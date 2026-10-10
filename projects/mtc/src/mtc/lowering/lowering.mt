@@ -3716,7 +3716,7 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
         let afield = j2("local_", name)
         let acname = j2("__mt_frame->", afield)
         async_register_local_field(ctx, name, afield, acname, success_ty)
-        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = acname, ty = success_ty, pointer = false)), operator = "=", value = success_val))
+        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = false)), member = afield, ty = success_ty)), operator = "=", value = success_val))
         return
     # No second local: reads project the success value out of the propagation temp.
     ctx.locals.push(LocalBinding(name = name, c_name = storage_c, ty = success_ty, pointer = false, projection = guard_binding_projection(kind, storage_ty)))
@@ -23177,7 +23177,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     var vparams = vec.Vec[ir.Param].create()
     vparams.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
     let vparam_s = vparams.as_span()
-    let raw_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = true))
+    let raw_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = false))
 
     # Param frame-field info.  Fields are named `param_<name>` so they cannot
     # clash with control fields (`state`/`result`/…).  For an async method the
@@ -23204,7 +23204,8 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     ctx.locals.clear()
     var resume_body = vec.Vec[ir.Stmt].create()
     resume_body.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
-    let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = frame_ptr_ty, pointer = true))
+    # The pointer lives in the type, not the `Name` (the host's `frame_expr`).
+    let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = frame_ptr_ty, pointer = false))
     # Register each param as a frame-field binding so references resolve to
     # `__mt_frame->param_<name>` (surviving suspend/resume); no C-local copy.
     var pib: ptr_uint = 0
@@ -23346,7 +23347,6 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
 
     # Shared bool exprs for vtable/constructor
     let bool_true = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))
-    let bool_false = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty))
 
 
     # -- vtable linkage names --
@@ -23432,11 +23432,13 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     let alloc_call = alloc_expr(ir.Expr.expr_call(callee = "mt_async_alloc", arguments = pack_single(size_expr), ty = ctx.ptr_void_ty))
     var ctor_body = vec.Vec[ir.Stmt].create()
     ctor_body.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = alloc_call, ty = frame_ptr_ty)), line = 0, source_path = ""))
-    let cframe = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = frame_ptr_ty, pointer = true))
-    ctor_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = "ready", ty = bool_ty)), operator = "=", value = bool_false))
-    ctor_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = "cancelled", ty = bool_ty)), operator = "=", value = bool_false))
-    if has_await:
-        ctor_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = "state", ty = int_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = int_ty))))
+    # The frame `Name` is not marked as a pointer — the pointer lives in the
+    # type (the host's `frame_expr`, `frame_builder.rb:267`) — and the resume
+    # call / aggregate carry its `ptr[void]` cast (`raw_frame_expr`).
+    let cframe = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = frame_ptr_ty, pointer = false))
+    let raw_cframe = alloc_expr(ir.Expr.expr_cast(target_type = ctx.ptr_void_ty, expression = cframe, ty = ctx.ptr_void_ty))
+    # `ready`/`cancelled`/`state` start zeroed by `mt_async_alloc`'s calloc — the
+    # host's ctor stores none of them.
     # Copy constructor params to frame fields.
     var pi3: ptr_uint = 0
     while pi3 < ctor_param_names.len:
@@ -23455,11 +23457,11 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         let arg_expr = alloc_expr(ir.Expr.expr_name(name = pname, ty = pty, pointer = false))
         ctor_body.push(ir.Stmt.stmt_assignment(target = field_expr, operator = "=", value = arg_expr))
         pi3 += 1
-    ctor_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = resume_c, arguments = single_expr_span(cframe), ty = void_t)), line = 0, source_path = ""))
+    ctor_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = resume_c, arguments = single_expr_span(raw_cframe), ty = void_t)), line = 0, source_path = ""))
     var tf = vec.Vec[ir.AggregateField].create()
     if not is_void_ret:
         tf.push(ir.AggregateField(name = "value", value = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = "result", ty = res_ty))))
-    tf.push(ir.AggregateField(name = "frame",       value = cframe))
+    tf.push(ir.AggregateField(name = "frame",       value = raw_cframe))
     tf.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_name(name = ready_lk,  ty = ctx.ptr_void_ty, pointer = false))))
     tf.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_name(name = waiter_lk, ty = ctx.ptr_void_ty, pointer = false))))
     tf.push(ir.AggregateField(name = "release",     value = alloc_expr(ir.Expr.expr_name(name = release_lk, ty = ctx.ptr_void_ty, pointer = false))))
@@ -23586,7 +23588,10 @@ function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], e
                 let field_name = j2("local_", tmp)
                 let frame_cname = j2("__mt_frame->", field_name)
                 async_register_local_field(ctx, tmp, field_name, frame_cname, result_ty)
-                let target = alloc_expr(ir.Expr.expr_name(name = frame_cname, ty = result_ty, pointer = false))
+                # The store target is the host's `IR::Member(frame, field)`
+                # (`async_frame_field_expression`), not the `__mt_frame->…` text
+                # Name (which stays for reads).
+                let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = false)), member = field_name, ty = result_ty))
                 async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target))
                 return alloc_ast_expr(ast.Expr.expr_identifier(name = tmp, line = 0, column = 0))
             ast.Expr.expr_binary_op as b:
@@ -23626,19 +23631,18 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
         let dv = loc_value else:
             return
         let field_name = j2("local_discard_", pw1_str(line))
-        let frame_cname = j2("__mt_frame->", field_name)
         if expr_is_direct_await(dv):
             let task_ir = lower_expr(ctx, direct_await_inner(dv))
             let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
             let result_ty = extract_task_element_type(ctx, task_ty)
             async_register_unused_field(ctx, field_name, result_ty)
-            let target = alloc_expr(ir.Expr.expr_name(name = frame_cname, ty = result_ty, pointer = false))
+            let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = false)), member = field_name, ty = result_ty))
             async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target))
         else:
             let value_ir = lower_expr(ctx, dv)
             let value_ty = ir_expr_type(value_ir)
             async_register_unused_field(ctx, field_name, value_ty)
-            output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = frame_cname, ty = value_ty, pointer = false)), operator = "=", value = value_ir))
+            output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = false)), member = field_name, ty = value_ty)), operator = "=", value = value_ir))
         return
 
     let field_name = j2("local_", loc_name)
@@ -23657,7 +23661,7 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
         let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
         let result_ty = extract_task_element_type(ctx, task_ty)
         async_register_local_field(ctx, loc_name, field_name, frame_cname, result_ty)
-        let target = alloc_expr(ir.Expr.expr_name(name = frame_cname, ty = result_ty, pointer = false))
+        let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = false)), member = field_name, ty = result_ty))
         async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target))
         return
 
@@ -23697,7 +23701,7 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
                     _:
                         val_ir = nullable_some_literal(ty, val_ir)
     async_register_local_field(ctx, loc_name, field_name, frame_cname, ty)
-    let target = alloc_expr(ir.Expr.expr_name(name = frame_cname, ty = ty, pointer = false))
+    let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = false)), member = field_name, ty = ty))
     output.push(ir.Stmt.stmt_assignment(target = target, operator = "=", value = val_ir))
 
 
@@ -23747,7 +23751,7 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
         ctx.async_await_fields.push(ir.Field(name = await_field, ty = task_ty))
     let next_state = int<-idx + 1
 
-    let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = true))
+    let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = false))
     let await_ref = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = await_field, ty = task_ty))
 
     # frame->await_N = <task>
@@ -23762,7 +23766,7 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
     var sw_args = vec.Vec[ir.Expr].create()
     unsafe:
         sw_args.push(read(alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "frame", ty = ptr_void))))
-        sw_args.push(read(alloc_expr(ir.Expr.expr_name(name = "__mt_frame_raw", ty = ptr_void, pointer = true))))
+        sw_args.push(read(alloc_expr(ir.Expr.expr_name(name = "__mt_frame_raw", ty = ptr_void, pointer = false))))
         sw_args.push(read(alloc_expr(ir.Expr.expr_name(name = ctx.async_resume_c, ty = ptr_void, pointer = false))))
     let set_waiter_fn = alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "set_waiter", ty = ptr_void))
     suspend.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = set_waiter_fn, arguments = sw_args.as_span(), ty = void_ty)), line = 0, source_path = ""))

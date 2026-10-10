@@ -3267,9 +3267,8 @@ function test_async_embedded_await_temps_and_discards() -> void:
     let text = dump.as_str()
     expect(text.contains_substring("(IR::Field :name \"local___mt_async_tmp_1\" :type (Types::VariantInstance :name \"Result\" :module_name \"std.result\")) (IR::Field :name \"local_ok\" :type (Types::Primitive :name \"int\")) (IR::Field :name \"local_discard_6\" :type (Types::VariantInstance :name \"Result\" :module_name \"std.result\"))"))
     ## The discard's awaited value is stored into the field (not silently
-    ## dropped) — the self's frame store carries the field path in a Name; the
-    ## host's `IR::Member` target shape is a separate item.
-    expect(text.contains_substring(":name \"__mt_frame->local_discard_6\""))
+    ## dropped) — the store target is the host's `IR::Member(frame, field)`.
+    expect(text.contains_substring(":member \"local_discard_6\""))
     expect(not text.contains_substring("local_await_tmp"))
     expect(not text.contains_substring("await_tmp_"))
 
@@ -3300,3 +3299,12 @@ function test_async_ctor_params_and_refcounted_allocator() -> void:
     expect(text.contains_substring(":callee \"mt_async_alloc\""))
     expect(text.contains_substring(":callee \"mt_async_free\""))
     expect(not text.contains_substring(":callee \"calloc\""))
+    ## The ctor's resume call carries the frame's `ptr[void]` cast (the host's
+    ## `raw_frame_expr`), its stores are the host's `IR::Member(frame, field)`
+    ## targets, and the refcounted allocator's zeroing replaces the self's
+    ## `ready`/`cancelled`/`state` stores (session 44 batch 15).
+    expect(text.contains_substring(":callee \"main_step__resume\" :arguments ((IR::Cast :target_type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\")))"))
+    expect(text.contains_substring(":member \"param_x\""))
+    ## No `ready`/`cancelled` zero-store remains in the ctor (this source has no
+    ## other `false` literal — the allocator's calloc is the initializer).
+    expect(not text.contains_substring("(IR::BooleanLiteral :value false"))
