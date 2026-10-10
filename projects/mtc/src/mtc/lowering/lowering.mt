@@ -199,10 +199,12 @@ struct LowerCtx:
     extern_map: map_mod.Map[str, str]
     function_returns: map_mod.Map[str, types.Type]
     inside_async: bool
-    # When non-empty, `lower_stmt` rewrites `return expr` into a result-store +
-    # `goto` this label instead of a `stmt_return`.  Set during async resume
-    # function body lowering so returns inside nested blocks reach the epilogue.
-    async_resume_return_label: str
+    # True while lowering an async resume body: `lower_stmt` rewrites `return
+    # expr` and a `?`-propagation failure into the host's inline frame
+    # completion (`async_complete_statements`: result store, ready, waiter
+    # wake, return) instead of a native `return`.  Set during both the
+    # no-await and the CPS resume body lowering.
+    async_completion_active: bool
     # Same-module variant declarations, keyed by variant name, so arm
     # constructors and match arms can resolve discriminants and payload fields.
     variants: map_mod.Map[str, VariantInfo]
@@ -381,8 +383,6 @@ struct LowerCtx:
     # arm's address.  The lowering pass emits the field after the arm body (the
     # host's post-order analysis registration).
     async_match_binding_names: map_mod.Map[ptr_uint, str]
-    async_complete_label: str
-    async_result_c_name: str
     # When non-null, `async_emit_await` and `async_register_local_field` push
     # through these pointers instead of the vec fields above.  This makes a
     # function's field collection immune to nested `lower_async_fn` calls — even
@@ -1093,7 +1093,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         hoist_root_ep = null,
         mapping_replacements = map_mod.Map[str, ptr[ir.Expr]].create(),
         inside_async = false,
-        async_resume_return_label = "",
+        async_completion_active = false,
         current_fn_return_type = types.primitive("void"),
         async_cps_active = false,
         async_frame_ptr_ty = types.primitive("void"),
@@ -1106,8 +1106,6 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         async_await_fields = vec.Vec[ir.Field].create(),
         async_local_seen = map_mod.Map[str, bool].create(),
         async_match_binding_names = map_mod.Map[ptr_uint, str].create(),
-        async_complete_label = "",
-        async_result_c_name = "",
         async_await_fields_ptr = null,
         async_local_fields_ptr = null,
         loop_break_label = "",
@@ -1405,8 +1403,11 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 if fun.is_async:
                     # All async functions use full CPS lowering (frame struct,
                     # resume state machine, vtable, constructor).  A 0-await
-                    # function is the single-state case.
-                    lower_async_fn(ref_of(ctx), fun.name, naming.qualified_c_name(ctx.module_name, fun.name), Option[types.Type].none, fun.method_params, fun.return_type, fun.body, ref_of(functions))
+                    # function is the single-state case.  An async `main`
+                    # constructor carries the host's `__async_main` linkage
+                    # (`function_binding_c_name`, utils.rb:1089-1092).
+                    let link_base = if is_root and fun.name == "main": naming.qualified_c_name(ctx.module_name, "__async_main") else: naming.qualified_c_name(ctx.module_name, fun.name)
+                    lower_async_fn(ref_of(ctx), fun.name, link_base, Option[types.Type].none, fun.method_params, fun.return_type, fun.body, ref_of(functions))
                     if is_root and fun.name == "main":
                         match build_async_main_entrypoint(ref_of(ctx), fun.name):
                             Option.some as entry:
@@ -2734,22 +2735,19 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
     unsafe:
         match read(sp):
             ast.Stmt.stmt_ret as r:
-                # Async resume functions (whose return_label is set) rewrite
-                # returns into: store result → goto epilogue.  This way
-                # returns inside nested blocks (if/while/for/switch) reach
-                # the waiter-wake + void-return epilogue instead of
+                # An async resume body completes the frame inline (the host's
+                # `async_complete_statements`): the return value stores into
+                # `frame->result`, then ready + waiter wake + return follow.
+                # This way returns inside nested blocks (if/while/for/switch)
+                # reach the waiter-wake + void-return epilogue instead of
                 # returning directly with a value from a void function.
-                if ctx.async_resume_return_label.len > 0:
+                if ctx.async_completion_active:
                     let rv = r.value
-                    if rv != null and not types.is_void(ctx.current_fn_return_type):
-                        # CPS returns store straight into the frame's `result`
-                        # field (which survives suspend/resume); the no-await path
-                        # stores into a `__mt_result` C local.
-                        let result_target_name = if ctx.async_result_c_name.len > 0: ctx.async_result_c_name else: "__mt_result"
+                    let ret_ty = ctx.current_fn_return_type
+                    if rv != null and not types.is_void(ret_ty):
                         # `return await X`: suspend, then store the awaited result.
                         if ctx.async_cps_active and expr_is_direct_await(rv):
-                            let ret_target = alloc_expr(ir.Expr.expr_name(name = result_target_name, ty = ctx.current_fn_return_type, pointer = Option[bool].some(value = false)))
-                            lower_async_await_into(ctx, output, direct_await_inner(rv), Option[ptr[ir.Expr]].some(value = ret_target))
+                            lower_async_await_into(ctx, output, direct_await_inner(rv), Option[ptr[ir.Expr]].some(value = async_result_target(ctx, ret_ty)))
                         else:
                             # Hoist any embedded awaits in the return value first.
                             var rvh = rv
@@ -2757,7 +2755,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                 rvh = async_hoist_awaits(ctx, output, rv)
                             let lowered = lower_expr(ctx, rvh)
                             output.push(ir.Stmt.stmt_assignment(
-                                target = alloc_expr(ir.Expr.expr_name(name = result_target_name, ty = ctx.current_fn_return_type, pointer = Option[bool].some(value = false))),
+                                target = async_result_target(ctx, ret_ty),
                                 operator = "=",
                                 value = lowered,
                             ))
@@ -2765,7 +2763,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     # `return copy_payload(packet)` with `defer packet.release()`
                     # evaluates copy_payload before release.
                     flush_all_defers(ctx, output)
-                    output.push(ir.Stmt.stmt_goto(label = ctx.async_resume_return_label))
+                    async_complete_statements(ctx, output, ret_ty, Option[ptr[ir.Expr]].none)
                     return
                 # `return expr?` — handle ? propagation inline before lowering
                 # the return value so the ? is resolved to an if/failure pattern
@@ -3691,17 +3689,18 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
     # Failure branch: return the appropriate failure value.
     var fail_body = vec.Vec[ir.Stmt].create()
     flush_all_defers(ctx, ref_of(fail_body))
-    if ctx.async_cps_active:
-        # In a CPS resume (void-returning), a failure `?` stores the propagated
-        # value into the frame result and jumps to the completion label rather
-        # than emitting a value-returning `return`.
+    if ctx.async_completion_active:
+        # In an async resume (void-returning), a failure `?` stores the
+        # propagated value into the frame result and completes the frame inline
+        # (the host's `async_complete_statements`) rather than emitting a
+        # value-returning `return`.
         if not ctx.async_result_is_void:
             fail_body.push(ir.Stmt.stmt_assignment(
-                target = alloc_expr(ir.Expr.expr_name(name = ctx.async_result_c_name, ty = ctx.async_result_ty, pointer = Option[bool].some(value = false))),
+                target = async_result_target(ctx, ctx.async_result_ty),
                 operator = "=",
                 value = fail_value,
             ))
-        fail_body.push(ir.Stmt.stmt_goto(label = ctx.async_complete_label))
+        async_complete_statements(ctx, ref_of(fail_body), ctx.async_result_ty, Option[ptr[ir.Expr]].none)
     else:
         fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = 0, source_path = ""))
 
@@ -3803,14 +3802,14 @@ function lower_propagate_assign(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
 
     var fail_body = vec.Vec[ir.Stmt].create()
     flush_all_defers(ctx, ref_of(fail_body))
-    if ctx.async_cps_active:
+    if ctx.async_completion_active:
         if not ctx.async_result_is_void:
             fail_body.push(ir.Stmt.stmt_assignment(
-                target = alloc_expr(ir.Expr.expr_name(name = ctx.async_result_c_name, ty = ctx.async_result_ty, pointer = Option[bool].some(value = false))),
+                target = async_result_target(ctx, ctx.async_result_ty),
                 operator = "=",
                 value = fail_value,
             ))
-        fail_body.push(ir.Stmt.stmt_goto(label = ctx.async_complete_label))
+        async_complete_statements(ctx, ref_of(fail_body), ctx.async_result_ty, Option[ptr[ir.Expr]].none)
     else:
         fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = 0, source_path = ""))
 
@@ -6950,18 +6949,14 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
     let saved_locals = ctx.locals
     let saved_counter = ctx.temp_counter
     let saved_cps_ci = ctx.async_cps_active
-    let saved_cps_ci_label = ctx.async_resume_return_label
-    let saved_cps_ci_complete = ctx.async_complete_label
-    let saved_cps_ci_result = ctx.async_result_c_name
+    let saved_cps_ci_completion = ctx.async_completion_active
     let saved_ci_inside_async = ctx.inside_async
     # A proc is a synchronous closure: a literal inside an async function must not
     # inherit the caller's CPS state, or its body emits `__mt_frame->result` stores
-    # and `goto <caller>_resume_complete` labels that don't exist here.  Nor may it
-    # inherit `inside_async`, which wraps every returned value in a Task literal.
+    # that don't exist here.  Nor may it inherit `inside_async`, which wraps every
+    # returned value in a Task literal.
     ctx.async_cps_active = false
-    ctx.async_resume_return_label = ""
-    ctx.async_complete_label = ""
-    ctx.async_result_c_name = ""
+    ctx.async_completion_active = false
     ctx.inside_async = false
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.temp_counter = 0
@@ -7016,9 +7011,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
     ctx.locals = saved_locals
     ctx.temp_counter = saved_counter
     ctx.async_cps_active = saved_cps_ci
-    ctx.async_resume_return_label = saved_cps_ci_label
-    ctx.async_complete_label = saved_cps_ci_complete
-    ctx.async_result_c_name = saved_cps_ci_result
+    ctx.async_completion_active = saved_cps_ci_completion
     ctx.inside_async = saved_ci_inside_async
     return ir.Function(
         name = invoke_c_name,
@@ -7082,17 +7075,13 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
     let saved_locals = ctx.locals
     let saved_counter = ctx.temp_counter
     let saved_cps_pi = ctx.async_cps_active
-    let saved_cps_pi_label = ctx.async_resume_return_label
-    let saved_cps_pi_complete = ctx.async_complete_label
-    let saved_cps_pi_result = ctx.async_result_c_name
+    let saved_cps_pi_completion = ctx.async_completion_active
     let saved_pi_inside_async = ctx.inside_async
     # See `build_capturing_invoke`: the proc body is synchronous and must not
     # inherit the enclosing async function's CPS return state — nor its
     # `inside_async`, which would wrap the returned value in a Task literal.
     ctx.async_cps_active = false
-    ctx.async_resume_return_label = ""
-    ctx.async_complete_label = ""
-    ctx.async_result_c_name = ""
+    ctx.async_completion_active = false
     ctx.inside_async = false
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.temp_counter = 0
@@ -7121,9 +7110,7 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
     ctx.locals = saved_locals
     ctx.temp_counter = saved_counter
     ctx.async_cps_active = saved_cps_pi
-    ctx.async_resume_return_label = saved_cps_pi_label
-    ctx.async_complete_label = saved_cps_pi_complete
-    ctx.async_result_c_name = saved_cps_pi_result
+    ctx.async_completion_active = saved_cps_pi_completion
     ctx.inside_async = saved_pi_inside_async
     return ir.Function(
         name = invoke_c_name,
@@ -7621,6 +7608,8 @@ function ir_expr_type(ep: ptr[ir.Expr]) -> types.Type:
                 return x.ty
             ir.Expr.expr_stmt_expr as x:
                 return x.ty
+            ir.Expr.expr_assignment as x:
+                return ir_expr_type(x.value)
             _:
                 return types.Type.ty_error
 
@@ -9528,16 +9517,12 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             var saved_type_subst = ctx.type_substitution
             var saved_inside_async = ctx.inside_async
             var saved_cps_active = ctx.async_cps_active
-            var saved_cps_label = ctx.async_resume_return_label
-            var saved_cps_complete = ctx.async_complete_label
-            var saved_cps_result_cname = ctx.async_result_c_name
-            # Specializations are lowered in their own right; a CPS label from a
-            # caller must not leak into their IR bodies (or the body will emit a
-            # `goto` to a label that doesn't exist in the specialization).
+            var saved_cps_completion = ctx.async_completion_active
+            # Specializations are lowered in their own right; a caller's CPS
+            # state must not leak into their IR bodies (or the body will emit a
+            # frame completion against a frame that doesn't exist).
             ctx.async_cps_active = false
-            ctx.async_resume_return_label = ""
-            ctx.async_complete_label = ""
-            ctx.async_result_c_name = ""
+            ctx.async_completion_active = false
 
             # Switch to the owner module's context when its analysis is available.
             match find_imported_analysis(ctx, gm.module_name):
@@ -9601,9 +9586,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             ctx.type_substitution = saved_type_subst
             ctx.inside_async = saved_inside_async
             ctx.async_cps_active = saved_cps_active
-            ctx.async_resume_return_label = saved_cps_label
-            ctx.async_complete_label = saved_cps_complete
-            ctx.async_result_c_name = saved_cps_result_cname
+            ctx.async_completion_active = saved_cps_completion
         _:
             fatal(j2("lowering: monomorphization failed, expected function decl for ", gm.module_name))
 
@@ -11657,9 +11640,7 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     var saved_sub = ctx.type_substitution
     var saved_inside_async = ctx.inside_async
     var saved_cps_active = ctx.async_cps_active
-    var saved_cps_label = ctx.async_resume_return_label
-    var saved_cps_complete = ctx.async_complete_label
-    var saved_cps_result_cname = ctx.async_result_c_name
+    var saved_cps_completion = ctx.async_completion_active
 
     ctx.module_name = gm.owner_module
     ctx.analysis = owner_a
@@ -11677,12 +11658,10 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     # A generic method may first be specialized while an async function body is
     # being CPS-lowered (its call triggers monomorphization).  The method body is
     # an ordinary (non-CPS) function, so the caller's CPS state must not leak into
-    # it — otherwise the body emits `__mt_frame->...` references and
-    # `goto <caller>_resume_complete` labels that don't exist in the method.
+    # it — otherwise the body emits `__mt_frame->...` references and frame
+    # completions that don't exist in the method.
     ctx.async_cps_active = false
-    ctx.async_resume_return_label = ""
-    ctx.async_complete_label = ""
-    ctx.async_result_c_name = ""
+    ctx.async_completion_active = false
     collect_foreign_functions(ctx, owner_a.source_file.declarations)
     collect_variants(ctx, owner_a.source_file.declarations)
     install_prelude_variants(ctx)
@@ -11726,9 +11705,7 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     ctx.type_substitution = saved_sub
     ctx.inside_async = saved_inside_async
     ctx.async_cps_active = saved_cps_active
-    ctx.async_resume_return_label = saved_cps_label
-    ctx.async_complete_label = saved_cps_complete
-    ctx.async_result_c_name = saved_cps_result_cname
+    ctx.async_completion_active = saved_cps_completion
 
 
 ## Find the module that defines a struct named `name` by searching loaded analyses.
@@ -23147,15 +23124,128 @@ function async_param_pointer(receiver_ty_opt: Option[types.Type], pname: str) ->
             return Option[bool].none
 
 
+## The host's `async_info[:wake_type]` / the Task struct's `wake_fn`:
+## `fn(frame: ptr[void]) -> void` (`types.rb:596-600`).
+function async_wake_fn_type(ctx: ref[LowerCtx]) -> types.Type:
+    return types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
+
+
+## The type of a `Types::Task` field (`types.rb:601-632`): `frame`, `ready`,
+## `set_waiter`, `release`, `take_result` or `cancel`.  Anything else falls back
+## to the frame pointer (the unknown field's C shape).
+function task_field_type(ctx: ref[LowerCtx], result_ty: types.Type, field: str) -> types.Type:
+    let void_ptr = ctx.ptr_void_ty
+    if field == "ready":
+        return types.Type.ty_function(name = "", params = single_ty_span(void_ptr), return_type = types.alloc_type(ctx.bool_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
+    if field == "take_result":
+        return types.Type.ty_function(name = "", params = single_ty_span(void_ptr), return_type = types.alloc_type(result_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
+    if field == "set_waiter":
+        var ptypes = vec.Vec[types.Type].create()
+        ptypes.push(void_ptr)
+        ptypes.push(void_ptr)
+        ptypes.push(async_wake_fn_type(ctx))
+        var pnames = vec.Vec[str].create()
+        pnames.push("frame")
+        pnames.push("waiter_frame")
+        pnames.push("waiter")
+        return types.Type.ty_function(name = "", params = ptypes.as_span(), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = pnames.as_span())
+    if field == "release" or field == "cancel":
+        return types.Type.ty_function(name = "", params = single_ty_span(void_ptr), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
+    return void_ptr
+
+
+## The `frame->result` store target (the host's
+## `async_frame_field_expression(frame_expr, "result", …)`).
+function async_result_target(ctx: ref[LowerCtx], res_ty: types.Type) -> ptr[ir.Expr]:
+    let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false)))
+    return alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty))
+
+
+## The host's `async_complete_statements` (`async_lowering.rb:1271`): store the
+## result (when one is given), mark the frame ready, wake a registered waiter and
+## return.  Emitted inline at every `return` and `?`-failure inside an async
+## resume body (the self's replacement for the old completion label).
+function async_complete_statements(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], res_ty: types.Type, result_value: Option[ptr[ir.Expr]]) -> void:
+    let bool_ty = ctx.bool_ty
+    let void_ptr = ctx.ptr_void_ty
+    let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false)))
+    match result_value:
+        Option.some as rv:
+            if not is_void_type_lowered(res_ty):
+                output.push(ir.Stmt.stmt_assignment(
+                    target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)),
+                    operator = "=",
+                    value = rv.value,
+                ))
+        Option.none:
+            pass
+    output.push(ir.Stmt.stmt_assignment(
+        target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)),
+        operator = "=",
+        value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty)),
+    ))
+    let waiter_frame_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter_frame", ty = void_ptr))
+    var wake_body = vec.Vec[ir.Stmt].create()
+    wake_body.push(ir.Stmt.stmt_local(name = "waiter_frame", linkage_name = "__mt_waiter_frame", ty = void_ptr, value = waiter_frame_field, line = 0, source_path = ""))
+    wake_body.push(ir.Stmt.stmt_assignment(target = waiter_frame_field, operator = "=", value = alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr))))
+    wake_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(
+        callee = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = async_wake_fn_type(ctx))),
+        arguments = single_expr_span(alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_frame", ty = void_ptr, pointer = Option[bool].some(value = false)))),
+        ty = ctx.void_ty,
+    )), line = 0, source_path = ""))
+    wake_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+    let has_waiter = alloc_expr(ir.Expr.expr_binary(
+        operator = "!=",
+        left = waiter_frame_field,
+        right = alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr)),
+        ty = bool_ty,
+    ))
+    output.push(ir.Stmt.stmt_if(condition = has_waiter, then_body = wake_body.as_span(), else_body = Option[span[ir.Stmt]].none))
+    output.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+
+
+## True when a lowered statement sequence always transfers control — the IR-level
+## mirror of the host's `cfg_block_always_terminates?` (used to decide whether an
+## async resume needs a trailing completion for a void result; structured like
+## `c_backend.body_terminates`).
+function async_block_terminates(stmts: span[ir.Stmt]) -> bool:
+    if stmts.len == 0:
+        return false
+    unsafe:
+        return async_stmt_terminates(stmts.data + (stmts.len - 1))
+
+
+function async_stmt_terminates(sp: ptr[ir.Stmt]) -> bool:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_return:
+                return true
+            ir.Stmt.stmt_break:
+                return true
+            ir.Stmt.stmt_continue:
+                return true
+            ir.Stmt.stmt_goto:
+                return true
+            ir.Stmt.stmt_block as blk:
+                return async_block_terminates(blk.body)
+            ir.Stmt.stmt_if as iff:
+                match iff.else_body:
+                    Option.some as eb:
+                        return async_block_terminates(iff.then_body) and async_block_terminates(eb.value)
+                    Option.none:
+                        return false
+            _:
+                return false
+
+
 ## Lower an async function: generate frame struct, resume fn, constructor fn,
 ## and vtable helpers.  Push into the output structs/functions collections.
 ## Supports both no-await (single-state) and full CPS (state-machine) paths.
 function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_ty_opt: Option[types.Type], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, functions: ref[vec.Vec[ir.Function]]) -> void:
     # Reset async CPS state so a no-await function (or the next function) never
-    # inherits a previous has-await function's frame-result target / labels.
+    # inherits a previous has-await function's frame state.
     ctx.async_cps_active = false
-    ctx.async_result_c_name = ""
-    ctx.async_complete_label = ""
+    ctx.async_completion_active = false
     ctx.async_await_counter = 0
     ctx.async_tmp_counter = 0
     ctx.async_local_fields = vec.Vec[ir.Field].create()
@@ -23238,20 +23328,21 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         # Full CPS: spill locals to frame fields, split awaits into a goto state
         # machine.  `lower_function_body` reuses the normal statement lowering;
         # `ctx.async_cps_active` redirects local decls and await-valued statements
-        # (see `lower_async_local` / `lower_async_await_into`).
+        # (see `lower_async_local` / `lower_async_await_into`), and
+        # `ctx.async_completion_active` rewrites returns/`?`-failures into the
+        # host's inline frame completion.
         ctx.async_cps_active = true
         ctx.async_frame_ptr_ty = frame_ptr_ty
         ctx.async_resume_c = resume_c
         ctx.async_result_ty = res_ty
         ctx.async_result_is_void = is_void_ret
+        var saved_completion = ctx.async_completion_active
+        ctx.async_completion_active = true
         # Fresh field vecs for this function.
         ctx.async_await_counter = 0
         ctx.async_local_fields = vec.Vec[ir.Field].create()
         ctx.async_await_fields = vec.Vec[ir.Field].create()
         ctx.async_local_seen = map_mod.Map[str, bool].create()
-        let complete_lbl = j2(resume_c, "_complete")
-        ctx.async_complete_label = complete_lbl
-        ctx.async_result_c_name = "__mt_frame->result"
         # Create LOCAL vec vars and point to THEM (NOT to ctx fields).  The ctx
         # fields are reassigned by nested lower_async_fn calls; a LOCAL variable
         # is immune to that, so pushes through the pointer always land here.
@@ -23261,8 +23352,6 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         let saved_local_ptr = ctx.async_local_fields_ptr
         ctx.async_await_fields_ptr = ptr_of(my_await_fields)
         ctx.async_local_fields_ptr = ptr_of(my_local_fields)
-        var saved_label = ctx.async_resume_return_label
-        ctx.async_resume_return_label = complete_lbl
         var saved_rt = ctx.current_fn_return_type
         ctx.current_fn_return_type = res_ty
         var saved_inside = ctx.inside_async
@@ -23278,7 +23367,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         ctx.async_local_fields_ptr = saved_local_ptr
 
         ctx.async_cps_active = false
-        ctx.async_resume_return_label = saved_label
+        ctx.async_completion_active = saved_completion
         ctx.current_fn_return_type = saved_rt
         ctx.inside_async = saved_inside
 
@@ -23297,32 +23386,30 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         while bci < body_stmts.len:
             resume_body.push(unsafe: read(body_stmts.data + bci))
             bci += 1
-        resume_body.push(ir.Stmt.stmt_label(name = complete_lbl))
-        resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
-        async_waiter_wake(ctx, ref_of(resume_body), frame_exp, bool_ty, async_mod.ptr_void_type())
-        resume_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+        # A void result whose body can fall through completes the frame at the
+        # end (the host's `cfg_block_always_terminates?` guard); every return
+        # already completed it inline.
+        if is_void_ret and not async_block_terminates(body_stmts):
+            async_complete_statements(ctx, ref_of(resume_body), res_ty, Option[ptr[ir.Expr]].none)
     else:
-        # No awaits: single-state body; `return expr` → store __mt_result + goto.
-        var saved_label = ctx.async_resume_return_label
-        ctx.async_resume_return_label = "__mt_async_return"
+        # No awaits: single-state body.  Returns complete the frame inline (the
+        # host's `lower_async_non_await_statements` + `async_complete_statements`).
+        ctx.async_frame_ptr_ty = frame_ptr_ty
+        ctx.async_result_ty = res_ty
+        ctx.async_result_is_void = is_void_ret
+        ctx.async_completion_active = true
         var saved_rt = ctx.current_fn_return_type
         ctx.current_fn_return_type = res_ty
         var saved_inside = ctx.inside_async
         ctx.inside_async = true
-        if not is_void_ret:
-            resume_body.push(ir.Stmt.stmt_local(name = "__mt_result", linkage_name = "__mt_result", ty = res_ty, value = alloc_expr(ir.Expr.expr_zero_init(ty = res_ty)), line = 0, source_path = ""))
         var body_ir = lower_function_body(ctx, body)
+        ctx.async_completion_active = false
         var bi: ptr_uint = 0
         while bi < body_ir.len:
             resume_body.push(unsafe: read(body_ir.data + bi))
             bi += 1
-        resume_body.push(ir.Stmt.stmt_label(name = "__mt_async_return"))
-        if not is_void_ret:
-            resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "__mt_result", ty = res_ty, pointer = Option[bool].some(value = false)))))
-        resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
-        async_waiter_wake(ctx, ref_of(resume_body), frame_exp, bool_ty, async_mod.ptr_void_type())
-        resume_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-        ctx.async_resume_return_label = saved_label
+        if is_void_ret and not async_block_terminates(body_ir):
+            async_complete_statements(ctx, ref_of(resume_body), res_ty, Option[ptr[ir.Expr]].none)
         ctx.current_fn_return_type = saved_rt
         ctx.inside_async = saved_inside
     functions.push(ir.Function(name = j2(name, "__resume"), linkage_name = resume_c, params = vparam_s, return_type = void_t, body = resume_body.as_span(), entry_point = false, method_receiver_param = false))
@@ -23378,53 +23465,53 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     vrdy.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), line = 0, source_path = ""))
     functions.push(ir.Function(name = j2(ready_lk, "_fn"), linkage_name = ready_lk, params = vparam_s, return_type = bool_ty, body = vrdy.as_span(), entry_point = false, method_receiver_param = false))
 
+    # -- vtable: set_waiter (fresh vec) --
+    let wake_fn_ty = async_wake_fn_type(ctx)
+    var vsw = vec.Vec[ir.Stmt].create()
+    vsw.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
+    # If already ready, call the waiter immediately (synchronous completion).
+    var sw_rdy = vec.Vec[ir.Stmt].create()
+    let sw_waiter_fn = alloc_expr(ir.Expr.expr_name(name = "waiter", ty = wake_fn_ty, pointer = Option[bool].some(value = false)))
+    let sw_waiter_frame = alloc_expr(ir.Expr.expr_name(name = "waiter_frame", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
+    sw_rdy.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = sw_waiter_fn, arguments = single_expr_span(sw_waiter_frame), ty = void_t)), line = 0, source_path = ""))
+    sw_rdy.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+    let sw_ready_cond = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty))
+    vsw.push(ir.Stmt.stmt_if(condition = sw_ready_cond, then_body = sw_rdy.as_span(), else_body = Option[span[ir.Stmt]].none))
+    vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter_frame", ty = ctx.ptr_void_ty)), operator = "=", value = sw_waiter_frame))
+    vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = wake_fn_ty)), operator = "=", value = sw_waiter_fn))
+    vsw.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+    var sw_params = vec.Vec[ir.Param].create()
+    sw_params.push(ir.Param(name = "frame", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
+    sw_params.push(ir.Param(name = "waiter_frame", linkage_name = "waiter_frame", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
+    sw_params.push(ir.Param(name = "waiter", linkage_name = "waiter", ty = wake_fn_ty, pointer = Option[bool].some(value = false)))
+    functions.push(ir.Function(name = j2(waiter_lk, "_fn"), linkage_name = waiter_lk, params = sw_params.as_span(), return_type = void_t, body = vsw.as_span(), entry_point = false, method_receiver_param = false))
+
     # -- vtable: release (fresh vec) --
     var vrel = vec.Vec[ir.Stmt].create()
     vrel.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
+    # If not yet ready, release the pending await tasks and return without
+    # freeing (the host's `build_async_release_function`).
+    var rel_if_body = vec.Vec[ir.Stmt].create()
     if has_await:
-        # If not yet ready, release pending await tasks and return without freeing.
-        let await_ptr_void = ctx.ptr_void_ty
-        let await_null_ptr = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = await_ptr_void))
-        var rel_if_body = vec.Vec[ir.Stmt].create()
         var afi: ptr_uint = 0
         while afi < ctx.async_await_fields.len():
             let afp = ctx.async_await_fields.get(afi) else:
                 break
             let af = unsafe: read(afp)
             let af_task = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = af.name, ty = af.ty))
-            let af_frame = alloc_expr(ir.Expr.expr_member(receiver = af_task, member = "frame", ty = await_ptr_void))
+            let af_frame = alloc_expr(ir.Expr.expr_member(receiver = af_task, member = "frame", ty = task_field_type(ctx, res_ty, "frame")))
             var af_release_body = vec.Vec[ir.Stmt].create()
-            let af_release_fn = alloc_expr(ir.Expr.expr_member(receiver = af_task, member = "release", ty = await_ptr_void))
+            let af_release_fn = alloc_expr(ir.Expr.expr_member(receiver = af_task, member = "release", ty = task_field_type(ctx, res_ty, "release")))
             af_release_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = af_release_fn, arguments = single_expr_span(af_frame), ty = void_t)), line = 0, source_path = ""))
-            let af_has_frame = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = af_frame, right = await_null_ptr, ty = bool_ty))
-            rel_if_body.push(ir.Stmt.stmt_if(condition = af_has_frame, then_body = af_release_body.as_span(), else_body = Option[span[ir.Stmt]].none))
+            rel_if_body.push(ir.Stmt.stmt_if(condition = af_frame, then_body = af_release_body.as_span(), else_body = Option[span[ir.Stmt]].none))
             afi += 1
-        rel_if_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-        let not_ready = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), ty = bool_ty))
-        vrel.push(ir.Stmt.stmt_if(condition = not_ready, then_body = rel_if_body.as_span(), else_body = Option[span[ir.Stmt]].none))
+    rel_if_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "mt_async_free", arguments = single_expr_span(raw_expr), ty = void_t)), line = 0, source_path = ""))
+    rel_if_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+    let not_ready = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), ty = bool_ty))
+    vrel.push(ir.Stmt.stmt_if(condition = not_ready, then_body = rel_if_body.as_span(), else_body = Option[span[ir.Stmt]].none))
     vrel.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "mt_async_free", arguments = single_expr_span(raw_expr), ty = void_t)), line = 0, source_path = ""))
+    vrel.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     functions.push(ir.Function(name = j2(release_lk, "_fn"), linkage_name = release_lk, params = vparam_s, return_type = void_t, body = vrel.as_span(), entry_point = false, method_receiver_param = false))
-
-    # -- vtable: set_waiter (fresh vec) --
-    var vsw = vec.Vec[ir.Stmt].create()
-    vsw.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
-    # If already ready, call the waiter immediately (synchronous completion).
-    var sw_rdy = vec.Vec[ir.Stmt].create()
-    let sw_waiter_fn = alloc_expr(ir.Expr.expr_name(name = "waiter", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
-    let sw_waiter_frame = alloc_expr(ir.Expr.expr_name(name = "waiter_frame", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = true)))
-    sw_rdy.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = sw_waiter_fn, arguments = single_expr_span(sw_waiter_frame), ty = void_t)), line = 0, source_path = ""))
-    sw_rdy.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    let sw_ready_cond = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty))
-    vsw.push(ir.Stmt.stmt_if(condition = sw_ready_cond, then_body = sw_rdy.as_span(), else_body = Option[span[ir.Stmt]].none))
-    vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter_frame", ty = ctx.ptr_void_ty)), operator = "=", value = sw_waiter_frame))
-    vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = ctx.ptr_void_ty)), operator = "=", value = sw_waiter_fn))
-    vsw.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    var sw_params = vec.Vec[ir.Param].create()
-    sw_params.push(ir.Param(name = "frame", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
-    sw_params.push(ir.Param(name = "waiter_frame", linkage_name = "waiter_frame", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
-    var waiter_cb_ty = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
-    sw_params.push(ir.Param(name = "waiter", linkage_name = "waiter", ty = waiter_cb_ty, pointer = Option[bool].some(value = false)))
-    functions.push(ir.Function(name = j2(waiter_lk, "_fn"), linkage_name = waiter_lk, params = sw_params.as_span(), return_type = void_t, body = vsw.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable: take_result (fresh vec) --
     if not is_void_ret:
@@ -23436,7 +23523,40 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     # -- vtable: cancel (fresh vec) --
     var vcn = vec.Vec[ir.Stmt].create()
     vcn.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
-    vcn.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "cancelled", ty = bool_ty)), operator = "=", value = bool_true))
+    # An already-ready frame returns without cancelling anything.
+    var cn_ready_body = vec.Vec[ir.Stmt].create()
+    cn_ready_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+    vcn.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), then_body = cn_ready_body.as_span(), else_body = Option[span[ir.Stmt]].none))
+    vcn.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "cancelled", ty = bool_ty)), operator = "=", value = bool_true)), line = 0, source_path = ""))
+    if has_await:
+        var cfi: ptr_uint = 0
+        while cfi < ctx.async_await_fields.len():
+            let cfp = ctx.async_await_fields.get(cfi) else:
+                break
+            let cf = unsafe: read(cfp)
+            let cf_task = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = cf.name, ty = cf.ty))
+            let cf_frame = alloc_expr(ir.Expr.expr_member(receiver = cf_task, member = "frame", ty = task_field_type(ctx, res_ty, "frame")))
+            var cf_then = vec.Vec[ir.Stmt].create()
+            var cf_cancel_body = vec.Vec[ir.Stmt].create()
+            let cf_cancel_fn = alloc_expr(ir.Expr.expr_member(receiver = cf_task, member = "cancel", ty = task_field_type(ctx, res_ty, "cancel")))
+            cf_cancel_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cf_cancel_fn, arguments = single_expr_span(cf_frame), ty = void_t)), line = 0, source_path = ""))
+            let cf_has_cancel = alloc_expr(ir.Expr.expr_member(receiver = cf_task, member = "cancel", ty = task_field_type(ctx, res_ty, "cancel")))
+            cf_then.push(ir.Stmt.stmt_if(condition = cf_has_cancel, then_body = cf_cancel_body.as_span(), else_body = Option[span[ir.Stmt]].none))
+            let cf_release_fn = alloc_expr(ir.Expr.expr_member(receiver = cf_task, member = "release", ty = task_field_type(ctx, res_ty, "release")))
+            cf_then.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cf_release_fn, arguments = single_expr_span(cf_frame), ty = void_t)), line = 0, source_path = ""))
+            vcn.push(ir.Stmt.stmt_if(condition = cf_frame, then_body = cf_then.as_span(), else_body = Option[span[ir.Stmt]].none))
+            cfi += 1
+    vcn.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = bool_true)), line = 0, source_path = ""))
+    let cn_waiter_frame = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter_frame", ty = ctx.ptr_void_ty))
+    var cn_wake_body = vec.Vec[ir.Stmt].create()
+    cn_wake_body.push(ir.Stmt.stmt_local(name = "waiter_frame", linkage_name = "__mt_waiter_frame", ty = ctx.ptr_void_ty, value = cn_waiter_frame, line = 0, source_path = ""))
+    cn_wake_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_assignment(target = cn_waiter_frame, operator = "=", value = alloc_expr(ir.Expr.expr_null_literal(ty = ctx.ptr_void_ty)))), line = 0, source_path = ""))
+    cn_wake_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(
+        callee = alloc_expr(ir.Expr.expr_name(name = "__mt_frame->waiter", ty = wake_fn_ty, pointer = Option[bool].some(value = false))),
+        arguments = single_expr_span(alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_frame", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))),
+        ty = void_t,
+    )), line = 0, source_path = ""))
+    vcn.push(ir.Stmt.stmt_if(condition = cn_waiter_frame, then_body = cn_wake_body.as_span(), else_body = Option[span[ir.Stmt]].none))
     vcn.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     functions.push(ir.Function(name = j2(cancel_lk, "_fn"), linkage_name = cancel_lk, params = vparam_s, return_type = void_t, body = vcn.as_span(), entry_point = false, method_receiver_param = false))
 
@@ -23477,20 +23597,11 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     # The host's task-struct field types (`async_info[:task_type].field(...)`)
     # for the aggregate entries below — the vtable signatures with their
     # parameter names (`frame_builder.rb:313-317`).
-    let ready_field_ty = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(bool_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
-    let release_field_ty = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(void_t), variadic = false, is_proc = false, param_names = sp_str("frame"))
-    let cancel_field_ty = release_field_ty
-    let take_field_ty = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(res_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
-    let wake_field_ty = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(void_t), variadic = false, is_proc = false, param_names = sp_str("frame"))
-    var sw_field_tys = vec.Vec[types.Type].create()
-    sw_field_tys.push(ctx.ptr_void_ty)
-    sw_field_tys.push(ctx.ptr_void_ty)
-    sw_field_tys.push(wake_field_ty)
-    var sw_field_names = vec.Vec[str].create()
-    sw_field_names.push("frame")
-    sw_field_names.push("waiter_frame")
-    sw_field_names.push("waiter")
-    let set_waiter_field_ty = types.Type.ty_function(name = "", params = sw_field_tys.as_span(), return_type = types.alloc_type(void_t), variadic = false, is_proc = false, param_names = sw_field_names.as_span())
+    let ready_field_ty = task_field_type(ctx, res_ty, "ready")
+    let release_field_ty = task_field_type(ctx, res_ty, "release")
+    let cancel_field_ty = task_field_type(ctx, res_ty, "cancel")
+    let take_field_ty = task_field_type(ctx, res_ty, "take_result")
+    let set_waiter_field_ty = task_field_type(ctx, res_ty, "set_waiter")
     var tf = vec.Vec[ir.AggregateField].create()
     # The host's ctor aggregate carries no `value` field (`frame_builder.rb:
     # 308-318`): the result reaches the task through `take_result` at await time.
@@ -23753,7 +23864,6 @@ function normalize_awaited_task_type(t: types.Type) -> types.Type:
 ## suspend (register waiter + return) if not ready, then resume at `state_<N+1>`,
 ## take the result into `target`, and release the child task.
 function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], task_ir: ptr[ir.Expr], task_ty: types.Type, result_ty: types.Type, target: Option[ptr[ir.Expr]]) -> void:
-    # Temporary to confirm function is reached
     let ptr_void = async_mod.ptr_void_type()
     let bool_ty = ctx.bool_ty
     let int_ty = types.primitive("int")
@@ -23777,17 +23887,20 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
     output.push(ir.Stmt.stmt_assignment(target = await_ref, operator = "=", value = task_ir))
 
     # if (!frame->await_N.ready(frame->await_N.frame)) { state=N+1; set_waiter; return; }
-    let ready_fn = alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "ready", ty = ptr_void))
-    let ready_call = alloc_expr(ir.Expr.expr_call_indirect(callee = ready_fn, arguments = single_expr_span(alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "frame", ty = ptr_void))), ty = bool_ty))
+    # Task member accesses carry the Task struct's field types (the host's
+    # `async_task_call`); the wake argument is the wake function type.
+    let task_frame_ty = task_field_type(ctx, result_ty, "frame")
+    let ready_fn = alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "ready", ty = task_field_type(ctx, result_ty, "ready")))
+    let ready_call = alloc_expr(ir.Expr.expr_call_indirect(callee = ready_fn, arguments = single_expr_span(alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "frame", ty = task_frame_ty))), ty = bool_ty))
     let not_ready = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = ready_call, ty = bool_ty))
     var suspend = vec.Vec[ir.Stmt].create()
     suspend.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "state", ty = int_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-next_state, ty = int_ty))))
     var sw_args = vec.Vec[ir.Expr].create()
     unsafe:
-        sw_args.push(read(alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "frame", ty = ptr_void))))
+        sw_args.push(read(alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "frame", ty = task_frame_ty))))
         sw_args.push(read(alloc_expr(ir.Expr.expr_name(name = "__mt_frame_raw", ty = ptr_void, pointer = Option[bool].some(value = false)))))
-        sw_args.push(read(alloc_expr(ir.Expr.expr_name(name = ctx.async_resume_c, ty = ptr_void, pointer = Option[bool].some(value = false)))))
-    let set_waiter_fn = alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "set_waiter", ty = ptr_void))
+        sw_args.push(read(alloc_expr(ir.Expr.expr_name(name = ctx.async_resume_c, ty = async_wake_fn_type(ctx), pointer = Option[bool].some(value = false)))))
+    let set_waiter_fn = alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "set_waiter", ty = task_field_type(ctx, result_ty, "set_waiter")))
     suspend.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = set_waiter_fn, arguments = sw_args.as_span(), ty = void_ty)), line = 0, source_path = ""))
     suspend.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     output.push(ir.Stmt.stmt_if(condition = not_ready, then_body = suspend.as_span(), else_body = Option[span[ir.Stmt]].none))
@@ -23795,8 +23908,8 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
     # resume point
     output.push(ir.Stmt.stmt_label(name = async_state_label(ctx.async_resume_c, next_state)))
 
-    let take_fn = alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "take_result", ty = ptr_void))
-    let take_call = alloc_expr(ir.Expr.expr_call_indirect(callee = take_fn, arguments = single_expr_span(alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "frame", ty = ptr_void))), ty = result_ty))
+    let take_fn = alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "take_result", ty = task_field_type(ctx, result_ty, "take_result")))
+    let take_call = alloc_expr(ir.Expr.expr_call_indirect(callee = take_fn, arguments = single_expr_span(alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "frame", ty = task_frame_ty))), ty = result_ty))
     match target:
         Option.some as t:
             output.push(ir.Stmt.stmt_assignment(target = t.value, operator = "=", value = take_call))
@@ -23804,8 +23917,8 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
             if not is_void_type_lowered(result_ty):
                 output.push(ir.Stmt.stmt_expression(expression = take_call, line = 0, source_path = ""))
 
-    let release_fn = alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "release", ty = ptr_void))
-    output.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = release_fn, arguments = single_expr_span(alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "frame", ty = ptr_void))), ty = void_ty)), line = 0, source_path = ""))
+    let release_fn = alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "release", ty = task_field_type(ctx, result_ty, "release")))
+    output.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = release_fn, arguments = single_expr_span(alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "frame", ty = task_frame_ty))), ty = void_ty)), line = 0, source_path = ""))
 
 
 ## Async `main` entrypoint — synthesizes the C `main()` function.
@@ -23830,7 +23943,9 @@ function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir
     let int_ty = types.primitive("int")
     let void_ty = ctx.void_ty
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    let main_cname = naming.qualified_c_name(ctx.module_name, name)
+    # The constructor's linkage: an async `main` is `<module>___async_main`
+    # (the host's `function_binding_c_name`).
+    let main_cname = naming.qualified_c_name(ctx.module_name, "__async_main")
 
     # Root proc: `proc() -> Task[inner]` wrapping the async main constructor.
     # `lower_fn_to_proc` registers the invoke/release/retain wrappers and the
@@ -23929,24 +24044,6 @@ function int_to_str(v: int) -> str:
     if is_neg:
         buf.push_byte(45)  # '-'
     return buf.as_str()
-
-
-## Emit waiter wake: if frame->waiter is non-NULL, call it and null it.
-function async_waiter_wake(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], frame_exp: ptr[ir.Expr], bool_ty: types.Type, ptr_void_ty: types.Type) -> void:
-    let waiter_fn_ty = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
-    let waiter_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = waiter_fn_ty))
-    let null_void = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_void_ty))
-    let has_waiter = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = waiter_field, right = null_void, ty = bool_ty))
-    var wake_body = vec.Vec[ir.Stmt].create()
-    let waiter_frame_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter_frame", ty = ptr_void_ty))
-    # Save the waiter into a temp BEFORE nulling the field, then call the temp.
-    # Nulling first (and re-reading the field) would call a null pointer; nulling
-    # prevents a double-wake if the waiter re-registers.
-    wake_body.push(ir.Stmt.stmt_local(name = "__mt_waker", linkage_name = "__mt_waker", ty = waiter_fn_ty, value = waiter_field, line = 0, source_path = ""))
-    let waker_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_waker", ty = waiter_fn_ty, pointer = Option[bool].some(value = false)))
-    wake_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = waiter_fn_ty)), operator = "=", value = null_void))
-    wake_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = waker_ref, arguments = single_expr_span(waiter_frame_field), ty = ctx.void_ty)), line = 0, source_path = ""))
-    output.push(ir.Stmt.stmt_if(condition = has_waiter, then_body = wake_body.as_span(), else_body = Option[span[ir.Stmt]].none))
 
 
 ## ptr_uint primitive type (repeated for convenience in async section).

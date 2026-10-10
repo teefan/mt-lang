@@ -803,6 +803,9 @@ function collect_constant_refs_expr(ep: ptr[ir.Expr], by_name: ref[map_mod.Map[s
             ir.Expr.expr_stmt_expr as se:
                 collect_constant_refs_stmts(se.setup, by_name, referenced, program)
                 collect_constant_refs_expr(se.result, by_name, referenced, program)
+            ir.Expr.expr_assignment as asg:
+                collect_constant_refs_expr(asg.target, by_name, referenced, program)
+                collect_constant_refs_expr(asg.value, by_name, referenced, program)
             _:
                 pass
 
@@ -991,6 +994,9 @@ function reach_from_expr(ep: ptr[ir.Expr], func_names: ref[map_mod.Map[str, bool
                     reach_from_stmt(se.setup.data + i, func_names, reachable, worklist)
                     i += 1
                 reach_from_expr(se.result, func_names, reachable, worklist)
+            ir.Expr.expr_assignment as asg:
+                reach_from_expr(asg.target, func_names, reachable, worklist)
+                reach_from_expr(asg.value, func_names, reachable, worklist)
             _:
                 pass
 
@@ -1209,6 +1215,9 @@ function collect_slice_from_expr(ep: ptr[ir.Expr], has_str: ref[bool], has_str_i
             ir.Expr.expr_stmt_expr as se:
                 collect_slice_from_stmts(se.setup, has_str, has_str_index, has_str_concat, span_types, seen)
                 collect_slice_from_expr(se.result, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Expr.expr_assignment as asg:
+                collect_slice_from_expr(asg.target, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_expr(asg.value, has_str, has_str_index, has_str_concat, span_types, seen)
             _:
                 pass
 
@@ -1850,6 +1859,8 @@ function expr_calls(ep: ptr[ir.Expr], name: str) -> bool:
                         return true
                     i += 1
                 return expr_calls(se.result, name)
+            ir.Expr.expr_assignment as asg:
+                return expr_calls(asg.target, name) or expr_calls(asg.value, name)
             _:
                 return false
 
@@ -1973,6 +1984,9 @@ function collect_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], 
                     collect_from_stmt(se.setup.data + i, seen, collected)
                     i += 1
                 collect_from_expr(se.result, seen, collected)
+            ir.Expr.expr_assignment as asg:
+                collect_from_expr(asg.target, seen, collected)
+                collect_from_expr(asg.value, seen, collected)
             _:
                 pass
 
@@ -2547,6 +2561,9 @@ function span_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], col
             ir.Expr.expr_stmt_expr as se:
                 span_from_stmts(se.setup, seen, collected)
                 span_from_expr(se.result, seen, collected)
+            ir.Expr.expr_assignment as asg:
+                span_from_expr(asg.target, seen, collected)
+                span_from_expr(asg.value, seen, collected)
             ir.Expr.expr_call as c:
                 var i: ptr_uint = 0
                 while i < c.arguments.len:
@@ -2793,6 +2810,9 @@ function tuple_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], co
             ir.Expr.expr_stmt_expr as se:
                 tuple_from_stmts(se.setup, seen, collected)
                 tuple_from_expr(se.result, seen, collected)
+            ir.Expr.expr_assignment as asg:
+                tuple_from_expr(asg.target, seen, collected)
+                tuple_from_expr(asg.value, seen, collected)
             _:
                 pass
 
@@ -4386,6 +4406,8 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return j5(emit_conditional_condition(e, cond.condition), " ? ", render_expression(e, cond.then_expression), " : ", render_expression(e, cond.else_expression))
             ir.Expr.expr_stmt_expr as se:
                 return render_stmt_expr(e, se.setup, se.result)
+            ir.Expr.expr_assignment as asg:
+                return j5(render_expression(e, asg.target), " ", asg.operator, " ", render_expression(e, asg.value))
             _:
                 fatal(c"c_backend: unsupported expression")
 
@@ -4582,6 +4604,9 @@ function checked_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], 
             ir.Expr.expr_stmt_expr as se:
                 checked_from_stmts(se.setup, seen, collected)
                 checked_from_expr(se.result, seen, collected)
+            ir.Expr.expr_assignment as asg:
+                checked_from_expr(asg.target, seen, collected)
+                checked_from_expr(asg.value, seen, collected)
             _:
                 pass
 
@@ -4785,6 +4810,9 @@ function span_index_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]
             ir.Expr.expr_stmt_expr as se:
                 span_index_from_stmts(se.setup, seen, collected)
                 span_index_from_expr(se.result, seen, collected)
+            ir.Expr.expr_assignment as asg:
+                span_index_from_expr(asg.target, seen, collected)
+                span_index_from_expr(asg.value, seen, collected)
             _:
                 pass
 
@@ -6023,6 +6051,8 @@ function expr_result_type(ep: ptr[ir.Expr]) -> types.Type:
                 return x.ty
             ir.Expr.expr_stmt_expr as x:
                 return x.ty
+            ir.Expr.expr_assignment as x:
+                return expr_result_type(x.value)
 
 
 # =============================================================================
@@ -6832,6 +6862,9 @@ function builtin_from_expr(ep: ptr[ir.Expr], needed: ref[map_mod.Map[str, bool]]
             ir.Expr.expr_stmt_expr as se:
                 builtin_from_stmts(se.setup, needed)
                 builtin_from_expr(se.result, needed)
+            ir.Expr.expr_assignment as asg:
+                builtin_from_expr(asg.target, needed)
+                builtin_from_expr(asg.value, needed)
             ir.Expr.expr_call as c:
                 var i: ptr_uint = 0
                 while i < c.arguments.len:

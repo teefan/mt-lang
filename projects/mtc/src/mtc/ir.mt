@@ -103,6 +103,12 @@ public variant Expr:
     ## GCC/Clang statement-expression `({ setup...; result; })`.  Used to lower a
     ## dynamic format string in expression position without a separate hoist pass.
     expr_stmt_expr(setup: span[Stmt], result: ptr[Expr], ty: types.Type)
+    ## An assignment in *expression* position — the host's `IR::Assignment`
+    ## wrapped by an `IR::ExpressionStmt` (its `build_async_cancel_function`
+    ## stores `cancelled`/`ready` this way).  The self models statements and
+    ## expressions as separate variants, so the expression-position form is its
+    ## own variant.
+    expr_assignment(target: ptr[Expr], operator: str, value: ptr[Expr])
 
 
 # =============================================================================
