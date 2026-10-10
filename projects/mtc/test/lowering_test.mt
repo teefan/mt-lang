@@ -3092,3 +3092,60 @@ function test_nested_struct_linkage_carries_its_parent() -> void:
     expect(text.contains_substring("IR::StructDecl :name \"Edge\" :linkage_name \""))
     expect(text.contains_substring("_Rectangle_Edge\""))
     expect(not text.contains_substring(":name \"Edge\" :linkage_name \"main_Edge\""))
+
+
+@[test]
+function test_async_match_bindings_use_local_match_binding_fields() -> void:
+    ## A match arm whose body awaits gets the host's *analysis-registered*
+    ## `local_match_binding_<N>` frame field (post-order, after the arm body's
+    ## locals) while the binding itself is a plain C local — the host's lowering
+    ## lookup never matches, so its field stays unused (`analysis.rb:125-145`,
+    ## `async_lowering.rb:1333`).  The counter is shared across async functions
+    ## and also advances per lowered payload-binding arm, so `second`'s field is
+    ## 4, not 2 (session 44, item 10b; `examples/async_network_lobby.mt`,
+    ## `examples/async_stress_test.mt`).
+    var source = <<-SRC
+        async function helper(x: int) -> Result[int, int]:
+            return Result[int, int].success(value = x)
+
+        async function value_of(x: int) -> int:
+            return x + 1
+
+        async function work(flag: bool) -> Result[int, int]:
+            let r = await helper(1)
+            match r:
+                Result.failure as p:
+                    return Result[int, int].failure(error = p.error)
+                Result.success as q:
+                    if flag:
+                        let v = await value_of(2)
+                        return Result[int, int].success(value = q.value + v)
+                    return Result[int, int].success(value = q.value)
+
+        async function second(x: int) -> Result[int, int]:
+            let r3 = await helper(x)
+            match r3:
+                Result.failure as f:
+                    return Result[int, int].failure(error = f.error)
+                Result.success as s:
+                    let w = await value_of(1)
+                    return Result[int, int].success(value = s.value + w)
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    ## The awaited arms carry the host's names (`work`'s analysis registers 1,
+    ## its lowering advances the counter by 2, so `second`'s registration is 4);
+    ## the non-awaited arms (`p`, `f`) get no field.
+    expect(text.contains_substring(":name \"local_match_binding_1\" :type (Types::VariantArmPayload :name \"Result_success\""))
+    expect(text.contains_substring(":name \"local_match_binding_4\" :type (Types::VariantArmPayload :name \"Result_success\""))
+    expect(not text.contains_substring("local_match_binding_2"))
+    expect(not text.contains_substring("local_match_binding_3"))
+    ## The bindings are plain C locals, not frame spills.
+    expect(text.contains_substring("(IR::LocalDecl :name \"q\" :linkage_name \"q\""))
+    expect(text.contains_substring("(IR::LocalDecl :name \"s\" :linkage_name \"s\""))
+    expect(not text.contains_substring("local_success_q"))
+    expect(not text.contains_substring("__mt_frame->local_success_"))

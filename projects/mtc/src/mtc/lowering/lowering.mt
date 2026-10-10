@@ -372,6 +372,16 @@ struct LowerCtx:
     async_local_fields: vec.Vec[ir.Field]
     async_await_fields: vec.Vec[ir.Field]
     async_local_seen: map_mod.Map[str, bool]
+    # The host's `@async_binding_counter` (per compile, lowering.rb:129): a match
+    # arm with an `as` binding whose body awaits takes the next
+    # `local_match_binding_<N>` frame-field name, and the counter also advances
+    # per lowered payload-binding arm (the host's `async_match_binding_field_key`
+    # call sites — the analysis pass registers, the lowering pass looks up).
+    async_match_binding_counter: ptr_uint
+    # Prepass-assigned field names for match arms whose body awaits, keyed by the
+    # arm's address.  The lowering pass emits the field after the arm body (the
+    # host's post-order analysis registration).
+    async_match_binding_names: map_mod.Map[ptr_uint, str]
     async_complete_label: str
     async_result_c_name: str
     # When non-null, `async_emit_await` and `async_register_local_field` push
@@ -1093,6 +1103,8 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         async_local_fields = vec.Vec[ir.Field].create(),
         async_await_fields = vec.Vec[ir.Field].create(),
         async_local_seen = map_mod.Map[str, bool].create(),
+        async_match_binding_counter = 0,
+        async_match_binding_names = map_mod.Map[ptr_uint, str].create(),
         async_complete_label = "",
         async_result_c_name = "",
         async_await_fields_ptr = null,
@@ -16848,17 +16860,11 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "data", ty = types.Type.ty_nil))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = binding_ty))
                     let bc = utils.c_local_name(bn.value)
-                    if ctx.async_cps_active:
-                        # Spill the match binding to a frame field so it survives
-                        # suspend/resume across an await inside the arm body.  The
-                        # arm name disambiguates same-named bindings across arms.
-                        let mfield = j4("local_", arm_name, "_", bn.value)
-                        let mcname = j2("__mt_frame->", mfield)
-                        async_register_local_field(ctx, bn.value, mfield, mcname, binding_ty)
-                        body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = mcname, ty = binding_ty, pointer = false)), operator = "=", value = arm_data))
-                    else:
-                        body.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
-                        ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
+                    # The host's plain match-expression lowering (expressions.rb:
+                    # 1166-1173) always declares the binding as a C local — its
+                    # async path has no frame spill here.
+                    body.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
+                    ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
                 Option.none:
                     pass
         let lowered_val = lower_expr(ctx, arm.value)
@@ -16954,8 +16960,10 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
     var i: ptr_uint = 0
     while i < arms.len:
         var arm: ast.MatchArm
+        var arm_key: ptr_uint = 0
         unsafe:
             arm = read(arms.data + i)
+            arm_key = reinterpret[ptr_uint](arms.data + i)
         let pattern = arm.pattern
         if pattern == null:
             cases.push(ir.SwitchCase(is_default = true, value = null, body = lower_switch_arm_body(ctx, arm.body)))
@@ -16963,6 +16971,8 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
             let arm_name = match_member_name(pattern) else:
                 fatal(c"lowering: unsupported variant match pattern")
             var stmts = vec.Vec[ir.Stmt].create()
+            var reg_field = ""
+            var reg_field_ty = ctx.void_ty
             match arm.binding_name:
                 Option.some as bn:
                     let binding_ty = variant_arm_payload_binding(variant_name, info.module_name, outer_c, arm_name)
@@ -16970,20 +16980,21 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = types.Type.ty_nil))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = binding_ty))
                     let bc = utils.c_local_name(bn.value)
-                    if ctx.async_cps_active:
-                        # Include the arm name in the frame field so two arms of the
-                        # same match that bind the SAME name to different arm-payload
-                        # types (e.g. `Result.failure as p` and `Result.success as p`)
-                        # get distinct fields instead of colliding on one field typed
-                        # by whichever arm registered first (which would mismatch the
-                        # other arm's payload type).
-                        let mfield = j4("local_", arm_name, "_", bn.value)
-                        let mcname = j2("__mt_frame->", mfield)
-                        async_register_local_field(ctx, bn.value, mfield, mcname, binding_ty)
-                        stmts.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = mcname, ty = binding_ty, pointer = false)), operator = "=", value = arm_data))
-                    else:
-                        stmts.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
-                        ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
+                    if ctx.inside_async:
+                        # The host's lowering-pass counter advance
+                        # (`async_variant_match_arm_binding` →
+                        # `async_match_binding_field_key`, async_lowering.rb:1333).
+                        # Its `local_fields` lookup never matches, so the arm
+                        # binding is a plain C local and the analysis-registered
+                        # field stays unused.
+                        if arm_has_payload(info, arm_name):
+                            ctx.async_match_binding_counter += 1
+                        let fname_ptr = ctx.async_match_binding_names.get(arm_key)
+                        if fname_ptr != null:
+                            reg_field = unsafe: read(ptr[str]<-fname_ptr)
+                            reg_field_ty = binding_ty
+                    stmts.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
+                    ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
                 Option.none:
                     pass
             let body = lower_switch_arm_body(ctx, arm.body)
@@ -16992,6 +17003,8 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
                 unsafe:
                     stmts.push(read(body.data + bi))
                 bi += 1
+            if reg_field != "":
+                async_register_unused_field(ctx, reg_field, reg_field_ty)
             let kind_const = alloc_expr(ir.Expr.expr_name(
                 name = variant_kind_const_name(outer_c, arm_name),
                 ty = int_ty,
@@ -17030,8 +17043,10 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
     var arm_index: ptr_uint = 0
     while arm_index < arms.len:
         var arm: ast.MatchArm
+        var arm_key: ptr_uint = 0
         unsafe:
             arm = read(arms.data + arm_index)
+            arm_key = reinterpret[ptr_uint](arms.data + arm_index)
         if arm_index > 0:
             output.push(ir.Stmt.stmt_label(name = match_arm_label(m, arm_index)))
 
@@ -17055,6 +17070,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
             output.push(ir.Stmt.stmt_if(condition = tag_check, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())))
 
             var blk = vec.Vec[ir.Stmt].create()
+            var reg_field = ""
             let payload_ty = variant_arm_payload_binding(variant_name, info.module_name, outer_c, arm_name)
             register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
             match variant_arm_info(info, arm_name):
@@ -17079,19 +17095,24 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                             Option.some as bn:
                                 let bc = utils.c_local_name(bn.value)
                                 let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
-                                if ctx.async_cps_active:
-                                    let asfield = j4("local_", arm_name, "_", bn.value)
-                                    let ascname = j2("__mt_frame->", asfield)
-                                    async_register_local_field(ctx, bn.value, asfield, ascname, payload_ty)
-                                    blk.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = ascname, ty = payload_ty, pointer = false)), operator = "=", value = payload_ref))
-                                else:
-                                    blk.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = payload_ty, value = payload_ref, line = 0, source_path = ""))
-                                    ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = payload_ty, pointer = false))
+                                if ctx.inside_async:
+                                    # The host's lowering-pass counter advance for
+                                    # the `as` binding (the payload temp above has
+                                    # no host counterpart: the host's async match
+                                    # path only handles member-pattern arms).
+                                    ctx.async_match_binding_counter += 1
+                                    let gname_ptr = ctx.async_match_binding_names.get(arm_key)
+                                    if gname_ptr != null:
+                                        reg_field = unsafe: read(ptr[str]<-gname_ptr)
+                                blk.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = payload_ty, value = payload_ref, line = 0, source_path = ""))
+                                ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = payload_ty, pointer = false))
                             Option.none:
                                 pass
                 Option.none:
                     pass
             append_span_stmts(ref_of(blk), lower_block(ctx, arm.body))
+            if reg_field != "":
+                async_register_unused_field(ctx, reg_field, payload_ty)
             blk.push(ir.Stmt.stmt_goto(label = end_label))
             output.push(ir.Stmt.stmt_block(body = blk.as_span()))
         arm_index += 1
@@ -22774,6 +22795,76 @@ function has_non_lifetime_type_params(params: span[ast.TypeParam]) -> bool:
 #  Async CPS — Step 1: frame struct + synthetic functions (with await support)
 # =============================================================================
 
+## The host's async analysis emulation for match bindings
+## (`analyze_async_statements!`'s MatchStmt arm, analysis.rb:125-145): an arm
+## with an `as` binding whose body awaits takes the next
+## `local_match_binding_<N>` name from the shared counter; the host registers
+## the field post-order (after the arm body's own locals), so the walk recurses
+## into each arm body first.  The host's registration also advances the counter
+## for arms whose payload never resolves — the name map simply stays empty for
+## them (the lowering pass decides the registration).
+function async_prepass_match_bindings(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?) -> void:
+    let bp = body else:
+        return
+    unsafe:
+        match read(bp):
+            ast.Stmt.stmt_block as blk:
+                var i: ptr_uint = 0
+                while i < blk.statements.len:
+                    async_prepass_stmt_match_bindings(ctx, blk.statements.data + i)
+                    i += 1
+            _:
+                pass
+
+
+function async_prepass_stmt_match_bindings(ctx: ref[LowerCtx], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_local as loc:
+                async_prepass_match_bindings(ctx, loc.else_body)
+            ast.Stmt.stmt_if as iff:
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    async_prepass_match_bindings(ctx, read(iff.branches.data + bi).body)
+                    bi += 1
+                async_prepass_match_bindings(ctx, iff.else_body)
+            ast.Stmt.stmt_while as w:
+                async_prepass_match_bindings(ctx, w.body)
+            ast.Stmt.stmt_for as f:
+                async_prepass_match_bindings(ctx, f.body)
+            ast.Stmt.stmt_match as m:
+                var ai: ptr_uint = 0
+                while ai < m.arms.len:
+                    let arm_ptr = m.arms.data + ai
+                    let arm = read(arm_ptr)
+                    async_prepass_match_bindings(ctx, arm.body)
+                    match arm.binding_name:
+                        Option.some:
+                            if async_mod.stmt_has_await(arm.body):
+                                ctx.async_match_binding_counter += 1
+                                ctx.async_match_binding_names.set(reinterpret[ptr_uint](arm_ptr), j2("local_match_binding_", pw1_str(ctx.async_match_binding_counter)))
+                        Option.none:
+                            pass
+                    ai += 1
+            ast.Stmt.stmt_unsafe as u:
+                async_prepass_match_bindings(ctx, u.body)
+            ast.Stmt.stmt_defer as d:
+                async_prepass_match_bindings(ctx, d.body)
+            _:
+                pass
+
+
+## True when the arm carries a payload (the host's `scrutinee_type.has_payload?`,
+## `fields && !fields.empty?`): the gate for the async match-binding counter
+## advance and the (unused) field registration.
+function arm_has_payload(info: VariantInfo, arm_name: str) -> bool:
+    match variant_arm_info(info, arm_name):
+        Option.some as ai:
+            return ai.value.field_names.len > 0
+        Option.none:
+            return false
+
+
 ## Lower an async function: generate frame struct, resume fn, constructor fn,
 ## and vtable helpers.  Push into the output structs/functions collections.
 ## Supports both no-await (single-state) and full CPS (state-machine) paths.
@@ -22801,6 +22892,10 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     let resume_c = j2(link_base, "__resume")
     let task_ty = make_task_type(res_ty)
     let has_await = async_mod.body_has_await(body)
+    # The host analyzes the normalized body before lowering it
+    # (`analyze_async_function` → `lower_async_function_decl`); its match-binding
+    # registrations are what name the frame's `local_match_binding_<N>` fields.
+    async_prepass_match_bindings(ctx, body)
     let ptr_ty = ptr_uint_type()
     let frame_ty = types.Type.ty_named(module_name = "", name = frame_c)
     let frame_ptr_ty = types.Type.ty_generic(name = "ptr", args = single_ty_span(frame_ty))
@@ -23156,14 +23251,22 @@ function direct_await_inner(ep: ptr[ast.Expr]) -> ptr[ast.Expr]:
 ## Register a spilled async local: add its frame field once and bind its name to
 ## `__mt_frame->local_<name>` so all references and writes go through the frame.
 function async_register_local_field(ctx: ref[LowerCtx], loc_name: str, field_name: str, frame_cname: str, ty: types.Type) -> void:
-    if not ctx.async_local_seen.contains(field_name):
-        ctx.async_local_seen.set(field_name, true)
-        let lfp = ctx.async_local_fields_ptr
-        if lfp != null:
-            unsafe: read(lfp).push(ir.Field(name = field_name, ty = ty))
-        else:
-            ctx.async_local_fields.push(ir.Field(name = field_name, ty = ty))
+    async_register_unused_field(ctx, field_name, ty)
     ctx.locals.push(LocalBinding(name = loc_name, c_name = frame_cname, ty = ty, pointer = false))
+
+
+## Register a frame field the host's async analysis recorded but its lowering
+## never references (the `local_match_binding_<N>` shape): the field joins
+## `async_local_fields` after the arm body's locals, with no local binding.
+function async_register_unused_field(ctx: ref[LowerCtx], field_name: str, ty: types.Type) -> void:
+    if ctx.async_local_seen.contains(field_name):
+        return
+    ctx.async_local_seen.set(field_name, true)
+    let lfp = ctx.async_local_fields_ptr
+    if lfp != null:
+        unsafe: read(lfp).push(ir.Field(name = field_name, ty = ty))
+    else:
+        ctx.async_local_fields.push(ir.Field(name = field_name, ty = ty))
 
 
 ## Lower a `let`/`var` inside an async CPS body: spill to a frame field and, when
