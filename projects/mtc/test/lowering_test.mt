@@ -3648,3 +3648,59 @@ function test_specialized_function_value_carries_its_name() -> void:
     defer: dump.release()
     let text = dump.as_str()
     expect(text.contains_substring("(Types::Function :name \"pick\""))
+
+
+@[test]
+function test_hash_hook_arguments_cast_to_const_ptr() -> void:
+    ## The `order`/`equal`/`hash` builtins take `const_ptr[T]` (the host's
+    ## `lower_hash_operation_argument`): a pointer argument is cast to that
+    ## target, not passed through with its own type (`std/binary_heap.mt`'s
+    ## `order[K](child_value, parent_value)`).
+    var source = <<-SRC
+        struct Key:
+            x: int
+
+        extending Key:
+            public static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:
+                unsafe:
+                    return read(left).x - read(right).x
+
+        struct Holder[T]:
+            a: ptr[T]
+            b: ptr[T]
+
+        extending Holder[T]:
+            public function cmp() -> int:
+                return order[T](this.a, this.b)
+
+        function use(h: Holder[Key]) -> int:
+            return h.cmp()
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring(":callee \"main_Key_order_static\" :arguments ((IR::Cast :target_type (Types::Generic :name \"const_ptr\""))
+    expect(not text.contains_substring(":callee \"mt_order_func\""))
+
+
+@[test]
+function test_ref_argument_bridge_casts_a_pointer_receiver() -> void:
+    ## The host's `implicit_ref_argument_bridge?` rewrites `S.take(this)` to
+    ## `ref_of(this)`; the pointer-lowered Name is then cast to the parameter's
+    ## `ref[T]` (its own type is the struct value), not passed through
+    ## (session 45).
+    var source = <<-SRC
+        struct S:
+            n: int
+
+        extending S:
+            public static function take(s: ref[S]) -> int:
+                return s.n
+
+            public editable function bump() -> int:
+                return S.take(this)
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Cast :target_type (Types::Generic :name \"ref\" :arguments ((Types::Struct :name \"S\" :module_name \"main\"))) :expression (IR::Name :name \"this\""))

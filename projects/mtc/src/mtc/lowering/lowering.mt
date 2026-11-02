@@ -8884,6 +8884,10 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                 # Builtin generic callables: order[T], equal[T], hash[T] — lower
                 # to direct C calls with a fixed suffix derived from the type.
                 if id.name == "order" or id.name == "equal" or id.name == "hash":
+                    var hook_ty = ctx.void_ty
+                    if type_args.len >= 1:
+                        hook_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
+                    let ptr_target = types.Type.ty_generic(name = "const_ptr", args = sp_type(hook_ty))
                     var ir_args = vec.Vec[ir.Expr].create()
                     var si: ptr_uint = 0
                     while si < call_args.len:
@@ -8891,19 +8895,33 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         unsafe:
                             arg = read(call_args.data + si)
                         let lowered = lower_expr(ctx, arg.arg_value)
-                        # The hooks take `const_ptr[T]`: implicitly borrow a value
-                        # argument (`&value`); pass a pointer/ref argument through.
                         let arg_ty = ir_expr_type(lowered)
-                        if ir_expr_is_pointer(lowered):
-                            unsafe:
-                                ir_args.push(read(lowered))
+                        # The hooks take `const_ptr[T]` (the host's
+                        # `lower_hash_operation_argument`): a pointer/ref value
+                        # is cast to that target, a `*p` operand is cast, and an
+                        # addressable value is borrowed.
+                        var hook_arg = lowered
+                        if types.is_raw_pointer(arg_ty) or types.is_ref_type(arg_ty):
+                            if not types.type_equals(arg_ty, ptr_target):
+                                hook_arg = alloc_expr(ir.Expr.expr_cast(target_type = ptr_target, expression = lowered, ty = ptr_target))
                         else:
-                            let borrowed = alloc_expr(ir.Expr.expr_address_of(
-                                expression = lowered,
-                                ty = types.Type.ty_generic(name = "const_ptr", args = sp_type(arg_ty)),
-                            ))
+                            var addressed = true
                             unsafe:
-                                ir_args.push(read(borrowed))
+                                match read(lowered):
+                                    ir.Expr.expr_unary as un:
+                                        if un.operator == "*":
+                                            addressed = false
+                                            let op_ty = ir_expr_type(un.operand)
+                                            if types.type_equals(op_ty, ptr_target):
+                                                hook_arg = un.operand
+                                            else:
+                                                hook_arg = alloc_expr(ir.Expr.expr_cast(target_type = ptr_target, expression = un.operand, ty = ptr_target))
+                                    _:
+                                        pass
+                            if addressed:
+                                hook_arg = alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = ptr_target))
+                        unsafe:
+                            ir_args.push(read(hook_arg))
                         si += 1
                     var ret_ty = types.primitive("int")
                     if id.name == "equal":
@@ -11245,6 +11263,7 @@ function lower_static_call_args(ctx: ref[LowerCtx], mi: MethodInfo, args: span[a
             var declared: types.Type
             unsafe:
                 declared = read(mi.params.data + i).ty
+            lowered = coerce_arg_to_ref_bridge(declared, lowered)
             if ir_expr_is_pointer(lowered) and not is_pointer_or_ref_type(declared):
                 lowered = alloc_expr(ir.Expr.expr_unary(operator = "*", operand = lowered, ty = ir_expr_deref_type(lowered)))
         unsafe:
@@ -11269,6 +11288,11 @@ function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr
             arg = read(args.data + i)
         var lowered = lower_expr(ctx, arg.arg_value)
         lowered = coerce_literal_to_param_type(mi.params, i, arg.arg_value, lowered)
+        if i < mi.params.len:
+            var declared: types.Type
+            unsafe:
+                declared = read(mi.params.data + i).ty
+            lowered = coerce_arg_to_ref_bridge(declared, lowered)
         # Coerce a bare function-identifier argument to proc when the lowered
         # IR is a name expression with a fn-pointer type: wrap it in a proc
         # struct so method calls with proc parameters receive the expected type.
@@ -11979,6 +12003,10 @@ function coerce_arg_to_param(cached: ptr[ir.Function]?, param_index: ptr_uint, a
     # coercion the analyzer permits).
     if is_span_type(param.ty) and is_array_type(arg_ty):
         return array_value_to_span(arg, arg_ty, param.ty)
+    if types.is_ref_type(param.ty):
+        # The implicit ref-argument bridge (the host's
+        # `implicit_ref_argument_bridge?` + `ref_of` lowering).
+        return coerce_arg_to_ref_bridge(param.ty, arg)
     if ir_expr_is_pointer(arg) and not is_pointer_or_ref_type(param.ty):
         # `*arg`: dereference the pointer argument to match the value parameter.
         return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = arg, ty = param.ty))
@@ -13798,11 +13826,8 @@ function coerce_arg_to_span_param(sig: Option[analyzer.FnSig], index: ptr_uint, 
             return arg
 
 
-## Implicitly borrow a by-value argument passed to a `ref[T]` parameter: when the
-## callee's parameter `index` has a `ref[T]` type but the lowered argument is not
-## already a pointer/ref, take its address (`&arg`).  Leaves the argument
-## unchanged when the signature is unavailable, the parameter is not a ref, or the
-## argument is already pointer-typed.
+## Apply the implicit ref-argument bridge to the callee signature's parameter
+## `index` (the host's `implicit_ref_argument_bridge?` + `ref_of` lowering).
 function coerce_arg_to_ref_param(sig: Option[analyzer.FnSig], index: ptr_uint, arg: ptr[ir.Expr]) -> ptr[ir.Expr]:
     match sig:
         Option.some as s:
@@ -13811,16 +13836,37 @@ function coerce_arg_to_ref_param(sig: Option[analyzer.FnSig], index: ptr_uint, a
             var param: analyzer.ParamEntry
             unsafe:
                 param = read(s.value.params.data + index)
-            if not types.is_ref_type(param.ty):
-                return arg
-            if ir_expr_is_pointer(arg):
-                return arg
-            return alloc_expr(ir.Expr.expr_address_of(
-                expression = arg,
-                ty = types.Type.ty_generic(name = "ref", args = sp_type(ir_expr_type(arg))),
-            ))
+            return coerce_arg_to_ref_bridge(param.ty, arg)
         Option.none:
             return arg
+
+
+## The host's `implicit_ref_argument_bridge?` with the `ref_of` lowering: for a
+## `ref[T]` parameter and an argument whose value type is `T`, a pointer-lowered
+## value (a `this` receiver or a pointer Name) is cast to `ref[T]` and a
+## `*p` operand casts its pointer; a plain addressable value is borrowed
+## (`&value`).  Any other argument shape is left unchanged.
+function coerce_arg_to_ref_bridge(param_ty: types.Type, arg: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    if not types.is_ref_type(param_ty):
+        return arg
+    let base_ty = types.pointer_element(param_ty)
+    if not types.type_equals(ir_expr_type(arg), base_ty):
+        return arg
+    unsafe:
+        match read(arg):
+            ir.Expr.expr_name as nm:
+                if nm.pointer.unwrap_or(false):
+                    return alloc_expr(ir.Expr.expr_cast(target_type = param_ty, expression = arg, ty = param_ty))
+            ir.Expr.expr_unary as un:
+                if un.operator == "*":
+                    if types.type_equals(ir_expr_type(un.operand), param_ty):
+                        return un.operand
+                    return alloc_expr(ir.Expr.expr_cast(target_type = param_ty, expression = un.operand, ty = param_ty))
+            _:
+                pass
+    if ir_is_addressable(arg):
+        return alloc_expr(ir.Expr.expr_address_of(expression = arg, ty = param_ty))
+    return arg
 
 
 ## Coerce a bare function name argument to a proc struct when the
