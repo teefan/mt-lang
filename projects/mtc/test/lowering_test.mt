@@ -3459,3 +3459,24 @@ function test_assignment_target_takes_the_refined_type() -> void:
     let text = dump.as_str()
     expect(text.contains_substring("(IR::Assignment :target (IR::Name :name \"node\" :type (Types::Generic :name \"ptr\""))
     expect(not text.contains_substring("(IR::Assignment :target (IR::Name :name \"node\" :type (Types::Nullable"))
+
+
+@[test]
+function test_plain_assignment_target_keeps_the_struct_module() -> void:
+    ## A plain local's assignment target keeps the binding's own nominal type —
+    ## module-qualified — even when the flow record carries the same struct
+    ## without its module (session 45; `examples/raylib/core/undo_redo.mt`
+    ## regressed on the flow type alone).
+    var source = <<-SRC
+        struct P:
+            x: int
+
+        function use(a: P) -> void:
+            var p = a
+            p = a
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Assignment :target (IR::Name :name \"p\" :type (Types::Struct :name \"P\" :module_name \"main\")"))
+    expect(not text.contains_substring("(IR::Assignment :target (IR::Name :name \"p\" :type (Types::Struct :name \"P\" :module_name nil)"))

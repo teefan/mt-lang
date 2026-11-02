@@ -4063,9 +4063,10 @@ function lower_binding_read(ctx: ref[LowerCtx], lb: LocalBinding) -> ptr[ir.Expr
 
 ## Lower an assignment's target with the host's `lower_assignment_target` rule
 ## (`utils.rb:1237`): a bare local's `IR::Name` carries the *visible* (flow-
-## refined) type when that is the storage type or the storage nullable's base,
-## and the storage type otherwise.  Reads keep the storage type, so this is
-## target-only.
+## refined) type when that is the storage nullable's base, and the storage type
+## otherwise.  Reads keep the storage type, so this is target-only.  The
+## equality case keeps the binding's own type: the refinement record can carry
+## the same nominal without its module name, which the binding's type has.
 function lower_assignment_target(ctx: ref[LowerCtx], target_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(target_ast):
@@ -4081,8 +4082,6 @@ function lower_assignment_target(ctx: ref[LowerCtx], target_ast: ptr[ast.Expr]) 
                                         # parameters; the lowering env is concrete.
                                         let visible_ty = substitute_type_params(ctx, refined.value, ref_of(ctx.type_substitution))
                                         let storage_ty = lb.value.ty
-                                        if types.type_equals(visible_ty, storage_ty):
-                                            return alloc_expr(ir.Expr.expr_name(name = lb.value.c_name, ty = visible_ty, pointer = lb.value.pointer))
                                         if types.is_nullable_type(storage_ty) and types.type_equals(types.unwrap_nullable(storage_ty), visible_ty):
                                             return alloc_expr(ir.Expr.expr_name(name = lb.value.c_name, ty = visible_ty, pointer = lb.value.pointer))
                                     Option.none:
