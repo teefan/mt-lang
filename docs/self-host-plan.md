@@ -1666,9 +1666,10 @@ materialization, then items 7–9 — file by file.
     it in `@artifacts.synthetic_structs`; the self pushes at the end of
     `lower_async_fn`, so the body's envs precede it
     (`examples/async_stress_test.mt`: `std_net_clock__proc_*__env` before
-    `std_net_clock_measure_offset__frame`).  **OPEN** — record
-    `pending_synthetic_structs.len()` before the body lowering and insert the
-    frame at that index (`Vec.insert`).
+    `std_net_clock_measure_offset__frame`).  **DONE (session 44 batch 12,
+    2026-10-10)** — `lower_async_fn` records `pending_synthetic_structs.len()`
+    before the body lowering and inserts the frame at that index
+    (`lowering.mt`'s `frame_index`/`insert`).
 10d. **The async constructor params' `:pointer nil`** (newly exposed by 10b) —
     **DONE (session 44 batch 14, 2026-10-10)**: `ir.Param.pointer` is now the
     host's `Option[bool]` (the 45 construction sites carry `some(...)`, the
@@ -2567,7 +2568,7 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
 ### Track 8 — Final verification
 
 - Clean-tree run of the full matrix: `tools/bootstrap.sh -j 16` (stage2 ==
-  stage3, 14/14 tests), `build/stage2/mtc test test/mt -I .` (60/60), 15/15
+  stage3, 19 test files / 0 failed), `build/stage2/mtc test test/mt -I .` (60/60), 15/15
   examples, 34/34 sdl3, 217/219 raylib, vendored families, `sexpr_parity`
   lex/parse/lower, `cli:parity`, both LSP harnesses + valgrind + a Neovim and a
   VS Code session, `dap_smoke` on both backends, `format_parity all`,
