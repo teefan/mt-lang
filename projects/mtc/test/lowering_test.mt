@@ -3480,3 +3480,171 @@ function test_plain_assignment_target_keeps_the_struct_module() -> void:
     let text = dump.as_str()
     expect(text.contains_substring("(IR::Assignment :target (IR::Name :name \"p\" :type (Types::Struct :name \"P\" :module_name \"main\")"))
     expect(not text.contains_substring("(IR::Assignment :target (IR::Name :name \"p\" :type (Types::Struct :name \"P\" :module_name nil)"))
+
+
+@[test]
+function test_assert_default_message_carries_the_callsite() -> void:
+    ## `assert`/`expect_eq`'s default message carries ` at <path>:<line>` (the
+    ## host's `default_assert_message`, `lowering/assertions.rb`) and the
+    ## synthesized `fatal` statement is the host's statement-position shape
+    ## (nil line, the analysis path) — session 45.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_assert_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        function check() -> void:
+            assert(1 == 1)
+            expect_eq(1, 1)
+
+        function main() -> int:
+            check()
+            return 0
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("assertion failed at " + main_path.as_str() + ":2"))
+    expect(text.contains_substring("expect_eq failed: values are not equal at " + main_path.as_str() + ":3"))
+    expect(text.contains_substring(":line nil :path \"" + main_path.as_str() + "\""))
+
+
+@[test]
+function test_static_method_call_literals_take_the_parameter_type() -> void:
+    ## A static method call's literal argument takes the declared parameter's
+    ## type — the host's `lower_contextual_expression` on every call argument
+    ## (`Color.from_rgba(10, 20, 30, 200)` against `ubyte` parameters;
+    ## `lower_static_call_args` now applies the method path's literal coercion).
+    var source = <<-SRC
+        struct C:
+            r: ubyte
+
+        extending C:
+            public static function make(r: ubyte) -> C:
+                return C(r = r)
+
+        function use() -> C:
+            return C.make(200)
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("IR::IntegerLiteral :value 200 :type (Types::Primitive :name \"ubyte\")"))
+    expect(not text.contains_substring("IR::IntegerLiteral :value 200 :type (Types::Primitive :name \"int\")"))
+
+
+@[test]
+function test_continue_in_a_match_arm_uses_the_loop_label() -> void:
+    ## The host's `switch_loop_flow` converts a `continue` *and* a `break`
+    ## inside a switch-backed match to the loop-label form
+    ## (`switch_loop_target`), so a `continue` in an arm emits
+    ## `IR::GotoStmt` with the continue label (session 45).
+    var source = <<-SRC
+        enum K: ubyte
+            a = 0
+            b = 1
+
+        struct N:
+            kind: K
+
+        function run(n: N) -> void:
+            var i = 0
+            while i < 3:
+                i += 1
+                match n.kind:
+                    K.a:
+                        continue
+                    K.b:
+                        pass
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::SwitchStmt :expression"))
+    expect(text.contains_substring("(IR::GotoStmt :label \"__mt_loop_continue_1\")"))
+    expect(not text.contains_substring("(IR::ContinueStmt"))
+
+
+@[test]
+function test_iterator_loop_binding_keeps_the_nullable_storage() -> void:
+    ## A `for x in collection` over the iterator protocol binds `x` with the
+    ## `next()` storage (nullable) and the unwrapped item as its visible type
+    ## (the host's `iterator_loop_info`), so a pointer-like item's read keeps
+    ## the storage `Nullable` (session 45).
+    var source = <<-SRC
+        struct It:
+            i: int
+
+            public function next() -> ptr[int]?:
+                return null
+
+        struct Coll:
+
+            public function iter() -> It:
+                return It(i = 0)
+
+        function use(c: Coll) -> int:
+            var total = 0
+            for v in c:
+                unsafe:
+                    total += read(v)
+            return total
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Unary :operator \"*\" :operand (IR::Name :name \"v\" :type (Types::Nullable :base (Types::Generic :name \"ptr\""))
+    expect(not text.contains_substring("(IR::Unary :operator \"*\" :operand (IR::Name :name \"v\" :type (Types::Generic :name \"ptr\""))
+
+
+@[test]
+function test_pointer_intrinsic_casts_like_the_host() -> void:
+    ## `ptr_of(ref_value)` wraps the reference in an `IR::Cast` to the result
+    ## pointer type (the host's `:ptr_of` branch) instead of retyping the Name
+    ## (session 45).
+    var source = <<-SRC
+        struct P:
+            x: int
+
+        function take(p: ptr[P]) -> void:
+            pass
+
+        function use(r: ref[P]) -> void:
+            take(ptr_of(r))
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Cast :target_type (Types::Generic :name \"ptr\" :arguments ((Types::Struct :name \"P\" :module_name \"main\"))) :expression (IR::Name :name \"r\" :type (Types::Generic :name \"ref\""))
+    expect(not text.contains_substring("(IR::Call :callee \"main_take\" :arguments ((IR::Name :name \"r\""))
+
+
+@[test]
+function test_specialized_function_value_carries_its_name() -> void:
+    ## `f[T]` passed as a value types its `IR::Name` with a `Types::Function`
+    ## whose `name` is the declaration's (`fn f`), not the empty signature form
+    ## (the host's `Types::Function#name`; session 45).
+    var source = <<-SRC
+        function pick[T](v: T) -> T:
+            return v
+
+        struct H:
+            fnv: fn(v: int) -> int
+
+        function make() -> H:
+            return H(fnv = pick[int])
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(Types::Function :name \"pick\""))

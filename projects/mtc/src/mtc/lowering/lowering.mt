@@ -3294,7 +3294,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                             match read(call.callee):
                                 ast.Expr.expr_identifier as id:
                                     if id.name == "assert" or id.name == "expect" or id.name == "expect_eq" or id.name == "expect_ne":
-                                        lower_assert_stmt(ctx, output, id.name, call.args, id.line, id.column)
+                                        lower_assert_stmt(ctx, output, id.name, call.args, ex.line)
                                         return
                                 _:
                                     pass
@@ -5448,7 +5448,14 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
 
     let binding_c = utils.c_local_name(binding_name)
     let binding_ty = if nullable_item: types.unwrap_nullable(next_ty) else: cur_ty
-    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = binding_ty, pointer = Option[bool].some(value = false)))
+    # The host registers the loop binding with the `next()` storage (nullable)
+    # and the unwrapped item as its visible type (`iterator_loop_info`'s
+    # `item_storage_type`/`item_type`), so a pointer-like item's reads keep the
+    # storage `Nullable` and a non-pointer-like one projects `.value`.
+    var binding_projection = BindingProjection.plain
+    if nullable_item:
+        binding_projection = guard_binding_projection("nullable", next_ty)
+    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = binding_ty, pointer = Option[bool].some(value = false), projection = binding_projection))
     let body_span = lower_block(ctx, body_ptr)
 
     var break_body = vec.Vec[ir.Stmt].create()
@@ -6232,7 +6239,7 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                     Option.none:
                         if ctx.function_returns.contains(id.name) or ctx.analysis.functions.contains(id.name):
                             let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
-                            let fn_ty = expr_type(ctx, ep)
+                            var fn_ty = expr_type(ctx, ep)
                             match fn_ty:
                                 types.Type.ty_function as fnt:
                                     # Only wrap in proc struct when the expected type
@@ -6240,6 +6247,12 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                                     # fields, pass the function pointer directly.
                                     if fnt.is_proc:
                                         return lower_fn_to_proc(ctx, fn_c_name, fn_ty)
+                                    # The analyzer records a bare function reference
+                                    # with an empty type name (the contextual
+                                    # field/signature form); the host's binding type
+                                    # carries the function's own name (`fn <name>`).
+                                    if fnt.name.len == 0:
+                                        fn_ty = types.Type.ty_function(name = id.name, params = fnt.params, return_type = fnt.return_type, variadic = fnt.variadic, is_proc = false, param_names = fnt.param_names)
                                 _:
                                     pass
                             return alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = fn_ty, pointer = Option[bool].some(value = false)))
@@ -6474,7 +6487,7 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                                                         ptypes.push(read(sf.params.data + vpi).ty)
                                                         pnames.push(read(sf.params.data + vpi).name)
                                                     vpi += 1
-                                                fn_ty = types.Type.ty_function(name = "", params = ptypes.as_span(),
+                                                fn_ty = types.Type.ty_function(name = id.name, params = ptypes.as_span(),
                                                     return_type = types.alloc_type(sf.return_type),
                                                     variadic = false,
                                                     is_proc = false,
@@ -7657,8 +7670,10 @@ function tuple_element_type(t: types.Type, index: ptr_uint) -> types.Type:
 
 ## Lower an `assert`/`expect`/`expect_eq`/`expect_ne` expression statement to
 ## `if (!condition) fatal(message)`.  The message is evaluated only on the
-## failing path.
-function lower_assert_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], kind: str, args: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> void:
+## failing path; its default form carries the analysis path and the statement's
+## line (the host's `default_assert_message`), and the synthesized fatal call is
+## the host's statement-position shape (nil line, the analysis path).
+function lower_assert_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], kind: str, args: span[ast.Argument], stmt_line: ptr_uint) -> void:
     var cond: ptr[ir.Expr]
     var msg_index: ptr_uint = 1
     if kind == "expect_eq" or kind == "expect_ne":
@@ -7678,25 +7693,33 @@ function lower_assert_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ki
             fatal_callee = "mt_fatal"
         msg = lower_expr(ctx, msg_ast)
     else:
-        msg = alloc_expr(ir.Expr.expr_string_literal(value = assert_default_message(kind), ty = types.Type.ty_str, cstring = false))
+        msg = alloc_expr(ir.Expr.expr_string_literal(value = assert_default_message(kind, ctx.analysis.source_path, stmt_line), ty = types.Type.ty_str, cstring = false))
     var fatal_args = vec.Vec[ir.Expr].create()
     unsafe:
         fatal_args.push(read(msg))
     let fatal_call = alloc_expr(ir.Expr.expr_call(callee = fatal_callee, arguments = fatal_args.as_span(), ty = ctx.void_ty))
     var then_body = vec.Vec[ir.Stmt].create()
-    then_body.push(ir.Stmt.stmt_expression(expression = fatal_call, line = line, source_path = ""))
+    then_body.push(ir.Stmt.stmt_expression(expression = fatal_call, line = 0, source_path = ctx.analysis.source_path))
     # The host emits an empty (present) else branch for assert-like calls.
     output.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())))
 
 
-function assert_default_message(kind: str) -> str:
+## The host's `default_assert_message`: the fixed text plus ` at <path>:<line>`.
+function assert_default_message(kind: str, path: str, line: ptr_uint) -> str:
+    var buf = string.String.create()
     if kind == "assert":
-        return "assertion failed"
-    if kind == "expect":
-        return "expectation failed"
-    if kind == "expect_eq":
-        return "expect_eq failed: values are not equal"
-    return "expect_ne failed: values are equal"
+        buf.append("assertion failed")
+    else if kind == "expect":
+        buf.append("expectation failed")
+    else if kind == "expect_eq":
+        buf.append("expect_eq failed: values are not equal")
+    else:
+        buf.append("expect_ne failed: values are equal")
+    buf.append(" at ")
+    buf.append(path)
+    buf.append(":")
+    fmt.append_ptr_uint(ref_of(buf), line)
+    return buf.as_str()
 
 
 ## Lower `receiver[index]`: array receivers use a bounds-checked index, span
@@ -8022,6 +8045,13 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         let inner_is_concrete = not (types.is_error(inner_ty) or types.is_void(inner_ty))
                         if types.is_error(result_ty) or types.is_void(result_ty) or (recorded_elem_bad and inner_is_concrete):
                             result_ty = types.Type.ty_generic(name = outer_kind, args = sp_type(inner_ty))
+                        # The host's `:ptr_of` on a ref-typed argument wraps the
+                        # reference value in a cast to the result pointer type
+                        # (`calls.rb`'s `IR::Cast` branch); it does not retype the
+                        # Name.  `const_ptr_of`/`ref_of` go through the address
+                        # path instead.
+                        if id.name == "ptr_of" and types.is_ref_type(inner_ty):
+                            return alloc_expr(ir.Expr.expr_cast(target_type = result_ty, expression = inner, ty = result_ty))
                         # When the argument is already a pointer/ref value (e.g. a
                         # `ref[T]` parameter, which is a pointer in C), taking its
                         # address again would produce `T**`.  Use the pointer value
@@ -8053,7 +8083,14 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                         if id.name == "const_ptr_of":
                                             kind = "const_ptr"
                                         direct_ty = types.Type.ty_generic(name = kind, args = sp_type(elem))
-                                    return alloc_expr(ir.Expr.expr_name(name = nm.name, ty = direct_ty, pointer = Option[bool].some(value = true)))
+                                    # The host's `lower_addr_expression` wraps a
+                                    # pointer-lowered Name in `cast_expression(name,
+                                    # target_type)`: the Name keeps its own type and a
+                                    # differing target becomes an `IR::Cast`
+                                    # (`ref_of(this)` on an editable receiver).
+                                    if types.type_equals(nm.ty, direct_ty):
+                                        return inner
+                                    return alloc_expr(ir.Expr.expr_cast(target_type = direct_ty, expression = inner, ty = direct_ty))
                                 # ref[T] is already a pointer in C, so ptr_of/const_ptr_of
                                 # on a ref variable returns the variable directly as a raw
                                 # pointer to the referent; ref_of returns it as-is.
@@ -8070,7 +8107,12 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                     return alloc_expr(ir.Expr.expr_name(name = nm.name, ty = adjusted_ty, pointer = Option[bool].some(value = true)))
                             ir.Expr.expr_unary as un:
                                 if un.operator == "*":
-                                    return un.operand
+                                    # The host casts the deref's operand to the
+                                    # target when the types differ and returns it
+                                    # unchanged otherwise.
+                                    if types.type_equals(ir_expr_type(un.operand), result_ty):
+                                        return un.operand
+                                    return alloc_expr(ir.Expr.expr_cast(target_type = result_ty, expression = un.operand, ty = result_ty))
                             _:
                                 pass
                         return alloc_expr(ir.Expr.expr_address_of(expression = inner, ty = result_ty))
@@ -11193,6 +11235,9 @@ function lower_static_call_args(ctx: ref[LowerCtx], mi: MethodInfo, args: span[a
         unsafe:
             arg = read(args.data + i)
         var lowered = lower_expr(ctx, arg.arg_value)
+        # The host contextualizes every call argument, so a bare literal takes
+        # the declared parameter's type (`Color.from_rgba(10, 20, 30, 200)`).
+        lowered = coerce_literal_to_param_type(mi.params, i, arg.arg_value, lowered)
         # A pointer argument (e.g. `this` inside an editable method) passed to
         # a by-value parameter is dereferenced, mirroring Ruby's `*this`
         # projection and the monomorphized-path `coerce_arg_to_param`.
@@ -16841,16 +16886,18 @@ function module_is_raw(ctx: ref[LowerCtx], module_name: str) -> bool:
             return false
 
 
-## Lower a match arm's body for a *switch-backed* match.  A native `break`
-## inside a C `switch` exits the switch, not the enclosing loop, so the
-## loop-flow's native-break mode is cleared for the body's lowering — the
-## host's `switch_loop_flow`/`switch_loop_target` conversion, after which a
-## `break` emits the label/goto form again.  `continue` needs no invalidation:
-## C's `continue` reaches the loop through a `switch`.
+## Lower a match arm's body when the match is a C `switch`.  The host's
+## `switch_loop_flow`/`switch_loop_target` convert both a `break` and a
+## `continue` to the loop-label form inside a switch (a C `break` would exit the
+## switch, and the host never relies on `continue` passing through one), so both
+## native flags are cleared here.
 function lower_switch_arm_body(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?) -> span[ir.Stmt]:
     let saved_break_native = ctx.loop_break_native
+    let saved_continue_native = ctx.loop_continue_native
     ctx.loop_break_native = false
+    ctx.loop_continue_native = false
     let result = lower_block(ctx, body)
+    ctx.loop_continue_native = saved_continue_native
     ctx.loop_break_native = saved_break_native
     return result
 
