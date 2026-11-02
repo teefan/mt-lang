@@ -18171,7 +18171,7 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                             let cond = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = left, right = right, ty = bool_ty))
                             var guard_body = vec.Vec[ir.Stmt].create()
                             guard_body.push(ir.Stmt.stmt_goto(label = next_arm_label))
-                            blk.push(ir.Stmt.stmt_if(condition = cond, then_body = guard_body.as_span(), else_body = Option[span[ir.Stmt]].none))
+                            blk.push(ir.Stmt.stmt_if(condition = cond, then_body = guard_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())))
                         Option.none:
                             pass
                     match read(arg.arg_value):

@@ -3946,6 +3946,29 @@ function test_break_and_continue_flush_loop_defers() -> void:
 
 
 @[test]
+function test_variant_equality_pattern_guard_has_an_empty_else() -> void:
+    ## A struct-pattern equality arm (`Entity.enemy(boss = true)`) emits the
+    ## host's guard shape: `then_body: [goto]` with a *present empty* else
+    ## (`else_body ()`), not none (session 45 batch 7).
+    var source = <<-SRC
+        variant Entity:
+            enemy(hp: int, boss: bool)
+            other(x: int)
+
+        function is_boss(e: Entity) -> bool:
+            match e:
+                Entity.enemy(boss = true):
+                    return true
+                _:
+                    return false
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring(":member \"boss\" :type (Types::Primitive :name \"bool\")) :right (IR::BooleanLiteral :value true :type (Types::Primitive :name \"bool\")) :type (Types::Primitive :name \"bool\")) :then_body ((IR::GotoStmt :label \"__mt_match_1_arm_1\")) :else_body ())"))
+
+
+@[test]
 function test_guard_local_hoists_foreign_argument_temps() -> void:
     ## A `let x = <foreign call> else:` guard is a prepared position: the
     ## argument's `str as cstr` temp hoists into the statement stream before the
