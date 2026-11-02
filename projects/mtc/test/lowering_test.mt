@@ -3902,6 +3902,50 @@ function test_unannotated_local_takes_the_refined_visible_type() -> void:
 
 
 @[test]
+function test_break_and_continue_flush_loop_defers() -> void:
+    ## A `break`/`continue` with a loop-scoped `defer` runs the cleanup before
+    ## its goto (the host's `lower_loop_exit`): the defer's release is the first
+    ## statement of the exit's then body, not dropped by a native break
+    ## (session 45 batch 6).
+    var source = <<-SRC
+        struct Res:
+            n: int
+
+        extending Res:
+            public editable function release() -> void:
+                this.n = 0
+
+        function take() -> bool:
+            return true
+
+        function use() -> int:
+            while true:
+                var r = Res(n = 1)
+                defer: r.release()
+                if take():
+                    break
+            return 0
+
+        function skip() -> int:
+            var i = 0
+            while i < 3:
+                var s = Res(n = 2)
+                defer: s.release()
+                i += 1
+                if i == 1:
+                    continue
+            return i
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring(":then_body ((IR::ExpressionStmt :expression (IR::Call :callee \"main_Res_release\" :arguments ((IR::AddressOf :expression (IR::Name :name \"r\""))
+    expect(text.contains_substring("(IR::GotoStmt :label \"__mt_loop_break_2\")"))
+    expect(text.contains_substring(":then_body ((IR::ExpressionStmt :expression (IR::Call :callee \"main_Res_release\" :arguments ((IR::AddressOf :expression (IR::Name :name \"s\""))
+    expect(text.contains_substring("(IR::GotoStmt :label \"__mt_loop_continue_1\")"))
+
+
+@[test]
 function test_guard_local_hoists_foreign_argument_temps() -> void:
     ## A `let x = <foreign call> else:` guard is a prepared position: the
     ## argument's `str as cstr` temp hoists into the statement stream before the

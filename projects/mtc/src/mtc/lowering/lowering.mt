@@ -412,6 +412,11 @@ struct LowerCtx:
     # `break` inside a C `switch` would exit the switch, not the loop, so those
     # arms keep the label/goto form (the host's `switch_loop_flow`).
     loop_break_native: bool
+    # `ctx.defer_stack`'s length at the current loop's entry.  A `break`/
+    # `continue` flushes the defer groups opened inside the loop (the host's
+    # `lower_loop_exit` cleanup preamble) before its goto; the enclosing
+    # scopes' defers are untouched.
+    loop_defer_depth: ptr_uint
     # Cached commonly-used types to avoid repeated ty_primitive/ty_generic calls.
     bool_ty: types.Type
     void_ty: types.Type
@@ -1117,6 +1122,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         loop_continue_label = "",
         loop_continue_native = false,
         loop_break_native = false,
+        loop_defer_depth = 0,
         bool_ty = types.primitive("bool"),
         void_ty = types.primitive("void"),
         ptr_void_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))),
@@ -2567,6 +2573,33 @@ function flush_all_defers(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]) -> 
         flush_defer_group(group_ptr, output)
 
 
+## True when a defer group opened inside the current loop still has pending
+## cleanups — the host's `local_defers`/`break_defers` check in `lower_loop_exit`.
+function has_loop_defers(ctx: ref[LowerCtx]) -> bool:
+    var i = ctx.loop_defer_depth
+    while i < ctx.defer_stack.len():
+        let group_ptr = ctx.defer_stack.get(i) else:
+            return false
+        unsafe:
+            if read(group_ptr).cleanups.len() > 0:
+                return true
+        i += 1
+    return false
+
+
+## Flush the defer groups opened inside the current loop, innermost first,
+## without popping them (the block's fall-through path emits its own copy).
+## The host's `lower_loop_exit`: with a cleanup the exit becomes
+## `cleanup...; goto <label>`.
+function flush_loop_defers(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]) -> void:
+    var count = ctx.defer_stack.len()
+    while count > ctx.loop_defer_depth:
+        count -= 1
+        let group_ptr = ctx.defer_stack.get(count) else:
+            fatal(c"lowering: loop defer stack missing group")
+        flush_defer_group(group_ptr, output)
+
+
 ## True when the innermost open block (or any enclosing block) has a pending
 ## defer, so a `return` needs a cleanup preamble.
 function has_pending_defers(ctx: ref[LowerCtx]) -> bool:
@@ -3236,10 +3269,12 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     # correct enclosing loop.
                     let saved_break = ctx.loop_break_label
                     let saved_continue = ctx.loop_continue_label
+                    let saved_loop_depth = ctx.loop_defer_depth
                     let cl = fresh_c_temp_name(ctx, "loop_continue")
                     let bl = fresh_c_temp_name(ctx, "loop_break")
                     ctx.loop_break_label = bl
                     ctx.loop_continue_label = cl
+                    ctx.loop_defer_depth = ctx.defer_stack.len()
                     var brk = vec.Vec[ir.Stmt].create()
                     brk.push(ir.Stmt.stmt_goto(label = bl))
                     wbody.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = cond_ir, ty = ctx.bool_ty)), then_body = brk.as_span(), else_body = Option[span[ir.Stmt]].none))
@@ -3257,16 +3292,19 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     output.push(ir.Stmt.stmt_block(body = wrap.as_span()))
                     ctx.loop_break_label = saved_break
                     ctx.loop_continue_label = saved_continue
+                    ctx.loop_defer_depth = saved_loop_depth
                     return
                 let cond = lower_expr(ctx, w.condition)
                 let saved_break = ctx.loop_break_label
                 let saved_continue = ctx.loop_continue_label
                 let saved_continue_native = ctx.loop_continue_native
                 let saved_break_native = ctx.loop_break_native
+                let saved_loop_depth = ctx.loop_defer_depth
                 let cl = fresh_c_temp_name(ctx, "loop_continue")
                 let bl = fresh_c_temp_name(ctx, "loop_break")
                 ctx.loop_break_label = bl
                 ctx.loop_continue_label = cl
+                ctx.loop_defer_depth = ctx.defer_stack.len()
                 # A plain C `while`'s continue point is the loop's condition, so
                 # a native `continue` here reaches exactly the label's position;
                 # a native `break` likewise exits exactly this loop (unless a
@@ -3288,6 +3326,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 ctx.loop_continue_label = saved_continue
                 ctx.loop_continue_native = saved_continue_native
                 ctx.loop_break_native = saved_break_native
+                ctx.loop_defer_depth = saved_loop_depth
             ast.Stmt.stmt_for as f:
                 if f.is_inline:
                     lower_inline_for_stmt(ctx, output, f.bindings, f.iterables, f.body)
@@ -3380,14 +3419,22 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     match_scrutinee = async_hoist_awaits(ctx, output, m.scrutinee)
                 lower_match(ctx, output, match_scrutinee, m.arms)
             ast.Stmt.stmt_break:
-                if ctx.loop_break_native:
+                # A loop-scoped cleanup forces the label/goto form: the defers
+                # run before the jump (the host's `lower_loop_exit`).
+                if has_loop_defers(ctx) and ctx.loop_break_label != "":
+                    flush_loop_defers(ctx, output)
+                    output.push(ir.Stmt.stmt_goto(label = ctx.loop_break_label))
+                else if ctx.loop_break_native:
                     output.push(ir.Stmt.stmt_break())
                 else if ctx.loop_break_label != "":
                     output.push(ir.Stmt.stmt_goto(label = ctx.loop_break_label))
                 else:
                     output.push(ir.Stmt.stmt_break())
             ast.Stmt.stmt_continue:
-                if ctx.loop_continue_native:
+                if has_loop_defers(ctx) and ctx.loop_continue_label != "":
+                    flush_loop_defers(ctx, output)
+                    output.push(ir.Stmt.stmt_goto(label = ctx.loop_continue_label))
+                else if ctx.loop_continue_native:
                     output.push(ir.Stmt.stmt_continue())
                 else if ctx.loop_continue_label != "":
                     output.push(ir.Stmt.stmt_goto(label = ctx.loop_continue_label))
@@ -5278,6 +5325,8 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
     else:
         ctx.locals.push(LocalBinding(name = index_name, c_name = index_c, ty = loop_type, pointer = Option[bool].some(value = false)))
 
+    let saved_loop_depth = ctx.loop_defer_depth
+    ctx.loop_defer_depth = ctx.defer_stack.len()
     let body_span = lower_block(ctx, body_ptr)
     var body = vec.Vec[ir.Stmt].create()
     append_span_stmts(ref_of(body), body_span)
@@ -5324,6 +5373,7 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
 
     ctx.loop_break_label = saved_break
     ctx.loop_continue_label = saved_continue
+    ctx.loop_defer_depth = saved_loop_depth
 
 
 function is_integer_literal(ep: ptr[ast.Expr]) -> bool:
@@ -5376,6 +5426,8 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
         async_register_local_field(ctx, items_c, items_field, items_linkage, iterable_type)
 
     ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = element_type, pointer = Option[bool].some(value = false)))
+    let saved_loop_depth = ctx.loop_defer_depth
+    ctx.loop_defer_depth = ctx.defer_stack.len()
     let body_span = lower_block(ctx, body_ptr)
 
     # item value: array -> items[index]; span -> items.data[index]
@@ -5439,6 +5491,7 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
 
     ctx.loop_break_label = saved_break
     ctx.loop_continue_label = saved_continue
+    ctx.loop_defer_depth = saved_loop_depth
 
 
 ## Lower `for x in custom_iterable` over the iterator protocol.  The `iter()`
@@ -5495,6 +5548,8 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
     if nullable_item:
         binding_projection = guard_binding_projection("nullable", next_ty)
     ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = binding_ty, pointer = Option[bool].some(value = false), projection = binding_projection))
+    let saved_loop_depth = ctx.loop_defer_depth
+    ctx.loop_defer_depth = ctx.defer_stack.len()
     let body_span = lower_block(ctx, body_ptr)
 
     var break_body = vec.Vec[ir.Stmt].create()
@@ -5533,6 +5588,7 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
 
     ctx.loop_break_label = saved_break
     ctx.loop_continue_label = saved_continue
+    ctx.loop_defer_depth = saved_loop_depth
 
 
 function array_length_of(t: types.Type) -> long:
