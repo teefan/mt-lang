@@ -3312,3 +3312,150 @@ function test_async_ctor_params_and_refcounted_allocator() -> void:
     ## carry the host's unset pointer (`ir.Expr` `Name.pointer` is `Option[bool]`).
     expect(text.contains_substring("(IR::Name :name \"__mt_frame->param_x\" :type (Types::Primitive :name \"int\") :pointer nil)"))
     expect(text.contains_substring("(IR::Name :name \"x\" :type (Types::Primitive :name \"int\") :pointer nil)"))
+
+
+@[test]
+function test_monomorphized_call_literal_takes_the_parameter_type() -> void:
+    ## A monomorphized call's literal argument takes the *specialized*
+    ## parameter's type — the host's `lower_contextual_expression` on every call
+    ## argument.  `heap.must_alloc_zeroed[SleepState](1)` against `count:
+    ## ptr_uint` emits a `ptr_uint` literal (session 45).
+    var source = <<-SRC
+        struct Box:
+            n: ptr_uint
+
+        function make[T](count: ptr_uint) -> Box:
+            return Box(n = count)
+
+        function use() -> Box:
+            return make[Box](41)
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("IR::IntegerLiteral :value 41 :type (Types::Primitive :name \"ptr_uint\")"))
+    expect(not text.contains_substring("IR::IntegerLiteral :value 41 :type (Types::Primitive :name \"int\")"))
+
+
+@[test]
+function test_specialization_instances_sort_by_rendered_arguments() -> void:
+    ## The host sorts a declaration's instances by
+    ## `type_arguments.map(&:to_s).join(",")` — the RENDERED arguments.  A
+    ## generic argument's closing bracket sorts after a longer element name, so
+    ## `array[A, 2]` precedes `array[AB, 2]` (`array[A, 2]` < `array[AB, 2]`
+    ## because ',' < 'B'), where the C key (`array_A_2` vs `array_AB_2`) would
+    ## order them the other way (session 45; the 3ad residue).
+    var source = <<-SRC
+        struct A:
+            x: int
+
+        struct AB:
+            x: int
+
+        function id[T](v: T) -> T:
+            return v
+
+        function use(a: array[A, 2], b: array[AB, 2]) -> int:
+            let x = id[array[A, 2]](a)
+            let y = id[array[AB, 2]](b)
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    let a_pos = text.find_substring(":linkage_name \"main_id__array_main_A_2\"") else:
+        expect(false)
+        return
+    let ab_pos = text.find_substring(":linkage_name \"main_id__array_main_AB_2\"") else:
+        expect(false)
+        return
+    expect(a_pos < ab_pos)
+
+
+@[test]
+function test_imported_variant_arm_payload_keeps_its_owner_module() -> void:
+    ## An `as name` binding of an *imported* variant carries the declaring
+    ## module on its `VariantArmPayload` type (the host's
+    ## `Types::VariantArmPayload#module_name`), so the dump renders
+    ## `:module_name "lib"` rather than nil (session 45).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_armmod_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var lib_source = <<-SRC
+        public variant Kind:
+            alpha(x: int)
+            beta
+    SRC
+    if not write_source_file(root.as_str(), "lib.mt", lib_source):
+        return
+
+    var source = <<-SRC
+        import lib as lib
+
+        function take(k: lib.Kind) -> int:
+            match k:
+                lib.Kind.alpha as a:
+                    return a.x
+                lib.Kind.beta:
+                    return 0
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(Types::VariantArmPayload :name \"Kind_alpha\" :module_name \"lib\")"))
+    expect(not text.contains_substring("(Types::VariantArmPayload :name \"Kind_alpha\" :module_name nil)"))
+
+
+@[test]
+function test_array_as_span_uses_an_unchecked_index() -> void:
+    ## `array.as_span()` is the host's `lower_array_to_span_expression`: the
+    ## decay's `&array[0]` is a plain `IR::Index`, not a runtime subscript's
+    ## `IR::CheckedIndex` (session 45).
+    var source = <<-SRC
+        const FLAGS: array[str, 2] = array[str, 2]("x", "y")
+
+        function get_flags() -> span[str]:
+            return FLAGS.as_span()
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::AddressOf :expression (IR::Index :receiver (IR::Name :name \"main_FLAGS\""))
+    expect(not text.contains_substring("(IR::AddressOf :expression (IR::CheckedIndex :receiver (IR::Name :name \"main_FLAGS\""))
+
+
+@[test]
+function test_assignment_target_takes_the_refined_type() -> void:
+    ## The host's `lower_assignment_target` (`utils.rb:1237`) types a bare
+    ## local's target Name with the *visible* (flow-refined) type when that is
+    ## the storage nullable's base: inside `while node != null`, `node = ...`
+    ## targets a `ptr[Box]`, not the storage `ptr[Box]?` (session 45).
+    var source = <<-SRC
+        struct Box:
+            value: int
+            next: ptr[Box]?
+
+        function walk(p: ptr[Box]?) -> int:
+            var node = p
+            unsafe:
+                while node != null:
+                    let node_ptr = ptr[Box]<-node
+                    node = read(node_ptr).next
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Assignment :target (IR::Name :name \"node\" :type (Types::Generic :name \"ptr\""))
+    expect(not text.contains_substring("(IR::Assignment :target (IR::Name :name \"node\" :type (Types::Nullable"))

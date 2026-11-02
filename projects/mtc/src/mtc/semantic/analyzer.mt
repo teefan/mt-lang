@@ -3944,6 +3944,49 @@ public function flow_type_at(analysis: ref[Analysis], name: str, line: ptr_uint,
     return Option[types.Type].some(value = best)
 
 
+## The lowering's view of a refined local: the record with the greatest position
+## at or before the cursor (ties: the later record).  The lowering's refinement
+## environment is lexical, so a compound statement's post-state replayed at its
+## start (`record_flow_snapshot_at` with an explicit position) must not shadow a
+## record inside the statement's body — unlike the LSP's completion snapshots,
+## which are order-based for the host's reverse walk (`flow_type_at`).
+public function flow_type_at_position(analysis: ref[Analysis], name: str, line: ptr_uint, character: ptr_uint) -> Option[types.Type]:
+    let at = line * 1000000 + character
+    var body_start: ptr_uint = 0
+    var start_index: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < unsafe: read(analysis).flow_types.len():
+        let entry = unsafe: read(analysis).flow_types.get(i) else:
+            break
+        unsafe:
+            let item = read(entry)
+            if item.name.len == 0 and item.at <= at and item.at >= body_start:
+                body_start = item.at
+                start_index = i + 1
+        i += 1
+    var best = types.Type.ty_error
+    var best_at: ptr_uint = 0
+    var found = false
+    var has_type = false
+    i = start_index
+    while i < unsafe: read(analysis).flow_types.len():
+        let entry = unsafe: read(analysis).flow_types.get(i) else:
+            break
+        unsafe:
+            let item = read(entry)
+            if item.name.len == 0:
+                break
+            if item.at <= at and item.name.equal(name) and item.at >= best_at:
+                best = item.ty
+                best_at = item.at
+                has_type = not item.cleared
+                found = true
+        i += 1
+    if not found or not has_type:
+        return Option[types.Type].none
+    return Option[types.Type].some(value = best)
+
+
 ## The snapshot key of a statement: its position packed into one comparable
 ## number (`line * 1000000 + column`).  A statement that carries no column uses
 ## 0, so its entry applies from the start of its line.

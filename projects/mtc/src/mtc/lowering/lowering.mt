@@ -3083,11 +3083,11 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # first, then emit the (await-free) assignment normally.
                 if ctx.async_cps_active and async_mod.expr_has_await(asg.value):
                     if asg.operator == "=" and expr_is_direct_await(asg.value):
-                        let asg_target = lower_expr(ctx, asg.target)
+                        let asg_target = lower_assignment_target(ctx, asg.target)
                         lower_async_await_into(ctx, output, direct_await_inner(asg.value), Option[ptr[ir.Expr]].some(value = asg_target))
                         return
                     let hoisted = async_hoist_awaits(ctx, output, asg.value)
-                    output.push(ir.Stmt.stmt_assignment(target = lower_expr(ctx, asg.target), operator = asg.operator, value = lower_expr(ctx, hoisted)))
+                    output.push(ir.Stmt.stmt_assignment(target = lower_assignment_target(ctx, asg.target), operator = asg.operator, value = lower_expr(ctx, hoisted)))
                     return
                 # Lower `arr[start..end] = (e1, e2, ...)` — range index assignment.
                 # Expand into individual checked-index assignments, one per RHS element.
@@ -3137,7 +3137,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         return
                     Option.none:
                         pass
-                let target = lower_expr(ctx, asg.target)
+                let target = lower_assignment_target(ctx, asg.target)
                 let hoist_base = output.len()
                 let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
                 var value = lower_expr(ctx, asg.value)
@@ -4059,6 +4059,41 @@ function lower_binding_read(ctx: ref[LowerCtx], lb: LocalBinding) -> ptr[ir.Expr
             let storage_ref = alloc_expr(ir.Expr.expr_name(name = lb.c_name, ty = p.storage_ty, pointer = lb.pointer))
             let (error_val, _) = guard_failure_projection(ctx, p.storage_ty, storage_ref)
             return error_val
+
+
+## Lower an assignment's target with the host's `lower_assignment_target` rule
+## (`utils.rb:1237`): a bare local's `IR::Name` carries the *visible* (flow-
+## refined) type when that is the storage type or the storage nullable's base,
+## and the storage type otherwise.  Reads keep the storage type, so this is
+## target-only.
+function lower_assignment_target(ctx: ref[LowerCtx], target_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    unsafe:
+        match read(target_ast):
+            ast.Expr.expr_identifier as id:
+                match lookup_local(ctx, id.name):
+                    Option.some as lb:
+                        match lb.value.projection:
+                            BindingProjection.plain:
+                                match analyzer.flow_type_at_position(ref_of(ctx.analysis), id.name, id.line, id.column):
+                                    Option.some as refined:
+                                        # The record comes from the declaration's
+                                        # analysis, so a generic body carries type
+                                        # parameters; the lowering env is concrete.
+                                        let visible_ty = substitute_type_params(ctx, refined.value, ref_of(ctx.type_substitution))
+                                        let storage_ty = lb.value.ty
+                                        if types.type_equals(visible_ty, storage_ty):
+                                            return alloc_expr(ir.Expr.expr_name(name = lb.value.c_name, ty = visible_ty, pointer = lb.value.pointer))
+                                        if types.is_nullable_type(storage_ty) and types.type_equals(types.unwrap_nullable(storage_ty), visible_ty):
+                                            return alloc_expr(ir.Expr.expr_name(name = lb.value.c_name, ty = visible_ty, pointer = lb.value.pointer))
+                                    Option.none:
+                                        pass
+                            _:
+                                pass
+                    Option.none:
+                        pass
+            _:
+                pass
+    return lower_expr(ctx, target_ast)
 
 
 ## Lower `let (a, b) = expr` (tuple) / `let Name(x, y) = expr` (struct) by
@@ -5481,19 +5516,12 @@ function lower_array_as_span(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], array_
     var length = array_length_of(array_ty)
     if length == 0:
         length = const_array_length(ctx, receiver)
-    # Rebuild the array type with the recovered length so the checked-index helper
-    # is generated for the correct array size (not a `[0]` mismatch).
-    var index_array_ty = array_ty
-    if array_length_of(array_ty) == 0 and length != 0:
-        var arr_args = vec.Vec[types.Type].create()
-        arr_args.push(elem_ty)
-        arr_args.push(types.literal_int(length))
-        index_array_ty = types.Type.ty_generic(name = "array", args = arr_args.as_span())
     let recv = lower_expr(ctx, receiver)
     let zero_index = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))
-    let elem0 = alloc_expr(ir.Expr.expr_checked_index(
-        receiver = recv, index = zero_index, receiver_type = index_array_ty, ty = elem_ty,
-    ))
+    # The host's `lower_array_to_span_expression` uses a plain `IR::Index` for
+    # the decay's `&array[0]` (an unchecked element pointer, not a runtime
+    # subscript).
+    let elem0 = alloc_expr(ir.Expr.expr_index(receiver = recv, index = zero_index, ty = elem_ty))
     let data_ptr = alloc_expr(ir.Expr.expr_address_of(
         expression = elem0,
         ty = types.Type.ty_generic(name = "ptr", args = sp_type(elem_ty)),
@@ -9432,7 +9460,7 @@ function lower_monomorphized_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], typ
         lower_and_cache_specialization(ctx, gm, type_args, spec_key)
     let ret_ty = cross_module_return_type(ctx, spec_key, call_ep)
     var ret_type_ptr = types.alloc_type(ret_ty)
-    return lower_plain_call(ctx, spec_key, call_args, call_ep, ret_type_ptr)
+    return lower_plain_call_spec(ctx, spec_key, call_args, call_ep, ret_type_ptr, ctx.specialization_cache.get(spec_key))
 
 
 ## A generic function's AST declaration plus the module that defines it.
@@ -9565,7 +9593,13 @@ function try_inferred_generic_call(ctx: ref[LowerCtx], module_name: Option[str],
                     syn_params.push(analyzer.ParamEntry(name = fm.name, ty = p_ty))
                     spi += 1
                 sig = Option[analyzer.FnSig].some(value = analyzer.FnSig(name = callee_name, params = syn_params.as_span(), return_type = ctx.void_ty, has_return_type = false, method_kind = ast.MethodKind.mk_plain, is_async = false))
-            return Option[ptr[ir.Expr]].some(value = lower_plain_call_sig(ctx, spec_key, args, call_ep, types.alloc_type(ret_ty), sig))
+            var lowered_call: ptr[ir.Expr]
+            match sig:
+                Option.some:
+                    lowered_call = lower_plain_call_sig(ctx, spec_key, args, call_ep, types.alloc_type(ret_ty), sig)
+                Option.none:
+                    lowered_call = lower_plain_call_spec(ctx, spec_key, args, call_ep, types.alloc_type(ret_ty), ctx.specialization_cache.get(spec_key))
+            return Option[ptr[ir.Expr]].some(value = lowered_call)
         _:
             return Option[ptr[ir.Expr]].none
 
@@ -9902,17 +9936,21 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             saved_returns.set(spec_key, spec_fun.return_type)
             # Record owner/declaration/arguments so the driver can place this
             # instance in its owner module's function list (host ordering).
+            # The host's sort key is `type_arguments.map(&:to_s).join(",")` — the
+            # RENDERED arguments, where a generic's closing bracket sorts after a
+            # longer element name (`span[TypeParamConstraint]` before
+            # `span[TypeParam]`), so it is not the C key.
             var fn_args_key = string.String.create()
             var fai: ptr_uint = 0
             while fai < fun.type_params.len:
                 if fai > 0:
-                    fn_args_key.append("_")
+                    fn_args_key.append(",")
                 var ftp: ast.TypeParam
                 unsafe:
                     ftp = read(fun.type_params.data + fai)
                 let fcv = sub.get(ftp.name)
                 if fcv != null:
-                    fn_args_key.append(naming.type_c_key(unsafe: read(fcv)))
+                    fn_args_key.append(naming.type_to_s_qualified(unsafe: read(fcv)))
                 fai += 1
             unsafe:
                 read(ctx.spec_infos).set(spec_key, SpecInfo(
@@ -12018,14 +12056,15 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     let spec_fun = lower_specialized_method(ctx, method_c, info, gm, ref_of(sub))
     ctx.specialization_cache.set(method_c, spec_fun)
     saved_returns.set(method_c, spec_fun.return_type)
-    # Record owner/declaration/arguments for host-style ordering.
+    # Record owner/declaration/arguments for host-style ordering.  The sort key
+    # is the host's rendered `type_arguments.map(&:to_s).join(",")`.
     var m_args_key = string.String.create()
     var mai: ptr_uint = 0
     while mai < info.concrete_args.len:
         if mai > 0:
-            m_args_key.append("_")
+            m_args_key.append(",")
         unsafe:
-            m_args_key.append(naming.type_c_key(read(info.concrete_args.data + mai)))
+            m_args_key.append(naming.type_to_s_qualified(read(info.concrete_args.data + mai)))
         mai += 1
     var m_decl_key = string.String.create()
     m_decl_key.append("method:")
@@ -13437,6 +13476,32 @@ function lower_plain_call(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argume
 ## optional; when absent, arguments are lowered verbatim.
 function lower_plain_call_sig(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, sig: Option[analyzer.FnSig]) -> ptr[ir.Expr]:
     return lower_call_with_callee(ctx, c_name, Option[ptr[ir.Expr]].none, args, call_ep, override_ty, sig)
+
+
+## Lower a call to a monomorphized function with the specialized function
+## available, so a bare literal argument takes its parameter's type — the host's
+## `lower_contextual_expression` on every call argument.  Mirrors the
+## monomorphized-method path's `coerce_literal_to_mono_param`.
+function lower_plain_call_spec(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, spec_fn: ptr[ir.Function]?) -> ptr[ir.Expr]:
+    var ir_args = vec.Vec[ir.Expr].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        var lowered = lower_expr(ctx, arg.arg_value)
+        lowered = coerce_literal_to_mono_param(spec_fn, i, arg.arg_value, lowered)
+        unsafe:
+            ir_args.push(read(lowered))
+        i += 1
+    var ret_ty: types.Type
+    let ov = override_ty
+    if ov != null:
+        unsafe:
+            ret_ty = read(ov)
+    else:
+        ret_ty = expr_type(ctx, call_ep)
+    return alloc_expr(ir.Expr.expr_call(callee = c_name, arguments = ir_args.as_span(), ty = ret_ty))
 
 
 ## Lower a call whose callee is an expression rather than a bare C name: a
@@ -16234,7 +16299,7 @@ function build_imported_variant_info(ctx: ref[LowerCtx], owner_module: str, owne
         i += 1
     ctx.module_name = saved_module
     ctx.analysis = saved_analysis
-    return VariantInfo(module_name = "", arms = arm_infos.as_span())
+    return VariantInfo(module_name = owner_module, arms = arm_infos.as_span())
 
 
 ## Lower a variant declaration to an `ir.VariantDecl`, mirroring Ruby's
@@ -24396,15 +24461,13 @@ function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir
 
 
 ## Ensure `std.async.wait[inner_ty]` is specialized and return its C linkage name.
-## Mirrors Ruby's `async_main_runtime_callee_name("wait", type_arguments: [...])`.
-## Resolution goes through `find_generic_function`, which (thanks to the
-## dependency-first ordering of `program_analyses`) resolves `wait` to the
-## deepest non-delegating backend implementation (`std.async.libuv_runtime.wait`)
-## — the same target the working inferred `aio.wait(...)` call path reaches.  The
-## spec key mirrors `try_inferred_generic_call` (`<owner>_wait__<type_key>`), so
-## the entrypoint reuses the exact specialization that `aio.wait` already emits.
+## Mirrors Ruby's `async_main_runtime_callee_name("wait", type_arguments: [...])`,
+## which instantiates the binding declared in `std.async` — the public delegating
+## entry, not the deepest backend implementation.  Lowering that instance's body
+## then instantiates the rest of the chain (`std.async.runtime.wait`, then
+## `std.async.libuv_runtime.wait`/`wait_on`), exactly as the host's walk does.
 function ensure_async_wait_specialization(ctx: ref[LowerCtx], inner_ty: types.Type) -> Option[str]:
-    let gm = find_generic_function(ctx, "wait") else:
+    let gm = find_generic_function_in_module(ctx, "std.async", "wait") else:
         return Option[str].none
     if not gm.module_name.starts_with("std.async"):
         return Option[str].none
