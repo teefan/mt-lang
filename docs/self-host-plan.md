@@ -14,7 +14,7 @@
 - [How to start a work session](#how-to-start-a-work-session-read-this-first)
 - [The program — ranked remaining work](#the-program--ranked-remaining-work)
 - [Ledger and scoreboard](#ledger-and-scoreboard)
-- §0k — LSP / linter / formatter records and the session history (sessions 4–33)
+- §0k — LSP / linter / formatter records and the session history (sessions 4–44)
 - §0j — stress, parse and `lower` records · §0i, §0h, §0a–§0f — older sessions
 - §1–§7 — subsystem records · Appendix (working notes) · Provenance
 
@@ -31,15 +31,15 @@ Status: **SELF-HOSTING FIXED POINT ACHIEVED. LSP + DAP + BINDGEN + IMPORTED-BIND
 self-host** (`~/Projects/MilkTea/SimpleGame`, the const-aggregate blocker of
 §0j item 12 — fixed in session 2; the binary initializes raylib and audio and
 runs).
-Stage2 == stage3 byte-identical; the compiler self-test suite is **618 tests
-across 17 files, 0 failed** (re-measured 2026-10-04 session 33; 596 at session
-27, 516 at session 2);
+Stage2 == stage3 byte-identical; the compiler self-test suite is **19 test
+files, 0 failed** (re-measured 2026-10-10 session 44 batch 21; 618 tests across
+17 files at session 33, 516 at session 2);
 the self-host also builds every example and `test/mt` file the host does (see
 §0j's 2026-09-27 section).
 **Linter parity: `language_baseline.mt`'s and `memory_stress_test.mt`'s
 diagnostic arrays are byte-identical to the Ruby host's (98/98 and 10/10, 0
-differing lines; sessions 17–18), and the whole-corpus sweep reads 496 agree /
-117 differ of 613 files (below).**
+differing lines; sessions 17–18), and the whole-corpus sweep reads 495 agree /
+121 differ of 616 files (session 40 re-measure, below).**
 **Raylib parity: 217/219 build and run** (2026-07-16 sweep).
 **Language examples: 15/15 build under `--no-cache`** (2026-09-27; the four that
 failed — `async_network_lobby`, `async_stress_test`, `data_structures`,
@@ -103,15 +103,16 @@ on 2026-09-26 (§7).
 message text/channel/argument-precedence differences, not missing commands
 (§0j).  Toolchain doctor is self-hosted; bootstrap/tools subcommands deferred.
 
-**`--sexpr` parity (re-measured 2026-10-04 session 33; the history is
-session 2, 2026-09-27): lex 712/712
+**`--sexpr` parity (lex/parse re-measured 2026-10-04 session 33; `lower`
+re-measured 2026-10-10 session 44 batch 21): lex 712/712
 comparable byte-identical; parse 708 comparable files byte-identical with 0
 differences (4 host-side rejections: external files, platform-pinned); `lower`
-39 match / 622 differ / 51 host-rejected / 0 self-rejected of 712 files** (the
-host-rejected bucket is only `external` and platform-pinned files; the counts
-above session 17's 615 are the tree's own new sources since — the match count
-is unchanged and every family whose first difference was closed moved 15–63 KB
-deeper into its dump).  The ref/lifetime and dyn vtable
+**286 match / 380 differ / 51 host-rejected / 0 self-rejected of 717 files** (the
+host-rejected bucket is only `external` and platform-pinned files; the count
+drifts with the tree's own sources — quote the set; session 44's batches (1–17)
+took it 216 → 286, the batch-19–21 proc stages kept the set with the dumps
+moving closer, and the ledger carries each batch's movement).  The
+ref/lifetime and dyn vtable
 categories are closed, and so are the three levers §0j ranked first —
 **raw-module method linkage naming**, **unsigned literals in the unsigned
 domain** (`18446744073709551615`, provenance-tracked so `~0` still prints `-1`)
@@ -125,10 +126,11 @@ for `float` literals).
 **alias-qualified const aggregates** (the `MilkTea/SimpleGame` blocker),
 **zero-valued aggregate field/element types**, **`null` contextual typing** and
 **`dyn` vtable method-slot substitution**, plus integer literals in local/global
-declarations.  The remaining `lower` deltas are dominated by opaque declaration
-*fields* (the sdl3 family's first difference), globals initialized from imported
-constants, refined nullable operand types, event-field modelling, function-type
-names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
+declarations.  The remaining `lower` deltas (batch-21 read) are led by the
+delegating `wait` chain's instances, the array/const literal shape, a
+statement's line/path shape, the `const_ptr_of` boundary cast (8a), the explicit
+format sink (3z) and the event runtime names (10e/4b) — see Track 3's ranked
+list.  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
 Last updated: session 44 batch 21 (2026-10-10) — **`lower` item 8A stage D: the
@@ -657,11 +659,14 @@ poisons the next bootstrap.
    a 40-file raylib sample, `test/mt` 60/60 with 0 failures).  Six root causes are
    recorded in §0j's 2026-09-27 section; regressions should show up as a build
    failure in those sweeps.
-1. **`lower` dump parity** — session-33 measurement: **39 match / 622 differ /
-   51 host-rejected / 0 self-rejected of 712 files** (the count drifts with the
-   tree's own sources and the tmp fixtures; quote the set).  The ranked items are the program's `lower` track; the biggest
-   single mover is item 1 (opaque declaration naming/`forward_declarable`, the
-   first difference for all 34 sdl3 files).
+1. **`lower` dump parity** — batch-21 measurement (2026-10-10): **286 match /
+   380 differ / 51 host-rejected / 0 self-rejected of 717 files** (the count
+   drifts with the tree's own sources and the tmp fixtures; quote the set).  The
+   ranked items are the program's `lower` track; the current leaders are the
+   delegating `wait` chain's instances, the array/const literal shape (57,
+   `projects/mtc/src`), a statement's line/path shape (~13), the `const_ptr_of`
+   boundary cast (8a) and **3z** (~41 files), then 10e/4b, the
+   `mt_str_buffer_*` decls and the tail.
 2. **CLI behavior parity** — **24 match / 37 differ / 0 pending** of 61 harness
    cases (session 22); the differ on message text, output channel and argument
    precedence.  The unported subsystems are the program's CLI track.
@@ -787,11 +792,11 @@ parts 1–3" and "The request boundary".
 
 ### Track 2 — Linter corpus residue
 
-`tools/lint_parity.rb -q` over `std examples projects/mtc/src`: 613 files,
-**496 agree / 117 differ** (re-measured 2026-10-04 session 33; from 357/252 in
-session 19 — the +3 files/+3 agrees over session 31 are the sweep linting this
-session's own new compiler sources, `debug_ast.mt`/`debug_text.mt`/
-`float_text.mt`; the changed files carry the same ranked deltas below).
+`tools/lint_parity.rb -q` over `std examples projects/mtc/src`: 616 files,
+**495 agree / 121 differ** (session 40 re-measure, 2026-10-06; the per-rule
+deltas below are the session-33 classification and are unchanged in kind — the
+changed files carry them; the corpus and agree counts drift with the tree's own
+sources, so quote the set).
 Closed so far: `redundant-unsafe` 807 → 0, `owning-release-leak` 602/286 → 0/0,
 `owning-release-double` 0/12 → 0/0, `prefer-inline-if` 213 → 0,
 `prefer-struct-with` 93/0 → 0/0, `prefer-conditional-expression` 25 → 0.
@@ -881,18 +886,11 @@ Records: §0k sessions 19–23; session 28.
 Work in the ranked order below; after **each** item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
 and re-rank — session 42's host cache makes the repeat measurement cheap.  Current set:
-**216 match / 450 differ / 51 host-rejected / 0 self-rejected of 717 files**
-(session 44 re-read after 3ad — 3r and 3s each move 30 files' first differences
-deeper, 3t flips `projects/stress/src/engine/interfaces.mt`, 3u flips 8 more
-(`examples/box2d/**` + `examples/raylib/core/3d_camera_free.mt`) and moves 42
-deeper, 3v flips 3 more (`examples/box2d/contact.mt`, `sensor_funnel.mt`,
-`std/noise.mt`) and moves 15 deeper, 3w flips 15 (the box2d family) and moves 30
-deeper, 3x flips 18 (the raylib family + `std/raylib/debug_console.mt`), 3y
-flips 34 (the raylib audio/models/textures families) and moves 66 deeper, 3aa
-flips 3 (`std/bitset.mt`, `std/bytes.mt`, `std/mem/pool.mt`) and moves 97
-deeper, 3ad flips 3 (`examples/raylib/core/random_sequence.mt`, `std/graph.mt`,
-`projects/mtc/src/mtc/lsp/utils.mt`) and moves 122 deeper; the count drifts
-with the tree's own sources and the tmp fixtures — quote the set).
+**286 match / 380 differ / 51 host-rejected / 0 self-rejected of 717 files**
+(batch-21 read, 2026-10-10; session 44's batches took it 216 → 286 — the
+batch-19–21 proc stages kept the set while moving it (stage A/B moved 70 files
+deeper, stage C 2 files deeper, stage D moved the dumps closer); the count
+drifts with the tree's own sources and the tmp fixtures — quote the set).
 
 **First-difference census (session 43) — the track's re-ranking.**  Bucketing
 the 585 differing files by their first difference (a throwaway classifier over
@@ -951,8 +949,10 @@ substituted `current_fn_return_type`, so `return null` takes
 shallower/newly differing/lost — **the full corpus 213 match / 453 differ** —
 and **3ad** (the declaring-module grouping for monomorphized methods):
 **3 flips**, 122 files deeper again, 0 shallower/newly differing/lost — **the
-full corpus 216 match / 450 differ**.  The current leaders (the post-3ad
-re-census):
+full corpus 216 match / 450 differ**.  The post-3ad census (session 44,
+historical — several rows have since landed: 3af/3ac/3ae in batches 1–2, 8b in
+batch 8, 9a in batch 9, 8A stages A–D in batches 19–21; the *current* leaders
+are the paragraph after item 8 above):
 
 | Files | First difference | Where |
 | --- | --- | --- |
@@ -2612,7 +2612,8 @@ Verify with `emit-c` timing plus the fixed point.
 
 ## Ledger and scoreboard
 
-Newest verified numbers (session 37 close, 2026-10-05) — re-measure only the
+Newest verified numbers (session 44 batch 21, 2026-10-10; per-gate dates in the
+rows) — re-measure only the
 classes a change can move, and only when the tree moved.  Target = the
 definition of done above.
 
