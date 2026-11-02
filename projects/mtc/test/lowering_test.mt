@@ -3902,6 +3902,96 @@ function test_unannotated_local_takes_the_refined_visible_type() -> void:
 
 
 @[test]
+function test_guard_local_hoists_foreign_argument_temps() -> void:
+    ## A `let x = <foreign call> else:` guard is a prepared position: the
+    ## argument's `str as cstr` temp hoists into the statement stream before the
+    ## storage local, and the local's value is the plain call — the host's
+    ## `prepare_expression_with_cleanups` (session 45 batch 5).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_guardhoist_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_source = <<-SRC
+        external
+
+        external function fetch(name: cstr) -> ptr[char]
+    SRC
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", raw_source):
+        return
+
+    var wrap_source = <<-SRC
+        import std.c.raw.lib as c
+
+        public foreign function fetch_name(name: str as cstr) -> cstr? = c.fetch
+    SRC
+    if not write_source_file(root.as_str(), "wrap.mt", wrap_source):
+        return
+
+    var source = <<-SRC
+        import wrap
+
+        function guarded(name: str) -> int:
+            let item = wrap.fetch_name(name) else:
+                return 0
+            return 1
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_foreign_arg_1\" :linkage_name \"__mt_foreign_arg_1\" :type (Types::Primitive :name \"cstr\") :value (IR::Call :callee \"mt_foreign_str_to_cstr_temp\""))
+    expect(text.contains_substring("(IR::LocalDecl :name \"item\" :linkage_name \"item\" :type (Types::Nullable :base (Types::Primitive :name \"cstr\")) :value (IR::Call :callee \"fetch\" :arguments ((IR::Name :name \"__mt_foreign_arg_1\""))
+    expect(not text.contains_substring("(IR::StmtExpr"))
+
+
+@[test]
+function test_propagate_let_materializes_the_success_local() -> void:
+    ## `let raw = make(flag)?` emits the hidden propagation storage, the failure
+    ## branch with the host's typed member chain (`data` nil, `failure` the arm
+    ## payload, `error` the payload's error type, and the analysis path on the
+    ## return), then a real local for `raw` initialized from the success
+    ## projection (session 45 batch 5).
+    var source = <<-SRC
+        struct Err:
+            code: int
+
+        function make(flag: bool) -> Result[ptr[int], Err]:
+            var value: int = 7
+            if flag:
+                return Result[ptr[int], Err].failure(error = Err(code = 1))
+            return Result[ptr[int], Err].success(value = ptr_of(value))
+
+        function use(flag: bool) -> int:
+            let raw = make(flag)?
+            unsafe:
+                return read(raw)
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"raw\" :linkage_name \"raw\" :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"int\"))) :value (IR::Member :receiver (IR::Member :receiver (IR::Member :receiver (IR::Name :name \"__mt_propagate_1\""))
+    expect(text.contains_substring(":member \"data\" :type nil) :member \"failure\" :type (Types::VariantArmPayload :name \"Result_failure\" :module_name \"std.result\")) :member \"error\" :type (Types::Struct :name \"Err\" :module_name \"main\"))))) :line nil :path"))
+
+
+@[test]
 function test_tuple_match_expression_nests_the_wildcard_else() -> void:
     ## The host nests a tuple match expression's if-chain into else bodies; the
     ## wildcard arm is the innermost else, so `return match t:` assigns the

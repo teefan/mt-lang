@@ -2780,7 +2780,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                             ast.Expr.expr_unary_op as un:
                                 if un.operator == "?":
                                     flush_all_defers(ctx, output)
-                                    lower_propagate_return(ctx, output, un.operand, r.line, "")
+                                    lower_propagate_return(ctx, output, un.operand, r.line, ctx.analysis.source_path)
                                     return
                             _:
                                 pass
@@ -2906,7 +2906,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                             unsafe:
                                 match read(init_val):
                                     ast.Expr.expr_unary_op as un:
-                                        lower_propagate_let(ctx, output, "_", un.operand)
+                                        lower_propagate_let(ctx, output, "_", un.operand, loc.line)
                                     _:
                                         pass
                             return
@@ -2930,7 +2930,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         match read(init_val):
                             ast.Expr.expr_unary_op as un:
                                 if un.operator == "?":
-                                    lower_propagate_let(ctx, output, loc.name, un.operand)
+                                    lower_propagate_let(ctx, output, loc.name, un.operand, loc.line)
                                     return
                             # `let x = <cast>(inner?)` — the `?` is nested inside a
                             # prefix cast.  Propagate the `?` into a hidden temp,
@@ -2940,7 +2940,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                     ast.Expr.expr_unary_op as inner_un:
                                         if inner_un.operator == "?":
                                             let tmp = fresh_c_temp_name(ctx, "cast_prop")
-                                            lower_propagate_let(ctx, output, tmp, inner_un.operand)
+                                            lower_propagate_let(ctx, output, tmp, inner_un.operand, 0)
                                             let tmp_id = alloc_ast_expr(ast.Expr.expr_identifier(name = tmp, line = 0, column = 0))
                                             let cast_expr = alloc_ast_expr(ast.Expr.expr_prefix_cast(target_type = pc.target_type, expression = tmp_id, line = pc.line, column = pc.column))
                                             let bc = utils.c_local_name(loc.name)
@@ -3312,7 +3312,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     match read(ex.expression):
                         ast.Expr.expr_unary_op as un:
                             if un.operator == "?":
-                                lower_propagate_let(ctx, output, "_", un.operand)
+                                lower_propagate_let(ctx, output, "_", un.operand, 0)
                                 return
                         _:
                             pass
@@ -3489,14 +3489,36 @@ function local_decl_type(ctx: ref[LowerCtx], declared: ptr[ast.TypeRef]?, value:
 function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, else_binding: Option[str], value: ptr[ast.Expr]?, else_body: ptr[ast.Stmt]?, line: ptr_uint) -> void:
     let value_ptr = value else:
         fatal(c"lowering: guard local requires an initializer")
+    # The initializer is a prepared position: a foreign call's argument/cleanup
+    # temporaries hoist into the statement stream before the storage local (the
+    # host's `prepare_expression_with_cleanups` with `allow_root_statement_foreign`).
+    let hoist_base = output.len()
+    let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
+    ctx.hoist_root_ep = value_ptr
     let value_ir = lower_expr(ctx, value_ptr)
-    let storage_ty = qualify_type(ctx, ir_expr_type(value_ir))
+    let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
+    emit_hoist_setup(output, hoist_base, hoist_collected)
+    # The storage type is the host's inference of the initializer
+    # (`infer_expression_type`): a foreign wrapper call's declared return
+    # (`cstr?`) rather than the simple mapping's raw `ptr[char]` call type.
+    var storage_ty = qualify_type(ctx, ir_expr_type(value_ir))
+    unsafe:
+        match read(value_ptr):
+            ast.Expr.expr_call as call:
+                match foreign_wrapper_call_return_type(ctx, call.callee):
+                    Option.some as declared:
+                        storage_ty = declared.value
+                    Option.none:
+                        pass
+            _:
+                pass
 
     # Hidden storage local holding the full Option/Result/nullable value.  The
     # host names it after the user binding (`memory`) so the C local name is
     # stable; `_` and discarded bindings get a fresh temp.
     let storage_c = if name == "_": fresh_c_temp_name(ctx, "let_else_discard") else: utils.c_local_name(name)
     output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = line, source_path = ctx.analysis.source_path))
+    append_hoist_cleanups(output, hoist_collected)
     let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = Option[bool].some(value = false)))
 
     let kind = guard_storage_kind(ctx, storage_ty)
@@ -3594,9 +3616,7 @@ function lower_propagate_return(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
             _:
                 pass
         if kind == "result":
-            let data_field = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = ctx.void_ty))
-            let failure_struct = alloc_expr(ir.Expr.expr_member(receiver = data_field, member = "failure", ty = ctx.void_ty))
-            let error_member = alloc_expr(ir.Expr.expr_member(receiver = failure_struct, member = "error", ty = ctx.void_ty))
+            let (error_member, _) = guard_failure_projection(ctx, storage_ty, storage_ref)
             if is_task_ret:
                 var result_fail_fields = vec.Vec[ir.AggregateField].create()
                 result_fail_fields.push(ir.AggregateField(name = "error", value = error_member))
@@ -3634,7 +3654,7 @@ function lower_propagate_return(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
 
 
 
-function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, operand: ptr[ast.Expr]) -> void:
+function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, operand: ptr[ast.Expr], line: ptr_uint) -> void:
     # The host's normalization hoists an embedded await out of a `?` operand
     # into a `__mt_async_tmp_<N>` local before the propagation lowers it
     # (`normalize_async_expression`'s AwaitExpr case).
@@ -3699,21 +3719,7 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
             # Extract the error from the storage's failure arm via
             # storage_ref.data.failure.error (three-level member access through
             # the variant's data union and failure arm struct).
-            let data_field = alloc_expr(ir.Expr.expr_member(
-                receiver = storage_ref,
-                member = "data",
-                ty = ctx.void_ty,
-            ))
-            let failure_struct = alloc_expr(ir.Expr.expr_member(
-                receiver = data_field,
-                member = "failure",
-                ty = ctx.void_ty,
-            ))
-            let error_member = alloc_expr(ir.Expr.expr_member(
-                receiver = failure_struct,
-                member = "error",
-                ty = ctx.void_ty,
-            ))
+            let (error_member, _) = guard_failure_projection(ctx, storage_ty, storage_ref)
             if is_task_ret:
                 # Construct a Task struct: all vtable fields zeroed, value
                 # field carries the failure Result variant literal.
@@ -3763,7 +3769,7 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
             ))
         async_complete_statements(ctx, ref_of(fail_body), ctx.async_result_ty, Option[ptr[ir.Expr]].none)
     else:
-        fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = 0, source_path = ""))
+        fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = 0, source_path = ctx.analysis.source_path))
 
     # `if (<failure condition>) { return storage; }`
     let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
@@ -3781,8 +3787,13 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
         async_register_local_field(ctx, name, afield, acname, success_ty)
         output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = afield, ty = success_ty)), operator = "=", value = success_val))
         return
-    # No second local: reads project the success value out of the propagation temp.
-    ctx.locals.push(LocalBinding(name = name, c_name = storage_c, ty = success_ty, pointer = Option[bool].some(value = false), projection = guard_binding_projection(kind, storage_ty)))
+    # The host materializes the success value into a real local named after the
+    # binding (`let raw_value = build_raw_value(value)?`), initialized from the
+    # propagation temp's projection; reads then take the plain local.
+    let c_name = utils.c_local_name(name)
+    let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
+    output.push(ir.Stmt.stmt_local(name = c_name, linkage_name = c_name, ty = success_ty, value = success_val, line = line, source_path = ctx.analysis.source_path))
+    ctx.locals.push(LocalBinding(name = name, c_name = c_name, ty = success_ty, pointer = Option[bool].some(value = false)))
 
 
 ## Lower `target = expr?` (assignment form of `?` propagation).  Mirrors
@@ -3836,9 +3847,7 @@ function lower_propagate_assign(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
             _:
                 pass
         if kind == "result":
-            let data_field = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = ctx.void_ty))
-            let failure_struct = alloc_expr(ir.Expr.expr_member(receiver = data_field, member = "failure", ty = ctx.void_ty))
-            let error_member = alloc_expr(ir.Expr.expr_member(receiver = failure_struct, member = "error", ty = ctx.void_ty))
+            let (error_member, _) = guard_failure_projection(ctx, storage_ty, storage_ref)
             if is_task_ret:
                 var result_fail_fields = vec.Vec[ir.AggregateField].create()
                 result_fail_fields.push(ir.AggregateField(name = "error", value = error_member))
@@ -3872,7 +3881,7 @@ function lower_propagate_assign(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
             ))
         async_complete_statements(ctx, ref_of(fail_body), ctx.async_result_ty, Option[ptr[ir.Expr]].none)
     else:
-        fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = 0, source_path = ""))
+        fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = 0, source_path = ctx.analysis.source_path))
 
     let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
     output.push(ir.Stmt.stmt_if(condition = cond, then_body = fail_body.as_span(), else_body = Option[span[ir.Stmt]].none))
@@ -24598,7 +24607,7 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
         match read(hv):
             ast.Expr.expr_unary_op as u:
                 if u.operator == "?":
-                    lower_propagate_let(ctx, output, loc_name, u.operand)
+                    lower_propagate_let(ctx, output, loc_name, u.operand, line)
                     return
             _:
                 pass
