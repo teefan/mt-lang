@@ -3704,3 +3704,216 @@ function test_ref_argument_bridge_casts_a_pointer_receiver() -> void:
     defer: dump.release()
     let text = dump.as_str()
     expect(text.contains_substring("(IR::Cast :target_type (Types::Generic :name \"ref\" :arguments ((Types::Struct :name \"S\" :module_name \"main\"))) :expression (IR::Name :name \"this\""))
+
+
+@[test]
+function test_foreign_in_boundary_projects_to_const_ptr() -> void:
+    ## An `in value: T as const_ptr[void]` argument takes the host's
+    ## `const_pointer_to(parameter.type)` address type and is then projected to
+    ## the declared boundary — `Cast(const_ptr[void], AddressOf(const_ptr[T]))`
+    ## (session 45, item 8a).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_inproj_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_source = <<-SRC
+        external
+
+        external function take(p: const_ptr[void]) -> void
+    SRC
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", raw_source):
+        return
+
+    var wrap_source = <<-SRC
+        import std.c.raw.lib as c
+
+        public foreign function take_value(in value: int as const_ptr[void]) -> void = c.take
+    SRC
+    if not write_source_file(root.as_str(), "wrap.mt", wrap_source):
+        return
+
+    var source = <<-SRC
+        import wrap
+
+        function use(v: int) -> void:
+            wrap.take_value(v)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Cast :target_type (Types::Generic :name \"const_ptr\" :arguments ((Types::Primitive :name \"void\"))) :expression (IR::AddressOf :expression (IR::Name :name \"v\" :type (Types::Primitive :name \"int\") :pointer false) :type (Types::Generic :name \"const_ptr\" :arguments ((Types::Primitive :name \"int\"))))"))
+    expect(not text.contains_substring(":type (Types::Primitive :name \"ptr[void]\")"))
+
+
+@[test]
+function test_foreign_plain_boundary_projects_the_pointer() -> void:
+    ## A plain `data: ptr[T] as const_ptr[void]` argument keeps its natural
+    ## `AddressOf(ptr[T])` type and projects to the boundary
+    ## (`update_audio_stream(stream, ptr_of(buffer[0]), N)`), not a bare address
+    ## with no cast (session 45, item 8a).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_plainproj_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_source = <<-SRC
+        external
+
+        external function update(data: const_ptr[void]) -> void
+    SRC
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", raw_source):
+        return
+
+    var wrap_source = <<-SRC
+        import std.c.raw.lib as c
+
+        public foreign function update_data[T](data: ptr[T] as const_ptr[void]) -> void = c.update
+    SRC
+    if not write_source_file(root.as_str(), "wrap.mt", wrap_source):
+        return
+
+    var source = <<-SRC
+        import wrap
+
+        function use(buf: array[float, 4]) -> void:
+            wrap.update_data(ptr_of(buf[0]))
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Cast :target_type (Types::Generic :name \"const_ptr\" :arguments ((Types::Primitive :name \"void\"))) :expression (IR::AddressOf :expression (IR::CheckedIndex"))
+    expect(text.contains_substring(":type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"float\"))"))
+
+
+@[test]
+function test_unannotated_local_takes_the_wrapper_return_type() -> void:
+    ## A local inferred from a simple foreign wrapper call takes the wrapper's
+    ## declared return type (`cstr?`) while the lowered call keeps the raw
+    ## declaration's return (`ptr[char]`, the 3j rule) — session 45.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_wrapret_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_source = <<-SRC
+        external
+
+        external function getenv(name: cstr) -> ptr[char]
+    SRC
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", raw_source):
+        return
+
+    var wrap_source = <<-SRC
+        import std.c.raw.lib as c
+
+        public foreign function env(name: str as cstr) -> cstr? = c.getenv
+    SRC
+    if not write_source_file(root.as_str(), "wrap.mt", wrap_source):
+        return
+
+    var source = <<-SRC
+        import wrap
+
+        function probe(name: str) -> int:
+            let configured = wrap.env(name)
+            if configured != null:
+                return 1
+            return 0
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"configured\" :linkage_name \"configured\" :type (Types::Nullable :base (Types::Primitive :name \"cstr\")) :value (IR::Call :callee \"getenv\""))
+    expect(text.contains_substring(":type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"char\")))"))
+
+
+@[test]
+function test_unannotated_local_takes_the_refined_visible_type() -> void:
+    ## Inside a null guard, `let q = p` takes the binding's *visible* type
+    ## (`ptr[int]`) — the host's `lookup_value` refinement — while the read
+    ## still carries the storage `Nullable` (session 45).
+    var source = <<-SRC
+        function narrow(p: ptr[int]?) -> int:
+            if p != null:
+                let q = p
+                unsafe:
+                    return read(q)
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"q\" :linkage_name \"q\" :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"int\"))) :value (IR::Name :name \"p\" :type (Types::Nullable :base (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"int\"))))"))
+
+
+@[test]
+function test_tuple_match_expression_nests_the_wildcard_else() -> void:
+    ## The host nests a tuple match expression's if-chain into else bodies; the
+    ## wildcard arm is the innermost else, so `return match t:` assigns the
+    ## default only when no pattern matches (session 45).
+    var source = <<-SRC
+        function pick(a: char, b: char) -> int:
+            let t = (a, b)
+            return match t:
+                ('x', 'y'): 1
+                _: 2
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring(":then_body ((IR::Assignment :target (IR::Name :name \"__mt_match_expr_1\" :type (Types::Primitive :name \"int\") :pointer false) :operator \"=\" :value (IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"int\")))) :else_body ((IR::Assignment :target (IR::Name :name \"__mt_match_expr_1\" :type (Types::Primitive :name \"int\") :pointer false) :operator \"=\" :value (IR::IntegerLiteral :value 2 :type (Types::Primitive :name \"int\"))))"))

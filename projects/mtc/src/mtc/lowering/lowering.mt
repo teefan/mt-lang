@@ -94,6 +94,10 @@ struct ForeignInfo:
     ## The module that declares the foreign function — an inline mapping's
     ## aliases resolve against this module's imports, not the caller's.
     owner_module: str
+    ## The wrapper's type parameters, inferred from the call's arguments so a
+    ## `T as const_ptr[void]` boundary resolves to the specialized type (the
+    ## host's `binding.type_substitutions`).
+    type_params: span[ast.TypeParam]
 
 
 ## A simple mapping's callee as its receiver expression and member name
@@ -3010,12 +3014,38 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         # Inference mirrors `infer_expression_type` exactly: an
                         # identifier takes its binding's *visible* type (the
                         # host's cache shortcut skips identifiers — refinement
-                        # and unwrapping live in `lookup_value`), every other
-                        # expression takes the analyzer's recorded type.
+                        # and unwrapping live in `lookup_value`), and a foreign
+                        # wrapper call takes the wrapper's declared return (a
+                        # simple mapping's lowered call carries the raw
+                        # declaration's return instead — `ptr[char]` for a
+                        # `cstr?` wrapper, the 3j rule).  Everything else keeps
+                        # the lowered value's type, which carries the
+                        # module-qualified nominal.
                         unsafe:
                             match read(ptr[ast.Expr]<-init):
-                                ast.Expr.expr_identifier:
-                                    ty = qualify_type(ctx, fallback_type(ctx, ptr[ast.Expr]<-init))
+                                ast.Expr.expr_identifier as ident:
+                                    let binding_ty = qualify_type(ctx, fallback_type(ctx, ptr[ast.Expr]<-init))
+                                    var ident_ty = binding_ty
+                                    match analyzer.flow_type_at_position(ref_of(ctx.analysis), ident.name, ident.line, ident.column):
+                                        Option.some as refined:
+                                            # A refinement is a narrowing of the
+                                            # binding's own type (its nullable's
+                                            # base), never a different nominal: a
+                                            # record can carry a stale field type
+                                            # the lowering resolved correctly.
+                                            let visible_ty = qualify_type(ctx, substitute_type_params(ctx, refined.value, ref_of(ctx.type_substitution)))
+                                            let narrowed = if types.is_nullable_type(binding_ty): types.unwrap_nullable(binding_ty) else: binding_ty
+                                            if types.type_equals(visible_ty, narrowed):
+                                                ident_ty = visible_ty
+                                        Option.none:
+                                            pass
+                                    ty = ident_ty
+                                ast.Expr.expr_call as call:
+                                    match foreign_wrapper_call_return_type(ctx, call.callee):
+                                        Option.some as declared:
+                                            ty = declared.value
+                                        Option.none:
+                                            ty = qualify_type(ctx, ir_expr_type(value_expr))
                                 _:
                                     ty = qualify_type(ctx, ir_expr_type(value_expr))
                 # A float, integer, bare string or `null` literal in a declared
@@ -9740,6 +9770,51 @@ function infer_type_param_from_args(ctx: ref[LowerCtx], param_name: str, params:
     return Option[types.Type].none
 
 
+## Infer a generic foreign wrapper's call-site type substitution from the
+## arguments — the host's `binding.type_substitutions` at a foreign call.  A
+## `T as const_ptr[void]` boundary then resolves to the argument's specialized
+## type instead of leaving the type parameter unbound.
+function foreign_call_substitution(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument]) -> map_mod.Map[str, types.Type]:
+    var sub = map_mod.Map[str, types.Type].create()
+    var tpi: ptr_uint = 0
+    while tpi < info.type_params.len:
+        var tp: ast.TypeParam
+        unsafe:
+            tp = read(info.type_params.data + tpi)
+        if not tp.is_lifetime:
+            match infer_foreign_type_param_from_args(ctx, tp.name, info.params, args):
+                Option.some as inferred:
+                    sub.set(tp.name, inferred.value)
+                Option.none:
+                    pass
+        tpi += 1
+    return sub
+
+
+function infer_foreign_type_param_from_args(ctx: ref[LowerCtx], param_name: str, params: span[ast.ForeignParam], args: span[ast.Argument]) -> Option[types.Type]:
+    var i: ptr_uint = 0
+    while i < params.len and i < args.len:
+        var p: ast.ForeignParam
+        var a: ast.Argument
+        unsafe:
+            p = read(params.data + i)
+            a = read(args.data + i)
+        var arg_ty = expr_type(ctx, a.arg_value)
+        if types.is_error(arg_ty) or types.is_void(arg_ty):
+            arg_ty = fallback_type_raw(ctx, a.arg_value)
+        arg_ty = substitute_type_params(ctx, arg_ty, ref_of(ctx.type_substitution))
+        arg_ty = expand_generic_arg_type(ctx, arg_ty)
+        if not types.is_error(arg_ty) and not types.is_void(arg_ty):
+            var ptre = p.param_type
+            match unify_type_param(param_name, ptre, arg_ty):
+                Option.some as found:
+                    return Option[types.Type].some(value = found.value)
+                Option.none:
+                    pass
+        i += 1
+    return Option[types.Type].none
+
+
 ## Structurally match a declared parameter type-ref against a concrete argument
 ## type, binding `param_name` when it is found.  Peels matching pointer/span/
 ## nullable constructors off both sides.
@@ -13965,6 +14040,13 @@ function lower_task_expression_as_root_proc(ctx: ref[LowerCtx], expr_ast: ptr[as
 ## literal); str-variable projection (runtime str->cstr) and in/out/inout/
 ## consuming modes arrive later.
 function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    # The host lowers a generic wrapper under its call-site specialization
+    # (`binding.type_substitutions`), so `T as const_ptr[void]` boundary
+    # projections see the concrete type.
+    var saved_sub = ctx.type_substitution
+    if info.type_params.len > 0:
+        ctx.type_substitution = foreign_call_substitution(ctx, info, args)
+    defer: ctx.type_substitution = saved_sub
     if not info.simple:
         return lower_inline_foreign_mapping(ctx, info, args, call_ep)
     var ir_args = vec.Vec[ir.Expr].create()
@@ -14754,6 +14836,134 @@ function foreign_param_context_type(ctx: ref[LowerCtx], info: ForeignInfo, param
     return ctx_ty
 
 
+## The declared return type of a foreign wrapper call, resolved in its
+## declaring module — the host's `infer_expression_type` for a call.  A simple
+## mapping's lowered call carries the raw declaration's return type instead
+## (`ptr[char]` for a `cstr?` wrapper, the 3j rule), so a local declaration
+## inferred from the call needs this.  None when the callee is not a wrapper.
+function foreign_wrapper_call_return_type(ctx: ref[LowerCtx], callee: ptr[ast.Expr]) -> Option[types.Type]:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                let fp = ctx.foreign_map.get(id.name)
+                if fp != null:
+                    return Option[types.Type].some(value = read(fp).return_ty)
+                return Option[types.Type].none
+            ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as id2:
+                        let mod_ptr = ctx.analysis.imports.get(id2.name) else:
+                            return Option[types.Type].none
+                        match imported_foreign_call(ctx, read(mod_ptr), ma.member_name):
+                            Option.some as fi:
+                                return Option[types.Type].some(value = fi.value.return_ty)
+                            Option.none:
+                                return Option[types.Type].none
+                    _:
+                        return Option[types.Type].none
+            _:
+                return Option[types.Type].none
+
+
+## The resolved `as` boundary type of a foreign wrapper parameter, in the
+## module that declares the wrapper — the host's `parameter.boundary_type`
+## (`resolve_type_ref` in the owner).
+function foreign_boundary_type(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.ForeignParam) -> types.Type:
+    match param.boundary_type:
+        Option.some as boundary:
+            var saved_module = ctx.module_name
+            var saved_analysis = ctx.analysis
+            if info.owner_module.len > 0 and not info.owner_module.equal(ctx.module_name):
+                match find_imported_analysis(ctx, info.owner_module):
+                    Option.some as owner_a:
+                        ctx.module_name = info.owner_module
+                        ctx.analysis = owner_a.value
+                    Option.none:
+                        pass
+            var bt_ref = boundary.value
+            let bt = qualify_type(ctx, resolve_type_ref(ctx, ptr_of(bt_ref)))
+            ctx.module_name = saved_module
+            ctx.analysis = saved_analysis
+            return bt
+        Option.none:
+            return types.Type.ty_error
+
+
+## True when a value of type `actual` may be projected to the foreign boundary
+## `expected` by an `IR::Cast` — the pointer/nullable/cstr subset of the host's
+## `foreign_identity_projection_cast_compatible?`.
+function foreign_projection_cast_compatible(actual: types.Type, expected: types.Type) -> bool:
+    if types.type_equals(actual, expected):
+        return true
+    match actual:
+        types.Type.ty_nullable as na:
+            match expected:
+                types.Type.ty_nullable as ne:
+                    return foreign_projection_cast_compatible(unsafe: read(na.base), unsafe: read(ne.base))
+                _:
+                    return false
+        _:
+            pass
+    match expected:
+        types.Type.ty_nullable as ne:
+            return foreign_projection_cast_compatible(actual, unsafe: read(ne.base))
+        _:
+            pass
+    let actual_ptr = types.is_pointer_type(actual)
+    let expected_ptr = types.is_pointer_type(expected)
+    if types.type_equals(actual, types.primitive("cstr")) and expected_ptr:
+        return types.is_char_type(types.pointer_element(expected))
+    if actual_ptr and types.type_equals(expected, types.primitive("cstr")):
+        return types.is_char_type(types.pointer_element(actual))
+    if actual_ptr and expected_ptr:
+        # A const pointer never projects to a mutable one.
+        match actual:
+            types.Type.ty_generic as ag:
+                if ag.name == "const_ptr":
+                    match expected:
+                        types.Type.ty_generic as eg:
+                            if eg.name == "ptr" or eg.name == "own":
+                                return false
+                        _:
+                            pass
+            _:
+                pass
+        if is_void_pointer_type(actual) or is_void_pointer_type(expected):
+            return true
+        return foreign_projection_cast_compatible(types.pointer_element(actual), types.pointer_element(expected))
+    # A `void*` and an opaque handle share the C representation.
+    if is_void_pointer_type(actual):
+        match expected:
+            types.Type.ty_opaque:
+                return true
+            _:
+                pass
+    if is_void_pointer_type(expected):
+        match actual:
+            types.Type.ty_opaque:
+                return true
+            _:
+                pass
+    return false
+
+
+function is_void_pointer_type(t: types.Type) -> bool:
+    return types.is_pointer_type(t) and types.is_void(types.pointer_element(t))
+
+
+## The host's `foreign_identity_projection_expression`: a value at a foreign
+## boundary keeps its type when equal to the boundary, is `IR::Cast` when the
+## types are projection-compatible, and is otherwise left unchanged (the self's
+## type resolution is coarser than the host's in a few nominal corners).
+function project_foreign_boundary(ctx: ref[LowerCtx], value: ptr[ir.Expr], boundary: types.Type) -> ptr[ir.Expr]:
+    let value_ty = ir_expr_type(value)
+    if types.type_equals(value_ty, boundary):
+        return value
+    if foreign_projection_cast_compatible(value_ty, boundary):
+        return alloc_expr(ir.Expr.expr_cast(target_type = boundary, expression = value, ty = boundary))
+    return value
+
+
 function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.ForeignParam, arg: ptr[ast.Expr]) -> ptr[ir.Expr]:
     match param.boundary_type:
         Option.some as boundary:
@@ -14793,18 +15003,35 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
                                 arguments = single_expr_span(lowered_str),
                                 ty = types.primitive("cstr"),
                             ))
-            # For `in value: int as const_ptr[void]`, the lowered value is a
-            # plain local integer but the boundary type is a C pointer.
-            # Take the address so we pass a pointer, not the value itself.
+            # For `in value: T as const_ptr[void]` the host takes the
+            # argument's address with `const_pointer_to(parameter.type)` and
+            # then projects it to the declared boundary type — the host's
+            # `lower_foreign_in_argument_value` + `lower_addr_expression`.
             if param.param_mode == ast.ForeignParamMode.fmode_in:
                 let lowered_val = lower_expr(ctx, arg)
+                let in_ty = foreign_param_context_type(ctx, info, param)
                 if is_null_ir_expr(lowered_val):
-                    return null_literal_to_context_type(arg, foreign_param_context_type(ctx, info, param), lowered_val)
-                let arg_ty = ir_expr_type(lowered_val)
-                if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty) and not types.is_ref_type(arg_ty):
-                    return alloc_expr(ir.Expr.expr_address_of(expression = lowered_val, ty = types.primitive("ptr[void]")))
-                return lowered_val
-            return lower_expr(ctx, arg)
+                    return null_literal_to_context_type(arg, in_ty, lowered_val)
+                let in_target = types.Type.ty_generic(name = "const_ptr", args = sp_type(in_ty))
+                var address: ptr[ir.Expr]
+                match addr_operand_expression(lowered_val):
+                    Option.some as op:
+                        let op_ty = ir_expr_type(op.value)
+                        if types.type_equals(op_ty, in_target):
+                            address = op.value
+                        else:
+                            address = alloc_expr(ir.Expr.expr_cast(target_type = in_target, expression = op.value, ty = in_target))
+                    Option.none:
+                        address = alloc_expr(ir.Expr.expr_address_of(expression = lowered_val, ty = in_target))
+                return project_foreign_boundary(ctx, address, foreign_boundary_type(ctx, info, param))
+            # A plain `as` boundary: a bare literal takes the parameter's
+            # declared type, then the value projects to the declared boundary —
+            # the host's `lower_foreign_argument_value` fallback +
+            # `foreign_identity_projection_expression`.
+            let lowered_plain = lower_expr(ctx, arg)
+            let ctx_ty = foreign_param_context_type(ctx, info, param)
+            let typed = literal_value_to_context_type(arg, ctx_ty, lowered_plain)
+            return project_foreign_boundary(ctx, typed, foreign_boundary_type(ctx, info, param))
         Option.none:
             let lowered = lower_expr(ctx, arg)
             # `out`/`inout` pass the address of the argument's storage slot, with
@@ -14844,12 +15071,10 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
                 # address-of with `pointer_to(slot_type)` — `ptr[T]`, not a
                 # `ptr[void]` placeholder.
                 return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = slot_ptr_ty))
-            # A plain `in` parameter is passed as a C const pointer: hand the
-            # callee the argument's address, unless it is already a pointer.
-            # (`foreign function f(in value: T) = c.f` — the C signature takes
-            # `const T*`, and the address is typed `const_ptr[T]` — the host's
-            # `lower_foreign_in_argument_value` with
-            # `const_pointer_to(parameter.type)`.)
+            # A bare `in` parameter (no `as`) has the host's implicit boundary
+            # `const_pointer_to(parameter.type)` (`foreign_parameter_boundary_type`):
+            # hand the callee the argument's address, unless it is already a
+            # pointer.
             if param.param_mode == ast.ForeignParamMode.fmode_in:
                 if is_null_ir_expr(lowered):
                     # The host types the null with the parameter's declared
@@ -14869,18 +15094,17 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
                 if not is_null_ir_expr(lowered):
                     let arg_ty = ir_expr_type(lowered)
                     if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty):
-                        return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
+                        let borrowed = alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
+                        return project_foreign_boundary(ctx, borrowed, foreign_boundary_type(ctx, info, param))
             # Every bare literal takes the parameter's declared type — the
             # host's `lower_contextual_expression` (int/float/string/null all
             # retype, not just `null`), resolved in the param's declaring
-            # module (session 44, items 3ag/3ae/3fc).
-            # A boundary *cast* for a pointer-type mismatch is the host's, but
-            # only in some shapes — a blanket cast regressed 114 files
-            # (`const_ptr_of(buffer[0])` as `const_ptr[void]` wants it; a
-            # `ptr[ubyte]` argument at a `ptr[void]` boundary does not, and
-            # already has its own cast).  Item 8a is left open with that
-            # evidence.
-            return literal_value_to_context_type(arg, foreign_param_context_type(ctx, info, param), lowered)
+            # module (session 44, items 3ag/3ae/3fc).  The lowered value is
+            # then projected to the declared boundary — the host's
+            # `foreign_identity_projection_expression` (item 8a).
+            let ctx_ty = foreign_param_context_type(ctx, info, param)
+            let typed = literal_value_to_context_type(arg, ctx_ty, lowered)
+            return project_foreign_boundary(ctx, typed, foreign_boundary_type(ctx, info, param))
 
 
 function boundary_is_cstr(boundary: ast.TypeRef) -> bool:
@@ -15038,6 +15262,7 @@ function collect_foreign_functions(ctx: ref[LowerCtx], decls: span[ast.Decl]) ->
                     mapping = ff.mapping,
                     simple = ff_simple,
                     owner_module = ctx.module_name,
+                    type_params = ff.type_params,
                 ))
             _:
                 pass
@@ -15075,6 +15300,7 @@ function imported_foreign_call(ctx: ref[LowerCtx], target_module: str, name: str
                         mapping = ff.mapping,
                         simple = ff_simple,
                         owner_module = target_module,
+                        type_params = ff.type_params,
                     ))
             _:
                 pass
@@ -15115,6 +15341,7 @@ function imported_extern_call(ctx: ref[LowerCtx], target_module: str, name: str)
                         mapping = null,
                         simple = true,
                         owner_module = target_module,
+                        type_params = ef.type_params,
                     ))
             _:
                 pass
@@ -17404,37 +17631,39 @@ function lower_str_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
 
 ## Lower a match expression over a tuple scrutinee: for each arm, compare the
 ## tuple element-wise (`scrut._0 == e0 && scrut._1 == e1 && ...`) and assign the
-## arm value on match.  Independent if-thens suffice because tuple-literal
-## patterns are mutually exclusive; the wildcard arm assigns unconditionally
-## first so a later matching arm overrides it.
+## arm value on match.  The host nests the chain into else bodies (the wildcard
+## arm is the innermost else), so exactly one arm's assignment executes.
 function lower_tuple_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], scrutinee_ty: types.Type, arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
-    var wildcard_val: ptr[ir.Expr]? = null
+    # The wildcard arm (built first, as the host does) is the chain's else body.
+    var else_body = vec.Vec[ir.Stmt].create()
     var ai: ptr_uint = 0
     while ai < arms.len:
         var arm: ast.MatchExprArm
         unsafe:
             arm = read(arms.data + ai)
         if arm.pattern == null:
-            wildcard_val = lower_expr(ctx, arm.value)
+            let value = lower_expr(ctx, arm.value)
+            else_body.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = value))
         ai += 1
 
-    if wildcard_val != null:
-        output.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = wildcard_val))
-
-    ai = 0
-    while ai < arms.len:
+    # Construct from the tail backwards so each arm's else body is the
+    # already-built remainder of the chain (the host's non_wildcard.reverse_each).
+    var idx = arms.len
+    while idx > 0:
+        idx -= 1
         var arm: ast.MatchExprArm
         unsafe:
-            arm = read(arms.data + ai)
+            arm = read(arms.data + idx)
         let pattern = arm.pattern
-        if pattern == null:
-            ai += 1
-            continue
-        let cond = tuple_pattern_condition(ctx, scrutinee_expr, scrutinee_ty, unsafe: read(pattern))
-        var assign = vec.Vec[ir.Stmt].create()
-        assign.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = lower_expr(ctx, arm.value)))
-        output.push(ir.Stmt.stmt_if(condition = cond, then_body = assign.as_span(), else_body = Option[span[ir.Stmt]].none))
-        ai += 1
+        if pattern != null:
+            var then_body = vec.Vec[ir.Stmt].create()
+            then_body.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = lower_expr(ctx, arm.value)))
+            let cond = tuple_pattern_condition(ctx, scrutinee_expr, scrutinee_ty, unsafe: read(pattern))
+            var chain = vec.Vec[ir.Stmt].create()
+            chain.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = else_body.as_span())))
+            else_body = chain
+
+    append_span_stmts(output, else_body.as_span())
 
 
 ## Lower a tuple-literal match statement to an if / else-if chain of
