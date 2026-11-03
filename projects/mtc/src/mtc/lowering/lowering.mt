@@ -15632,7 +15632,11 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
             # `foreign_identity_projection_expression`.
             let lowered_plain = lower_expr(ctx, arg)
             let ctx_ty = foreign_param_context_type(ctx, info, param)
-            let typed = literal_value_to_context_type(ctx, arg, ctx_ty, lowered_plain)
+            var typed = literal_value_to_context_type(ctx, arg, ctx_ty, lowered_plain)
+            # The host's `lower_contextual_expression` also applies the numeric
+            # constant cast at a foreign boundary (`set_render_draw_color(…,
+            # ALPHA_OPAQUE)` with a `ubyte` parameter casts the `int` const).
+            typed = contextual_numeric_cast(ctx, arg, typed, ctx_ty, false, false)
             return project_foreign_boundary(ctx, typed, foreign_boundary_type(ctx, info, param))
         Option.none:
             let lowered = lower_expr(ctx, arg)
@@ -15705,7 +15709,8 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
             # then projected to the declared boundary — the host's
             # `foreign_identity_projection_expression` (item 8a).
             let ctx_ty = foreign_param_context_type(ctx, info, param)
-            let typed = literal_value_to_context_type(ctx, arg, ctx_ty, lowered)
+            var typed = literal_value_to_context_type(ctx, arg, ctx_ty, lowered)
+            typed = contextual_numeric_cast(ctx, arg, typed, ctx_ty, false, false)
             return project_foreign_boundary(ctx, typed, foreign_boundary_type(ctx, info, param))
 
 
@@ -24325,6 +24330,35 @@ function try_evaluate_const_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Optio
                     Option.some as rv:
                         return Option[ConstValue].some(value = rv.value)
                     Option.none:
+                        pass
+                # An imported module constant (`alias.CONST`): evaluate its
+                # initializer in the declaring module's context — the host's
+                # `resolve_imported_module_const_value` (`sdl.ALPHA_OPAQUE` at a
+                # `ubyte` foreign boundary).
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as rid:
+                        let target_ptr = ctx.analysis.imports.get(rid.name)
+                        if target_ptr != null:
+                            match find_imported_analysis(ctx, unsafe: read(target_ptr)):
+                                Option.some as owner:
+                                    var saved_module = ctx.module_name
+                                    var saved_analysis = ctx.analysis
+                                    ctx.module_name = owner.value.module_name
+                                    ctx.analysis = owner.value
+                                    var imported_cv = Option[ConstValue].none
+                                    let chain = ctx.analysis.const_values.get(ma.member_name)
+                                    if chain != null:
+                                        imported_cv = try_evaluate_const_expr(ctx, unsafe: read(chain))
+                                    ctx.module_name = saved_module
+                                    ctx.analysis = saved_analysis
+                                    match imported_cv:
+                                        Option.some as cv:
+                                            return Option[ConstValue].some(value = cv.value)
+                                        Option.none:
+                                            pass
+                                Option.none:
+                                    pass
+                    _:
                         pass
                 # If the receiver is an enum type, look up the member value
                 # from the enum's backing integer.

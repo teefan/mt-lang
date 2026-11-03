@@ -4896,3 +4896,24 @@ function test_local_name_keeps_a_trailing_underscore() -> void:
     defer: dump.release()
     let text = dump.as_str()
     expect(text.contains_substring("(IR::LocalDecl :name \"event_\" :linkage_name \"event_\""))
+
+
+@[test]
+function test_foreign_boundary_casts_a_numeric_const() -> void:
+    ## The host's `lower_contextual_expression` applies the numeric constant cast
+    ## at a foreign boundary: `sdl.ALPHA_OPAQUE` (an `int` const) passed to a
+    ## `ubyte` parameter carries `Cast(ubyte, Name)` (session 45 batch 16).
+    var source = <<-SRC
+        import std.sdl3 as sdl
+
+        function main() -> int:
+            let renderer = zero[sdl.Renderer]
+            let _ = sdl.set_render_draw_color(renderer, 0, 0, 0, sdl.ALPHA_OPAQUE)
+            return 0
+    SRC
+    var module_root = test_module_root()
+    defer: module_root.release()
+    var dump = lower_dump_for_source_roots(source, module_root.as_str())
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Cast :target_type (Types::Primitive :name \"ubyte\") :expression (IR::Name :name \"std_sdl3_ALPHA_OPAQUE\""))
