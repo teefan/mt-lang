@@ -6384,6 +6384,56 @@ function fresh_c_temp_name(ctx: ref[LowerCtx], prefix: str) -> str:
 #  Expression lowering
 # =============================================================================
 
+## The host's prepared `and`/`or` shape
+## (`prepare_binary_expression_for_inline_lowering`): when either operand's
+## lowering produces setup statements, hoist a `__mt_and_N`/`__mt_or_N` result
+## local, store the left value, and guard the right's setup + assignment with
+## `if result` (and) or `if not result` (or).  With no setup on either side the
+## plain binary is kept.
+function lower_short_circuit_binary(
+    ctx: ref[LowerCtx],
+    operator: str,
+    left_ep: ptr[ast.Expr],
+    right_ep: ptr[ast.Expr],
+    ep: ptr[ast.Expr],
+) -> ptr[ir.Expr]:
+    let setup_base = ctx.hoist_stmts.len
+    let left = lower_expr(ctx, left_ep)
+    let left_has_setup = ctx.hoist_stmts.len > setup_base
+    let right_saved = begin_stmt_setup(ctx, ctx.hoist_mode)
+    let right = lower_expr(ctx, right_ep)
+    let right_collected = collect_stmt_setup(ctx, right_saved)
+    let right_has_setup = right_collected.stmts.len > 0
+    append_cleanup_stmts(ref_of(ctx.hoist_cleanups), right_collected.cleanups)
+    if not left_has_setup and not right_has_setup:
+        return alloc_expr(ir.Expr.expr_binary(operator = operator, left = left, right = right, ty = ctx.bool_ty))
+    let result_c = fresh_c_temp_name(ctx, operator)
+    let result_ty = ctx.bool_ty
+    let result_ref = alloc_expr(ir.Expr.expr_name(name = result_c, ty = result_ty, pointer = Option[bool].some(value = false)))
+    ctx.hoist_stmts.push(ir.Stmt.stmt_local(
+        name = result_c,
+        linkage_name = result_c,
+        ty = result_ty,
+        value = left,
+        line = 0,
+        source_path = "",
+    ))
+    let cond = if operator == "and":
+        result_ref
+    else:
+        alloc_expr(ir.Expr.expr_unary(operator = "not", operand = result_ref, ty = result_ty))
+    var then_body = vec.Vec[ir.Stmt].create()
+    var ri: ptr_uint = 0
+    while ri < right_collected.stmts.len:
+        let stmt = right_collected.stmts.get(ri) else:
+            break
+        then_body.push(unsafe: read(stmt))
+        ri += 1
+    then_body.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = right))
+    ctx.hoist_stmts.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].none))
+    return alloc_expr(ir.Expr.expr_name(name = result_c, ty = result_ty, pointer = Option[bool].some(value = false)))
+
+
 function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(ep):
@@ -6456,6 +6506,8 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                                 pass
                         return alloc_expr(ir.Expr.expr_name(name = id.name, ty = expr_type(ctx, ep), pointer = Option[bool].some(value = false)))
             ast.Expr.expr_binary_op as bin:
+                if (bin.operator == "and" or bin.operator == "or") and ctx.hoist_mode != HoistMode.hm_off:
+                    return lower_short_circuit_binary(ctx, bin.operator, bin.left, bin.right, ep)
                 var left = lower_expr(ctx, bin.left)
                 var right: ptr[ir.Expr]
                 if bin.operator == "and" or bin.operator == "or":
@@ -24143,8 +24195,63 @@ function try_evaluate_const_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Optio
                 return evaluate_const_binary(ctx, bin.operator, bin.left, bin.right)
             ast.Expr.expr_unary_op as un:
                 return evaluate_const_unary(ctx, un.operator, un.operand)
+            ast.Expr.expr_prefix_cast as pc:
+                return evaluate_const_prefix_cast(ctx, pc.target_type, pc.expression)
             _:
                 return Option[ConstValue].none
+
+
+## The host's `CompileTime.evaluate_prefix_cast`: fold a constant through the
+## cast's target primitive, wrapping integers to the target width/signedness
+## (`uint<-MoverBit` → 2, `ubyte<-300` → 44).  A non-primitive target or a
+## non-numeric operand stays unfolded.
+function evaluate_const_prefix_cast(ctx: ref[LowerCtx], target_type: ptr[ast.TypeRef], expression: ptr[ast.Expr]) -> Option[ConstValue]:
+    match try_evaluate_const_expr(ctx, expression):
+        Option.some as inner:
+            match inner.value:
+                ConstValue.cv_int as iv:
+                    let target_ty = resolve_type_ref(ctx, target_type)
+                    match target_ty:
+                        types.Type.ty_primitive as p:
+                            if p.name == "bool":
+                                return Option[ConstValue].some(value = ConstValue.cv_bool(value = iv.value != 0))
+                            if types.is_integer_type(target_ty):
+                                let width = types.integer_width(p.name)
+                                if width <= 0:
+                                    return Option[ConstValue].none
+                                return Option[ConstValue].some(value = ConstValue.cv_int(value = wrap_const_integer(iv.value, width, types.is_signed_integer_name(p.name))))
+                            if types.is_float_type(target_ty):
+                                return Option[ConstValue].some(value = ConstValue.cv_int(value = iv.value))
+                        _:
+                            pass
+                ConstValue.cv_bool as bv:
+                    let target_ty = resolve_type_ref(ctx, target_type)
+                    match target_ty:
+                        types.Type.ty_primitive as p:
+                            if p.name == "bool":
+                                return Option[ConstValue].some(value = inner.value)
+                            if types.is_integer_type(target_ty):
+                                return Option[ConstValue].some(value = ConstValue.cv_int(value = if bv.value: 1 else: 0))
+                        _:
+                            pass
+                _:
+                    pass
+        Option.none:
+            pass
+    return Option[ConstValue].none
+
+
+function wrap_const_integer(value: long, width: int, signed: bool) -> long:
+    if width >= 64:
+        return value
+    let wide_width = long<-width
+    let mask = (1l << wide_width) - 1
+    var wrapped = value & mask
+    if signed:
+        let half = 1l << (wide_width - 1)
+        if wrapped >= half:
+            wrapped -= 1l << wide_width
+    return wrapped
 
 
 function evaluate_const_unary(ctx: ref[LowerCtx], op: str, operand: ptr[ast.Expr]) -> Option[ConstValue]:

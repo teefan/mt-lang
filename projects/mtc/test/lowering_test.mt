@@ -4626,6 +4626,47 @@ function test_synthetic_functions_follow_all_modules() -> void:
 
 
 @[test]
+function test_const_prefix_cast_folds() -> void:
+    ## A compile-time constant through a prefix cast folds before the contextual
+    ## numeric check (`uint<-MoverBit` is the constant 2), so a `ptr_uint` field
+    ## receives the host's outer cast — the box2d `categoryBits` shape
+    ## (session 45 batch 12).
+    var source = <<-SRC
+        struct Filter:
+            categoryBits: ptr_uint
+
+        const MoverBit: int = 2
+
+        function main() -> int:
+            let filter = Filter(categoryBits = uint<-MoverBit)
+            return int<-filter.categoryBits
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Cast :target_type (Types::Primitive :name \"ptr_uint\") :expression (IR::Cast :target_type (Types::Primitive :name \"uint\") :expression (IR::Name :name \"main_MoverBit\""))
+
+
+@[test]
+function test_short_circuit_binary_hoists_the_result_temp() -> void:
+    ## `and`/`or` with a setup-producing operand hoists the host's
+    ## `__mt_or_N`/`__mt_and_N` result temp and guards the right operand with
+    ## `if result` / `if not result`; with no setup the plain binary is kept
+    ## (session 45 batch 12).
+    var source = <<-SRC
+        function check() -> bool:
+            let value = 1
+            return (f"x#{value}" == "x1") or true
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_or_"))
+    expect(text.contains_substring("(IR::IfStmt :condition (IR::Unary :operator \"not\" :operand (IR::Name :name \"__mt_or_"))
+    expect(text.contains_substring("(IR::Assignment :target (IR::Name :name \"__mt_or_"))
+
+
+@[test]
 function test_propagate_failure_return_has_no_line() -> void:
     ## The `?` propagation's failure return carries the analysis path but no
     ## source line (the host's `IR::ReturnStmt.new(value: failure_return, path:)`),
