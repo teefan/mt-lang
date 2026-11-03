@@ -3003,7 +3003,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         match read(init_val):
                             ast.Expr.expr_unary_op as un:
                                 if un.operator == "?":
-                                    lower_propagate_let(ctx, output, loc.name, un.operand, loc.line)
+                                    lower_propagate_let(ctx, output, loc.name, un.operand, loc.line, false)
                                     return
                             # `let x = <cast>(inner?)` — the `?` is nested inside a
                             # prefix cast.  Propagate the `?` into a hidden temp,
@@ -3013,7 +3013,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                     ast.Expr.expr_unary_op as inner_un:
                                         if inner_un.operator == "?":
                                             let tmp = fresh_c_temp_name(ctx, "cast_prop")
-                                            lower_propagate_let(ctx, output, tmp, inner_un.operand, 0)
+                                            lower_propagate_let(ctx, output, tmp, inner_un.operand, 0, false)
                                             let tmp_id = alloc_ast_expr(ast.Expr.expr_identifier(name = tmp, line = 0, column = 0))
                                             let cast_expr = alloc_ast_expr(ast.Expr.expr_prefix_cast(target_type = pc.target_type, expression = tmp_id, line = pc.line, column = pc.column))
                                             let bc = utils.c_local_name(loc.name)
@@ -3404,7 +3404,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     match read(ex.expression):
                         ast.Expr.expr_unary_op as un:
                             if un.operator == "?":
-                                lower_propagate_let(ctx, output, "_", un.operand, 0)
+                                lower_propagate_let(ctx, output, "_", un.operand, ex.line, true)
                                 return
                         _:
                             pass
@@ -3655,12 +3655,15 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
         return
     let success_ty = guard_success_type(ctx, kind, storage_ty)
     if ctx.async_cps_active:
-        # Spill the guard-bound local to a frame field so it survives suspend.
-        let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
+        # The frame field stores the *full* storage value (the host's spilled
+        # guard storage, e.g. `Nullable(ptr[PendingReliable])`); reads of the
+        # binding project the success value out of it, so a suspend/resume keeps
+        # the absent case as well as the payload.
         let gfield = j2("local_", name)
         let gcname = j2("__mt_frame->", gfield)
-        async_register_local_field(ctx, name, gfield, gcname, success_ty)
-        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = gcname, ty = success_ty, pointer = Option[bool].some(value = false))), operator = "=", value = success_val))
+        async_register_unused_field(ctx, gfield, storage_ty)
+        ctx.locals.push(LocalBinding(name = name, c_name = gcname, ty = success_ty, pointer = Option[bool].some(value = false), projection = guard_binding_projection(kind, storage_ty)))
+        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = gcname, ty = storage_ty, pointer = Option[bool].some(value = false))), operator = "=", value = storage_ref))
         return
     # No second local: reads project the success value out of the storage local.
     ctx.locals.push(LocalBinding(name = name, c_name = storage_c, ty = success_ty, pointer = Option[bool].some(value = false), projection = guard_binding_projection(kind, storage_ty)))
@@ -3769,7 +3772,7 @@ function lower_propagate_return(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
 
 
 
-function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, operand: ptr[ast.Expr], line: ptr_uint) -> void:
+function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, operand: ptr[ast.Expr], line: ptr_uint, emit_success_read: bool) -> void:
     # The host's normalization hoists an embedded await out of a `?` operand
     # into a `__mt_async_tmp_<N>` local before the propagation lowers it
     # (`normalize_async_expression`'s AwaitExpr case).
@@ -3892,10 +3895,20 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
 
     # Bind `name` to the unwrapped success value (unless discarded with `_`).
     if name == "_":
+        # A bare `expr?` statement still reads the success projection as its
+        # expression statement (the host's prepared-temp read); a `let _ = expr?`
+        # stores it instead and passes false here.
+        if emit_success_read:
+            let discard_ty = guard_success_type(ctx, kind, storage_ty)
+            if not types.is_void(discard_ty):
+                let discard_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, discard_ty)
+                output.push(ir.Stmt.stmt_expression(expression = discard_val, line = line, source_path = ctx.analysis.source_path))
         return
     let success_ty = guard_success_type(ctx, kind, storage_ty)
     if ctx.async_cps_active:
-        # Spill the bound local to a frame field so it survives suspend/resume.
+        # The `?` binding's frame field holds the *success* value (the host's
+        # spilled prepared temp), unlike a `let … else:` guard whose field keeps
+        # the full storage.
         let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
         let afield = j2("local_", name)
         let acname = j2("__mt_frame->", afield)
@@ -6494,7 +6507,17 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                             return alloc_expr(ir.Expr.expr_name(name = naming.qualified_c_name(ctx.module_name, id.name), ty = expr_type(ctx, ep), pointer = Option[bool].some(value = false)))
                         match lookup_qualified_constant(ctx, id.name):
                             Option.some as qc:
-                                return alloc_expr(ir.Expr.expr_name(name = qc.value, ty = expr_type(ctx, ep), pointer = Option[bool].some(value = false)))
+                                # A module-level value's read carries its *declared*
+                                # storage type (the host's binding type), not the
+                                # contextually-inferred type: stripping the
+                                # `Nullable` here would let a guarded global read
+                                # masquerade as non-null in the IR (the
+                                # `opaque_backing_names` global).
+                                var value_ty = expr_type(ctx, ep)
+                                let declared_ty_ptr = ctx.analysis.value_types.get(id.name)
+                                if declared_ty_ptr != null:
+                                    value_ty = unsafe: read(declared_ty_ptr)
+                                return alloc_expr(ir.Expr.expr_name(name = qc.value, ty = value_ty, pointer = Option[bool].some(value = false)))
                             Option.none:
                                 pass
                         return alloc_expr(ir.Expr.expr_name(name = id.name, ty = expr_type(ctx, ep), pointer = Option[bool].some(value = false)))
@@ -17904,6 +17927,7 @@ function lower_scalar_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
         return
 
     let scrutinee_expr = lower_expr(ctx, scrutinee)
+    let scrutinee_ty = ir_expr_type(scrutinee_expr)
     var cases = vec.Vec[ir.SwitchCase].create()
     var i: ptr_uint = 0
     while i < arms.len:
@@ -17915,7 +17939,12 @@ function lower_scalar_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
         if pattern == null:
             cases.push(ir.SwitchCase(is_default = true, value = null, body = body))
         else:
-            cases.push(ir.SwitchCase(is_default = false, value = lower_expr(ctx, ptr[ast.Expr]<-pattern), body = body))
+            # A literal case value takes the scrutinee's type (the host's
+            # `lower_pattern_expression`): `match b { 80: … }` on a `ubyte`
+            # carries a `ubyte` literal, not `int`.
+            var case_value = lower_expr(ctx, ptr[ast.Expr]<-pattern)
+            case_value = literal_value_to_context_type(ctx, ptr[ast.Expr]<-pattern, scrutinee_ty, case_value)
+            cases.push(ir.SwitchCase(is_default = false, value = case_value, body = body))
         i += 1
     output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = true))
 
@@ -17925,6 +17954,7 @@ function lower_scalar_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
 ## compare with `==`.  A `_` arm becomes the final else block.
 function lower_scalar_range_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
     let scrutinee_expr = lower_expr(ctx, scrutinee)
+    let scrutinee_ty = ir_expr_type(scrutinee_expr)
     # The host's match-to-if chains always carry an else body; the innermost
     # `if` falls back to an empty one when there is no wildcard arm.
     var else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())
@@ -17950,13 +17980,16 @@ function lower_scalar_range_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
             unsafe:
                 match read(pattern):
                     ast.Expr.expr_range as rng:
-                        let start = lower_expr(ctx, rng.start_expr)
-                        let stop = lower_expr(ctx, rng.end_expr)
+                        var start = lower_expr(ctx, rng.start_expr)
+                        var stop = lower_expr(ctx, rng.end_expr)
+                        start = literal_value_to_context_type(ctx, rng.start_expr, scrutinee_ty, start)
+                        stop = literal_value_to_context_type(ctx, rng.end_expr, scrutinee_ty, stop)
                         let ge = alloc_expr(ir.Expr.expr_binary(operator = ">=", left = scrutinee_expr, right = start, ty = ctx.bool_ty))
                         let le = alloc_expr(ir.Expr.expr_binary(operator = "<=", left = scrutinee_expr, right = stop, ty = ctx.bool_ty))
                         cond = alloc_expr(ir.Expr.expr_binary(operator = "and", left = ge, right = le, ty = ctx.bool_ty))
                     _:
-                        let lit = lower_expr(ctx, pattern)
+                        var lit = lower_expr(ctx, pattern)
+                        lit = literal_value_to_context_type(ctx, pattern, scrutinee_ty, lit)
                         cond = alloc_expr(ir.Expr.expr_binary(operator = "==", left = scrutinee_expr, right = lit, ty = ctx.bool_ty))
             var chain = vec.Vec[ir.Stmt].create()
             chain.push(ir.Stmt.stmt_if(condition = cond, then_body = body, else_body = else_body))
@@ -18352,8 +18385,11 @@ function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
             cases.push(ir.SwitchCase(is_default = true, value = null, body = body.as_span()))
         else:
             let member = match_member_name(pattern) else:
-                # Non-enum pattern (integer literal, char literal, etc.)
-                let lowered_pat = lower_expr(ctx, pattern)
+                # Non-enum pattern (integer literal, char literal, etc.): the
+                # literal takes the scrutinee's type, as `lower_pattern_expression`
+                # does on the host.
+                var lowered_pat = lower_expr(ctx, pattern)
+                lowered_pat = literal_value_to_context_type(ctx, pattern, ir_expr_type(scrutinee_expr), lowered_pat)
                 cases.push(ir.SwitchCase(is_default = false, value = lowered_pat, body = body.as_span()))
                 i += 1
                 continue
@@ -25880,7 +25916,7 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
         match read(hv):
             ast.Expr.expr_unary_op as u:
                 if u.operator == "?":
-                    lower_propagate_let(ctx, output, loc_name, u.operand, line)
+                    lower_propagate_let(ctx, output, loc_name, u.operand, line, false)
                     return
             _:
                 pass

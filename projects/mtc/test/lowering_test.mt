@@ -4705,7 +4705,7 @@ function test_propagate_failure_return_has_no_line() -> void:
     defer: dump.release()
     let text = dump.as_str()
     expect(text.contains_substring("(IR::ReturnStmt :value (IR::Name :name \"__mt_propagate_1\""))
-    expect(text.contains_substring(":line nil :path \"/tmp/mtc_ld_"))
+    expect(text.contains_substring(":line nil :path \"/"))
     expect(text.contains_substring("(IR::LocalDecl :name \"value\" :linkage_name \"value\""))
 
 
@@ -4786,3 +4786,113 @@ function test_nested_foreign_call_materializes_result_before_frees() -> void:
     let text = dump.as_str()
     expect(text.contains_substring("(IR::LocalDecl :name \"__mt_foreign_result_"))
     expect(text.contains_substring("mt_free_foreign_cstr_temp"))
+
+
+@[test]
+function test_module_value_read_keeps_its_declared_nullable() -> void:
+    ## A module-level value's `IR::Name` carries its declared storage type (the
+    ## host's binding type), not the contextually-inferred cast target: the
+    ## `opaque_backing_names` global reads `Nullable(ptr[Map])` inside a
+    ## `ptr[Map]<-` cast (session 45 batch 15).
+    var source = <<-SRC
+        var pending: ptr[int]? = null
+
+        function main() -> int:
+            let p = unsafe: read(ptr[int]<-pending)
+            let _ = p
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Name :name \"main_pending\" :type (Types::Nullable :base (Types::Generic :name \"ptr\""))
+
+
+@[test]
+function test_bare_propagation_reads_the_success_value() -> void:
+    ## A bare `expr?` statement still emits the success projection as its
+    ## expression statement after the failure-if (the host's prepared-temp read),
+    ## unlike a `let _ = expr?` which stores it (session 45 batch 15).
+    var source = <<-SRC
+        function step() -> Result[int, int]:
+            return Result[int, int].success(value = 1)
+
+        function run() -> Result[bool, int]:
+            step()?
+            return Result[bool, int].success(value = true)
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::ExpressionStmt :expression (IR::Member :receiver (IR::Member :receiver (IR::Member :receiver (IR::Name :name \"__mt_propagate_1\""))
+    expect(text.contains_substring(":member \"success\""))
+
+
+@[test]
+function test_async_guard_field_keeps_the_storage_type() -> void:
+    ## A `let x = … else:` guard's async frame field stores the full storage
+    ## (`Nullable(ptr[T])`), with reads projecting the success value — the host's
+    ## spilled guard storage (`local_entry_ptr`, session 45 batch 15).
+    var source = <<-SRC
+        import std.vec as vec
+
+        async function tick() -> void:
+            return
+
+        async function first(v: ref[vec.Vec[int]]) -> int:
+            let item = v.get(0) else:
+                await tick()
+                return 0
+            await tick()
+            return unsafe: read(item)
+
+        function main() -> int:
+            return 0
+    SRC
+    var module_root = test_module_root()
+    defer: module_root.release()
+    var dump = lower_dump_for_source_roots(source, module_root.as_str())
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Field :name \"local_item\" :type (Types::Nullable :base (Types::Generic :name \"ptr\""))
+    expect(text.contains_substring("(IR::Assignment :target (IR::Name :name \"__mt_frame->local_item\" :type (Types::Nullable"))
+
+
+@[test]
+function test_match_case_literal_takes_the_scrutinee_type() -> void:
+    ## A match arm's integer literal takes the scrutinee's type
+    ## (`lower_pattern_expression`): `match b { 80: … }` on a `ubyte` carries a
+    ## `ubyte` literal in both the statement and expression matches (session 45
+    ## batch 15).
+    var source = <<-SRC
+        function classify(b: ubyte) -> int:
+            return match b:
+                80: 1
+                _: 0
+
+        function classify_stmt(b: ubyte) -> int:
+            match b:
+                80: return 1
+                _: return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::IntegerLiteral :value 80 :type (Types::Primitive :name \"ubyte\"))"))
+    expect(not text.contains_substring("(IR::IntegerLiteral :value 80 :type (Types::Primitive :name \"int\"))"))
+
+
+@[test]
+function test_local_name_keeps_a_trailing_underscore() -> void:
+    ## `c_local_name` returns an ordinary local name verbatim (the host's rule);
+    ## only a C keyword gets a trailing underscore.  Sanitizing here stripped a
+    ## meaningful `event_` to `event` (session 45 batch 15).
+    var source = <<-SRC
+        function pick() -> int:
+            var event_ = 1
+            return event_
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"event_\" :linkage_name \"event_\""))

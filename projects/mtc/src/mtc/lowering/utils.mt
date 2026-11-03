@@ -174,13 +174,15 @@ public function ir_expr_type(ep: ptr[ir.Expr]) -> types.Type:
 # =============================================================================
 
 public function c_local_name(name: str) -> str:
-    let identifier = naming.sanitize_identifier(name)
-    if c_reserved_identifier(identifier):
-        var buf = string.String.create()
-        buf.append(identifier)
-        buf.append("_")
-        return buf.as_str()
-    return identifier
+    # The host's `c_local_name` (`utils.rb:1146`): a source local name is already
+    # a valid C identifier, so it is returned verbatim; only a C keyword gets a
+    # trailing underscore.  Sanitizing here would strip a meaningful trailing
+    # underscore (`event_`) or collapse a name's interior runs.
+    if name.len == 0:
+        return "value"
+    if c_reserved_identifier(name):
+        return j2(name, "_")
+    return name
 
 
 function c_reserved_identifier(identifier: str) -> bool:
