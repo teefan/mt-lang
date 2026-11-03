@@ -126,17 +126,6 @@ function simple_mapping_callee(mapping: ptr[ast.Expr]) -> Option[SimpleCallee]:
                 return Option[SimpleCallee].none
 
 
-## One referenced parameter of an inline foreign mapping while the call is
-## lowered: its projected argument value plus the reference count that decides
-## temp vs substitution (the host's `bind_foreign_mapping_arguments`).
-struct MappingParamBinding:
-    name: str
-    ref_count: ptr_uint
-    value: ptr[ir.Expr]
-    ty: types.Type
-    is_cstr: bool
-
-
 ## One arm of a variant, as needed by lowering: its name, payload field names and
 ## resolved types (empty for a no-payload arm).  The discriminant index is the
 ## arm's position in the owning `VariantInfo.arms`.
@@ -3047,6 +3036,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 let init = loc.value
                 let hoist_base = output.len()
                 let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
+                ctx.hoist_root_ep = init
                 if init == null:
                     let declared = loc.stmt_type else:
                         fatal(c"lowering: local without initializer requires a type")
@@ -3238,6 +3228,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         let target = alloc_expr(ir.Expr.expr_unary(operator = "*", operand = deref_target, ty = deref_ty))
                         let hoist_base = output.len()
                         let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
+                        ctx.hoist_root_ep = asg.value
                         var value = lower_expr(ctx, asg.value)
                         let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
                         emit_hoist_setup(output, hoist_base, hoist_collected)
@@ -3254,6 +3245,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 let target = lower_assignment_target(ctx, asg.target)
                 let hoist_base = output.len()
                 let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
+                ctx.hoist_root_ep = asg.value
                 var value = lower_expr(ctx, asg.value)
                 let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
                 emit_hoist_setup(output, hoist_base, hoist_collected)
@@ -3271,6 +3263,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     types.is_float_type(target_ty) and not is_foreign_call_initializer(ctx, asg.value),
                     external_numeric_assignment_target(ctx, asg.target),
                 )
+                update_cstr_metadata_for_assignment_mt(ctx, asg.target, asg.value, value, asg.operator)
                 # Native math compound assignment (`a += b`, `a *= 2.0`): the C
                 # aggregate structs have no operators, so expand component-wise
                 # and emit a plain assignment.
@@ -14518,6 +14511,7 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
     # mt_foreign_str_to_cstr_temp) that must be freed after the call so a foreign
     # call in a loop (e.g. DrawText(dynamic_str, ...) each frame) does not leak.
     var cstr_temps = vec.Vec[str].create()
+    let saved_locals_len = ctx.locals.len()
     var i: ptr_uint = 0
     while i < args.len:
         var arg: ast.Argument
@@ -14528,7 +14522,11 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
             var param: ast.ForeignParam
             unsafe:
                 param = read(info.params.data + i)
-            lowered = materialize_foreign_address_arg(ctx, lower_foreign_arg(ctx, info, param, arg.arg_value), ref_of(setup))
+            # The host's `prepare_foreign_in_argument`: an `in` operand that is
+            # not addressable storage gets a `foreign_in` temp before the
+            # boundary projection wraps its address.
+            let prepared = prepare_foreign_in_argument_mt(ctx, info, param, arg, ref_of(setup))
+            lowered = materialize_foreign_address_arg(ctx, lower_foreign_arg(ctx, info, param, prepared.arg_value), ref_of(setup))
         else:
             # A variadic slot has no declared type; the host still converts a
             # `str` value at the raw C boundary (`TextFormat("%s", value)`).
@@ -14545,6 +14543,11 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
             ir_args.push(read(lowered))
         i += 1
     let ret_ty = info.return_ty
+    # The host's `bind_foreign_mapping_arguments` binds its argument temps in a
+    # duplicated env; the simple path's `foreign_in` temps must not leak either.
+    while ctx.locals.len() > saved_locals_len:
+        if ctx.locals.pop().is_none():
+            break
     # The host types the emitted C call with the *raw declaration's* return
     # type — the owner analysis's view — not the wrapper's: `= c.getenv` with
     # a `ptr[char]` declaration and a `cstr?` wrapper types the call
@@ -14620,7 +14623,13 @@ function wrap_foreign_cstr_frees(ctx: ref[LowerCtx], setup: ref[vec.Vec[ir.Stmt]
             return result
         if cstr_temps.len() == 0:
             return result
-        if ctx.hoist_mode == HoistMode.hm_return and not types.is_void(ret_ty):
+        # A nested value-position foreign call with temporaries materializes its
+        # result before the frees (the host's `prepare_statement_lowered_foreign_call`:
+        # `foreign_result` + frees, then the Name).  A statement-root call does
+        # not: the assignment/local/return destination stores it directly (the
+        # host's `lower_foreign_call_components` path).
+        let nested_value_call = ctx.hoist_mode == HoistMode.hm_value and call_ep != ctx.hoist_root_ep
+        if (ctx.hoist_mode == HoistMode.hm_return or nested_value_call) and not types.is_void(ret_ty):
             let rt = fresh_c_temp_name(ctx, "foreign_result")
             ctx.hoist_stmts.push(ir.Stmt.stmt_local(name = rt, linkage_name = rt, ty = ret_ty, value = result, line = 0, source_path = ""))
             var hi: ptr_uint = 0
@@ -14751,86 +14760,78 @@ function str_buffer_capacity_of(ty: types.Type) -> long:
 
 ## Lower a foreign call whose `= target` mapping is an inline expression such as
 ## `c.GuiSetStyle(int<-control, property, value)` or
-## `c.SaveFileData(file_name, data.data, int<-data.len)`.  Each referenced
-## parameter is projected once into a temporary local (so a parameter used more
-## than once in the mapping is evaluated only once) and the mapping expression
-## is then re-lowered with those temporaries in scope, mirroring Ruby's
-## lower_inline_foreign_mapping_expression.  The whole thing renders as a
-## GCC/Clang statement-expression `({ tmp = ...; MappedCall(...); })`.
+## `c.SaveFileData(file_name, data.data, int<-data.len)`.  The host's
+## `bind_foreign_mapping_arguments` runs three passes and their order is
+## load-bearing for the emitted IR: the `as` boundary's public alias first
+## (`<name>_public`, reusing the argument's Name when it already is one), then
+## every referenced parameter's value (an `in` operand that is not addressable
+## storage materializes into a `foreign_in` temp), then the `foreign_arg`
+## temporaries decided by the reference-count/inlineability rule.  The mapping
+## expression is re-lowered with those bindings in scope; the whole thing renders
+## as a GCC/Clang statement-expression `({ tmp = ...; MappedCall(...); })`.
 function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let mapping = info.mapping else:
         fatal(c"lowering: inline foreign mapping missing expression")
 
     var setup = vec.Vec[ir.Stmt].create()
     var cstr_temps = vec.Vec[str].create()
-    var binds = vec.Vec[MappingParamBinding].create()
     let saved_locals_len = ctx.locals.len()
+    # The mapping's substitutions never leak into an argument's lowering (the
+    # host lowers the values in the caller's env); start from an empty map.
+    let saved_replacements = ctx.mapping_replacements
+    ctx.mapping_replacements = map_mod.Map[str, ptr[ir.Expr]].create()
 
+    # Pass 1: the `as` boundary's public alias.  A value that already is a Name
+    # (the buffer/local itself) is bound to that name; anything else gets the
+    # host's `foreign_arg_public` temp before any parameter value is evaluated.
     var i: ptr_uint = 0
     while i < info.params.len and i < args.len:
         var param: ast.ForeignParam
-        unsafe:
-            param = read(info.params.data + i)
         var arg: ast.Argument
         unsafe:
+            param = read(info.params.data + i)
             arg = read(args.data + i)
+        if param.boundary_type.is_some():
+            let pub_alias = j2(param.name, "_public")
+            if mapping_references_name(mapping, pub_alias):
+                let declared_ty = foreign_param_context_type(ctx, info, param)
+                let public_ir = literal_value_to_context_type(ctx, arg.arg_value, declared_ty, lower_expr(ctx, arg.arg_value))
+                let public_lowered = unsafe: read(public_ir)
+                match public_lowered:
+                    ir.Expr.expr_name as nm:
+                        ctx.locals.push(LocalBinding(name = pub_alias, c_name = nm.name, ty = declared_ty, pointer = Option[bool].some(value = false)))
+                    _:
+                        let tcp = fresh_c_temp_name(ctx, "foreign_arg_public")
+                        setup.push(ir.Stmt.stmt_local(name = tcp, linkage_name = tcp, ty = declared_ty, value = public_ir, line = 0, source_path = ""))
+                        ctx.locals.push(LocalBinding(name = pub_alias, c_name = tcp, ty = declared_ty, pointer = Option[bool].some(value = false)))
+        i += 1
 
-        # `text: str_buffer[N] as ptr[char]` (raygui text widgets): the C side
-        # writes into the buffer through a `char*`.  Materialize the buffer into
-        # one public temp, bind `<name>_public` to it (for `.capacity()` etc.),
-        # and bind `<name>` to `mt_str_buffer_prepare_write(&pub.data[0], N,
-        # &pub.dirty)`, which NUL-terminates and returns the writable pointer.
-        if is_str_buffer_char_ptr_boundary(param):
-            let pub_ir = lower_expr(ctx, arg.arg_value)
-            let sb_ty = ir_expr_type(pub_ir)
-            let n_val = str_buffer_capacity_of(sb_ty)
-            let pub_tc = fresh_c_temp_name(ctx, "foreign_arg_public")
-            setup.push(ir.Stmt.stmt_local(name = pub_tc, linkage_name = pub_tc, ty = sb_ty, value = pub_ir, line = 0, source_path = ""))
-            ctx.locals.push(LocalBinding(name = j2(param.name, "_public"), c_name = pub_tc, ty = sb_ty, pointer = Option[bool].some(value = false)))
-
-            let char_ty = types.primitive("char")
-            let char_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(char_ty))
-            let bool_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.bool_ty))
-            let pub_ref = alloc_expr(ir.Expr.expr_name(name = pub_tc, ty = sb_ty, pointer = Option[bool].some(value = false)))
-            let data_member = alloc_expr(ir.Expr.expr_member(receiver = pub_ref, member = "data", ty = types.Type.ty_generic(name = "array", args = sp_type2(char_ty, types.literal_int(n_val + 1)))))
-            let data0 = alloc_expr(ir.Expr.expr_index(receiver = data_member, index = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("ptr_uint"))), ty = char_ty))
-            let data_ptr = alloc_expr(ir.Expr.expr_address_of(expression = data0, ty = char_ptr_ty))
-            let dirty_member = alloc_expr(ir.Expr.expr_member(receiver = pub_ref, member = "dirty", ty = ctx.bool_ty))
-            let dirty_ptr = alloc_expr(ir.Expr.expr_address_of(expression = dirty_member, ty = bool_ptr_ty))
-            var pw_args = vec.Vec[ir.Expr].create()
-            unsafe:
-                pw_args.push(read(data_ptr))
-                pw_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = n_val, ty = types.primitive("ptr_uint")))))
-                pw_args.push(read(dirty_ptr))
-            let pw_call = alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_prepare_write", arguments = pw_args.as_span(), ty = char_ptr_ty))
-            let proj_tc = fresh_c_temp_name(ctx, "foreign_arg")
-            setup.push(ir.Stmt.stmt_local(name = proj_tc, linkage_name = proj_tc, ty = char_ptr_ty, value = pw_call, line = 0, source_path = ""))
-            ctx.locals.push(LocalBinding(name = param.name, c_name = proj_tc, ty = char_ptr_ty, pointer = Option[bool].some(value = false)))
-            i += 1
-            continue
-
-        if mapping_references_name(mapping, param.name):
-            var projected: ptr[ir.Expr]
-            var temp_ty: types.Type
-            if param.param_mode == ast.ForeignParamMode.fmode_out or param.param_mode == ast.ForeignParamMode.fmode_inout:
-                # out/inout: pass the address, typed as ptr[param type] (not the
-                # generic void* that lower_foreign_arg would produce) so the C
-                # call receives a correctly-typed pointer.  A lowered argument
-                # that already is a pointer (an editable `this` receiver, a
-                # `*p` dereference) is cast to that pointer type instead of
-                # being addressed again — the host's `lower_addr_expression`.
-                let operand = lower_expr(ctx, arg.arg_value)
-                var pt_copy = param.param_type
-                let pty = qualify_type(ctx, resolve_type_ref(ctx, ptr_of(pt_copy)))
-                let ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(pty))
-                match addr_operand_expression(operand):
-                    Option.some as op:
-                        projected = alloc_expr(ir.Expr.expr_cast(target_type = ptr_ty, expression = op.value, ty = ptr_ty))
-                    Option.none:
-                        projected = alloc_expr(ir.Expr.expr_address_of(expression = operand, ty = ptr_ty))
-                temp_ty = ptr_ty
+    # Pass 2: lower every referenced parameter's value in declaration order.
+    var values = map_mod.Map[str, ptr[ir.Expr]].create()
+    i = 0
+    while i < info.params.len and i < args.len:
+        var param2: ast.ForeignParam
+        var arg2: ast.Argument
+        unsafe:
+            param2 = read(info.params.data + i)
+            arg2 = read(args.data + i)
+        if mapping_reference_count(mapping, param2.name) > 0:
+            # A referenced public alias supplies the source value (the host's
+            # `source_argument` rewrite), so `text_public.capacity()` and the
+            # projection share one evaluation.
+            var source_arg = arg2
+            if param2.boundary_type.is_some():
+                let pub_alias2 = j2(param2.name, "_public")
+                if mapping_reference_count(mapping, pub_alias2) > 0:
+                    let alias_id = alloc_ast_expr(ast.Expr.expr_identifier(name = pub_alias2, line = 0, column = 0))
+                    source_arg = ast.Argument(arg_name = arg2.arg_name, arg_value = alias_id)
+            source_arg = prepare_foreign_in_argument_mt(ctx, info, param2, source_arg, ref_of(setup))
+            var value: ptr[ir.Expr]
+            if is_str_buffer_char_ptr_boundary(param2):
+                value = lower_str_buffer_char_ptr_argument(ctx, param2, source_arg, ref_of(setup))
             else:
-                projected = lower_foreign_arg(ctx, info, param, arg.arg_value)
+                value = lower_foreign_arg(ctx, info, param2, source_arg.arg_value)
+                value = materialize_foreign_address_arg(ctx, value, ref_of(setup))
                 # An `array[T, N]` argument for a `span[T]` parameter (e.g.
                 # `render_lines(renderer, line_points)`) coerces to the span
                 # aggregate `{ data = &arr[0], len = N }` so the mapping's
@@ -14838,76 +14839,69 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
                 # array→span boundary rule.  The span's element type comes from
                 # the argument: the declared name (`FPoint`) is an alias of the
                 # binding's module and is not resolvable from the caller.
-                let projected_ty = ir_expr_type(projected)
-                if param_type_is_span(param.param_type) and is_array_type(projected_ty):
+                let projected_ty = ir_expr_type(value)
+                if param_type_is_span(param2.param_type) and is_array_type(projected_ty):
                     let span_ty = types.Type.ty_generic(name = "span", args = sp_type(generic_first_arg(projected_ty)))
-                    projected = array_value_to_span(projected, projected_ty, span_ty)
-                temp_ty = ir_expr_type(projected)
-            binds.push(MappingParamBinding(
-                name = param.name,
-                ref_count = mapping_reference_count(mapping, param.name),
-                value = projected,
-                ty = temp_ty,
-                is_cstr = is_foreign_cstr_temp_call(projected),
-            ))
-
-        if param.boundary_type.is_some():
-            let pub_name = j2(param.name, "_public")
-            if mapping_references_name(mapping, pub_name):
-                let public_ir = lower_expr(ctx, arg.arg_value)
-                let uty = ir_expr_type(public_ir)
-                let tcp = fresh_c_temp_name(ctx, "foreign_arg_public")
-                setup.push(ir.Stmt.stmt_local(name = tcp, linkage_name = tcp, ty = uty, value = public_ir, line = 0, source_path = ""))
-                ctx.locals.push(LocalBinding(name = pub_name, c_name = tcp, ty = uty, pointer = Option[bool].some(value = false)))
-
+                    value = array_value_to_span(value, projected_ty, span_ty)
+            values.set(param2.name, value)
         i += 1
 
     # The host's `inlineable_single_direct_call_names` exception: when exactly
     # one referenced parameter needs a temporary and it is a single-reference
     # plain call, that call is embedded directly after all.
     var blocked_count: ptr_uint = 0
-    var blocked_index: ptr_uint = 0
-    var bi: ptr_uint = 0
-    while bi < binds.len:
-        let bptr = binds.get(bi) else:
-            fatal(c"lowering: missing mapping binding")
-        let b = unsafe: read(bptr)
-        if b.ref_count > 1 or not inlineable_foreign_value(b.value):
-            blocked_count += 1
-            blocked_index = bi
-        bi += 1
+    var blocked_name = ""
+    i = 0
+    while i < info.params.len and i < args.len:
+        var param3: ast.ForeignParam
+        unsafe:
+            param3 = read(info.params.data + i)
+        let refs3 = mapping_reference_count(mapping, param3.name)
+        if refs3 > 0:
+            let value_ptr3 = values.get(param3.name)
+            if value_ptr3 != null:
+                let value3 = unsafe: read(value_ptr3)
+                if refs3 > 1 or not inlineable_foreign_value(value3):
+                    blocked_count += 1
+                    blocked_name = param3.name
+        i += 1
     var inline_direct_name = ""
     if blocked_count == 1:
-        let bptr = binds.get(blocked_index) else:
-            fatal(c"lowering: missing mapping binding")
-        let b = unsafe: read(bptr)
-        if b.ref_count == 1 and is_plain_foreign_call_value(b.value) and not b.is_cstr:
-            inline_direct_name = b.name
+        let refs_d = mapping_reference_count(mapping, blocked_name)
+        let value_ptr_d = values.get(blocked_name)
+        if value_ptr_d != null:
+            let value_d = unsafe: read(value_ptr_d)
+            if refs_d == 1 and is_plain_foreign_call_value(value_d) and not is_foreign_cstr_temp_call(value_d):
+                inline_direct_name = blocked_name
 
-    # Temporary-bind a parameter only where the host does
+    # Pass 3: temporary-bind a parameter only where the host does
     # (`foreign_argument_needs_temporary_binding?`); every other referenced
     # parameter's value is substituted into the mapping instead.
-    let saved_replacements = ctx.mapping_replacements
-    ctx.mapping_replacements = map_mod.Map[str, ptr[ir.Expr]].create()
-    var ti: ptr_uint = 0
-    while ti < binds.len:
-        let bptr = binds.get(ti) else:
-            fatal(c"lowering: missing mapping binding")
-        let b = unsafe: read(bptr)
-        var needs_temp = b.ref_count > 1 and not duplicable_foreign_value(b.value)
-        if not inlineable_foreign_value(b.value):
-            needs_temp = true
-        if b.name == inline_direct_name:
-            needs_temp = false
-        if needs_temp:
-            let tc = fresh_c_temp_name(ctx, "foreign_arg")
-            setup.push(ir.Stmt.stmt_local(name = tc, linkage_name = tc, ty = b.ty, value = b.value, line = 0, source_path = ""))
-            ctx.locals.push(LocalBinding(name = b.name, c_name = tc, ty = b.ty, pointer = Option[bool].some(value = false)))
-            if b.is_cstr:
-                cstr_temps.push(tc)
-        else:
-            ctx.mapping_replacements.set(b.name, b.value)
-        ti += 1
+    i = 0
+    while i < info.params.len and i < args.len:
+        var param4: ast.ForeignParam
+        unsafe:
+            param4 = read(info.params.data + i)
+        let refs4 = mapping_reference_count(mapping, param4.name)
+        if refs4 > 0:
+            let value_ptr4 = values.get(param4.name)
+            if value_ptr4 != null:
+                let value4 = unsafe: read(value_ptr4)
+                let temp_ty = ir_expr_type(value4)
+                var needs_temp = refs4 > 1 and not duplicable_foreign_value(value4)
+                if not inlineable_foreign_value(value4):
+                    needs_temp = true
+                if param4.name == inline_direct_name:
+                    needs_temp = false
+                if needs_temp:
+                    let tc = fresh_c_temp_name(ctx, "foreign_arg")
+                    setup.push(ir.Stmt.stmt_local(name = tc, linkage_name = tc, ty = temp_ty, value = value4, line = 0, source_path = ""))
+                    ctx.locals.push(LocalBinding(name = param4.name, c_name = tc, ty = temp_ty, pointer = Option[bool].some(value = false)))
+                    if is_foreign_cstr_temp_call(value4):
+                        cstr_temps.push(tc)
+                else:
+                    ctx.mapping_replacements.set(param4.name, value4)
+        i += 1
 
     let result = walk_mapping_expr(ctx, mapping, info.return_ty, info.owner_module)
     ctx.mapping_replacements = saved_replacements
@@ -14917,6 +14911,84 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
             break
 
     return wrap_foreign_cstr_frees(ctx, ref_of(setup), result, info.return_ty, ref_of(cstr_temps), call_ep)
+
+
+## The host's `addressable_storage_expression?` over the AST: an identifier,
+## a member/element chain rooted at one, or a `read(...)` call.  An `in`
+## argument with any other shape needs a `foreign_in` temporary before its
+## address can be taken.
+function addressable_storage_ast(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier:
+                return true
+            ast.Expr.expr_member_access as ma:
+                return addressable_storage_ast(ma.receiver)
+            ast.Expr.expr_index_access as ix:
+                return addressable_storage_ast(ix.receiver)
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_identifier as id:
+                        return id.name == "read"
+                    _:
+                        return false
+            _:
+                return false
+
+
+## The operand of a call-site `in`/`out`/`inout` marker (the host's
+## `foreign_argument_expression`), or the expression itself.
+function foreign_argument_operand(ep: ptr[ast.Expr]) -> ptr[ast.Expr]:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_unary_op as un:
+                if un.operator == "in" or un.operator == "out" or un.operator == "inout":
+                    return un.operand
+                return ep
+            _:
+                return ep
+
+
+## The host's `prepare_foreign_in_argument`: an `in` argument whose operand is
+## not addressable storage is materialized into a `foreign_in` temp before the
+## value is lowered, so the boundary's address-of has an lvalue to take.
+function prepare_foreign_in_argument_mt(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.ForeignParam, arg: ast.Argument, setup: ref[vec.Vec[ir.Stmt]]) -> ast.Argument:
+    if param.param_mode != ast.ForeignParamMode.fmode_in:
+        return arg
+    let operand = foreign_argument_operand(arg.arg_value)
+    if addressable_storage_ast(operand):
+        return arg
+    let declared_ty = foreign_param_context_type(ctx, info, param)
+    let value = literal_value_to_context_type(ctx, operand, declared_ty, lower_expr(ctx, operand))
+    let tc = fresh_c_temp_name(ctx, "foreign_in")
+    setup.push(ir.Stmt.stmt_local(name = tc, linkage_name = tc, ty = declared_ty, value = value, line = 0, source_path = ""))
+    ctx.locals.push(LocalBinding(name = tc, c_name = tc, ty = declared_ty, pointer = Option[bool].some(value = false)))
+    let id = alloc_ast_expr(ast.Expr.expr_identifier(name = tc, line = 0, column = 0))
+    return ast.Argument(arg_name = arg.arg_name, arg_value = id)
+
+
+## A `str_buffer[N] as ptr[char]` argument (raygui text widgets): the C side
+## writes into the buffer through a `char*`, so the mapping takes
+## `mt_str_buffer_prepare_write(&buffer.data[0], N, &buffer.dirty)` — the host's
+## `lower_foreign_char_pointer_buffer_argument_value` str-buffer branch.
+function lower_str_buffer_char_ptr_argument(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ast.Argument, setup: ref[vec.Vec[ir.Stmt]]) -> ptr[ir.Expr]:
+    let buffer = lower_expr(ctx, arg.arg_value)
+    let sb_ty = ir_expr_type(buffer)
+    let n_val = str_buffer_capacity_of(sb_ty)
+    let char_ty = types.primitive("char")
+    let char_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(char_ty))
+    let bool_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.bool_ty))
+    let data_member = alloc_expr(ir.Expr.expr_member(receiver = buffer, member = "data", ty = types.Type.ty_generic(name = "array", args = sp_type2(char_ty, types.literal_int(n_val + 1)))))
+    let data0 = alloc_expr(ir.Expr.expr_index(receiver = data_member, index = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("ptr_uint"))), ty = char_ty))
+    let data_ptr = alloc_expr(ir.Expr.expr_address_of(expression = data0, ty = char_ptr_ty))
+    let dirty_member = alloc_expr(ir.Expr.expr_member(receiver = buffer, member = "dirty", ty = ctx.bool_ty))
+    let dirty_ptr = alloc_expr(ir.Expr.expr_address_of(expression = dirty_member, ty = bool_ptr_ty))
+    var pw_args = vec.Vec[ir.Expr].create()
+    unsafe:
+        pw_args.push(read(data_ptr))
+        pw_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = n_val, ty = types.primitive("ptr_uint")))))
+        pw_args.push(read(dirty_ptr))
+    return alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_prepare_write", arguments = pw_args.as_span(), ty = char_ptr_ty))
 
 
 ## Re-lower a foreign mapping expression with the call's projected parameter
@@ -20265,6 +20337,37 @@ function is_cstr_backed_lowered(ctx: ref[LowerCtx], ep: ptr[ir.Expr]) -> bool:
                 return false
 
 
+## The host's `update_cstr_metadata_for_assignment!`: an assignment to a `str`
+## local refreshes whether its storage is still cstr-backed.  `= <cstr-backed
+## value>` keeps it; every other assignment and every compound assignment
+## clears it (`skybox_file_name = dropped_path` turns a literal-backed local
+## into a plain `str`, so a later `str as cstr` boundary must copy it).
+function update_cstr_metadata_for_assignment_mt(ctx: ref[LowerCtx], target: ptr[ast.Expr], value_ast: ptr[ast.Expr], value_ir: ptr[ir.Expr], operator: str) -> void:
+    unsafe:
+        match read(target):
+            ast.Expr.expr_identifier as id:
+                match lookup_local(ctx, id.name):
+                    Option.some as lb:
+                        var backed = false
+                        if operator == "=":
+                            match lb.value.ty:
+                                types.Type.ty_primitive as p:
+                                    if p.name == "cstr":
+                                        backed = true
+                                types.Type.ty_str:
+                                    backed = is_cstr_backed_lowered(ctx, value_ir) or ast_expr_cstr_backed(ctx, value_ast)
+                                _:
+                                    pass
+                        if backed:
+                            ctx.cstr_backed_names.set(lb.value.c_name, true)
+                        else:
+                            let _removed = ctx.cstr_backed_names.remove(lb.value.c_name)
+                    Option.none:
+                        pass
+            _:
+                pass
+
+
 ## Build a dynamic format string: the host's
 ## `build_dynamic_format_string_temp_setup` — the interpolation temps first (in
 ## part order, their nested setups included), then the capacity local (seeded
@@ -21018,6 +21121,7 @@ function lower_explicit_format_sink_stmt(
         return false
     let base = output.len()
     let saved = begin_stmt_setup(ctx, HoistMode.hm_value)
+    ctx.hoist_root_ep = ep
     let sink_cleanup_start = ctx.hoist_cleanups.len
     let target = lower_format_sink_target(ctx, info)
     let sink_cleanup_end = ctx.hoist_cleanups.len

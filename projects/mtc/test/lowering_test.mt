@@ -4707,3 +4707,82 @@ function test_propagate_failure_return_has_no_line() -> void:
     expect(text.contains_substring("(IR::ReturnStmt :value (IR::Name :name \"__mt_propagate_1\""))
     expect(text.contains_substring(":line nil :path \"/tmp/mtc_ld_"))
     expect(text.contains_substring("(IR::LocalDecl :name \"value\" :linkage_name \"value\""))
+
+
+@[test]
+function test_foreign_in_argument_materializes_non_addressable_operand() -> void:
+    ## A bare `in value` argument that is not addressable storage (an integer
+    ## literal) gets the host's `__mt_foreign_in_N` temp before the boundary
+    ## projection, so the C never takes the address of a literal
+    ## (`set_shader_value(..., 0, ...)`, session 45 batch 14).
+    var source = <<-SRC
+        import std.raylib as rl
+
+        function main() -> int:
+            let shader = zero[rl.Shader]
+            rl.set_shader_value(shader, 0, 0, 0)
+            return 0
+    SRC
+    var module_root = test_module_root()
+    defer: module_root.release()
+    var dump = lower_dump_for_source_roots(source, module_root.as_str())
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_foreign_in_"))
+    expect(text.contains_substring("(IR::AddressOf :expression (IR::Name :name \"__mt_foreign_in_"))
+
+
+@[test]
+function test_cstr_metadata_clears_on_plain_str_assignment() -> void:
+    ## A `str` local initialized from a literal is cstr-backed, but assigning a
+    ## plain `str` clears that metadata; a later `str as cstr` boundary copies
+    ## through `mt_foreign_str_to_cstr_temp` instead of passing `.data`
+    ## (session 45 batch 14).
+    var source = <<-SRC
+        import std.raylib as rl
+
+        function plain() -> str:
+            return "plain"
+
+        function main() -> int:
+            var name: str = "file.png"
+            name = plain()
+            let got = rl.get_file_name(name)
+            let _ = got
+            return 0
+    SRC
+    var module_root = test_module_root()
+    defer: module_root.release()
+    var dump = lower_dump_for_source_roots(source, module_root.as_str())
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("mt_foreign_str_to_cstr_temp"))
+
+
+@[test]
+function test_nested_foreign_call_materializes_result_before_frees() -> void:
+    ## A foreign call with a cstr temp nested inside another call materializes
+    ## its result into `__mt_foreign_result_N` before the free, so the value
+    ## survives the cleanup (`cstr_as_str(GetFileName(name))`, session 45
+    ## batch 14).
+    var source = <<-SRC
+        import std.raylib as rl
+        import std.str as text
+
+        function plain() -> str:
+            return "file.png"
+
+        function main() -> int:
+            var name: str = "file.png"
+            name = plain()
+            let base = text.cstr_as_str(rl.get_file_name(name))
+            let _ = base
+            return 0
+    SRC
+    var module_root = test_module_root()
+    defer: module_root.release()
+    var dump = lower_dump_for_source_roots(source, module_root.as_str())
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_foreign_result_"))
+    expect(text.contains_substring("mt_free_foreign_cstr_temp"))
