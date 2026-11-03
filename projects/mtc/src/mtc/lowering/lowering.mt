@@ -14530,7 +14530,11 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
                 param = read(info.params.data + i)
             lowered = materialize_foreign_address_arg(ctx, lower_foreign_arg(ctx, info, param, arg.arg_value), ref_of(setup))
         else:
+            # A variadic slot has no declared type; the host still converts a
+            # `str` value at the raw C boundary (`TextFormat("%s", value)`).
             lowered = lower_expr(ctx, arg.arg_value)
+            if is_str_typed(ir_expr_type(lowered)):
+                lowered = lower_cstr_argument(ctx, arg.arg_value, lowered)
         if is_foreign_cstr_temp_call(lowered):
             let cstr_ty = types.primitive("cstr")
             let tc = fresh_c_temp_name(ctx, "foreign_arg")
@@ -15470,45 +15474,42 @@ function project_foreign_boundary(ctx: ref[LowerCtx], value: ptr[ir.Expr], bound
     return value
 
 
+## A `str` argument at a `cstr` boundary (a declared `str as cstr` parameter or
+## a variadic slot): a string literal becomes a C string literal; an already
+## cstr value passes through; a cstr-backed `str` (a literal-backed local, a
+## dynamic format temp, or a syntactically cstr-backed `if`/`unsafe`) passes its
+## `data` pointer in an `IR::Cast(cstr)`; anything else takes the malloc-backed
+## `mt_foreign_str_to_cstr_temp` copy (hoisted/freed by the caller).
+function lower_cstr_argument(ctx: ref[LowerCtx], arg: ptr[ast.Expr], lowered_str: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    let cstr_ty = types.primitive("cstr")
+    unsafe:
+        match read(arg):
+            ast.Expr.expr_string_literal as lit:
+                return alloc_expr(ir.Expr.expr_string_literal(value = lit.value, ty = cstr_ty, cstring = true))
+            _:
+                pass
+    let arg_ty = ir_expr_type(lowered_str)
+    match arg_ty:
+        types.Type.ty_primitive as p:
+            if p.name == "cstr":
+                return lowered_str
+        _:
+            pass
+    if is_cstr_backed_lowered(ctx, lowered_str) or ast_expr_cstr_backed(ctx, arg):
+        let data_member = alloc_expr(ir.Expr.expr_member(receiver = lowered_str, member = "data", ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("char")))))
+        return alloc_expr(ir.Expr.expr_cast(target_type = cstr_ty, expression = data_member, ty = cstr_ty))
+    return alloc_expr(ir.Expr.expr_call(
+        callee = "mt_foreign_str_to_cstr_temp",
+        arguments = single_expr_span(lowered_str),
+        ty = cstr_ty,
+    ))
+
+
 function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.ForeignParam, arg: ptr[ast.Expr]) -> ptr[ir.Expr]:
     match param.boundary_type:
         Option.some as boundary:
             if boundary_is_cstr(boundary.value):
-                unsafe:
-                    match read(arg):
-                        ast.Expr.expr_string_literal as lit:
-                            return alloc_expr(ir.Expr.expr_string_literal(value = lit.value, ty = types.primitive("cstr"), cstring = true))
-                        _:
-                            let lowered_str = lower_expr(ctx, arg)
-                            # If the argument is already a cstr (e.g. from a
-                            # preceding foreign function call returning cstr),
-                            # skip the mt_foreign_str_to_cstr_temp wrapper
-                            # since the value is already a C string pointer.
-                            let arg_ty = ir_expr_type(lowered_str)
-                            var arg_is_cstr = false
-                            match arg_ty:
-                                types.Type.ty_primitive as p:
-                                    if p.name == "cstr":
-                                        arg_is_cstr = true
-                                _:
-                                    pass
-                            if arg_is_cstr:
-                                return lowered_str
-                            # A cstr-backed `str` (a string-literal or cstr-backed
-                            # local, a dynamic format string's temp, or any
-                            # *syntactically* cstr-backed expression — an
-                            # `if`/`unsafe` of them, the host's
-                            # `cstr_backed_expression?`) owns a buffer that
-                            # outlives the call, so its `data` pointer passes
-                            # directly.
-                            if is_cstr_backed_lowered(ctx, lowered_str) or ast_expr_cstr_backed(ctx, arg):
-                                let data_member = alloc_expr(ir.Expr.expr_member(receiver = lowered_str, member = "data", ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("char")))))
-                                return alloc_expr(ir.Expr.expr_cast(target_type = types.primitive("cstr"), expression = data_member, ty = types.primitive("cstr")))
-                            return alloc_expr(ir.Expr.expr_call(
-                                callee = "mt_foreign_str_to_cstr_temp",
-                                arguments = single_expr_span(lowered_str),
-                                ty = types.primitive("cstr"),
-                            ))
+                return lower_cstr_argument(ctx, arg, lower_expr(ctx, arg))
             # For `in value: T as const_ptr[void]` the host takes the
             # argument's address with `const_pointer_to(parameter.type)` and
             # then projects it to the declared boundary type — the host's

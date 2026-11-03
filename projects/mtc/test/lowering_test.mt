@@ -4626,6 +4626,30 @@ function test_synthetic_functions_follow_all_modules() -> void:
 
 
 @[test]
+function test_variadic_foreign_str_argument_takes_the_cstr_projection() -> void:
+    ## A `str` argument in a variadic foreign slot has no declared parameter,
+    ## but the host still applies the cstr projection (`TextFormat("%s", value)`):
+    ## a cstr-backed local passes its `data` pointer in an `IR::Cast(cstr)`
+    ## (session 45 batch 13).
+    var source = <<-SRC
+        import std.raylib as rl
+
+        function main() -> int:
+            let text = "on"
+            let formatted = rl.text_format(c"Cel: %s", text)
+            let _ = formatted
+            return 0
+    SRC
+    var module_root = test_module_root()
+    defer: module_root.release()
+    var dump = lower_dump_for_source_roots(source, module_root.as_str())
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Call :callee \"TextFormat\""))
+    expect(text.contains_substring("(IR::Cast :target_type (Types::Primitive :name \"cstr\") :expression (IR::Member :receiver (IR::Name :name \"text\""))
+
+
+@[test]
 function test_const_prefix_cast_folds() -> void:
     ## A compile-time constant through a prefix cast folds before the contextual
     ## numeric check (`uint<-MoverBit` is the constant 2), so a `ptr_uint` field
