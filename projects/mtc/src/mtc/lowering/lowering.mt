@@ -23,6 +23,7 @@ import std.mem.heap as heap_mod
 import mtc.ir as ir
 import mtc.loader.module_loader as loader
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.expressions as sem_exprs
 import mtc.semantic.types as types
 import mtc.parser.ast as ast
 import mtc.parser.literal_parsing as lparse
@@ -3505,6 +3506,15 @@ function local_decl_type(ctx: ref[LowerCtx], declared: ptr[ast.TypeRef]?, value:
 function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, else_binding: Option[str], value: ptr[ast.Expr]?, else_body: ptr[ast.Stmt]?, line: ptr_uint) -> void:
     let value_ptr = value else:
         fatal(c"lowering: guard local requires an initializer")
+    # Hidden storage local holding the full Option/Result/nullable value.  The
+    # host names it after the user binding (`memory`) so the C local name is
+    # stable; `_` and discarded bindings get a fresh temp.  It is allocated
+    # *before* the initializer's temps (the host's `lower_local_decl_stmt`
+    # computes `linkage_name` first) and becomes the block's format
+    # destination, so a later `f"..."` in this block (the guard's own else body
+    # included) is named `__fmt_<storage>`.
+    let storage_c = if name == "_": fresh_c_temp_name(ctx, "let_else_discard") else: utils.c_local_name(name)
+    ctx.fmt_dest_name = storage_c
     # The initializer is a prepared position: a foreign call's argument/cleanup
     # temporaries hoist into the statement stream before the storage local (the
     # host's `prepare_expression_with_cleanups` with `allow_root_statement_foreign`).
@@ -3529,10 +3539,6 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
             _:
                 pass
 
-    # Hidden storage local holding the full Option/Result/nullable value.  The
-    # host names it after the user binding (`memory`) so the C local name is
-    # stable; `_` and discarded bindings get a fresh temp.
-    let storage_c = if name == "_": fresh_c_temp_name(ctx, "let_else_discard") else: utils.c_local_name(name)
     output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = line, source_path = ctx.analysis.source_path))
     append_hoist_cleanups(output, hoist_collected)
     let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = Option[bool].some(value = false)))
@@ -5270,7 +5276,11 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
     let index_c = utils.c_local_name(index_name)
     let stop_c = fresh_c_temp_name(ctx, "for_stop")
 
-    let inline_stop = is_integer_literal(stop)
+    # The host inlines the stop value when it is a compile-time numeric
+    # constant expression (`compile_time_numeric_const_expression?`) — a literal,
+    # a module constant, an enum member or a fold of those — and hoists the
+    # `__mt_for_stop_N` temp only otherwise.
+    let inline_stop = is_numeric_const_expression(ctx, stop)
 
     let saved_break = ctx.loop_break_label
     let saved_continue = ctx.loop_continue_label
@@ -5345,13 +5355,19 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
     ctx.loop_defer_depth = saved_loop_depth
 
 
-function is_integer_literal(ep: ptr[ast.Expr]) -> bool:
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_integer_literal:
-                return true
-            _:
-                return false
+## True when `ep` folds to a numeric compile-time constant (the host's
+## `compile_time_numeric_const_expression?`): a literal, a module constant
+## (recursively), an enum member's value, or an arithmetic fold of those.
+function is_numeric_const_expression(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool:
+    match try_evaluate_const_expr(ctx, ep):
+        Option.some as value:
+            match value.value:
+                ConstValue.cv_int:
+                    return true
+                _:
+                    return false
+        Option.none:
+            return false
 
 
 ## Lower `for v in xs:` (array) / `for v in s:` (span) into a scope block that
@@ -10075,6 +10091,16 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             var saved_inside_async = ctx.inside_async
             var saved_cps_active = ctx.async_cps_active
             var saved_cps_completion = ctx.async_completion_active
+            # A specialization lowered *while an expression is being lowered*
+            # (a lazy monomorphization) must not disturb the caller's format
+            # state: its body's result naming would otherwise leak back and a
+            # later `f"..."` in the caller loses its `__fmt_<dest>` name (and
+            # numbering).  The maps are shared by reference, so the body gets
+            # fresh ones and the caller's are restored afterwards.
+            var saved_fmt_dest = ctx.fmt_dest_name
+            var saved_fmt_counter = ctx.fmt_counter
+            var saved_fmt_visible = ctx.fmt_counter_visible
+            var saved_cstr_backed = ctx.cstr_backed_names
             # Specializations are lowered in their own right; a caller's CPS
             # state must not leak into their IR bodies (or the body will emit a
             # frame completion against a frame that doesn't exist).
@@ -10098,8 +10124,9 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             ctx.locals = vec.Vec[LocalBinding].create()
             ctx.temp_counter = 0
             ctx.fmt_dest_name = ""
-            ctx.fmt_counter.clear()
-            ctx.cstr_backed_names.clear()
+            ctx.fmt_counter = map_mod.Map[str, ptr_uint].create()
+            ctx.fmt_counter_visible = false
+            ctx.cstr_backed_names = map_mod.Map[str, bool].create()
             ctx.function_returns = map_mod.Map[str, types.Type].create()
             ctx.type_substitution = map_mod.Map[str, types.Type].create()
             ctx.inside_async = false
@@ -10148,6 +10175,10 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             ctx.inside_async = saved_inside_async
             ctx.async_cps_active = saved_cps_active
             ctx.async_completion_active = saved_cps_completion
+            ctx.fmt_dest_name = saved_fmt_dest
+            ctx.fmt_counter = saved_fmt_counter
+            ctx.fmt_counter_visible = saved_fmt_visible
+            ctx.cstr_backed_names = saved_cstr_backed
         _:
             fatal(j2("lowering: monomorphization failed, expected function decl for ", gm.module_name))
 
@@ -12218,6 +12249,14 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     var saved_inside_async = ctx.inside_async
     var saved_cps_active = ctx.async_cps_active
     var saved_cps_completion = ctx.async_completion_active
+    # A lazy specialization nested in the caller's expression lowering must not
+    # disturb the caller's format state (its `__fmt_<dest>` naming and repeat
+    # counters, and the cstr-backed local set); the maps are shared by
+    # reference, so the body gets fresh ones and the caller's are restored.
+    var saved_fmt_dest = ctx.fmt_dest_name
+    var saved_fmt_counter = ctx.fmt_counter
+    var saved_fmt_visible = ctx.fmt_counter_visible
+    var saved_cstr_backed = ctx.cstr_backed_names
 
     ctx.module_name = gm.owner_module
     ctx.analysis = owner_a
@@ -12226,9 +12265,9 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
-    ctx.fmt_counter.clear()
+    ctx.fmt_counter = map_mod.Map[str, ptr_uint].create()
     ctx.fmt_counter_visible = false
-    ctx.cstr_backed_names.clear()
+    ctx.cstr_backed_names = map_mod.Map[str, bool].create()
     ctx.function_returns = map_mod.Map[str, types.Type].create()
     ctx.type_substitution = sub
     ctx.inside_async = false
@@ -12284,6 +12323,10 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     ctx.inside_async = saved_inside_async
     ctx.async_cps_active = saved_cps_active
     ctx.async_completion_active = saved_cps_completion
+    ctx.fmt_dest_name = saved_fmt_dest
+    ctx.fmt_counter = saved_fmt_counter
+    ctx.fmt_counter_visible = saved_fmt_visible
+    ctx.cstr_backed_names = saved_cstr_backed
 
 
 ## Find the module that defines a struct named `name` by searching loaded analyses.
@@ -14557,11 +14600,27 @@ function walk_mapping_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr], top_ret_ty: ty
                     ast.Expr.expr_member_access as ma:
                         if not member_receiver_is_local(ctx, ma.receiver):
                             var cargs = vec.Vec[ir.Expr].create()
+                            let raw_info = mapping_call_foreign_info(ctx, owner_module, ma.receiver, ma.member_name)
                             var k: ptr_uint = 0
                             while k < call.args.len:
                                 var a: ast.Argument
                                 a = read(call.args.data + k)
-                                cargs.push(read(walk_mapping_expr(ctx, a.arg_value, top_ret_ty, owner_module)))
+                                var arg_ir = walk_mapping_expr(ctx, a.arg_value, top_ret_ty, owner_module)
+                                # A literal mapping argument (the fixed `null` of
+                                # `= c.SDL_RunApp(..., null)`) takes the raw C
+                                # parameter's declared type, the host's
+                                # `lower_contextual_expression` against the
+                                # resolved declaration (item 5b's rule on the
+                                # mapping path).
+                                match raw_info:
+                                    Option.some as ri:
+                                        if k < ri.value.params.len:
+                                            var raw_param: ast.ForeignParam
+                                            raw_param = read(ri.value.params.data + k)
+                                            arg_ir = literal_value_to_context_type(a.arg_value, foreign_param_context_type(ctx, ri.value, raw_param), arg_ir)
+                                    Option.none:
+                                        pass
+                                cargs.push(read(arg_ir))
                                 k += 1
                             var call_ty = top_ret_ty
                             match mapping_call_return_type(ctx, owner_module, ma.receiver, ma.member_name):
@@ -14882,6 +14941,33 @@ function mapping_call_return_type(ctx: ref[LowerCtx], owner_module: str, receive
                         return Option[types.Type].none
             _:
                 return Option[types.Type].none
+
+
+## The raw C declaration behind a foreign mapping's external call
+## (`c.SDL_RunApp`), resolved in the mapping owner's module — the parameter
+## types its arguments are contextually lowered against.
+function mapping_call_foreign_info(ctx: ref[LowerCtx], owner_module: str, receiver: ptr[ast.Expr], name: str) -> Option[ForeignInfo]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                let owner_a = find_imported_analysis(ctx, owner_module) else:
+                    return Option[ForeignInfo].none
+                let mod_ptr = owner_a.imports.get(id.name)
+                if mod_ptr == null:
+                    return Option[ForeignInfo].none
+                let target_module = read(mod_ptr)
+                match imported_foreign_call(ctx, target_module, name):
+                    Option.some as fi:
+                        return Option[ForeignInfo].some(value = fi.value)
+                    Option.none:
+                        pass
+                match imported_extern_call(ctx, target_module, name):
+                    Option.some as ei:
+                        return Option[ForeignInfo].some(value = ei.value)
+                    Option.none:
+                        return Option[ForeignInfo].none
+            _:
+                return Option[ForeignInfo].none
 
 
 ## True when a lowered value is a plain call (the host's single-direct-call
@@ -19353,22 +19439,13 @@ function common_numeric_type(left: types.Type, right: types.Type) -> Option[type
 
 
 ## The common integer type of two operands (mirrors Ruby's common_integer_type):
-## identical types pass through; otherwise both must be fixed-width integers of
-## the same signedness, and the wider one wins.
+## identical types pass through; both must be fixed-width integers.  Same
+## signedness takes the wider type; mixed signedness promotes to the narrowest
+## signed type that holds both ranges (`uint` vs `int` → `long`), with no answer
+## once the unsigned side is 64-bit.  Shared with the semantic conditional
+## common-type rule.
 function common_integer_type(left: types.Type, right: types.Type) -> Option[types.Type]:
-    if types.type_equals(left, right):
-        return Option[types.Type].some(value = left)
-    if not (types.is_integer_type(left) and types.is_integer_type(right)):
-        return Option[types.Type].none
-    let left_name = prim_name(left)
-    let right_name = prim_name(right)
-    if not (types.is_fixed_width_integer_name(left_name) and types.is_fixed_width_integer_name(right_name)):
-        return Option[types.Type].none
-    if types.is_signed_integer_name(left_name) != types.is_signed_integer_name(right_name):
-        return Option[types.Type].none
-    if types.integer_width(left_name) >= types.integer_width(right_name):
-        return Option[types.Type].some(value = left)
-    return Option[types.Type].some(value = right)
+    return sem_exprs.common_integer_type(left, right)
 
 
 ## The wider of two float primitives (mirrors Ruby's wider_float_type).

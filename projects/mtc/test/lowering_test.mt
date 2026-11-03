@@ -4192,3 +4192,144 @@ function test_negative_literal_takes_the_peer_type() -> void:
     defer: dump.release()
     let text = dump.as_str()
     expect(text.contains_substring(":right (IR::Unary :operator \"-\" :operand (IR::IntegerLiteral :value 128 :type (Types::Primitive :name \"long\")) :type (Types::Primitive :name \"long\"))"))
+
+
+@[test]
+function test_foreign_mapping_literal_takes_the_raw_parameter_type() -> void:
+    ## A foreign mapping's fixed literal argument takes the raw C parameter's
+    ## declared type (`= c.load(a, null)`'s null is `Nullable(ptr[void])`, not
+    ## `void`) — the host's contextual lowering of the mapping arguments
+    ## (session 45 batch 9).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_mapctx_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_source = <<-SRC
+        external
+
+        external function load(name: cstr, reserved: ptr[void]?) -> bool
+    SRC
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", raw_source):
+        return
+
+    var wrap_source = <<-SRC
+        import std.c.raw.lib as c
+
+        public foreign function load(name: str as cstr) -> bool = c.load(name, null)
+    SRC
+    if not write_source_file(root.as_str(), "wrap.mt", wrap_source):
+        return
+
+    var source = <<-SRC
+        import wrap
+
+        function f() -> bool:
+            return wrap.load("x")
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\"))))"))
+    expect(not text.contains_substring("(IR::NullLiteral :type (Types::Primitive :name \"void\"))"))
+
+
+@[test]
+function test_range_for_stop_inlines_a_compile_time_constant() -> void:
+    ## `for i in 0..<N` with a module constant inlines the stop value (the
+    ## host's `compile_time_numeric_const_expression?`) instead of hoisting a
+    ## `__mt_for_stop_N` temp (session 45 batch 9).
+    var source = <<-SRC
+        const COUNT: int = 4
+
+        function sum() -> int:
+            var total = 0
+            for i in 0..COUNT:
+                total += i
+            return total
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring(":condition (IR::Binary :operator \"<\" :left (IR::Name :name \"i\""))
+    expect(text.contains_substring(":right (IR::Name :name \"main_COUNT\""))
+    expect(not text.contains_substring("__mt_for_stop_"))
+
+
+@[test]
+function test_lazy_specialization_keeps_the_callers_format_destination() -> void:
+    ## A generic method specialization lowered lazily inside an expression must
+    ## not clobber the caller's `fmt_dest_name`/cstr state: the later dynamic
+    ## format string still names its result after the most recent local
+    ## (`__fmt_ok`), instead of falling back to `__mt_fmt_str_N`
+    ## (session 45 batch 9).
+    var source = <<-SRC
+        import std.string as string
+
+        function f(sample: str) -> int:
+            var d: uint = 0
+            let text = string.String.from_str(sample)
+            let ok = text.as_str() == "x"
+            if not ok:
+                fatal(f"msg: #{d}")
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"__fmt_ok\""))
+    expect(not text.contains_substring("__mt_fmt_str_"))
+
+
+@[test]
+function test_guard_binding_names_the_blocks_format_destination() -> void:
+    ## A `let n = value else:` guard's storage binding is the block's format
+    ## destination (the host's `current_local_name = linkage_name`), so the
+    ## guard's else body's `f"..."` is `__fmt_n` (session 45 batch 9).
+    var source = <<-SRC
+        function f(maybe: int?) -> int:
+            var d: uint = 0
+            let n = maybe else:
+                fatal(f"missing value: #{d}")
+            return n
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"__fmt_n\""))
+    expect(not text.contains_substring("__mt_fmt_str_"))
+
+
+@[test]
+function test_mixed_signedness_integer_promotion_casts_both_operands() -> void:
+    ## A `uint`/`int` comparison promotes both operands to `long` (the host's
+    ## `common_integer_type` mixed-signedness rule: the narrowest signed type
+    ## that holds both ranges), not leaving the `uint` operand uncast
+    ## (session 45 batch 9).
+    var source = <<-SRC
+        function eq(a: uint, b: int) -> bool:
+            return a == b
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring(":left (IR::Cast :target_type (Types::Primitive :name \"long\") :expression (IR::Name :name \"a\""))
+    expect(text.contains_substring(":right (IR::Cast :target_type (Types::Primitive :name \"long\") :expression (IR::Name :name \"b\""))
