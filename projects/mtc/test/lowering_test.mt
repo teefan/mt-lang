@@ -4573,3 +4573,72 @@ function test_signed_literal_takes_the_declared_type() -> void:
     defer: dump.release()
     let text = dump.as_str()
     expect(text.contains_substring("(IR::Unary :operator \"-\" :operand (IR::IntegerLiteral :value 42 :type (Types::Primitive :name \"short\")) :type (Types::Primitive :name \"short\"))"))
+
+
+@[test]
+function test_contextual_numeric_constant_casts() -> void:
+    ## A declared float context applies the host's contextual numeric cast to a
+    ## folded constant (`LIMIT - 1`) and to an ordinary (non-foreign) call, but
+    ## not to a foreign call (the foreign branch bypasses
+    ## `lower_contextual_expression`) — session 45 batch 11.
+    var source = <<-SRC
+        const LIMIT: int = 1024
+
+        function get_value() -> int:
+            return 5
+
+        function frames() -> float:
+            let frames_since: float = LIMIT - 1
+            let from_call: float = get_value()
+            return frames_since + from_call
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Cast :target_type (Types::Primitive :name \"float\") :expression (IR::Binary :operator \"-\" :left (IR::Name :name \"main_LIMIT\""))
+    expect(text.contains_substring("(IR::Cast :target_type (Types::Primitive :name \"float\") :expression (IR::Call :callee \"main_get_value\""))
+    expect(text.contains_substring("(IR::LocalDecl :name \"frames_since\" :linkage_name \"frames_since\" :type (Types::Primitive :name \"float\")"))
+
+
+@[test]
+function test_synthetic_functions_follow_all_modules() -> void:
+    ## A proc's synthetic invoke/release/retain functions are a program-level
+    ## creation-ordered tail (the host's `@artifacts.synthetic_functions`),
+    ## appended after every module's declarations — not a per-module leftover
+    ## before the next module's functions (session 45 batch 11).
+    var source = <<-SRC
+        function make_proc() -> fn() -> int:
+            let p = proc() -> int:
+                return 1
+            return p
+
+        function other() -> int:
+            return 2
+    SRC
+    var text = lower_source(source)
+    defer: text.release()
+    let ir = text.as_str()
+    let make_pos = test_source_position(ir, "fn make_proc as")
+    let other_pos = test_source_position(ir, "fn other as")
+    let invoke_pos = test_source_position(ir, "fn main__proc_1__invoke")
+    expect(make_pos < other_pos)
+    expect(other_pos < invoke_pos)
+
+
+@[test]
+function test_propagate_failure_return_has_no_line() -> void:
+    ## The `?` propagation's failure return carries the analysis path but no
+    ## source line (the host's `IR::ReturnStmt.new(value: failure_return, path:)`),
+    ## while the success binding keeps the statement's line/path (session 45
+    ## batch 11).
+    var source = <<-SRC
+        function f(r: Result[int, int]) -> Result[int, int]:
+            let value = r?
+            return Result[int, int].success(value = value)
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::ReturnStmt :value (IR::Name :name \"__mt_propagate_1\""))
+    expect(text.contains_substring(":line nil :path \"/tmp/mtc_ld_"))
+    expect(text.contains_substring("(IR::LocalDecl :name \"value\" :linkage_name \"value\""))

@@ -627,6 +627,7 @@ public function lower(program: loader.Program) -> ir.Program:
     var spec_infos = map_mod.Map[str, SpecInfo].create()
     var module_fragments = vec.Vec[ir.Program].create()
     var module_analyses = vec.Vec[analyzer.Analysis].create()
+    var synthetic_functions = vec.Vec[ir.Function].create()
     while i < count:
         let a_ptr = program.analyses.get(i) else:
             i += 1
@@ -636,7 +637,7 @@ public function lower(program: loader.Program) -> ir.Program:
             i += 1
             continue
         let is_root = i == program.root_index
-        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(pending_synthetic_structs), ref_of(spec_infos))
+        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(pending_synthetic_structs), ref_of(synthetic_functions), ref_of(spec_infos))
         module_fragments.push(fragment)
         module_analyses.push(analysis)
         globals.append_span(fragment.globals)
@@ -707,6 +708,9 @@ public function lower(program: loader.Program) -> ir.Program:
         var ordered = ordered_module_functions(unsafe: read(ana_ptr), program.analyses.as_span(), unsafe: read(frag_ptr).functions, ref_of(all_by_linkage), ref_of(spec_infos))
         dedup_append_functions(ref_of(functions), ordered.as_span(), ref_of(seen_functions))
         fi += 1
+    # The host's program-level synthetic function list (proc invoke/release/
+    # retain bodies and pfor/spawn workers) follows every module's functions.
+    dedup_append_functions(ref_of(functions), synthetic_functions.as_span(), ref_of(seen_functions))
 
     # Collect type aliases from all non-raw modules. Raw (external) modules
     # define C-level types that already exist — we never emit typedefs for
@@ -1373,7 +1377,7 @@ function append_selected_when_decls(ctx: ref[LowerCtx], discriminant: ptr[ast.Ex
             pass
 
 
-function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> ir.Program:
+function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]], synthetic_functions: ref[vec.Vec[ir.Function]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> ir.Program:
     var ctx = new_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)))
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
@@ -1637,12 +1641,14 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
             break
         functions.push(unsafe: read(spec_ptr))
 
-    # Append any pending synthetic proc functions and capture-env structs.
+    # Synthetic proc/worker functions go to the program-level creation-ordered
+    # tail (the host's `@artifacts.synthetic_functions`, appended after every
+    # module's functions by `assemble_modules`), not to this module's list.
     var sf_iter = ctx.pending_synthetic_functions.iter()
     while true:
         let sf_ptr = sf_iter.next() else:
             break
-        functions.push(unsafe: read(sf_ptr))
+        synthetic_functions.push(unsafe: read(sf_ptr))
 
     var ds_iter = ctx.pending_dyn_structs.iter()
     while true:
@@ -2941,12 +2947,16 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # Re-type an integer literal return value against the function's
                 # return type (e.g. `return 0` in a `ptr_uint` function), matching
                 # the host's contextual numeric literal inference.
-                let ret_lit = int_literal_to_context_type(value, ctx.current_fn_return_type, lowered)
-                let ret_flt = float_literal_to_context_type(value, ctx.current_fn_return_type, ret_lit)
+                let ret_ty0 = ctx.current_fn_return_type
+                let ret_lit = int_literal_to_context_type(value, ret_ty0, lowered)
+                let ret_flt = float_literal_to_context_type(value, ret_ty0, ret_lit)
                 # A bare `null` return takes the function's return type (the
                 # analyzer may record only `void` for it).
-                let ret_null = null_literal_to_context_type(value, ctx.current_fn_return_type, ret_flt)
-                let wrapped = if ctx.inside_async: make_task_literal(ret_null) else: ret_null
+                let ret_null = null_literal_to_context_type(value, ret_ty0, ret_flt)
+                # The host's return-site contextual conversion: a folded numeric
+                # constant that fits, and int→float for a float/double return.
+                let ret_typed = contextual_numeric_cast(ctx, value, ret_null, ret_ty0, types.is_float_type(ret_ty0) and not is_foreign_call_initializer(ctx, value), false)
+                let wrapped = if ctx.inside_async: make_task_literal(ret_typed) else: ret_typed
                 # A returned str/cstr (or a struct containing one) transfers the
                 # dynamic format temp's buffer to the caller, so its release is
                 # dropped; every other return type keeps the release.
@@ -3126,7 +3136,14 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # nullable position takes that type (the host's contextual
                 # literal inference).
                 if init != null:
-                    value_expr = literal_value_to_context_type(ptr[ast.Expr]<-init, ty, value_expr)
+                    value_expr = contextual_value_to_type(
+                        ctx,
+                        ptr[ast.Expr]<-init,
+                        ty,
+                        value_expr,
+                        loc.stmt_type != null and types.is_float_type(ty) and not is_foreign_call_initializer(ctx, ptr[ast.Expr]<-init),
+                        false,
+                    )
                 # Wrap a non-nullable value into a value-type nullable's opt struct.
                 if types.is_nullable_type(ty) and not is_nullable_pointer_like(ty):
                     let value_ty = ir_expr_type(value_expr)
@@ -3224,7 +3241,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         var value = lower_expr(ctx, asg.value)
                         let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
                         emit_hoist_setup(output, hoist_base, hoist_collected)
-                        value = literal_value_to_context_type(asg.value, deref_ty, value)
+                        value = contextual_value_to_type(ctx, asg.value, deref_ty, value, types.is_float_type(deref_ty) and not is_foreign_call_initializer(ctx, asg.value), false)
                         output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
                         let read_target_cleanups = if format_owning_target_type(ctx, deref_ty, 0):
                             drop_format_release_cleanups(hoist_collected)
@@ -3246,7 +3263,14 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # type): `i = 1` / `i += 1` on a `ptr_uint` target emits a
                 # `ptr_uint` literal, not an `int` one.  Mirrors the local
                 # declaration arm's literal set.
-                value = literal_value_to_context_type(asg.value, target_ty, value)
+                value = contextual_value_to_type(
+                    ctx,
+                    asg.value,
+                    target_ty,
+                    value,
+                    types.is_float_type(target_ty) and not is_foreign_call_initializer(ctx, asg.value),
+                    external_numeric_assignment_target(ctx, asg.target),
+                )
                 # Native math compound assignment (`a += b`, `a *= 2.0`): the C
                 # aggregate structs have no operators, so expand component-wise
                 # and emit a plain assignment.
@@ -3680,7 +3704,7 @@ function lower_propagate_return(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
 
     let kind = guard_storage_kind(ctx, storage_ty)
     if kind != "option" and kind != "result" and kind != "nullable":
-        output.push(ir.Stmt.stmt_return(value = storage_ref, line = line, source_path = source_path))
+        output.push(ir.Stmt.stmt_return(value = storage_ref, line = 0, source_path = source_path))
         return
 
     if kind == "option" or kind == "result":
@@ -3740,7 +3764,7 @@ function lower_propagate_return(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
     # Failure branch: return the appropriate failure value.
     var fail_body = vec.Vec[ir.Stmt].create()
     flush_all_defers(ctx, ref_of(fail_body))
-    fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = line, source_path = source_path))
+    fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = 0, source_path = source_path))
 
     let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
     output.push(ir.Stmt.stmt_if(condition = cond, then_body = fail_body.as_span(), else_body = Option[span[ir.Stmt]].none))
@@ -6384,8 +6408,8 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 var ty = expr_type(ctx, ep)
                 if types.is_error(ty) or types.type_to_string(ty) == "void":
                     ty = ir_expr_type(then_e)
-                then_e = literal_value_to_context_type(ie.then_expr, ty, then_e)
-                else_e = literal_value_to_context_type(ie.else_expr, ty, else_e)
+                then_e = literal_value_to_context_type(ctx, ie.then_expr, ty, then_e)
+                else_e = literal_value_to_context_type(ctx, ie.else_expr, ty, else_e)
                 return alloc_expr(ir.Expr.expr_conditional(condition = cond, then_expression = then_e, else_expression = else_e, ty = ty))
             ast.Expr.expr_unsafe as u:
                 return lower_expr(ctx, u.expression)
@@ -10344,7 +10368,7 @@ function collect_variant_literal_fields(ctx: ref[LowerCtx], args: span[ast.Argum
                 # A bare literal takes the field's type (`Option[ptr_uint].some(
                 # value = 0)` emits a `ptr_uint` literal; the host lowers the
                 # field value with the field's type as the expected type).
-                value = literal_value_to_context_type(arg.arg_value, fty_val, value)
+                value = literal_value_to_context_type(ctx, arg.arg_value, fty_val, value)
                 # Wrap non-nullable values into value-type nullable fields
                 # (e.g. `NullableFields.with_values(port = raw)` where
                 # `port: int?`).
@@ -10485,9 +10509,7 @@ function lower_aggregate_literal_impl(ctx: ref[LowerCtx], struct_name: str, args
         match find_struct_field_type(ctx, field_struct_name, field_source_module, field_name):
             Option.some as field_ty:
                 let fty = field_ty.value
-                value = int_literal_to_context_type(arg.arg_value, fty, value)
-                value = float_literal_to_context_type(arg.arg_value, fty, value)
-                value = null_literal_to_context_type(arg.arg_value, fty, value)
+                value = literal_value_to_context_type(ctx, arg.arg_value, fty, value)
                 # Wrap non-nullable values into value-type nullable fields.
                 if types.is_nullable_type(fty) and not is_nullable_pointer_like(fty):
                     let value_ty = ir_expr_type(value)
@@ -11491,7 +11513,7 @@ function lower_static_call_args(ctx: ref[LowerCtx], mi: MethodInfo, args: span[a
         var lowered = lower_expr(ctx, arg.arg_value)
         # The host contextualizes every call argument, so a bare literal takes
         # the declared parameter's type (`Color.from_rgba(10, 20, 30, 200)`).
-        lowered = coerce_literal_to_param_type(mi.params, i, arg.arg_value, lowered)
+        lowered = coerce_literal_to_param_type(ctx, mi.params, i, arg.arg_value, lowered)
         # A pointer argument (e.g. `this` inside an editable method) passed to
         # a by-value parameter is dereferenced, mirroring Ruby's `*this`
         # projection and the monomorphized-path `coerce_arg_to_param`.
@@ -11523,7 +11545,7 @@ function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr
         unsafe:
             arg = read(args.data + i)
         var lowered = lower_expr(ctx, arg.arg_value)
-        lowered = coerce_literal_to_param_type(mi.params, i, arg.arg_value, lowered)
+        lowered = coerce_literal_to_param_type(ctx, mi.params, i, arg.arg_value, lowered)
         if i < mi.params.len:
             var declared: types.Type
             unsafe:
@@ -12196,7 +12218,7 @@ function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, g
         var lowered = lower_expr(ctx, arg.arg_value)
         lowered = coerce_arg_to_param(cached, param_offset + i, lowered)
         lowered = coerce_monomorphized_arg_to_proc(ctx, cached, param_offset + i, lowered, arg.arg_value)
-        lowered = coerce_literal_to_mono_param(cached, param_offset + i, arg.arg_value, lowered)
+        lowered = coerce_literal_to_mono_param(ctx, cached, param_offset + i, arg.arg_value, lowered)
         unsafe:
             ir_args.push(read(lowered))
         i += 1
@@ -12207,7 +12229,7 @@ function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, g
 ## type — the monomorphized path's `coerce_literal_to_param_type` (the params
 ## live on the IR function, not an `FnSig`), so `a.m(2, 3)` against
 ## `ptr_uint` parameters emits `ptr_uint` literals.
-function coerce_literal_to_mono_param(cached: ptr[ir.Function]?, param_index: ptr_uint, arg_ast: ptr[ast.Expr], arg: ptr[ir.Expr]) -> ptr[ir.Expr]:
+function coerce_literal_to_mono_param(ctx: ref[LowerCtx], cached: ptr[ir.Function]?, param_index: ptr_uint, arg_ast: ptr[ast.Expr], arg: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let fn_ptr = cached else:
         return arg
     let spec_fn = unsafe: read(fn_ptr)
@@ -12216,7 +12238,7 @@ function coerce_literal_to_mono_param(cached: ptr[ir.Function]?, param_index: pt
     var param: ir.Param
     unsafe:
         param = read(spec_fn.params.data + param_index)
-    return literal_value_to_context_type(arg_ast, param.ty, arg)
+    return literal_value_to_context_type(ctx, arg_ast, param.ty, arg)
 
 
 ## Coerce a lowered call argument to the specialized function's parameter type:
@@ -13822,7 +13844,7 @@ function lower_plain_call_spec(ctx: ref[LowerCtx], c_name: str, args: span[ast.A
         unsafe:
             arg = read(args.data + i)
         var lowered = lower_expr(ctx, arg.arg_value)
-        lowered = coerce_literal_to_mono_param(spec_fn, i, arg.arg_value, lowered)
+        lowered = coerce_literal_to_mono_param(ctx, spec_fn, i, arg.arg_value, lowered)
         unsafe:
             ir_args.push(read(lowered))
         i += 1
@@ -13861,7 +13883,7 @@ function lower_call_with_callee(ctx: ref[LowerCtx], c_name: str, callee_expr: Op
                 lowered = coerce_fn_arg_to_proc(ctx, sig, i, lowered, arg.arg_value)
                 match sig:
                     Option.some as s:
-                        lowered = coerce_literal_to_param_type(s.value.params, i, arg.arg_value, lowered)
+                        lowered = coerce_literal_to_param_type(ctx, s.value.params, i, arg.arg_value, lowered)
                     Option.none:
                         pass
         unsafe:
@@ -13909,8 +13931,10 @@ function null_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.
 ## expression` is used for assignment values and for every call argument).
 ## Shared by the assignment arms and the call-argument coercion, so `i = 1` /
 ## `read(header - 1) = 0` / `create_aligned(x, 1)` emit `ptr_uint` literals for
-## a `ptr_uint` context.
-function literal_value_to_context_type(value_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+## a `ptr_uint` context.  The compile-time numeric compatibility cast is applied
+## here too (a folded constant that fits the context), with int→float and the
+## external-numeric arm left to the declared-type sites.
+function literal_value_to_context_type(ctx: ref[LowerCtx], value_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
     var result = value
     unsafe:
         match read(value_ast):
@@ -13928,7 +13952,180 @@ function literal_value_to_context_type(value_ast: ptr[ast.Expr], context_ty: typ
                 result = null_literal_to_context_type(value_ast, context_ty, result)
             _:
                 pass
-    return result
+    return contextual_numeric_cast(ctx, value_ast, result, context_ty, false, false)
+
+
+## The declared-type sites' contextual conversion: the literal retyping above,
+## then the host's int→float arm (only where the host passes
+## `contextual_int_to_float`, i.e. a declared float local/assignment/return) and
+## the external-numeric arm (an assignment through a raw-module field).
+function contextual_value_to_type(
+    ctx: ref[LowerCtx],
+    value_ast: ptr[ast.Expr],
+    context_ty: types.Type,
+    value: ptr[ir.Expr],
+    allow_int_to_float: bool,
+    external_numeric: bool,
+) -> ptr[ir.Expr]:
+    let typed = literal_value_to_context_type(ctx, value_ast, context_ty, value)
+    return contextual_numeric_cast(ctx, value_ast, typed, context_ty, allow_int_to_float, external_numeric)
+
+
+## The host's `contextual_numeric_compatibility?` + `cast_expression` step:
+##  - a compile-time constant whose numeric value fits the context type,
+##  - an integer-like value in a `char` context,
+##  - an integer value in a float/double context when the host's
+##    `contextual_int_to_float` flag is set,
+##  - a lossless external numeric pair when the assignment target is a
+##    raw-module field (`external_numeric`).
+## An enum/flags *actual* type is excluded from the constant arm (the host's
+## `return false if actual_type.is_a?(Types::EnumBase)`).
+function contextual_numeric_cast(
+    ctx: ref[LowerCtx],
+    value_ast: ptr[ast.Expr],
+    value: ptr[ir.Expr],
+    context_ty: types.Type,
+    allow_int_to_float: bool,
+    external_numeric: bool,
+) -> ptr[ir.Expr]:
+    let actual_ty = ir_expr_type(value)
+    if types.type_equals(actual_ty, context_ty):
+        return value
+    var context_name = ""
+    match context_ty:
+        types.Type.ty_primitive as p:
+            context_name = p.name
+        _:
+            return value
+    if context_name == "char":
+        if is_integer_like_value_type(ctx, actual_ty):
+            return cast_to_type(value, context_ty)
+        return value
+    if not types.is_numeric_name(context_name):
+        return value
+    if (context_name == "float" or context_name == "double") and allow_int_to_float:
+        if is_integer_like_value_type(ctx, actual_ty):
+            return cast_to_type(value, context_ty)
+    if not is_enum_value_type(ctx, actual_ty):
+        unsafe:
+            match read(value_ast):
+                ast.Expr.expr_float_literal:
+                    # The literal pass already typed it; a float literal is not
+                    # an exact integer constant for this arm.
+                    pass
+                _:
+                    match try_evaluate_const_expr(ctx, value_ast):
+                        Option.some as cv:
+                            match cv.value:
+                                ConstValue.cv_int as iv:
+                                    if numeric_int_fits_context(iv.value, context_ty):
+                                        return cast_to_type(value, context_ty)
+                                _:
+                                    pass
+                        Option.none:
+                            pass
+    if external_numeric and external_numeric_compatible(actual_ty, context_ty):
+        return cast_to_type(value, context_ty)
+    return value
+
+
+## True for an integer primitive or an enum/flags value (whose backing is an
+## integer) — the host's `integer_like_char_source_type?`.
+function is_integer_like_value_type(ctx: ref[LowerCtx], t: types.Type) -> bool:
+    if types.is_integer_type(t):
+        return true
+    let backing = enum_backing_or_self(ctx, t)
+    return types.is_integer_type(backing)
+
+
+## True when the value type is an enum/flags nominal (the host's `EnumBase`).
+function is_enum_value_type(ctx: ref[LowerCtx], t: types.Type) -> bool:
+    let backing = enum_backing_or_self(ctx, t)
+    return not types.type_equals(backing, t)
+
+
+## A compile-time integer constant fits a numeric context — the host's
+## `numeric_constant_fits_type?` for an integer value: the integer range for an
+## integer context, `|value| <= 2^24` for float and `<= 2^53` for double.
+function numeric_int_fits_context(value: long, context_ty: types.Type) -> bool:
+    if types.is_integer_type(context_ty):
+        return int_value_fits_type(value, context_ty)
+    let magnitude = if value < 0: -value else: value
+    match context_ty:
+        types.Type.ty_primitive as p:
+            if p.name == "float":
+                return magnitude <= 16777216l
+            if p.name == "double":
+                return magnitude <= 9007199254740992l
+        _:
+            pass
+    return false
+
+
+## The host's `lossless_external_integer_compatibility?` / float-width arm of
+## `external_numeric_compatibility?`.
+function external_numeric_compatible(actual_ty: types.Type, expected_ty: types.Type) -> bool:
+    match actual_ty:
+        types.Type.ty_primitive as a:
+            match expected_ty:
+                types.Type.ty_primitive as e:
+                    if types.is_integer_type(actual_ty) and types.is_integer_type(expected_ty):
+                        let a_signed = types.is_signed_integer_name(a.name)
+                        let e_signed = types.is_signed_integer_name(e.name)
+                        let a_width = types.integer_width(a.name)
+                        let e_width = types.integer_width(e.name)
+                        if a_signed == e_signed:
+                            return e_width >= a_width
+                        if a_signed:
+                            return false
+                        return e_signed and e_width > a_width
+                    if types.is_float_type(actual_ty) and types.is_float_type(expected_ty):
+                        return float_width_name(e.name) >= float_width_name(a.name)
+                _:
+                    pass
+        _:
+            pass
+    return false
+
+
+function float_width_name(name: str) -> int:
+    if name == "double":
+        return 64
+    return 32
+
+
+## True when an assignment target is a member of a raw-module (`std.c.*`) type —
+## the host's `external_numeric_assignment_target?`.
+function external_numeric_assignment_target(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_member_access as ma:
+                return is_external_module_type(expr_type(ctx, ma.receiver))
+            _:
+                return false
+
+
+function is_external_module_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_imported as im:
+            return im.module_name.starts_with("std.c.")
+        types.Type.ty_named as n:
+            return n.module_name.starts_with("std.c.")
+        _:
+            return false
+
+
+## True when the initializer/value is a foreign wrapper call: the host's local
+## and assignment foreign-call branches emit the call's value directly, so the
+## return-site/local-site `contextual_int_to_float` arm does not run for them
+## (`float size = GetScreenHeight()` keeps the int call).
+function is_foreign_call_initializer(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_call as call:
+                return foreign_wrapper_call_return_type(ctx, call.callee).is_some()
+            _:
+                return false
 
 
 ## Re-type a call argument's bare literal against the parameter's type — the
@@ -13936,10 +14133,10 @@ function literal_value_to_context_type(value_ast: ptr[ast.Expr], context_ty: typ
 ## (`prepare_expression_with_cleanups`), so `create_aligned(x, 1)` with a
 ## `ptr_uint` parameter emits a `ptr_uint` literal, not an `int` one.  A
 ## variadic argument beyond the fixed parameters has no expected type.
-function coerce_literal_to_param_type(params: span[analyzer.ParamEntry], index: ptr_uint, arg_ast: ptr[ast.Expr], value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+function coerce_literal_to_param_type(ctx: ref[LowerCtx], params: span[analyzer.ParamEntry], index: ptr_uint, arg_ast: ptr[ast.Expr], value: ptr[ir.Expr]) -> ptr[ir.Expr]:
     if index < params.len:
         unsafe:
-            return literal_value_to_context_type(arg_ast, read(params.data + index).ty, value)
+            return literal_value_to_context_type(ctx, arg_ast, read(params.data + index).ty, value)
     return value
 
 
@@ -14705,7 +14902,7 @@ function walk_mapping_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr], top_ret_ty: ty
                                         if k < ri.value.params.len:
                                             var raw_param: ast.ForeignParam
                                             raw_param = read(ri.value.params.data + k)
-                                            arg_ir = literal_value_to_context_type(a.arg_value, foreign_param_context_type(ctx, ri.value, raw_param), arg_ir)
+                                            arg_ir = literal_value_to_context_type(ctx, a.arg_value, foreign_param_context_type(ctx, ri.value, raw_param), arg_ir)
                                     Option.none:
                                         pass
                                 cargs.push(read(arg_ir))
@@ -15287,7 +15484,7 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
             # `foreign_identity_projection_expression`.
             let lowered_plain = lower_expr(ctx, arg)
             let ctx_ty = foreign_param_context_type(ctx, info, param)
-            let typed = literal_value_to_context_type(arg, ctx_ty, lowered_plain)
+            let typed = literal_value_to_context_type(ctx, arg, ctx_ty, lowered_plain)
             return project_foreign_boundary(ctx, typed, foreign_boundary_type(ctx, info, param))
         Option.none:
             let lowered = lower_expr(ctx, arg)
@@ -15360,7 +15557,7 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
             # then projected to the declared boundary — the host's
             # `foreign_identity_projection_expression` (item 8a).
             let ctx_ty = foreign_param_context_type(ctx, info, param)
-            let typed = literal_value_to_context_type(arg, ctx_ty, lowered)
+            let typed = literal_value_to_context_type(ctx, arg, ctx_ty, lowered)
             return project_foreign_boundary(ctx, typed, foreign_boundary_type(ctx, info, param))
 
 
@@ -15649,7 +15846,7 @@ function lower_extern_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast
             # Every bare literal takes the parameter's declared type — the raw
             # external call path shares the foreign rule (`c.time(null)` carries
             # `Nullable(ptr[time_t])`; session 44, item 5b).
-            lowered = literal_value_to_context_type(arg.arg_value, foreign_param_context_type(ctx, info, param), lowered)
+            lowered = literal_value_to_context_type(ctx, arg.arg_value, foreign_param_context_type(ctx, info, param), lowered)
             if param.param_mode == ast.ForeignParamMode.fmode_out or param.param_mode == ast.ForeignParamMode.fmode_inout:
                 let arg_ty = ir_expr_type(lowered)
                 lowered = alloc_expr(ir.Expr.expr_address_of(
