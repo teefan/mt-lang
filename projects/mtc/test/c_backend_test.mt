@@ -561,3 +561,24 @@ function test_emits_the_str_buffer_struct_from_the_backend() -> void:
     let text = c.as_str()
     expect(text.contains_substring("typedef struct mt_str_buffer_256 mt_str_buffer_256;"))
     expect(text.contains_substring("struct mt_str_buffer_256 {"))
+
+
+@[test]
+function test_str_buffer_sink_emits_the_four_argument_clear_and_format_helpers() -> void:
+    ## The explicit format sink emits `mt_str_buffer_clear` with the host's four
+    ## arguments and a `memset`, and a sink that only calls the format helpers
+    ## directly (no `mt_format_str_make`) still pulls the helper block in
+    ## (session 45 batch 10, item 3z).
+    var source = <<-SRC
+        function main(value: int) -> int:
+            var buffer: str_buffer[32]
+            buffer.assign_format(f"n=#{value}")
+            return 0
+    SRC
+    var c = compile_to_c(source)
+    defer: c.release()
+    let text = c.as_str()
+    expect(text.contains_substring("static void mt_str_buffer_clear(char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {"))
+    expect(text.contains_substring("memset(data, 0, cap + 1);"))
+    expect(text.contains_substring("static uintptr_t mt_format_append_int("))
+    expect(text.contains_substring("mt_str_buffer_len("))

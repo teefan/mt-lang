@@ -6156,7 +6156,8 @@ function emit_str_buffer_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  return cap;")
     emit_line(e, "}")
     emit_line(e, "")
-    emit_line(e, "static void mt_str_buffer_clear(uintptr_t* len, bool* dirty) {")
+    emit_line(e, "static void mt_str_buffer_clear(char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {")
+    emit_line(e, "  memset(data, 0, cap + 1);")
     emit_line(e, "  *len = 0;")
     emit_line(e, "  *dirty = false;")
     emit_line(e, "}")
@@ -6205,13 +6206,46 @@ function emit_str_buffer_helpers(e: ref[Emitter]) -> void:
 
 
 function uses_format_helpers(program: ir.Program) -> bool:
-    # Detect by checking for mt_format_append_bytes call in any function body.
+    # The dynamic format builder and the explicit sinks share one helper block;
+    # a sink can call an append/len helper directly without ever calling
+    # `mt_format_append_bytes` or `mt_format_str_make` (a text-only str_buffer
+    # sink, for example), so detect every helper the lowering can emit.
+    var names = vec.Vec[str].create()
+    defer: names.release()
+    names.push("mt_format_append_bytes")
+    names.push("mt_format_str_make")
+    names.push("mt_format_str_release")
+    names.push("mt_format_cstr_len")
+    names.push("mt_format_append_str")
+    names.push("mt_format_append_cstr")
+    names.push("mt_format_append_int")
+    names.push("mt_format_append_uint")
+    names.push("mt_format_append_ptr_uint")
+    names.push("mt_format_append_long")
+    names.push("mt_format_append_ulong")
+    names.push("mt_format_append_bool")
+    names.push("mt_format_append_float")
+    names.push("mt_format_append_double")
+    names.push("mt_format_append_double_precision")
+    names.push("mt_format_append_ulong_hex")
+    names.push("mt_format_append_ulong_hex_upper")
+    names.push("mt_format_append_long_hex")
+    names.push("mt_format_append_long_hex_upper")
+    names.push("mt_format_append_ulong_oct")
+    names.push("mt_format_append_long_oct")
+    names.push("mt_format_append_ulong_bin")
+    names.push("mt_format_append_long_bin")
     var i: ptr_uint = 0
     while i < program.functions.len:
         unsafe:
             let f = read(program.functions.data + i)
-            if body_calls(f.body, "mt_format_append_bytes") or body_calls(f.body, "mt_format_str_make"):
-                return true
+            var ni: ptr_uint = 0
+            while ni < names.len:
+                let name_ptr = names.get(ni) else:
+                    break
+                if body_calls(f.body, read(name_ptr)):
+                    return true
+                ni += 1
         i += 1
     return false
 

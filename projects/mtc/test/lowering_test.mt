@@ -74,6 +74,23 @@ function lower_source(source: str) -> string.String:
     return irfmt.format_program(ir_program)
 
 
+## The repository root (the ancestor of the test's working directory that holds
+## `std/`), so a lowering fixture can import the standard library.
+function test_module_root() -> string.String:
+    match fs.current_directory():
+        Result.success as cwd:
+            match fs.find_ancestor_containing(cwd.value.as_str(), "std"):
+                Option.some as found:
+                    cwd.value.release()
+                    return found.value
+                Option.none:
+                    cwd.value.release()
+        Result.failure as f:
+            var err = f.error
+            err.release()
+    return string.String.from_str(".")
+
+
 ## Create a temp directory, write `source` as `main.mt`, check and lower it, and
 ## return the *sexpr* dump of the lowered program.  The temp tree is removed
 ## before returning.
@@ -94,6 +111,48 @@ function lower_dump_for_source(source: str) -> string.String:
 
     var ir_program = lowering.lower(program)
     return sexpr.dump_ir(ir_program)
+
+
+## Like `lower_dump_for_source`, with an extra module root (the repository root)
+## so the fixture's `std.*` imports resolve.
+function lower_dump_for_source_roots(source: str, extra_root: str) -> string.String:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_ld_") else:
+        return string.String.from_str("FAIL: temp dir")
+    defer: cleanup_dir(ref_of(root))
+
+    if not write_main_file(root.as_str(), source):
+        return string.String.from_str("FAIL: write main")
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+
+    var roots = array[str, 2](root.as_str(), extra_root)
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    var ir_program = lowering.lower(program)
+    return sexpr.dump_ir(ir_program)
+
+
+## Like `lower_source`, with an extra module root (the repository root) so the
+## fixture's `std.*` imports resolve.
+function lower_source_roots(source: str, extra_root: str) -> string.String:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_ls_") else:
+        return string.String.from_str("FAIL: temp dir")
+    defer: cleanup_dir(ref_of(root))
+
+    if not write_main_file(root.as_str(), source):
+        return string.String.from_str("FAIL: write main")
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+
+    var roots = array[str, 2](root.as_str(), extra_root)
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    var ir_program = lowering.lower(program)
+    return irfmt.format_program(ir_program)
 
 
 ## Write `content` to `dir/name` (the directory must exist).
@@ -4333,3 +4392,184 @@ function test_mixed_signedness_integer_promotion_casts_both_operands() -> void:
     let text = dump.as_str()
     expect(text.contains_substring(":left (IR::Cast :target_type (Types::Primitive :name \"long\") :expression (IR::Name :name \"a\""))
     expect(text.contains_substring(":right (IR::Cast :target_type (Types::Primitive :name \"long\") :expression (IR::Name :name \"b\""))
+
+
+function test_source_position(text: str, needle: str) -> ptr_uint:
+    match text.find_substring(needle):
+        Option.some as found:
+            return found.value
+        Option.none:
+            return 999999999z
+
+
+@[test]
+function test_explicit_format_sink_strings() -> void:
+    ## A statement-form `std.fmt.append_format` / `String.assign_format` /
+    ## `String.append_format` with a format string is a *sink*: the parts stream
+    ## directly into the destination (the host's
+    ## `lower_explicit_format_sink_expression_statement`), not through a built
+    ## `str` and `std_fmt_append_format` / `std_string_String_append_format`.
+    ## The fixture's whole dump is byte-identical to the host's (session 45
+    ## batch 10, item 3z).
+    var source = <<-SRC
+        import std.fmt as fmt
+        import std.string as string
+
+        function main(value: uint) -> int:
+            var output = string.String.from_str("x")
+            defer: output.release()
+            fmt.append_format(ref_of(output), f"n=#{value}")
+            output.assign_format(f"h=#{value:x}")
+            output.append_format(f" ok=#{true}")
+            return 0
+    SRC
+    var module_root = test_module_root()
+    defer: module_root.release()
+    var dump = lower_dump_for_source_roots(source, module_root.as_str())
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Call :callee \"std_string_String_append\" :arguments ((IR::AddressOf :expression (IR::Name :name \"output\""))
+    expect(text.contains_substring("(IR::Call :callee \"std_fmt_append_uint\""))
+    expect(text.contains_substring("(IR::Call :callee \"std_fmt_append_ulong_hex\""))
+    expect(text.contains_substring("(IR::Call :callee \"std_string_String_clear\" :arguments ((IR::AddressOf :expression (IR::Name :name \"output\""))
+    expect(text.contains_substring("(IR::Call :callee \"std_fmt_append_bool\""))
+    expect(not text.contains_substring(":callee \"std_fmt_append_format\""))
+    expect(not text.contains_substring(":callee \"std_string_String_append_format\""))
+
+
+@[test]
+function test_explicit_format_sink_str_buffer() -> void:
+    ## A dynamic `str_buffer[N].assign_format/append_format` streams through a
+    ## single `__mt_fmt_sink_offset_N` into a `str` view over the buffer: the
+    ## host's four-argument `mt_str_buffer_clear` (after the part temps), the
+    ## `array[char, N + 1]` data member and the final `*(&len) = offset` store.
+    ## No `mt_str_buffer_assign/append` copy is emitted (session 45 batch 10,
+    ## item 3z).
+    var source = <<-SRC
+        function main(value: uint) -> int:
+            var buffer: str_buffer[32]
+            buffer.assign_format(f"b=#{value:x}")
+            buffer.append_format(f"|c=#{true}")
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Call :callee \"mt_str_buffer_clear\" :arguments ((IR::AddressOf :expression (IR::Index :receiver (IR::Member :receiver (IR::Name :name \"buffer\""))
+    expect(text.contains_substring(":member \"data\" :type (Types::Generic :name \"array\" :arguments ((Types::Primitive :name \"char\") (Types::LiteralTypeArg :value 33)))"))
+    expect(text.contains_substring(":member \"len\" :type (Types::Primitive :name \"ptr_uint\")) :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"ptr_uint\"))))"))
+    expect(text.contains_substring(":member \"dirty\" :type (Types::Primitive :name \"bool\")) :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"bool\"))))"))
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_fmt_sink_offset_"))
+    expect(text.contains_substring("(IR::Call :callee \"mt_format_append_ulong_hex\""))
+    expect(text.contains_substring("(IR::Call :callee \"mt_format_append_bool\""))
+    expect(text.contains_substring("(IR::Call :callee \"mt_str_buffer_len\""))
+    expect(text.contains_substring("(IR::Unary :operator \"*\" :operand (IR::AddressOf :expression (IR::Member :receiver (IR::Name :name \"buffer\""))
+    expect(not text.contains_substring("(IR::Call :callee \"mt_str_buffer_assign\""))
+    expect(not text.contains_substring("(IR::Call :callee \"mt_str_buffer_append\""))
+
+
+@[test]
+function test_explicit_format_sink_static_format() -> void:
+    ## An all-static sink collapses to one runtime call: `String.assign` for a
+    ## String destination and `mt_str_buffer_assign` for a str_buffer, with no
+    ## clear and no format temp (session 45 batch 10, item 3z).
+    var source = <<-SRC
+        import std.string as string
+
+        function main() -> int:
+            var output = string.String.from_str("x")
+            defer: output.release()
+            output.assign_format(f"static")
+            var buffer: str_buffer[16]
+            buffer.assign_format(f"static")
+            return 0
+    SRC
+    var module_root = test_module_root()
+    defer: module_root.release()
+    var dump = lower_dump_for_source_roots(source, module_root.as_str())
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Call :callee \"std_string_String_assign\" :arguments ((IR::AddressOf :expression (IR::Name :name \"output\""))
+    expect(text.contains_substring("(IR::StringLiteral :value \"static\""))
+    expect(text.contains_substring("(IR::Call :callee \"mt_str_buffer_assign\" :arguments ((IR::StringLiteral :value \"static\""))
+    expect(not text.contains_substring(":callee \"std_string_String_assign_format\""))
+
+
+@[test]
+function test_format_release_is_deferred_out_of_a_local_declaration() -> void:
+    ## A dynamic format string's release is a *prepared* cleanup on a local
+    ## declaration: the host records it in `local_defers`, so it runs at scope
+    ## exit (or before a return) after later locals and their return temp — not
+    ## immediately after the declaration (session 45 batch 10).
+    var source = <<-SRC
+        import std.string as string
+
+        function main(value: int) -> int:
+            var output = string.String.from_str("x")
+            defer: output.release()
+            let count = f"v=#{value}".len
+            let marker = 1
+            return int<-count + marker
+    SRC
+    var module_root = test_module_root()
+    defer: module_root.release()
+    var text = lower_source_roots(source, module_root.as_str())
+    defer: text.release()
+    let ir = text.as_str()
+    let count_pos = test_source_position(ir, "let count: ptr_uint = __fmt_count.len")
+    let marker_pos = test_source_position(ir, "let marker: int = 1")
+    let release_pos = test_source_position(ir, "mt_format_str_release(__fmt_count)")
+    let output_release_pos = test_source_position(ir, "std_string_String_release(&output)")
+    expect(count_pos < marker_pos)
+    expect(marker_pos < release_pos)
+    expect(release_pos < output_release_pos)
+
+
+@[test]
+function test_return_format_cleanup_keeps_or_transfers_ownership() -> void:
+    ## A `return f"...".len` has a non-owning return type: the format release
+    ## stays, the value is stored in `__mt_return_value_N` before it, and the
+    ## temp is returned.  A `return f"..."` from a `-> str` function transfers
+    ## the buffer to the caller, so its release is dropped (the host's
+    ## `lower_return_stmt` ownership rule).
+    var source = <<-SRC
+        function taken(value: int) -> ptr_uint:
+            return f"v=#{value}".len
+
+        function passed(value: int) -> str:
+            return f"v=#{value}"
+
+        function main() -> int:
+            return 0
+    SRC
+    var text = lower_source(source)
+    defer: text.release()
+    let ir = text.as_str()
+    let taken_start = test_source_position(ir, "fn taken as")
+    let passed_start = test_source_position(ir, "fn passed as")
+    let main_start = test_source_position(ir, "fn main as")
+    let taken = ir.slice(taken_start, passed_start - taken_start)
+    let passed = ir.slice(passed_start, main_start - passed_start)
+    let temp_pos = test_source_position(taken, "let __mt_return_value_")
+    let release_pos = test_source_position(taken, "mt_format_str_release(__mt_fmt_str_")
+    let return_pos = test_source_position(taken, "return __mt_return_value_")
+    expect(temp_pos < release_pos)
+    expect(release_pos < return_pos)
+    expect(not passed.contains_substring("mt_format_str_release"))
+    expect(passed.contains_substring("return __mt_fmt_str_"))
+
+
+@[test]
+function test_signed_literal_takes_the_declared_type() -> void:
+    ## A signed literal in a declared local takes the declared type through the
+    ## unary (`let delta: short = -42` emits a short literal and a short unary,
+    ## the host's contextual literal inference) — session 45 batch 10.
+    var source = <<-SRC
+        function main() -> int:
+            let delta: short = -42
+            return int<-delta
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Unary :operator \"-\" :operand (IR::IntegerLiteral :value 42 :type (Types::Primitive :name \"short\")) :type (Types::Primitive :name \"short\"))"))
