@@ -394,8 +394,9 @@ function scalar_category(t: Type) -> int:
             return cat_other
 
 
-## Width in bits of a fixed-width integer primitive, 0 for pointer-sized integer
-## types and non-integers.  Mirrors Ruby’s Primitive#integer_width.
+## Width in bits of an integer primitive, 0 for non-integers.  Pointer-sized
+## integers are as wide as a pointer on the host platform (64), mirroring
+## Ruby's `Primitive#integer_width` and its `POINTER_INTEGER_WIDTH`.
 public function integer_width(name: str) -> int:
     if name == "byte" or name == "ubyte" or name == "char":
         return 8
@@ -405,21 +406,24 @@ public function integer_width(name: str) -> int:
         return 32
     if name == "long" or name == "ulong":
         return 64
+    if name == "ptr_int" or name == "ptr_uint":
+        return 64
     return 0
 
 
-## True when `name` is a primitive integer type with a platform-independent
-## width (not ptr_int / ptr_uint).
+## True when `name` is a primitive integer with a known width — the host's
+## `fixed_width_integer?`, which includes the pointer-sized integers.
 public function is_fixed_width_integer_name(name: str) -> bool:
     return integer_width(name) != 0
 
 
-## True for signed integer primitives.  Unsigned types, pointer integers,
-## and non-integers return false.
+## True for signed integer primitives, including the pointer-sized `ptr_int`
+## (the host's `Primitive#signed_integer?`).  Unsigned types and non-integers
+## return false.
 public function is_signed_integer_name(name: str) -> bool:
     return (
         name == "byte" or name == "short" or name == "int"
-        or name == "long"
+        or name == "long" or name == "ptr_int"
     )
 
 

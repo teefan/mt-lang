@@ -302,6 +302,12 @@ struct Context:
     inside_async: bool
     resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
     resolved_call_kinds: map_mod.Map[ptr_uint, str]
+    ## The host's `expected_type` argument while inferring a value expression in
+    ## a declared position (a local's annotation, an assignment target, a
+    ## return type): an if/match expression whose branches all fit it takes
+    ## that type (`let n: uint = if p: uint<-x else: 0` is `uint`, not the
+    ## branches' numeric common type).  `ty_error` when there is no context.
+    expected_type_hint: types.Type
     ## The *declared* type of an annotated local, keyed by its declaration line:
     ## a local with an annotation has no inferred initializer type, so this is
     ## the only record of its type (the host reads the same type off its scope
@@ -554,6 +560,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         inside_async = false,
         resolved_expr_types = map_mod.Map[ptr_uint, types.Type].create(),
         resolved_call_kinds = map_mod.Map[ptr_uint, str].create(),
+        expected_type_hint = types.Type.ty_error,
         local_decl_types = map_mod.Map[ptr_uint, types.Type].create(),
         destructure_types = vec.Vec[DestructureTypeEntry].create(),
         arm_payload_field_types = map_mod.Map[str, span[types.PayloadField]].create(),
@@ -3313,7 +3320,7 @@ function apply_narrow_by_name(ctx: ref[Context], scope: ref[sscope.Scope], narro
 ## local's type the way the host's completion snapshots do.
 function check_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, sp: ptr[ast.Stmt], next_stmt: ptr[ast.Stmt]?) -> void:
     let start_pos = statement_position(sp)
-    record_flow_snapshot_at(ctx, scope, start_pos, false)
+    record_flow_snapshot_at(ctx, scope, start_pos, false, false)
     check_stmt_inner(ctx, scope, chk, sp)
     # The host applies the dataflow's non-null set for the *next* statement
     # right after this one, so the state it records at this statement's
@@ -3327,11 +3334,11 @@ function check_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags
     # its own start so a lookup on the declaration line finds the new binding.
     let end_line = statement_end_line(sp)
     if end_line == 0:
-        record_flow_snapshot_at(ctx, scope, start_pos, false)
+        record_flow_snapshot_at(ctx, scope, start_pos, false, false)
     else:
         if end_line > start_pos / 1000000:
-            record_flow_snapshot_at(ctx, scope, start_pos, true)
-        record_flow_snapshot_at(ctx, scope, end_line * 1000000 + 999999, false)
+            record_flow_snapshot_at(ctx, scope, start_pos, true, true)
+        record_flow_snapshot_at(ctx, scope, end_line * 1000000 + 999999, false, false)
 
 
 function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, sp: ptr[ast.Stmt]) -> void:
@@ -3348,7 +3355,12 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                 if rv != null:
                     if types.is_void(chk.ret):
                         report(ctx, r.line, r.column, "void function may not return a value")
+                    # The return type is the value's expected type (the host's
+                    # `lower_return_stmt` contextual lowering).
+                    let ret_saved_hint = ctx.expected_type_hint
+                    ctx.expected_type_hint = chk.ret
                     let vt = infer_expr(ctx, scope, rv)
+                    ctx.expected_type_hint = ret_saved_hint
                     if incompatible_value(chk.ret, vt, rv):
                         report(ctx, expr_source_line(rv), expr_source_column(rv), return_mismatch_message(chk.ret, vt))
             ast.Stmt.stmt_local as l:
@@ -3466,8 +3478,14 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                 let _ignored = infer_expr(ctx, scope, e.expression)
             ast.Stmt.stmt_assignment as a:
                 let tt = infer_expr(ctx, scope, a.target)
-                let vt = infer_expr(ctx, scope, a.value)
                 let target_ty = assign_target_type(scope, a.target, tt)
+                # The target's type is the value's expected type (the host's
+                # `lower_assignment_stmt` passes it to the value's inference).
+                let assign_saved_hint = ctx.expected_type_hint
+                if a.operator == "=":
+                    ctx.expected_type_hint = target_ty
+                let vt = infer_expr(ctx, scope, a.value)
+                ctx.expected_type_hint = assign_saved_hint
                 if a.operator == "=" and incompatible_value(target_ty, vt, a.value):
                     report(ctx, a.line, a.column, assign_message(target_ty, vt))
                 check_assign_target_immutable(ctx, scope, a.target, a.line, a.column)
@@ -3641,7 +3659,7 @@ function apply_flow_continuation(ctx: ref[Context], scope: ref[sscope.Scope], sp
 ## `latest_completion_snapshot` walks its snapshots in reverse), so the
 ## position is a filter and the recording order decides.
 function record_flow_snapshot(ctx: ref[Context], scope: ref[sscope.Scope], sp: ptr[ast.Stmt]) -> void:
-    record_flow_snapshot_at(ctx, scope, statement_position(sp), false)
+    record_flow_snapshot_at(ctx, scope, statement_position(sp), false, false)
 
 
 ## The body of `record_flow_snapshot` with an explicit packed position, so the
@@ -3652,7 +3670,15 @@ function record_flow_snapshot(ctx: ref[Context], scope: ref[sscope.Scope], sp: p
 ## and its cleared entries would shadow the very body entries a cursor inside
 ## the statement still sits under (they are recorded after them, and the
 ## cursor's lookup takes the last record).
-function record_flow_snapshot_at(ctx: ref[Context], scope: ref[sscope.Scope], position: ptr_uint, skip_clears: bool) -> void:
+##
+## A replay is a *view* of the post-statement state at the statement's start,
+## not a state transition: it must not advance `flow_recorded`.  Advancing it
+## would suppress the genuine end-of-statement record (the state now "matches"
+## what the replay claimed), leaving the lowering's greatest-position lookup
+## with only the statement body's inner records — a branch refinement that has
+## already gone out of scope (`std/map.mt`'s `previous = node` after the
+## `if previous == null` arm).
+function record_flow_snapshot_at(ctx: ref[Context], scope: ref[sscope.Scope], position: ptr_uint, skip_clears: bool, replay: bool) -> void:
     if not ctx.flow_active:
         return
     if position == 0:
@@ -3681,7 +3707,8 @@ function record_flow_snapshot_at(ctx: ref[Context], scope: ref[sscope.Scope], po
                 changed = not types.type_equals(read(previous), ty)
             if changed:
                 ctx.flow_types.push(FlowTypeEntry(at = position, name = name, ty = ty, cleared = false))
-                let _prev = ctx.flow_recorded.set(name, ty)
+                if not replay:
+                    let _prev = ctx.flow_recorded.set(name, ty)
         si += 1
     var to_clear = vec.Vec[str].create()
     defer: to_clear.release()
@@ -4691,7 +4718,14 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlag
     var has_value = false
     let val = value
     if val != null:
+        # A declared type is the initializer's expected type: an if/match whose
+        # branches all fit it takes the annotation rather than its own common
+        # type (the host's `infer_expression(..., expected_type:)`).
+        let saved_hint = ctx.expected_type_hint
+        if has_declared:
+            ctx.expected_type_hint = declared
         value_type = infer_expr(ctx, scope, val)
+        ctx.expected_type_hint = saved_hint
         has_value = true
 
     # A guarded let/var (let x = nullable else: ...) unwraps the value type:
@@ -5134,21 +5168,40 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 let else_ty = infer_expr(ctx, scope, ife.else_expr)
                 else_refs.release()
                 scope_leave(scope)
-                return exprs.conditional_common_type(then_ty, else_ty)
+                # A declared position's expected type wins when both branches fit
+                # it (the host's `infer_if_expression` short-circuit): `let n:
+                # uint = if p: uint<-x else: 0` is uint, though the branches'
+                # numeric common type would be long.
+                let hint_ty = ctx.expected_type_hint
+                if not types.is_error(hint_ty):
+                    if compat.types_compatible(hint_ty, then_ty, ife.then_expr) and compat.types_compatible(hint_ty, else_ty, ife.else_expr):
+                        return hint_ty
+                return exprs.conditional_common_type(then_ty, else_ty, ife.then_expr, ife.else_expr)
             ast.Expr.expr_match as me:
                 # An `as name` arm binds the arm's payload type from the
                 # scrutinee's type, so it is inferred once, before the arms.
                 let expr_scrutinee_ty = infer_expr_inner(ctx, scope, me.scrutinee)
                 var arm_types = vec.Vec[types.Type].create()
+                var arm_exprs = vec.Vec[ptr[ast.Expr]].create()
+                let match_hint = ctx.expected_type_hint
+                var all_fit_hint = not types.is_error(match_hint)
                 var ai: ptr_uint = 0
                 while ai < me.arms.len:
                     var arm: ast.MatchExprArm = read(me.arms.data + ai)
                     scope_enter(scope)
                     bind_match_arm_names(ctx, scope, expr_scrutinee_ty, arm.binding_name, arm.pattern, arm.binding_line, arm.binding_column)
-                    arm_types.push(infer_expr(ctx, scope, arm.value))
+                    let arm_ty = infer_expr(ctx, scope, arm.value)
+                    if all_fit_hint and not compat.types_compatible(match_hint, arm_ty, arm.value):
+                        all_fit_hint = false
+                    arm_types.push(arm_ty)
+                    arm_exprs.push(arm.value)
                     scope_leave(scope)
                     ai += 1
-                return exprs.match_expression_common_type(arm_types.as_span())
+                # A declared position's expected type wins when every arm fits
+                # it (the host's `match_expression_common_type` short-circuit).
+                if all_fit_hint:
+                    return match_hint
+                return exprs.match_expression_common_type(arm_types.as_span(), arm_exprs.as_span())
             ast.Expr.expr_detach as det:
                 match read(det.expression):
                     ast.Expr.expr_call as call:
@@ -5608,6 +5661,20 @@ function infer_tuple_literal(ctx: ref[Context], scope: ref[sscope.Scope], ep: pt
     var elements = vec.Vec[types.Type].create()
     var names = vec.Vec[str].create()
     var has_named = false
+    # The host's `infer_expression` for an expression list gives the elements
+    # an expected type only for an array context (each element takes the
+    # element type); otherwise the elements are inferred without one.  Keeping
+    # the outer hint would hand a tuple-typed return's elements the tuple type
+    # (`return (name, if cond: a else: b)`).
+    let outer_hint = ctx.expected_type_hint
+    var element_hint = types.Type.ty_error
+    match outer_hint:
+        types.Type.ty_generic as hg:
+            if hg.name == "array" and hg.args.len >= 1:
+                element_hint = unsafe: read(hg.args.data + 0)
+        _:
+            pass
+    ctx.expected_type_hint = element_hint
     unsafe:
         match read(ep):
             ast.Expr.expr_expression_list as el:
@@ -5624,7 +5691,9 @@ function infer_tuple_literal(ctx: ref[Context], scope: ref[sscope.Scope], ep: pt
                             names.push("")
                     i += 1
             _:
+                ctx.expected_type_hint = outer_hint
                 return types.Type.ty_error
+    ctx.expected_type_hint = outer_hint
     var field_names: Option[span[str]] = Option[span[str]].none
     if has_named:
         field_names = Option[span[str]].some(value = names.as_span())

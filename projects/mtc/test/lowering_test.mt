@@ -4074,3 +4074,121 @@ function test_tuple_match_expression_nests_the_wildcard_else() -> void:
     defer: dump.release()
     let text = dump.as_str()
     expect(text.contains_substring(":then_body ((IR::Assignment :target (IR::Name :name \"__mt_match_expr_1\" :type (Types::Primitive :name \"int\") :pointer false) :operator \"=\" :value (IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"int\")))) :else_body ((IR::Assignment :target (IR::Name :name \"__mt_match_expr_1\" :type (Types::Primitive :name \"int\") :pointer false) :operator \"=\" :value (IR::IntegerLiteral :value 2 :type (Types::Primitive :name \"int\"))))"))
+
+
+@[test]
+function test_assignment_after_a_guard_keeps_the_storage_type() -> void:
+    ## The multi-line replay of a statement's post-state is a *view* at the
+    ## statement's start, not a transition: it must not advance the recorded
+    ## flow state, or the end-of-statement transition is suppressed and the
+    ## lowering's greatest-position lookup resolves a branch refinement that
+    ## has gone out of scope (`previous = node` after `if previous == null`)
+    ## (session 45 batch 8).
+    var source = <<-SRC
+        struct Box:
+            value: int
+            next: ptr[Box]?
+
+        function walk(bucket: ptr[ptr[Box]?]) -> int:
+            unsafe:
+                var previous: ptr[Box]? = null
+                var node = read(bucket)
+                while node != null:
+                    let node_ptr = ptr[Box]<-node
+                    if read(node_ptr).value == 1:
+                        let next = read(node_ptr).next
+                        if previous == null:
+                            read(bucket) = next
+                        else:
+                            read(ptr[Box]<-previous).next = next
+                        return read(node_ptr).value
+                    previous = node
+                    node = read(node_ptr).next
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Assignment :target (IR::Name :name \"previous\" :type (Types::Nullable :base (Types::Generic :name \"ptr\""))
+    expect(not text.contains_substring("(IR::Assignment :target (IR::Name :name \"previous\" :type (Types::Generic :name \"ptr\""))
+
+
+@[test]
+function test_match_expression_in_a_condition_prepares_the_host_temp() -> void:
+    ## A match expression in a prepared position (`if e is Entity.enemy`) takes
+    ## the host's inline lowering: a zero-initialized bool `__mt_match_expr_<N>`
+    ## local plus a kind switch in the statement's setup, and the condition is a
+    ## read of the temp (session 45 batch 8).
+    var source = <<-SRC
+        variant Entity:
+            enemy(hp: int)
+            other(x: int)
+
+        function check(e: Entity) -> bool:
+            if e is Entity.enemy:
+                return true
+            return false
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_match_expr_1\" :linkage_name \"__mt_match_expr_1\" :type (Types::Primitive :name \"bool\") :value (IR::ZeroInit :type (Types::Primitive :name \"bool\"))"))
+    expect(text.contains_substring("(IR::SwitchStmt :expression (IR::Member :receiver (IR::Name :name \"e\""))
+    expect(text.contains_substring("(IR::IfStmt :condition (IR::Name :name \"__mt_match_expr_1\""))
+
+
+@[test]
+function test_discard_local_keeps_the_hosts_declaration() -> void:
+    ## `let _ = value` is still a declaration on the host: IR name `_`, linkage
+    ## a fresh discard temp (`__mt___N`, `let_else_storage_c_name`), and the
+    ## value stored in it — not an expression statement (session 45 batch 8).
+    var source = <<-SRC
+        function take(x: int) -> int:
+            return x
+
+        function main() -> int:
+            let _ = take(1)
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"_\" :linkage_name \"__mt___1\" :type (Types::Primitive :name \"int\") :value (IR::Call :callee \"main_take\""))
+    expect(not text.contains_substring("(IR::ExpressionStmt :expression (IR::Call :callee \"main_take\""))
+
+
+@[test]
+function test_if_expression_takes_the_expected_and_common_types() -> void:
+    ## A declared local's annotation is the if-expression's expected type when
+    ## both branches fit it (`let n: uint = if flag: value else: 0` is uint, not
+    ## the branches' numeric common type long); without an annotation the
+    ## branches' common type wins (`0` and a ptr_uint count → ptr_uint), and the
+    ## literal branch is retyped to it (session 45 batch 8).
+    var source = <<-SRC
+        function pick(flag: bool, value: uint, count: ptr_uint) -> uint:
+            let n: uint = if flag: value else: 0
+            let m = if flag: 0 else: count
+            return n + uint<-m
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"n\" :linkage_name \"n\" :type (Types::Primitive :name \"uint\") :value (IR::Conditional"))
+    expect(text.contains_substring(":else_expression (IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"uint\")) :type (Types::Primitive :name \"uint\"))"))
+    expect(text.contains_substring("(IR::LocalDecl :name \"m\" :linkage_name \"m\" :type (Types::Primitive :name \"ptr_uint\") :value (IR::Conditional"))
+    expect(text.contains_substring(":then_expression (IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"ptr_uint\")) :else_expression (IR::Name :name \"count\""))
+
+
+@[test]
+function test_negative_literal_takes_the_peer_type() -> void:
+    ## `value >= -128` against a `long` peer keeps a long literal under the
+    ## unary — no `(long)` cast around an int unary (the host's expected-type
+    ## propagation through UnaryOp) (session 45 batch 8).
+    var source = <<-SRC
+        function fits(value: long) -> bool:
+            return value >= -128
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring(":right (IR::Unary :operator \"-\" :operand (IR::IntegerLiteral :value 128 :type (Types::Primitive :name \"long\")) :type (Types::Primitive :name \"long\"))"))

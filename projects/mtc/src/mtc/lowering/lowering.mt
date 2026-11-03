@@ -2918,47 +2918,17 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 if loc.else_body != null and loc.value != null:
                     lower_guard_local(ctx, output, loc.name, loc.else_binding, loc.value, loc.else_body, loc.line)
                     return
-                # let _ = expr / var _ = expr — evaluate the expression for side
-                # effects only; no local binding is introduced.  The lowered
-                # expression must still be emitted as an expression statement so
-                # its side effects (e.g. a method call) actually run.
-                if loc.name == "_":
-                    let init_val = loc.value
-                    if init_val != null:
-                        # `let _ = expr?` still propagates: unwrap and return the
-                        # failure arm, discarding the success value.
-                        var is_propagate = false
-                        unsafe:
-                            match read(init_val):
-                                ast.Expr.expr_unary_op as un:
-                                    if un.operator == "?":
-                                        is_propagate = true
-                                _:
-                                    pass
-                        if is_propagate:
-                            unsafe:
-                                match read(init_val):
-                                    ast.Expr.expr_unary_op as un:
-                                        lower_propagate_let(ctx, output, "_", un.operand, loc.line)
-                                    _:
-                                        pass
-                            return
-                        let discard_base = output.len()
-                        let discard_saved = begin_stmt_setup(ctx, HoistMode.hm_discard)
-                        ctx.hoist_root_ep = init_val
-                        let discard_ir = lower_expr(ctx, init_val)
-                        let discard_collected = collect_stmt_setup(ctx, discard_saved)
-                        emit_hoist_setup(output, discard_base, discard_collected)
-                        if not discard_collected.stmt_emitted:
-                            output.push(ir.Stmt.stmt_expression(expression = discard_ir, line = 0, source_path = ""))
-                        append_hoist_cleanups(output, discard_collected)
-                    return
+                # A `_` binding keeps the host's declaration shape: the IR name
+                # is `_` and the linkage is a fresh discard temp (`__mt___N`,
+                # `let_else_storage_c_name`).  The value is evaluated and stored
+                # like any other local — `let _ = expr?` still propagates.
+                let c_name = if loc.name == "_": fresh_c_temp_name(ctx, "_") else: utils.c_local_name(loc.name)
                 let init_val = loc.value
                 if init_val != null:
                     # The host's `env[:current_local_name]`: a dynamic format
                     # string later in this block names its result temp after the
                     # most recent local declaration (`__fmt_<name>`).
-                    ctx.fmt_dest_name = utils.c_local_name(loc.name)
+                    ctx.fmt_dest_name = c_name
                     unsafe:
                         match read(init_val):
                             ast.Expr.expr_unary_op as un:
@@ -2991,7 +2961,6 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                 return
                             _:
                                 pass
-                let c_name = utils.c_local_name(loc.name)
                 var ty: types.Type
                 var value_expr: ptr[ir.Expr]
                 let init = loc.value
@@ -6313,10 +6282,19 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
             ast.Expr.expr_if as ie:
                 let cond = lower_expr(ctx, ie.condition)
                 let hoist_saved = suspend_stmt_setup(ctx)
-                let then_e = lower_expr(ctx, ie.then_expr)
-                let else_e = lower_expr(ctx, ie.else_expr)
+                var then_e = lower_expr(ctx, ie.then_expr)
+                var else_e = lower_expr(ctx, ie.else_expr)
                 resume_stmt_setup(ctx, hoist_saved)
-                return alloc_expr(ir.Expr.expr_conditional(condition = cond, then_expression = then_e, else_expression = else_e, ty = ir_expr_type(then_e)))
+                # The conditional's type is the host's branch-common inference
+                # (`conditional_common_type`), and each branch is lowered
+                # contextually to it (`lower_contextual_expression`), so
+                # `if flag: 0 else: <ptr_uint call>` emits `ptr_uint` literals.
+                var ty = expr_type(ctx, ep)
+                if types.is_error(ty) or types.type_to_string(ty) == "void":
+                    ty = ir_expr_type(then_e)
+                then_e = literal_value_to_context_type(ie.then_expr, ty, then_e)
+                else_e = literal_value_to_context_type(ie.else_expr, ty, else_e)
+                return alloc_expr(ir.Expr.expr_conditional(condition = cond, then_expression = then_e, else_expression = else_e, ty = ty))
             ast.Expr.expr_unsafe as u:
                 return lower_expr(ctx, u.expression)
             ast.Expr.expr_string_literal as lit:
@@ -13485,12 +13463,27 @@ function sp_expr2(e1: ptr[ir.Expr], e2: ptr[ir.Expr]) -> span[ir.Expr]:
 
 
 function lower_expression_match(ctx: ref[LowerCtx], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    # A statement-prepared position (an if/while condition, a call argument, a
+    # binary operand, an initializer) hoists the host's inline match lowering
+    # (`prepare_match_expression_for_inline_lowering`): a zero-initialized
+    # `__mt_match_expr_<N>` result local plus the strategy's switch/if chain in
+    # the enclosing statement's setup, with the expression replaced by a read of
+    # the result.
+    if ctx.hoist_mode != HoistMode.hm_off:
+        var result_ty = expr_type(ctx, ep)
+        if types.is_error(result_ty) or types.type_to_string(result_ty) == "void":
+            result_ty = ctx.bool_ty
+        let temp = fresh_c_temp_name(ctx, "match_expr")
+        let zero_init = alloc_expr(ir.Expr.expr_zero_init(ty = result_ty))
+        ctx.hoist_stmts.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = result_ty, value = zero_init, line = 0, source_path = ""))
+        let result_ref = alloc_expr(ir.Expr.expr_name(name = temp, ty = result_ty, pointer = Option[bool].some(value = false)))
+        lower_match_expr_to_ref(ctx, ref_of(ctx.hoist_stmts), scrutinee, arms, result_ref)
+        return result_ref
     # `expr is Variant.Arm` desugars (in the parser) to a two-arm match
-    # expression: [Variant.Arm -> true, _ -> false].  Such a match has a pure
-    # boolean-expression equivalent — a discriminant test `scrut.kind == Kind_arm`
-    # — so lower it inline without a temp/switch.  This is the only match-expr
-    # shape that appears as a nested sub-expression (inside `or`/`and`/`if`) in
-    # the self-host, where statement hoisting is not available.
+    # expression: [Variant.Arm -> true, _ -> false].  In a lazy region (no
+    # statement window) it has a pure boolean-expression equivalent — a
+    # discriminant test `scrut.kind == Kind_arm` — so lower it inline without a
+    # temp/switch.
     match is_variant_membership_arms(arms):
         Option.some as arm_name:
             let scrut_ty = method_receiver_type(ctx, scrutinee)
@@ -13505,8 +13498,8 @@ function lower_expression_match(ctx: ref[LowerCtx], scrutinee: ptr[ast.Expr], ar
     # A genuine multi-arm match expression in a non-return position is not
     # supported inline (needs statement hoisting); `return match` is handled at
     # the statement boundary in `lower_stmt`.  Fall back to a placeholder.
-    let result_ty = expr_type(ctx, ep)
-    return alloc_expr(ir.Expr.expr_name(name = "match_expr", ty = result_ty, pointer = Option[bool].some(value = false)))
+    let result_ty2 = expr_type(ctx, ep)
+    return alloc_expr(ir.Expr.expr_name(name = "match_expr", ty = result_ty2, pointer = Option[bool].some(value = false)))
 
 
 ## Detect the `is`-operator desugaring shape: exactly two arms, where the first
@@ -13826,6 +13819,31 @@ function coerce_literal_to_param_type(params: span[analyzer.ParamEntry], index: 
 function int_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
     if not types.is_integer_type(context_ty):
         return value
+    # A signed literal (`-128`, `+3`) is a literal expression: the host
+    # propagates the expected type through the unary to its literal operand, so
+    # both the operand and the unary node carry the context type
+    # (`value >= -128` against a `long` peer keeps a long literal, no cast).
+    unsafe:
+        match read(arg_ast):
+            ast.Expr.expr_unary_op as un:
+                if un.operator == "-" or un.operator == "+":
+                    match read(un.operand):
+                        ast.Expr.expr_integer_literal as lit:
+                            # A negative value has no unsigned representation.
+                            if un.operator == "-" and lit.value != 0 and types.is_unsigned_integer_type(context_ty):
+                                return value
+                            match read(value):
+                                ir.Expr.expr_unary as uv:
+                                    let inner = int_literal_to_context_type(un.operand, context_ty, uv.operand)
+                                    if inner != uv.operand:
+                                        return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = inner, ty = context_ty))
+                                    return value
+                                _:
+                                    return value
+                        _:
+                            return value
+            _:
+                pass
     var literal_value: long
     var literal_lexeme: str = ""
     unsafe:
