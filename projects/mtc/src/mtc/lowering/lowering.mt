@@ -6403,6 +6403,49 @@ function lower_short_circuit_binary(
     right_ep: ptr[ast.Expr],
     ep: ptr[ast.Expr],
 ) -> ptr[ir.Expr]:
+    # The host's async normalizer rewrites every `and`/`or` in an async body —
+    # setup or not — into a `__mt_async_tmp_N` var spilled to the frame:
+    # `tmp = init; <left setup>; if left: <right setup>; tmp = right; else: tmp = init`.
+    # The sync lowering keeps the prepared shape only when an operand produces
+    # setup (below).
+    if ctx.inside_async:
+        let bool_ty = ctx.bool_ty
+        ctx.async_tmp_counter += 1
+        let tmp = j2("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
+        let field_name = j2("local_", tmp)
+        let frame_cname = j2("__mt_frame->", field_name)
+        async_register_unused_field(ctx, field_name, bool_ty)
+        let short_circuit_value = operator != "and"
+        # A CPS body spills the normalizer's LocalDecl to a frame field; the
+        # no-await async path lowers it as a plain C local (the host's
+        # `lower_async_cf_statements` vs `lower_async_non_await_statements`).
+        # Both keep the frame field registered.
+        var value_name = frame_cname
+        if ctx.async_cps_active:
+            let init_target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = field_name, ty = bool_ty))
+            ctx.hoist_stmts.push(ir.Stmt.stmt_assignment(target = init_target, operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = short_circuit_value, ty = bool_ty))))
+        else:
+            value_name = tmp
+            ctx.hoist_stmts.push(ir.Stmt.stmt_local(name = tmp, linkage_name = tmp, ty = bool_ty, value = alloc_expr(ir.Expr.expr_boolean_literal(value = short_circuit_value, ty = bool_ty)), line = 0, source_path = ""))
+        let left = lower_expr(ctx, left_ep)
+        let right_saved = begin_stmt_setup(ctx, ctx.hoist_mode)
+        let right = lower_expr(ctx, right_ep)
+        let right_collected = collect_stmt_setup(ctx, right_saved)
+        append_cleanup_stmts(ref_of(ctx.hoist_cleanups), right_collected.cleanups)
+        var then_body = vec.Vec[ir.Stmt].create()
+        var ri: ptr_uint = 0
+        while ri < right_collected.stmts.len:
+            let stmt = right_collected.stmts.get(ri) else:
+                break
+            then_body.push(unsafe: read(stmt))
+            ri += 1
+        let then_target = alloc_expr(ir.Expr.expr_name(name = value_name, ty = bool_ty, pointer = Option[bool].some(value = false)))
+        then_body.push(ir.Stmt.stmt_assignment(target = then_target, operator = "=", value = right))
+        var else_body = vec.Vec[ir.Stmt].create()
+        let else_target = alloc_expr(ir.Expr.expr_name(name = value_name, ty = bool_ty, pointer = Option[bool].some(value = false)))
+        else_body.push(ir.Stmt.stmt_assignment(target = else_target, operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = short_circuit_value, ty = bool_ty))))
+        ctx.hoist_stmts.push(ir.Stmt.stmt_if(condition = left, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = else_body.as_span())))
+        return alloc_expr(ir.Expr.expr_name(name = value_name, ty = bool_ty, pointer = Option[bool].some(value = false)))
     let setup_base = ctx.hoist_stmts.len
     let left = lower_expr(ctx, left_ep)
     let left_has_setup = ctx.hoist_stmts.len > setup_base
@@ -8910,12 +8953,43 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 if is_task and ma.member_name == "frame":
                     found_ft = ctx.ptr_void_ty
                 else if is_task and is_task_fn_field(ma.member_name):
-                    found_ft = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty),
-                        return_type = types.alloc_type(task_ret_ty),
-                        variadic = false,
-                        is_proc = false,
-                        param_names = sp_str("frame"),
-                    )
+                    # The host's `Types::Task#fields` (`types.rb:590-632`):
+                    # `ready` returns bool, `take_result` returns T, every other
+                    # vtable field returns void; `set_waiter` takes
+                    # `(frame, waiter_frame, waiter)`.
+                    var ret = ctx.void_ty
+                    if ma.member_name == "ready":
+                        ret = ctx.bool_ty
+                    else if ma.member_name == "take_result":
+                        ret = task_ret_ty
+                    if ma.member_name == "set_waiter":
+                        let waiter_ty = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty),
+                            return_type = types.alloc_type(ctx.void_ty),
+                            variadic = false,
+                            is_proc = false,
+                            param_names = sp_str("frame"),
+                        )
+                        var params = vec.Vec[types.Type].create()
+                        params.push(ctx.ptr_void_ty)
+                        params.push(ctx.ptr_void_ty)
+                        params.push(waiter_ty)
+                        var pnames = vec.Vec[str].create()
+                        pnames.push("frame")
+                        pnames.push("waiter_frame")
+                        pnames.push("waiter")
+                        found_ft = types.Type.ty_function(name = "", params = params.as_span(),
+                            return_type = types.alloc_type(ctx.void_ty),
+                            variadic = false,
+                            is_proc = false,
+                            param_names = pnames.as_span(),
+                        )
+                    else:
+                        found_ft = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty),
+                            return_type = types.alloc_type(ret),
+                            variadic = false,
+                            is_proc = false,
+                            param_names = sp_str("frame"),
+                        )
                 # A proc-typed field may be typed either as a `ty_function` with
                 # `is_proc` or as the shared proc struct it resolves to, so test
                 # the type rather than the variant: both must call through the
@@ -25508,19 +25582,18 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             pfty = read(ptr[types.Type]<-ctor_param_tys.data + pif)
         ff.push(ir.Field(name = j2("param_", pfname), ty = pfty))
         pif += 1
-    if has_await:
-        var lfi: ptr_uint = 0
-        while lfi < ctx.async_local_fields.len():
-            let lfp = ctx.async_local_fields.get(lfi) else:
-                break
-            ff.push(unsafe: read(lfp))
-            lfi += 1
-        var afi: ptr_uint = 0
-        while afi < ctx.async_await_fields.len():
-            let afp = ctx.async_await_fields.get(afi) else:
-                break
-            ff.push(unsafe: read(afp))
-            afi += 1
+    var lfi: ptr_uint = 0
+    while lfi < ctx.async_local_fields.len():
+        let lfp = ctx.async_local_fields.get(lfi) else:
+            break
+        ff.push(unsafe: read(lfp))
+        lfi += 1
+    var afi: ptr_uint = 0
+    while afi < ctx.async_await_fields.len():
+        let afp = ctx.async_await_fields.get(afi) else:
+            break
+        ff.push(unsafe: read(afp))
+        afi += 1
     let _inserted = ctx.pending_synthetic_structs.insert(frame_index, ir.StructDecl(name = frame_c, linkage_name = frame_c, fields = ff.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
 
     # Shared bool exprs for vtable/constructor

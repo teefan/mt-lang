@@ -8274,8 +8274,20 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
             return types.Type.ty_error
         types.Type.ty_generic as g:
             if g.name == "Task" and g.args.len >= 1:
-                if member == "frame" or member == "value" or member == "ready":
-                    return types.Type.ty_error
+                # The host's `Types::Task#fields` (`types.rb:590-632`): `frame`
+                # is `ptr[void]`, `ready`/`release`/`take_result`/`cancel` are
+                # `fn(frame) -> …`, and `set_waiter` takes the waiter callback.
+                if member.equal("frame"):
+                    return task_frame_field_type()
+                if member.equal("ready"):
+                    return task_ready_field_type()
+                if member.equal("set_waiter"):
+                    return task_set_waiter_field_type()
+                if member.equal("release") or member.equal("cancel"):
+                    return task_void_field_type()
+                if member.equal("take_result"):
+                    return task_take_result_field_type(unsafe: read(g.args.data + 0))
+                return types.Type.ty_error
             if g.name == "span":
                 # The host's `Span#fields`: the element pointer and the length.
                 if member == "data" and g.args.len >= 1:
@@ -8631,6 +8643,47 @@ function alloc_one_type_arg(ty: types.Type) -> span[types.Type]:
     var v = vec.Vec[types.Type].create()
     v.push(ty)
     return v.as_span()
+
+
+## The host's `Types::Task` field types (`types.rb:590-632`).
+function task_frame_field_type() -> types.Type:
+    return types.Type.ty_generic(name = "ptr", args = alloc_one_type_arg(types.primitive("void")))
+
+
+function task_ready_field_type() -> types.Type:
+    var params = vec.Vec[types.Type].create()
+    params.push(task_frame_field_type())
+    var names = vec.Vec[str].create()
+    names.push("frame")
+    return types.Type.ty_function(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("bool")), variadic = false, is_proc = false, param_names = names.as_span())
+
+
+function task_void_field_type() -> types.Type:
+    var params = vec.Vec[types.Type].create()
+    params.push(task_frame_field_type())
+    var names = vec.Vec[str].create()
+    names.push("frame")
+    return types.Type.ty_function(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
+
+
+function task_take_result_field_type(result_ty: types.Type) -> types.Type:
+    var params = vec.Vec[types.Type].create()
+    params.push(task_frame_field_type())
+    var names = vec.Vec[str].create()
+    names.push("frame")
+    return types.Type.ty_function(name = "", params = params.as_span(), return_type = types.alloc_type(result_ty), variadic = false, is_proc = false, param_names = names.as_span())
+
+
+function task_set_waiter_field_type() -> types.Type:
+    var params = vec.Vec[types.Type].create()
+    params.push(task_frame_field_type())
+    params.push(task_frame_field_type())
+    params.push(task_void_field_type())
+    var names = vec.Vec[str].create()
+    names.push("frame")
+    names.push("waiter_frame")
+    names.push("waiter")
+    return types.Type.ty_function(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
 
 
 ## Check a call to a top-level function by identifier and yield its result type.

@@ -3333,6 +3333,59 @@ function test_async_embedded_await_temps_and_discards() -> void:
 
 
 @[test]
+function test_async_short_circuit_hoists_a_frame_temp() -> void:
+    ## The host's async normalizer rewrites *every* `and`/`or` in an async body
+    ## into a `__mt_async_tmp_<N>` frame local — setup or not — and the frame
+    ## field is registered even when the operands are plain reads (session 46;
+    ## the `serve_directory_index` and `handle_connection` shapes).
+    var source = <<-SRC
+        async function step(x: int) -> int:
+            return x
+
+        async function work(a: bool, b: bool) -> int:
+            if a and b:
+                let v = await step(1)
+                return v
+            return 0
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Field :name \"local___mt_async_tmp_1\" :type (Types::Primitive :name \"bool\"))"))
+    expect(text.contains_substring(":member \"local___mt_async_tmp_1\""))
+    expect(text.contains_substring("(IR::Name :name \"__mt_frame->local___mt_async_tmp_1\" :type (Types::Primitive :name \"bool\") :pointer false)"))
+    expect(text.contains_substring("(IR::BooleanLiteral :value false :type (Types::Primitive :name \"bool\"))"))
+
+
+@[test]
+function test_task_member_fields_carry_the_host_types() -> void:
+    ## `Types::Task#fields` (`types.rb:590-632`): `frame` is `ptr[void]`,
+    ## `ready` is `fn(frame) -> bool`, and `take_result` returns the task's
+    ## result type.  The analyzer's `check_member` and the lowering's Task
+    ## field fallback must agree or `task.ready(task.frame)` types as the
+    ## receiver (session 46).
+    var module_root = test_module_root()
+    defer: module_root.release()
+    var source = <<-SRC
+        import std.async as aio
+
+        function completed[T](task: Task[T]) -> bool:
+            return task.ready(task.frame)
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source_roots(source, module_root.as_str())
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring(":member \"ready\" :type (Types::Function :name \"\" :params ((Types::Parameter :name \"frame\" :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\"))) :mutable false :passing_mode :plain :boundary_type nil)) :return_type (Types::Primitive :name \"bool\")"))
+    expect(text.contains_substring(":member \"frame\" :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\")))"))
+
+
+@[test]
 function test_async_ctor_params_and_refcounted_allocator() -> void:
     ## The async constructor's params carry the host's unset `pointer`
     ## (`:pointer nil` — `frame_builder.rb:291`'s `field_info[:pointer]`), the
