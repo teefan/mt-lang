@@ -2942,9 +2942,12 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # A bare `null` return takes the function's return type (the
                 # analyzer may record only `void` for it).
                 let ret_null = null_literal_to_context_type(value, ret_ty0, ret_flt)
+                # A conditional return value takes the return type on both
+                # branches (`return if b: 1 else: 0` in a `long` function).
+                let ret_cond = conditional_value_to_context_type(ctx, value, ret_ty0, ret_null)
                 # The host's return-site contextual conversion: a folded numeric
                 # constant that fits, and int→float for a float/double return.
-                let ret_typed = contextual_numeric_cast(ctx, value, ret_null, ret_ty0, types.is_float_type(ret_ty0) and not is_foreign_call_initializer(ctx, value), false)
+                let ret_typed = contextual_numeric_cast(ctx, value, ret_cond, ret_ty0, types.is_float_type(ret_ty0) and not is_foreign_call_initializer(ctx, value), false)
                 let wrapped = if ctx.inside_async: make_task_literal(ret_typed) else: ret_typed
                 # A returned str/cstr (or a struct containing one) transfers the
                 # dynamic format temp's buffer to the caller, so its release is
@@ -14092,9 +14095,33 @@ function literal_value_to_context_type(ctx: ref[LowerCtx], value_ast: ptr[ast.Ex
                 result = string_literal_to_context_type(value_ast, context_ty, result)
             ast.Expr.expr_null_literal:
                 result = null_literal_to_context_type(value_ast, context_ty, result)
+            ast.Expr.expr_if:
+                result = conditional_value_to_context_type(ctx, value_ast, context_ty, result)
             _:
                 pass
     return contextual_numeric_cast(ctx, value_ast, result, context_ty, false, false)
+
+
+## A conditional in a context position takes the host's
+## `lower_contextual_expression` expected type on both branches, so
+## `int_cell(if b: 1 else: 0)` emits `long` literals for a `long` parameter.
+## Only numeric contexts recurse; other conditionals keep their inferred type.
+function conditional_value_to_context_type(ctx: ref[LowerCtx], value_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    if not types.is_integer_type(context_ty) and not types.is_float_type(context_ty):
+        return value
+    unsafe:
+        match read(value_ast):
+            ast.Expr.expr_if as ie:
+                match read(value):
+                    ir.Expr.expr_conditional as cond:
+                        let then_ir = literal_value_to_context_type(ctx, ie.then_expr, context_ty, cond.then_expression)
+                        let else_ir = literal_value_to_context_type(ctx, ie.else_expr, context_ty, cond.else_expression)
+                        return alloc_expr(ir.Expr.expr_conditional(condition = cond.condition, then_expression = then_ir, else_expression = else_ir, ty = context_ty))
+                    _:
+                        pass
+            _:
+                pass
+    return value
 
 
 ## The declared-type sites' contextual conversion: the literal retyping above,

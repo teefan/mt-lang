@@ -3386,6 +3386,34 @@ function test_task_member_fields_carry_the_host_types() -> void:
 
 
 @[test]
+function test_conditional_values_take_the_context_type() -> void:
+    ## A conditional in a call-argument or return position takes the expected
+    ## type on both branches (the host's `lower_contextual_expression`), so an
+    ## `int_cell(if b: 1 else: 0)` argument to a `long` parameter emits `long`
+    ## literals, not an `int` conditional cast up (session 46).
+    var source = <<-SRC
+        function int_cell(v: long) -> long:
+            return v
+
+        function pick_arg(b: bool) -> long:
+            return int_cell(if b: 1 else: 0)
+
+        function pick_ret(b: bool) -> long:
+            return if b: 2 else: 3
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"long\"))"))
+    expect(text.contains_substring("(IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"long\"))"))
+    expect(text.contains_substring("(IR::IntegerLiteral :value 2 :type (Types::Primitive :name \"long\"))"))
+    expect(text.contains_substring("(IR::IntegerLiteral :value 3 :type (Types::Primitive :name \"long\"))"))
+
+
+@[test]
 function test_async_ctor_params_and_refcounted_allocator() -> void:
     ## The async constructor's params carry the host's unset `pointer`
     ## (`:pointer nil` — `frame_builder.rb:291`'s `field_info[:pointer]`), the
