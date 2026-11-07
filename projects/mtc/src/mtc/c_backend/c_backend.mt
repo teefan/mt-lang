@@ -2123,6 +2123,13 @@ function c_type(t: types.Type) -> str:
                 ai += 1
             return buf.as_str()
         types.Type.ty_named as n:
+            # A nested struct's type links through its parents
+            # (`<module>_Rectangle_Edge`), recorded at declaration time.
+            match n.linkage_name:
+                Option.some as linked:
+                    return linked.value
+                Option.none:
+                    pass
             if n.module_name.len > 0:
                 if n.module_name.starts_with("std.c."):
                     if std_c_backing_names != null:
@@ -3304,6 +3311,11 @@ function collect_soa_from_type(e: ref[Emitter], ty: types.Type, seen: ref[map_mo
 function soa_element_c_name(ty: types.Type) -> str:
     match ty:
         types.Type.ty_named as n:
+            match n.linkage_name:
+                Option.some as linked:
+                    return linked.value
+                Option.none:
+                    pass
             if n.module_name.len > 0:
                 return naming.qualified_c_name(n.module_name, n.name)
             return n.name
@@ -3457,6 +3469,13 @@ function struct_field_linkage(ty: types.Type) -> Option[str]:
     match ty:
         types.Type.ty_imported as im:
             return Option[str].some(value = naming.qualified_c_name(im.module_name, im.name))
+        types.Type.ty_named as n:
+            # A nested struct embeds via its parent-qualified linkage name.
+            match n.linkage_name:
+                Option.some as linked:
+                    return Option[str].some(value = linked.value)
+                Option.none:
+                    return Option[str].none
         _:
             return Option[str].none
 
@@ -3490,6 +3509,11 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
                 return Option[str].some(value = naming.proc_type_c_name(ty))
             return Option[str].none
         types.Type.ty_named as n:
+            match n.linkage_name:
+                Option.some as linked:
+                    return Option[str].some(value = linked.value)
+                Option.none:
+                    pass
             if n.module_name.len > 0:
                 return Option[str].some(value = naming.qualified_c_name(n.module_name, n.name))
             return Option[str].some(value = n.name)
@@ -4489,15 +4513,34 @@ function render_address_of_operand(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
 
 
 function checked_array_index_helper_name(receiver_type: types.Type) -> str:
+    let elem = array_element_type(receiver_type)
     var buf = string.String.create()
     buf.append("mt_checked_index_array_")
-    buf.append(naming.type_c_key(array_element_type(receiver_type)))
+    match elem:
+        types.Type.ty_function:
+            # The host names a function/proc element after its C declaration
+            # with a placeholder name (`c_declaration(element, "value")`), e.g.
+            # `mt_proc_proc_int value` -> `mt_proc_proc_int_value`.
+            buf.append(naming.sanitize_c_identifier(c_declaration(elem, "value")))
+        _:
+            buf.append(naming.type_c_key(elem))
     buf.append("_")
     buf.append(long_to_str(array_length(receiver_type)))
     return buf.as_str()
 
 
 function checked_span_index_helper_name(receiver_type: types.Type) -> str:
+    match receiver_type:
+        types.Type.ty_generic as g:
+            if g.name == "span" and g.args.len > 0:
+                let elem = unsafe: read(g.args.data + 0)
+                match elem:
+                    types.Type.ty_function:
+                        return j2("mt_checked_span_index_", naming.sanitize_c_identifier(c_declaration(elem, "value")))
+                    _:
+                        pass
+        _:
+            pass
     return j2("mt_checked_span_index_", naming.type_c_key(receiver_type))
 
 
@@ -4666,43 +4709,54 @@ function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type) -
     let elem_c = c_type(elem_type)
     let n = long_to_str(array_length(receiver_type))
     let name = checked_array_index_helper_name(receiver_type)
-    var sig = string.String.create()
-    sig.append("static inline ")
+    # A raw function-pointer element needs the nested declarator spelled out; a
+    # proc element is the synthesized closure *struct* (`mt_proc_*`) and uses
+    # the ordinary pointer declarator (`c_type` renders the struct name).
+    var raw_fn = false
     match elem_type:
         types.Type.ty_function as fnt:
-            # Function-pointer elements need the nested declarator spelled out:
-            #   static inline RET (**name(RET (*array)[N], uintptr_t index))(params)
-            unsafe:
-                sig.append(c_type(read(fnt.return_type)))
-            sig.append(" (**")
-            sig.append(name)
-            sig.append("(")
-            # The parameter is a pointer to the element (a function pointer):
-            # `RET (**array)(params)` — every call passes the receiver decayed
-            # (session 44, item 6a).
-            sig.append(c_fn_ptr_declarator(elem_type, "*array"))
-            sig.append(", uintptr_t index))(")
-            var fpi: ptr_uint = 0
-            while fpi < fnt.params.len:
-                if fpi > 0:
-                    sig.append(", ")
-                unsafe:
-                    sig.append(c_type(read(fnt.params.data + fpi)))
-                fpi += 1
-            if fnt.params.len == 0 and not fnt.variadic:
-                sig.append("void")
-            if fnt.variadic:
-                if fnt.params.len > 0:
-                    sig.append(", ")
-                sig.append("...")
-            sig.append(") {")
+            raw_fn = not fnt.is_proc
         _:
-            sig.append(elem_c)
-            sig.append(" *")
-            sig.append(name)
-            sig.append("(")
-            sig.append(elem_c)
-            sig.append(" *array, uintptr_t index) {")
+            pass
+    var sig = string.String.create()
+    sig.append("static inline ")
+    if raw_fn:
+        match elem_type:
+            types.Type.ty_function as fnt:
+                #   static inline RET (**name(RET (*array)[N], uintptr_t index))(params)
+                unsafe:
+                    sig.append(c_type(read(fnt.return_type)))
+                sig.append(" (**")
+                sig.append(name)
+                sig.append("(")
+                # The parameter is a pointer to the element (a function pointer):
+                # `RET (**array)(params)` — every call passes the receiver decayed
+                # (session 44, item 6a).
+                sig.append(c_fn_ptr_declarator(elem_type, "*array"))
+                sig.append(", uintptr_t index))(")
+                var fpi: ptr_uint = 0
+                while fpi < fnt.params.len:
+                    if fpi > 0:
+                        sig.append(", ")
+                    unsafe:
+                        sig.append(c_type(read(fnt.params.data + fpi)))
+                    fpi += 1
+                if fnt.params.len == 0 and not fnt.variadic:
+                    sig.append("void")
+                if fnt.variadic:
+                    if fnt.params.len > 0:
+                        sig.append(", ")
+                    sig.append("...")
+                sig.append(") {")
+            _:
+                pass
+    else:
+        sig.append(elem_c)
+        sig.append(" *")
+        sig.append(name)
+        sig.append("(")
+        sig.append(elem_c)
+        sig.append(" *array, uintptr_t index) {")
     emit_line(e, sig.as_str())
     emit_line(e, j4("  if (index >= ", n, ") mt_fatal(\"array index out of bounds\");", ""))
     emit_line(e, "  return &array[index];")
@@ -4842,17 +4896,53 @@ function span_index_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]
 
 
 function emit_checked_span_index_helper(e: ref[Emitter], receiver_type: types.Type) -> void:
-    let elem_c = c_type(array_element_type(receiver_type))
+    let elem = array_element_type(receiver_type)
+    let elem_c = c_type(elem)
     let span_c = c_type(receiver_type)
     let name = checked_span_index_helper_name(receiver_type)
+    var raw_fn = false
+    match elem:
+        types.Type.ty_function as fnt:
+            raw_fn = not fnt.is_proc
+        _:
+            pass
     var sig = string.String.create()
     sig.append("static inline ")
-    sig.append(elem_c)
-    sig.append(" *")
-    sig.append(name)
-    sig.append("(")
-    sig.append(span_c)
-    sig.append(" span, uintptr_t index) {")
+    if raw_fn:
+        # A raw function-pointer element needs the nested declarator:
+        #   static inline RET (**name(SPAN span, uintptr_t index))(params)
+        match elem:
+            types.Type.ty_function as fnt:
+                unsafe:
+                    sig.append(c_type(read(fnt.return_type)))
+                sig.append(" (**")
+                sig.append(name)
+                sig.append("(")
+                sig.append(span_c)
+                sig.append(" span, uintptr_t index))(")
+                var fpi: ptr_uint = 0
+                while fpi < fnt.params.len:
+                    if fpi > 0:
+                        sig.append(", ")
+                    unsafe:
+                        sig.append(c_type(read(fnt.params.data + fpi)))
+                    fpi += 1
+                if fnt.params.len == 0 and not fnt.variadic:
+                    sig.append("void")
+                if fnt.variadic:
+                    if fnt.params.len > 0:
+                        sig.append(", ")
+                    sig.append("...")
+                sig.append(") {")
+            _:
+                pass
+    else:
+        sig.append(elem_c)
+        sig.append(" *")
+        sig.append(name)
+        sig.append("(")
+        sig.append(span_c)
+        sig.append(" span, uintptr_t index) {")
     emit_line(e, sig.as_str())
     emit_line(e, "  if (index >= span.len) mt_fatal(\"span index out of bounds\");")
     emit_line(e, "  return &span.data[index];")

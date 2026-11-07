@@ -25,6 +25,7 @@ import mtc.semantic.control_flow.graph as flow_graph_mod
 import mtc.semantic.diagnostics as diag
 import mtc.semantic.emit_expansion as emit_ex
 import mtc.semantic.scope as sscope
+import mtc.c_naming as naming
 
 
 public struct SemanticDiagnostic:
@@ -1178,7 +1179,7 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
         match d:
             ast.Decl.decl_struct as s:
                 declare_type(ctx, s.name, s.line, s.column)
-                ctx.types.set(s.name, types.Type.ty_named(module_name = ctx.module_name, name = s.name))
+                ctx.types.set(s.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = s.name))
                 register_module_type_name(ctx, s.name)
                 ctx.type_param_names.set(s.name, s.type_params)
                 ctx.implemented.set(s.name, s.impl_list)
@@ -1186,24 +1187,24 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
                 register_struct_events(ctx, s.struct_events)
             ast.Decl.decl_union as u:
                 declare_type(ctx, u.name, u.line, u.column)
-                ctx.types.set(u.name, types.Type.ty_named(module_name = ctx.module_name, name = u.name))
+                ctx.types.set(u.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = u.name))
                 register_module_type_name(ctx, u.name)
             ast.Decl.decl_enum as e:
                 declare_type(ctx, e.name, e.line, e.column)
-                ctx.types.set(e.name, types.Type.ty_named(module_name = ctx.module_name, name = e.name))
+                ctx.types.set(e.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = e.name))
                 register_module_type_name(ctx, e.name)
             ast.Decl.decl_flags as fl:
                 declare_type(ctx, fl.name, fl.line, fl.column)
-                ctx.types.set(fl.name, types.Type.ty_named(module_name = ctx.module_name, name = fl.name))
+                ctx.types.set(fl.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = fl.name))
                 register_module_type_name(ctx, fl.name)
             ast.Decl.decl_variant as vr:
                 declare_type(ctx, vr.name, vr.line, vr.column)
-                ctx.types.set(vr.name, types.Type.ty_named(module_name = ctx.module_name, name = vr.name))
+                ctx.types.set(vr.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = vr.name))
                 register_module_type_name(ctx, vr.name)
                 ctx.type_param_names.set(vr.name, vr.type_params)
             ast.Decl.decl_opaque as op:
                 declare_type(ctx, op.name, op.line, op.column)
-                ctx.types.set(op.name, types.Type.ty_named(module_name = ctx.module_name, name = op.name))
+                ctx.types.set(op.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = op.name))
                 register_module_type_name(ctx, op.name)
                 ctx.implemented.set(op.name, op.opaque_implements)
             ast.Decl.decl_type_alias as ta:
@@ -1264,6 +1265,23 @@ function record_import_symbol_count(ctx: ref[Context], module_name: str) -> void
     ctx.import_symbol_counts.set(module_name, binding.structs.len() + binding.types.len() + binding.static_member_types.len() + binding.type_alias_types.len() + binding.functions.len() + binding.value_types.len())
 
 
+## A nested struct's C linkage name: its qualified path flattened under the
+## module prefix (`Rectangle.Edge` -> `<module>_Rectangle_Edge`), the name the
+## host's `register_nested_struct_types` stores as `Types::Struct#linkage_name`
+## and the lowering's `lower_nested_struct_decls` declares.
+function nested_struct_linkage(module_name: str, qname: str) -> str:
+    var flat = string.String.create()
+    var i: ptr_uint = 0
+    while i < qname.len:
+        let b = qname.byte_at(i)
+        if b == '.':
+            flat.push_byte('_')
+        else:
+            flat.push_byte(b)
+        i += 1
+    return naming.qualified_c_name(module_name, flat.as_str())
+
+
 function register_nested_struct_types(ctx: ref[Context], nested: span[ast.Decl], parent_name: str) -> void:
     var i: ptr_uint = 0
     while i < nested.len:
@@ -1278,9 +1296,18 @@ function register_nested_struct_types(ctx: ref[Context], nested: span[ast.Decl],
                 qualified.append(s.name)
                 let qname = qualified.as_str()
                 declare_type(ctx, qname, s.line, s.column)
+                # The nested struct's type keeps its short name (the host's
+                # `Types::Struct.new(nested.name, …)`) but links through its
+                # parents (`<module>_Rectangle_Edge`), so a field, parameter or
+                # local of this type emits the declared C name.
+                let nested_ty = types.Type.ty_named(
+                    linkage_name = Option[str].some(value = nested_struct_linkage(ctx.module_name, qname)),
+                    module_name = ctx.module_name,
+                    name = s.name)
+                ctx.types.set(qname, nested_ty)
                 if not ctx.type_names.contains(s.name):
                     declare_type(ctx, s.name, s.line, s.column)
-                ctx.types.set(qname, types.Type.ty_named(module_name = ctx.module_name, name = qname))
+                    ctx.types.set(s.name, nested_ty)
                 register_module_type_name(ctx, qname)
                 register_nested_struct_types(ctx, s.nested_types, qname)
                 register_struct_events(ctx, s.struct_events)
@@ -1717,7 +1744,7 @@ function merge_prelude_binding_methods(ctx: ref[Context], module_name: str) -> v
 ## Ruby's type_declaration.rb built-in registration.
 function register_builtin_event_types(ctx: ref[Context]) -> void:
     if not ctx.type_names.contains("EventError"):
-        ctx.types.set("EventError", types.Type.ty_named(module_name = "", name = "EventError"))
+        ctx.types.set("EventError", types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "EventError"))
         ctx.static_member_types.set("EventError", true)
         ctx.match_case_types.set("EventError", true)
         ctx.method_keys.set(method_key("EventError", "full"), true)
@@ -1726,13 +1753,13 @@ function register_builtin_event_types(ctx: ref[Context]) -> void:
         ctx.match_case_names.set("EventError", members.as_span())
         ctx.member_names.set("EventError", members.as_span())
     if not ctx.type_names.contains("Subscription"):
-        ctx.types.set("Subscription", types.Type.ty_named(module_name = "", name = "Subscription"))
+        ctx.types.set("Subscription", types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "Subscription"))
 
 
 function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: str) -> void:
     if ctx.type_names.contains(name):
         return
-    ctx.types.set(name, types.Type.ty_named(module_name = "", name = name))
+    ctx.types.set(name, types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = name))
     ctx.static_member_types.set(name, true)
     ctx.match_case_types.set(name, true)
     ctx.variant_types.set(name, true)
@@ -2049,7 +2076,7 @@ function resolve_field_entries_with_events(ctx: ref[Context], fields: span[ast.F
         unsafe:
             match read(struct_events.data + evi):
                 ast.Decl.decl_event as ev:
-                    result.push(FieldEntry(name = ev.name, ty = types.Type.ty_named(module_name = "", name = ev.name)))
+                    result.push(FieldEntry(name = ev.name, ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = ev.name)))
                 _:
                     pass
         evi += 1
@@ -2118,6 +2145,12 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
                 let canonical = canonical_extending_base(ctx, ex.type_name)
                 if canonical != base:
                     ctx.extending_canonical_names.set(base, canonical)
+                # A receiver of a nested struct (`Rectangle.Edge`) resolves to a
+                # type whose `name` is the short segment, so the block's methods
+                # are registered under that name as well as the qualified one.
+                var short_base = base
+                if canonical == base:
+                    short_base = last_dotted_segment(base)
                 var j: ptr_uint = 0
                 while j < ex.methods.len:
                     var m: ast.Method
@@ -2125,6 +2158,8 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
                         m = read(ex.methods.data + j)
                     let key = method_key(base, m.name)
                     ctx.method_keys.set(key, true)
+                    if short_base != base:
+                        ctx.method_keys.set(method_key(short_base, m.name), true)
                     if canonical != base:
                         ctx.method_keys.set(method_key(canonical, m.name), true)
                     enter_suppressed_extending_target(ctx, ex.type_name)
@@ -2133,6 +2168,10 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
                     let sig = build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind, m.is_async)
                     if m.method_kind != ast.MethodKind.mk_static or not ctx.method_sigs.contains(key):
                         register_method_sig(ctx, key, sig)
+                    if short_base != base:
+                        let short_key = method_key(short_base, m.name)
+                        if m.method_kind != ast.MethodKind.mk_static or not ctx.method_sigs.contains(short_key):
+                            register_method_sig(ctx, short_key, sig)
                     if canonical != base:
                         let canonical_key = method_key(canonical, m.name)
                         if not ctx.method_sigs.contains(canonical_key):
@@ -2145,6 +2184,22 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
             _:
                 pass
         i += 1
+
+
+## The final segment of a dotted type name (`Rectangle.Edge` -> `Edge`); a
+## nested struct's type and its receivers carry the short name.
+function last_dotted_segment(name: str) -> str:
+    var last_dot: ptr_uint = 0
+    var has_dot = false
+    var i: ptr_uint = 0
+    while i < name.len:
+        if name.byte_at(i) == '.':
+            last_dot = i
+            has_dot = true
+        i += 1
+    if has_dot:
+        return name.slice(last_dot + 1, name.len - last_dot - 1)
+    return name
 
 
 public function method_key(type_name: str, member: str) -> str:
@@ -2317,7 +2372,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                 record_decl_callable_sites(ctx, ff.mapping)
             ast.Decl.decl_event as ev:
                 if declare_value(ctx, ev.name, ev.line, ev.column):
-                    ctx.value_types.set(ev.name, types.Type.ty_named(module_name = "", name = ev.name))
+                    ctx.value_types.set(ev.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = ev.name))
             ast.Decl.decl_struct as s:
                 # Register struct events as values so they can be referenced
                 # in expressions like `window.closed.emit()`.  Also recurse
@@ -2457,7 +2512,7 @@ function resolve_type_at(ctx: ref[Context], t: ast.TypeRef, depth: int) -> types
         return wrap_nullable(base, t.nullable)
 
     if t.is_dyn:
-        return wrap_nullable(types.Type.ty_named(module_name = "", name = "dyn"), t.nullable)
+        return wrap_nullable(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "dyn"), t.nullable)
 
     if t.is_tuple:
         var elems = vec.Vec[types.Type].create()
@@ -2572,12 +2627,16 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
     if ctx.type_names.contains(name):
         # Built-in registered types (e.g. `EventError`, `Subscription`) carry no
         # owning module and must stay unqualified.
+        # The registry entry is authoritative: a builtin stays unqualified, a
+        # module-level type names its own module, and a nested struct's entry
+        # carries its parent-qualified `linkage_name` (its `name` is the short
+        # one, so rebuilding the type from `name` would lose the link).
         let registered_ptr = ctx.types.get(name)
         if registered_ptr != null:
             let registered = unsafe: read(registered_ptr)
             match registered:
                 types.Type.ty_named as rn:
-                    if rn.module_name.len == 0 and arguments.len == 0:
+                    if arguments.len == 0:
                         return registered
                 _:
                     pass
@@ -2594,7 +2653,7 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
                 args.push(resolve_type_at(ctx, a, depth + 1))
                 ai += 1
             return types.Type.ty_imported(module_name = ctx.module_name, name = name, args = args.as_span())
-        return types.Type.ty_named(module_name = ctx.module_name, name = name)
+        return types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = name)
     # An integer literal in type-argument position (`array[ubyte, 256]`) is
     # resolved directly to a `ty_literal_int` so that the lowering and C
     # backend can recover the correct array size without relying on a
@@ -5214,7 +5273,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                                 report(ctx, det.line, det.column, "detach target must be a global function call")
                     _:
                         report(ctx, det.line, det.column, "detach target must be a function call")
-                return types.Type.ty_named(module_name = "", name = "Handle")
+                return types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "Handle")
             ast.Expr.expr_sizeof:
                 return types.primitive("ptr_uint")
             ast.Expr.expr_alignof:
@@ -7113,7 +7172,7 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
     match static_type_receiver(ctx, scope, receiver):
         Option.some as tn:
             check_static_member(ctx, tn.value, method_name, line, column)
-            return types.Type.ty_named(module_name = ctx.module_name, name = tn.value)
+            return types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = tn.value)
         Option.none:
             pass
 
@@ -7161,7 +7220,7 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
     # block declares them (std.linear_algebra's `extending mat4:`).
     match static_builtin_type_name(ctx, scope, receiver):
         Option.some as builtin_name:
-            return check_typed_method_call(ctx, types.Type.ty_named(module_name = "", name = builtin_name.value), method_name, args, arg_types, any_named, line, column)
+            return check_typed_method_call(ctx, types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = builtin_name.value), method_name, args, arg_types, any_named, line, column)
         Option.none:
             pass
 
@@ -7360,7 +7419,7 @@ function static_struct_receiver_type(ctx: ref[Context], scope: ref[sscope.Scope]
                 if scope_get(scope, id.name) != null:
                     return Option[types.Type].none
                 if ctx.structs.contains(id.name):
-                    return Option[types.Type].some(value = types.Type.ty_named(module_name = "", name = id.name))
+                    return Option[types.Type].some(value = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = id.name))
                 return Option[types.Type].none
             ast.Expr.expr_member_access as inner:
                 match read(inner.receiver):
@@ -7817,8 +7876,8 @@ function event_value_receiver(ctx: ref[Context], scope: ref[sscope.Scope], recei
 function event_method_call_type(method_name: str) -> types.Type:
     if method_name == "subscribe" or method_name == "subscribe_once":
         var results = vec.Vec[types.Type].create()
-        results.push(types.Type.ty_named(module_name = "", name = "Subscription"))
-        results.push(types.Type.ty_named(module_name = "", name = "EventError"))
+        results.push(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "Subscription"))
+        results.push(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "EventError"))
         return types.Type.ty_generic(name = "Result", args = results.as_span())
     if method_name == "unsubscribe":
         return types.primitive("bool")
@@ -8027,7 +8086,7 @@ function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], rece
                     match static_type_receiver(ctx, scope, receiver):
                         Option.some as tn:
                             check_static_member(ctx, tn.value, member, line, column)
-                            return types.Type.ty_named(module_name = ctx.module_name, name = tn.value)
+                            return types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = tn.value)
                         Option.none:
                             match try_imported_type(ctx, scope, receiver, member):
                                 Option.some as imported_type:
@@ -8120,7 +8179,7 @@ function try_construction(ctx: ref[Context], scope: ref[sscope.Scope], callee: p
                             return Option[types.Type].some(value = read(builtin))
                     return Option[types.Type].none
                 check_construction(ctx, scope, id.name, read(fieldsp), args, id.line, id.column)
-                return Option[types.Type].some(value = types.Type.ty_named(module_name = "", name = id.name))
+                return Option[types.Type].some(value = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = id.name))
             _:
                 return Option[types.Type].none
 

@@ -582,3 +582,124 @@ function test_str_buffer_sink_emits_the_four_argument_clear_and_format_helpers()
     expect(text.contains_substring("memset(data, 0, cap + 1);"))
     expect(text.contains_substring("static uintptr_t mt_format_append_int("))
     expect(text.contains_substring("mt_str_buffer_len("))
+
+
+@[test]
+function test_nested_struct_types_link_through_their_parents() -> void:
+    ## A nested struct's type keeps its short name but links through its
+    ## parents: a field, parameter, local or `extending` target of
+    ## `Rectangle.Edge` emits the declared `main_Rectangle_Edge` C name, and the
+    ## aggregate ordering puts the nested struct before its parent.
+    var source = <<-SRC
+        struct Rectangle:
+            x: float
+
+            struct Edge:
+                start: float
+                end: float
+
+            top_edge: Edge
+
+        extending Rectangle.Edge:
+            function length() -> float:
+                return this.end - this.start
+
+        function take(e: ref[Rectangle.Edge]) -> float:
+            return e.start
+
+        function main() -> int:
+            var r: Rectangle
+            r.top_edge.start = 1.0
+            var e: Rectangle.Edge
+            e.end = 2.0
+            return int<-take(ref_of(e)) + int<-e.length()
+    SRC
+    var c = compile_to_c(source)
+    defer: c.release()
+    let text = c.as_str()
+    expect_contains(text, "struct main_Rectangle_Edge {")
+    expect_contains(text, "main_Rectangle_Edge top_edge;")
+    expect_contains(text, "main_Rectangle_Edge *e")
+    expect_contains(text, "main_Rectangle_Edge_length")
+    let nested_at = text.find_substring("struct main_Rectangle_Edge {").unwrap_or(text.len)
+    let parent_at = text.find_substring("struct main_Rectangle {").unwrap_or(text.len)
+    expect(nested_at < parent_at)
+
+
+@[test]
+function test_proc_array_element_uses_the_proc_struct_helper() -> void:
+    ## A proc-typed array element is the synthesized closure struct, so the
+    ## checked-index helper takes and returns `mt_proc_proc_int*` (not a raw
+    ## function-pointer declarator) and is named after the element's C
+    ## declaration, as the host names it.
+    var source = <<-SRC
+        type IntGenerator = proc() -> int
+
+        function main() -> int:
+            var ops: array[IntGenerator, 2]
+            ops[0] = proc() -> int: 3
+            let a = ops[0]
+            return a()
+    SRC
+    var c = compile_to_c(source)
+    defer: c.release()
+    let text = c.as_str()
+    expect_contains(text, "static inline mt_proc_proc_int *mt_checked_index_array_mt_proc_proc_int_value_2(mt_proc_proc_int *array, uintptr_t index)")
+    expect_contains(text, "mt_proc_proc_int a = (*mt_checked_index_array_mt_proc_proc_int_value_2(ops, 0));")
+
+
+@[test]
+function test_async_editable_receiver_is_a_single_pointer() -> void:
+    ## An editable async method's constructor takes `T *this` — the pointer
+    ## lives in the frame field and the C declarator, never doubled into
+    ## `T* *this` — and `ref_of(this)` casts the pointer value.
+    var source = <<-SRC
+        struct Counter:
+            value: int
+
+        extending Counter:
+            public async editable function bump() -> int:
+                let p = ref_of(this)
+                unsafe: read(p).value += 1
+                return this.value
+
+        function main() -> int:
+            var c: Counter
+            let task = c.bump()
+            return task.take_result(task.frame)
+    SRC
+    var c = compile_to_c(source)
+    defer: c.release()
+    let text = c.as_str()
+    expect_contains(text, "main_Counter_bump(main_Counter *this)")
+    expect_contains(text, "(main_Counter*) __mt_frame->param_this")
+    expect(not text.contains_substring("main_Counter* *this"))
+
+
+@[test]
+function test_struct_event_methods_use_the_event_runtime() -> void:
+    ## A struct event field's `subscribe`/`emit` lower through the per-event
+    ## runtime (the hidden `__event_<name>` field and the event's own C
+    ## functions), never through the generic method fallback.
+    var source = <<-SRC
+        struct Window:
+            name: str
+            public event closed[4]
+
+        function on_close() -> void:
+            pass
+
+        function main() -> int:
+            var w: Window
+            let _ = w.closed.subscribe(on_close) else:
+                return 1
+            w.closed.emit()
+            return 0
+    SRC
+    var c = compile_to_c(source)
+    defer: c.release()
+    let text = c.as_str()
+    expect_contains(text, "__event_closed")
+    expect_contains(text, "__subscribe(")
+    expect_contains(text, "__emit(")
+    expect(not text.contains_substring("main_mt_subscribe"))

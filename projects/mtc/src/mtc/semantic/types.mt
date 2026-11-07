@@ -35,7 +35,11 @@ public variant Type:
     ty_nullable(base: ptr[Type])
     ty_null(target: ptr[Type]?)
     ty_event(name: str, capacity: ptr_uint, payload_type: ptr[Type]?, linkage_name: str)
-    ty_named(name: str, module_name: str)
+    # A nominal type declared in this module.  `linkage_name` carries the C
+    # linkage when it differs from `<module>_<name>` — a nested struct's type is
+    # named by its short name (`Edge`) but linked through its parents
+    # (`<module>_Rectangle_Edge`), mirroring Ruby's `Types::Struct#linkage_name`.
+    ty_named(name: str, module_name: str, linkage_name: Option[str])
     # The binding type of an `as name` variant match arm.  `variant_name` and
     # `module_name` identify the owning variant (`Option`, `std.option`); `name`
     # is the rendered payload name (`Option_some`); `c_name` is the payload
