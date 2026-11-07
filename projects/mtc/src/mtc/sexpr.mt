@@ -492,9 +492,31 @@ function types_list_value(ctx: ref[SexprCtx], items: span[types.Type]) -> SexprV
     return list_value(items_out.as_span())
 
 
+## The host stores an SoA count / simd lane count as a plain Integer, not a
+## `Types::LiteralTypeArg`; the dump emits a bare number, falling back to the
+## regular type rendering for a non-literal (a bound parameter mid-analysis).
+function int_arg_field(ctx: ref[SexprCtx], name: str, t: types.Type) -> SexprField:
+    match t:
+        types.Type.ty_literal_int as lit:
+            return field_int(name, lit.value)
+        _:
+            return field_value(name, types_value(ctx, t))
+
+
 function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
     match t:
         types.Type.ty_primitive as p:
+            # The host installs the builtin vector/matrix/quaternion names as
+            # their own type classes (`Types::Vector`/`Matrix`/`Quaternion`,
+            # `type_declaration.rb:54-71`); the self keeps them as primitives
+            # (arithmetic, fields and the C backend special-case the names), so
+            # the dump classifies them here.  Each renders only `:name`.
+            if p.name == "vec2" or p.name == "vec3" or p.name == "vec4" or p.name == "ivec2" or p.name == "ivec3" or p.name == "ivec4":
+                return node("Types::Vector", fields1(field_str("name", p.name)))
+            if p.name == "mat3" or p.name == "mat4":
+                return node("Types::Matrix", fields1(field_str("name", p.name)))
+            if p.name == "quat":
+                return node("Types::Quaternion", fields1(field_str("name", p.name)))
             return node("Types::Primitive", fields1(field_str("name", p.name)))
         types.Type.ty_str:
             return node("Types::StringView", span[SexprField]())
@@ -571,12 +593,12 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
             if g.name == "SoA" and g.args.len == 2:
                 var soaf = vec.Vec[SexprField].create()
                 soaf.push(field_value("element_type", types_value(ctx, unsafe: read(g.args.data + 0))))
-                soaf.push(field_value("count", types_value(ctx, unsafe: read(g.args.data + 1))))
+                soaf.push(int_arg_field(ctx, "count", unsafe: read(g.args.data + 1)))
                 return node("Types::SoA", soaf.as_span())
             if g.name == "simd" and g.args.len == 2:
                 var simdf = vec.Vec[SexprField].create()
                 simdf.push(field_value("element_type", types_value(ctx, unsafe: read(g.args.data + 0))))
-                simdf.push(field_value("lane_count", types_value(ctx, unsafe: read(g.args.data + 1))))
+                simdf.push(int_arg_field(ctx, "lane_count", unsafe: read(g.args.data + 1)))
                 return node("Types::Simd", simdf.as_span())
             if is_builtin_generic_name(g.name):
                 var gf = vec.Vec[SexprField].create()

@@ -4998,3 +4998,194 @@ function test_foreign_boundary_casts_a_numeric_const() -> void:
     defer: dump.release()
     let text = dump.as_str()
     expect(text.contains_substring("(IR::Cast :target_type (Types::Primitive :name \"ubyte\") :expression (IR::Name :name \"std_sdl3_ALPHA_OPAQUE\""))
+
+
+@[test]
+function test_monomorphized_method_array_parameter_takes_an_input_copy() -> void:
+    ## An array-typed parameter on a monomorphized method takes the host's
+    ## array copy: the IR parameter is `<name>_input` and the body opens with
+    ## `<name> = <name>_input` (`functions.rb:151-161`; `Vec.append_array`'s
+    ## `values_input`), matching the plain function and method paths
+    ## (session 47).
+    var source = <<-SRC
+        public struct Holder[T]:
+            tag: T
+
+        extending Holder[T]:
+            public function first(values: array[int, 4]) -> int:
+                return values[0]
+
+        function main() -> int:
+            let h = Holder[int](tag = 1)
+            var values: array[int, 4] = (1, 2, 3, 4)
+            return h.first(values)
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Param :name \"values\" :linkage_name \"values_input\" :type (Types::Generic :name \"array\" :arguments ((Types::Primitive :name \"int\") (Types::LiteralTypeArg :value 4))) :pointer false)"))
+    expect(text.contains_substring("(IR::LocalDecl :name \"values\" :linkage_name \"values\" :type (Types::Generic :name \"array\" :arguments ((Types::Primitive :name \"int\") (Types::LiteralTypeArg :value 4))) :value (IR::Name :name \"values_input\""))
+
+
+@[test]
+function test_cast_propagation_inlines_the_success_projection() -> void:
+    ## `let x = <cast>(expr?)` mirrors the host's prepared-temp path: the hidden
+    ## storage is named first (`__mt_propagate_1`, not a cast temp) and the
+    ## statement's local takes the cast of the success projection directly —
+    ## one declaration, no intermediate success local (`std/binary.mt`'s
+    ## `read_str`; session 47).
+    var source = <<-SRC
+        struct Reader:
+            value: int
+
+        extending Reader:
+            public function read_uint() -> Result[uint, int]:
+                return Result[uint, int].success(value = 7)
+
+            public function read_str() -> Result[ptr_uint, int]:
+                let length = ptr_uint<-this.read_uint()?
+                return Result[ptr_uint, int].success(value = length)
+
+        function main() -> int:
+            let r = Reader(value = 0)
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_propagate_1\""))
+    expect(not text.contains_substring("__mt_cast_prop"))
+    expect(not text.contains_substring("__mt_propagate_2"))
+    expect(text.contains_substring("(IR::LocalDecl :name \"length\" :linkage_name \"length\" :type (Types::Primitive :name \"ptr_uint\") :value (IR::Cast :target_type (Types::Primitive :name \"ptr_uint\") :expression (IR::Member :receiver (IR::Member :receiver (IR::Member :receiver (IR::Name :name \"__mt_propagate_1\""))
+
+
+@[test]
+function test_builtin_aggregates_render_as_their_host_classes() -> void:
+    ## The host installs the builtin vector/matrix/quaternion names as
+    ## `Types::Vector`/`Matrix`/`Quaternion` instances, not primitives
+    ## (`type_declaration.rb:54-71`); the dump renders `(Types::Vector :name
+    ## "vec2")` (session 47).
+    var source = <<-SRC
+        function spin(v: vec2, m: mat4, q: quat) -> vec3:
+            return vec3(x = v.x, y = v.y, z = 0.0)
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(Types::Vector :name \"vec2\")"))
+    expect(text.contains_substring("(Types::Vector :name \"vec3\")"))
+    expect(text.contains_substring("(Types::Matrix :name \"mat4\")"))
+    expect(text.contains_substring("(Types::Quaternion :name \"quat\")"))
+    expect(not text.contains_substring("(Types::Primitive :name \"vec2\")"))
+
+
+@[test]
+function test_variant_match_uses_the_scrutinees_module() -> void:
+    ## Two modules may declare the same variant name (`mtc.ir.Expr` vs
+    ## `mtc.parser.ast.Expr`); the scrutinee type's own module selects the
+    ## registry entry, so the kind constant and the arm payload carry the
+    ## declaring module (session 47).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_varmod_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var liba_source = <<-SRC
+        public variant Expr:
+            alpha(x: int)
+    SRC
+    if not write_source_file(root.as_str(), "liba.mt", liba_source):
+        return
+
+    var libb_source = <<-SRC
+        public variant Expr:
+            beta(y: int)
+    SRC
+    if not write_source_file(root.as_str(), "libb.mt", libb_source):
+        return
+
+    var source = <<-SRC
+        import liba as liba
+        import libb as libb
+
+        function take(e: libb.Expr) -> int:
+            match e:
+                libb.Expr.beta as b:
+                    return b.y
+                libb.Expr.alpha:
+                    return 0
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Name :name \"libb_Expr_kind_beta\""))
+    expect(text.contains_substring("(Types::VariantArmPayload :name \"Expr_beta\" :module_name \"libb\")"))
+    expect(not text.contains_substring("(IR::Name :name \"liba_Expr_kind_beta\""))
+
+
+@[test]
+function test_soa_and_simd_counts_render_as_integers() -> void:
+    ## The host stores `Types::SoA#count` and `Types::Simd#lane_count` as plain
+    ## Integers, so the dump emits bare numbers (`:count 4`) — the self's type
+    ## arguments resolve like array lengths, not type names (session 47).
+    var source = <<-SRC
+        struct Point:
+            x: float
+            y: float
+
+        function make() -> int:
+            var points: SoA[Point, 4] = zero[SoA[Point, 4]]
+            var lanes: simd[float, 2] = zero[simd[float, 2]]
+            return 0
+
+        function main() -> int:
+            return make()
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(Types::SoA :element_type (Types::Struct :name \"Point\" :module_name \"main\") :count 4)"))
+    expect(text.contains_substring("(Types::Simd :element_type (Types::Primitive :name \"float\") :lane_count 2)"))
+    expect(not text.contains_substring("(Types::Struct :name \"4\" :module_name nil)"))
+
+
+@[test]
+function test_imported_named_type_keeps_its_module_in_qualification() -> void:
+    ## `qualify_type` must not re-attribute a named type that already carries
+    ## its owning module: `std.result`'s `map_error[F]` resolved the caller's
+    ## `Error` as `std.result.Error`, so the propagate guard's kind constant
+    ## used the prelude module (session 47).
+    var source = <<-SRC
+        struct Error:
+            message: str
+
+        function take(raw: int) -> Error:
+            return Error(message = "x")
+
+        function run() -> Result[bool, Error]:
+            let r = Result[bool, int].success(value = true)
+            let ok = r.map_error(take)?
+            return Result[bool, Error].success(value = ok)
+
+        function main() -> int:
+            return 0
+    SRC
+    var module_root = test_module_root()
+    defer: module_root.release()
+    var dump = lower_dump_for_source_roots(source, module_root.as_str())
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("std_result_Result_bool_main_Error_kind_failure"))
+    expect(not text.contains_substring("std_result_Result_bool_std_result_Error_kind_failure"))

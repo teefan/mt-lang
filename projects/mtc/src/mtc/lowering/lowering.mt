@@ -3009,20 +3009,23 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                     lower_propagate_let(ctx, output, loc.name, un.operand, loc.line, false)
                                     return
                             # `let x = <cast>(inner?)` — the `?` is nested inside a
-                            # prefix cast.  Propagate the `?` into a hidden temp,
-                            # then bind `x` to the cast of that temp.
+                            # prefix cast.  The host's prepared-temp path wraps the
+                            # propagation's success projection in the cast directly
+                            # (one local decl, the statement's line); the storage
+                            # temp is named first.
                             ast.Expr.expr_prefix_cast as pc:
                                 match read(pc.expression):
                                     ast.Expr.expr_unary_op as inner_un:
                                         if inner_un.operator == "?":
-                                            let tmp = fresh_c_temp_name(ctx, "cast_prop")
-                                            lower_propagate_let(ctx, output, tmp, inner_un.operand, 0, false)
-                                            let tmp_id = alloc_ast_expr(ast.Expr.expr_identifier(name = tmp, line = 0, column = 0))
-                                            let cast_expr = alloc_ast_expr(ast.Expr.expr_prefix_cast(target_type = pc.target_type, expression = tmp_id, line = pc.line, column = pc.column))
+                                            let temp = lower_propagate_storage(ctx, output, inner_un.operand)
+                                            let storage_ref = alloc_expr(ir.Expr.expr_name(name = temp.name, ty = temp.storage_ty, pointer = Option[bool].some(value = false)))
+                                            let success_ty = guard_success_type(ctx, temp.kind, temp.storage_ty)
+                                            let success_val = guard_success_projection(ctx, temp.kind, temp.storage_ty, storage_ref, success_ty)
+                                            let target_ty = qualify_type(ctx, resolve_type_ref(ctx, pc.target_type))
+                                            let val_ir = alloc_expr(ir.Expr.expr_cast(target_type = target_ty, expression = success_val, ty = target_ty))
                                             let bc = utils.c_local_name(loc.name)
-                                            let val_ir = lower_expr(ctx, cast_expr)
-                                            output.push(ir.Stmt.stmt_local(name = loc.name, linkage_name = bc, ty = ir_expr_type(val_ir), value = val_ir, line = 0, source_path = ""))
-                                            ctx.locals.push(LocalBinding(name = loc.name, c_name = bc, ty = ir_expr_type(val_ir), pointer = Option[bool].some(value = false)))
+                                            output.push(ir.Stmt.stmt_local(name = loc.name, linkage_name = bc, ty = target_ty, value = val_ir, line = loc.line, source_path = ctx.analysis.source_path))
+                                            ctx.locals.push(LocalBinding(name = loc.name, c_name = bc, ty = target_ty, pointer = Option[bool].some(value = false)))
                                             return
                                     _:
                                         pass
@@ -3775,7 +3778,21 @@ function lower_propagate_return(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
 
 
 
-function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, operand: ptr[ast.Expr], line: ptr_uint, emit_success_read: bool) -> void:
+## The hidden storage a `?` propagation lowers into: the temp's name, the full
+## Option/Result storage type and the guard kind.  The caller builds the success
+## read — the host's prepared-temp projection, inlined where the value is used.
+struct PropagatedTemp:
+    name: str
+    storage_ty: types.Type
+    kind: str
+
+
+## Lower a `?` operand into the host's hidden storage temp and its failure guard
+## (`prepare_result_propagation_for_inline_lowering`).  The operand lowers first,
+## so its own temps take the lower counter values; `__mt_propagate_<N>` is named
+## after it, and the failure branch returns (or completes the frame early in
+## CPS).  Returns the temp so the caller can read its success projection.
+function lower_propagate_storage(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], operand: ptr[ast.Expr]) -> PropagatedTemp:
     # The host's normalization hoists an embedded await out of a `?` operand
     # into a `__mt_async_tmp_<N>` local before the propagation lowers it
     # (`normalize_async_expression`'s AwaitExpr case).
@@ -3895,6 +3912,14 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
     # `if (<failure condition>) { return storage; }`
     let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
     output.push(ir.Stmt.stmt_if(condition = cond, then_body = fail_body.as_span(), else_body = Option[span[ir.Stmt]].none))
+    return PropagatedTemp(name = storage_c, storage_ty = storage_ty, kind = kind)
+
+
+function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, operand: ptr[ast.Expr], line: ptr_uint, emit_success_read: bool) -> void:
+    let temp = lower_propagate_storage(ctx, output, operand)
+    let storage_ty = temp.storage_ty
+    let kind = temp.kind
+    let storage_ref = alloc_expr(ir.Expr.expr_name(name = temp.name, ty = storage_ty, pointer = Option[bool].some(value = false)))
 
     # Bind `name` to the unwrapped success value (unless discarded with `_`).
     if name == "_":
@@ -4545,7 +4570,12 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
                 let resolved_val = unsafe: read(resolved_ptr)
                 if not type_is_from_std_c(resolved_val):
                     return qualify_type(ctx, resolved_val)
-            return types.Type.ty_imported(module_name = ctx.module_name, name = n.name, args = span[types.Type]())
+            # A named type that already carries its owning module is qualified
+            # against it, not the current module: lowering std.result's
+            # `map_error[F]` with `ty_named("Error", "map_err_probe")` must not
+            # produce `std.result.Error`.
+            let owner = if n.module_name.len > 0: n.module_name else: ctx.module_name
+            return types.Type.ty_imported(module_name = owner, name = n.name, args = span[types.Type]())
         types.Type.ty_imported as im:
             if is_raw_type_param_name(im.name):
                 return ctx.void_ty
@@ -5185,6 +5215,14 @@ function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.T
             simd_args.push(resolve_type_ref(ctx, t.arguments.data + 0))
         simd_args.push(resolve_array_length_type(ctx, unsafe: t.arguments.data + 1))
         return types.Type.ty_generic(name = "simd", args = simd_args.as_span())
+    # SoA[T, N]: the count is an integer argument like simd's lane count (the
+    # host stores a plain Integer in `Types::SoA#count`).
+    if name == "SoA" and t.arguments.len == 2:
+        var soa_args = vec.Vec[types.Type].create()
+        unsafe:
+            soa_args.push(resolve_type_ref(ctx, t.arguments.data + 0))
+        soa_args.push(resolve_array_length_type(ctx, unsafe: t.arguments.data + 1))
+        return types.Type.ty_generic(name = "SoA", args = soa_args.as_span())
     # str_buffer[N]: ensure the struct type exists and return the resolved type.
     if name == "str_buffer" and t.arguments.len == 1:
         var sb_args = vec.Vec[types.Type].create()
@@ -6702,7 +6740,11 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                     let vname = nominal_type_name(op_ty)
                     if is_vec_math_name(vname):
                         return lower_vec_unary_neg(ctx, operand, vname)
-                return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = expr_type(ctx, ep)))
+                # The host types a unary with its *operand's* lowered type
+                # (`infer_expression_type`'s UnaryOp arm; `not` is bool), not the
+                # analyzer's recorded expression type.
+                let un_ty = if un.operator == "not": ctx.bool_ty else: op_ty
+                return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = un_ty))
             ast.Expr.expr_prefix_cast as pc:
                 let target_ty = qualify_type(ctx, resolve_type_ref(ctx, pc.target_type))
                 let lowered_expr = lower_expr(ctx, pc.expression)
@@ -12633,6 +12675,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
         ))
 
     var ir_params = vec.Vec[ir.Param].create()
+    var param_setup = vec.Vec[ir.Stmt].create()
     if m.method_kind != ast.MethodKind.mk_static:
         let recv_is_ptr = receiver_by_pointer(ctx, recv_struct_ty, m.method_kind, m.is_async)
         ir_params.push(ir.Param(name = "this", linkage_name = utils.c_local_name("this"), ty = recv_struct_ty, pointer = Option[bool].some(value = recv_is_ptr)))
@@ -12646,7 +12689,8 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
         let p_ty = qualify_type(ctx, substitute_type_params(ctx, resolve_field_type_ref(ctx, p.param_type), sub))
         let c_pname = utils.c_local_name(p.name)
         let is_ptr = false
-        ir_params.push(ir.Param(name = p.name, linkage_name = c_pname, ty = p_ty, pointer = Option[bool].some(value = is_ptr)))
+        let link_name = array_param_input_name(p_ty, c_pname, ref_of(param_setup))
+        ir_params.push(ir.Param(name = p.name, linkage_name = link_name, ty = p_ty, pointer = Option[bool].some(value = is_ptr)))
         ctx.locals.push(LocalBinding(name = p.name, c_name = c_pname, ty = p_ty, pointer = Option[bool].some(value = is_ptr)))
         pi += 1
 
@@ -12664,7 +12708,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
     ctx.type_substitution = read(sub)
     var saved_fn_ret = ctx.current_fn_return_type
     ctx.current_fn_return_type = ret_ty
-    let body_ir = lower_function_body(ctx, m.body)
+    let body_ir = prepend_param_setup(ref_of(param_setup), lower_function_body(ctx, m.body))
     ctx.current_fn_return_type = saved_fn_ret
     ctx.type_substitution = saved_sub
 
@@ -15754,13 +15798,13 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
                 if is_null_ir_expr(lowered):
                     return lowered
                 let arg_ty = ir_expr_type(lowered)
-                var pt_copy0 = param.param_type
-                # `qualify_type` first, then deepen: the qualifier is what pairs
-                # a std.c-targeting alias with its target module
-                # (`ty_imported("std.c.raw.lib", "MyDef")`), the shape
-                # `deep_alias_target` resolves to the raw declaration — the
-                # order the `in` branch uses (session 44, item 3u).
-                var slot_ty = deep_alias_target(ctx, qualify_type(ctx, resolve_type_ref(ctx, ptr_of(pt_copy0))))
+                # Resolve the declared parameter type in the wrapper's OWNER
+                # module (the host's `ForeignInfo.owner_module`): a wrapper in
+                # `std.libuv` declares `out addr: sockaddr_in` where
+                # `sockaddr_in` is that module's public alias of
+                # `std.c.libuv.sockaddr_in`, a name the caller may not import.
+                # `qualify_type`/`deep_alias_target` run inside that context.
+                var slot_ty = foreign_param_context_type(ctx, info, param)
                 # The host's `foreign_slot_boundary_value_type`: a nullable
                 # pointer-like slot's boundary value is its base.
                 if types.is_nullable_type(slot_ty) and is_nullable_pointer_like(slot_ty):
@@ -15791,8 +15835,7 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
                 let in_arg_ty = ir_expr_type(lowered)
                 if types.is_raw_pointer(in_arg_ty) or types.is_ref_type(in_arg_ty) or types.is_own_type(in_arg_ty):
                     return lowered
-                var pt_in_copy = param.param_type
-                let in_val_ty = deep_alias_target(ctx, qualify_type(ctx, resolve_type_ref(ctx, ptr_of(pt_in_copy))))
+                let in_val_ty = foreign_param_context_type(ctx, info, param)
                 return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.Type.ty_generic(name = "const_ptr", args = sp_type(in_val_ty))))
             # A plain pointer/ref param passed a non-pointer value borrows it.
             var pt_copy = param.param_type
@@ -17182,7 +17225,9 @@ function collect_variants(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> void:
                 # registers them with the `_phantom` placeholder that
                 # `specialize_prelude_arm_info` specializes per match site.
                 if vr.type_params.len == 0 or not is_prelude_variant_name(vr.name):
-                    ctx.variants.set(vr.name, build_variant_info(ctx, vr.variant_arms))
+                    let info = build_variant_info(ctx, vr.variant_arms)
+                    ctx.variants.set(vr.name, info)
+                    ctx.variants.set(j2(j2(ctx.module_name, "."), vr.name), info)
                 if vr.type_params.len == 0:
                     register_imported_variant_arm_fields(ctx, ctx.module_name, ctx.analysis, vr.name, vr.variant_arms)
             _:
@@ -17236,8 +17281,15 @@ function install_imported_variants(ctx: ref[LowerCtx]) -> void:
                             # See `collect_variants`: a user-defined generic
                             # variant is registered (minus the prelude pair).
                             let registerable = vr.type_params.len == 0 or not is_prelude_variant_name(vr.name)
-                            if registerable and not ctx.variants.contains(vr.name):
-                                ctx.variants.set(vr.name, build_imported_variant_info(ctx, target_module, imported.value, vr.variant_arms))
+                            if registerable:
+                                let info = build_imported_variant_info(ctx, target_module, imported.value, vr.variant_arms)
+                                if not ctx.variants.contains(vr.name):
+                                    ctx.variants.set(vr.name, info)
+                                # The module-qualified entry is what a match whose
+                                # scrutinee names this module's type resolves to;
+                                # two modules may declare the same bare name
+                                # (`mtc.ir.Expr` vs `mtc.parser.ast.Expr`).
+                                ctx.variants.set(j2(j2(target_module, "."), vr.name), info)
                             # Register arm payload field types keyed by the
                             # module-qualified payload struct C name, for EVERY
                             # imported variant — even when its bare name collides
@@ -17409,7 +17461,11 @@ function variant_base_c_name(ty: types.Type, module_name: str) -> str:
             if is_prelude_variant_name(n.name):
                 result = n.name
             else:
-                result = naming.qualified_c_name(module_name, n.name)
+                # A named type's own module is authoritative: the caller's
+                # `module_name` is only the fallback for a bare declaration
+                # (`Expr` in `builder` vs an imported `ast.Expr`).
+                let owner = if n.module_name.len > 0: n.module_name else: module_name
+                result = naming.qualified_c_name(owner, n.name)
         _:
             result = naming.qualified_c_name(module_name, "")
     return result
@@ -17906,7 +17962,7 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
 
     let type_name = named_type_name(scrutinee_ty)
 
-    if type_name.is_some() and ctx.variants.contains(type_name.unwrap()):
+    if type_name.is_some() and ctx.variants.contains(variant_registry_key(ctx, type_name.unwrap(), scrutinee_ty)):
         lower_variant_match(ctx, output, scrutinee, type_name.unwrap(), scrutinee_ty, arms)
         ctx.locals = saved_locals
         return
@@ -18517,7 +18573,7 @@ function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
 ## Lower a match expression over a variant scrutinee: emit a switch on the variant
 ## kind, with each arm assigning its value to the result reference.
 function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
-    let info_ptr = ctx.variants.get(variant_name) else:
+    let info_ptr = ctx.variants.get(variant_registry_key(ctx, variant_name, scrutinee_ty)) else:
         fatal(c"lowering: variant match expr on unknown variant")
     let info = unsafe: read(info_ptr)
     let outer_c = variant_base_c_name(scrutinee_ty, ctx.module_name)
@@ -18605,13 +18661,11 @@ function arms_have_call_pattern(arms: span[ast.MatchArm]) -> bool:
 function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
     # If variant_name includes type args (e.g. "Option_span_Field"), strip to
     # the base name (e.g. "Option") to find the variant info.
-    var base_name = variant_name
-    var info_ptr = ctx.variants.get(variant_name)
+    var info_ptr = ctx.variants.get(variant_registry_key(ctx, variant_name, scrutinee_ty))
     if info_ptr == null:
         let bn = variant_base_name(variant_name)
         if bn.is_some():
-            base_name = bn.unwrap()
-            info_ptr = ctx.variants.get(base_name)
+            info_ptr = ctx.variants.get(variant_registry_key(ctx, bn.unwrap(), scrutinee_ty))
     let info_ptr2 = info_ptr else:
         fatal(c"lowering: variant match on unknown variant")
     let info = unsafe: read(info_ptr2)
@@ -18703,7 +18757,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
 ## the payload into a temp, destructures its fields, and falls through to the arm
 ## body then `goto <end>`.  Mirrors Ruby's block.rb struct-pattern match path.
 function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
-    let info_ptr = ctx.variants.get(variant_name) else:
+    let info_ptr = ctx.variants.get(variant_registry_key(ctx, variant_name, scrutinee_ty)) else:
         fatal(c"lowering: variant match on unknown variant")
     let info = unsafe: read(info_ptr)
     let outer_c = variant_base_c_name(scrutinee_ty, ctx.module_name)
@@ -19054,6 +19108,21 @@ function variant_declared_identity(ty: types.Type, fallback_module: str) -> (str
             return ("", fallback_module)
 
 
+## The `ctx.variants` key for a variant reference.  Two modules may declare the
+## same variant name (`mtc.ir.Expr` and `mtc.parser.ast.Expr`); the scrutinee
+## type's own module selects the right entry, and the bare name stays the
+## fallback (prelude variants and single-module programs).
+function variant_registry_key(ctx: ref[LowerCtx], variant_name: str, ty: types.Type) -> str:
+    var base = variant_name
+    let bn = variant_base_name(variant_name)
+    if bn.is_some():
+        base = bn.unwrap()
+    let (_, decl_module) = variant_declared_identity(ty, ctx.module_name)
+    if decl_module.len > 0:
+        let qualified = j2(j2(decl_module, "."), base)
+        if ctx.variants.contains(qualified):
+            return qualified
+    return variant_name
 
 
 ## Record a match-arm payload binding's field info under its payload struct C
