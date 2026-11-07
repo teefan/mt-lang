@@ -28,6 +28,19 @@ public function conditional_common_type(then_ty: types.Type, else_ty: types.Type
         Option.none:
             pass
 
+    # A bare `null` branch unifies with the other branch's nullable (the host's
+    # `conditional_null_common_type`, in both its analyzer and its lowering).
+    match conditional_null_common_type(then_ty, else_ty):
+        Option.some as null_common:
+            return null_common.value
+        Option.none:
+            pass
+    match conditional_null_common_type(else_ty, then_ty):
+        Option.some as null_common_rev:
+            return null_common_rev.value
+        Option.none:
+            pass
+
     # T?  and  T  →  T?   (nullable with compatible base).
     if types.is_nullable_type(then_ty):
         let base = types.unwrap_nullable(then_ty)
@@ -56,6 +69,59 @@ public function conditional_common_type(then_ty: types.Type, else_ty: types.Type
 
     # Fall back — different concrete types, can't unify.
     return types.Type.ty_error
+
+
+## A type a bare `null` may widen into a nullable of — the host's
+## `nullable_candidate?` (`flow_refinement.rb:327`): a sized layout type.  The
+## self's `ty_generic` merges the host's pointer/array/str_buffer instances with
+## its nominal instances (Vec/Map/Option/Result/span), all of which are sized;
+## `ref` and `atomic` are the exceptions.
+function nullable_candidate_type(ty: types.Type) -> bool:
+    match ty:
+        types.Type.ty_primitive:
+            return true
+        types.Type.ty_str:
+            return true
+        types.Type.ty_named:
+            return true
+        types.Type.ty_imported:
+            return true
+        types.Type.ty_variant_arm_payload:
+            return true
+        types.Type.ty_tuple:
+            return true
+        types.Type.ty_nullable:
+            return true
+        types.Type.ty_generic as g:
+            return g.name != "ref" and g.name != "atomic"
+        _:
+            return false
+    return false
+
+
+## `null` + T unifies to T? (or passes T? through when its base matches) — the
+## host's `conditional_null_common_type` (`flow_refinement.rb:333`).
+function conditional_null_common_type(null_ty: types.Type, other_ty: types.Type) -> Option[types.Type]:
+    match null_ty:
+        types.Type.ty_null as nt:
+            match other_ty:
+                types.Type.ty_nullable as ot:
+                    let target = nt.target else:
+                        return Option[types.Type].some(value = other_ty)
+                    if types.type_equals(unsafe: read(target), unsafe: read(ot.base)):
+                        return Option[types.Type].some(value = other_ty)
+                    return Option[types.Type].none
+                _:
+                    if not nullable_candidate_type(other_ty):
+                        return Option[types.Type].none
+                    let target = nt.target else:
+                        return Option[types.Type].some(value = types.Type.ty_nullable(base = types.alloc_type(other_ty)))
+                    if types.type_equals(unsafe: read(target), other_ty):
+                        return Option[types.Type].some(value = types.Type.ty_nullable(base = types.alloc_type(other_ty)))
+                    return Option[types.Type].none
+        _:
+            return Option[types.Type].none
+    return Option[types.Type].none
 
 
 ## The common type across all arms of a match expression.  Folds

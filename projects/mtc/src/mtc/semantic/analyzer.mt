@@ -3530,21 +3530,19 @@ function flow_refinements(ctx: ref[Context], cond: ptr[ast.Expr], truthy: bool, 
                     return flow_refinements(ctx, u.operand, not truthy, scope)
             ast.Expr.expr_binary_op as b:
                 if b.operator == "and":
+                    # Only the truthy side refines (`a and b` false says nothing
+                    # about `a`); the host's `flow_refinements` returns `{}` for
+                    # the falsy case (`flow_refinement.rb:79-85`).
                     if truthy:
                         var left = flow_refinements(ctx, b.left, true, scope)
                         merge_refinements_into(ref_of(result), ref_of(left))
                         apply_refinements_to_frame(ctx, scope, ref_of(left))
                         var right = flow_refinements(ctx, b.right, true, scope)
                         merge_refinements_into(ref_of(result), ref_of(right))
-                    else:
-                        var left = flow_refinements(ctx, b.left, false, scope)
-                        merge_refinements_into(ref_of(result), ref_of(left))
                     return result
                 if b.operator == "or":
-                    if truthy:
-                        var left = flow_refinements(ctx, b.left, true, scope)
-                        merge_refinements_into(ref_of(result), ref_of(left))
-                    else:
+                    # Symmetric with `and`: only the falsy side refines.
+                    if not truthy:
                         var left = flow_refinements(ctx, b.left, false, scope)
                         merge_refinements_into(ref_of(result), ref_of(left))
                         apply_refinements_to_frame(ctx, scope, ref_of(left))
@@ -5132,7 +5130,11 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 if target != null:
                     let t = resolve_type(ctx, target)
                     return types.Type.ty_nullable(base = types.alloc_type(t))
-                return types.Type.ty_error
+                # The host's `infer_null_literal_type` answers its `Types::Null`
+                # when no target type is in scope — not an error — so a
+                # conditional branch can unify with the other branch's nullable
+                # (`conditional_null_common_type`).
+                return types.Type.ty_null(target = null)
             ast.Expr.expr_format_string as fs:
                 check_format_string_parts(ctx, scope, fs.parts)
                 return types.Type.ty_str

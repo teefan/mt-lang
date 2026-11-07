@@ -5189,3 +5189,297 @@ function test_imported_named_type_keeps_its_module_in_qualification() -> void:
     let text = dump.as_str()
     expect(text.contains_substring("std_result_Result_bool_main_Error_kind_failure"))
     expect(not text.contains_substring("std_result_Result_bool_std_result_Error_kind_failure"))
+
+
+@[test]
+function test_flow_refinements_follow_the_lowering_scope() -> void:
+    ## The lowering's own refinement scopes (the host's `FlowScope` stack,
+    ## `lowering/utils.rb:567-650`): a guard-break does not narrow (the host's
+    ## termination builder has no loop targets, so `break` falls through to the
+    ## block exit), while an early return, an if-branch body, a while body and a
+    ## conditional's branch do; a conditional's bare `null` branch unifies with
+    ## the other branch's nullable (`conditional_null_common_type`).
+    var source = <<-SRC
+        struct Node:
+            val: int
+            next: ptr[Node]?
+
+        function walk_break(start: ptr[Node]?) -> ptr[Node]?:
+            var p = start
+            while true:
+                if p == null:
+                    break
+                let q_after_break = p
+                let node = unsafe: read(q_after_break)
+                p = node.next
+            return p
+
+        function early_return(start: ptr[Node]?) -> ptr[Node]?:
+            if start == null:
+                return null
+            let q_after_return = start
+            return q_after_return
+
+        function in_branch(start: ptr[Node]?) -> int:
+            var n = 0
+            if start != null:
+                let q_in_branch = start
+                let node = unsafe: read(q_in_branch)
+                n = node.val
+            return n
+
+        function in_loop_body(start: ptr[Node]?) -> int:
+            var p = start
+            var n = 0
+            while p != null:
+                let q_in_loop = p
+                let node = unsafe: read(q_in_loop)
+                n = node.val
+                p = node.next
+            return n
+
+        function after_and_guard(left: ptr[Node]?, right: ptr[Node]?) -> ptr[Node]?:
+            if left != null and right != null:
+                return left
+            let q_after_and_guard = left
+            return q_after_and_guard
+
+        function in_conditional(start: ptr[Node]?) -> ptr[Node]?:
+            let q_conditional = if start == null: null else: start
+            return q_conditional
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring(":name \"q_after_break\" :linkage_name \"q_after_break\" :type (Types::Nullable"))
+    expect(text.contains_substring(":name \"q_after_return\" :linkage_name \"q_after_return\" :type (Types::Generic :name \"ptr\""))
+    expect(text.contains_substring(":name \"q_in_branch\" :linkage_name \"q_in_branch\" :type (Types::Generic :name \"ptr\""))
+    expect(text.contains_substring(":name \"q_in_loop\" :linkage_name \"q_in_loop\" :type (Types::Generic :name \"ptr\""))
+    ## The falsy side of an `and` refines nothing (`not (a and b)` says nothing
+    ## about `a`), so the guard's false refinements leave `left` nullable.
+    expect(text.contains_substring(":name \"q_after_and_guard\" :linkage_name \"q_after_and_guard\" :type (Types::Nullable"))
+    expect(text.contains_substring(":name \"q_conditional\" :linkage_name \"q_conditional\" :type (Types::Nullable"))
+
+
+@[test]
+function test_refined_module_value_assignment_takes_the_visible_type() -> void:
+    ## A module-level value is a binding in the host's env, so a guard-narrowed
+    ## one takes the visible type on an assignment target and the bare `null`
+    ## value takes that same expected type (`expressions.rb:1377`).
+    var source = <<-SRC
+        var current: ptr[int]? = null
+
+        function poke() -> void:
+            if current != null:
+                current = null
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Assignment :target (IR::Name :name \"main_current\" :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"int\"))) :pointer false) :operator \"=\" :value (IR::NullLiteral :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"int\"))))"))
+
+
+@[test]
+function test_integer_literal_suffix_takes_the_context_type() -> void:
+    ## The lowering's literal typing checks the expected type before the sema
+    ## cache (`resolve.rb:706`), so a suffixed literal in a contextual position
+    ## is that type: `1u` in a `ulong` slot and `0z` in a `long` call argument
+    ## or struct field carry no cast.
+    var source = <<-SRC
+        struct Box:
+            value: long
+
+        function take_long(v: long) -> long:
+            return v
+
+        function main() -> int:
+            let a: ulong = 1u
+            let b = take_long(0z)
+            let c = Box(value = 0z)
+            return long<-b + long<-c.value
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"ulong\"))"))
+    expect(text.contains_substring("(IR::Call :callee \"main_take_long\" :arguments ((IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"long\")))"))
+    expect(not text.contains_substring("(IR::Cast :target_type (Types::Primitive :name \"long\") :expression (IR::IntegerLiteral"))
+
+
+@[test]
+function test_slice_bounds_take_ptr_uint_literals() -> void:
+    ## `lower_range_index_bound` lowers a bound with `ptr_uint` as its expected
+    ## type (`expressions.rb:1506`), so `text[0..n]`'s literal is a `ptr_uint`
+    ## literal rather than an `int` plus a cast.
+    var source = <<-SRC
+        function cut(text: str, n: ptr_uint) -> str:
+            return text[0..n]
+
+        function main() -> int:
+            let s = cut("abc", 2)
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Call :callee \"mt_str_slice\" :arguments ((IR::Name :name \"text\" :type (Types::StringView) :pointer false) (IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"ptr_uint\"))"))
+    expect(not text.contains_substring("(IR::Cast :target_type (Types::Primitive :name \"ptr_uint\") :expression (IR::IntegerLiteral :value 0"))
+
+
+@[test]
+function test_extern_out_argument_addresses_the_slot_boundary_type() -> void:
+    ## The raw external call path shares the host's
+    ## `lower_foreign_pointer_argument_value`: an `out` slot's address is typed
+    ## `pointer_to(foreign_slot_boundary_value_type(parameter.type))`, so a
+    ## nullable pointer-like slot contributes its base
+    ## (`mt_mutex_create(handle)`).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_extout_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", "external\n\nopaque Mutex = c\"Mutex\"\n\nexternal function take(out h: ptr[Mutex]?) -> int\n"):
+        return
+    var source = <<-SRC
+        import std.c.raw.lib as c
+
+        function run() -> int:
+            var handle: ptr[c.Mutex]? = null
+            return c.take(handle)
+
+        function main() -> int:
+            return run()
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+    var ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::AddressOf :expression (IR::Name :name \"handle\""))
+    expect(text.contains_substring(":type (Types::Generic :name \"ptr\" :arguments ((Types::Generic :name \"ptr\" :arguments ((Types::Opaque :name \"Mutex\" :module_name \"std.c.raw.lib\"))))"))
+    expect(not text.contains_substring(":type (Types::Generic :name \"ptr\" :arguments ((Types::Nullable"))
+
+
+@[test]
+function test_async_helpers_join_the_synthetic_tail() -> void:
+    ## The host appends an async function's resume and vtable helpers to the
+    ## program-wide `@artifacts.synthetic_functions` tail (`functions.rb:217-222`)
+    ## while the constructor stays in the declaring module's function list.
+    var source = <<-SRC
+        async function work() -> int:
+            return 1
+
+        function after() -> int:
+            return 2
+
+        function main() -> int:
+            return after()
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    let after_pos = text.find_substring(":linkage_name \"main_after\"") else:
+        expect(false, "missing the module function after the async declaration")
+    let resume_pos = text.find_substring(":linkage_name \"main_work__resume\"") else:
+        expect(false, "missing the async resume function")
+    expect(after_pos < resume_pos)
+    let ready_pos = text.find_substring(":linkage_name \"main_work__ready\"") else:
+        expect(false, "missing the async ready function")
+    expect(resume_pos < ready_pos)
+
+
+@[test]
+function test_async_match_cases_append_a_break() -> void:
+    ## The CPS match lowering appends a native break to every switch case body
+    ## (the host's `lower_async_cf_match_stmt`, async_lowering.rb:573-590), even
+    ## after a terminating return.
+    var source = <<-SRC
+        async function step(x: int) -> int:
+            return x
+
+        async function pick(flag: bool) -> int:
+            let d = await step(1)
+            let r = if flag: Result[int, str].success(value = d) else: Result[int, str].failure(error = "no")
+            match r:
+                Result.success as p:
+                    return p.value
+                Result.failure as p:
+                    return d
+            return 0
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::BreakStmt)"))
+
+
+@[test]
+function test_discard_binding_declares_the_success_value() -> void:
+    ## `let _ = expr?` shares the host's ordinary local-decl path: the discard
+    ## local is declared (IR name `_`, a fresh `__mt___N` linkage) with the
+    ## success projection, and its name is allocated before the propagation's
+    ## storage temp (`let_else_storage_c_name` precedes
+    ## `prepare_expression_with_cleanups`).
+    var source = <<-SRC
+        function mk(flag: bool) -> Result[int, str]:
+            if flag:
+                return Result[int, str].success(value = 1)
+            return Result[int, str].failure(error = "no")
+
+        function use_them(flag: bool) -> Result[int, str]:
+            let y = mk(flag)?
+            let _ = mk(flag)?
+            let z = mk(flag)?
+            return Result[int, str].success(value = y + z)
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"_\" :linkage_name \"__mt___2\" :type (Types::Primitive :name \"int\")"))
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_propagate_3\""))
+    expect(text.contains_substring(":member \"success\" :type (Types::VariantArmPayload :name \"Result_success\" :module_name \"std.result\")) :member \"value\" :type (Types::Primitive :name \"int\"))"))
+
+
+@[test]
+function test_return_value_temp_takes_the_function_return_type() -> void:
+    ## The return-value hoist declares its temp with the function's return type
+    ## (the host's `block.rb:508`), not the value's own type: `return
+    ## <own[int]>` from an `own[int]?` function carries the nullable.
+    var module_root = test_module_root()
+    defer: module_root.release()
+    var source = <<-SRC
+        import std.mem.heap as heap
+
+        function maybe() -> own[int]?:
+            var guard = 0
+            defer: guard = 1
+            return heap.must_alloc[int](1)
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source_roots(source, module_root.as_str())
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_return_value_1\" :linkage_name \"__mt_return_value_1\" :type (Types::Nullable :base (Types::Generic :name \"own\""))

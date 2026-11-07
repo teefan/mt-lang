@@ -188,6 +188,16 @@ struct LowerCtx:
     module_name: str
     analysis: analyzer.Analysis
     locals: vec.Vec[LocalBinding]
+    # Lowering-side flow refinements — the host's `FlowScope` stack
+    # (`lowering/utils.rb:567-650`).  Each entry maps a local (or module-level
+    # value) to its *visible*, narrowed type; `lookup_local` still answers the
+    # storage type, so reads keep the declared type while inference
+    # (`infer_expression_type`) and assignment targets see the refinement.
+    # `lower_block` truncates the stack at block exit (the host duplicates its
+    # env per block), except for the host's post-if rule, which leaves the
+    # falsy refinements of a terminating else-less `if` for the rest of the
+    # block.
+    flow_scopes: vec.Vec[map_mod.Map[str, types.Type]]
     temp_counter: ptr_uint
     foreign_map: map_mod.Map[str, ForeignInfo]
     extern_map: map_mod.Map[str, str]
@@ -1049,6 +1059,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         module_name = analysis.module_name,
         analysis = analysis,
         locals = vec.Vec[LocalBinding].create(),
+        flow_scopes = vec.Vec[map_mod.Map[str, types.Type]].create(),
         temp_counter = 0,
         fmt_dest_name = "",
         fmt_counter = map_mod.Map[str, ptr_uint].create(),
@@ -1412,7 +1423,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                     # constructor carries the host's `__async_main` linkage
                     # (`function_binding_c_name`, utils.rb:1089-1092).
                     let link_base = if is_root and fun.name == "main": naming.qualified_c_name(ctx.module_name, "__async_main") else: naming.qualified_c_name(ctx.module_name, fun.name)
-                    lower_async_fn(ref_of(ctx), fun.name, link_base, Option[types.Type].none, fun.method_params, fun.return_type, fun.body, ref_of(functions))
+                    lower_async_fn(ref_of(ctx), fun.name, link_base, Option[types.Type].none, fun.method_params, fun.return_type, fun.body, ref_of(functions), is_root and fun.name == "main")
                     if is_root and fun.name == "main":
                         match build_async_main_entrypoint(ref_of(ctx), fun.name):
                             Option.some as entry:
@@ -2184,7 +2195,7 @@ function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Fun
             if m.method_kind != ast.MethodKind.mk_static:
                 let recv_ty = if m.method_kind == ast.MethodKind.mk_editable: types.Type.ty_generic(name = "ptr", args = sp_type(receiver_ty)) else: receiver_ty
                 recv_opt = Option[types.Type].some(value = recv_ty)
-            lower_async_fn(ctx, m.name, c_name, recv_opt, m.method_params, m.return_type, m.body, functions)
+            lower_async_fn(ctx, m.name, c_name, recv_opt, m.method_params, m.return_type, m.body, functions, false)
             mi += 1
             continue
         functions.push(lower_method(ctx, c_name, receiver_ty, m))
@@ -2774,6 +2785,11 @@ function resume_stmt_setup(ctx: ref[LowerCtx], saved: HoistSaved) -> void:
 function lower_block(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.Stmt]:
     var stmts = vec.Vec[ir.Stmt].create()
     push_defer_scope(ctx)
+    # Flow refinements are block-scoped: the host duplicates its env per block
+    # (`block.rb:16`), so a refinement pushed while lowering this block's
+    # statements must not escape it.
+    let flow_saved = ctx.flow_scopes.len()
+    defer: restore_flow_refinements(ctx, flow_saved)
     # `fmt_dest_name` is block-scoped (the host's per-block `env` copy): a local
     # declared inside this block names this block's format results, and the
     # name is restored on exit so sibling blocks are unaffected.
@@ -2822,9 +2838,12 @@ function lower_block(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.St
 ## body, and restored afterwards.
 function lower_function_body(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.Stmt]:
     let saved = ctx.defer_stack
+    let saved_flow = ctx.flow_scopes
     ctx.defer_stack = vec.Vec[DeferGroup].create()
+    ctx.flow_scopes = vec.Vec[map_mod.Map[str, types.Type]].create()
     let result = lower_block(ctx, body_ptr)
     ctx.defer_stack = saved
+    ctx.flow_scopes = saved_flow
     return result
 
 
@@ -2959,7 +2978,13 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # (`block.rb:503-509`).
                 let ret_needs_proc_retain = has_pending_defers(ctx) and contains_proc_storage_type(ctx, ctx.current_fn_return_type) and not proc_expr_contains_proc_expr(value)
                 if ((ret_cleanups.len > 0 or has_pending_defers(ctx)) and not cleanup_safe_return_expr(value)) or ret_needs_proc_retain:
-                    let ret_ty = ir_expr_type(wrapped)
+                    # The host's hoist declares the temp with the *function's*
+                    # return type (`block.rb:508`), not the value's own type
+                    # (`return <own[String]>` from an `own[String]?` function
+                    # carries `Nullable(ptr[String])`).
+                    var ret_ty = ir_expr_type(wrapped)
+                    if not types.is_void(ctx.current_fn_return_type) and not types.is_error(ctx.current_fn_return_type):
+                        ret_ty = ctx.current_fn_return_type
                     let rtemp = fresh_c_temp_name(ctx, "return_value")
                     let rc = utils.c_local_name(rtemp)
                     output.push(ir.Stmt.stmt_local(name = rtemp, linkage_name = rc, ty = ret_ty, value = wrapped, line = 0, source_path = ""))
@@ -3006,7 +3031,13 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         match read(init_val):
                             ast.Expr.expr_unary_op as un:
                                 if un.operator == "?":
-                                    lower_propagate_let(ctx, output, loc.name, un.operand, loc.line, false)
+                                    # The host allocates the discard binding's
+                                    # temp name *before* preparing the value
+                                    # (`let_else_storage_c_name` precedes
+                                    # `prepare_expression_with_cleanups`), so the
+                                    # `__mt___N` counter value is the statement's
+                                    # own, not one past the propagation temp's.
+                                    lower_propagate_let(ctx, output, loc.name, un.operand, loc.line, false, c_name)
                                     return
                             # `let x = <cast>(inner?)` — the `?` is nested inside a
                             # prefix cast.  The host's prepared-temp path wraps the
@@ -3091,9 +3122,9 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         # pointer-like rule while inferring the visible success
                         # type (`let data_ptr = data` in `String.push_byte`).
                         # Inference mirrors `infer_expression_type` exactly: an
-                        # identifier takes its binding's *visible* type (the
-                        # host's cache shortcut skips identifiers — refinement
-                        # and unwrapping live in `lookup_value`), and a foreign
+                        # identifier takes its *visible* type from the lowering
+                        # env (the host's cache shortcut skips identifiers —
+                        # refinement lives in `lookup_value`), and a foreign
                         # wrapper call takes the wrapper's declared return (a
                         # simple mapping's lowered call carries the raw
                         # declaration's return instead — `ptr[char]` for a
@@ -3102,23 +3133,8 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         # module-qualified nominal.
                         unsafe:
                             match read(ptr[ast.Expr]<-init):
-                                ast.Expr.expr_identifier as ident:
-                                    let binding_ty = qualify_type(ctx, fallback_type(ctx, ptr[ast.Expr]<-init))
-                                    var ident_ty = binding_ty
-                                    match analyzer.flow_type_at_position(ref_of(ctx.analysis), ident.name, ident.line, ident.column):
-                                        Option.some as refined:
-                                            # A refinement is a narrowing of the
-                                            # binding's own type (its nullable's
-                                            # base), never a different nominal: a
-                                            # record can carry a stale field type
-                                            # the lowering resolved correctly.
-                                            let visible_ty = qualify_type(ctx, substitute_type_params(ctx, refined.value, ref_of(ctx.type_substitution)))
-                                            let narrowed = if types.is_nullable_type(binding_ty): types.unwrap_nullable(binding_ty) else: binding_ty
-                                            if types.type_equals(visible_ty, narrowed):
-                                                ident_ty = visible_ty
-                                        Option.none:
-                                            pass
-                                    ty = ident_ty
+                                ast.Expr.expr_identifier:
+                                    ty = qualify_type(ctx, fallback_type(ctx, ptr[ast.Expr]<-init))
                                 ast.Expr.expr_call as call:
                                     match foreign_wrapper_call_return_type(ctx, call.callee):
                                         Option.some as declared:
@@ -3229,8 +3245,20 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                             pass
                 match is_read_call(target_expr):
                     Option.some as inner:
-                        let deref_ty = expr_type(ctx, target_expr)
                         let deref_target = lower_expr(ctx, inner.value)
+                        # The deref's type is the handle's value type (the host's
+                        # `infer_value_type`, `utils.rb:128`): a pointer-like
+                        # nullable unwraps to its base, then the pointee/referent.
+                        # Falls back to the recorded `read(...)` type when the
+                        # handle is not a pointer.
+                        var deref_ty = expr_type(ctx, inner.value)
+                        if types.is_nullable_type(deref_ty) and is_nullable_pointer_like(deref_ty):
+                            deref_ty = types.unwrap_nullable(deref_ty)
+                        let pointee_ty = types.pointer_element(deref_ty)
+                        if types.is_error(pointee_ty):
+                            deref_ty = expr_type(ctx, target_expr)
+                        else:
+                            deref_ty = pointee_ty
                         let target = alloc_expr(ir.Expr.expr_unary(operator = "*", operand = deref_target, ty = deref_ty))
                         let hoist_base = output.len()
                         let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
@@ -3371,7 +3399,12 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # arms).
                 ctx.loop_continue_native = true
                 ctx.loop_break_native = true
+                # The body sees the condition's truthy refinements (the host's
+                # `lower_while_stmt`, `loops.rb:28`).
+                var while_refs = lowering_flow_refinements(ctx, w.condition, true)
+                let while_flow_saved = push_flow_refinements(ctx, ref_of(while_refs))
                 let body_span = lower_block(ctx, w.body)
+                restore_flow_refinements(ctx, while_flow_saved)
                 var body = vec.Vec[ir.Stmt].create()
                 append_span_stmts(ref_of(body), body_span)
                 if contains_label_target(body.as_span(), cl):
@@ -3410,7 +3443,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     match read(ex.expression):
                         ast.Expr.expr_unary_op as un:
                             if un.operator == "?":
-                                lower_propagate_let(ctx, output, "_", un.operand, ex.line, true)
+                                lower_propagate_let(ctx, output, "_", un.operand, ex.line, true, "")
                                 return
                         _:
                             pass
@@ -3915,7 +3948,7 @@ function lower_propagate_storage(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt
     return PropagatedTemp(name = storage_c, storage_ty = storage_ty, kind = kind)
 
 
-function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, operand: ptr[ast.Expr], line: ptr_uint, emit_success_read: bool) -> void:
+function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, operand: ptr[ast.Expr], line: ptr_uint, emit_success_read: bool, discard_c: str) -> void:
     let temp = lower_propagate_storage(ctx, output, operand)
     let storage_ty = temp.storage_ty
     let kind = temp.kind
@@ -3925,12 +3958,19 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
     if name == "_":
         # A bare `expr?` statement still reads the success projection as its
         # expression statement (the host's prepared-temp read); a `let _ = expr?`
-        # stores it instead and passes false here.
+        # declares the discard binding itself (IR name `_`, fresh `__mt___N`
+        # linkage), exactly like the host's ordinary local-decl path.
         if emit_success_read:
             let discard_ty = guard_success_type(ctx, kind, storage_ty)
             if not types.is_void(discard_ty):
                 let discard_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, discard_ty)
                 output.push(ir.Stmt.stmt_expression(expression = discard_val, line = line, source_path = ctx.analysis.source_path))
+        else:
+            let discard_ty = guard_success_type(ctx, kind, storage_ty)
+            if not types.is_void(discard_ty):
+                let discard_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, discard_ty)
+                let dc = if discard_c.len > 0: discard_c else: fresh_c_temp_name(ctx, "_")
+                output.push(ir.Stmt.stmt_local(name = "_", linkage_name = dc, ty = discard_ty, value = discard_val, line = line, source_path = ctx.analysis.source_path))
         return
     let success_ty = guard_success_type(ctx, kind, storage_ty)
     if ctx.async_cps_active:
@@ -4259,9 +4299,7 @@ function lower_binding_read(ctx: ref[LowerCtx], lb: LocalBinding) -> ptr[ir.Expr
 ## Lower an assignment's target with the host's `lower_assignment_target` rule
 ## (`utils.rb:1237`): a bare local's `IR::Name` carries the *visible* (flow-
 ## refined) type when that is the storage nullable's base, and the storage type
-## otherwise.  Reads keep the storage type, so this is target-only.  The
-## equality case keeps the binding's own type: the refinement record can carry
-## the same nominal without its module name, which the binding's type has.
+## otherwise.  Reads keep the storage type, so this is target-only.
 function lower_assignment_target(ctx: ref[LowerCtx], target_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(target_ast):
@@ -4270,21 +4308,29 @@ function lower_assignment_target(ctx: ref[LowerCtx], target_ast: ptr[ast.Expr]) 
                     Option.some as lb:
                         match lb.value.projection:
                             BindingProjection.plain:
-                                match analyzer.flow_type_at_position(ref_of(ctx.analysis), id.name, id.line, id.column):
-                                    Option.some as refined:
-                                        # The record comes from the declaration's
-                                        # analysis, so a generic body carries type
-                                        # parameters; the lowering env is concrete.
-                                        let visible_ty = substitute_type_params(ctx, refined.value, ref_of(ctx.type_substitution))
+                                match visible_local_type(ctx, id.name):
+                                    Option.some as visible:
                                         let storage_ty = lb.value.ty
-                                        if types.is_nullable_type(storage_ty) and types.type_equals(types.unwrap_nullable(storage_ty), visible_ty):
-                                            return alloc_expr(ir.Expr.expr_name(name = lb.value.c_name, ty = visible_ty, pointer = lb.value.pointer))
+                                        if types.is_nullable_type(storage_ty) and types.type_equals(types.unwrap_nullable(storage_ty), visible.value):
+                                            return alloc_expr(ir.Expr.expr_name(name = lb.value.c_name, ty = visible.value, pointer = lb.value.pointer))
                                     Option.none:
                                         pass
                             _:
                                 pass
                     Option.none:
-                        pass
+                        # A module-level value is a binding in the host's env
+                        # too, so a guard-narrowed one takes the visible type
+                        # on an assignment target the same way
+                        # (`lint_reserved_out` inside `if != null`).
+                        match visible_local_type(ctx, id.name):
+                            Option.some as visible:
+                                let declared = ctx.analysis.value_types.get(id.name)
+                                if declared != null:
+                                    let storage_ty = read(declared)
+                                    if types.is_nullable_type(storage_ty) and types.type_equals(types.unwrap_nullable(storage_ty), visible.value):
+                                        return alloc_expr(ir.Expr.expr_name(name = naming.qualified_c_name(ctx.module_name, id.name), ty = visible.value, pointer = Option[bool].some(value = false)))
+                            Option.none:
+                                pass
             _:
                 pass
     return lower_expr(ctx, target_ast)
@@ -5358,10 +5404,22 @@ function parse_decimal(text: str) -> long:
 ## is emitted *before* its `IfStmt` — for an `else if` that is the enclosing
 ## branch's else body — and the condition's cleanups head *both* branches, the
 ## host's `lower_if_chain` shape.
+##
+## Each branch is lowered with the host's flow refinements (`block.rb:656-709`):
+## the condition and body see the accumulated falsy refinements of the earlier
+## branches, the body adds the condition's truthy refinements, and an else-less
+## `if` whose branches all terminate narrows the enclosing block after the
+## statement.
 function lower_if_chain(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], index: ptr_uint, else_body: ptr[ast.Stmt]?) -> void:
+    var prior_false = map_mod.Map[str, types.Type].create()
+    lower_if_chain_at(ctx, output, branches, index, else_body, ref_of(prior_false), true)
+
+
+function lower_if_chain_at(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], index: ptr_uint, else_body: ptr[ast.Stmt]?, prior_false: ref[map_mod.Map[str, types.Type]], top: bool) -> void:
     var branch: ast.IfBranch
     unsafe:
         branch = read(branches.data + index)
+    let base_saved = push_flow_refinements(ctx, prior_false)
     let cond_base = output.len()
     # A condition is a *prepared* position: a statement-lowered foreign call
     # materializes into `__mt_foreign_result_N` with its cleanups before the
@@ -5372,22 +5430,67 @@ function lower_if_chain(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], branc
     let cond_collected = collect_stmt_setup(ctx, cond_saved)
     emit_hoist_setup(output, cond_base, cond_collected)
 
+    # The body's visible env: the prior falsy refinements plus this
+    # condition's truthy refinements (the host's `merge_refinements`).
+    var true_refs = map_mod.Map[str, types.Type].create()
+    merge_flow_refinements(ref_of(true_refs), prior_false)
+    var cond_true = lowering_flow_refinements(ctx, branch.condition, true)
+    merge_flow_refinements(ref_of(true_refs), ref_of(cond_true))
     var then_body = vec.Vec[ir.Stmt].create()
     append_hoist_cleanups(ref_of(then_body), cond_collected)
+    let then_saved = push_flow_refinements(ctx, ref_of(true_refs))
     then_body.append_span(lower_block(ctx, branch.body))
+    restore_flow_refinements(ctx, then_saved)
+
+    # The cumulative falsy refinements for the next branch.
+    var next_false = map_mod.Map[str, types.Type].create()
+    merge_flow_refinements(ref_of(next_false), prior_false)
+    var cond_false = lowering_flow_refinements(ctx, branch.condition, false)
+    merge_flow_refinements(ref_of(next_false), ref_of(cond_false))
 
     # A source-level `if` always carries an else body in the host's IR — an
     # empty one when the source has no else clause.
     var else_inner = vec.Vec[ir.Stmt].create()
     if index + 1 < branches.len:
-        lower_if_chain(ctx, ref_of(else_inner), branches, index + 1, else_body)
+        lower_if_chain_at(ctx, ref_of(else_inner), branches, index + 1, else_body, ref_of(next_false), false)
     else:
+        let else_saved = push_flow_refinements(ctx, ref_of(next_false))
         else_inner.append_span(lower_block(ctx, else_body))
+        restore_flow_refinements(ctx, else_saved)
     var else_stmts = vec.Vec[ir.Stmt].create()
     append_hoist_cleanups(ref_of(else_stmts), cond_collected)
     else_stmts.append_span(else_inner.as_span())
 
     output.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = else_stmts.as_span())))
+    restore_flow_refinements(ctx, base_saved)
+
+    # The host's post-if rule (`block.rb:707`): an else-less `if` whose branches
+    # all terminate narrows the enclosing block's env after the statement.
+    # `break`/`continue` count as falling through here (the host's termination
+    # builder has no loop targets), which is why the guard-break shape does not
+    # refine.  The pushed scope is released by the enclosing `lower_block`.
+    if top and else_body == null and if_branches_all_terminate(branches):
+        var final_false = map_mod.Map[str, types.Type].create()
+        var bi: ptr_uint = 0
+        while bi < branches.len:
+            var cond_false_i = lowering_flow_refinements(ctx, unsafe: read(branches.data + bi).condition, false)
+            merge_flow_refinements(ref_of(final_false), ref_of(cond_false_i))
+            bi += 1
+        let _post_scope = push_flow_refinements(ctx, ref_of(final_false))
+
+
+function if_branches_all_terminate(branches: span[ast.IfBranch]) -> bool:
+    if branches.len == 0:
+        return false
+    var i: ptr_uint = 0
+    while i < branches.len:
+        var br: ast.IfBranch
+        unsafe:
+            br = read(branches.data + i)
+        if not ast_block_always_terminates(br.body):
+            return false
+        i += 1
+    return true
 
 
 ## Lower `for i in start..stop:` into a scope block holding an optional hoisted
@@ -6470,7 +6573,12 @@ function lower_short_circuit_binary(
             ctx.hoist_stmts.push(ir.Stmt.stmt_local(name = tmp, linkage_name = tmp, ty = bool_ty, value = alloc_expr(ir.Expr.expr_boolean_literal(value = short_circuit_value, ty = bool_ty)), line = 0, source_path = ""))
         let left = lower_expr(ctx, left_ep)
         let right_saved = begin_stmt_setup(ctx, ctx.hoist_mode)
+        # The right operand sees the left operand's refinement (the host's
+        # `binary_right_env`, `resolve.rb:967`).
+        var right_refs = lowering_flow_refinements(ctx, left_ep, operator == "and")
+        let right_flow_saved = push_flow_refinements(ctx, ref_of(right_refs))
         let right = lower_expr(ctx, right_ep)
+        restore_flow_refinements(ctx, right_flow_saved)
         let right_collected = collect_stmt_setup(ctx, right_saved)
         append_cleanup_stmts(ref_of(ctx.hoist_cleanups), right_collected.cleanups)
         var then_body = vec.Vec[ir.Stmt].create()
@@ -6491,7 +6599,10 @@ function lower_short_circuit_binary(
     let left = lower_expr(ctx, left_ep)
     let left_has_setup = ctx.hoist_stmts.len > setup_base
     let right_saved = begin_stmt_setup(ctx, ctx.hoist_mode)
+    var right_refs = lowering_flow_refinements(ctx, left_ep, operator == "and")
+    let right_flow_saved = push_flow_refinements(ctx, ref_of(right_refs))
     let right = lower_expr(ctx, right_ep)
+    restore_flow_refinements(ctx, right_flow_saved)
     let right_collected = collect_stmt_setup(ctx, right_saved)
     let right_has_setup = right_collected.stmts.len > 0
     append_cleanup_stmts(ref_of(ctx.hoist_cleanups), right_collected.cleanups)
@@ -6538,8 +6649,16 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
             ast.Expr.expr_if as ie:
                 let cond = lower_expr(ctx, ie.condition)
                 let hoist_saved = suspend_stmt_setup(ctx)
+                # Each branch sees the condition's truthy/falsy refinements (the
+                # host's `then_env`/`else_env`, `expressions.rb:1101`).
+                var then_refs = lowering_flow_refinements(ctx, ie.condition, true)
+                let then_flow_saved = push_flow_refinements(ctx, ref_of(then_refs))
                 var then_e = lower_expr(ctx, ie.then_expr)
+                restore_flow_refinements(ctx, then_flow_saved)
+                var else_refs = lowering_flow_refinements(ctx, ie.condition, false)
+                let else_flow_saved = push_flow_refinements(ctx, ref_of(else_refs))
                 var else_e = lower_expr(ctx, ie.else_expr)
+                restore_flow_refinements(ctx, else_flow_saved)
                 resume_stmt_setup(ctx, hoist_saved)
                 # The conditional's type is the host's branch-common inference
                 # (`conditional_common_type`), and each branch is lowered
@@ -6612,7 +6731,10 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 var right: ptr[ir.Expr]
                 if bin.operator == "and" or bin.operator == "or":
                     let hoist_saved = suspend_stmt_setup(ctx)
+                    var right_refs = lowering_flow_refinements(ctx, bin.left, bin.operator == "and")
+                    let right_flow_saved = push_flow_refinements(ctx, ref_of(right_refs))
                     right = lower_expr(ctx, bin.right)
+                    restore_flow_refinements(ctx, right_flow_saved)
                     resume_stmt_setup(ctx, hoist_saved)
                 else:
                     right = lower_expr(ctx, bin.right)
@@ -8139,8 +8261,12 @@ function lower_index_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: 
 function lower_range_index_read(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], start_expr: ptr[ast.Expr], end_expr: ptr[ast.Expr], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let recv_ty = index_receiver_type(ctx, receiver)
     let recv = lower_expr(ctx, receiver)
-    let start = coerce_index_bound_to_ptr_uint(ctx, lower_expr(ctx, start_expr))
-    let stop = coerce_index_bound_to_ptr_uint(ctx, lower_expr(ctx, end_expr))
+    # A slice bound is lowered with `ptr_uint` as its expected type (the host's
+    # `lower_range_index_bound`, `expressions.rb:1506`), so a bare literal is a
+    # `ptr_uint` literal rather than an `int` plus a cast.
+    let ptr_uint_ty = types.primitive("ptr_uint")
+    let start = coerce_index_bound_to_ptr_uint(ctx, literal_value_to_context_type(ctx, start_expr, ptr_uint_ty, lower_expr(ctx, start_expr)))
+    let stop = coerce_index_bound_to_ptr_uint(ctx, literal_value_to_context_type(ctx, end_expr, ptr_uint_ty, lower_expr(ctx, end_expr)))
     if is_str_typed(recv_ty) or is_str_typed(ir_expr_type(recv)):
         var args = vec.Vec[ir.Expr].create()
         unsafe:
@@ -9335,14 +9461,15 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                     let arg = unsafe: read(call_args.data + 0)
                     let lowered = lower_expr(ctx, arg.arg_value)
                     var source_ty = ir_expr_type(lowered)
-                    # The host resolves the argument through its refined env, so
+                    # The host infers the argument through its lowering env, so
                     # a guarded local carries its narrowed type (`p` after
-                    # `if p == null: return` is `ptr[void]`, not `ptr[void]?`).
+                    # `if p == null: return` is `ptr[void]`, not `ptr[void]?`)
+                    # and an unrefined one its storage type.
                     match unsafe: read(arg.arg_value):
                         ast.Expr.expr_identifier as aid:
-                            match analyzer.flow_type_at(ref_of(ctx.analysis), aid.name, aid.line, aid.column):
-                                Option.some as refined:
-                                    source_ty = refined.value
+                            match visible_local_type(ctx, aid.name):
+                                Option.some as visible:
+                                    source_ty = visible.value
                                 Option.none:
                                     pass
                         _:
@@ -14110,7 +14237,11 @@ function null_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.
         return value
     if types.is_nullable_type(ir_expr_type(value)):
         return value
-    if not is_nullable_pointer_like(context_ty) and not types.is_nullable_type(context_ty):
+    # The host's `IR::NullLiteral.new(type:)` takes the *expected* type verbatim
+    # (`expressions.rb:1377`), even when it is a bare pointer: an assignment to a
+    # guard-narrowed `ptr[T]?` target carries the visible `ptr[T]` on the literal.
+    # Only a missing context (`void`/error) keeps the lowered literal.
+    if types.is_void(context_ty) or types.is_error(context_ty):
         return value
     return alloc_expr(ir.Expr.expr_null_literal(ty = context_ty))
 
@@ -14394,14 +14525,12 @@ function int_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.T
                 literal_lexeme = lit.lexeme
             _:
                 return value
-    # An explicit suffix wins over the context — the host's
-    # `infer_integer_literal` checks it first, so `1u` stays `uint` even
-    # against a `ulong` expected type.
-    match analyzer.integer_suffix_type_name(literal_lexeme):
-        Option.some:
-            return value
-        Option.none:
-            pass
+    # The lowering's literal typing ignores an explicit integer suffix when an
+    # expected type exists: the host's `infer_expression_type` checks
+    # `expected_type` before consulting the sema cache, so `1u` in a `ulong`
+    # position is a `ulong` literal and `0z` in a `long` field a `long` one.
+    # (The *analyzer* keeps the suffix type — `infer_integer_literal` — which is
+    # why a suffixed literal still participates as its own type in sema.)
     if not int_value_fits_type(literal_value, context_ty):
         return value
     return alloc_expr(integer_literal_expr(literal_lexeme, literal_value, context_ty))
@@ -16145,11 +16274,21 @@ function lower_extern_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast
             # `Nullable(ptr[time_t])`; session 44, item 5b).
             lowered = literal_value_to_context_type(ctx, arg.arg_value, foreign_param_context_type(ctx, info, param), lowered)
             if param.param_mode == ast.ForeignParamMode.fmode_out or param.param_mode == ast.ForeignParamMode.fmode_inout:
-                let arg_ty = ir_expr_type(lowered)
-                lowered = alloc_expr(ir.Expr.expr_address_of(
-                    expression = lowered,
-                    ty = types.Type.ty_generic(name = "ptr", args = sp_type(arg_ty)),
-                ))
+                # The host's `lower_foreign_pointer_argument_value` (the external
+                # call path shares it): the address-of's type is
+                # `pointer_to(foreign_slot_boundary_value_type(parameter.type))`,
+                # so a nullable pointer-like slot contributes its base
+                # (`mt_mutex_create(handle)` with `handle: ptr[mt_mutex]?` gets
+                # `ptr[ptr[mt_mutex]]`, not `ptr[ptr[mt_mutex]?]`).
+                var slot_ty = foreign_param_context_type(ctx, info, param)
+                if types.is_nullable_type(slot_ty) and is_nullable_pointer_like(slot_ty):
+                    slot_ty = types.unwrap_nullable(slot_ty)
+                let slot_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(qualify_type(ctx, slot_ty)))
+                match addr_operand_expression(lowered):
+                    Option.some as op:
+                        lowered = alloc_expr(ir.Expr.expr_cast(target_type = slot_ptr_ty, expression = op.value, ty = slot_ptr_ty))
+                    Option.none:
+                        lowered = alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = slot_ptr_ty))
         unsafe:
             ir_args.push(read(lowered))
         i += 1
@@ -18702,7 +18841,16 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
             arm_key = reinterpret[ptr_uint](arms.data + i)
         let pattern = arm.pattern
         if pattern == null:
-            cases.push(ir.SwitchCase(is_default = true, value = null, body = lower_switch_arm_body(ctx, arm.body)))
+            if ctx.async_cps_active:
+                # The CPS match lowering appends a native break to every case
+                # body (the host's `lower_async_cf_match_stmt`,
+                # async_lowering.rb:573-590), even after a terminating return.
+                var case_body = vec.Vec[ir.Stmt].create()
+                append_span_stmts(ref_of(case_body), lower_switch_arm_body(ctx, arm.body))
+                case_body.push(ir.Stmt.stmt_break)
+                cases.push(ir.SwitchCase(is_default = true, value = null, body = case_body.as_span()))
+            else:
+                cases.push(ir.SwitchCase(is_default = true, value = null, body = lower_switch_arm_body(ctx, arm.body)))
         else:
             let arm_name = match_member_name(pattern) else:
                 fatal(c"lowering: unsupported variant match pattern")
@@ -18741,6 +18889,8 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
                 bi += 1
             if reg_field != "":
                 async_register_unused_field(ctx, reg_field, reg_field_ty)
+            if ctx.async_cps_active:
+                stmts.push(ir.Stmt.stmt_break)
             let kind_const = alloc_expr(ir.Expr.expr_name(
                 name = variant_kind_const_name(outer_c, arm_name),
                 ty = int_ty,
@@ -19610,8 +19760,22 @@ function resolve_return_type(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], re
 
 ## The resolved type of an AST expression, preferring the analyzer's recorded
 ## type (keyed by node pointer identity).  A recorded `ty_error` is permissive
-## — the lowering recovers via `fallback_type`.
+## — the lowering recovers via `fallback_type`.  An identifier that names a
+## local (or a refined module value) takes the *lowering env's* visible type:
+## the host's `infer_expression_type` skips its sema-type cache for identifiers
+## (`resolve.rb:706`) and reads `lookup_value`, so the analyzer's CFG refinement
+## must not leak in where the host's lowering scope has none.
 function expr_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier as id:
+                match visible_local_type(ctx, id.name):
+                    Option.some as visible:
+                        return visible.value
+                    Option.none:
+                        pass
+            _:
+                pass
     let key = unsafe: reinterpret[ptr_uint](ep)
     let tp = ctx.analysis.resolved_expr_types.get(key)
     if tp != null:
@@ -19705,36 +19869,37 @@ function fallback_type_raw(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
             ast.Expr.expr_bool_literal:
                 return ctx.bool_ty
             ast.Expr.expr_identifier as id:
-                match lookup_local(ctx, id.name):
-                    Option.some as lb:
-                        return lb.value.ty
+                match visible_local_type(ctx, id.name):
+                    Option.some as visible:
+                        return visible.value
                     Option.none:
-                        let mvt = module_var_type(ctx, id.name)
-                        if not types.is_error(mvt):
-                            return mvt
-                        # Function reference: its function type, named after the
-                        # function and carrying its variadic flag, the way the
-                        # host's `infer_expression_type` returns the function
-                        # binding's own type (`Types::Function#name`; the
-                        # analyzer's `argument_inference_type` refinement does
-                        # the same for call arguments).
-                        match lookup_fn_sig(ctx, id.name):
-                            Option.some as s:
-                                var ret = s.value.return_type
-                                if not s.value.has_return_type:
-                                    ret = ctx.void_ty
-                                var param_types = vec.Vec[types.Type].create()
-                                var param_names = vec.Vec[str].create()
-                                var pi: ptr_uint = 0
-                                while pi < s.value.params.len:
-                                    unsafe:
-                                        param_types.push(read(s.value.params.data + pi).ty)
-                                        param_names.push(read(s.value.params.data + pi).name)
-                                    pi += 1
-                                return types.Type.ty_function(name = id.name, params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = s.value.is_variadic, is_proc = false, param_names = param_names.as_span())
-                            Option.none:
-                                pass
-                        return types.Type.ty_error
+                        pass
+                let mvt = module_var_type(ctx, id.name)
+                if not types.is_error(mvt):
+                    return mvt
+                # Function reference: its function type, named after the
+                # function and carrying its variadic flag, the way the
+                # host's `infer_expression_type` returns the function
+                # binding's own type (`Types::Function#name`; the
+                # analyzer's `argument_inference_type` refinement does
+                # the same for call arguments).
+                match lookup_fn_sig(ctx, id.name):
+                    Option.some as s:
+                        var ret = s.value.return_type
+                        if not s.value.has_return_type:
+                            ret = ctx.void_ty
+                        var param_types = vec.Vec[types.Type].create()
+                        var param_names = vec.Vec[str].create()
+                        var pi: ptr_uint = 0
+                        while pi < s.value.params.len:
+                            unsafe:
+                                param_types.push(read(s.value.params.data + pi).ty)
+                                param_names.push(read(s.value.params.data + pi).name)
+                            pi += 1
+                        return types.Type.ty_function(name = id.name, params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = s.value.is_variadic, is_proc = false, param_names = param_names.as_span())
+                    Option.none:
+                        pass
+                return types.Type.ty_error
             ast.Expr.expr_binary_op as bin:
                 if is_comparison_operator(bin.operator):
                     return ctx.bool_ty
@@ -20187,6 +20352,258 @@ function lookup_local(ctx: ref[LowerCtx], name: str) -> Option[LocalBinding]:
             if read(lb_ptr).name == name:
                 return Option[LocalBinding].some(value = read(lb_ptr))
     return Option[LocalBinding].none
+
+
+## The visible (flow-refined) type of `name` in the innermost refinement scope
+## that mentions it.  The host's `lookup_value(...)[:type]`; nil when no scope
+## narrows the name.
+function flow_scope_binding(ctx: ref[LowerCtx], name: str) -> Option[types.Type]:
+    var i = ctx.flow_scopes.len()
+    while i > 0:
+        i -= 1
+        let scope_ptr = ctx.flow_scopes.get(i) else:
+            break
+        unsafe:
+            let found = read(scope_ptr).get(name)
+            if found != null:
+                return Option[types.Type].some(value = read(found))
+    return Option[types.Type].none
+
+
+## The type inference sees for a name — the host's `infer_expression_type`
+## identifier arm: the refinement scope's narrowed type, else the local
+## binding's storage type, else a module-level value's declared type.
+function visible_local_type(ctx: ref[LowerCtx], name: str) -> Option[types.Type]:
+    match flow_scope_binding(ctx, name):
+        Option.some as narrowed:
+            return Option[types.Type].some(value = narrowed.value)
+        Option.none:
+            pass
+    match lookup_local(ctx, name):
+        Option.some as lb:
+            return Option[types.Type].some(value = lb.value.ty)
+        Option.none:
+            pass
+    let declared = ctx.analysis.value_types.get(name)
+    if declared != null:
+        return Option[types.Type].some(value = unsafe: read(declared))
+    return Option[types.Type].none
+
+
+## Merge `incoming` into `existing`: a conflicting type deletes the entry (the
+## host's `merge_refinements`, `utils.rb:593`).
+function merge_flow_refinements(existing: ref[map_mod.Map[str, types.Type]], incoming: ref[map_mod.Map[str, types.Type]]) -> void:
+    var entries = incoming.entries()
+    while true:
+        if not entries.next():
+            break
+        let entry = entries.current()
+        unsafe:
+            let key = read(entry.key)
+            let new_val = read(entry.value)
+            let cur_ptr = existing.get(key)
+            if cur_ptr != null:
+                if not types.type_equals(read(cur_ptr), new_val):
+                    let _removed = existing.remove(key)
+            else:
+                existing.set(key, new_val)
+
+
+## Push a refinement map as a new visible scope (skipped when empty); returns
+## the stack length `restore_flow_refinements` restores.  The host's
+## `env_with_refinements` makes a fresh `FlowScope` layer, so the pushed map is
+## a copy rather than the caller's.
+function push_flow_refinements(ctx: ref[LowerCtx], refinements: ref[map_mod.Map[str, types.Type]]) -> ptr_uint:
+    let saved = ctx.flow_scopes.len()
+    if refinements.len() == 0:
+        return saved
+    var scope = map_mod.Map[str, types.Type].create()
+    merge_flow_refinements(ref_of(scope), refinements)
+    ctx.flow_scopes.push(scope)
+    return saved
+
+
+function restore_flow_refinements(ctx: ref[LowerCtx], saved: ptr_uint) -> void:
+    while ctx.flow_scopes.len() > saved:
+        let _dropped = ctx.flow_scopes.pop()
+
+
+## The lowering's `flow_refinements` (`utils.rb:606`): the binding types a
+## condition narrows when it is true (`truthy`) or false.  Only null tests
+## narrow; `not` flips, and `and`/`or` recurse with the host's short-circuit
+## scopes (the right operand sees the left's refinement).
+function lowering_flow_refinements(ctx: ref[LowerCtx], cond: ptr[ast.Expr], truthy: bool) -> map_mod.Map[str, types.Type]:
+    var result = map_mod.Map[str, types.Type].create()
+    unsafe:
+        match read(cond):
+            ast.Expr.expr_unary_op as u:
+                if u.operator == "not":
+                    return lowering_flow_refinements(ctx, u.operand, not truthy)
+            ast.Expr.expr_binary_op as b:
+                if b.operator == "and":
+                    # Only the truthy side refines: `a and b` being false says
+                    # nothing about `a`, so the host's `flow_refinements` falls
+                    # through to `{}` for the falsy case (`utils.rb:612-618`).
+                    if truthy:
+                        var left = lowering_flow_refinements(ctx, b.left, true)
+                        merge_flow_refinements(ref_of(result), ref_of(left))
+                        let saved = push_flow_refinements(ctx, ref_of(left))
+                        var right = lowering_flow_refinements(ctx, b.right, true)
+                        restore_flow_refinements(ctx, saved)
+                        merge_flow_refinements(ref_of(result), ref_of(right))
+                    return result
+                if b.operator == "or":
+                    # Symmetric with `and`: only the falsy side refines.
+                    if not truthy:
+                        var left_f = lowering_flow_refinements(ctx, b.left, false)
+                        merge_flow_refinements(ref_of(result), ref_of(left_f))
+                        let saved = push_flow_refinements(ctx, ref_of(left_f))
+                        var right = lowering_flow_refinements(ctx, b.right, false)
+                        restore_flow_refinements(ctx, saved)
+                        merge_flow_refinements(ref_of(result), ref_of(right))
+                    return result
+                if b.operator == "==" or b.operator == "!=":
+                    return lowering_null_test_refinements(ctx, cond, truthy)
+            _:
+                pass
+    return result
+
+
+## Null-test refinements (`utils.rb:634`): `x == null` truthy (and `!=` falsy)
+## narrows to the bare null; the other direction narrows to the nullable's base.
+## A local's storage type is its binding; a module-level value's is its declared
+## type (the host seeds module bindings into its env).
+function lowering_null_test_refinements(ctx: ref[LowerCtx], condp: ptr[ast.Expr], truthy: bool) -> map_mod.Map[str, types.Type]:
+    var result = map_mod.Map[str, types.Type].create()
+    unsafe:
+        match read(condp):
+            ast.Expr.expr_binary_op as b:
+                if b.operator != "==" and b.operator != "!=":
+                    return result
+                var name_value: str = ""
+                var found = false
+                match read(b.left):
+                    ast.Expr.expr_identifier as id:
+                        if read(b.right) is ast.Expr.expr_null_literal:
+                            name_value = id.name
+                            found = true
+                    _:
+                        pass
+                if not found:
+                    match read(b.right):
+                        ast.Expr.expr_identifier as id2:
+                            if read(b.left) is ast.Expr.expr_null_literal:
+                                name_value = id2.name
+                                found = true
+                        _:
+                            pass
+                if not found:
+                    return result
+                var storage: Option[types.Type] = Option[types.Type].none
+                match lookup_local(ctx, name_value):
+                    Option.some as lb:
+                        storage = Option[types.Type].some(value = lb.value.ty)
+                    Option.none:
+                        let declared = ctx.analysis.value_types.get(name_value)
+                        if declared != null:
+                            storage = Option[types.Type].some(value = read(declared))
+                match storage:
+                    Option.some as st:
+                        match st.value:
+                            types.Type.ty_nullable as nl:
+                                let null_result = if b.operator == "==": truthy else: not truthy
+                                if null_result:
+                                    result.set(name_value, types.Type.ty_null(target = null))
+                                else:
+                                    result.set(name_value, read(nl.base))
+                            _:
+                                pass
+                    Option.none:
+                        pass
+            _:
+                pass
+    return result
+
+
+## The host's `cfg_block_always_terminates?` as the lowering applies it
+## (`block.rb:707`): the host's termination builder has no break/continue
+## targets, so a `break`/`continue` falls through to the block exit and does
+## NOT terminate.
+function ast_block_always_terminates(body: ptr[ast.Stmt]?) -> bool:
+    let b = body else:
+        return false
+    unsafe:
+        match read(ptr[ast.Stmt]<-b):
+            ast.Stmt.stmt_block as blk:
+                if blk.statements.len == 0:
+                    return false
+                return ast_stmt_terminates(blk.statements.data + (blk.statements.len - 1))
+            _:
+                return ast_stmt_terminates(ptr[ast.Stmt]<-b)
+
+
+function ast_stmt_terminates(sp: ptr[ast.Stmt]) -> bool:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_ret:
+                return true
+            ast.Stmt.stmt_block as blk:
+                if blk.statements.len == 0:
+                    return false
+                return ast_stmt_terminates(blk.statements.data + (blk.statements.len - 1))
+            ast.Stmt.stmt_unsafe as u:
+                return ast_block_always_terminates(u.body)
+            ast.Stmt.stmt_error_block as eb:
+                return ast_stmt_terminates(eb.body)
+            ast.Stmt.stmt_if as iff:
+                if iff.else_body == null:
+                    return false
+                if not ast_block_always_terminates(iff.else_body):
+                    return false
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    if not ast_block_always_terminates(read(iff.branches.data + bi).body):
+                        return false
+                    bi += 1
+                return iff.branches.len > 0
+            ast.Stmt.stmt_match as m:
+                if m.arms.len == 0:
+                    return false
+                var ai: ptr_uint = 0
+                while ai < m.arms.len:
+                    if not ast_block_always_terminates(read(m.arms.data + ai).body):
+                        return false
+                    ai += 1
+                return true
+            ast.Stmt.stmt_expression as e:
+                return ast_expression_always_aborts(e.expression)
+            _:
+                return false
+    return false
+
+
+## The host's `fatal_expression?` (`builder.rb:256`): a `fatal(...)` call or a
+## literal-false `assert`/`expect` always aborts.
+function ast_expression_always_aborts(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_identifier as id:
+                        if id.name == "fatal":
+                            return true
+                        if call.args.len == 0:
+                            return false
+                        match read(read(call.args.data + 0).arg_value):
+                            ast.Expr.expr_bool_literal as b:
+                                return (id.name == "assert" or id.name == "expect") and not b.value
+                            _:
+                                return false
+                    _:
+                        return false
+            _:
+                return false
+    return false
 
 
 function lookup_qualified_constant(ctx: ref[LowerCtx], name: str) -> Option[str]:
@@ -25486,7 +25903,7 @@ function async_stmt_terminates(sp: ptr[ir.Stmt]) -> bool:
 ## Lower an async function: generate frame struct, resume fn, constructor fn,
 ## and vtable helpers.  Push into the output structs/functions collections.
 ## Supports both no-await (single-state) and full CPS (state-machine) paths.
-function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_ty_opt: Option[types.Type], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, functions: ref[vec.Vec[ir.Function]]) -> void:
+function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_ty_opt: Option[types.Type], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, functions: ref[vec.Vec[ir.Function]], synthetic_ctor: bool) -> void:
     # Reset async CPS state so a no-await function (or the next function) never
     # inherits a previous has-await function's frame state.
     ctx.async_cps_active = false
@@ -25657,7 +26074,11 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             async_complete_statements(ctx, ref_of(resume_body), res_ty, Option[ptr[ir.Expr]].none)
         ctx.current_fn_return_type = saved_rt
         ctx.inside_async = saved_inside
-    functions.push(ir.Function(name = j2(name, "__resume"), linkage_name = resume_c, params = vparam_s, return_type = void_t, body = resume_body.as_span(), entry_point = false, method_receiver_param = false))
+    # The host's `lower_async_function_decl` appends the resume and the vtable
+    # helpers to the program-wide `@artifacts.synthetic_functions` tail (after
+    # every module's functions), while the constructor stays in the declaring
+    # module's list (`functions.rb:199-215`).
+    ctx.pending_synthetic_functions.push(ir.Function(name = j2(name, "__resume"), linkage_name = resume_c, params = vparam_s, return_type = void_t, body = resume_body.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- frame struct (base + state + result + params + spilled locals + awaits) --
     var ff = vec.Vec[ir.Field].create()
@@ -25707,7 +26128,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     var vrdy = vec.Vec[ir.Stmt].create()
     vrdy.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
     vrdy.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), line = 0, source_path = ""))
-    functions.push(ir.Function(name = j2(ready_lk, "_fn"), linkage_name = ready_lk, params = vparam_s, return_type = bool_ty, body = vrdy.as_span(), entry_point = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = j2(ready_lk, "_fn"), linkage_name = ready_lk, params = vparam_s, return_type = bool_ty, body = vrdy.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable: set_waiter (fresh vec) --
     let wake_fn_ty = async_wake_fn_type(ctx)
@@ -25728,7 +26149,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     sw_params.push(ir.Param(name = "frame", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
     sw_params.push(ir.Param(name = "waiter_frame", linkage_name = "waiter_frame", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
     sw_params.push(ir.Param(name = "waiter", linkage_name = "waiter", ty = wake_fn_ty, pointer = Option[bool].some(value = false)))
-    functions.push(ir.Function(name = j2(waiter_lk, "_fn"), linkage_name = waiter_lk, params = sw_params.as_span(), return_type = void_t, body = vsw.as_span(), entry_point = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = j2(waiter_lk, "_fn"), linkage_name = waiter_lk, params = sw_params.as_span(), return_type = void_t, body = vsw.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable: release (fresh vec) --
     var vrel = vec.Vec[ir.Stmt].create()
@@ -25784,14 +26205,14 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         rli += 1
     vrel.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "mt_async_free", arguments = single_expr_span(raw_expr), ty = void_t)), line = 0, source_path = ""))
     vrel.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    functions.push(ir.Function(name = j2(release_lk, "_fn"), linkage_name = release_lk, params = vparam_s, return_type = void_t, body = vrel.as_span(), entry_point = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = j2(release_lk, "_fn"), linkage_name = release_lk, params = vparam_s, return_type = void_t, body = vrel.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable: take_result (fresh vec) --
     if not is_void_ret:
         var vtr = vec.Vec[ir.Stmt].create()
         vtr.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
         vtr.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), line = 0, source_path = ""))
-        functions.push(ir.Function(name = j2(take_lk, "_fn"), linkage_name = take_lk, params = vparam_s, return_type = res_ty, body = vtr.as_span(), entry_point = false, method_receiver_param = false))
+        ctx.pending_synthetic_functions.push(ir.Function(name = j2(take_lk, "_fn"), linkage_name = take_lk, params = vparam_s, return_type = res_ty, body = vtr.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable: cancel (fresh vec) --
     var vcn = vec.Vec[ir.Stmt].create()
@@ -25859,7 +26280,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     )), line = 0, source_path = ""))
     vcn.push(ir.Stmt.stmt_if(condition = cn_waiter_frame, then_body = cn_wake_body.as_span(), else_body = Option[span[ir.Stmt]].none))
     vcn.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    functions.push(ir.Function(name = j2(cancel_lk, "_fn"), linkage_name = cancel_lk, params = vparam_s, return_type = void_t, body = vcn.as_span(), entry_point = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = j2(cancel_lk, "_fn"), linkage_name = cancel_lk, params = vparam_s, return_type = void_t, body = vcn.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- constructor function --
     let size_expr = alloc_expr(ir.Expr.expr_sizeof(target_type = frame_ty, ty = ptr_ty))
@@ -25944,7 +26365,14 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             pty = read(ptr[types.Type]<-rawt + pi4)
         ctor_params.push(ir.Param(name = pname, linkage_name = pname, ty = pty, pointer = async_param_pointer(receiver_ty_opt, pname)))
         pi4 += 1
-    functions.push(ir.Function(name = name, linkage_name = link_base, params = ctor_params.as_span(), return_type = task_ty, body = ctor_body.as_span(), entry_point = false, method_receiver_param = false))
+    # The host returns the constructor into the declaring module's list, except
+    # for the root `async main`, whose constructor joins the synthetic tail
+    # (`functions.rb:224-240`).
+    let ctor_fn = ir.Function(name = name, linkage_name = link_base, params = ctor_params.as_span(), return_type = task_ty, body = ctor_body.as_span(), entry_point = false, method_receiver_param = false)
+    if synthetic_ctor:
+        ctx.pending_synthetic_functions.push(ctor_fn)
+    else:
+        functions.push(ctor_fn)
 
 
 ## The C label for async resume state `n` (goto target in the dispatch switch).
@@ -26119,7 +26547,7 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
         match read(hv):
             ast.Expr.expr_unary_op as u:
                 if u.operator == "?":
-                    lower_propagate_let(ctx, output, loc_name, u.operand, line, false)
+                    lower_propagate_let(ctx, output, loc_name, u.operand, line, false, "")
                     return
             _:
                 pass
