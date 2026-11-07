@@ -182,6 +182,10 @@ struct HoistSaved:
     cleanups: vec.Vec[ir.Stmt]
     stmt_emitted: bool
     root_ep: ptr[ast.Expr]?
+    # The statement's root expression when its expected/storage type is an
+    # array: an array-returning call there is not materialized (the host's
+    # `materialize_array_calls: !array_type?(…)` at return/assignment/local).
+    array_exempt: ptr[ast.Expr]?
 
 
 struct LowerCtx:
@@ -332,6 +336,10 @@ struct LowerCtx:
     # The statement-root AST expression of the current window, so the foreign
     # lowering can tell the root call from a nested one (pointer identity).
     hoist_root_ep: ptr[ast.Expr]?
+    # Set by a statement arm whose expected/storage type is an array (a return
+    # of an array, an array-typed assignment target or local): the root call
+    # keeps its inline form instead of hoisting `__mt_array_call_<N>`.
+    array_call_exempt: ptr[ast.Expr]?
     # Dynamic format-string result naming (the host's `env[:fmt_counter]` and
     # `env[:current_local_name]`): `fmt_dest_name` is the most recent local
     # declaration's C name in the current block (and its ancestors), which names
@@ -1106,6 +1114,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         hoist_cleanups = vec.Vec[ir.Stmt].create(),
         hoist_stmt_emitted = false,
         hoist_root_ep = null,
+        array_call_exempt = null,
         mapping_replacements = map_mod.Map[str, ptr[ir.Expr]].create(),
         inside_async = false,
         async_completion_active = false,
@@ -2657,24 +2666,26 @@ function cleanup_safe_return_expr(ep: ptr[ast.Expr]) -> bool:
 ## `prepare_expression_with_cleanups`.  Returns the enclosing state; close the
 ## window with `collect_stmt_setup`.
 function begin_stmt_setup(ctx: ref[LowerCtx], mode: HoistMode) -> HoistSaved:
-    let saved = HoistSaved(mode = ctx.hoist_mode, stmts = ctx.hoist_stmts, cleanups = ctx.hoist_cleanups, stmt_emitted = ctx.hoist_stmt_emitted, root_ep = ctx.hoist_root_ep)
+    let saved = HoistSaved(mode = ctx.hoist_mode, stmts = ctx.hoist_stmts, cleanups = ctx.hoist_cleanups, stmt_emitted = ctx.hoist_stmt_emitted, root_ep = ctx.hoist_root_ep, array_exempt = ctx.array_call_exempt)
     ctx.hoist_mode = mode
     ctx.hoist_stmts = vec.Vec[ir.Stmt].create()
     ctx.hoist_cleanups = vec.Vec[ir.Stmt].create()
     ctx.hoist_stmt_emitted = false
     ctx.hoist_root_ep = null
+    ctx.array_call_exempt = null
     return saved
 
 
 ## Close a hoisting window: restore the enclosing state and return what the
 ## window collected (`stmts` before the statement, `cleanups` after it).
 function collect_stmt_setup(ctx: ref[LowerCtx], saved: HoistSaved) -> HoistSaved:
-    let collected = HoistSaved(mode = ctx.hoist_mode, stmts = ctx.hoist_stmts, cleanups = ctx.hoist_cleanups, stmt_emitted = ctx.hoist_stmt_emitted, root_ep = ctx.hoist_root_ep)
+    let collected = HoistSaved(mode = ctx.hoist_mode, stmts = ctx.hoist_stmts, cleanups = ctx.hoist_cleanups, stmt_emitted = ctx.hoist_stmt_emitted, root_ep = ctx.hoist_root_ep, array_exempt = ctx.array_call_exempt)
     ctx.hoist_mode = saved.mode
     ctx.hoist_stmts = saved.stmts
     ctx.hoist_cleanups = saved.cleanups
     ctx.hoist_stmt_emitted = saved.stmt_emitted
     ctx.hoist_root_ep = saved.root_ep
+    ctx.array_call_exempt = saved.array_exempt
     return collected
 
 
@@ -2711,9 +2722,11 @@ struct HoistedValue:
 ## hoisted setup (argument temps, a `__mt_foreign_result_N` temp and the cstr
 ## frees) is inserted before the statement and the lowered value returned with
 ## the window's post-statement cleanups.
-function lower_expr_hoisting(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ep: ptr[ast.Expr]) -> HoistedValue:
+function lower_expr_hoisting(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ep: ptr[ast.Expr], array_exempt: bool) -> HoistedValue:
     let base = output.len()
     let saved = begin_stmt_setup(ctx, HoistMode.hm_return)
+    if array_exempt:
+        ctx.array_call_exempt = ep
     let lowered = lower_expr(ctx, ep)
     let collected = collect_stmt_setup(ctx, saved)
     emit_hoist_setup(output, base, collected)
@@ -2728,6 +2741,19 @@ function append_cleanup_stmts(output: ref[vec.Vec[ir.Stmt]], cleanups: vec.Vec[i
             break
         output.push(unsafe: read(stmt))
         i += 1
+
+
+## The IR type of an expression lowered only to discover it (a generic
+## method's type-argument inference).  The speculative lowering must not leak
+## statement setup into the enclosing window: an array-returning call would
+## hoist a `__mt_array_call_<N>` that the real argument lowering then duplicates
+## (`infer_type_param_from_args`).  The window is suspended, so the speculative
+## pass takes the same inline forms a lazily-evaluated region uses.
+function speculative_expr_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
+    let saved = suspend_stmt_setup(ctx)
+    let ty = ir_expr_type(lower_expr(ctx, ep))
+    resume_stmt_setup(ctx, saved)
+    return ty
 
 
 ## A one-statement span, for recording a hoisted cleanup as a defer group.
@@ -2778,7 +2804,7 @@ function filter_return_format_cleanups(ctx: ref[LowerCtx], return_ty: types.Type
 ## branch, a short-circuit right operand, a proc body): a region that may not
 ## run must not hoist its setup out, so it keeps the inline `StmtExpr` form.
 function suspend_stmt_setup(ctx: ref[LowerCtx]) -> HoistSaved:
-    let saved = HoistSaved(mode = ctx.hoist_mode, stmts = ctx.hoist_stmts, cleanups = ctx.hoist_cleanups, stmt_emitted = ctx.hoist_stmt_emitted, root_ep = ctx.hoist_root_ep)
+    let saved = HoistSaved(mode = ctx.hoist_mode, stmts = ctx.hoist_stmts, cleanups = ctx.hoist_cleanups, stmt_emitted = ctx.hoist_stmt_emitted, root_ep = ctx.hoist_root_ep, array_exempt = ctx.array_call_exempt)
     ctx.hoist_mode = HoistMode.hm_off
     return saved
 
@@ -2786,6 +2812,7 @@ function suspend_stmt_setup(ctx: ref[LowerCtx]) -> HoistSaved:
 ## Restore the state saved by `suspend_stmt_setup`.
 function resume_stmt_setup(ctx: ref[LowerCtx], saved: HoistSaved) -> void:
     ctx.hoist_mode = saved.mode
+    ctx.array_call_exempt = saved.array_exempt
     ctx.hoist_stmts = saved.stmts
     ctx.hoist_cleanups = saved.cleanups
     ctx.hoist_stmt_emitted = saved.stmt_emitted
@@ -2960,7 +2987,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # control leaves.  If the value is not a trivial literal, hoist
                 # it into a temp so the cleanups cannot invalidate it (the host's
                 # return-value hoist + cleanup preamble, `block.rb:495-511`).
-                let hoisted = lower_expr_hoisting(ctx, output, value)
+                let hoisted = lower_expr_hoisting(ctx, output, value, is_array_type(ctx.current_fn_return_type))
                 let lowered = coerce_return_literal_to_cstr(ctx, value, hoisted.value)
                 # Re-type an integer literal return value against the function's
                 # return type (e.g. `return 0` in a `ptr_uint` function), matching
@@ -3084,6 +3111,19 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 let hoist_base = output.len()
                 let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
                 ctx.hoist_root_ep = init
+                if init != null:
+                    # The local's storage type: the declared annotation, else
+                    # the analyzer's inferred initializer type.  An array there
+                    # keeps the root call inline (the host's
+                    # `materialize_array_calls: !array_type?(storage_type)`).
+                    var storage_is_array = false
+                    let declared_ref0 = loc.stmt_type
+                    if declared_ref0 != null:
+                        storage_is_array = is_array_type(resolve_type_ref(ctx, unsafe: ptr[ast.TypeRef]<-declared_ref0))
+                    if not storage_is_array:
+                        storage_is_array = is_array_type(expr_type(ctx, init))
+                    if storage_is_array:
+                        ctx.array_call_exempt = init
                 if init == null:
                     let declared = loc.stmt_type else:
                         fatal(c"lowering: local without initializer requires a type")
@@ -3273,6 +3313,8 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         let hoist_base = output.len()
                         let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
                         ctx.hoist_root_ep = asg.value
+                        if is_array_type(deref_ty):
+                            ctx.array_call_exempt = asg.value
                         var value = lower_expr(ctx, asg.value)
                         let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
                         emit_hoist_setup(output, hoist_base, hoist_collected)
@@ -3290,6 +3332,8 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 let hoist_base = output.len()
                 let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
                 ctx.hoist_root_ep = asg.value
+                if is_array_type(expr_type(ctx, asg.target)):
+                    ctx.array_call_exempt = asg.value
                 var value = lower_expr(ctx, asg.value)
                 let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
                 emit_hoist_setup(output, hoist_base, hoist_collected)
@@ -6575,6 +6619,37 @@ function fresh_c_temp_name(ctx: ref[LowerCtx], prefix: str) -> str:
     return buf.as_str()
 
 
+## The host's array-call materialization (`prepare_call_expression_for_inline_
+## lowering`): a call whose value type is an array hoists into a
+## `__mt_array_call_<N>` local in the statement's setup, and the expression
+## reads the temp.  The three statement roots whose own type is an array
+## (return/assignment/local) exempt their root call — the host passes
+## `materialize_array_calls: !array_type?(<the statement's type>)` there.
+function maybe_materialize_array_call(ctx: ref[LowerCtx], ep: ptr[ast.Expr], value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    let ty = ir_expr_type(value)
+    if not is_array_type(ty):
+        return value
+    # Only a real function/method call materializes — the host's
+    # `callee_type.return_type` test.  An intrinsic or constructor that lowers
+    # to another node with an array type (`read(collection)` -> `IR::Unary`,
+    # `array[T, N](…)` -> `IR::ArrayLiteral`, `zero[…]`/`default[…]`) keeps its
+    # inline form.
+    match unsafe: read(value):
+        ir.Expr.expr_call:
+            pass
+        ir.Expr.expr_call_indirect:
+            pass
+        _:
+            return value
+    if ctx.hoist_mode == HoistMode.hm_off:
+        return value
+    if ctx.array_call_exempt == ep:
+        return value
+    let name = fresh_c_temp_name(ctx, "array_call")
+    ctx.hoist_stmts.push(ir.Stmt.stmt_local(name = name, linkage_name = name, ty = ty, value = value, line = 0, source_path = ""))
+    return alloc_expr(ir.Expr.expr_name(name = name, ty = ty, pointer = Option[bool].some(value = false)))
+
+
 # =============================================================================
 #  Expression lowering
 # =============================================================================
@@ -6917,7 +6992,7 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 let lowered_expr = lower_expr(ctx, pc.expression)
                 return alloc_expr(ir.Expr.expr_cast(target_type = target_ty, expression = lowered_expr, ty = target_ty))
             ast.Expr.expr_call as call:
-                return lower_call(ctx, call.callee, call.args, ep)
+                return maybe_materialize_array_call(ctx, ep, lower_call(ctx, call.callee, call.args, ep))
             ast.Expr.expr_member_access as ma:
                 return lower_member_access(ctx, ma.receiver, ma.member_name, ep)
             ast.Expr.expr_index_access as ix:
@@ -10282,9 +10357,9 @@ function infer_type_param_from_args(ctx: ref[LowerCtx], param_name: str, params:
         if p.param_type.is_proc or p.param_type.is_fn:
             arg_ty = fallback_type_raw(ctx, unsafe: read(args.data + i).arg_value)
             if not is_proc_type(arg_ty) and not is_fn_type(arg_ty):
-                arg_ty = ir_expr_type(lower_expr(ctx, unsafe: read(args.data + i).arg_value))
+                arg_ty = speculative_expr_type(ctx, unsafe: read(args.data + i).arg_value)
         else:
-            arg_ty = ir_expr_type(lower_expr(ctx, unsafe: read(args.data + i).arg_value))
+            arg_ty = speculative_expr_type(ctx, unsafe: read(args.data + i).arg_value)
         # The analyzer records argument types from the *generic* body, so
         # substitute the active specialization's bindings before matching, then
         # re-expand collapsed generic instances.
@@ -12524,6 +12599,7 @@ function monomorphized_method_c_name(owner_module: str, info: GenericReceiver, g
 ## C name groups by the concrete struct (`std_vec_Vec_int_push`), matching the
 ## monomorphized struct type produced by `qualify_type`.
 function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, gm: GenericMethodMatch, method_name: str, receiver: ptr[ast.Expr], args: span[ast.Argument]) -> ptr[ir.Expr]:
+
     # For the struct prefix in the C name, use the struct's defining module
     # (which may differ from the extending-block module, e.g. `Writer` is
     # defined in `std_binary` but extended by `std_serialize`).  The receiver
@@ -14239,6 +14315,7 @@ function lower_call_with_callee_expr(ctx: ref[LowerCtx], callee: ptr[ir.Expr], a
 
 
 function lower_call_with_callee(ctx: ref[LowerCtx], c_name: str, callee_expr: Option[ptr[ir.Expr]], args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, sig: Option[analyzer.FnSig]) -> ptr[ir.Expr]:
+
     var ir_args = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -26395,16 +26472,24 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     while pi3 < ctor_param_names.len:
         var pname: str
         var pty: types.Type
+        var fty: types.Type
         unsafe:
             let rawdata = ctor_param_names.data
             if rawdata == null:
                 fatal(c"lowering: async ctor param names missing storage")
             pname = read(ptr[str]<-rawdata + pi3)
-            let rawt = ctor_field_tys.data
+            let rawt = ctor_param_tys.data
             if rawt == null:
                 fatal(c"lowering: async ctor param types missing storage")
             pty = read(ptr[types.Type]<-rawt + pi3)
-        let field_expr = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = j2("param_", pname), ty = pty))
+            let rawf = ctor_field_tys.data
+            if rawf == null:
+                fatal(c"lowering: async ctor field types missing storage")
+            fty = read(ptr[types.Type]<-rawf + pi3)
+        # The store target is typed with the frame field; the value Name carries
+        # the declared parameter type with the pointer flag (the host's
+        # `param_type` vs `field_type` split).
+        let field_expr = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = j2("param_", pname), ty = fty))
         let arg_pointer = async_param_pointer(receiver_ty_opt, receiver_editable, pname)
         let arg_expr = alloc_expr(ir.Expr.expr_name(name = pname, ty = pty, pointer = arg_pointer))
         ctor_body.push(ir.Stmt.stmt_assignment(target = field_expr, operator = "=", value = arg_expr))
@@ -26461,7 +26546,10 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     # The host returns the constructor into the declaring module's list, except
     # for the root `async main`, whose constructor joins the synthetic tail
     # (`functions.rb:224-240`).
-    let ctor_fn = ir.Function(name = name, linkage_name = link_base, params = ctor_params.as_span(), return_type = task_ty, body = ctor_body.as_span(), entry_point = false, method_receiver_param = false)
+    # The async constructor is a method when the function has a receiver (the
+    # host's `method_receiver_param: !binding.type.receiver_type.nil?`,
+    # `frame_builder.rb:329`).
+    let ctor_fn = ir.Function(name = name, linkage_name = link_base, params = ctor_params.as_span(), return_type = task_ty, body = ctor_body.as_span(), entry_point = false, method_receiver_param = receiver_ty_opt.is_some())
     if synthetic_ctor:
         ctx.pending_synthetic_functions.push(ctor_fn)
     else:

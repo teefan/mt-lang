@@ -703,3 +703,44 @@ function test_struct_event_methods_use_the_event_runtime() -> void:
     expect_contains(text, "__subscribe(")
     expect_contains(text, "__emit(")
     expect(not text.contains_substring("main_mt_subscribe"))
+
+
+@[test]
+function test_array_calls_materialize_in_value_positions_only() -> void:
+    ## The host's `prepare_call_expression_for_inline_lowering` hoists an
+    ## array-returning *call* into a `__mt_array_call_<N>` local in a value
+    ## position; a return/assignment/local whose own type is that array keeps
+    ## the inline call, and an intrinsic or constructor that merely lowers to a
+    ## node with an array type (`read(x)`, `array[T, N](…)`, `zero[…]`) is never
+    ## hoisted.
+    var source = <<-SRC
+        function make() -> array[ubyte, 4]:
+            return array[ubyte, 4](1, 2, 3, 4)
+
+        struct Box:
+            data: array[ubyte, 4]
+
+        extending Box:
+            function put(a: array[ubyte, 4]) -> void:
+                pass
+
+        function main() -> int:
+            var b: Box
+            b.put(make())
+            let local: array[ubyte, 4] = make()
+            var assigned: array[ubyte, 4] = zero[array[ubyte, 4]]
+            assigned = make()
+            return int<-local[0] + int<-assigned[0]
+    SRC
+    var c = compile_to_c(source)
+    defer: c.release()
+    let text = c.as_str()
+    # The argument position materializes once ...
+    expect_contains(text, "uint8_t __mt_array_call_1[4];")
+    expect_contains(text, "main_make(&__mt_array_call_1);")
+    expect_contains(text, "main_Box_put(&b, __mt_array_call_1);")
+    expect(not text.contains_substring("__mt_array_call_2"))
+    # ... while the array-typed local and assignment keep the direct call.
+    expect_contains(text, "uint8_t local[4];")
+    expect_contains(text, "main_make(&local);")
+    expect_contains(text, "main_make(&(assigned));")
