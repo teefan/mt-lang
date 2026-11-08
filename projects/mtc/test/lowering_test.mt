@@ -4936,7 +4936,10 @@ function test_async_guard_field_keeps_the_storage_type() -> void:
     defer: dump.release()
     let text = dump.as_str()
     expect(text.contains_substring("(IR::Field :name \"local_item\" :type (Types::Nullable :base (Types::Generic :name \"ptr\""))
-    expect(text.contains_substring("(IR::Assignment :target (IR::Name :name \"__mt_frame->local_item\" :type (Types::Nullable"))
+    # The initializer spills into the frame field as a member-expression target
+    # (the host's `async_frame_field_expression`), not the text `__mt_frame->…`.
+    expect(text.contains_substring("(IR::Assignment :target (IR::Member :receiver (IR::Name :name \"__mt_frame\""))
+    expect(text.contains_substring(":member \"local_item\" :type (Types::Nullable"))
 
 
 @[test]

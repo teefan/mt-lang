@@ -24,6 +24,8 @@ import mtc.ir as ir
 import mtc.loader.module_loader as loader
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.expressions as sem_exprs
+import mtc.semantic.control_flow.builder as flow_builder
+import mtc.semantic.control_flow.graph as flow_graph
 import mtc.semantic.types as types
 import mtc.parser.ast as ast
 import mtc.parser.literal_parsing as lparse
@@ -213,6 +215,10 @@ struct LowerCtx:
     # wake, return) instead of a native `return`.  Set during both the
     # no-await and the CPS resume body lowering.
     async_completion_active: bool
+    # True while lowering a no-await async body (the host's
+    # `lower_async_non_await_statements`): its plain locals are declared without
+    # a source line/path (the host's LocalDecl carries neither).
+    async_nonawait_body: bool
     # Same-module variant declarations, keyed by variant name, so arm
     # constructors and match arms can resolve discriminants and payload fields.
     variants: map_mod.Map[str, VariantInfo]
@@ -1181,6 +1187,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         mapping_replacements = map_mod.Map[str, ptr[ir.Expr]].create(),
         inside_async = false,
         async_completion_active = false,
+        async_nonawait_body = false,
         current_fn_return_type = types.primitive("void"),
         async_cps_active = false,
         async_frame_ptr_ty = types.primitive("void"),
@@ -1860,6 +1867,38 @@ function collect_opaque_decls(program: loader.Program) -> span[ir.OpaqueDecl]:
                     pass
             di += 1
         mi += 1
+    # Raw (external) modules' forward-declarable opaques (the host's
+    # `lower_imported_external_opaques`, `declarations.rb:194-203`): an
+    # unnamed external opaque (`opaque X`, no `= c"..."`) keeps its bare C name;
+    # a c-named opaque keeps its declared linkage and is not forward-declared.
+    var seen_raw = map_mod.Map[str, bool].create()
+    var ri: ptr_uint = 0
+    while ri < program.analyses.len():
+        let ra_ptr = program.analyses.get(ri) else:
+            break
+        var ra = unsafe: read(ra_ptr)
+        if is_raw_module(ra.module_kind):
+            var rdi: ptr_uint = 0
+            while rdi < ra.source_file.declarations.len:
+                var rd: ast.Decl
+                unsafe:
+                    rd = read(ra.source_file.declarations.data + rdi)
+                match rd:
+                    ast.Decl.decl_opaque as rop:
+                        if rop.c_name.is_none():
+                            let linkage = rop.name
+                            if naming.is_c_identifier(linkage) and not seen_raw.contains(linkage):
+                                seen_raw.set(linkage, true)
+                                opaques.push(ir.OpaqueDecl(
+                                    name = rop.name,
+                                    linkage_name = linkage,
+                                    forward_declarable = true,
+                                    source_module = Option[str].some(value = ra.module_name),
+                                ))
+                    _:
+                        pass
+                rdi += 1
+        ri += 1
     return opaques.as_span()
 
 
@@ -2908,6 +2947,23 @@ function resume_stmt_setup(ctx: ref[LowerCtx], saved: HoistSaved) -> void:
 function lower_block(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.Stmt]:
     var stmts = vec.Vec[ir.Stmt].create()
     push_defer_scope(ctx)
+    # The host lowers a nested body that contains no `await` with
+    # `lower_async_non_await_statements` (plain locals), even inside a CPS
+    # function; returns and `?` still complete the frame because
+    # `async_completion_active` stays set.  A block with an await keeps CPS.
+    let saved_cps_active = ctx.async_cps_active
+    if saved_cps_active and not async_mod.body_has_await(body_ptr):
+        # The host's async *analysis* records a frame field for every local
+        # declaration regardless of the lowering path, so register this body's
+        # fields up front (their lowering still uses plain locals).
+        async_register_body_local_fields(ctx, body_ptr)
+        ctx.async_cps_active = false
+    defer: ctx.async_cps_active = saved_cps_active
+    # A no-await async body's plain locals carry no source line/path (the
+    # host's `lower_async_non_await_statements` LocalDecl omits both).
+    let saved_nonawait = ctx.async_nonawait_body
+    ctx.async_nonawait_body = ctx.async_completion_active and not ctx.async_cps_active
+    defer: ctx.async_nonawait_body = saved_nonawait
     # Flow refinements are block-scoped: the host duplicates its env per block
     # (`block.rb:16`), so a refinement pushed while lowering this block's
     # statements must not escape it.
@@ -2946,10 +3002,35 @@ function lower_block(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.St
     # Run this block's defers on fall-through exit (skipped when the block
     # already ends in a terminator such as return/break/continue/goto, whose
     # lowering flushed the relevant defers itself).
-    if not stmts_terminate(stmts.as_span()):
+    # The host decides an async body's fall-through cleanup with its AST CFG
+    # (`cfg_block_always_terminates?`, `async_lowering.rb:314,747`); the sync
+    # path keeps its shallow IR check (`terminating_ir_statement?`).
+    var terminates = stmts_terminate(stmts.as_span())
+    if ctx.async_completion_active:
+        terminates = async_body_always_terminates(body_ptr)
+    if not terminates:
         flush_top_defers(ctx, ref_of(stmts))
     pop_defer_scope(ctx)
     return stmts.as_span()
+
+
+## True when the AST body always transfers control away (the host's
+## `cfg_block_always_terminates?`).
+function async_body_always_terminates(body_ptr: ptr[ast.Stmt]?) -> bool:
+    let b = body_ptr else:
+        return false
+    var cfg = flow_builder.empty_cfg()
+    defer: flow_builder.cfg_release(ref_of(cfg))
+    var graph = flow_graph.empty_graph()
+    defer: flow_graph.graph_release(ref_of(graph))
+    flow_builder.build_graph_into(ref_of(cfg), ref_of(graph), span[ast.Param](), b)
+    # The host builds the block with the graph's exit as its continuation and
+    # asks whether the exit is reachable (`Termination.block_always_terminates?`).
+    # `graph.entry_id` is the body entry `build_graph_body` returned.
+    let entry = graph.entry_id
+    if entry == 0:
+        return false
+    return not flow_graph.graph_reaches(ref_of(graph), entry, graph.exit_id)
 
 
 ## Lower a function/method/proc body with an isolated defer stack.  Generic
@@ -3301,13 +3382,15 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                 value_expr = alloc_expr(ir.Expr.expr_zero_init(ty = ty))
                             _:
                                 value_expr = nullable_some_literal(ty, value_expr)
+                let decl_line = if ctx.async_nonawait_body: 0z else: loc.line
+                let decl_path = if ctx.async_nonawait_body: "" else: ctx.analysis.source_path
                 output.push(ir.Stmt.stmt_local(
                     name = loc.name,
                     linkage_name = c_name,
                     ty = ty,
                     value = value_expr,
-                    line = loc.line,
-                    source_path = ctx.analysis.source_path,
+                    line = decl_line,
+                    source_path = decl_path,
                 ))
                 let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
                 emit_hoist_setup(output, hoist_base, hoist_collected)
@@ -3516,7 +3599,15 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     wrap.push(ir.Stmt.stmt_while(condition = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = ctx.bool_ty)), body = wbody.as_span()))
                     if contains_label_target(wbody.as_span(), bl):
                         wrap.push(ir.Stmt.stmt_label(name = bl))
-                    output.push(ir.Stmt.stmt_block(body = wrap.as_span()))
+                    # The host's CF path (`lower_async_cf_while_stmt`) emits the
+                    # while (and any break label) directly, without the sync
+                    # path's scoping block.
+                    var wi: ptr_uint = 0
+                    while wi < wrap.len():
+                        let wsp = wrap.get(wi) else:
+                            break
+                        output.push(unsafe: read(wsp))
+                        wi += 1
                     ctx.loop_break_label = saved_break
                     ctx.loop_continue_label = saved_continue
                     ctx.loop_defer_depth = saved_loop_depth
@@ -3553,7 +3644,17 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 wrap.push(ir.Stmt.stmt_while(condition = cond, body = body.as_span()))
                 if contains_label_target(body.as_span(), bl):
                     wrap.push(ir.Stmt.stmt_label(name = bl))
-                output.push(ir.Stmt.stmt_block(body = wrap.as_span()))
+                if ctx.async_cps_active:
+                    # The host's CF path emits the while directly (no scoping
+                    # block); only the sync path wraps it.
+                    var wi: ptr_uint = 0
+                    while wi < wrap.len():
+                        let wsp = wrap.get(wi) else:
+                            break
+                        output.push(unsafe: read(wsp))
+                        wi += 1
+                else:
+                    output.push(ir.Stmt.stmt_block(body = wrap.as_span()))
                 ctx.loop_break_label = saved_break
                 ctx.loop_continue_label = saved_continue
                 ctx.loop_continue_native = saved_continue_native
@@ -3807,13 +3908,25 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
             _:
                 pass
 
-    output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = line, source_path = ctx.analysis.source_path))
+    var storage_ref: ptr[ir.Expr]
+    if ctx.async_cps_active:
+        # The host's CF path spills the guard's storage to the frame field and
+        # binds the success name to that same field (no plain local, no copy).
+        let gfield = if name == "_": j2("local_discard_", pw1_str(line)) else: j2("local_", name)
+        async_register_unused_field(ctx, gfield, storage_ty)
+        let frame_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false)))
+        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_ref, member = gfield, ty = storage_ty)), operator = "=", value = value_ir))
+        # The guard condition reads the field as a member expression (the host's
+        # `async_frame_field_expression`); later binding reads use the text name.
+        storage_ref = alloc_expr(ir.Expr.expr_member(receiver = frame_ref, member = gfield, ty = storage_ty))
+    else:
+        output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = line, source_path = ctx.analysis.source_path))
+        storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = Option[bool].some(value = false)))
     let guard_cleanups = if format_owning_target_type(ctx, storage_ty, 0):
         drop_format_release_cleanups(hoist_collected)
     else:
         hoist_collected
     record_or_emit_local_cleanups(ctx, output, guard_cleanups.cleanups)
-    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = Option[bool].some(value = false)))
 
     let kind = guard_storage_kind(ctx, storage_ty)
 
@@ -3837,12 +3950,12 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
         # The frame field stores the *full* storage value (the host's spilled
         # guard storage, e.g. `Nullable(ptr[PendingReliable])`); reads of the
         # binding project the success value out of it, so a suspend/resume keeps
-        # the absent case as well as the payload.
+        # the absent case as well as the payload.  The field already holds the
+        # initializer (spilled above), so no copy is emitted.
         let gfield = j2("local_", name)
         let gcname = j2("__mt_frame->", gfield)
         async_register_unused_field(ctx, gfield, storage_ty)
         ctx.locals.push(LocalBinding(name = name, c_name = gcname, ty = success_ty, pointer = Option[bool].some(value = false), projection = guard_binding_projection(kind, storage_ty)))
-        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = gcname, ty = storage_ty, pointer = Option[bool].some(value = false))), operator = "=", value = storage_ref))
         return
     # No second local: reads project the success value out of the storage local.
     ctx.locals.push(LocalBinding(name = name, c_name = storage_c, ty = success_ty, pointer = Option[bool].some(value = false), projection = guard_binding_projection(kind, storage_ty)))
@@ -5636,6 +5749,9 @@ function lower_if_chain_at(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], br
     append_hoist_cleanups(ref_of(else_stmts), cond_collected)
     else_stmts.append_span(else_inner.as_span())
 
+    # A source-level `if` always carries an else body — an empty list when the
+    # source has none (the async normalizer materializes `else_body: []`, and
+    # the sync path's `lower_block(nil)` returns `[]`).
     output.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = else_stmts.as_span())))
     restore_flow_refinements(ctx, base_saved)
 
@@ -5692,9 +5808,15 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
                 lower_collection_for(ctx, output, index_name, iterables.data + 0, body_ptr)
                 return
 
+    # The host's `infer_range_loop_type`: an integer-literal bound takes the
+    # other bound's type, so `for i in 0..span.len` is a `ptr_uint` loop.
     var loop_type = expr_type(ctx, start)
-    if types.is_error(loop_type):
-        loop_type = expr_type(ctx, stop)
+    var stop_ty = expr_type(ctx, stop)
+    if not types.type_equals(loop_type, stop_ty):
+        if ast_is_integer_literal(start) and types.is_integer_type(stop_ty):
+            loop_type = stop_ty
+        else if ast_is_integer_literal(stop) and types.is_integer_type(loop_type):
+            stop_ty = loop_type
     if types.is_error(loop_type):
         loop_type = types.primitive("int")
 
@@ -5738,19 +5860,23 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
         body.push(ir.Stmt.stmt_label(name = cl))
 
     let index_ref = alloc_expr(ir.Expr.expr_name(name = index_linkage, ty = loop_type, pointer = Option[bool].some(value = false)))
+    # The host lowers both bounds with the loop type as the expected type
+    # (`lower_expression(..., expected_type: loop_type)`).
+    let start_value = int_literal_to_context_type(start, loop_type, lower_expr(ctx, start))
+    let stop_lowered = int_literal_to_context_type(stop, loop_type, lower_expr(ctx, stop))
     var init: ptr[ir.Stmt]
     if ctx.async_cps_active:
-        init = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "=", value = lower_expr(ctx, start)))
+        init = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "=", value = start_value))
     else:
         init = alloc_stmt(ir.Stmt.stmt_local(
             name = index_name,
             linkage_name = index_c,
             ty = loop_type,
-            value = lower_expr(ctx, start),
+            value = start_value,
             line = 0,
             source_path = "",
         ))
-    let stop_value = if inline_stop: lower_expr(ctx, stop) else: alloc_expr(ir.Expr.expr_name(name = stop_linkage, ty = loop_type, pointer = Option[bool].some(value = false)))
+    let stop_value = if inline_stop: stop_lowered else: alloc_expr(ir.Expr.expr_name(name = stop_linkage, ty = loop_type, pointer = Option[bool].some(value = false)))
     let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = stop_value, ty = ctx.bool_ty))
     let post_target = alloc_expr(ir.Expr.expr_name(name = index_linkage, ty = loop_type, pointer = Option[bool].some(value = false)))
     let one = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = loop_type))
@@ -5760,13 +5886,13 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
     var block_stmts = vec.Vec[ir.Stmt].create()
     if not inline_stop:
         if ctx.async_cps_active:
-            block_stmts.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = stop_linkage, ty = loop_type, pointer = Option[bool].some(value = false))), operator = "=", value = lower_expr(ctx, stop)))
+            block_stmts.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = stop_linkage, ty = loop_type, pointer = Option[bool].some(value = false))), operator = "=", value = stop_lowered))
         else:
             block_stmts.push(ir.Stmt.stmt_local(
                 name = stop_c,
                 linkage_name = stop_c,
                 ty = loop_type,
-                value = lower_expr(ctx, stop),
+                value = stop_lowered,
                 line = 0,
                 source_path = "",
             ))
@@ -5778,6 +5904,17 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
     ctx.loop_break_label = saved_break
     ctx.loop_continue_label = saved_continue
     ctx.loop_defer_depth = saved_loop_depth
+
+
+## True when `ep` is an integer-literal expression (the host's
+## `AST::IntegerLiteral` checks in `infer_range_loop_type`).
+function ast_is_integer_literal(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_integer_literal:
+                return true
+            _:
+                return false
 
 
 ## True when `ep` folds to a numeric compile-time constant (the host's
@@ -6787,18 +6924,31 @@ function lower_short_circuit_binary(
         restore_flow_refinements(ctx, right_flow_saved)
         let right_collected = collect_stmt_setup(ctx, right_saved)
         append_cleanup_stmts(ref_of(ctx.hoist_cleanups), right_collected.cleanups)
-        var then_body = vec.Vec[ir.Stmt].create()
+        # `and`: left true -> value = right, left false -> value = false.
+        # `or`:  left true -> value = true,  left false -> value = right.
+        # The host swaps the two branch bodies for `or`
+        # (`normalize_async_expression`'s BinaryOp arm).
+        var right_stmts = vec.Vec[ir.Stmt].create()
         var ri: ptr_uint = 0
         while ri < right_collected.stmts.len:
             let stmt = right_collected.stmts.get(ri) else:
                 break
-            then_body.push(unsafe: read(stmt))
+            right_stmts.push(unsafe: read(stmt))
             ri += 1
-        let then_target = alloc_expr(ir.Expr.expr_name(name = value_name, ty = bool_ty, pointer = Option[bool].some(value = false)))
-        then_body.push(ir.Stmt.stmt_assignment(target = then_target, operator = "=", value = right))
+        let right_target = alloc_expr(ir.Expr.expr_name(name = value_name, ty = bool_ty, pointer = Option[bool].some(value = false)))
+        let short_target = alloc_expr(ir.Expr.expr_name(name = value_name, ty = bool_ty, pointer = Option[bool].some(value = false)))
+        let right_assign = ir.Stmt.stmt_assignment(target = right_target, operator = "=", value = right)
+        let short_assign = ir.Stmt.stmt_assignment(target = short_target, operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = short_circuit_value, ty = bool_ty)))
+        var then_body = vec.Vec[ir.Stmt].create()
         var else_body = vec.Vec[ir.Stmt].create()
-        let else_target = alloc_expr(ir.Expr.expr_name(name = value_name, ty = bool_ty, pointer = Option[bool].some(value = false)))
-        else_body.push(ir.Stmt.stmt_assignment(target = else_target, operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = short_circuit_value, ty = bool_ty))))
+        if operator == "and":
+            append_span_stmts(ref_of(then_body), right_stmts.as_span())
+            then_body.push(right_assign)
+            else_body.push(short_assign)
+        else:
+            then_body.push(short_assign)
+            append_span_stmts(ref_of(else_body), right_stmts.as_span())
+            else_body.push(right_assign)
         ctx.hoist_stmts.push(ir.Stmt.stmt_if(condition = left, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = else_body.as_span())))
         return alloc_expr(ir.Expr.expr_name(name = value_name, ty = bool_ty, pointer = Option[bool].some(value = false)))
     let setup_base = ctx.hoist_stmts.len
@@ -12675,6 +12825,16 @@ function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method
     return Option[ptr[ir.Expr]].some(value = lower_monomorphized_method(ctx, info, gm, method_name, receiver, args))
 
 
+## True for the builtin generic constructors a method receiver can instantiate
+## (`ptr[T]`, `span[T]`, `array[T, N]`, ...).
+function is_builtin_generic_receiver_name(name: str) -> bool:
+    return (
+        name == "ptr" or name == "const_ptr" or name == "own" or name == "ref"
+        or name == "span" or name == "array" or name == "str_buffer"
+        or name == "atomic" or name == "Task" or name == "SoA" or name == "simd"
+    )
+
+
 ## The C linkage name for a monomorphized method instance.  Struct receivers use
 ## the module-qualified concrete-struct prefix (`std_vec_Vec_int_push`); prelude
 ## variant receivers (Option/Result) use the global concrete-variant prefix with
@@ -12694,6 +12854,17 @@ function monomorphized_method_c_name(owner_module: str, info: GenericReceiver, g
             buf.append("std_option_Option")
         else:
             buf.append("std_result_Result")
+    else if is_builtin_generic_receiver_name(info.owner_name) and gm.struct_param_names.len > 0:
+        # The host's receiver type at the declaration is the builtin instance
+        # over its type parameters, renamed `__receiver_argN`
+        # (`module_binding.rb:33`), so `extending ptr[T]` methods link as
+        # `ptr_receiver_arg0_<method>__<concrete args>`.
+        buf.append(info.owner_name)
+        var rpi: ptr_uint = 0
+        while rpi < gm.struct_param_names.len:
+            buf.append("_receiver_arg")
+            buf.append(pw1_str(rpi))
+            rpi += 1
     else:
         buf.append(naming.qualified_c_name(owner_module, info.owner_name))
     buf.append("_")
@@ -26588,6 +26759,14 @@ function async_stmt_terminates(sp: ptr[ir.Stmt]) -> bool:
 ## and vtable helpers.  Push into the output structs/functions collections.
 ## Supports both no-await (single-state) and full CPS (state-machine) paths.
 function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_ty_opt: Option[types.Type], receiver_editable: bool, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, functions: ref[vec.Vec[ir.Function]], synthetic_ctor: bool) -> void:
+    # Function-level state starts fresh (the host's per-function env): the
+    # fresh-temp counter, format destination and cstr metadata.
+    ctx.locals.clear()
+    ctx.temp_counter = 0
+    ctx.fmt_dest_name = ""
+    ctx.fmt_counter.clear()
+    ctx.fmt_counter_visible = false
+    ctx.cstr_backed_names.clear()
     # Reset async CPS state so a no-await function (or the next function) never
     # inherits a previous has-await function's frame state.
     ctx.async_cps_active = false
@@ -27379,6 +27558,17 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
         let annotated = local_decl_type(ctx, loc_stmt_type, hv)
         if not types.is_error(annotated):
             ty = annotated
+    # A literal initializer takes the declared type (the host's CF path lowers
+    # the value with `expected_type: storage_type`), so `var offset: ptr_uint = 0`
+    # stores a ptr_uint literal.
+    val_ir = contextual_value_to_type(
+        ctx,
+        hv,
+        ty,
+        val_ir,
+        loc_stmt_type != null and types.is_float_type(ty) and not is_foreign_call_initializer(ctx, hv),
+        false,
+    )
     # Wrap a non-nullable value into a value-type nullable's opt struct (mirrors
     # the normal stmt_local path), so `let m: int? = 5` stores `{has_value,value}`.
     if types.is_nullable_type(ty) and not is_nullable_pointer_like(ty):
