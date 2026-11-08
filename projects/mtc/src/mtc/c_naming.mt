@@ -62,6 +62,56 @@ public function sanitize_c_identifier(text: str) -> str:
     return result
 
 
+## The host's event-linkage part sanitizer (`Types::Event#linkage_name`,
+## `types.rb:750-755`): every maximal run of bytes outside `[A-Za-z0-9_]`
+## becomes one `_` — the regex's `+`, so unlike `sanitize_identifier` nothing is
+## collapsed or stripped beyond that (a generic payload's `Vec[int]` keeps its
+## trailing `_`: `Vec_int_`).
+public function sanitize_event_part(text: str) -> str:
+    var buf = string.String.create()
+    var previous_invalid = false
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = text.byte_at(i)
+        if is_alnum_byte(b) or b == '_':
+            buf.push_byte(b)
+            previous_invalid = false
+        else:
+            if not previous_invalid:
+                buf.push_byte('_')
+            previous_invalid = true
+        i += 1
+    return buf.as_str()
+
+
+## The host's `Types::Event#linkage_name`: `mt_event` + the sanitized module,
+## owner, name and payload `to_s` parts (empty ones dropped) + the capacity —
+## `mt_event_<module>_<owner>_<name>[_<payload>]_<capacity>`.
+public function event_linkage_name(module_name: str, owner: str, name: str, payload: Option[str], capacity: long) -> str:
+    var buf = string.String.create()
+    buf.append("mt_event")
+    append_event_part(ref_of(buf), module_name)
+    append_event_part(ref_of(buf), owner)
+    append_event_part(ref_of(buf), name)
+    match payload:
+        Option.some as p:
+            append_event_part(ref_of(buf), p.value)
+        Option.none:
+            pass
+    var cap_buf = string.String.create()
+    fmt.append_long(ref_of(cap_buf), capacity)
+    buf.append("_")
+    buf.append(cap_buf.as_str())
+    return buf.as_str()
+
+
+function append_event_part(buf: ref[string.String], text: str) -> void:
+    if text.len == 0:
+        return
+    buf.append("_")
+    buf.append(sanitize_event_part(text))
+
+
 ## The C struct name for a proc (closure) type — the host's `proc_type_name`
 ## (`type_system.rb:213-215`): `mt_proc_` + the sanitized `proc(<params>) -> <ret>`
 ## spelling (`Types::Proc#to_s`), so `proc(int) -> int` -> `mt_proc_proc_int_int`.

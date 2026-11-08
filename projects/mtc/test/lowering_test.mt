@@ -5483,3 +5483,107 @@ function test_return_value_temp_takes_the_function_return_type() -> void:
     defer: dump.release()
     let text = dump.as_str()
     expect(text.contains_substring("(IR::LocalDecl :name \"__mt_return_value_1\" :linkage_name \"__mt_return_value_1\" :type (Types::Nullable :base (Types::Generic :name \"own\""))
+
+
+@[test]
+function test_arithmetic_binary_operands_take_the_numeric_expected_type() -> void:
+    ## The host's `propagating_expected_type`: an arithmetic binary's numeric
+    ## expected type reaches both operands, so a bare float literal in a
+    ## `double` context is a double literal and the promotion casts the value
+    ## operand to `double` (`val / 4294967296.0` in a `-> double` function);
+    ## the same expression in a `-> float` function stays float.
+    var source = <<-SRC
+        function as_double(val: uint) -> double:
+            return val / 4294967296.0
+
+        function as_float(val: uint) -> float:
+            return val / 4294967296.0
+
+        function main() -> int:
+            return 0
+    SRC
+    var ir = lower_source(source)
+    defer: ir.release()
+    let text = ir.as_str()
+    expect(text.contains_substring("double<-val"))
+    expect(text.contains_substring("float<-val"))
+
+
+@[test]
+function test_event_runtimes_are_owner_qualified() -> void:
+    ## The host's `Types::Event#linkage_name` carries the declaring struct's
+    ## owner and payload segments (`mt_event_<mod>_<owner>_<name>[_<payload>]_<cap>`)
+    ## while the event struct's IR name stays the bare event name; two
+    ## same-named events in different structs stay distinct.  Module events'
+    ## runtimes lead (the host's `lower_globals`), the shared `Subscription`
+    ## struct precedes every per-event struct, and the builtin `EventError` enum
+    ## is a program-level synthetic enum.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_event_owner_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        struct Window:
+            event closed[4]
+
+        event late_event[2]
+
+        struct Container:
+            struct Inner:
+                event updated[4](int)
+            inner: Inner
+
+        function main() -> int:
+            return 0
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    expect(dumped.contains_substring("(IR::StructDecl :name \"Subscription\" :linkage_name \"mt_subscription\""))
+    expect(dumped.contains_substring("(IR::EnumDecl :name \"EventError\" :linkage_name \"EventError\""))
+    expect(dumped.contains_substring("(IR::StructDecl :name \"closed\" :linkage_name \"mt_event_main_Window_closed_4\""))
+    expect(dumped.contains_substring("(IR::StructDecl :name \"late_event\" :linkage_name \"mt_event_main_late_event_2\""))
+    expect(dumped.contains_substring("(IR::StructDecl :name \"updated\" :linkage_name \"mt_event_main_Container_Inner_updated_int_4\""))
+    expect(dumped.contains_substring("(IR::Field :name \"__event_closed\" :type (Types::Event :name \"closed\" :capacity 4 :payload_type nil))"))
+    expect(dumped.contains_substring("(IR::Field :name \"__event_updated\" :type (Types::Event :name \"updated\" :capacity 4 :payload_type (Types::Primitive :name \"int\")))"))
+    # Module events are ensured before struct events, so `late_event` (declared
+    # after `Window`) precedes `Window.closed`.
+    let late_at = dumped.find_substring("mt_event_main_late_event_2").unwrap_or(dumped.len)
+    let closed_at = dumped.find_substring("mt_event_main_Window_closed_4").unwrap_or(dumped.len)
+    expect(late_at < closed_at)
+
+
+@[test]
+function test_await_reuses_the_spilled_local_field() -> void:
+    ## The host's `reusable_async_await_task_field_name`: an await whose task is
+    ## a spilled local or parameter reuses that binding's frame field and skips
+    ## the `await_<N>` allocation; an await on a call still gets one.
+    var source = <<-SRC
+        async function fetch_value() -> int:
+            return 1
+
+        async function run() -> int:
+            let waited = fetch_value()
+            let direct = await fetch_value()
+            let reused = await waited
+            return direct + reused
+
+        function main() -> int:
+            return 0
+    SRC
+    var ir = lower_source(source)
+    defer: ir.release()
+    let text = ir.as_str()
+    expect(text.contains_substring("local_waited"))
+    expect(text.contains_substring("await_0"))
+    expect(not text.contains_substring("await_1"))

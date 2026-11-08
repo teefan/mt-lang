@@ -549,9 +549,16 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
                 ev_fields.push(field_value("payload_type", types_value(ctx, unsafe: read(ev_payload))))
             return node("Types::Event", ev_fields.as_span())
         types.Type.ty_named as n:
+            # The host's built-in event support types are their own classes: the
+            # `Subscription` handle renders as `(Types::Subscription)` and
+            # `EventError` as the builtin enum (`type_declaration.rb:38,79`).
+            if n.module_name.len == 0 and n.name == "Subscription":
+                return node("Types::Subscription", span[SexprField]())
             var nf = vec.Vec[SexprField].create()
             nf.push(field_str("name", n.name))
             nf.push(field_module_name("module_name", n.module_name))
+            if n.module_name.len == 0 and n.name == "EventError":
+                return node("Types::Enum", nf.as_span())
             # A module-qualified named type classifies through the qualified
             # kind map like an imported one (`std.c.box2d.b2HexColor` is the raw
             # module's enum, and no IR declaration carries it).

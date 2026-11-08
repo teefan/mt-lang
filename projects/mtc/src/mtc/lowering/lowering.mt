@@ -295,6 +295,10 @@ struct LowerCtx:
     # Pending synthetic declarations emitted during event lowering, appended after
     # the main module iteration.
     pending_event_functions: vec.Vec[ir.Function]
+    # Synthetic enums (the builtin `EventError`), the host's
+    # `@artifacts.synthetic_enums`; appended after every module's enums at the
+    # program level, deduped by linkage.
+    pending_synthetic_enums: vec.Vec[ir.EnumDecl]
     # Pending generic variant declarations emitted during type qualification.
     pending_generic_variants: vec.Vec[ir.VariantDecl]
     # Concrete proc value structs (`mt_proc_*`).  The host's C backend collects
@@ -442,6 +446,9 @@ struct EventRuntimeInfo:
     name: str
     linkage_name: str
     capacity: ptr_uint
+    ## The declaring struct's sanitized owner path, empty for a module-level
+    ## event (the host's `Types::Event#owner_type_name`).
+    owner: str
     has_payload: bool
     payload_type: types.Type
     slot_c_name: str
@@ -459,6 +466,46 @@ struct EventRuntimeInfo:
     wait_release_c_name: str
     wait_take_result_c_name: str
     wait_result_ty: types.Type
+
+
+## The runtime's `Types::Event` value type (the host's `Types::Event`): the
+## initialized `milkTea/debugInfo`/dump form carries name, capacity and payload,
+## while the C backend renders it through the linkage.
+function event_value_type(info: ref[EventRuntimeInfo]) -> types.Type:
+    var ev_payload: ptr[types.Type]? = null
+    if info.has_payload:
+        ev_payload = types.alloc_type(info.payload_type)
+    return types.Type.ty_event(
+        name = info.name,
+        capacity = info.capacity,
+        payload_type = ev_payload,
+        linkage_name = info.event_c_name,
+    )
+
+
+## The typed stateless listener: the host's `event_listener_function_type`,
+## `fn <event>__listener(payload?) -> void`.
+function event_listener_type(info: ref[EventRuntimeInfo]) -> types.Type:
+    var params = vec.Vec[types.Type].create()
+    var names = vec.Vec[str].create()
+    if info.has_payload:
+        params.push(info.payload_type)
+        names.push("payload")
+    return types.Type.ty_function(name = j2(info.name, "__listener"), params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
+
+
+## The typed stateful listener: the host's `event_stateful_listener_function_type`,
+## `fn <event>__stateful_listener(ptr[void], payload?) -> void`.
+function event_stateful_listener_type(info: ref[EventRuntimeInfo]) -> types.Type:
+    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+    var params = vec.Vec[types.Type].create()
+    var names = vec.Vec[str].create()
+    params.push(void_ptr_ty)
+    names.push("state")
+    if info.has_payload:
+        params.push(info.payload_type)
+        names.push("payload")
+    return types.Type.ty_function(name = j2(info.name, "__stateful_listener"), params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
 
 
 # =============================================================================
@@ -635,6 +682,7 @@ public function lower(program: loader.Program) -> ir.Program:
     var module_fragments = vec.Vec[ir.Program].create()
     var module_analyses = vec.Vec[analyzer.Analysis].create()
     var synthetic_functions = vec.Vec[ir.Function].create()
+    var synthetic_enums = vec.Vec[ir.EnumDecl].create()
     while i < count:
         let a_ptr = program.analyses.get(i) else:
             i += 1
@@ -644,7 +692,7 @@ public function lower(program: loader.Program) -> ir.Program:
             i += 1
             continue
         let is_root = i == program.root_index
-        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(pending_synthetic_structs), ref_of(synthetic_functions), ref_of(spec_infos))
+        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(pending_synthetic_structs), ref_of(synthetic_functions), ref_of(synthetic_enums), ref_of(spec_infos))
         module_fragments.push(fragment)
         module_analyses.push(analysis)
         globals.append_span(fragment.globals)
@@ -666,6 +714,20 @@ public function lower(program: loader.Program) -> ir.Program:
             efx += 1
         # Functions are appended after the loop, reordered per module.
         i += 1
+
+    # Synthetic enums (the builtin `EventError`) follow every module's enums —
+    # the host's `all_enums.concat(@artifacts.synthetic_enums.uniq {
+    # |e| e.linkage_name })`.
+    var seen_enums = map_mod.Map[str, bool].create()
+    var se_i: ptr_uint = 0
+    while se_i < synthetic_enums.len():
+        let en_decl_ptr = synthetic_enums.get(se_i) else:
+            break
+        var en_decl = unsafe: read(en_decl_ptr)
+        if not seen_enums.contains(en_decl.linkage_name):
+            seen_enums.set(en_decl.linkage_name, true)
+            enums.push(en_decl)
+        se_i += 1
 
     # Synthetic value structs registered while lowering (the host's
     # `synthetic_structs` synthetics) follow the module declarations.  The
@@ -1101,6 +1163,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         str_buffer_structs = map_mod.Map[str, str].create(),
         event_runtimes = map_mod.Map[str, EventRuntimeInfo].create(),
         pending_event_functions = vec.Vec[ir.Function].create(),
+        pending_synthetic_enums = vec.Vec[ir.EnumDecl].create(),
         pending_generic_variants = vec.Vec[ir.VariantDecl].create(),
         pending_proc_structs = vec.Vec[ir.StructDecl].create(),
         pending_synthetic_structs = vec.Vec[ir.StructDecl].create(),
@@ -1386,7 +1449,7 @@ function append_selected_when_decls(ctx: ref[LowerCtx], discriminant: ptr[ast.Ex
             pass
 
 
-function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]], synthetic_functions: ref[vec.Vec[ir.Function]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> ir.Program:
+function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]], synthetic_functions: ref[vec.Vec[ir.Function]], synthetic_enums: ref[vec.Vec[ir.EnumDecl]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> ir.Program:
     var ctx = new_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)))
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
@@ -1415,6 +1478,21 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
             _:
                 decls.push(wd)
         wi += 1
+
+    # The host's `lower_globals` ensures every module-level event's runtime
+    # before any struct declaration lowers, so the synthetic structs' creation
+    # order leads with the module events in declaration order, then each
+    # struct's own events in struct order.
+    var evi: ptr_uint = 0
+    while evi < decls.len():
+        let ev_decl_ptr = decls.get(evi) else:
+            break
+        match unsafe: read(ev_decl_ptr):
+            ast.Decl.decl_event as ev:
+                let _ = ensure_event_runtime(ref_of(ctx), "", ev.name)
+            _:
+                pass
+        evi += 1
 
     var i: ptr_uint = 0
     while i < decls.len():
@@ -1596,7 +1674,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                                 Option.none:
                                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr), line = c.line, path = ctx.analysis.source_path))
             ast.Decl.decl_event as ev:
-                var info = ensure_event_runtime(ctx, ev.name)
+                var info = ensure_event_runtime(ctx, "", ev.name)
                 # The global's declared type is the event itself (`Types::Event`),
                 # whose C name is the runtime struct; the linkage name is the
                 # module-qualified event name.
@@ -1658,6 +1736,14 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         let sf_ptr = sf_iter.next() else:
             break
         synthetic_functions.push(unsafe: read(sf_ptr))
+
+    # Synthetic enums (the builtin `EventError`) join the program-level list;
+    # `lower()` appends them after every module's enums.
+    var se_iter = ctx.pending_synthetic_enums.iter()
+    while true:
+        let se_ptr = se_iter.next() else:
+            break
+        synthetic_enums.push(unsafe: read(se_ptr))
 
     var ds_iter = ctx.pending_dyn_structs.iter()
     while true:
@@ -4218,7 +4304,7 @@ function guard_failure_condition(ctx: ref[LowerCtx], kind: str, storage_ty: type
         # mt_subscription is a plain struct without nullable/null wrapper;
         # failure is indicated by slot == 0.
         let tn = named_type_name(storage_ty)
-        if tn.is_some() and tn.unwrap() == "mt_subscription":
+        if tn.is_some() and (tn.unwrap() == "Subscription" or tn.unwrap() == "mt_subscription"):
             let slot_expr = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "slot", ty = types.primitive("ptr_uint")))
             let zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0z, ty = types.primitive("ptr_uint")))
             return alloc_expr(ir.Expr.expr_binary(operator = "==", left = slot_expr, right = zero, ty = bool_ty))
@@ -6826,8 +6912,21 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                             return alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = fn_ty, pointer = Option[bool].some(value = false)))
                         if ctx.analysis.events.contains(id.name):
                             # The event's global is emitted under its
-                            # module-qualified linkage name.
-                            return alloc_expr(ir.Expr.expr_name(name = naming.qualified_c_name(ctx.module_name, id.name), ty = expr_type(ctx, ep), pointer = Option[bool].some(value = false)))
+                            # module-qualified linkage name, and its read type is
+                            # the event itself (`Types::Event`) — the host's
+                            # binding carries `Types::Event`, not a plain named
+                            # type.
+                            var ev_info = ensure_event_runtime(ctx, "", id.name)
+                            var ev_payload: ptr[types.Type]? = null
+                            if ev_info.has_payload:
+                                ev_payload = types.alloc_type(ev_info.payload_type)
+                            let ev_ty = types.Type.ty_event(
+                                name = id.name,
+                                capacity = ev_info.capacity,
+                                payload_type = ev_payload,
+                                linkage_name = ev_info.event_c_name,
+                            )
+                            return alloc_expr(ir.Expr.expr_name(name = naming.qualified_c_name(ctx.module_name, id.name), ty = ev_ty, pointer = Option[bool].some(value = false)))
                         match lookup_qualified_constant(ctx, id.name):
                             Option.some as qc:
                                 # A module-level value's read carries its *declared*
@@ -6944,6 +7043,17 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                     let hr = int_literal_to_context_type(bin.right, harm_lt, right)
                     if hr != right:
                         right = hr
+                # The recorded result type carries the host's propagated expected
+                # type: a bare float literal in an arithmetic binary takes it,
+                # so `next_double`'s `val / 4294967296.0` promotes both operands
+                # to `double` (the analyzer's hint propagation records the
+                # contextual type).  An explicit `f`/`d` suffix keeps its own
+                # type.
+                if is_pure_arithmetic_operator(bin.operator) and types.is_float_type(result_ty):
+                    if is_bare_float_literal(bin.left) and not types.type_equals(ir_expr_type(left), result_ty):
+                        left = float_literal_to_context_type(bin.left, result_ty, left)
+                    if is_bare_float_literal(bin.right) and not types.type_equals(ir_expr_type(right), result_ty):
+                        right = float_literal_to_context_type(bin.right, result_ty, right)
                 # Re-type a *bare* float literal operand against a float peer
                 # (`payload.value == 2.718…` with a `double` peer stays a double
                 # literal — the host's contextual literal inference).  An explicit
@@ -13210,14 +13320,93 @@ function strip_event_cap_suffix(name: str) -> str:
 
 function is_any_event_suffix(ctx: ref[LowerCtx], name: str) -> bool:
     let base = strip_event_cap_suffix(name)
-    var iter = ctx.analysis.events.keys()
+    var iter = ctx.analysis.events.entries()
     while true:
-        let kp = iter.next() else:
+        if not iter.next():
             break
         unsafe:
-            if base.ends_with(read(kp)):
+            let info = read(iter.current().value)
+            # A struct event's linkage carries its sanitized owner segment
+            # (`Window_closed`, `Container_Inner_updated`), so match that stem
+            # rather than the registry key's dotted form.
+            var stem = info.name
+            if info.owner_type_name.len > 0:
+                stem = j3(info.owner_type_name, "_", info.name)
+            if base.ends_with(stem):
                 return true
     return false
+
+
+## The event declared by `owner` (a sanitized owner path) under `name`, the
+## host's struct-scoped `Types::Struct#event` lookup.  A struct's own map is the
+## only one consulted — a module-level event of the same name must not claim a
+## plain field.
+function event_info_for_owner(ctx: ref[LowerCtx], owner: str, name: str) -> Option[analyzer.EventInfo]:
+    let key = analyzer.event_registry_key(owner, name)
+    let keyed = ctx.analysis.events.get(key)
+    if keyed != null:
+        return Option[analyzer.EventInfo].some(value = unsafe: read(keyed))
+    return Option[analyzer.EventInfo].none
+
+
+## The sanitized owner path of an expression's receiver type — the host's
+## `event_member_from_owner_type` unwrap ladder: `Window` for a top-level
+## struct, `Container_Inner` for a nested one (its type links as
+## `<module>_Container_Inner`), and the unwrapped element for `ptr`/`const_ptr`/
+## `ref`/`own`/nullable wrappers.
+function event_owner_for_receiver(ctx: ref[LowerCtx], t: types.Type) -> str:
+    var base = t
+    while true:
+        match base:
+            types.Type.ty_nullable as nl:
+                base = unsafe: read(nl.base)
+            types.Type.ty_generic as g:
+                if (g.name == "ptr" or g.name == "const_ptr" or g.name == "ref" or g.name == "own") and g.args.len == 1:
+                    base = unsafe: read(g.args.data + 0)
+                else:
+                    return ""
+            _:
+                break
+    match base:
+        types.Type.ty_named as n:
+            match n.linkage_name:
+                Option.some as lk:
+                    let prefix = j2(naming.sanitize_event_part(ctx.module_name), "_")
+                    let linkage = lk.value
+                    if linkage.len > prefix.len and linkage.starts_with(prefix):
+                        return linkage.slice(prefix.len, linkage.len - prefix.len)
+                    return n.name
+                Option.none:
+                    return n.name
+        types.Type.ty_imported as im:
+            return im.name
+        _:
+            return ""
+
+
+## The event a member access names on a receiver of type `recv_ty`, if any.
+function event_info_for_receiver(ctx: ref[LowerCtx], recv_ty: types.Type, member: str) -> Option[analyzer.EventInfo]:
+    return event_info_for_owner(ctx, event_owner_for_receiver(ctx, recv_ty), member)
+
+
+## The runtime of an event-typed receiver (`window.closed.emit()`): a
+## `ty_event` carries the runtime linkage the member access already resolved, so
+## look the runtime up by it; a bare module-level event name resolves directly.
+function event_runtime_for_type(ctx: ref[LowerCtx], t: types.Type) -> EventRuntimeInfo:
+    match t:
+        types.Type.ty_event as e:
+            var iter = ctx.event_runtimes.entries()
+            while true:
+                if not iter.next():
+                    break
+                unsafe:
+                    let info = read(iter.current().value)
+                    if info.event_c_name == e.linkage_name:
+                        return info
+        _:
+            pass
+    let ev_name = event_name_from_type(t)
+    return ensure_event_runtime(ctx, "", ev_name)
 
 
 function event_name_from_c_linkage(name: str) -> str:
@@ -13226,33 +13415,73 @@ function event_name_from_c_linkage(name: str) -> str:
     return base
 
 
-## Create the EventError enum (backing: int).  Returns the named type.
+## Create the EventError enum (backing: int) — the host's
+## `ensure_event_error_enum` pushes the builtin enum into
+## `@artifacts.synthetic_enums` once.  Returns the named type.
 function ensure_event_error_enum(ctx: ref[LowerCtx]) -> types.Type:
     if not ctx.event_error_emitted:
+        let int_ty = types.primitive("int")
+        var members = vec.Vec[ir.EnumMember].create()
+        members.push(ir.EnumMember(
+            name = "full",
+            linkage_name = "EventError_full",
+            value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = int_ty)),
+        ))
+        ctx.pending_synthetic_enums.push(ir.EnumDecl(
+            name = "EventError",
+            linkage_name = "EventError",
+            backing_type = int_ty,
+            members = members.as_span(),
+            is_flags = false,
+        ))
         ctx.event_error_emitted = true
     return types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "EventError")
 
 
 ## Ensure event runtime structs are declared (slot type, event type, subscript type).
 ## Called lazily on first event method call.
-function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRuntimeInfo:
-    let existing_ptr = ctx.event_runtimes.get(event_name)
+function ensure_event_runtime(ctx: ref[LowerCtx], owner: str, event_name: str) -> EventRuntimeInfo:
+    let runtime_key = analyzer.event_registry_key(owner, event_name)
+    let existing_ptr = ctx.event_runtimes.get(runtime_key)
     if existing_ptr != null:
         return unsafe: read(existing_ptr)
-    let ev_ptr = ctx.analysis.events.get(event_name) else:
+    var ev_ptr = ctx.analysis.events.get(runtime_key)
+    if ev_ptr == null and owner.len > 0:
+        ev_ptr = ctx.analysis.events.get(event_name)
+    let found_ev = ev_ptr else:
         fatal(c"ensure_event_runtime: event not found")
-    var ev = unsafe: read(ev_ptr)
+    var ev = unsafe: read(found_ev)
     let ptr_uint_ty = types.primitive("ptr_uint")
     let bool_ty = ctx.bool_ty
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
-    let raw_linkage = naming.qualified_c_name(ctx.module_name, event_name)
-    var cap_buf = string.String.create()
-    fmt.append_long(ref_of(cap_buf), long<-(ev.capacity))
-    let linkage_with_cap = j3(raw_linkage, "_", cap_buf.as_str())
-    let linkage = j2("mt_event_", linkage_with_cap)
+    var has_payload = false
+    var payload_ty = ctx.void_ty
+    if ev.payload_type != null:
+        has_payload = true
+        let pt = ev.payload_type else:
+            fatal(c"ensure_event_runtime: payload type is null")
+        payload_ty = resolve_type_ref(ctx, pt)
+    var payload_name: Option[str] = Option[str].none
+    if has_payload:
+        payload_name = Option[str].some(value = naming.type_to_s_qualified(payload_ty))
+    let linkage = naming.event_linkage_name(ctx.module_name, ev.owner_type_name, event_name, payload_name, long<-(ev.capacity))
     let slot_cn = j2(linkage, "__slot")
     let snapshot_cn = j2(linkage, "__snapshot")
     let event_cn = linkage
+    # Subscription struct: { slot, generation } — the shared handle.  The host's
+    # `ensure_subscription_runtime` runs before the first per-event struct, and
+    # its IR name is the builtin type's `Subscription` (linkage
+    # `mt_subscription`).
+    if not ctx.subscription_emitted:
+        ctx.pending_synthetic_structs.push(ir.StructDecl(
+            name = "Subscription", linkage_name = "mt_subscription",
+            fields = sp_field2(
+                ir.Field(name = "slot", ty = ptr_uint_ty),
+                ir.Field(name = "generation", ty = ptr_uint_ty),
+            ),
+            packed = false, alignment = 0, source_module = Option[str].none,
+        ))
+        ctx.subscription_emitted = true
     # Slot struct: { active, once, generation, state, listener, wait_frame }
     ctx.pending_synthetic_structs.push(ir.StructDecl(
         name = slot_cn, linkage_name = slot_cn,
@@ -13280,33 +13509,6 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
         ),
         packed = false, alignment = 0, source_module = Option[str].none,
     ))
-    # Event struct: { slots: array[Slot, capacity] }
-    let capacity_val: long = long<-(ev.capacity)
-    let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = slot_cn)
-    let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(capacity_val)))
-    ctx.pending_synthetic_structs.push(ir.StructDecl(
-        name = event_cn, linkage_name = event_cn,
-        fields = sp_field1(ir.Field(name = "slots", ty = slot_arr_ty)),
-        packed = false, alignment = 0, source_module = Option[str].none,
-    ))
-    # Subscript struct: { slot, generation }
-    if not ctx.subscription_emitted:
-        ctx.pending_synthetic_structs.push(ir.StructDecl(
-            name = "mt_subscription", linkage_name = "mt_subscription",
-            fields = sp_field2(
-                ir.Field(name = "slot", ty = ptr_uint_ty),
-                ir.Field(name = "generation", ty = ptr_uint_ty),
-            ),
-            packed = false, alignment = 0, source_module = Option[str].none,
-        ))
-        ctx.subscription_emitted = true
-    var has_payload = false
-    var payload_ty = ctx.void_ty
-    if ev.payload_type != null:
-        has_payload = true
-        let pt = ev.payload_type else:
-            fatal(c"ensure_event_runtime: payload type is null")
-        payload_ty = resolve_type_ref(ctx, pt)
     let event_error_ty = ensure_event_error_enum(ctx)
     var wait_result_args = vec.Vec[types.Type].create()
     if has_payload:
@@ -13324,14 +13526,26 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
             ir.Field(name = "waiter_frame", ty = void_ptr_ty),
             ir.Field(name = "waiter", ty = wake_fn_ty),
             ir.Field(name = "event", ty = void_ptr_ty),
-            ir.Field(name = "subscription", ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "mt_subscription")),
+            ir.Field(name = "subscription", ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription")),
             ir.Field(name = "result", ty = wait_result_ty),
         ),
+        packed = false, alignment = 0, source_module = Option[str].none,
+    ))
+    # Event struct: { slots: array[Slot, capacity] }.  Its IR name is the bare
+    # event name (the host's `Types::Event#name`) while the linkage carries the
+    # module/owner/name/payload/capacity identity.
+    let capacity_val: long = long<-(ev.capacity)
+    let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = slot_cn)
+    let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(capacity_val)))
+    ctx.pending_synthetic_structs.push(ir.StructDecl(
+        name = event_name, linkage_name = event_cn,
+        fields = sp_field1(ir.Field(name = "slots", ty = slot_arr_ty)),
         packed = false, alignment = 0, source_module = Option[str].none,
     ))
     var info = EventRuntimeInfo(
         name = event_name, linkage_name = linkage, capacity = ptr_uint<-(ev.capacity),
         has_payload = has_payload, payload_type = payload_ty,
+        owner = ev.owner_type_name,
         slot_c_name = slot_cn, event_c_name = event_cn,
         subscribe_c_name = j2(linkage, "__subscribe"),
         subscribe_once_c_name = j2(linkage, "__subscribe_once"),
@@ -13341,13 +13555,13 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
         emit_c_name = j2(linkage, "__emit"),
         wait_c_name = j2(linkage, "__wait"),
         wait_frame_c_name = wait_frame_cn,
-        wait_ready_c_name = j2(linkage, "__wait_ready"),
-        wait_set_waiter_c_name = j2(linkage, "__wait_set_waiter"),
-        wait_release_c_name = j2(linkage, "__wait_release"),
-        wait_take_result_c_name = j2(linkage, "__wait_take_result"),
+        wait_ready_c_name = j2(linkage, "__wait__ready"),
+        wait_set_waiter_c_name = j2(linkage, "__wait__set_waiter"),
+        wait_release_c_name = j2(linkage, "__wait__release"),
+        wait_take_result_c_name = j2(linkage, "__wait__take_result"),
         wait_result_ty = wait_result_ty,
     )
-    ctx.event_runtimes.set(event_name, info)
+    ctx.event_runtimes.set(runtime_key, info)
     ctx.pending_event_functions.push(build_event_subscribe_fn(ctx, ref_of(info), slot_cn, event_cn, false))
     ctx.pending_event_functions.push(build_event_subscribe_fn(ctx, ref_of(info), slot_cn, event_cn, true))
     ctx.pending_event_functions.push(build_event_subscribe_stateful_fn(ctx, ref_of(info), slot_cn, event_cn, false))
@@ -13364,11 +13578,27 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
 
 ## Generates calls to per-event typed functions (mt_event_NAME__emit etc.).
 function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: types.Type, method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
-    let ev_name = event_name_from_type(recv_ty)
-    var info = ensure_event_runtime(ctx, ev_name)
+    var info = event_runtime_for_type(ctx, recv_ty)
     let void_ty = ctx.void_ty
     let bool_ty = ctx.bool_ty
-    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.event_c_name)))
+    # The receiver pointer's element type is the event itself (`ptr[Types::Event]`
+    # in the host's `lower_event_storage_pointer`), which the C backend renders
+    # through the event's linkage name.
+    var recv_event_ty = recv_ty
+    match recv_event_ty:
+        types.Type.ty_event:
+            pass
+        _:
+            var ev_payload: ptr[types.Type]? = null
+            if info.has_payload:
+                ev_payload = types.alloc_type(info.payload_type)
+            recv_event_ty = types.Type.ty_event(
+                name = info.name,
+                capacity = info.capacity,
+                payload_type = ev_payload,
+                linkage_name = info.event_c_name,
+            )
+    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(recv_event_ty))
     let recv_addr = alloc_expr(ir.Expr.expr_address_of(expression = recv, ty = event_ptr_ty))
     if method_name == "emit":
         var call_args = vec.Vec[ir.Expr].create()
@@ -13393,14 +13623,17 @@ function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: typ
             let state_val = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
             unsafe:
                 call_args.push(read(state_val))
-            let listener_val = lower_listener_arg(ctx, unsafe: read(args.data + 1).arg_value)
+            let listener_val = lower_expr(ctx, unsafe: read(args.data + 1).arg_value)
             unsafe:
                 call_args.push(read(listener_val))
         else:
-            let listener_val = lower_listener_arg(ctx, unsafe: read(args.data + 0).arg_value)
+            # The plain listener is the typed `fn <event>__listener(...) -> void`;
+            # the host's contextual lowering passes the function value directly
+            # (only the stateful form, whose slot stores a `void*`, casts).
+            let listener_val = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
             unsafe:
                 call_args.push(read(listener_val))
-        let sub_plain_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "mt_subscription")
+        let sub_plain_ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription")
         let event_error_ty = ensure_event_error_enum(ctx)
         var result_args = vec.Vec[types.Type].create()
         result_args.push(sub_plain_ty)
@@ -13438,14 +13671,15 @@ function build_event_subscribe_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo
     let bool_ty = ctx.bool_ty
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    let sub_plain_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "mt_subscription")
+    let sub_plain_ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription")
     let event_error_ty = ensure_event_error_enum(ctx)
     var result_args = vec.Vec[types.Type].create()
     result_args.push(sub_plain_ty)
     result_args.push(event_error_ty)
     let sub_result_ty = ensure_generic_variant(ctx, "Result", result_args.as_span())
     let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = slot_cn)
-    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = event_cn)))
+    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(event_value_type(info)))
+    let listener_ty = event_listener_type(info)
     let callee = if once: info.subscribe_once_c_name else: info.subscribe_c_name
     var body = vec.Vec[ir.Stmt].create()
     let index_name = "i"
@@ -13469,7 +13703,7 @@ function build_event_subscribe_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "once", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = once, ty = bool_ty))))
     loop_body.push(ir.Stmt.stmt_assignment(target = gen_ref, operator = "=", value = gen_snap))
-    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "listener", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "listener", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "listener", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_cast(target_type = void_ptr_ty, expression = alloc_expr(ir.Expr.expr_name(name = "listener", ty = listener_ty, pointer = Option[bool].some(value = false))), ty = void_ptr_ty))))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "state", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "wait_frame", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))))
     # Return Result.success(value = {slot, generation}).
@@ -13499,8 +13733,8 @@ function build_event_subscribe_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo
     body.push(ir.Stmt.stmt_return(value = fail_val, line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
-    params.push(ir.Param(name = "listener", linkage_name = "listener", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = callee, linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    params.push(ir.Param(name = "listener", linkage_name = "listener", ty = listener_ty, pointer = Option[bool].some(value = false)))
+    return ir.Function(name = j2(callee, "_fn"), linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
 
 
 ## Build a per-event stateful subscribe (or subscribe_once) synthetic function.
@@ -13511,14 +13745,14 @@ function build_event_subscribe_stateful_fn(ctx: ref[LowerCtx], info: ref[EventRu
     let bool_ty = ctx.bool_ty
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    let sub_plain_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "mt_subscription")
+    let sub_plain_ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription")
     let event_error_ty = ensure_event_error_enum(ctx)
     var result_args = vec.Vec[types.Type].create()
     result_args.push(sub_plain_ty)
     result_args.push(event_error_ty)
     let sub_result_ty = ensure_generic_variant(ctx, "Result", result_args.as_span())
     let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = slot_cn)
-    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = event_cn)))
+    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(event_value_type(info)))
     var callee: str
     if once:
         callee = info.subscribe_once_stateful_c_name
@@ -13578,7 +13812,7 @@ function build_event_subscribe_stateful_fn(ctx: ref[LowerCtx], info: ref[EventRu
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "state", linkage_name = "state", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "listener", linkage_name = "listener", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = callee, linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(callee, "_fn"), linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
 
 
 ## Build a per-event unsubscribe synthetic function.
@@ -13586,8 +13820,8 @@ function build_event_unsubscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, e
     let bool_ty = types.primitive("bool")
     let ptr_uint_ty = types.primitive("ptr_uint")
     let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = slot_cn)
-    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = event_cn)))
-    let sub_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "mt_subscription")
+    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(event_value_type(info)))
+    let sub_ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription")
     var body = vec.Vec[ir.Stmt].create()
     let sub_ref = alloc_expr(ir.Expr.expr_name(name = "subscription", ty = sub_ty, pointer = Option[bool].some(value = false)))
     let sub_slot = alloc_expr(ir.Expr.expr_member(receiver = sub_ref, member = "slot", ty = ptr_uint_ty))
@@ -13609,7 +13843,7 @@ function build_event_unsubscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, e
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "subscription", linkage_name = "subscription", ty = sub_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = info.unsubscribe_c_name, linkage_name = info.unsubscribe_c_name, params = params.as_span(), return_type = bool_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(info.unsubscribe_c_name, "_fn"), linkage_name = info.unsubscribe_c_name, params = params.as_span(), return_type = bool_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
 
 
 ## Build a per-event emit synthetic function.
@@ -13619,7 +13853,7 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
     let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = slot_cn)
-    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = event_cn)))
+    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(event_value_type(info)))
     var body = vec.Vec[ir.Stmt].create()
     let index_name = "i"
     let index_ref = alloc_expr(ir.Expr.expr_name(name = index_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
@@ -13680,14 +13914,7 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
         let payload_ref2 = alloc_expr(ir.Expr.expr_name(name = "payload", ty = info.payload_type, pointer = Option[bool].some(value = false)))
         unsafe:
             stateful_call_args.push(read(payload_ref2))
-    var stateful_fn_params = vec.Vec[types.Type].create()
-    var stateful_fn_names = vec.Vec[str].create()
-    stateful_fn_params.push(void_ptr_ty)
-    stateful_fn_names.push("state")
-    if info.has_payload:
-        stateful_fn_params.push(info.payload_type)
-        stateful_fn_names.push("payload")
-    let stateful_fn_ty = types.Type.ty_function(name = "", params = stateful_fn_params.as_span(), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = stateful_fn_names.as_span())
+    let stateful_fn_ty = event_stateful_listener_type(info)
     let stateful_fn_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(stateful_fn_ty))
     let stateful_cast = alloc_expr(ir.Expr.expr_cast(target_type = stateful_fn_ptr_ty, expression = slot_listener, ty = stateful_fn_ptr_ty))
     stateful_call_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = stateful_cast, arguments = stateful_call_args.as_span(), ty = void_ty)), line = 0, source_path = ""))
@@ -13699,12 +13926,7 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
         let payload_ref = alloc_expr(ir.Expr.expr_name(name = "payload", ty = info.payload_type, pointer = Option[bool].some(value = false)))
         unsafe:
             call_args.push(read(payload_ref))
-    var listener_fn_params = vec.Vec[types.Type].create()
-    var listener_fn_names = vec.Vec[str].create()
-    if info.has_payload:
-        listener_fn_params.push(info.payload_type)
-        listener_fn_names.push("payload")
-    let void_fn_ty = types.Type.ty_function(name = "", params = listener_fn_params.as_span(), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = listener_fn_names.as_span())
+    let void_fn_ty = event_listener_type(info)
     let fn_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_fn_ty))
     let cast_listener = alloc_expr(ir.Expr.expr_cast(target_type = fn_ptr_ty, expression = slot_listener, ty = fn_ptr_ty))
     call_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cast_listener, arguments = call_args.as_span(), ty = void_ty)), line = 0, source_path = ""))
@@ -13723,7 +13945,7 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     if info.has_payload:
         params.push(ir.Param(name = "payload", linkage_name = "payload", ty = info.payload_type, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = info.emit_c_name, linkage_name = info.emit_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(info.emit_c_name, "_fn"), linkage_name = info.emit_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
 
 
 ## Build a per-event wait ready vtable function.
@@ -13742,7 +13964,7 @@ function build_event_wait_ready_fn(info: ref[EventRuntimeInfo], slot_cn: str, ev
     body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "ready", ty = bool_ty)), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = info.wait_ready_c_name, linkage_name = info.wait_ready_c_name, params = params.as_span(), return_type = bool_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(info.wait_ready_c_name, "_fn"), linkage_name = info.wait_ready_c_name, params = params.as_span(), return_type = bool_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
 
 
 ## Build a per-event wait set_waiter vtable function.
@@ -13778,7 +14000,7 @@ function build_event_wait_set_waiter_fn(info: ref[EventRuntimeInfo], slot_cn: st
     params.push(ir.Param(name = "waiter_frame", linkage_name = "waiter_frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     let waiter_cb_ty = types.Type.ty_function(name = "", params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = sp_str("frame"))
     params.push(ir.Param(name = "waiter", linkage_name = "waiter", ty = waiter_cb_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = info.wait_set_waiter_c_name, linkage_name = info.wait_set_waiter_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(info.wait_set_waiter_c_name, "_fn"), linkage_name = info.wait_set_waiter_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
 
 
 ## Build a per-event wait release vtable function.
@@ -13797,7 +14019,7 @@ function build_event_wait_release_fn(info: ref[EventRuntimeInfo], slot_cn: str, 
     body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = info.wait_release_c_name, linkage_name = info.wait_release_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(info.wait_release_c_name, "_fn"), linkage_name = info.wait_release_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
 
 
 ## Build a per-event wait take_result vtable function.
@@ -13818,7 +14040,7 @@ function build_event_wait_take_result_fn(info: ref[EventRuntimeInfo], slot_cn: s
     body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "result", ty = info.wait_result_ty)), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = info.wait_take_result_c_name, linkage_name = info.wait_take_result_c_name, params = params.as_span(), return_type = info.wait_result_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(info.wait_take_result_c_name, "_fn"), linkage_name = info.wait_take_result_c_name, params = params.as_span(), return_type = info.wait_result_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
 
 
 ## Build the per-event wait function.
@@ -13831,7 +14053,7 @@ function build_event_wait_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], sl
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
     let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.wait_frame_c_name)))
     let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = slot_cn)
-    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = event_cn)))
+    let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(event_value_type(info)))
     var body = vec.Vec[ir.Stmt].create()
     let index_name = "i"
     let index_ref = alloc_expr(ir.Expr.expr_name(name = index_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
@@ -13865,11 +14087,11 @@ function build_event_wait_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], sl
     let wf_void = alloc_expr(ir.Expr.expr_cast(target_type = void_ptr_ty, expression = wf_ref, ty = void_ptr_ty))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "wait_frame", ty = void_ptr_ty)), operator = "=", value = wf_void))
     # Build sub literal for slot/generation
-    var sub_literal = alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "mt_subscription"), fields = sp_fields2(
+    var sub_literal = alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription"), fields = sp_fields2(
         ir.AggregateField(name = "slot", value = index_ref),
         ir.AggregateField(name = "generation", value = gen_snap),
     )))
-    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "subscription", ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "mt_subscription"))), operator = "=", value = sub_literal))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "subscription", ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription"))), operator = "=", value = sub_literal))
     # Build task literal
     let task_ty = make_task_type(info.wait_result_ty)
     var tf = vec.Vec[ir.AggregateField].create()
@@ -13893,7 +14115,7 @@ function build_event_wait_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], sl
     body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = task_ty, fields = fail_tf.as_span())), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = info.wait_c_name, linkage_name = info.wait_c_name, params = params.as_span(), return_type = task_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(info.wait_c_name, "_fn"), linkage_name = info.wait_c_name, params = params.as_span(), return_type = task_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
 
 
 ## Build a span from a single IR statement.
@@ -13951,27 +14173,6 @@ function sp_field7(f1: ir.Field, f2: ir.Field, f3: ir.Field, f4: ir.Field, f5: i
     buf.push(f6)
     buf.push(f7)
     return buf.as_span()
-
-
-## Lower a listener argument for event subscribe calls.  When the argument is a
-## plain function name, use the raw C function name (avoid fn→proc coercion
-## which creates a temporary proc struct); otherwise fall back to lower_expr.
-function lower_listener_arg(ctx: ref[LowerCtx], arg: ptr[ast.Expr]) -> ptr[ir.Expr]:
-    unsafe:
-        match read(arg):
-            ast.Expr.expr_identifier as id:
-                if ctx.function_returns.contains(id.name) or ctx.analysis.functions.contains(id.name):
-                    let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
-                    let void_ty = ctx.void_ty
-                    let void_fn_ty = types.Type.ty_function(name = "", params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = span[str]())
-                    return alloc_expr(ir.Expr.expr_cast(
-                        target_type = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty)),
-                        expression = alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = void_fn_ty, pointer = Option[bool].some(value = false))),
-                        ty = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty)),
-                    ))
-            _:
-                pass
-    return lower_expr(ctx, arg)
 
 
 ## Lower a str_buffer[N] method call to a C helper call or inline operation.
@@ -16883,7 +17084,7 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                 if id.name == "EventError" and member == "full":
                     return alloc_expr(ir.Expr.expr_name(
                         name = "EventError_full",
-                        ty = expr_type(ctx, ep),
+                        ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "EventError"),
                         pointer = Option[bool].some(value = false),
                     ))
                 if ctx.analysis.static_member_types.contains(id.name):
@@ -17119,23 +17320,40 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                                             _:
                                                 pass
     # An event field is stored under its hidden C name (`__event_<name>`) and
-    # typed as the event, as the host's member-name resolution routes it.
+    # typed as the event, as the host's `event_member_from_owner_type` routes it
+    # through the receiver struct's own event map.
     var member_name = member
     var member_type = member_ty
-    if is_event_type(ctx, member_ty):
-        member_name = j2("__event_", member)
-        let ev_name = event_name_from_type(member_ty)
-        if ctx.analysis.events.contains(ev_name):
-            var ev_info = ensure_event_runtime(ctx, ev_name)
+    match event_info_for_receiver(ctx, recv_ty, member):
+        Option.some as evi:
+            member_name = j2("__event_", member)
+            var ev_info = ensure_event_runtime(ctx, evi.value.owner_type_name, member)
             var ev_payload: ptr[types.Type]? = null
             if ev_info.has_payload:
                 ev_payload = types.alloc_type(ev_info.payload_type)
             member_type = types.Type.ty_event(
-                name = ev_name,
+                name = evi.value.name,
                 capacity = ev_info.capacity,
                 payload_type = ev_payload,
                 linkage_name = ev_info.event_c_name,
             )
+        Option.none:
+            # A member already typed as an event (an imported event, a
+            # module-level registration) keeps its bare-name resolution.
+            if is_event_type(ctx, member_ty):
+                member_name = j2("__event_", member)
+                let ev_name = event_name_from_type(member_ty)
+                if ctx.analysis.events.contains(ev_name):
+                    var ev_info = ensure_event_runtime(ctx, "", ev_name)
+                    var ev_payload: ptr[types.Type]? = null
+                    if ev_info.has_payload:
+                        ev_payload = types.alloc_type(ev_info.payload_type)
+                    member_type = types.Type.ty_event(
+                        name = ev_name,
+                        capacity = ev_info.capacity,
+                        payload_type = ev_payload,
+                        linkage_name = ev_info.event_c_name,
+                    )
     var result = alloc_expr(ir.Expr.expr_member(
         receiver = recv,
         member = member_name,
@@ -17320,8 +17538,13 @@ function opaqueify_type(ctx: ref[LowerCtx], ty: types.Type) -> types.Type:
 
 function lower_struct_decl(ctx: ref[LowerCtx], name: str, packed: bool, alignment: int, qualified: Option[str], linkage_base: str) -> Option[ir.StructDecl]:
     var fields_ptr: ptr[span[analyzer.FieldEntry]]? = null
+    # The owner segment of the struct's events: the declared path sanitized the
+    # way the host's `Types::Event#linkage_name` sanitizes `owner_type_name`
+    # (`Container.Inner` -> `Container_Inner`).
+    var owner = naming.sanitize_event_part(name)
     match qualified:
         Option.some as qn:
+            owner = naming.sanitize_event_part(qn.value)
             fields_ptr = ctx.analysis.structs.get(qn.value)
         Option.none:
             pass
@@ -17343,18 +17566,21 @@ function lower_struct_decl(ctx: ref[LowerCtx], name: str, packed: bool, alignmen
         # `lower_struct_decl` emits it (`Types::Event#hidden_field_name`).
         match fty:
             types.Type.ty_named as nt:
-                if ctx.analysis.events.contains(nt.name):
-                    var info = ensure_event_runtime(ctx, nt.name)
-                    var ev_payload: ptr[types.Type]? = null
-                    if info.has_payload:
-                        ev_payload = types.alloc_type(info.payload_type)
-                    fty = types.Type.ty_event(
-                        name = nt.name,
-                        capacity = info.capacity,
-                        payload_type = ev_payload,
-                        linkage_name = info.event_c_name,
-                    )
-                    fname = j2("__event_", nt.name)
+                match event_info_for_owner(ctx, owner, nt.name):
+                    Option.some as evi:
+                        var info = ensure_event_runtime(ctx, evi.value.owner_type_name, nt.name)
+                        var ev_payload: ptr[types.Type]? = null
+                        if info.has_payload:
+                            ev_payload = types.alloc_type(info.payload_type)
+                        fty = types.Type.ty_event(
+                            name = nt.name,
+                            capacity = info.capacity,
+                            payload_type = ev_payload,
+                            linkage_name = info.event_c_name,
+                        )
+                        fname = j2("__event_", nt.name)
+                    Option.none:
+                        pass
             _:
                 pass
         # A `str_buffer[N]` used only as a struct field still needs its backing
@@ -20416,6 +20642,11 @@ function cast_to_type(ep: ptr[ir.Expr], target: types.Type) -> ptr[ir.Expr]:
 function enum_backing_or_self(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
     match t:
         types.Type.ty_named as n:
+            # The builtin event enum has no AST declaration to scan; its backing
+            # is the host's `Types::Enum` int (`type_declaration.rb`'s builtin
+            # registration).
+            if n.name == "EventError" and n.module_name.len == 0:
+                return types.primitive("int")
             match lookup_enum_backing(ctx, ctx.module_name, n.name):
                 Option.some as b:
                     return b.value
@@ -26643,7 +26874,7 @@ function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], e
                 # (`async_frame_field_expression`), not the `__mt_frame->…` text
                 # Name (which stays for reads).
                 let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = field_name, ty = result_ty))
-                async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target))
+                async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target), inner)
                 return alloc_ast_expr(ast.Expr.expr_identifier(name = tmp, line = 0, column = 0))
             ast.Expr.expr_binary_op as b:
                 let l = async_hoist_awaits(ctx, output, b.left)
@@ -26688,7 +26919,7 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
             let result_ty = extract_task_element_type(ctx, task_ty)
             async_register_unused_field(ctx, field_name, result_ty)
             let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = field_name, ty = result_ty))
-            async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target))
+            async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target), direct_await_inner(dv))
         else:
             let value_ir = lower_expr(ctx, dv)
             let value_ty = ir_expr_type(value_ir)
@@ -26713,7 +26944,7 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
         let result_ty = extract_task_element_type(ctx, task_ty)
         async_register_local_field(ctx, loc_name, field_name, frame_cname, result_ty)
         let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = field_name, ty = result_ty))
-        async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target))
+        async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target), direct_await_inner(v))
         return
 
     # Hoist any embedded awaits (inside `?`, arithmetic, calls, etc.) into temp
@@ -26762,7 +26993,7 @@ function lower_async_await_into(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
     let task_ir = lower_expr(ctx, task_ep)
     let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
     let result_ty = extract_task_element_type(ctx, task_ty)
-    async_emit_await(ctx, output, task_ir, task_ty, result_ty, target)
+    async_emit_await(ctx, output, task_ir, task_ty, result_ty, target, task_ep)
 
 
 ## The type of an awaited expression, normalized to a `Task[T]`.  A cross-module
@@ -26781,31 +27012,64 @@ function normalize_awaited_task_type(t: types.Type) -> types.Type:
     return make_task_type(t)
 
 
+## The frame field an awaited task identifier already spills to — the host's
+## `reusable_async_await_task_field_name`: `await waited` on a spilled local or a
+## parameter reuses that binding's field and skips the `await_<N>` allocation
+## (and its store; the value is already there).
+function async_reusable_await_field(ctx: ref[LowerCtx], task_ep: ptr[ast.Expr]?) -> str:
+    let ep = task_ep else:
+        return ""
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier as id:
+                var i = ctx.locals.len()
+                while i > 0:
+                    i -= 1
+                    let lb_ptr = ctx.locals.get(i) else:
+                        break
+                    let lb = read(lb_ptr)
+                    if lb.name == id.name:
+                        let prefix = "__mt_frame->"
+                        if lb.c_name.starts_with(prefix):
+                            return lb.c_name.slice(prefix.len, lb.c_name.len - prefix.len)
+                        return ""
+                return ""
+            _:
+                return ""
+
+
 ## Core await lowering: store the task in `frame->await_N`, guard on `ready`,
 ## suspend (register waiter + return) if not ready, then resume at `state_<N+1>`,
 ## take the result into `target`, and release the child task.
-function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], task_ir: ptr[ir.Expr], task_ty: types.Type, result_ty: types.Type, target: Option[ptr[ir.Expr]]) -> void:
+function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], task_ir: ptr[ir.Expr], task_ty: types.Type, result_ty: types.Type, target: Option[ptr[ir.Expr]], task_ep: ptr[ast.Expr]?) -> void:
     let ptr_void = async_mod.ptr_void_type()
     let bool_ty = ctx.bool_ty
     let int_ty = types.primitive("int")
     let void_ty = ctx.void_ty
     let idx = ctx.async_await_counter
     ctx.async_await_counter = idx + 1
-    let await_field = j2("await_", int_to_str(int<-idx))
-    # Push through the pointer when set (immune to ctx reassignment by nested
-    # lower_async_fn calls), otherwise push to the ctx vec directly.
-    let afp = ctx.async_await_fields_ptr
-    if afp != null:
-        unsafe: read(afp).push(ir.Field(name = await_field, ty = task_ty))
+    let reusable = async_reusable_await_field(ctx, task_ep)
+    var await_field: str
+    if reusable.len > 0:
+        await_field = reusable
     else:
-        ctx.async_await_fields.push(ir.Field(name = await_field, ty = task_ty))
+        await_field = j2("await_", int_to_str(int<-idx))
+        # Push through the pointer when set (immune to ctx reassignment by nested
+        # lower_async_fn calls), otherwise push to the ctx vec directly.
+        let afp = ctx.async_await_fields_ptr
+        if afp != null:
+            unsafe: read(afp).push(ir.Field(name = await_field, ty = task_ty))
+        else:
+            ctx.async_await_fields.push(ir.Field(name = await_field, ty = task_ty))
     let next_state = int<-idx + 1
 
     let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false)))
     let await_ref = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = await_field, ty = task_ty))
 
-    # frame->await_N = <task>
-    output.push(ir.Stmt.stmt_assignment(target = await_ref, operator = "=", value = task_ir))
+    # frame->await_N = <task> (skipped when the task already lives in the reused
+    # local's field — the host's `unless await_info[:reuse_existing_storage]`).
+    if reusable.len == 0:
+        output.push(ir.Stmt.stmt_assignment(target = await_ref, operator = "=", value = task_ir))
 
     # if (!frame->await_N.ready(frame->await_N.frame)) { state=N+1; set_waiter; return; }
     # Task member accesses carry the Task struct's field types (the host's

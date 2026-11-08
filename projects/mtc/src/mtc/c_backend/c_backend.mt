@@ -339,9 +339,6 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     if uses_builtin_helpers(program):
         emit_builtin_helpers(ref_of(e))
 
-    if uses_event_runtime(program):
-        emit_event_helpers(ref_of(e))
-
     if uses_foreign_cstr_helper(funcs):
         emit_foreign_cstr_helper(ref_of(e))
         emit_line(ref_of(e), "")
@@ -6565,43 +6562,6 @@ function emit_format_string_helpers(e: ref[Emitter]) -> void:
 #  Event runtime helpers
 # =============================================================================
 
-
-
-function uses_event_runtime(program: ir.Program) -> bool:
-
-    var i: ptr_uint = 0
-
-    while i < program.functions.len:
-
-        unsafe:
-
-            let f = read(program.functions.data + i)
-
-            if body_calls(f.body, "mt_event_subscribe") or body_calls(f.body, "mt_event_subscribe_once") or body_calls(f.body, "mt_event_unsubscribe") or body_calls(f.body, "mt_event_emit"):
-                return true
-
-        i += 1
-
-    # Also detect per-event synthetic functions whose linkage names contain
-    # `mt_event_` (e.g. `mt_event_examples_event_stress_test_...__subscribe`).
-    i = 0
-    while i < program.functions.len:
-        unsafe:
-            if read(program.functions.data + i).linkage_name.starts_with("mt_event_"):
-                return true
-        i += 1
-
-    return false
-
-
-
-
-
-function emit_event_helpers(e: ref[Emitter]) -> void:
-
-    emit_line(e, "typedef int32_t EventError;")
-    emit_line(e, "enum { EventError_full = 0 };")
-    emit_line(e, "")
 
 
 #  Parallel / detach runtime helpers

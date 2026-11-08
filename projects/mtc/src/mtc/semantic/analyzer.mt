@@ -144,6 +144,11 @@ public struct EventInfo:
     name: str
     capacity: int
     payload_type: ptr[ast.TypeRef]?
+    ## The declaring struct's sanitized owner path (`Window`,
+    ## `Container_Inner`), empty for a module-level event.  Mirrors the host's
+    ## `Types::Event#owner_type_name`, which the linkage uses to keep two
+    ## same-named events in different structs distinct.
+    owner_type_name: str
 
 
 ## The public export surface of a module, consumed by importers for cross-module
@@ -1184,7 +1189,7 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
                 ctx.type_param_names.set(s.name, s.type_params)
                 ctx.implemented.set(s.name, s.impl_list)
                 register_nested_struct_types(ctx, s.nested_types, s.name)
-                register_struct_events(ctx, s.struct_events)
+                register_struct_events(ctx, s.struct_events, s.name)
             ast.Decl.decl_union as u:
                 declare_type(ctx, u.name, u.line, u.column)
                 ctx.types.set(u.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = u.name))
@@ -1216,7 +1221,7 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
                 ctx.type_aliases.set(ta.name, ta.target)
             ast.Decl.decl_event as ev:
                 declare_type(ctx, ev.name, ev.line, ev.column)
-                ctx.event_types.set(ev.name, EventInfo(name = ev.name, capacity = ev.capacity, payload_type = ev.payload_type))
+                ctx.event_types.set(ev.name, EventInfo(name = ev.name, capacity = ev.capacity, payload_type = ev.payload_type, owner_type_name = ""))
             _:
                 pass
         i += 1
@@ -1310,21 +1315,36 @@ function register_nested_struct_types(ctx: ref[Context], nested: span[ast.Decl],
                     ctx.types.set(s.name, nested_ty)
                 register_module_type_name(ctx, qname)
                 register_nested_struct_types(ctx, s.nested_types, qname)
-                register_struct_events(ctx, s.struct_events)
+                register_struct_events(ctx, s.struct_events, qname)
             _:
                 pass
         i += 1
 
 
+## The registry key of an event declared by `owner_type_name` (a sanitized
+## owner path such as `Container_Inner`; empty for a module-level event).  The
+## host keys its event types by the full `Types::Event` identity, so an owner
+## keeps two same-named events in different structs distinct.
+public function event_registry_key(owner_type_name: str, name: str) -> str:
+    if owner_type_name.len == 0:
+        return name
+    var buf = string.String.create()
+    buf.append(owner_type_name)
+    buf.append(".")
+    buf.append(name)
+    return buf.as_str()
+
+
 ## Register event types and values from a struct's event declarations, so
 ## struct-member event access (`window.closed.emit()`) resolves correctly.
-function register_struct_events(ctx: ref[Context], events: span[ast.Decl]) -> void:
+function register_struct_events(ctx: ref[Context], events: span[ast.Decl], owner: str) -> void:
+    let owner_key = naming.sanitize_event_part(owner)
     var i: ptr_uint = 0
     while i < events.len:
         unsafe:
             match read(events.data + i):
                 ast.Decl.decl_event as ev:
-                    ctx.event_types.set(ev.name, EventInfo(name = ev.name, capacity = ev.capacity, payload_type = ev.payload_type))
+                    ctx.event_types.set(event_registry_key(owner_key, ev.name), EventInfo(name = ev.name, capacity = ev.capacity, payload_type = ev.payload_type, owner_type_name = owner_key))
                 _:
                     pass
         i += 1
@@ -1812,11 +1832,14 @@ function register_event_methods(ctx: ref[Context]) -> void:
         if not entries.next():
             break
         unsafe:
-            let key = read(entries.current().key)
-            ctx.method_keys.set(method_key(key, "emit"), true)
-            ctx.method_keys.set(method_key(key, "subscribe"), true)
-            ctx.method_keys.set(method_key(key, "subscribe_once"), true)
-            ctx.method_keys.set(method_key(key, "unsubscribe"), true)
+            # The method table is keyed by the receiver *type name* (the bare
+            # event name), not the registry key: a struct event's declared type
+            # renders as its short name.
+            let info = read(entries.current().value)
+            ctx.method_keys.set(method_key(info.name, "emit"), true)
+            ctx.method_keys.set(method_key(info.name, "subscribe"), true)
+            ctx.method_keys.set(method_key(info.name, "subscribe_once"), true)
+            ctx.method_keys.set(method_key(info.name, "unsubscribe"), true)
 
 
 function fn_sig_no_params(type_name: str, method_name: str, return_type: types.Type) -> FnSig:
@@ -5626,6 +5649,24 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
         else:
             mark_required_unsafe(ctx)
     if types.is_numeric(lt) and types.is_numeric(rt):
+        # The host's `propagating_expected_type`: an arithmetic binary's numeric
+        # expected type reaches both operands, so a bare float literal in a
+        # float context takes that type (`val / 4294967296.0` in a `next_double`
+        # body is a double binary) and the promoted result is the context's.
+        let hint = ctx.expected_type_hint
+        if types.is_float_type(hint) and is_arithmetic_binary_op(op):
+            var lt_eff = lt
+            var rt_eff = rt
+            if is_bare_float_literal_expr(left):
+                lt_eff = hint
+            if is_bare_float_literal_expr(right):
+                rt_eff = hint
+            if not types.type_equals(lt_eff, lt) or not types.type_equals(rt_eff, rt):
+                match exprs.common_numeric_type(lt_eff, rt_eff):
+                    Option.some as common:
+                        return common.value
+                    Option.none:
+                        pass
         # A literal operand adapts to the other operand's numeric type, so
         # `48 + value` types as `value`'s type and `1 << uint<-x` as uint —
         # mirrors Ruby's harmonize_binary_integer_literal_types /
@@ -5680,6 +5721,23 @@ function is_bare_integer_literal(ep: ptr[ast.Expr]) -> bool:
                 return true
             _:
                 return false
+
+
+## A bare float literal — no `f`/`d` suffix — takes an expected float type
+## (the host's `AST::FloatLiteral` inference checks the lexeme first).
+function is_bare_float_literal_expr(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_float_literal as lit:
+                return not (lit.lexeme.ends_with("f") or lit.lexeme.ends_with("d"))
+            _:
+                return false
+
+
+## The arithmetic operators whose numeric expected type propagates to the
+## operands (the host's `propagating_expected_type`: `+ - * / % << >>`).
+function is_arithmetic_binary_op(op: str) -> bool:
+    return op == "+" or op == "-" or op == "*" or op == "/" or op == "%" or op == "<<" or op == ">>"
 
 
 ## A float literal, optionally under unary +/- (Ruby's float_literal_expression?).
