@@ -5564,6 +5564,47 @@ function test_event_runtimes_are_owner_qualified() -> void:
 
 
 @[test]
+function test_no_await_async_frame_registers_local_fields() -> void:
+    ## The host's async analysis records every local declaration's frame field
+    ## even when the body has no awaits (`local_socket` in the async examples):
+    ## the body lowers plain C locals, so the field is dead, but the frame
+    ## carries it.  A call through a function-typed member initializes the local
+    ## with the member's return type (`h.run(1)` -> bool).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_noawait_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        struct Handler:
+            run: fn(arg: int) -> bool
+
+        async function no_await(h: Handler) -> int:
+            let result = h.run(1)
+            if result:
+                return 1
+            return 0
+
+        function main() -> int:
+            return 0
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    expect(dumped.contains_substring("(IR::StructDecl :name \"main_no_await__frame\""))
+    expect(dumped.contains_substring("(IR::Field :name \"local_result\" :type (Types::Primitive :name \"bool\"))"))
+
+
+@[test]
 function test_await_reuses_the_spilled_local_field() -> void:
     ## The host's `reusable_async_await_task_field_name`: an await whose task is
     ## a spilled local or parameter reuses that binding's frame field and skips

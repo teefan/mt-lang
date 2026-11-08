@@ -26457,6 +26457,15 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     else:
         # No awaits: single-state body.  Returns complete the frame inline (the
         # host's `lower_async_non_await_statements` + `async_complete_statements`).
+        # The host's async analysis still records every local declaration's
+        # `local_<name>` frame field (the body lowers plain locals, so the field
+        # is dead, but the frame carries it).
+        var noawait_locals = ctx.async_local_fields
+        let saved_nf_ptr = ctx.async_local_fields_ptr
+        ctx.async_local_fields_ptr = ptr_of(noawait_locals)
+        async_register_body_local_fields(ctx, body)
+        ctx.async_local_fields = noawait_locals
+        ctx.async_local_fields_ptr = saved_nf_ptr
         ctx.async_frame_ptr_ty = frame_ptr_ty
         ctx.async_result_ty = res_ty
         ctx.async_result_is_void = is_void_ret
@@ -26902,6 +26911,96 @@ function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], e
                 return alloc_ast_expr(ast.Expr.expr_unsafe(expression = async_hoist_awaits(ctx, output, us.expression), line = us.line, column = us.column))
             _:
                 return ep
+
+
+## Register the frame fields the host's async analysis records for every local
+## declaration, even in a no-await body.  The host's
+## `analyze_async_statements!` records a `local_<name>` field (storage type) for
+## each declaration up front; a no-await body lowers its locals as plain C
+## locals, so the field is dead — but the frame carries it, and the dump
+## compares the frame.
+function async_register_body_local_fields(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?) -> void:
+    let b = body else:
+        return
+    async_register_stmt_local_fields(ctx, unsafe: read(b))
+
+
+## The storage type of a no-await async local's initializer.  A call through a
+## function-typed member (`task.ready(task.frame)`) records the *member's* type
+## on the call node (`fn(ptr[void]) -> bool`); the call's value type is that
+## function's return type, as the lowering's own call path computes it.  A
+## function-returning method call keeps its recorded type.
+function async_local_value_type(ctx: ref[LowerCtx], val: ptr[ast.Expr]) -> types.Type:
+    unsafe:
+        match read(val):
+            ast.Expr.expr_call as cl:
+                match read(cl.callee):
+                    ast.Expr.expr_member_access:
+                        match expr_type(ctx, val):
+                            types.Type.ty_function as fnt:
+                                return unsafe: read(fnt.return_type)
+                            _:
+                                pass
+                    _:
+                        pass
+            _:
+                pass
+    return expr_type(ctx, val)
+
+
+function async_register_stmt_local_fields(ctx: ref[LowerCtx], stmt: ast.Stmt) -> void:
+    match stmt:
+        ast.Stmt.stmt_block as blk:
+            var i: ptr_uint = 0
+            while i < blk.statements.len:
+                async_register_stmt_local_fields(ctx, unsafe: read(blk.statements.data + i))
+                i += 1
+        ast.Stmt.stmt_local as l:
+            var is_destructure = false
+            match l.destructure_bindings:
+                Option.some:
+                    is_destructure = true
+                Option.none:
+                    pass
+            if l.name != "_" and not is_destructure:
+                var storage_ty = ctx.void_ty
+                let val = l.value
+                if l.else_body != null:
+                    # A guarded local's frame storage is the value's own type.
+                    if val != null:
+                        storage_ty = async_local_value_type(ctx, unsafe: ptr[ast.Expr]<-val)
+                else if l.stmt_type != null:
+                    if val != null:
+                        storage_ty = local_decl_type(ctx, l.stmt_type, unsafe: ptr[ast.Expr]<-val)
+                    else:
+                        storage_ty = resolve_type_ref(ctx, unsafe: ptr[ast.TypeRef]<-l.stmt_type)
+                else if val != null:
+                    storage_ty = async_local_value_type(ctx, unsafe: ptr[ast.Expr]<-val)
+                async_register_unused_field(ctx, j2("local_", l.name), storage_ty)
+            async_register_body_local_fields(ctx, l.else_body)
+        ast.Stmt.stmt_if as sif:
+            var bi: ptr_uint = 0
+            while bi < sif.branches.len:
+                async_register_body_local_fields(ctx, unsafe: read(sif.branches.data + bi).body)
+                bi += 1
+            async_register_body_local_fields(ctx, sif.else_body)
+        ast.Stmt.stmt_while as w:
+            async_register_body_local_fields(ctx, w.body)
+        ast.Stmt.stmt_for as f:
+            async_register_body_local_fields(ctx, f.body)
+        ast.Stmt.stmt_match as m:
+            var ai: ptr_uint = 0
+            while ai < m.arms.len:
+                async_register_body_local_fields(ctx, unsafe: read(m.arms.data + ai).body)
+                ai += 1
+        ast.Stmt.stmt_defer as d:
+            async_register_body_local_fields(ctx, d.body)
+        ast.Stmt.stmt_unsafe as u:
+            async_register_body_local_fields(ctx, u.body)
+        ast.Stmt.stmt_when as wn:
+            async_register_body_local_fields(ctx, wn.else_body)
+        _:
+            pass
 
 
 function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], loc_name: str, loc_value: ptr[ast.Expr]?, loc_stmt_type: ptr[ast.TypeRef]?, line: ptr_uint) -> void:
