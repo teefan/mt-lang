@@ -515,7 +515,12 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
             let name = checked_array_index_helper_name(read(ty_ptr))
             if not emitted_helpers.contains(name):
                 emitted_helpers.set(name, true)
-                emit_checked_index_helper(ref_of(e), read(ty_ptr))
+                emit_checked_index_helper(ref_of(e), read(ty_ptr), false)
+                emit_line(ref_of(e), "")
+            let nullable_name = nullable_array_index_helper_name(read(ty_ptr))
+            if not emitted_helpers.contains(nullable_name):
+                emitted_helpers.set(nullable_name, true)
+                emit_checked_index_helper(ref_of(e), read(ty_ptr), true)
                 emit_line(ref_of(e), "")
         i += 1
 
@@ -528,7 +533,12 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
             let name = checked_span_index_helper_name(read(ty_ptr))
             if not emitted_span_helpers.contains(name):
                 emitted_span_helpers.set(name, true)
-                emit_checked_span_index_helper(ref_of(e), read(ty_ptr))
+                emit_checked_span_index_helper(ref_of(e), read(ty_ptr), false)
+                emit_line(ref_of(e), "")
+            let nullable_name = nullable_span_index_helper_name(read(ty_ptr))
+            if not emitted_span_helpers.contains(nullable_name):
+                emitted_span_helpers.set(nullable_name, true)
+                emit_checked_span_index_helper(ref_of(e), read(ty_ptr), true)
                 emit_line(ref_of(e), "")
         i += 1
 
@@ -4414,6 +4424,10 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return j5("(*", checked_array_index_helper_name(ci.receiver_type), "(", wrap_member_receiver(e, ci.receiver), j3(", ", render_expression(e, ci.index), "))"))
             ir.Expr.expr_checked_span_index as cs:
                 return j5("(*", checked_span_index_helper_name(cs.receiver_type), "(", render_expression(e, cs.receiver), j3(", ", render_expression(e, cs.index), "))"))
+            ir.Expr.expr_nullable_index as ni:
+                return j5(nullable_array_index_helper_name(ni.receiver_type), "(", wrap_member_receiver(e, ni.receiver), ", ", j2(render_expression(e, ni.index), ")"))
+            ir.Expr.expr_nullable_span_index as ns:
+                return j5(nullable_span_index_helper_name(ns.receiver_type), "(", render_expression(e, ns.receiver), ", ", j2(render_expression(e, ns.index), ")"))
             ir.Expr.expr_index as ix:
                 return j4(wrap_member_receiver(e, ix.receiver), "[", render_expression(e, ix.index), "]")
             ir.Expr.expr_address_of as addr:
@@ -4541,6 +4555,37 @@ function checked_span_index_helper_name(receiver_type: types.Type) -> str:
     return j2("mt_checked_span_index_", naming.type_c_key(receiver_type))
 
 
+## The host's `nullable_array_index_helper_name` (`reinterpret.rb:141`): the
+## bounds-checked accessor that returns NULL instead of aborting (`get()`).
+function nullable_array_index_helper_name(receiver_type: types.Type) -> str:
+    let elem = array_element_type(receiver_type)
+    var buf = string.String.create()
+    buf.append("mt_nullable_index_array_")
+    match elem:
+        types.Type.ty_function:
+            buf.append(naming.sanitize_c_identifier(c_declaration(elem, "value")))
+        _:
+            buf.append(naming.type_c_key(elem))
+    buf.append("_")
+    buf.append(long_to_str(array_length(receiver_type)))
+    return buf.as_str()
+
+
+function nullable_span_index_helper_name(receiver_type: types.Type) -> str:
+    match receiver_type:
+        types.Type.ty_generic as g:
+            if g.name == "span" and g.args.len > 0:
+                let elem = unsafe: read(g.args.data + 0)
+                match elem:
+                    types.Type.ty_function:
+                        return j2("mt_nullable_span_index_", naming.sanitize_c_identifier(c_declaration(elem, "value")))
+                    _:
+                        pass
+        _:
+            pass
+    return j2("mt_nullable_span_index_", naming.type_c_key(receiver_type))
+
+
 # =============================================================================
 #  Checked-index helper generation
 # =============================================================================
@@ -4645,9 +4690,17 @@ function checked_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], 
             ir.Expr.expr_reinterpret as rin:
                 checked_from_expr(rin.expression, seen, collected)
             ir.Expr.expr_nullable_index as ni:
+                let nn = nullable_array_index_helper_name(ni.receiver_type)
+                if not seen.contains(nn):
+                    seen.set(nn, true)
+                    collected.push(ni.receiver_type)
                 checked_from_expr(ni.receiver, seen, collected)
                 checked_from_expr(ni.index, seen, collected)
             ir.Expr.expr_nullable_span_index as ns:
+                let nsn = nullable_span_index_helper_name(ns.receiver_type)
+                if not seen.contains(nsn):
+                    seen.set(nsn, true)
+                    collected.push(ns.receiver_type)
                 checked_from_expr(ns.receiver, seen, collected)
                 checked_from_expr(ns.index, seen, collected)
             ir.Expr.expr_array_literal as arr:
@@ -4675,8 +4728,28 @@ function checked_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], 
                 pass
 
 
-function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type) -> void:
+## The bounds line of a checked/nullable index helper: abort or return NULL.
+function index_bounds_body(n: str, nullable: bool) -> str:
+    var buf = string.String.create()
+    buf.append("  if (index >= ")
+    buf.append(n)
+    buf.append(") ")
+    if nullable:
+        buf.append("return NULL;")
+    else:
+        buf.append("mt_fatal(\"array index out of bounds\");")
+    return buf.as_str()
+
+
+function span_index_bounds_body(nullable: bool) -> str:
+    if nullable:
+        return "  if (index >= span.len) return NULL;"
+    return "  if (index >= span.len) mt_fatal(\"span index out of bounds\");"
+
+
+function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type, nullable: bool) -> void:
     let elem_type = array_element_type(receiver_type)
+    let helper_name = if nullable: nullable_array_index_helper_name(receiver_type) else: checked_array_index_helper_name(receiver_type)
     # When the element is itself an array (e.g. array[array[float, 2], 6]) the
     # parameter and the return type are *pointers to the element* (the host's
     # nested declarator) and the call passes the receiver decayed:
@@ -4685,7 +4758,7 @@ function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type) -
     if is_array_type(elem_type):
         let inner_c = c_type(array_element_type(elem_type))
         let m = long_to_str(array_length(elem_type))
-        let name_arr = checked_array_index_helper_name(receiver_type)
+        let name_arr = helper_name
         var asig = string.String.create()
         asig.append("static inline ")
         asig.append(inner_c)
@@ -4699,13 +4772,13 @@ function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type) -
         asig.append(m)
         asig.append("] {")
         emit_line(e, asig.as_str())
-        emit_line(e, j4("  if (index >= ", long_to_str(array_length(receiver_type)), ") mt_fatal(\"array index out of bounds\");", ""))
+        emit_line(e, index_bounds_body(long_to_str(array_length(receiver_type)), nullable))
         emit_line(e, "  return &array[index];")
         emit_line(e, "}")
         return
     let elem_c = c_type(elem_type)
     let n = long_to_str(array_length(receiver_type))
-    let name = checked_array_index_helper_name(receiver_type)
+    let name = helper_name
     # A raw function-pointer element needs the nested declarator spelled out; a
     # proc element is the synthesized closure *struct* (`mt_proc_*`) and uses
     # the ordinary pointer declarator (`c_type` renders the struct name).
@@ -4755,7 +4828,7 @@ function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type) -
         sig.append(elem_c)
         sig.append(" *array, uintptr_t index) {")
     emit_line(e, sig.as_str())
-    emit_line(e, j4("  if (index >= ", n, ") mt_fatal(\"array index out of bounds\");", ""))
+    emit_line(e, index_bounds_body(n, nullable))
     emit_line(e, "  return &array[index];")
     emit_line(e, "}")
 
@@ -4865,6 +4938,10 @@ function span_index_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]
                 span_index_from_expr(ni.receiver, seen, collected)
                 span_index_from_expr(ni.index, seen, collected)
             ir.Expr.expr_nullable_span_index as ns:
+                let nsn = nullable_span_index_helper_name(ns.receiver_type)
+                if not seen.contains(nsn):
+                    seen.set(nsn, true)
+                    collected.push(ns.receiver_type)
                 span_index_from_expr(ns.receiver, seen, collected)
                 span_index_from_expr(ns.index, seen, collected)
             ir.Expr.expr_array_literal as arr:
@@ -4892,11 +4969,11 @@ function span_index_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]
                 pass
 
 
-function emit_checked_span_index_helper(e: ref[Emitter], receiver_type: types.Type) -> void:
+function emit_checked_span_index_helper(e: ref[Emitter], receiver_type: types.Type, nullable: bool) -> void:
     let elem = array_element_type(receiver_type)
     let elem_c = c_type(elem)
     let span_c = c_type(receiver_type)
-    let name = checked_span_index_helper_name(receiver_type)
+    let name = if nullable: nullable_span_index_helper_name(receiver_type) else: checked_span_index_helper_name(receiver_type)
     var raw_fn = false
     match elem:
         types.Type.ty_function as fnt:
@@ -4941,7 +5018,7 @@ function emit_checked_span_index_helper(e: ref[Emitter], receiver_type: types.Ty
         sig.append(span_c)
         sig.append(" span, uintptr_t index) {")
     emit_line(e, sig.as_str())
-    emit_line(e, "  if (index >= span.len) mt_fatal(\"span index out of bounds\");")
+    emit_line(e, span_index_bounds_body(nullable))
     emit_line(e, "  return &span.data[index];")
     emit_line(e, "}")
 

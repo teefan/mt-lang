@@ -833,12 +833,19 @@ public function lower(program: loader.Program) -> ir.Program:
                         # An alias that is only ever referenced as a typedef
                         # never reaches `resolve_type_ref`, so nothing else
                         # registers the shared proc value struct it points at.
-                        # Append it here through the same dedup path as the
-                        # IR's own struct collection.
+                        # The struct is a C-backend artifact (`Program.
+                        # monomorphized_structs`), so the dumper never sees it.
                         if not proc_type_has_type_var(tv):
-                            var proc_decls = vec.Vec[ir.StructDecl].create()
-                            proc_decls.push(proc_struct_decl(proc_name, tv))
-                            dedup_append_structs(ref_of(structs), proc_decls.as_span(), ref_of(seen_structs))
+                            var already_registered = false
+                            var mpi: ptr_uint = 0
+                            while mpi < monomorphized_structs.len():
+                                let existing = monomorphized_structs.get(mpi) else:
+                                    break
+                                if unsafe: read(existing).linkage_name == proc_name:
+                                    already_registered = true
+                                mpi += 1
+                            if not already_registered:
+                                monomorphized_structs.push(proc_struct_decl(proc_name, tv))
                 _:
                     pass
             type_aliases.push(ir.TypeAlias(
@@ -7135,6 +7142,14 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                         concat_args.push(read(right))
                     return alloc_expr(ir.Expr.expr_call(callee = "mt_str_concat", arguments = concat_args.as_span(), ty = types.Type.ty_str))
                 var result_ty = expr_type(ctx, ep)
+                # Bitwise operators on one nominal type (`Flags.a | Flags.b`):
+                # const initializers can miss the analyzer's type map, so the
+                # host re-infers from the operands; equal operands give that type.
+                if types.is_error(result_ty) and (bin.operator == "|" or bin.operator == "&" or bin.operator == "^"):
+                    let blt = ir_expr_type(left)
+                    let brt = ir_expr_type(right)
+                    if not types.is_error(blt) and types.type_equals(blt, brt):
+                        result_ty = blt
                 # Vector/matrix/quaternion binary arithmetic: lower to
                 # component-wise aggregate literal BEFORE type promotion, so
                 # scalar operands are not cast to the vector result type.
@@ -9029,15 +9044,13 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         if types.is_nullable_type(elem_ty):
                             elem_ty = types.unwrap_nullable(elem_ty)
                         if is_array_type(recv_ty):
-                            let checked = alloc_expr(ir.Expr.expr_checked_index(receiver = recv_ir, index = idx_ir, receiver_type = recv_ty, ty = elem_ty))
                             let ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(qualify_type(ctx, elem_ty)))
                             let nullable_ptr = types.Type.ty_nullable(base = types.alloc_type(ptr_ty))
-                            return alloc_expr(ir.Expr.expr_address_of(expression = checked, ty = nullable_ptr))
+                            return alloc_expr(ir.Expr.expr_nullable_index(receiver = recv_ir, index = idx_ir, receiver_type = recv_ty, ty = nullable_ptr))
                         if is_span_type(recv_ty):
-                            let checked = alloc_expr(ir.Expr.expr_checked_span_index(receiver = recv_ir, index = idx_ir, receiver_type = recv_ty, ty = elem_ty))
                             let ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(qualify_type(ctx, elem_ty)))
                             let nullable_ptr = types.Type.ty_nullable(base = types.alloc_type(ptr_ty))
-                            return alloc_expr(ir.Expr.expr_address_of(expression = checked, ty = nullable_ptr))
+                            return alloc_expr(ir.Expr.expr_nullable_span_index(receiver = recv_ir, index = idx_ir, receiver_type = recv_ty, ty = nullable_ptr))
                 # Native `str(data = ..., len = ...)` construction -> mt_str
                 # aggregate literal (not a call to a `str` function).
                 if id.name == "str":
@@ -18602,11 +18615,18 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
         if is_builtin_type_name(name):
             resolved = types.primitive(name)
         else if ctx.analysis.type_names.contains(name):
-            match local_nested_type(ctx, tref.name.parts):
-                Option.some as nested:
-                    resolved = nested.value
-                Option.none:
-                    resolved = types.Type.ty_imported(module_name = ctx.module_name, name = name, args = span[types.Type]())
+            # A same-module type alias resolves to its target (the host's
+            # `resolve_type_ref`), except a `std.c.*` backing alias, which stays
+            # nominal so the C typedef handles the mapping.
+            let alias_ptr = ctx.analysis.type_alias_types.get(name)
+            if alias_ptr != null and not type_is_from_std_c(unsafe: read(alias_ptr)):
+                resolved = unsafe: read(alias_ptr)
+            else:
+                match local_nested_type(ctx, tref.name.parts):
+                    Option.some as nested:
+                        resolved = nested.value
+                    Option.none:
+                        resolved = types.Type.ty_imported(module_name = ctx.module_name, name = name, args = span[types.Type]())
         else:
             let concrete_ptr = ctx.type_substitution.get(name)
             if concrete_ptr != null:
@@ -18667,7 +18687,12 @@ function lower_enum_decl(ctx: ref[LowerCtx], name: str, backing_type: ptr[ast.Ty
         let explicit = m.value
         if explicit != null:
             let lowered = lower_expr(ctx, explicit)
-            value_expr = alloc_expr(coerce_const_value(ctx, unsafe: read(lowered), backing))
+            var coerced = coerce_const_value(ctx, unsafe: read(lowered), backing)
+            # A pure numeric constant (`1 << 0`, `1 | 2`) takes the backing type
+            # throughout (the host lowers member values with the backing as the
+            # expected type); a flags/enum-member expression keeps its own type.
+            coerced = retag_pure_integer_const(coerced, backing)
+            value_expr = alloc_expr(coerced)
             next_auto = const_eval_int(ctx, explicit) + 1
         else:
             value_expr = alloc_expr(ir.Expr.expr_integer_literal(value = next_auto, ty = backing))
@@ -23730,6 +23755,53 @@ function wrap_int_value(value: long, width: int, signed: bool) -> long:
     return wrapped
 
 
+## True when an IR expression is a pure integer constant tree (literals under
+## integer unary/binary operators), so a contextual retype cannot change names,
+## calls or flag/enum members.
+function ir_pure_integer_const(v: ir.Expr) -> bool:
+    match v:
+        ir.Expr.expr_integer_literal:
+            return true
+        ir.Expr.expr_unsigned_integer_literal:
+            return true
+        ir.Expr.expr_unary as u:
+            if u.operator == "-" or u.operator == "~":
+                return ir_pure_integer_const(unsafe: read(u.operand))
+            return false
+        ir.Expr.expr_binary as b:
+            if is_pure_integer_operator(b.operator):
+                return ir_pure_integer_const(unsafe: read(b.left)) and ir_pure_integer_const(unsafe: read(b.right))
+            return false
+        _:
+            return false
+
+
+function is_pure_integer_operator(operator: str) -> bool:
+    if operator == "+" or operator == "-" or operator == "*" or operator == "/":
+        return true
+    if operator == "%" or operator == "&" or operator == "|" or operator == "^":
+        return true
+    return operator == "<<" or operator == ">>"
+
+
+## Retype a pure integer constant tree to `target_ty` (the host's contextual
+## inference of an enum member value against the backing type).
+function retag_pure_integer_const(v: ir.Expr, target_ty: types.Type) -> ir.Expr:
+    if not types.is_integer_type(target_ty) or not ir_pure_integer_const(v):
+        return v
+    match v:
+        ir.Expr.expr_integer_literal as lit:
+            return ir.Expr.expr_integer_literal(value = lit.value, ty = target_ty)
+        ir.Expr.expr_unsigned_integer_literal as lit:
+            return ir.Expr.expr_unsigned_integer_literal(value = lit.value, ty = target_ty)
+        ir.Expr.expr_unary as u:
+            return ir.Expr.expr_unary(operator = u.operator, operand = alloc_expr(retag_pure_integer_const(unsafe: read(u.operand), target_ty)), ty = target_ty)
+        ir.Expr.expr_binary as b:
+            return ir.Expr.expr_binary(operator = b.operator, left = alloc_expr(retag_pure_integer_const(unsafe: read(b.left), target_ty)), right = alloc_expr(retag_pure_integer_const(unsafe: read(b.right), target_ty)), ty = target_ty)
+        _:
+            return v
+
+
 ## Apply the host's declared-type coercion to a folded constant value
 ## (`lower_const_value_literal`): mask integers to the type's width,
 ## sign-extend signed types, and recurse into array elements.
@@ -27502,8 +27574,77 @@ function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], e
                 return alloc_ast_expr(ast.Expr.expr_prefix_cast(target_type = pc.target_type, expression = async_hoist_awaits(ctx, output, pc.expression), line = pc.line, column = pc.column))
             ast.Expr.expr_unsafe as us:
                 return alloc_ast_expr(ast.Expr.expr_unsafe(expression = async_hoist_awaits(ctx, output, us.expression), line = us.line, column = us.column))
+            ast.Expr.expr_if as ie:
+                # The host's `normalize_async_expression` IfExpr arm: the
+                # condition setup precedes the result temp, and the branch
+                # setup lives inside the generated `if` that assigns the temp
+                # (`async/normalization.rb:274`).
+                if not async_mod.expr_has_await(ep):
+                    return ep
+                let cond_h = async_hoist_awaits(ctx, output, ie.condition)
+                # The branches take the lower temp numbers (`tmp_1`, `tmp_2`)
+                # while the result temp registers first in the frame (the
+                # host's normalized LocalDecl precedes the generated `if`).
+                let field_index = async_local_field_count(ctx)
+                var then_setup = vec.Vec[ir.Stmt].create()
+                let then_h = async_hoist_awaits(ctx, ref_of(then_setup), ie.then_expr)
+                var else_setup = vec.Vec[ir.Stmt].create()
+                let else_h = async_hoist_awaits(ctx, ref_of(else_setup), ie.else_expr)
+                ctx.async_tmp_counter += 1
+                let tmp = j2("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
+                let field_name = j2("local_", tmp)
+                let frame_cname = j2("__mt_frame->", field_name)
+                var result_ty = expr_type(ctx, ep)
+                if types.is_error(result_ty):
+                    result_ty = expr_type(ctx, ie.then_expr)
+                async_register_local_field(ctx, tmp, field_name, frame_cname, result_ty)
+                async_move_last_local_field_to(ctx, field_index)
+                output.push(async_frame_field_assignment(ctx, field_name, result_ty, alloc_expr(ir.Expr.expr_zero_init(ty = result_ty))))
+                let cond_ir = lower_expr(ctx, cond_h)
+                then_setup.push(async_frame_field_assignment(ctx, field_name, result_ty, lower_expr(ctx, then_h)))
+                else_setup.push(async_frame_field_assignment(ctx, field_name, result_ty, lower_expr(ctx, else_h)))
+                output.push(ir.Stmt.stmt_if(condition = cond_ir, then_body = then_setup.as_span(), else_body = Option[span[ir.Stmt]].some(value = else_setup.as_span())))
+                return alloc_ast_expr(ast.Expr.expr_identifier(name = tmp, line = 0, column = 0))
             _:
                 return ep
+
+
+## The frame's current local-field count (the vec the registration helpers use).
+function async_local_field_count(ctx: ref[LowerCtx]) -> ptr_uint:
+    let lfp = ctx.async_local_fields_ptr
+    if lfp != null:
+        return unsafe: read(lfp).len()
+    return ctx.async_local_fields.len()
+
+
+## Move the most recently appended frame field to `index` — the host's
+## normalized statement order registers an if-expression's result temp before
+## the branch temps that were numbered first.
+function async_move_last_local_field_to(ctx: ref[LowerCtx], index: ptr_uint) -> void:
+    let lfp = ctx.async_local_fields_ptr
+    var fields: ptr[vec.Vec[ir.Field]]
+    if lfp != null:
+        fields = unsafe: ptr[vec.Vec[ir.Field]]<-lfp
+    else:
+        fields = ptr_of(ctx.async_local_fields)
+    let count = unsafe: read(fields).len()
+    if count <= index + 1:
+        return
+    let last = count - 1
+    let moved = unsafe: read(fields).remove(last)
+    match moved:
+        Option.some as f:
+            let _ok = unsafe: read(fields).insert(index, f.value)
+        Option.none:
+            pass
+
+
+## `__mt_frame-><field> = value` — the host's `async_frame_field_expression`
+## assignment target.
+function async_frame_field_assignment(ctx: ref[LowerCtx], field_name: str, field_ty: types.Type, value: ptr[ir.Expr]) -> ir.Stmt:
+    let frame = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false)))
+    let target = alloc_expr(ir.Expr.expr_member(receiver = frame, member = field_name, ty = field_ty))
+    return ir.Stmt.stmt_assignment(target = target, operator = "=", value = value)
 
 
 ## Register the frame fields the host's async analysis records for every local

@@ -23,15 +23,15 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 54, 2026-11-08)
+## Status at a glance (session 55, 2026-11-08)
 
 | Area | State |
 | --- | --- |
-| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`, session 54 full); full self-test suite **19 files / 0 failed** |
-| `test/mt` | **60 files / 0 failed** (session 54) |
+| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`, session 55 full); full self-test suite **19 files / 0 failed** |
+| `test/mt` | **60 files / 0 failed** (session 55) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex 712/712; parse 713 match / 0 differ / 4 host-rejected at the session-49 scoreboard; counts drift with the tree) |
-| `sexpr lower` | **592 match / 74 differ / 51 host-rejected / 0 self-rejected of 717 files** (session 54) |
+| `sexpr lower` | **595 match / 71 differ / 51 host-rejected / 0 self-rejected of 717 files** (session 55) |
 | `cli:parity` | **24 match / 37 differ / 0 pending** of 61 cases (last re-measured session 49, unchanged since session 35) |
 | Linter corpus | **495 agree / 121 differ** of 616 files (session 50 re-read) |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
@@ -41,7 +41,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 
 Rough completion against the per-track Definition of Done: **~80%**.  The
 self-hosting foundation is done; the residue is concentrated in the `lower`
-dump (74 files), CLI (37 cases + unported subsystems), the linter corpus (121
+dump (71 files), CLI (37 cases + unported subsystems), the linter corpus (121
 files), and bindings verification.  LSP, DAP and formatter are closed at their
 documented differences.
 
@@ -76,6 +76,17 @@ offset literal takes the host's default `int` (a `0z` suffix is ignored) and a
 nullable pointer projects to a plain pointer foreign boundary as a cast.
 Flipped `raylib/{core/automation_events,audio/spectrum_visualizer,
 textures/image_processing}` and three more raylib/SDL examples.
+
+Session-55 batch: proc closure structs ride the non-dumped
+`Program.monomorphized_structs` (the host's C backend collects them), a
+same-module type alias resolves in union fields, a pure integer constant enum
+member value takes the backing type (`1 << 0` in a `flags` block), a bitwise
+binary with missing analyzer type falls back to its equal operands' type, and
+`get()` lowers to `IR::NullableIndex`/`IR::NullableSpanIndex` (NULL on
+out-of-bounds; the backend emits the host's nullable helper names). An async
+`if` expression with awaits in its branches hoists like the host's
+normalization: the result temp registers before the branch temps, numbered
+after them. Flipped `engine/{types,systems,guards}`.
 
 ## How to start a work session
 
@@ -235,15 +246,15 @@ order: finish `lower` first, then CLI/linter/bindings, then the final matrix;
 LSP/DAP/formatter are closed at their documented differences.  Anchor by symbol
 names, not line numbers — lines drift.
 
-### Track A — `lower` dump parity (592/74 of 717)
+### Track A — `lower` dump parity (595/71 of 717)
 
-Current set: **592 match / 74 differ / 51 host-rejected / 0 self-rejected of 717
-files** (session 54).  The host-rejected bucket is `external` and platform-pinned
+Current set: **595 match / 71 differ / 51 host-rejected / 0 self-rejected of 717
+files** (session 55).  The host-rejected bucket is `external` and platform-pinned
 files; the count drifts with the tree and `tmp` fixtures — quote the set.
 
 Work one item per commit; after each item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
-and re-rank.  Open leaders, largest first (re-ranked session 54):
+and re-rank.  Open leaders, largest first (re-ranked session 55):
 
 1. **Generic-instance wave placement** (~21) — `async_stress_test`'s first
    difference: the host's `lower_functions` fixpoint lowers a generic
@@ -261,17 +272,27 @@ and re-rank.  Open leaders, largest first (re-ranked session 54):
    `std/oauth2`, ~18) — first differences now sit at 1.7M–3.0M bytes, past the
    await-free-body/guard/short-circuit shapes fixed in session 52; re-rank each
    file's next difference.
-4. **Foreign-call protocol residue** (raylib/SDL3 examples, ~30) — first
-   differences in the 20K–570K range: a nested foreign call with cstr temps
-   must materialize `__mt_foreign_result_N` even in a `hm_discard` window
-   (`prepare_statement_lowered_foreign_call`), the `__mt_foreign_arg_N` /
+4. **Foreign-call protocol residue** (raylib/SDL3 examples, ~30) — the
+   `hm_discard` result materialization, raw receivers and pointer boundaries are
+   fixed; the remaining first differences are the `__mt_foreign_arg_N` /
    `__mt_foreign_in_N` policy (`inlineable_single_direct_call_names`,
-   addressable operands) and the cstr-temp numbering need the host's exact
-   ordering.  Classify each file's first difference before working it.
+   addressable operands), cstr-temp numbering when an outer argument binds
+   before a nested call is prepared, and call-argument expected-type
+   propagation (`math.cos(double)` arguments typing their operand expressions).
 5. **Simd member types** (`examples/simd_features.mt`, `projects/stress/src/engine/math.mt`)
    — a `simd` value's `x` member resolves to `void` in the self where the host
    has `array[double, 4]`; the vector-scalar binary expansion also needs the
    host's lane shapes.
+5b. **Raw-module enum backing** (`examples/sdl3/*`, `drawing_lines`,
+   `read_pixels`, `load_bitmaps`) — an enum import from a raw (`std.c.*`) module
+   does not resolve its backing in `enum_backing_or_self`, so an equality never
+   casts both operands to the backing `int` (`ev.paxis.axis ==
+   sdl.PenAxis.SDL_PEN_AXIS_PRESSURE`).
+5c. **Async expression normalization** (`projects/stress/src/engine/async_tasks`,
+   `closures`) — an `if`-expression with branch awaits now hoists; the
+   while-condition await (`loop_with_await`) still registers its short-circuit
+   temp after the operand temp, and a proc comparison carries the proc type
+   rather than `bool`.  Re-derive `normalize_async_expression`'s remaining arms.
 6. **Parallel for/block shapes and naming** (`multithreading_test`) — port the
    host's `mt_pfor_cap_<prefix>_pfor_<N>` / `mt_pfor_work_*` /
    `mt_spawn_cap_<prefix>_spawn_<N>_<idx>` / `mt_spawn_work_*` names, the
@@ -511,11 +532,11 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds; 19 files / 0 failed | session 54 (full) | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 60 files / 0 failed | session 54 | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds; 19 files / 0 failed | session 55 (full) | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 60 files / 0 failed | session 55 | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 13/13 sync top-level identical (+2 async at the host's rc 134); sdl3 34/34; raylib sample builds | session 50 (raylib 49) | per-family sweeps |
 | `sexpr lex` / `parse` | lex 712/712; parse 713 match / 0 differ / 4 host-rejected | lex session 33, parse session 49 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 592 match / 74 differ / 51 host-rejected / 0 self-rejected of 717 | session 54 | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 595 match / 71 differ / 51 host-rejected / 0 self-rejected of 717 | session 55 | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | 24 match / 37 differ / 0 pending of 61 | session 49 | `rake "cli:parity"` |
 | lint corpus | 495 agree / 121 differ of 616 | session 50 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
