@@ -3586,12 +3586,16 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     # correct enclosing loop.
                     let saved_break = ctx.loop_break_label
                     let saved_continue = ctx.loop_continue_label
+                    let saved_continue_native = ctx.loop_continue_native
+                    let saved_break_native = ctx.loop_break_native
                     let saved_loop_depth = ctx.loop_defer_depth
                     let cl = fresh_c_temp_name(ctx, "loop_continue")
                     let bl = fresh_c_temp_name(ctx, "loop_break")
                     ctx.loop_break_label = bl
                     ctx.loop_continue_label = cl
                     ctx.loop_defer_depth = ctx.defer_stack.len()
+                    ctx.loop_continue_native = true
+                    ctx.loop_break_native = true
                     var brk = vec.Vec[ir.Stmt].create()
                     brk.push(ir.Stmt.stmt_goto(label = bl))
                     wbody.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = cond_ir, ty = ctx.bool_ty)), then_body = brk.as_span(), else_body = Option[span[ir.Stmt]].none))
@@ -3617,6 +3621,8 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         wi += 1
                     ctx.loop_break_label = saved_break
                     ctx.loop_continue_label = saved_continue
+                    ctx.loop_continue_native = saved_continue_native
+                    ctx.loop_break_native = saved_break_native
                     ctx.loop_defer_depth = saved_loop_depth
                     return
                 let cond = lower_expr(ctx, w.condition)
@@ -5842,10 +5848,17 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
 
     let saved_break = ctx.loop_break_label
     let saved_continue = ctx.loop_continue_label
+    let saved_continue_native = ctx.loop_continue_native
+    let saved_break_native = ctx.loop_break_native
     let cl = fresh_c_temp_name(ctx, "loop_continue")
     let bl = fresh_c_temp_name(ctx, "loop_break")
     ctx.loop_break_label = bl
     ctx.loop_continue_label = cl
+    # A native `continue` reaches the generated loop's post statement and a
+    # native `break` exits it (the host's ContinueStmt/BreakStmt); the labels
+    # remain for the defer-flush paths and for arms inside a switch.
+    ctx.loop_continue_native = true
+    ctx.loop_break_native = true
 
     # In CPS mode, spill the induction variable and (if not inline) the stop value
     # to frame fields so they survive an `await` inside the loop body.
@@ -5914,6 +5927,8 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
 
     ctx.loop_break_label = saved_break
     ctx.loop_continue_label = saved_continue
+    ctx.loop_continue_native = saved_continue_native
+    ctx.loop_break_native = saved_break_native
     ctx.loop_defer_depth = saved_loop_depth
 
 
@@ -5966,10 +5981,17 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     let binding_c = utils.c_local_name(binding_name)
     let saved_break = ctx.loop_break_label
     let saved_continue = ctx.loop_continue_label
+    let saved_continue_native = ctx.loop_continue_native
+    let saved_break_native = ctx.loop_break_native
     let cl = fresh_c_temp_name(ctx, "loop_continue")
     let bl = fresh_c_temp_name(ctx, "loop_break")
     ctx.loop_break_label = bl
     ctx.loop_continue_label = cl
+    # A native `continue` reaches the generated loop's post statement and a
+    # native `break` exits it (the host's ContinueStmt/BreakStmt); the labels
+    # remain for the defer-flush paths and for arms inside a switch.
+    ctx.loop_continue_native = true
+    ctx.loop_break_native = true
 
     # In CPS mode, register the index and element binding as frame fields so they
     # survive an `await` inside the loop body.
@@ -6049,6 +6071,8 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
 
     ctx.loop_break_label = saved_break
     ctx.loop_continue_label = saved_continue
+    ctx.loop_continue_native = saved_continue_native
+    ctx.loop_break_native = saved_break_native
     ctx.loop_defer_depth = saved_loop_depth
 
 
@@ -6091,10 +6115,17 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
 
     let saved_break = ctx.loop_break_label
     let saved_continue = ctx.loop_continue_label
+    let saved_continue_native = ctx.loop_continue_native
+    let saved_break_native = ctx.loop_break_native
     let cl = fresh_c_temp_name(ctx, "loop_continue")
     let bl = fresh_c_temp_name(ctx, "loop_break")
     ctx.loop_break_label = bl
     ctx.loop_continue_label = cl
+    # A native `continue` reaches the generated loop's post statement and a
+    # native `break` exits it (the host's ContinueStmt/BreakStmt); the labels
+    # remain for the defer-flush paths and for arms inside a switch.
+    ctx.loop_continue_native = true
+    ctx.loop_break_native = true
 
     let binding_c = utils.c_local_name(binding_name)
     let binding_ty = if nullable_item: types.unwrap_nullable(next_ty) else: cur_ty
@@ -6146,6 +6177,8 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
 
     ctx.loop_break_label = saved_break
     ctx.loop_continue_label = saved_continue
+    ctx.loop_continue_native = saved_continue_native
+    ctx.loop_break_native = saved_break_native
     ctx.loop_defer_depth = saved_loop_depth
 
 
@@ -7142,6 +7175,11 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                         concat_args.push(read(right))
                     return alloc_expr(ir.Expr.expr_call(callee = "mt_str_concat", arguments = concat_args.as_span(), ty = types.Type.ty_str))
                 var result_ty = expr_type(ctx, ep)
+                # A comparison is always `bool` (the host's `infer_expression_type`
+                # BinaryOp arm); the analyzer can miss it inside a constant
+                # initializer (`not (glfwInit() != 0)`).
+                if bin.operator == "==" or bin.operator == "!=" or bin.operator == "<" or bin.operator == "<=" or bin.operator == ">" or bin.operator == ">=":
+                    result_ty = ctx.bool_ty
                 # Bitwise operators on one nominal type (`Flags.a | Flags.b`):
                 # const initializers can miss the analyzer's type map, so the
                 # host re-infers from the operands; equal operands give that type.
@@ -7226,6 +7264,13 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                     let hr = int_literal_to_context_type(bin.right, harm_lt, right)
                     if hr != right:
                         right = hr
+                    right = conditional_value_to_context_type(ctx, bin.right, harm_lt, right)
+                # The same expected-type propagation for a float peer: an `if`
+                # expression operand takes the peer's type on both branches
+                # (`(if c: W else: H) / sqrtf(x)` casts each branch to float).
+                if types.is_float_type(harm_rt):
+                    left = conditional_value_to_context_type(ctx, bin.left, harm_rt, left)
+                if types.is_float_type(harm_lt):
                     right = conditional_value_to_context_type(ctx, bin.right, harm_lt, right)
                 # The recorded result type carries the host's propagated expected
                 # type: a bare float literal in an arithmetic binary takes it,
@@ -16263,10 +16308,19 @@ function walk_mapping_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr], top_ret_ty: ty
             ast.Expr.expr_binary_op as bin:
                 let l = walk_mapping_expr(ctx, bin.left, top_ret_ty, owner_module)
                 let r = walk_mapping_expr(ctx, bin.right, top_ret_ty, owner_module)
-                return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = l, right = r, ty = ir_expr_type(l)))
+                # The rebuilt node keeps the analyzer's recorded type (the host
+                # lowers the mapping through `lower_expression`): a comparison
+                # (`= c.glfwInit() != 0`) is `bool`, not its left operand's type.
+                var bty = expr_type(ctx, ep)
+                if types.is_error(bty) or types.type_to_string(bty) == "void":
+                    bty = ir_expr_type(l)
+                return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = l, right = r, ty = bty))
             ast.Expr.expr_unary_op as un:
                 let operand = walk_mapping_expr(ctx, un.operand, top_ret_ty, owner_module)
-                return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = ir_expr_type(operand)))
+                var uty = expr_type(ctx, ep)
+                if types.is_error(uty) or types.type_to_string(uty) == "void":
+                    uty = ir_expr_type(operand)
+                return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = uty))
             _:
                 return lower_expr(ctx, ep)
 
@@ -21236,7 +21290,8 @@ function enum_backing_or_self(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             # registration).
             if n.name == "EventError" and n.module_name.len == 0:
                 return types.primitive("int")
-            match lookup_enum_backing(ctx, ctx.module_name, n.name):
+            let owner = if n.module_name.len > 0: n.module_name else: ctx.module_name
+            match lookup_enum_backing(ctx, owner, n.name):
                 Option.some as b:
                     return b.value
                 Option.none:
@@ -25905,6 +25960,8 @@ function try_evaluate_const_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Optio
                 return Option[ConstValue].some(value = ConstValue.cv_bool(value = b.value))
             ast.Expr.expr_string_literal as s:
                 return Option[ConstValue].some(value = ConstValue.cv_str(value = s.value))
+            ast.Expr.expr_char_literal as ch:
+                return Option[ConstValue].some(value = ConstValue.cv_int(value = long<-ch.value))
             ast.Expr.expr_identifier as id:
                 let cv_entry = ctx.analysis.const_values.get(id.name)
                 if cv_entry != null:
