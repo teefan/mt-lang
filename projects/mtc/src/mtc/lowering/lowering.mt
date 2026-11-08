@@ -7189,6 +7189,15 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 # constant `ulong`, and a value > 2^31 is `long` on its own).
                 let harm_lt = ir_expr_type(left)
                 let harm_rt = ir_expr_type(right)
+                # Pointer arithmetic: the host lowers the integer offset with the
+                # pointer as its expected type, which falls back to the literal's
+                # default `int` — an explicit `0z` suffix is ignored
+                # (`paths + 0z` carries an `int` literal).
+                if bin.operator == "+" or bin.operator == "-":
+                    if (types.is_pointer_type(harm_lt) or types.is_ref_type(harm_lt)) and ast_is_integer_literal(bin.right):
+                        right = int_literal_to_context_type(bin.right, types.primitive("int"), right)
+                    else if (types.is_pointer_type(harm_rt) or types.is_ref_type(harm_rt)) and ast_is_integer_literal(bin.left):
+                        left = int_literal_to_context_type(bin.left, types.primitive("int"), left)
                 if types.is_integer_type(harm_rt):
                     let hl = int_literal_to_context_type(bin.left, harm_rt, left)
                     if hl != left:
@@ -12869,6 +12878,10 @@ function monomorphized_method_c_name(owner_module: str, info: GenericReceiver, g
             buf.append("_receiver_arg")
             buf.append(pw1_str(rpi))
             rpi += 1
+    else if info.owner_module.starts_with("std.c."):
+        # A raw-module receiver's C type is its bare name (`Image_draw_pixel`),
+        # not a module-qualified symbol.
+        buf.append(info.owner_name)
     else:
         buf.append(naming.qualified_c_name(owner_module, info.owner_name))
     buf.append("_")
@@ -15802,8 +15815,9 @@ function wrap_foreign_cstr_frees(ctx: ref[LowerCtx], setup: ref[vec.Vec[ir.Stmt]
         # result before the frees (the host's `prepare_statement_lowered_foreign_call`:
         # `foreign_result` + frees, then the Name).  A statement-root call does
         # not: the assignment/local/return destination stores it directly (the
-        # host's `lower_foreign_call_components` path).
-        let nested_value_call = ctx.hoist_mode == HoistMode.hm_value and call_ep != ctx.hoist_root_ep
+        # host's `lower_foreign_call_components` path).  A nested call inside a
+        # discarded statement (`DrawText(TextFormat(…), …)`) materializes too.
+        let nested_value_call = ctx.hoist_mode != HoistMode.hm_off and call_ep != ctx.hoist_root_ep
         if (ctx.hoist_mode == HoistMode.hm_return or nested_value_call) and not types.is_void(ret_ty):
             let rt = fresh_c_temp_name(ctx, "foreign_result")
             ctx.hoist_stmts.push(ir.Stmt.stmt_local(name = rt, linkage_name = rt, ty = ret_ty, value = result, line = 0, source_path = ""))
@@ -16658,6 +16672,13 @@ function foreign_projection_cast_compatible(actual: types.Type, expected: types.
                 types.Type.ty_nullable as ne:
                     return foreign_projection_cast_compatible(unsafe: read(na.base), unsafe: read(ne.base))
                 _:
+                    # A nullable *pointer* is the same C pointer value, so it
+                    # projects to a non-nullable pointer boundary as a cast
+                    # (`update_texture(texture, pixels)` with a guard-bound
+                    # `pixels: ptr[Color]?`).
+                    let nbase = unsafe: read(na.base)
+                    if (types.is_pointer_type(nbase) or types.is_ref_type(nbase)) and (types.is_pointer_type(expected) or types.is_ref_type(expected)):
+                        return true
                     return false
         _:
             pass
