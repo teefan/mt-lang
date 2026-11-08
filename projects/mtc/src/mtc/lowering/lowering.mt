@@ -1683,7 +1683,16 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                                                 c_val = al.value
                                             Option.none:
                                                 pass
-                                    let coerced = alloc_expr(coerce_const_value(ctx, c_val, c_ty))
+                                    # A plain expression constant takes the host's
+                                    # `lower_compile_time_literal` path: the folded
+                                    # value is typed but *not* width-masked
+                                    # (`~268435455` stays `-268435456` in a `uint`),
+                                    # unlike the `lower_const_value_literal` paths.
+                                    var coerced: ptr[ir.Expr]
+                                    if const_value_literal_path:
+                                        coerced = alloc_expr(coerce_const_value(ctx, c_val, c_ty))
+                                    else:
+                                        coerced = alloc_expr(retype_const_literal(c_val, c_ty))
                                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = coerced, line = c.line, path = ctx.analysis.source_path))
                                 Option.none:
                                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr), line = c.line, path = ctx.analysis.source_path))
@@ -9829,6 +9838,11 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                                     element_value = folded.value
                                 Option.none:
                                     pass
+                        # A `char` element casts its integer literal (`array[char,
+                        # 512](0, …)` — the host's `contextual_numeric_cast` char
+                        # arm), applied after the fold so it is not folded away.
+                        if prim_name(element_ty) == "char" and is_integer_like_value_type(ctx, ir_expr_type(element_value)):
+                            element_value = cast_to_type(element_value, element_ty)
                         elements.push(read(element_value))
                         ai += 1
                     return alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span()))
@@ -10594,6 +10608,11 @@ function try_inferred_generic_call(ctx: ref[LowerCtx], module_name: Option[str],
             key.append(naming.module_c_prefix(gm.module_name))
             key.append("_")
             key.append(callee_name)
+            # The host's `module_function_c_name`: one double underscore before
+            # the type-argument list, single underscores between its elements
+            # (`find_state_hooks__World_Context`, not `__World__Context`).
+            if fun.type_params.len > 0:
+                key.append("__")
             var tpi: ptr_uint = 0
             while tpi < fun.type_params.len:
                 var tp: ast.TypeParam
@@ -10602,7 +10621,8 @@ function try_inferred_generic_call(ctx: ref[LowerCtx], module_name: Option[str],
                 let inferred = infer_type_param_from_args(ctx, tp.name, fun.method_params, args) else:
                     return Option[ptr[ir.Expr]].none
                 sub.set(tp.name, inferred)
-                key.append("__")
+                if tpi > 0:
+                    key.append("_")
                 key.append(spec_type_key(ctx, inferred))
                 tpi += 1
             let spec_key = key.as_str()
@@ -23855,6 +23875,26 @@ function retag_pure_integer_const(v: ir.Expr, target_ty: types.Type) -> ir.Expr:
             return ir.Expr.expr_binary(operator = b.operator, left = alloc_expr(retag_pure_integer_const(unsafe: read(b.left), target_ty)), right = alloc_expr(retag_pure_integer_const(unsafe: read(b.right), target_ty)), ty = target_ty)
         _:
             return v
+
+
+## Type a folded literal without masking it — the host's
+## `lower_compile_time_literal` (a plain expression constant).
+function retype_const_literal(v: ir.Expr, target_ty: types.Type) -> ir.Expr:
+    if types.is_integer_type(target_ty):
+        match v:
+            ir.Expr.expr_integer_literal as lit:
+                return ir.Expr.expr_integer_literal(value = lit.value, ty = target_ty)
+            ir.Expr.expr_unsigned_integer_literal as lit:
+                return ir.Expr.expr_unsigned_integer_literal(value = lit.value, ty = target_ty)
+            _:
+                pass
+    if types.is_float_type(target_ty):
+        match v:
+            ir.Expr.expr_float_literal as lit:
+                return ir.Expr.expr_float_literal(value = lit.value, ty = target_ty)
+            _:
+                pass
+    return v
 
 
 ## Apply the host's declared-type coercion to a folded constant value
