@@ -3716,6 +3716,10 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 emit_hoist_setup(output, stmt_base, stmt_collected)
                 if not stmt_collected.stmt_emitted:
                     output.push(ir.Stmt.stmt_expression(expression = lowered, line = ex.line, source_path = ctx.analysis.source_path))
+                # A consuming foreign call nulls its argument bindings after the
+                # call (the host's `consuming_foreign_release_assignments`),
+                # before the statement's cstr cleanups.
+                append_foreign_consuming_releases(ctx, output, ex.expression)
                 append_hoist_cleanups(output, stmt_collected)
             ast.Stmt.stmt_when as wn:
                 lower_when_stmt(ctx, output, wn.discriminant, wn.branches, wn.else_body)
@@ -15663,6 +15667,82 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
     return wrap_foreign_cstr_frees(ctx, ref_of(setup), call, ret_ty, ref_of(cstr_temps), call_ep)
 
 
+## The host's consuming-argument rule (`consuming_foreign_release_assignments`):
+## after a statement-position foreign call, each bare nullable local passed to a
+## `consuming` parameter is nulled and refined to null for later statements.
+function append_foreign_consuming_releases(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ep: ptr[ast.Expr]) -> void:
+    var info_opt = Option[ForeignInfo].none
+    var call_args = span[ast.Argument]()
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_call as call:
+                call_args = call.args
+                match read(call.callee):
+                    ast.Expr.expr_identifier as id:
+                        let fp = ctx.foreign_map.get(id.name)
+                        if fp != null:
+                            info_opt = Option[ForeignInfo].some(value = read(fp))
+                    ast.Expr.expr_member_access as ma:
+                        match read(ma.receiver):
+                            ast.Expr.expr_identifier as rid:
+                                let mod_ptr = ctx.analysis.imports.get(rid.name)
+                                if mod_ptr != null:
+                                    info_opt = imported_foreign_call(ctx, read(mod_ptr), ma.member_name)
+                            _:
+                                pass
+                    _:
+                        pass
+            _:
+                pass
+    let info = info_opt else:
+        return
+    var refinements = map_mod.Map[str, types.Type].create()
+    var i: ptr_uint = 0
+    while i < info.params.len and i < call_args.len:
+        var param: ast.ForeignParam
+        var arg: ast.Argument
+        unsafe:
+            param = read(info.params.data + i)
+            arg = read(call_args.data + i)
+        if param.param_mode == ast.ForeignParamMode.fmode_consuming:
+            unsafe:
+                match read(arg.arg_value):
+                    ast.Expr.expr_identifier as aid:
+                        match lookup_local(ctx, aid.name):
+                            Option.some as lb:
+                                let b = lb.value
+                                # The binding's *storage* type: a guard-bound
+                                # pointer binding stores the full nullable in its
+                                # c_name (projection-carried); option/result
+                                # storages cannot satisfy a consuming pointer.
+                                var storage_ty = types.primitive("void")
+                                match b.projection:
+                                    BindingProjection.plain:
+                                        storage_ty = b.ty
+                                    BindingProjection.nullable_storage as st:
+                                        storage_ty = st.storage_ty
+                                    _:
+                                        pass
+                                if types.is_nullable_type(storage_ty):
+                                    let base = types.unwrap_nullable(storage_ty)
+                                    let param_ty = foreign_param_context_type(ctx, info, param)
+                                    if types.type_equals(base, param_ty):
+                                        let target = alloc_expr(ir.Expr.expr_name(name = b.c_name, ty = storage_ty, pointer = b.pointer))
+                                        output.push(ir.Stmt.stmt_assignment(
+                                            target = target,
+                                            operator = "=",
+                                            value = alloc_expr(ir.Expr.expr_null_literal(ty = storage_ty)),
+                                        ))
+                                        refinements.set(aid.name, types.Type.ty_null(target = null))
+                            Option.none:
+                                pass
+                    _:
+                        pass
+        i += 1
+    if refinements.len() > 0:
+        let _post = push_flow_refinements(ctx, ref_of(refinements))
+
+
 ## True when a lowered IR expression is a call to the malloc-backed
 ## `mt_foreign_str_to_cstr_temp` helper (a dynamic `str as cstr` foreign
 ## argument), so the caller can hoist and free it after the call.
@@ -21784,7 +21864,18 @@ function ast_expr_cstr_backed(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool:
                                 pass
                         return ctx.cstr_backed_names.contains(lb.value.c_name)
                     Option.none:
-                        return false
+                        # A module constant whose compile-time value is a string
+                        # literal is cstr-backed (the host's
+                        # `binding.const_value.is_a?(String)`).
+                        match try_evaluate_const_expr(ctx, ep):
+                            Option.some as cv:
+                                match cv.value:
+                                    ConstValue.cv_str:
+                                        return true
+                                    _:
+                                        return false
+                            Option.none:
+                                return false
             ast.Expr.expr_if as iff:
                 return ast_expr_cstr_backed(ctx, iff.then_expr) and ast_expr_cstr_backed(ctx, iff.else_expr)
             ast.Expr.expr_unsafe as u:
