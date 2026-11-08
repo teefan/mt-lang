@@ -371,9 +371,9 @@ function test_stateful_event_listener_receives_state_pointer() -> void:
     var c = compile_to_c(source)
     defer: c.release()
     let text = c.as_str()
-    # The emit dispatch for stateful slots must include the state argument.
-    # Self-host emits: ((void (*)(void*)) event->slots[i].listener)(event->slots[i].state)
-    expect_contains(text, "listener)(event->slots")
+    # The emit dispatch for stateful slots must include the state argument
+    # (the host's snapshot-based deferred dispatch).
+    expect_contains(text, "__mt_snapshots[__mt_dispatch_index].listener)(__mt_snapshots[__mt_dispatch_index].state)")
     return
 
 
