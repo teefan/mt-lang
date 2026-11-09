@@ -3279,7 +3279,7 @@ function lower_block(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.St
         # The host's async *analysis* records a frame field for every local
         # declaration regardless of the lowering path, so register this body's
         # fields up front (their lowering still uses plain locals).
-        async_register_body_local_fields(ctx, body_ptr)
+        async_register_normalized_body_fields(ctx, body_ptr)
         ctx.async_cps_active = false
     defer: ctx.async_cps_active = saved_cps_active
     # A no-await async body's plain locals carry no source line/path (the
@@ -28049,7 +28049,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         var noawait_locals = ctx.async_local_fields
         let saved_nf_ptr = ctx.async_local_fields_ptr
         ctx.async_local_fields_ptr = ptr_of(noawait_locals)
-        async_register_body_local_fields(ctx, body)
+        async_register_normalized_body_fields(ctx, body)
         ctx.async_local_fields = noawait_locals
         ctx.async_local_fields_ptr = saved_nf_ptr
         ctx.async_frame_ptr_ty = frame_ptr_ty
@@ -28621,16 +28621,193 @@ function async_frame_field_assignment(ctx: ref[LowerCtx], field_name: str, field
     return ir.Stmt.stmt_assignment(target = target, operator = "=", value = value)
 
 
-## Register the frame fields the host's async analysis records for every local
-## declaration, even in a no-await body.  The host's
-## `analyze_async_statements!` records a `local_<name>` field (storage type) for
-## each declaration up front; a no-await body lowers its locals as plain C
-## locals, so the field is dead — but the frame carries it, and the dump
-## compares the frame.
-function async_register_body_local_fields(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?) -> void:
+## One frame field collected by the no-await prepass, in normalized order.
+struct AsyncFieldEntry:
+    name: str
+    ty: types.Type
+
+
+## Register the frame fields a no-await async body contributes, in the host
+## analysis' normalized order: an explicit local's field follows its
+## initializer's normalizer temps, and an `and`/`or` temp (the only temp the
+## plain lowering creates in an await-free body) precedes the locals of the
+## branch bodies it encloses.  The lowering later creates the same temps in the
+## same counter order, so its registrations dedup against these and the frame
+## order matches the host's analysis walk.
+function async_register_normalized_body_fields(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?) -> void:
     let b = body else:
         return
-    async_register_stmt_local_fields(ctx, unsafe: read(b))
+    var entries = vec.Vec[AsyncFieldEntry].create()
+    # Predicted temp names start at the lowering's current counter but never
+    # advance it: the lowering allocates them itself.
+    var counter = ctx.async_tmp_counter
+    async_collect_stmt_fields(ctx, unsafe: read(b), ref_of(entries), ref_of(counter))
+    var i: ptr_uint = 0
+    while i < entries.len():
+        let entry_ptr = entries.get(i) else:
+            break
+        let entry = unsafe: read(entry_ptr)
+        async_register_unused_field(ctx, entry.name, entry.ty)
+        i += 1
+    entries.release()
+
+
+## Collect a statement's normalized frame fields (see
+## `async_register_normalized_body_fields`).  Assignment targets are skipped:
+## the plain lowering lowers them before its statement window opens, so a
+## target `and`/`or` stays inline there.
+function async_collect_stmt_fields(ctx: ref[LowerCtx], stmt: ast.Stmt, sink: ref[vec.Vec[AsyncFieldEntry]], counter: ref[ptr_uint]) -> void:
+    match stmt:
+        ast.Stmt.stmt_block as blk:
+            var i: ptr_uint = 0
+            while i < blk.statements.len:
+                async_collect_stmt_fields(ctx, unsafe: read(blk.statements.data + i), sink, counter)
+                i += 1
+        ast.Stmt.stmt_local as l:
+            let val = l.value
+            if val != null:
+                async_collect_expr_fields(ctx, unsafe: ptr[ast.Expr]<-val, sink, counter)
+            var is_destructure = false
+            match l.destructure_bindings:
+                Option.some:
+                    is_destructure = true
+                Option.none:
+                    pass
+            if l.name != "_" and not is_destructure:
+                var storage_ty = ctx.void_ty
+                if l.else_body != null:
+                    if val != null:
+                        storage_ty = async_local_value_type(ctx, unsafe: ptr[ast.Expr]<-val)
+                else if l.stmt_type != null:
+                    if val != null:
+                        storage_ty = local_decl_type(ctx, l.stmt_type, unsafe: ptr[ast.Expr]<-val)
+                    else:
+                        storage_ty = resolve_type_ref(ctx, unsafe: ptr[ast.TypeRef]<-l.stmt_type)
+                else if val != null:
+                    storage_ty = async_local_value_type(ctx, unsafe: ptr[ast.Expr]<-val)
+                sink.push(AsyncFieldEntry(name = j2("local_", l.name), ty = storage_ty))
+            async_collect_body_fields(ctx, l.else_body, sink, counter)
+        ast.Stmt.stmt_if as sif:
+            var bi: ptr_uint = 0
+            while bi < sif.branches.len:
+                var branch: ast.IfBranch
+                unsafe:
+                    branch = read(sif.branches.data + bi)
+                async_collect_expr_fields(ctx, branch.condition, sink, counter)
+                async_collect_body_fields(ctx, branch.body, sink, counter)
+                bi += 1
+            async_collect_body_fields(ctx, sif.else_body, sink, counter)
+        ast.Stmt.stmt_while as w:
+            async_collect_expr_fields(ctx, w.condition, sink, counter)
+            async_collect_body_fields(ctx, w.body, sink, counter)
+        ast.Stmt.stmt_for as f:
+            var fi: ptr_uint = 0
+            while fi < f.iterables.len:
+                async_collect_expr_fields(ctx, unsafe: f.iterables.data + fi, sink, counter)
+                fi += 1
+            async_collect_body_fields(ctx, f.body, sink, counter)
+        ast.Stmt.stmt_match as m:
+            async_collect_expr_fields(ctx, m.scrutinee, sink, counter)
+            var ai: ptr_uint = 0
+            while ai < m.arms.len:
+                async_collect_body_fields(ctx, unsafe: read(m.arms.data + ai).body, sink, counter)
+                ai += 1
+        ast.Stmt.stmt_expression as ex:
+            async_collect_expr_fields(ctx, ex.expression, sink, counter)
+        ast.Stmt.stmt_assignment as asg:
+            async_collect_expr_fields(ctx, asg.value, sink, counter)
+        ast.Stmt.stmt_ret as r:
+            let rv = r.value
+            if rv != null:
+                async_collect_expr_fields(ctx, unsafe: ptr[ast.Expr]<-rv, sink, counter)
+        ast.Stmt.stmt_defer as d:
+            let de = d.expression
+            if de != null:
+                async_collect_expr_fields(ctx, unsafe: ptr[ast.Expr]<-de, sink, counter)
+            async_collect_body_fields(ctx, d.body, sink, counter)
+        ast.Stmt.stmt_unsafe as u:
+            async_collect_body_fields(ctx, u.body, sink, counter)
+        ast.Stmt.stmt_when as wn:
+            async_collect_body_fields(ctx, wn.else_body, sink, counter)
+        _:
+            pass
+
+
+function async_collect_body_fields(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?, sink: ref[vec.Vec[AsyncFieldEntry]], counter: ref[ptr_uint]) -> void:
+    let b = body else:
+        return
+    async_collect_stmt_fields(ctx, unsafe: read(b), sink, counter)
+
+
+## Collect the temps the plain lowering creates for `ep` in an await-free async
+## body, in normalized emission order.  Only `and`/`or` temps exist there: the
+## normalizer allocates its temp name after both operand setups but emits the
+## temp declaration first, so the entry is emitted before its children's.
+## Proc bodies are synchronous and contribute nothing.
+function async_collect_expr_fields(ctx: ref[LowerCtx], ep: ptr[ast.Expr], sink: ref[vec.Vec[AsyncFieldEntry]], counter: ref[ptr_uint]) -> void:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_call as c:
+                async_collect_expr_fields(ctx, c.callee, sink, counter)
+                var i: ptr_uint = 0
+                while i < c.args.len:
+                    async_collect_expr_fields(ctx, read(c.args.data + i).arg_value, sink, counter)
+                    i += 1
+            ast.Expr.expr_specialization as s:
+                # Type arguments are type refs, not expressions — no temps.
+                async_collect_expr_fields(ctx, s.callee, sink, counter)
+            ast.Expr.expr_prefix_cast as pc:
+                async_collect_expr_fields(ctx, pc.expression, sink, counter)
+            ast.Expr.expr_unary_op as u:
+                async_collect_expr_fields(ctx, u.operand, sink, counter)
+            ast.Expr.expr_binary_op as b:
+                if b.operator == "and" or b.operator == "or":
+                    var children = vec.Vec[AsyncFieldEntry].create()
+                    async_collect_expr_fields(ctx, b.left, ref_of(children), counter)
+                    async_collect_expr_fields(ctx, b.right, ref_of(children), counter)
+                    read(counter) = read(counter) + 1
+                    let tmp = j2("__mt_async_tmp_", pw1_str(read(counter)))
+                    sink.push(AsyncFieldEntry(name = j2("local_", tmp), ty = ctx.bool_ty))
+                    var ci: ptr_uint = 0
+                    while ci < children.len():
+                        let child_ptr = children.get(ci) else:
+                            break
+                        sink.push(unsafe: read(child_ptr))
+                        ci += 1
+                    children.release()
+                else:
+                    async_collect_expr_fields(ctx, b.left, sink, counter)
+                    async_collect_expr_fields(ctx, b.right, sink, counter)
+            ast.Expr.expr_if as ie:
+                async_collect_expr_fields(ctx, ie.condition, sink, counter)
+                async_collect_expr_fields(ctx, ie.then_expr, sink, counter)
+                async_collect_expr_fields(ctx, ie.else_expr, sink, counter)
+            ast.Expr.expr_match as me:
+                async_collect_expr_fields(ctx, me.scrutinee, sink, counter)
+                var mi: ptr_uint = 0
+                while mi < me.arms.len:
+                    let arm = read(me.arms.data + mi)
+                    let pat = arm.pattern
+                    if pat != null:
+                        async_collect_expr_fields(ctx, pat, sink, counter)
+                    async_collect_expr_fields(ctx, arm.value, sink, counter)
+                    mi += 1
+            ast.Expr.expr_format_string as fs:
+                var pi: ptr_uint = 0
+                while pi < fs.parts.len:
+                    match read(fs.parts.data + pi):
+                        ast.FormatStringPart.fmt_expr as fe:
+                            async_collect_expr_fields(ctx, fe.expression, sink, counter)
+                        _:
+                            pass
+                    pi += 1
+            ast.Expr.expr_unsafe as u:
+                async_collect_expr_fields(ctx, u.expression, sink, counter)
+            ast.Expr.expr_await as aw:
+                # Not reachable for an await-free body; skip the temp.
+                async_collect_expr_fields(ctx, aw.expression, sink, counter)
+            _:
+                pass
 
 
 ## The storage type of a no-await async local's initializer.  A call through a
@@ -28654,61 +28831,6 @@ function async_local_value_type(ctx: ref[LowerCtx], val: ptr[ast.Expr]) -> types
             _:
                 pass
     return expr_type(ctx, val)
-
-
-function async_register_stmt_local_fields(ctx: ref[LowerCtx], stmt: ast.Stmt) -> void:
-    match stmt:
-        ast.Stmt.stmt_block as blk:
-            var i: ptr_uint = 0
-            while i < blk.statements.len:
-                async_register_stmt_local_fields(ctx, unsafe: read(blk.statements.data + i))
-                i += 1
-        ast.Stmt.stmt_local as l:
-            var is_destructure = false
-            match l.destructure_bindings:
-                Option.some:
-                    is_destructure = true
-                Option.none:
-                    pass
-            if l.name != "_" and not is_destructure:
-                var storage_ty = ctx.void_ty
-                let val = l.value
-                if l.else_body != null:
-                    # A guarded local's frame storage is the value's own type.
-                    if val != null:
-                        storage_ty = async_local_value_type(ctx, unsafe: ptr[ast.Expr]<-val)
-                else if l.stmt_type != null:
-                    if val != null:
-                        storage_ty = local_decl_type(ctx, l.stmt_type, unsafe: ptr[ast.Expr]<-val)
-                    else:
-                        storage_ty = resolve_type_ref(ctx, unsafe: ptr[ast.TypeRef]<-l.stmt_type)
-                else if val != null:
-                    storage_ty = async_local_value_type(ctx, unsafe: ptr[ast.Expr]<-val)
-                async_register_unused_field(ctx, j2("local_", l.name), storage_ty)
-            async_register_body_local_fields(ctx, l.else_body)
-        ast.Stmt.stmt_if as sif:
-            var bi: ptr_uint = 0
-            while bi < sif.branches.len:
-                async_register_body_local_fields(ctx, unsafe: read(sif.branches.data + bi).body)
-                bi += 1
-            async_register_body_local_fields(ctx, sif.else_body)
-        ast.Stmt.stmt_while as w:
-            async_register_body_local_fields(ctx, w.body)
-        ast.Stmt.stmt_for as f:
-            async_register_body_local_fields(ctx, f.body)
-        ast.Stmt.stmt_match as m:
-            var ai: ptr_uint = 0
-            while ai < m.arms.len:
-                async_register_body_local_fields(ctx, unsafe: read(m.arms.data + ai).body)
-                ai += 1
-        ast.Stmt.stmt_defer as d:
-            async_register_body_local_fields(ctx, d.body)
-        ast.Stmt.stmt_unsafe as u:
-            async_register_body_local_fields(ctx, u.body)
-        ast.Stmt.stmt_when as wn:
-            async_register_body_local_fields(ctx, wn.else_body)
-        _:
-            pass
 
 
 ## The host's prepared array-call temp for a value lowered with hoisting off:
