@@ -8927,8 +8927,15 @@ function lower_assert_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ki
     var msg_index: ptr_uint = 1
     if kind == "expect_eq" or kind == "expect_ne":
         msg_index = 2
-        let left = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
-        let right = lower_expr(ctx, unsafe: read(args.data + 1).arg_value)
+        let left_ast = unsafe: read(args.data + 0).arg_value
+        let right_ast = unsafe: read(args.data + 1).arg_value
+        var left = lower_expr(ctx, left_ast)
+        var right = lower_expr(ctx, right_ast)
+        # Each operand takes the other's type as its expected type, as a normal
+        # binary does (`found != 1` with a `ptr_uint` peer keeps a `ptr_uint`
+        # literal).
+        left = literal_value_to_context_type(ctx, left_ast, ir_expr_type(right), left)
+        right = literal_value_to_context_type(ctx, right_ast, ir_expr_type(left), right)
         let op = if kind == "expect_eq": "!=" else: "=="
         cond = alloc_expr(ir.Expr.expr_binary(operator = op, left = left, right = right, ty = ctx.bool_ty))
     else:
@@ -15519,11 +15526,12 @@ function literal_value_to_context_type(ctx: ref[LowerCtx], value_ast: ptr[ast.Ex
         match read(value_ast):
             ast.Expr.expr_integer_literal:
                 result = int_literal_to_context_type(value_ast, context_ty, result)
+            ast.Expr.expr_float_literal:
+                result = float_literal_to_context_type(value_ast, context_ty, result)
             ast.Expr.expr_unary_op:
-                # A signed literal (`-128`, `+3`) is a literal expression: the
+                # A signed literal (`-1.0`, `-128`) is a literal expression; the
                 # context type propagates through the unary to its operand.
                 result = int_literal_to_context_type(value_ast, context_ty, result)
-            ast.Expr.expr_float_literal:
                 result = float_literal_to_context_type(value_ast, context_ty, result)
             ast.Expr.expr_string_literal:
                 result = string_literal_to_context_type(value_ast, context_ty, result)
@@ -15804,6 +15812,12 @@ function is_bare_float_literal(ep: ptr[ast.Expr]) -> bool:
         match read(ep):
             ast.Expr.expr_float_literal as lit:
                 return not (lit.lexeme.ends_with("f") or lit.lexeme.ends_with("d"))
+            # A signed literal (`-1.0`) is a literal expression: the context
+            # type propagates through the unary to its float operand.
+            ast.Expr.expr_unary_op as un:
+                if un.operator == "-" or un.operator == "+":
+                    return is_bare_float_literal(un.operand)
+                return false
             _:
                 return false
 
@@ -15826,6 +15840,18 @@ function float_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types
         match read(arg_ast):
             ast.Expr.expr_float_literal as lit:
                 return alloc_expr(ir.Expr.expr_float_literal(value = lit.value, ty = context_ty))
+            ast.Expr.expr_unary_op as un:
+                if un.operator == "-" or un.operator == "+":
+                    if is_bare_float_literal(un.operand):
+                        match read(value):
+                            ir.Expr.expr_unary as uv:
+                                let inner = float_literal_to_context_type(un.operand, context_ty, uv.operand)
+                                if inner != uv.operand:
+                                    return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = inner, ty = context_ty))
+                                return value
+                            _:
+                                return value
+                return value
             _:
                 return value
 
@@ -19491,37 +19517,47 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
         unsafe:
             ctx.locals.push(read(lb_ptr))
         li += 1
+    # The host's `lower_match_stmt` prepares the scrutinee with the statement's
+    # window, lowers it once, and appends its cleanups after the match
+    # (`block.rb:838-845,924`).  A proc argument therefore materializes before
+    # the `match_value` temp; reusing the same IR node keeps the single
+    # evaluation's proc ids/temps/instantiations.
+    let had_window = ctx.hoist_mode != HoistMode.hm_off
+    let window_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
+    let scrutinee_expr = lower_expr(ctx, scrutinee)
+    let window_collected = collect_stmt_setup(ctx, window_saved)
+    if had_window:
+        append_span_stmts(ref_of(ctx.hoist_stmts), window_collected.stmts.as_span())
+        append_span_stmts(ref_of(ctx.hoist_cleanups), window_collected.cleanups.as_span())
+    else:
+        append_span_stmts(output, window_collected.stmts.as_span())
+        defer: append_span_stmts(output, window_collected.cleanups.as_span())
     var scrutinee_ty = expr_type(ctx, scrutinee)
-    # Prefer the lowered scrutinee's type: lowering resolves member/field types
-    # (including Option-typed fields and read(ptr) rvalues) more accurately than
-    # the analyzer's recorded type, which can drop the Option wrapper or record
-    # void.  Fall back to the analyzer type only when the lowered type is unknown.
-    let lowered_ty = ir_expr_type(lower_expr(ctx, scrutinee))
+    let lowered_ty = ir_expr_type(scrutinee_expr)
     if not types.is_error(lowered_ty) and not types.type_to_string(lowered_ty) == "void":
         scrutinee_ty = lowered_ty
-
     let type_name = named_type_name(scrutinee_ty)
 
     if type_name.is_some() and ctx.variants.contains(variant_registry_key(ctx, type_name.unwrap(), scrutinee_ty)):
-        lower_variant_match(ctx, output, scrutinee, type_name.unwrap(), scrutinee_ty, arms)
+        lower_variant_match(ctx, output, scrutinee_expr, type_name.unwrap(), scrutinee_ty, arms)
         ctx.locals = saved_locals
         return
 
     let gen_var = generic_variant_name(scrutinee_ty)
     if gen_var.is_some() and variant_match_allowed(ctx, gen_var.unwrap()):
-        lower_variant_match(ctx, output, scrutinee, gen_var.unwrap(), scrutinee_ty, arms)
+        lower_variant_match(ctx, output, scrutinee_expr, gen_var.unwrap(), scrutinee_ty, arms)
         ctx.locals = saved_locals
         return
 
     # Integer scrutinee: switch over integer / char literal case values.
     if is_integer_scrutinee(scrutinee_ty):
-        lower_scalar_match(ctx, output, scrutinee, arms)
+        lower_scalar_match(ctx, output, scrutinee_expr, arms)
         ctx.locals = saved_locals
         return
 
     # String scrutinee: an if / else-if chain comparing with `equal`.
     if is_str_scrutinee(scrutinee_ty):
-        lower_string_match(ctx, output, scrutinee, arms)
+        lower_string_match(ctx, output, scrutinee_expr, arms)
         ctx.locals = saved_locals
         return
 
@@ -19529,7 +19565,7 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
     # tests (mirrors the expression-match tuple path).
     match scrutinee_ty:
         types.Type.ty_tuple:
-            lower_tuple_match_stmt(ctx, output, scrutinee, scrutinee_ty, arms)
+            lower_tuple_match_stmt(ctx, output, scrutinee_expr, scrutinee_ty, arms)
             ctx.locals = saved_locals
             return
         _:
@@ -19541,8 +19577,6 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
             ctx.locals = saved_locals
             return
         fatal(j2("lowering: match requires known type, got ", ts))
-
-    let scrutinee_expr = lower_expr(ctx, scrutinee)
     var enum_module = enum_source_module(ctx, scrutinee_ty, ctx.module_name)
     var cases = vec.Vec[ir.SwitchCase].create()
     var i: ptr_uint = 0
@@ -19609,7 +19643,7 @@ function is_str_scrutinee(ty: types.Type) -> bool:
 ## pattern as the case value.  A `_` arm becomes `default` (marked exhaustive,
 ## matching the host; the backend only emits `__builtin_unreachable` when the
 ## switch has no default).
-function lower_scalar_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
+function lower_scalar_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchArm]) -> void:
     # A range pattern cannot be a `switch` case, so a match containing one is
     # lowered to an if / else-if chain (mirrors Ruby's lower_range_match_stmt).
     var has_range = false
@@ -19625,10 +19659,9 @@ function lower_scalar_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
                         pass
         hi += 1
     if has_range:
-        lower_scalar_range_match(ctx, output, scrutinee, arms)
+        lower_scalar_range_match(ctx, output, scrutinee_expr, arms)
         return
 
-    let scrutinee_expr = lower_expr(ctx, scrutinee)
     let scrutinee_ty = ir_expr_type(scrutinee_expr)
     var cases = vec.Vec[ir.SwitchCase].create()
     var i: ptr_uint = 0
@@ -19654,8 +19687,7 @@ function lower_scalar_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
 ## Lower an integer match containing range patterns to an if / else-if chain.
 ## A range arm becomes `scrutinee >= start and scrutinee <= stop`; other arms
 ## compare with `==`.  A `_` arm becomes the final else block.
-function lower_scalar_range_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
-    let scrutinee_expr = lower_expr(ctx, scrutinee)
+function lower_scalar_range_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchArm]) -> void:
     let scrutinee_ty = ir_expr_type(scrutinee_expr)
     # The host's match-to-if chains always carry an else body; the innermost
     # `if` falls back to an empty one when there is no wildcard arm.
@@ -19711,8 +19743,7 @@ function lower_scalar_range_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
 ## each arm's string-literal pattern via `equal` (rendered as `mt_str_equal`).
 ## The scrutinee is evaluated once into a temp.  A `_` arm becomes the final
 ## else block.
-function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
-    let scrutinee_expr = lower_expr(ctx, scrutinee)
+function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchArm]) -> void:
     let temp = fresh_c_temp_name(ctx, "match_str")
     let str_ty = types.Type.ty_str
     output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = str_ty, value = scrutinee_expr, line = 0, source_path = ""))
@@ -19982,8 +20013,7 @@ function lower_tuple_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
 
 ## Lower a tuple-literal match statement to an if / else-if chain of
 ## per-element equality conditions, with the `_` arm as the final else.
-function lower_tuple_match_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
-    let scrutinee_expr = lower_expr(ctx, scrutinee)
+function lower_tuple_match_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
     # The host's match-to-if chains always carry an else body; the innermost
     # `if` falls back to an empty one when there is no wildcard arm.
     var else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())
@@ -20171,11 +20201,11 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
 ## Dispatch a variant match to the switch strategy (member / `as name` /
 ## no-payload / wildcard arms) or the if/goto strategy (any struct-pattern arm,
 ## i.e. `Variant.arm(field, ...)`), mirroring Ruby's block.rb decision.
-function lower_variant_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
+function lower_variant_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
     if arms_have_call_pattern(arms):
-        lower_variant_match_goto(ctx, output, scrutinee, variant_name, scrutinee_ty, arms)
+        lower_variant_match_goto(ctx, output, scrutinee_expr, variant_name, scrutinee_ty, arms)
     else:
-        lower_variant_match_switch(ctx, output, scrutinee, variant_name, scrutinee_ty, arms)
+        lower_variant_match_switch(ctx, output, scrutinee_expr, variant_name, scrutinee_ty, arms)
 
 
 ## True when any arm's pattern is a call (a struct-destructure pattern such as
@@ -20198,7 +20228,7 @@ function arms_have_call_pattern(arms: span[ast.MatchArm]) -> bool:
     return false
 
 
-function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
+function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
     # If variant_name includes type args (e.g. "Option_span_Field"), strip to
     # the base name (e.g. "Option") to find the variant info.
     var info_ptr = ctx.variants.get(variant_registry_key(ctx, variant_name, scrutinee_ty))
@@ -20212,7 +20242,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
     let outer_c = variant_base_c_name(scrutinee_ty, ctx.module_name)
     let int_ty = types.primitive("int")
 
-    var scrut_base = lower_expr(ctx, scrutinee)
+    var scrut_base = scrutinee_expr
     if not ir_expr_is_name(scrut_base):
         # The host's hoist rule (`block.rb:847-853`): a `match_value` temp only
         # when some arm binds a payload and the expression is not duplicable.
@@ -20307,7 +20337,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
 ## tests `scrut.kind`, jumps to the next arm's label on mismatch, otherwise binds
 ## the payload into a temp, destructures its fields, and falls through to the arm
 ## body then `goto <end>`.  Mirrors Ruby's block.rb struct-pattern match path.
-function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
+function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
     let info_ptr = ctx.variants.get(variant_registry_key(ctx, variant_name, scrutinee_ty)) else:
         fatal(c"lowering: variant match on unknown variant")
     let info = unsafe: read(info_ptr)
@@ -20315,7 +20345,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
     let int_ty = types.primitive("int")
     let bool_ty = ctx.bool_ty
 
-    var scrut_base = lower_expr(ctx, scrutinee)
+    var scrut_base = scrutinee_expr
     if not ir_expr_is_name(scrut_base):
         let temp = fresh_c_temp_name(ctx, "match_value")
         let scrut_ty = ir_expr_type(scrut_base)
