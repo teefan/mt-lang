@@ -579,7 +579,12 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
             # The host dumper matches `Types::Struct`/`Types::Variant` before the
             # instance subclasses, so instance arguments are never printed.
             if im.args.len > 0:
-                let cls = if im.name == "Option" or im.name == "Result": "VariantInstance" else: "StructInstance"
+                # The host's instance subclass follows the declaration kind: a
+                # generic variant (Option/Result or a user variant such as
+                # engine.types.Outcome) is a VariantInstance, a generic struct a
+                # StructInstance.
+                let kind = imported_type_class(ctx, im.module_name, im.name)
+                let cls = if kind == "Variant" or im.name == "Option" or im.name == "Result": "VariantInstance" else: "StructInstance"
                 return node(j2("Types::", cls), imf.as_span())
             return node(j2("Types::", imported_type_class(ctx, im.module_name, im.name)), imf.as_span())
         types.Type.ty_generic as g:

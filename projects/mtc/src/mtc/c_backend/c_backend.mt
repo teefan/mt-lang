@@ -4475,10 +4475,17 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
 ## statement kinds produced by dynamic format-string lowering are supported
 ## (local declaration, assignment, and expression statement); sub-expressions go
 ## through `render_expression` so their string literals still register globally.
-## `_Static_assert(<condition>, "<message>");` — the message expr is a cstring
-## literal, rendered as a bare C string.
+## `_Static_assert(<condition>, "<message>");` — a string-literal message is
+## emitted as a bare C string (the host's `emit_static_assert`), regardless of
+## its IR type; any other message expression renders normally.
 function render_static_assert(e: ref[Emitter], condition: ptr[ir.Expr], message: ptr[ir.Expr]) -> str:
-    return j5("_Static_assert(", render_expression(e, condition), ", ", render_expression(e, message), ");")
+    var message_text = string.String.create()
+    match unsafe: read(message):
+        ir.Expr.expr_string_literal as lit:
+            message_text.append(c_string_literal(lit.value))
+        _:
+            message_text.append(render_expression(e, message))
+    return j5("_Static_assert(", render_expression(e, condition), ", ", message_text.as_str(), ");")
 
 
 function render_stmt_expr(e: ref[Emitter], setup: span[ir.Stmt], result: ptr[ir.Expr]) -> str:

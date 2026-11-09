@@ -8225,7 +8225,7 @@ function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast
         ctx.pending_synthetic_functions.push(build_capturing_invoke(ctx, method_params, ret_ty, body_ptr, invoke_str, env_type_name, captures))
 
         # Build release: decrement ref_count, free if zero.
-        ctx.pending_synthetic_functions.push(build_capturing_release(release_str, env_type_name, captures))
+        ctx.pending_synthetic_functions.push(build_capturing_release(ctx, release_str, env_type_name, captures))
 
         # Build retain: increment ref_count.
         ctx.pending_synthetic_functions.push(build_capturing_retain(retain_str, env_type_name))
@@ -8723,7 +8723,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
 
 
 ## Build a release function for capturing procs with ref-counting.
-function build_capturing_release(c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
+function build_capturing_release(ctx: ref[LowerCtx], c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = env_type_name)))
     let uint_ty = types.primitive("ptr_uint")
@@ -8741,6 +8741,18 @@ function build_capturing_release(c_name: str, env_type_name: str, captures: span
     let zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = uint_ty))
     let cond = alloc_expr(ir.Expr.expr_binary(operator = "==", left = ref_field, right = zero, ty = types.primitive("bool")))
     var then_body = vec.Vec[ir.Stmt].create()
+    # Captured proc values own a reference; release them before the env is
+    # freed (the host's `build_proc_release_function` capture walk).
+    var ci: ptr_uint = 0
+    while ci < captures.len:
+        var cap: ProcCapture
+        unsafe:
+            cap = read(captures.data + ci)
+        if contains_proc_storage_type(ctx, cap.ty):
+            let release_env = alloc_expr(ir.Expr.expr_name(name = "__mt_proc_env_ptr", ty = env_ptr_ty, pointer = Option[bool].some(value = false)))
+            let capture_ref = alloc_expr(ir.Expr.expr_member(receiver = release_env, member = cap.name, ty = cap.ty))
+            proc_contained_release_stmts(ctx, capture_ref, cap.ty, ref_of(then_body))
+        ci += 1
     let free_call = alloc_expr(ir.Expr.expr_call(callee = "mt_async_free", arguments = pack_single(alloc_expr(ir.Expr.expr_name(name = "__mt_proc_env", ty = void_ptr, pointer = Option[bool].some(value = false)))), ty = types.primitive("void")))
     then_body.push(ir.Stmt.stmt_expression(expression = free_call, line = 0, source_path = ""))
     body.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].none))
@@ -18179,7 +18191,7 @@ function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Ar
     # proc VALUE (`let _s = scaler(10.0)` came out void), so fall back to the
     # closure's own signature, which carries the real return type.
     var call_ty = expr_type(ctx, call_ep)
-    if is_void_type(call_ty):
+    if is_void_type(call_ty) or types.is_error(call_ty) or is_proc_type(call_ty):
         call_ty = proc_return_type(lb.ty)
     let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "invoke", ty = proc_invoke_field_type(lb.ty)))
     return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = call_ty))
@@ -18208,7 +18220,7 @@ function lower_proc_field_call(ctx: ref[LowerCtx], field_expr: ptr[ir.Expr], arg
     # type the `invoke` member with its field signature.
     var call_ty = expr_type(ctx, call_ep)
     let field_proc_ty = ir_expr_type(field_expr)
-    if is_void_type(call_ty):
+    if is_void_type(call_ty) or types.is_error(call_ty) or is_proc_type(call_ty):
         call_ty = proc_return_type(field_proc_ty)
     let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = field_expr, member = "invoke", ty = proc_invoke_field_type(field_proc_ty)))
     return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = call_ty))
@@ -19798,7 +19810,9 @@ function lower_static_assert(ctx: ref[LowerCtx], condition: ptr[ast.Expr], messa
                     message_text = lit.value
                 _:
                     pass
-    let message_ir = alloc_expr(ir.Expr.expr_string_literal(value = message_text, ty = types.primitive("cstr"), cstring = true))
+    # The host lowers the message with `expected_type: str` (a StringView
+    # literal), not a cstr (`declarations.rb:217`).
+    let message_ir = alloc_expr(ir.Expr.expr_string_literal(value = message_text, ty = types.Type.ty_str, cstring = false))
     return ir.StaticAssert(condition = cond_ir, message = message_ir)
 
 
@@ -26878,6 +26892,37 @@ function try_lookup_enum_value(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], memb
                                     pass
                             di += 1
                     mi += 1
+                return -1
+            ast.Expr.expr_member_access as type_access:
+                # A qualified enum type: `module.Enum.member` (the receiver is
+                # `module.Enum`).  Resolve the imported module's enum/flags
+                # declaration and its member value.
+                match read(type_access.receiver):
+                    ast.Expr.expr_identifier as module_id:
+                        let target_ptr = ctx.analysis.imports.get(module_id.name)
+                        if target_ptr != null:
+                            match find_imported_analysis(ctx, unsafe: read(target_ptr)):
+                                Option.some as owner:
+                                    var di: ptr_uint = 0
+                                    let adecls = owner.value.source_file.declarations
+                                    while di < adecls.len:
+                                        var dd: ast.Decl
+                                        unsafe:
+                                            dd = read(adecls.data + di)
+                                        match dd:
+                                            ast.Decl.decl_enum as een:
+                                                if een.name == type_access.member_name:
+                                                    return find_enum_member_value(een.enum_members, member_name)
+                                            ast.Decl.decl_flags as ffl:
+                                                if ffl.name == type_access.member_name:
+                                                    return find_enum_member_value(ffl.flags_members, member_name)
+                                            _:
+                                                pass
+                                        di += 1
+                                Option.none:
+                                    pass
+                    _:
+                        pass
                 return -1
             _:
                 return -1

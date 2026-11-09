@@ -747,6 +747,37 @@ function test_anonymous_tuple_renders_default_field_names() -> void:
 
 
 @[test]
+function test_named_tuple_static_assert_and_proc_calls() -> void:
+    ## `Types::Tuple#to_s` includes non-default field names in the struct decl
+    ## name; a static_assert message is a StringView literal; and a proc call
+    ## through a struct field or an array element takes the proc's return type,
+    ## not the analyzer's proc/error record (session 61).
+    var source = <<-SRC
+        static_assert(size_of(int) == 4, "int must be 4 bytes")
+
+        struct Holder:
+            cb: proc(i: int) -> bool
+
+        function call_field(h: Holder) -> bool:
+            return h.cb(1)
+
+        function call_index(ops: span[proc(i: int) -> int]) -> int:
+            return ops[0](5)
+
+        function main() -> int:
+            let named = (x = 10, y = 20)
+            return named.x
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::StructDecl :name \"(x: int, y: int)\" :linkage_name \"mt_tuple_int_int_x_y\""))
+    expect(text.contains_substring("(IR::StringLiteral :value \"int must be 4 bytes\" :type (Types::StringView) :cstring false)"))
+    expect(text.contains_substring(":type (Types::Primitive :name \"bool\")) :line 7 :path"))
+    expect(not text.contains_substring("(Types::Error)"))
+
+
+@[test]
 function test_tuple_constant_lowers_to_array_literal() -> void:
     ## A constant whose declared type is a tuple and whose value is an
     ## expression list takes the host's `lower_const_value_literal` shape: an

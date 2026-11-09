@@ -326,11 +326,28 @@ public function type_to_s_qualified(t: types.Type) -> str:
             return buf.as_str()
         types.Type.ty_tuple as tup:
             var buf = string.String.create()
+            # The host's `Types::Tuple#to_s`: default positional names render as
+            # `(T1, T2)`, non-default names as `(n1: T1, n2: T2)`.
+            var named = false
+            match tup.field_names:
+                Option.some as names:
+                    if not tuple_names_are_default(names.value):
+                        named = true
+                Option.none:
+                    pass
             buf.append("(")
             var i: ptr_uint = 0
             while i < tup.elements.len:
                 if i > 0:
                     buf.append(", ")
+                if named:
+                    match tup.field_names:
+                        Option.some as names:
+                            unsafe:
+                                buf.append(read(names.value.data + i))
+                            buf.append(": ")
+                        Option.none:
+                            pass
                 unsafe:
                     buf.append(type_to_s_qualified(read(tup.elements.data + i)))
                 i += 1
