@@ -14,7 +14,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-50-2026-11-08)
+- [Status at a glance](#status-at-a-glance-session-60-2026-11-09)
 - [How to start a work session](#how-to-start-a-work-session)
 - [The program — ranked remaining work](#the-program--ranked-remaining-work)
 - [Deliberate differences (do not chase)](#deliberate-differences-do-not-chase)
@@ -23,15 +23,15 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 59, 2026-11-09)
+## Status at a glance (session 60, 2026-11-09)
 
 | Area | State |
 | --- | --- |
-| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`, session 59 full); full self-test suite **19 files / 0 failed** |
-| `test/mt` | **60 files / 0 failed** (session 59) |
+| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`, session 60 full); full self-test suite **19 files / 0 failed** |
+| `test/mt` | **60 files / 0 failed** (session 60) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
-| `sexpr lex` / `parse` | 0 differ (lex 712/712; parse 713 match / 0 differ / 4 host-rejected at the session-49 scoreboard; counts drift with the tree) |
-| `sexpr lower` | **630 match / 36 differ / 51 host-rejected / 0 self-rejected of 717 files** (session 59) |
+| `sexpr lex` / `parse` | 0 differ (lex **717/717**; parse **713 match / 0 differ / 4 host-rejected of 717**; counts drift with the tree) |
+| `sexpr lower` | **630 match / 36 differ / 51 host-rejected / 0 self-rejected of 717 files** (session 60) |
 | `cli:parity` | **24 match / 37 differ / 0 pending** of 61 cases (last re-measured session 49, unchanged since session 35) |
 | Linter corpus | **495 agree / 121 differ** of 616 files (session 50 re-read) |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
@@ -41,7 +41,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 
 Rough completion against the per-track Definition of Done: **~82%**.  The
 self-hosting foundation is done; the residue is concentrated in the `lower`
-dump (37 files), CLI (37 cases + unported subsystems), the linter corpus (121
+dump (36 files), CLI (37 cases + unported subsystems), the linter corpus (121
 files), and bindings verification.  LSP, DAP and formatter are closed at their
 documented differences.
 
@@ -148,11 +148,16 @@ a runtime call and a non-constant argument no longer folds to 0
 analyzer types vec/mat/quat members and Simd arithmetic, SoA fields type as
 `array[T, N]`, and an unannotated local keeps the recorded simd/vec aggregate
 over its scalar binary node (`projects/stress/src/engine/math`,
-`examples/simd_features` advances to the `SimdLaneWith` IR node).  Flipped 14
-files; a no-await async body registers its frame fields in the host analysis'
-normalized order (an `and`/`or` temp before the branch locals), which flipped
-`std/net/rpc`; ledger `sexpr lower` 630/36/51/0 of 717 (from 615/51); 19/0 and 60/0
-re-run.
+`examples/simd_features` advances to the `SimdLaneWith` IR node).  A no-await
+async body registers its frame fields in the host analysis' normalized order
+(an `and`/`or` temp before the branch locals), which flipped `std/net/rpc`.
+Flipped 15 files; ledger `sexpr lower` 630/36/51/0 of 717 (from 615/51); 19/0
+and 60/0 re-run.
+
+Session-60 verification at the committed tree: full bootstrap (fixed point plus
+19/0), `test/mt` 60/0, `sexpr lower` 630/36/51/0, lex 717/717 and parse
+713 match / 0 differ / 4 host-rejected.  No code changes; the plan header and
+Ledger were re-stamped, and the ranked Track A leaders stand as below.
 
 ## How to start a work session
 
@@ -207,8 +212,9 @@ Iterate cheap, prove once:
 ### HARD RULES
 
 - **Never edit sources while a gate runs** — `tools/bootstrap.sh` compiles the working
-  tree, so a mid-run edit silently corrupts the result.  Check the exit status,
-  not just the tail.
+  tree, and `tools/sexpr_parity.rb`'s host side analyzes imported working-tree
+  sources, so a mid-run edit silently corrupts the result.  Check the exit
+  status, not just the tail.
 - **No hacks, no workarounds** — fix root causes where the wrong state is
   produced, not in the layer where the symptom surfaces.
 - **Sandbox generated binaries**: `timeout 10 bash -c 'ulimit -v 20000000; …'`.
@@ -315,12 +321,12 @@ names, not line numbers — lines drift.
 ### Track A — `lower` dump parity (630/36 of 717)
 
 Current set: **630 match / 36 differ / 51 host-rejected / 0 self-rejected of 717
-files** (session 59).  The host-rejected bucket is `external` and platform-pinned
+files** (session 60).  The host-rejected bucket is `external` and platform-pinned
 files; the count drifts with the tree and `tmp` fixtures — quote the set.
 
 Work one item per commit; after each item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
-and re-rank.  Open leaders, largest first (re-ranked session 59):
+and re-rank.  Open leaders, largest first (re-ranked session 60):
 
 1. **CPS async temp ordering** (`std/http/server`, `projects/stress/src/main`,
    `engine/async_tasks`) — the *no-await* body's frame fields now register in
@@ -372,10 +378,11 @@ and re-rank.  Open leaders, largest first (re-ranked session 59):
     naming (`loops.rb:445-601,603-798`), and `memory_stress_test`'s documented
     host `ref[@_mt_0, T]` artifact (do not chase).
 
-Session-59 flips: `examples/{async_network_lobby,comptime,reflection_advanced,
-simd_features→SimdLaneWith}` (the last only advanced), `sdl3/input/{gamepad,
-joystick}_polling`, `std/http`, `std/net/{discovery,lobby,nat,stun,turn}`,
-`std/oauth2`, `stress/engine/math`, `test/mt/reflect_test`.
+Session-59/60 flips: `examples/{async_network_lobby,comptime,
+reflection_advanced,simd_features→SimdLaneWith}` (the last only advanced),
+`sdl3/input/{gamepad,joystick}_polling`, `std/http`, `std/net/{discovery,lobby,
+nat,rpc,stun,turn}`, `std/oauth2`, `stress/engine/math`,
+`test/mt/reflect_test`.
 
 Stopping rule: **0 differing files, or a documented host artifact with a
 reproduction** (e.g. the host's leaked `ref[@_mt_0, T]` lifetime in
@@ -595,11 +602,11 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); 19 files / 0 failed | session 59 (full) | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 60 files / 0 failed | session 59 | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); 19 files / 0 failed | session 60 (full) | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 60 files / 0 failed | session 60 | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 13/13 sync top-level identical (+2 async at the host's rc 134); sdl3 34/34; raylib sample builds | session 50 (raylib 49) | per-family sweeps |
-| `sexpr lex` / `parse` | lex 712/712; parse 713 match / 0 differ / 4 host-rejected | lex session 33, parse session 49 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 630 match / 36 differ / 51 host-rejected / 0 self-rejected of 717 | session 59 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lex` / `parse` | lex 717/717; parse 713 match / 0 differ / 4 host-rejected of 717 | session 60 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 630 match / 36 differ / 51 host-rejected / 0 self-rejected of 717 | session 60 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | 24 match / 37 differ / 0 pending of 61 | session 49 | `rake "cli:parity"` |
 | lint corpus | 495 agree / 121 differ of 616 | session 50 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
