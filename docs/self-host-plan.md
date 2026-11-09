@@ -23,15 +23,15 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 58, 2026-11-09)
+## Status at a glance (session 59, 2026-11-09)
 
 | Area | State |
 | --- | --- |
-| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`, session 58 full); full self-test suite **19 files / 0 failed** |
-| `test/mt` | **60 files / 0 failed** (session 58) |
+| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`, session 59 full); full self-test suite **19 files / 0 failed** |
+| `test/mt` | **60 files / 0 failed** (session 59) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex 712/712; parse 713 match / 0 differ / 4 host-rejected at the session-49 scoreboard; counts drift with the tree) |
-| `sexpr lower` | **615 match / 51 differ / 51 host-rejected / 0 self-rejected of 717 files** (session 58) |
+| `sexpr lower` | **629 match / 37 differ / 51 host-rejected / 0 self-rejected of 717 files** (session 59) |
 | `cli:parity` | **24 match / 37 differ / 0 pending** of 61 cases (last re-measured session 49, unchanged since session 35) |
 | Linter corpus | **495 agree / 121 differ** of 616 files (session 50 re-read) |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
@@ -39,9 +39,9 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | bindgen self-hosted; **3 verified / 25 changed of 28** (deltas are cosmetic emitter gaps, unverified) |
 
-Rough completion against the per-track Definition of Done: **~80%**.  The
+Rough completion against the per-track Definition of Done: **~82%**.  The
 self-hosting foundation is done; the residue is concentrated in the `lower`
-dump (62 files), CLI (37 cases + unported subsystems), the linter corpus (121
+dump (37 files), CLI (37 cases + unported subsystems), the linter corpus (121
 files), and bindings verification.  LSP, DAP and formatter are closed at their
 documented differences.
 
@@ -132,6 +132,26 @@ through its unary at binary, call-argument and return sites; and
 binary.  Flipped `test/mt/{vec,math}_test` and
 `projects/mtc/test/tidy_formatter_test` (19/0 and 60/0 re-run).
 
+Session-59 batch: async scalar/enum match cases append the CPS break
+(`std/http`, `std/oauth2`); a guard local in a no-await async body carries no
+line/path (`std/net/lobby`); async local/assignment initializers materialize
+array calls (`__mt_array_call_N`) and the `?`-operand prepared windows precede
+`__mt_propagate_N` (`std/net/{discovery,nat,stun,turn}`,
+`examples/async_network_lobby`).  Cross-module async calls are Task-wrapped for
+every return type (the analyzer's imported binding type).  Plain local reads and
+assignment targets carry the flow-refined visible type (sdl3 gamepad/joystick,
+the `raw_fields` family).  Inline-for binds its loop variable as a comptime
+constant (no local) and folds constant branch conditions; `emit` declarations
+lower a second time into the emitted tail; an ordinary const-function call stays
+a runtime call and a non-constant argument no longer folds to 0
+(`examples/{comptime,reflection_advanced}`, `test/mt/reflect_test`).  The
+analyzer types vec/mat/quat members and Simd arithmetic, SoA fields type as
+`array[T, N]`, and an unannotated local keeps the recorded simd/vec aggregate
+over its scalar binary node (`projects/stress/src/engine/math`,
+`examples/simd_features` advances to the `SimdLaneWith` IR node).  Flipped 14
+files; ledger `sexpr lower` 629/37/51/0 of 717 (from 615/51); 19/0 and 60/0
+re-run.
+
 ## How to start a work session
 
 ### Entry points
@@ -211,7 +231,7 @@ Iterate cheap, prove once:
 0. **Hard build parity** — **DONE** (session 49; re-verified session 50): all
    15 top-level examples build, the synchronous set's stdout+exit is identical,
    `examples/sdl3` 34/34, `test/mt` 60/0.
-1. **`lower` dump parity** — **ACTIVE**: 615/51/51/0 of 717.  Work the ranked
+1. **`lower` dump parity** — **ACTIVE**: 629/37/51/0 of 717.  Work the ranked
    leaders in Track A; every item moves files' first differences deeper and can
    expose new families, so re-rank after each item.
 2. **CLI behavior parity** — open: 24/37/0 of 61, plus the unported subsystems
@@ -290,103 +310,70 @@ order: finish `lower` first, then CLI/linter/bindings, then the final matrix;
 LSP/DAP/formatter are closed at their documented differences.  Anchor by symbol
 names, not line numbers — lines drift.
 
-### Track A — `lower` dump parity (615/51 of 717)
+### Track A — `lower` dump parity (629/37 of 717)
 
-Current set: **615 match / 51 differ / 51 host-rejected / 0 self-rejected of 717
-files** (session 58).  The host-rejected bucket is `external` and platform-pinned
+Current set: **629 match / 37 differ / 51 host-rejected / 0 self-rejected of 717
+files** (session 59).  The host-rejected bucket is `external` and platform-pinned
 files; the count drifts with the tree and `tmp` fixtures — quote the set.
 
 Work one item per commit; after each item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
-and re-rank.  Open leaders, largest first (re-ranked session 58):
+and re-rank.  Open leaders, largest first (re-ranked session 59):
 
-1. **Generic-instance wave placement** — **DONE** (session 58): the driver now
-   reproduces the host's setup pass + `lower_functions` fixpoint, including
-   analyzer-pre-instantiated bindings and lowering-created instances gated on
-   their creator.  Flipped the 8 files listed in *Status at a glance*.
-2. **Async tails in the net/TLS corpus** (`std/net/*`, `std/http*`, `std/tls`,
-   `std/oauth2`) — the session-58 wave port moved the remaining first
-   differences deep into the async bodies; re-rank each file's next difference
-   (`examples/async_network_lobby`, `std/net/lobby` were also advanced).
-3. **Foreign-call protocol residue** (raylib/SDL3 examples, ~25) — the
-   `hm_discard` result materialization, raw receivers, pointer boundaries and
-   mapping node types are fixed; the remaining first differences are the
+1. **Async frame-field registration order** (`std/net/rpc`, `std/http/server`,
+   `projects/stress/src/main`, `engine/async_tasks`) — the host's analysis walks
+   the normalized body, so a normalizer-created temp (`and`/`or`, an if/match
+   expression) registers *between* the surrounding explicit locals; the self's
+   no-await prepass registers only explicit locals up front and a lowering-time
+   temp lands after them.  Port the normalized analysis walk (or register the
+   no-await body's fields in normalized order).
+2. **Foreign-call protocol residue** (raylib/SDL examples: `basic_pbr`,
+   `pie_chart`, `digital_clock`, `unicode_emojis`, `spotlight_rendering`) — the
    `__mt_foreign_arg_N` / `__mt_foreign_in_N` policy
-   (`inlineable_single_direct_call_names`, addressable operands), cstr-temp
-   numbering when an outer argument binds before a nested call is prepared, and
-   call-argument expected-type propagation (`math.cos(double)` arguments typing
-   their operand expressions).
-4. **Simd member types** (`examples/simd_features.mt`, `projects/stress/src/engine/math.mt`)
-   — a `simd` value's `x` member resolves to `void` in the self where the host
-   has `array[double, 4]`; the vector-scalar binary expansion also needs the
-   host's lane shapes.
-5. **Visible-vs-storage local binding type** (`lowering.mt`, the debug-map and
-   lowering tests, `sdl3/input/{gamepad,joystick}_polling`, 5 files) — the
-   host's binding keeps the initializer's visible type (`Types::Null` for an
-   annotated `var x: ptr[T]? = null`) while storage stays the declared nullable;
-   the self reads the declared type.  Model `binding[:type]` vs `storage_type`.
-5b. **Cast-context conditional typing** (`sdl3/demo/woodeneye`) —
-   `ubyte<-(if …: 0 else: 255)`: the self's analyzer records the cast's `ubyte`
-   on the `if` and its branches; the host's lowering re-infers the conditional
-   as `int` below the cast.  Mirrors the analyzer/lowering split for conditionals
-   under a prefix cast.
-5c. **Async expression normalization** (`projects/stress/src/engine/async_tasks`,
-   `closures`) — an `if`-expression with branch awaits now hoists; the
-   while-condition await (`loop_with_await`) still registers its short-circuit
-   temp after the operand temp, and a proc comparison carries the proc type
-   rather than `bool`.  Re-derive `normalize_async_expression`'s remaining arms.
-5d. **`mtop/main.mt` null lowering** — host `NullLiteral`, self `Name("NULL")`
-   for a `ptr[str]` local initialized from `null` in that tree.
-5e. **Proc-symbol numbering is a consequence of item 1** — `test/mt/vec_test`
-   (`__proc_5` vs `__proc_7`) and `language_baseline`/`tetris` proc ids follow
-   the host's wave lowering order, so re-check them after the wave port.
-5f. **Generic method ordering within an instance** (`test/mt/{queue,stack,
+   (`inlineable_single_direct_call_names`, addressable operands), the
+   `__mt_foreign_expr_N` condition hoist, temp numbering when an outer argument
+   binds before a nested call is prepared, and call-argument expected-type
+   propagation (`math.cos(double)` typing its operand expressions).
+3. **Generic method ordering within an instance** (`test/mt/{queue,stack,
    priority_queue,set,multiset}_test`) — the host emits `Vec.get` before
    `Vec.as_span`, `Deque.get` before `Deque.iter`, `Map.contains` before
-   `Map.keys`; the self orders them differently.  Likely the same
-   `ordered_module_functions` grouping as item 1; re-derive the per-declaration
-   method order and the `sort_by(type_arguments)` key.
-5g. **Generic `StructInstance` member type resolves void** (`test/mt/
-   ordered_map_test`, `ordered_set_test`) — a `Node`-typed generic instance
-   local's inferred type is `void` in the self where the host has
-   `Nullable[ptr[StructInstance Node]]`.
-5h. **Compile-time reflection `inline for`** (`examples/comptime`,
-   `reflection_advanced`, `test/mt/reflect_test`) — the host folds the field
-   loop to a direct `if`; the self emits a `LocalDecl field` block (the
-   `inline_for` per-field evaluation path).
-5i. **Task value literal shape** (`test/mt/net_sync_test`) — the self's
-   `make_task_literal` includes a leading `value` field where the host emits the
-   constructor's 6-field `{frame, ready, set_waiter, release, take_result,
-   cancel}` shape.
-5j. **Format-string part temporaries** (`test/mt/mem_tracking_test`) — the self
-   hoists `__mt_fmt_part_N` where the host appends directly.
-5k. **Double unary cast** (`test/mt/math_test`) — an extra `Cast double` around
-   an already-double negation.
-6. **Parallel for/block shapes and naming** (`multithreading_test`) — port the
-   host's `mt_pfor_cap_<prefix>_pfor_<N>` / `mt_pfor_work_*` /
-   `mt_spawn_cap_<prefix>_spawn_<N>_<idx>` / `mt_spawn_work_*` names, the
-   `mt_pfor_cap` / `mt_spawn_cap_<idx>` locals, the capture aggregate literals
-   (no zero-init+assign), the `mt_pfor_data/start/end` worker params, and the
-   direct-stop `mt_parallel_for` call (`loops.rb:445-601,603-798`).
-7. **Visible-vs-storage local binding type** (`lowering.mt`) — the host's
-   binding keeps the initializer's visible type (`Types::Null` for an annotated
-   `var x: ptr[T]? = null`) while storage stays the declared nullable; the self
-   reads the declared type.  Model `binding[:type]` vs `storage_type` and rewrite
-   on assignment.
-8. **Unsigned literal folding** (`std/flecs.mt` line 329) — host `-268435456`,
-   self `4026531840` for a `uint` constant: the host folds through a signed
-   long, the self keeps the unsigned value.
+   `Map.keys`; re-derive the per-declaration method order and the
+   `sort_by(type_arguments)` key.
+4. **Generic-instance placement** (`examples/data_structures`,
+   `nested_struct_stress_test`) — the host emits a specialization at its owner
+   declaration's next visit gated on its creator; these two file's remaining
+   lead differences are that visit order.
+5. **Proc/proc-symbol numbering** (`examples/language_baseline`, `tetris`,
+   `std/raylib/packed_assets`) — follows the wave lowering/creation order; item
+   4's fix likely moves it.
+6. **Async/expression tails** (`stress/engine/closures` proc comparison keeps
+   the proc type rather than `bool`; `stress/engine/compile` static-assert
+   message is `StringView`, not `cstr`; `test/mt/net_sync_test` aggregate
+   literal is a `uint` zero; `std/flecs` char array elements cast to `char`;
+   `projects/mtop/src/main` null lowering is `NullLiteral`; `examples/
+   nullable_and_variant_test` `AddressOf` carries the ref type).
+7. **`SimdLaneWith` IR node** (`examples/simd_features`) — add the host's node
+   and backend emission; the self currently emits a `StmtExpr` temp.
+8. **Cast-context conditional typing** (`sdl3/demo/woodeneye`) —
+   `ubyte<-(if …: 0 else: 255)`: the host's lowering re-infers the conditional
+   as `int` below the cast.
 9. **`main.mt` crash** — lowering `projects/mtc/src/mtc/main.mt` with its
    project roots aborts in `str_is_valid_utf8` (loop guard) on both stage2 and
    the dev compiler; investigate the corrupt `str` length feeding it.
-10. **Tail (file-by-file):** `memory_stress_test` is the documented host
-    `ref[@_mt_0, T]` artifact (do not chase); re-rank the remaining
-    `projects/stress`, `projects/mtc/test` and `test/mt` files individually.
+10. **Tail (file-by-file):** `lowering.mt`'s next str-match shape (re-derive),
+    `std/mem/tracking`'s `__mt_fmt_part_N` hoist, the multithreading pfor
+    naming (`loops.rb:445-601,603-798`), and `memory_stress_test`'s documented
+    host `ref[@_mt_0, T]` artifact (do not chase).
+
+Session-59 flips: `examples/{async_network_lobby,comptime,reflection_advanced,
+simd_features→SimdLaneWith}` (the last only advanced), `sdl3/input/{gamepad,
+joystick}_polling`, `std/http`, `std/net/{discovery,lobby,nat,stun,turn}`,
+`std/oauth2`, `stress/engine/math`, `test/mt/reflect_test`.
 
 Stopping rule: **0 differing files, or a documented host artifact with a
 reproduction** (e.g. the host's leaked `ref[@_mt_0, T]` lifetime in
-`examples/memory_stress_test.mt` — the self renders the declared `ref[T]`; see *Deliberate
-differences*).
+`examples/memory_stress_test.mt` — the self renders the declared `ref[T]`; see
+*Deliberate differences*).
 
 ### Track B — CLI parity (24/37 of 61)
 
@@ -601,11 +588,11 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds; 19 files / 0 failed | session 58 (full) | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 60 files / 0 failed | session 58 | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); 19 files / 0 failed | session 59 (full) | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 60 files / 0 failed | session 59 | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 13/13 sync top-level identical (+2 async at the host's rc 134); sdl3 34/34; raylib sample builds | session 50 (raylib 49) | per-family sweeps |
 | `sexpr lex` / `parse` | lex 712/712; parse 713 match / 0 differ / 4 host-rejected | lex session 33, parse session 49 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 615 match / 51 differ / 51 host-rejected / 0 self-rejected of 717 | session 58 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 629 match / 37 differ / 51 host-rejected / 0 self-rejected of 717 | session 59 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | 24 match / 37 differ / 0 pending of 61 | session 49 | `rake "cli:parity"` |
 | lint corpus | 495 agree / 121 differ of 616 | session 50 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |

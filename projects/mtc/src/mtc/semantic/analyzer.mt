@@ -8391,6 +8391,39 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
             if member.equal("len"):
                 return types.primitive("ptr_uint")
             return types.Type.ty_error
+        types.Type.ty_primitive as p:
+            # The host's `Types::Vector`/`Matrix`/`Quaternion` field maps:
+            # vectors and quaternions expose `x`/`y`/`z`/`w` (the vector's
+            # width is its name suffix), and a matrix exposes `col0..colN-1` as
+            # the matching `vecN`.  `ivec*` lanes are `int`; everything else is
+            # `float`.
+            if is_vec_math_name(p.name):
+                let is_int = p.name.starts_with("ivec")
+                let lane_ty = if is_int: types.primitive("int") else: types.primitive("float")
+                if p.name == "mat3":
+                    if member == "col0" or member == "col1" or member == "col2":
+                        return types.primitive("vec3")
+                    return types.Type.ty_error
+                if p.name == "mat4":
+                    if member == "col0" or member == "col1" or member == "col2" or member == "col3":
+                        return types.primitive("vec4")
+                    return types.Type.ty_error
+                var width = 4
+                if p.name == "vec2" or p.name == "ivec2":
+                    width = 2
+                else if p.name == "vec3" or p.name == "ivec3":
+                    width = 3
+                if member == "x":
+                    return lane_ty
+                if width >= 2 and member == "y":
+                    return lane_ty
+                if width >= 3 and member == "z":
+                    return lane_ty
+                if width >= 4 and member == "w":
+                    return lane_ty
+                return types.Type.ty_error
+            # A non-vector primitive member keeps the permissive path.
+            return types.Type.ty_error
         types.Type.ty_generic as g:
             if g.name == "Task" and g.args.len >= 1:
                 # The host's `Types::Task#fields` (`types.rb:590-632`): `frame`
