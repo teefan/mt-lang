@@ -31,7 +31,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | `test/mt` | **60 files / 0 failed** (session 60) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **717/717**; parse **713 match / 0 differ / 4 host-rejected of 717**; counts drift with the tree) |
-| `sexpr lower` | **632 match / 34 differ / 51 host-rejected / 0 self-rejected of 717 files** (session 61) |
+| `sexpr lower` | **634 match / 32 differ / 51 host-rejected / 0 self-rejected of 717 files** (session 61) |
 | `cli:parity` | **24 match / 37 differ / 0 pending** of 61 cases (last re-measured session 49, unchanged since session 35) |
 | Linter corpus | **495 agree / 121 differ** of 616 files (session 50 re-read) |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
@@ -190,6 +190,19 @@ concrete instance's substituted fields (`proc_struct_fields`) instead of the
 declared `analyzer.structs` entry, so `PipelineStep[int].handler` carries
 `proc(input: int)`.  `stress/main` advances from that field type to event
 function ordering; count unchanged at 632/34/51/0, gates as above.
+
+Session-61 fourth batch: event runtime functions and dyn wrappers join the
+program-wide synthetic function tail in creation order (the host's single
+`@artifacts.synthetic_functions` list); a multi-iterable `for` mirrors the host's
+parallel collection-for (per-iterable `__mt_for_items_N`, the matching-length
+fatal check, and a block-wrapped `__mt_for_index_N` loop); proc-call arguments
+and `.with(...)` replacements take the target parameter/field literal type; and
+a proc literal in a CPS local initializer uses a prepared window, so no
+`__proc_N__setup_env` synthetic function is emitted.  Flipped
+`projects/stress/src/engine/async_tasks.mt` and `projects/stress/src/main.mt`;
+lower **634 match / 32 differ / 51 host-rejected / 0 self-rejected of 717**
+(from 632/34; the set diff shows no newly differing files).  Gates: fixed point
+holds, `test/mt` 60/0, examples 49/0, dev self-tests 19/0.
 
 ## How to start a work session
 
@@ -350,9 +363,9 @@ order: finish `lower` first, then CLI/linter/bindings, then the final matrix;
 LSP/DAP/formatter are closed at their documented differences.  Anchor by symbol
 names, not line numbers — lines drift.
 
-### Track A — `lower` dump parity (632/34 of 717)
+### Track A — `lower` dump parity (634/32 of 717)
 
-Current set: **632 match / 34 differ / 51 host-rejected / 0 self-rejected of 717
+Current set: **634 match / 32 differ / 51 host-rejected / 0 self-rejected of 717
 files** (session 61).  The host-rejected bucket is `external` and platform-pinned
 files; the count drifts with the tree and `tmp` fixtures — quote the set.
 
@@ -360,18 +373,13 @@ Work one item per commit; after each item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
 and re-rank.  Open leaders, largest first (re-ranked session 61):
 
-1. **Async-file tails: proc/synthetic placement, the async-main args bridge and
-   generic struct proc fields** (`engine/async_tasks`, `std/http/server`,
-   `projects/stress/src/main`) — the async frame/temp shapes and the
-   tuple/static-assert/proc-call/enum/proc-env residuals are byte-equal
-   (session 61; flipped `engine/{compile,closures}.mt`).  The lead differences
-   are now: the host's program-wide synthetic function order
-   (`async_with_proc__resume` vs the proc helper functions), the missing
-   async-main `args` bridge proc env (`std_http_server__proc_1__env`; host
-   `lib/milk_tea/core/lowering/async/frame_builder.rb:6-95`, bridge `:147-260`),
-   and `stress/main`'s next difference: event runtime helper placement/order
-   (`mt_event_engine_systems_entity_spawned_*` vs the module's
-   `type_system_stress`), i.e. the program-wide synthetic function tail order.
+1. **Async-main args bridge** (`std/http/server`) — the async frame/temp shapes,
+   the program-wide synthetic ordering (events, dyn wrappers, proc helpers) and
+   the async_tasks/stress-main tails are byte-equal (session 61; flipped
+   `engine/async_tasks` and `stress/main`).  The remaining lead difference is
+   the missing async-main `args` bridge proc env
+   (`std_http_server__proc_1__env`; host
+   `lib/milk_tea/core/lowering/async/frame_builder.rb:6-95`, bridge `:147-260`).
 2. **Foreign-call protocol residue** (raylib/SDL examples: `basic_pbr`,
    `pie_chart`, `digital_clock`, `unicode_emojis`, `spotlight_rendering`) — the
    `__mt_foreign_arg_N` / `__mt_foreign_in_N` policy
@@ -638,7 +646,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `test/mt` | 60 files / 0 failed | session 61 | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 61 | `tools/gates.sh --areas codegen --run` |
 | `sexpr lex` / `parse` | lex 717/717; parse 713 match / 0 differ / 4 host-rejected of 717 | session 60 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 632 match / 34 differ / 51 host-rejected / 0 self-rejected of 717 | session 61 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 634 match / 32 differ / 51 host-rejected / 0 self-rejected of 717 | session 61 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | 24 match / 37 differ / 0 pending of 61 | session 49 | `rake "cli:parity"` |
 | lint corpus | 495 agree / 121 differ of 616 | session 50 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |

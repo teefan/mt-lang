@@ -788,6 +788,57 @@ function test_named_tuple_static_assert_and_proc_calls() -> void:
 
 
 @[test]
+function test_parallel_for_collection_shape() -> void:
+    ## A multi-iterable `for left, right in a, b` mirrors the host's
+    ## `lower_parallel_collection_for_stmt`: a block with one `__mt_for_items_N`
+    ## per iterable, a matching-lengths fatal check, and a `__mt_for_index_N`
+    ## `ForStmt` (session 61).
+    var source = <<-SRC
+        function main() -> int:
+            var a: array[int, 3]
+            var b: array[int, 3]
+            var total = 0
+            for left, right in a, b:
+                total += left + right
+            return total
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::BlockStmt :body ((IR::LocalDecl :name \"__mt_for_items_"))
+    expect(text.contains_substring("parallel for iterables must have matching lengths"))
+    expect(text.contains_substring("(IR::ForStmt :init (IR::LocalDecl :name \"__mt_for_index_"))
+    expect(text.contains_substring("(IR::LocalDecl :name \"left\""))
+    expect(text.contains_substring("(IR::LocalDecl :name \"right\""))
+
+
+@[test]
+function test_proc_and_with_literal_contexts() -> void:
+    ## A proc call argument and a `.with(...)` replacement take the target
+    ## parameter/field type, so a bare `10.0` is a double in both (session 61).
+    var source = <<-SRC
+        struct Pair:
+            x: double
+            y: double
+
+        function apply(p: proc(input: double) -> double) -> double:
+            return p(10.0)
+
+        function main() -> int:
+            let p = Pair(x = 1.0, y = 2.0)
+            let q = p.with(x = 10.0)
+            let r = apply(proc(input: double) -> double:
+                return input)
+            return int<-q.x + int<-r
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::FloatLiteral :value 10.0 :type (Types::Primitive :name \"double\"))"))
+    expect(not text.contains_substring("(IR::FloatLiteral :value 10.0 :type (Types::Primitive :name \"float\"))"))
+
+
+@[test]
 function test_tuple_constant_lowers_to_array_literal() -> void:
     ## A constant whose declared type is a tuple and whose value is an
     ## expression list takes the host's `lower_const_value_literal` shape: an
@@ -3436,6 +3487,32 @@ function test_async_short_circuit_ordering_and_while_cond_temp() -> void:
     expect(text.contains_substring("(IR::BreakStmt)"))
     expect(text.contains_substring("(IR::Field :name \"local_chunk\" :type (Types::VariantInstance :name \"Result\""))
     expect(not text.contains_substring("(IR::Field :name \"local___mt_async_tmp_4\" :type (Types::VariantInstance"))
+
+
+@[test]
+function test_async_proc_local_inlines_env_setup() -> void:
+    ## A proc literal in a CPS local initializer is a prepared expression: its
+    ## env allocation/store hoists inline in the resume body, so no synthetic
+    ## `__proc_N__setup_env` function is emitted (the host's CF local path).
+    var source = <<-SRC
+        async function tick(x: int) -> int:
+            return x
+
+        async function work() -> int:
+            let offset = 5
+            let cb = proc(x: int) -> int:
+                return x + offset
+            return cb(await tick(1))
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(not text.contains_substring("__setup_env"))
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_proc_expr_"))
+    expect(text.contains_substring(":member \"__mt_ref_count\""))
 
 
 @[test]

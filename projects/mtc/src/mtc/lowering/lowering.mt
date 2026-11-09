@@ -301,16 +301,12 @@ struct LowerCtx:
     # `Program.monomorphized_structs` (see below).
     pending_dyn_structs: vec.Vec[ir.StructDecl]
     pending_dyn_vtable_structs: vec.Vec[ir.StructDecl]
-    pending_dyn_wrappers: vec.Vec[ir.Function]
     pending_dyn_constants: vec.Vec[ir.Constant]
     dyn_generated_vtables: map_mod.Map[str, bool]
     # str_buffer[N] struct type cache: N → struct_linkage_name
     str_buffer_structs: map_mod.Map[str, str]
     # Event runtime: per-event-type synthetic info (capacity, payload, linkage names).
     event_runtimes: map_mod.Map[str, EventRuntimeInfo]
-    # Pending synthetic declarations emitted during event lowering, appended after
-    # the main module iteration.
-    pending_event_functions: vec.Vec[ir.Function]
     # Synthetic enums (the builtin `EventError`), the host's
     # `@artifacts.synthetic_enums`; appended after every module's enums at the
     # program level, deduped by linkage.
@@ -1222,12 +1218,10 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         external_struct_keys = map_mod.Map[str, bool].create(),
         pending_dyn_structs = vec.Vec[ir.StructDecl].create(),
         pending_dyn_vtable_structs = vec.Vec[ir.StructDecl].create(),
-        pending_dyn_wrappers = vec.Vec[ir.Function].create(),
         pending_dyn_constants = vec.Vec[ir.Constant].create(),
         dyn_generated_vtables = map_mod.Map[str, bool].create(),
         str_buffer_structs = map_mod.Map[str, str].create(),
         event_runtimes = map_mod.Map[str, EventRuntimeInfo].create(),
-        pending_event_functions = vec.Vec[ir.Function].create(),
         pending_synthetic_enums = vec.Vec[ir.EnumDecl].create(),
         pending_generic_variants = vec.Vec[ir.VariantDecl].create(),
         pending_proc_structs = vec.Vec[ir.StructDecl].create(),
@@ -2091,12 +2085,6 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         let ds_ptr = ds_iter.next() else:
             break
         monomorphized.push(unsafe: read(ds_ptr))
-    var dw_index: ptr_uint = 0
-    while dw_index < ctx.pending_dyn_wrappers.len():
-        let dw_ptr = ctx.pending_dyn_wrappers.get(dw_index) else:
-            break
-        functions.push(unsafe: read(dw_ptr))
-        dw_index += 1
 
     var dyn_constants = vec.Vec[ir.Constant].create()
     var dci: ptr_uint = 0
@@ -2115,13 +2103,6 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
             break
         constants.push(unsafe: read(c_ptr))
         di += 1
-
-    var ev_func_index: ptr_uint = 0
-    while ev_func_index < ctx.pending_event_functions.len():
-        let ef_ptr = ctx.pending_event_functions.get(ev_func_index) else:
-            break
-        functions.push(unsafe: read(ef_ptr))
-        ev_func_index += 1
 
     # Concrete Option/Result instances are kept outside the IR's `:variants`
     # section (host parity) and handed to the driver for the C backend.
@@ -6907,7 +6888,21 @@ function lower_with_call(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], recv_ty: t
             a = read(args.data + ai)
         let aname = a.arg_name else:
             fatal(c"lower_with_call: named arguments required")
-        arg_map.set(aname, lower_expr(ctx, a.arg_value))
+        var arg_val = lower_expr(ctx, a.arg_value)
+        # A literal argument takes the replaced field's type (`v.with(x = 10.0)`
+        # on a double field is a double literal), the host's contextual
+        # aggregate-field lowering.
+        var fti: ptr_uint = 0
+        while fti < field_names.len():
+            let fn2 = field_names.get(fti) else:
+                break
+            let ft2 = field_types.get(fti) else:
+                break
+            if unsafe: read(fn2) == aname:
+                arg_val = literal_value_to_context_type(ctx, a.arg_value, unsafe: read(ft2), arg_val)
+                break
+            fti += 1
+        arg_map.set(aname, arg_val)
         ai += 1
     var fields = vec.Vec[ir.AggregateField].create()
     var fi: ptr_uint = 0
@@ -11590,10 +11585,21 @@ function pointer_or_span_element(t: types.Type) -> types.Type:
     return t
 
 
+## The parameter type at `index` of a proc/fn type (`ty_error` when out of range).
+function proc_param_type_at(t: types.Type, index: ptr_uint) -> types.Type:
+    match t:
+        types.Type.ty_function as fnt:
+            if index < fnt.params.len:
+                return unsafe: read(fnt.params.data + index)
+        _:
+            pass
+    return types.Type.ty_error
+
+
 ## Extract the return type from a function/proc type.  For `ty_function`, return
 ## the return type.  For `ty_named` proc struct types (mt_proc_*), recover the
-## return type from the proc struct name by reversing proc_type_name_from_signature:
-## "mt_proc_int" → int, "mt_proc_void" → void.
+## return type from the proc struct name by reversing
+## `proc_type_name_from_signature` ("mt_proc_int" → int).
 function proc_return_type(t: types.Type) -> types.Type:
     match t:
         types.Type.ty_function as fnt:
@@ -12410,7 +12416,7 @@ function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concret
                     line = 0,
                     source_path = "",
                 ))
-                ctx.pending_dyn_wrappers.push(ir.Function(
+                ctx.pending_synthetic_functions.push(ir.Function(
                     name = wrapper_c_name,
                     linkage_name = wrapper_c_name,
                     params = wrapper_params.as_span(),
@@ -14593,17 +14599,17 @@ function ensure_event_runtime(ctx: ref[LowerCtx], owner: str, event_name: str) -
         wait_result_ty = wait_result_ty,
     )
     ctx.event_runtimes.set(runtime_key, info)
-    ctx.pending_event_functions.push(build_event_subscribe_fn(ctx, ref_of(info), slot_cn, event_cn, false))
-    ctx.pending_event_functions.push(build_event_subscribe_fn(ctx, ref_of(info), slot_cn, event_cn, true))
-    ctx.pending_event_functions.push(build_event_subscribe_stateful_fn(ctx, ref_of(info), slot_cn, event_cn, false))
-    ctx.pending_event_functions.push(build_event_subscribe_stateful_fn(ctx, ref_of(info), slot_cn, event_cn, true))
-    ctx.pending_event_functions.push(build_event_unsubscribe_fn(ref_of(info), slot_cn, event_cn))
-    ctx.pending_event_functions.push(build_event_emit_fn(ref_of(info), slot_cn, event_cn))
-    ctx.pending_event_functions.push(build_event_wait_ready_fn(ref_of(info), slot_cn, event_cn))
-    ctx.pending_event_functions.push(build_event_wait_set_waiter_fn(ref_of(info), slot_cn, event_cn))
-    ctx.pending_event_functions.push(build_event_wait_release_fn(ref_of(info), slot_cn, event_cn))
-    ctx.pending_event_functions.push(build_event_wait_take_result_fn(ctx, ref_of(info), slot_cn, event_cn))
-    ctx.pending_event_functions.push(build_event_wait_fn(ctx, ref_of(info), slot_cn, event_cn))
+    ctx.pending_synthetic_functions.push(build_event_subscribe_fn(ctx, ref_of(info), slot_cn, event_cn, false))
+    ctx.pending_synthetic_functions.push(build_event_subscribe_fn(ctx, ref_of(info), slot_cn, event_cn, true))
+    ctx.pending_synthetic_functions.push(build_event_subscribe_stateful_fn(ctx, ref_of(info), slot_cn, event_cn, false))
+    ctx.pending_synthetic_functions.push(build_event_subscribe_stateful_fn(ctx, ref_of(info), slot_cn, event_cn, true))
+    ctx.pending_synthetic_functions.push(build_event_unsubscribe_fn(ref_of(info), slot_cn, event_cn))
+    ctx.pending_synthetic_functions.push(build_event_emit_fn(ref_of(info), slot_cn, event_cn))
+    ctx.pending_synthetic_functions.push(build_event_wait_ready_fn(ref_of(info), slot_cn, event_cn))
+    ctx.pending_synthetic_functions.push(build_event_wait_set_waiter_fn(ref_of(info), slot_cn, event_cn))
+    ctx.pending_synthetic_functions.push(build_event_wait_release_fn(ref_of(info), slot_cn, event_cn))
+    ctx.pending_synthetic_functions.push(build_event_wait_take_result_fn(ctx, ref_of(info), slot_cn, event_cn))
+    ctx.pending_synthetic_functions.push(build_event_wait_fn(ctx, ref_of(info), slot_cn, event_cn))
     return info
 
 
@@ -18215,7 +18221,8 @@ function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Ar
         var arg: ast.Argument
         unsafe:
             arg = read(args.data + i)
-        let lowered = lower_expr(ctx, arg.arg_value)
+        var lowered = lower_expr(ctx, arg.arg_value)
+        lowered = literal_value_to_context_type(ctx, arg.arg_value, proc_param_type_at(lb.ty, i), lowered)
         unsafe:
             invoke_args.push(read(lowered))
         i += 1
@@ -18238,6 +18245,7 @@ function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Ar
 ## struct field receivers instead of local bindings.
 function lower_proc_field_call(ctx: ref[LowerCtx], field_expr: ptr[ir.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
+    let field_proc_ty = ir_expr_type(field_expr)
     let env_member = alloc_expr(ir.Expr.expr_member(receiver = field_expr, member = "env", ty = void_ptr))
     var invoke_args = vec.Vec[ir.Expr].create()
     unsafe:
@@ -18247,7 +18255,8 @@ function lower_proc_field_call(ctx: ref[LowerCtx], field_expr: ptr[ir.Expr], arg
         var arg: ast.Argument
         unsafe:
             arg = read(args.data + i)
-        let lowered = lower_expr(ctx, arg.arg_value)
+        var lowered = lower_expr(ctx, arg.arg_value)
+        lowered = literal_value_to_context_type(ctx, arg.arg_value, proc_param_type_at(field_proc_ty, i), lowered)
         unsafe:
             invoke_args.push(read(lowered))
         i += 1
@@ -18255,7 +18264,6 @@ function lower_proc_field_call(ctx: ref[LowerCtx], field_expr: ptr[ir.Expr], arg
     # recorded type, so take the return type from the field's own signature, and
     # type the `invoke` member with its field signature.
     var call_ty = expr_type(ctx, call_ep)
-    let field_proc_ty = ir_expr_type(field_expr)
     if is_void_type(call_ty) or types.is_error(call_ty) or is_proc_type(call_ty):
         call_ty = proc_return_type(field_proc_ty)
     let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = field_expr, member = "invoke", ty = proc_invoke_field_type(field_proc_ty)))
@@ -27731,31 +27739,44 @@ function lower_multi_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
     if len == 0 or iterables.len == 0:
         return
     let ptr_uint_ty = types.primitive("ptr_uint")
-    let index_c = fresh_c_temp_name(ctx, "for_index")
-    var bi: ptr_uint = 0
-    var lowered_iterables = vec.Vec[ptr[ir.Expr]].create()
+    # The host's `lower_parallel_collection_for_stmt`: prepare/lower each
+    # iterable first, then allocate its `__mt_for_items_N` temp and the shared
+    # `__mt_for_index_N` (the fresh-temp counter order).
+    var items_names = vec.Vec[str].create()
+    var iterable_types = vec.Vec[types.Type].create()
     var elem_types = vec.Vec[types.Type].create()
+    var lowered_iterables = vec.Vec[ptr[ir.Expr]].create()
+    var bi: ptr_uint = 0
     while bi < len:
-        var lb: ptr[ast.Expr]
-        unsafe:
-            lb = iterables.data + bi
-        let iterable_type = index_receiver_type(ctx, lb)
-        lowered_iterables.push(lower_expr(ctx, lb))
-        elem_types.push(generic_first_arg(iterable_type))
+        let ib = unsafe: iterables.data + bi
+        let iterable_type = index_receiver_type(ctx, ib)
+        let element_type = generic_first_arg(iterable_type)
+        let lowered = lower_expr(ctx, ib)
+        let items_c = fresh_c_temp_name(ctx, "for_items")
+        items_names.push(items_c)
+        iterable_types.push(iterable_type)
+        elem_types.push(element_type)
+        lowered_iterables.push(lowered)
         bi += 1
-    bi = 0
-    while bi < len:
-        var bname: str
-        unsafe:
-            bname = read(bindings.data + bi).name
-        let binding_c = utils.c_local_name(bname)
-        let elem_ptr = elem_types.get(bi) else:
-            fatal(c"lower_multi_for: missing elem type")
-        ctx.locals.push(LocalBinding(name = bname, c_name = binding_c, ty = unsafe: read(elem_ptr), pointer = Option[bool].some(value = false)))
-        bi += 1
-    let body = lower_block(ctx, body_ptr)
-    var loop_body = vec.Vec[ir.Stmt].create()
+    let index_c = fresh_c_temp_name(ctx, "for_index")
+
+    let saved_break = ctx.loop_break_label
+    let saved_continue = ctx.loop_continue_label
+    let saved_continue_native = ctx.loop_continue_native
+    let saved_break_native = ctx.loop_break_native
+    let cl = fresh_c_temp_name(ctx, "loop_continue")
+    let bl = fresh_c_temp_name(ctx, "loop_break")
+    ctx.loop_break_label = bl
+    ctx.loop_continue_label = cl
+    ctx.loop_continue_native = true
+    ctx.loop_break_native = true
+
+    let saved_loop_depth = ctx.loop_defer_depth
+    ctx.loop_defer_depth = ctx.defer_stack.len()
+    let body_span = lower_block(ctx, body_ptr)
     let index_ref = alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
+
+    var loop_body = vec.Vec[ir.Stmt].create()
     bi = 0
     while bi < len:
         var bname: str
@@ -27765,32 +27786,98 @@ function lower_multi_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
         let elem_ptr = elem_types.get(bi) else:
             fatal(c"lower_multi_for: missing elem type")
         let elem_ty = unsafe: read(elem_ptr)
-        let l_ptr = lowered_iterables.get(bi) else:
-            fatal(c"lower_multi_for: missing lowered iterable")
-        let lowered = unsafe: read(l_ptr)
-        let is_arr = is_array_type(ir_expr_type(lowered))
+        let items_name_ptr = items_names.get(bi) else:
+            fatal(c"lower_multi_for: missing items name")
+        let items_name = unsafe: read(items_name_ptr)
+        let iterable_ty_ptr = iterable_types.get(bi) else:
+            fatal(c"lower_multi_for: missing iterable type")
+        let iterable_ty = unsafe: read(iterable_ty_ptr)
+        let items_ref = alloc_expr(ir.Expr.expr_name(name = items_name, ty = iterable_ty, pointer = Option[bool].some(value = false)))
         var item_val: ptr[ir.Expr]
-        if is_arr:
-            item_val = alloc_expr(ir.Expr.expr_index(receiver = lowered, index = index_ref, ty = elem_ty))
+        if is_array_type(iterable_ty):
+            item_val = alloc_expr(ir.Expr.expr_index(receiver = items_ref, index = index_ref, ty = elem_ty))
         else:
             var ptr_args = vec.Vec[types.Type].create()
             ptr_args.push(elem_ty)
             let data_ty = types.Type.ty_generic(name = "ptr", args = ptr_args.as_span())
-            let data_ref = alloc_expr(ir.Expr.expr_member(receiver = lowered, member = "data", ty = data_ty))
+            let data_ref = alloc_expr(ir.Expr.expr_member(receiver = items_ref, member = "data", ty = data_ty))
             item_val = alloc_expr(ir.Expr.expr_index(receiver = data_ref, index = index_ref, ty = elem_ty))
         loop_body.push(ir.Stmt.stmt_local(name = bname, linkage_name = binding_c, ty = elem_ty, value = item_val, line = 0, source_path = ""))
         bi += 1
     var si: ptr_uint = 0
-    while si < body.len:
+    while si < body_span.len:
         unsafe:
-            loop_body.push(read(body.data + si))
+            loop_body.push(read(body_span.data + si))
         si += 1
+    if contains_label_target(loop_body.as_span(), cl):
+        loop_body.push(ir.Stmt.stmt_label(name = cl))
+
+    # The first iterable's length is the loop bound; every other iterable must
+    # match it (the host's `length_checks`).
+    let first_name_ptr = items_names.get(0) else:
+        fatal(c"lower_multi_for: missing first items name")
+    let first_ty_ptr = iterable_types.get(0) else:
+        fatal(c"lower_multi_for: missing first iterable type")
+    let stop_value = multi_for_stop(unsafe: read(first_name_ptr), unsafe: read(first_ty_ptr))
+    var length_checks = vec.Vec[ir.Stmt].create()
+    bi = 1
+    while bi < len:
+        let name_ptr = items_names.get(bi) else:
+            break
+        let ty_ptr = iterable_types.get(bi) else:
+            break
+        let other_stop = multi_for_stop(unsafe: read(name_ptr), unsafe: read(ty_ptr))
+        let cond = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = other_stop, right = stop_value, ty = ctx.bool_ty))
+        let msg = alloc_expr(ir.Expr.expr_string_literal(value = "parallel for iterables must have matching lengths", ty = types.Type.ty_str, cstring = false))
+        let fatal_call = alloc_expr(ir.Expr.expr_call(callee = "mt_fatal_str", arguments = single_expr_span(msg), ty = ctx.void_ty))
+        var then_body = vec.Vec[ir.Stmt].create()
+        then_body.push(ir.Stmt.stmt_expression(expression = fatal_call, line = 0, source_path = ""))
+        length_checks.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].none))
+        bi += 1
+
     let init = alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
-    let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = alloc_expr(ir.Expr.expr_integer_literal(value = 3, ty = ptr_uint_ty)), ty = ctx.bool_ty))
+    let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = stop_value, ty = ctx.bool_ty))
     let post_target = alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = loop_body.as_span())
-    output.push(for_stmt)
+
+    var block_stmts = vec.Vec[ir.Stmt].create()
+    bi = 0
+    while bi < len:
+        let name_ptr = items_names.get(bi) else:
+            break
+        let ty_ptr = iterable_types.get(bi) else:
+            break
+        let val_ptr = lowered_iterables.get(bi) else:
+            break
+        block_stmts.push(ir.Stmt.stmt_local(name = unsafe: read(name_ptr), linkage_name = unsafe: read(name_ptr), ty = unsafe: read(ty_ptr), value = unsafe: read(val_ptr), line = 0, source_path = ""))
+        bi += 1
+    var li: ptr_uint = 0
+    while li < length_checks.len():
+        let lc_ptr = length_checks.get(li) else:
+            break
+        block_stmts.push(unsafe: read(lc_ptr))
+        li += 1
+    block_stmts.push(for_stmt)
+    if contains_label_target(loop_body.as_span(), bl):
+        block_stmts.push(ir.Stmt.stmt_label(name = bl))
+    output.push(ir.Stmt.stmt_block(body = block_stmts.as_span()))
+
+    ctx.loop_break_label = saved_break
+    ctx.loop_continue_label = saved_continue
+    ctx.loop_continue_native = saved_continue_native
+    ctx.loop_break_native = saved_break_native
+    ctx.loop_defer_depth = saved_loop_depth
+
+
+## The stop value of a parallel-for entry: an array's length literal or a
+## span's `items.len` member.
+function multi_for_stop(items_name: str, iterable_type: types.Type) -> ptr[ir.Expr]:
+    let ptr_uint_ty = types.primitive("ptr_uint")
+    if is_array_type(iterable_type):
+        return alloc_expr(ir.Expr.expr_integer_literal(value = array_length_of(iterable_type), ty = ptr_uint_ty))
+    let items_ref = alloc_expr(ir.Expr.expr_name(name = items_name, ty = iterable_type, pointer = Option[bool].some(value = false)))
+    return alloc_expr(ir.Expr.expr_member(receiver = items_ref, member = "len", ty = ptr_uint_ty))
 
 
 ## True when a span of type parameters contains at least one non-lifetime
@@ -29137,7 +29224,22 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
     # the initializer with `materialize_array_calls: true`, so an array-returning
     # call first lands in a `__mt_array_call_<N>` local even when the local's own
     # type is that array.
-    var val_ir = materialize_array_call_value(ctx, output, lower_expr(ctx, hv))
+    var val_ir: ptr[ir.Expr]
+    unsafe:
+        match read(hv):
+            ast.Expr.expr_proc:
+                # The host's CF local initializer is a prepared expression, so a
+                # proc literal's env allocation/store hoists inline instead of
+                # creating a `__proc_N__setup_env` synthetic function.
+                let hoist_base = output.len()
+                let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
+                ctx.hoist_root_ep = hv
+                val_ir = lower_expr(ctx, hv)
+                let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
+                emit_hoist_setup(output, hoist_base, hoist_collected)
+                record_or_emit_local_cleanups(ctx, output, hoist_collected.cleanups)
+            _:
+                val_ir = materialize_array_call_value(ctx, output, lower_expr(ctx, hv))
     var ty = ir_expr_type(val_ir)
     if loc_stmt_type != null:
         let annotated = local_decl_type(ctx, loc_stmt_type, hv)
