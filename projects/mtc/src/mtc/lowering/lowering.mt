@@ -276,6 +276,16 @@ struct LowerCtx:
     # Always points to a valid map (empty during normal lowering, populated
     # during monomorphized function lowering).
     type_substitution: map_mod.Map[str, types.Type]
+    # Linkage name of the function whose body is currently being lowered.  A
+    # specialization created while this is set records it as its creator, which
+    # the driver's wave ordering uses to place instances exactly when the host's
+    # `lower_functions` fixpoint does.  Empty outside a function body.
+    current_function_linkage: str
+    # Whether the body currently being lowered is analyzer-instantiated source.
+    # A specialization created in this context is pre-instantiated too (the
+    # host's analyzer recursively analyzes generic instance bodies); synthesized
+    # lowering calls clear it so their instances stay creator-gated.
+    pre_instantiated_context: bool
     # Pending synthetic functions (invoke/release/retain) emitted during
     # proc lowering, to be appended after the main module iteration.
     pending_synthetic_functions: vec.Vec[ir.Function]
@@ -755,10 +765,9 @@ public function lower(program: loader.Program) -> ir.Program:
         syn_i += 1
     dedup_append_structs(ref_of(structs), plain_synthetic.as_span(), ref_of(seen_structs))
 
-    # Place each module's functions in the host's order (`lower_functions`):
-    # declaration order, with a generic function's or method's instances grouped
-    # under its declaration and sorted by type arguments, then any synthetic
-    # functions in creation order.
+    # Place every module's functions in the host's order (`lower_functions` and
+    # its fixpoint): a declaration pass over all modules, then further passes
+    # for instances created by later declaration visits.
     var all_by_linkage = map_mod.Map[str, ir.Function].create()
     var fi: ptr_uint = 0
     while fi < module_fragments.len():
@@ -774,15 +783,8 @@ public function lower(program: loader.Program) -> ir.Program:
                 all_by_linkage.set(f.linkage_name, f)
             ffi += 1
         fi += 1
-    fi = 0
-    while fi < module_fragments.len():
-        let frag_ptr = module_fragments.get(fi) else:
-            break
-        let ana_ptr = module_analyses.get(fi) else:
-            break
-        var ordered = ordered_module_functions(unsafe: read(ana_ptr), program.analyses.as_span(), unsafe: read(frag_ptr).functions, ref_of(all_by_linkage), ref_of(spec_infos))
-        dedup_append_functions(ref_of(functions), ordered.as_span(), ref_of(seen_functions))
-        fi += 1
+    let ordered = order_module_functions(module_analyses.as_span(), module_fragments.as_span(), ref_of(all_by_linkage), ref_of(spec_infos))
+    dedup_append_functions(ref_of(functions), ordered.as_span(), ref_of(seen_functions))
     # The host's program-level synthetic function list (proc invoke/release/
     # retain bodies and pfor/spawn workers) follows every module's functions.
     dedup_append_functions(ref_of(functions), synthetic_functions.as_span(), ref_of(seen_functions))
@@ -1002,7 +1004,7 @@ function struct_exists_in_imports(ctx: ref[LowerCtx], name: str) -> bool:
 ## Lower a function body with type-parameter substitution applied: every reference
 ## to a type param (e.g. `T`) in locals, expressions, and the return type is
 ## replaced by the corresponding concrete type from `sub`.
-function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, sub: ref[map_mod.Map[str, types.Type]]) -> ir.Function:
+function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, sub: ref[map_mod.Map[str, types.Type]], pre_instantiated: bool) -> ir.Function:
     # Reset function-level state
     ctx.locals.clear()
     ctx.temp_counter = 0
@@ -1011,6 +1013,10 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str
     ctx.fmt_counter_visible = false
     ctx.cstr_backed_names.clear()
     ctx.function_returns.clear()
+    var saved_current_fn = ctx.current_function_linkage
+    ctx.current_function_linkage = spec_key
+    var saved_pre_instantiated = ctx.pre_instantiated_context
+    ctx.pre_instantiated_context = pre_instantiated
     var saved_type_subst = ctx.type_substitution
     ctx.type_substitution = read(sub)
     var ir_params = vec.Vec[ir.Param].create()
@@ -1061,6 +1067,8 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str
     ctx.current_fn_return_type = saved_fn_ret
     ctx.type_substitution = saved_sub
     ctx.type_substitution = saved_type_subst
+    ctx.current_function_linkage = saved_current_fn
+    ctx.pre_instantiated_context = saved_pre_instantiated
     return ir.Function(
         name = name,
         linkage_name = name,
@@ -1165,6 +1173,8 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         loaded_modules = lod_modules,
         spec_in_progress = map_mod.Map[str, bool].create(),
         type_substitution = map_mod.Map[str, types.Type].create(),
+        current_function_linkage = "",
+        pre_instantiated_context = true,
         pending_synthetic_functions = vec.Vec[ir.Function].create(),
         pending_external_structs = vec.Vec[ir.ExternalStructLayout].create(),
         external_struct_keys = map_mod.Map[str, bool].create(),
@@ -1306,75 +1316,131 @@ function type_ref_last_name(tref_ptr: ptr[ast.TypeRef]) -> str:
         return read(tref.name.parts.data + (tref.name.parts.len - 1))
 
 
-## Append the function with the given linkage name, once, from the global pool.
-function emit_fragment_function_linkage(linkage: str, all_by_linkage: ref[map_mod.Map[str, ir.Function]], emitted: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.Function]]) -> void:
-    if emitted.contains(linkage):
-        return
-    let fp = all_by_linkage.get(linkage) else:
-        return
-    emitted.set(linkage, true)
-    result.push(unsafe: read(fp))
-
-
-## Append a module-qualified function by source name.
-function emit_fragment_function_named(module_name: str, name: str, all_by_linkage: ref[map_mod.Map[str, ir.Function]], emitted: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.Function]]) -> void:
-    emit_fragment_function_linkage(naming.qualified_c_name(module_name, name), all_by_linkage, emitted, result)
-
-
-## Append a generic declaration's instances (owner module + declaration key),
-## sorted by their recorded type-argument key (host `sort_by { ... }`).
-function emit_specializations(decl_key: str, owner_module: str, all_by_linkage: ref[map_mod.Map[str, ir.Function]], spec_infos: ref[map_mod.Map[str, SpecInfo]], emitted: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.Function]]) -> void:
-    var picked = vec.Vec[ir.Function].create()
-    var keys = vec.Vec[str].create()
-    var values = all_by_linkage.values()
-    while true:
-        let fp = values.next() else:
-            break
-        var f = unsafe: read(fp)
-        if not emitted.contains(f.linkage_name):
-            let info_ptr = spec_infos.get(f.linkage_name)
-            if info_ptr != null:
-                let info = unsafe: read(info_ptr)
-                if info.owner_module == owner_module and info.decl_key == decl_key:
-                    picked.push(f)
-                    keys.push(info.args_key)
-    # Insertion sort by the type-argument key.
-    var si: ptr_uint = 1
-    while si < picked.len():
-        var j = si
-        while j > 0:
-            let a_ptr = keys.get(j - 1) else:
-                break
-            let b_ptr = keys.get(j) else:
-                break
-            var a: str
-            var b: str
+## Render a type the way the host's `Type#to_s` does for the fixpoint's
+## `sort_by { instance.type_arguments.map(&:to_s).join(",") }` key.  Nominal
+## types (structs, variants, enums) are module-qualified; builtin generics
+## (`ptr`, `span`, `array`, `Task`, …) are bare; the prelude variants belong to
+## `std.option` / `std.result`.  This is intentionally separate from
+## `c_naming.type_to_s_qualified`, whose output feeds C name mangling.
+function spec_arg_type_to_s(t: types.Type) -> str:
+    match t:
+        types.Type.ty_primitive as p:
+            return p.name
+        types.Type.ty_str:
+            return "str"
+        types.Type.ty_named as n:
+            if n.module_name.len > 0:
+                return j3(n.module_name, ".", n.name)
+            return n.name
+        types.Type.ty_imported as im:
+            var buf = string.String.create()
+            if im.module_name.len > 0:
+                buf.append(im.module_name)
+                buf.append(".")
+            buf.append(im.name)
+            if im.args.len > 0:
+                buf.append("[")
+                var i: ptr_uint = 0
+                while i < im.args.len:
+                    if i > 0:
+                        buf.append(", ")
+                    unsafe:
+                        buf.append(spec_arg_type_to_s(read(im.args.data + i)))
+                    i += 1
+                buf.append("]")
+            return buf.as_str()
+        types.Type.ty_generic as g:
+            var buf = string.String.create()
+            if g.name == "Option":
+                buf.append("std.option.")
+            else if g.name == "Result":
+                buf.append("std.result.")
+            buf.append(g.name)
+            if g.args.len > 0:
+                buf.append("[")
+                var i: ptr_uint = 0
+                while i < g.args.len:
+                    if i > 0:
+                        buf.append(", ")
+                    unsafe:
+                        buf.append(spec_arg_type_to_s(read(g.args.data + i)))
+                    i += 1
+                buf.append("]")
+            return buf.as_str()
+        types.Type.ty_nullable as nl:
+            var buf = string.String.create()
             unsafe:
-                a = read(a_ptr)
-                b = read(b_ptr)
-            if str_less_than(a, b):
-                break
-            picked.swap(j - 1, j)
-            keys.swap(j - 1, j)
-            j -= 1
-        si += 1
-    var pi: ptr_uint = 0
-    while pi < picked.len():
-        let fp = picked.get(pi) else:
-            break
-        var f = unsafe: read(fp)
-        if not emitted.contains(f.linkage_name):
-            emitted.set(f.linkage_name, true)
-            result.push(f)
-        pi += 1
+                buf.append(spec_arg_type_to_s(read(nl.base)))
+            buf.append("?")
+            return buf.as_str()
+        types.Type.ty_tuple as tup:
+            var buf = string.String.create()
+            buf.append("(")
+            var i: ptr_uint = 0
+            while i < tup.elements.len:
+                if i > 0:
+                    buf.append(", ")
+                unsafe:
+                    buf.append(spec_arg_type_to_s(read(tup.elements.data + i)))
+                i += 1
+            buf.append(")")
+            return buf.as_str()
+        types.Type.ty_function as fnt:
+            if fnt.is_proc:
+                var buf = string.String.create()
+                buf.append("proc(")
+                var i: ptr_uint = 0
+                while i < fnt.params.len:
+                    if i > 0:
+                        buf.append(", ")
+                    unsafe:
+                        buf.append(spec_arg_type_to_s(read(fnt.params.data + i)))
+                    i += 1
+                buf.append(") -> ")
+                unsafe:
+                    buf.append(spec_arg_type_to_s(read(fnt.return_type)))
+                return buf.as_str()
+            if fnt.name.len > 0:
+                return j2("fn ", fnt.name)
+            return "fn "
+        types.Type.ty_var as v:
+            return v.name
+        types.Type.ty_opaque as o:
+            if o.module_name.len > 0:
+                return j3(o.module_name, ".", o.name)
+            return o.name
+        _:
+            return types.type_to_string(t)
 
 
-## Order one module's functions like the host: walk its declarations, emitting
-## each function/method (or its sorted instances) in source order, then append
-## any remaining synthetic functions in creation order.
-function ordered_module_functions(analysis: analyzer.Analysis, analyses: span[analyzer.Analysis], fragment_functions: span[ir.Function], all_by_linkage: ref[map_mod.Map[str, ir.Function]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> vec.Vec[ir.Function]:
-    var result = vec.Vec[ir.Function].create()
-    var emitted = map_mod.Map[str, bool].create()
+## A single visit in the host's `lower_functions` declaration walk.  A
+## non-instance visit emits one function by linkage; an instance visit emits
+## every *available* instance of a generic declaration / extending block method.
+struct DeclVisit:
+    instance: bool
+    linkage: str
+    owner_module: str
+    decl_key: str
+    ## `owner_module` + `decl_key`, precomputed for the availability map.
+    owner_key: str
+    is_main: bool
+
+
+## Join an owner module and declaration key into one map key.  Module names and
+## declaration keys never contain `@@`.
+function spec_owner_key(owner_module: str, decl_key: str) -> str:
+    var b = string.String.create()
+    b.append(owner_module)
+    b.append("@@")
+    b.append(decl_key)
+    return b.as_str()
+
+
+## Build one module's declaration visit sequence in the host's order
+## (`expanded_declarations`, `functions.rb:18-73`): functions in source order,
+## an extending block's methods in source order.
+function build_decl_visits(analysis: analyzer.Analysis, analyses: span[analyzer.Analysis]) -> vec.Vec[DeclVisit]:
+    var visits = vec.Vec[DeclVisit].create()
     let module_name = analysis.module_name
     var di: ptr_uint = 0
     while di < analysis.source_file.declarations.len:
@@ -1384,12 +1450,19 @@ function ordered_module_functions(analysis: analyzer.Analysis, analyses: span[an
         match d:
             ast.Decl.decl_function as fun:
                 if fun.type_params.len == 0:
-                    emit_fragment_function_named(module_name, fun.name, all_by_linkage, ref_of(emitted), ref_of(result))
-                    if fun.name == "main":
-                        # The root entrypoint wrapper has linkage `main`.
-                        emit_fragment_function_linkage("main", all_by_linkage, ref_of(emitted), ref_of(result))
+                    visits.push(DeclVisit(
+                        instance = false,
+                        linkage = naming.qualified_c_name(module_name, fun.name),
+                        owner_module = "", decl_key = "", owner_key = "",
+                        is_main = fun.name == "main",
+                    ))
                 else:
-                    emit_specializations(j2("fn:", fun.name), module_name, all_by_linkage, spec_infos, ref_of(emitted), ref_of(result))
+                    let dk = j2("fn:", fun.name)
+                    visits.push(DeclVisit(
+                        instance = true, linkage = "",
+                        owner_module = module_name, decl_key = dk,
+                        owner_key = spec_owner_key(module_name, dk), is_main = false,
+                    ))
             ast.Decl.decl_extending_block as ex:
                 let bare = unsafe: type_ref_last_name(ex.type_name)
                 # Resolve the receiver the same way `lower_extending_block` does,
@@ -1417,25 +1490,218 @@ function ordered_module_functions(analysis: analyzer.Analysis, analyses: span[an
                         dk.append(bare)
                         dk.append(".")
                         dk.append(m.name)
-                        emit_specializations(dk.as_str(), module_name, all_by_linkage, spec_infos, ref_of(emitted), ref_of(result))
+                        visits.push(DeclVisit(
+                            instance = true, linkage = "",
+                            owner_module = module_name, decl_key = dk.as_str(),
+                            owner_key = spec_owner_key(module_name, dk.as_str()), is_main = false,
+                        ))
                     else:
-                        let lk = method_c_name_for_receiver(receiver_ty, module_name, recv_name, m.name, m.method_kind)
-                        emit_fragment_function_linkage(lk, all_by_linkage, ref_of(emitted), ref_of(result))
+                        visits.push(DeclVisit(
+                            instance = false,
+                            linkage = method_c_name_for_receiver(receiver_ty, module_name, recv_name, m.name, m.method_kind),
+                            owner_module = "", decl_key = "", owner_key = "", is_main = false,
+                        ))
                     mi += 1
             _:
                 pass
         di += 1
-    # Leftovers: synthetic functions, event runtime, dyn wrappers, and
-    # functions from `when`-expanded declarations.
-    var lfi: ptr_uint = 0
-    while lfi < fragment_functions.len:
-        var f: ir.Function
+    return visits
+
+
+## An instance is available once the function that created it has been lowered.
+## Instances created outside any function body (module constants/globals,
+## synthetic setup) are available from the start; a creator that the declaration
+## walk never emits is treated the same way.
+function spec_creator_ready(info: SpecInfo, emittable: ref[map_mod.Map[str, bool]], emitted: ref[map_mod.Map[str, bool]], setup_reached: ref[map_mod.Map[str, bool]]) -> bool:
+    if info.pre_instantiated:
+        return true
+    if info.creator == "":
+        if info.setup_module == "":
+            return true
+        return setup_reached.contains(info.setup_module)
+    if not emittable.contains(info.creator):
+        return true
+    return emitted.contains(info.creator)
+
+
+## Append a function to one module's ordered result list.
+function push_module_function(per_module: ref[vec.Vec[vec.Vec[ir.Function]]], mi: ptr_uint, f: ir.Function) -> void:
+    let fp = per_module.get(mi) else:
+        return
+    unsafe: read(fp).push(f)
+
+
+## Order the whole program's functions like the host's `lower_modules`: an
+## initial declaration pass over every module, then `lower_functions` fixpoint
+## passes until no function is lowered.  Within one visit the available
+## instances are sorted by their type-argument key (the host's `sort_by`), and a
+## function's instances become available at its own visit — so an instance
+## created by an earlier declaration in the same pass can still be emitted later
+## in that pass, while one created after its declaration was seen waits for the
+## next pass.
+function order_module_functions(analyses: span[analyzer.Analysis], fragments: span[ir.Program], all_by_linkage: ref[map_mod.Map[str, ir.Function]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> vec.Vec[ir.Function]:
+    var visits = vec.Vec[vec.Vec[DeclVisit]].create()
+    var emittable = map_mod.Map[str, bool].create()
+    var specs_by_decl = map_mod.Map[str, vec.Vec[str]].create()
+    var mi: ptr_uint = 0
+    while mi < analyses.len:
+        var a: analyzer.Analysis
         unsafe:
-            f = read(fragment_functions.data + lfi)
-        if not emitted.contains(f.linkage_name):
-            emitted.set(f.linkage_name, true)
-            result.push(f)
-        lfi += 1
+            a = read(analyses.data + mi)
+        let module_visits = build_decl_visits(a, analyses)
+        var vi: ptr_uint = 0
+        while vi < module_visits.len():
+            let vp = module_visits.get(vi) else:
+                break
+            let v = unsafe: read(vp)
+            if not v.instance:
+                emittable.set(v.linkage, true)
+            vi += 1
+        visits.push(module_visits)
+        mi += 1
+
+    var spec_keys = spec_infos.keys()
+    while true:
+        let kp = spec_keys.next() else:
+            break
+        let key = unsafe: read(kp)
+        let info_ptr = spec_infos.get(key)
+        if info_ptr == null:
+            continue
+        let info = unsafe: read(info_ptr)
+        let dk = spec_owner_key(info.owner_module, info.decl_key)
+        var list = vec.Vec[str].create()
+        let existing = specs_by_decl.get(dk)
+        if existing != null:
+            list = unsafe: read(existing)
+        list.push(key)
+        specs_by_decl.set(dk, list)
+        emittable.set(key, true)
+
+    var per_module = vec.Vec[vec.Vec[ir.Function]].create()
+    mi = 0
+    while mi < analyses.len:
+        per_module.push(vec.Vec[ir.Function].create())
+        mi += 1
+
+    var emitted = map_mod.Map[str, bool].create()
+    var setup_reached = map_mod.Map[str, bool].create()
+    var first_pass = true
+    var changed = true
+    while changed:
+        changed = false
+        mi = 0
+        while mi < analyses.len:
+            let visits_ptr = visits.get(mi) else:
+                break
+            if first_pass:
+                # The host's setup loop has already lowered this module's
+                # constants/globals/synthetics when its declaration walk starts,
+                # so instances created there are available from this visit on.
+                let setup_analysis = unsafe: read(analyses.data + mi)
+                setup_reached.set(setup_analysis.module_name, true)
+            let module_visits = unsafe: read(visits_ptr)
+            var vi: ptr_uint = 0
+            while vi < module_visits.len():
+                let vp = module_visits.get(vi) else:
+                    break
+                let v = unsafe: read(vp)
+                if v.instance:
+                    let list_ptr = specs_by_decl.get(v.owner_key)
+                    if list_ptr != null:
+                        let list = unsafe: read(list_ptr)
+                        var picked = vec.Vec[ir.Function].create()
+                        var pkeys = vec.Vec[str].create()
+                        var li: ptr_uint = 0
+                        while li < list.len():
+                            let kp = list.get(li) else:
+                                break
+                            let key = unsafe: read(kp)
+                            if not emitted.contains(key):
+                                let info_ptr = spec_infos.get(key)
+                                if info_ptr != null:
+                                    let info = unsafe: read(info_ptr)
+                                    if spec_creator_ready(info, ref_of(emittable), ref_of(emitted), ref_of(setup_reached)):
+                                        let fp = all_by_linkage.get(key)
+                                        if fp != null:
+                                            picked.push(unsafe: read(fp))
+                                            pkeys.push(info.args_key)
+                            li += 1
+                        # Insertion sort by the host's type-argument key.
+                        var si: ptr_uint = 1
+                        while si < picked.len():
+                            var j = si
+                            while j > 0:
+                                let a_ptr = pkeys.get(j - 1) else:
+                                    break
+                                let b_ptr = pkeys.get(j) else:
+                                    break
+                                var a: str
+                                var b: str
+                                unsafe:
+                                    a = read(a_ptr)
+                                    b = read(b_ptr)
+                                if str_less_than(a, b):
+                                    break
+                                picked.swap(j - 1, j)
+                                pkeys.swap(j - 1, j)
+                                j -= 1
+                            si += 1
+                        var pi: ptr_uint = 0
+                        while pi < picked.len():
+                            let fp = picked.get(pi) else:
+                                break
+                            var f = unsafe: read(fp)
+                            if not emitted.contains(f.linkage_name):
+                                emitted.set(f.linkage_name, true)
+                                push_module_function(ref_of(per_module), mi, f)
+                                changed = true
+                            pi += 1
+                else:
+                    if not emitted.contains(v.linkage):
+                        let fp = all_by_linkage.get(v.linkage)
+                        if fp != null:
+                            emitted.set(v.linkage, true)
+                            push_module_function(ref_of(per_module), mi, unsafe: read(fp))
+                            changed = true
+                            if v.is_main and not emitted.contains("main"):
+                                let mp = all_by_linkage.get("main")
+                                if mp != null:
+                                    emitted.set("main", true)
+                                    push_module_function(ref_of(per_module), mi, unsafe: read(mp))
+                vi += 1
+            mi += 1
+        first_pass = false
+
+    # Leftovers: functions from `when`-expanded declarations and any fragment
+    # function the declaration walk does not name (kept in creation order).
+    mi = 0
+    while mi < analyses.len:
+        let frag = unsafe: read(fragments.data + mi)
+        var fi: ptr_uint = 0
+        while fi < frag.functions.len:
+            var f: ir.Function
+            unsafe:
+                f = read(frag.functions.data + fi)
+            if not emitted.contains(f.linkage_name):
+                emitted.set(f.linkage_name, true)
+                push_module_function(ref_of(per_module), mi, f)
+            fi += 1
+        mi += 1
+
+    var result = vec.Vec[ir.Function].create()
+    mi = 0
+    while mi < per_module.len():
+        let mf_ptr = per_module.get(mi) else:
+            break
+        let module_functions = unsafe: read(mf_ptr)
+        var fi: ptr_uint = 0
+        while fi < module_functions.len():
+            let fp = module_functions.get(fi) else:
+                break
+            result.push(unsafe: read(fp))
+            fi += 1
+        mi += 1
     return result
 
 
@@ -2371,6 +2637,8 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
     ctx.fmt_counter.clear()
     ctx.fmt_counter_visible = false
     ctx.cstr_backed_names.clear()
+    var saved_current_fn = ctx.current_function_linkage
+    ctx.current_function_linkage = c_name
     let sig = lookup_fn_sig(ctx, m.name)
 
     var ir_params = vec.Vec[ir.Param].create()
@@ -2403,6 +2671,7 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
     ctx.current_fn_return_type = ret_ty
     let body_stmts = prepend_param_setup(ref_of(param_setup), lower_function_body(ctx, m.body))
     ctx.current_fn_return_type = saved_fn_ret
+    ctx.current_function_linkage = saved_current_fn
 
     return ir.Function(
         name = m.name,
@@ -2530,6 +2799,8 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
     ctx.fmt_counter.clear()
     ctx.fmt_counter_visible = false
     ctx.cstr_backed_names.clear()
+    var saved_current_fn = ctx.current_function_linkage
+    ctx.current_function_linkage = naming.qualified_c_name(ctx.module_name, name)
     let sig = lookup_fn_sig(ctx, name)
 
     var ir_params = vec.Vec[ir.Param].create()
@@ -2556,6 +2827,7 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
     let body_stmts = prepend_param_setup(ref_of(param_setup), lower_function_body(ctx, body))
     ctx.current_fn_return_type = saved_fn_ret
     ctx.inside_async = false
+    ctx.current_function_linkage = saved_current_fn
 
     return ir.Function(
         name = name,
@@ -3084,20 +3356,31 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         # `return await X`: suspend, then store the awaited result.
                         if ctx.async_cps_active and expr_is_direct_await(rv):
                             lower_async_await_into(ctx, output, direct_await_inner(rv), Option[ptr[ir.Expr]].some(value = async_result_target(ctx, ret_ty)))
-                        else:
-                            # Hoist any embedded awaits in the return value first.
-                            var rvh = rv
-                            if ctx.async_cps_active and async_mod.expr_has_await(rv):
-                                rvh = async_hoist_awaits(ctx, output, rv)
-                            let lowered = lower_expr(ctx, rvh)
+                            flush_all_defers(ctx, output)
+                            async_complete_statements(ctx, output, ret_ty, Option[ptr[ir.Expr]].none)
+                            return
+                        # Hoist any embedded awaits in the return value first.
+                        var rvh = rv
+                        if ctx.async_cps_active and async_mod.expr_has_await(rv):
+                            rvh = async_hoist_awaits(ctx, output, rv)
+                        let lowered = lower_expr(ctx, rvh)
+                        # The host stores the result before the cleanups only for
+                        # a non-literal value when cleanups exist
+                        # (`async_lowering.rb:1105`); a literal can be stored by
+                        # the completion after the cleanups run.
+                        if has_pending_defers(ctx) and not cleanup_safe_return_expr(rv):
                             output.push(ir.Stmt.stmt_assignment(
                                 target = async_result_target(ctx, ret_ty),
                                 operator = "=",
                                 value = lowered,
                             ))
-                    # Flush defers AFTER evaluating the return expression so
-                    # `return copy_payload(packet)` with `defer packet.release()`
-                    # evaluates copy_payload before release.
+                            flush_all_defers(ctx, output)
+                            async_complete_statements(ctx, output, ret_ty, Option[ptr[ir.Expr]].none)
+                        else:
+                            flush_all_defers(ctx, output)
+                            async_complete_statements(ctx, output, ret_ty, Option[ptr[ir.Expr]].some(value = lowered))
+                        return
+                    # A void return (or no value): cleanups precede completion.
                     flush_all_defers(ctx, output)
                     async_complete_statements(ctx, output, ret_ty, Option[ptr[ir.Expr]].none)
                     return
@@ -3834,7 +4117,13 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     if not stmts_terminate(body_stmts.as_span()):
                         flush_top_defers(ctx, ref_of(body_stmts))
                     pop_defer_scope(ctx)
-                    output.push(ir.Stmt.stmt_block(body = body_stmts.as_span()))
+                    if ctx.async_completion_active:
+                        # The async lowerers splice an unsafe body's statements
+                        # (`async_lowering.rb:289,736`) instead of wrapping them
+                        # in a block.
+                        append_span_stmts(output, body_stmts.as_span())
+                    else:
+                        output.push(ir.Stmt.stmt_block(body = body_stmts.as_span()))
                 return
             ast.Stmt.stmt_block as blk:
                 var block_stmts = vec.Vec[ir.Stmt].create()
@@ -4111,12 +4400,27 @@ function lower_propagate_storage(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt
     var actual = operand
     if ctx.async_cps_active and async_mod.expr_has_await(operand):
         actual = async_hoist_awaits(ctx, output, operand)
+    # The host prepares the `?` operand with the enclosing statement's window,
+    # so a proc literal argument materializes as its own `__mt_proc_expr_<N>`
+    # local before the propagation storage.  A caller that already opened a
+    # window gets the operand's setup merged into it; otherwise raise a local
+    # window so the operand's temps precede the storage local.
+    let had_window = ctx.hoist_mode != HoistMode.hm_off
+    let window_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
     let value_ir = lower_expr(ctx, actual)
+    let window_collected = collect_stmt_setup(ctx, window_saved)
+    if had_window:
+        append_span_stmts(ref_of(ctx.hoist_stmts), window_collected.stmts.as_span())
+        append_span_stmts(ref_of(ctx.hoist_cleanups), window_collected.cleanups.as_span())
+    else:
+        append_span_stmts(output, window_collected.stmts.as_span())
     let storage_ty = ir_expr_type(value_ir)
 
     # Hidden storage local holding the full Option/Result value.
     let storage_c = fresh_c_temp_name(ctx, "propagate")
     output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = 0, source_path = ""))
+    if not had_window:
+        append_span_stmts(output, window_collected.cleanups.as_span())
     let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = Option[bool].some(value = false)))
 
     let kind = guard_storage_kind(ctx, storage_ty)
@@ -5775,10 +6079,13 @@ function lower_if_chain_at(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], br
     append_hoist_cleanups(ref_of(else_stmts), cond_collected)
     else_stmts.append_span(else_inner.as_span())
 
-    # A source-level `if` always carries an else body — an empty list when the
-    # source has none (the async normalizer materializes `else_body: []`, and
-    # the sync path's `lower_block(nil)` returns `[]`).
-    output.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = else_stmts.as_span())))
+    # The sync path always carries an else body — an empty list when the source
+    # has none (`block.rb:682-701`).  The async non-await path instead emits
+    # `nil` for an empty effective else (`async_lowering.rb:667`).
+    var else_opt = Option[span[ir.Stmt]].some(value = else_stmts.as_span())
+    if ctx.async_nonawait_body and else_stmts.len() == 0:
+        else_opt = Option[span[ir.Stmt]].none
+    output.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = else_opt))
     restore_flow_refinements(ctx, base_saved)
 
     # The host's post-if rule (`block.rb:707`): an else-less `if` whose branches
@@ -7103,7 +7410,7 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                                     # is a proc (is_proc == true).  For plain fn
                                     # fields, pass the function pointer directly.
                                     if fnt.is_proc:
-                                        return lower_fn_to_proc(ctx, fn_c_name, fn_ty)
+                                        return lower_fn_to_proc(ctx, fn_c_name, fn_ty, "")
                                     # The analyzer records a bare function reference
                                     # with an empty type name (the contextual
                                     # field/signature form); the host's binding type
@@ -7410,7 +7717,7 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                                         if vfun.type_params.len > 0 and vfun.type_params.len == spec.arguments.len:
                                             let vspec_key = specialization_key(ctx, vgm.value.module_name, id.name, spec.arguments)
                                             if not ctx.specialization_cache.contains(vspec_key) and not ctx.spec_in_progress.contains(vspec_key):
-                                                lower_and_cache_specialization(ctx, vgm.value, spec.arguments, vspec_key)
+                                                lower_and_cache_specialization(ctx, vgm.value, spec.arguments, vspec_key, ctx.pre_instantiated_context)
                                             var fn_ty = expr_type(ctx, ep)
                                             let vcached = ctx.specialization_cache.get(vspec_key)
                                             if vcached != null:
@@ -10503,7 +10810,7 @@ function lower_monomorphized_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], typ
     # dedup_append_functions).
     let spec_key = specialization_key(ctx, gm.module_name, callee_name, type_args)
     if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
-        lower_and_cache_specialization(ctx, gm, type_args, spec_key)
+        lower_and_cache_specialization(ctx, gm, type_args, spec_key, ctx.pre_instantiated_context)
     let ret_ty = cross_module_return_type(ctx, spec_key, call_ep)
     var ret_type_ptr = types.alloc_type(ret_ty)
     return lower_plain_call_spec(ctx, spec_key, call_args, call_ep, ret_type_ptr, ctx.specialization_cache.get(spec_key))
@@ -10627,7 +10934,7 @@ function try_inferred_generic_call(ctx: ref[LowerCtx], module_name: Option[str],
                 tpi += 1
             let spec_key = key.as_str()
             if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
-                lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key)
+                lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key, ctx.pre_instantiated_context)
             let ret_ty = cross_module_return_type(ctx, spec_key, call_ep)
             # Pass a synthesized sig for async wait/run so coerce_fn_arg_to_proc
             # can wrap task expressions in procs (task-root-proc bridge).
@@ -10951,7 +11258,7 @@ function recognize_type_name(name: str) -> types.Type:
 ## map, then lower the body in the OWNER module's context (so its imports,
 ## foreign functions, variants, and recorded expression types resolve against the
 ## defining module rather than the caller) and cache it under `spec_key`.
-function lower_and_cache_specialization(ctx: ref[LowerCtx], gm: GenericFunctionMatch, type_args: span[ast.TypeArgument], spec_key: str) -> void:
+function lower_and_cache_specialization(ctx: ref[LowerCtx], gm: GenericFunctionMatch, type_args: span[ast.TypeArgument], spec_key: str, pre_instantiated: bool) -> void:
     match gm.decl:
         ast.Decl.decl_function as fun:
             # Build type substitution from the function's type params, resolving
@@ -10970,7 +11277,7 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], gm: GenericFunctionM
                     let concrete = qualify_type(ctx, resolve_type_ref(ctx, unsafe: read(type_args.data + tpi).value))
                     sub.set(tp.name, concrete)
                 tpi += 1
-            lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key)
+            lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key, pre_instantiated)
         _:
             fatal(j2("lowering: monomorphization failed, expected function decl for ", gm.module_name))
 
@@ -10979,7 +11286,9 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], gm: GenericFunctionM
 ## substitution map (`sub`: type-param name -> concrete, caller-qualified type).
 ## The body is lowered in the OWNER module's context and cached under `spec_key`.
 ## Shared by explicit-type-arg specialization and inferred-type-arg calls.
-function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: GenericFunctionMatch, sub: ref[map_mod.Map[str, types.Type]], spec_key: str) -> void:
+function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: GenericFunctionMatch, sub: ref[map_mod.Map[str, types.Type]], spec_key: str, pre_instantiated: bool) -> void:
+    let creator = ctx.current_function_linkage
+    let setup_module = if creator.len == 0: ctx.module_name else: ""
     ctx.spec_in_progress.set(spec_key, true)
     match gm.decl:
         ast.Decl.decl_function as fun:
@@ -11035,7 +11344,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             ctx.type_substitution = map_mod.Map[str, types.Type].create()
             ctx.inside_async = false
 
-            var spec_fun = lower_specialized_function(ctx, fun.name, spec_key, fun.method_params, fun.return_type, fun.body, sub)
+            var spec_fun = lower_specialized_function(ctx, fun.name, spec_key, fun.method_params, fun.return_type, fun.body, sub, pre_instantiated)
             # Host parity: the instance's `name` is the declaration name; only
             # the linkage name carries the specialization suffix.
             spec_fun.linkage_name = spec_key
@@ -11058,14 +11367,29 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
                     ftp = read(fun.type_params.data + fai)
                 let fcv = sub.get(ftp.name)
                 if fcv != null:
-                    fn_args_key.append(naming.type_to_s_qualified(unsafe: read(fcv)))
+                    fn_args_key.append(spec_arg_type_to_s(unsafe: read(fcv)))
                 fai += 1
-            unsafe:
-                read(ctx.spec_infos).set(spec_key, SpecInfo(
-                    owner_module = gm.module_name,
-                    decl_key = j2("fn:", fun.name),
-                    args_key = fn_args_key.as_str(),
-                ))
+            # The first creator wins: the host instantiates a binding once, so
+            # the earliest module to reach the call site owns its creation wave.
+            # Pre-instantiation is sticky, though: if *any* analyzed source path
+            # reaches this instance, the host's analyzer created it before
+            # lowering and it belongs to the setup pass.
+            let existing_ptr = unsafe: read(ctx.spec_infos).get(spec_key)
+            if existing_ptr == null:
+                unsafe:
+                    read(ctx.spec_infos).set(spec_key, SpecInfo(
+                        owner_module = gm.module_name,
+                        decl_key = j2("fn:", fun.name),
+                        args_key = fn_args_key.as_str(),
+                        creator = creator,
+                        pre_instantiated = pre_instantiated,
+                        setup_module = setup_module,
+                    ))
+            else:
+                var existing = unsafe: read(existing_ptr)
+                if pre_instantiated and not existing.pre_instantiated:
+                    existing.pre_instantiated = true
+                    unsafe: read(ctx.spec_infos).set(spec_key, existing)
 
             # Restore the caller context.
             ctx.module_name = saved_module
@@ -12359,7 +12683,7 @@ function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr
                         match read(arg.arg_value):
                             ast.Expr.expr_identifier as fn_id:
                                 if ctx.function_returns.contains(fn_id.name) or ctx.analysis.functions.contains(fn_id.name):
-                                    lowered = lower_fn_to_proc(ctx, nm.name, nm.ty)
+                                    lowered = lower_fn_to_proc(ctx, nm.name, nm.ty, "")
                             _:
                                 pass
                 _:
@@ -12514,6 +12838,25 @@ struct SpecInfo:
     decl_key: str
     ## Type arguments joined with "_" (host `type_arguments.map(&:to_s).join`).
     args_key: str
+    ## Linkage name of the function whose body lowering instantiated this
+    ## specialization.  The host creates the instance at the call site while
+    ## lowering that function, so the fixpoint emits the instance at its owner
+    ## declaration's next visit.  Empty when it was created outside a function
+    ## body (module constants/globals, synthetic setup).
+    creator: str
+    ## True when the host's *analyzer* already instantiated this binding (a call
+    ## site in analyzed source, recursively through instantiated generic bodies).
+    ## Those instances exist before lowering starts, so the setup pass emits them
+    ## at their declaration visit.  Instances the analyzer never saw (synthesized
+    ## calls such as the async main's `wait`) are created during lowering and are
+    ## gated on their creator's visit instead.
+    pre_instantiated: bool
+    ## When `creator` is empty and the instance was not pre-instantiated, the
+    ## module whose setup lowering created it (module constants/globals, the
+    ## async main entrypoint, synthetic setup).  The host's setup pass makes
+    ## such an instance available at that module's visit, so later modules in
+    ## the same pass may emit it while earlier ones wait a pass.
+    setup_module: str
 
 
 struct GenericReceiver:
@@ -13005,7 +13348,7 @@ function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, g
     let method_c = monomorphized_method_c_name(struct_module, info, gm, method_name)
 
     if not ctx.specialization_cache.contains(method_c) and not ctx.spec_in_progress.contains(method_c):
-        ensure_monomorphized_method(ctx, method_c, info, gm)
+        ensure_monomorphized_method(ctx, method_c, info, gm, ctx.pre_instantiated_context)
 
     var ret_ty = ctx.void_ty
     let cached = ctx.specialization_cache.get(method_c)
@@ -13141,7 +13484,7 @@ function coerce_monomorphized_arg_to_proc(ctx: ref[LowerCtx], cached: ptr[ir.Fun
                                 # The wrapper's value type is the *parameter's*
                                 # proc type (the bare name's own type is a plain
                                 # `fn`, whose C form is a function pointer).
-                                return lower_fn_to_proc(ctx, nm.name, param.ty)
+                                return lower_fn_to_proc(ctx, nm.name, param.ty, "")
                         _:
                             pass
             _:
@@ -13153,7 +13496,9 @@ function coerce_monomorphized_arg_to_proc(ctx: ref[LowerCtx], cached: ptr[ir.Fun
 ## context.  The context switch (module name, analysis, foreign map, variants)
 ## makes the body's recorded expression types and import-qualified references
 ## resolve against the defining module rather than the caller.
-function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: GenericReceiver, gm: GenericMethodMatch) -> void:
+function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: GenericReceiver, gm: GenericMethodMatch, pre_instantiated: bool) -> void:
+    let creator = ctx.current_function_linkage
+    let setup_module = if creator.len == 0: ctx.module_name else: ""
     ctx.spec_in_progress.set(method_c, true)
     let owner_a = find_imported_analysis(ctx, gm.owner_module) else:
         return
@@ -13217,7 +13562,7 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     collect_variants(ctx, owner_a.source_file.declarations)
     install_prelude_variants(ctx)
 
-    let spec_fun = lower_specialized_method(ctx, method_c, info, gm, ref_of(sub))
+    let spec_fun = lower_specialized_method(ctx, method_c, info, gm, ref_of(sub), pre_instantiated)
     ctx.specialization_cache.set(method_c, spec_fun)
     saved_returns.set(method_c, spec_fun.return_type)
     # Record owner/declaration/arguments for host-style ordering.  The sort key
@@ -13228,24 +13573,39 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
         if mai > 0:
             m_args_key.append(",")
         unsafe:
-            m_args_key.append(naming.type_to_s_qualified(read(info.concrete_args.data + mai)))
+            m_args_key.append(spec_arg_type_to_s(read(info.concrete_args.data + mai)))
         mai += 1
     var m_decl_key = string.String.create()
     m_decl_key.append("method:")
     m_decl_key.append(info.owner_name)
     m_decl_key.append(".")
     m_decl_key.append(gm.method.name)
-    unsafe:
-        read(ctx.spec_infos).set(method_c, SpecInfo(
-            # The host groups a method's instances under its declaration in the
-            # module that *declares* the extending block, so the ordering key
-            # must carry that module — `info.owner_module` is the receiver
-            # type's module, which a cross-module call site may have registered
-            # as its own (`Vec.create[String]` written in std.string).
-            owner_module = gm.owner_module,
-            decl_key = m_decl_key.as_str(),
-            args_key = m_args_key.as_str(),
-        ))
+    # The first creator wins: the host instantiates a binding once, so the
+    # earliest module to reach the call site owns its creation wave.
+    # Pre-instantiation is sticky, though: if *any* analyzed source path
+    # reaches this instance, the host's analyzer created it before lowering
+    # and it belongs to the setup pass.
+    let existing_ptr = unsafe: read(ctx.spec_infos).get(method_c)
+    if existing_ptr == null:
+        unsafe:
+            read(ctx.spec_infos).set(method_c, SpecInfo(
+                # The host groups a method's instances under its declaration in
+                # the module that *declares* the extending block, so the ordering
+                # key must carry that module — `info.owner_module` is the receiver
+                # type's module, which a cross-module call site may have registered
+                # as its own (`Vec.create[String]` written in std.string).
+                owner_module = gm.owner_module,
+                decl_key = m_decl_key.as_str(),
+                args_key = m_args_key.as_str(),
+                creator = creator,
+                pre_instantiated = pre_instantiated,
+                setup_module = setup_module,
+            ))
+    else:
+        var existing = unsafe: read(existing_ptr)
+        if pre_instantiated and not existing.pre_instantiated:
+            existing.pre_instantiated = true
+            unsafe: read(ctx.spec_infos).set(method_c, existing)
 
     ctx.module_name = saved_module
     ctx.analysis = saved_analysis
@@ -13281,7 +13641,7 @@ function struct_defining_module_for_type(ctx: ref[LowerCtx], name: str) -> str:
 ## Lower a single generic method to an IR function with the struct's type
 ## parameters substituted.  Mirrors `lower_method`, but resolves the receiver and
 ## parameter/return types through `substitute_type_params` with `sub`.
-function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: GenericReceiver, gm: GenericMethodMatch, sub: ref[map_mod.Map[str, types.Type]]) -> ir.Function:
+function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: GenericReceiver, gm: GenericMethodMatch, sub: ref[map_mod.Map[str, types.Type]], pre_instantiated: bool) -> ir.Function:
     let m = gm.method
     ctx.locals.clear()
     ctx.temp_counter = 0
@@ -13289,6 +13649,10 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
     ctx.fmt_counter.clear()
     ctx.fmt_counter_visible = false
     ctx.cstr_backed_names.clear()
+    var saved_current_fn = ctx.current_function_linkage
+    ctx.current_function_linkage = method_c
+    var saved_pre_instantiated = ctx.pre_instantiated_context
+    ctx.pre_instantiated_context = pre_instantiated
 
     # Build the receiver struct type using only the struct-level type args
     # (the first N concrete args where N = struct_param_names.len).  Method-level
@@ -13350,6 +13714,8 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
     let body_ir = prepend_param_setup(ref_of(param_setup), lower_function_body(ctx, m.body))
     ctx.current_fn_return_type = saved_fn_ret
     ctx.type_substitution = saved_sub
+    ctx.current_function_linkage = saved_current_fn
+    ctx.pre_instantiated_context = saved_pre_instantiated
 
     return ir.Function(
         # Host parity: the instance's `name` is the method name; the linkage
@@ -13366,7 +13732,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
 
 ## Wrap a function reference in a proc struct with a synthetic invoke function
 ## that calls the original function, plus no-op release/retain.
-function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type) -> ptr[ir.Expr]:
+function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type, source_path: str) -> ptr[ir.Expr]:
     proc_counter += 1
     var prefix = string.String.create()
     prefix.append(naming.module_c_prefix(ctx.module_name))
@@ -13416,11 +13782,11 @@ function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type)
             var inv_body = vec.Vec[ir.Stmt].create()
             if is_void_type(ret_ty):
                 let call = alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = call_args.as_span(), ty = ret_ty))
-                inv_body.push(ir.Stmt.stmt_expression(expression = call, line = 0, source_path = ""))
-                inv_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+                inv_body.push(ir.Stmt.stmt_expression(expression = call, line = 0, source_path = source_path))
+                inv_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = source_path))
             else:
                 let call = alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = call_args.as_span(), ty = ret_ty))
-                inv_body.push(ir.Stmt.stmt_return(value = call, line = 0, source_path = ""))
+                inv_body.push(ir.Stmt.stmt_return(value = call, line = 0, source_path = source_path))
 
             ctx.pending_synthetic_functions.push(ir.Function(name = invoke_str, linkage_name = invoke_str, params = inv_params.as_span(), return_type = ret_ty, body = inv_body.as_span(), entry_point = false, method_receiver_param = false))
             ctx.pending_synthetic_functions.push(build_proc_noop_fn(release_str))
@@ -15610,7 +15976,7 @@ function coerce_fn_arg_to_proc(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], 
                     ast.Expr.expr_identifier as id:
                         if ctx.function_returns.contains(id.name) or ctx.analysis.functions.contains(id.name):
                             let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
-                            return lower_fn_to_proc(ctx, fn_c_name, param_ty)
+                            return lower_fn_to_proc(ctx, fn_c_name, param_ty, "")
                     _:
                         pass
             return lowered
@@ -27048,6 +27414,8 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     ctx.fmt_counter.clear()
     ctx.fmt_counter_visible = false
     ctx.cstr_backed_names.clear()
+    var saved_current_fn = ctx.current_function_linkage
+    ctx.current_function_linkage = link_base
     # Reset async CPS state so a no-await function (or the next function) never
     # inherits a previous has-await function's frame state.
     ctx.async_cps_active = false
@@ -27375,16 +27743,40 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             let rl_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = rlf.name, ty = rlf.ty))
             proc_nullable_release_stmts(ctx, rl_field, rlf.ty, ref_of(vrel))
         rli += 1
+    # Pointer-lowered params are heap copies; free them before the frame
+    # (`frame_builder.rb:483-490`).
+    var rppi: ptr_uint = 0
+    while rppi < ctor_param_names.len:
+        var rpp_name: str
+        var rpp_ty: types.Type
+        unsafe:
+            rpp_name = read(ptr[str]<-ctor_param_names.data + rppi)
+            rpp_ty = read(ptr[types.Type]<-ctor_field_tys.data + rppi)
+        var rpp_is_ptr = false
+        match async_param_pointer(receiver_ty_opt, receiver_editable, rpp_name):
+            Option.some as app:
+                rpp_is_ptr = app.value
+            Option.none:
+                pass
+        if rpp_is_ptr:
+            let rpp_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = j2("param_", rpp_name), ty = rpp_ty))
+            vrel.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "mt_async_free", arguments = single_expr_span(rpp_field), ty = void_t)), line = 0, source_path = ""))
+        rppi += 1
     vrel.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "mt_async_free", arguments = single_expr_span(raw_expr), ty = void_t)), line = 0, source_path = ""))
     vrel.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     ctx.pending_synthetic_functions.push(ir.Function(name = j2(release_lk, "_fn"), linkage_name = release_lk, params = vparam_s, return_type = void_t, body = vrel.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable: take_result (fresh vec) --
-    if not is_void_ret:
-        var vtr = vec.Vec[ir.Stmt].create()
+    # The host emits this vtable entry for every async function; a void result's
+    # body is a bare return (`frame_builder.rb build_async_take_result_function`),
+    # and the constructor aggregate carries the field either way.
+    var vtr = vec.Vec[ir.Stmt].create()
+    if is_void_ret:
+        vtr.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+    else:
         vtr.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
         vtr.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), line = 0, source_path = ""))
-        ctx.pending_synthetic_functions.push(ir.Function(name = j2(take_lk, "_fn"), linkage_name = take_lk, params = vparam_s, return_type = res_ty, body = vtr.as_span(), entry_point = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = j2(take_lk, "_fn"), linkage_name = take_lk, params = vparam_s, return_type = res_ty, body = vtr.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable: cancel (fresh vec) --
     var vcn = vec.Vec[ir.Stmt].create()
@@ -27440,6 +27832,25 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             let cl_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = clf.name, ty = clf.ty))
             proc_nullable_release_stmts(ctx, cl_field, clf.ty, ref_of(vcn))
         cli += 1
+    # Pointer-lowered params are heap copies; cancel frees them before marking
+    # the frame ready (`frame_builder.rb:577-591`).
+    var cppi: ptr_uint = 0
+    while cppi < ctor_param_names.len:
+        var cpp_name: str
+        var cpp_ty: types.Type
+        unsafe:
+            cpp_name = read(ptr[str]<-ctor_param_names.data + cppi)
+            cpp_ty = read(ptr[types.Type]<-ctor_field_tys.data + cppi)
+        var cpp_is_ptr = false
+        match async_param_pointer(receiver_ty_opt, receiver_editable, cpp_name):
+            Option.some as ap:
+                cpp_is_ptr = ap.value
+            Option.none:
+                pass
+        if cpp_is_ptr:
+            let cpp_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = j2("param_", cpp_name), ty = cpp_ty))
+            vcn.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "mt_async_free", arguments = single_expr_span(cpp_field), ty = void_t)), line = 0, source_path = ""))
+        cppi += 1
     vcn.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = bool_true)), line = 0, source_path = ""))
     let cn_waiter_frame = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter_frame", ty = ctx.ptr_void_ty))
     var cn_wake_body = vec.Vec[ir.Stmt].create()
@@ -27522,8 +27933,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     tf.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_name(name = ready_lk,  ty = ready_field_ty, pointer = Option[bool].some(value = false)))))
     tf.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_name(name = waiter_lk, ty = set_waiter_field_ty, pointer = Option[bool].some(value = false)))))
     tf.push(ir.AggregateField(name = "release",     value = alloc_expr(ir.Expr.expr_name(name = release_lk, ty = release_field_ty, pointer = Option[bool].some(value = false)))))
-    if not is_void_ret:
-        tf.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_name(name = take_lk, ty = take_field_ty, pointer = Option[bool].some(value = false)))))
+    tf.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_name(name = take_lk, ty = take_field_ty, pointer = Option[bool].some(value = false)))))
     tf.push(ir.AggregateField(name = "cancel",      value = alloc_expr(ir.Expr.expr_name(name = cancel_lk, ty = cancel_field_ty, pointer = Option[bool].some(value = false)))))
     ctor_body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = task_ty, fields = tf.as_span())), line = 0, source_path = ""))
     # Build constructor params from the original async function params, with the
@@ -27556,6 +27966,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         ctx.pending_synthetic_functions.push(ctor_fn)
     else:
         functions.push(ctor_fn)
+    ctx.current_function_linkage = saved_current_fn
 
 
 ## The C label for async resume state `n` (goto target in the dispatch switch).
@@ -28050,8 +28461,9 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
         Option.some as t:
             output.push(ir.Stmt.stmt_assignment(target = t.value, operator = "=", value = take_call))
         Option.none:
-            if not is_void_type_lowered(result_ty):
-                output.push(ir.Stmt.stmt_expression(expression = take_call, line = 0, source_path = ""))
+            # The host takes the result of every await, including a void task
+            # (`async_lowering.rb:1213`).
+            output.push(ir.Stmt.stmt_expression(expression = take_call, line = 0, source_path = ""))
 
     let release_fn = alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "release", ty = task_field_type(ctx, result_ty, "release")))
     output.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = release_fn, arguments = single_expr_span(alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "frame", ty = task_frame_ty))), ty = void_ty)), line = 0, source_path = ""))
@@ -28087,7 +28499,7 @@ function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir
     # `lower_fn_to_proc` registers the invoke/release/retain wrappers and the
     # proc struct decl, and returns the aggregate-literal initializer.
     let proc_fn_ty = types.Type.ty_function(name = "", params = span[types.Type](), return_type = types.alloc_type(task_ret), variadic = false, is_proc = true, param_names = span[str]())
-    let proc_expr = lower_fn_to_proc(ctx, main_cname, proc_fn_ty)
+    let proc_expr = lower_fn_to_proc(ctx, main_cname, proc_fn_ty, ctx.analysis.source_path)
     let proc_named_ty = ir_expr_type(proc_expr)
 
     var body = vec.Vec[ir.Stmt].create()
@@ -28157,7 +28569,10 @@ function ensure_async_wait_specialization(ctx: ref[LowerCtx], inner_ty: types.Ty
     let spec_key = key.as_str()
 
     if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
-        lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key)
+        # The async main's `wait` call is synthesized during lowering, not seen
+        # by the analyzer, so its instance (and everything its body creates) is
+        # creator-gated rather than pre-instantiated.
+        lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key, false)
     return Option[str].some(value = spec_key)
 
 
