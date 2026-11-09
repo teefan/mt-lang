@@ -29244,25 +29244,16 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
                 pass
 
     # Plain spilled local: `frame->local_<name> = <value>`.  The host prepares
-    # the initializer with `materialize_array_calls: true`, so an array-returning
-    # call first lands in a `__mt_array_call_<N>` local even when the local's own
-    # type is that array.
-    var val_ir: ptr[ir.Expr]
-    unsafe:
-        match read(hv):
-            ast.Expr.expr_proc:
-                # The host's CF local initializer is a prepared expression, so a
-                # proc literal's env allocation/store hoists inline instead of
-                # creating a `__proc_N__setup_env` synthetic function.
-                let hoist_base = output.len()
-                let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
-                ctx.hoist_root_ep = hv
-                val_ir = lower_expr(ctx, hv)
-                let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
-                emit_hoist_setup(output, hoist_base, hoist_collected)
-                record_or_emit_local_cleanups(ctx, output, hoist_collected.cleanups)
-            _:
-                val_ir = materialize_array_call_value(ctx, output, lower_expr(ctx, hv))
+    # every CF local initializer (a dynamic format string, a proc literal, a
+    # foreign call, an array call) into the statement stream, so an
+    # array-returning call first lands in a `__mt_array_call_<N>` local even
+    # when the local's own type is that array.
+    let hoist_base = output.len()
+    let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
+    ctx.hoist_root_ep = hv
+    var val_ir = lower_expr(ctx, hv)
+    let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
+    emit_hoist_setup(output, hoist_base, hoist_collected)
     var ty = ir_expr_type(val_ir)
     if loc_stmt_type != null:
         let annotated = local_decl_type(ctx, loc_stmt_type, hv)
@@ -29293,6 +29284,7 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
     async_register_local_field(ctx, loc_name, field_name, frame_cname, ty)
     let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = field_name, ty = ty))
     output.push(ir.Stmt.stmt_assignment(target = target, operator = "=", value = val_ir))
+    record_or_emit_local_cleanups(ctx, output, hoist_collected.cleanups)
 
 
 ## Lower an `await` at statement position: lower the task expr, then emit the

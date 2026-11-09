@@ -3516,6 +3516,30 @@ function test_async_proc_local_inlines_env_setup() -> void:
 
 
 @[test]
+function test_async_local_format_part_hoists_inline() -> void:
+    ## Every CPS local initializer is a prepared expression (the host's CF
+    ## path), so a dynamic format string's `__mt_fmt_part_N` locals and setup
+    ## precede the frame store instead of nesting in a `StmtExpr`.
+    var source = <<-SRC
+        async function tick(x: int) -> int:
+            return x
+
+        async function work(n: int) -> int:
+            let text = f"value #{n}"
+            let v = await tick(1)
+            return int<-text.len + v
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_fmt_part_"))
+    expect(not text.contains_substring("(IR::StmtExpr :setup ((IR::LocalDecl :name \"__mt_fmt_part_"))
+
+
+@[test]
 function test_task_member_fields_carry_the_host_types() -> void:
     ## `Types::Task#fields` (`types.rb:590-632`): `frame` is `ptr[void]`,
     ## `ready` is `fn(frame) -> bool`, and `take_result` returns the task's

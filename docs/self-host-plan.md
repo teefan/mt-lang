@@ -214,6 +214,15 @@ matches through the entrypoint and advances to a dynamic format-string part
 (`__mt_fmt_part_N`) difference; count unchanged at 634/32/51/0 with no newly
 differing files.  Gates as above.
 
+Session-61 sixth batch: every CPS local initializer now uses a prepared window
+(the host's CF local path), so a dynamic format string's `__mt_fmt_part_N`
+locals, a proc literal's env setup, and array-call temps precede the frame
+store instead of nesting in a `StmtExpr`; the proc-literal special case folds
+into the same rule.  `std/http/server` advances from the format parts to a
+release-cleanup shape (`String_release(&frame->local_...)` vs
+`mt_format_str_release(...)`); count unchanged at 634/32/51/0 with no newly
+differing files.  Gates as above.
+
 ## How to start a work session
 
 ### Entry points
@@ -383,11 +392,12 @@ Work one item per commit; after each item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
 and re-rank.  Open leaders, largest first (re-ranked session 61):
 
-1. **Dynamic format-string part hoist** (`std/http/server`) — the async-main
-   args bridge and the program-wide synthetic ordering are byte-equal
-   (session 61).  The remaining lead difference is a dynamic format-string
-   part: the host hoists a `__mt_fmt_part_N` StringView `LocalDecl` where the
-   self emits a frame member assignment (the `std/mem/tracking` family).
+1. **Format-release cleanup order** (`std/http/server`) — the async-main args
+   bridge, the program-wide synthetic ordering and the CPS initializer windows
+   are byte-equal (session 61).  The remaining lead difference is the release
+   cleanup for a dynamic format string vs a source String local
+   (`mt_format_str_release(...)` where the host emits
+   `String_release(&frame->local_...)`).
 2. **Foreign-call protocol residue** (raylib/SDL examples: `basic_pbr`,
    `pie_chart`, `digital_clock`, `unicode_emojis`, `spotlight_rendering`) — the
    `__mt_foreign_arg_N` / `__mt_foreign_in_N` policy
