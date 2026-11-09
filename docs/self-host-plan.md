@@ -204,6 +204,16 @@ lower **634 match / 32 differ / 51 host-rejected / 0 self-rejected of 717**
 (from 632/34; the set diff shows no newly differing files).  Gates: fixed point
 holds, `test/mt` 60/0, examples 49/0, dev self-tests 19/0.
 
+Session-61 fifth batch: the root async `main` entrypoint now synthesizes the
+host's argc/argv bridge — `span[str]` (`__mt_args_items`/`__mt_args`), raw
+`ptr[cstr]`, or `ptr[ptr[char]]` — with the `__mt_async_main_arg_N` locals, a
+capturing root proc whose env is named from the root local
+(`__mt___mt_async_main_root_env_1`), and the argv cleanup; a call to the root
+async `main` targets its `__async_main` constructor.  `std/http/server` now
+matches through the entrypoint and advances to a dynamic format-string part
+(`__mt_fmt_part_N`) difference; count unchanged at 634/32/51/0 with no newly
+differing files.  Gates as above.
+
 ## How to start a work session
 
 ### Entry points
@@ -373,13 +383,11 @@ Work one item per commit; after each item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
 and re-rank.  Open leaders, largest first (re-ranked session 61):
 
-1. **Async-main args bridge** (`std/http/server`) — the async frame/temp shapes,
-   the program-wide synthetic ordering (events, dyn wrappers, proc helpers) and
-   the async_tasks/stress-main tails are byte-equal (session 61; flipped
-   `engine/async_tasks` and `stress/main`).  The remaining lead difference is
-   the missing async-main `args` bridge proc env
-   (`std_http_server__proc_1__env`; host
-   `lib/milk_tea/core/lowering/async/frame_builder.rb:6-95`, bridge `:147-260`).
+1. **Dynamic format-string part hoist** (`std/http/server`) — the async-main
+   args bridge and the program-wide synthetic ordering are byte-equal
+   (session 61).  The remaining lead difference is a dynamic format-string
+   part: the host hoists a `__mt_fmt_part_N` StringView `LocalDecl` where the
+   self emits a frame member assignment (the `std/mem/tracking` family).
 2. **Foreign-call protocol residue** (raylib/SDL examples: `basic_pbr`,
    `pie_chart`, `digital_clock`, `unicode_emojis`, `spotlight_rendering`) — the
    `__mt_foreign_arg_N` / `__mt_foreign_in_N` policy

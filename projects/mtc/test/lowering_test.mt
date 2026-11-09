@@ -3610,6 +3610,30 @@ function test_async_ctor_params_and_refcounted_allocator() -> void:
 
 
 @[test]
+function test_async_main_args_bridge() -> void:
+    ## A root `async function main(args: span[str])` synthesizes the host's C
+    ## argc/argv bridge: `__mt_args_items`/`__mt_args`, the argument local, the
+    ## capturing root proc env named from the root local, and the argv cleanup.
+    var source = <<-SRC
+        async function main(args: span[str]) -> void:
+            let count = args.len
+            return
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Param :name \"argc\" :linkage_name \"argc\" :type (Types::Primitive :name \"int\")"))
+    expect(text.contains_substring("(IR::Param :name \"argv\" :linkage_name \"argv\" :type (Types::Generic :name \"ptr\" :arguments ((Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"char\"))))"))
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_args_items\""))
+    expect(text.contains_substring(":callee \"mt_entry_argv_to_span_str\""))
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_async_main_arg_1\" :linkage_name \"__mt_async_main_arg_1\" :type (Types::Span"))
+    expect(text.contains_substring("__mt___mt_async_main_root_env_1"))
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_async_main_root\" :linkage_name \"__mt_async_main_root\""))
+    expect(text.contains_substring(":callee \"mt_free_entry_argv_strs\""))
+    expect(not text.contains_substring("__setup_env"))
+
+
+@[test]
 function test_monomorphized_call_literal_takes_the_parameter_type() -> void:
     ## A monomorphized call's literal argument takes the *specialized*
     ## parameter's type — the host's `lower_contextual_expression` on every call

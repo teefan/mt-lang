@@ -193,6 +193,9 @@ struct HoistSaved:
 struct LowerCtx:
     module_name: str
     analysis: analyzer.Analysis
+    # True while lowering the program's root module: the root async `main`'s
+    # synthesized proc calls its `__async_main` constructor, not a plain `main`.
+    is_root_module: bool
     locals: vec.Vec[LocalBinding]
     # Lowering-side flow refinements — the host's `FlowScope` stack
     # (`lowering/utils.rb:567-650`).  Each entry maps a local (or module-level
@@ -1187,6 +1190,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
     return LowerCtx(
         module_name = analysis.module_name,
         analysis = analysis,
+        is_root_module = false,
         locals = vec.Vec[LocalBinding].create(),
         flow_scopes = vec.Vec[map_mod.Map[str, types.Type]].create(),
         temp_counter = 0,
@@ -1774,6 +1778,7 @@ function append_selected_when_decls(ctx: ref[LowerCtx], discriminant: ptr[ast.Ex
 
 function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]], synthetic_functions: ref[vec.Vec[ir.Function]], synthetic_enums: ref[vec.Vec[ir.EnumDecl]], emitted_functions: ptr[vec.Vec[ir.Function]], emitted_structs: ptr[vec.Vec[ir.StructDecl]], emitted_constants: ptr[vec.Vec[ir.Constant]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> ir.Program:
     var ctx = new_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)))
+    ctx.is_root_module = is_root
     ctx.pending_emitted_functions = emitted_functions
     ctx.pending_emitted_structs = emitted_structs
     ctx.pending_emitted_constants = emitted_constants
@@ -8140,6 +8145,14 @@ function materialize_proc_literal(ctx: ref[LowerCtx], literal: ptr[ir.Expr], pro
 ## invoke's C return type (the declared return type, or the proc type's own return
 ## type for synthesized procs) and `proc_ty` the proc's function type.
 function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast.Param], ret_ty: types.Type, body_ptr: ptr[ast.Stmt], proc_ty: types.Type) -> ptr[ir.Expr]:
+    return lower_proc_expression_typed_named(ctx, method_params, ret_ty, body_ptr, proc_ty, "")
+
+
+## Like `lower_proc_expression_typed`, but `name_hint` seeds the env temp name
+## (`__mt_<hint>_env_<N>`) and the returned literal is not materialized into a
+## `__mt_proc_expr_N` local (the caller stores it in its own named local).  The
+## host's `lower_proc_expression_for_local(..., local_name:)`.
+function lower_proc_expression_typed_named(ctx: ref[LowerCtx], method_params: span[ast.Param], ret_ty: types.Type, body_ptr: ptr[ast.Stmt], proc_ty: types.Type, name_hint: str) -> ptr[ir.Expr]:
     # A proc body runs later, so its window is its own: suspend the enclosing
     # statement's hoisting while the synthetic invoke/release/retain functions
     # (and their bodies) are built.  The literal's own setup hoists into the
@@ -8163,7 +8176,7 @@ function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast
     # `materialize_prepared_expression`): the literal's base temp is requested
     # first (it seeds the env temp even when unused), then the env temp derived
     # from it, then the literal's own local.
-    let local_name = fresh_c_temp_name(ctx, "proc_expr")
+    let local_name = if name_hint.len > 0: name_hint else: fresh_c_temp_name(ctx, "proc_expr")
     var env_decl_name = ""
     if has_captures:
         env_decl_name = fresh_c_temp_name(ctx, j2(local_name, "_env"))
@@ -8282,6 +8295,8 @@ function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast
     fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = Option[bool].some(value = false)))))
     fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = Option[bool].some(value = false)))))
     let literal = alloc_expr(ir.Expr.expr_aggregate_literal(ty = proc_ty, fields = fields.as_span()))
+    if name_hint.len > 0:
+        return literal
     return materialize_proc_literal(ctx, literal, proc_ty)
 
 
@@ -9932,7 +9947,15 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                 pass
                     Option.none:
                         pass
-                return lower_plain_call_sig(ctx, naming.qualified_c_name(ctx.module_name, id.name), plain_args, call_ep, ret_type_ptr, lookup_fn_sig(ctx, id.name))
+                var callee_c = naming.qualified_c_name(ctx.module_name, id.name)
+                if ctx.is_root_module and id.name == "main":
+                    match lookup_fn_sig(ctx, id.name):
+                        Option.some as main_sig:
+                            if main_sig.value.is_async:
+                                callee_c = naming.qualified_c_name(ctx.module_name, "__async_main")
+                        Option.none:
+                            pass
+                return lower_plain_call_sig(ctx, callee_c, plain_args, call_ep, ret_type_ptr, lookup_fn_sig(ctx, id.name))
             ast.Expr.expr_specialization as spec:
                 # When the specialisation callee is a member access
                 # (e.g. `r.unpack[CompactHeader]()`), try method resolution
@@ -29399,12 +29422,6 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
 ## linkage `<module>_main`.  Here we build a root proc from the constructor,
 ## drive it via `std.async.wait[int]` / `run` for void, and release the proc.
 function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir.Function]:
-    # Only a zero-parameter `async function main` is supported today (both async
-    # examples use `async function main() -> int`).  The constructor is already
-    # CPS-lowered as `<module>_main` returning `Task[inner]`; here we synthesize
-    # the C `main()` that wraps that constructor in a root proc and drives it via
-    # the async runtime (`std.async.wait[inner]` for an int result, `run` for a
-    # void result), mirroring Ruby's `build_async_main_entrypoint`.
     let sig = lookup_fn_sig(ctx, name)
     let task_ret = fn_sig_return_type(sig)
     let inner_ty = extract_task_element_type(ctx, task_ret)
@@ -29416,18 +29433,104 @@ function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir
     let int_ty = types.primitive("int")
     let void_ty = ctx.void_ty
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    # The constructor's linkage: an async `main` is `<module>___async_main`
-    # (the host's `function_binding_c_name`).
-    let main_cname = naming.qualified_c_name(ctx.module_name, "__async_main")
+    let str_ty = types.Type.ty_str
+    let char_ty = types.primitive("char")
+    let cstr_ty = types.primitive("cstr")
+    let ptr_char_ty = types.Type.ty_generic(name = "ptr", args = sp_type(char_ty))
+    let raw_argv_ty = types.Type.ty_generic(name = "ptr", args = sp_type(ptr_char_ty))
+    var params = span[analyzer.ParamEntry]()
+    match sig:
+        Option.some as s:
+            params = s.value.params
+        Option.none:
+            pass
 
-    # Root proc: `proc() -> Task[inner]` wrapping the async main constructor.
-    # `lower_fn_to_proc` registers the invoke/release/retain wrappers and the
-    # proc struct decl, and returns the aggregate-literal initializer.
-    let proc_fn_ty = types.Type.ty_function(name = "", params = span[types.Type](), return_type = types.alloc_type(task_ret), variadic = false, is_proc = true, param_names = span[str]())
-    let proc_expr = lower_fn_to_proc(ctx, main_cname, proc_fn_ty, ctx.analysis.source_path)
-    let proc_named_ty = ir_expr_type(proc_expr)
+    # The host's `root_main_entrypoint_signature` + `build_root_main_entrypoint_bridge`:
+    # none, one `span[str]`, `(int, ptr[cstr])`, or `(int, ptr[ptr[char]])`.
+    var c_params = vec.Vec[ir.Param].create()
+    var setup = vec.Vec[ir.Stmt].create()
+    var call_args = vec.Vec[ptr[ir.Expr]].create()
+    var cleanup = vec.Vec[ir.Stmt].create()
+    if params.len > 0:
+        c_params.push(ir.Param(name = "argc", linkage_name = "argc", ty = int_ty, pointer = Option[bool].some(value = false)))
+        c_params.push(ir.Param(name = "argv", linkage_name = "argv", ty = raw_argv_ty, pointer = Option[bool].some(value = false)))
+        let argc_expr = alloc_expr(ir.Expr.expr_name(name = "argc", ty = int_ty, pointer = Option[bool].some(value = false)))
+        let argv_expr = alloc_expr(ir.Expr.expr_name(name = "argv", ty = raw_argv_ty, pointer = Option[bool].some(value = false)))
+        if params.len == 1:
+            let p0 = unsafe: read(params.data + 0).ty
+            if not (is_span_type(p0) and types.type_equals(generic_first_arg(p0), str_ty)):
+                return Option[ir.Function].none
+            let items_ty = types.Type.ty_generic(name = "ptr", args = sp_type(str_ty))
+            let items_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_args_items", ty = items_ty, pointer = Option[bool].some(value = false)))
+            setup.push(ir.Stmt.stmt_local(name = "__mt_args_items", linkage_name = "__mt_args_items", ty = items_ty, value = alloc_expr(ir.Expr.expr_null_literal(ty = items_ty)), line = 0, source_path = ""))
+            var bridge_args = vec.Vec[ir.Expr].create()
+            unsafe:
+                bridge_args.push(read(argc_expr))
+                bridge_args.push(read(argv_expr))
+                bridge_args.push(read(alloc_expr(ir.Expr.expr_address_of(expression = items_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(items_ty))))))
+            let args_ty = p0
+            let args_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_args", ty = args_ty, pointer = Option[bool].some(value = false)))
+            setup.push(ir.Stmt.stmt_local(name = "__mt_args", linkage_name = "__mt_args", ty = args_ty, value = alloc_expr(ir.Expr.expr_call(callee = "mt_entry_argv_to_span_str", arguments = bridge_args.as_span(), ty = args_ty)), line = 0, source_path = ""))
+            call_args.push(args_ref)
+            cleanup.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "mt_free_entry_argv_strs", arguments = single_expr_span(items_ref), ty = void_ty)), line = 0, source_path = ""))
+        else if params.len == 2:
+            let p1 = unsafe: read(params.data + 1).ty
+            call_args.push(argc_expr)
+            if types.is_raw_pointer(p1) and types.type_equals(types.pointer_element(p1), cstr_ty):
+                let cstr_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(cstr_ty))
+                call_args.push(alloc_expr(ir.Expr.expr_cast(target_type = cstr_ptr_ty, expression = argv_expr, ty = cstr_ptr_ty)))
+            else if types.is_raw_pointer(p1) and types.type_equals(types.pointer_element(p1), ptr_char_ty):
+                call_args.push(argv_expr)
+            else:
+                return Option[ir.Function].none
+        else:
+            return Option[ir.Function].none
 
     var body = vec.Vec[ir.Stmt].create()
+    var si: ptr_uint = 0
+    while si < setup.len():
+        let sp = setup.get(si) else:
+            break
+        body.push(unsafe: read(sp))
+        si += 1
+    var arg_names = vec.Vec[str].create()
+    var ai: ptr_uint = 0
+    while ai < params.len:
+        let an = j2("__mt_async_main_arg_", int_to_str(int<-ai + 1))
+        let pty = unsafe: read(params.data + ai).ty
+        let cval = call_args.get(ai) else:
+            return Option[ir.Function].none
+        body.push(ir.Stmt.stmt_local(name = an, linkage_name = an, ty = pty, value = unsafe: read(cval), line = 0, source_path = ""))
+        ctx.locals.push(LocalBinding(name = an, c_name = an, ty = pty, pointer = Option[bool].some(value = false)))
+        arg_names.push(an)
+        ai += 1
+
+    # The root proc calls the constructor through a synthesized AST body, so the
+    # argument locals are captured into the host's `__proc_N__env`.
+    var ast_args = vec.Vec[ast.Argument].create()
+    ai = 0
+    while ai < arg_names.len():
+        let an_ptr = arg_names.get(ai) else:
+            break
+        ast_args.push(ast.Argument(arg_name = Option[str].none, arg_value = alloc_ast_expr(ast.Expr.expr_identifier(name = unsafe: read(an_ptr), line = 0, column = 0))))
+        ai += 1
+    let call_ast = alloc_ast_expr(ast.Expr.expr_call(callee = alloc_ast_expr(ast.Expr.expr_identifier(name = name, line = 0, column = 0)), args = ast_args.as_span()))
+    let ret_ast = alloc_ast_stmt(ast.Stmt.stmt_ret(value = call_ast, line = 0, column = 0, length = 0))
+    let proc_fn_ty = types.Type.ty_function(name = "", params = span[types.Type](), return_type = types.alloc_type(task_ret), variadic = false, is_proc = true, param_names = span[str]())
+    # The env setup is a prepared expression: hoist it into the C main body
+    # (no `__proc_N__setup_env` fallback).
+    let proc_base = body.len()
+    let proc_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
+    # The host lowers the root proc in a fresh env: the env temp is
+    # `__mt___mt_async_main_root_env_1` (the counter starts at zero).
+    let saved_proc_counter = ctx.temp_counter
+    ctx.temp_counter = 0
+    let proc_expr = lower_proc_expression_typed_named(ctx, span[ast.Param](), task_ret, ret_ast, proc_fn_ty, "__mt_async_main_root")
+    ctx.temp_counter = saved_proc_counter
+    let proc_collected = collect_stmt_setup(ctx, proc_saved)
+    emit_hoist_setup(ref_of(body), proc_base, proc_collected)
+    let proc_named_ty = ir_expr_type(proc_expr)
+
     let root_name = "__mt_async_main_root"
     body.push(ir.Stmt.stmt_local(name = root_name, linkage_name = root_name, ty = proc_named_ty, value = proc_expr, line = 0, source_path = ""))
     let root_ref = alloc_expr(ir.Expr.expr_name(name = root_name, ty = proc_named_ty, pointer = Option[bool].some(value = false)))
@@ -29451,6 +29554,12 @@ function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir
     let release_member = alloc_expr(ir.Expr.expr_member(receiver = root_ref, member = "release", ty = lifecycle_ty))
     let env_member = alloc_expr(ir.Expr.expr_member(receiver = root_ref, member = "env", ty = void_ptr))
     body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = release_member, arguments = single_expr_span(env_member), ty = void_ty)), line = 0, source_path = ""))
+    var ci: ptr_uint = 0
+    while ci < cleanup.len():
+        let cp = cleanup.get(ci) else:
+            break
+        body.push(unsafe: read(cp))
+        ci += 1
 
     if is_void_ret:
         body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = int_ty)), line = 0, source_path = ""))
@@ -29458,7 +29567,7 @@ function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir
         body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_name(name = result_name, ty = int_ty, pointer = Option[bool].some(value = false))), line = 0, source_path = ""))
 
     return Option[ir.Function].some(value = ir.Function(
-        name = name, linkage_name = "main", params = span[ir.Param](),
+        name = name, linkage_name = "main", params = c_params.as_span(),
         return_type = int_ty, body = body.as_span(), entry_point = true, method_receiver_param = false,
     ))
 
