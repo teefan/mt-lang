@@ -8976,16 +8976,54 @@ function proc_nullable_release_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr], t: 
             pass
 
 
+## The fields a proc retain/release walk visits.  A generic instance uses its
+## concrete declaration's substituted fields (`generic_struct_decls`); every
+## other struct wraps the analyzer's declared fields.
+function proc_struct_fields(ctx: ref[LowerCtx], t: types.Type) -> Option[span[ir.Field]]:
+    match t:
+        types.Type.ty_imported as im:
+            if im.args.len > 0:
+                let lookup_name = naming.qualified_c_name(im.module_name, generic_struct_c_name(im.name, im.args))
+                let p = ctx.generic_struct_decls.get(lookup_name)
+                if p != null:
+                    return Option[span[ir.Field]].some(value = unsafe: read(p).fields)
+        types.Type.ty_named as n:
+            let p = ctx.generic_struct_decls.get(n.name)
+            if p != null:
+                return Option[span[ir.Field]].some(value = unsafe: read(p).fields)
+        types.Type.ty_generic as g:
+            if g.args.len > 0:
+                let concrete = try_monomorphize_generic(ctx, g.name, g.args)
+                match concrete:
+                    types.Type.ty_named:
+                        return proc_struct_fields(ctx, concrete)
+                    types.Type.ty_imported:
+                        return proc_struct_fields(ctx, concrete)
+                    _:
+                        return Option[span[ir.Field]].none
+        _:
+            pass
+    match struct_fields_of(ctx, t):
+        Option.some as fields:
+            var result_fields = vec.Vec[ir.Field].create()
+            var i: ptr_uint = 0
+            while i < fields.value.len:
+                let f = unsafe: read(fields.value.data + i)
+                result_fields.push(ir.Field(name = f.name, ty = f.ty))
+                i += 1
+            return Option[span[ir.Field]].some(value = result_fields.as_span())
+        Option.none:
+            return Option[span[ir.Field]].none
+
+
 ## Walk a struct type's proc-storing fields, emitting a release per field
 ## (`guarded` applies the nullable/zero-init guard).
 function proc_struct_field_release_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]], guarded: bool) -> void:
-    match struct_fields_of(ctx, t):
+    match proc_struct_fields(ctx, t):
         Option.some as fields:
             var i: ptr_uint = 0
             while i < fields.value.len:
-                var f: analyzer.FieldEntry
-                unsafe:
-                    f = read(fields.value.data + i)
+                let f = unsafe: read(fields.value.data + i)
                 if contains_proc_storage_type(ctx, f.ty):
                     let member = alloc_expr(ir.Expr.expr_member(receiver = recv, member = f.name, ty = f.ty))
                     if guarded:
@@ -9033,13 +9071,11 @@ function proc_selective_retain_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr], val
 ## assignment's RHS (a struct literal's named argument is the field's own
 ## source, per the host's `ast_field_source` rule).
 function proc_struct_field_retain_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]], value_ast: Option[ptr[ast.Expr]]) -> void:
-    match struct_fields_of(ctx, t):
+    match proc_struct_fields(ctx, t):
         Option.some as fields:
             var i: ptr_uint = 0
             while i < fields.value.len:
-                var f: analyzer.FieldEntry
-                unsafe:
-                    f = read(fields.value.data + i)
+                let f = unsafe: read(fields.value.data + i)
                 if contains_proc_storage_type(ctx, f.ty):
                     let member = alloc_expr(ir.Expr.expr_member(receiver = recv, member = f.name, ty = f.ty))
                     var field_ast = value_ast
@@ -18814,6 +18850,20 @@ function concrete_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: st
                 lookup_name = naming.qualified_c_name(im.module_name, generic_struct_c_name(im.name, im.args))
             else:
                 lookup_name = im.name
+        types.Type.ty_generic as g:
+            # A receiver still in generic form (`PipelineStep[int]`): create its
+            # concrete declaration and look the field up there, so a proc field's
+            # type parameters are substituted (the host's instance types).
+            if g.args.len == 0:
+                return Option[types.Type].none
+            let concrete = try_monomorphize_generic(ctx, g.name, g.args)
+            match concrete:
+                types.Type.ty_named:
+                    return concrete_field_type(ctx, concrete, member)
+                types.Type.ty_imported:
+                    return concrete_field_type(ctx, concrete, member)
+                _:
+                    return Option[types.Type].none
         _:
             return Option[types.Type].none
     let decl_ptr = ctx.generic_struct_decls.get(lookup_name)

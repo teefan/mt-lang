@@ -764,9 +764,18 @@ function test_named_tuple_static_assert_and_proc_calls() -> void:
         function call_index(ops: span[proc(i: int) -> int]) -> int:
             return ops[0](5)
 
+        struct Step[T]:
+            handler: proc(input: T) -> int
+
+        function run_step[T](value: T, step: Step[T]) -> int:
+            return step.handler(value)
+
         function main() -> int:
             let named = (x = 10, y = 20)
-            return named.x
+            let doubled = proc(input: int) -> int:
+                return input * 2
+            let total = run_step(1, Step[int](handler = doubled))
+            return named.x + total
     SRC
     var dump = lower_dump_for_source(source)
     defer: dump.release()
@@ -774,6 +783,7 @@ function test_named_tuple_static_assert_and_proc_calls() -> void:
     expect(text.contains_substring("(IR::StructDecl :name \"(x: int, y: int)\" :linkage_name \"mt_tuple_int_int_x_y\""))
     expect(text.contains_substring("(IR::StringLiteral :value \"int must be 4 bytes\" :type (Types::StringView) :cstring false)"))
     expect(text.contains_substring(":type (Types::Primitive :name \"bool\")) :line 7 :path"))
+    expect(text.contains_substring(":member \"handler\" :type (Types::Proc :params ((Types::Parameter :name \"input\" :type (Types::Primitive :name \"int\")"))
     expect(not text.contains_substring("(Types::Error)"))
 
 

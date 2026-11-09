@@ -184,6 +184,13 @@ lower **632 match / 34 differ / 51 host-rejected / 0 self-rejected of 717**
 (from 630/36; the set diff shows no newly differing files).  Gates: fixed point
 holds, `test/mt` 60/0, examples 49/0, dev self-tests 19/0.
 
+Session-61 third batch: a generic struct receiver in `concrete_field_type` is
+monomorphized before the field lookup, and the proc retain/release walks use the
+concrete instance's substituted fields (`proc_struct_fields`) instead of the
+declared `analyzer.structs` entry, so `PipelineStep[int].handler` carries
+`proc(input: int)`.  `stress/main` advances from that field type to event
+function ordering; count unchanged at 632/34/51/0, gates as above.
+
 ## How to start a work session
 
 ### Entry points
@@ -362,8 +369,9 @@ and re-rank.  Open leaders, largest first (re-ranked session 61):
    (`async_with_proc__resume` vs the proc helper functions), the missing
    async-main `args` bridge proc env (`std_http_server__proc_1__env`; host
    `lib/milk_tea/core/lowering/async/frame_builder.rb:6-95`, bridge `:147-260`),
-   and `stress/main`'s `PipelineStep[T].handler` proc field keeping `T` instead
-   of the instance's `int` (`concrete_field_type`/`extract_generic_struct_fields`).
+   and `stress/main`'s next difference: event runtime helper placement/order
+   (`mt_event_engine_systems_entity_spawned_*` vs the module's
+   `type_system_stress`), i.e. the program-wide synthetic function tail order.
 2. **Foreign-call protocol residue** (raylib/SDL examples: `basic_pbr`,
    `pie_chart`, `digital_clock`, `unicode_emojis`, `spotlight_rendering`) — the
    `__mt_foreign_arg_N` / `__mt_foreign_in_N` policy
