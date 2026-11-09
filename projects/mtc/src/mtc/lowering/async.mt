@@ -115,6 +115,45 @@ public function expr_has_await(ep: ptr[ast.Expr]?) -> bool:
                 return false
 
 
+## True when an expression contains an `and`/`or`.  The host's async
+## normalizer rewrites every one into a frame temp, even in an await-free
+## while condition, so the CPS while lowering must restructure those too.
+public function expr_has_short_circuit(ep: ptr[ast.Expr]?) -> bool:
+    let p = ep else:
+        return false
+    unsafe:
+        match read(p):
+            ast.Expr.expr_binary_op as b:
+                if b.operator == "and" or b.operator == "or":
+                    return true
+                return expr_has_short_circuit(b.left) or expr_has_short_circuit(b.right)
+            ast.Expr.expr_call as c:
+                if expr_has_short_circuit(c.callee):
+                    return true
+                var i: ptr_uint = 0
+                while i < c.args.len:
+                    if expr_has_short_circuit(unsafe: read(c.args.data + i).arg_value):
+                        return true
+                    i += 1
+                return false
+            ast.Expr.expr_unary_op as u:
+                return expr_has_short_circuit(u.operand)
+            ast.Expr.expr_member_access as ma:
+                return expr_has_short_circuit(ma.receiver)
+            ast.Expr.expr_index_access as ix:
+                return expr_has_short_circuit(ix.receiver) or expr_has_short_circuit(ix.index)
+            ast.Expr.expr_prefix_cast as c:
+                return expr_has_short_circuit(c.expression)
+            ast.Expr.expr_if as c:
+                return expr_has_short_circuit(c.condition) or expr_has_short_circuit(c.then_expr) or expr_has_short_circuit(c.else_expr)
+            ast.Expr.expr_unsafe as u:
+                return expr_has_short_circuit(u.expression)
+            ast.Expr.expr_specialization as s:
+                return expr_has_short_circuit(s.callee)
+            _:
+                return false
+
+
 # =============================================================================
 #  State counting
 # =============================================================================

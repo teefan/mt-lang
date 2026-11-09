@@ -23,7 +23,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 60, 2026-11-09)
+## Status at a glance (session 61, 2026-11-09)
 
 | Area | State |
 | --- | --- |
@@ -158,6 +158,19 @@ Session-60 verification at the committed tree: full bootstrap (fixed point plus
 19/0), `test/mt` 60/0, `sexpr lower` 630/36/51/0, lex 717/717 and parse
 713 match / 0 differ / 4 host-rejected.  No code changes; the plan header and
 Ledger were re-stamped, and the ranked Track A leaders stand as below.
+
+Session-61 batch: the async normalizer's two-phase `and`/`or` shape (both operands
+lowered into child windows, the result temp allocated after them but its frame
+field registered at the pre-recursion slot and its declaration emitted first), the
+CPS while restructure for await-free `and`/`or` conditions (with the extra
+`cond_name` bool temp and a native break guard), direct-await guard locals taking
+the awaited result straight into the guard's frame field (no temp field), and the
+if-expression branch assignments using the textual frame `Name` (await stores keep
+`Member`).  `std/http/server`, `projects/stress/src/main` and
+`engine/async_tasks` now match through their async frames; their first differences
+moved to the async-main proc env bridge / proc-helper placement and the tuple
+struct name.  `std/net/rpc` stays matching.  Gates: fixed point holds, `test/mt`
+60/0, lower 630/36/51/0 (unchanged count, deeper first diffs), examples 49/0.
 
 ## How to start a work session
 
@@ -321,25 +334,23 @@ names, not line numbers — lines drift.
 ### Track A — `lower` dump parity (630/36 of 717)
 
 Current set: **630 match / 36 differ / 51 host-rejected / 0 self-rejected of 717
-files** (session 60).  The host-rejected bucket is `external` and platform-pinned
+files** (session 61).  The host-rejected bucket is `external` and platform-pinned
 files; the count drifts with the tree and `tmp` fixtures — quote the set.
 
 Work one item per commit; after each item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
-and re-rank.  Open leaders, largest first (re-ranked session 60):
+and re-rank.  Open leaders, largest first (re-ranked session 61):
 
-1. **CPS async temp ordering** (`std/http/server`, `projects/stress/src/main`,
-   `engine/async_tasks`) — the *no-await* body's frame fields now register in
-   the host analysis' normalized order (session 59, flipped `std/net/rpc`: an
-   `and`/`or` temp precedes the branch locals it encloses).  The remaining lead
-   differences are await-containing bodies: the host normalizer allocates an
-   `and`/`or` temp *after* its operand setups but emits its declaration first,
-   so the frame carries `local___mt_async_tmp_2: bool` before the await hoist's
-   `local___mt_async_tmp_1: int`; the self allocates the `and`/`or` temp before
-   lowering the operands and the bool field is missing.  Restructure
-   `lower_short_circuit_binary` into the normalizer's two-phase shape (lower the
-   operands into a child window, then allocate/register the temp and emit its
-   declaration ahead of the child setup).
+1. **Async-file tails: proc/synthetic placement and the async-main args bridge**
+   (`engine/async_tasks`, `std/http/server`, `projects/stress/src/main`) — the
+   async frame/temp shapes are byte-equal (session 61), so the lead differences
+   are now: the host's program-wide synthetic function order
+   (`async_with_proc__resume` vs the proc helper functions), the missing
+   async-main `args` bridge proc env (`std_http_server__proc_1__env`; host
+   `lib/milk_tea/core/lowering/async/frame_builder.rb:6-95`, bridge `:147-260`),
+   and `stress/main`'s tuple struct name (`(x: int, y: int)` vs `(int, int)`;
+   host `Types::Tuple#to_s` includes non-default field names, self
+   `c_naming.type_to_s_qualified` renders element types only).
 2. **Foreign-call protocol residue** (raylib/SDL examples: `basic_pbr`,
    `pie_chart`, `digital_clock`, `unicode_emojis`, `spotlight_rendering`) — the
    `__mt_foreign_arg_N` / `__mt_foreign_in_N` policy
@@ -602,11 +613,11 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); 19 files / 0 failed | session 60 (full) | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 60 files / 0 failed | session 60 | `build/stage2/mtc test test/mt -I .` |
-| examples / sdl3 | 13/13 sync top-level identical (+2 async at the host's rc 134); sdl3 34/34; raylib sample builds | session 50 (raylib 49) | per-family sweeps |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); 19 files / 0 failed | session 61 (fixed point gate; dev suite) | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 60 files / 0 failed | session 61 | `build/stage2/mtc test test/mt -I .` |
+| examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 61 | `tools/gates.sh --areas codegen --run` |
 | `sexpr lex` / `parse` | lex 717/717; parse 713 match / 0 differ / 4 host-rejected of 717 | session 60 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 630 match / 36 differ / 51 host-rejected / 0 self-rejected of 717 | session 60 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 630 match / 36 differ / 51 host-rejected / 0 self-rejected of 717 | session 61 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | 24 match / 37 differ / 0 pending of 61 | session 49 | `rake "cli:parity"` |
 | lint corpus | 495 agree / 121 differ of 616 | session 50 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |

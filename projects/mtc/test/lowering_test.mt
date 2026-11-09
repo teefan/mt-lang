@@ -3361,6 +3361,43 @@ function test_async_short_circuit_hoists_a_frame_temp() -> void:
 
 
 @[test]
+function test_async_short_circuit_ordering_and_while_cond_temp() -> void:
+    ## The host normalizer declares an and/or temp before its operand setup but
+    ## numbers it after (`local___mt_async_tmp_2: bool` before the await's
+    ## `tmp_1: int`); an await-containing while condition also gets the
+    ## `cond_name` bool temp and a native break guard, and a direct-await guard
+    ## stores the awaited Result in the guard's field with no temp field
+    ## (session 61).
+    var source = <<-SRC
+        async function step(x: int) -> int:
+            return x
+
+        async function maybe(x: int) -> Result[int, str]:
+            return Result.success(value = x)
+
+        async function work(i: int) -> int:
+            while (await step(1)) > 0 and i < 3:
+                i += 1
+            while i < 3 and i > 0:
+                i -= 1
+            var chunk = await maybe(2) else:
+                return 0
+            return i + chunk
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Field :name \"local___mt_async_tmp_2\" :type (Types::Primitive :name \"bool\")) (IR::Field :name \"local___mt_async_tmp_1\" :type (Types::Primitive :name \"int\"))"))
+    expect(text.contains_substring("(IR::Field :name \"local___mt_async_tmp_3\" :type (Types::Primitive :name \"bool\"))"))
+    expect(text.contains_substring("(IR::BreakStmt)"))
+    expect(text.contains_substring("(IR::Field :name \"local_chunk\" :type (Types::VariantInstance :name \"Result\""))
+    expect(not text.contains_substring("(IR::Field :name \"local___mt_async_tmp_4\" :type (Types::VariantInstance"))
+
+
+@[test]
 function test_task_member_fields_carry_the_host_types() -> void:
     ## `Types::Task#fields` (`types.rb:590-632`): `frame` is `ptr[void]`,
     ## `ready` is `fn(frame) -> bool`, and `take_result` returns the task's

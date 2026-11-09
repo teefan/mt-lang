@@ -421,6 +421,19 @@ struct LowerCtx:
     # arm's address.  The lowering pass emits the field after the arm body (the
     # host's post-order analysis registration).
     async_match_binding_names: map_mod.Map[ptr_uint, str]
+    # The frame-field index an `and`/`or` temp must occupy, captured before
+    # `async_hoist_awaits` recurses into its operands and keyed by the rewritten
+    # node: the host normalizer allocates the temp name after the operand
+    # setups but emits its declaration first, so the field registers ahead of
+    # the operand await temps that were numbered earlier.
+    async_and_or_field_indices: map_mod.Map[ptr_uint, ptr_uint]
+    # While-condition mode: `async_hoist_awaits` keeps each and/or operand's
+    # await setup (instead of flattening it into the caller's output), so the
+    # lowering can emit the normalizer's `[temp decl] ++ left_setup ++ IfStmt`
+    # order.  Keyed by the rewritten and/or node.
+    async_structured_setup: bool
+    async_and_or_left_setup: map_mod.Map[ptr_uint, vec.Vec[ir.Stmt]]
+    async_and_or_right_setup: map_mod.Map[ptr_uint, vec.Vec[ir.Stmt]]
     # When non-null, `async_emit_await` and `async_register_local_field` push
     # through these pointers instead of the vec fields above.  This makes a
     # function's field collection immune to nested `lower_async_fn` calls — even
@@ -1249,6 +1262,10 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         async_await_fields = vec.Vec[ir.Field].create(),
         async_local_seen = map_mod.Map[str, bool].create(),
         async_match_binding_names = map_mod.Map[ptr_uint, str].create(),
+        async_and_or_field_indices = map_mod.Map[ptr_uint, ptr_uint].create(),
+        async_structured_setup = false,
+        async_and_or_left_setup = map_mod.Map[ptr_uint, vec.Vec[ir.Stmt]].create(),
+        async_and_or_right_setup = map_mod.Map[ptr_uint, vec.Vec[ir.Stmt]].create(),
         async_await_fields_ptr = null,
         async_local_fields_ptr = null,
         loop_break_label = "",
@@ -3921,12 +3938,35 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     lower_inline_while(ctx, output, w.condition, w.body)
                     return
                 # Async CPS: an await in the loop condition must be re-evaluated
-                # (and may suspend) each iteration.  Restructure to
-                # `while (true) { <cond awaits>; if (!cond) break; <body> }`.
-                if ctx.async_cps_active and async_mod.expr_has_await(w.condition):
+                # (and may suspend) each iteration.  The host normalizer also
+                # restructures an await-free condition that contains `and`/`or`
+                # (its setup is non-empty) and spills the evaluated condition to
+                # a `cond_name` frame temp.  Restructure to
+                # `while (true) { <cond setup>; cond = <cond>; if (!cond) break; <body> }`.
+                if ctx.async_cps_active and (async_mod.expr_has_await(w.condition) or async_mod.expr_has_short_circuit(w.condition)):
                     var wbody = vec.Vec[ir.Stmt].create()
+                    let saved_structured = ctx.async_structured_setup
+                    ctx.async_structured_setup = true
                     let cond_hoisted = async_hoist_awaits(ctx, ref_of(wbody), w.condition)
+                    ctx.async_structured_setup = saved_structured
+                    # The host's `normalize_async_expression` evaluates the
+                    # condition into a fresh `cond_name` bool local after the
+                    # condition setup and declares it inside the loop body
+                    # (`normalization.rb:107`), so its field registers after the
+                    # setup temps but before the body locals.
+                    let cond_base = wbody.len()
+                    let cond_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
                     let cond_ir = lower_expr(ctx, cond_hoisted)
+                    let cond_collected = collect_stmt_setup(ctx, cond_saved)
+                    emit_hoist_setup(ref_of(wbody), cond_base, cond_collected)
+                    ctx.async_tmp_counter += 1
+                    let cond_tmp = j2("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
+                    let cond_field = j2("local_", cond_tmp)
+                    let cond_frame = j2("__mt_frame->", cond_field)
+                    async_register_local_field(ctx, cond_tmp, cond_field, cond_frame, ctx.bool_ty)
+                    wbody.push(async_frame_field_assignment(ctx, cond_field, ctx.bool_ty, cond_ir))
+                    append_hoist_cleanups(ref_of(wbody), cond_collected)
+                    let cond_ref = alloc_expr(ir.Expr.expr_name(name = cond_frame, ty = ctx.bool_ty, pointer = Option[bool].some(value = false)))
                     # Use goto labels so user-written `break`/`continue` inside the
                     # loop body (including inside match→switch arms) still exit the
                     # correct enclosing loop.
@@ -3943,8 +3983,8 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     ctx.loop_continue_native = true
                     ctx.loop_break_native = true
                     var brk = vec.Vec[ir.Stmt].create()
-                    brk.push(ir.Stmt.stmt_goto(label = bl))
-                    wbody.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = cond_ir, ty = ctx.bool_ty)), then_body = brk.as_span(), else_body = Option[span[ir.Stmt]].none))
+                    brk.push(ir.Stmt.stmt_break())
+                    wbody.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = cond_ref, ty = ctx.bool_ty)), then_body = brk.as_span(), else_body = Option[span[ir.Stmt]].none))
                     let inner = lower_block(ctx, w.body)
                     var ii: ptr_uint = 0
                     while ii < inner.len:
@@ -4359,54 +4399,73 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
     # included) is named `__fmt_<storage>`.
     let storage_c = if name == "_": fresh_c_temp_name(ctx, "let_else_discard") else: utils.c_local_name(name)
     ctx.fmt_dest_name = storage_c
-    # The initializer is a prepared position: a foreign call's argument/cleanup
-    # temporaries hoist into the statement stream before the storage local (the
-    # host's `prepare_expression_with_cleanups` with `allow_root_statement_foreign`).
-    let hoist_base = output.len()
-    let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
-    ctx.hoist_root_ep = value_ptr
-    let value_ir = lower_expr(ctx, value_ptr)
-    let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
-    emit_hoist_setup(output, hoist_base, hoist_collected)
-    # The storage type is the host's inference of the initializer
-    # (`infer_expression_type`): a foreign wrapper call's declared return
-    # (`cstr?`) rather than the simple mapping's raw `ptr[char]` call type.
-    var storage_ty = qualify_type(ctx, ir_expr_type(value_ir))
-    unsafe:
-        match read(value_ptr):
-            ast.Expr.expr_call as call:
-                match foreign_wrapper_call_return_type(ctx, call.callee):
-                    Option.some as declared:
-                        storage_ty = declared.value
-                    Option.none:
-                        pass
-            _:
-                pass
-
+    var storage_ty: types.Type
     var storage_ref: ptr[ir.Expr]
-    if ctx.async_cps_active:
-        # The host's CF path spills the guard's storage to the frame field and
-        # binds the success name to that same field (no plain local, no copy).
+    if ctx.async_cps_active and expr_is_direct_await(value_ptr):
+        # The host normalizer hoists the guard's direct await, and the CF
+        # lowering takes the awaited result straight into the guard's frame
+        # storage field (the field holds the full Result/Option; there is no
+        # separate temp field and no second store).
+        var inner = direct_await_inner(value_ptr)
+        if async_mod.expr_has_await(inner):
+            inner = async_hoist_awaits(ctx, output, inner)
+        let task_ir = lower_expr(ctx, inner)
+        let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
+        storage_ty = extract_task_element_type(ctx, task_ty)
         let gfield = if name == "_": j2("local_discard_", pw1_str(line)) else: j2("local_", name)
         async_register_unused_field(ctx, gfield, storage_ty)
         let frame_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false)))
-        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_ref, member = gfield, ty = storage_ty)), operator = "=", value = value_ir))
-        # The guard condition reads the field as a member expression (the host's
-        # `async_frame_field_expression`); later binding reads use the text name.
+        let target = alloc_expr(ir.Expr.expr_member(receiver = frame_ref, member = gfield, ty = storage_ty))
+        async_emit_await(ctx, output, task_ir, task_ty, storage_ty, Option[ptr[ir.Expr]].some(value = target), inner)
         storage_ref = alloc_expr(ir.Expr.expr_member(receiver = frame_ref, member = gfield, ty = storage_ty))
     else:
-        # The host's no-await async body declares its plain locals without a
-        # source line/path (`lower_async_non_await_statements`); its sync path
-        # carries both.
-        let guard_line = if ctx.async_nonawait_body: 0z else: line
-        let guard_path = if ctx.async_nonawait_body: "" else: ctx.analysis.source_path
-        output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = guard_line, source_path = guard_path))
-        storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = Option[bool].some(value = false)))
-    let guard_cleanups = if format_owning_target_type(ctx, storage_ty, 0):
-        drop_format_release_cleanups(hoist_collected)
-    else:
-        hoist_collected
-    record_or_emit_local_cleanups(ctx, output, guard_cleanups.cleanups)
+        # The initializer is a prepared position: a foreign call's argument/cleanup
+        # temporaries hoist into the statement stream before the storage local (the
+        # host's `prepare_expression_with_cleanups` with `allow_root_statement_foreign`).
+        let hoist_base = output.len()
+        let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
+        ctx.hoist_root_ep = value_ptr
+        let value_ir = lower_expr(ctx, value_ptr)
+        let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
+        emit_hoist_setup(output, hoist_base, hoist_collected)
+        # The storage type is the host's inference of the initializer
+        # (`infer_expression_type`): a foreign wrapper call's declared return
+        # (`cstr?`) rather than the simple mapping's raw `ptr[char]` call type.
+        storage_ty = qualify_type(ctx, ir_expr_type(value_ir))
+        unsafe:
+            match read(value_ptr):
+                ast.Expr.expr_call as call:
+                    match foreign_wrapper_call_return_type(ctx, call.callee):
+                        Option.some as declared:
+                            storage_ty = declared.value
+                        Option.none:
+                            pass
+                _:
+                    pass
+
+        if ctx.async_cps_active:
+            # The host's CF path spills the guard's storage to the frame field and
+            # binds the success name to that same field (no plain local, no copy).
+            let gfield = if name == "_": j2("local_discard_", pw1_str(line)) else: j2("local_", name)
+            async_register_unused_field(ctx, gfield, storage_ty)
+            let frame_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false)))
+            output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_ref, member = gfield, ty = storage_ty)), operator = "=", value = value_ir))
+            # The guard condition reads the field as a member expression (the host's
+            # `async_frame_field_expression`); later binding reads use the text name.
+            storage_ref = alloc_expr(ir.Expr.expr_member(receiver = frame_ref, member = gfield, ty = storage_ty))
+        else:
+            # The host's no-await async body declares its plain locals without a
+            # source line/path (`lower_async_non_await_statements`); its sync path
+            # carries both.
+            let guard_line = if ctx.async_nonawait_body: 0z else: line
+            let guard_path = if ctx.async_nonawait_body: "" else: ctx.analysis.source_path
+            output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = guard_line, source_path = guard_path))
+            storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = Option[bool].some(value = false)))
+        let guard_cleanups = if format_owning_target_type(ctx, storage_ty, 0):
+            drop_format_release_cleanups(hoist_collected)
+        else:
+            hoist_collected
+        record_or_emit_local_cleanups(ctx, output, guard_cleanups.cleanups)
 
     let kind = guard_storage_kind(ctx, storage_ty)
 
@@ -7479,11 +7538,46 @@ function lower_short_circuit_binary(
     # setup (below).
     if ctx.inside_async:
         let bool_ty = ctx.bool_ty
+        # The host normalizer's declaration position: the and/or result temp is
+        # declared before its operand setups, but its name is allocated after
+        # them.  `async_hoist_awaits` recorded the field slot before recursing
+        # into the operands; an unrecorded node starts at the current count.
+        var field_index = async_local_field_count(ctx)
+        let recorded_index = ctx.async_and_or_field_indices.get(unsafe: reinterpret[ptr_uint](ep))
+        if recorded_index != null:
+            field_index = unsafe: read(ptr[ptr_uint]<-recorded_index)
+        let left_stored_ptr = ctx.async_and_or_left_setup.get(unsafe: reinterpret[ptr_uint](ep))
+        let right_stored_ptr = ctx.async_and_or_right_setup.get(unsafe: reinterpret[ptr_uint](ep))
+        # Lower both operands into child windows: their setup follows the temp
+        # declaration, and their cleanups follow the enclosing statement (the
+        # host's prepared binary shape).
+        let left_saved = begin_stmt_setup(ctx, ctx.hoist_mode)
+        if left_stored_ptr != null:
+            var left_stored = unsafe: read(ptr[vec.Vec[ir.Stmt]]<-left_stored_ptr)
+            append_span_stmts(ref_of(ctx.hoist_stmts), left_stored.as_span())
+        let left = lower_expr(ctx, left_ep)
+        let left_collected = collect_stmt_setup(ctx, left_saved)
+        let right_saved = begin_stmt_setup(ctx, ctx.hoist_mode)
+        if right_stored_ptr != null:
+            var right_stored = unsafe: read(ptr[vec.Vec[ir.Stmt]]<-right_stored_ptr)
+            append_span_stmts(ref_of(ctx.hoist_stmts), right_stored.as_span())
+        # The right operand sees the left operand's refinement (the host's
+        # `binary_right_env`, `resolve.rb:967`).
+        var right_refs = lowering_flow_refinements(ctx, left_ep, operator == "and")
+        let right_flow_saved = push_flow_refinements(ctx, ref_of(right_refs))
+        let right = lower_expr(ctx, right_ep)
+        restore_flow_refinements(ctx, right_flow_saved)
+        let right_collected = collect_stmt_setup(ctx, right_saved)
+        append_cleanup_stmts(ref_of(ctx.hoist_cleanups), left_collected.cleanups)
+        append_cleanup_stmts(ref_of(ctx.hoist_cleanups), right_collected.cleanups)
         ctx.async_tmp_counter += 1
         let tmp = j2("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
         let field_name = j2("local_", tmp)
         let frame_cname = j2("__mt_frame->", field_name)
+        let field_count_before = async_local_field_count(ctx)
         async_register_unused_field(ctx, field_name, bool_ty)
+        if async_local_field_count(ctx) > field_count_before:
+            async_move_last_local_field_to(ctx, field_index)
         let short_circuit_value = operator != "and"
         # A CPS body spills the normalizer's LocalDecl to a frame field; the
         # no-await async path lowers it as a plain C local (the host's
@@ -7496,16 +7590,8 @@ function lower_short_circuit_binary(
         else:
             value_name = tmp
             ctx.hoist_stmts.push(ir.Stmt.stmt_local(name = tmp, linkage_name = tmp, ty = bool_ty, value = alloc_expr(ir.Expr.expr_boolean_literal(value = short_circuit_value, ty = bool_ty)), line = 0, source_path = ""))
-        let left = lower_expr(ctx, left_ep)
-        let right_saved = begin_stmt_setup(ctx, ctx.hoist_mode)
-        # The right operand sees the left operand's refinement (the host's
-        # `binary_right_env`, `resolve.rb:967`).
-        var right_refs = lowering_flow_refinements(ctx, left_ep, operator == "and")
-        let right_flow_saved = push_flow_refinements(ctx, ref_of(right_refs))
-        let right = lower_expr(ctx, right_ep)
-        restore_flow_refinements(ctx, right_flow_saved)
-        let right_collected = collect_stmt_setup(ctx, right_saved)
-        append_cleanup_stmts(ref_of(ctx.hoist_cleanups), right_collected.cleanups)
+        var left_stmts = left_collected.stmts
+        append_span_stmts(ref_of(ctx.hoist_stmts), left_stmts.as_span())
         # `and`: left true -> value = right, left false -> value = false.
         # `or`:  left true -> value = true,  left false -> value = right.
         # The host swaps the two branch bodies for `or`
@@ -28525,9 +28611,35 @@ function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], e
                 async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target), inner)
                 return alloc_ast_expr(ast.Expr.expr_identifier(name = tmp, line = 0, column = 0))
             ast.Expr.expr_binary_op as b:
+                # The host normalizer declares an and/or result temp before the
+                # operand setups but numbers it after them, so capture the field
+                # slot before recursing into the operands and key it by the
+                # rewritten node the lowering will see.
+                let is_short_circuit = b.operator == "and" or b.operator == "or"
+                if is_short_circuit and ctx.async_structured_setup:
+                    # Two-phase normalizer shape: keep each operand's await setup
+                    # separate so the lowering can emit
+                    # `[temp decl] ++ left_setup ++ IfStmt(...)` in that order.
+                    let and_or_field_index = async_local_field_count(ctx)
+                    var left_setup = vec.Vec[ir.Stmt].create()
+                    var right_setup = vec.Vec[ir.Stmt].create()
+                    let l = async_hoist_awaits(ctx, ref_of(left_setup), b.left)
+                    let r = async_hoist_awaits(ctx, ref_of(right_setup), b.right)
+                    let rewritten = alloc_ast_expr(ast.Expr.expr_binary_op(operator = b.operator, left = l, right = r))
+                    let key = reinterpret[ptr_uint](rewritten)
+                    ctx.async_and_or_field_indices.set(key, and_or_field_index)
+                    ctx.async_and_or_left_setup.set(key, left_setup)
+                    ctx.async_and_or_right_setup.set(key, right_setup)
+                    return rewritten
+                var and_or_field_index: ptr_uint = 0
+                if is_short_circuit:
+                    and_or_field_index = async_local_field_count(ctx)
                 let l = async_hoist_awaits(ctx, output, b.left)
                 let r = async_hoist_awaits(ctx, output, b.right)
-                return alloc_ast_expr(ast.Expr.expr_binary_op(operator = b.operator, left = l, right = r))
+                let rewritten = alloc_ast_expr(ast.Expr.expr_binary_op(operator = b.operator, left = l, right = r))
+                if is_short_circuit:
+                    ctx.async_and_or_field_indices.set(reinterpret[ptr_uint](rewritten), and_or_field_index)
+                return rewritten
             ast.Expr.expr_unary_op as u:
                 let operand = async_hoist_awaits(ctx, output, u.operand)
                 return alloc_ast_expr(ast.Expr.expr_unary_op(operator = u.operator, operand = operand))
@@ -28575,8 +28687,13 @@ function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], e
                 async_move_last_local_field_to(ctx, field_index)
                 output.push(async_frame_field_assignment(ctx, field_name, result_ty, alloc_expr(ir.Expr.expr_zero_init(ty = result_ty))))
                 let cond_ir = lower_expr(ctx, cond_h)
-                then_setup.push(async_frame_field_assignment(ctx, field_name, result_ty, lower_expr(ctx, then_h)))
-                else_setup.push(async_frame_field_assignment(ctx, field_name, result_ty, lower_expr(ctx, else_h)))
+                # The host's normalized branch bodies assign an Identifier bound
+                # to the frame local (`__mt_frame->local_X`, an `IR::Name`); only
+                # await stores use the `IR::Member` frame-field form.
+                let then_target = alloc_expr(ir.Expr.expr_name(name = frame_cname, ty = result_ty, pointer = Option[bool].some(value = false)))
+                let else_target = alloc_expr(ir.Expr.expr_name(name = frame_cname, ty = result_ty, pointer = Option[bool].some(value = false)))
+                then_setup.push(ir.Stmt.stmt_assignment(target = then_target, operator = "=", value = lower_expr(ctx, then_h)))
+                else_setup.push(ir.Stmt.stmt_assignment(target = else_target, operator = "=", value = lower_expr(ctx, else_h)))
                 output.push(ir.Stmt.stmt_if(condition = cond_ir, then_body = then_setup.as_span(), else_body = Option[span[ir.Stmt]].some(value = else_setup.as_span())))
                 return alloc_ast_expr(ast.Expr.expr_identifier(name = tmp, line = 0, column = 0))
             _:
