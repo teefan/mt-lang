@@ -3027,7 +3027,7 @@ function parse_postfix(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
                 left = node
         else if match_kind(s, tk.TokenKind.lparen):
             var args = parse_call_args(s)
-            consume(s, tk.TokenKind.rparen, c"expected ')'")
+            consume(s, tk.TokenKind.rparen, c"expected ')' after call arguments")
             var node = alloc_expr(s)
             read(node) = ast.Expr.expr_call(callee = left, args = args)
             left = node
@@ -3081,7 +3081,7 @@ function try_parse_specialization(s: ref[pstate.ParserState], left: ptr[ast.Expr
     let args_span = args_vec.as_span()
     if match_kind(s, tk.TokenKind.lparen):
         var call_args = parse_call_args(s)
-        consume(s, tk.TokenKind.rparen, c"expected ')'")
+        consume(s, tk.TokenKind.rparen, c"expected ')' after call arguments")
         if not specialization_call_target(s, left, args_span, call_args):
             s.stream.current = saved
             return Option[ptr[ast.Expr]].none

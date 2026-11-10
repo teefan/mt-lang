@@ -64,6 +64,25 @@ function append_decimal(target: ref[string.String], value: ptr_uint) -> void:
 ## The cache root: `$XDG_CACHE_HOME/milk_tea/mtc-cache`, falling back to
 ## `~/.cache/milk_tea/mtc-cache`.
 function cache_root() -> string.String:
+    # The host's `MilkTea.data_root`: the source tree when the compiler runs
+    # from its checkout (the usual case), otherwise the XDG cache directory
+    # (an installed gem).  Locate the checkout the same way module roots do:
+    # the nearest ancestor of the running binary containing `std/`.
+    match fs.canonicalize("/proc/self/exe"):
+        Result.success as exe_payload:
+            var exe = exe_payload.value
+            defer: exe.release()
+            match fs.find_ancestor_containing(exe.as_str(), "std"):
+                Option.some as root_payload:
+                    var data_root = root_payload.value
+                    defer: data_root.release()
+                    return path_ops.join(data_root.as_str(), "tmp/mtc-cache")
+                Option.none:
+                    pass
+        Result.failure as exe_failure:
+            var exe_error = exe_failure.error
+            exe_error.release()
+
     let xdg = libc.get_environment_variable("XDG_CACHE_HOME")
     if xdg != null:
         let xdg_path = text.cstr_as_str(xdg)
@@ -314,58 +333,99 @@ public function purge() -> Result[string.String, string.String]:
 
 
 struct CacheStatus:
-    count: ptr_uint
+    programs: ptr_uint
+    binaries: ptr_uint
     total_bytes: ptr_uint
 
 
-## Count cached entries and total bytes used.
-public function status() -> CacheStatus:
-    var root = cache_root()
+## Count two-level cache entries under `base` and add their file sizes to
+## `total`.  A program entry is a directory tree; a binary entry is the
+## `<key>/binary` file.
+function count_cache_entries(base: str, is_program: bool, total: ref[ptr_uint]) -> ptr_uint:
+    if not fs.is_directory(base):
+        return 0
     var count: ptr_uint = 0
-    var total_bytes: ptr_uint = 0
-    if not fs.is_directory(root.as_str()):
-        return CacheStatus(count = 0, total_bytes = 0)
-    match fs.list_entries(root.as_str()):
+    match fs.list_entries(base):
         Result.failure as failure:
             var err = failure.error
             err.release()
-            return CacheStatus(count = 0, total_bytes = 0)
-        Result.success as entries_payload:
-            var entries = entries_payload.value
-            defer: entries.release()
-            var ei: ptr_uint = 0
-            while ei < entries.len():
-                match entries.get(ei):
-                    Option.none:
-                        break
-                    Option.some as entry:
-                        var entry_path = path_ops.join(root.as_str(), entry.value)
-                        let is_dir = fs.is_directory(entry_path.as_str())
-                        if is_dir:
-                            match fs.list_entries(entry_path.as_str()):
-                                Result.failure:
-                                    pass
-                                Result.success as sub_payload:
-                                    var subs = sub_payload.value
-                                    defer: subs.release()
-                                    var si: ptr_uint = 0
-                                    while si < subs.len():
-                                        match subs.get(si):
-                                            Option.none:
-                                                break
-                                            Option.some as sub:
-                                                var sub_path = path_ops.join(entry_path.as_str(), sub.value)
-                                                defer: sub_path.release()
-                                                let is_file = fs.is_file(sub_path.as_str())
-                                                if is_file:
-                                                    match fs.metadata(sub_path.as_str()):
-                                                        Result.failure:
-                                                            pass
-                                                        Result.success as meta_payload:
-                                                            var meta = meta_payload.value
-                                                            total_bytes += meta.size
-                                                si += 1
-                            count += 1
-                        entry_path.release()
-                ei += 1
-            return CacheStatus(count = count, total_bytes = total_bytes)
+            return 0
+        Result.success as prefixes_payload:
+            var prefixes = prefixes_payload.value
+            defer: prefixes.release()
+            var pi: ptr_uint = 0
+            while pi < prefixes.len():
+                let prefix = prefixes.get(pi) else:
+                    break
+                var prefix_path = path_ops.join(base, prefix)
+                match fs.list_entries(prefix_path.as_str()):
+                    Result.failure as failure:
+                        var err = failure.error
+                        err.release()
+                    Result.success as entries_payload:
+                        var entries = entries_payload.value
+                        defer: entries.release()
+                        var ei: ptr_uint = 0
+                        while ei < entries.len():
+                            let entry = entries.get(ei) else:
+                                break
+                            var entry_path = path_ops.join(prefix_path.as_str(), entry)
+                            if is_program:
+                                if fs.is_directory(entry_path.as_str()):
+                                    count += 1
+                                    add_tree_size(entry_path.as_str(), total)
+                            else:
+                                var binary_path = path_ops.join(entry_path.as_str(), "binary")
+                                if fs.is_file(binary_path.as_str()):
+                                    count += 1
+                                    match fs.metadata(binary_path.as_str()):
+                                        Result.success as meta_payload:
+                                            var meta = meta_payload.value
+                                            unsafe: read(total) += meta.size
+                                        Result.failure:
+                                            pass
+                                binary_path.release()
+                            entry_path.release()
+                            ei += 1
+                prefix_path.release()
+                pi += 1
+    return count
+
+
+## Add every regular file's size under `dir` (recursively) to `total`.
+function add_tree_size(dir: str, total: ref[ptr_uint]) -> void:
+    match fs.list_files_recursive(dir):
+        Result.failure as failure:
+            var err = failure.error
+            err.release()
+        Result.success as files_payload:
+            var files = files_payload.value
+            defer: files.release()
+            var i: ptr_uint = 0
+            while i < files.len():
+                let fp = files.get(i) else:
+                    break
+                match fs.metadata(fp):
+                    Result.success as meta_payload:
+                        var meta = meta_payload.value
+                        unsafe: read(total) += meta.size
+                    Result.failure:
+                        pass
+                i += 1
+
+
+## Count cached program dirs, binary files and total bytes used (the host's
+## `cache status` layout: `programs/<2>/<key>` and `binaries/<2>/<key>/binary`).
+public function status() -> CacheStatus:
+    var root = cache_root()
+    defer: root.release()
+    if not fs.is_directory(root.as_str()):
+        return CacheStatus(programs = 0, binaries = 0, total_bytes = 0)
+    var total_bytes: ptr_uint = 0
+    var programs_path = path_ops.join(root.as_str(), "programs")
+    let programs = count_cache_entries(programs_path.as_str(), true, ref_of(total_bytes))
+    programs_path.release()
+    var binaries_path = path_ops.join(root.as_str(), "binaries")
+    let binaries = count_cache_entries(binaries_path.as_str(), false, ref_of(total_bytes))
+    binaries_path.release()
+    return CacheStatus(programs = programs, binaries = binaries, total_bytes = total_bytes)

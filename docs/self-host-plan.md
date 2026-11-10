@@ -32,16 +32,17 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **718/718**; parse **714 match / 0 differ / 4 host-rejected of 718**; counts drift with the tree) |
 | `sexpr lower` | **665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 files** (session 63) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
-| `cli:parity` | **24 match / 37 differ / 0 pending** of 61 cases (last re-measured session 49, unchanged since session 35) |
+| `cli:parity` | **60 match / 1 differ / 0 pending** of 61 cases (session 63; the one diff is the `debug` AST/facts formatter; `--timings` values are normalized) |
 | Linter corpus | **495 agree / 121 differ** of 616 files (session 50 re-read) |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the live VS Code F5 check is the remaining manual step |
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | bindgen self-hosted; **3 verified / 25 changed of 28** (deltas are cosmetic emitter gaps, unverified) |
 
-Rough completion against the per-track Definition of Done: **~88%**.  The
-self-hosting foundation and `lower` dump parity are done; the residue is
-concentrated in CLI (37 cases + unported subsystems), the linter corpus (121
+Rough completion against the per-track Definition of Done: **~92%**.  The
+self-hosting foundation and `lower` dump parity are done and CLI behavior is
+down to one case; the residue is the CLI's unported subsystems (`deps`, `docs`,
+wasm/bundle, `--jobs`, toolchain/tools, `--kind`), the linter corpus (121
 files), and bindings verification.  LSP, DAP and formatter are closed at their
 documented differences.
 
@@ -334,6 +335,32 @@ documented `memory_stress_test` artifact and `main.mt`'s `--sexpr` loop guard):
   `examples/language_baseline` (flags/dyn/proc/match/detach) and
   `examples/multithreading_test` (parallel for/spawn/gather).
 
+Session-63 CLI batch (24/37 → 60/1 of 61; only the `debug` formatter remains):
+- Errors and usage blocks now go to stderr in the host's shape: `new`,
+  `format --check --write`, `completions`, `std`, `toolchain`, `snapshot`,
+  `test`, `build` (`--kind`, unknown options, missing values), `lex`/`debug`
+  missing-file and directory messages, package-entry errors
+  (`build.entry not found: … (resolved to …)`, directory-as-source), and
+  `std show`/`build`'s no-entrypoint line.
+- The analyzer reports the host's `unknown callable <name>` for an unresolved
+  bare call (value/builtin/handle/type allowlists, loader-backed analysis only),
+  and `check` prints only the first error per file (the host aborts there).
+- `lex`'s default output is Ruby's `PP.pp(tokens)` shape (field-per-line Data
+  objects, Ruby string inspection, integer/float `literal` values).
+- `lower`/`emit-c` directory operands expand to sorted `.mt` files with the
+  `# --- <path> ---` headers; a package root is discovered when neither
+  `build` nor `run` gets an operand.
+- The parser's missing-closing-delimiter diagnostics report the *previous*
+  token (the host's `consume` rule) and call arguments say `expected ')' after
+  call arguments`; `parse` renders lexer errors as `error[lex/error]` blocks
+  and the lexer's unclosed-grouping error carries the host's line/column.
+- `cache status` uses the host's `data_root/tmp/mtc-cache` (checkout root, XDG
+  fallback), counts program dirs/binaries and formats MiB; `cli_parity.rb`
+  normalizes `--timings` wall-clock values (the report structure still
+  compared).
+- Gates: fixed point holds, `test/mt` 60/0, self-tests 19/0, examples 49/49,
+  lex 718/718, parse 714/0/4, lower 665/2/51/0.
+
 ## How to start a work session
 
 ### Entry points
@@ -416,9 +443,10 @@ Iterate cheap, prove once:
    `examples/sdl3` 34/34, `test/mt` 60/0.
 1. **`lower` dump parity** — **CLOSED** (session 63): 665/2/51/0 of 718, the
    two residuals are documented host artifacts.  See Track A.
-2. **CLI behavior parity** — open: 24/37/0 of 61, plus the unported subsystems
-   (`deps`, `docs`, wasm/emcc, `--bundle`/`--archive`, `--jobs`, toolchain
-   bootstrap/tools, `--kind`, bindgen policy flags).
+2. **CLI behavior parity** — **near-closed**: 60/1/0 of 61 (only `debug`),
+   plus the unported subsystems (`deps`, `docs`, wasm/emcc,
+   `--bundle`/`--archive`, `--jobs`, toolchain bootstrap/tools, `--kind`,
+   bindgen policy flags).
 3. **Linter corpus residue** — open: 495/121 of 616, two unported rules and one
    unported fix, plus the analyzer gaps in Track C.
 4. **Imported bindings / bindgen** — open: 28/28 verification and the bindgen
@@ -511,26 +539,25 @@ The two counted differs are the documented host artifacts, not work:
 Track A reached its stopping rule: **0 real differing files**.  Keep lex/parse
 at 0-diff and re-measure both after any lowering-adjacent change.
 
-### Track B — CLI parity (24/37 of 61)
+### Track B — CLI parity (60/61; only `debug` left)
 
-Open work, cheapest first:
+The 61-case behavior matrix is byte-equal except `debug`.  Remaining work:
 
-1. **Message/channel/precedence parity** — enumerate the 37 differing cases with
-   `ruby tools/cli_parity.rb --max-diffs 37 --keep` (per-case `host/self`
-   `{out,err,rc}` under `tmp/cli-parity/cases/`); fix each to byte-equal.
-   Examples: `std show` prints to stdout instead of stderr; `build --bogus`
-   reports "accepts a single source path" instead of "unknown build option".
-   Exit: 61/61.
-2. **`test` argument forms** — the self accepts only a directory: `--jobs N`
-   (the help advertises it but nothing parses it; a stray `16` lands in the path
-   slot), `--cc/--profile/--platform`, and **file** arguments the host accepts
-   (`mtc test path/file.mt`).  Port the host's fork-per-file, order-preserving
-   parallel runner (`lib/milk_tea/tooling/cli/commands/test.rb:281-335`); `build` already honors
-   `--cc`.  `gates_dev_tests` uses one-file temp dirs as a workaround.
+1. **`debug` formatter** — port `lib/milk_tea/tooling/debug_info_formatter.rb`
+   (454 lines): header, token table with per-kind counts, AST tree, parse
+   errors, facts (types/functions/imports), bindings, diagnostics.  The data
+   exists in the self's analysis; the missing piece is the Ruby reflection
+   renderer (compact node types, tree connectors, headers).  Exit: 61/61.
+2. **`test` argument forms** — `--jobs N`, `--cc/--profile/--platform`, and
+   **file** operands (the self accepts only a directory; `gates_dev_tests`
+   uses one-file temp dirs as a workaround).  Port the host's fork-per-file,
+   order-preserving parallel runner (`lib/milk_tea/tooling/cli/commands/test.rb:281-335`).
 3. **Cheap flags/subcommands** — `build --kind static|shared`
-   (`lib/milk_tea/tooling/build.rb`); `toolchain bootstrap`/`toolchain tools`
-   (`lib/milk_tea/tooling/toolchain_cli.rb:68-205`; only `doctor` is dispatched); `bindgen
-   --nullable-policy/--nullable-report/--clang-arg` (advertised, not parsed).
+   (`lib/milk_tea/tooling/build.rb`; bogus values match the host, real values
+   report "not implemented"); `toolchain bootstrap`/`toolchain tools`
+   (`lib/milk_tea/tooling/toolchain_cli.rb:68-205`; only `doctor` is
+   dispatched); bindgen `--nullable-policy/--nullable-report/--clang-arg`
+   (advertised, not parsed).
 4. **`--bundle`/`--archive`** — host `lib/milk_tea/tooling/build.rb:143-164,459-464,962-1032` and
    `lib/milk_tea/tooling/asset_pack.rb` (MTAP).  Implement the archive in-language (`std/tar.mt` and
    `std/gzip.mt` exist).  Verify `tar tzf` lists it, extraction runs, and each
@@ -554,7 +581,14 @@ Open work, cheapest first:
    `build`/`run`/`check`; network via `std/http`.  Verify against the host's
    `test/packages/*` fixtures and a local-registry probe.
 8. **Harness** — add `tools/cli_parity.rb` cases for every command/flag above and
-   delete the matching `KNOWN_GAPS` entries; exit: every case matches.
+   delete the matching `KNOWN_GAPS` entries; exit: every case matches.  Timing
+   values are normalized (wall-clock measurements never compare byte-for-byte);
+   the report structure still is.
+
+Session-63 CLI flips: all 37 original diffs except `debug` — lex/parse/lower/
+emit-c diagnostics and formats, check/lint/format/debug messages and channels,
+package build/run entry points, `new`, `completions`, `std`, `test`, `cache`,
+`toolchain`, `snapshot`.
 
 ### Track C — linter corpus residue (495/121 of 616)
 
@@ -736,7 +770,7 @@ when the tree moved.  Target = the Definition of Done above.
 | examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 63 | `tools/gates.sh --only examples --run` |
 | `sexpr lex` / `parse` | lex 718/718; parse 714 match / 0 differ / 4 host-rejected of 718 | session 63 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
 | `sexpr lower` | 665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 (the 2 are documented artifacts) | session 63 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
-| `cli:parity` | 24 match / 37 differ / 0 pending of 61 | session 49 | `rake "cli:parity"` |
+| `cli:parity` | 60 match / 1 differ / 0 pending of 61 (only `debug`; timings normalized) | session 63 | `rake "cli:parity"` |
 | lint corpus | 495 agree / 121 differ of 616 | session 50 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 43 | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |

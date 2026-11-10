@@ -129,11 +129,19 @@ public function consume(s: ref[ParserState], kind: tk.TokenKind, msg: cstr) -> v
     if check(s, kind):
         advance(s)
         return
-    let tok = peek(s) else:
+    var tok = peek(s)
+    # The host's `consume` reports a missing closing delimiter at the *previous*
+    # token (`parser.rb:227`: `[:rparen, :rbracket, :rbrace].include?(type) ?
+    # previous : peek`).
+    if kind == tk.TokenKind.rparen or kind == tk.TokenKind.rbracket:
+        let prev = previous(s)
+        if prev != null:
+            tok = prev
+    let t_ptr = tok else:
         parser_error_naked(s, msg)
         return
     unsafe:
-        let t = read(tok)
+        let t = read(t_ptr)
         let lexeme = token_mod.token_lexeme(t, s.source)
         let kn = token_mod.kind_name(t.kind)
         parser_error_at(s, msg, t.line, t.column, lexeme, kn)

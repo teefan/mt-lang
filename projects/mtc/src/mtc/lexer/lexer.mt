@@ -477,9 +477,6 @@ function lex_lines(session: ref[LexSession]) -> void:
 
 
 function emit_eof(session: ref[LexSession]) -> vec.Vec[tok.Token]:
-    if session.grouping_depth > 0:
-        session_fatal(session, c"unclosed grouping delimiter", 0, 0)
-
     # Ruby uses @line_count (`source.lines.count`) for dedent, +1 for eof.
     var total_lines: ptr_uint = 1
     if session.src_len > 0:
@@ -494,6 +491,10 @@ function emit_eof(session: ref[LexSession]) -> vec.Vec[tok.Token]:
         unsafe:
             if ubyte<-read(session.source.data + session.src_len - 1) != 10:
                 total_lines += 1
+
+    # The host raises at the source's line count, column 1 (`lexer.rb:180`).
+    if session.grouping_depth > 0:
+        session_fatal(session, c"unclosed grouping delimiter", total_lines, 1)
 
     while session.indent_stack.len > 1:
         session.indent_stack.pop()

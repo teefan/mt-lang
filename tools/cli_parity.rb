@@ -279,6 +279,10 @@ def normalize(text, self_bin:)
   text = text.gsub(%r{/tmp/mtc_build_[A-Za-z0-9_.]+\.c}, "<TMPC>")
   text = text.gsub(%r{/tmp/[A-Za-z0-9_.-]*mtc[A-Za-z0-9_.-]*}, "<TMP>")
   text = text.gsub(/^built .*\[cached\]$/, "built <TARGET> [cached]")
+  # `--timings` values (and phase breakdowns) are wall-clock measurements and
+  # differ between any two runs; compare the report's structure only.
+  text = text.gsub(/^(\s+\S+: )[\d.]+ms(?:\s+\(.*\))?$/, '\1<MS>')
+  text = text.gsub(/^Total: [\d.]+ms$/, 'Total: <MS>')
   text
 end
 

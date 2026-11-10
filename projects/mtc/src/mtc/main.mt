@@ -9,7 +9,7 @@ import std.fs as fs
 import std.fmt as fmt_mod
 import std.mem.heap as heap
 import std.path as path_ops
-import std.str
+import std.str as str
 import std.string as string
 import std.time as time
 import std.vec as vec
@@ -23,6 +23,8 @@ import mtc.lexer.lexer as lexer
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.parser.ast as ast
+import mtc.parser.literal_parsing as lparse
+import mtc.float_text as float_text
 import mtc.pretty_printer.ast_formatter as ast_formatter
 import mtc.pretty_printer.ir_formatter as ir_formatter
 import mtc.formatter.tidy as tidy
@@ -437,6 +439,14 @@ function parse_command(file_path: str, sexpr: bool) -> int:
             defer: content.release()
 
             let source = content.as_str()
+            # The host's parse command lexes first; a lexer error aborts before
+            # parsing (`Lexer.lex` raises, the CLI renders `error[lex/error]`).
+            var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+            defer: lex_diags.release()
+            let _lexed = lexer.lex_reporting(source, ref_of(lex_diags))
+            if lex_diags.len() > 0:
+                print_lex_diagnostics(resolved.as_str(), source, lex_diags.as_span())
+                return 1
             var diags = vec.Vec[pstate.ParseDiagnostic].create()
             defer: diags.release()
             let file = parser.parse_source(source, ref_of(diags))
@@ -621,9 +631,9 @@ function check_command(args: span[str]) -> int:
                     int<-(module_name.len), module_name.data,
                 )
         else:
-            print_program_diagnostics(ref_of(program))
+            let printed_errors = print_program_diagnostics(ref_of(program))
             file_count += 1
-            total_errors += errors
+            total_errors += printed_errors
             total_warnings += warnings
 
         # Run linter on clean files to catch style hints.
@@ -722,7 +732,10 @@ function rjust_line_number(line: ptr_uint) -> string.String:
 ##        |
 ##         2 | <source line>
 ##           | <caret>
-function print_program_diagnostics(program: ref[loader.Program]) -> void:
+function print_program_diagnostics(program: ref[loader.Program]) -> ptr_uint:
+    var printed_errors: ptr_uint = 0
+    var seen_error_paths = vec.Vec[str].create()
+    defer: seen_error_paths.clear()
     var i: ptr_uint = 0
     while i < program.diagnostics.len():
         let d = program.diagnostics.get(i) else:
@@ -732,6 +745,23 @@ function print_program_diagnostics(program: ref[loader.Program]) -> void:
             let message = rd.message.as_str()
             let location = rd.path.as_str()
             let prefix = if rd.severity == "warning": "warning" else: "error"
+            # The host aborts a file at its first semantic error, so later
+            # diagnostics for the same path cannot exist there.
+            if rd.severity != "warning":
+                var already_seen = false
+                var spi: ptr_uint = 0
+                while spi < seen_error_paths.len():
+                    let sp = seen_error_paths.get(spi) else:
+                        break
+                    if unsafe: read(sp) == location:
+                        already_seen = true
+                        break
+                    spi += 1
+                if already_seen:
+                    i += 1
+                    continue
+                seen_error_paths.push(location)
+                printed_errors += 1
             var block = string.String.create()
             defer: block.release()
             block.append(prefix)
@@ -784,6 +814,55 @@ function print_program_diagnostics(program: ref[loader.Program]) -> void:
                     Result.failure:
                         pass
             let _ = terminal.write_stderr(block.as_str())
+        i += 1
+    let _ = terminal.flush_stderr()
+    return printed_errors
+
+
+## Print a lexer error in the host CLI's `error[lex/error]` block form.
+function print_lex_diagnostics(path: str, source: str, diags: span[token_mod.LexDiagnostic]) -> void:
+    var i: ptr_uint = 0
+    while i < diags.len:
+        let d = unsafe: read(diags.data + i)
+        var block = string.String.create()
+        defer: block.release()
+        block.append("error[lex/error]: ")
+        block.append(str.cstr_as_str(d.message))
+        block.append(" -- ")
+        block.append(path)
+        block.append(":")
+        block.append(ptr_uint_to_str(d.line))
+        block.append(":")
+        block.append(ptr_uint_to_str(d.column))
+        block.append("\n")
+        if d.line >= 1:
+            var current_line: ptr_uint = 1
+            var pos: ptr_uint = 0
+            while pos < source.len and current_line < d.line:
+                if source.byte_at(pos) == 10:
+                    current_line += 1
+                pos += 1
+            let line_start = pos
+            while pos < source.len and source.byte_at(pos) != 10:
+                pos += 1
+            let line_end = pos
+            if line_start <= line_end:
+                let source_line = source.slice(line_start, line_end - line_start)
+                var gutter = rjust_line_number(d.line)
+                defer: gutter.release()
+                block.append("   |\n")
+                block.append(gutter.as_str())
+                block.append(" | ")
+                block.append(source_line)
+                block.append("\n")
+                block.append("      | ")
+                var sp: ptr_uint = 1
+                while sp < d.column:
+                    block.push_byte(32)
+                    sp += 1
+                block.push_byte(94)
+                block.append("\n")
+        let _ = terminal.write_stderr(block.as_str())
         i += 1
     let _ = terminal.flush_stderr()
 
@@ -1196,6 +1275,11 @@ function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]], owned_r
             add_module_roots(p.value, roots, owned_roots)
             return Option[str].some(value = p.value)
         Option.none:
+            # `run`/`build` with no operand in a package root default to that
+            # package (the host's package-root discovery).
+            if fs.is_file("package.toml"):
+                add_module_roots(".", roots, owned_roots)
+                return Option[str].some(value = ".")
             eprint_line("missing source file path")
             cli_help.print_usage(true)
             return Option[str].none
@@ -1221,9 +1305,9 @@ function reject_missing_entrypoint(program: loader.Program, ir_program: ir.Progr
     if ir.has_entrypoint(ir_program):
         return false
     if program.root_has_main():
-        stdio.print_line("root main is not a valid executable entrypoint; expected `function main() -> int|void`, `function main(argc: int, argv: ptr[cstr]) -> int|void`, `function main(argc: int, argv: ptr[ptr[char]]) -> int|void`, or `function main(args: span[str]) -> int|void`")
+        eprint_line("root main is not a valid executable entrypoint; expected `function main() -> int|void`, `function main(argc: int, argv: ptr[cstr]) -> int|void`, `function main(argc: int, argv: ptr[ptr[char]]) -> int|void`, or `function main(args: span[str]) -> int|void`")
     else:
-        stdio.print_line("no executable entrypoint found; define `main` with one of the supported executable signatures")
+        eprint_line("no executable entrypoint found; define `main` with one of the supported executable signatures")
     return true
 
 
@@ -1248,17 +1332,81 @@ function lower_command(args: span[str]) -> int:
         fi += 1
     let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
         return 1
+    if fs.is_directory(path):
+        var manifest = path_ops.join(path, "package.toml")
+        defer: manifest.release()
+        if not fs.is_file(manifest.as_str()):
+            return lower_directory(path, ref_of(roots), ref_of(owned_roots), platform, sexpr)
+    return lower_one_path(path, ref_of(roots), ref_of(owned_roots), platform, sexpr)
 
+
+## Expand a directory operand to its `.mt` files (sorted) and lower each one,
+## printing the host's `# --- <path> ---` header when there is more than one.
+function lower_directory(dir: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]], platform: resolver.Platform, sexpr: bool) -> int:
+    match fs.list_files_recursive(dir):
+        Result.failure as failure:
+            var err = failure.error
+            defer: err.release()
+            var msg = string.String.create()
+            defer: msg.release()
+            msg.append("cannot read ")
+            msg.append(dir)
+            eprint_line(msg.as_str())
+            return 1
+        Result.success as entries_payload:
+            var entries = entries_payload.value
+            defer: entries.release()
+            var files = vec.Vec[str].create()
+            defer: files.release()
+            var ei: ptr_uint = 0
+            while ei < entries.len():
+                let name = entries.get(ei) else:
+                    break
+                if name.ends_with(".mt"):
+                    files.push(name)
+                ei += 1
+            if files.len() == 0:
+                stdio.print_format(c"no .mt files found in %.*s\n", int<-(dir.len), dir.data)
+                return 0
+            files.sort_by(proc(left: ptr[str], right: ptr[str]) -> int: str.order(left, right))
+            let multiple = files.len() > 1
+            var fi: ptr_uint = 0
+            while fi < files.len():
+                let file_ptr = files.get(fi) else:
+                    break
+                let file = unsafe: read(file_ptr)
+                if multiple and not sexpr:
+                    stdio.print_format(c"# --- %.*s ---\n", int<-(file.len), file.data)
+                let rc = lower_one_path(file, roots, owned, platform, sexpr)
+                if rc != 0:
+                    return rc
+                fi += 1
+            return 0
+    return 0
+
+
+## Lower one source file and print the rendered IR (or its `--sexpr` dump).
+function lower_one_path(path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]], platform: resolver.Platform, sexpr: bool) -> int:
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
-    let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+    let effective = effective_source_path(path, roots, ref_of(entry_path_owner), ref_of(source_root_owner)) else:
         return 1
+    if not fs.exists(effective):
+        var missing = string.String.create()
+        defer: missing.release()
+        missing.append("source file not found: ")
+        missing.append(path)
+        eprint_line(missing.as_str())
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
+    add_module_roots(effective, roots, owned)
 
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer: program.release()
 
     if program.diagnostic_error_count() > 0:
-        print_program_diagnostics(ref_of(program))
+        let _ = print_program_diagnostics(ref_of(program))
         entry_path_owner.release()
         source_root_owner.release()
         return 1
@@ -1300,12 +1448,19 @@ function emit_c_command(args: span[str]) -> int:
     var source_root_owner = string.String.create()
     let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
         return 1
+    if not fs.exists(effective):
+        var missing = string.String.create()
+        defer: missing.release()
+        missing.append("source file not found: ")
+        missing.append(path)
+        eprint_line(missing.as_str())
+        return 1
 
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer: program.release()
 
     if program.diagnostic_error_count() > 0:
-        print_program_diagnostics(ref_of(program))
+        let _ = print_program_diagnostics(ref_of(program))
         entry_path_owner.release()
         source_root_owner.release()
         return 1
@@ -1437,10 +1592,16 @@ function resolve_package_entry(dir: str, roots: ref[vec.Vec[str]], entry_owner: 
     var manifest_path = path_ops.join(dir, "package.toml")
     defer: manifest_path.release()
     if not fs.is_file(manifest_path.as_str()):
-        stdio.print_format(
-            c"error: no package.toml found in %.*s\n",
-            int<-(dir.len), dir.data,
-        )
+        # The host only treats a directory as a package when its manifest
+        # declares an entry; otherwise the operand is a directory where a file
+        # was expected.
+        var dir_msg = string.String.create()
+        defer: dir_msg.release()
+        var abs_dir = loader.absolute_path(dir)
+        defer: abs_dir.release()
+        dir_msg.append("expected a source file, got a directory: ")
+        dir_msg.append(abs_dir.as_str())
+        eprint_line(dir_msg.as_str())
         return Option[str].none
 
     match fs.read_text(manifest_path.as_str()):
@@ -1456,13 +1617,18 @@ function resolve_package_entry(dir: str, roots: ref[vec.Vec[str]], entry_owner: 
             let toml_text = source.as_str()
 
             let entry_val = read_toml_str(toml_text, "build", "entry")
-            read(entry_owner) = string.String.from_str("src/main.mt")
-            match entry_val:
-                Option.some as e:
-                    read(entry_owner).release()
-                    read(entry_owner) = e.value
-                Option.none:
-                    pass
+            let declared_entry = entry_val else:
+                # No `[build] entry`: the host falls back to the operand being a
+                # plain source path, so a directory operand is rejected.
+                var no_entry_msg = string.String.create()
+                defer: no_entry_msg.release()
+                var abs_dir = loader.absolute_path(dir)
+                defer: abs_dir.release()
+                no_entry_msg.append("expected a source file, got a directory: ")
+                no_entry_msg.append(abs_dir.as_str())
+                eprint_line(no_entry_msg.as_str())
+                return Option[str].none
+            read(entry_owner) = declared_entry
 
             let root_val = read_toml_str(toml_text, "package", "source_root")
             read(source_root_owner) = string.String.from_str("src")
@@ -1476,6 +1642,19 @@ function resolve_package_entry(dir: str, roots: ref[vec.Vec[str]], entry_owner: 
     var source_root_path = path_ops.join(dir, source_root_owner.as_str())
     roots.push(source_root_path.as_str())
     var entry_path = path_ops.join(dir, entry_owner.as_str())
+    if not fs.is_file(entry_path.as_str()):
+        var missing_msg = string.String.create()
+        defer: missing_msg.release()
+        missing_msg.append("build.entry not found: ")
+        missing_msg.append(entry_owner.as_str())
+        var resolved_path = loader.absolute_path(entry_path.as_str())
+        defer: resolved_path.release()
+        missing_msg.append(" (resolved to ")
+        missing_msg.append(resolved_path.as_str())
+        missing_msg.append(")")
+        eprint_line(missing_msg.as_str())
+        entry_path.release()
+        return Option[str].none
     read(entry_owner).release()
     read(entry_owner) = entry_path
     return Option[str].some(value= entry_owner.as_str())
@@ -1608,6 +1787,31 @@ function build_command(args: span[str]) -> int:
             clean_mode = true
             ai += 1
             continue
+        if arg == "--kind":
+            if ai + 1 >= args.len:
+                eprint_line("missing value for --kind")
+                cli_help.print_usage(true)
+                return 1
+            let kind_name = args[ai + 1]
+            if kind_name == "executable":
+                ai += 2
+                continue
+            if kind_name == "static" or kind_name == "shared":
+                var unimplemented = string.String.create()
+                defer: unimplemented.release()
+                unimplemented.append("build --kind ")
+                unimplemented.append(kind_name)
+                unimplemented.append(" is not implemented")
+                eprint_line(unimplemented.as_str())
+                return 1
+            var bad_kind = string.String.create()
+            defer: bad_kind.release()
+            bad_kind.append("unknown build kind ")
+            bad_kind.append(kind_name)
+            bad_kind.append("; expected executable|static|shared")
+            eprint_line(bad_kind.as_str())
+            cli_help.print_usage(true)
+            return 1
         if arg == "--keep-c":
             if ai + 1 >= args.len:
                 stdio.print_line("error: --keep-c requires a path")
@@ -1617,7 +1821,8 @@ function build_command(args: span[str]) -> int:
             continue
         if arg == "--cc":
             if ai + 1 >= args.len:
-                stdio.print_line("error: --cc requires a compiler name")
+                eprint_line("missing value for --cc")
+                cli_help.print_usage(true)
                 return 1
             c_compiler = args[ai + 1]
             ai += 2
@@ -1625,6 +1830,12 @@ function build_command(args: span[str]) -> int:
         if arg == "--no-cache":
             use_cache = false
             ai += 1
+            continue
+        if arg == "-I" or arg == "--root" or arg == "--include-path":
+            filtered.push(arg)
+            if ai + 1 < args.len:
+                filtered.push(args[ai + 1])
+            ai += 2
             continue
         if arg == "--sanitize":
             sanitize = true
@@ -1669,6 +1880,14 @@ function build_command(args: span[str]) -> int:
                     return 1
             ai += 2
             continue
+        if arg.starts_with("-"):
+            var unknown_opt = string.String.create()
+            defer: unknown_opt.release()
+            unknown_opt.append("unknown build option ")
+            unknown_opt.append(arg)
+            eprint_line(unknown_opt.as_str())
+            cli_help.print_usage(true)
+            return 1
         filtered.push(arg)
         ai += 1
     let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
@@ -1677,6 +1896,13 @@ function build_command(args: span[str]) -> int:
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
     let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+        return 1
+    if not fs.exists(effective):
+        var missing = string.String.create()
+        defer: missing.release()
+        missing.append("source file not found: ")
+        missing.append(path)
+        eprint_line(missing.as_str())
         return 1
 
     # --clean removes the generated output artifact without compiling.
@@ -1710,7 +1936,7 @@ function build_command(args: span[str]) -> int:
     defer: program.release()
 
     if program.diagnostic_error_count() > 0:
-        print_program_diagnostics(ref_of(program))
+        let _ = print_program_diagnostics(ref_of(program))
         entry_path_owner.release()
         source_root_owner.release()
         return 1
@@ -1867,7 +2093,8 @@ function run_command(args: span[str]) -> int:
             continue
         if arg == "--cc":
             if ai + 1 >= args.len:
-                stdio.print_line("error: --cc requires a compiler name")
+                eprint_line("missing value for --cc")
+                cli_help.print_usage(true)
                 return 1
             c_compiler = args[ai + 1]
             ai += 2
@@ -1875,6 +2102,12 @@ function run_command(args: span[str]) -> int:
         if arg == "--no-cache":
             use_cache = false
             ai += 1
+            continue
+        if arg == "-I" or arg == "--root" or arg == "--include-path":
+            filtered.push(arg)
+            if ai + 1 < args.len:
+                filtered.push(args[ai + 1])
+            ai += 2
             continue
         if arg == "--profile":
             if ai + 1 >= args.len:
@@ -1897,6 +2130,14 @@ function run_command(args: span[str]) -> int:
                     return 1
             ai += 2
             continue
+        if arg.starts_with("-"):
+            var unknown_opt = string.String.create()
+            defer: unknown_opt.release()
+            unknown_opt.append("unknown build option ")
+            unknown_opt.append(arg)
+            eprint_line(unknown_opt.as_str())
+            cli_help.print_usage(true)
+            return 1
         filtered.push(arg)
         ai += 1
     let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
@@ -1905,12 +2146,19 @@ function run_command(args: span[str]) -> int:
     var source_root_owner = string.String.create()
     let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
         return 1
+    if not fs.exists(effective):
+        var missing = string.String.create()
+        defer: missing.release()
+        missing.append("source file not found: ")
+        missing.append(path)
+        eprint_line(missing.as_str())
+        return 1
 
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer: program.release()
 
     if program.diagnostic_error_count() > 0:
-        print_program_diagnostics(ref_of(program))
+        let _ = print_program_diagnostics(ref_of(program))
         entry_path_owner.release()
         source_root_owner.release()
         return 1
@@ -2139,11 +2387,16 @@ function resolve_app_module(name: str, roots: ref[vec.Vec[str]]) -> Option[strin
 ## `src/main.mt` entry — mirroring Ruby's ProjectScaffold.
 function new_command(args: span[str]) -> int:
     if args.len < 2:
-        stdio.print_line("missing project name")
+        eprint_line("missing project name")
+        cli_help.print_usage(true)
         return 1
     if args.len > 2:
         let extra = args[2]
-        stdio.print_format(c"unknown new option %.*s\n", int<-(extra.len), extra.data)
+        var extra_msg = string.String.create()
+        defer: extra_msg.release()
+        extra_msg.append("unknown new option ")
+        extra_msg.append(extra)
+        eprint_line(extra_msg.as_str())
         return 1
 
     let target = args[1]
@@ -2166,7 +2419,11 @@ function new_command(args: span[str]) -> int:
 
     let abs_path = absolute.as_str()
     if fs.exists(abs_path) and not fs.is_directory(abs_path):
-        stdio.print_format(c"project path is not a directory: %.*s\n", int<-(abs_path.len), abs_path.data)
+        var not_dir_msg = string.String.create()
+        defer: not_dir_msg.release()
+        not_dir_msg.append("project path is not a directory: ")
+        not_dir_msg.append(abs_path)
+        eprint_line(not_dir_msg.as_str())
         return 1
     if fs.is_directory(abs_path):
         match fs.list_entries(abs_path):
@@ -2175,10 +2432,11 @@ function new_command(args: span[str]) -> int:
                 let count = entries.len()
                 entries.release()
                 if count > 0:
-                    stdio.print_format(
-                        c"project directory already exists and is not empty: %.*s\n",
-                        int<-(abs_path.len), abs_path.data,
-                    )
+                    var exists_msg = string.String.create()
+                    defer: exists_msg.release()
+                    exists_msg.append("project directory already exists and is not empty: ")
+                    exists_msg.append(abs_path)
+                    eprint_line(exists_msg.as_str())
                     return 1
             Result.failure as list_failure:
                 var list_error = list_failure.error
@@ -2273,7 +2531,8 @@ function snake_case_identifier(name: str) -> string.String:
 ## Ruby's completions_command for the self-host's implemented command set.
 function completions_command(args: span[str]) -> int:
     if args.len < 2:
-        stdio.print_line("completions: shell must be bash, zsh, or fish")
+        eprint_line("completions: shell must be bash, zsh, or fish")
+        let _ = cli_help.print_command_help("completions", true)
         return 1
     let shell = args[1]
     if shell == "bash":
@@ -2317,8 +2576,24 @@ function completions_command(args: span[str]) -> int:
             )
             fi += 1
         return 0
-    stdio.print_line("completions: shell must be bash, zsh, or fish")
+    eprint_line("completions: shell must be bash, zsh, or fish")
+    let _ = cli_help.print_command_help("completions", true)
     return 1
+
+
+## `format_size` (Ruby's `%.1f` over the 1024-based unit).
+function print_human_size(bytes: ptr_uint) -> void:
+    if bytes == 0:
+        stdio.print_line("0 B")
+        return
+    var exp: ptr_uint = 0
+    var divisor: double = 1.0
+    while exp < 3 and double<-bytes >= divisor * 1024.0:
+        divisor = divisor * 1024.0
+        exp += 1
+    let value = double<-bytes / divisor
+    let unit = if exp == 0: c"B" else: if exp == 1: c"KiB" else: if exp == 2: c"MiB" else: c"GiB"
+    stdio.print_format(c"%.1f %s", value, unit)
 
 
 function cache_command(args: span[str]) -> int:
@@ -2341,6 +2616,12 @@ function cache_command(args: span[str]) -> int:
         stdio.print_line("  status  Show cache entry count and total size")
         return 0
     if sub == "purge":
+        var root = build_cache.cache_root_path()
+        let root_text = root.as_str()
+        if not fs.is_directory(root_text):
+            stdio.print_line("cache is already empty")
+            root.release()
+            return 0
         match build_cache.purge():
             Result.failure as failure:
                 var msg = string.String.from_str("cache purge failed: ")
@@ -2348,22 +2629,31 @@ function cache_command(args: span[str]) -> int:
                 let msg_text = msg.as_str()
                 stdio.print_format(c"%.*s\n", int<-(msg_text.len), msg_text.data)
                 msg.release()
+                root.release()
                 return 1
-            Result.success as payload:
-                var root = payload.value
-                let text = root.as_str()
-                stdio.print_format(c"purged %.*s\n", int<-(text.len), text.data)
+            Result.success:
+                stdio.print_format(c"purged %.*s\n", int<-(root_text.len), root_text.data)
                 root.release()
                 return 0
     if sub == "status":
-        var st = build_cache.status()
         var root = build_cache.cache_root_path()
         let root_text = root.as_str()
-        stdio.print_format(c"cache  %zu programs  %zu bytes\n", st.count, st.total_bytes)
-        stdio.print_format(c"  root  %.*s\n", int<-(root_text.len), root_text.data)
+        if not fs.is_directory(root_text):
+            stdio.print_format(c"cache directory does not exist: %.*s\n", int<-(root_text.len), root_text.data)
+            root.release()
+            return 0
+        var st = build_cache.status()
+        stdio.print_format(c"cache  %zu programs, %zu binaries  (", st.programs, st.binaries)
+        print_human_size(st.total_bytes)
+        stdio.print_format(c")\n  root  %.*s\n", int<-(root_text.len), root_text.data)
         root.release()
         return 0
-    stdio.print_line("unknown cache subcommand")
+    var unknown_msg = string.String.create()
+    defer: unknown_msg.release()
+    unknown_msg.append("unknown cache subcommand ")
+    unknown_msg.append(sub)
+    eprint_line(unknown_msg.as_str())
+    let _ = cli_help.print_command_help("cache", true)
     return 1
 
 
@@ -2574,21 +2864,23 @@ function regenerate_one(policy_path: str, output_path: str, raw_module_name: str
             return 0
 function toolchain_command(args: span[str]) -> int:
     if args.len < 2:
-        stdio.print_line("toolchain: missing subcommand")
-        stdio.print_line("")
-        stdio.print_line("subcommands:")
-        stdio.print_line("  doctor      check build tool availability")
+        eprint_line("missing toolchain subcommand")
+        let _ = cli_help.print_command_help("toolchain", true)
         return 1
 
     let sub = args[1]
     if sub == "--help" or sub == "-h":
-        stdio.print_line("usage: mtc toolchain <doctor>")
+        let _ = cli_help.print_command_help("toolchain", false)
         return 0
 
     if sub == "doctor":
         return toolchain_doctor()
 
-    stdio.print_line("toolchain: unknown subcommand")
+    var unknown_sub = string.String.create()
+    defer: unknown_sub.release()
+    unknown_sub.append("unknown toolchain subcommand ")
+    unknown_sub.append(sub)
+    eprint_line(unknown_sub.as_str())
     return 1
 
 
@@ -2657,7 +2949,12 @@ function std_command(args: span[str]) -> int:
             stdio.print_line("missing module name")
             return 1
         return std_show_command(args[2])
-    stdio.print_format(c"unknown std subcommand %.*s\n", int<-(sub.len), sub.data)
+    var unknown_sub = string.String.create()
+    defer: unknown_sub.release()
+    unknown_sub.append("unknown std subcommand ")
+    unknown_sub.append(sub)
+    eprint_line(unknown_sub.as_str())
+    let _ = cli_help.print_command_help("std", true)
     return 1
 
 
@@ -2713,9 +3010,17 @@ function std_list_command(as_json: bool) -> int:
     return 0
 
 
+function std_module_not_found(name: str) -> void:
+    var msg = string.String.create()
+    defer: msg.release()
+    msg.append("std module not found: ")
+    msg.append(name)
+    eprint_line(msg.as_str())
+
+
 function std_show_command(name: str) -> int:
     if name.len == 0 or name.contains_substring(".."):
-        stdio.print_format(c"std module not found: %.*s\n", int<-(name.len), name.data)
+        std_module_not_found(name)
         return 1
     let root_opt = std_root_dir() else:
         stdio.print_line("std: cannot locate the standard library (set MILK_TEA_STD_ROOT)")
@@ -2747,7 +3052,7 @@ function std_show_command(name: str) -> int:
         return print_std_source(variant_path.as_str(), name)
     if fs.is_file(shared_path.as_str()):
         return print_std_source(shared_path.as_str(), name)
-    stdio.print_format(c"std module not found: %.*s\n", int<-(name.len), name.data)
+    std_module_not_found(name)
     return 1
 
 
@@ -2759,7 +3064,7 @@ function print_std_source(path: str, name: str) -> int:
             stdio.print_format(c"%.*s", int<-(content.as_str().len), content.as_str().data)
             return 0
         Result.failure:
-            stdio.print_format(c"std module not found: %.*s\n", int<-(name.len), name.data)
+            std_module_not_found(name)
             return 1
 
 
@@ -3089,7 +3394,8 @@ function snapshot_command(args: span[str]) -> int:
         ai += 1
 
     let input_path = input_path_opt else:
-        stdio.print_line("snapshot: missing source file path")
+        eprint_line("snapshot: missing source file path")
+        cli_help.print_usage(true)
         return 1
 
     if not fs.is_file(input_path):
@@ -3259,6 +3565,13 @@ function debug_command(args: span[str]) -> int:
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
     let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+        return 1
+    if not fs.exists(effective):
+        var missing = string.String.create()
+        defer: missing.release()
+        missing.append("source file not found: ")
+        missing.append(path)
+        eprint_line(missing.as_str())
         return 1
 
     var program = loader.check_program(effective, roots.as_span(), platform)
@@ -3537,7 +3850,8 @@ function format_command(args: span[str]) -> int:
         return 1
 
     if check_mode and write_mode:
-        stdio.print_line("format options --check and --write cannot be combined")
+        eprint_line("format options --check and --write cannot be combined")
+        cli_help.print_usage(true)
         return 1
 
     let path = file_path else:
@@ -3887,7 +4201,99 @@ function ptr_uint_to_str(value: ptr_uint) -> str:
     return buf.as_str()
 
 
+## Ruby `String#inspect` for a lexeme (the host's token dump prints
+## `lexeme="..."` with escaped control characters).
+function append_ruby_inspect(buf: ref[string.String], text: str) -> void:
+    buf.push_byte(34)
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = text.byte_at(i)
+        if b == 34:
+            buf.append("\\\"")
+        else if b == 92:
+            buf.append("\\\\")
+        else if b == 10:
+            buf.append("\\n")
+        else if b == 9:
+            buf.append("\\t")
+        else if b == 13:
+            buf.append("\\r")
+        else if b == 27:
+            buf.append("\\e")
+        else if b < 32 or b == 127:
+            buf.append("\\x")
+            let hi = b >> 4
+            let lo = b & 15
+            buf.push_byte(if hi < 10: ubyte<-(48 + hi) else: ubyte<-(55 + hi))
+            buf.push_byte(if lo < 10: ubyte<-(48 + lo) else: ubyte<-(55 + lo))
+        else:
+            buf.push_byte(b)
+        i += 1
+    buf.push_byte(34)
+
+
+## The host's `Token#literal` rendering for the pretty-printed token dump.
+## Integers and floats carry the parsed value; every other token is `nil`.
+function append_lex_token_literal(buf: ref[string.String], kind: tk.TokenKind, lexeme: str) -> void:
+    if kind == tk.TokenKind.integer:
+        fmt_mod.append_ulong(buf, lex_integer_value(lexeme))
+    else if kind == tk.TokenKind.float_literal:
+        let value = lparse.parse_float_literal(lexeme)
+        buf.append(float_text.double_to_str(value))
+    else:
+        buf.append("nil")
+
+
+## The numeric value of an integer token, following the host lexer's scan:
+## prefixed bases consume their own digit alphabet, then a type suffix is
+## ignored (`0x1Fu` -> 31, `0xab` -> 171).
+function lex_integer_value(lexeme: str) -> ulong:
+    var i: ptr_uint = 0
+    var base: ulong = 10
+    if lexeme.len >= 2 and lexeme.byte_at(0) == 48 and (lexeme.byte_at(1) == 120 or lexeme.byte_at(1) == 88):
+        base = 16
+        i = 2
+    else if lexeme.len >= 2 and lexeme.byte_at(0) == 48 and (lexeme.byte_at(1) == 98 or lexeme.byte_at(1) == 66):
+        base = 2
+        i = 2
+    var value: ulong = 0
+    while i < lexeme.len:
+        let b = lexeme.byte_at(i)
+        var digit: ulong = 0
+        var valid = true
+        if b >= 48 and b <= 57:
+            digit = ulong<-(b - 48)
+        else if b >= 97 and b <= 102:
+            digit = ulong<-(b - 87)
+        else if b >= 65 and b <= 70:
+            digit = ulong<-(b - 55)
+        else if b == 95:
+            i += 1
+            continue
+        else:
+            valid = false
+        if not valid or digit >= base:
+            break
+        value = value * base + digit
+        i += 1
+    return value
+
+
 function lex_command(file_path: str, machine: bool, sexpr: bool) -> int:
+    if not fs.exists(file_path):
+        var missing = string.String.create()
+        defer: missing.release()
+        missing.append("source file not found: ")
+        missing.append(file_path)
+        eprint_line(missing.as_str())
+        return 1
+    if fs.is_directory(file_path):
+        var dir_msg = string.String.create()
+        defer: dir_msg.release()
+        dir_msg.append("expected a source file, got a directory: ")
+        dir_msg.append(file_path)
+        eprint_line(dir_msg.as_str())
+        return 1
     match fs.read_text(file_path):
         Result.failure:
             stdio.print_format(c"error: cannot read '%.*s'\n", int<-(file_path.len), file_path.data)
@@ -3901,20 +4307,9 @@ function lex_command(file_path: str, machine: bool, sexpr: bool) -> int:
             var tokens = lexer.lex_reporting(source, ref_of(diags))
 
             if diags.len() > 0:
-                var di: ptr_uint = 0
-                while di < diags.len():
-                    let d = diags.get(di) else:
-                        break
-                    unsafe:
-                        let rd = read(d)
-                        stdio.print_format(
-                            c"%.*s:%d:%d: lex error: %s\n",
-                            int<-(file_path.len), file_path.data,
-                            int<-(rd.line),
-                            int<-(rd.column),
-                            rd.message,
-                        )
-                    di += 1
+                print_lex_diagnostics(file_path, source, diags.as_span())
+                diags.release()
+                return 1
 
             if sexpr:
                 var dumped = sexpr_mod.dump_tokens(tokens.as_span(), source)
@@ -3923,9 +4318,8 @@ function lex_command(file_path: str, machine: bool, sexpr: bool) -> int:
                 diags.release()
                 return 0
 
-            stdio.print_format(c"── Tokens  %d  ──\n", int<-(tokens.len()))
-
             if machine:
+                stdio.print_format(c"── Tokens  %d  ──\n", int<-(tokens.len()))
                 # Machine-readable: kind line col start end
                 var j: ptr_uint = 0
                 while j < tokens.len():
@@ -3944,7 +4338,8 @@ function lex_command(file_path: str, machine: bool, sexpr: bool) -> int:
                         )
                     j += 1
             else:
-                # Human-readable
+                # The host prints `PP.pp(tokens)` — Ruby's pretty-printed array
+                # of `MilkTea::Token` Data objects, one field per line.
                 var k: ptr_uint = 0
                 while k < tokens.len():
                     let tok = tokens.get(k) else:
@@ -3952,16 +4347,60 @@ function lex_command(file_path: str, machine: bool, sexpr: bool) -> int:
                     unsafe:
                         let t = read(tok)
                         let lexeme = token_mod.token_lexeme(t, source)
-                        let kn = token_mod.kind_name(t.kind)
-                        let end_col = if t.kind == tk.TokenKind.eof: t.column else: t.column + lexeme.len - 1z
-                        stdio.print_format(
-                            c"  %3d:%d-%-3d  %-24.*s %s\n",
-                            int<-(t.line),
-                            int<-(t.column),
-                            int<-(end_col),
-                            int<-(lexeme.len), lexeme.data,
-                            kn,
-                        )
+                        var line = string.String.create()
+                        defer: line.release()
+                        if k == 0:
+                            line.append("[#<data MilkTea::Token")
+                        else:
+                            line.append(" #<data MilkTea::Token")
+                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                        line.clear()
+                        line.append("  type=:")
+                        line.append(token_mod.kind_name(t.kind))
+                        line.append(",")
+                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                        line.clear()
+                        line.append("  lexeme=")
+                        append_ruby_inspect(ref_of(line), lexeme)
+                        line.append(",")
+                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                        line.clear()
+                        line.append("  literal=")
+                        append_lex_token_literal(ref_of(line), t.kind, lexeme)
+                        line.append(",")
+                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                        line.clear()
+                        line.append("  line=")
+                        fmt_mod.append_ptr_uint(ref_of(line), t.line)
+                        line.append(",")
+                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                        line.clear()
+                        line.append("  column=")
+                        fmt_mod.append_ptr_uint(ref_of(line), t.column)
+                        line.append(",")
+                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                        line.clear()
+                        line.append("  start_offset=")
+                        fmt_mod.append_ptr_uint(ref_of(line), t.start_offset)
+                        line.append(",")
+                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                        line.clear()
+                        line.append("  end_offset=")
+                        fmt_mod.append_ptr_uint(ref_of(line), t.end_offset)
+                        line.append(",")
+                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                        line.clear()
+                        line.append("  leading_trivia=[]")
+                        line.append(",")
+                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                        line.clear()
+                        line.append("  trailing_trivia=[]")
+                        line.append(">")
+                        if k + 1 == tokens.len():
+                            line.append("]")
+                        else:
+                            line.append(",")
+                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
                     k += 1
             diags.release()
 
@@ -4285,7 +4724,8 @@ function run_compile_fail_file(file_path: str, source_text: str, roots: ref[vec.
 function test_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer: roots.release()
-    var test_dir = "."
+    var test_dir = ""
+    var saw_test_dir = false
     var name_filter: Option[str] = Option[str].none
     var timeout_seconds: ptr_uint = 30
     var memory_mb: ptr_uint = 1024
@@ -4349,8 +4789,13 @@ function test_command(args: span[str]) -> int:
             ai += 1
             continue
         test_dir = arg
+        saw_test_dir = true
         ai += 1
 
+    if not saw_test_dir:
+        eprint_line("missing source file path")
+        cli_help.print_usage(true)
+        return 1
     if not fs.is_directory(test_dir):
         stdio.print_format(c"error: not a directory: %.*s\n", int<-(test_dir.len), test_dir.data)
         return 1
@@ -4611,7 +5056,7 @@ function build_runner_file(source_path: str, roots: span[str], output_path: str,
     defer: program.release()
 
     if program.diagnostic_error_count() > 0:
-        print_program_diagnostics(ref_of(program))
+        let _ = print_program_diagnostics(ref_of(program))
         return Result[bool, string.String].failure(error = string.String.from_str(""))
 
     let ir_program = lowering.lower(program)

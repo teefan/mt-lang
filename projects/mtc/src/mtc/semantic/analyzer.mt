@@ -4706,15 +4706,33 @@ function is_handle_builtin_callee(callee: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
-                return (
-                    id.name == "callable_of" or id.name == "field_of"
-                    or id.name == "attribute_of" or id.name == "attribute_arg"
-                    or id.name == "has_attribute" or id.name == "fields_of"
-                    or id.name == "members_of" or id.name == "attributes_of"
-                    or id.name == "size_of" or id.name == "align_of"
-                )
+                return is_handle_builtin_name(id.name)
             _:
                 return false
+
+
+function is_handle_builtin_name(name: str) -> bool:
+    return (
+        name == "callable_of" or name == "field_of"
+        or name == "attribute_of" or name == "attribute_arg"
+        or name == "has_attribute" or name == "fields_of"
+        or name == "members_of" or name == "attributes_of"
+        or name == "size_of" or name == "align_of"
+    )
+
+
+## Identifier-callable builtins the host resolves before its unknown-callable
+## fallback.  Their arity/type checking is separate, so an unusable argument
+## shape must not turn into `unknown callable`.  `str` is the StringView
+## constructor (the host's named-type branch).
+function is_callable_builtin_name(name: str) -> bool:
+    return (
+        name == "read" or name == "ptr_of" or name == "const_ptr_of"
+        or name == "ref_of" or name == "get" or name == "fatal"
+        or name == "assert" or name == "expect" or name == "expect_eq"
+        or name == "expect_ne" or name == "str"
+        or is_handle_builtin_name(name)
+    )
 
 
 ## True when a type is a function or proc type (a nullable one included), the
@@ -8871,6 +8889,21 @@ function check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast
                     return types.Type.ty_error
                 let sigp = ctx.functions.get(id.name)
                 if sigp == null:
+                    # The host's `resolve_callable_raw` fallback: a module-level
+                    # value (e.g. a proc-typed `var`) and the compile-time handle
+                    # builtins resolve permissively; anything else is an unknown
+                    # callable.
+                    if ctx.value_names.contains(id.name) or ctx.suppressed_type_names.contains(id.name) or is_callable_builtin_name(id.name):
+                        return types.Type.ty_error
+                    # A source-only check (no loader-backed import bindings) is
+                    # the permissive diagnostic helper path; only a real compile
+                    # reports an unresolved callee.
+                    if ctx.imported_modules == null:
+                        return types.Type.ty_error
+                    var unknown_msg = string.String.create()
+                    unknown_msg.append("unknown callable ")
+                    unknown_msg.append(id.name)
+                    report(ctx, id.line, id.column, unknown_msg.as_str())
                     return types.Type.ty_error
                 let sig = read(sigp)
                 record_mutating_argument_sites(ctx, id.name, args)
