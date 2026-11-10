@@ -1549,7 +1549,15 @@ function build_decl_visits(analysis: analyzer.Analysis, analyses: span[analyzer.
                             Option.none:
                                 pass
                     Option.none:
-                        pass
+                        # A nested struct target (`extending Rectangle.Edge:`)
+                        # resolves through the analysis' registered types, the
+                        # same way `lower_extending_block` names the method.
+                        let target_parts = unsafe: read(ex.type_name).name.parts
+                        match nested_type_in_analysis(analysis, target_parts):
+                            Option.some as nested:
+                                receiver_ty = nested.value
+                            Option.none:
+                                pass
                 var mi: ptr_uint = 0
                 while mi < ex.methods.len:
                     var m: ast.Method
@@ -3009,8 +3017,9 @@ function build_root_main_entrypoint(ctx: ref[LowerCtx], name: str, params: span[
         let char_ptr_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("char")))))
 
         var body = vec.Vec[ir.Stmt].create()
-        # mt_str* __mt_args_items = NULL;
-        let items_null = alloc_expr(ir.Expr.expr_name(name = "NULL", ty = items_ty, pointer = Option[bool].some(value = true)))
+        # mt_str* __mt_args_items = NULL; (the host's null literal, not a `NULL`
+        # name — the C backend renders the null literal as `NULL`).
+        let items_null = alloc_expr(ir.Expr.expr_null_literal(ty = items_ty))
         body.push(ir.Stmt.stmt_local(name = "__mt_args_items", linkage_name = "__mt_args_items", ty = items_ty, value = items_null, line = 0, source_path = ""))
         let items_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_args_items", ty = items_ty, pointer = Option[bool].some(value = false)))
         # mt_span_str __mt_args = mt_entry_argv_to_span_str(argc, argv, &__mt_args_items);
@@ -6082,6 +6091,12 @@ function imported_member_c_name(ctx: ref[LowerCtx], imported: analyzer.Analysis,
 ## reference's parts.  `None` for a name the analysis did not register as a
 ## nested (linked) named type.
 function local_nested_type(ctx: ref[LowerCtx], parts: span[str]) -> Option[types.Type]:
+    return nested_type_in_analysis(ctx.analysis, parts)
+
+
+## The registered nested struct type for a dotted name (`Rectangle.Edge`) in an
+## analysis: a `ty_named` carrying a parent-qualified linkage name.
+function nested_type_in_analysis(a: analyzer.Analysis, parts: span[str]) -> Option[types.Type]:
     var buf = string.String.create()
     var i: ptr_uint = 0
     while i < parts.len:
@@ -6090,7 +6105,7 @@ function local_nested_type(ctx: ref[LowerCtx], parts: span[str]) -> Option[types
         unsafe:
             buf.append(read(parts.data + i))
         i += 1
-    let registered_ptr = ctx.analysis.types.get(buf.as_str()) else:
+    let registered_ptr = a.types.get(buf.as_str()) else:
         return Option[types.Type].none
     let registered = unsafe: read(registered_ptr)
     match registered:
@@ -6942,26 +6957,19 @@ function lower_array_as_span(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], array_
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = span_ty, fields = fields.as_span()))
 
 
-## Lower `simd[E, N].with(lane, value)` to a GCC statement expression that
-## copies the vector into a temp and assigns the lane through an element
-## pointer: `({ mt_simd_E xN tmp = v; ((E*)&tmp)[lane] = value; tmp; })`.
+## Lower `simd[E, N].with(lane, value)` to the host's `IR::SimdLaneWith` node:
+## the index takes `int` as its expected type and the value the lane's element
+## type (`lower_simd_lane_with`).
 function lower_simd_with_call(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], simd_ty: types.Type, args: span[ast.Argument]) -> ptr[ir.Expr]:
     let elem_ty = types.simd_element_type(simd_ty)
     let src = lower_expr(ctx, receiver)
-    let index_ir = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
-    let value_ir = lower_expr(ctx, unsafe: read(args.data + 1).arg_value)
-    let temp = fresh_c_temp_name(ctx, "simd_with")
-    var setup = vec.Vec[ir.Stmt].create()
-    setup.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = simd_ty, value = src, line = 0, source_path = ""))
-    let temp_ref = alloc_expr(ir.Expr.expr_name(name = temp, ty = simd_ty, pointer = Option[bool].some(value = false)))
-    let simd_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(simd_ty))
-    let addr = alloc_expr(ir.Expr.expr_address_of(expression = temp_ref, ty = simd_ptr_ty))
-    let elem_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(elem_ty))
-    let cast = alloc_expr(ir.Expr.expr_cast(target_type = elem_ptr_ty, expression = addr, ty = elem_ptr_ty))
-    let lane_ref = alloc_expr(ir.Expr.expr_index(receiver = cast, index = index_ir, ty = elem_ty))
-    setup.push(ir.Stmt.stmt_assignment(target = lane_ref, operator = "=", value = value_ir))
-    let result = alloc_expr(ir.Expr.expr_name(name = temp, ty = simd_ty, pointer = Option[bool].some(value = false)))
-    return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = result, ty = simd_ty))
+    let index_ast = unsafe: read(args.data + 0).arg_value
+    var index_ir = lower_expr(ctx, index_ast)
+    index_ir = literal_value_to_context_type(ctx, index_ast, types.primitive("int"), index_ir)
+    let value_ast = unsafe: read(args.data + 1).arg_value
+    var value_ir = lower_expr(ctx, value_ast)
+    value_ir = literal_value_to_context_type(ctx, value_ast, elem_ty, value_ir)
+    return alloc_expr(ir.Expr.expr_simd_lane_with(src = src, index = index_ir, value = value_ir, ty = simd_ty))
 
 
 ## Lower `.with(x = val, ...)` to an aggregate literal copy with specified
@@ -8176,9 +8184,18 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                                         if vfun.type_params.len > 0 and vfun.type_params.len == spec.arguments.len:
                                             let vspec_key = specialization_key(ctx, vgm.value.module_name, id.name, spec.arguments)
                                             if not ctx.specialization_cache.contains(vspec_key) and not ctx.spec_in_progress.contains(vspec_key):
+                                                # A function *reference* instantiates the
+                                                # binding but the host analyzer does not
+                                                # validate the referenced body (that is
+                                                # the `infer_call` path's job), so its
+                                                # nested calls are lowering-created.
+                                                ctx.next_spec_body_validated = Option[bool].some(value = false)
                                                 lower_and_cache_specialization(ctx, vgm.value, spec.arguments, vspec_key, ctx.pre_instantiated_context)
+                                                ctx.next_spec_body_validated = Option[bool].none
                                             else:
-                                                note_validated_spec_reach(ctx, vspec_key)
+                                                # A reference is not a call; an actual
+                                                # call site elsewhere records the edge.
+                                                pass
                                             var fn_ty = expr_type(ctx, ep)
                                             let vcached = ctx.specialization_cache.get(vspec_key)
                                             if vcached != null:
@@ -9805,6 +9822,8 @@ function ir_expr_type(ep: ptr[ir.Expr]) -> types.Type:
                 return x.ty
             ir.Expr.expr_stmt_expr as x:
                 return x.ty
+            ir.Expr.expr_simd_lane_with as x:
+                return x.ty
             ir.Expr.expr_assignment as x:
                 return ir_expr_type(x.value)
             _:
@@ -10937,7 +10956,7 @@ function expr_type_for_spec(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr], type
 ## The resolved field type of a generic struct instance (e.g. the `index` field
 ## of `Indexed[int]` is `ptr_uint`).  `concrete_args` are the instance's type
 ## arguments; returns none when the struct or field is unknown.
-function generic_struct_field_type(ctx: ref[LowerCtx], struct_name: str, concrete_args: span[types.Type], field_name: str) -> Option[types.Type]:
+function generic_struct_field_type(ctx: ref[LowerCtx], struct_name: str, concrete_args: span[types.Type], field_name: str, owner_module: str) -> Option[types.Type]:
     let unqualified = generic_struct_c_name(struct_name, concrete_args)
     let decl_ptr = ctx.generic_struct_decls.get(unqualified)
     if decl_ptr != null:
@@ -10949,7 +10968,11 @@ function generic_struct_field_type(ctx: ref[LowerCtx], struct_name: str, concret
                 if f.name == field_name:
                     return Option[types.Type].some(value = f.ty)
                 fi += 1
-    let q_ptr = ctx.generic_struct_decls.get(naming.qualified_c_name(ctx.module_name, unqualified))
+    # A concrete generic struct instance is registered under the name of the
+    # module that *defines* the struct (`std_net_sync_SyncValue_uint`), not the
+    # caller's module.
+    let decl_module = if owner_module.len > 0: owner_module else: ctx.module_name
+    let q_ptr = ctx.generic_struct_decls.get(naming.qualified_c_name(decl_module, unqualified))
     if q_ptr != null:
         unsafe:
             let decl = read(q_ptr)
@@ -10977,8 +11000,10 @@ function lower_generic_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, t
     # Ensure the concrete struct declaration exists before looking up field
     # types (the constructor may be the first use of the instance).
     var qualified_args = concrete_args.as_span()
+    var owner_module = ""
     match result_ty:
         types.Type.ty_imported as rim:
+            owner_module = rim.module_name
             if rim.args.len > 0:
                 qualified_args = rim.args
         _:
@@ -10994,7 +11019,7 @@ function lower_generic_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, t
         var field_value = lower_expr(ctx, arg.arg_value)
         # Re-type an integer literal whose value fits the field type (matching
         # the host's contextual numeric literal inference).
-        match generic_struct_field_type(ctx, struct_name, qualified_args, field_name):
+        match generic_struct_field_type(ctx, struct_name, qualified_args, field_name, owner_module):
             Option.some as field_ty:
                 field_value = int_literal_to_context_type(arg.arg_value, field_ty.value, field_value)
                 field_value = null_literal_to_context_type(arg.arg_value, field_ty.value, field_value)
@@ -18960,7 +18985,23 @@ function method_receiver_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> ty
             _:
                 pass
     if side_effect_free:
+        # Type the receiver without leaving side effects: the setup statements,
+        # cleanups, temp names and dynamic-format counters are restored, and
+        # the real lowering below (in the call path) reproduces them once.
+        let saved_setup = suspend_stmt_setup(ctx)
+        let saved_temp = ctx.temp_counter
+        let saved_fmt_dest = ctx.fmt_dest_name
+        let saved_fmt_visible = ctx.fmt_counter_visible
+        var saved_fmt_n: ptr_uint = 0
+        let saved_n_ptr = ctx.fmt_counter.get(ctx.fmt_dest_name)
+        if saved_n_ptr != null:
+            saved_fmt_n = unsafe: read(saved_n_ptr)
         let lowered_ty = ir_expr_type(lower_expr(ctx, receiver))
+        resume_stmt_setup(ctx, saved_setup)
+        ctx.temp_counter = saved_temp
+        ctx.fmt_dest_name = saved_fmt_dest
+        ctx.fmt_counter_visible = saved_fmt_visible
+        ctx.fmt_counter.set(ctx.fmt_dest_name, saved_fmt_n)
         if not types.is_error(lowered_ty) and not types.type_to_string(lowered_ty) == "void":
             return lowered_ty
     return expr_type(ctx, receiver)
@@ -20651,13 +20692,9 @@ function lower_scalar_range_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
 
 ## Lower a string match to an if / else-if chain comparing the scrutinee with
 ## each arm's string-literal pattern via `equal` (rendered as `mt_str_equal`).
-## The scrutinee is evaluated once into a temp.  A `_` arm becomes the final
-## else block.
+## The host compares the prepared scrutinee IR node directly (no `match_str`
+## temp).  A `_` arm becomes the final else block.
 function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchArm]) -> void:
-    let temp = fresh_c_temp_name(ctx, "match_str")
-    let str_ty = types.Type.ty_str
-    output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = str_ty, value = scrutinee_expr, line = 0, source_path = ""))
-
     # Collect literal arms and the optional default (wildcard) body.
     var default_body = span[ir.Stmt]()
     var lit_bodies = vec.Vec[span[ir.Stmt]].create()
@@ -20687,10 +20724,9 @@ function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
             fatal(c"lowering: string match value")
         let body_ptr = lit_bodies.get(idx) else:
             fatal(c"lowering: string match body")
-        let name_ref = alloc_expr(ir.Expr.expr_name(name = temp, ty = str_ty, pointer = Option[bool].some(value = false)))
         let condition = alloc_expr(ir.Expr.expr_binary(
             operator = "==",
-            left = name_ref,
+            left = scrutinee_expr,
             right = unsafe: read(value_ptr),
             ty = ctx.bool_ty,
         ))

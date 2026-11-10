@@ -897,6 +897,13 @@ function ir_expr_value(ctx: ref[SexprCtx], ep: ptr[ir.Expr]) -> SexprValue:
                 f.push(field_value("result", ir_expr_value(ctx, x.result)))
                 f.push(field_value("type", types_value(ctx, x.ty)))
                 return node("IR::StmtExpr", f.as_span())
+            ir.Expr.expr_simd_lane_with as x:
+                var f = vec.Vec[SexprField].create()
+                f.push(field_value("src", ir_expr_value(ctx, x.src)))
+                f.push(field_value("index", ir_expr_value(ctx, x.index)))
+                f.push(field_value("value", ir_expr_value(ctx, x.value)))
+                f.push(field_value("type", types_value(ctx, x.ty)))
+                return node("IR::SimdLaneWith", f.as_span())
             ir.Expr.expr_assignment as x:
                 # The host's `IR::Assignment` in expression position (wrapped by
                 # an `IR::ExpressionStmt`), rendered exactly like the statement.

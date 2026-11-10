@@ -109,6 +109,9 @@ public variant Expr:
     ## expressions as separate variants, so the expression-position form is its
     ## own variant.
     expr_assignment(target: ptr[Expr], operator: str, value: ptr[Expr])
+    ## `simd[E, N].with(lane, value)` — the host's `IR::SimdLaneWith`: a copy of
+    ## `src` with one lane replaced (emitted as a statement expression).
+    expr_simd_lane_with(src: ptr[Expr], index: ptr[Expr], value: ptr[Expr], ty: types.Type)
 
 
 # =============================================================================

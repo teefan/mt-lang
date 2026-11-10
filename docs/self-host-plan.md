@@ -31,7 +31,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | `test/mt` | **60 files / 0 failed** (session 62) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **717/717**; parse **713 match / 0 differ / 4 host-rejected of 717**; counts drift with the tree) |
-| `sexpr lower` | **648 match / 18 differ / 51 host-rejected / 0 self-rejected of 717 files** (session 62) |
+| `sexpr lower` | **657 match / 9 differ / 51 host-rejected / 0 self-rejected of 717 files** (session 62) |
 | `cli:parity` | **24 match / 37 differ / 0 pending** of 61 cases (last re-measured session 49, unchanged since session 35) |
 | Linter corpus | **495 agree / 121 differ** of 616 files (session 50 re-read) |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
@@ -39,9 +39,9 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | bindgen self-hosted; **3 verified / 25 changed of 28** (deltas are cosmetic emitter gaps, unverified) |
 
-Rough completion against the per-track Definition of Done: **~83%**.  The
+Rough completion against the per-track Definition of Done: **~84%**.  The
 self-hosting foundation is done; the residue is concentrated in the `lower`
-dump (18 files), CLI (37 cases + unported subsystems), the linter corpus (121
+dump (9 files), CLI (37 cases + unported subsystems), the linter corpus (121
 files), and bindings verification.  LSP, DAP and formatter are closed at their
 documented differences.
 
@@ -255,6 +255,30 @@ Session-62 batch (18 files flipped, 634/32 → 648/18):
   `function_returns` entry.  Flipped `test/mt/{queue,stack,priority_queue,
   set,multiset,ordered_map,ordered_set}_test`.
 
+Session-62 second batch (657/9, from 648/18):
+- Extending blocks resolve a nested struct target (`extending Rectangle.Edge:`)
+  through the analysis' registered types in the declaration-visit pass too, so
+  the method emits at its source position (`examples/nested_struct_stress_test`).
+- A generic specialization created from a plain function *reference* is
+  analyzer-instantiated but not body-validated (the host validates only call
+  sites), so its nested concrete calls stay creator-gated
+  (`examples/data_structures`).
+- String matches compare the prepared scrutinee node directly (no
+  `__mt_match_str_N` temp), the host's `lower_string_match_stmt` shape
+  (`projects/mtc/src/mtc/lowering/lowering.mt`, `debug_map_test`,
+  `lowering_test`).
+- The `simd[E, N].with(lane, value)` builtin emits the host's
+  `IR::SimdLaneWith` node (new IR variant, dumper, formatter and C backend).
+- A concrete generic struct instance's field lookup uses the *defining*
+  module's qualified name, so a field literal takes its declared type
+  (`SyncValue[uint](value = 0)`, `test/mt/net_sync_test`).
+- The synthesized sync `main(span[str])` argc/argv bridge initializes its args
+  array with a null literal (not a `NULL` name).
+- A method receiver's speculative type query is now effect-free: it discards
+  its setup statements and restores the temp/format counters, so a chained
+  method call's receiver is built once with the host's name
+  (`std/mem/tracking`, `test/mt/mem_tracking_test`).
+
 ## How to start a work session
 
 ### Entry points
@@ -335,7 +359,7 @@ Iterate cheap, prove once:
 0. **Hard build parity** — **DONE** (session 49; re-verified session 50): all
    15 top-level examples build, the synchronous set's stdout+exit is identical,
    `examples/sdl3` 34/34, `test/mt` 60/0.
-1. **`lower` dump parity** — **ACTIVE**: 648/18/51/0 of 717.  Work the ranked
+1. **`lower` dump parity** — **ACTIVE**: 657/9/51/0 of 717.  Work the ranked
    leaders in Track A; every item moves files' first differences deeper and can
    expose new families, so re-rank after each item.
 2. **CLI behavior parity** — open: 24/37/0 of 61, plus the unported subsystems
@@ -414,44 +438,39 @@ order: finish `lower` first, then CLI/linter/bindings, then the final matrix;
 LSP/DAP/formatter are closed at their documented differences.  Anchor by symbol
 names, not line numbers — lines drift.
 
-### Track A — `lower` dump parity (648/18 of 717)
+### Track A — `lower` dump parity (657/9 of 717)
 
-Current set: **648 match / 18 differ / 51 host-rejected / 0 self-rejected of 717
+Current set: **657 match / 9 differ / 51 host-rejected / 0 self-rejected of 717
 files** (session 62).  The host-rejected bucket is `external` and platform-pinned
 files; the count drifts with the tree and `tmp` fixtures — quote the set.
 
 Work one item per commit; after each item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
-and re-rank.  Open leaders, largest first (re-ranked session 62):
+and re-rank.  Open leaders, largest first (re-ranked session 62, second batch):
 
-1. **Generic-instance placement families** — `examples/data_structures`
-   (host `heap.release__LinkedMap_Node…` before the filter-iterator instance)
-   and `examples/nested_struct_stress_test` (an extending-block method's visit
-   order vs a top-level function).  Session 62 closed the `test/mt` ordering
-   family; these two are the remaining visit-order shapes.
-2. **Proc/proc-symbol numbering** — `examples/language_baseline` (proc_1 vs
+1. **Proc/proc-symbol numbering** — `examples/language_baseline` (proc_1 vs
    proc_10), `projects/tetris/src/main` and `std/raylib/packed_assets`
-   (proc_1 vs proc_2); follows wave lowering/creation order, likely moved by
-   item 1.
-3. **Str-match shape in `mtc.semantic.types`** — `projects/mtc/src/mtc/
-   lowering/lowering.mt`, `projects/mtc/test/{debug_map,lowering}_test`: the
-   host emits the `==` IfStmt where the self hoists `__mt_match_str_1`.
-4. **`main.mt` crash** — lowering `projects/mtc/src/mtc/main.mt` with its
+   (proc_1 vs proc_2).  The host's `fresh_proc_symbol` is a per-compile
+   counter fed by wave lowering order, while the self lowers a specialization
+   eagerly at its first call site; the output *order* is reconstructed, but
+   intra-body proc numbers still follow creation order.  A fix needs the
+   symbols assigned in the host's declaration-visit/instance-sort order.
+2. **`main.mt` crash** — lowering `projects/mtc/src/mtc/main.mt` with its
    project roots aborts in `str_is_valid_utf8` (loop guard) on both stage2 and
    the dev compiler; investigate the corrupt `str` length feeding it.
-5. **Tail (file-by-file):** `SimdLaneWith` (`examples/simd_features`, add the
-   node + backend emission), `std/flecs` imported-constant struct expansion
-   (the host rewrites `c.ECS_STRBUF_INIT` to its AST initializer and casts each
-   `char` array element; the self folds the const value instead),
-   `std/mem/tracking` + `test/mt/mem_tracking_test`'s `__mt_fmt_part_N` hoist,
-   `examples/multithreading_test` pfor capacity-struct naming,
-   `examples/nullable_and_variant_test` `AddressOf` ref type,
-   `projects/mtop/src/main` `null` lowering (`NullLiteral` vs a `NULL` name),
-   `test/mt/net_sync_test` aggregate literal `uint` zero, and
-   `examples/memory_stress_test`'s documented host `ref[@_mt_0, T]` artifact
-   (do not chase).
-6. **Open smaller leaders from session 61's list are closed**, unless a fix
-   above re-exposes them.
+3. **`std/flecs` imported-constant struct expansion** — the host rewrites
+   `c.ECS_STRBUF_INIT` to its AST initializer (storage-initializer path) and
+   casts each `char` array element; the self folds the const value and emits
+   int elements.  Port the host's `lower_compile_time_literal` nil fallback /
+   `rewrite_static_storage_initializer` for imported constant aggregates.
+4. **`projects/mtop/src/main` root wrapper naming** — host `__mt_result` vs
+   self `__mt_exit` in the synthesized `main` wrapper.
+5. **`examples/multithreading_test` pfor capacity-struct naming**
+   (`mt_pfor_cap_…` vs `mt_pcap_…`).
+6. **`examples/nullable_and_variant_test` `AddressOf` ref type** — the self's
+   address-of carries `ptr[Expr]` where the host keeps the ref type.
+7. **`examples/memory_stress_test`** — the documented host
+   `ref[@_mt_0, T]` artifact; do not chase (see *Deliberate differences*).
 
 Session-59/60 flips: `examples/{async_network_lobby,comptime,
 reflection_advanced,simd_features→SimdLaneWith}` (the last only advanced),
@@ -681,7 +700,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `test/mt` | 60 files / 0 failed | session 62 | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 61 | `tools/gates.sh --areas codegen --run` |
 | `sexpr lex` / `parse` | lex 717/717; parse 713 match / 0 differ / 4 host-rejected of 717 | session 60 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 648 match / 18 differ / 51 host-rejected / 0 self-rejected of 717 | session 62 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 657 match / 9 differ / 51 host-rejected / 0 self-rejected of 717 | session 62 second batch (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | 24 match / 37 differ / 0 pending of 61 | session 49 | `rake "cli:parity"` |
 | lint corpus | 495 agree / 121 differ of 616 | session 50 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |

@@ -4465,6 +4465,22 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return j5(emit_conditional_condition(e, cond.condition), " ? ", render_expression(e, cond.then_expression), " : ", render_expression(e, cond.else_expression))
             ir.Expr.expr_stmt_expr as se:
                 return render_stmt_expr(e, se.setup, se.result)
+            ir.Expr.expr_simd_lane_with as lw:
+                # The host's `emit_simd_lane_with`: a GCC statement expression
+                # with its fixed `_mt_with` temp.
+                var lbuf = string.String.create()
+                lbuf.append("({ ")
+                lbuf.append(c_type(lw.ty))
+                lbuf.append(" _mt_with = ")
+                lbuf.append(wrap_expression(e, lw.src))
+                lbuf.append("; ((")
+                lbuf.append(c_type(types.simd_element_type(lw.ty)))
+                lbuf.append("*)&_mt_with)[")
+                lbuf.append(render_expression(e, lw.index))
+                lbuf.append("] = ")
+                lbuf.append(wrap_expression(e, lw.value))
+                lbuf.append("; _mt_with; })")
+                return lbuf.as_str()
             ir.Expr.expr_assignment as asg:
                 return j5(render_expression(e, asg.target), " ", asg.operator, " ", render_expression(e, asg.value))
             _:
@@ -6245,6 +6261,8 @@ function expr_result_type(ep: ptr[ir.Expr]) -> types.Type:
             ir.Expr.expr_array_literal as x:
                 return x.ty
             ir.Expr.expr_stmt_expr as x:
+                return x.ty
+            ir.Expr.expr_simd_lane_with as x:
                 return x.ty
             ir.Expr.expr_assignment as x:
                 return expr_result_type(x.value)
