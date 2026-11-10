@@ -2117,6 +2117,18 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                                     if const_value_literal_path:
                                         coerced = alloc_expr(coerce_const_value(ctx, c_val, c_ty))
                                     else:
+                                        # `lower_compile_time_literal` returns nil when a
+                                        # leaf value cannot be represented (an integer for
+                                        # a `char` field, for instance); the host then
+                                        # falls back to rewriting the imported constant
+                                        # reference to its declaration initializer and
+                                        # lowering that AST with the expected type.
+                                        if not const_value_ir_representable(ctx, c_val, c_ty):
+                                            match lower_imported_const_initializer(ctx, unsafe: ptr[ast.Expr]<-val_ptr, c_ty):
+                                                Option.some as iv:
+                                                    c_val = unsafe: read(iv.value)
+                                                Option.none:
+                                                    pass
                                         coerced = alloc_expr(retype_const_literal(c_val, c_ty))
                                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = coerced, line = c.line, path = ctx.analysis.source_path))
                                 Option.none:
@@ -25373,6 +25385,145 @@ function retype_const_literal(v: ir.Expr, target_ty: types.Type) -> ir.Expr:
             _:
                 pass
     return v
+
+
+## True when a folded constant value can be represented by
+## `lower_compile_time_literal` for `ty` — the host returns nil (falling back to
+## the AST initializer) when an integer stands for a non-integer primitive such
+## as `char`, or a value's shape does not fit.  Unknown shapes are accepted so
+## the folding path is only abandoned where the host would abandon it.
+function const_value_ir_representable(ctx: ref[LowerCtx], v: ir.Expr, ty: types.Type) -> bool:
+    match ty:
+        types.Type.ty_primitive as p:
+            match v:
+                ir.Expr.expr_boolean_literal:
+                    return p.name == "bool"
+                ir.Expr.expr_integer_literal:
+                    return types.is_integer_type(ty) or types.is_float_type(ty)
+                ir.Expr.expr_unsigned_integer_literal:
+                    return types.is_integer_type(ty) or types.is_float_type(ty)
+                ir.Expr.expr_float_literal:
+                    return types.is_float_type(ty)
+                ir.Expr.expr_string_literal:
+                    return p.name == "cstr"
+                _:
+                    return false
+        types.Type.ty_str:
+            match v:
+                ir.Expr.expr_string_literal:
+                    return true
+                _:
+                    return false
+        types.Type.ty_generic as g:
+            if g.name == "array" and g.args.len == 2:
+                let element_ty = unsafe: read(g.args.data + 0)
+                match v:
+                    ir.Expr.expr_array_literal as al:
+                        var i: ptr_uint = 0
+                        while i < al.elements.len:
+                            if not const_value_ir_representable(ctx, unsafe: read(al.elements.data + i), element_ty):
+                                return false
+                            i += 1
+                        return true
+                    _:
+                        return false
+            return true
+        types.Type.ty_named:
+            pass
+        types.Type.ty_imported:
+            pass
+        _:
+            return true
+    match v:
+        ir.Expr.expr_aggregate_literal as ag:
+            var i: ptr_uint = 0
+            while i < ag.fields.len:
+                let field = unsafe: read(ag.fields.data + i)
+                match concrete_field_type(ctx, ty, field.name):
+                    Option.some as ft:
+                        if not const_value_ir_representable(ctx, unsafe: read(field.value), ft.value):
+                            return false
+                    Option.none:
+                        pass
+                i += 1
+            return true
+        _:
+            return true
+
+
+## The host's `rewrite_static_storage_initializer` fallback: lower the
+## referenced imported constant's declaration initializer in its own module
+## context (used when the folded value cannot be represented literally).
+function lower_imported_const_initializer(ctx: ref[LowerCtx], ep: ptr[ast.Expr], expected_ty: types.Type) -> Option[ptr[ir.Expr]]:
+    var target_module = ""
+    var const_name = ""
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as id:
+                        let mod_ptr = ctx.analysis.imports.get(id.name)
+                        if mod_ptr == null:
+                            return Option[ptr[ir.Expr]].none
+                        target_module = read(mod_ptr)
+                        const_name = ma.member_name
+                    _:
+                        return Option[ptr[ir.Expr]].none
+            _:
+                return Option[ptr[ir.Expr]].none
+    let imported = find_imported_analysis(ctx, target_module) else:
+        return Option[ptr[ir.Expr]].none
+    var init_ast: ptr[ast.Expr]? = null
+    var di: ptr_uint = 0
+    while di < imported.source_file.declarations.len:
+        unsafe:
+            match read(imported.source_file.declarations.data + di):
+                ast.Decl.decl_const as c:
+                    if c.name == const_name:
+                        init_ast = c.value
+                _:
+                    pass
+        di += 1
+    let init = init_ast else:
+        return Option[ptr[ir.Expr]].none
+    var saved_module = ctx.module_name
+    var saved_analysis = ctx.analysis
+    var saved_foreign = ctx.foreign_map
+    var saved_variants = ctx.variants
+    var saved_locals = ctx.locals
+    var saved_counter = ctx.temp_counter
+    var saved_subst = ctx.type_substitution
+    var saved_inside = ctx.inside_async
+    var saved_cps = ctx.async_cps_active
+    var saved_completion = ctx.async_completion_active
+
+    ctx.module_name = target_module
+    ctx.analysis = imported
+    ctx.foreign_map = map_mod.Map[str, ForeignInfo].create()
+    ctx.variants = map_mod.Map[str, VariantInfo].create()
+    ctx.locals = vec.Vec[LocalBinding].create()
+    ctx.temp_counter = 0
+    ctx.type_substitution = map_mod.Map[str, types.Type].create()
+    ctx.inside_async = false
+    ctx.async_cps_active = false
+    ctx.async_completion_active = false
+    collect_foreign_functions(ctx, imported.source_file.declarations)
+    collect_variants(ctx, imported.source_file.declarations)
+    install_prelude_variants(ctx)
+    let lowered = lower_expr(ctx, init)
+    let value = literal_value_to_context_type(ctx, init, expected_ty, lowered)
+
+    ctx.module_name = saved_module
+    ctx.analysis = saved_analysis
+    ctx.foreign_map = saved_foreign
+    ctx.variants = saved_variants
+    ctx.locals = saved_locals
+    ctx.temp_counter = saved_counter
+    ctx.type_substitution = saved_subst
+    ctx.inside_async = saved_inside
+    ctx.async_cps_active = saved_cps
+    ctx.async_completion_active = saved_completion
+    return Option[ptr[ir.Expr]].some(value = value)
 
 
 ## Apply the host's declared-type coercion to a folded constant value

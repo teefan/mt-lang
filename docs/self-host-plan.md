@@ -31,7 +31,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | `test/mt` | **60 files / 0 failed** (session 62) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **717/717**; parse **713 match / 0 differ / 4 host-rejected of 717**; counts drift with the tree) |
-| `sexpr lower` | **659 match / 7 differ / 51 host-rejected / 0 self-rejected of 717 files** (session 62) |
+| `sexpr lower` | **660 match / 6 differ / 51 host-rejected / 0 self-rejected of 717 files** (session 62) |
 | `cli:parity` | **24 match / 37 differ / 0 pending** of 61 cases (last re-measured session 49, unchanged since session 35) |
 | Linter corpus | **495 agree / 121 differ** of 616 files (session 50 re-read) |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
@@ -41,7 +41,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 
 Rough completion against the per-track Definition of Done: **~84%**.  The
 self-hosting foundation is done; the residue is concentrated in the `lower`
-dump (7 files), CLI (37 cases + unported subsystems), the linter corpus (121
+dump (6 files), CLI (37 cases + unported subsystems), the linter corpus (121
 files), and bindings verification.  LSP, DAP and formatter are closed at their
 documented differences.
 
@@ -286,6 +286,13 @@ Session-62 third batch (659/7, from 657/9):
 - Variant arm payload member accesses use the declared field name; C struct
   members may be keywords (`sizeof`), so the arm-field sanitizer was wrong.
 
+Session-62 fourth batch (660/6, from 659/7):
+- An imported constant whose folded value cannot be represented literally
+  (an integer standing for a `char` field, per the host's
+  `lower_compile_time_literal` nil result) falls back to lowering the
+  referenced constant's declaration initializer in its own module context —
+  the host's `rewrite_static_storage_initializer` path.  Closes `std/flecs`.
+
 ## How to start a work session
 
 ### Entry points
@@ -366,7 +373,7 @@ Iterate cheap, prove once:
 0. **Hard build parity** — **DONE** (session 49; re-verified session 50): all
    15 top-level examples build, the synchronous set's stdout+exit is identical,
    `examples/sdl3` 34/34, `test/mt` 60/0.
-1. **`lower` dump parity** — **ACTIVE**: 659/7/51/0 of 717.  Work the ranked
+1. **`lower` dump parity** — **ACTIVE**: 660/6/51/0 of 717.  Work the ranked
    leaders in Track A; every item moves files' first differences deeper and can
    expose new families, so re-rank after each item.
 2. **CLI behavior parity** — open: 24/37/0 of 61, plus the unported subsystems
@@ -445,15 +452,15 @@ order: finish `lower` first, then CLI/linter/bindings, then the final matrix;
 LSP/DAP/formatter are closed at their documented differences.  Anchor by symbol
 names, not line numbers — lines drift.
 
-### Track A — `lower` dump parity (659/7 of 717)
+### Track A — `lower` dump parity (660/6 of 717)
 
-Current set: **659 match / 7 differ / 51 host-rejected / 0 self-rejected of 717
+Current set: **660 match / 6 differ / 51 host-rejected / 0 self-rejected of 717
 files** (session 62).  The host-rejected bucket is `external` and platform-pinned
 files; the count drifts with the tree and `tmp` fixtures — quote the set.
 
 Work one item per commit; after each item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
-and re-rank.  Open leaders, largest first (re-ranked session 62, second batch):
+and re-rank.  Open leaders, largest first (re-ranked session 62, fourth batch):
 
 1. **Proc/proc-symbol numbering** — `examples/language_baseline` (proc_1 vs
    proc_10), `projects/tetris/src/main` and `std/raylib/packed_assets`
@@ -462,21 +469,17 @@ and re-rank.  Open leaders, largest first (re-ranked session 62, second batch):
    eagerly at its first call site; the output *order* is reconstructed, but
    intra-body proc numbers still follow creation order.  A fix needs the
    symbols assigned in the host's declaration-visit/instance-sort order.
-2. *(closed as a host artifact — see Deliberate differences: the `main.mt`
-   `--sexpr` dump exceeds the C backend's 50M loop guard during UTF-8
-   validation, and the host-built stage1 aborts identically.)*
-3. **`std/flecs` imported-constant struct expansion** — the host rewrites
-   `c.ECS_STRBUF_INIT` to its AST initializer (storage-initializer path) and
-   casts each `char` array element; the self folds the const value and emits
-   int elements.  Port the host's `lower_compile_time_literal` nil fallback /
-   `rewrite_static_storage_initializer` for imported constant aggregates.
-4. **`examples/multithreading_test` parallel IR** — port the host's parallel
+2. **`examples/multithreading_test` parallel IR** — port the host's parallel
    naming (`<module>_pfor_N` / `_spawn_N` / `_detach_N` on the shared counter,
    `mt_pfor_cap_/work_`, `mt_spawn_cap_/work_<uid>_<idx>`,
    `mt_detach_work_`) and the per-spawn-body capture structs, array-capture
    pointer fields, written-capture write-back and write-conflict validation.
-5. **`examples/memory_stress_test`** — the documented host
+3. **`examples/memory_stress_test`** — the documented host
    `ref[@_mt_0, T]` artifact; do not chase (see *Deliberate differences*).
+
+The remaining counted differ, `projects/mtc/src/mtc/main.mt`, is the
+`--sexpr` loop-guard artifact documented under *Deliberate differences*, not
+work.
 
 Session-59/60 flips: `examples/{async_network_lobby,comptime,
 reflection_advanced,simd_features→SimdLaneWith}` (the last only advanced),
@@ -713,7 +716,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `test/mt` | 60 files / 0 failed | session 62 | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 61 | `tools/gates.sh --areas codegen --run` |
 | `sexpr lex` / `parse` | lex 717/717; parse 713 match / 0 differ / 4 host-rejected of 717 | session 60 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 659 match / 7 differ / 51 host-rejected / 0 self-rejected of 717 | session 62 third batch (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 660 match / 6 differ / 51 host-rejected / 0 self-rejected of 717 | session 62 fourth batch (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | 24 match / 37 differ / 0 pending of 61 | session 49 | `rake "cli:parity"` |
 | lint corpus | 495 agree / 121 differ of 616 | session 50 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
