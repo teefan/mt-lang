@@ -36,8 +36,6 @@ $LOAD_PATH.unshift(File.join(ROOT, "lib"))
 KNOWN_GAPS = [
   /^deps\b/,
   /^docs\b/,
-  /--bundle\b/,
-  /--archive\b/,
   /^toolchain bootstrap\b/,
   /--locked\b/,
   /--frozen\b/,
@@ -89,7 +87,7 @@ warn "warning: #{self_bin} is older than the newest self-host source — rebuild
 FIXROOT = File.join(ROOT, "tmp", "cli-parity", "fixtures")
 
 FIXTURES = {
-  # A normal application package.
+  # A normal application package (with runtime assets for bundle/archive).
   "pkg/package.toml" => <<~TOML,
     [package]
     name = "pkg"
@@ -98,15 +96,19 @@ FIXTURES = {
 
     [build]
     entry = "src/main.mt"
+    assets = ["assets"]
   TOML
-  "pkg/src/main.mt" => <<~MT,
+  "pkg/src/main.mt" => <<~'MT',
+    import std.stdio as stdio
+
     public function add(a: int, b: int) -> int:
         return a + b
 
     function main() -> int:
-        print(add(2, 3))
+        stdio.print_line(f"#{add(2, 3)}")
         return 0
     MT
+  "pkg/assets/hello.txt" => "hello\n",
   "pkg/src/platform_info.linux.mt" => "public const PLATFORM: str = \"linux\"\n",
   "pkg/src/platform_info.windows.mt" => "public const PLATFORM: str = \"windows\"\n",
 
@@ -237,6 +239,10 @@ def build_cases
 
   # Package targets
   add.call("build-package", ["build", "pkg", "-I", FIXROOT, "--no-cache"])
+  add.call("build-package-bundle", ["build", "pkg", "-I", FIXROOT, "--bundle", "--no-cache"])
+  add.call("build-package-archive", ["build", "pkg", "-I", FIXROOT, "--archive", "--no-cache"])
+  add.call("build-bundle-non-package", ["build", "standalone/clean.mt", "-I", FIXROOT, "--bundle"])
+  add.call("build-package-clean", ["build", "pkg", "-I", FIXROOT, "--clean"])
   add.call("build-package-from-root", ["build", "."], cwd: File.join(FIXROOT, "pkg"))
   add.call("build-standalone", ["build", "standalone/clean.mt", "-I", FIXROOT, "--no-cache"])
   add.call("build-no-main", ["build", "standalone/no_main.mt", "-I", FIXROOT, "--no-cache"])

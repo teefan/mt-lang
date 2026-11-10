@@ -32,17 +32,17 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **718/718**; parse **714 match / 0 differ / 4 host-rejected of 718**; counts drift with the tree) |
 | `sexpr lower` | **665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 files** (session 63) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
-| `cli:parity` | **61 match / 0 differ / 0 pending** of 61 cases (session 64; `--timings` values and `debug`'s Ruby node ids are normalized) |
+| `cli:parity` | **65 match / 0 differ / 0 pending** of 65 cases (session 64; `--timings` values and `debug`'s Ruby node ids are normalized) |
 | Linter corpus | **495 agree / 121 differ** of 616 files (session 50 re-read) |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the live VS Code F5 check is the remaining manual step |
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | bindgen self-hosted; **3 verified / 25 changed of 28** (deltas are cosmetic emitter gaps, unverified) |
 
-Rough completion against the per-track Definition of Done: **~94%**.  The
+Rough completion against the per-track Definition of Done: **~95%**.  The
 self-hosting foundation, `lower` dump parity and the CLI behavior matrix are
 done; the residue is the CLI's largest unported subsystems (`deps`, `docs`,
-wasm/bundle), the linter corpus (121 files), and bindings verification.  LSP,
+wasm/emcc), the linter corpus (121 files), and bindings verification.  LSP,
 DAP and formatter are closed at their documented differences.
 
 Session-51 batch: the event synthetic bodies (host slot/snapshot shapes), the
@@ -418,6 +418,37 @@ Session-64 second batch (Track B's cheap flags/subcommands):
   consumer, bindgen nullable output/report byte-equal to the host on the probe,
   `toolchain bootstrap` byte-equal and its error/flag cases equal.
 
+Session-64 third batch (package builds, `--bundle`/`--archive`):
+- `loader/package_manifest.mt` now parses the host's build-relevant
+  `PackageManifest` view (name, kind, source_root, entry, profile/platform
+  defaults, output, assets with the host's not-found/duplicate-basename
+  errors, html_template) and applies the host's
+  `use_package_build_for?` rule (a directory package needs a resolved entry;
+  a file operand must be that entry).  `build` uses the package output layout
+  (`build/bin/<platform>/<profile>/<name>`, or `[build] output`) instead of
+  the raw source stem; library packages and entry-less applications fall back
+  to the host's "expected a source file, got a directory" path.
+- `--bundle`/`--archive`: the bundle root is `-o`/`[build] output`/
+  `build/dist/<platform>/<profile>/<name>`; the executable's parent is
+  created, `build.assets` are staged beside a non-bundle binary or packed
+  into `assets.mtpack`, and `--archive` writes `<bundle_root>.tar.gz` with
+  `std/tar`.  The messages (`built <operand> -> <dir>`, `entry executable`,
+  `  [cached]`, `archive`) and clean targets match the host, and a cache hit
+  re-stages assets/archive like `build_cached`.
+- `std/asset_pack.mt` gained the host's MTAP writer (28-byte header, 32-byte
+  entries, sorted logical paths, raw data; packs are byte-identical on the
+  probe).  The reader's `close`/state handling was fixed so a host-produced
+  pack opens and reads in-language.
+- `std/toml.mt` duplicate-key/table messages match Tomlrb
+  (`Cannot overwrite value with key x`, `Key x is already used`); `run` now
+  prints `[cached]` on a cache hit.
+- Harness: 65/65 (bundle, archive, clean and non-package cases; the `pkg`
+  fixture now has an asset tree and a real `stdio.print_line` program).
+- Gates: dev build, self-tests 19/0, CLI matrix 65/65, MTAP byte-identical,
+  tar listing/extraction equal, host-vs-self bundle error/clean matrix equal,
+  focused lower 3/4 (only the documented `main.mt` artifact).
+
+
 ## How to start a work session
 
 ### Entry points
@@ -501,10 +532,10 @@ Iterate cheap, prove once:
 1. **`lower` dump parity** — **CLOSED** (session 63): 665/2/51/0 of 718, the
    two residuals are documented host artifacts.  See Track A.
 2. **CLI behavior parity** — **behavior matrix closed** (session 64):
-   61/61 cases match; the unported subsystems remain (`deps`, `docs`,
-   wasm/emcc, `--bundle`/`--archive`).  `toolchain bootstrap|tools`,
-   `build --kind static|shared` and the bindgen nullable flags landed in the
-   session-64 second batch.
+   65/65 cases match; the unported subsystems remain (`deps`, `docs`,
+   wasm/emcc).  `toolchain bootstrap|tools`, `build --kind static|shared`,
+   the bindgen nullable flags and `--bundle`/`--archive` landed in the
+   session-64 batches.
 3. **Linter corpus residue** — open: 495/121 of 616, two unported rules and one
    unported fix, plus the analyzer gaps in Track C.
 4. **Imported bindings / bindgen** — open: 28/28 verification and the bindgen
@@ -597,35 +628,34 @@ The two counted differs are the documented host artifacts, not work:
 Track A reached its stopping rule: **0 real differing files**.  Keep lex/parse
 at 0-diff and re-measure both after any lowering-adjacent change.
 
-### Track B — CLI parity (61/61 matrix; unported subsystems remain)
+### Track B — CLI parity (65/65 matrix; unported subsystems remain)
 
-The **61-case behavior matrix is byte-equal** (session 64; `--timings` values
-and `debug`'s Ruby node ids normalized).  `debug` and `test`'s argument forms
-were the last two cases — see the session-64 batch.  Remaining work:
+The **65-case behavior matrix is byte-equal** (session 64; `--timings` values
+and `debug`'s Ruby node ids normalized).  `debug`/`test`'s argument forms and
+the bundle/archive cases closed there — see the session-64 batches.  The fixed
+`pkg` fixture now builds and runs a real program (the old fixture used a bare
+`print`, so its build/run cases only compared a semantic-error path).
+Remaining work:
 
-1. **`--bundle`/`--archive`** — host `lib/milk_tea/tooling/build.rb:143-164,459-464,962-1032` and
-   `lib/milk_tea/tooling/asset_pack.rb` (MTAP).  Implement the archive in-language (`std/tar.mt` and
-   `std/gzip.mt` exist).  Verify `tar tzf` lists it, extraction runs, and each
-   compiler consumes the other's archive.
-2. **Wasm/emcc + preview** — `projects/mtc/src/mtc/build.mt` ignores `Platform.wasm`.  Port
+1. **Wasm/emcc + preview** — `projects/mtc/src/mtc/build.mt` ignores `Platform.wasm`.  Port
    `compile_wasm` and shell rendering (`lib/milk_tea/tooling/build.rb:26-69,704-779,900-937,953-960`,
    `lib/milk_tea/tooling/templates/wasm_shell.html`), `--preload-file` for `build.assets`, `.html`
    output, and `run --platform wasm` (`lib/milk_tea/tooling/cli/commands/run.rb:11-207`) on `std/http/server.mt`.
    Detect `$EMCC`/`emcc` in `toolchain doctor`; reproduce the host's error text
    when absent.  Verify with emcc installed and byte-compare the HTML shell.
-3. **`docs`** — port `lib/milk_tea/tooling/cli/commands/docs.rb` + `lib/milk_tea/tooling/docs_app.rb` routes
+2. **`docs`** — port `lib/milk_tea/tooling/cli/commands/docs.rb` + `lib/milk_tea/tooling/docs_app.rb` routes
    (`/`, `/reference`, `/stdlib`, `/stdlib/:name`, `/api/search`) onto
    `std/http/server.mt`, reusing the repo's `docs/` assets and `snapshot.js`;
    `--port/-p`, `--open/-o`, the `Serving Milk Tea docs at <url>` line.
    Acceptance: functional parity, not byte-identical HTML.
-4. **`deps`** (largest, ~3,000 lines + 485-line CLI) — port
+3. **`deps`** (largest, ~3,000 lines + 485-line CLI) — port
    `lib/milk_tea/packages/*` into `projects/mtc/src/mtc/packages/*.mt` and
    `deps add|remove|update|tree|lock|publish|fetch`; extend
    `projects/mtc/src/mtc/loader/package_manifest.mt` (currently `source_root` only) into the full
    manifest/graph, wire `--locked`/`--frozen` and the package graph into
    `build`/`run`/`check`; network via `std/http`.  Verify against the host's
    `test/packages/*` fixtures and a local-registry probe.
-5. **Harness** — add `tools/cli_parity.rb` cases for every command/flag above and
+4. **Harness** — add `tools/cli_parity.rb` cases for every command/flag above and
    delete the matching `KNOWN_GAPS` entries; exit: every case matches.  Timing
    values are normalized (wall-clock measurements never compare byte-for-byte);
    the report structure still is.
@@ -813,6 +843,15 @@ ones:
   child's stderr into its stdout (a buffering artifact).  The sequential run
   keeps the streams correct; this is a throughput-only difference, not a
   behavior gap.
+- **Bundle archive bytes:** `--archive`'s `.tar.gz` has the host's entry
+  layout/order and extracts identically, but the bytes are not fixed (the
+  host's TarWriter stamps entries with the current time).  The MTAP asset
+  pack, which carries the assets, is byte-identical.
+- **Build cache namespaces:** both compilers honor the shared
+  `<data_root>/tmp/mtc-cache` root, but the self's entry layout
+  (`<hash>/{key,binary}`) and key material differ from the host's
+  (`programs|binaries/<2>/<sha>`), so cached artifacts are not shared across
+  implementations.  Each compiler's cache still works independently.
 - **Platform set:** the self's resolver targets `linux`, `windows` and `wasm`;
   the host's option parser also knows `darwin`, which the self does not target
   anywhere (no resolver variant, platform-pinned suffix, or build flags).  An
@@ -841,7 +880,7 @@ when the tree moved.  Target = the Definition of Done above.
 | examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 63 | `tools/gates.sh --only examples --run` |
 | `sexpr lex` / `parse` | lex 718/718; parse 714 match / 0 differ / 4 host-rejected of 718 | session 63 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
 | `sexpr lower` | 665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 (the 2 are documented artifacts) | session 63 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
-| `cli:parity` | **61 match / 0 differ / 0 pending** of 61 (timings and `debug` node ids normalized) | session 64 | `rake "cli:parity"` |
+| `cli:parity` | **65 match / 0 differ / 0 pending** of 65 (timings and `debug` node ids normalized) | session 64 | `rake "cli:parity"` |
 | lint corpus | 495 agree / 121 differ of 616 | session 50 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 43 | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |

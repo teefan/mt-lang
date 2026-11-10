@@ -4,6 +4,7 @@
 ##   mtc lex <file>       Print the lexer token stream
 ##   mtc help             Print help
 
+import std.asset_pack as asset_pack
 import std.env as env
 import std.fs as fs
 import std.fmt as fmt_mod
@@ -16,6 +17,7 @@ import std.vec as vec
 import std.stdio as stdio
 import std.process as process
 import std.libuv as libuv
+import std.tar as tar
 import std.terminal as terminal
 
 import mtc.lexer.token_kinds as tk
@@ -1788,12 +1790,16 @@ function build_command(args: span[str]) -> int:
     var keep_c_path: Option[str] = Option[str].none
     var c_compiler = "cc"
     var profile_name = "debug"
+    var has_cli_profile = false
     var platform = resolver.Platform.linux
+    var has_cli_platform = false
     var clean_mode = false
     var use_cache = true
     var sanitize = false
     var debug_guards: Option[bool] = Option[bool].none
     var kind = build_driver.BuildKind.executable
+    var bundle_mode = false
+    var archive_mode = false
     var filtered = vec.Vec[str].create()
     defer: filtered.release()
     filtered.push("build")
@@ -1809,6 +1815,15 @@ function build_command(args: span[str]) -> int:
             continue
         if arg == "--clean":
             clean_mode = true
+            ai += 1
+            continue
+        if arg == "--bundle":
+            bundle_mode = true
+            ai += 1
+            continue
+        if arg == "--archive":
+            bundle_mode = true
+            archive_mode = true
             ai += 1
             continue
         if arg == "--kind":
@@ -1892,6 +1907,7 @@ function build_command(args: span[str]) -> int:
             if not profile_name == "debug" and not profile_name == "release":
                 stdio.print_line("error: --profile must be debug or release")
                 return 1
+            has_cli_profile = true
             ai += 2
             continue
         if arg == "--platform":
@@ -1903,6 +1919,7 @@ function build_command(args: span[str]) -> int:
                     platform = plat.value
                 Option.none:
                     return 1
+            has_cli_platform = true
             ai += 2
             continue
         if arg.starts_with("-"):
@@ -1919,42 +1936,176 @@ function build_command(args: span[str]) -> int:
         return 1
 
     var entry_path_owner = string.String.create()
+    defer: entry_path_owner.release()
     var source_root_owner = string.String.create()
-    let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
-        return 1
+    defer: source_root_owner.release()
+
+    # Package manifest discovery: a directory operand uses its own manifest; a
+    # source-file operand is a package build only when the manifest's entry is
+    # that file (the host's `use_package_build_for?`).
+    var package_opt = Option[package_manifest.PackageBuild].none
+    var package_abs = loader.absolute_path(path)
+    defer: package_abs.release()
+    match package_manifest.load_package_for(package_abs.as_str()):
+        Result.success as loaded:
+            package_opt = loaded.value
+        Result.failure as manifest_failure:
+            let message = manifest_failure.error.as_str()
+            eprint_line(message)
+            manifest_failure.error.release()
+            return 1
+    defer: release_package_option(ref_of(package_opt))
+
+    var output_owner = string.String.create()
+    defer: output_owner.release()
+    var bundle_root = string.String.create()
+    defer: bundle_root.release()
+    var clean_target = string.String.create()
+    defer: clean_target.release()
+    var clean_target_is_tree = false
+    var effective: str = ""
+    let display_path = path
+    var is_package = false
+
+    match package_opt:
+        Option.some as package_ref:
+            let pkg = package_ref.value
+            is_package = true
+            if pkg.kind == package_manifest.PackageKind.library and kind == build_driver.BuildKind.executable:
+                var message = string.String.create()
+                defer: message.release()
+                message.append("cannot build library package ")
+                message.append(pkg.name.as_str())
+                message.append(" as an executable")
+                eprint_line(message.as_str())
+                return 1
+            match pkg.source_path:
+                Option.some as declared_source:
+                    effective = declared_source.value.as_str()
+                Option.none:
+                    var message = string.String.create()
+                    defer: message.release()
+                    message.append("application package ")
+                    message.append(pkg.name.as_str())
+                    message.append(" has no build entry; set build.entry or create src/main.mt")
+                    eprint_line(message.as_str())
+                    return 1
+            roots.push(pkg.source_root.as_str())
+            if not has_cli_profile:
+                profile_name = pkg.profile
+            if not has_cli_platform:
+                platform = platform_from_manifest(pkg.platform)
+            let extension = if platform == resolver.Platform.windows: ".exe" else: ""
+            if bundle_mode:
+                if platform == resolver.Platform.wasm:
+                    eprint_line("bundle mode is supported only for native package builds")
+                    return 1
+                match output_override:
+                    Option.some as explicit_root:
+                        bundle_root.append(explicit_root.value)
+                    Option.none:
+                        match pkg.output_path:
+                            Option.some as manifest_output:
+                                bundle_root.append(manifest_output.value.as_str())
+                            Option.none:
+                                var computed = path_ops.join(pkg.root_dir.as_str(), "build/dist")
+                                defer: computed.release()
+                                var with_platform = path_ops.join(computed.as_str(), platform_label(platform))
+                                defer: with_platform.release()
+                                var with_profile = path_ops.join(with_platform.as_str(), profile_name)
+                                defer: with_profile.release()
+                                var with_name = path_ops.join(with_profile.as_str(), pkg.name.as_str())
+                                defer: with_name.release()
+                                bundle_root.append(with_name.as_str())
+                output_owner.append(bundle_root.as_str())
+                output_owner.push_byte('/')
+                output_owner.append(pkg.name.as_str())
+                output_owner.append(extension)
+                match output_override:
+                    Option.some:
+                        clean_target.append(bundle_root.as_str())
+                        clean_target_is_tree = true
+                    Option.none:
+                        match pkg.output_path:
+                            Option.some:
+                                clean_target.append(bundle_root.as_str())
+                                clean_target_is_tree = true
+                            Option.none:
+                                clean_target.append(pkg.root_dir.as_str())
+                                clean_target.append("/build/dist")
+                                clean_target_is_tree = true
+            else:
+                match output_override:
+                    Option.some as explicit_output:
+                        output_owner.append(explicit_output.value)
+                        clean_target.append(explicit_output.value)
+                    Option.none:
+                        match pkg.output_path:
+                            Option.some as manifest_output:
+                                output_owner.append(manifest_output.value.as_str())
+                                clean_target.append(manifest_output.value.as_str())
+                            Option.none:
+                                var computed = path_ops.join(pkg.root_dir.as_str(), "build/bin")
+                                defer: computed.release()
+                                var with_platform = path_ops.join(computed.as_str(), platform_label(platform))
+                                defer: with_platform.release()
+                                var with_profile = path_ops.join(with_platform.as_str(), profile_name)
+                                defer: with_profile.release()
+                                var with_name = path_ops.join(with_profile.as_str(), pkg.name.as_str())
+                                defer: with_name.release()
+                                output_owner.append(with_name.as_str())
+                                output_owner.append(extension)
+                                clean_target.append(pkg.root_dir.as_str())
+                                clean_target.append("/build")
+                                clean_target_is_tree = true
+        Option.none:
+            if bundle_mode:
+                eprint_line("bundle mode requires a package build")
+                return 1
+            let fallback = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+                return 1
+            effective = fallback
+            match output_override:
+                Option.some as explicit_output:
+                    output_owner.append(explicit_output.value)
+                    clean_target.append(explicit_output.value)
+                Option.none:
+                    var computed = default_output_path(effective)
+                    defer: computed.release()
+                    output_owner.append(computed.as_str())
+                    clean_target.append(computed.as_str())
+
     if not fs.exists(effective):
         var missing = string.String.create()
         defer: missing.release()
         missing.append("source file not found: ")
-        missing.append(path)
+        missing.append(display_path)
         eprint_line(missing.as_str())
         return 1
 
     # --clean removes the generated output artifact without compiling.
     if clean_mode:
-        var clean_output: string.String
-        if output_override.is_some():
-            clean_output = string.String.from_str(output_override.unwrap())
-        else:
-            clean_output = default_output_path(effective)
-        defer: clean_output.release()
-        if fs.exists(clean_output.as_str()):
-            match fs.remove(clean_output.as_str()):
-                Result.success:
-                    if not cli_quiet:
-                        stdio.print_format(c"cleaned %.*s\n", int<-(clean_output.as_str().len), clean_output.as_str().data)
+        if clean_target_is_tree:
+            if fs.exists(clean_target.as_str()):
+                match fs.remove_tree(clean_target.as_str()):
+                    Result.failure as failure:
+                        var message = failure.error
+                        defer: message.release()
+                        stdio.print_format(c"error: cannot remove %.*s\n", int<-(clean_target.as_str().len), clean_target.as_str().data)
+                        return 1
+                    Result.success:
+                        pass
+        else if fs.exists(clean_target.as_str()):
+            match fs.remove(clean_target.as_str()):
                 Result.failure as failure:
-                    var msg = failure.error
-                    defer: msg.release()
-                    stdio.print_format(c"error: cannot remove %.*s\n", int<-(clean_output.as_str().len), clean_output.as_str().data)
-                    entry_path_owner.release()
-                    source_root_owner.release()
+                    var message = failure.error
+                    defer: message.release()
+                    stdio.print_format(c"error: cannot remove %.*s\n", int<-(clean_target.as_str().len), clean_target.as_str().data)
                     return 1
-        else:
-            if not cli_quiet:
-                stdio.print_format(c"cleaned %.*s\n", int<-(clean_output.as_str().len), clean_output.as_str().data)
-        entry_path_owner.release()
-        source_root_owner.release()
+                Result.success:
+                    pass
+        if not cli_quiet:
+            stdio.print_format(c"cleaned %.*s\n", int<-(clean_target.as_str().len), clean_target.as_str().data)
         return 0
 
     var program = loader.check_program(effective, roots.as_span(), platform)
@@ -1962,36 +2113,41 @@ function build_command(args: span[str]) -> int:
 
     if program.diagnostic_error_count() > 0:
         let _ = print_program_diagnostics(ref_of(program))
-        entry_path_owner.release()
-        source_root_owner.release()
         return 1
 
     if reject_external_root(program):
-        entry_path_owner.release()
-        source_root_owner.release()
         return 1
 
     let ir_program = lowering.lower(program)
 
     if kind == build_driver.BuildKind.executable and reject_missing_entrypoint(program, ir_program):
-        entry_path_owner.release()
-        source_root_owner.release()
         return 1
 
     if keep_c_path.is_some():
         keep_c_to_file(ir_program, keep_c_path.unwrap())
 
-    var output_path: string.String
-    if output_override.is_some():
-        output_path = string.String.from_str(output_override.unwrap())
-    else:
-        output_path = default_output_path(effective)
+    let output_dir = path_ops.dirname(output_owner.as_str())
+    match fs.create_directories(output_dir):
+        Result.failure as dir_failure:
+            var dir_error = dir_failure.error
+            var message = string.String.create()
+            defer: message.release()
+            message.append("error: cannot create output directory ")
+            message.append(output_dir)
+            message.append(": ")
+            message.append(dir_error.message.as_str())
+            dir_error.release()
+            eprint_line(message.as_str())
+            return 1
+        Result.success:
+            pass
 
     # Binary cache: an unchanged program (same mtc executable, C compiler,
     # configuration, and module sources) reuses the previously built binary.
     # --keep-c always rebuilds so the saved C matches the produced binary.
-    # Libraries are not cached: the cache materializes executables and its key
-    # does not encode the artifact kind.
+    # Libraries are not cached (the cache materializes executables and its key
+    # does not encode the artifact kind).  Asset staging and the bundle archive
+    # are re-run on a hit, as the host's `build_cached` does.
     let cache_enabled = use_cache and keep_c_path.is_none() and kind == build_driver.BuildKind.executable
     var cache_key = string.String.create()
     defer: cache_key.release()
@@ -2008,47 +2164,232 @@ function build_command(args: span[str]) -> int:
         match build_cache.lookup(cache_key.as_str()):
             Option.some as hit:
                 var cached = hit.value
-                let copied = build_cache.materialize(cached.as_str(), output_path.as_str())
+                let copied = build_cache.materialize(cached.as_str(), output_owner.as_str())
                 cached.release()
                 if copied:
+                    match stage_package_assets(package_opt, output_owner.as_str(), bundle_mode):
+                        Result.success:
+                            pass
+                        Result.failure as asset_failure:
+                            var asset_error = asset_failure.error
+                            var message = string.String.create()
+                            defer: message.release()
+                            message.append("error: ")
+                            message.append(asset_error.as_str())
+                            asset_error.release()
+                            eprint_line(message.as_str())
+                            return 1
+                    var cached_archive = string.String.create()
+                    defer: cached_archive.release()
+                    if archive_mode:
+                        match write_bundle_archive(bundle_root.as_str(), ref_of(cached_archive)):
+                            Result.success:
+                                pass
+                            Result.failure as archive_failure:
+                                var archive_error = archive_failure.error
+                                var message = string.String.create()
+                                defer: message.release()
+                                message.append("error: ")
+                                message.append(archive_error.as_str())
+                                archive_error.release()
+                                eprint_line(message.as_str())
+                                return 1
                     if not cli_quiet:
-                        stdio.print_format(
-                            c"built %.*s -> %.*s  [cached]\n",
-                            int<-(effective.len), effective.data,
-                            int<-(output_path.as_str().len), output_path.as_str().data,
-                        )
-                    output_path.release()
-                    entry_path_owner.release()
-                    source_root_owner.release()
+                        if bundle_mode:
+                            stdio.print_format(
+                                c"built %.*s -> %.*s\n",
+                                int<-(display_path.len), display_path.data,
+                                int<-(output_dir.len), output_dir.data,
+                            )
+                            stdio.print_format(
+                                c"entry executable %.*s\n",
+                                int<-(output_owner.as_str().len), output_owner.as_str().data,
+                            )
+                            stdio.print_line("  [cached]")
+                            if archive_mode:
+                                stdio.print_format(
+                                    c"archive %.*s\n",
+                                    int<-(cached_archive.as_str().len), cached_archive.as_str().data,
+                                )
+                        else:
+                            stdio.print_format(
+                                c"built %.*s -> %.*s  [cached]\n",
+                                int<-(display_path.len), display_path.data,
+                                int<-(output_owner.as_str().len), output_owner.as_str().data,
+                            )
                     return 0
             Option.none:
                 pass
 
-    match build_driver.build(program, ir_program, output_path.as_str(), c_compiler, roots.as_span(), sanitize, profile_name, debug_guards, kind):
+    match build_driver.build(program, ir_program, output_owner.as_str(), c_compiler, roots.as_span(), sanitize, profile_name, debug_guards, kind):
         Result.success as built:
             var output = built.value
             defer: output.release()
-            output_path.release()
             if cache_enabled:
                 build_cache.store(cache_key.as_str(), output.as_str())
+            match stage_package_assets(package_opt, output_owner.as_str(), bundle_mode):
+                Result.success:
+                    pass
+                Result.failure as asset_failure:
+                    var asset_error = asset_failure.error
+                    var message = string.String.create()
+                    defer: message.release()
+                    message.append("error: ")
+                    message.append(asset_error.as_str())
+                    asset_error.release()
+                    eprint_line(message.as_str())
+                    return 1
+            var archive_owner = string.String.create()
+            defer: archive_owner.release()
+            if archive_mode:
+                match write_bundle_archive(bundle_root.as_str(), ref_of(archive_owner)):
+                    Result.success:
+                        pass
+                    Result.failure as archive_failure:
+                        var archive_error = archive_failure.error
+                        var message = string.String.create()
+                        defer: message.release()
+                        message.append("error: ")
+                        message.append(archive_error.as_str())
+                        archive_error.release()
+                        eprint_line(message.as_str())
+                        return 1
             if not cli_quiet:
-                stdio.print_format(
-                    c"built %.*s -> %.*s\n",
-                    int<-(effective.len), effective.data,
-                    int<-(output.as_str().len), output.as_str().data,
-                )
-            entry_path_owner.release()
-            source_root_owner.release()
+                if bundle_mode:
+                    stdio.print_format(
+                        c"built %.*s -> %.*s\n",
+                        int<-(display_path.len), display_path.data,
+                        int<-(output_dir.len), output_dir.data,
+                    )
+                    stdio.print_format(
+                        c"entry executable %.*s\n",
+                        int<-(output_owner.as_str().len), output_owner.as_str().data,
+                    )
+                    if archive_mode:
+                        stdio.print_format(
+                            c"archive %.*s\n",
+                            int<-(archive_owner.as_str().len), archive_owner.as_str().data,
+                        )
+                else:
+                    stdio.print_format(
+                        c"built %.*s -> %.*s\n",
+                        int<-(display_path.len), display_path.data,
+                        int<-(output_owner.as_str().len), output_owner.as_str().data,
+                    )
             return 0
         Result.failure as failure:
             var message = failure.error
             defer: message.release()
             let text = message.as_str()
             stdio.print_format(c"error: %.*s\n", int<-(text.len), text.data)
-            output_path.release()
-            entry_path_owner.release()
-            source_root_owner.release()
             return 1
+
+
+## Release the optional package manifest (its owned strings) at scope exit.
+function release_package_option(option: ref[Option[package_manifest.PackageBuild]]) -> void:
+    match read(option):
+        Option.some as package:
+            package.value.release()
+        Option.none:
+            pass
+
+
+function platform_from_manifest(label: str) -> resolver.Platform:
+    if label == "windows":
+        return resolver.Platform.windows
+    if label == "wasm":
+        return resolver.Platform.wasm
+    return resolver.Platform.linux
+
+
+function path_is_within(path: str, root: str) -> bool:
+    if path.equal(root):
+        return true
+    if path.len <= root.len:
+        return false
+    if not path.slice(0, root.len).equal(root):
+        return false
+    return path.byte_at(root.len) == '/'
+
+
+## Stage a package's `build.assets` beside the executable: packed into
+## `assets.mtpack` in bundle mode, copied as-is otherwise (the host's
+## `stage_runtime_assets`).
+function stage_package_assets(option: Option[package_manifest.PackageBuild], output_path: str, bundle_mode: bool) -> Result[bool, string.String]:
+    match option:
+        Option.none:
+            return Result[bool, string.String].success(value = true)
+        Option.some as package_ref:
+            let package = package_ref.value
+            if package.assets.len() == 0:
+                return Result[bool, string.String].success(value = true)
+            let output_dir = path_ops.dirname(output_path)
+            if bundle_mode:
+                var pack_path = path_ops.join(output_dir, "assets.mtpack")
+                defer: pack_path.release()
+                return asset_pack.write(pack_path.as_str(), package.assets.as_span())
+
+            var i: ptr_uint = 0
+            while i < package.assets.len():
+                let asset_ptr = package.assets.get(i) else:
+                    break
+                let asset = unsafe: read(asset_ptr).as_str()
+                var staged = path_ops.join(output_dir, path_ops.basename(asset))
+                if staged.as_str().equal(asset):
+                    staged.release()
+                    i += 1
+                    continue
+                if fs.is_directory(asset) and path_is_within(staged.as_str(), asset):
+                    var message = string.String.from_str("native runtime asset output would be written inside build.assets source tree: ")
+                    message.append(staged.as_str())
+                    staged.release()
+                    return Result[bool, string.String].failure(error = message)
+                if fs.exists(staged.as_str()):
+                    match fs.remove_tree(staged.as_str()):
+                        Result.failure as remove_failure:
+                            var remove_error = remove_failure.error
+                            var message = string.String.from_str(remove_error.message.as_str())
+                            remove_error.release()
+                            staged.release()
+                            return Result[bool, string.String].failure(error = message)
+                        Result.success:
+                            pass
+                match fs.copy_entry(asset, staged.as_str()):
+                    Result.failure as copy_failure:
+                        var copy_error = copy_failure.error
+                        var message = string.String.from_str(copy_error.message.as_str())
+                        copy_error.release()
+                        staged.release()
+                        return Result[bool, string.String].failure(error = message)
+                    Result.success:
+                        pass
+                staged.release()
+                i += 1
+            return Result[bool, string.String].success(value = true)
+
+
+## Write `<bundle_root>.tar.gz` (the host's `write_bundle_archive`).
+function write_bundle_archive(bundle_root: str, archive_owner: ref[string.String]) -> Result[bool, string.String]:
+    read(archive_owner).append(bundle_root)
+    read(archive_owner).append(".tar.gz")
+    match tar.archive_directory_gzip(bundle_root, path_ops.basename(bundle_root), true):
+        Result.success as archive_payload:
+            var data = archive_payload.value
+            defer: data.release()
+            match fs.write_bytes(read(archive_owner).as_str(), data.as_span()):
+                Result.failure as write_failure:
+                    var write_error = write_failure.error
+                    var message = string.String.from_str("could not write archive: ")
+                    message.append(write_error.message.as_str())
+                    write_error.release()
+                    return Result[bool, string.String].failure(error = message)
+                Result.success:
+                    return Result[bool, string.String].success(value = true)
+        Result.failure as archive_failure:
+            var archive_error = archive_failure.error
+            var message = string.String.from_str(archive_error.message.as_str())
+            archive_error.release()
+            return Result[bool, string.String].failure(error = message)
 
 
 ## Run a program (`mtc run`).  Builds and then executes the binary.
@@ -2245,7 +2586,10 @@ function run_command(args: span[str]) -> int:
                     output_path.release()
                     entry_path_owner.release()
                     source_root_owner.release()
-                    return execute_binary(cached_output.as_str(), ref_of(program_args))
+                    let run_status = execute_binary(cached_output.as_str(), ref_of(program_args))
+                    if not cli_quiet:
+                        stdio.print_line("[cached]")
+                    return run_status
             Option.none:
                 pass
 
