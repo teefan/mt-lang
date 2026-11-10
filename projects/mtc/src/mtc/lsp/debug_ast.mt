@@ -25,7 +25,10 @@ import mtc.lsp.debug_text as debug_text
 ## `module_name`: the workspace's inferred module name, which the host's cached
 ## AST carries (`SourceFile [Ln 1]`, `module_name: QualifiedName(main)`); the
 ## host's `node_path_ids` map is empty on the LSP path and never renders.
-public function append_ast_section(target: ref[string.String], file: ast.SourceFile, module_name: str) -> void:
+## `root_line` reproduces the host's two paths: its LSP cached AST re-wrap
+## carries `line: ast.line || 1`, while the CLI's loader/parse tree carries no
+## line and renders a bare `SourceFile`.
+public function append_ast_section(target: ref[string.String], file: ast.SourceFile, module_name: str, root_line: bool) -> void:
     target.append("\n\n── AST  1 SourceFile, ")
     target.append_format(f"#{file.imports.len} imports, ")
     target.append_format(f"#{file.directives.len} directives, ")
@@ -36,7 +39,8 @@ public function append_ast_section(target: ref[string.String], file: ast.SourceF
     # directives, declarations, node_ids.  The host's cached AST is a re-wrap
     # with `line: ast.line || 1` and `node_ids` only (`node_path_ids` is the
     # default empty hash and `skip_child_value?` drops it).
-    ast_header(target, "", true, "SourceFile", false, "", 1z, 0z)
+    let root_position = if root_line: 1z else: 0z
+    ast_header(target, "", true, "SourceFile", false, "", root_position, 0z)
 
     let cp = "   "
     if module_name.len > 0:

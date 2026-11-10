@@ -15,6 +15,7 @@ import std.time as time
 import std.vec as vec
 import std.stdio as stdio
 import std.process as process
+import std.libuv as libuv
 import std.terminal as terminal
 
 import mtc.lexer.token_kinds as tk
@@ -43,6 +44,9 @@ import mtc.linter.linter as linter
 import mtc.linter.scope_tracking as scope_tracking
 import mtc.linter.fix_engine as fix_engine
 import mtc.lsp.server as lsp
+import mtc.lsp.debug_info as debug_info
+import mtc.lsp.debug_text as debug_text
+import mtc.lsp.workspace as workspace
 import mtc.lsp.semantic_tokens as sem_tokens
 import mtc.dap.server as dap
 import mtc.bindgen as bindgen
@@ -824,47 +828,65 @@ function print_lex_diagnostics(path: str, source: str, diags: span[token_mod.Lex
     var i: ptr_uint = 0
     while i < diags.len:
         let d = unsafe: read(diags.data + i)
-        var block = string.String.create()
-        defer: block.release()
-        block.append("error[lex/error]: ")
-        block.append(str.cstr_as_str(d.message))
-        block.append(" -- ")
-        block.append(path)
-        block.append(":")
-        block.append(ptr_uint_to_str(d.line))
-        block.append(":")
-        block.append(ptr_uint_to_str(d.column))
-        block.append("\n")
-        if d.line >= 1:
-            var current_line: ptr_uint = 1
-            var pos: ptr_uint = 0
-            while pos < source.len and current_line < d.line:
-                if source.byte_at(pos) == 10:
-                    current_line += 1
-                pos += 1
-            let line_start = pos
-            while pos < source.len and source.byte_at(pos) != 10:
-                pos += 1
-            let line_end = pos
-            if line_start <= line_end:
-                let source_line = source.slice(line_start, line_end - line_start)
-                var gutter = rjust_line_number(d.line)
-                defer: gutter.release()
-                block.append("   |\n")
-                block.append(gutter.as_str())
-                block.append(" | ")
-                block.append(source_line)
-                block.append("\n")
-                block.append("      | ")
-                var sp: ptr_uint = 1
-                while sp < d.column:
-                    block.push_byte(32)
-                    sp += 1
-                block.push_byte(94)
-                block.append("\n")
-        let _ = terminal.write_stderr(block.as_str())
+        print_diagnostic_block(path, source, d.line, d.column, "lex/error", str.cstr_as_str(d.message))
         i += 1
     let _ = terminal.flush_stderr()
+
+
+## Print a parse error in the host CLI's `error[parse/error]` block form.
+function print_parse_diagnostics(path: str, source: str, diags: span[pstate.ParseDiagnostic]) -> void:
+    var i: ptr_uint = 0
+    while i < diags.len:
+        let d = unsafe: read(diags.data + i)
+        print_diagnostic_block(path, source, d.line, d.column, "parse/error", str.cstr_as_str(d.message))
+        i += 1
+    let _ = terminal.flush_stderr()
+
+
+## `error[<code>]: <message> -- <path>:<line>:<col>` plus the source line and
+## caret, the host ErrorFormatter's block.
+function print_diagnostic_block(path: str, source: str, line: ptr_uint, column: ptr_uint, code: str, message: str) -> void:
+    var block = string.String.create()
+    defer: block.release()
+    block.append("error[")
+    block.append(code)
+    block.append("]: ")
+    block.append(message)
+    block.append(" -- ")
+    block.append(path)
+    block.append(":")
+    block.append(ptr_uint_to_str(line))
+    block.append(":")
+    block.append(ptr_uint_to_str(column))
+    block.append("\n")
+    if line >= 1:
+        var current_line: ptr_uint = 1
+        var pos: ptr_uint = 0
+        while pos < source.len and current_line < line:
+            if source.byte_at(pos) == 10:
+                current_line += 1
+            pos += 1
+        let line_start = pos
+        while pos < source.len and source.byte_at(pos) != 10:
+            pos += 1
+        let line_end = pos
+        if line_start <= line_end:
+            let source_line = source.slice(line_start, line_end - line_start)
+            var gutter = rjust_line_number(line)
+            defer: gutter.release()
+            block.append("   |\n")
+            block.append(gutter.as_str())
+            block.append(" | ")
+            block.append(source_line)
+            block.append("\n")
+            block.append("      | ")
+            var sp: ptr_uint = 1
+            while sp < column:
+                block.push_byte(32)
+                sp += 1
+            block.push_byte(94)
+            block.append("\n")
+    let _ = terminal.write_stderr(block.as_str())
 
 
 ## Append "<n> <singular|plural>" (e.g. "1 error", "3 errors") to `buf`.
@@ -3564,6 +3586,8 @@ function debug_command(args: span[str]) -> int:
 
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
+    defer: entry_path_owner.release()
+    defer: source_root_owner.release()
     let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
         return 1
     if not fs.exists(effective):
@@ -3574,164 +3598,22 @@ function debug_command(args: span[str]) -> int:
         eprint_line(missing.as_str())
         return 1
 
-    var program = loader.check_program(effective, roots.as_span(), platform)
-    defer: program.release()
+    var display_path = loader.absolute_path(effective)
+    defer: display_path.release()
 
-    stdio.print_format(c"File: %.*s\n", int<-(effective.len), effective.data)
-
-    # Source info
-    match fs.read_text(effective):
-        Result.failure:
-            pass
-        Result.success as src_payload:
-            var source_text = src_payload.value
-            defer: source_text.release()
-            let source = source_text.as_str()
-            stdio.print_format(c"Content: %d lines, %d bytes\n\n", int<-(line_count(source)), int<-(source.len))
-
-            # Token summary
-            var all_tokens = lexer.lex(source)
-            defer: all_tokens.release()
-            print_token_summary(ref_of(all_tokens))
-            stdio.print_line("")
-
-    # Parse diagnostics from program
-    stdio.print_line("── Diagnostics ──")
-    if program.diagnostics.len() == 0:
-        stdio.print_line("  (none)")
-    else:
-        var di: ptr_uint = 0
-        while di < program.diagnostics.len():
-            let dp = program.diagnostics.get(di) else:
-                break
-            let d = unsafe: read(dp)
-            stdio.print_format(c"  %.*s: %.*s\n", int<-(d.path.len), d.path.data, int<-(d.message.len), d.message.data)
-            di += 1
-    stdio.print_line("")
-
-    # Root analysis facts
-    let root_analysis_ptr = program.analyses.get(program.root_index) else:
-        stdio.print_line("── Facts  (no analyses) ──")
-        entry_path_owner.release()
-        source_root_owner.release()
-        return 0
-
-    let analysis = unsafe: read(root_analysis_ptr)
-    let type_count = analysis.types.len()
-    let fn_count = analysis.functions.len()
-    let val_count = analysis.value_types.len()
-    let struct_count = analysis.structs.len()
-    let iface_count = analysis.interfaces.len()
-    let import_count = analysis.imports.len()
-    let alias_count = analysis.type_alias_types.len()
-    let method_count = analysis.method_sigs.len()
-
-    stdio.print_format(c"── Facts  module \"%.*s\"  ", int<-(analysis.module_name.len), analysis.module_name.data)
-    stdio.print_format(c"%d types, %d functions, %d values, %d structs, ", int<-(type_count), int<-(fn_count), int<-(val_count), int<-(struct_count))
-    stdio.print_format(c"%d interfaces, %d imports, %d aliases, %d methods\n", int<-(iface_count), int<-(import_count), int<-(alias_count), int<-(method_count))
-
-    # Functions
-    if fn_count > 0:
-        stdio.print_line("")
-        stdio.print_line("  Functions:")
-        var fn_keys = analysis.functions.keys()
-        while true:
-            let kp = fn_keys.next() else:
-                break
-            let name = unsafe: read(kp)
-            let sig_ptr = analysis.functions.get(name) else:
-                fatal(c"debug missing fn sig")
-            let sig = unsafe: read(sig_ptr)
-            stdio.print_format(c"    %.*s(", int<-(name.len), name.data)
-            var pi2: ptr_uint = 0
-            while pi2 < sig.params.len:
-                let param = unsafe: read(sig.params.data + pi2)
-                if pi2 > 0:
-                    stdio.print_format(c", ")
-                stdio.print_format(c"%.*s", int<-(param.name.len), param.name.data)
-                pi2 += 1
-            stdio.print_format(c")\n")
-
-    # Structs
-    if struct_count > 0:
-        stdio.print_line("")
-        stdio.print_line("  Structs:")
-        var s_keys = analysis.structs.keys()
-        while true:
-            let kp = s_keys.next() else:
-                break
-            let name = unsafe: read(kp)
-            stdio.print_format(c"    %.*s\n", int<-(name.len), name.data)
-
-    # Interfaces
-    if iface_count > 0:
-        stdio.print_line("")
-        stdio.print_line("  Interfaces:")
-        var i_keys = analysis.interfaces.keys()
-        while true:
-            let kp = i_keys.next() else:
-                break
-            let name = unsafe: read(kp)
-            stdio.print_format(c"    %.*s\n", int<-(name.len), name.data)
-
-    # Imports
-    if import_count > 0:
-        stdio.print_line("")
-        stdio.print_line("  Imports:")
-        var imp_keys = analysis.imports.keys()
-        while true:
-            let kp = imp_keys.next() else:
-                break
-            let alias = unsafe: read(kp)
-            let path_ptr = analysis.imports.get(alias) else:
-                fatal(c"debug missing import")
-            let path_val = unsafe: read(path_ptr)
-            stdio.print_format(c"    %.*s → %.*s\n", int<-(alias.len), alias.data, int<-(path_val.len), path_val.data)
-
-    # Type aliases
-    if alias_count > 0:
-        stdio.print_line("")
-        stdio.print_line("  Type Aliases:")
-        var ta_keys = analysis.type_alias_types.keys()
-        while true:
-            let kp = ta_keys.next() else:
-                break
-            let name = unsafe: read(kp)
-            stdio.print_format(c"    %.*s\n", int<-(name.len), name.data)
-
-    entry_path_owner.release()
-    source_root_owner.release()
-    return 0
-
-
-function line_count(source: str) -> ptr_uint:
-    var count: ptr_uint = 0
-    var i: ptr_uint = 0
-    while i < source.len:
-        if source.byte_at(i) == 10:
-            count += 1
-        i += 1
-    if source.len > 0 and source.byte_at(source.len - 1) != 10:
-        count += 1
-    return count
-
-
-function print_token_summary(tokens: ref[vec.Vec[token_mod.Token]]) -> void:
-    var ident_count: ptr_uint = 0
-    var nl_count: ptr_uint = 0
-    stdio.print_format(c"── Tokens  %d  (", int<-(tokens.len()))
-    var ti: ptr_uint = 0
-    while ti < tokens.len():
-        let tp = tokens.get(ti) else:
+    var ws = workspace.Workspace.create(effective)
+    defer: ws.release()
+    var ri: ptr_uint = roots.len()
+    while ri > 0:
+        ri -= 1
+        let rp = roots.get(ri) else:
             break
-        let t = unsafe: read(tp)
-        if t.kind == tk.TokenKind.newline:
-            nl_count += 1
-        if t.kind == tk.TokenKind.identifier:
-            ident_count += 1
-        ti += 1
-    stdio.print_format(c"%d identifier, %d newline", int<-(ident_count), int<-(nl_count))
-    stdio.print_line(c")")
+        ws.module_roots.insert(0, string.String.from_str(unsafe: read(rp)))
+
+    var text = debug_info.build_cli_debug_text(ref_of(ws), effective, display_path.as_str())
+    defer: text.release()
+    stdio.print_line(text.as_str())
+    return 0
 
 
 struct CommandSummary:
@@ -4631,10 +4513,10 @@ function is_compile_fail_fixture(source: str) -> bool:
 
 
 ## Run a compile-fail fixture: type-check the file and verify every
-## `# expect-error:` substring appears in some error diagnostic.  Returns
-## (1, 0) when the expectations are satisfied and (1, 1) otherwise, so the
-## fixture is counted like a test file.
-function run_compile_fail_file(file_path: str, source_text: str, roots: ref[vec.Vec[str]], machine: bool, results: ref[vec.Vec[TestResult]]) -> (int, int):
+## `# expect-error:` substring appears in some error diagnostic.  Returns 0 when
+## the expectations are satisfied and 1 otherwise; `header` prints the
+## directory-mode `# <file>` line.
+function run_compile_fail_file(file_path: str, source_text: str, options: TestRunOptions, header: bool, results: ref[vec.Vec[TestResult]]) -> int:
     var expected = vec.Vec[str].create()
     defer: expected.release()
     collect_expect_errors(source_text, ref_of(expected))
@@ -4642,15 +4524,13 @@ function run_compile_fail_file(file_path: str, source_text: str, roots: ref[vec.
     var eff_roots = vec.Vec[str].create()
     defer: eff_roots.release()
     var ri: ptr_uint = 0
-    while ri < roots.len():
-        let rp = roots.get(ri) else:
-            break
+    while ri < options.roots.len:
         unsafe:
-            eff_roots.push(read(rp))
+            eff_roots.push(read(options.roots.data + ri))
         ri += 1
     eff_roots.push(path_ops.dirname(file_path))
 
-    var program = loader.check_program(file_path, eff_roots.as_span(), resolver.Platform.linux)
+    var program = loader.check_program(file_path, eff_roots.as_span(), options.platform)
     defer: program.release()
 
     var error_msgs = vec.Vec[str].create()
@@ -4687,11 +4567,14 @@ function run_compile_fail_file(file_path: str, source_text: str, roots: ref[vec.
                 mi += 1
             if not found:
                 passed = false
-                fail_reason.assign("no diagnostic matched: ")
-                fail_reason.append(exp)
+                fail_reason.assign("no diagnostic matched ")
+                var inspected = debug_text.ruby_inspect(exp)
+                fail_reason.append(inspected.as_str())
+                inspected.release()
                 break
             ei += 1
 
+    let machine = options.format != OutputFormat.human
     if machine:
         var name = string.String.from_str(file_path)
         name.append(" (compile-fail)")
@@ -4700,7 +4583,8 @@ function run_compile_fail_file(file_path: str, source_text: str, roots: ref[vec.
         else:
             results.push(TestResult(name = name, status = TestStatus.fail, detail = string.String.from_str(fail_reason.as_str()), has_detail = true))
     else:
-        stdio.print_format(c"# %.*s\n", int<-(file_path.len), file_path.data)
+        if header:
+            stdio.print_format(c"# %.*s\n", int<-(file_path.len), file_path.data)
         if passed:
             stdio.print_format(c"ok   - %.*s (compile-fail)\n", int<-(file_path.len), file_path.data)
         else:
@@ -4712,65 +4596,105 @@ function run_compile_fail_file(file_path: str, source_text: str, roots: ref[vec.
             )
 
     if passed:
-        return (1, 0)
-    return (1, 1)
+        return 0
+    return 1
 
 
-## Discover and run @[test] functions under a directory.  Scans all .mt files,
-## synthesizes a std.testing runner per file, builds and runs it in-process
-## under a timeout/memory sandbox.  With --format tap|junit the per-test
-## outcomes are parsed and re-emitted in the machine-readable format instead of
-## the human summary.
+## Runner settings shared by the directory and single-file paths.
+struct TestRunOptions:
+    roots: span[str]
+    name_filter: Option[str]
+    timeout_seconds: ptr_uint
+    memory_mb: ptr_uint
+    jobs: ptr_uint
+    sanitize: bool
+    format: OutputFormat
+    cc: str
+    profile: str
+    platform: resolver.Platform
+
+
+## How a discovered test file runs (`TestFileKind.lex_error` aborts the run:
+## the host's discovery rescues parse errors but lets a LexError escape).
+enum TestFileKind: ubyte
+    none = 0
+    test = 1
+    compile_fail = 2
+    lex_error = 3
+
+
+## Discover and run @[test] functions from a file or directory.  Scans all .mt
+## files, synthesizes a runner per file, builds and runs it in-process under a
+## timeout/memory sandbox.  With --format tap|junit the per-test outcomes are
+## re-emitted in the machine-readable format instead of the human summary.
+## `--jobs` is validated and accepted; files still run in order — the host's
+## fork-per-file mode only changes wall time (and folds a child's stderr into
+## its stdout), so the sequential run is the equivalent without that wart.
 function test_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer: roots.release()
-    var test_dir = ""
-    var saw_test_dir = false
+    var positional = vec.Vec[str].create()
+    defer: positional.release()
     var name_filter: Option[str] = Option[str].none
     var timeout_seconds: ptr_uint = 30
     var memory_mb: ptr_uint = 1024
+    var jobs: ptr_uint = 1
     var sanitize = false
     var format = OutputFormat.human
+    var cc = "cc"
+    var profile = "debug"
+    var platform = resolver.Platform.linux
     var ai: ptr_uint = 1
     while ai < args.len:
         let arg = args[ai]
         if arg == "--root" or arg == "-I" or arg == "--include-path":
             if ai + 1 >= args.len:
-                stdio.print_line("error: -I requires a directory")
-                return 1
+                eprint_line("missing value for -I")
+                ai += 1
+                continue
             roots.push(args[ai + 1])
             ai += 2
             continue
         if arg == "-n" or arg == "--name":
             if ai + 1 >= args.len:
-                stdio.print_line("error: -n requires a name substring")
+                eprint_line("-n requires a name substring")
                 return 1
             name_filter = Option[str].some(value= args[ai + 1])
             ai += 2
             continue
         if arg == "--timeout":
             if ai + 1 >= args.len:
-                stdio.print_line("error: --timeout requires a positive integer (seconds)")
+                eprint_line("--timeout requires a positive integer (seconds)")
                 return 1
             let seconds = parse_positive_int(args[ai + 1]) else:
-                stdio.print_line("error: --timeout requires a positive integer (seconds)")
+                eprint_line("--timeout requires a positive integer (seconds)")
                 return 1
             timeout_seconds = seconds
             ai += 2
             continue
         if arg == "--mem":
             if ai + 1 >= args.len:
-                stdio.print_line("error: --mem requires a positive integer (megabytes)")
+                eprint_line("--mem requires a positive integer (megabytes)")
                 return 1
             let megabytes = parse_positive_int(args[ai + 1]) else:
-                stdio.print_line("error: --mem requires a positive integer (megabytes)")
+                eprint_line("--mem requires a positive integer (megabytes)")
                 return 1
             memory_mb = megabytes
             ai += 2
             continue
+        if arg == "--jobs":
+            if ai + 1 >= args.len:
+                eprint_line("--jobs requires a positive integer")
+                return 1
+            let count = parse_positive_int(args[ai + 1]) else:
+                eprint_line("--jobs requires a positive integer")
+                return 1
+            jobs = count
+            ai += 2
+            continue
         if arg == "--format":
             if ai + 1 >= args.len:
-                stdio.print_line("error: --format must be human, tap, or junit")
+                eprint_line("--format must be human, tap, or junit")
                 return 1
             let fmt_name = args[ai + 1]
             if fmt_name == "human":
@@ -4780,7 +4704,7 @@ function test_command(args: span[str]) -> int:
             else if fmt_name == "junit":
                 format = OutputFormat.junit
             else:
-                stdio.print_line("error: --format must be human, tap, or junit")
+                eprint_line("--format must be human, tap, or junit")
                 return 1
             ai += 2
             continue
@@ -4788,28 +4712,198 @@ function test_command(args: span[str]) -> int:
             sanitize = true
             ai += 1
             continue
-        test_dir = arg
-        saw_test_dir = true
+        if arg == "--":
+            var rest = ai + 1
+            while rest < args.len:
+                positional.push(args[rest])
+                rest += 1
+            break
+        if arg == "-o" or arg == "--output" or arg == "--keep-c" or arg == "--cc" or arg == "--profile" or arg == "--platform":
+            if ai + 1 >= args.len:
+                eprint_missing_option_value(arg)
+                return 1
+            let value = args[ai + 1]
+            if arg == "--cc":
+                cc = value
+            else if arg == "--profile":
+                if not value == "debug" and not value == "release":
+                    var bad_profile = string.String.create()
+                    defer: bad_profile.release()
+                    bad_profile.append("unknown profile ")
+                    bad_profile.append(value)
+                    bad_profile.append("; expected debug|release")
+                    eprint_line(bad_profile.as_str())
+                    return 1
+                profile = value
+            else if arg == "--platform":
+                if value == "linux":
+                    platform = resolver.Platform.linux
+                else if value == "windows":
+                    platform = resolver.Platform.windows
+                else if value == "wasm":
+                    platform = resolver.Platform.wasm
+                else:
+                    var bad_platform = string.String.create()
+                    defer: bad_platform.release()
+                    bad_platform.append("unknown platform ")
+                    bad_platform.append(value)
+                    bad_platform.append("; expected linux|windows|wasm")
+                    eprint_line(bad_platform.as_str())
+                    return 1
+            ai += 2
+            continue
+        if arg == "--kind":
+            if ai + 1 >= args.len:
+                eprint_missing_option_value(arg)
+                return 1
+            let kind_name = args[ai + 1]
+            if not is_known_build_kind(kind_name):
+                var bad_kind = string.String.create()
+                defer: bad_kind.release()
+                bad_kind.append("unknown build kind ")
+                bad_kind.append(kind_name)
+                bad_kind.append("; expected executable|static|shared")
+                eprint_line(bad_kind.as_str())
+                cli_help.print_usage(true)
+                return 1
+            ai += 2
+            continue
+        if arg == "--bundle" or arg == "--archive" or arg == "--locked" or arg == "--frozen" or arg == "--no-cache" or arg == "--timings" or arg == "--debug-guards" or arg == "--no-debug-guards":
+            ai += 1
+            continue
+        if arg.starts_with("-"):
+            var unknown_opt = string.String.create()
+            defer: unknown_opt.release()
+            unknown_opt.append("unknown build option ")
+            unknown_opt.append(arg)
+            eprint_line(unknown_opt.as_str())
+            cli_help.print_usage(true)
+            return 1
+        positional.push(arg)
         ai += 1
 
-    if not saw_test_dir:
-        eprint_line("missing source file path")
-        cli_help.print_usage(true)
-        return 1
-    if not fs.is_directory(test_dir):
-        stdio.print_format(c"error: not a directory: %.*s\n", int<-(test_dir.len), test_dir.data)
-        return 1
+    var cwd_owner = string.String.create()
+    defer: cwd_owner.release()
+    var path: str = ""
+    let first_positional = positional.get(0)
+    if first_positional != null:
+        path = unsafe: read(first_positional)
+    else:
+        match fs.current_directory():
+            Result.success as cwd_payload:
+                var package_path = path_ops.join(cwd_payload.value.as_str(), "package.toml")
+                let has_package = fs.exists(package_path.as_str())
+                package_path.release()
+                if has_package:
+                    cwd_owner.append(cwd_payload.value.as_str())
+                    path = cwd_owner.as_str()
+                else:
+                    cwd_payload.value.release()
+            Result.failure:
+                pass
+        if path.len == 0:
+            eprint_line("missing source file path")
+            cli_help.print_usage(true)
+            return 1
 
-    match fs.list_files_recursive(test_dir):
+    let options = TestRunOptions(
+        roots = roots.as_span(),
+        name_filter = name_filter,
+        timeout_seconds = timeout_seconds,
+        memory_mb = memory_mb,
+        jobs = jobs,
+        sanitize = sanitize,
+        format = format,
+        cc = cc,
+        profile = profile,
+        platform = platform,
+    )
+
+    if fs.is_directory(path):
+        return run_test_directory(path, options)
+    if fs.exists(path):
+        return run_test_file_path(path, options)
+
+    var not_found = string.String.create()
+    defer: not_found.release()
+    not_found.append("mtc test: not a file or directory: ")
+    not_found.append(path)
+    eprint_line(not_found.as_str())
+    return 1
+
+
+## One file operand: the host's `dispatch_test_run` file branch.  A compile-fail
+## fixture runs alone; a normal file must lex and parse before its tests run.
+function run_test_file_path(path: str, options: TestRunOptions) -> int:
+    match fs.read_text(path):
+        Result.failure:
+            var cannot_read = string.String.create()
+            defer: cannot_read.release()
+            cannot_read.append("error: cannot read '")
+            cannot_read.append(path)
+            cannot_read.append("'")
+            eprint_line(cannot_read.as_str())
+            return 1
+        Result.success as content_payload:
+            var source = content_payload.value
+            defer: source.release()
+            let source_text = source.as_str()
+            var rc: int = 0
+            if is_compile_fail_fixture(source_text):
+                var results = vec.Vec[TestResult].create()
+                defer: release_test_results(ref_of(results))
+                rc = run_compile_fail_file(path, source_text, options, false, ref_of(results))
+                emit_machine_output(options.format, ref_of(results))
+                return rc
+
+            var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+            defer: lex_diags.release()
+            let _tokens = lexer.lex_reporting(source_text, ref_of(lex_diags))
+            if lex_diags.len() > 0:
+                print_lex_diagnostics(path, source_text, lex_diags.as_span())
+                return 1
+
+            var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+            defer: parse_diags.release()
+            let _file = parser.parse_source(source_text, ref_of(parse_diags))
+            if parse_diags.len() > 0:
+                print_parse_diagnostics(path, source_text, parse_diags.as_span())
+                return 1
+
+            var results = vec.Vec[TestResult].create()
+            defer: release_test_results(ref_of(results))
+            rc = run_tests_from_source(path, source_text, options, false, ref_of(results))
+            emit_machine_output(options.format, ref_of(results))
+            return rc
+
+
+## Emit TAP/JUnit for a completed run; human mode prints nothing extra.
+function emit_machine_output(format: OutputFormat, results: ref[vec.Vec[TestResult]]) -> void:
+    if format == OutputFormat.tap:
+        emit_tap(results)
+    else if format == OutputFormat.junit:
+        emit_junit(results)
+
+
+## Discover every test file (the host's `discover_test_files`) and only then
+## run them, so a lex error anywhere in the tree aborts before any file's
+## output, as the host's discovery pass does.
+function run_test_directory(directory: str, options: TestRunOptions) -> int:
+    var results = vec.Vec[TestResult].create()
+    defer: release_test_results(ref_of(results))
+    let machine = options.format != OutputFormat.human
+    var failed: ptr_uint = 0
+
+    match fs.list_files_recursive(directory):
         Result.success as entries_payload:
             var entries = entries_payload.value
             defer: entries.release()
-            var total_passed: ptr_uint = 0
-            var total_failed: ptr_uint = 0
-            var file_count: ptr_uint = 0
-            var runner_counter: ptr_uint = 0
-            var results = vec.Vec[TestResult].create()
-            let machine = format != OutputFormat.human
+
+            var discovered = vec.Vec[ptr_uint].create()
+            defer: discovered.release()
+            var kinds = vec.Vec[TestFileKind].create()
+            defer: kinds.release()
+
             var index: ptr_uint = 0
             while index < entries.len():
                 match entries.get(index):
@@ -4818,27 +4912,14 @@ function test_command(args: span[str]) -> int:
                         if entry_name.ends_with(".mt"):
                             match fs.read_text(entry_name):
                                 Result.success as content:
-                                    var src = content.value
-                                    if is_compile_fail_fixture(src.as_str()):
-                                        if matches_name_filter(path_ops.basename(entry_name), name_filter):
-                                            let (cfp, cff) = run_compile_fail_file(
-                                                entry_name, src.as_str(), ref_of(roots), machine, ref_of(results)
-                                            )
-                                            if cfp > 0 or cff > 0:
-                                                file_count += 1
-                                            total_passed += ptr_uint<-cfp
-                                            total_failed += ptr_uint<-cff
-                                        src.release()
-                                    else:
-                                        src.release()
-                                        let (file_passed, file_failed) = run_test_file(
-                                            entry_name, ref_of(roots), ref_of(runner_counter), name_filter,
-                                            timeout_seconds, memory_mb, sanitize, machine, ref_of(results)
-                                        )
-                                        if file_passed > 0 or file_failed > 0:
-                                            file_count += 1
-                                        total_passed += ptr_uint<-file_passed
-                                        total_failed += ptr_uint<-file_failed
+                                    var source = content.value
+                                    let kind = classify_test_file(entry_name, source.as_str(), options.name_filter)
+                                    source.release()
+                                    if kind == TestFileKind.lex_error:
+                                        return 1
+                                    if kind != TestFileKind.none:
+                                        discovered.push(index)
+                                        kinds.push(kind)
                                 Result.failure as read_err:
                                     var em = read_err.error
                                     em.release()
@@ -4846,51 +4927,245 @@ function test_command(args: span[str]) -> int:
                         pass
                 index += 1
 
+            let file_count = discovered.len()
+            var run_index: ptr_uint = 0
+            while run_index < discovered.len():
+                let discovered_ptr = discovered.get(run_index) else:
+                    break
+                let entry_index = unsafe: read(discovered_ptr)
+                let entry_name = entries.get(entry_index) else:
+                    break
+                let kind_ptr = kinds.get(run_index) else:
+                    break
+                let kind = unsafe: read(kind_ptr)
+                match fs.read_text(entry_name):
+                    Result.success as content:
+                        var source = content.value
+                        var file_rc: int = 0
+                        if kind == TestFileKind.compile_fail:
+                            file_rc = run_compile_fail_file(entry_name, source.as_str(), options, true, ref_of(results))
+                        else:
+                            file_rc = run_tests_from_source(entry_name, source.as_str(), options, true, ref_of(results))
+                        if file_rc != 0:
+                            failed += 1
+                        source.release()
+                    Result.failure as read_err:
+                        var em = read_err.error
+                        em.release()
+                        failed += 1
+                run_index += 1
+
             if machine:
-                if format == OutputFormat.tap:
-                    emit_tap(ref_of(results))
-                else:
-                    emit_junit(ref_of(results))
-                var ri: ptr_uint = 0
-                while ri < results.len():
-                    let rp = results.get(ri) else:
-                        break
-                    unsafe:
-                        read(rp).release()
-                    ri += 1
-                results.release()
-                if total_failed > 0:
+                emit_machine_output(options.format, ref_of(results))
+                if failed > 0:
                     return 1
                 return 0
 
-            results.release()
             if file_count == 0:
-                match name_filter:
+                match options.name_filter:
                     Option.some as needle:
                         stdio.print_format(
                             c"no tests matched -n '%.*s' under %.*s\n",
                             int<-(needle.value.len), needle.value.data,
-                            int<-(test_dir.len), test_dir.data,
+                            int<-(directory.len), directory.data,
                         )
                     Option.none:
-                        stdio.print_line("no @[test] functions found")
+                        stdio.print_format(
+                            c"no @[test] functions or # expect-error: fixtures found under %.*s\n",
+                            int<-(directory.len), directory.data,
+                        )
                 return 0
-            stdio.print_format(
-                c"%d test file(s), %d failed\n",
-                int<-file_count,
-                int<-total_failed,
-            )
-            if total_failed > 0:
+
+            stdio.print_line("")
+            stdio.print_format(c"%d test file(s), %d failed\n", int<-file_count, int<-failed)
+            if failed > 0:
                 return 1
             return 0
         Result.failure as failure_payload:
             var err = failure_payload.error
             defer: err.release()
-            stdio.print_format(
-                c"error: cannot list directory %.*s\n",
-                int<-(test_dir.len), test_dir.data,
-            )
+            stdio.print_format(c"error: cannot list directory %.*s\n", int<-(directory.len), directory.data)
             return 1
+
+
+## The host's `classify_test_file`: a `# expect-error:` fixture (basename
+## matches the filter) or a parseable file declaring a matching @[test]
+## function.  Lex errors are printed and abort the run (the host's discovery
+## rescues only ParseError).
+function classify_test_file(path: str, source: str, name_filter: Option[str]) -> TestFileKind:
+    if is_compile_fail_fixture(source):
+        if matches_name_filter(basename_without_mt(path), name_filter):
+            return TestFileKind.compile_fail
+        return TestFileKind.none
+
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: lex_diags.release()
+    let _tokens = lexer.lex_reporting(source, ref_of(lex_diags))
+    if lex_diags.len() > 0:
+        print_lex_diagnostics(path, source, lex_diags.as_span())
+        return TestFileKind.lex_error
+
+    var diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: diags.release()
+    let file = parser.parse_source(source, ref_of(diags))
+    if diags.len() > 0:
+        return TestFileKind.none
+
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        unsafe:
+            match read(file.declarations.data + di):
+                ast.Decl.decl_function as fun:
+                    if has_test_attribute(fun.attributes) and matches_name_filter(fun.name, name_filter):
+                        return TestFileKind.test
+                _:
+                    pass
+        di += 1
+    return TestFileKind.none
+
+
+function basename_without_mt(path: str) -> str:
+    let name = path_ops.basename(path)
+    if name.ends_with(".mt"):
+        return name.slice(0, name.len - 3)
+    return name
+
+
+## True when the attribute list carries an `@[test]` application.
+function has_test_attribute(attributes: span[ast.AttributeApplication]) -> bool:
+    var ai: ptr_uint = 0
+    while ai < attributes.len:
+        let attr = unsafe: read(attributes.data + ai)
+        if attr.name.parts.len == 1:
+            let an = unsafe: read(attr.name.parts.data + 0)
+            if an == "test":
+                return true
+        ai += 1
+    return false
+
+
+## Run the @[test]/@[expect_fatal] functions of an already-read source.  The
+## host's `run_test_file`: a file may not define `main`, filtered tests must
+## take no parameters, a file with no tests reports (file operands only) and a
+## directory run prints its `# <file>` header first.
+function run_tests_from_source(file_path: str, source: str, options: TestRunOptions, header: bool, results: ref[vec.Vec[TestResult]]) -> int:
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: parse_diags.release()
+    let file = parser.parse_source(source, ref_of(parse_diags))
+
+    var has_main = false
+    var invalid_name = ""
+    var all_test_count: ptr_uint = 0
+    var test_names = vec.Vec[str].create()
+    defer: test_names.release()
+    var death_names = vec.Vec[str].create()
+    defer: death_names.release()
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        unsafe:
+            match read(file.declarations.data + di):
+                ast.Decl.decl_function as fun:
+                    if fun.name == "main":
+                        has_main = true
+                    var is_test = false
+                    var is_fatal = false
+                    var ai: ptr_uint = 0
+                    while ai < fun.attributes.len:
+                        let attr = read(fun.attributes.data + ai)
+                        if attr.name.parts.len == 1:
+                            let an = read(attr.name.parts.data + 0)
+                            if an == "test":
+                                is_test = true
+                            else if an == "expect_fatal":
+                                is_fatal = true
+                        ai += 1
+                    if is_test:
+                        all_test_count += 1
+                        if matches_name_filter(fun.name, options.name_filter):
+                            if fun.method_params.len > 0 and invalid_name.len == 0:
+                                invalid_name = fun.name
+                            if is_fatal:
+                                death_names.push(fun.name)
+                            else:
+                                test_names.push(fun.name)
+                _:
+                    pass
+        di += 1
+
+    if has_main:
+        var main_error = string.String.create()
+        defer: main_error.release()
+        main_error.append("a test file must not define 'main': ")
+        main_error.append(file_path)
+        eprint_line(main_error.as_str())
+        return 1
+
+    let machine = options.format != OutputFormat.human
+    if all_test_count == 0:
+        if not header and not machine:
+            stdio.print_format(c"no @[test] functions found in %.*s\n", int<-(file_path.len), file_path.data)
+        return 0
+
+    if test_names.len() == 0 and death_names.len() == 0:
+        return 0
+
+    if invalid_name.len > 0:
+        var param_error = string.String.create()
+        defer: param_error.release()
+        param_error.append("@[test] function '")
+        param_error.append(invalid_name)
+        param_error.append("' must take no parameters")
+        eprint_line(param_error.as_str())
+        return 1
+
+    if header and not machine:
+        stdio.print_format(c"# %.*s\n", int<-(file_path.len), file_path.data)
+
+    var file_failed = 0
+    if test_names.len() > 0:
+        if run_normal_test_runner(file_path, source, ref_of(test_names), options, results) != 0:
+            file_failed = 1
+
+    var dj: ptr_uint = 0
+    while dj < death_names.len():
+        let dn_ptr = death_names.get(dj) else:
+            break
+        if not run_death_test(file_path, source, unsafe: read(dn_ptr), options, results):
+            file_failed = 1
+        dj += 1
+    return file_failed
+
+
+## Release every parsed result row, then the vector.
+function release_test_results(results: ref[vec.Vec[TestResult]]) -> void:
+    var i: ptr_uint = 0
+    while i < results.len():
+        let rp = results.get(i) else:
+            break
+        unsafe:
+            read(rp).release()
+        i += 1
+    results.release()
+
+
+## `missing value for <option>` plus the usage block, the host's
+## `reject_missing_option_value`.
+function eprint_missing_option_value(option: str) -> void:
+    var text = string.String.create()
+    defer: text.release()
+    text.append("missing value for ")
+    text.append(option)
+    eprint_line(text.as_str())
+    cli_help.print_usage(true)
+
+
+## The `--kind` names the host accepts (aliases included).
+function is_known_build_kind(name: str) -> bool:
+    return (
+        name == "executable" or name == "exe" or name == "bin"
+        or name == "static" or name == "staticlib"
+        or name == "shared" or name == "dylib" or name == "dll" or name == "so"
+    )
 
 
 ## True when `name` should run under the active `-n` filter: no filter matches
@@ -4936,73 +5211,6 @@ function count_tests_in_file(file_path: str) -> int:
             return 0
 
 
-function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[ptr_uint], name_filter: Option[str], timeout_seconds: ptr_uint, memory_mb: ptr_uint, sanitize: bool, machine: bool, results: ref[vec.Vec[TestResult]]) -> (int, int):
-    match fs.read_text(file_path):
-        Result.success as content_payload:
-            var source = content_payload.value
-            defer: source.release()
-            let source_text = source.as_str()
-
-            var diags = vec.Vec[pstate.ParseDiagnostic].create()
-            defer: diags.release()
-            let file = parser.parse_source(source_text, ref_of(diags))
-            if diags.len() > 0:
-                return (0, 0)
-
-            var test_names = vec.Vec[str].create()
-            defer: test_names.release()
-            var death_names = vec.Vec[str].create()
-            defer: death_names.release()
-            var di: ptr_uint = 0
-            while di < file.declarations.len:
-                unsafe:
-                    match read(file.declarations.data + di):
-                        ast.Decl.decl_function as fun:
-                            var is_test = false
-                            var is_fatal = false
-                            var ai: ptr_uint = 0
-                            while ai < fun.attributes.len:
-                                let attr = read(fun.attributes.data + ai)
-                                if attr.name.parts.len == 1:
-                                    let an = read(attr.name.parts.data + 0)
-                                    if an == "test":
-                                        is_test = true
-                                    else if an == "expect_fatal":
-                                        is_fatal = true
-                                ai += 1
-                            if is_test and matches_name_filter(fun.name, name_filter):
-                                if is_fatal:
-                                    death_names.push(fun.name)
-                                else:
-                                    test_names.push(fun.name)
-                        _:
-                            pass
-                di += 1
-
-            if test_names.len() == 0 and death_names.len() == 0:
-                return (0, 0)
-
-            if not machine:
-                stdio.print_format(c"# %.*s\n", int<-(file_path.len), file_path.data)
-
-            var file_failed = 0
-            if test_names.len() > 0:
-                if run_normal_test_runner(file_path, source_text, ref_of(test_names), roots, counter, timeout_seconds, memory_mb, sanitize, machine, results) != 0:
-                    file_failed = 1
-
-            var dj: ptr_uint = 0
-            while dj < death_names.len():
-                let dn_ptr = death_names.get(dj) else:
-                    break
-                if not run_death_test(file_path, source_text, unsafe: read(dn_ptr), roots, counter, timeout_seconds, memory_mb, sanitize, machine, results):
-                    file_failed = 1
-                dj += 1
-
-            return (int<-(test_names.len() + death_names.len()), file_failed)
-        Result.failure:
-            return (0, 0)
-
-
 ## Run `binary_path` under a sandbox: `timeout <sec> bash -c 'ulimit -v <kb>;
 ## exec "$@"'`, capturing output.  `timeout` reports exit 124 on expiry and the
 ## `ulimit -v` cap bounds virtual memory so a hung/runaway binary cannot stall
@@ -5038,31 +5246,35 @@ function run_sandboxed(binary_path: str, timeout_seconds: ptr_uint, memory_mb: p
 
 ## Build a runner .mt source file in-process using the self-host compiler.
 ## Walks up from the source path to find the project's `src/` directory so
-## imports like `mtc.linter.fix_engine` resolve.
-function build_runner_file(source_path: str, roots: span[str], output_path: str, sanitize: bool) -> Result[bool, string.String]:
+## imports like `mtc.linter.fix_engine` resolve.  `quiet` suppresses the
+## diagnostics (machine-readable output captures and discards them, as the host
+## buffers the whole human run before re-emitting the results).
+function build_runner_file(source_path: str, options: TestRunOptions, output_path: str, quiet: bool) -> Result[bool, string.String]:
     var runner_roots = vec.Vec[str].create()
     defer: runner_roots.release()
     var ri: ptr_uint = 0
-    while ri < roots.len:
+    while ri < options.roots.len:
         unsafe:
-            runner_roots.push(read(roots.data + ri))
+            runner_roots.push(read(options.roots.data + ri))
         ri += 1
 
     var package_src_root = find_project_src_root(source_path)
     if package_src_root.is_some():
         runner_roots.push(package_src_root.unwrap())
 
-    var program = loader.check_program(source_path, runner_roots.as_span(), resolver.Platform.linux)
+    var program = loader.check_program(source_path, runner_roots.as_span(), options.platform)
     defer: program.release()
 
     if program.diagnostic_error_count() > 0:
-        let _ = print_program_diagnostics(ref_of(program))
+        if not quiet:
+            let _ = print_program_diagnostics(ref_of(program))
         return Result[bool, string.String].failure(error = string.String.from_str(""))
 
     let ir_program = lowering.lower(program)
 
-    var c_compiler = "cc"
-    match build_driver.build(program, ir_program, output_path, c_compiler, runner_roots.as_span(), sanitize, "debug", Option[bool].none):
+    # The host forces guards off for synthesized test runners, regardless of
+    # the debug profile.
+    match build_driver.build(program, ir_program, output_path, options.cc, runner_roots.as_span(), options.sanitize, options.profile, Option[bool].some(value = false)):
         Result.success:
             return Result[bool, string.String].success(value = true)
         Result.failure as failure:
@@ -5087,17 +5299,45 @@ function find_project_src_root(source_path: str) -> Option[str]:
     return Option[str].none
 
 
+## The host's runner path: `<source dir>/__mt_test_runner_<pid><suffix>`.  The
+## pid keeps a concurrent `mtc test` (and the discovery rule that ignores
+## `__mt_test_runner_` files) from colliding with another process's runner.
+function test_runner_path(dirname: str, suffix: str) -> string.String:
+    var path = string.String.from_str(dirname)
+    path.append("/__mt_test_runner_")
+    path.append_format(f"#{libuv.os_getpid()}")
+    path.append(suffix)
+    return path
+
+
+## The first non-blank line of `text`, trimmed (the host's `first_fail_message`).
+## The `timeout` wrapper's core-dump notice is not the child's output and is
+## skipped: this coreutils ships no `--quiet`, and the host's direct spawn has
+## no wrapper to report through.
+function first_nonblank_line(text: str) -> str:
+    var start: ptr_uint = 0
+    var pos: ptr_uint = 0
+    while pos <= text.len:
+        if pos == text.len or text.byte_at(pos) == 10:
+            let line = text.slice(start, pos - start).trim_ascii_whitespace()
+            if line.len > 0 and not line.starts_with("timeout: the monitored command"):
+                return line
+            start = pos + 1
+        pos += 1
+    return ""
+
+
 ## Build one runner binary whose `main(args)` dispatches to a single @[test]
 ## function selected by `args[1]`, then run it once per test in its own process
 ## so an aborting assertion is isolated to that test.  Returns 1 when the runner
 ## fails to build or any test fails.
-function run_normal_test_runner(file_path: str, source_text: str, test_names: ref[vec.Vec[str]], roots: ref[vec.Vec[str]], counter: ref[ptr_uint], timeout_seconds: ptr_uint, memory_mb: ptr_uint, sanitize: bool, machine: bool, results: ref[vec.Vec[TestResult]]) -> int:
+function run_normal_test_runner(file_path: str, source_text: str, test_names: ref[vec.Vec[str]], options: TestRunOptions, results: ref[vec.Vec[TestResult]]) -> int:
     var runner_source = string.String.create()
     defer: runner_source.release()
     runner_source.append(source_text)
     runner_source.append("\n\nfunction main(args: span[str]) -> int:\n")
-    runner_source.append("    let __mt_test_which = if args.len > 1: args[1] else: \"\"\n")
-    runner_source.append("    match __mt_test_which:\n")
+    runner_source.append("    let which = if args.len > 1: args[1] else: \"\"\n")
+    runner_source.append("    match which:\n")
     var ti: ptr_uint = 0
     while ti < test_names.len():
         let tn_ptr = test_names.get(ti) else:
@@ -5109,18 +5349,11 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
         runner_source.append(tn)
         runner_source.append("()\n")
         ti += 1
-    runner_source.append("        _:\n            return 1\n")
+    runner_source.append("        _:\n            return 2\n")
     runner_source.append("    return 0\n")
 
     let dirname = path_ops.dirname(file_path)
-    let counter_val = read(counter)
-    read(counter) = counter_val + 1z
-    var runner_num_str = ptr_uint_to_str(counter_val)
-    var runner_path_str = string.String.create()
-    runner_path_str.append(dirname)
-    runner_path_str.append("/__mt_test_runner_")
-    runner_path_str.append(runner_num_str)
-    runner_path_str.append(".mt")
+    var runner_path_str = test_runner_path(dirname, ".mt")
     defer: runner_path_str.release()
 
     match fs.write_text(runner_path_str.as_str(), runner_source.as_str()):
@@ -5129,14 +5362,12 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
         Result.failure:
             return 1
 
-    var runner_bin_str = string.String.create()
-    runner_bin_str.append(dirname)
-    runner_bin_str.append("/__mt_test_runner_")
-    runner_bin_str.append(runner_num_str)
+    var runner_bin_str = test_runner_path(dirname, "")
     defer: runner_bin_str.release()
 
+    let machine = options.format != OutputFormat.human
     var build_failed = false
-    match build_runner_file(runner_path_str.as_str(), roots.as_span(), runner_bin_str.as_str(), sanitize):
+    match build_runner_file(runner_path_str.as_str(), options, runner_bin_str.as_str(), machine):
         Result.failure as build_err:
             if not machine:
                 let be_text = build_err.error.as_str()
@@ -5168,7 +5399,7 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
         let tn_ptr = test_names.get(ti2) else:
             break
         let tn = unsafe: read(tn_ptr)
-        match run_sandboxed(runner_bin_str.as_str(), timeout_seconds, memory_mb, sanitize, Option[str].some(value = tn)):
+        match run_sandboxed(runner_bin_str.as_str(), options.timeout_seconds, options.memory_mb, options.sanitize, Option[str].some(value = tn)):
             Result.success as run_result:
                 var capture_result = run_result.value
                 let code = capture_result.status.normalized_code()
@@ -5183,13 +5414,21 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
                     if code == 124:
                         detail.append("timed out")
                     else:
-                        let err_text = capture_result.stderr_text()
-                        match err_text:
+                        match capture_result.stderr_text():
                             Option.some as et:
-                                if et.value.len > 0:
-                                    detail.append(et.value)
+                                let line = first_nonblank_line(et.value)
+                                if line.len > 0:
+                                    detail.append(line)
                             Option.none:
                                 pass
+                        if detail.len() == 0:
+                            match capture_result.stdout_text():
+                                Option.some as ot:
+                                    let line = first_nonblank_line(ot.value)
+                                    if line.len > 0:
+                                        detail.append(line)
+                                Option.none:
+                                    pass
                         if detail.len() == 0:
                             detail.append("test aborted")
                     if machine:
@@ -5218,7 +5457,7 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
 ## main calls the test and returns 0 on either outcome; the test passes only if
 ## the process aborts (fatal / failed safety check) instead of returning or
 ## timing out.
-function run_death_test(file_path: str, source_text: str, test_name: str, roots: ref[vec.Vec[str]], counter: ref[ptr_uint], timeout_seconds: ptr_uint, memory_mb: ptr_uint, sanitize: bool, machine: bool, results: ref[vec.Vec[TestResult]]) -> bool:
+function run_death_test(file_path: str, source_text: str, test_name: str, options: TestRunOptions, results: ref[vec.Vec[TestResult]]) -> bool:
     var runner_source = string.String.create()
     defer: runner_source.release()
     runner_source.append(source_text)
@@ -5230,14 +5469,7 @@ function run_death_test(file_path: str, source_text: str, test_name: str, roots:
     runner_source.append("        Result.failure:\n            return 0\n")
 
     let dirname = path_ops.dirname(file_path)
-    let counter_val = read(counter)
-    read(counter) = counter_val + 1z
-    var runner_num_str = ptr_uint_to_str(counter_val)
-    var runner_path_str = string.String.create()
-    runner_path_str.append(dirname)
-    runner_path_str.append("/__mt_test_runner_")
-    runner_path_str.append(runner_num_str)
-    runner_path_str.append(".mt")
+    var runner_path_str = test_runner_path(dirname, ".mt")
     defer: runner_path_str.release()
 
     match fs.write_text(runner_path_str.as_str(), runner_source.as_str()):
@@ -5246,14 +5478,12 @@ function run_death_test(file_path: str, source_text: str, test_name: str, roots:
         Result.failure:
             return false
 
-    var runner_bin_str = string.String.create()
-    runner_bin_str.append(dirname)
-    runner_bin_str.append("/__mt_test_runner_")
-    runner_bin_str.append(runner_num_str)
+    var runner_bin_str = test_runner_path(dirname, "")
     defer: runner_bin_str.release()
 
     var build_ok = false
-    match build_runner_file(runner_path_str.as_str(), roots.as_span(), runner_bin_str.as_str(), sanitize):
+    let machine = options.format != OutputFormat.human
+    match build_runner_file(runner_path_str.as_str(), options, runner_bin_str.as_str(), machine):
         Result.success:
             build_ok = true
         Result.failure as build_err:
@@ -5265,7 +5495,7 @@ function run_death_test(file_path: str, source_text: str, test_name: str, roots:
     if not build_ok:
         reason = "build error"
     else:
-        match run_sandboxed(runner_bin_str.as_str(), timeout_seconds, memory_mb, sanitize, Option[str].none):
+        match run_sandboxed(runner_bin_str.as_str(), options.timeout_seconds, options.memory_mb, options.sanitize, Option[str].none):
             Result.success as run_result:
                 var capture_result = run_result.value
                 defer: capture_result.release()

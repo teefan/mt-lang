@@ -79,15 +79,68 @@ public function build_debug_text(ws: ref[workspace.Workspace], uri: str) -> stri
     match entry_opt:
         Option.some as ep:
             var entry = unsafe: read(ep.value)
-            debug_ast.append_ast_section(ref_of(text), file, entry.analysis.module_name)
+            debug_ast.append_ast_section(ref_of(text), file, entry.analysis.module_name, true)
             append_parse_errors(ref_of(text), ref_of(parse_diags))
             append_facts_section(ref_of(text), ref_of(entry.analysis))
             append_bindings_section(ref_of(text), ref_of(entry.analysis))
             append_diagnostics_text(ref_of(text), ref_of(entry.analysis))
         Option.none:
-            debug_ast.append_ast_section(ref_of(text), file, "")
+            debug_ast.append_ast_section(ref_of(text), file, "", true)
             append_parse_errors(ref_of(text), ref_of(parse_diags))
             text.append("\n\n── Diagnostics  (not available) ──")
+    return text
+
+
+## The CLI `debug` dump (`lib/milk_tea/tooling/cli/commands/debug.rb`): the same
+## sections as the LSP request, with the CLI path's inputs and fallbacks.  The
+## token table carries no semantic-class column (the host passes no semantic
+## entries), and the snapshot — facts, bindings and diagnostics — is only built
+## when the root parses cleanly; otherwise those sections print
+## "(not available)", as the host's nil facts/snapshot do.  `display_path` is
+## the host's `File.expand_path` rendering of the operand.
+public function build_cli_debug_text(ws: ref[workspace.Workspace], path: str, display_path: str) -> string.String:
+    var text = string.String.create()
+    var content = ws.document_source(path) else:
+        text.append("error: cannot read ")
+        text.append(display_path)
+        return text
+    defer: content.release()
+    let source = content.as_str()
+
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
+    defer: tokens.release()
+
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: parse_diags.release()
+    var file = parser.parse_source(source, ref_of(parse_diags))
+
+    append_header(ref_of(text), display_path, source, last_token_line(ref_of(tokens)))
+
+    var classes = vec.Vec[semtok.SemanticClass].create()
+    defer: classes.release()
+    append_token_section(ref_of(text), source, ref_of(tokens), ref_of(classes))
+
+    if parse_diags.len() == 0:
+        let entry_opt = workspace.analysis_entry_for(ws, path)
+        match entry_opt:
+            Option.some as ep:
+                var entry = unsafe: read(ep.value)
+                debug_ast.append_ast_section(ref_of(text), file, entry.analysis.module_name, false)
+                append_parse_errors(ref_of(text), ref_of(parse_diags))
+                append_facts_section(ref_of(text), ref_of(entry.analysis))
+                append_bindings_section(ref_of(text), ref_of(entry.analysis))
+                append_diagnostics_text(ref_of(text), ref_of(entry.analysis))
+                return text
+            Option.none:
+                pass
+
+    debug_ast.append_ast_section(ref_of(text), file, "", false)
+    append_parse_errors(ref_of(text), ref_of(parse_diags))
+    text.append("\n\n── Facts  (not available) ──")
+    text.append("\n\n── Bindings  (not available) ──")
+    text.append("\n\n── Diagnostics  (not available) ──")
     return text
 
 
@@ -894,15 +947,18 @@ function append_facts_value_row(target: ref[string.String], analysis: ref[analyz
 
 
 ## The host's `facts.methods` shape: one `on <receiver>:` group per first-seen
-## receiver type, the methods in registration order.
+## receiver type, the methods in registration order.  The receiver list comes
+## from this file's extending blocks, so a prelude-only `method_sigs` entry
+## (std.option/std.result methods) does not open an empty block the way the
+## host's facts never would.
 function append_facts_methods(target: ref[string.String], analysis: ref[analyzer.Analysis]) -> void:
-    if analysis.method_sigs.len() == 0:
-        return
-    target.append("\n\n  Methods:")
     var receivers = vec.Vec[str].create()
     defer: receivers.release()
     facts_collect_receivers(analysis, ref_of(receivers), analysis.source_file.declarations)
     facts_collect_receivers(analysis, ref_of(receivers), analysis.when_declarations)
+    if receivers.len() == 0:
+        return
+    target.append("\n\n  Methods:")
     var ri: ptr_uint = 0
     while ri < receivers.len():
         let rp = receivers.get(ri) else:

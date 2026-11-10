@@ -283,6 +283,11 @@ def normalize(text, self_bin:)
   # differ between any two runs; compare the report's structure only.
   text = text.gsub(/^(\s+\S+: )[\d.]+ms(?:\s+\(.*\))?$/, '\1<MS>')
   text = text.gsub(/^Total: [\d.]+ms$/, 'Total: <MS>')
+  # `debug`'s bindings section keys its site rows by Ruby `object_id` (the
+  # loader's node identities) — process-local allocation addresses with no
+  # cross-implementation meaning.  The binding ids and the row order, which are
+  # the observable resolution, still compare.
+  text = text.gsub(/^(\s+obj )\d+( → binding_id: \d+)$/, '\1<NODE>\2')
   text
 end
 
