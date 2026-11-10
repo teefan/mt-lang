@@ -39,12 +39,11 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | bindgen self-hosted; **3 verified / 25 changed of 28** (deltas are cosmetic emitter gaps, unverified) |
 
-Rough completion against the per-track Definition of Done: **~93%**.  The
-self-hosting foundation and `lower` dump parity are done and the CLI behavior
-matrix is closed; the residue is the CLI's unported subsystems (`deps`, `docs`,
-wasm/bundle, toolchain/tools, `--kind`), the linter corpus (121 files), and
-bindings verification.  LSP, DAP and formatter are closed at their documented
-differences.
+Rough completion against the per-track Definition of Done: **~94%**.  The
+self-hosting foundation, `lower` dump parity and the CLI behavior matrix are
+done; the residue is the CLI's largest unported subsystems (`deps`, `docs`,
+wasm/bundle), the linter corpus (121 files), and bindings verification.  LSP,
+DAP and formatter are closed at their documented differences.
 
 Session-51 batch: the event synthetic bodies (host slot/snapshot shapes), the
 reused await-field recording plus nested-await hoisting in a direct-await
@@ -391,6 +390,34 @@ Session-64 CLI batch (61/61; Track B's behavior matrix closed):
   documented entries (`milkTea/debugInfo` still byte-equal), test matrix
   compared against the host across 25 directory/file/flag/error cases.
 
+Session-64 second batch (Track B's cheap flags/subcommands):
+- `toolchain bootstrap` is implemented from the host's `UpstreamSources` table
+  (18 pinned sources, sentinel checks, `git clone` + `checkout --detach`, the
+  two `config/upstream_versions.yml` override shapes, `-q/--quiet`, ANSI
+  progress lines and the host's summary/error text).  `toolchain tools` builds
+  the Tracy profiler (cmake configure/build, install to `<data>/bin`, the
+  host's messages).  `-q/--quiet` and `--` are extracted like the host, and
+  extra arguments/unknown subcommands print the host's errors.  The commands
+  live in `projects/mtc/src/mtc/toolchain_cli.mt` (mirroring the Ruby file).
+- `build --kind static|shared` now produces a static archive (`ar rcs`) or a
+  shared object (`cc -shared -fPIC`) instead of "not implemented".  IR
+  functions carry a `public_export` flag (never dumped, so `lower` parity is
+  unchanged); the C backend keeps public top-level functions `static` for
+  executables (byte-identical C) and exports them when building a library.
+  Archives are rebuilt from clean output, and the CLI skips the missing-entry
+  check and binary cache for library kinds.  The host's own static/shared path
+  raises `NoMethodError: generate_header`; this is the working equivalent.
+- Bindgen gained `--clang-arg` (threaded into both clang invocations),
+  `--nullable-policy` (the host's JSON validation messages, function/parameter
+  target validation, return/param type overrides in the emitted module) and
+  `--nullable-report` (the host's JSON shape: module/header, summary, sorted
+  manual entries with override/auto/c types; identical bytes on the probe).
+  Generated-module include/macro differences remain Track D work.
+- Gates: dev build, self-tests 19/0, CLI matrix 61/61, executable C
+  byte-identical to the previous stage2, static/shared libraries link from a C
+  consumer, bindgen nullable output/report byte-equal to the host on the probe,
+  `toolchain bootstrap` byte-equal and its error/flag cases equal.
+
 ## How to start a work session
 
 ### Entry points
@@ -475,8 +502,9 @@ Iterate cheap, prove once:
    two residuals are documented host artifacts.  See Track A.
 2. **CLI behavior parity** — **behavior matrix closed** (session 64):
    61/61 cases match; the unported subsystems remain (`deps`, `docs`,
-   wasm/emcc, `--bundle`/`--archive`, toolchain bootstrap/tools, `--kind`,
-   bindgen policy flags).
+   wasm/emcc, `--bundle`/`--archive`).  `toolchain bootstrap|tools`,
+   `build --kind static|shared` and the bindgen nullable flags landed in the
+   session-64 second batch.
 3. **Linter corpus residue** — open: 495/121 of 616, two unported rules and one
    unported fix, plus the analyzer gaps in Track C.
 4. **Imported bindings / bindgen** — open: 28/28 verification and the bindgen
@@ -575,38 +603,36 @@ The **61-case behavior matrix is byte-equal** (session 64; `--timings` values
 and `debug`'s Ruby node ids normalized).  `debug` and `test`'s argument forms
 were the last two cases — see the session-64 batch.  Remaining work:
 
-1. **Cheap flags/subcommands** — `build --kind static|shared`
-   (`lib/milk_tea/tooling/build.rb`; bogus values match the host, real values
-   report "not implemented"); `toolchain bootstrap`/`toolchain tools`
-   (`lib/milk_tea/tooling/toolchain_cli.rb:68-205`; only `doctor` is
-   dispatched); bindgen `--nullable-policy/--nullable-report/--clang-arg`
-   (advertised, not parsed).
-2. **`--bundle`/`--archive`** — host `lib/milk_tea/tooling/build.rb:143-164,459-464,962-1032` and
+1. **`--bundle`/`--archive`** — host `lib/milk_tea/tooling/build.rb:143-164,459-464,962-1032` and
    `lib/milk_tea/tooling/asset_pack.rb` (MTAP).  Implement the archive in-language (`std/tar.mt` and
    `std/gzip.mt` exist).  Verify `tar tzf` lists it, extraction runs, and each
    compiler consumes the other's archive.
-3. **Wasm/emcc + preview** — `projects/mtc/src/mtc/build.mt` ignores `Platform.wasm`.  Port
+2. **Wasm/emcc + preview** — `projects/mtc/src/mtc/build.mt` ignores `Platform.wasm`.  Port
    `compile_wasm` and shell rendering (`lib/milk_tea/tooling/build.rb:26-69,704-779,900-937,953-960`,
    `lib/milk_tea/tooling/templates/wasm_shell.html`), `--preload-file` for `build.assets`, `.html`
    output, and `run --platform wasm` (`lib/milk_tea/tooling/cli/commands/run.rb:11-207`) on `std/http/server.mt`.
    Detect `$EMCC`/`emcc` in `toolchain doctor`; reproduce the host's error text
    when absent.  Verify with emcc installed and byte-compare the HTML shell.
-4. **`docs`** — port `lib/milk_tea/tooling/cli/commands/docs.rb` + `lib/milk_tea/tooling/docs_app.rb` routes
+3. **`docs`** — port `lib/milk_tea/tooling/cli/commands/docs.rb` + `lib/milk_tea/tooling/docs_app.rb` routes
    (`/`, `/reference`, `/stdlib`, `/stdlib/:name`, `/api/search`) onto
    `std/http/server.mt`, reusing the repo's `docs/` assets and `snapshot.js`;
    `--port/-p`, `--open/-o`, the `Serving Milk Tea docs at <url>` line.
    Acceptance: functional parity, not byte-identical HTML.
-5. **`deps`** (largest, ~3,000 lines + 485-line CLI) — port
+4. **`deps`** (largest, ~3,000 lines + 485-line CLI) — port
    `lib/milk_tea/packages/*` into `projects/mtc/src/mtc/packages/*.mt` and
    `deps add|remove|update|tree|lock|publish|fetch`; extend
    `projects/mtc/src/mtc/loader/package_manifest.mt` (currently `source_root` only) into the full
    manifest/graph, wire `--locked`/`--frozen` and the package graph into
    `build`/`run`/`check`; network via `std/http`.  Verify against the host's
    `test/packages/*` fixtures and a local-registry probe.
-6. **Harness** — add `tools/cli_parity.rb` cases for every command/flag above and
+5. **Harness** — add `tools/cli_parity.rb` cases for every command/flag above and
    delete the matching `KNOWN_GAPS` entries; exit: every case matches.  Timing
    values are normalized (wall-clock measurements never compare byte-for-byte);
    the report structure still is.
+
+Session-64 `toolchain`/`build --kind`/bindgen-nullable flips are recorded in
+the session-64 second batch above; `toolchain doctor`'s rows are the one
+deliberately simplified surface (see *Deliberate differences*).
 
 Session-63 CLI flips: all 37 original diffs except `debug` — lex/parse/lower/
 emit-c diagnostics and formats, check/lint/format/debug messages and channels,
@@ -791,6 +817,17 @@ ones:
   the host's option parser also knows `darwin`, which the self does not target
   anywhere (no resolver variant, platform-pinned suffix, or build flags).  An
   invalid `--platform` value is still rejected on stderr as the host does.
+- **`toolchain doctor`:** the self checks the six external build tools
+  (`cc`, `ar`, `clang`, `cmake`, `ninja`, `git`).  The host additionally prints
+  Ruby's description, one row per vendored-source sentinel set, and one row per
+  raw `std.c.*` binding header.  The vendored-source rows can be added with the
+  `toolchain_cli` source table; the binding rows need the raw-binding
+  header-candidate registry, which is Track D work.
+- **`build --kind static|shared`:** the host's own path raises
+  `NoMethodError: generate_header`, so there is no reference output.  The self
+  archives a clean `ar rcs` (or links `-shared -fPIC`) and gives `public`
+  top-level functions external linkage; no C header is generated (the host's
+  generator is missing).  Executable C output is unchanged.
 
 ## Ledger
 

@@ -1143,7 +1143,7 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str
         params = ir_params.as_span(),
         return_type = ret_ty,
         body = body_ir,
-        entry_point = false,
+        entry_point = false, public_export = false,
         method_receiver_param = false,
     )
 
@@ -1994,7 +1994,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                                 Option.none:
                                     pass
                     else if lowerable_function(fun.type_params, fun.body):
-                        functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, false))
+                        functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, false, fun.visibility))
                         if is_root and fun.name == "main":
                             match build_root_main_entrypoint(ref_of(ctx), fun.name, fun.method_params):
                                 Option.some as entry:
@@ -2875,7 +2875,7 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
         params = ir_params.as_span(),
         return_type = ret_ty,
         body = body_stmts,
-        entry_point = false,
+        entry_point = false, public_export = false,
         method_receiver_param = m.method_kind != ast.MethodKind.mk_static,
     )
 
@@ -2988,7 +2988,7 @@ function coerce_return_literal_to_cstr(ctx: ref[LowerCtx], value: ptr[ast.Expr],
 
 
 ## Multi-string join helpers (mirror c_backend j2, j6).
-function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, is_async: bool) -> ir.Function:
+function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, is_async: bool, public_export: bool) -> ir.Function:
     ctx.locals.clear()
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
@@ -3032,6 +3032,7 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
         return_type = ret_ty,
         body = body_stmts,
         entry_point = false,
+        public_export = public_export,
         method_receiver_param = false,
     )
 
@@ -3056,7 +3057,7 @@ function build_root_main_entrypoint(ctx: ref[LowerCtx], name: str, params: span[
         append_entry_call_and_return(ref_of(body), call, user_return, int_ty)
         return Option[ir.Function].some(value = ir.Function(
             name = name, linkage_name = "main", params = span[ir.Param](),
-            return_type = int_ty, body = body.as_span(), entry_point = true, method_receiver_param = false,
+            return_type = int_ty, body = body.as_span(), entry_point = true, public_export = false, method_receiver_param = false,
         ))
 
     # Single `span[str]` parameter: emit `int main(int argc, char** argv)`, build a
@@ -3107,7 +3108,7 @@ function build_root_main_entrypoint(ctx: ref[LowerCtx], name: str, params: span[
         entry_params.push(ir.Param(name = "argv", linkage_name = "argv", ty = char_ptr_ptr, pointer = Option[bool].some(value = false)))
         return Option[ir.Function].some(value = ir.Function(
             name = name, linkage_name = "main", params = entry_params.as_span(),
-            return_type = int_ty, body = body.as_span(), entry_point = true, method_receiver_param = false,
+            return_type = int_ty, body = body.as_span(), entry_point = true, public_export = false, method_receiver_param = false,
         ))
 
     return Option[ir.Function].none
@@ -4468,7 +4469,7 @@ function lower_emitted_decl(ctx: ref[LowerCtx], decl: ast.Decl) -> void:
                 params = params.as_span(),
                 return_type = ret_ty,
                 body = body,
-                entry_point = false,
+                entry_point = false, public_export = false,
                 method_receiver_param = false,
             ))
         ast.Decl.decl_struct as st:
@@ -7776,7 +7777,7 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
     let worker = ir.Function(
         name = worker_name, linkage_name = worker_name,
         params = worker_params.as_span(), return_type = ctx.void_ty,
-        body = worker_body.as_span(), entry_point = false, method_receiver_param = false,
+        body = worker_body.as_span(), entry_point = false, public_export = false, method_receiver_param = false,
     )
     ctx.pending_synthetic_functions.push(worker)
 
@@ -7983,7 +7984,7 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
         let worker = ir.Function(
             name = worker_name, linkage_name = worker_name,
             params = worker_params.as_span(), return_type = void_ty,
-            body = worker_body.as_span(), entry_point = false, method_receiver_param = false,
+            body = worker_body.as_span(), entry_point = false, public_export = false, method_receiver_param = false,
         )
         ctx.pending_synthetic_functions.push(worker)
         infos.push(SpawnBlockInfo(
@@ -8166,7 +8167,7 @@ function lower_detach_expr(ctx: ref[LowerCtx], expression: ptr[ast.Expr], ep: pt
     let worker = ir.Function(
         name = worker_name, linkage_name = worker_name,
         params = worker_params.as_span(), return_type = void_ty,
-        body = wb.as_span(), entry_point = false, method_receiver_param = false,
+        body = wb.as_span(), entry_point = false, public_export = false, method_receiver_param = false,
     )
     ctx.pending_synthetic_functions.push(worker)
     resume_stmt_setup(ctx, hoist_saved)
@@ -9362,7 +9363,7 @@ function build_env_setup_fn(ctx: ref[LowerCtx], c_name: str, env_type_name: str,
     # return env
     body.push(ir.Stmt.stmt_return(value = env_ref, line = 0, source_path = ""))
 
-    return ir.Function(name = c_name, linkage_name = c_name, params = params.as_span(), return_type = env_ptr_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = c_name, linkage_name = c_name, params = params.as_span(), return_type = env_ptr_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build an invoke function for a capturing proc: unpacks env struct fields into
@@ -9443,7 +9444,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
         params = params.as_span(),
         return_type = ret_ty,
         body = body_stmts.as_span(),
-        entry_point = false,
+        entry_point = false, public_export = false,
         method_receiver_param = false,
     )
 
@@ -9483,7 +9484,7 @@ function build_capturing_release(ctx: ref[LowerCtx], c_name: str, env_type_name:
     then_body.push(ir.Stmt.stmt_expression(expression = free_call, line = 0, source_path = ""))
     body.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].none))
     body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    return ir.Function(name = c_name, linkage_name = c_name, params = params.as_span(), return_type = types.primitive("void"), body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = c_name, linkage_name = c_name, params = params.as_span(), return_type = types.primitive("void"), body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a retain function for capturing procs (increments ref_count).
@@ -9502,7 +9503,7 @@ function build_capturing_retain(c_name: str, env_type_name: str) -> ir.Function:
     let one = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = uint_ty))
     body.push(ir.Stmt.stmt_assignment(target = ref_field, operator = "+=", value = one))
     body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    return ir.Function(name = c_name, linkage_name = c_name, params = params.as_span(), return_type = types.primitive("void"), body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = c_name, linkage_name = c_name, params = params.as_span(), return_type = types.primitive("void"), body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a non-capturing proc invoke function: unpacks env (unused), lowers the
@@ -9554,7 +9555,7 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
         params = params.as_span(),
         return_type = ret_ty,
         body = body_stmts,
-        entry_point = false,
+        entry_point = false, public_export = false,
         method_receiver_param = false,
     )
 
@@ -9566,7 +9567,7 @@ function build_proc_noop_fn(c_name: str) -> ir.Function:
     params.push(ir.Param(name = "env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = Option[bool].some(value = false)))
     var body = vec.Vec[ir.Stmt].create()
     body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    return ir.Function(name = c_name, linkage_name = c_name, params = params.as_span(), return_type = types.primitive("void"), body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = c_name, linkage_name = c_name, params = params.as_span(), return_type = types.primitive("void"), body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## The proc struct's `invoke` field type — the host's
@@ -13223,7 +13224,7 @@ function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concret
                     params = wrapper_params.as_span(),
                     return_type = ret_ty,
                     body = body_stmts.as_span(),
-                    entry_point = false,
+                    entry_point = false, public_export = false,
                     method_receiver_param = false,
                 ))
                 wrappers.set(m.name, wrapper_c_name)
@@ -15000,7 +15001,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
         params = ir_params.as_span(),
         return_type = ret_ty,
         body = body_ir,
-        entry_point = false,
+        entry_point = false, public_export = false,
         method_receiver_param = m.method_kind != ast.MethodKind.mk_static,
     )
 
@@ -15063,7 +15064,7 @@ function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type,
                 let call = alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = call_args.as_span(), ty = ret_ty))
                 inv_body.push(ir.Stmt.stmt_return(value = call, line = 0, source_path = source_path))
 
-            ctx.pending_synthetic_functions.push(ir.Function(name = invoke_str, linkage_name = invoke_str, params = inv_params.as_span(), return_type = ret_ty, body = inv_body.as_span(), entry_point = false, method_receiver_param = false))
+            ctx.pending_synthetic_functions.push(ir.Function(name = invoke_str, linkage_name = invoke_str, params = inv_params.as_span(), return_type = ret_ty, body = inv_body.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
             ctx.pending_synthetic_functions.push(build_proc_noop_fn(release_str))
             ctx.pending_synthetic_functions.push(build_proc_noop_fn(retain_str))
 
@@ -15874,7 +15875,7 @@ function build_event_subscribe_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "listener", linkage_name = "listener", ty = listener_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(callee, "_fn"), linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(callee, "_fn"), linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a per-event stateful subscribe (or subscribe_once) synthetic function.
@@ -15927,7 +15928,7 @@ function build_event_subscribe_stateful_fn(ctx: ref[LowerCtx], info: ref[EventRu
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "state", linkage_name = "state", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "listener", linkage_name = "listener", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(callee, "_fn"), linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(callee, "_fn"), linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a per-event unsubscribe synthetic function.
@@ -15977,7 +15978,7 @@ function build_event_unsubscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, e
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "subscription", linkage_name = "subscription", ty = sub_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(info.unsubscribe_c_name, "_fn"), linkage_name = info.unsubscribe_c_name, params = params.as_span(), return_type = bool_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(info.unsubscribe_c_name, "_fn"), linkage_name = info.unsubscribe_c_name, params = params.as_span(), return_type = bool_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a per-event emit synthetic function.
@@ -16138,7 +16139,7 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     if info.has_payload:
         params.push(ir.Param(name = "payload", linkage_name = "payload", ty = info.payload_type, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(info.emit_c_name, "_fn"), linkage_name = info.emit_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(info.emit_c_name, "_fn"), linkage_name = info.emit_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a per-event wait ready vtable function.
@@ -16160,7 +16161,7 @@ function build_event_wait_ready_fn(info: ref[EventRuntimeInfo], slot_cn: str, ev
     body.push(ir.Stmt.stmt_return(value = event_wait_frame_field_expression(frame_expr, "ready", bool_ty), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(info.wait_ready_c_name, "_fn"), linkage_name = info.wait_ready_c_name, params = params.as_span(), return_type = bool_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(info.wait_ready_c_name, "_fn"), linkage_name = info.wait_ready_c_name, params = params.as_span(), return_type = bool_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a per-event wait set_waiter vtable function.
@@ -16201,7 +16202,7 @@ function build_event_wait_set_waiter_fn(info: ref[EventRuntimeInfo], slot_cn: st
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "waiter_frame", linkage_name = "waiter_frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "waiter", linkage_name = "waiter", ty = wake_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(info.wait_set_waiter_c_name, "_fn"), linkage_name = info.wait_set_waiter_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(info.wait_set_waiter_c_name, "_fn"), linkage_name = info.wait_set_waiter_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a per-event wait release vtable function.
@@ -16240,7 +16241,7 @@ function build_event_wait_release_fn(info: ref[EventRuntimeInfo], slot_cn: str, 
     body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(info.wait_release_c_name, "_fn"), linkage_name = info.wait_release_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(info.wait_release_c_name, "_fn"), linkage_name = info.wait_release_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a per-event wait take_result vtable function.
@@ -16262,7 +16263,7 @@ function build_event_wait_take_result_fn(ctx: ref[LowerCtx], info: ref[EventRunt
     body.push(ir.Stmt.stmt_return(value = event_wait_frame_field_expression(frame_expr, "result", info.wait_result_ty), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(info.wait_take_result_c_name, "_fn"), linkage_name = info.wait_take_result_c_name, params = params.as_span(), return_type = info.wait_result_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(info.wait_take_result_c_name, "_fn"), linkage_name = info.wait_take_result_c_name, params = params.as_span(), return_type = info.wait_result_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build the per-event wait function.
@@ -16314,7 +16315,7 @@ function build_event_wait_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], sl
     body.push(ir.Stmt.stmt_return(value = event_immediate_failure_task_literal(info), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(info.wait_c_name, "_fn"), linkage_name = info.wait_c_name, params = params.as_span(), return_type = task_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
+    return ir.Function(name = j2(info.wait_c_name, "_fn"), linkage_name = info.wait_c_name, params = params.as_span(), return_type = task_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a span from a single IR statement.
@@ -29595,7 +29596,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     # helpers to the program-wide `@artifacts.synthetic_functions` tail (after
     # every module's functions), while the constructor stays in the declaring
     # module's list (`functions.rb:199-215`).
-    ctx.pending_synthetic_functions.push(ir.Function(name = j2(name, "__resume"), linkage_name = resume_c, params = vparam_s, return_type = void_t, body = resume_body.as_span(), entry_point = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = j2(name, "__resume"), linkage_name = resume_c, params = vparam_s, return_type = void_t, body = resume_body.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
 
     # -- frame struct (base + state + result + params + spilled locals + awaits) --
     var ff = vec.Vec[ir.Field].create()
@@ -29655,7 +29656,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     var vrdy = vec.Vec[ir.Stmt].create()
     vrdy.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
     vrdy.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), line = 0, source_path = ""))
-    ctx.pending_synthetic_functions.push(ir.Function(name = j2(ready_lk, "_fn"), linkage_name = ready_lk, params = vparam_s, return_type = bool_ty, body = vrdy.as_span(), entry_point = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = j2(ready_lk, "_fn"), linkage_name = ready_lk, params = vparam_s, return_type = bool_ty, body = vrdy.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
 
     # -- vtable: set_waiter (fresh vec) --
     let wake_fn_ty = async_wake_fn_type(ctx)
@@ -29676,7 +29677,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     sw_params.push(ir.Param(name = "frame", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
     sw_params.push(ir.Param(name = "waiter_frame", linkage_name = "waiter_frame", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
     sw_params.push(ir.Param(name = "waiter", linkage_name = "waiter", ty = wake_fn_ty, pointer = Option[bool].some(value = false)))
-    ctx.pending_synthetic_functions.push(ir.Function(name = j2(waiter_lk, "_fn"), linkage_name = waiter_lk, params = sw_params.as_span(), return_type = void_t, body = vsw.as_span(), entry_point = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = j2(waiter_lk, "_fn"), linkage_name = waiter_lk, params = sw_params.as_span(), return_type = void_t, body = vsw.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
 
     # -- vtable: release (fresh vec) --
     var vrel = vec.Vec[ir.Stmt].create()
@@ -29760,7 +29761,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         rppi += 1
     vrel.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "mt_async_free", arguments = single_expr_span(raw_expr), ty = void_t)), line = 0, source_path = ""))
     vrel.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    ctx.pending_synthetic_functions.push(ir.Function(name = j2(release_lk, "_fn"), linkage_name = release_lk, params = vparam_s, return_type = void_t, body = vrel.as_span(), entry_point = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = j2(release_lk, "_fn"), linkage_name = release_lk, params = vparam_s, return_type = void_t, body = vrel.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
 
     # -- vtable: take_result (fresh vec) --
     # The host emits this vtable entry for every async function; a void result's
@@ -29772,7 +29773,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     else:
         vtr.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
         vtr.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), line = 0, source_path = ""))
-    ctx.pending_synthetic_functions.push(ir.Function(name = j2(take_lk, "_fn"), linkage_name = take_lk, params = vparam_s, return_type = res_ty, body = vtr.as_span(), entry_point = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = j2(take_lk, "_fn"), linkage_name = take_lk, params = vparam_s, return_type = res_ty, body = vtr.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
 
     # -- vtable: cancel (fresh vec) --
     var vcn = vec.Vec[ir.Stmt].create()
@@ -29868,7 +29869,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     )), line = 0, source_path = ""))
     vcn.push(ir.Stmt.stmt_if(condition = cn_waiter_frame, then_body = cn_wake_body.as_span(), else_body = Option[span[ir.Stmt]].none))
     vcn.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    ctx.pending_synthetic_functions.push(ir.Function(name = j2(cancel_lk, "_fn"), linkage_name = cancel_lk, params = vparam_s, return_type = void_t, body = vcn.as_span(), entry_point = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = j2(cancel_lk, "_fn"), linkage_name = cancel_lk, params = vparam_s, return_type = void_t, body = vcn.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
 
     # -- constructor function --
     let size_expr = alloc_expr(ir.Expr.expr_sizeof(target_type = frame_ty, ty = ptr_ty))
@@ -29966,7 +29967,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     # The async constructor is a method when the function has a receiver (the
     # host's `method_receiver_param: !binding.type.receiver_type.nil?`,
     # `frame_builder.rb:329`).
-    let ctor_fn = ir.Function(name = name, linkage_name = link_base, params = ctor_params.as_span(), return_type = task_ty, body = ctor_body.as_span(), entry_point = false, method_receiver_param = receiver_ty_opt.is_some())
+    let ctor_fn = ir.Function(name = name, linkage_name = link_base, params = ctor_params.as_span(), return_type = task_ty, body = ctor_body.as_span(), entry_point = false, public_export = false, method_receiver_param = receiver_ty_opt.is_some())
     if synthetic_ctor:
         ctx.pending_synthetic_functions.push(ctor_fn)
     else:
@@ -30850,7 +30851,7 @@ function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir
 
     return Option[ir.Function].some(value = ir.Function(
         name = name, linkage_name = "main", params = c_params.as_span(),
-        return_type = int_ty, body = body.as_span(), entry_point = true, method_receiver_param = false,
+        return_type = int_ty, body = body.as_span(), entry_point = true, public_export = false, method_receiver_param = false,
     ))
 
 

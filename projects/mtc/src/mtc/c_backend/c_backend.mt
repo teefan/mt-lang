@@ -109,7 +109,7 @@ public struct OptionStructEntry:
     field_store: vec.Vec[ir.Field]
 
 
-public function generate_c(input_program: ir.Program, emit_line_directives: bool, debug_guards: bool) -> string.String:
+public function generate_c(input_program: ir.Program, emit_line_directives: bool, debug_guards: bool, export_public: bool) -> string.String:
     var program = input_program
     # Concrete generic struct instances are carried outside the IR's `:structs`
     # section (host parity).  Merge them into the declaration list the backend
@@ -502,7 +502,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
         i = 0
         while i < funcs.len:
             unsafe:
-                emit_line(ref_of(e), j2(function_signature(read(funcs.data + i)), ";"))
+                emit_line(ref_of(e), j2(function_signature(read(funcs.data + i), export_public), ";"))
             i += 1
         emit_line(ref_of(e), "")
 
@@ -603,7 +603,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     i = 0
     while i < funcs.len:
         unsafe:
-            emit_function(ref_of(e), read(funcs.data + i))
+            emit_function(ref_of(e), read(funcs.data + i), export_public)
         if i < funcs.len - 1:
             emit_line(ref_of(e), "")
         i += 1
@@ -3793,8 +3793,10 @@ function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs
         di += 1
     result.push(node)
 
-function function_signature(func: ir.Function) -> str:
-    let prefix = if func.entry_point: "" else: "static "
+## `export_public` keeps a `public` top-level function's symbol external (the
+## host's library intent); executables keep every non-entry function `static`.
+function function_signature(func: ir.Function, export_public: bool) -> str:
+    let prefix = if func.entry_point or (export_public and func.public_export): "" else: "static "
     var buf = string.String.create()
     buf.append(prefix)
     # A function returning `array[T, N]` cannot return it by value in C; it is
@@ -3848,13 +3850,13 @@ function array_out_param_declaration(t: types.Type, name: str) -> str:
     return c_declaration(t, j3("(*", name, ")"))
 
 
-function emit_function(e: ref[Emitter], func: ir.Function) -> void:
+function emit_function(e: ref[Emitter], func: ir.Function, export_public: bool) -> void:
     e.used_labels.clear()
     collect_used_labels(func.body, ref_of(e.used_labels))
     e.current_fn_return_type = func.return_type
     e.current_fn_linkage = func.linkage_name
     e.array_call_temps = map_mod.Map[ptr_uint, str].create()
-    emit_line(e, j2(function_signature(func), " {"))
+    emit_line(e, j2(function_signature(func, export_public), " {"))
     emit_stmts(e, func.body, 1)
     emit_line(e, "}")
     e.current_fn_return_type = types.primitive("void")

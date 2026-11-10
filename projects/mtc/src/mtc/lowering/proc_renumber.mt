@@ -657,6 +657,7 @@ function rename_function(f: ir.Function, mapping: ref[map_mod.Map[str, str]]) ->
         return_type = rename_type(f.return_type, mapping),
         body = rename_stmt_span(f.body, mapping),
         entry_point = f.entry_point,
+        public_export = f.public_export,
         method_receiver_param = f.method_receiver_param,
     )
 

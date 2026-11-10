@@ -54,6 +54,7 @@ import mtc.imported_bindings.registry as ib_registry
 import mtc.imported_bindings.main as ib_main
 import mtc.sexpr as sexpr_mod
 import mtc.std_catalog as std_catalog
+import mtc.toolchain_cli as toolchain_cli
 import mtc.version_info as ver
 import mtc.cli_help as cli_help
 
@@ -1493,7 +1494,7 @@ function emit_c_command(args: span[str]) -> int:
         return 1
 
     let ir_program = lowering.lower(program)
-    var c_source = c_backend.generate_c(ir_program, false, false)
+    var c_source = c_backend.generate_c(ir_program, false, false, false)
     defer: c_source.release()
     let text = c_source.as_str()
     stdio.print_format(c"%.*s", int<-(text.len), text.data)
@@ -1792,6 +1793,7 @@ function build_command(args: span[str]) -> int:
     var use_cache = true
     var sanitize = false
     var debug_guards: Option[bool] = Option[bool].none
+    var kind = build_driver.BuildKind.executable
     var filtered = vec.Vec[str].create()
     defer: filtered.release()
     filtered.push("build")
@@ -1815,17 +1817,18 @@ function build_command(args: span[str]) -> int:
                 cli_help.print_usage(true)
                 return 1
             let kind_name = args[ai + 1]
-            if kind_name == "executable":
+            if kind_name == "executable" or kind_name == "exe" or kind_name == "bin":
+                kind = build_driver.BuildKind.executable
                 ai += 2
                 continue
-            if kind_name == "static" or kind_name == "shared":
-                var unimplemented = string.String.create()
-                defer: unimplemented.release()
-                unimplemented.append("build --kind ")
-                unimplemented.append(kind_name)
-                unimplemented.append(" is not implemented")
-                eprint_line(unimplemented.as_str())
-                return 1
+            if kind_name == "static" or kind_name == "staticlib":
+                kind = build_driver.BuildKind.kind_static
+                ai += 2
+                continue
+            if kind_name == "shared" or kind_name == "dylib" or kind_name == "dll" or kind_name == "so":
+                kind = build_driver.BuildKind.kind_shared
+                ai += 2
+                continue
             var bad_kind = string.String.create()
             defer: bad_kind.release()
             bad_kind.append("unknown build kind ")
@@ -1970,7 +1973,7 @@ function build_command(args: span[str]) -> int:
 
     let ir_program = lowering.lower(program)
 
-    if reject_missing_entrypoint(program, ir_program):
+    if kind == build_driver.BuildKind.executable and reject_missing_entrypoint(program, ir_program):
         entry_path_owner.release()
         source_root_owner.release()
         return 1
@@ -1987,7 +1990,9 @@ function build_command(args: span[str]) -> int:
     # Binary cache: an unchanged program (same mtc executable, C compiler,
     # configuration, and module sources) reuses the previously built binary.
     # --keep-c always rebuilds so the saved C matches the produced binary.
-    let cache_enabled = use_cache and keep_c_path.is_none()
+    # Libraries are not cached: the cache materializes executables and its key
+    # does not encode the artifact kind.
+    let cache_enabled = use_cache and keep_c_path.is_none() and kind == build_driver.BuildKind.executable
     var cache_key = string.String.create()
     defer: cache_key.release()
     if cache_enabled:
@@ -2019,7 +2024,7 @@ function build_command(args: span[str]) -> int:
             Option.none:
                 pass
 
-    match build_driver.build(program, ir_program, output_path.as_str(), c_compiler, roots.as_span(), sanitize, profile_name, debug_guards):
+    match build_driver.build(program, ir_program, output_path.as_str(), c_compiler, roots.as_span(), sanitize, profile_name, debug_guards, kind):
         Result.success as built:
             var output = built.value
             defer: output.release()
@@ -2244,7 +2249,7 @@ function run_command(args: span[str]) -> int:
             Option.none:
                 pass
 
-    match build_driver.build(program, ir_program, output_path.as_str(), c_compiler, roots.as_span(), sanitize, profile_name, debug_guards):
+    match build_driver.build(program, ir_program, output_path.as_str(), c_compiler, roots.as_span(), sanitize, profile_name, debug_guards, build_driver.BuildKind.executable):
         Result.success as built:
             var built_path = built.value
             defer: built_path.release()
@@ -2685,8 +2690,11 @@ function bindgen_command(args: span[str]) -> int:
     var module_name: Option[str] = Option[str].none
     var header: Option[str] = Option[str].none
     var output: Option[str] = Option[str].none
+    var nullable_report: Option[str] = Option[str].none
+    var nullable_policy: Option[str] = Option[str].none
     var link_libs = vec.Vec[str].create()
     var includes = vec.Vec[str].create()
+    var clang_args = vec.Vec[str].create()
     var clang_str: str = ""
 
     var ai: ptr_uint = 1
@@ -2716,8 +2724,29 @@ function bindgen_command(args: span[str]) -> int:
                 stdio.print_line("bindgen: --clang requires a path")
                 return 1
             clang_str = args[ai]
+        else if arg == "--clang-arg":
+            ai += 1
+            if ai >= args.len:
+                eprint_line("missing value for --clang-arg")
+                let _ = cli_help.print_command_help("bindgen", true)
+                return 1
+            clang_args.push(args[ai])
+        else if arg == "--nullable-report":
+            ai += 1
+            if ai >= args.len:
+                eprint_line("missing value for --nullable-report")
+                let _ = cli_help.print_command_help("bindgen", true)
+                return 1
+            nullable_report = Option[str].some(value = args[ai])
+        else if arg == "--nullable-policy":
+            ai += 1
+            if ai >= args.len:
+                eprint_line("missing value for --nullable-policy")
+                let _ = cli_help.print_command_help("bindgen", true)
+                return 1
+            nullable_policy = Option[str].some(value = args[ai])
         else if arg == "--help" or arg == "-h":
-            stdio.print_line("usage: mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]")
+            stdio.print_line("usage: mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG] [--nullable-policy PATH] [--nullable-report PATH]")
             return 0
         else if module_name.is_none():
             module_name = Option[str].some(value = arg)
@@ -2735,14 +2764,83 @@ function bindgen_command(args: span[str]) -> int:
         stdio.print_line("bindgen: missing header path")
         return 1
 
+    var policy: bindgen.NullablePolicy
+    match nullable_policy:
+        Option.some as policy_path:
+            match bindgen.load_nullable_policy(policy_path.value):
+                Result.success as loaded:
+                    policy = loaded.value
+                Result.failure as load_failure:
+                    let message = load_failure.error.as_str()
+                    eprint_line(message)
+                    load_failure.error.release()
+                    link_libs.release()
+                    includes.release()
+                    clang_args.release()
+                    return 1
+        Option.none:
+            policy = bindgen.NullablePolicy(
+                return_overrides = vec.Vec[bindgen.TypeOverride].create(),
+                param_overrides = vec.Vec[bindgen.ParamOverride].create(),
+            )
+    defer: policy.release()
+
+    var header_abs = loader.absolute_path(header_path)
+    defer: header_abs.release()
+
     var opts = bindgen.BindgenOptions(
         module_name = string.String.from_str(mod_name),
-        header_path = string.String.from_str(header_path),
+        header_path = string.String.from_str(header_abs.as_str()),
         output_path = output,
         link_libs = link_libs,
         include_headers = includes,
         clang_bin = clang_str,
+        clang_args = clang_args,
+        return_overrides = policy.return_overrides,
+        param_overrides = policy.param_overrides,
+        report_header_path = header_abs.as_str(),
     )
+    defer: opts.module_name.release()
+    defer: opts.header_path.release()
+
+    if nullable_report.is_some():
+        let report_arg = nullable_report.unwrap()
+        var report_path = loader.absolute_path(report_arg)
+        defer: report_path.release()
+        match bindgen.generate_with_report(ref_of(opts)):
+            Result.success as generated:
+                var generated_output = generated.value
+                defer: generated_output.source.release()
+                defer: generated_output.report.release()
+                if not write_nullable_report(report_path.as_str(), generated_output.report.as_str()):
+                    return 1
+                match output:
+                    Option.some as out_file:
+                        match fs.write_text(out_file.value, generated_output.source.as_str()):
+                            Result.success:
+                                stdio.print_format(c"generated %.*s -> %.*s\n",
+                                    int<-(header_path.len), header_path.data,
+                                    int<-(out_file.value.len), out_file.value.data)
+                                stdio.print_format(c"nullable report %.*s -> %.*s\n",
+                                    int<-(header_path.len), header_path.data,
+                                    int<-(report_path.as_str().len), report_path.as_str().data)
+                            Result.failure:
+                                stdio.print_line("bindgen: could not write output file")
+                                return 1
+                    Option.none:
+                        let st = generated_output.source.as_str()
+                        stdio.print_format(c"%.*s", int<-(st.len), st.data)
+                        var wrote = string.String.create()
+                        defer: wrote.release()
+                        wrote.append("wrote nullable report ")
+                        wrote.append(report_path.as_str())
+                        eprint_line(wrote.as_str())
+                return 0
+            Result.failure as failure:
+                let mt = failure.error.as_str()
+                eprint_line(mt)
+                failure.error.release()
+                return 1
 
     match bindgen.generate(ref_of(opts)):
         Result.success as generated:
@@ -2764,9 +2862,31 @@ function bindgen_command(args: span[str]) -> int:
             return 0
         Result.failure as failure:
             let mt = failure.error.as_str()
-            stdio.print_format(c"bindgen: %.*s\n", int<-(mt.len), mt.data)
+            eprint_line(mt)
             failure.error.release()
             return 1
+
+
+## Write the nullable-policy report, creating its parent directory.  Reports a
+## write failure on stderr (the host raises through the CLI error formatter).
+function write_nullable_report(path: str, report: str) -> bool:
+    let parent = path_ops.dirname(path)
+    match fs.create_directories(parent):
+        Result.failure as dir_failure:
+            var dir_error = dir_failure.error
+            eprint_line(dir_error.message.as_str())
+            dir_error.release()
+            return false
+        Result.success:
+            pass
+    match fs.write_text(path, report):
+        Result.failure as write_failure:
+            var write_error = write_failure.error
+            eprint_line(write_error.message.as_str())
+            write_error.release()
+            return false
+        Result.success:
+            return true
 
 
 ## Regenerate imported binding modules from raw C bindings and JSON policies.
@@ -2885,59 +3005,7 @@ function regenerate_one(policy_path: str, output_path: str, raw_module_name: str
             raw_buf.release()
             return 0
 function toolchain_command(args: span[str]) -> int:
-    if args.len < 2:
-        eprint_line("missing toolchain subcommand")
-        let _ = cli_help.print_command_help("toolchain", true)
-        return 1
-
-    let sub = args[1]
-    if sub == "--help" or sub == "-h":
-        let _ = cli_help.print_command_help("toolchain", false)
-        return 0
-
-    if sub == "doctor":
-        return toolchain_doctor()
-
-    var unknown_sub = string.String.create()
-    defer: unknown_sub.release()
-    unknown_sub.append("unknown toolchain subcommand ")
-    unknown_sub.append(sub)
-    eprint_line(unknown_sub.as_str())
-    return 1
-
-
-function toolchain_doctor() -> int:
-    var all_ok = true
-    var checks: array[str, 6] = array[str, 6]("cc", "ar", "clang", "cmake", "ninja", "git")
-
-    var i: ptr_uint = 0
-    while i < 6:
-        let tool = checks[i]
-        if is_executable_on_path(tool):
-            stdio.print_format(c"ok   %.*s\n", int<-(tool.len), tool.data)
-        else:
-            stdio.print_format(c"fail %.*s (not found on PATH)\n", int<-(tool.len), tool.data)
-            all_ok = false
-        i += 1
-
-    if all_ok:
-        return 0
-    return 1
-
-
-function is_executable_on_path(name: str) -> bool:
-    var which_cmd = vec.Vec[str].create()
-    defer: which_cmd.release()
-    which_cmd.push("which")
-    which_cmd.push(name)
-    match process.capture(which_cmd.as_span()):
-        Result.success as captured:
-            var result = captured.value
-            defer: result.stdout.release()
-            defer: result.stderr.release()
-            return result.status.exit_code == 0
-        Result.failure:
-            return false
+    return toolchain_cli.run(args)
 
 
 ## A standard-library catalog entry (name, doc summary, category, source path).
@@ -3802,7 +3870,7 @@ function default_output_path(path: str) -> string.String:
 
 
 function keep_c_to_file(ir_program: ir.Program, output_path_str: str) -> void:
-    var c_source = c_backend.generate_c(ir_program, false, false)
+    var c_source = c_backend.generate_c(ir_program, false, false, false)
     defer: c_source.release()
     match fs.write_text(output_path_str, c_source.as_str()):
         Result.success:
@@ -5274,7 +5342,7 @@ function build_runner_file(source_path: str, options: TestRunOptions, output_pat
 
     # The host forces guards off for synthesized test runners, regardless of
     # the debug profile.
-    match build_driver.build(program, ir_program, output_path, options.cc, runner_roots.as_span(), options.sanitize, options.profile, Option[bool].some(value = false)):
+    match build_driver.build(program, ir_program, output_path, options.cc, runner_roots.as_span(), options.sanitize, options.profile, Option[bool].some(value = false), build_driver.BuildKind.executable):
         Result.success:
             return Result[bool, string.String].success(value = true)
         Result.failure as failure:

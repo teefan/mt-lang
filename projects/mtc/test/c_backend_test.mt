@@ -74,7 +74,7 @@ function compile_to_c(source: str) -> string.String:
     defer: program.release()
 
     var ir_program = lowering.lower(program)
-    return c_backend.generate_c(ir_program, false, false)
+    return c_backend.generate_c(ir_program, false, false, false)
 
 
 ## Assert `text` contains `needle`; the failure message names the missing text.
@@ -534,7 +534,7 @@ function test_external_struct_equality_helper_is_synthesized() -> void:
     defer: program.release()
 
     let ir_program = lowering.lower(program)
-    var c = c_backend.generate_c(ir_program, false, false)
+    var c = c_backend.generate_c(ir_program, false, false, false)
     defer: c.release()
     let text = c.as_str()
     expect_contains(text, "static bool mt_struct_eq_Part(struct Part left, struct Part right);")

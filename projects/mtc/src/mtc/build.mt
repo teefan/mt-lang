@@ -21,6 +21,16 @@ import mtc.c_backend.c_backend as c_backend
 import mtc.parser.ast as ast
 
 
+## What the build produces: an executable (the default), a static archive
+## (`ar rcs`), or a shared object (`cc -shared`).  Mirrors the host's
+## `Build` kind option; the host's own static/shared paths call a missing
+## `generate_header`, so the self implements the rest of that flow.
+public enum BuildKind: ubyte
+    executable = 0
+    kind_static = 1
+    kind_shared = 2
+
+
 ## Build a checked program to `output_path` using `c_compiler`.  `roots` are the
 ## module search roots (as passed on the CLI): the one containing `std/c` supplies
 ## the C ABI header include path.  `ir_program` is the caller-lowered IR (the CLI
@@ -28,7 +38,7 @@ import mtc.parser.ast as ast
 ## When `sanitize` is true, the binary is compiled with AddressSanitizer and UBSan.
 ## On success the success value is the output path; on failure the error is a
 ## human-readable message.
-public function build(program: loader.Program, ir_program: ir.Program, output_path: str, c_compiler: str, roots: span[str], sanitize: bool, profile: str, debug_guards: Option[bool]) -> Result[string.String, string.String]:
+public function build(program: loader.Program, ir_program: ir.Program, output_path: str, c_compiler: str, roots: span[str], sanitize: bool, profile: str, debug_guards: Option[bool], kind: BuildKind) -> Result[string.String, string.String]:
     # Vendored static libraries (GLFW, the Tracy client) must exist before the
     # link step; build them on demand for raw bindings that require them.
     match prepare_vendored_libraries(program, roots):
@@ -49,7 +59,7 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
         Option.none:
             pass
 
-    var c_source = c_backend.generate_c(ir_program, is_debug, guards)
+    var c_source = c_backend.generate_c(ir_program, is_debug, guards, kind != BuildKind.executable)
     defer: c_source.release()
 
     # A unique temporary C path: concurrent builds (e.g. a parallel example
@@ -96,40 +106,11 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
     if include_flag.len() > 0:
         command.push(include_flag.as_str())
 
-    command.push("-o")
-    command.push(output_path)
-    command.push(c_path.as_str())
-
-    # Link libraries declared via `link "..."` directives in external modules
-    # (e.g. `link "uv"` in std.c.fs → `-luv`).
-    var link_flags = collect_link_flags(program)
-    defer: link_flags.release()
-    var lfi: ptr_uint = 0
-    while lfi < link_flags.len():
-        let flag_ptr = link_flags.get(lfi) else:
-            break
-        unsafe:
-            command.push(read(flag_ptr).as_str())
-        lfi += 1
-
-    # Vendored static library search paths (`-L`) plus their static-link system
-    # dependencies.  The `-l<lib>` flags themselves come from the bindings'
-    # `link "..."` directives above; GNU ld applies `-L` to all `-l` options
-    # regardless of order.
-    var vendored_flags = collect_vendored_link_flags(program, roots)
-    defer: vendored_flags.release()
-    var vfi: ptr_uint = 0
-    while vfi < vendored_flags.len():
-        let flag_ptr = vendored_flags.get(vfi) else:
-            break
-        unsafe:
-            command.push(read(flag_ptr).as_str())
-        vfi += 1
-
     # Binding build flags (include paths and implementation defines) that the
     # raw std.c.* modules require but do not express as source directives — e.g.
     # raygui needs its header include path plus -DRAYGUI_IMPLEMENTATION.  These
-    # mirror the Ruby raw-binding registry entries.
+    # mirror the Ruby raw-binding registry entries.  They are needed to compile
+    # the generated C, so they precede the input in every kind.
     var binding_flags = collect_binding_flags(program, roots)
     defer: binding_flags.release()
     var bfi: ptr_uint = 0
@@ -140,25 +121,115 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
             command.push(read(flag_ptr).as_str())
         bfi += 1
 
+    let is_static = kind == BuildKind.kind_static
+    var object_path = string.String.create()
+    defer: object_path.release()
+    if is_static:
+        object_path.append(c_path.as_str().slice(0, c_path.len() - 2))
+        object_path.append(".o")
+        command.push("-c")
+        command.push("-o")
+        command.push(object_path.as_str())
+        command.push(c_path.as_str())
+    else:
+        if kind == BuildKind.kind_shared:
+            command.push("-fPIC")
+            command.push("-shared")
+        command.push("-o")
+        command.push(output_path)
+        command.push(c_path.as_str())
+
+        # Link libraries declared via `link "..."` directives in external
+        # modules (e.g. `link "uv"` in std.c.fs → `-luv`).
+        var link_flags = collect_link_flags(program)
+        defer: link_flags.release()
+        var lfi: ptr_uint = 0
+        while lfi < link_flags.len():
+            let flag_ptr = link_flags.get(lfi) else:
+                break
+            unsafe:
+                command.push(read(flag_ptr).as_str())
+            lfi += 1
+
+        # Vendored static library search paths (`-L`) plus their static-link
+        # system dependencies.  The `-l<lib>` flags themselves come from the
+        # bindings' `link "..."` directives above; GNU ld applies `-L` to all
+        # `-l` options regardless of order.
+        var vendored_flags = collect_vendored_link_flags(program, roots)
+        defer: vendored_flags.release()
+        var vfi: ptr_uint = 0
+        while vfi < vendored_flags.len():
+            let flag_ptr = vendored_flags.get(vfi) else:
+                break
+            unsafe:
+                command.push(read(flag_ptr).as_str())
+            vfi += 1
+
     match process.capture(command.as_span()):
         Result.success as captured:
             var result = captured.value
             defer: result.stdout.release()
             defer: result.stderr.release()
-            if result.status.exit_code == 0:
-                # The generated C is no longer needed; a failed compile keeps
-                # it on disk so the reported path stays inspectable.
-                match fs.remove(c_path.as_str()):
+            if result.status.exit_code != 0:
+                var message = string.String.from_str("C compiler exited with an error:\n")
+                message.append(result.stderr.as_str())
+                return Result[string.String, string.String].failure(error = message)
+
+            if is_static:
+                # `ar rcs` replaces a member of the same name but keeps stale
+                # members from earlier objects; the generated object's name is
+                # build-unique, so start from a clean archive.
+                if fs.exists(output_path):
+                    match fs.remove(output_path):
+                        Result.success:
+                            pass
+                        Result.failure as stale_failure:
+                            var stale_error = stale_failure.error
+                            var message = string.String.create()
+                            message.append("archiver failed:\n")
+                            message.append(stale_error.message.as_str())
+                            stale_error.release()
+                            return Result[string.String, string.String].failure(error = message)
+                var archive_cmd = vec.Vec[str].create()
+                defer: archive_cmd.release()
+                archive_cmd.push("ar")
+                archive_cmd.push("rcs")
+                archive_cmd.push(output_path)
+                archive_cmd.push(object_path.as_str())
+                match process.capture(archive_cmd.as_span()):
+                    Result.success as archived:
+                        var archive_result = archived.value
+                        defer: archive_result.stdout.release()
+                        defer: archive_result.stderr.release()
+                        if archive_result.status.exit_code != 0:
+                            var message = string.String.from_str("archiver failed:\n")
+                            message.append(archive_result.stdout.as_str())
+                            message.append(archive_result.stderr.as_str())
+                            return Result[string.String, string.String].failure(error = message)
+                    Result.failure as archive_failure:
+                        var archive_error = archive_failure.error
+                        archive_error.release()
+                        return Result[string.String, string.String].failure(
+                            error = string.String.from_str("could not launch archiver 'ar'")
+                        )
+                match fs.remove(object_path.as_str()):
                     Result.success:
                         pass
                     Result.failure as rm_failure:
                         var rm_err = rm_failure.error
                         rm_err.release()
+
+            # The generated C is no longer needed; a failed compile keeps it on
+            # disk so the reported path stays inspectable.
+            match fs.remove(c_path.as_str()):
+                Result.success:
+                    pass
+                Result.failure as rm_failure:
+                    var rm_err = rm_failure.error
+                    rm_err.release()
+            if kind == BuildKind.executable:
                 write_debug_map(ir_program, output_path)
-                return Result[string.String, string.String].success(value = string.String.from_str(output_path))
-            var message = string.String.from_str("C compiler exited with an error:\n")
-            message.append(result.stderr.as_str())
-            return Result[string.String, string.String].failure(error = message)
+            return Result[string.String, string.String].success(value = string.String.from_str(output_path))
         Result.failure as failure:
             var err = failure.error
             err.release()

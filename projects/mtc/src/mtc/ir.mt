@@ -207,6 +207,10 @@ public struct Function:
     return_type: types.Type
     body: span[Stmt]
     entry_point: bool
+    ## True for a `public` top-level function.  The C backend keeps that
+    ## linkage internal for executables (the host's shape) and exports it when
+    ## building a library (`build --kind static|shared`).
+    public_export: bool
     method_receiver_param: bool
 
 
