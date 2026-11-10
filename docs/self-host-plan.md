@@ -14,7 +14,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-60-2026-11-09)
+- [Status at a glance](#status-at-a-glance-session-62-2026-11-10)
 - [How to start a work session](#how-to-start-a-work-session)
 - [The program — ranked remaining work](#the-program--ranked-remaining-work)
 - [Deliberate differences (do not chase)](#deliberate-differences-do-not-chase)
@@ -39,7 +39,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | bindgen self-hosted; **3 verified / 25 changed of 28** (deltas are cosmetic emitter gaps, unverified) |
 
-Rough completion against the per-track Definition of Done: **~84%**.  The
+Rough completion against the per-track Definition of Done: **~85%**.  The
 self-hosting foundation is done; the residue is concentrated in the `lower`
 dump (6 files), CLI (37 cases + unported subsystems), the linter corpus (121
 files), and bindings verification.  LSP, DAP and formatter are closed at their
