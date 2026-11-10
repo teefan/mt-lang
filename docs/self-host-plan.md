@@ -462,9 +462,9 @@ and re-rank.  Open leaders, largest first (re-ranked session 62, second batch):
    eagerly at its first call site; the output *order* is reconstructed, but
    intra-body proc numbers still follow creation order.  A fix needs the
    symbols assigned in the host's declaration-visit/instance-sort order.
-2. **`main.mt` crash** — lowering `projects/mtc/src/mtc/main.mt` with its
-   project roots aborts in `str_is_valid_utf8` (loop guard) on both stage2 and
-   the dev compiler; investigate the corrupt `str` length feeding it.
+2. *(closed as a host artifact — see Deliberate differences: the `main.mt`
+   `--sexpr` dump exceeds the C backend's 50M loop guard during UTF-8
+   validation, and the host-built stage1 aborts identically.)*
 3. **`std/flecs` imported-constant struct expansion** — the host rewrites
    `c.ECS_STRBUF_INIT` to its AST initializer (storage-initializer path) and
    casts each `char` array element; the self folds the const value and emits
@@ -690,6 +690,13 @@ ones:
   cache-hit map loss).
 - **`lower`:** the host's leaked auto-lifetime names (`ref[@_mt_0, T]`) in
   `memory_stress_test`; the self renders the declared `ref[T]`.
+- **`lower` `main.mt` (`--sexpr` only):** the dump is ~59 MB and the compiler's
+  own `String.as_str` UTF-8 validation legitimately scans more than the C
+  backend's 50,000,000-iteration loop guard; the host-built stage1 aborts
+  identically (`build/stage1/mtc lower projects/mtc/src/mtc/main.mt -I .
+  --sexpr` -> rc 134 `loop iteration limit exceeded in str_is_valid_utf8`),
+  while only the Ruby host (which has no guard) completes.  Not a parity gap;
+  the non-`--sexpr` formatting path completes on both C compilers.
 - **Better-than-host behaviours to preserve:** malformed-frame `-32700` + keep
   serving, synchronous facts with no lag, faster cold start, deterministic
   binding-map iteration; a capability the host lacks is not automatically a
