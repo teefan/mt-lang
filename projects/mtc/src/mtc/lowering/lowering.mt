@@ -3047,9 +3047,9 @@ function build_root_main_entrypoint(ctx: ref[LowerCtx], name: str, params: span[
             let zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = int_ty))
             body.push(ir.Stmt.stmt_return(value = zero, line = 0, source_path = ""))
         else:
-            body.push(ir.Stmt.stmt_local(name = "__mt_exit", linkage_name = "__mt_exit", ty = int_ty, value = call, line = 0, source_path = ""))
+            body.push(ir.Stmt.stmt_local(name = "__mt_result", linkage_name = "__mt_result", ty = int_ty, value = call, line = 0, source_path = ""))
             append_free_argv_items(ref_of(body), items_ref)
-            let exit_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_exit", ty = int_ty, pointer = Option[bool].some(value = false)))
+            let exit_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_result", ty = int_ty, pointer = Option[bool].some(value = false)))
             body.push(ir.Stmt.stmt_return(value = exit_ref, line = 0, source_path = ""))
 
         var entry_params = vec.Vec[ir.Param].create()
@@ -12102,7 +12102,9 @@ function collect_variant_literal_fields(ctx: ref[LowerCtx], args: span[ast.Argum
                 arm_payload_c.append(arm_name)
                 let payload_c = arm_payload_c.as_str()
                 if is_recursive_variant_field_c(payload_c, fty_val):
-                    value = alloc_expr(ir.Expr.expr_address_of(expression = value, ty = types.Type.ty_generic(name = "ptr", args = sp_type(fty_val))))
+                    # The host types the auto-address with the value's own type
+                    # (`calls.rb:202`), not `ptr[field]`.
+                    value = alloc_expr(ir.Expr.expr_address_of(expression = value, ty = ir_expr_type(value)))
             Option.none:
                 pass
         fields.push(ir.AggregateField(name = field_name, value = value))
@@ -19879,22 +19881,6 @@ function lower_variant_decl(ctx: ref[LowerCtx], name: str, arms: span[ast.Varian
 
 
 
-## Sanitize a variant arm name that would collide with a C keyword by appending
-## a trailing underscore (e.g. `sizeof` → `sizeof_`, `switch` → `switch_`).
-function sanitize_arm_field(name: str) -> str:
-    if (
-        name == "sizeof" or name == "switch" or name == "union" or name == "struct" or name == "enum"
-        or name == "register" or name == "volatile" or name == "const" or name == "restrict"
-        or name == "auto" or name == "extern" or name == "static" or name == "typedef"
-        or name == "int" or name == "float" or name == "double" or name == "char"
-        or name == "short" or name == "long" or name == "void" or name == "bool"
-        or name == "default" or name == "case" or name == "break" or name == "continue"
-        or name == "return" or name == "if" or name == "else" or name == "while"
-        or name == "for" or name == "do" or name == "goto"
-    ):
-        return j2(name, "_")
-    return name
-
 ## The C name of a variant arm's payload struct: `<outer_c>_<arm>`.
 function variant_arm_c_name(outer_c: str, arm_name: str) -> str:
     var buf = string.String.create()
@@ -21112,7 +21098,7 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                     let binding_ty = variant_arm_payload_binding(variant_name, info.module_name, outer_c, arm_name)
                     register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "data", ty = types.Type.ty_nil))
-                    let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = binding_ty))
+                    let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
                     let bc = utils.c_local_name(bn.value)
                     # The host's plain match-expression lowering (expressions.rb:
                     # 1166-1173) always declares the binding as a C local — its
@@ -21239,7 +21225,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
                     let binding_ty = variant_arm_payload_binding(variant_name, info.module_name, outer_c, arm_name)
                     register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
                     let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = types.Type.ty_nil))
-                    let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = binding_ty))
+                    let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
                     let bc = utils.c_local_name(bn.value)
                     if ctx.inside_async:
                         # The host's lowering-pass counter advance
@@ -21341,7 +21327,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                     if ai.value.field_names.len > 0:
                         let payload_c = fresh_c_temp_name(ctx, "match_payload")
                         let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = types.Type.ty_nil))
-                        let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = payload_ty))
+                        let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = payload_ty))
                         if ctx.async_cps_active:
                             # Spill the match arm's payload struct to a frame
                             # field so pattern-bindings and `as` binding survive
