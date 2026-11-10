@@ -526,6 +526,8 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
             return SexprValue.sv_nil
         types.Type.ty_type_meta:
             return node("Types::TypeType", span[SexprField]())
+        types.Type.ty_handle:
+            return node("Types::Handle", span[SexprField]())
         types.Type.ty_nullable as nl:
             var nl_fields = vec.Vec[SexprField].create()
             nl_fields.push(field_value("base", types_value(ctx, unsafe: read(nl.base))))
@@ -676,7 +678,7 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
         types.Type.ty_dyn as d:
             var df = vec.Vec[SexprField].create()
             df.push(field_str("interface_name", d.iface))
-            df.push(field_value("type_arguments", list_value(span[SexprValue]())))
+            df.push(field_value("type_arguments", types_list_value(ctx, d.args)))
             return node("Types::Dyn", df.as_span())
         types.Type.ty_dyn_vtable as dv:
             var dvf = vec.Vec[SexprField].create()

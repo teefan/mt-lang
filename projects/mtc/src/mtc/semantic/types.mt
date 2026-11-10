@@ -32,6 +32,9 @@ public variant Type:
     # `x.data` member of a variant access); the sexpr dumper renders it `nil`.
     ty_nil
     ty_type_meta
+    # The host's `Types::Handle` singleton: the opaque `void*` returned by
+    # `detach`, consumed by `gather`.
+    ty_handle
     ty_nullable(base: ptr[Type])
     ty_null(target: ptr[Type]?)
     ty_event(name: str, capacity: ptr_uint, payload_type: ptr[Type]?, linkage_name: str)
@@ -53,7 +56,9 @@ public variant Type:
     # keeps the raw lifetime name (`"@a"`) as the first generic argument; it
     # renders as a bare quoted string and the referent is the last argument.
     ty_lifetime(name: str)
-    ty_dyn(iface: str)
+    # A `dyn[Iface[args]]` fat pointer.  The host's `Types::Dyn` carries the
+    # interface's own type arguments as well as its name.
+    ty_dyn(iface: str, args: span[Type])
     # A `dyn` interface vtable type.  Mirrors Ruby's `Types::DynVtable`
     # (`interface_name` + generated `mt_vtable_<Iface>` linkage name); its field
     # map is not rendered by the sexpr dumper.
@@ -273,6 +278,8 @@ public function type_to_string(t: Type) -> str:
             return "nil"
         Type.ty_type_meta:
             return "type"
+        Type.ty_handle:
+            return "Handle"
         Type.ty_named as n:
             return n.name
         Type.ty_variant_arm_payload as ap:
@@ -291,7 +298,25 @@ public function type_to_string(t: Type) -> str:
         Type.ty_lifetime as lt:
             return lt.name
         Type.ty_dyn as d:
-            return d.iface
+            if d.args.len == 0:
+                var dbuf = string.String.create()
+                dbuf.append("dyn[")
+                dbuf.append(d.iface)
+                dbuf.append("]")
+                return dbuf.as_str()
+            var dbuf = string.String.create()
+            dbuf.append("dyn[")
+            dbuf.append(d.iface)
+            dbuf.append("[")
+            var di: ptr_uint = 0
+            while di < d.args.len:
+                if di > 0:
+                    dbuf.append(", ")
+                unsafe:
+                    dbuf.append(type_to_string(read(d.args.data + di)))
+                di += 1
+            dbuf.append("]]")
+            return dbuf.as_str()
         Type.ty_dyn_vtable as dv:
             return dv.linkage_name
         Type.ty_opaque as o:
@@ -474,6 +499,12 @@ public function type_equals(a: Type, b: Type) -> bool:
                     return true
                 _:
                     return false
+        Type.ty_handle:
+            match b:
+                Type.ty_handle:
+                    return true
+                _:
+                    return false
         Type.ty_primitive as pa:
             match b:
                 Type.ty_primitive as pb:
@@ -542,6 +573,19 @@ public function type_equals(a: Type, b: Type) -> bool:
                     return true
                 Type.ty_named as nb:
                     return ia.name == nb.name and ia.args.len == 0
+                Type.ty_generic as gb:
+                    if not ia.name == gb.name or ia.args.len != gb.args.len:
+                        return false
+                    let prelude = (ia.name == "Option" and ia.module_name == "std.option") or (ia.name == "Result" and ia.module_name == "std.result")
+                    if not prelude:
+                        return false
+                    var i3: ptr_uint = 0
+                    while i3 < ia.args.len:
+                        unsafe:
+                            if not type_equals(read(ia.args.data + i3), read(gb.args.data + i3)):
+                                return false
+                        i3 += 1
+                    return true
                 _:
                     return false
         Type.ty_var as va:
@@ -559,7 +603,15 @@ public function type_equals(a: Type, b: Type) -> bool:
         Type.ty_dyn as da:
             match b:
                 Type.ty_dyn as db:
-                    return da.iface == db.iface
+                    if da.iface != db.iface or da.args.len != db.args.len:
+                        return false
+                    var di: ptr_uint = 0
+                    while di < da.args.len:
+                        unsafe:
+                            if not type_equals(read(da.args.data + di), read(db.args.data + di)):
+                                return false
+                        di += 1
+                    return true
                 _:
                     return false
         Type.ty_dyn_vtable as dva:
@@ -587,6 +639,22 @@ public function type_equals(a: Type, b: Type) -> bool:
                             if not type_equals(read(ga.args.data + i), read(gb.args.data + i)):
                                 return false
                         i += 1
+                    return true
+                Type.ty_imported as ib:
+                    # The prelude variants appear both as the bare generic
+                    # (`Option[T]`/`Result[T, E]`) and as their imported
+                    # definition (`std.option.Option`/`std.result.Result`).
+                    if not ga.name == ib.name or ga.args.len != ib.args.len:
+                        return false
+                    let prelude = (ga.name == "Option" and ib.module_name == "std.option") or (ga.name == "Result" and ib.module_name == "std.result")
+                    if not prelude:
+                        return false
+                    var i2: ptr_uint = 0
+                    while i2 < ga.args.len:
+                        unsafe:
+                            if not type_equals(read(ga.args.data + i2), read(ib.args.data + i2)):
+                                return false
+                        i2 += 1
                     return true
                 _:
                     return false

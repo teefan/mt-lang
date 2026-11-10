@@ -5304,7 +5304,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                                 report(ctx, det.line, det.column, "detach target must be a global function call")
                     _:
                         report(ctx, det.line, det.column, "detach target must be a function call")
-                return types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "Handle")
+                return types.Type.ty_handle
             ast.Expr.expr_sizeof:
                 return types.primitive("ptr_uint")
             ast.Expr.expr_alignof:
@@ -6575,8 +6575,14 @@ function check_adapt_call(ctx: ref[Context], type_args: span[ast.TypeArgument]) 
     var arg_ref: ptr[ast.TypeRef]
     unsafe:
         arg_ref = read(type_args.data + 0).value
-    let iface_name = unsafe: qname_to_str(read(arg_ref).name)
-    return types.Type.ty_dyn(iface = iface_name)
+    let iface_qname = unsafe: read(arg_ref).name
+    let iface_name = unsafe: qname_to_str(iface_qname)
+    var dyn_args = vec.Vec[types.Type].create()
+    var di: ptr_uint = 0
+    while di < iface_qname.type_arguments.len:
+        dyn_args.push(resolve_type(ctx, unsafe: iface_qname.type_arguments.data + di))
+        di += 1
+    return types.Type.ty_dyn(iface = iface_name, args = dyn_args.as_span())
 
 
 ## `array[T, N](v0, …, vN)` and `span[T](data = …, len = …)` — the host's

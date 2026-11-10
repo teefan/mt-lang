@@ -2160,6 +2160,8 @@ function c_type(t: types.Type) -> str:
             return naming.tuple_type_c_name(t)
         types.Type.ty_type_meta:
             return "void"
+        types.Type.ty_handle:
+            return "void*"
         types.Type.ty_error:
             return "void"
         types.Type.ty_nil:
@@ -3054,6 +3056,15 @@ function c_fn_ptr_declarator(t: types.Type, name: str) -> str:
             fatal(c"c_backend: c_fn_ptr_declarator called on non-function type")
 
 
+## A struct/variant field declaration: a void-typed field materializes as a
+## `uint8_t` placeholder (the host's `c_field_declaration`), since C forbids
+## `void` members (`WorkState[void]`, `Result[void, E].success`).
+function c_field_declaration(t: types.Type, name: str) -> str:
+    if is_void_type(t):
+        return j3("uint8_t ", name, "")
+    return c_declaration(t, name)
+
+
 ## A C declaration `TYPE NAME`.  Array types place the length after the name
 ## (`int32_t xs[3]`); everything else in Phase 3 is a plain `TYPE NAME`.
 function c_declaration(t: types.Type, name: str) -> str:
@@ -3157,10 +3168,7 @@ function emit_struct(e: ref[Emitter], s: ir.StructDecl) -> void:
     while i < s.fields.len:
         unsafe:
             let f = read(s.fields.data + i)
-            # Skip void-typed fields — C does not allow fields of type void
-            # (e.g. `void result;` in WorkState[void] from async runtime).
-            if not is_void_type(f.ty):
-                emit_line(e, j4("  ", c_declaration(f.ty, f.name), ";", ""))
+            emit_line(e, j4("  ", c_field_declaration(f.ty, f.name), ";", ""))
         i += 1
     emit_line(e, struct_closer(s.packed, s.alignment))
 
@@ -3389,11 +3397,10 @@ function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
                 var fi: ptr_uint = 0
                 while fi < arm.fields.len:
                     let f = read(arm.fields.data + fi)
-                    if not is_void_type(f.ty):
-                        if c_type(f.ty) == outer_c:
-                            emit_line(e, j4("  ", c_declaration(f.ty, j2("*", f.name)), ";", ""))
-                        else:
-                            emit_line(e, j4("  ", c_declaration(f.ty, f.name), ";", ""))
+                    if not is_void_type(f.ty) and c_type(f.ty) == outer_c:
+                        emit_line(e, j4("  ", c_declaration(f.ty, j2("*", f.name)), ";", ""))
+                    else:
+                        emit_line(e, j4("  ", c_field_declaration(f.ty, f.name), ";", ""))
                     fi += 1
                 emit_line(e, "};")
                 emit_line(e, j3("typedef struct ", arm.linkage_name, j2(" ", j2(arm.linkage_name, ";"))))
@@ -5164,6 +5171,25 @@ function render_zero_expression(t: types.Type) -> str:
             return j4("(", c_declaration(t, ""), ") ", render_zero_initializer(t))
 
 
+## True for an expression whose C form is a void expression (a cast to `void`,
+## a void call).  A void expression cannot appear in a C initializer, so an
+## aggregate field holding one renders `(expr, 0)` (the host's
+## `emit_void_field_initializer`).
+function is_void_value_expr(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_cast as c:
+                return is_void_type(c.target_type)
+            ir.Expr.expr_call as c:
+                return is_void_type(c.ty)
+            ir.Expr.expr_call_indirect as c:
+                return is_void_type(c.ty)
+            ir.Expr.expr_stmt_expr as se:
+                return is_void_type(se.ty)
+            _:
+                return false
+
+
 function render_aggregate_initializer(e: ref[Emitter], fields: span[ir.AggregateField]) -> str:
     var buf = string.String.create()
     buf.append("{ ")
@@ -5180,7 +5206,13 @@ function render_aggregate_initializer(e: ref[Emitter], fields: span[ir.Aggregate
                 buf.append(".")
                 buf.append(f.name)
                 buf.append(" = ")
-            buf.append(render_initializer(e, f.value))
+            let rendered = render_initializer(e, f.value)
+            if is_void_value_expr(f.value):
+                buf.append("(")
+                buf.append(rendered)
+                buf.append(", 0)")
+            else:
+                buf.append(rendered)
         i += 1
     buf.append(" }")
     return buf.as_str()

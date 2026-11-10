@@ -23,15 +23,15 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 62, 2026-11-10)
+## Status at a glance (session 63, 2026-11-10)
 
 | Area | State |
 | --- | --- |
-| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`, session 62 full); full self-test suite **19 files / 0 failed** |
-| `test/mt` | **60 files / 0 failed** (session 62) |
+| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`, session 63 full); full self-test suite **19 files / 0 failed** |
+| `test/mt` | **60 files / 0 failed** (session 63) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
-| `sexpr lex` / `parse` | 0 differ (lex **717/717**; parse **713 match / 0 differ / 4 host-rejected of 717**; counts drift with the tree) |
-| `sexpr lower` | **660 match / 6 differ / 51 host-rejected / 0 self-rejected of 717 files** (session 62) |
+| `sexpr lex` / `parse` | 0 differ (lex **718/718**; parse **714 match / 0 differ / 4 host-rejected of 718**; counts drift with the tree) |
+| `sexpr lower` | **665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 files** (session 63) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
 | `cli:parity` | **24 match / 37 differ / 0 pending** of 61 cases (last re-measured session 49, unchanged since session 35) |
 | Linter corpus | **495 agree / 121 differ** of 616 files (session 50 re-read) |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
@@ -39,9 +39,9 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | bindgen self-hosted; **3 verified / 25 changed of 28** (deltas are cosmetic emitter gaps, unverified) |
 
-Rough completion against the per-track Definition of Done: **~85%**.  The
-self-hosting foundation is done; the residue is concentrated in the `lower`
-dump (6 files), CLI (37 cases + unported subsystems), the linter corpus (121
+Rough completion against the per-track Definition of Done: **~88%**.  The
+self-hosting foundation and `lower` dump parity are done; the residue is
+concentrated in CLI (37 cases + unported subsystems), the linter corpus (121
 files), and bindings verification.  LSP, DAP and formatter are closed at their
 documented differences.
 
@@ -293,13 +293,54 @@ Session-62 fourth batch (660/6, from 659/7):
   referenced constant's declaration initializer in its own module context —
   the host's `rewrite_static_storage_initializer` path.  Closes `std/flecs`.
 
+Session-63 batch (Track A closed, 662/4 → 665/2; the residual two are the
+documented `memory_stress_test` artifact and `main.mt`'s `--sexpr` loop guard):
+- Module setup order: `lower_module` now follows the host's per-module passes
+  (constants, globals, types, then function bodies); globals' proc symbols and
+  synthetic creation order match.
+- Module-level `when` expansion is shared with the placement pass, so an
+  expanded function keeps its source position instead of being appended.
+- Parallel IR: ported the host's `@parallel_for_counter` naming
+  (`_pfor_N`/`_spawn_N`/`_detach_N`, `mt_pfor_cap_/work_`, `mt_spawn_cap_/work_`,
+  `mt_detach_work_`), per-spawn capture structs with array-capture pointer
+  fields and rewrite, written-capture write-back, write-conflict validation,
+  and `mt_cap`/`mt_pfor_data` shapes; fixed the capture order to
+  first-occurrence (Map keys are hashed, not insertion-ordered).
+- Proc symbols: a final pass (`lowering/proc_renumber.mt`) renumbers
+  `__proc_<N>__` ids from the assembled program in host allocation order
+  (setup values, then module-function emission order) and reorders the
+  invoke/release/retain tail; it is gated off when any helper has no literal in
+  that prefix (async synthetic bodies), preserving their existing numbering.
+- Types: added the host's `Types::Handle` singleton for `detach`; `dyn[I]`
+  carries interface type arguments (`Types::Dyn :type_arguments`), including
+  `iface_method_return_type` substitution; tuple instance suffixes render like
+  `sanitize_identifier(to_s)` (`Option[(int, int)].unwrap` →
+  `Option_unwrap__int_int`) and prelude `Option`/`Result` compare equal across
+  their generic and imported forms.
+- Smaller fixes: flags implicit members honor `value_explicit` (parser-synthesized
+  literals no longer reset auto values), `str_index` passes its index through,
+  range-index assignment emits plain `Index`, `let x = match` materializes the
+  host's `__mt_match_expr_N` copy, `?` returns the propagate temp when the
+  return type matches, chained calls lower through the callable-value path,
+  tuple literals keep proc literals inline, a ref/pointer receiver decides
+  pointer lowering from its referent, and monomorphized calls apply the ref
+  argument bridge.
+- C backend: void-typed struct/variant fields materialize as `uint8_t`
+  (`c_field_declaration`) and initializers wrap a void value as `(expr, 0)`,
+  matching the host's `Result[void, E].success` / `WorkState[void]` shapes;
+  previously the self emitted an empty arm struct and invalid C.
+- Gates: fixed point holds, `test/mt` 60/0, self-tests 19/0, examples 49/49,
+  lex 718/718, parse 714/0/4; host-vs-self runtime output is identical for
+  `examples/language_baseline` (flags/dyn/proc/match/detach) and
+  `examples/multithreading_test` (parallel for/spawn/gather).
+
 ## How to start a work session
 
 ### Entry points
 
 | Workstream | Read | Verify with |
 | --- | --- | --- |
-| `lower` dump parity (**active**) | *The program* Track A; `docs/language-design.md` | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` (~1 min warm, ~4 min cold) |
+| `lower` dump parity (**closed**, keep at 0 real differ) | *The program* Track A; `docs/language-design.md` | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` (~1 min warm, ~4 min cold) |
 | CLI behavior parity | Track B; `tools/cli_parity.rb --help` | `rake "cli:parity"` |
 | Linter corpus residue | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb -q` (616 files; `--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
 | Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check`; regenerate `std/c/*.mt` and diff |
@@ -373,9 +414,8 @@ Iterate cheap, prove once:
 0. **Hard build parity** — **DONE** (session 49; re-verified session 50): all
    15 top-level examples build, the synchronous set's stdout+exit is identical,
    `examples/sdl3` 34/34, `test/mt` 60/0.
-1. **`lower` dump parity** — **ACTIVE**: 660/6/51/0 of 717.  Work the ranked
-   leaders in Track A; every item moves files' first differences deeper and can
-   expose new families, so re-rank after each item.
+1. **`lower` dump parity** — **CLOSED** (session 63): 665/2/51/0 of 718, the
+   two residuals are documented host artifacts.  See Track A.
 2. **CLI behavior parity** — open: 24/37/0 of 61, plus the unported subsystems
    (`deps`, `docs`, wasm/emcc, `--bundle`/`--archive`, `--jobs`, toolchain
    bootstrap/tools, `--kind`, bindgen policy flags).
@@ -443,7 +483,8 @@ Goal: close every remaining self-host gap so `build/stage2/mtc` matches the Ruby
 host on observable behavior everywhere — `--sexpr` dumps, CLI messages/commands,
 LSP, DAP, linter, formatter, imported bindings, bindgen — while keeping the
 self-host's documented improvements (malformed-frame recovery, synchronous
-facts, speed, determinism).
+facts, speed, determinism).  **`lower` dump parity is closed (session 63);
+CLI is the active front.**
 
 Confirmed scope decision: **all** unported CLI subsystems are in scope (`deps`,
 `docs`, wasm/emcc + preview, `--bundle`/`--archive`, `--jobs`, toolchain
@@ -452,45 +493,23 @@ order: finish `lower` first, then CLI/linter/bindings, then the final matrix;
 LSP/DAP/formatter are closed at their documented differences.  Anchor by symbol
 names, not line numbers — lines drift.
 
-### Track A — `lower` dump parity (660/6 of 717)
+### Track A — `lower` dump parity (CLOSED: 665/2 of 718)
 
-Current set: **660 match / 6 differ / 51 host-rejected / 0 self-rejected of 717
-files** (session 62).  The host-rejected bucket is `external` and platform-pinned
+Current set: **665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718
+files** (session 63).  The host-rejected bucket is `external` and platform-pinned
 files; the count drifts with the tree and `tmp` fixtures — quote the set.
 
-Work one item per commit; after each item re-run
-`ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
-and re-rank.  Open leaders, largest first (re-ranked session 62, fourth batch):
+The two counted differs are the documented host artifacts, not work:
 
-1. **Proc/proc-symbol numbering** — `examples/language_baseline` (proc_1 vs
-   proc_10), `projects/tetris/src/main` and `std/raylib/packed_assets`
-   (proc_1 vs proc_2).  The host's `fresh_proc_symbol` is a per-compile
-   counter fed by wave lowering order, while the self lowers a specialization
-   eagerly at its first call site; the output *order* is reconstructed, but
-   intra-body proc numbers still follow creation order.  A fix needs the
-   symbols assigned in the host's declaration-visit/instance-sort order.
-2. **`examples/multithreading_test` parallel IR** — port the host's parallel
-   naming (`<module>_pfor_N` / `_spawn_N` / `_detach_N` on the shared counter,
-   `mt_pfor_cap_/work_`, `mt_spawn_cap_/work_<uid>_<idx>`,
-   `mt_detach_work_`) and the per-spawn-body capture structs, array-capture
-   pointer fields, written-capture write-back and write-conflict validation.
-3. **`examples/memory_stress_test`** — the documented host
-   `ref[@_mt_0, T]` artifact; do not chase (see *Deliberate differences*).
+1. **`examples/memory_stress_test`** — the host's leaked `ref[@_mt_0, T]`
+   lifetime; the self renders the declared `ref[T]` (see *Deliberate
+   differences*).
+2. **`projects/mtc/src/mtc/main.mt`** — the `--sexpr` loop-guard artifact (the
+   dump exceeds the generated C loop guard's UTF-8 scan); documented under
+   *Deliberate differences*.
 
-The remaining counted differ, `projects/mtc/src/mtc/main.mt`, is the
-`--sexpr` loop-guard artifact documented under *Deliberate differences*, not
-work.
-
-Session-59/60 flips: `examples/{async_network_lobby,comptime,
-reflection_advanced,simd_features→SimdLaneWith}` (the last only advanced),
-`sdl3/input/{gamepad,joystick}_polling`, `std/http`, `std/net/{discovery,lobby,
-nat,rpc,stun,turn}`, `std/oauth2`, `stress/engine/math`,
-`test/mt/reflect_test`.
-
-Stopping rule: **0 differing files, or a documented host artifact with a
-reproduction** (e.g. the host's leaked `ref[@_mt_0, T]` lifetime in
-`examples/memory_stress_test.mt` — the self renders the declared `ref[T]`; see
-*Deliberate differences*).
+Track A reached its stopping rule: **0 real differing files**.  Keep lex/parse
+at 0-diff and re-measure both after any lowering-adjacent change.
 
 ### Track B — CLI parity (24/37 of 61)
 
@@ -712,11 +731,11 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); 19 files / 0 failed | session 62 (full bootstrap) | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 60 files / 0 failed | session 62 | `build/stage2/mtc test test/mt -I .` |
-| examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 61 | `tools/gates.sh --areas codegen --run` |
-| `sexpr lex` / `parse` | lex 717/717; parse 713 match / 0 differ / 4 host-rejected of 717 | session 60 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 660 match / 6 differ / 51 host-rejected / 0 self-rejected of 717 | session 62 fourth batch (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); 19 files / 0 failed | session 63 (full bootstrap) | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 60 files / 0 failed | session 63 | `build/stage2/mtc test test/mt -I .` |
+| examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 63 | `tools/gates.sh --only examples --run` |
+| `sexpr lex` / `parse` | lex 718/718; parse 714 match / 0 differ / 4 host-rejected of 718 | session 63 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 (the 2 are documented artifacts) | session 63 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | 24 match / 37 differ / 0 pending of 61 | session 49 | `rake "cli:parity"` |
 | lint corpus | 495 agree / 121 differ of 616 | session 50 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |

@@ -32,6 +32,7 @@ import mtc.parser.literal_parsing as lparse
 import mtc.c_naming as naming
 import mtc.lowering.async as async_mod
 import mtc.lowering.utils as utils
+import mtc.lowering.proc_renumber as proc_renumber
 
 
 ## A lowering-stage error.  The lowering resolves types structurally and
@@ -729,6 +730,10 @@ public function lower(program: loader.Program) -> ir.Program:
     var external_structs = vec.Vec[ir.ExternalStructLayout].create()
     var seen_external_structs = map_mod.Map[str, bool].create()
     var spec_infos = map_mod.Map[str, SpecInfo].create()
+    # Each module's declaration list with module-level `when` blocks expanded in
+    # place.  Lowering and the placement pass must share it: the host's
+    # `expanded_declarations` expands in place for both.
+    var expanded_decls = map_mod.Map[str, span[ast.Decl]].create()
     var module_fragments = vec.Vec[ir.Program].create()
     var module_analyses = vec.Vec[analyzer.Analysis].create()
     var synthetic_functions = vec.Vec[ir.Function].create()
@@ -747,7 +752,7 @@ public function lower(program: loader.Program) -> ir.Program:
             i += 1
             continue
         let is_root = i == program.root_index
-        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(pending_synthetic_structs), ref_of(synthetic_functions), ref_of(synthetic_enums), ptr_of(emitted_functions), ptr_of(emitted_structs), ptr_of(emitted_constants), ref_of(spec_infos))
+        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(pending_synthetic_structs), ref_of(synthetic_functions), ref_of(synthetic_enums), ptr_of(emitted_functions), ptr_of(emitted_structs), ptr_of(emitted_constants), ref_of(spec_infos), ref_of(expanded_decls))
         module_fragments.push(fragment)
         module_analyses.push(analysis)
         globals.append_span(fragment.globals)
@@ -828,8 +833,9 @@ public function lower(program: loader.Program) -> ir.Program:
                 all_by_linkage.set(f.linkage_name, f)
             ffi += 1
         fi += 1
-    let ordered = order_module_functions(module_analyses.as_span(), module_fragments.as_span(), ref_of(all_by_linkage), ref_of(spec_infos))
+    let ordered = order_module_functions(module_analyses.as_span(), module_fragments.as_span(), ref_of(all_by_linkage), ref_of(spec_infos), ref_of(expanded_decls))
     dedup_append_functions(ref_of(functions), ordered.as_span(), ref_of(seen_functions))
+    let module_fn_count = functions.len()
     # The host's program-level synthetic function list (proc invoke/release/
     # retain bodies and pfor/spawn workers) follows every module's functions.
     dedup_append_functions(ref_of(functions), synthetic_functions.as_span(), ref_of(seen_functions))
@@ -915,7 +921,7 @@ public function lower(program: loader.Program) -> ir.Program:
             ))
         tai += 1
 
-    return ir.Program(
+    let assembled = ir.Program(
         module_name = root_name,
         includes = collect_includes(program),
         constants = constants.as_span(),
@@ -934,6 +940,7 @@ public function lower(program: loader.Program) -> ir.Program:
         external_structs = external_structs.as_span(),
         str_buffer_structs = str_buffer_synthetic.as_span(),
     )
+    return proc_renumber.renumber_program_procs(assembled, module_fn_count)
 
 
 ## True when a module is an external (`raw`) file, which has no lowerable body.
@@ -1510,14 +1517,18 @@ function spec_owner_key(owner_module: str, decl_key: str) -> str:
 ## Build one module's declaration visit sequence in the host's order
 ## (`expanded_declarations`, `functions.rb:18-73`): functions in source order,
 ## an extending block's methods in source order.
-function build_decl_visits(analysis: analyzer.Analysis, analyses: span[analyzer.Analysis]) -> vec.Vec[DeclVisit]:
+function build_decl_visits(analysis: analyzer.Analysis, analyses: span[analyzer.Analysis], expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]]) -> vec.Vec[DeclVisit]:
     var visits = vec.Vec[DeclVisit].create()
     let module_name = analysis.module_name
+    var source_decls = analysis.source_file.declarations
+    let expanded_ptr = expanded_decls.get(module_name)
+    if expanded_ptr != null:
+        source_decls = unsafe: read(expanded_ptr)
     var di: ptr_uint = 0
-    while di < analysis.source_file.declarations.len:
+    while di < source_decls.len:
         var d: ast.Decl
         unsafe:
-            d = read(analysis.source_file.declarations.data + di)
+            d = read(source_decls.data + di)
         match d:
             ast.Decl.decl_function as fun:
                 if fun.type_params.len == 0:
@@ -1618,7 +1629,7 @@ function push_module_function(per_module: ref[vec.Vec[vec.Vec[ir.Function]]], mi
 ## created by an earlier declaration in the same pass can still be emitted later
 ## in that pass, while one created after its declaration was seen waits for the
 ## next pass.
-function order_module_functions(analyses: span[analyzer.Analysis], fragments: span[ir.Program], all_by_linkage: ref[map_mod.Map[str, ir.Function]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> vec.Vec[ir.Function]:
+function order_module_functions(analyses: span[analyzer.Analysis], fragments: span[ir.Program], all_by_linkage: ref[map_mod.Map[str, ir.Function]], spec_infos: ref[map_mod.Map[str, SpecInfo]], expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]]) -> vec.Vec[ir.Function]:
     var visits = vec.Vec[vec.Vec[DeclVisit]].create()
     var emittable = map_mod.Map[str, bool].create()
     var specs_by_decl = map_mod.Map[str, vec.Vec[str]].create()
@@ -1627,7 +1638,7 @@ function order_module_functions(analyses: span[analyzer.Analysis], fragments: sp
         var a: analyzer.Analysis
         unsafe:
             a = read(analyses.data + mi)
-        let module_visits = build_decl_visits(a, analyses)
+        let module_visits = build_decl_visits(a, analyses, expanded_decls)
         var vi: ptr_uint = 0
         while vi < module_visits.len():
             let vp = module_visits.get(vi) else:
@@ -1884,7 +1895,27 @@ function append_selected_when_decls(ctx: ref[LowerCtx], discriminant: ptr[ast.Ex
             pass
 
 
-function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]], synthetic_functions: ref[vec.Vec[ir.Function]], synthetic_enums: ref[vec.Vec[ir.EnumDecl]], emitted_functions: ptr[vec.Vec[ir.Function]], emitted_structs: ptr[vec.Vec[ir.StructDecl]], emitted_constants: ptr[vec.Vec[ir.Constant]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> ir.Program:
+## The host's per-module setup order (`lower_modules`): `lower_constants`, then
+## `lower_globals` (vars and events), then the type/opaque declarations, then
+## `lower_functions`.  Proc symbols are allocated while lowering, so this pass
+## order is observable in the generated names.
+function decl_lowering_pass(d: ast.Decl) -> ptr_uint:
+    match d:
+        ast.Decl.decl_const:
+            return 0
+        ast.Decl.decl_var:
+            return 1
+        ast.Decl.decl_event:
+            return 1
+        ast.Decl.decl_function:
+            return 3
+        ast.Decl.decl_extending_block:
+            return 3
+        _:
+            return 2
+
+
+function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]], synthetic_functions: ref[vec.Vec[ir.Function]], synthetic_enums: ref[vec.Vec[ir.EnumDecl]], emitted_functions: ptr[vec.Vec[ir.Function]], emitted_structs: ptr[vec.Vec[ir.StructDecl]], emitted_constants: ptr[vec.Vec[ir.Constant]], spec_infos: ref[map_mod.Map[str, SpecInfo]], expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]]) -> ir.Program:
     var ctx = new_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)))
     ctx.is_root_module = is_root
     ctx.pending_emitted_functions = emitted_functions
@@ -1917,6 +1948,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
             _:
                 decls.push(wd)
         wi += 1
+    expanded_decls.set(analysis.module_name, decls.as_span())
 
     # The host's `lower_globals` ensures every module-level event's runtime
     # before any struct declaration lowers, so the synthetic structs' creation
@@ -1933,228 +1965,234 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 pass
         evi += 1
 
-    var i: ptr_uint = 0
-    while i < decls.len():
-        var d: ast.Decl
-        let d_ptr = decls.get(i) else:
-            break
-        unsafe:
-            d = read(d_ptr)
-        match d:
-            ast.Decl.decl_function as fun:
-                if fun.is_async:
-                    # All async functions use full CPS lowering (frame struct,
-                    # resume state machine, vtable, constructor).  A 0-await
-                    # function is the single-state case.  An async `main`
-                    # constructor carries the host's `__async_main` linkage
-                    # (`function_binding_c_name`, utils.rb:1089-1092).
-                    let link_base = if is_root and fun.name == "main": naming.qualified_c_name(ctx.module_name, "__async_main") else: naming.qualified_c_name(ctx.module_name, fun.name)
-                    lower_async_fn(ref_of(ctx), fun.name, link_base, Option[types.Type].none, false, fun.method_params, fun.return_type, fun.body, ref_of(functions), is_root and fun.name == "main")
-                    if is_root and fun.name == "main":
-                        match build_async_main_entrypoint(ref_of(ctx), fun.name):
-                            Option.some as entry:
-                                functions.push(entry.value)
+    var phase: ptr_uint = 0
+    while phase < 4:
+        var i: ptr_uint = 0
+        while i < decls.len():
+            var d: ast.Decl
+            let d_ptr = decls.get(i) else:
+                break
+            unsafe:
+                d = read(d_ptr)
+            if decl_lowering_pass(d) != phase:
+                i += 1
+                continue
+            match d:
+                ast.Decl.decl_function as fun:
+                    if fun.is_async:
+                        # All async functions use full CPS lowering (frame struct,
+                        # resume state machine, vtable, constructor).  A 0-await
+                        # function is the single-state case.  An async `main`
+                        # constructor carries the host's `__async_main` linkage
+                        # (`function_binding_c_name`, utils.rb:1089-1092).
+                        let link_base = if is_root and fun.name == "main": naming.qualified_c_name(ctx.module_name, "__async_main") else: naming.qualified_c_name(ctx.module_name, fun.name)
+                        lower_async_fn(ref_of(ctx), fun.name, link_base, Option[types.Type].none, false, fun.method_params, fun.return_type, fun.body, ref_of(functions), is_root and fun.name == "main")
+                        if is_root and fun.name == "main":
+                            match build_async_main_entrypoint(ref_of(ctx), fun.name):
+                                Option.some as entry:
+                                    functions.push(entry.value)
+                                Option.none:
+                                    pass
+                    else if lowerable_function(fun.type_params, fun.body):
+                        functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, false))
+                        if is_root and fun.name == "main":
+                            match build_root_main_entrypoint(ref_of(ctx), fun.name, fun.method_params):
+                                Option.some as entry:
+                                    functions.push(entry.value)
+                                Option.none:
+                                    pass
+                ast.Decl.decl_enum as en:
+                    enums.push(lower_enum_decl(ref_of(ctx), en.name, en.backing_type, en.enum_members, false))
+                ast.Decl.decl_flags as fl:
+                    enums.push(lower_enum_decl(ref_of(ctx), fl.name, fl.backing_type, fl.flags_members, true))
+                ast.Decl.decl_static_assert as sa:
+                    module_static_asserts.push(lower_static_assert(ref_of(ctx), sa.condition, sa.message))
+                ast.Decl.decl_struct as s:
+                    # Skip generic structs — only their concrete specializations
+                    # (emitted by `ensure_generic_struct_decl`) carry resolved
+                    # field types.  Structs with only lifetime parameters (`@a`)
+                    # are not generic in the monomorphization sense and should
+                    # be emitted directly.
+                    if not has_non_lifetime_type_params(s.type_params):
+                        match lower_struct_decl(ref_of(ctx), s.name, s.packed, s.alignment, Option[str].none, s.name):
+                            Option.some as sd:
+                                structs.push(sd.value)
                             Option.none:
                                 pass
-                else if lowerable_function(fun.type_params, fun.body):
-                    functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, false))
-                    if is_root and fun.name == "main":
-                        match build_root_main_entrypoint(ref_of(ctx), fun.name, fun.method_params):
-                            Option.some as entry:
-                                functions.push(entry.value)
+                        lower_nested_struct_decls(ref_of(ctx), s.nested_types, s.name, s.name, ref_of(structs))
+                ast.Decl.decl_union as u:
+                    unions.push(lower_union_decl(ref_of(ctx), u.name, u.union_fields))
+                ast.Decl.decl_variant as vr:
+                    if vr.type_params.len == 0:
+                        variants.push(lower_variant_decl(ref_of(ctx), vr.name, vr.variant_arms))
+                ast.Decl.decl_extending_block as ex:
+                    lower_extending_block(ctx, ref_of(functions), ex.type_name, ex.methods)
+                ast.Decl.decl_var as v:
+                    var g_ty = types.primitive("void")
+                    if v.var_type != null:
+                        var vt: ptr[ast.TypeRef] = unsafe: ptr[ast.TypeRef]<-v.var_type
+                        # `qualify_type` (not just `resolve_type_ref`) registers the
+                        # generic instance and produces the monomorphized C name, so a
+                        # module-level `var m: Map[str, str]` declares
+                        # `std_map_Map_str_str m` rather than the unspecialized
+                        # `std_map_Map` (which is never defined).
+                        g_ty = qualify_type(ctx, resolve_type_ref(ctx, vt))
+                    # A tuple in the global's declared type registers its value
+                    # struct even when no literal mentions it (the host's
+                    # `ensure_registered_storage_type_types`).
+                    var g_seen = map_mod.Map[str, bool].create()
+                    ensure_storage_type_tuples(ctx, g_ty, ref_of(g_seen))
+                    # A top-level `var` initializer must be static-storage-safe (the
+                    # analyzer enforces this), so it lowers to a C static initializer.
+                    # A no-capture `proc` initializer, for example, becomes a static
+                    # aggregate of function pointers — without it the proc's invoke
+                    # pointer stays null and calling it segfaults.
+                    var g_val = alloc_expr(ir.Expr.expr_zero_init(ty = g_ty))
+                    if v.value != null:
+                        # A top-level initializer is evaluated in an empty local
+                        # scope: clear any locals left over from a previously-lowered
+                        # function so a no-capture `proc` initializer is not treated
+                        # as capturing stale bindings.
+                        ctx.locals.clear()
+                        # A compile-time-known initializer folds to its constant value
+                        # — a literal, a constant reference (an imported module's
+                        # constant included) or a `const` function/method call — as the
+                        # host's `lower_static_storage_initializer` folds
+                        # `compile_time_const_value` through `lower_compile_time_literal`.
+                        # Anything else lowers as an ordinary expression.
+                        var init_env = map_mod.Map[str, ptr[ir.Expr]].create()
+                        match try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-v.value, ref_of(init_env), g_ty):
+                            Option.some as g_cv:
+                                g_val = alloc_expr(coerce_const_value(ctx, unsafe: read(g_cv.value), g_ty))
                             Option.none:
+                                g_val = lower_expr(ctx, unsafe: ptr[ast.Expr]<-v.value)
+                                # A literal initializer takes the global's declared type, as
+                                # the host's contextual literal inference gives it one
+                                # (`var shorts: short = 0` is a `short` literal, not `int`).
+                                g_val = int_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
+                                g_val = float_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
+                                g_val = string_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
+                                g_val = null_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
+                    globals.push(ir.Global(name = v.name, linkage_name = naming.qualified_c_name(ctx.module_name, v.name), ty = g_ty, value = g_val))
+                ast.Decl.decl_const as c:
+                    var c_ty = resolve_type_ref(ctx, c.const_type)
+                    # A tuple in the constant's declared type registers its value
+                    # struct, as the host's `ensure_registered_storage_type_types`
+                    # does before the value is lowered.
+                    var c_seen = map_mod.Map[str, bool].create()
+                    ensure_storage_type_tuples(ctx, c_ty, ref_of(c_seen))
+                    let val_ptr = c.value
+                    # The host's `lower_constants` routes an expression-list or
+                    # call/specialization constant value through
+                    # `lower_const_value_literal` rather than the storage-initializer
+                    # path.
+                    var const_value_literal_path = false
+                    if val_ptr != null:
+                        match unsafe: read(ptr[ast.Expr]<-val_ptr):
+                            ast.Expr.expr_expression_list:
+                                const_value_literal_path = true
+                            ast.Expr.expr_call:
+                                const_value_literal_path = true
+                            ast.Expr.expr_specialization:
+                                const_value_literal_path = true
+                            _:
                                 pass
-            ast.Decl.decl_enum as en:
-                enums.push(lower_enum_decl(ref_of(ctx), en.name, en.backing_type, en.enum_members, false))
-            ast.Decl.decl_flags as fl:
-                enums.push(lower_enum_decl(ref_of(ctx), fl.name, fl.backing_type, fl.flags_members, true))
-            ast.Decl.decl_static_assert as sa:
-                module_static_asserts.push(lower_static_assert(ref_of(ctx), sa.condition, sa.message))
-            ast.Decl.decl_struct as s:
-                # Skip generic structs — only their concrete specializations
-                # (emitted by `ensure_generic_struct_decl`) carry resolved
-                # field types.  Structs with only lifetime parameters (`@a`)
-                # are not generic in the monomorphization sense and should
-                # be emitted directly.
-                if not has_non_lifetime_type_params(s.type_params):
-                    match lower_struct_decl(ref_of(ctx), s.name, s.packed, s.alignment, Option[str].none, s.name):
-                        Option.some as sd:
-                            structs.push(sd.value)
-                        Option.none:
-                            pass
-                    lower_nested_struct_decls(ref_of(ctx), s.nested_types, s.name, s.name, ref_of(structs))
-            ast.Decl.decl_union as u:
-                unions.push(lower_union_decl(ref_of(ctx), u.name, u.union_fields))
-            ast.Decl.decl_variant as vr:
-                if vr.type_params.len == 0:
-                    variants.push(lower_variant_decl(ref_of(ctx), vr.name, vr.variant_arms))
-            ast.Decl.decl_extending_block as ex:
-                lower_extending_block(ctx, ref_of(functions), ex.type_name, ex.methods)
-            ast.Decl.decl_var as v:
-                var g_ty = types.primitive("void")
-                if v.var_type != null:
-                    var vt: ptr[ast.TypeRef] = unsafe: ptr[ast.TypeRef]<-v.var_type
-                    # `qualify_type` (not just `resolve_type_ref`) registers the
-                    # generic instance and produces the monomorphized C name, so a
-                    # module-level `var m: Map[str, str]` declares
-                    # `std_map_Map_str_str m` rather than the unspecialized
-                    # `std_map_Map` (which is never defined).
-                    g_ty = qualify_type(ctx, resolve_type_ref(ctx, vt))
-                # A tuple in the global's declared type registers its value
-                # struct even when no literal mentions it (the host's
-                # `ensure_registered_storage_type_types`).
-                var g_seen = map_mod.Map[str, bool].create()
-                ensure_storage_type_tuples(ctx, g_ty, ref_of(g_seen))
-                # A top-level `var` initializer must be static-storage-safe (the
-                # analyzer enforces this), so it lowers to a C static initializer.
-                # A no-capture `proc` initializer, for example, becomes a static
-                # aggregate of function pointers — without it the proc's invoke
-                # pointer stays null and calling it segfaults.
-                var g_val = alloc_expr(ir.Expr.expr_zero_init(ty = g_ty))
-                if v.value != null:
-                    # A top-level initializer is evaluated in an empty local
-                    # scope: clear any locals left over from a previously-lowered
-                    # function so a no-capture `proc` initializer is not treated
-                    # as capturing stale bindings.
-                    ctx.locals.clear()
-                    # A compile-time-known initializer folds to its constant value
-                    # — a literal, a constant reference (an imported module's
-                    # constant included) or a `const` function/method call — as the
-                    # host's `lower_static_storage_initializer` folds
-                    # `compile_time_const_value` through `lower_compile_time_literal`.
-                    # Anything else lowers as an ordinary expression.
-                    var init_env = map_mod.Map[str, ptr[ir.Expr]].create()
-                    match try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-v.value, ref_of(init_env), g_ty):
-                        Option.some as g_cv:
-                            g_val = alloc_expr(coerce_const_value(ctx, unsafe: read(g_cv.value), g_ty))
-                        Option.none:
-                            g_val = lower_expr(ctx, unsafe: ptr[ast.Expr]<-v.value)
-                            # A literal initializer takes the global's declared type, as
-                            # the host's contextual literal inference gives it one
-                            # (`var shorts: short = 0` is a `short` literal, not `int`).
-                            g_val = int_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
-                            g_val = float_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
-                            g_val = string_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
-                            g_val = null_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
-                globals.push(ir.Global(name = v.name, linkage_name = naming.qualified_c_name(ctx.module_name, v.name), ty = g_ty, value = g_val))
-            ast.Decl.decl_const as c:
-                var c_ty = resolve_type_ref(ctx, c.const_type)
-                # A tuple in the constant's declared type registers its value
-                # struct, as the host's `ensure_registered_storage_type_types`
-                # does before the value is lowered.
-                var c_seen = map_mod.Map[str, bool].create()
-                ensure_storage_type_tuples(ctx, c_ty, ref_of(c_seen))
-                let val_ptr = c.value
-                # The host's `lower_constants` routes an expression-list or
-                # call/specialization constant value through
-                # `lower_const_value_literal` rather than the storage-initializer
-                # path.
-                var const_value_literal_path = false
-                if val_ptr != null:
-                    match unsafe: read(ptr[ast.Expr]<-val_ptr):
-                        ast.Expr.expr_expression_list:
-                            const_value_literal_path = true
-                        ast.Expr.expr_call:
-                            const_value_literal_path = true
-                        ast.Expr.expr_specialization:
-                            const_value_literal_path = true
-                        _:
-                            pass
-                # Type constants (->type) are compile-time only; they don't
-                # have a C representation (mirrors Ruby).
-                var is_type_meta = false
-                match c_ty:
-                    types.Type.ty_type_meta:
-                        is_type_meta = true
-                    _:
-                        pass
-                if is_type_meta:
-                    pass
-                else if val_ptr == null:
-                    var bv = alloc_expr(ir.Expr.expr_zero_init(ty = c_ty))
-                    if c.block_body != null:
-                        var empty_env = map_mod.Map[str, ptr[ir.Expr]].create()
-                        match try_const_value_body(ctx, c.block_body, ref_of(empty_env)):
-                            Option.some as body_val:
-                                bv = alloc_expr(coerce_const_value(ctx, unsafe: read(body_val.value), c_ty))
-                            Option.none:
-                                pass
-                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = bv, line = c.line, path = ctx.analysis.source_path))
-                else:
-                    # `const EQ: bool = A == B` over constant aggregates folds
-                    # at compile time; a C function call is not a constant
-                    # initializer.
-                    var folded: Option[bool] = Option[bool].none
+                    # Type constants (->type) are compile-time only; they don't
+                    # have a C representation (mirrors Ruby).
+                    var is_type_meta = false
                     match c_ty:
-                        types.Type.ty_primitive as cp:
-                            if cp.name == "bool":
-                                folded = try_const_equality(ctx, unsafe: ptr[ast.Expr]<-val_ptr)
+                        types.Type.ty_type_meta:
+                            is_type_meta = true
                         _:
                             pass
-                    match folded:
-                        Option.some as fb:
-                            constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = alloc_expr(ir.Expr.expr_boolean_literal(value = fb.value, ty = c_ty)), line = c.line, path = ctx.analysis.source_path))
-                        Option.none:
-                            var const_env = map_mod.Map[str, ptr[ir.Expr]].create()
-                            match try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-val_ptr, ref_of(const_env), c_ty):
-                                Option.some as cv2:
-                                    var c_val = unsafe: read(cv2.value)
-                                    # The host's `lower_const_value_literal` path
-                                    # (an expression-list or call constant) emits a
-                                    # tuple constant as an `IR::ArrayLiteral`.
-                                    if const_value_literal_path:
-                                        match const_tuple_array_literal(c_val, c_ty):
-                                            Option.some as al:
-                                                c_val = al.value
-                                            Option.none:
-                                                pass
-                                    # A plain expression constant takes the host's
-                                    # `lower_compile_time_literal` path: the folded
-                                    # value is typed but *not* width-masked
-                                    # (`~268435455` stays `-268435456` in a `uint`),
-                                    # unlike the `lower_const_value_literal` paths.
-                                    var coerced: ptr[ir.Expr]
-                                    if const_value_literal_path:
-                                        coerced = alloc_expr(coerce_const_value(ctx, c_val, c_ty))
-                                    else:
-                                        # `lower_compile_time_literal` returns nil when a
-                                        # leaf value cannot be represented (an integer for
-                                        # a `char` field, for instance); the host then
-                                        # falls back to rewriting the imported constant
-                                        # reference to its declaration initializer and
-                                        # lowering that AST with the expected type.
-                                        if not const_value_ir_representable(ctx, c_val, c_ty):
-                                            match lower_imported_const_initializer(ctx, unsafe: ptr[ast.Expr]<-val_ptr, c_ty):
-                                                Option.some as iv:
-                                                    c_val = unsafe: read(iv.value)
+                    if is_type_meta:
+                        pass
+                    else if val_ptr == null:
+                        var bv = alloc_expr(ir.Expr.expr_zero_init(ty = c_ty))
+                        if c.block_body != null:
+                            var empty_env = map_mod.Map[str, ptr[ir.Expr]].create()
+                            match try_const_value_body(ctx, c.block_body, ref_of(empty_env)):
+                                Option.some as body_val:
+                                    bv = alloc_expr(coerce_const_value(ctx, unsafe: read(body_val.value), c_ty))
+                                Option.none:
+                                    pass
+                        constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = bv, line = c.line, path = ctx.analysis.source_path))
+                    else:
+                        # `const EQ: bool = A == B` over constant aggregates folds
+                        # at compile time; a C function call is not a constant
+                        # initializer.
+                        var folded: Option[bool] = Option[bool].none
+                        match c_ty:
+                            types.Type.ty_primitive as cp:
+                                if cp.name == "bool":
+                                    folded = try_const_equality(ctx, unsafe: ptr[ast.Expr]<-val_ptr)
+                            _:
+                                pass
+                        match folded:
+                            Option.some as fb:
+                                constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = alloc_expr(ir.Expr.expr_boolean_literal(value = fb.value, ty = c_ty)), line = c.line, path = ctx.analysis.source_path))
+                            Option.none:
+                                var const_env = map_mod.Map[str, ptr[ir.Expr]].create()
+                                match try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-val_ptr, ref_of(const_env), c_ty):
+                                    Option.some as cv2:
+                                        var c_val = unsafe: read(cv2.value)
+                                        # The host's `lower_const_value_literal` path
+                                        # (an expression-list or call constant) emits a
+                                        # tuple constant as an `IR::ArrayLiteral`.
+                                        if const_value_literal_path:
+                                            match const_tuple_array_literal(c_val, c_ty):
+                                                Option.some as al:
+                                                    c_val = al.value
                                                 Option.none:
                                                     pass
-                                        coerced = alloc_expr(retype_const_literal(c_val, c_ty))
-                                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = coerced, line = c.line, path = ctx.analysis.source_path))
-                                Option.none:
-                                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr), line = c.line, path = ctx.analysis.source_path))
-            ast.Decl.decl_event as ev:
-                var info = ensure_event_runtime(ctx, "", ev.name)
-                # The global's declared type is the event itself (`Types::Event`),
-                # whose C name is the runtime struct; the linkage name is the
-                # module-qualified event name.
-                var ev_payload: ptr[types.Type]? = null
-                if info.has_payload:
-                    ev_payload = types.alloc_type(info.payload_type)
-                let ev_ty = types.Type.ty_event(
-                    name = ev.name,
-                    capacity = info.capacity,
-                    payload_type = ev_payload,
-                    linkage_name = info.event_c_name,
-                )
-                let ev_zero = alloc_expr(ir.Expr.expr_zero_init(ty = ev_ty))
-                globals.push(ir.Global(name = ev.name, linkage_name = naming.qualified_c_name(ctx.module_name, ev.name), ty = ev_ty, value = ev_zero))
-            ast.Decl.decl_when as w:
-                # Expanded by the pre-pass above; unreachable here.
-                pass
-            _:
-                pass
-        i += 1
+                                        # A plain expression constant takes the host's
+                                        # `lower_compile_time_literal` path: the folded
+                                        # value is typed but *not* width-masked
+                                        # (`~268435455` stays `-268435456` in a `uint`),
+                                        # unlike the `lower_const_value_literal` paths.
+                                        var coerced: ptr[ir.Expr]
+                                        if const_value_literal_path:
+                                            coerced = alloc_expr(coerce_const_value(ctx, c_val, c_ty))
+                                        else:
+                                            # `lower_compile_time_literal` returns nil when a
+                                            # leaf value cannot be represented (an integer for
+                                            # a `char` field, for instance); the host then
+                                            # falls back to rewriting the imported constant
+                                            # reference to its declaration initializer and
+                                            # lowering that AST with the expected type.
+                                            if not const_value_ir_representable(ctx, c_val, c_ty):
+                                                match lower_imported_const_initializer(ctx, unsafe: ptr[ast.Expr]<-val_ptr, c_ty):
+                                                    Option.some as iv:
+                                                        c_val = unsafe: read(iv.value)
+                                                    Option.none:
+                                                        pass
+                                            coerced = alloc_expr(retype_const_literal(c_val, c_ty))
+                                        constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = coerced, line = c.line, path = ctx.analysis.source_path))
+                                    Option.none:
+                                        constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr), line = c.line, path = ctx.analysis.source_path))
+                ast.Decl.decl_event as ev:
+                    var info = ensure_event_runtime(ctx, "", ev.name)
+                    # The global's declared type is the event itself (`Types::Event`),
+                    # whose C name is the runtime struct; the linkage name is the
+                    # module-qualified event name.
+                    var ev_payload: ptr[types.Type]? = null
+                    if info.has_payload:
+                        ev_payload = types.alloc_type(info.payload_type)
+                    let ev_ty = types.Type.ty_event(
+                        name = ev.name,
+                        capacity = info.capacity,
+                        payload_type = ev_payload,
+                        linkage_name = info.event_c_name,
+                    )
+                    let ev_zero = alloc_expr(ir.Expr.expr_zero_init(ty = ev_ty))
+                    globals.push(ir.Global(name = ev.name, linkage_name = naming.qualified_c_name(ctx.module_name, ev.name), ty = ev_ty, value = ev_zero))
+                ast.Decl.decl_when as w:
+                    # Expanded by the pre-pass above; unreachable here.
+                    pass
+                _:
+                    pass
+            i += 1
+        phase += 1
 
     # Concrete generic struct instances are not part of the IR's declaration
     # sections (host parity: its C backend collects them from the types in
@@ -3592,25 +3630,6 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         let ret_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = ret_ty, pointer = Option[bool].some(value = false)))
                         output.push(ir.Stmt.stmt_return(value = ret_ref, line = r.line, source_path = ctx.analysis.source_path))
                         return
-                    ast.Expr.expr_call as outer_call:
-                        # Chain call: `return f(a)(b)` where `f(a)` returns a
-                        # proc/fn.  Hoist the inner call into a temp so the
-                        # outer call can reference both `.invoke` and `.env`.
-                        match read(outer_call.callee):
-                            ast.Expr.expr_call:
-                                let inner_result = lower_expr(ctx, outer_call.callee)
-                                let inner_ty = ir_expr_type(inner_result)
-                                if is_proc_type(inner_ty):
-                                    let chain_tmp = fresh_c_temp_name(ctx, "chain")
-                                    let ct = utils.c_local_name(chain_tmp)
-                                    output.push(ir.Stmt.stmt_local(name = chain_tmp, linkage_name = ct, ty = inner_ty, value = inner_result, line = 0, source_path = ""))
-                                    let lb = LocalBinding(name = chain_tmp, c_name = ct, ty = inner_ty, pointer = Option[bool].some(value = false))
-                                    let proc_ret = lower_proc_call(ctx, lb, outer_call.args, value)
-                                    flush_all_defers(ctx, output)
-                                    output.push(ir.Stmt.stmt_return(value = proc_ret, line = r.line, source_path = ""))
-                                    return
-                            _:
-                                pass
                     _:
                         pass
                 # Plain `return expr`: when defers or hoisted cleanups are active
@@ -3732,7 +3751,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                 pass
                         match read(init_val):
                             ast.Expr.expr_match as me:
-                                lower_match_expression_local(ctx, output, loc.name, loc.stmt_type, me.scrutinee, me.arms)
+                                lower_match_expression_local(ctx, output, loc.name, loc.stmt_type, me.scrutinee, me.arms, loc.line)
                                 return
                             _:
                                 pass
@@ -3824,6 +3843,13 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                             ty = declared.value
                                         Option.none:
                                             ty = qualify_type(ctx, ir_expr_type(value_expr))
+                                ast.Expr.expr_detach:
+                                    # The host's inference gives a detach value the
+                                    # singleton `Handle`, while its lowered call
+                                    # node carries `ptr[void]`.
+                                    ty = qualify_type(ctx, expr_type(ctx, ptr[ast.Expr]<-init))
+                                    if types.is_error(ty):
+                                        ty = qualify_type(ctx, ir_expr_type(value_expr))
                                 _:
                                     ty = qualify_type(ctx, ir_expr_type(value_expr))
                                     # A numeric-aggregate expression's storage
@@ -6131,6 +6157,16 @@ function nested_type_in_analysis(a: analyzer.Analysis, parts: span[str]) -> Opti
             return Option[types.Type].none
 
 
+## Resolve the interface type arguments of a `dyn[Iface[args]]` annotation.
+function dyn_type_args(ctx: ref[LowerCtx], qn: ast.QualifiedName) -> span[types.Type]:
+    var args = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < qn.type_arguments.len:
+        args.push(resolve_type_ref(ctx, unsafe: qn.type_arguments.data + i))
+        i += 1
+    return args.as_span()
+
+
 ## Resolve a syntactic `ast.TypeRef` to a `types.Type`, producing module-
 ## qualified named types and modelling `array[T, N]` (N as `ty_literal_int`) and
 ## `span[T]` / `ptr[T]` / `const_ptr[T]` / `ref[T]` as generic instances.  Returns
@@ -6148,7 +6184,7 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
                 return types.Type.ty_nullable(base = types.alloc_type(fun))
             return fun
         if t.is_dyn:
-            return types.Type.ty_dyn(iface = naming.dyn_iface_declared_name(unsafe: analyzer.qname_to_str(t.dyn_interface)))
+            return types.Type.ty_dyn(iface = naming.dyn_iface_declared_name(unsafe: analyzer.qname_to_str(t.dyn_interface)), args = dyn_type_args(ctx, t.dyn_interface))
         if t.is_tuple:
             var elems = vec.Vec[types.Type].create()
             var i: ptr_uint = 0
@@ -7112,116 +7148,41 @@ function const_array_length(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> long
 #  Parallel / detach / gather lowering
 # =============================================================================
 
+# =============================================================================
+#  Parallel / detach / gather lowering
+# =============================================================================
+
+## Host parity for the parallel constructs (`loops.rb`):
+## `@parallel_for_counter` is a single per-module counter shared by
+## `parallel for` (`_pfor_`), `parallel:` (`_spawn_`) and `detach`
+## (`_detach_`), incremented once per construct (not per worker).  The
+## generated identifiers are `<module_prefix>_<kind>_<N>` with the construct
+## prefix in front (`mt_pfor_cap_`, `mt_pfor_work_`, ...).
 var parallel_cnt: ptr_uint = 0
 
 
-function parallel_uid(ctx: ref[LowerCtx]) -> str:
+function parallel_uid(ctx: ref[LowerCtx], kind: str) -> str:
     var buf = string.String.create()
     buf.append(naming.module_c_prefix(ctx.module_name))
-    buf.append("_par_")
+    buf.append("_")
+    buf.append(kind)
+    buf.append("_")
     fmt.append_ptr_uint(ref_of(buf), parallel_cnt)
     return buf.as_str()
 
 
-function parallel_worker_fn(ctx: ref[LowerCtx], body_ir: span[ir.Stmt]) -> ir.Function:
-    let void_ty = ctx.void_ty
-    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    parallel_cnt += 1
-    let uid = parallel_uid(ctx)
-    let name = j2("mt_p_work_", uid)
-    var params = vec.Vec[ir.Param].create()
-    params.push(ir.Param(name = "data", linkage_name = "data", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = name, linkage_name = name, params = params.as_span(),
-        return_type = void_ty, body = body_ir, entry_point = false, method_receiver_param = false)
-
-
-## Collect all `ir.Expr.expr_name` references from a span of IR statements.
-function collect_ir_names(stmts: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]]) -> void:
-    var si: ptr_uint = 0
-    while si < stmts.len:
-        collect_ir_stmt_names(unsafe: read(stmts.data + si), seen)
-        si += 1
-
-
-function collect_ir_stmt_names(s: ir.Stmt, seen: ref[map_mod.Map[str, bool]]) -> void:
-    match s:
-        ir.Stmt.stmt_expression as ex:
-            collect_ir_expr_names(unsafe: read(ex.expression), seen)
-        ir.Stmt.stmt_assignment as asg:
-            collect_ir_expr_names(unsafe: read(asg.target), seen)
-            collect_ir_expr_names(unsafe: read(asg.value), seen)
-        ir.Stmt.stmt_local as loc:
-            collect_ir_expr_names(unsafe: read(loc.value), seen)
-        ir.Stmt.stmt_return as ret:
-            if ret.value != null:
-                collect_ir_expr_names(unsafe: read(unsafe: ptr[ir.Expr]<-ret.value), seen)
-        ir.Stmt.stmt_if as if_:
-            collect_ir_expr_names(unsafe: read(if_.condition), seen)
-            collect_ir_names(if_.then_body, seen)
-        ir.Stmt.stmt_block as blk:
-            collect_ir_names(blk.body, seen)
-        ir.Stmt.stmt_for as f:
-            collect_ir_expr_names(unsafe: read(f.condition), seen)
-            collect_ir_names(f.body, seen)
-        ir.Stmt.stmt_while as w:
-            collect_ir_expr_names(unsafe: read(w.condition), seen)
-            collect_ir_names(w.body, seen)
+function pfor_element_type(t: types.Type) -> types.Type:
+    match t:
+        types.Type.ty_generic as g:
+            if g.args.len > 0:
+                return unsafe: read(g.args.data + 0)
+            return types.Type.ty_error
         _:
-            pass
+            return types.Type.ty_error
 
 
-function collect_ir_expr_names(ep: ir.Expr, seen: ref[map_mod.Map[str, bool]]) -> void:
-    match ep:
-        ir.Expr.expr_name as nm:
-            seen.set(nm.name, true)
-        ir.Expr.expr_member as m:
-            collect_ir_expr_names(unsafe: read(m.receiver), seen)
-        ir.Expr.expr_unary as u:
-            collect_ir_expr_names(unsafe: read(u.operand), seen)
-        ir.Expr.expr_binary as b:
-            collect_ir_expr_names(unsafe: read(b.left), seen)
-            collect_ir_expr_names(unsafe: read(b.right), seen)
-        ir.Expr.expr_index as ix:
-            collect_ir_expr_names(unsafe: read(ix.receiver), seen)
-            collect_ir_expr_names(unsafe: read(ix.index), seen)
-        ir.Expr.expr_checked_index as ci:
-            collect_ir_expr_names(unsafe: read(ci.receiver), seen)
-            collect_ir_expr_names(unsafe: read(ci.index), seen)
-        ir.Expr.expr_checked_span_index as cs:
-            collect_ir_expr_names(unsafe: read(cs.receiver), seen)
-            collect_ir_expr_names(unsafe: read(cs.index), seen)
-        ir.Expr.expr_address_of as ao:
-            collect_ir_expr_names(unsafe: read(ao.expression), seen)
-        ir.Expr.expr_call as call:
-            var ai: ptr_uint = 0
-            while ai < call.arguments.len:
-                collect_ir_expr_names(unsafe: read(call.arguments.data + ai), seen)
-                ai += 1
-        ir.Expr.expr_call_indirect as ci:
-            collect_ir_expr_names(unsafe: read(ci.callee), seen)
-            var cai: ptr_uint = 0
-            while cai < ci.arguments.len:
-                collect_ir_expr_names(unsafe: read(ci.arguments.data + cai), seen)
-                cai += 1
-        ir.Expr.expr_cast as c:
-            collect_ir_expr_names(unsafe: read(c.expression), seen)
-        ir.Expr.expr_aggregate_literal as al:
-            var al_i: ptr_uint = 0
-            while al_i < al.fields.len:
-                collect_ir_expr_names(unsafe: read(unsafe: read(al.fields.data + al_i).value), seen)
-                al_i += 1
-        ir.Expr.expr_array_literal as al:
-            var ali: ptr_uint = 0
-            while ali < al.elements.len:
-                collect_ir_expr_names(unsafe: read(al.elements.data + ali), seen)
-                ali += 1
-        ir.Expr.expr_variant_literal as vl:
-            var vli: ptr_uint = 0
-            while vli < vl.fields.len:
-                collect_ir_expr_names(unsafe: read(unsafe: read(vl.fields.data + vli).value), seen)
-                vli += 1
-        _:
-            pass
+function pfor_ptr_type(t: types.Type) -> types.Type:
+    return types.Type.ty_generic(name = "ptr", args = sp_type(t))
 
 
 ## Find the LocalBinding for a name in ctx.locals, if it exists.
@@ -7237,45 +7198,442 @@ function find_local(ctx: ref[LowerCtx], name: str) -> Option[LocalBinding]:
     return Option[LocalBinding].none
 
 
-## Worker for mt_parallel_for: takes (void* data, int64_t start, int64_t end).
-function parallel_for_worker_fn(ctx: ref[LowerCtx], body_ir: span[ir.Stmt]) -> ir.Function:
-    let void_ty = ctx.void_ty
-    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    let long_ty = types.primitive("long")
-    parallel_cnt += 1
-    let uid = parallel_uid(ctx)
-    let name = j2("mt_pfor_work_", uid)
-    # Wrap body in a for-loop: for (let i = mt_pfor_start; i < mt_pfor_end; i += 1) { body }
-    let index_c = "i"
-    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_c, ty = long_ty, pointer = Option[bool].some(value = false)))
-    let start_ref = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_start", ty = long_ty, pointer = Option[bool].some(value = false)))
-    let end_ref = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_end", ty = long_ty, pointer = Option[bool].some(value = false)))
-    let cond = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = end_ref, ty = ctx.bool_ty))
-    let post = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = long_ty))))
-    let init = alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = long_ty, value = start_ref, line = 0, source_path = ""))
-    let for_stmt = ir.Stmt.stmt_for(init = init, condition = cond, post = post, body = body_ir)
-    var full_body = vec.Vec[ir.Stmt].create()
-    full_body.push(for_stmt)
-    var params = vec.Vec[ir.Param].create()
-    params.push(ir.Param(name = "data", linkage_name = "data", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    params.push(ir.Param(name = "mt_pfor_start", linkage_name = "mt_pfor_start", ty = long_ty, pointer = Option[bool].some(value = false)))
-    params.push(ir.Param(name = "mt_pfor_end", linkage_name = "mt_pfor_end", ty = long_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = name, linkage_name = name, params = params.as_span(),
-        return_type = void_ty, body = full_body.as_span(), entry_point = false, method_receiver_param = false)
+function pfor_capture_name(c: ir.Expr) -> str:
+    match c:
+        ir.Expr.expr_name as nm:
+            return nm.name
+        _:
+            return ""
 
 
-function void_ptr_ty() -> types.Type:
-    return types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
+## First-occurrence-ordered collected names: the capture order is observable
+## (struct fields and aggregate literals), and a hash map does not preserve it.
+struct PforNames:
+    names: vec.Vec[ir.Expr]
+    seen: map_mod.Map[str, bool]
 
 
-function pw1_str(value: ptr_uint) -> str:
-    var buf = string.String.create()
-    fmt.append_ptr_uint(ref_of(buf), value)
-    return buf.as_str()
+## The host's `collect_pfor_ir_names_expr` (`loops.rb:1055`): names reachable
+## from a lowered expression, first occurrence winning.
+function collect_pfor_ir_names_expr(ep: ir.Expr, result: ref[PforNames]) -> void:
+    match ep:
+        ir.Expr.expr_name as nm:
+            if not result.seen.contains(nm.name):
+                result.seen.set(nm.name, true)
+                result.names.push(ep)
+        ir.Expr.expr_member as m:
+            collect_pfor_ir_names_expr(unsafe: read(m.receiver), result)
+        ir.Expr.expr_index as ix:
+            collect_pfor_ir_names_expr(unsafe: read(ix.receiver), result)
+            collect_pfor_ir_names_expr(unsafe: read(ix.index), result)
+        ir.Expr.expr_checked_index as ix:
+            collect_pfor_ir_names_expr(unsafe: read(ix.receiver), result)
+            collect_pfor_ir_names_expr(unsafe: read(ix.index), result)
+        ir.Expr.expr_checked_span_index as ix:
+            collect_pfor_ir_names_expr(unsafe: read(ix.receiver), result)
+            collect_pfor_ir_names_expr(unsafe: read(ix.index), result)
+        ir.Expr.expr_nullable_index as ix:
+            collect_pfor_ir_names_expr(unsafe: read(ix.receiver), result)
+            collect_pfor_ir_names_expr(unsafe: read(ix.index), result)
+        ir.Expr.expr_nullable_span_index as ix:
+            collect_pfor_ir_names_expr(unsafe: read(ix.receiver), result)
+            collect_pfor_ir_names_expr(unsafe: read(ix.index), result)
+        ir.Expr.expr_call as call:
+            var ai: ptr_uint = 0
+            while ai < call.arguments.len:
+                collect_pfor_ir_names_expr(unsafe: read(call.arguments.data + ai), result)
+                ai += 1
+        ir.Expr.expr_call_indirect as call:
+            collect_pfor_ir_names_expr(unsafe: read(call.callee), result)
+            var cai: ptr_uint = 0
+            while cai < call.arguments.len:
+                collect_pfor_ir_names_expr(unsafe: read(call.arguments.data + cai), result)
+                cai += 1
+        ir.Expr.expr_binary as b:
+            collect_pfor_ir_names_expr(unsafe: read(b.left), result)
+            collect_pfor_ir_names_expr(unsafe: read(b.right), result)
+        ir.Expr.expr_unary as u:
+            collect_pfor_ir_names_expr(unsafe: read(u.operand), result)
+        ir.Expr.expr_cast as c:
+            collect_pfor_ir_names_expr(unsafe: read(c.expression), result)
+        ir.Expr.expr_address_of as ao:
+            collect_pfor_ir_names_expr(unsafe: read(ao.expression), result)
+        ir.Expr.expr_conditional as cond:
+            collect_pfor_ir_names_expr(unsafe: read(cond.condition), result)
+            collect_pfor_ir_names_expr(unsafe: read(cond.then_expression), result)
+            collect_pfor_ir_names_expr(unsafe: read(cond.else_expression), result)
+        ir.Expr.expr_aggregate_literal as al:
+            var al_i: ptr_uint = 0
+            while al_i < al.fields.len:
+                collect_pfor_ir_names_expr(unsafe: read(unsafe: read(al.fields.data + al_i).value), result)
+                al_i += 1
+        ir.Expr.expr_array_literal as al:
+            var ali: ptr_uint = 0
+            while ali < al.elements.len:
+                collect_pfor_ir_names_expr(unsafe: read(al.elements.data + ali), result)
+                ali += 1
+        ir.Expr.expr_reinterpret as r:
+            collect_pfor_ir_names_expr(unsafe: read(r.expression), result)
+        _:
+            pass
 
 
-## Lower `parallel for i in 0..N: body`.  Generates a worker function that
-## contains the loop body, and emits a call to mt_parallel_for.
+function collect_pfor_ir_names_span(stmts: span[ir.Stmt], result: ref[PforNames]) -> void:
+    var si: ptr_uint = 0
+    while si < stmts.len:
+        collect_pfor_ir_names_stmt(unsafe: read(stmts.data + si), result)
+        si += 1
+
+
+function collect_pfor_ir_names_stmt(s: ir.Stmt, result: ref[PforNames]) -> void:
+    match s:
+        ir.Stmt.stmt_local as loc:
+            collect_pfor_ir_names_expr(unsafe: read(loc.value), result)
+        ir.Stmt.stmt_assignment as asg:
+            collect_pfor_ir_names_expr(unsafe: read(asg.target), result)
+            collect_pfor_ir_names_expr(unsafe: read(asg.value), result)
+        ir.Stmt.stmt_expression as ex:
+            collect_pfor_ir_names_expr(unsafe: read(ex.expression), result)
+        ir.Stmt.stmt_return as ret:
+            let value = ret.value
+            if value != null:
+                collect_pfor_ir_names_expr(unsafe: read(unsafe: ptr[ir.Expr]<-value), result)
+        ir.Stmt.stmt_if as iff:
+            collect_pfor_ir_names_expr(unsafe: read(iff.condition), result)
+            collect_pfor_ir_names_span(iff.then_body, result)
+            match iff.else_body:
+                Option.some as eb:
+                    collect_pfor_ir_names_span(eb.value, result)
+                Option.none:
+                    pass
+        ir.Stmt.stmt_while as w:
+            collect_pfor_ir_names_expr(unsafe: read(w.condition), result)
+            collect_pfor_ir_names_span(w.body, result)
+        ir.Stmt.stmt_for as f:
+            collect_pfor_ir_names_stmt(unsafe: read(f.init), result)
+            collect_pfor_ir_names_expr(unsafe: read(f.condition), result)
+            unsafe:
+                match read(f.post):
+                    ir.Stmt.stmt_assignment:
+                        collect_pfor_ir_names_stmt(unsafe: read(f.post), result)
+                    ir.Stmt.stmt_expression:
+                        collect_pfor_ir_names_stmt(unsafe: read(f.post), result)
+                    _:
+                        pass
+            collect_pfor_ir_names_span(f.body, result)
+        ir.Stmt.stmt_block as blk:
+            collect_pfor_ir_names_span(blk.body, result)
+        ir.Stmt.stmt_switch as sw:
+            collect_pfor_ir_names_expr(unsafe: read(sw.expression), result)
+            var ci: ptr_uint = 0
+            while ci < sw.cases.len:
+                let c = unsafe: read(sw.cases.data + ci)
+                collect_pfor_ir_names_span(c.body, result)
+                ci += 1
+        _:
+            pass
+
+
+## The host's `collect_pfor_local_decls` (`loops.rb:1089`): linkage names of
+## every local declaration in the body, which are never captures.
+function collect_pfor_local_decls(stmt: ir.Stmt, decls: ref[map_mod.Map[str, bool]]) -> void:
+    match stmt:
+        ir.Stmt.stmt_local as loc:
+            decls.set(loc.linkage_name, true)
+        ir.Stmt.stmt_for as f:
+            unsafe:
+                match read(f.init):
+                    ir.Stmt.stmt_local as init:
+                        decls.set(init.linkage_name, true)
+                    _:
+                        pass
+            collect_pfor_local_decls_span(f.body, decls)
+        ir.Stmt.stmt_block as blk:
+            collect_pfor_local_decls_span(blk.body, decls)
+        ir.Stmt.stmt_if as iff:
+            collect_pfor_local_decls_span(iff.then_body, decls)
+            match iff.else_body:
+                Option.some as eb:
+                    collect_pfor_local_decls_span(eb.value, decls)
+                Option.none:
+                    pass
+        ir.Stmt.stmt_while as w:
+            collect_pfor_local_decls_span(w.body, decls)
+        ir.Stmt.stmt_switch as sw:
+            var ci: ptr_uint = 0
+            while ci < sw.cases.len:
+                let c = unsafe: read(sw.cases.data + ci)
+                collect_pfor_local_decls_span(c.body, decls)
+                ci += 1
+        _:
+            pass
+
+
+function collect_pfor_local_decls_span(stmts: span[ir.Stmt], decls: ref[map_mod.Map[str, bool]]) -> void:
+    var si: ptr_uint = 0
+    while si < stmts.len:
+        collect_pfor_local_decls(unsafe: read(stmts.data + si), decls)
+        si += 1
+
+
+## The base name of an assignment target, for the parallel-block write set
+## (the host's `pfor_assignment_base_name`, `loops.rb:901`).
+function pfor_assignment_base_name(expr: ir.Expr) -> str:
+    match expr:
+        ir.Expr.expr_name as nm:
+            return nm.name
+        ir.Expr.expr_member as m:
+            return pfor_assignment_base_name(unsafe: read(m.receiver))
+        ir.Expr.expr_index as ix:
+            return pfor_assignment_base_name(unsafe: read(ix.receiver))
+        ir.Expr.expr_checked_index as ix:
+            return pfor_assignment_base_name(unsafe: read(ix.receiver))
+        ir.Expr.expr_checked_span_index as ix:
+            return pfor_assignment_base_name(unsafe: read(ix.receiver))
+        ir.Expr.expr_nullable_index as ix:
+            return pfor_assignment_base_name(unsafe: read(ix.receiver))
+        ir.Expr.expr_nullable_span_index as ix:
+            return pfor_assignment_base_name(unsafe: read(ix.receiver))
+        ir.Expr.expr_address_of as ao:
+            return pfor_assignment_base_name(unsafe: read(ao.expression))
+        _:
+            return ""
+
+
+function collect_pfor_written_names(stmts: span[ir.Stmt], capture_names: ref[map_mod.Map[str, bool]], written: ref[map_mod.Map[str, bool]]) -> void:
+    var si: ptr_uint = 0
+    while si < stmts.len:
+        collect_pfor_written_stmt(unsafe: read(stmts.data + si), capture_names, written)
+        si += 1
+
+
+function collect_pfor_written_stmt(stmt: ir.Stmt, capture_names: ref[map_mod.Map[str, bool]], written: ref[map_mod.Map[str, bool]]) -> void:
+    match stmt:
+        ir.Stmt.stmt_assignment as asg:
+            let base = pfor_assignment_base_name(unsafe: read(asg.target))
+            if base.len > 0 and capture_names.contains(base):
+                written.set(base, true)
+        ir.Stmt.stmt_if as iff:
+            collect_pfor_written_names(iff.then_body, capture_names, written)
+            match iff.else_body:
+                Option.some as eb:
+                    collect_pfor_written_names(eb.value, capture_names, written)
+                Option.none:
+                    pass
+        ir.Stmt.stmt_while as w:
+            collect_pfor_written_names(w.body, capture_names, written)
+        ir.Stmt.stmt_for as f:
+            collect_pfor_written_names(f.body, capture_names, written)
+        ir.Stmt.stmt_block as blk:
+            collect_pfor_written_names(blk.body, capture_names, written)
+        ir.Stmt.stmt_switch as sw:
+            var ci: ptr_uint = 0
+            while ci < sw.cases.len:
+                let c = unsafe: read(sw.cases.data + ci)
+                collect_pfor_written_names(c.body, capture_names, written)
+                ci += 1
+        _:
+            pass
+
+
+## Rewrite the array captures of a parallel body to their pointer fields (the
+## host's `rewrite_pfor_array_captures`, `loops.rb:916`).  An array value is
+## not safe to copy into a capture struct, so the struct holds `ptr[E]` and a
+## checked index through the array becomes a plain pointer index.
+function rewrite_pfor_array_captures(stmts: span[ir.Stmt], array_names: ref[map_mod.Map[str, bool]]) -> span[ir.Stmt]:
+    var rewritten = vec.Vec[ir.Stmt].create()
+    var si: ptr_uint = 0
+    while si < stmts.len:
+        rewritten.push(rewrite_pfor_stmt(unsafe: read(stmts.data + si), array_names))
+        si += 1
+    return rewritten.as_span()
+
+
+function rewrite_pfor_stmt(stmt: ir.Stmt, array_names: ref[map_mod.Map[str, bool]]) -> ir.Stmt:
+    match stmt:
+        ir.Stmt.stmt_assignment as asg:
+            return ir.Stmt.stmt_assignment(
+                target = alloc_expr(rewrite_pfor_expr(unsafe: read(asg.target), array_names)),
+                operator = asg.operator,
+                value = alloc_expr(rewrite_pfor_expr(unsafe: read(asg.value), array_names)),
+            )
+        ir.Stmt.stmt_local as loc:
+            return ir.Stmt.stmt_local(
+                name = loc.name, linkage_name = loc.linkage_name, ty = loc.ty,
+                value = alloc_expr(rewrite_pfor_expr(unsafe: read(loc.value), array_names)),
+                line = loc.line, source_path = loc.source_path,
+            )
+        ir.Stmt.stmt_expression as ex:
+            return ir.Stmt.stmt_expression(
+                expression = alloc_expr(rewrite_pfor_expr(unsafe: read(ex.expression), array_names)),
+                line = ex.line, source_path = ex.source_path,
+            )
+        ir.Stmt.stmt_if as iff:
+            var else_body = Option[span[ir.Stmt]].none
+            match iff.else_body:
+                Option.some as eb:
+                    else_body = Option[span[ir.Stmt]].some(value = rewrite_pfor_array_captures(eb.value, array_names))
+                Option.none:
+                    pass
+            return ir.Stmt.stmt_if(
+                condition = alloc_expr(rewrite_pfor_expr(unsafe: read(iff.condition), array_names)),
+                then_body = rewrite_pfor_array_captures(iff.then_body, array_names),
+                else_body = else_body,
+            )
+        ir.Stmt.stmt_for as f:
+            return ir.Stmt.stmt_for(
+                init = alloc_stmt(rewrite_pfor_stmt(unsafe: read(f.init), array_names)),
+                condition = alloc_expr(rewrite_pfor_expr(unsafe: read(f.condition), array_names)),
+                post = alloc_stmt(rewrite_pfor_stmt(unsafe: read(f.post), array_names)),
+                body = rewrite_pfor_array_captures(f.body, array_names),
+            )
+        ir.Stmt.stmt_while as w:
+            return ir.Stmt.stmt_while(
+                condition = alloc_expr(rewrite_pfor_expr(unsafe: read(w.condition), array_names)),
+                body = rewrite_pfor_array_captures(w.body, array_names),
+            )
+        ir.Stmt.stmt_block as blk:
+            return ir.Stmt.stmt_block(body = rewrite_pfor_array_captures(blk.body, array_names))
+        ir.Stmt.stmt_switch as sw:
+            var cases = vec.Vec[ir.SwitchCase].create()
+            var ci: ptr_uint = 0
+            while ci < sw.cases.len:
+                let c = unsafe: read(sw.cases.data + ci)
+                cases.push(ir.SwitchCase(is_default = c.is_default, value = c.value, body = rewrite_pfor_array_captures(c.body, array_names)))
+                ci += 1
+            return ir.Stmt.stmt_switch(
+                expression = alloc_expr(rewrite_pfor_expr(unsafe: read(sw.expression), array_names)),
+                cases = cases.as_span(), exhaustive = sw.exhaustive,
+            )
+        ir.Stmt.stmt_return as ret:
+            let value = ret.value
+            if value == null:
+                return stmt
+            return ir.Stmt.stmt_return(
+                value = alloc_expr(rewrite_pfor_expr(unsafe: read(unsafe: ptr[ir.Expr]<-value), array_names)),
+                line = ret.line, source_path = ret.source_path,
+            )
+        _:
+            return stmt
+
+
+function rewrite_pfor_expr(expr: ir.Expr, array_names: ref[map_mod.Map[str, bool]]) -> ir.Expr:
+    match expr:
+        ir.Expr.expr_checked_index as ci:
+            match unsafe: read(ci.receiver):
+                ir.Expr.expr_address_of as ao:
+                    match unsafe: read(ao.expression):
+                        ir.Expr.expr_name as nm:
+                            if array_names.contains(nm.name):
+                                var ptr_ty = nm.ty
+                                if is_array_type(nm.ty):
+                                    ptr_ty = pfor_ptr_type(pfor_element_type(nm.ty))
+                                return ir.Expr.expr_index(
+                                    receiver = alloc_expr(ir.Expr.expr_name(name = nm.name, ty = ptr_ty, pointer = Option[bool].some(value = false))),
+                                    index = alloc_expr(rewrite_pfor_expr(unsafe: read(ci.index), array_names)),
+                                    ty = ci.ty,
+                                )
+                        _:
+                            pass
+                ir.Expr.expr_name as nm:
+                    if array_names.contains(nm.name):
+                        var ptr_ty = ci.receiver_type
+                        if is_array_type(ci.receiver_type):
+                            ptr_ty = pfor_ptr_type(pfor_element_type(ci.receiver_type))
+                        return ir.Expr.expr_index(
+                            receiver = alloc_expr(ir.Expr.expr_name(name = nm.name, ty = ptr_ty, pointer = Option[bool].some(value = false))),
+                            index = alloc_expr(rewrite_pfor_expr(unsafe: read(ci.index), array_names)),
+                            ty = ci.ty,
+                        )
+                _:
+                    pass
+            return expr
+        ir.Expr.expr_binary as b:
+            return ir.Expr.expr_binary(
+                operator = b.operator,
+                left = alloc_expr(rewrite_pfor_expr(unsafe: read(b.left), array_names)),
+                right = alloc_expr(rewrite_pfor_expr(unsafe: read(b.right), array_names)),
+                ty = b.ty,
+            )
+        ir.Expr.expr_unary as u:
+            return ir.Expr.expr_unary(
+                operator = u.operator,
+                operand = alloc_expr(rewrite_pfor_expr(unsafe: read(u.operand), array_names)),
+                ty = u.ty,
+            )
+        ir.Expr.expr_cast as c:
+            return ir.Expr.expr_cast(
+                target_type = c.target_type,
+                expression = alloc_expr(rewrite_pfor_expr(unsafe: read(c.expression), array_names)),
+                ty = c.ty,
+            )
+        ir.Expr.expr_call as call:
+            var args = vec.Vec[ir.Expr].create()
+            var ai: ptr_uint = 0
+            while ai < call.arguments.len:
+                args.push(rewrite_pfor_expr(unsafe: read(call.arguments.data + ai), array_names))
+                ai += 1
+            return ir.Expr.expr_call(callee = call.callee, arguments = args.as_span(), ty = call.ty)
+        ir.Expr.expr_call_indirect as call:
+            var args = vec.Vec[ir.Expr].create()
+            var cai: ptr_uint = 0
+            while cai < call.arguments.len:
+                args.push(rewrite_pfor_expr(unsafe: read(call.arguments.data + cai), array_names))
+                cai += 1
+            return ir.Expr.expr_call_indirect(
+                callee = alloc_expr(rewrite_pfor_expr(unsafe: read(call.callee), array_names)),
+                arguments = args.as_span(), ty = call.ty,
+            )
+        ir.Expr.expr_address_of as ao:
+            return ir.Expr.expr_address_of(
+                expression = alloc_expr(rewrite_pfor_expr(unsafe: read(ao.expression), array_names)),
+                ty = ao.ty,
+            )
+        ir.Expr.expr_conditional as cond:
+            return ir.Expr.expr_conditional(
+                condition = alloc_expr(rewrite_pfor_expr(unsafe: read(cond.condition), array_names)),
+                then_expression = alloc_expr(rewrite_pfor_expr(unsafe: read(cond.then_expression), array_names)),
+                else_expression = alloc_expr(rewrite_pfor_expr(unsafe: read(cond.else_expression), array_names)),
+                ty = cond.ty,
+            )
+        ir.Expr.expr_member as m:
+            return ir.Expr.expr_member(
+                receiver = alloc_expr(rewrite_pfor_expr(unsafe: read(m.receiver), array_names)),
+                member = m.member, ty = m.ty,
+            )
+        ir.Expr.expr_index as ix:
+            return ir.Expr.expr_index(
+                receiver = alloc_expr(rewrite_pfor_expr(unsafe: read(ix.receiver), array_names)),
+                index = alloc_expr(rewrite_pfor_expr(unsafe: read(ix.index), array_names)),
+                ty = ix.ty,
+            )
+        ir.Expr.expr_aggregate_literal as al:
+            var fields = vec.Vec[ir.AggregateField].create()
+            var fi: ptr_uint = 0
+            while fi < al.fields.len:
+                let f = unsafe: read(al.fields.data + fi)
+                fields.push(ir.AggregateField(name = f.name, value = alloc_expr(rewrite_pfor_expr(unsafe: read(f.value), array_names))))
+                fi += 1
+            return ir.Expr.expr_aggregate_literal(ty = al.ty, fields = fields.as_span())
+        _:
+            return expr
+
+
+function validate_pfor_no_ref_captures(captures: span[ir.Expr]) -> void:
+    var ci: ptr_uint = 0
+    while ci < captures.len:
+        match unsafe: read(captures.data + ci):
+            ir.Expr.expr_name as nm:
+                if types.is_ref_type(nm.ty):
+                    fatal(j3("cannot capture '", nm.name, "' of type ref across thread boundary — ref values are not safe to share across threads"))
+            _:
+                pass
+        ci += 1
+
+
+## Lower `parallel for i in 0..N: body` (the host's `lower_threaded_for_stmt`,
+## `loops.rb:445`): a worker receives `(data, start, end)`, unpacks the capture
+## struct, and runs the induction loop.
 function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body: ptr[ast.Stmt]?) -> void:
     if bindings.len == 0 or iterables.len == 0:
         return
@@ -7288,341 +7646,535 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
                 end_ptr = rng.end_expr
             _:
                 fatal(c"lowering parallel for: only range iteration is supported")
-    let void_ty = ctx.void_ty
-    let long_ty = types.primitive("long")
     let bd = body else:
         return
-    # Detect captures from loop body.
-    var outer_len = ctx.locals.len()
-    var loop_body = lower_block(ctx, bd)
-    var names = map_mod.Map[str, bool].create()
-    collect_ir_names(loop_body, ref_of(names))
-    var pfor_captures = map_mod.Map[str, LocalBinding].create()
-    var nm_iter = names.keys()
-    while true:
-        let np = nm_iter.next() else:
+    var index_name: str
+    unsafe:
+        index_name = read(bindings.data + 0).name
+    let index_c = utils.c_local_name(index_name)
+    # The host's `infer_range_loop_type`: an integer-literal bound takes the
+    # other bound's type.
+    var loop_type = expr_type(ctx, start_ptr)
+    var stop_ty = expr_type(ctx, end_ptr)
+    if not types.type_equals(loop_type, stop_ty):
+        if ast_is_integer_literal(start_ptr) and types.is_integer_type(stop_ty):
+            loop_type = stop_ty
+        else if ast_is_integer_literal(end_ptr) and types.is_integer_type(loop_type):
+            stop_ty = loop_type
+    if types.is_error(loop_type):
+        loop_type = types.primitive("int")
+    let long_ty = types.primitive("long")
+
+    # Both bounds are prepared before the stop value is lowered
+    # (`prepare_expression_for_inline_lowering` on start, then stop).
+    let start_saved = begin_stmt_setup(ctx, ctx.hoist_mode)
+    let _start_value = lower_expr(ctx, start_ptr)
+    let start_collected = collect_stmt_setup(ctx, start_saved)
+    let stop_saved = begin_stmt_setup(ctx, ctx.hoist_mode)
+    let lowered_stop = int_literal_to_context_type(end_ptr, loop_type, lower_expr(ctx, end_ptr))
+    let stop_collected = collect_stmt_setup(ctx, stop_saved)
+
+    let saved_locals_len = ctx.locals.len()
+    ctx.locals.push(LocalBinding(name = index_name, c_name = index_c, ty = loop_type, pointer = Option[bool].some(value = false)))
+    let body_span = lower_block(ctx, bd)
+    while ctx.locals.len() > saved_locals_len:
+        let _popped = ctx.locals.pop()
+    var body_ir = vec.Vec[ir.Stmt].create()
+    append_span_stmts(ref_of(body_ir), body_span)
+
+    # Captures: every name in the body minus the body's own locals and the
+    # induction variable.
+    var all_names = PforNames(names = vec.Vec[ir.Expr].create(), seen = map_mod.Map[str, bool].create())
+    collect_pfor_ir_names_span(body_ir.as_span(), ref_of(all_names))
+    var local_decls = map_mod.Map[str, bool].create()
+    collect_pfor_local_decls_span(body_ir.as_span(), ref_of(local_decls))
+    local_decls.set(index_c, true)
+    var captures = vec.Vec[ir.Expr].create()
+    var ni: ptr_uint = 0
+    while ni < all_names.names.len():
+        let np = all_names.names.get(ni) else:
             break
-        let nm = unsafe: read(np)
-        # Skip the loop binding itself (shadowed by the worker wrapper).
-        var skip = false
-        var bi: ptr_uint = 0
-        while bi < bindings.len:
-            unsafe:
-                if nm == read(bindings.data + bi).name:
-                    skip = true
-                    break
-            bi += 1
-        if skip:
-            continue
-        match find_local_before(ctx, nm, outer_len):
-            Option.some as lb:
-                pfor_captures.set(nm, lb.value)
-            Option.none:
-                pass
-    # Generate capture struct if needed.
+        let c = unsafe: read(np)
+        if not local_decls.contains(pfor_capture_name(c)):
+            captures.push(c)
+        ni += 1
+    validate_pfor_no_ref_captures(captures.as_span())
+
     parallel_cnt += 1
-    let pfor_uid = parallel_uid(ctx)
-    var pfor_has_captures = false
-    var pf_ck = pfor_captures.keys()
-    while true:
-        let cp = pf_ck.next() else:
+    let uid = parallel_uid(ctx, "pfor")
+    let cap_name = j2("mt_pfor_cap_", uid)
+    let worker_name = j2("mt_pfor_work_", uid)
+
+    var array_capture_names = map_mod.Map[str, bool].create()
+    var cap_fields = vec.Vec[ir.Field].create()
+    var ci: ptr_uint = 0
+    while ci < captures.len():
+        let cp = captures.get(ci) else:
             break
-        pfor_has_captures = true
-        break
-    var pfor_cap_name: str = ""
-    if pfor_has_captures:
-        pfor_cap_name = j3("mt_pcap_", naming.module_c_prefix(ctx.module_name), j2("_", pfor_uid))
-        var pf_fields = vec.Vec[ir.Field].create()
-        var pf_iter = pfor_captures.entries()
-        while pf_iter.next():
-            let pe = pf_iter.current()
-            let lb_ptr = pfor_captures.get(unsafe: read(pe.key)) else:
-                fatal(c"lower_parallel_for: missing capture")
-            let lb_val = unsafe: read(lb_ptr)
-            pf_fields.push(ir.Field(name = unsafe: read(pe.key), ty = lb_val.ty))
-        ctx.pending_synthetic_structs.push(ir.StructDecl(name = pfor_cap_name, linkage_name = pfor_cap_name, fields = pf_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
-        # Prepend capture-unpacking preamble.
-        var pf_pre = vec.Vec[ir.Stmt].create()
-        let pf_cap_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = pfor_cap_name)))
-        let pf_data_local = ir.Stmt.stmt_local(name = "__cap", linkage_name = "__cap", ty = pf_cap_ptr, value = alloc_expr(ir.Expr.expr_cast(target_type = pf_cap_ptr, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr_ty(), pointer = Option[bool].some(value = false))), ty = pf_cap_ptr)), line = 0, source_path = "")
-        pf_pre.push(pf_data_local)
-        let pf_cap_ref = alloc_expr(ir.Expr.expr_name(name = "__cap", ty = pf_cap_ptr, pointer = Option[bool].some(value = false)))
-        var pf_iter2 = pfor_captures.entries()
-        while pf_iter2.next():
-            let pe2 = pf_iter2.current()
-            let ft_ptr = pfor_captures.get(unsafe: read(pe2.key)) else:
-                fatal(c"lower_parallel_for: missing capture")
-            let lb_v = unsafe: read(ft_ptr)
-            let field_ty = lb_v.ty
-            let field_expr = alloc_expr(ir.Expr.expr_member(receiver = pf_cap_ref, member = unsafe: read(pe2.key), ty = field_ty))
-            pf_pre.push(ir.Stmt.stmt_local(name = unsafe: read(pe2.key), linkage_name = unsafe: read(pe2.key), ty = field_ty, value = field_expr, line = 0, source_path = ""))
-        var pf_full = vec.Vec[ir.Stmt].create()
-        var pf_pre_iter = pf_pre.iter()
-        while true:
-            let psp = pf_pre_iter.next() else:
-                break
-            pf_full.push(unsafe: read(psp))
-        var lbi: ptr_uint = 0
-        while lbi < loop_body.len:
-            unsafe:
-                pf_full.push(read(loop_body.data + lbi))
-            lbi += 1
-        loop_body = pf_full.as_span()
-    let worker = parallel_for_worker_fn(ctx, loop_body)
-    let start_expr = lower_expr(ctx, start_ptr)
-    let end_expr = lower_expr(ctx, end_ptr)
-    # Compute count = end - start.
-    let count_expr = alloc_expr(ir.Expr.expr_binary(operator = "-", left = end_expr, right = start_expr, ty = long_ty))
-    var call_args = vec.Vec[ir.Expr].create()
-    unsafe:
-        call_args.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = Option[bool].some(value = false)))))
-    if pfor_has_captures:
-        let pf_cap_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = pfor_cap_name)
-        let pf_cap_var = j2("__pf_cap_", pfor_uid)
-        var pf_setup = vec.Vec[ir.Stmt].create()
-        let pf_cap_ref = alloc_expr(ir.Expr.expr_name(name = pf_cap_var, ty = pf_cap_ty, pointer = Option[bool].some(value = false)))
-        pf_setup.push(ir.Stmt.stmt_local(name = pf_cap_var, linkage_name = pf_cap_var, ty = pf_cap_ty, value = alloc_expr(ir.Expr.expr_zero_init(ty = pf_cap_ty)), line = 0, source_path = ""))
-        var pf_iter3 = pfor_captures.entries()
-        while pf_iter3.next():
-            let pe3 = pf_iter3.current()
-            let lb_ptr = pfor_captures.get(unsafe: read(pe3.key)) else:
-                fatal(c"lower_parallel_for: missing capture")
-            let lb_val = unsafe: read(lb_ptr)
-            let key = unsafe: read(pe3.key)
-            let outer_ref = alloc_expr(ir.Expr.expr_name(name = key, ty = lb_val.ty, pointer = Option[bool].some(value = false)))
-            let field_ref = alloc_expr(ir.Expr.expr_member(receiver = pf_cap_ref, member = key, ty = lb_val.ty))
-            if is_array_type(lb_val.ty):
-                let field_addr = alloc_expr(ir.Expr.expr_address_of(expression = field_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(lb_val.ty))))
-                let outer_addr = alloc_expr(ir.Expr.expr_address_of(expression = outer_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(lb_val.ty))))
-                let sz = alloc_expr(ir.Expr.expr_sizeof(target_type = lb_val.ty, ty = types.primitive("ptr_uint")))
-                var mc_args = vec.Vec[ir.Expr].create()
-                unsafe:
-                    mc_args.push(read(field_addr))
-                    mc_args.push(read(outer_addr))
-                    mc_args.push(read(sz))
-                pf_setup.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "memcpy", arguments = mc_args.as_span(), ty = ctx.void_ty)), line = 0, source_path = ""))
-            else:
-                pf_setup.push(ir.Stmt.stmt_assignment(target = field_ref, operator = "=", value = outer_ref))
-        var pf_setup_iter = pf_setup.iter()
-        while true:
-            let psp = pf_setup_iter.next() else:
-                break
-            output.push(unsafe: read(psp))
-        let pf_data_ref = alloc_expr(ir.Expr.expr_address_of(expression = alloc_expr(ir.Expr.expr_name(name = pf_cap_var, ty = pf_cap_ty, pointer = Option[bool].some(value = false))), ty = void_ptr_ty()))
-        unsafe:
-            call_args.push(read(pf_data_ref))
-    else:
-        unsafe:
-            call_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
-    unsafe:
-        call_args.push(read(count_expr))
-    ctx.pending_synthetic_functions.push(worker)
-    output.push(ir.Stmt.stmt_expression(
-        expression = alloc_expr(ir.Expr.expr_call(callee = "mt_parallel_for", arguments = call_args.as_span(), ty = void_ty)),
+        match unsafe: read(cp):
+            ir.Expr.expr_name as nm:
+                if is_array_type(nm.ty):
+                    array_capture_names.set(nm.name, true)
+                    cap_fields.push(ir.Field(name = nm.name, ty = pfor_ptr_type(pfor_element_type(nm.ty))))
+                else:
+                    cap_fields.push(ir.Field(name = nm.name, ty = nm.ty))
+            _:
+                pass
+        ci += 1
+    ctx.pending_synthetic_structs.push(ir.StructDecl(name = cap_name, linkage_name = cap_name, fields = cap_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+
+    let cap_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = cap_name)
+    let cap_ptr_ty = pfor_ptr_type(cap_ty)
+    let void_ptr = void_ptr_ty()
+    var worker_body = vec.Vec[ir.Stmt].create()
+    worker_body.push(ir.Stmt.stmt_local(
+        name = "mt_cap", linkage_name = "mt_cap", ty = cap_ptr_ty,
+        value = alloc_expr(ir.Expr.expr_cast(
+            target_type = cap_ptr_ty,
+            expression = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_data", ty = void_ptr, pointer = Option[bool].some(value = false))),
+            ty = cap_ptr_ty,
+        )),
         line = 0, source_path = "",
     ))
+    let cap_ref = alloc_expr(ir.Expr.expr_name(name = "mt_cap", ty = cap_ptr_ty, pointer = Option[bool].some(value = true)))
+    ci = 0
+    while ci < captures.len():
+        let cp = captures.get(ci) else:
+            break
+        match unsafe: read(cp):
+            ir.Expr.expr_name as nm:
+                var alias_ty = nm.ty
+                if is_array_type(nm.ty):
+                    alias_ty = pfor_ptr_type(pfor_element_type(nm.ty))
+                worker_body.push(ir.Stmt.stmt_local(
+                    name = nm.name, linkage_name = nm.name, ty = alias_ty,
+                    value = alloc_expr(ir.Expr.expr_member(receiver = cap_ref, member = nm.name, ty = alias_ty)),
+                    line = 0, source_path = "",
+                ))
+            _:
+                pass
+        ci += 1
+    var rewritten_body = body_ir.as_span()
+    if array_capture_names.len() > 0:
+        rewritten_body = rewrite_pfor_array_captures(body_ir.as_span(), ref_of(array_capture_names))
+    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_c, ty = loop_type, pointer = Option[bool].some(value = false)))
+    let start_ref = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_start", ty = long_ty, pointer = Option[bool].some(value = false)))
+    let end_ref = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_end", ty = long_ty, pointer = Option[bool].some(value = false)))
+    let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = end_ref, ty = ctx.bool_ty))
+    let post = alloc_stmt(ir.Stmt.stmt_assignment(
+        target = alloc_expr(ir.Expr.expr_name(name = index_c, ty = loop_type, pointer = Option[bool].some(value = false))),
+        operator = "+=",
+        value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = loop_type)),
+    ))
+    let init = alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = loop_type, value = start_ref, line = 0, source_path = ""))
+    worker_body.push(ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = rewritten_body))
+
+    var worker_params = vec.Vec[ir.Param].create()
+    worker_params.push(ir.Param(name = "mt_pfor_data", linkage_name = "mt_pfor_data", ty = void_ptr, pointer = Option[bool].some(value = false)))
+    worker_params.push(ir.Param(name = "mt_pfor_start", linkage_name = "mt_pfor_start", ty = long_ty, pointer = Option[bool].some(value = false)))
+    worker_params.push(ir.Param(name = "mt_pfor_end", linkage_name = "mt_pfor_end", ty = long_ty, pointer = Option[bool].some(value = false)))
+    let worker = ir.Function(
+        name = worker_name, linkage_name = worker_name,
+        params = worker_params.as_span(), return_type = ctx.void_ty,
+        body = worker_body.as_span(), entry_point = false, method_receiver_param = false,
+    )
+    ctx.pending_synthetic_functions.push(worker)
+
+    var call_site = vec.Vec[ir.Stmt].create()
+    append_span_stmts(ref_of(call_site), start_collected.stmts.as_span())
+    append_span_stmts(ref_of(call_site), stop_collected.stmts.as_span())
+    var cap_fields_out = vec.Vec[ir.AggregateField].create()
+    ci = 0
+    while ci < captures.len():
+        let cp = captures.get(ci) else:
+            break
+        match unsafe: read(cp):
+            ir.Expr.expr_name as nm:
+                if array_capture_names.contains(nm.name):
+                    cap_fields_out.push(ir.AggregateField(
+                        name = nm.name,
+                        value = alloc_expr(ir.Expr.expr_name(name = nm.name, ty = pfor_ptr_type(pfor_element_type(nm.ty)), pointer = Option[bool].some(value = false))),
+                    ))
+                else:
+                    cap_fields_out.push(ir.AggregateField(name = nm.name, value = unsafe: cp))
+            _:
+                pass
+        ci += 1
+    let cap_init = alloc_expr(ir.Expr.expr_aggregate_literal(ty = cap_ty, fields = cap_fields_out.as_span()))
+    call_site.push(ir.Stmt.stmt_local(name = "mt_pfor_cap", linkage_name = "mt_pfor_cap", ty = cap_ty, value = cap_init, line = 0, source_path = ""))
+    let fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = span[str](), name = "")
+    var call_args = vec.Vec[ir.Expr].create()
+    unsafe: call_args.push(read(alloc_expr(ir.Expr.expr_name(name = worker_name, ty = fn_ty, pointer = Option[bool].some(value = false)))))
+    unsafe: call_args.push(read(alloc_expr(ir.Expr.expr_address_of(
+        expression = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_cap", ty = cap_ty, pointer = Option[bool].some(value = false))),
+        ty = void_ptr,
+    ))))
+    unsafe: call_args.push(read(lowered_stop))
+    call_site.push(ir.Stmt.stmt_expression(
+        expression = alloc_expr(ir.Expr.expr_call(callee = "mt_parallel_for", arguments = call_args.as_span(), ty = ctx.void_ty)),
+        line = 0, source_path = "",
+    ))
+    output.push(ir.Stmt.stmt_block(body = call_site.as_span()))
 
 
-## Lower `parallel: stmt1; stmt2; ...`.  Each statement becomes a worker
-## function, dispatched via mt_spawn_all.
+struct SpawnBlockInfo:
+    worker_name: str
+    cap_local_name: str
+    cap_ty: types.Type
+    cap_init: ptr[ir.Expr]
+    capture_names: vec.Vec[str]
+    written_names: vec.Vec[str]
+    written_scalars: vec.Vec[ir.Expr]
+    captureless: bool
+
+
+## Lower `parallel: stmt1; stmt2; ...` (the host's
+## `lower_parallel_block_stmt`, `loops.rb:603`): one worker and one capture
+## struct per body, dispatched through an `mt_spawn_item` array.
 function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bodies: span[ast.Stmt]) -> void:
     if bodies.len < 2:
         return
     let void_ty = ctx.void_ty
+    let void_ptr = void_ptr_ty()
     parallel_cnt += 1
-    let cap_uid = parallel_uid(ctx)
-    # Detect captures: names referenced in bodies that are outer-scope locals.
-    var i: ptr_uint = 0
-    var all_captures = map_mod.Map[str, LocalBinding].create()
-    var body_irs = vec.Vec[span[ir.Stmt]].create()
-    var outer_len = ctx.locals.len()
-    while i < bodies.len:
-        var wb = lower_block(ctx, unsafe: ptr[ast.Stmt]<-(bodies.data + i))
-        body_irs.push(wb)
-        var names = map_mod.Map[str, bool].create()
-        collect_ir_names(wb, ref_of(names))
-        var nm_iter = names.keys()
-        while true:
-            let np = nm_iter.next() else:
-                break
-            let nm = unsafe: read(np)
-            match find_local_before(ctx, nm, outer_len):
-                Option.some as lb:
-                    all_captures.set(nm, lb.value)
-                Option.none:
-                    pass
-        i += 1
-    # Generate capture struct if any captures exist.
-    var has_captures = false
-    var ck_iter = all_captures.keys()
-    while true:
-        let ckp = ck_iter.next() else:
-            break
-        has_captures = true
-        break
-    var cap_struct_name: str = ""
-    var cap_body_irs = vec.Vec[span[ir.Stmt]].create()
-    if has_captures:
-        cap_struct_name = j3("mt_pcap_", naming.module_c_prefix(ctx.module_name), j2("_", cap_uid))
-        var cap_fields = vec.Vec[ir.Field].create()
-        var cap_iter = all_captures.entries()
-        while cap_iter.next():
-            let entry = cap_iter.current()
-            let lb_ptr = all_captures.get(unsafe: read(entry.key)) else:
-                fatal(c"lower_parallel_block: missing capture binding")
-            let lb_val = unsafe: read(lb_ptr)
-            cap_fields.push(ir.Field(name = unsafe: read(entry.key), ty = lb_val.ty))
-        ctx.pending_synthetic_structs.push(ir.StructDecl(name = cap_struct_name, linkage_name = cap_struct_name, fields = cap_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
-        # Rewrite each body: prepend capture-unpacking preamble.
-        var body_ir_iter = body_irs.iter()
-        while true:
-            let bir_ptr = body_ir_iter.next() else:
-                break
-            var pre_body = vec.Vec[ir.Stmt].create()
-            let cap_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = cap_struct_name)))
-            let data_local = ir.Stmt.stmt_local(name = "__cap", linkage_name = "__cap", ty = cap_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = cap_ptr_ty, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr_ty(), pointer = Option[bool].some(value = false))), ty = cap_ptr_ty)), line = 0, source_path = "")
-            pre_body.push(data_local)
-            let cap_ref = alloc_expr(ir.Expr.expr_name(name = "__cap", ty = cap_ptr_ty, pointer = Option[bool].some(value = false)))
-            var cap_iter2 = all_captures.entries()
-            while cap_iter2.next():
-                let entry2 = cap_iter2.current()
-                let ft2_ptr = all_captures.get(unsafe: read(entry2.key)) else:
-                    fatal(c"lower_parallel_block: missing capture")
-                let lb_v2 = unsafe: read(ft2_ptr)
-                let field_ty = lb_v2.ty
-                let field_expr = alloc_expr(ir.Expr.expr_member(receiver = cap_ref, member = unsafe: read(entry2.key), ty = field_ty))
-                pre_body.push(ir.Stmt.stmt_local(name = unsafe: read(entry2.key), linkage_name = unsafe: read(entry2.key), ty = field_ty, value = field_expr, line = 0, source_path = ""))
-            var full_body = vec.Vec[ir.Stmt].create()
-            var pre_iter = pre_body.iter()
-            while true:
-                let psp = pre_iter.next() else:
-                    break
-                full_body.push(unsafe: read(psp))
-            var bsi: ptr_uint = 0
-            let bir = unsafe: read(bir_ptr)
-            while bsi < bir.len:
-                unsafe:
-                    full_body.push(read(bir.data + bsi))
-                bsi += 1
-            cap_body_irs.push(full_body.as_span())
-    else:
-        cap_body_irs = body_irs
+    let uid_base = parallel_uid(ctx, "spawn")
 
-    # Generate workers, accumulate spawn items, emit mt_spawn_all.
-    let spawn_item_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "mt_spawn_item")
-    var spawn_items = vec.Vec[ir.Expr].create()
-    let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
-    i = 0
-    while i < bodies.len:
-        let wbp = cap_body_irs.get(i) else:
-            fatal(c"lower_parallel_block: missing body IR")
-        let wb = unsafe: read(wbp)
-        let worker = parallel_worker_fn(ctx, wb)
-        ctx.pending_synthetic_functions.push(worker)
-        var item_data: ptr[ir.Expr]
-        if has_captures:
-            let cap_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = cap_struct_name)
-            let cap_var = j3("__cap_", cap_uid, j2("_", pw1_str(i)))
-            var cap_setup = vec.Vec[ir.Stmt].create()
-            let cap_ref = alloc_expr(ir.Expr.expr_name(name = cap_var, ty = cap_ty, pointer = Option[bool].some(value = false)))
-            cap_setup.push(ir.Stmt.stmt_local(name = cap_var, linkage_name = cap_var, ty = cap_ty, value = alloc_expr(ir.Expr.expr_zero_init(ty = cap_ty)), line = 0, source_path = ""))
-            var cap_iter3 = all_captures.entries()
-            while cap_iter3.next():
-                let entry3 = cap_iter3.current()
-                let lb2_ptr = all_captures.get(unsafe: read(entry3.key)) else:
-                    fatal(c"lower_parallel_block: missing capture")
-                let lb_val = unsafe: read(lb2_ptr)
-                let key = unsafe: read(entry3.key)
-                let outer_ref = alloc_expr(ir.Expr.expr_name(name = key, ty = lb_val.ty, pointer = Option[bool].some(value = false)))
-                let field_ref = alloc_expr(ir.Expr.expr_member(receiver = cap_ref, member = key, ty = lb_val.ty))
-                if is_array_type(lb_val.ty):
-                    let field_addr = alloc_expr(ir.Expr.expr_address_of(expression = field_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(lb_val.ty))))
-                    let outer_addr = alloc_expr(ir.Expr.expr_address_of(expression = outer_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(lb_val.ty))))
-                    let sz = alloc_expr(ir.Expr.expr_sizeof(target_type = lb_val.ty, ty = types.primitive("ptr_uint")))
-                    var mc_args = vec.Vec[ir.Expr].create()
-                    unsafe:
-                        mc_args.push(read(field_addr))
-                        mc_args.push(read(outer_addr))
-                        mc_args.push(read(sz))
-                    cap_setup.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "memcpy", arguments = mc_args.as_span(), ty = ctx.void_ty)), line = 0, source_path = ""))
-                else:
-                    cap_setup.push(ir.Stmt.stmt_assignment(target = field_ref, operator = "=", value = outer_ref))
-            var cs_iter = cap_setup.iter()
-            while true:
-                let csp = cs_iter.next() else:
-                    break
-                output.push(unsafe: read(csp))
-            item_data = alloc_expr(ir.Expr.expr_address_of(expression = alloc_expr(ir.Expr.expr_name(name = cap_var, ty = cap_ty, pointer = Option[bool].some(value = false))), ty = void_ptr_ty))
+    var infos = vec.Vec[SpawnBlockInfo].create()
+    var bi: ptr_uint = 0
+    while bi < bodies.len:
+        let body_ir = lower_block(ctx, unsafe: ptr[ast.Stmt]<-(bodies.data + bi))
+        var all_names = PforNames(names = vec.Vec[ir.Expr].create(), seen = map_mod.Map[str, bool].create())
+        collect_pfor_ir_names_span(body_ir, ref_of(all_names))
+        var local_decls = map_mod.Map[str, bool].create()
+        collect_pfor_local_decls_span(body_ir, ref_of(local_decls))
+        var captures = vec.Vec[ir.Expr].create()
+        var ni: ptr_uint = 0
+        while ni < all_names.names.len():
+            let np = all_names.names.get(ni) else:
+                break
+            let c = unsafe: read(np)
+            if not local_decls.contains(pfor_capture_name(c)):
+                captures.push(c)
+            ni += 1
+        validate_pfor_no_ref_captures(captures.as_span())
+        var capture_names_map = map_mod.Map[str, bool].create()
+        var capture_names = vec.Vec[str].create()
+        var ci: ptr_uint = 0
+        while ci < captures.len():
+            let cp = captures.get(ci) else:
+                break
+            let nm = pfor_capture_name(unsafe: read(cp))
+            capture_names.push(nm)
+            capture_names_map.set(nm, true)
+            ci += 1
+        var written_map = map_mod.Map[str, bool].create()
+        collect_pfor_written_names(body_ir, ref_of(capture_names_map), ref_of(written_map))
+        var written_names = vec.Vec[str].create()
+        var written_scalars = vec.Vec[ir.Expr].create()
+        ci = 0
+        while ci < captures.len():
+            let cp = captures.get(ci) else:
+                break
+            let c = unsafe: read(cp)
+            let nm = pfor_capture_name(c)
+            if written_map.contains(nm):
+                written_names.push(nm)
+                match c:
+                    ir.Expr.expr_name as cn:
+                        if not is_array_type(cn.ty):
+                            written_scalars.push(c)
+                    _:
+                        pass
+            ci += 1
+        let captureless = captures.len() == 0
+        let cap_name = j3("mt_spawn_cap_", uid_base, j2("_", pw1_str(bi)))
+        let worker_name = j3("mt_spawn_work_", uid_base, j2("_", pw1_str(bi)))
+        var cap_ty = void_ptr
+        var cap_init = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr))
+        var worker_body = vec.Vec[ir.Stmt].create()
+        if captureless:
+            append_span_stmts(ref_of(worker_body), body_ir)
         else:
-            item_data = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))
-        var item_fields = vec.Vec[ir.AggregateField].create()
-        item_fields.push(ir.AggregateField(name = "work", value = alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = Option[bool].some(value = false)))))
-        item_fields.push(ir.AggregateField(name = "data", value = item_data))
-        let item_agg = alloc_expr(ir.Expr.expr_aggregate_literal(ty = spawn_item_ty, fields = item_fields.as_span()))
-        unsafe:
-            spawn_items.push(read(item_agg))
-        i += 1
-    let item_count = bodies.len
-    let spawn_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(spawn_item_ty, types.literal_int(long<-item_count)))
-    let tasks_var = "__mt_tasks"
-    let tasks_arr = alloc_expr(ir.Expr.expr_array_literal(ty = spawn_arr_ty, elements = spawn_items.as_span()))
-    output.push(ir.Stmt.stmt_local(name = tasks_var, linkage_name = tasks_var, ty = spawn_arr_ty, value = tasks_arr, line = 0, source_path = ""))
-    var sa_args = vec.Vec[ir.Expr].create()
-    unsafe:
-        sa_args.push(read(alloc_expr(ir.Expr.expr_name(name = tasks_var, ty = spawn_arr_ty, pointer = Option[bool].some(value = false)))))
-        sa_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-item_count, ty = types.primitive("int")))))
-    output.push(ir.Stmt.stmt_expression(
-        expression = alloc_expr(ir.Expr.expr_call(callee = "mt_spawn_all", arguments = sa_args.as_span(), ty = void_ty)),
+            var array_capture_names = map_mod.Map[str, bool].create()
+            var cap_fields = vec.Vec[ir.Field].create()
+            ci = 0
+            while ci < captures.len():
+                let cp = captures.get(ci) else:
+                    break
+                match unsafe: read(cp):
+                    ir.Expr.expr_name as nm:
+                        if is_array_type(nm.ty):
+                            array_capture_names.set(nm.name, true)
+                            cap_fields.push(ir.Field(name = nm.name, ty = pfor_ptr_type(pfor_element_type(nm.ty))))
+                        else:
+                            cap_fields.push(ir.Field(name = nm.name, ty = nm.ty))
+                    _:
+                        pass
+                ci += 1
+            ctx.pending_synthetic_structs.push(ir.StructDecl(name = cap_name, linkage_name = cap_name, fields = cap_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+            cap_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = cap_name)
+            let cap_ptr_ty = pfor_ptr_type(cap_ty)
+            worker_body.push(ir.Stmt.stmt_local(
+                name = "mt_cap", linkage_name = "mt_cap", ty = cap_ptr_ty,
+                value = alloc_expr(ir.Expr.expr_cast(
+                    target_type = cap_ptr_ty,
+                    expression = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_data", ty = void_ptr, pointer = Option[bool].some(value = false))),
+                    ty = cap_ptr_ty,
+                )),
+                line = 0, source_path = "",
+            ))
+            let cap_ref = alloc_expr(ir.Expr.expr_name(name = "mt_cap", ty = cap_ptr_ty, pointer = Option[bool].some(value = true)))
+            ci = 0
+            while ci < captures.len():
+                let cp = captures.get(ci) else:
+                    break
+                match unsafe: read(cp):
+                    ir.Expr.expr_name as nm:
+                        var alias_ty = nm.ty
+                        if is_array_type(nm.ty):
+                            alias_ty = pfor_ptr_type(pfor_element_type(nm.ty))
+                        worker_body.push(ir.Stmt.stmt_local(
+                            name = nm.name, linkage_name = nm.name, ty = alias_ty,
+                            value = alloc_expr(ir.Expr.expr_member(receiver = cap_ref, member = nm.name, ty = alias_ty)),
+                            line = 0, source_path = "",
+                        ))
+                    _:
+                        pass
+                ci += 1
+            if array_capture_names.len() > 0:
+                append_span_stmts(ref_of(worker_body), rewrite_pfor_array_captures(body_ir, ref_of(array_capture_names)))
+            else:
+                append_span_stmts(ref_of(worker_body), body_ir)
+            # Write-back assignments for written scalar captures.
+            var wsi: ptr_uint = 0
+            while wsi < written_scalars.len():
+                let wp = written_scalars.get(wsi) else:
+                    break
+                match unsafe: read(wp):
+                    ir.Expr.expr_name as nm:
+                        worker_body.push(ir.Stmt.stmt_assignment(
+                            target = alloc_expr(ir.Expr.expr_member(receiver = cap_ref, member = nm.name, ty = nm.ty)),
+                            operator = "=",
+                            value = alloc_expr(ir.Expr.expr_name(name = nm.name, ty = nm.ty, pointer = Option[bool].some(value = false))),
+                        ))
+                    _:
+                        pass
+                wsi += 1
+            var cap_fields_out = vec.Vec[ir.AggregateField].create()
+            ci = 0
+            while ci < captures.len():
+                let cp = captures.get(ci) else:
+                    break
+                match unsafe: read(cp):
+                    ir.Expr.expr_name as nm:
+                        if array_capture_names.contains(nm.name):
+                            cap_fields_out.push(ir.AggregateField(
+                                name = nm.name,
+                                value = alloc_expr(ir.Expr.expr_name(name = nm.name, ty = pfor_ptr_type(pfor_element_type(nm.ty)), pointer = Option[bool].some(value = false))),
+                            ))
+                        else:
+                            cap_fields_out.push(ir.AggregateField(name = nm.name, value = unsafe: cp))
+                    _:
+                        pass
+                ci += 1
+            cap_init = alloc_expr(ir.Expr.expr_aggregate_literal(ty = cap_ty, fields = cap_fields_out.as_span()))
+        var worker_params = vec.Vec[ir.Param].create()
+        worker_params.push(ir.Param(name = "mt_pfor_data", linkage_name = "mt_pfor_data", ty = void_ptr, pointer = Option[bool].some(value = false)))
+        let worker = ir.Function(
+            name = worker_name, linkage_name = worker_name,
+            params = worker_params.as_span(), return_type = void_ty,
+            body = worker_body.as_span(), entry_point = false, method_receiver_param = false,
+        )
+        ctx.pending_synthetic_functions.push(worker)
+        infos.push(SpawnBlockInfo(
+            worker_name = worker_name,
+            cap_local_name = j2("mt_spawn_cap_", pw1_str(bi)),
+            cap_ty = cap_ty,
+            cap_init = cap_init,
+            capture_names = capture_names,
+            written_names = written_names,
+            written_scalars = written_scalars,
+            captureless = captureless,
+        ))
+        bi += 1
+
+    # Write-conflict validation: a name written by one body and captured by
+    # another is a data race.
+    var idx: ptr_uint = 0
+    while idx < infos.len():
+        let ip = infos.get(idx) else:
+            break
+        let info = unsafe: read(ip)
+        var wi: ptr_uint = 0
+        while wi < info.written_names.len():
+            let wp = info.written_names.get(wi) else:
+                break
+            let name = unsafe: read(wp)
+            var oi: ptr_uint = 0
+            while oi < infos.len():
+                if oi != idx:
+                    let op = infos.get(oi) else:
+                        break
+                    let other = unsafe: read(op)
+                    var ci2: ptr_uint = 0
+                    while ci2 < other.capture_names.len():
+                        let cp = other.capture_names.get(ci2) else:
+                            break
+                        if unsafe: read(cp) == name:
+                            var msg = string.String.create()
+                            msg.append("write conflict in parallel block: '")
+                            msg.append(name)
+                            msg.append("' is written in spawn block ")
+                            fmt.append_ptr_uint(ref_of(msg), idx + 1)
+                            msg.append(" and accessed in spawn block ")
+                            fmt.append_ptr_uint(ref_of(msg), oi + 1)
+                            fatal(msg.as_str())
+                        ci2 += 1
+                oi += 1
+            wi += 1
+        idx += 1
+
+    let fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = span[str](), name = "")
+    let spawn_item_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "mt_spawn_item")
+    var call_site = vec.Vec[ir.Stmt].create()
+    idx = 0
+    while idx < infos.len():
+        let ip = infos.get(idx) else:
+            break
+        let info = unsafe: read(ip)
+        if not info.captureless:
+            call_site.push(ir.Stmt.stmt_local(name = info.cap_local_name, linkage_name = info.cap_local_name, ty = info.cap_ty, value = info.cap_init, line = 0, source_path = ""))
+        idx += 1
+    let tasks_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(spawn_item_ty, types.literal_int(long<-bodies.len)))
+    var elements = vec.Vec[ir.Expr].create()
+    idx = 0
+    while idx < infos.len():
+        let ip = infos.get(idx) else:
+            break
+        let info = unsafe: read(ip)
+        var data_expr = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr))
+        if not info.captureless:
+            data_expr = alloc_expr(ir.Expr.expr_address_of(
+                expression = alloc_expr(ir.Expr.expr_name(name = info.cap_local_name, ty = info.cap_ty, pointer = Option[bool].some(value = false))),
+                ty = void_ptr,
+            ))
+        var fields = vec.Vec[ir.AggregateField].create()
+        fields.push(ir.AggregateField(name = "work", value = alloc_expr(ir.Expr.expr_name(name = info.worker_name, ty = fn_ty, pointer = Option[bool].some(value = false)))))
+        fields.push(ir.AggregateField(name = "data", value = data_expr))
+        unsafe: elements.push(read(alloc_expr(ir.Expr.expr_aggregate_literal(ty = spawn_item_ty, fields = fields.as_span()))))
+        idx += 1
+    call_site.push(ir.Stmt.stmt_local(
+        name = "mt_spawn_tasks", linkage_name = "mt_spawn_tasks", ty = tasks_arr_ty,
+        value = alloc_expr(ir.Expr.expr_array_literal(ty = tasks_arr_ty, elements = elements.as_span())),
         line = 0, source_path = "",
     ))
+    var spawn_args = vec.Vec[ir.Expr].create()
+    unsafe: spawn_args.push(read(alloc_expr(ir.Expr.expr_name(name = "mt_spawn_tasks", ty = tasks_arr_ty, pointer = Option[bool].some(value = false)))))
+    unsafe: spawn_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-bodies.len, ty = types.primitive("int")))))
+    call_site.push(ir.Stmt.stmt_expression(
+        expression = alloc_expr(ir.Expr.expr_call(callee = "mt_spawn_all", arguments = spawn_args.as_span(), ty = void_ty)),
+        line = 0, source_path = "",
+    ))
+    # Written scalar captures flow back after the join.
+    idx = 0
+    while idx < infos.len():
+        let ip = infos.get(idx) else:
+            break
+        let info = unsafe: read(ip)
+        var wi: ptr_uint = 0
+        while wi < info.written_scalars.len():
+            let wp = info.written_scalars.get(wi) else:
+                break
+            match unsafe: read(wp):
+                ir.Expr.expr_name as nm:
+                    call_site.push(ir.Stmt.stmt_assignment(
+                        target = alloc_expr(ir.Expr.expr_name(name = nm.name, ty = nm.ty, pointer = Option[bool].some(value = false))),
+                        operator = "=",
+                        value = alloc_expr(ir.Expr.expr_member(
+                            receiver = alloc_expr(ir.Expr.expr_name(name = info.cap_local_name, ty = info.cap_ty, pointer = Option[bool].some(value = false))),
+                            member = nm.name, ty = nm.ty,
+                        )),
+                    ))
+                _:
+                    pass
+            wi += 1
+        idx += 1
+    output.push(ir.Stmt.stmt_block(body = call_site.as_span()))
 
 
-function find_local_before(ctx: ref[LowerCtx], name: str, limit: ptr_uint) -> Option[LocalBinding]:
-    var li: ptr_uint = 0
-    while li < limit and li < ctx.locals.len():
-        let lb_ptr = ctx.locals.get(li) else:
-            fatal(c"find_local_before: missing local")
-        let item = unsafe: read(lb_ptr)
-        if item.name == name:
-            return Option[LocalBinding].some(value = item)
-        li += 1
-    return Option[LocalBinding].none
+function void_ptr_ty() -> types.Type:
+    return types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
 
 
-## Lower `gather h1, h2, ...`.  Each handle is joined via mt_detach_join.
+function pw1_str(value: ptr_uint) -> str:
+    var buf = string.String.create()
+    fmt.append_ptr_uint(ref_of(buf), value)
+    return buf.as_str()
+
+
+## Lower `gather h1, h2, ...`.  Each handle is joined via mt_detach_join; the
+## host wraps the joins in one block.
 function lower_gather_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], handles: span[ast.Expr]) -> void:
     let void_ty = ctx.void_ty
+    var joins = vec.Vec[ir.Stmt].create()
     var i: ptr_uint = 0
     while i < handles.len:
         let h = unsafe: lower_expr(ctx, handles.data + i)
         var join_args = vec.Vec[ir.Expr].create()
         unsafe:
             join_args.push(read(h))
-        output.push(ir.Stmt.stmt_expression(
+        joins.push(ir.Stmt.stmt_expression(
             expression = alloc_expr(ir.Expr.expr_call(callee = "mt_detach_join", arguments = join_args.as_span(), ty = void_ty)),
             line = 0, source_path = "",
         ))
         i += 1
+    output.push(ir.Stmt.stmt_block(body = joins.as_span()))
 
 
-## Lower `detach <call>` expression.  Wraps the call in a worker function
-## and dispatches via mt_detach_run, returning a void* handle.
+## Lower `detach <call>` (the host's `lower_detach_expr`, `loops.rb:810`).
+## The call runs in a worker function; the expression yields an opaque Handle.
 function lower_detach_expr(ctx: ref[LowerCtx], expression: ptr[ast.Expr], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     # The call runs in a worker, so its setup must not hoist into the enclosing
     # statement's window.
     let hoist_saved = suspend_stmt_setup(ctx)
     let void_ty = ctx.void_ty
+    let void_ptr = void_ptr_ty()
+    parallel_cnt += 1
+    let uid = parallel_uid(ctx, "detach")
+    let worker_name = j2("mt_detach_work_", uid)
     let lowered_call = lower_expr(ctx, expression)
     var wb = vec.Vec[ir.Stmt].create()
-    wb.push(ir.Stmt.stmt_expression(expression = lowered_call, line = 0, source_path = ""))
-    let worker = parallel_worker_fn(ctx, wb.as_span())
+    wb.push(ir.Stmt.stmt_expression(expression = lowered_call, line = 0, source_path = ctx.analysis.source_path))
+    var all_names = PforNames(names = vec.Vec[ir.Expr].create(), seen = map_mod.Map[str, bool].create())
+    collect_pfor_ir_names_span(wb.as_span(), ref_of(all_names))
+    var local_decls = map_mod.Map[str, bool].create()
+    collect_pfor_local_decls_span(wb.as_span(), ref_of(local_decls))
+    var captures = vec.Vec[ir.Expr].create()
+    var ni: ptr_uint = 0
+    while ni < all_names.names.len():
+        let np = all_names.names.get(ni) else:
+            break
+        let c = unsafe: read(np)
+        if not local_decls.contains(pfor_capture_name(c)):
+            captures.push(c)
+        ni += 1
+    validate_pfor_no_ref_captures(captures.as_span())
+    if captures.len() > 0:
+        fatal(c"detach with captured variables is not yet supported; use a global function call or module-level variables")
+    var worker_params = vec.Vec[ir.Param].create()
+    worker_params.push(ir.Param(name = "mt_pfor_data", linkage_name = "mt_pfor_data", ty = void_ptr, pointer = Option[bool].some(value = false)))
+    let worker = ir.Function(
+        name = worker_name, linkage_name = worker_name,
+        params = worker_params.as_span(), return_type = void_ty,
+        body = wb.as_span(), entry_point = false, method_receiver_param = false,
+    )
     ctx.pending_synthetic_functions.push(worker)
-    var da = vec.Vec[ir.Expr].create()
-    unsafe:
-        da.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = Option[bool].some(value = false)))))
-        da.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
     resume_stmt_setup(ctx, hoist_saved)
-    return alloc_expr(ir.Expr.expr_call(callee = "mt_detach_run", arguments = da.as_span(), ty = void_ptr_ty()))
+    let fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = span[str](), name = "")
+    var da = vec.Vec[ir.Expr].create()
+    unsafe: da.push(read(alloc_expr(ir.Expr.expr_name(name = worker_name, ty = fn_ty, pointer = Option[bool].some(value = false)))))
+    unsafe: da.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr))))
+    return alloc_expr(ir.Expr.expr_call(callee = "mt_detach_run", arguments = da.as_span(), ty = void_ptr))
 
 
 # =============================================================================
@@ -9326,6 +9878,11 @@ function lower_tuple_literal_with_names(ctx: ref[LowerCtx], elements: span[ast.E
     var elem_types = vec.Vec[types.Type].create()
     var fnames = vec.Vec[str].create()
     var all_named = true
+    # A tuple literal's elements are lowered directly (the host's
+    # `lower_expression`, not a prepared context), so repeatedly-evaluated
+    # inline forms — a proc literal in particular — stay inline rather than
+    # materializing into a statement temp.
+    let tuple_saved = suspend_stmt_setup(ctx)
     var i: ptr_uint = 0
     while i < elements.len:
         var ep = unsafe: elements.data + i
@@ -9346,6 +9903,7 @@ function lower_tuple_literal_with_names(ctx: ref[LowerCtx], elements: span[ast.E
         elem_types.push(ir_expr_type(lowered))
         fnames.push(name)
         i += 1
+    resume_stmt_setup(ctx, tuple_saved)
     var tuple_field_names = Option[span[str]].none
     if all_named:
         tuple_field_names = Option[span[str]].some(value = fnames.as_span())
@@ -9550,12 +10108,13 @@ function lower_index_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: 
     if is_array_type(recv_ty_pre) or is_span_type(recv_ty_pre):
         receiver_type = recv_ty_pre
     if is_str_typed(receiver_type) or is_str_typed(ir_expr_type(recv)):
-        # str byte read → mt_str_index(text, index) with a bounds check.
+        # str byte read → mt_str_index(text, index) with a bounds check.  The
+        # host passes the lowered index through unchanged (the helper's
+        # `uintptr_t` parameter converts it in C).
         var str_args = vec.Vec[ir.Expr].create()
-        let str_idx = coerce_index_bound_to_ptr_uint(ctx, index_expr)
         unsafe:
             str_args.push(read(recv))
-            str_args.push(read(str_idx))
+            str_args.push(read(index_expr))
         return alloc_expr(ir.Expr.expr_call(callee = "mt_str_index", arguments = str_args.as_span(), ty = types.primitive("ubyte")))
     var elem_ty = qualify_type(ctx, expr_type(ctx, ep))
     # Prefer the element type of the lowered receiver: the analyzer's recorded
@@ -9649,13 +10208,9 @@ function lower_range_index_assignment(ctx: ref[LowerCtx], output: ref[vec.Vec[ir
     var i: ptr_uint = 0
     while i < elements.len:
         let index_expr = alloc_expr(ir.Expr.expr_integer_literal(value = start_val + long<-(i), ty = types.primitive("ptr_uint")))
-        var target_expr: ptr[ir.Expr]
-        if is_array_type(receiver_type):
-            target_expr = alloc_expr(ir.Expr.expr_checked_index(receiver = recv, index = index_expr, receiver_type = receiver_type, ty = elem_ty))
-        else if is_span_type(receiver_type):
-            target_expr = alloc_expr(ir.Expr.expr_checked_span_index(receiver = recv, index = index_expr, receiver_type = receiver_type, ty = elem_ty))
-        else:
-            target_expr = alloc_expr(ir.Expr.expr_index(receiver = recv, index = index_expr, ty = elem_ty))
+        # A range-index assignment is element-wise and lowers to plain indexes
+        # (the host's `lower_range_index_assignment`), never checked ones.
+        let target_expr = alloc_expr(ir.Expr.expr_index(receiver = recv, index = index_expr, ty = elem_ty))
         let value_expr = lower_expr(ctx, unsafe: elements.data + i)
         output.push(ir.Stmt.stmt_assignment(target = target_expr, operator = "=", value = value_expr))
         i += 1
@@ -10591,6 +11146,32 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     return lower_proc_field_call(ctx, elem_recv, args, call_ep)
                 return alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty))
             _:
+                # Call through a callable *value* expression (e.g. a chain call
+                # `f(a)(b)`): the host lowers the callee once and shares the node
+                # in the `invoke` callee and the `env` argument.
+                let callee_expr = lower_expr(ctx, callee)
+                let callee_ty = ir_expr_type(callee_expr)
+                if is_proc_type(callee_ty):
+                    let void_ptr = ctx.ptr_void_ty
+                    let env_member = alloc_expr(ir.Expr.expr_member(receiver = callee_expr, member = "env", ty = void_ptr))
+                    var invoke_args = vec.Vec[ir.Expr].create()
+                    unsafe:
+                        invoke_args.push(read(env_member))
+                    var ai: ptr_uint = 0
+                    while ai < args.len:
+                        let arg = unsafe: read(args.data + ai)
+                        var lowered = lower_expr(ctx, arg.arg_value)
+                        lowered = literal_value_to_context_type(ctx, arg.arg_value, proc_param_type_at(callee_ty, ai), lowered)
+                        unsafe:
+                            invoke_args.push(read(lowered))
+                        ai += 1
+                    var call_ty = expr_type(ctx, call_ep)
+                    if is_void_type(call_ty) or types.is_error(call_ty) or is_proc_type(call_ty):
+                        call_ty = proc_return_type(callee_ty)
+                    let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = callee_expr, member = "invoke", ty = proc_invoke_field_type(callee_ty)))
+                    return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = call_ty))
+                if is_fn_type(callee_ty):
+                    return lower_call_with_callee_expr(ctx, callee_expr, args, call_ep, types.alloc_type(expr_type(ctx, call_ep)), empty_fn_sig())
                 return alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty))
 
 
@@ -12147,6 +12728,8 @@ function spec_type_key(ctx: ref[LowerCtx], ty: types.Type) -> str:
             if g.name == "Option" or g.name == "Result":
                 return naming.type_c_key(ty)
             return naming.qualified_c_name(ctx.module_name, generic_struct_c_name(g.name, g.args))
+        types.Type.ty_tuple:
+            return naming.type_c_key(ty)
         types.Type.ty_nullable as nl:
             return spec_type_key(ctx, unsafe: read(nl.base))
         _:
@@ -12333,7 +12916,7 @@ function lower_adapt_call(ctx: ref[LowerCtx], iface_type_ref: ptr[ast.TypeRef], 
             let vtable_ty = types.Type.ty_dyn_vtable(interface_name = iface_name, linkage_name = j2("mt_vtable_", iface_name))
             let vtable_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(vtable_ty))
             return alloc_expr(ir.Expr.expr_aggregate_literal(
-                ty = types.Type.ty_dyn(iface = iface_name),
+                ty = types.Type.ty_dyn(iface = iface_name, args = type_args.as_span()),
                 fields = sp_fields2(
                     ir.AggregateField(name = "data", value = alloc_expr(ir.Expr.expr_cast(target_type = void_ptr, expression = arg_value, ty = void_ptr))),
                     ir.AggregateField(name = "vtable", value = alloc_expr(ir.Expr.expr_cast(
@@ -12770,7 +13353,8 @@ function iface_method_return_type(ctx: ref[LowerCtx], recv_ty: types.Type, metho
                         if m.name == method_name:
                             let ret = m.return_type else:
                                 return ctx.void_ty
-                            return resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-ret))
+                            let resolved = resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-ret))
+                            return substitute_interface_type_params(resolved, d.args, ia.value.type_params)
                         mi += 1
                 Option.none:
                     pass
@@ -12781,13 +13365,10 @@ function iface_method_return_type(ctx: ref[LowerCtx], recv_ty: types.Type, metho
 
 ## The C type name for a dyn[I] vtable struct: "mt_vtable_" + iface_name.
 function dyn_vtable_c_type(t: types.Type) -> str:
-    let ts = types.type_to_string(t)
-    # The type string could be "dyn" for ty_named or the iface name for ty_dyn.
-    # For ty_dyn(iface = "Shape"), the string is "Shape".
-    # If ts is "dyn", we can't determine the iface — use a fallback.
-    if ts == "dyn":
-        return "mt_vtable_unknown"
-    return j3("mt_vtable_", ts, "")
+    # `dyn_vtable_iface_name` reads the interface name from the type itself;
+    # `type_to_string` renders the full `dyn[Shape]` spelling, which is not a
+    # valid symbol.
+    return j3("mt_vtable_", dyn_vtable_iface_name(t), "")
 
 
 ## The interface name of a `dyn[I]` receiver, for the `DynVtable` type.
@@ -13388,7 +13969,14 @@ function build_receiver_arg(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_kind:
                     recv_deref = Option[ptr[ir.Expr]].some(value = u.operand)
             _:
                 pass
-    if receiver_by_pointer(ctx, recv_ty, method_kind, is_async):
+    # The host decides pointer lowering from the method's *declared* receiver
+    # type (the struct), not from a ref/pointer expression that reaches it
+    # (`screen: ref[Game]` calling a `Game` method: Game has array storage, so
+    # the receiver is borrowed and the ref value passes straight through).
+    var decision_ty = recv_ty
+    if is_pointer_or_ref_type(recv_ty):
+        decision_ty = types.pointer_element(recv_ty)
+    if receiver_by_pointer(ctx, decision_ty, method_kind, is_async):
         if recv_is_pointer or recv_is_ptr_expr:
             return Option[ptr[ir.Expr]].some(value = recv)
         match recv_deref:
@@ -16106,6 +16694,14 @@ function lower_plain_call_spec(ctx: ref[LowerCtx], c_name: str, args: span[ast.A
             arg = read(args.data + i)
         var lowered = lower_expr(ctx, arg.arg_value)
         lowered = coerce_literal_to_mono_param(ctx, spec_fn, i, arg.arg_value, lowered)
+        # The specialized function's parameter carries the concrete type, so a
+        # `ref[T]` parameter borrows a plain value argument (or passes an
+        # existing ref through) exactly like a direct call's implicit bridge.
+        if spec_fn != null:
+            let sf = unsafe: read(spec_fn)
+            if i < sf.params.len:
+                let pty = unsafe: read(sf.params.data + i).ty
+                lowered = coerce_arg_to_ref_bridge(pty, lowered)
         unsafe:
             ir_args.push(read(lowered))
         i += 1
@@ -19974,7 +20570,7 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
             return types.Type.ty_nullable(base = types.alloc_type(fun))
         return fun
     if tref.is_dyn:
-        return types.Type.ty_dyn(iface = naming.dyn_iface_declared_name(unsafe: analyzer.qname_to_str(tref.dyn_interface)))
+        return types.Type.ty_dyn(iface = naming.dyn_iface_declared_name(unsafe: analyzer.qname_to_str(tref.dyn_interface)), args = dyn_type_args(ctx, tref.dyn_interface))
     if tref.is_tuple:
         var elems = vec.Vec[types.Type].create()
         var ti: ptr_uint = 0
@@ -20081,7 +20677,10 @@ function lower_enum_decl(ctx: ref[LowerCtx], name: str, backing_type: ptr[ast.Ty
         let member_linkage = naming.qualified_member_c_name(ctx.module_name, name, m.name)
         var value_expr: ptr[ir.Expr]
         let explicit = m.value
-        if explicit != null:
+        # The parser synthesizes a literal for an implicit member too; only a
+        # source-explicit value advances the constant fold, and an implicit one
+        # takes the running auto value (the host's constant-value rule).
+        if explicit != null and m.value_explicit:
             let lowered = lower_expr(ctx, explicit)
             var coerced = coerce_const_value(ctx, unsafe: read(lowered), backing)
             # A pure numeric constant (`1 << 0`, `1 | 2`) takes the backing type
@@ -20787,7 +21386,7 @@ function infer_match_arm_type(ctx: ref[LowerCtx], arms: span[ast.MatchExprArm]) 
     return types.Type.ty_error
 
 
-function lower_match_expression_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, declared_type: ptr[ast.TypeRef]?, scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm]) -> void:
+function lower_match_expression_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, declared_type: ptr[ast.TypeRef]?, scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], line: ptr_uint) -> void:
     let c_name = utils.c_local_name(name)
     var ty = types.Type.ty_error
     let dt = declared_type
@@ -20798,12 +21397,18 @@ function lower_match_expression_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir
     if types.is_error(ty):
         ty = types.primitive("int")
 
-    # Zero-init the local, then build a switch/if chain that overwrites it.
+    # The host's prepared-expression path: the match writes a fresh
+    # `__mt_match_expr_N` temp (zero-initialized), and the declared local copies
+    # it afterwards.
+    let temp = fresh_c_temp_name(ctx, "match_expr")
     let zero_init = alloc_expr(ir.Expr.expr_zero_init(ty = ty))
-    output.push(ir.Stmt.stmt_local(name = name, linkage_name = c_name, ty = ty, value = zero_init, line = 0, source_path = ""))
+    output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = ty, value = zero_init, line = 0, source_path = ""))
 
-    let result_ref = alloc_expr(ir.Expr.expr_name(name = c_name, ty = ty, pointer = Option[bool].some(value = false)))
+    let result_ref = alloc_expr(ir.Expr.expr_name(name = temp, ty = ty, pointer = Option[bool].some(value = false)))
     lower_match_expr_to_ref(ctx, output, scrutinee, arms, result_ref)
+
+    let temp_ref = alloc_expr(ir.Expr.expr_name(name = temp, ty = ty, pointer = Option[bool].some(value = false)))
+    output.push(ir.Stmt.stmt_local(name = name, linkage_name = c_name, ty = ty, value = temp_ref, line = line, source_path = ctx.analysis.source_path))
 
     ctx.locals.push(LocalBinding(name = name, c_name = c_name, ty = ty, pointer = Option[bool].some(value = false)))
 
@@ -23043,7 +23648,7 @@ function resolve_scalar_type_ref(declared: ptr[ast.TypeRef]) -> types.Type:
     unsafe:
         let t = read(declared)
         if t.is_dyn:
-            return types.Type.ty_dyn(iface = naming.dyn_iface_declared_name(unsafe: analyzer.qname_to_str(t.dyn_interface)))
+            return types.Type.ty_dyn(iface = naming.dyn_iface_declared_name(unsafe: analyzer.qname_to_str(t.dyn_interface)), args = span[types.Type]())
         if t.is_fn or t.is_proc or t.is_tuple or t.nullable:
             return types.Type.ty_error
         if t.arguments.len > 0:

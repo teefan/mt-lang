@@ -222,6 +222,8 @@ public function type_c_key(t: types.Type) -> str:
             return "error"
         types.Type.ty_type_meta:
             return "type"
+        types.Type.ty_handle:
+            return "handle"
         types.Type.ty_named as n:
             if n.module_name.len > 0:
                 var buf = string.String.create()
@@ -265,11 +267,24 @@ public function type_c_key(t: types.Type) -> str:
             fmt.append_long(ref_of(buf), lit.value)
             return buf.as_str()
         types.Type.ty_tuple as tup:
+            # The host names a generic instance after `sanitize_identifier(
+            # type.arguments.join('_'))`, i.e. each argument's `to_s`.  A tuple
+            # renders `(int, int)` / `(x: int, y: int)`, whose punctuation
+            # collapses to single underscores (`Option[(int, int)]` ->
+            # `std_option_Option_int_int`).  This is the instance suffix, not the
+            # tuple value struct's own `mt_tuple_*` name.
             var buf = string.String.create()
-            buf.append("tuple")
             var i: ptr_uint = 0
             while i < tup.elements.len:
-                buf.append("_")
+                if i > 0:
+                    buf.append("_")
+                match tup.field_names:
+                    Option.some as names:
+                        if i < names.value.len:
+                            buf.append(unsafe: read(names.value.data + i))
+                            buf.append("_")
+                    Option.none:
+                        pass
                 buf.append(type_c_key(unsafe: read(tup.elements.data + i)))
                 i += 1
             return buf.as_str()
