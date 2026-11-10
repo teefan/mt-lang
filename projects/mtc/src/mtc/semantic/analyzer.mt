@@ -5141,7 +5141,15 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
             ast.Expr.expr_unary_op as u:
                 return infer_unary(ctx, scope, u.operator, u.operand)
             ast.Expr.expr_prefix_cast as c:
+                # The host infers a cast's operand with no expected type
+                # (`infer_expression(expression.expression)` without
+                # `expected_type:`), so an outer assignment/declaration hint must
+                # not leak through the cast (`ubyte<-(if c: 0 else: 255)` infers
+                # the conditional as `int`).
+                let cast_saved_hint = ctx.expected_type_hint
+                ctx.expected_type_hint = types.Type.ty_error
                 let source = infer_expr(ctx, scope, c.expression)
+                ctx.expected_type_hint = cast_saved_hint
                 let target = resolve_type(ctx, c.target_type)
                 check_cast_call(ctx, c.expression, source, target, c.line, c.column)
                 return target

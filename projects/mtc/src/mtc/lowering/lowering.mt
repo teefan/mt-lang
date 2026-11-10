@@ -416,6 +416,10 @@ struct LowerCtx:
     async_local_fields: vec.Vec[ir.Field]
     async_await_fields: vec.Vec[ir.Field]
     async_local_seen: map_mod.Map[str, bool]
+    # Frame fields holding a dynamic format string's result, in first-encounter
+    # order: the local's temp release is dropped and the frame's release/cancel
+    # functions free the field instead (the host's `format_str_fields`).
+    async_format_str_fields: vec.Vec[str]
     # Prepass-assigned field names for match arms whose body awaits, keyed by the
     # arm's address.  The lowering pass emits the field after the arm body (the
     # host's post-order analysis registration).
@@ -431,6 +435,17 @@ struct LowerCtx:
     # lowering can emit the normalizer's `[temp decl] ++ left_setup ++ IfStmt`
     # order.  Keyed by the rewritten and/or node.
     async_structured_setup: bool
+    # One-shot: the next `lower_block` keeps CPS for its top-level statements
+    # even when the body itself has no await.  The host normalizes a while
+    # condition into the loop body and lowers that body as a unit; an await in
+    # the condition setup therefore forces the original body onto the CF path.
+    async_force_cps_body: bool
+    # One-shot override for the next specialization created: whether the host
+    # analyzer also *validated* that specialization's body.  The iterator
+    # protocol instantiates `iter`/`next` without checking their bodies
+    # (`iterator_loop_type`), so their nested instances are lowering-created
+    # even though the bindings themselves are analyzer-created.
+    next_spec_body_validated: Option[bool]
     async_and_or_left_setup: map_mod.Map[ptr_uint, vec.Vec[ir.Stmt]]
     async_and_or_right_setup: map_mod.Map[ptr_uint, vec.Vec[ir.Stmt]]
     # When non-null, `async_emit_await` and `async_register_local_field` push
@@ -440,6 +455,7 @@ struct LowerCtx:
     # targets the local vec declared in this function's `has_await` branch.
     async_await_fields_ptr: ptr[vec.Vec[ir.Field]]?
     async_local_fields_ptr: ptr[vec.Vec[ir.Field]]?
+    async_format_str_fields_ptr: ptr[vec.Vec[str]]?
     # Current loop's break / continue goto labels.  When non-empty, `break` and
     # `continue` statements emit `stmt_goto` to these labels instead of C's
     # native `break`/`continue`, so they correctly exit the enclosing loop even
@@ -1045,7 +1061,7 @@ function struct_exists_in_imports(ctx: ref[LowerCtx], name: str) -> bool:
 ## Lower a function body with type-parameter substitution applied: every reference
 ## to a type param (e.g. `T`) in locals, expressions, and the return type is
 ## replaced by the corresponding concrete type from `sub`.
-function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, sub: ref[map_mod.Map[str, types.Type]], pre_instantiated: bool) -> ir.Function:
+function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, sub: ref[map_mod.Map[str, types.Type]], body_validated: bool) -> ir.Function:
     # Reset function-level state
     ctx.locals.clear()
     ctx.temp_counter = 0
@@ -1056,8 +1072,12 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str
     ctx.function_returns.clear()
     var saved_current_fn = ctx.current_function_linkage
     ctx.current_function_linkage = spec_key
+    # Calls inside this body were analyzer-instantiated only when the host
+    # validated the specialization's body (a concrete call site); an
+    # instance created by other paths (the iterator protocol) is not validated,
+    # so its nested concrete calls are lowering-created and creator-gated.
     var saved_pre_instantiated = ctx.pre_instantiated_context
-    ctx.pre_instantiated_context = pre_instantiated
+    ctx.pre_instantiated_context = body_validated
     var saved_type_subst = ctx.type_substitution
     ctx.type_substitution = read(sub)
     var ir_params = vec.Vec[ir.Param].create()
@@ -1259,13 +1279,17 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         async_local_fields = vec.Vec[ir.Field].create(),
         async_await_fields = vec.Vec[ir.Field].create(),
         async_local_seen = map_mod.Map[str, bool].create(),
+        async_format_str_fields = vec.Vec[str].create(),
         async_match_binding_names = map_mod.Map[ptr_uint, str].create(),
         async_and_or_field_indices = map_mod.Map[ptr_uint, ptr_uint].create(),
         async_structured_setup = false,
+        async_force_cps_body = false,
+        next_spec_body_validated = Option[bool].none,
         async_and_or_left_setup = map_mod.Map[ptr_uint, vec.Vec[ir.Stmt]].create(),
         async_and_or_right_setup = map_mod.Map[ptr_uint, vec.Vec[ir.Stmt]].create(),
         async_await_fields_ptr = null,
         async_local_fields_ptr = null,
+        async_format_str_fields_ptr = null,
         loop_break_label = "",
         loop_continue_label = "",
         loop_continue_native = false,
@@ -1606,6 +1630,82 @@ function order_module_functions(analyses: span[analyzer.Analysis], fragments: sp
             vi += 1
         visits.push(module_visits)
         mi += 1
+
+    # The analyzer ran before lowering, so its instantiation/validation of a
+    # specialization does not depend on which call site lowering reached first.
+    # Recompute the classification from the creation graph: a normal call from
+    # an analyzed context means the analyzer validated the callee's body (its
+    # nested calls are analyzer-created), and an instance is analyzer-created
+    # whenever an analyzed context (directly or transitively) created it.
+    var spec_key_list = vec.Vec[str].create()
+    var spec_key_iter = spec_infos.keys()
+    while true:
+        let kp = spec_key_iter.next() else:
+            break
+        spec_key_list.push(unsafe: read(kp))
+    var bv_changed = true
+    while bv_changed:
+        bv_changed = false
+        var ski: ptr_uint = 0
+        while ski < spec_key_list.len():
+            let kp = spec_key_list.get(ski) else:
+                break
+            let key = unsafe: read(kp)
+            let info_ptr = spec_infos.get(key)
+            if info_ptr != null:
+                var info = unsafe: read(info_ptr)
+                if not info.body_validated:
+                    var analyzed = false
+                    var ri: ptr_uint = 0
+                    while ri < info.reachers.len():
+                        let rp = info.reachers.get(ri) else:
+                            break
+                        let reacher = unsafe: read(rp)
+                        if reacher.len == 0:
+                            analyzed = true
+                        else:
+                            let cp = spec_infos.get(reacher)
+                            if cp == null:
+                                analyzed = true
+                            else if unsafe: read(cp).body_validated:
+                                analyzed = true
+                        ri += 1
+                    if analyzed:
+                        info.body_validated = true
+                        spec_infos.set(key, info)
+                        bv_changed = true
+            ski += 1
+    var pre_changed = true
+    while pre_changed:
+        pre_changed = false
+        var pki: ptr_uint = 0
+        while pki < spec_key_list.len():
+            let kp = spec_key_list.get(pki) else:
+                break
+            let key = unsafe: read(kp)
+            let info_ptr = spec_infos.get(key)
+            if info_ptr != null:
+                var info = unsafe: read(info_ptr)
+                var pre = info.pre_instantiated
+                var ri2: ptr_uint = 0
+                while ri2 < info.reachers.len():
+                    let rp = info.reachers.get(ri2) else:
+                        break
+                    let reacher = unsafe: read(rp)
+                    if reacher.len == 0:
+                        pre = true
+                    else:
+                        let cp = spec_infos.get(reacher)
+                        if cp == null:
+                            pre = true
+                        else if unsafe: read(cp).body_validated:
+                            pre = true
+                    ri2 += 1
+                if pre != info.pre_instantiated:
+                    info.pre_instantiated = pre
+                    spec_infos.set(key, info)
+                    pre_changed = true
+            pki += 1
 
     var spec_keys = spec_infos.keys()
     while true:
@@ -3176,6 +3276,10 @@ struct HoistedValue:
 function lower_expr_hoisting(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ep: ptr[ast.Expr], array_exempt: bool) -> HoistedValue:
     let base = output.len()
     let saved = begin_stmt_setup(ctx, HoistMode.hm_return)
+    # A return value is a statement root: the host passes
+    # `allow_root_statement_foreign: true`, so a foreign call keeps its inline
+    # shape rather than materializing a `__mt_foreign_expr_N` value.
+    ctx.hoist_root_ep = ep
     if array_exempt:
         ctx.array_call_exempt = ep
     let lowered = lower_expr(ctx, ep)
@@ -3278,7 +3382,9 @@ function lower_block(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.St
     # function; returns and `?` still complete the frame because
     # `async_completion_active` stays set.  A block with an await keeps CPS.
     let saved_cps_active = ctx.async_cps_active
-    if saved_cps_active and not async_mod.body_has_await(body_ptr):
+    let force_cps = ctx.async_force_cps_body
+    ctx.async_force_cps_body = false
+    if saved_cps_active and not force_cps and not async_mod.body_has_await(body_ptr):
         # The host's async *analysis* records a frame field for every local
         # declaration regardless of the lowering path, so register this body's
         # fields up front (their lowering still uses plain locals).
@@ -3931,6 +4037,15 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # `while (true) { <cond setup>; cond = <cond>; if (!cond) break; <body> }`.
                 if ctx.async_cps_active and (async_mod.expr_has_await(w.condition) or async_mod.expr_has_short_circuit(w.condition)):
                     var wbody = vec.Vec[ir.Stmt].create()
+                    # The host normalizes the condition into the loop body and
+                    # lowers that body as a unit: when neither the condition nor
+                    # the body awaits, the generated condition temps are plain
+                    # locals (their frame fields still register); an await in
+                    # either keeps the whole body on the CF path.
+                    let loop_needs_cps = async_mod.expr_has_await(w.condition) or async_mod.body_has_await(w.body)
+                    let loop_cps = ctx.async_cps_active
+                    if not loop_needs_cps:
+                        ctx.async_cps_active = false
                     let saved_structured = ctx.async_structured_setup
                     ctx.async_structured_setup = true
                     let cond_hoisted = async_hoist_awaits(ctx, ref_of(wbody), w.condition)
@@ -3949,10 +4064,17 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     let cond_tmp = j2("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
                     let cond_field = j2("local_", cond_tmp)
                     let cond_frame = j2("__mt_frame->", cond_field)
-                    async_register_local_field(ctx, cond_tmp, cond_field, cond_frame, ctx.bool_ty)
-                    wbody.push(async_frame_field_assignment(ctx, cond_field, ctx.bool_ty, cond_ir))
+                    var cond_name: str
+                    if ctx.async_cps_active:
+                        async_register_local_field(ctx, cond_tmp, cond_field, cond_frame, ctx.bool_ty)
+                        wbody.push(async_frame_field_assignment(ctx, cond_field, ctx.bool_ty, cond_ir))
+                        cond_name = cond_frame
+                    else:
+                        async_register_unused_field(ctx, cond_field, ctx.bool_ty)
+                        wbody.push(ir.Stmt.stmt_local(name = cond_tmp, linkage_name = cond_tmp, ty = ctx.bool_ty, value = cond_ir, line = 0, source_path = ""))
+                        cond_name = cond_tmp
                     append_hoist_cleanups(ref_of(wbody), cond_collected)
-                    let cond_ref = alloc_expr(ir.Expr.expr_name(name = cond_frame, ty = ctx.bool_ty, pointer = Option[bool].some(value = false)))
+                    let cond_ref = alloc_expr(ir.Expr.expr_name(name = cond_name, ty = ctx.bool_ty, pointer = Option[bool].some(value = false)))
                     # Use goto labels so user-written `break`/`continue` inside the
                     # loop body (including inside match→switch arms) still exit the
                     # correct enclosing loop.
@@ -3971,6 +4093,8 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     var brk = vec.Vec[ir.Stmt].create()
                     brk.push(ir.Stmt.stmt_break())
                     wbody.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = cond_ref, ty = ctx.bool_ty)), then_body = brk.as_span(), else_body = Option[span[ir.Stmt]].none))
+                    ctx.async_cps_active = loop_cps
+                    ctx.async_force_cps_body = loop_needs_cps
                     let inner = lower_block(ctx, w.body)
                     var ii: ptr_uint = 0
                     while ii < inner.len:
@@ -6669,8 +6793,13 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
 ##   * ready flag: `Iter it = xs.iter(); while (true) { bool ready = it.next();
 ##     if (!ready) break; T x = it.current(); body }`
 function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], binding_name: str, iterable: ptr[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+    # The host's `iterator_loop_type` instantiates `iter`/`next`/`current` while
+    # analyzing the loop but never validates their bodies, so those
+    # specializations' nested calls are lowering-created.
     let iter_callee = alloc_ast_expr(ast.Expr.expr_member_access(receiver = iterable, member_name = "iter", line = 0, column = 0))
+    ctx.next_spec_body_validated = Option[bool].some(value = false)
     let iter_call = lower_call(ctx, iter_callee, span[ast.Argument](), iter_callee)
+    ctx.next_spec_body_validated = Option[bool].none
     let iter_ty = ir_expr_type(iter_call)
     if types.is_error(iter_ty) or types.is_void(iter_ty):
         return
@@ -6680,7 +6809,9 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
 
     let it_id = alloc_ast_expr(ast.Expr.expr_identifier(name = it_c, line = 0, column = 0))
     let next_callee = alloc_ast_expr(ast.Expr.expr_member_access(receiver = it_id, member_name = "next", line = 0, column = 0))
+    ctx.next_spec_body_validated = Option[bool].some(value = false)
     let next_call = lower_call(ctx, next_callee, span[ast.Argument](), next_callee)
+    ctx.next_spec_body_validated = Option[bool].none
     let next_ty = ir_expr_type(next_call)
     if types.is_error(next_ty) or types.is_void(next_ty):
         return
@@ -6691,7 +6822,9 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
     if not nullable_item:
         let it_id2 = alloc_ast_expr(ast.Expr.expr_identifier(name = it_c, line = 0, column = 0))
         let cur_callee = alloc_ast_expr(ast.Expr.expr_member_access(receiver = it_id2, member_name = "current", line = 0, column = 0))
+        ctx.next_spec_body_validated = Option[bool].some(value = false)
         cur_call = lower_call(ctx, cur_callee, span[ast.Argument](), cur_callee)
+        ctx.next_spec_body_validated = Option[bool].none
         cur_ty = ir_expr_type(cur_call)
         if types.is_error(cur_ty) or types.is_void(cur_ty):
             return
@@ -8044,6 +8177,8 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                                             let vspec_key = specialization_key(ctx, vgm.value.module_name, id.name, spec.arguments)
                                             if not ctx.specialization_cache.contains(vspec_key) and not ctx.spec_in_progress.contains(vspec_key):
                                                 lower_and_cache_specialization(ctx, vgm.value, spec.arguments, vspec_key, ctx.pre_instantiated_context)
+                                            else:
+                                                note_validated_spec_reach(ctx, vspec_key)
                                             var fn_ty = expr_type(ctx, ep)
                                             let vcached = ctx.specialization_cache.get(vspec_key)
                                             if vcached != null:
@@ -11220,6 +11355,8 @@ function lower_monomorphized_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], typ
     let spec_key = specialization_key(ctx, gm.module_name, callee_name, type_args)
     if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
         lower_and_cache_specialization(ctx, gm, type_args, spec_key, ctx.pre_instantiated_context)
+    else:
+        note_validated_spec_reach(ctx, spec_key)
     let ret_ty = cross_module_return_type(ctx, spec_key, call_ep)
     var ret_type_ptr = types.alloc_type(ret_ty)
     return lower_plain_call_spec(ctx, spec_key, call_args, call_ep, ret_type_ptr, ctx.specialization_cache.get(spec_key))
@@ -11344,6 +11481,8 @@ function try_inferred_generic_call(ctx: ref[LowerCtx], module_name: Option[str],
             let spec_key = key.as_str()
             if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
                 lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key, ctx.pre_instantiated_context)
+            else:
+                note_validated_spec_reach(ctx, spec_key)
             let ret_ty = cross_module_return_type(ctx, spec_key, call_ep)
             # Pass a synthesized sig for async wait/run so coerce_fn_arg_to_proc
             # can wrap task expressions in procs (task-root-proc bridge).
@@ -11709,6 +11848,17 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], gm: GenericFunctionM
 function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: GenericFunctionMatch, sub: ref[map_mod.Map[str, types.Type]], spec_key: str, pre_instantiated: bool) -> void:
     let creator = ctx.current_function_linkage
     let setup_module = if creator.len == 0: ctx.module_name else: ""
+    # Consume the one-shot creation-path override (see `ensure_monomorphized_method`).
+    let creation_override = ctx.next_spec_body_validated
+    ctx.next_spec_body_validated = Option[bool].none
+    var creation_normal_call = true
+    var body_validated = pre_instantiated
+    match creation_override:
+        Option.some as v:
+            creation_normal_call = false
+            body_validated = v.value
+        Option.none:
+            pass
     ctx.spec_in_progress.set(spec_key, true)
     match gm.decl:
         ast.Decl.decl_function as fun:
@@ -11764,7 +11914,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             ctx.type_substitution = map_mod.Map[str, types.Type].create()
             ctx.inside_async = false
 
-            var spec_fun = lower_specialized_function(ctx, fun.name, spec_key, fun.method_params, fun.return_type, fun.body, sub, pre_instantiated)
+            var spec_fun = lower_specialized_function(ctx, fun.name, spec_key, fun.method_params, fun.return_type, fun.body, sub, body_validated)
             # Host parity: the instance's `name` is the declaration name; only
             # the linkage name carries the specialization suffix.
             spec_fun.linkage_name = spec_key
@@ -11799,6 +11949,9 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
                 unsafe:
                     read(ctx.spec_infos).set(spec_key, SpecInfo(
                         owner_module = gm.module_name,
+                        body_validated = body_validated,
+                        creation_normal_call = creation_normal_call,
+                        reachers = if creation_normal_call: make_spec_reachers(creator) else: vec.Vec[str].create(),
                         decl_key = j2("fn:", fun.name),
                         args_key = fn_args_key.as_str(),
                         creator = creator,
@@ -11809,6 +11962,9 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
                 var existing = unsafe: read(existing_ptr)
                 if pre_instantiated and not existing.pre_instantiated:
                     existing.pre_instantiated = true
+                    unsafe: read(ctx.spec_infos).set(spec_key, existing)
+                if body_validated and not existing.body_validated:
+                    existing.body_validated = true
                     unsafe: read(ctx.spec_infos).set(spec_key, existing)
 
             # Restore the caller context.
@@ -13246,6 +13402,14 @@ function build_receiver_arg(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_kind:
 #  expression types and imports resolve correctly.
 # =============================================================================
 
+## The initial reach-edge list for a new specialization (its first creator).
+function make_spec_reachers(creator: str) -> vec.Vec[str]:
+    var reachers = vec.Vec[str].create()
+    if creator.len > 0:
+        reachers.push(creator)
+    return reachers
+
+
 ## A concrete generic receiver: the struct name and its resolved type arguments
 ## (e.g. `Vec` + `[int]`).  Type-parameter arguments are resolved through the
 ## active substitution so nested method calls inside monomorphized bodies work.
@@ -13254,6 +13418,21 @@ function build_receiver_arg(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_kind:
 ## (`lower_functions`: declaration order, instances sorted by type arguments).
 struct SpecInfo:
     owner_module: str
+    ## True when the analyzer checked this specialization's body, so the host's
+    ## *analyzer* also instantiated the concrete calls inside it.  The binding's
+    ## own pre-instantiation is separate: the iterator protocol instantiates
+    ## `iter`/`next` without validating their bodies.
+    body_validated: bool
+    ## True when this specialization was first created from a normal call site
+    ## (as opposed to the iterator protocol's `iter`/`next`/`current` lookup).
+    ## A normal call from a validated body means the analyzer validated this
+    ## specialization's body too.
+    creation_normal_call: bool
+    ## Every function/method linkage from whose body a *normal* call reached this
+    ## specialization (the first creator and any later cache hits).  Validation
+    ## propagates along these edges at placement time, independent of lowering
+    ## order: the analyzer validated every callee body of an analyzed body.
+    reachers: vec.Vec[str]
     ## "fn:<name>" or "method:<Type>.<name>".
     decl_key: str
     ## Type arguments joined with "_" (host `type_arguments.map(&:to_s).join`).
@@ -13769,11 +13948,19 @@ function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, g
 
     if not ctx.specialization_cache.contains(method_c) and not ctx.spec_in_progress.contains(method_c):
         ensure_monomorphized_method(ctx, method_c, info, gm, ctx.pre_instantiated_context)
+    else:
+        note_validated_spec_reach(ctx, method_c)
 
     var ret_ty = ctx.void_ty
     let cached = ctx.specialization_cache.get(method_c)
     if cached != null:
         ret_ty = unsafe: read(cached).return_type
+    else:
+        # A recursive self-call reaches here while the specialization is still
+        # being lowered, so only the pre-registered return type is available.
+        let fr = ctx.function_returns.get(method_c)
+        if fr != null:
+            ret_ty = unsafe: read(fr)
 
     let recv = lower_expr(ctx, receiver)
     var ir_args = vec.Vec[ir.Expr].create()
@@ -13912,6 +14099,25 @@ function coerce_monomorphized_arg_to_proc(ctx: ref[LowerCtx], cached: ptr[ir.Fun
     return lowered
 
 
+## A normal call from an analyzed context means the host's analyzer validated
+## the reached specialization's body (and instantiated everything inside it),
+## even when lowering had already created the instance from another path (the
+## `for`-iterator lookup).  Record that sticky fact for the placement pass.
+function note_validated_spec_reach(ctx: ref[LowerCtx], spec_key: str) -> void:
+    if ctx.next_spec_body_validated.is_some():
+        return
+    let info_ptr = unsafe: read(ctx.spec_infos).get(spec_key)
+    if info_ptr == null:
+        return
+    var info = unsafe: read(info_ptr)
+    let parent = ctx.current_function_linkage
+    if parent.len > 0:
+        info.reachers.push(parent)
+    if ctx.pre_instantiated_context and not info.body_validated:
+        info.body_validated = true
+    unsafe: read(ctx.spec_infos).set(spec_key, info)
+
+
 ## Lower and cache a monomorphized method body once, in the owner module's
 ## context.  The context switch (module name, analysis, foreign map, variants)
 ## makes the body's recorded expression types and import-qualified references
@@ -13919,6 +14125,20 @@ function coerce_monomorphized_arg_to_proc(ctx: ref[LowerCtx], cached: ptr[ir.Fun
 function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: GenericReceiver, gm: GenericMethodMatch, pre_instantiated: bool) -> void:
     let creator = ctx.current_function_linkage
     let setup_module = if creator.len == 0: ctx.module_name else: ""
+    # Consume the one-shot creation-path override.  The iterator protocol's
+    # `iter`/`next`/`current` bindings are analyzer-created but their bodies are
+    # not validated (`iterator_loop_type` only looks the methods up), so their
+    # nested instances are lowering-created.
+    let creation_override = ctx.next_spec_body_validated
+    ctx.next_spec_body_validated = Option[bool].none
+    var creation_normal_call = true
+    var body_validated = pre_instantiated
+    match creation_override:
+        Option.some as v:
+            creation_normal_call = false
+            body_validated = v.value
+        Option.none:
+            pass
     ctx.spec_in_progress.set(method_c, true)
     let owner_a = find_imported_analysis(ctx, gm.owner_module) else:
         return
@@ -13982,7 +14202,7 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     collect_variants(ctx, owner_a.source_file.declarations)
     install_prelude_variants(ctx)
 
-    let spec_fun = lower_specialized_method(ctx, method_c, info, gm, ref_of(sub), pre_instantiated)
+    let spec_fun = lower_specialized_method(ctx, method_c, info, gm, ref_of(sub), body_validated)
     ctx.specialization_cache.set(method_c, spec_fun)
     saved_returns.set(method_c, spec_fun.return_type)
     # Record owner/declaration/arguments for host-style ordering.  The sort key
@@ -14015,6 +14235,9 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
                 # type's module, which a cross-module call site may have registered
                 # as its own (`Vec.create[String]` written in std.string).
                 owner_module = gm.owner_module,
+                body_validated = body_validated,
+                creation_normal_call = creation_normal_call,
+                reachers = if creation_normal_call: make_spec_reachers(creator) else: vec.Vec[str].create(),
                 decl_key = m_decl_key.as_str(),
                 args_key = m_args_key.as_str(),
                 creator = creator,
@@ -14025,6 +14248,9 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
         var existing = unsafe: read(existing_ptr)
         if pre_instantiated and not existing.pre_instantiated:
             existing.pre_instantiated = true
+            unsafe: read(ctx.spec_infos).set(method_c, existing)
+        if body_validated and not existing.body_validated:
+            existing.body_validated = true
             unsafe: read(ctx.spec_infos).set(method_c, existing)
 
     ctx.module_name = saved_module
@@ -14061,7 +14287,7 @@ function struct_defining_module_for_type(ctx: ref[LowerCtx], name: str) -> str:
 ## Lower a single generic method to an IR function with the struct's type
 ## parameters substituted.  Mirrors `lower_method`, but resolves the receiver and
 ## parameter/return types through `substitute_type_params` with `sub`.
-function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: GenericReceiver, gm: GenericMethodMatch, sub: ref[map_mod.Map[str, types.Type]], pre_instantiated: bool) -> ir.Function:
+function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: GenericReceiver, gm: GenericMethodMatch, sub: ref[map_mod.Map[str, types.Type]], body_validated: bool) -> ir.Function:
     let m = gm.method
     ctx.locals.clear()
     ctx.temp_counter = 0
@@ -14071,8 +14297,10 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
     ctx.cstr_backed_names.clear()
     var saved_current_fn = ctx.current_function_linkage
     ctx.current_function_linkage = method_c
+    # Nested instances are analyzer-created only when the body was validated
+    # (see `lower_specialized_function`).
     var saved_pre_instantiated = ctx.pre_instantiated_context
-    ctx.pre_instantiated_context = pre_instantiated
+    ctx.pre_instantiated_context = body_validated
 
     # Build the receiver struct type using only the struct-level type args
     # (the first N concrete args where N = struct_param_names.len).  Method-level
@@ -15872,7 +16100,23 @@ function lower_call_with_callee(ctx: ref[LowerCtx], c_name: str, callee_expr: Op
             Option.some as bridge_proc:
                 lowered = lower_task_expression_as_root_proc(ctx, arg.arg_value, bridge_proc.value)
             Option.none:
-                lowered = lower_expr(ctx, arg.arg_value)
+                # A float/double parameter threads its expected type into an
+                # arithmetic binary argument (the host's
+                # `lower_contextual_expression` with the parameter as the
+                # expected type): `math.cos((i + 1) / 51.45)` takes a double
+                # literal and casts the int sub-expression.
+                var contextual = false
+                match sig:
+                    Option.some as s:
+                        if i < s.value.params.len:
+                            let pty = unsafe: read(s.value.params.data + i).ty
+                            if types.is_float_type(pty) and is_contextual_binary_expr(arg.arg_value):
+                                lowered = lower_contextual_binary(ctx, arg.arg_value, pty)
+                                contextual = true
+                    Option.none:
+                        pass
+                if not contextual:
+                    lowered = lower_expr(ctx, arg.arg_value)
                 lowered = coerce_arg_to_ref_param(sig, i, lowered)
                 lowered = coerce_arg_to_span_param(sig, i, lowered)
                 lowered = coerce_fn_arg_to_proc(ctx, sig, i, lowered, arg.arg_value)
@@ -16162,6 +16406,91 @@ function coerce_literal_to_param_type(ctx: ref[LowerCtx], params: span[analyzer.
         unsafe:
             return literal_value_to_context_type(ctx, arg_ast, read(params.data + index).ty, value)
     return value
+
+
+## True when `ep` (looking through `unsafe:`) is an arithmetic binary the host's
+## `propagating_expected_type` threads a numeric expected type into.
+function is_contextual_binary_expr(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_binary_op as b:
+                return is_pure_arithmetic_operator(b.operator)
+            ast.Expr.expr_unsafe as u:
+                return is_contextual_binary_expr(u.expression)
+            _:
+                return false
+
+
+## A binary operand's expected type only steers literal inference and a
+## conditional's branch typing (the host's `lower_expression(... expected_type:)`
+## calls inside its BinaryOp arm) — it does not apply the
+## `lower_contextual_expression` numeric-compatibility cast.
+function operand_value_to_context_type(ctx: ref[LowerCtx], value_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    var result = value
+    unsafe:
+        match read(value_ast):
+            ast.Expr.expr_integer_literal:
+                result = int_literal_to_context_type(value_ast, context_ty, result)
+            ast.Expr.expr_float_literal:
+                result = float_literal_to_context_type(value_ast, context_ty, result)
+            ast.Expr.expr_unary_op:
+                result = int_literal_to_context_type(value_ast, context_ty, result)
+                result = float_literal_to_context_type(value_ast, context_ty, result)
+            ast.Expr.expr_if:
+                result = conditional_value_to_context_type(ctx, value_ast, context_ty, result)
+            _:
+                pass
+    return result
+
+
+## Lower one operand of a contextual binary with the host's expected type: a
+## nested arithmetic binary recurses, any other expression takes the literal /
+## conditional retyping above.
+function lower_contextual_operand(ctx: ref[LowerCtx], ep: ptr[ast.Expr], expected: Option[types.Type]) -> ptr[ir.Expr]:
+    let exp = expected else:
+        return lower_expr(ctx, ep)
+    if is_contextual_binary_expr(ep):
+        return lower_contextual_binary(ctx, ep, exp)
+    let value = lower_expr(ctx, ep)
+    return operand_value_to_context_type(ctx, ep, exp, value)
+
+
+## The host's `lower_expression(expression, expected_type:)` BinaryOp arm for an
+## arithmetic binary in a numeric context: both operands see the expected type
+## (a bare float literal becomes the context width, an int expression stays
+## int), the promoted operand type casts each side, and the result carries the
+## common numeric type.  Used for call arguments, where the host passes the
+## parameter's type as the argument's expected type.
+function lower_contextual_binary(ctx: ref[LowerCtx], ep: ptr[ast.Expr], expected: types.Type) -> ptr[ir.Expr]:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_unsafe as u:
+                return lower_contextual_binary(ctx, u.expression, expected)
+            ast.Expr.expr_binary_op as bin:
+                var propagated = Option[types.Type].none
+                if types.is_numeric(expected):
+                    propagated = Option[types.Type].some(value = expected)
+                var left = lower_contextual_operand(ctx, bin.left, propagated)
+                var right = lower_contextual_operand(ctx, bin.right, propagated)
+                var left_ty = ir_expr_type(left)
+                var right_ty = ir_expr_type(right)
+                # The host's `harmonize_binary_float_literal_types`: a bare float
+                # literal takes a float peer's width.
+                if is_bare_float_literal(bin.left) and types.is_float_type(right_ty):
+                    left = float_literal_to_context_type(bin.left, right_ty, left)
+                    left_ty = ir_expr_type(left)
+                if is_bare_float_literal(bin.right) and types.is_float_type(left_ty):
+                    right = float_literal_to_context_type(bin.right, left_ty, right)
+                    right_ty = ir_expr_type(right)
+                match promoted_binary_operand_type(bin.operator, left_ty, right_ty):
+                    Option.some as op_ty:
+                        left = cast_to_type(left, op_ty.value)
+                        right = cast_to_type(right, op_ty.value)
+                        return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = op_ty.value))
+                    Option.none:
+                        return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = left_ty))
+            _:
+                return lower_expr(ctx, ep)
 
 
 ## Re-type an integer literal whose value fits `context_ty` (a numeric primitive)
@@ -16485,6 +16814,53 @@ function lower_task_expression_as_root_proc(ctx: ref[LowerCtx], expr_ast: ptr[as
     return lower_proc_expression_typed(ctx, span[ast.Param](), ret_ty, body, proc_ty)
 
 
+## The host's `foreign_call_requires_statement_lowering?` rule that needs the
+## value materialized in an expression position: a parameter the mapping
+## references more than once (its name plus its `as` boundary's public alias)
+## whose argument expression is not duplicable, so the value must be evaluated
+## into a temporary before the mapping substitutes it.
+function foreign_call_needs_materialized_value(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument]) -> bool:
+    let mapping = info.mapping else:
+        return false
+    var i: ptr_uint = 0
+    while i < info.params.len and i < args.len:
+        var param: ast.ForeignParam
+        var arg: ast.Argument
+        unsafe:
+            param = read(info.params.data + i)
+            arg = read(args.data + i)
+        var total = mapping_reference_count(mapping, param.name)
+        if param.boundary_type.is_some():
+            total += mapping_reference_count(mapping, j2(param.name, "_public"))
+        if total > 1 and not duplicable_foreign_ast(arg.arg_value):
+            return true
+        i += 1
+    return false
+
+
+## The host's `materialize_prepared_expression` with prefix `foreign_expr`: a
+## statement-lowered foreign call in an expression position stores its result in
+## a `__mt_foreign_expr_N` local before the enclosing statement.  A value that
+## already is a temp's Name (the `foreign_result` shape) passes through.
+function materialize_foreign_expr(ctx: ref[LowerCtx], result: ptr[ir.Expr], ret_ty: types.Type) -> ptr[ir.Expr]:
+    match unsafe: read(result):
+        ir.Expr.expr_name:
+            return result
+        _:
+            pass
+    if types.is_void(ret_ty):
+        return result
+    let rt = fresh_c_temp_name(ctx, "foreign_expr")
+    let decl = ir.Stmt.stmt_local(name = rt, linkage_name = rt, ty = ret_ty, value = result, line = 0, source_path = "")
+    let ref_expr = alloc_expr(ir.Expr.expr_name(name = rt, ty = ret_ty, pointer = Option[bool].some(value = false)))
+    if ctx.hoist_mode != HoistMode.hm_off:
+        ctx.hoist_stmts.push(decl)
+        return ref_expr
+    var stmts = vec.Vec[ir.Stmt].create()
+    stmts.push(decl)
+    return alloc_expr(ir.Expr.expr_stmt_expr(setup = stmts.as_span(), result = ref_expr, ty = ret_ty))
+
+
 ## Lower a foreign function call to a direct call on its mapped C function,
 ## applying `as cstr` boundary projections to arguments.  Phase 2d supports
 ## string-literal arguments at an `as cstr` boundary (emitted as a C string
@@ -16498,14 +16874,29 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
     if info.type_params.len > 0:
         ctx.type_substitution = foreign_call_substitution(ctx, info, args)
     defer: ctx.type_substitution = saved_sub
-    if not info.simple:
-        return lower_inline_foreign_mapping(ctx, info, args, call_ep)
+    var result: ptr[ir.Expr]
+    if info.simple:
+        result = lower_foreign_call_direct(ctx, info, args, call_ep)
+    else:
+        result = lower_inline_foreign_mapping(ctx, info, args, call_ep)
+    # A statement-lowered foreign call used in an expression position
+    # materializes its result before the enclosing statement (the host's
+    # `prepare_statement_lowered_foreign_call`); the statement roots
+    # (initializer, assignment value, return value, discarded expression) keep
+    # the call inline.
+    if ctx.hoist_mode != HoistMode.hm_off and ctx.hoist_root_ep != call_ep and foreign_call_needs_materialized_value(ctx, info, args):
+        result = materialize_foreign_expr(ctx, result, info.return_ty)
+    return result
+
+
+function lower_foreign_call_direct(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     var ir_args = vec.Vec[ir.Expr].create()
     var setup = vec.Vec[ir.Stmt].create()
     # Names of hoisted `str as cstr` temporaries (malloc'd by
     # mt_foreign_str_to_cstr_temp) that must be freed after the call so a foreign
     # call in a loop (e.g. DrawText(dynamic_str, ...) each frame) does not leak.
     var cstr_temps = vec.Vec[str].create()
+    var lowered_args = vec.Vec[ptr[ir.Expr]].create()
     let saved_locals_len = ctx.locals.len()
     var i: ptr_uint = 0
     while i < args.len:
@@ -16528,6 +16919,17 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
             lowered = lower_expr(ctx, arg.arg_value)
             if is_str_typed(ir_expr_type(lowered)):
                 lowered = lower_cstr_argument(ctx, arg.arg_value, lowered)
+        lowered_args.push(lowered)
+        i += 1
+    # The host allocates this call's own argument temps only after every
+    # argument value has been lowered (`bind_foreign_mapping_arguments` phase
+    # 3), so a nested foreign call in a later argument numbers before an earlier
+    # argument's cstr temp.
+    var ai: ptr_uint = 0
+    while ai < lowered_args.len:
+        let lp = lowered_args.get(ai) else:
+            break
+        var lowered = unsafe: read(lp)
         if is_foreign_cstr_temp_call(lowered):
             let cstr_ty = types.primitive("cstr")
             let tc = fresh_c_temp_name(ctx, "foreign_arg")
@@ -16536,7 +16938,7 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
             lowered = alloc_expr(ir.Expr.expr_name(name = tc, ty = cstr_ty, pointer = Option[bool].some(value = false)))
         unsafe:
             ir_args.push(read(lowered))
-        i += 1
+        ai += 1
     let ret_ty = info.return_ty
     # The host's `bind_foreign_mapping_arguments` binds its argument temps in a
     # duplicated env; the simple path's `foreign_in` temps must not leak either.
@@ -16988,12 +17390,16 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
 ## The host's `addressable_storage_expression?` over the AST: an identifier,
 ## a member/element chain rooted at one, or a `read(...)` call.  An `in`
 ## argument with any other shape needs a `foreign_in` temporary before its
-## address can be taken.
+## address can be taken.  The host strips `unsafe:` while preparing the
+## argument (`prepare_expression_for_inline_lowering`'s UnsafeExpr arm), so the
+## predicate looks through the wrapper.
 function addressable_storage_ast(ep: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(ep):
             ast.Expr.expr_identifier:
                 return true
+            ast.Expr.expr_unsafe as us:
+                return addressable_storage_ast(us.expression)
             ast.Expr.expr_member_access as ma:
                 return addressable_storage_ast(ma.receiver)
             ast.Expr.expr_index_access as ix:
@@ -17293,6 +17699,36 @@ function mapping_reference_count(ep: ptr[ast.Expr], name: str) -> ptr_uint:
                 return mapping_reference_count(spec.callee, name)
             _:
                 return 0
+
+
+## The host's `duplicable_foreign_argument_expression?` over the AST (before
+## lowering).  `unsafe:` is transparent — the host strips it while preparing
+## arguments.
+function duplicable_foreign_ast(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier:
+                return true
+            ast.Expr.expr_integer_literal:
+                return true
+            ast.Expr.expr_float_literal:
+                return true
+            ast.Expr.expr_string_literal:
+                return true
+            ast.Expr.expr_bool_literal:
+                return true
+            ast.Expr.expr_null_literal:
+                return true
+            ast.Expr.expr_unsafe as us:
+                return duplicable_foreign_ast(us.expression)
+            ast.Expr.expr_member_access as ma:
+                return duplicable_foreign_ast(ma.receiver)
+            ast.Expr.expr_unary_op as u:
+                return duplicable_foreign_ast(u.operand)
+            ast.Expr.expr_binary_op as b:
+                return duplicable_foreign_ast(b.left) and duplicable_foreign_ast(b.right)
+            _:
+                return false
 
 
 ## The host's `duplicable_foreign_argument_expression?` for a lowered value: an
@@ -17704,7 +18140,16 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
             typed = contextual_numeric_cast(ctx, arg, typed, ctx_ty, false, false)
             return project_foreign_boundary(ctx, typed, foreign_boundary_type(ctx, info, param))
         Option.none:
-            let lowered = lower_expr(ctx, arg)
+            # A float/double parameter threads its expected type into an
+            # arithmetic binary argument (the host's `lower_contextual_expression`
+            # with the parameter's type): `math.cos((i + 1) / 51.45)` takes a
+            # double literal and casts the int sub-expression.
+            let arg_ctx_ty = foreign_param_context_type(ctx, info, param)
+            var lowered: ptr[ir.Expr]
+            if types.is_float_type(arg_ctx_ty) and is_contextual_binary_expr(arg):
+                lowered = lower_contextual_binary(ctx, arg, arg_ctx_ty)
+            else:
+                lowered = lower_expr(ctx, arg)
             # `out`/`inout` pass the address of the argument's storage slot, with
             # the host's `lower_addr_expression` exception: a lowered argument
             # that already *is* a pointer — an editable method's `this` receiver
@@ -28182,6 +28627,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     ctx.async_local_fields = vec.Vec[ir.Field].create()
     ctx.async_await_fields = vec.Vec[ir.Field].create()
     ctx.async_local_seen = map_mod.Map[str, bool].create()
+    ctx.async_format_str_fields = vec.Vec[str].create()
     let sig = lookup_fn_sig(ctx, name)
     let res_ty = resolve_return_type(ctx, sig, return_type)
     let bool_ty = ctx.bool_ty
@@ -28283,15 +28729,19 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         ctx.async_local_fields = vec.Vec[ir.Field].create()
         ctx.async_await_fields = vec.Vec[ir.Field].create()
         ctx.async_local_seen = map_mod.Map[str, bool].create()
+        ctx.async_format_str_fields = vec.Vec[str].create()
         # Create LOCAL vec vars and point to THEM (NOT to ctx fields).  The ctx
         # fields are reassigned by nested lower_async_fn calls; a LOCAL variable
         # is immune to that, so pushes through the pointer always land here.
         var my_await_fields = ctx.async_await_fields
         var my_local_fields = ctx.async_local_fields
+        var my_format_str_fields = ctx.async_format_str_fields
         let saved_await_ptr = ctx.async_await_fields_ptr
         let saved_local_ptr = ctx.async_local_fields_ptr
+        let saved_format_str_ptr = ctx.async_format_str_fields_ptr
         ctx.async_await_fields_ptr = ptr_of(my_await_fields)
         ctx.async_local_fields_ptr = ptr_of(my_local_fields)
+        ctx.async_format_str_fields_ptr = ptr_of(my_format_str_fields)
         var saved_rt = ctx.current_fn_return_type
         ctx.current_fn_return_type = res_ty
         var saved_inside = ctx.inside_async
@@ -28303,8 +28753,10 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         # up (ctx fields may have been reassigned by nested lower_async_fn calls).
         ctx.async_local_fields = my_local_fields
         ctx.async_await_fields = my_await_fields
+        ctx.async_format_str_fields = my_format_str_fields
         ctx.async_await_fields_ptr = saved_await_ptr
         ctx.async_local_fields_ptr = saved_local_ptr
+        ctx.async_format_str_fields_ptr = saved_format_str_ptr
 
         ctx.async_cps_active = false
         ctx.async_completion_active = saved_completion
@@ -28500,6 +28952,15 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             let rl_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = rlf.name, ty = rlf.ty))
             proc_nullable_release_stmts(ctx, rl_field, rlf.ty, ref_of(vrel))
         rli += 1
+    # A dynamic format string stored in the frame is freed when the task is
+    # released (`frame_builder.rb:472-481`).
+    var rfsi: ptr_uint = 0
+    while rfsi < ctx.async_format_str_fields.len():
+        let rfsp = ctx.async_format_str_fields.get(rfsi) else:
+            break
+        let rf_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = unsafe: read(rfsp), ty = types.Type.ty_str))
+        vrel.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_release", arguments = single_expr_span(rf_field), ty = void_t)), line = 0, source_path = ""))
+        rfsi += 1
     # Pointer-lowered params are heap copies; free them before the frame
     # (`frame_builder.rb:483-490`).
     var rppi: ptr_uint = 0
@@ -28589,6 +29050,15 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             let cl_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = clf.name, ty = clf.ty))
             proc_nullable_release_stmts(ctx, cl_field, clf.ty, ref_of(vcn))
         cli += 1
+    # A dynamic format string stored in the frame is freed on cancel too
+    # (`frame_builder.rb:566-575`).
+    var cfsi: ptr_uint = 0
+    while cfsi < ctx.async_format_str_fields.len():
+        let cfsp = ctx.async_format_str_fields.get(cfsi) else:
+            break
+        let cf_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = unsafe: read(cfsp), ty = types.Type.ty_str))
+        vcn.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_release", arguments = single_expr_span(cf_field), ty = void_t)), line = 0, source_path = ""))
+        cfsi += 1
     # Pointer-lowered params are heap copies; cancel frees them before marking
     # the frame ready (`frame_builder.rb:577-591`).
     var cppi: ptr_uint = 0
@@ -29176,6 +29646,33 @@ function materialize_array_call_value(ctx: ref[LowerCtx], output: ref[vec.Vec[ir
     return alloc_expr(ir.Expr.expr_name(name = name, ty = ty, pointer = Option[bool].some(value = false)))
 
 
+## Record a frame field whose value is a dynamic format string: the prepared
+## temp release is dropped and the frame's release/cancel functions free the
+## field instead (the host's `async_info[:format_str_fields]`).  First-encounter
+## order, deduplicated by field name.
+function async_record_format_str_field(ctx: ref[LowerCtx], field_name: str) -> void:
+    let ffp = ctx.async_format_str_fields_ptr
+    if ffp != null:
+        let fields = unsafe: read(ffp)
+        var i: ptr_uint = 0
+        while i < fields.len:
+            let existing = fields.get(i) else:
+                break
+            if unsafe: read(existing) == field_name:
+                return
+            i += 1
+        unsafe: read(ffp).push(field_name)
+        return
+    var j: ptr_uint = 0
+    while j < ctx.async_format_str_fields.len:
+        let existing = ctx.async_format_str_fields.get(j) else:
+            break
+        if unsafe: read(existing) == field_name:
+            return
+        j += 1
+    ctx.async_format_str_fields.push(field_name)
+
+
 function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], loc_name: str, loc_value: ptr[ast.Expr]?, loc_stmt_type: ptr[ast.TypeRef]?, line: ptr_uint) -> void:
     # `let _ = ...`: the host's analysis registers `local_discard_<line>` for the
     # discard and its lowering stores the (awaited) value there — a dead field,
@@ -29284,7 +29781,22 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
     async_register_local_field(ctx, loc_name, field_name, frame_cname, ty)
     let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = field_name, ty = ty))
     output.push(ir.Stmt.stmt_assignment(target = target, operator = "=", value = val_ir))
-    record_or_emit_local_cleanups(ctx, output, hoist_collected.cleanups)
+    # A dynamic format string's result is owned by the frame field: drop the
+    # prepared temp release and register the field for the frame's
+    # release/cancel cleanup (the host's `format_str_fields`).
+    var local_cleanups = hoist_collected
+    var has_format_release = false
+    var fci: ptr_uint = 0
+    while fci < hoist_collected.cleanups.len:
+        let fcp = hoist_collected.cleanups.get(fci) else:
+            break
+        if is_format_release_stmt(unsafe: read(fcp)):
+            has_format_release = true
+        fci += 1
+    if has_format_release:
+        async_record_format_str_field(ctx, field_name)
+        local_cleanups = drop_format_release_cleanups(hoist_collected)
+    record_or_emit_local_cleanups(ctx, output, local_cleanups.cleanups)
 
 
 ## Lower an `await` at statement position: lower the task expr, then emit the
