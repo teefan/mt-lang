@@ -37,8 +37,7 @@ function signal_as_handle(handle: ptr[libuv.uv_signal_t]) -> ptr[libuv.uv_handle
 
 
 function stop_signal_cb(handle: ptr[libuv.uv_signal_t], _signum: int) -> void:
-    let data = libuv.handle_get_data(signal_as_handle(handle))
-    if data == null:
+    let data = libuv.handle_get_data(signal_as_handle(handle)) else:
         return
 
     stop_requested = true

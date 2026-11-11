@@ -6577,29 +6577,42 @@ function reserved_name_warn(path: str, line: ptr_uint, column: ptr_uint, name: s
 
 
 
+## The first `ref_of`/`ptr_of` site seen for a borrowed name.  The host finds
+## the earliest site with `find_borrow_location`; recording it during collection
+## gives the same anchor without a second walk.
+struct BorrowSite:
+    name: str
+    line: ptr_uint
+    column: ptr_uint
+    length: ptr_uint
+
+
 function borrow_check_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     let bp = body else:
         return
-    var borrows = vec.Vec[str].create()
+    var borrows = vec.Vec[BorrowSite].create()
     defer: borrows.release()
     var writes = vec.Vec[str].create()
     defer: writes.release()
     borrow_collect_body(bp, ref_of(borrows), ref_of(writes))
     var i: ptr_uint = 0
     while i < borrows.len():
-        let bp2 = borrows.get(i) else:
+        let site_ptr = borrows.get(i) else:
             break
-        let name = unsafe: read(bp2)
-        if borrow_vec_contains(ref_of(writes), name):
+        let site = unsafe: read(site_ptr)
+        if borrow_vec_contains(ref_of(writes), site.name):
             var buf = string.String.create()
             buf.append("'")
-            buf.append(name)
+            buf.append(site.name)
             buf.append("' is borrowed via ref_of/ptr_of and also mutated in the same scope — potential aliasing hazard")
-            push_warning(warnings, path, 1, "borrow-and-mutate", buf.as_str(), "warning")
+            push_warning_at(
+                warnings, path, site.line, site.column, site.length,
+                "borrow-and-mutate", buf.as_str(), "warning"
+            )
         i += 1
 
 
-function borrow_collect_body(body: ptr[ast.Stmt], borrows: ref[vec.Vec[str]], writes: ref[vec.Vec[str]]) -> void:
+function borrow_collect_body(body: ptr[ast.Stmt], borrows: ref[vec.Vec[BorrowSite]], writes: ref[vec.Vec[str]]) -> void:
     unsafe:
         match read(body):
             ast.Stmt.stmt_block as blk:
@@ -6608,7 +6621,7 @@ function borrow_collect_body(body: ptr[ast.Stmt], borrows: ref[vec.Vec[str]], wr
                 borrow_collect_stmt(body, borrows, writes)
 
 
-function borrow_collect_stmts(stmts: span[ast.Stmt], borrows: ref[vec.Vec[str]], writes: ref[vec.Vec[str]]) -> void:
+function borrow_collect_stmts(stmts: span[ast.Stmt], borrows: ref[vec.Vec[BorrowSite]], writes: ref[vec.Vec[str]]) -> void:
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:
@@ -6621,11 +6634,11 @@ function borrow_collect_stmts(stmts: span[ast.Stmt], borrows: ref[vec.Vec[str]],
         i += 1
 
 
-function borrow_collect_stmt(stmt: ptr[ast.Stmt], borrows: ref[vec.Vec[str]], writes: ref[vec.Vec[str]]) -> void:
+function borrow_collect_stmt(stmt: ptr[ast.Stmt], borrows: ref[vec.Vec[BorrowSite]], writes: ref[vec.Vec[str]]) -> void:
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_assignment as asgn:
-                borrow_collect_expr(asgn.value, borrows, writes)
+                borrow_collect_expr(asgn.value, borrows, writes, false)
                 match read(asgn.target):
                     ast.Expr.expr_identifier as id:
                         if not borrow_vec_contains(writes, id.name):
@@ -6633,7 +6646,7 @@ function borrow_collect_stmt(stmt: ptr[ast.Stmt], borrows: ref[vec.Vec[str]], wr
                     _:
                         pass
             ast.Stmt.stmt_expression as ex:
-                borrow_collect_expr(ex.expression, borrows, writes)
+                borrow_collect_expr(ex.expression, borrows, writes, false)
             ast.Stmt.stmt_local as loc:
                 borrow_collect_expr_opt(loc.value, borrows, writes)
             ast.Stmt.stmt_ret as r:
@@ -6644,66 +6657,59 @@ function borrow_collect_stmt(stmt: ptr[ast.Stmt], borrows: ref[vec.Vec[str]], wr
                 pass
 
 
-function borrow_collect_expr(expr: ptr[ast.Expr], borrows: ref[vec.Vec[str]], writes: ref[vec.Vec[str]]) -> void:
+function borrow_collect_expr(
+    expr: ptr[ast.Expr],
+    borrows: ref[vec.Vec[BorrowSite]],
+    writes: ref[vec.Vec[str]],
+    inside_call_argument: bool,
+) -> void:
     unsafe:
         match read(expr):
             ast.Expr.expr_call as call:
-                if borrow_is_ref_call(call.callee) and call.args.len > 0:
+                # The host ignores a `ref_of`/`ptr_of` that is itself a call
+                # argument, and does not recurse into a recognized borrow call.
+                if not inside_call_argument and borrow_is_ref_call(call.callee) and call.args.len > 0:
                     let first_arg = read(call.args.data + 0).arg_value
                     match read(first_arg):
                         ast.Expr.expr_identifier as id:
-                            if not borrow_vec_contains(borrows, id.name):
-                                borrows.push(id.name)
+                            if not borrow_site_contains(borrows, id.name):
+                                borrows.push(BorrowSite(
+                                    name = id.name, line = id.line, column = id.column, length = id.name.len
+                                ))
                         _:
                             pass
-                borrow_collect_expr(call.callee, borrows, writes)
-                var ai: ptr_uint = 0
-                while ai < call.args.len:
-                    borrow_collect_expr(read(call.args.data + ai).arg_value, borrows, writes)
-                    ai += 1
+                else:
+                    borrow_collect_expr(call.callee, borrows, writes, inside_call_argument)
+                    var ai: ptr_uint = 0
+                    while ai < call.args.len:
+                        borrow_collect_expr(read(call.args.data + ai).arg_value, borrows, writes, true)
+                        ai += 1
             ast.Expr.expr_binary_op as b:
-                borrow_collect_expr(b.left, borrows, writes)
-                borrow_collect_expr(b.right, borrows, writes)
+                borrow_collect_expr(b.left, borrows, writes, inside_call_argument)
+                borrow_collect_expr(b.right, borrows, writes, inside_call_argument)
             ast.Expr.expr_unary_op as u:
-                borrow_collect_expr(u.operand, borrows, writes)
+                borrow_collect_expr(u.operand, borrows, writes, inside_call_argument)
             ast.Expr.expr_member_access as m:
-                borrow_collect_expr(m.receiver, borrows, writes)
+                borrow_collect_expr(m.receiver, borrows, writes, inside_call_argument)
             ast.Expr.expr_index_access as ix:
-                borrow_collect_expr(ix.receiver, borrows, writes)
-                borrow_collect_expr(ix.index, borrows, writes)
+                borrow_collect_expr(ix.receiver, borrows, writes, inside_call_argument)
+                borrow_collect_expr(ix.index, borrows, writes, inside_call_argument)
             ast.Expr.expr_if as iff:
-                borrow_collect_expr(iff.condition, borrows, writes)
-                borrow_collect_expr(iff.then_expr, borrows, writes)
-                borrow_collect_expr(iff.else_expr, borrows, writes)
-            ast.Expr.expr_match as mm:
-                borrow_collect_expr(mm.scrutinee, borrows, writes)
-                var mi: ptr_uint = 0
-                while mi < mm.arms.len:
-                    borrow_collect_expr(read(mm.arms.data + mi).value, borrows, writes)
-                    mi += 1
-            ast.Expr.expr_prefix_cast as pc:
-                borrow_collect_expr(pc.expression, borrows, writes)
+                borrow_collect_expr(iff.condition, borrows, writes, inside_call_argument)
+                borrow_collect_expr(iff.then_expr, borrows, writes, inside_call_argument)
+                borrow_collect_expr(iff.else_expr, borrows, writes, inside_call_argument)
             ast.Expr.expr_unsafe as us:
-                borrow_collect_expr(us.expression, borrows, writes)
+                borrow_collect_expr(us.expression, borrows, writes, inside_call_argument)
             ast.Expr.expr_await as aw:
-                borrow_collect_expr(aw.expression, borrows, writes)
-            ast.Expr.expr_detach as dt:
-                borrow_collect_expr(dt.expression, borrows, writes)
-            ast.Expr.expr_expression_list as el:
-                var ei: ptr_uint = 0
-                while ei < el.elements.len:
-                    borrow_collect_expr(el.elements.data + ei, borrows, writes)
-                    ei += 1
-            ast.Expr.expr_named as nm:
-                borrow_collect_expr(nm.value, borrows, writes)
+                borrow_collect_expr(aw.expression, borrows, writes, inside_call_argument)
             _:
                 pass
 
 
-function borrow_collect_expr_opt(expr: ptr[ast.Expr]?, borrows: ref[vec.Vec[str]], writes: ref[vec.Vec[str]]) -> void:
+function borrow_collect_expr_opt(expr: ptr[ast.Expr]?, borrows: ref[vec.Vec[BorrowSite]], writes: ref[vec.Vec[str]]) -> void:
     let ep = expr else:
         return
-    borrow_collect_expr(ep, borrows, writes)
+    borrow_collect_expr(ep, borrows, writes, false)
 
 
 function borrow_is_ref_call(callee: ptr[ast.Expr]) -> bool:
@@ -6715,7 +6721,7 @@ function borrow_is_ref_call(callee: ptr[ast.Expr]) -> bool:
                 return false
 
 
-function borrow_recurse_stmt(stmt: ptr[ast.Stmt], borrows: ref[vec.Vec[str]], writes: ref[vec.Vec[str]]) -> void:
+function borrow_recurse_stmt(stmt: ptr[ast.Stmt], borrows: ref[vec.Vec[BorrowSite]], writes: ref[vec.Vec[str]]) -> void:
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_if as iff:
@@ -6743,10 +6749,21 @@ function borrow_recurse_stmt(stmt: ptr[ast.Stmt], borrows: ref[vec.Vec[str]], wr
                 pass
 
 
-function borrow_collect_body_opt2(body: ptr[ast.Stmt]?, borrows: ref[vec.Vec[str]], writes: ref[vec.Vec[str]]) -> void:
+function borrow_collect_body_opt2(body: ptr[ast.Stmt]?, borrows: ref[vec.Vec[BorrowSite]], writes: ref[vec.Vec[str]]) -> void:
     let bp = body else:
         return
     borrow_collect_body(bp, borrows, writes)
+
+
+function borrow_site_contains(values: ref[vec.Vec[BorrowSite]], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < values.len():
+        let ep = values.get(i) else:
+            break
+        if unsafe: read(ep).name.equal(name):
+            return true
+        i += 1
+    return false
 
 
 function borrow_vec_contains(vec_ref: ref[vec.Vec[str]], name: str) -> bool:
@@ -7079,13 +7096,24 @@ function lint_loop_single_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.V
         match read(sp):
             ast.Stmt.stmt_while as wh:
                 let always_exits = always_returns_body(wh.body)
+                # The host's CFG predicate does not report these `while true`
+                # bodies; the AST predicate would, so keep the exemption until
+                # the CFG termination port (Track C7).
                 if always_exits and not is_true_literal(wh.condition):
-                    push_warning(warnings, path, wh.line, "loop-single-iteration", "while loop body always exits on first iteration", "warning")
+                    push_warning(
+                        warnings, path, wh.line, "loop-single-iteration",
+                        "loop body always exits on the first iteration - consider replacing with an 'if' block",
+                        "warning"
+                    )
                 lint_loop_single_in_body(wh.body, path, warnings)
             ast.Stmt.stmt_for as fr:
                 let always_exits = always_returns_body(fr.body)
                 if always_exits:
-                    push_warning(warnings, path, fr.line, "loop-single-iteration", "for loop body always exits on first iteration", "warning")
+                    push_warning(
+                        warnings, path, fr.line, "loop-single-iteration",
+                        "loop body always exits on the first iteration - consider iterating directly without a loop",
+                        "warning"
+                    )
                 lint_loop_single_in_body(fr.body, path, warnings)
             ast.Stmt.stmt_if as iff:
                 var bi: ptr_uint = 0
@@ -7100,6 +7128,18 @@ function lint_loop_single_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.V
                     ai += 1
             ast.Stmt.stmt_unsafe as un:
                 lint_loop_single_in_body(un.body, path, warnings)
+            ast.Stmt.stmt_defer as df:
+                lint_loop_single_in_body(df.body, path, warnings)
+            ast.Stmt.stmt_when as wn:
+                var wi: ptr_uint = 0
+                while wi < wn.branches.len:
+                    let branch = read(wn.branches.data + wi)
+                    var bji: ptr_uint = 0
+                    while bji < branch.body.len:
+                        lint_loop_single_stmt(branch.body.data + bji, path, warnings)
+                        bji += 1
+                    wi += 1
+                lint_loop_single_in_body(wn.else_body, path, warnings)
             ast.Stmt.stmt_block as blk:
                 var bsi: ptr_uint = 0
                 while bsi < blk.statements.len:

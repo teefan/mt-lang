@@ -33,7 +33,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | `sexpr lex` / `parse` | 0 differ (lex **718/718**; parse **714 match / 0 differ / 4 host-rejected of 718**; counts drift with the tree) |
 | `sexpr lower` | **665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 files** (session 63) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
 | `cli:parity` | **82 match / 0 differ / 7 case-backed pending** of 89 cases (session 67; `toolchain doctor`, `run --bundle`, `run --archive` and `build --platform wasm` closed; `--timings` values and `debug`'s Ruby node ids are normalized). The pending set is `deps` (5 cases) and locked/frozen build (2). |
-| Linter corpus | **495 agree / 123 differ** of 618 (session 66; hostfail 0, selffail 0); **41/43 rules, 13/13 fixers**.  The assignability batch improved `borrow-and-mutate` (29 self-only) and `loop-single-iteration` (8). |
+| Linter corpus | **510 agree / 114 differ** of 624 (session 67; hostfail 0, selffail 0); **41/43 rules, 13/13 fixers**.  Session 67 closed `borrow-and-mutate` (29 self-only) and the new-file `unused-local`/`prefer-let-else`/`prefer-try` rows; `loop-single-iteration` messages now match. |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the live VS Code F5 check is the remaining manual step |
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
@@ -160,6 +160,18 @@ copy of the VS Code snapshot script with the 2026-dark theme.  `docs` parses
 `Press Ctrl+C to stop.`, and handles SIGINT.  `tools/docs_smoke.rb` compares
 host and self route statuses/content types and the byte-stable reference,
 source, highlight, CSS and JS bodies, and is the hard `docs_smoke` gate.
+
+The first Track C batch in the same session closed `borrow-and-mutate`
+(29 self-only rows): the collector now applies the host's
+`inside_call_argument` gate (a `ref_of`/`ptr_of` that is itself a call argument
+is ignored), records the first borrow site's line/column/length instead of
+anchoring every warning at line 1, and mirrors the host's expression set.
+`loop-single-iteration` now uses the host's message text on both loop kinds and
+recurses into `when`/`defer` bodies (the `while true` exemption stays until the
+CFG termination port).  The new docs/preview files were made lint-clean
+(`prefer-let-else` in `http_util`, `?` validation in `wasm_shell`), and the dead
+`is_package` local in `build_command` was removed (host-only `unused-local`).
+Lint corpus: **510 agree / 114 differ of 624**, hostfail 0, selffail 0.
 
 Session-51 batch: the event synthetic bodies (host slot/snapshot shapes), the
 reused await-field recording plus nested-await hoisting in a direct-await
@@ -657,7 +669,7 @@ Iterate cheap, prove once:
    subsystems remain (`deps`, locked/frozen).
    `toolchain bootstrap|tools`, `build --kind static|shared`, the bindgen
    nullable flags and `--bundle`/`--archive` landed in the session-64 batches.
-3. **Linter corpus residue** — open: 495/123 of 618, **41/43 rules and 13/13
+3. **Linter corpus residue** — open: 510/114 of 624, **41/43 rules and 13/13
    fixers**, plus the analyzer gaps in Track C.
 4. **Imported bindings / bindgen** — imported bindings **closed at 29/29**;
    bindgen reproducibility remains open (Track D item 3).
@@ -808,15 +820,14 @@ package build/run entry points, `new`, `completions`, `std`, `test`, `cache`,
 `toolchain`, `snapshot`.  Session 64 closed `debug` (shared renderer) and
 `test`'s argument forms.
 
-### Track C — linter corpus residue (495/123 of 618; 41/43 rules)
+### Track C — linter corpus residue (510/114 of 624; 41/43 rules)
 
-State: **495 agree / 123 differ of 618, hostfail 0, selffail 0** (session 66;
-the assignability batch improved `borrow-and-mutate` and
-`loop-single-iteration`, and the unused-local in the imported-bindings helper
-was removed).  Per-rule deltas (session-66 re-read; **pairs are self-only /
-host-only**, in that order): `prefer-try` 75/39, `redundant-cast` 75/48,
-`prefer-let` 69/141, `borrow-and-mutate` 29/0, `shadow` 20/0,
-`prefer-own-ptr` 20/0, `constant-condition` 11/1, `prefer-or-pattern` 10/8,
+State: **510 agree / 114 differ of 624, hostfail 0, selffail 0** (session 67;
+the borrow-and-mutate batch closed its 29 self-only rows and the new docs
+files were made lint-clean).  Per-rule deltas (session-67 re-read; **pairs are
+self-only / host-only**, in that order): `prefer-try` 75/39, `redundant-cast`
+75/48, `prefer-let` 70/141, `shadow` 20/0, `prefer-own-ptr` 20/0,
+`constant-condition` 11/1, `prefer-or-pattern` 10/8,
 `loop-single-iteration` 8/0, `unreachable-code` 4/0, `prefer-var-else` 2/0, and
 one host-only `prefer-struct-with` (so that rule is not fully closed).  The
 corpus count drifts with the tree; quote the set.  The `prefer-own-ptr`
@@ -1047,7 +1058,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `cli:parity` | **82 match / 0 differ / 7 pending** of 89 (case-backed; the original 65/65; timings and `debug` node ids normalized) | session 67 | `ruby tools/cli_parity.rb -q` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 67 | `ruby tools/wasm_smoke.rb` |
 | docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 67 | `ruby tools/docs_smoke.rb` |
-| lint corpus | 495 agree / 123 differ of 618, hostfail 0, selffail 0; **41/43 rules, 13/13 fixers** | session 66 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| lint corpus | 510 agree / 114 differ of 624, hostfail 0, selffail 0; **41/43 rules, 13/13 fixers** | session 67 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 616/616 | session 64 | `ruby tools/unused_import_parity.rb` |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 43 | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |

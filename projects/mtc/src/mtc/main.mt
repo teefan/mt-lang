@@ -2398,12 +2398,10 @@ function build_command(args: span[str]) -> int:
     var clean_target_is_tree = false
     var effective: str = ""
     let display_path = path
-    var is_package = false
 
     match package_opt:
         Option.some as package_ref:
             let pkg = package_ref.value
-            is_package = true
             if pkg.kind == package_manifest.PackageKind.library and kind == build_driver.BuildKind.executable:
                 var message = string.String.create()
                 defer: message.release()

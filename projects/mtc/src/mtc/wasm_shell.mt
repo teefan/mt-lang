@@ -59,34 +59,18 @@ public function render(
     template_source: str,
     template_path: str,
 ) -> Result[string.String, string.String]:
-    match validate_placeholder(
+    let _ = validate_placeholder(
         template_source, SCRIPT_PLACEHOLDER, "Emscripten {{{ SCRIPT }}}", template_path
-    ):
-        Result.failure as failure:
-            return Result[string.String, string.String].failure(error = failure.error)
-        Result.success:
-            pass
-    match validate_placeholder(
+    )?
+    let _ = validate_placeholder(
         template_source, CANVAS_PLACEHOLDER, "Milk Tea {{{ MILK_TEA_CANVAS }}}", template_path
-    ):
-        Result.failure as failure:
-            return Result[string.String, string.String].failure(error = failure.error)
-        Result.success:
-            pass
-    match validate_placeholder(
+    )?
+    let _ = validate_placeholder(
         template_source, OUTPUT_PLACEHOLDER, "Milk Tea {{{ MILK_TEA_OUTPUT }}}", template_path
-    ):
-        Result.failure as failure:
-            return Result[string.String, string.String].failure(error = failure.error)
-        Result.success:
-            pass
-    match validate_placeholder(
+    )?
+    let _ = validate_placeholder(
         template_source, BOOTSTRAP_PLACEHOLDER, "Milk Tea {{{ MILK_TEA_BOOTSTRAP }}}", template_path
-    ):
-        Result.failure as failure:
-            return Result[string.String, string.String].failure(error = failure.error)
-        Result.success:
-            pass
+    )?
 
     var rendered = string.String.from_str(template_source)
     var replaced = rendered.replace(CANVAS_PLACEHOLDER, CANVAS_TEMPLATE)
