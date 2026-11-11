@@ -455,12 +455,27 @@ def run_session(server, workdir, program_binary)
   out
 end
 
+## Find a usable lldb-dap: an explicit LLDB_DAP, the unversioned name, then a
+## versioned `lldb-dap-<N>` (distro packages often install only the latter).
+def find_lldb_dap
+  override = ENV["LLDB_DAP"]
+  return override if override && !override.empty? && File.executable?(override)
+
+  dirs = ENV.fetch("PATH", "").split(File::PATH_SEPARATOR)
+  exact = dirs.map { |d| File.join(d, "lldb-dap") }.find { |p| File.executable?(p) }
+  return exact if exact
+
+  dirs.flat_map { |d| Dir.glob(File.join(d, "lldb-dap*")) }
+      .select { |p| File.executable?(p) && File.basename(p).match?(/\Alldb-dap(-\d+(?:\.\d+)*)?\z/) }
+      .max_by { |p| File.basename(p).scan(/\d+/).map(&:to_i) }
+end
+
 ## Real lldb-dap end-to-end: each server builds the `.mt` source itself (so
 ## its own debug map is in play) and drives a breakpoint session.  Skipped with
-## a loud row when lldb-dap is not on PATH.
+## a loud row when lldb-dap is not on PATH; the gate treats that as a failure
+## unless --allow-skip is passed.
 def run_real_lldb_session(server, workdir, source, into)
-  adapter = ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).map { |d| File.join(d, "lldb-dap") }
-               .find { |p| File.executable?(p) }
+  adapter = find_lldb_dap
   unless adapter
     into["lldb-real skipped"] = "lldb-dap not found on PATH"
     return
@@ -503,12 +518,13 @@ def run_real_lldb_session(server, workdir, source, into)
   end
 end
 
-options = { server: "both", json: nil, verbose: false, self_bin: SELF_SERVER }
+options = { server: "both", json: nil, verbose: false, self_bin: SELF_SERVER, allow_skip: false }
 OptionParser.new do |opts|
   opts.on("--server SERVER", %w[host self both]) { |v| options[:server] = v }
   opts.on("--json PATH") { |v| options[:json] = v }
   opts.on("--verbose") { options[:verbose] = true }
   opts.on("--self-bin PATH", "Self server binary (default build/stage2/mtc)") { |v| options[:self_bin] = v }
+  opts.on("--allow-skip", "Allow the real lldb-dap rows to be skipped") { options[:allow_skip] = true }
 end.parse!
 $self_bin = options[:self_bin]
 
@@ -552,3 +568,30 @@ results.each do |server, out|
   (out["stderr"] || []).each { |line| puts "  #{line}" }
 end
 File.write(options[:json], JSON.pretty_generate(results)) if options[:json]
+
+# Assertion layer: only the documented self-better row may differ.  A missing
+# lldb-dap is a failure by default so a machine without LLVM cannot look green.
+DOCUMENTED_DIFFERENCES = {
+  "lldb-real frame0 name" => ["main_add", "add"],
+}.freeze
+
+differing = []
+if results.key?("host") && results.key?("self")
+  keys.each do |key|
+    next if key == "stderr"
+
+    host = results.dig("host", key)
+    self_ = results.dig("self", key)
+    next if host == self_
+    next if DOCUMENTED_DIFFERENCES[key] == [host.to_s, self_.to_s]
+
+    differing << key
+  end
+end
+skipped = results.values.any? { |r| r.key?("lldb-real skipped") }
+aborted = results.values.any? { |r| r.key?("lldb-real exception") }
+puts "differing rows: #{differing.empty? ? 'none' : differing.join(', ')}"
+if skipped && !options[:allow_skip]
+  puts "lldb-dap is required (pass --allow-skip to accept a missing adapter)"
+end
+exit 1 if differing.any? || aborted || (skipped && !options[:allow_skip])

@@ -73,8 +73,11 @@ end
 host_cache = nil
 digests = {}
 if options[:host_cache]
-  host_version = Dir.glob([File.join(ROOT, "lib/**/*.rb"), File.join(ROOT, "bin/mtc")])
-                    .map { |f| File.mtime(f).to_i }.max
+  host_version = Digest::SHA256.hexdigest(
+    Dir.glob([File.join(ROOT, "lib/**/*.rb"), File.join(ROOT, "bin/mtc")]).sort
+       .map { |f| "#{f}:#{Digest::SHA256.file(f).hexdigest}" }
+       .join("\n")
+  )
   host_cache = { "version" => host_version, "commands" => [options[:host]], "files" => {} }
   if File.exist?(options[:host_cache])
     loaded = begin
@@ -108,10 +111,20 @@ def rule_tally(text)
   text.lines.filter_map { |line| line[%r{^\S+\.mt:\d+: ([a-z-]+):}, 1] }.tally
 end
 
+# The host linter swallows lex/parse/sema errors and lints the AST anyway, so a
+# rejection shows up as an error block with no warning lines.  Treat that as
+# "host could not analyze" rather than "host emitted zero warnings".
+def analysis_failure?(text)
+  rule_tally(text).empty? &&
+    text.lines.any? { |line| line.start_with?("error[") || line.start_with?("error: ") }
+end
+
 results = Queue.new
 files.each { |f| results << f }
 
 diffs = []
+hostfail = []
+selffail = []
 mutex = Mutex.new
 workers = Array.new(options[:jobs]) do
   Thread.new do
@@ -123,9 +136,14 @@ workers = Array.new(options[:jobs]) do
       end
       host = host_lint(options, host_cache, digests, cache_mutex, file)
       self_host = lint_output([options[:self], "lint"], file, options[:timeout])
-      next if host == self_host
-
-      mutex.synchronize { diffs << [file.delete_prefix("#{ROOT}/"), host, self_host] }
+      relative = file.delete_prefix("#{ROOT}/")
+      if analysis_failure?(host)
+        mutex.synchronize { hostfail << [relative, host] }
+      elsif analysis_failure?(self_host)
+        mutex.synchronize { selffail << [relative, self_host] }
+      elsif host != self_host
+        mutex.synchronize { diffs << [relative, host, self_host] }
+      end
     end
   end
 end
@@ -165,5 +183,15 @@ puts "--- warnings only the self reports (rule count)"
 self_only.sort_by { |_, v| -v }.first(12).each { |k, v| puts format("  %-30s %6d", k, v) }
 puts "--- warnings only the host reports (rule count)"
 host_only.sort_by { |_, v| -v }.first(12).each { |k, v| puts format("  %-30s %6d", k, v) }
-puts "files=#{files.size} agree=#{files.size - diffs.size} differ=#{diffs.size} (jobs=#{options[:jobs]})"
-exit(diffs.empty? ? 0 : 1)
+hostfail.first(options[:max_files]).each do |relative, output|
+  detail = output.lines.find { |line| line.start_with?("error[", "error: ") }.to_s.strip
+  puts "HOST-FAIL #{relative}: #{detail}"
+end
+selffail.first(options[:max_files]).each do |relative, output|
+  detail = output.lines.find { |line| line.start_with?("error[", "error: ") }.to_s.strip
+  puts "SELF-FAIL #{relative}: #{detail}"
+end
+agree = files.size - diffs.size - hostfail.size - selffail.size
+puts "files=#{files.size} agree=#{agree} differ=#{diffs.size} " \
+     "hostfail=#{hostfail.size} selffail=#{selffail.size} (jobs=#{options[:jobs]})"
+exit(diffs.empty? && selffail.empty? ? 0 : 1)

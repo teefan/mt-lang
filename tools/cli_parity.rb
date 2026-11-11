@@ -20,9 +20,11 @@
 #   -f, --filter RE  only run cases whose name matches RE
 #   -h, --help       show this message
 #
-# Exit status: 0 when every comparable case matches, 1 otherwise.  Cases listed
-# in KNOWN_GAPS are reported as PENDING and never counted as failures, so the
-# deferred subsystems stay visible without painting the harness red.
+# Exit status: 0 when every comparable case matches, 1 otherwise.  A case may be
+# marked `pending:` while its subsystem is unimplemented; it is reported as
+# PENDING and never counts as a failure.  A pending case that starts matching is
+# a failure, forcing the flag's removal so a landed feature cannot silently
+# regress back into pending.
 
 require "fileutils"
 require "open3"
@@ -30,21 +32,6 @@ require "stringio"
 
 ROOT = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(File.join(ROOT, "lib"))
-
-# Invocations that depend on subsystems the self-host does not implement yet
-# (see docs/self-host-plan.md "Self-host CLI gaps").  Reported, never counted.
-KNOWN_GAPS = [
-  /^deps\b/,
-  /^docs\b/,
-  /^toolchain bootstrap\b/,
-  /--locked\b/,
-  /--frozen\b/,
-  /--tidy\b/,
-  /--preserve\b/,
-  /--max-line-length\b/,
-  /--platform wasm\b/,
-  /^build --kind (static|shared)\b/,
-].freeze
 
 self_bin = nil
 max_diffs = 25
@@ -175,6 +162,9 @@ FIXTURES = {
   "multi/a.mt" => "public function a() -> int:\n    return 1\n",
   "multi/b.mt" => "public function b() -> int:\n    return 2\n",
   "multi/empty/.keep" => "",
+
+  # Empty directory for `lint --init` (the host writes `.mt-lint.yml` here).
+  "initdir/.keep" => "",
 }.freeze
 
 def materialize_fixtures
@@ -188,13 +178,14 @@ end
 
 # ── cases ───────────────────────────────────────────────────────────────────
 
-def case_entry(name, argv, cwd: nil, stdin: nil)
-  { name:, argv:, cwd: cwd || FIXROOT, stdin: }
+def case_entry(name, argv, cwd: nil, stdin: nil, pending: false)
+  { name:, argv:, cwd: cwd || FIXROOT, stdin:, pending: }
 end
 
 def build_cases
   cases = []
-  add = ->(name, argv, cwd: nil) { cases << case_entry(name, argv, cwd:) }
+  add = ->(name, argv, cwd: nil, pending: false) { cases << case_entry(name, argv, cwd:, pending:) }
+  pkg = File.join(FIXROOT, "pkg")
 
   # Version / help / dispatch
   add.call("version", ["version"])
@@ -218,22 +209,35 @@ def build_cases
   add.call("parse", ["parse", "standalone/clean.mt"])
   add.call("parse-no-path", ["parse"])
   add.call("parse-syntax-error", ["parse", "standalone/syntax_error.mt"])
+  add.call("parse-multiple", ["parse", "multi/a.mt", "multi/b.mt"], pending: true)
+  add.call("parse-directory", ["parse", "multi"], pending: true)
   add.call("lower", ["lower", "standalone/clean.mt", "-I", FIXROOT])
   add.call("emit-c", ["emit-c", "standalone/clean.mt", "-I", FIXROOT])
   add.call("emit-c-external", ["emit-c", "standalone/external_bindings.mt", "-I", FIXROOT])
+  add.call("emit-c-multiple", ["emit-c", "multi/a.mt", "multi/b.mt", "-I", FIXROOT], pending: true)
+  add.call("emit-c-directory", ["emit-c", "multi", "-I", FIXROOT], pending: true)
   add.call("lower-directory", ["lower", "multi"])
 
   # check / lint / format / debug
   add.call("check-clean", ["check", "standalone/clean.mt"])
   add.call("check-sema-error", ["check", "standalone/sema_error.mt"])
   add.call("check-werror", ["check", "-Werror", "standalone/warns.mt"])
+  add.call("check-platform", ["check", "--platform", "wasm", "standalone/clean.mt"], pending: true)
+  add.call("check-root", ["check", "--root", FIXROOT, "standalone/clean.mt"], pending: true)
   add.call("lint-warns", ["lint", "standalone/warns.mt"])
   add.call("lint-clean", ["lint", "standalone/clean.mt"])
   add.call("lint-select", ["lint", "--select", "unused-local", "standalone/warns.mt"])
   add.call("lint-timings", ["lint", "--timings", "standalone/clean.mt"])
+  add.call("lint-init", ["lint", "--init"], cwd: File.join(FIXROOT, "initdir"), pending: true)
+  add.call("lint-unknown-flag", ["lint", "--bogus", "standalone/clean.mt"], pending: true)
   add.call("format-check", ["format", "--check", "standalone/clean.mt"])
   add.call("format-conflict", ["format", "--check", "--write", "standalone/clean.mt"])
   add.call("format-preserve", ["format", "--preserve", "standalone/warns.mt"])
+  add.call("format-tidy", ["format", "--tidy", "standalone/warns.mt"])
+  add.call("format-max-line-length", ["format", "--max-line-length", "20", "standalone/warns.mt"])
+  add.call("format-directory-check", ["format", "--check", "multi"], pending: true)
+  add.call("format-multiple", ["format", "--check", "multi/a.mt", "multi/b.mt"], pending: true)
+  add.call("format-multiple-no-check", ["format", "multi/a.mt", "multi/b.mt"], pending: true)
   add.call("debug-missing-file", ["debug", "standalone/nope.mt"])
   add.call("debug", ["debug", "standalone/clean.mt", "-I", FIXROOT])
 
@@ -253,11 +257,16 @@ def build_cases
   add.call("build-unknown-option", ["build", "standalone/clean.mt", "--bogus"])
   add.call("build-missing-value", ["build", "standalone/clean.mt", "--cc"])
   add.call("build-kind-bogus", ["build", "standalone/clean.mt", "--kind", "bogus"])
+  add.call("build-locked", ["build", "pkg", "-I", FIXROOT, "--locked", "--no-cache"], pending: true)
+  add.call("build-frozen", ["build", "pkg", "-I", FIXROOT, "--frozen", "--no-cache"], pending: true)
+  add.call("build-wasm", ["build", "pkg", "-I", FIXROOT, "--platform", "wasm", "--no-cache"], pending: true)
   add.call("run-package", ["run", "pkg", "-I", FIXROOT, "--no-cache"])
   add.call("run-standalone", ["run", "standalone/clean.mt", "-I", FIXROOT, "--no-cache"])
   add.call("run-no-operand-no-package", ["run"], cwd: FIXROOT)
   add.call("run-no-operand-package", ["run", "-I", FIXROOT], cwd: File.join(FIXROOT, "pkg"))
   add.call("run-module-missing", ["run-module", "nope.module", "-I", FIXROOT])
+  add.call("run-bundle", ["run", "pkg", "-I", FIXROOT, "--bundle", "--no-cache"], pending: true)
+  add.call("run-archive", ["run", "pkg", "-I", FIXROOT, "--archive", "--no-cache"], pending: true)
   add.call("new-missing-name", ["new"])
   add.call("new-existing-dir", ["new", "pkg"], cwd: FIXROOT)
   add.call("completions-bogus", ["completions", "powershell"])
@@ -267,6 +276,12 @@ def build_cases
   add.call("std-unknown-sub", ["std", "bogus"])
   add.call("cache-status", ["cache", "status"])
   add.call("toolchain-no-sub", ["toolchain"])
+  add.call("toolchain-doctor", ["toolchain", "doctor"], pending: true)
+  add.call("deps-no-sub", ["deps"], pending: true)
+  add.call("deps-unknown-sub", ["deps", "bogus"], pending: true)
+  add.call("deps-tree", ["deps", "tree"], cwd: pkg, pending: true)
+  add.call("deps-lock-check", ["deps", "lock", "--check"], cwd: pkg, pending: true)
+  add.call("deps-fetch", ["deps", "fetch"], cwd: pkg, pending: true)
   add.call("snapshot-no-arg", ["snapshot"])
 
   cases
@@ -314,7 +329,6 @@ kept = File.join(ROOT, "tmp", "cli-parity", "cases")
 
 cases.each do |c|
   argv = c[:argv]
-  gap = KNOWN_GAPS.any? { |re| argv.join(" ").match?(re) }
   name = c[:name]
 
   hout = StringIO.new
@@ -338,8 +352,13 @@ cases.each do |c|
   actual   = [normalize(sout,        self_bin:), normalize(serr,        self_bin:), src]
 
   if expected == actual
-    results[:pass] << name
-  elsif gap
+    if c[:pending]
+      results[:fail] << [name, argv, expected, actual,
+                         "pending case now matches; remove pending:"]
+    else
+      results[:pass] << name
+    end
+  elsif c[:pending]
     results[:pending] << name
   else
     results[:fail] << [name, argv, expected, actual]
@@ -374,8 +393,9 @@ puts format("cases=%d match=%d differ=%d pending=%d",
             cases.length, results[:pass].length, results[:fail].length, results[:pending].length)
 
 unless quiet
-  results[:fail].take(max_diffs).each do |name, argv, expected, actual|
+  results[:fail].take(max_diffs).each do |name, argv, expected, actual, note|
     puts "\nDIFF #{name}   argv: mtc #{argv.join(' ')}"
+    puts "  note: #{note}" if note
     %w[stdout stderr].each_with_index do |stream, i|
       next if expected[i] == actual[i]
       at = first_diff(expected[i], actual[i])

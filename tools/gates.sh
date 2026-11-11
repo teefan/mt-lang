@@ -83,7 +83,11 @@ infer_area() {
         projects/mtc/src/mtc/formatter/*)         echo formatter ;;
         projects/mtc/src/mtc/dap/*)               echo dap ;;
         projects/mtc/src/mtc/imported_bindings/*|bindings/*|lib/milk_tea/bindings/*) echo bindings ;;
-        projects/mtc/src/mtc/main.mt|projects/mtc/src/mtc/version_info.mt) echo cli ;;
+        projects/mtc/src/mtc/packages/*)          echo packages ;;
+        projects/mtc/src/mtc/docs_cli.mt|projects/mtc/src/mtc/docs_app.mt) echo docs_cli ;;
+        projects/mtc/src/mtc/wasm*.mt|projects/mtc/src/mtc/wasm/*) echo wasm ;;
+        projects/mtc/src/mtc/toolchain_cli.mt)    echo toolchain ;;
+        projects/mtc/src/mtc/main.mt|projects/mtc/src/mtc/build*.mt|projects/mtc/src/mtc/build_cache.mt|projects/mtc/src/mtc/version_info.mt) echo cli ;;
         projects/mtc/test/*|test/mt/*)            echo tests ;;
         lib/*)                                    echo host ;;
         std/*)                                    echo std ;;
@@ -110,14 +114,14 @@ fi
 
 gate_kind() {
     case "$1" in
-        bootstrap|test_mt|dev_build|dev_tests|unused_import|recovery|format) echo hard ;;
+        bootstrap|test_mt|dev_build|dev_tests|unused_import|recovery|format|dap|tools_check) echo hard ;;
         *) echo meter ;;
     esac
 }
 
 gate_tier() {
     case "$1" in
-        dev_build|dev_tests) echo 1 ;;
+        dev_build|dev_tests|tools_check) echo 1 ;;
         *) echo 2 ;;
     esac
 }
@@ -128,12 +132,12 @@ gate_label() {
         dev_tests)      echo "self-host suite, one process per file (~1 min)" ;;
         bootstrap)      echo "bootstrap --fast: fixed point only (~12 min)" ;;
         test_mt)        echo "test/mt under stage2 (60 files / 0 failed)" ;;
-        sexpr_lex)      echo "sexpr lex parity (705/705)" ;;
-        sexpr_parse)    echo "sexpr parse parity (701 comparable / 0 differ)" ;;
+        sexpr_lex)      echo "sexpr lex parity (718/718)" ;;
+        sexpr_parse)    echo "sexpr parse parity (714 match / 0 differ / 4 host-rejected of 718)" ;;
         sexpr_lower)    echo "sexpr lower parity (meter, ~1 min warm / ~4 min cold host cache)" ;;
-        cli_parity)     echo "CLI parity (meter, expected 24/37/0)" ;;
+        cli_parity)     echo "CLI parity (65 match + case-backed pending; no allowlist)" ;;
         scoreboard)     echo "parity scoreboard (meter)" ;;
-        format)         echo "formatter parity all modes (702/702)" ;;
+        format)         echo "formatter parity all modes (712/712)" ;;
         lint_parity)    echo "corpus-wide lint parity (meter, ~5 min)" ;;
         unused_import)  echo "unused-import parity (616/616, ~30 min)" ;;
         harness)        echo "LSP harness 30/30 + 4 documented entries (~3 min)" ;;
@@ -144,8 +148,9 @@ gate_label() {
         valgrind_lsp)   echo "valgrind over an LSP drive (0 errors)" ;;
         neovim)         echo "headless-Neovim smoke (when tmp/ has the script)" ;;
         soak)           echo "long-session soak meter (~25 s): RSS slope for mixed requests" ;;
-        bindings)       echo "imported-bindings --all --check" ;;
-        dap)            echo "DAP smoke (both adapters)" ;;
+        bindings)       echo "imported-bindings --all --check (3/25 of 28; parity gate in Phase 3)" ;;
+        dap)            echo "DAP smoke (asserting; lldb-dap required unless --allow-skip)" ;;
+        tools_check)    echo "Ruby/bash syntax check for the tools/ harnesses" ;;
         *)              echo "$1" ;;
     esac
 }
@@ -174,6 +179,7 @@ gate_cmd() {
         soak)          echo "ruby tools/lsp_soak.rb --quiet" ;;
         bindings)      echo "build/stage2/mtc imported-bindings --all --check" ;;
         dap)           echo "ruby tools/dap_smoke.rb" ;;
+        tools_check)   echo "for f in tools/*.rb; do ruby -c \"\$f\" >/dev/null || exit 1; done; bash -n tools/gates.sh tools/bootstrap.sh && echo 'tools syntax ok'" ;;
         *)             echo "true" ;;
     esac
 }
@@ -197,6 +203,8 @@ gate_summary() {
         valgrind_lsp)   echo "ERROR SUMMARY|skipped" ;;
         neovim)         echo "HOVER|Error|skipped" ;;
         soak)           echo "^label=" ;;
+        dap)            echo "differing rows|stderr:" ;;
+        tools_check)    echo "tools syntax ok" ;;
         *)              echo "." ;;
     esac
 }
@@ -300,7 +308,9 @@ gates_for_area() {
         examples)  echo "examples" ;;
         host)      echo "bootstrap" ;;
         tests)     echo "dev_build dev_tests" ;;
-        tools|docs|other) echo "" ;;
+        packages|docs_cli|wasm|toolchain) echo "bootstrap test_mt cli_parity" ;;
+        tools)     echo "tools_check" ;;
+        docs|other) echo "" ;;
         *)         echo "bootstrap test_mt scoreboard" ;;
     esac
 }
