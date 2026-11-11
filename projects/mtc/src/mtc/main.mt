@@ -2368,27 +2368,9 @@ function build_command(args: span[str]) -> int:
                 if platform == resolver.Platform.wasm:
                     eprint_line("bundle mode is supported only for native package builds")
                     return 1
-                match output_override:
-                    Option.some as explicit_root:
-                        bundle_root.append(explicit_root.value)
-                    Option.none:
-                        match pkg.output_path:
-                            Option.some as manifest_output:
-                                bundle_root.append(manifest_output.value.as_str())
-                            Option.none:
-                                var computed = path_ops.join(pkg.root_dir.as_str(), "build/dist")
-                                defer: computed.release()
-                                var with_platform = path_ops.join(computed.as_str(), platform_label(platform))
-                                defer: with_platform.release()
-                                var with_profile = path_ops.join(with_platform.as_str(), profile_name)
-                                defer: with_profile.release()
-                                var with_name = path_ops.join(with_profile.as_str(), pkg.name.as_str())
-                                defer: with_name.release()
-                                bundle_root.append(with_name.as_str())
-                output_owner.append(bundle_root.as_str())
-                output_owner.push_byte('/')
-                output_owner.append(pkg.name.as_str())
-                output_owner.append(extension)
+                resolve_bundle_paths(
+                    pkg, output_override, platform, profile_name, ref_of(bundle_root), ref_of(output_owner)
+                )
                 match output_override:
                     Option.some:
                         clean_target.append(bundle_root.as_str())
@@ -2662,6 +2644,71 @@ function release_package_option(option: ref[Option[package_manifest.PackageBuild
             pass
 
 
+## The host's bundle path rules (`Build#initialize`): `-o` or the manifest
+## output is the bundle root; otherwise `build/dist/<platform>/<profile>/<name>`.
+## The entry executable is `<bundle_root>/<name><extension>`.
+function resolve_bundle_paths(
+    package: package_manifest.PackageBuild,
+    output_override: Option[str],
+    platform: resolver.Platform,
+    profile_name: str,
+    bundle_root: ref[string.String],
+    entry_output: ref[string.String],
+) -> void:
+    match output_override:
+        Option.some as explicit_root:
+            bundle_root.append(explicit_root.value)
+        Option.none:
+            match package.output_path:
+                Option.some as manifest_output:
+                    bundle_root.append(manifest_output.value.as_str())
+                Option.none:
+                    var computed = path_ops.join(package.root_dir.as_str(), "build/dist")
+                    defer: computed.release()
+                    var with_platform = path_ops.join(computed.as_str(), platform_label(platform))
+                    defer: with_platform.release()
+                    var with_profile = path_ops.join(with_platform.as_str(), profile_name)
+                    defer: with_profile.release()
+                    var with_name = path_ops.join(with_profile.as_str(), package.name.as_str())
+                    defer: with_name.release()
+                    bundle_root.append(with_name.as_str())
+    entry_output.append(bundle_root.as_str())
+    entry_output.push_byte('/')
+    entry_output.append(package.name.as_str())
+    if platform == resolver.Platform.windows:
+        entry_output.append(".exe")
+
+
+## Stage the bundle's assets and, for `--archive`, its tarball.  The host's
+## `Build.build` re-stages on a cache hit; `build` and `run` share this step.
+function stage_run_bundle(
+    package_opt: Option[package_manifest.PackageBuild],
+    output_path: str,
+    bundle_root: str,
+    bundle_mode: bool,
+    archive_mode: bool,
+) -> Result[bool, string.String]:
+    if not bundle_mode:
+        return Result[bool, string.String].success(value = true)
+
+    match stage_package_assets(package_opt, output_path, true):
+        Result.failure as asset_failure:
+            return Result[bool, string.String].failure(error = asset_failure.error)
+        Result.success:
+            pass
+
+    if archive_mode:
+        var archive_owner = string.String.create()
+        defer: archive_owner.release()
+        match write_bundle_archive(bundle_root, ref_of(archive_owner)):
+            Result.failure as archive_failure:
+                return Result[bool, string.String].failure(error = archive_failure.error)
+            Result.success:
+                pass
+
+    return Result[bool, string.String].success(value = true)
+
+
 function platform_from_manifest(label: str) -> resolver.Platform:
     if label == "windows":
         return resolver.Platform.windows
@@ -2770,10 +2817,14 @@ function run_command(args: span[str]) -> int:
     var keep_c_path: Option[str] = Option[str].none
     var c_compiler = "cc"
     var profile_name = "debug"
+    var has_cli_profile = false
     var platform = resolver.Platform.linux
+    var has_cli_platform = false
     var use_cache = true
     var sanitize = false
     var debug_guards: Option[bool] = Option[bool].none
+    var bundle_mode = false
+    var archive_mode = false
     var program_args = vec.Vec[str].create()
     defer: program_args.release()
     var filtered = vec.Vec[str].create()
@@ -2839,6 +2890,15 @@ function run_command(args: span[str]) -> int:
             use_cache = false
             ai += 1
             continue
+        if arg == "--bundle":
+            bundle_mode = true
+            ai += 1
+            continue
+        if arg == "--archive":
+            bundle_mode = true
+            archive_mode = true
+            ai += 1
+            continue
         if arg == "-I" or arg == "--root" or arg == "--include-path":
             filtered.push(arg)
             if ai + 1 < args.len:
@@ -2853,6 +2913,7 @@ function run_command(args: span[str]) -> int:
             if not profile_name == "debug" and not profile_name == "release":
                 stdio.print_line("error: --profile must be debug or release")
                 return 1
+            has_cli_profile = true
             ai += 2
             continue
         if arg == "--platform":
@@ -2864,6 +2925,7 @@ function run_command(args: span[str]) -> int:
                     platform = plat.value
                 Option.none:
                     return 1
+            has_cli_platform = true
             ai += 2
             continue
         if arg.starts_with("-"):
@@ -2890,6 +2952,34 @@ function run_command(args: span[str]) -> int:
         eprint_line(missing.as_str())
         return 1
 
+    # `--bundle`/`--archive` are package builds (the host's
+    # `validate_bundle_mode!`); load the manifest for the bundle root, assets,
+    # and entry name.  A plain run does not need it.
+    var package_opt = Option[package_manifest.PackageBuild].none
+    defer: release_package_option(ref_of(package_opt))
+    if bundle_mode:
+        var package_abs = loader.absolute_path(path)
+        defer: package_abs.release()
+        match package_manifest.load_package_for(package_abs.as_str()):
+            Result.success as loaded:
+                package_opt = loaded.value
+                match package_opt:
+                    Option.some as loaded_package:
+                        let pkg = loaded_package.value
+                        if not has_cli_profile:
+                            profile_name = pkg.profile
+                        if not has_cli_platform:
+                            platform = platform_from_manifest(pkg.platform)
+                    Option.none:
+                        pass
+            Result.failure as manifest_failure:
+                let message = manifest_failure.error.as_str()
+                eprint_line(message)
+                manifest_failure.error.release()
+                entry_path_owner.release()
+                source_root_owner.release()
+                return 1
+
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer: program.release()
 
@@ -2914,8 +3004,29 @@ function run_command(args: span[str]) -> int:
     if keep_c_path.is_some():
         keep_c_to_file(ir_program, keep_c_path.unwrap())
 
-    var output_path: string.String
-    if output_override.is_some():
+    var bundle_root = string.String.create()
+    defer: bundle_root.release()
+    var output_path = string.String.create()
+    defer: output_path.release()
+    if bundle_mode:
+        match package_opt:
+            Option.some as package_ref:
+                let pkg = package_ref.value
+                if platform == resolver.Platform.wasm:
+                    eprint_line("bundle mode is supported only for native package builds")
+                    entry_path_owner.release()
+                    source_root_owner.release()
+                    return 1
+                resolve_bundle_paths(
+                    pkg, output_override, platform, profile_name, ref_of(bundle_root), ref_of(output_path)
+                )
+            Option.none:
+                eprint_line("bundle mode requires a package build")
+                entry_path_owner.release()
+                source_root_owner.release()
+                return 1
+    else if output_override.is_some():
+        output_path.release()
         output_path = string.String.from_str(output_override.unwrap())
     else:
         # Ruby's `run` builds into a temporary directory; use a unique /tmp
@@ -2923,10 +3034,29 @@ function run_command(args: span[str]) -> int:
         # (and parallel runs stay independent).
         var default_out = default_output_path(effective)
         defer: default_out.release()
+        output_path.release()
         output_path = string.String.from_str("/tmp/mtc_run_")
         output_path.append(path_ops.basename(default_out.as_str()))
         output_path.push_byte('_')
         fmt_mod.append_long(ref_of(output_path), long<-time.now())
+
+    let output_dir = path_ops.dirname(output_path.as_str())
+    match fs.create_directories(output_dir):
+        Result.failure as dir_failure:
+            var dir_error = dir_failure.error
+            var message = string.String.create()
+            defer: message.release()
+            message.append("error: cannot create output directory ")
+            message.append(output_dir)
+            message.append(": ")
+            message.append(dir_error.message.as_str())
+            dir_error.release()
+            eprint_line(message.as_str())
+            entry_path_owner.release()
+            source_root_owner.release()
+            return 1
+        Result.success:
+            pass
 
     # Binary cache: reuse the previously built binary when nothing changed.
     # --keep-c always rebuilds so the saved C matches the produced binary.
@@ -2951,7 +3081,19 @@ function run_command(args: span[str]) -> int:
                 if copied:
                     var cached_output = string.String.from_str(output_path.as_str())
                     defer: cached_output.release()
-                    output_path.release()
+                    match stage_run_bundle(
+                        package_opt, output_path.as_str(), bundle_root.as_str(), bundle_mode, archive_mode
+                    ):
+                        Result.success:
+                            pass
+                        Result.failure as bundle_failure:
+                            var bundle_error = bundle_failure.error
+                            let bundle_text = bundle_error.as_str()
+                            stdio.print_format(c"error: %.*s\n", int<-(bundle_text.len), bundle_text.data)
+                            bundle_error.release()
+                            entry_path_owner.release()
+                            source_root_owner.release()
+                            return 1
                     entry_path_owner.release()
                     source_root_owner.release()
                     let run_status = execute_binary(cached_output.as_str(), ref_of(program_args))
@@ -2966,8 +3108,20 @@ function run_command(args: span[str]) -> int:
             var built_path = built.value
             defer: built_path.release()
             var owned_output = string.String.from_str(output_path.as_str())
-            output_path.release()
             defer: owned_output.release()
+            match stage_run_bundle(
+                package_opt, owned_output.as_str(), bundle_root.as_str(), bundle_mode, archive_mode
+            ):
+                Result.success:
+                    pass
+                Result.failure as bundle_failure:
+                    var bundle_error = bundle_failure.error
+                    let bundle_text = bundle_error.as_str()
+                    stdio.print_format(c"error: %.*s\n", int<-(bundle_text.len), bundle_text.data)
+                    bundle_error.release()
+                    entry_path_owner.release()
+                    source_root_owner.release()
+                    return 1
             entry_path_owner.release()
             source_root_owner.release()
             if run_cache_enabled:
@@ -2978,7 +3132,6 @@ function run_command(args: span[str]) -> int:
             defer: message.release()
             let text = message.as_str()
             stdio.print_format(c"error: %.*s\n", int<-(text.len), text.data)
-            output_path.release()
             entry_path_owner.release()
             source_root_owner.release()
             return 1
