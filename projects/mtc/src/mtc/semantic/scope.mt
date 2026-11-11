@@ -15,6 +15,7 @@ import mtc.semantic.types as types
 public struct Scope:
     frames: vec.Vec[map_mod.Map[str, types.Type]]
     let_bindings: vec.Vec[map_mod.Map[str, bool]]
+    param_bindings: vec.Vec[map_mod.Map[str, bool]]
     storage_types: vec.Vec[map_mod.Map[str, types.Type]]
     ## The semantic binding id of each name's declaration (the host's
     ## ValueBinding ids, `semantic/analyzer.mt`'s binding-id records).  Only
@@ -26,6 +27,7 @@ public function scope_create() -> Scope:
     return Scope(
         frames = vec.Vec[map_mod.Map[str, types.Type]].create(),
         let_bindings = vec.Vec[map_mod.Map[str, bool]].create(),
+        param_bindings = vec.Vec[map_mod.Map[str, bool]].create(),
         storage_types = vec.Vec[map_mod.Map[str, types.Type]].create(),
         binding_ids = vec.Vec[map_mod.Map[str, ptr_uint]].create(),
     )
@@ -34,6 +36,7 @@ public function scope_create() -> Scope:
 public function scope_enter(scope: ref[Scope]) -> void:
     scope.frames.push(map_mod.Map[str, types.Type].create())
     scope.let_bindings.push(map_mod.Map[str, bool].create())
+    scope.param_bindings.push(map_mod.Map[str, bool].create())
     scope.storage_types.push(map_mod.Map[str, types.Type].create())
     scope.binding_ids.push(map_mod.Map[str, ptr_uint].create())
 
@@ -49,6 +52,12 @@ public function scope_leave(scope: ref[Scope]) -> void:
         Option.some as let_frame:
             var released = let_frame.value
             released.release()
+        Option.none:
+            pass
+    match scope.param_bindings.pop():
+        Option.some as param_frame:
+            var released_params = param_frame.value
+            released_params.release()
         Option.none:
             pass
     match scope.storage_types.pop():
@@ -134,6 +143,30 @@ public function scope_set_let(scope: ref[Scope], name: str) -> void:
         return
     unsafe:
         let _prev = read(frame_ptr).set(name, true)
+
+
+## Mark a name as a function/method/proc parameter (the host's
+## `ValueBinding#kind == :param`).  Used by the lvalue-receiver ladder to allow
+## a span parameter as an assignment receiver.
+public function scope_set_param(scope: ref[Scope], name: str) -> void:
+    let count = scope.param_bindings.len()
+    if count == 0:
+        return
+    let frame_ptr = scope.param_bindings.get(count - 1) else:
+        return
+    unsafe:
+        let _prev = read(frame_ptr).set(name, true)
+
+
+public function scope_is_param(scope: ref[Scope], name: str) -> bool:
+    var index = scope.param_bindings.len()
+    while index > 0:
+        index -= 1
+        let frame_ptr = scope.param_bindings.get(index) else:
+            return false
+        if unsafe: read(frame_ptr).contains(name):
+            return true
+    return false
 
 
 ## The binding's *storage* type — the declared/initializer type, unaffected by

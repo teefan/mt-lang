@@ -27,6 +27,7 @@ import std.str
 import std.string as string
 import std.vec as vec
 
+import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.linter.config as lint_config
@@ -196,7 +197,7 @@ function fix_rule_single_pass(
     # that would rewrite `var v` while `v.push(1)` needs it never fires.
     # The semantic maps are keyed by expression pointer, so the analysis must
     # belong to THIS parse (the fix passes re-parse after every edit).
-    var analysis = analyzer.check_source_file(file)
+    var analysis = analyze_with_imports(file, path, options)
     var local_options = options
     local_options.analysis = ptr_of(analysis)
     var warnings = linter.lint_source_with(file, source, path, local_options)
@@ -241,11 +242,26 @@ function fix_rule_single_pass(
     var candidate_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: candidate_diags.release()
     let candidate_file = parser.parse_source(candidate.as_str(), ref_of(candidate_diags))
-    var candidate_analysis = analyzer.check_source_file(candidate_file)
+    var candidate_analysis = analyze_with_imports(candidate_file, path, options)
     if introduces_new_errors(ref_of(analysis), ref_of(candidate_analysis)):
         candidate.release()
         return string.String.from_str(source)
     return candidate
+
+
+## Re-analyze an edited source against the same loader-backed imports as the
+## lint command's analysis.  Without them, an imported editable method's kind is
+## unknown and `prefer-let` would rewrite a `var` the host keeps.
+function analyze_with_imports(file: ast.SourceFile, path: str, options: linter.LintOptions) -> analyzer.Analysis:
+    let analysis_ptr = options.analysis else:
+        return analyzer.check_source_file(file)
+    unsafe:
+        return analyzer.check_module(
+            file,
+            read(analysis_ptr).imported_modules,
+            read(analysis_ptr).module_name,
+            path,
+        )
 
 
 ## True when the fixed analysis adds an error signature — a (line, column,

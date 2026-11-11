@@ -268,19 +268,32 @@ public function ctx_mark_editable_receiver(call: ptr[ast.Expr], ctx: ref[ScopeCt
         match read(call):
             ast.Expr.expr_call as cl:
                 match read(cl.callee):
-                    ast.Expr.expr_member_access as ma:
-                        match read(ma.receiver):
-                            ast.Expr.expr_identifier as id:
-                                var si: ptr_uint = 0
-                                let sites = read(ctx).editable_sites
-                                while si < sites.len:
-                                    let site = read(sites.data + si)
-                                    if site.line == id.line and site.name.equal(id.name):
-                                        ctx_mark_mutated(ctx, ma.receiver)
-                                        return
-                                    si += 1
-                            _:
-                                pass
+                    ast.Expr.expr_member_access:
+                        ctx_mark_editable_member(cl.callee, ctx)
+                    ast.Expr.expr_specialization as sp:
+                        ctx_mark_editable_member(sp.callee, ctx)
+                    _:
+                        pass
+            _:
+                pass
+
+
+## `x.method(...)` / `x.method[T](...)`: mark the receiver when the analyzer
+## recorded an editable site at the same name/line.
+function ctx_mark_editable_member(member_expr: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
+    unsafe:
+        match read(member_expr):
+            ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as id:
+                        var si: ptr_uint = 0
+                        let sites = read(ctx).editable_sites
+                        while si < sites.len:
+                            let site = read(sites.data + si)
+                            if site.line == id.line and site.name.equal(id.name):
+                                ctx_mark_mutated(ctx, ma.receiver)
+                                return
+                            si += 1
                     _:
                         pass
             _:

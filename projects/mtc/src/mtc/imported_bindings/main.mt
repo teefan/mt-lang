@@ -179,7 +179,7 @@ public function generate(
                     # Method extensions
                     var ext_funcs = vec.Vec[methods_mod.MethodFunc].create()
                     var ext_alias = string.String.create()
-                    var has_external = load_external_method_sources(ref_of(pol), ref_of(ext_funcs), ref_of(ext_alias))
+                    load_external_method_sources(ref_of(pol), ref_of(ext_funcs), ref_of(ext_alias))
 
                     var method_lines = methods_mod.generate(
                         pol.methods,

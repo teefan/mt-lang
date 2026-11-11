@@ -85,8 +85,10 @@ function release_funcs(funcs: ref[vec.Vec[raw.RawFuncInfo]]) -> void:
 
 
 function expect_str(actual: string.String, expected: str, label: str) -> void:
+    # `actual` is an immutable value parameter; releasing it would require a
+    # mutable receiver.  The test process is short-lived, so leave cleanup to
+    # the arena/heap.
     expect(actual.as_str().equal(expected), label)
-    actual.release()
 
 
 @[test]

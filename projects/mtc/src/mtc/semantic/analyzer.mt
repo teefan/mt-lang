@@ -439,6 +439,10 @@ public struct Analysis:
     const_values: map_mod.Map[str, ptr[ast.Expr]]
     module_name: str
     module_kind: ast.ModuleKind
+    ## The loader-backed import table this analysis resolved against (borrowed).
+    ## A consumer that re-analyzes an edited source (the fix engine) can reuse it
+    ## instead of dropping cross-module method kinds.
+    imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?
     unsafe_statement_lines: vec.Vec[ptr_uint]
     ## See `ImportedTypeMembers`: the imported types' fields and methods.
     imported_type_members: map_mod.Map[str, ImportedTypeMembers]
@@ -660,6 +664,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         const_values = ctx.const_values,
         module_name = module_name,
         module_kind = file.module_kind,
+        imported_modules = imported_modules,
         unsafe_statement_lines = required_unsafe_line_list(ref_of(ctx)),
         imported_type_members = collect_imported_type_members(ref_of(ctx)),
         uses_parallel_for = ctx.uses_parallel_for,
@@ -3064,6 +3069,12 @@ function scope_is_let(scope: ref[sscope.Scope], name: str) -> bool:
 function scope_set_let(scope: ref[sscope.Scope], name: str) -> void:
     sscope.scope_set_let(scope, name)
 
+function scope_is_param(scope: ref[sscope.Scope], name: str) -> bool:
+    return sscope.scope_is_param(scope, name)
+
+function scope_set_param(scope: ref[sscope.Scope], name: str) -> void:
+    sscope.scope_set_param(scope, name)
+
 
 function scope_set_storage(scope: ref[sscope.Scope], name: str, ty: types.Type) -> void:
     sscope.scope_set_storage(scope, name, ty)
@@ -3096,6 +3107,8 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
     if m.method_kind != ast.MethodKind.mk_static:
         scope_set(ref_of(scope), "this", this_type)
         scope_set_storage(ref_of(scope), "this", this_type)
+        if m.method_kind != ast.MethodKind.mk_editable:
+            scope_set_let(ref_of(scope), "this")
         let this_id = ctx.this_binding_ids.get(node)
         if this_id != null:
             let tid = unsafe: read(this_id)
@@ -3115,6 +3128,8 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
         let param_ty = resolve_type_value(ctx, p.param_type)
         scope_set(ref_of(scope), p.name, param_ty)
         scope_set_storage(ref_of(scope), p.name, param_ty)
+        scope_set_let(ref_of(scope), p.name)
+        scope_set_param(ref_of(scope), p.name)
         scope_set_binding_id(ref_of(scope), p.name, declared_param_id(ctx, node, pi))
         pi += 1
     seen.release()
@@ -3179,6 +3194,8 @@ function check_function_body(ctx: ref[Context], node: ptr_uint, name: str, line:
         let param_ty = resolve_type_value(ctx, p.param_type)
         scope_set(ref_of(scope), p.name, param_ty)
         scope_set_storage(ref_of(scope), p.name, param_ty)
+        scope_set_let(ref_of(scope), p.name)
+        scope_set_param(ref_of(scope), p.name)
         scope_set_binding_id(ref_of(scope), p.name, declared_param_id(ctx, node, pi))
         pi += 1
     seen.release()
@@ -3195,6 +3212,7 @@ function check_function_body(ctx: ref[Context], node: ptr_uint, name: str, line:
                 let vparam_ty = resolve_type_value(ctx, unsafe: read(vtype))
                 scope_set(ref_of(scope), tp.name, vparam_ty)
                 scope_set_storage(ref_of(scope), tp.name, vparam_ty)
+                scope_set_let(ref_of(scope), tp.name)
         tpi += 1
     var ret = types.primitive("void")
     let rt = return_type
@@ -4771,12 +4789,64 @@ public function is_callable_type(t: types.Type) -> bool:
 ## Flag an assignment whose target is a name bound by `let`, which is immutable.
 ## The host anchors the error at the assignment's operator (the statement's
 ## column) and spans the target's name (`source_length` falls back to it).
+function is_generic_type_named(t: types.Type, name: str) -> bool:
+    match t:
+        types.Type.ty_generic as g:
+            return g.name == name
+        types.Type.ty_imported as im:
+            return im.name == name
+        _:
+            return false
+
+
+## The host's `infer_lvalue_receiver` immutability ladder: a mutable binding is
+## assignable; a `ref[T]` and a mutable raw pointer receiver are assignable; a
+## `span` *parameter* is assignable; a `const_ptr` is read-only; anything else
+## bound by `let` (including parameters and non-editable `this`) is immutable.
+function check_lvalue_receiver_immutable(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> void:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                let type_ptr = scope_get(scope, id.name)
+                if type_ptr == null:
+                    return
+                let declared = read(type_ptr)
+                let ty = if types.is_nullable_type(declared): types.unwrap_nullable(declared) else: declared
+                if types.is_ref_type(ty) or is_generic_type_named(ty, "ref"):
+                    return
+                if is_generic_type_named(ty, "ptr") or is_generic_type_named(ty, "own"):
+                    return
+                if is_generic_type_named(ty, "const_ptr"):
+                    var msg = string.String.create()
+                    msg.append("cannot assign through read-only raw pointer ")
+                    msg.append(types.type_to_diagnostic_string(ty))
+                    report_at(ctx, line, column, id.name.len, msg.as_str())
+                    return
+                if is_generic_type_named(ty, "span") and scope_is_param(scope, id.name):
+                    return
+                if scope_is_let(scope, id.name):
+                    var msg = string.String.create()
+                    msg.append("cannot assign through immutable ")
+                    msg.append(id.name)
+                    report_at(ctx, line, column, id.name.len, msg.as_str())
+            ast.Expr.expr_member_access as m:
+                check_lvalue_receiver_immutable(ctx, scope, m.receiver, line, column)
+            ast.Expr.expr_index_access as ix:
+                check_lvalue_receiver_immutable(ctx, scope, ix.receiver, line, column)
+            _:
+                pass
+
+
 function check_assign_target_immutable(ctx: ref[Context], scope: ref[sscope.Scope], target: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> void:
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
                 if scope_is_let(scope, id.name):
                     report_at(ctx, line, column, id.name.len, assign_to_let_message(id.name))
+            ast.Expr.expr_member_access as m:
+                check_lvalue_receiver_immutable(ctx, scope, m.receiver, line, column)
+            ast.Expr.expr_index_access as ix:
+                check_lvalue_receiver_immutable(ctx, scope, ix.receiver, line, column)
             _:
                 pass
 
@@ -5654,6 +5724,8 @@ function check_proc_body(ctx: ref[Context], scope: ref[sscope.Scope], param_type
             let pty = read(param_types.data + i)
             scope_set(scope, pname, pty)
             scope_set_storage(scope, pname, pty)
+            scope_set_let(scope, pname)
+            scope_set_param(scope, pname)
         i += 1
     let proc_flags = check_flags(ret, false, false, false)
     check_body(ctx, scope, proc_flags, b)
@@ -6014,6 +6086,9 @@ function check_specialized_method_call(ctx: ref[Context], scope: ref[sscope.Scop
     var subs = map_mod.Map[str, types.Type].create()
     defer: subs.release()
     validate_explicit_type_args(ctx, tps, type_args, ref_of(subs), line, column)
+    # The host's specialized-call arm records/enforces an editable receiver
+    # exactly like a normal member call.
+    check_editable_receiver_immutable(ctx, scope, receiver, recv_ty, method_name, line, column)
     return substitute_type(sig.return_type, ref_of(subs))
 
 
@@ -7497,6 +7572,28 @@ public struct EditableSite:
     line: ptr_uint
 
 
+## The host's `assignable_receiver?`: `infer_lvalue_receiver` with ref and
+## pointer identifiers allowed and a mutable pointer required.  A `ref[T]` or a
+## mutable raw pointer is assignable; a `const_ptr` is not; otherwise the
+## binding must be mutable (not a `let`/parameter/`this` in a non-editable
+## method).
+function editable_receiver_assignable(scope: ref[sscope.Scope], name: str) -> bool:
+    let type_ptr = scope_get(scope, name)
+    if type_ptr == null:
+        return true
+    var declared: types.Type
+    unsafe:
+        declared = read(type_ptr)
+    let ty = if types.is_nullable_type(declared): types.unwrap_nullable(declared) else: declared
+    if types.is_ref_type(ty) or is_generic_type_named(ty, "ref"):
+        return true
+    if is_generic_type_named(ty, "ptr") or is_generic_type_named(ty, "own"):
+        return true
+    if is_generic_type_named(ty, "const_ptr"):
+        return false
+    return not scope_is_let(scope, name)
+
+
 function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[sscope.Scope], receiver_expr: ptr[ast.Expr], receiver_type: types.Type, method_name: str, line: ptr_uint, column: ptr_uint) -> void:
     match resolve_method_sig(ctx, receiver_type, method_name):
         Option.some as sig:
@@ -7505,12 +7602,8 @@ function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[sscope.
                     unsafe:
                         match read(receiver_expr):
                             ast.Expr.expr_identifier as id:
-                                # `this` in a method body is implicitly ref,
-                                # never a local let binding.
-                                if id.name == "this":
-                                    return
                                 ctx.editable_receiver_sites.push(EditableSite(name = id.name, line = id.line))
-                                if scope_is_let(scope, id.name):
+                                if not editable_receiver_assignable(scope, id.name):
                                     report(ctx, line, column, editable_on_immutable_message(id.name, method_name))
                             _:
                                 pass

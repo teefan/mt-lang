@@ -33,7 +33,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | `sexpr lex` / `parse` | 0 differ (lex **718/718**; parse **714 match / 0 differ / 4 host-rejected of 718**; counts drift with the tree) |
 | `sexpr lower` | **665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 files** (session 63) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
 | `cli:parity` | **78 match / 0 differ / 11 case-backed pending** of 89 cases (session 65; `--timings` values and `debug`'s Ruby node ids are normalized). The pending set is `deps`, wasm, `toolchain doctor`, locked/frozen build, and bundle/archive run. |
-| Linter corpus | **496 agree / 122 differ** of 618 (session 65 re-read with the content-hash host cache; hostfail 0, selffail 0); **41/43 rules, 12/13 fixers** |
+| Linter corpus | **495 agree / 123 differ** of 618 (session 66; hostfail 0, selffail 0); **41/43 rules, 12/13 fixers**.  The assignability batch improved `borrow-and-mutate` (29 self-only) and `loop-single-iteration` (8). |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the live VS Code F5 check is the remaining manual step |
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
@@ -80,10 +80,14 @@ OpenGL naming vectors are pinned in
 Bindgen reproducibility (Track D item 3) remains open and is deferred behind
 the linter/analyzer track.
 
-The same session's analyzer batch closed the reserved-name diagnostics
+The same session's analyzer batches closed the reserved-name diagnostics
 (module consts/vars/functions/events, params/locals, host message and
-positions) and the qualified return-mismatch rendering with the host's
-statement fallback for position-less literal returns.
+positions), the qualified return-mismatch rendering with the host's statement
+fallback for position-less literal returns, null assignability, immutable
+parameters, the member-assignment immutability ladder, and specialized
+editable-call recording.  The fix engine now re-analyzes candidates against the
+loader-backed imports.  Lint corpus: 495 agree / 123 differ of 618, with
+`borrow-and-mutate` 29 and `loop-single-iteration` 8 (both improved).
 
 Session-51 batch: the event synthetic bodies (host slot/snapshot shapes), the
 reused await-field recording plus nested-await hoisting in a direct-await
@@ -728,16 +732,16 @@ package build/run entry points, `new`, `completions`, `std`, `test`, `cache`,
 `toolchain`, `snapshot`.  Session 64 closed `debug` (shared renderer) and
 `test`'s argument forms.
 
-### Track C — linter corpus residue (496/122 of 618; 41/43 rules)
+### Track C — linter corpus residue (495/123 of 618; 41/43 rules)
 
-State: **496 agree / 122 differ of 618, hostfail 0, selffail 0** (session 65
-re-read; this is the authoritative measurement after the host cache moved to a
-content hash — the earlier 495/121 table was stale).  Per-rule deltas
-(session-65 re-read; **pairs are self-only / host-only**, in that order):
-`prefer-try` 75/39, `redundant-cast` 75/48, `prefer-let` 69/141,
-`borrow-and-mutate` 31/0, `shadow` 20/0, `prefer-own-ptr` 16/38,
-`constant-condition` 11/1, `prefer-or-pattern` 10/8,
-`loop-single-iteration` 9/0, `unreachable-code` 4/0, `prefer-var-else` 2/0, and
+State: **495 agree / 123 differ of 618, hostfail 0, selffail 0** (session 66;
+the assignability batch improved `borrow-and-mutate` and
+`loop-single-iteration`, and the unused-local in the imported-bindings helper
+was removed).  Per-rule deltas (session-66 re-read; **pairs are self-only /
+host-only**, in that order): `prefer-try` 75/39, `redundant-cast` 75/48,
+`prefer-let` 69/141, `borrow-and-mutate` 29/0, `shadow` 20/0,
+`prefer-own-ptr` 16/38, `constant-condition` 11/1, `prefer-or-pattern` 10/8,
+`loop-single-iteration` 8/0, `unreachable-code` 4/0, `prefer-var-else` 2/0, and
 one host-only `prefer-struct-with` (so that rule is not fully closed).  The
 corpus count drifts with the tree; quote the set.  Closed with no residue:
 `redundant-unsafe`, `owning-release-leak`, `owning-release-double`,
@@ -751,30 +755,30 @@ be the first visible difference.
 
 Analyzer gaps that gate lint rows and LSP entries:
 
-- **Null assignability pair** (session 22): a bare `null` into a non-nullable
-  target (`return null` for `ptr[int]`/`str`) is unflagged (`ty_null` is
-  kind-unknown in `definitely_incompatible`/`types_compatible`); and
-  generic-vs-scalar pairs (`ptr[int]` → `str`) need the host's positive
-  `call_argument_compatible?`/`implicit_ref_argument_compatible?` split.
-  Assigning to an immutable parameter is also unflagged.
+- **Null assignability + immutable parameters — CLOSED (session 66).**  A bare
+  `null` is accepted only by a nullable target (a typed null must match the
+  nullable base; the host's `null_assignable_to?`), and parameters are bound
+  immutably (`cannot assign to immutable p`).  **Remaining:** the host's
+  positive generic-vs-scalar split (`ptr[int]` → `str`) and the
+  `call_argument_compatible?`/`implicit_ref_argument_compatible?` argument-only
+  coercions; the self's fallback is still permissive for those pairs.
 - **Constant-value coercion** (session 23): a folded constant that fits a narrow
   integer target is host-accepted and self-rejected (`return sdl.ALPHA_OPAQUE`
   from `-> ubyte`); the host folds via `evaluate_compile_time_const_value`
   (`semantic_analyzer/top_level.rb:280`) + `numeric_constant_fits_type?`, the
   self's `is_numeric_literal_valued_expr` sees only literal nodes/`if`-chains.
-- **Member-assignment immutability** (session 28): the host rejects
-  `x.field = …` through an immutable receiver and `this.field = …` in a
-  non-editable method (host `infer_lvalue_receiver`,
-  `lib/milk_tea/core/semantic_analyzer/expressions.rb:76`,
-  `lib/milk_tea/core/semantic_analyzer/function_binding.rb:594-605`); the self
-  has no such check, so `check` accepts
-  sources the host rejects and `--fix` applies batches the host withholds
-  (repro: an `extending Counter:` with a second block plus `this.value = 0`).
-  Port the receiver-implicitness ladder and the generic-method scan.
-- **`prefer-let` and specialized editable calls** (session 28): the self rewrites
-  `examples/reflection_advanced.mt`'s `var r`, which must stay `var` because
-  `r.unpack[CompactHeader]()` is editable; the editable-site recording misses
-  the specialized editable call.
+- **Member-assignment immutability — CLOSED (session 66).**  The host's
+  `infer_lvalue_receiver` ladder is ported: `ref[T]`, mutable raw pointers and
+  `own[T]` receivers are assignable; `const_ptr` reports
+  `cannot assign through read-only raw pointer`; a `span` parameter is allowed;
+  a `let`/parameter/`this` in a non-editable method reports
+  `cannot assign through immutable <name>`.
+- **`prefer-let` and specialized editable calls — CLOSED (session 66).**
+  `check_specialized_method_call` records/enforces the editable receiver, the
+  linter unwraps an `expr_specialization` callee to its member access, and the
+  fix engine re-analyzes candidate sources against the loader-backed imports
+  (`Analysis.imported_modules`), so `var r` in
+  `examples/reflection_advanced.mt` is preserved.
 - **`--fix` unresolved-import guard** (session 28): the host's
   `fix_source_single_pass` refuses all fixes when an import did not resolve; the
   self proceeds.  The CLI lint path **does** fill
@@ -962,7 +966,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `sexpr lex` / `parse` | lex 718/718; parse 714 match / 0 differ / 4 host-rejected of 718 | session 63 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
 | `sexpr lower` | 665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 (the 2 are documented artifacts) | session 63 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | **78 match / 0 differ / 11 pending** of 89 (case-backed; the original 65/65; timings and `debug` node ids normalized) | session 65 | `ruby tools/cli_parity.rb -q` |
-| lint corpus | 496 agree / 122 differ of 618, hostfail 0, selffail 0; **41/43 rules, 12/13 fixers** | session 65 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| lint corpus | 495 agree / 123 differ of 618, hostfail 0, selffail 0; **41/43 rules, 12/13 fixers** | session 66 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 616/616 | session 64 | `ruby tools/unused_import_parity.rb` |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 43 | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |

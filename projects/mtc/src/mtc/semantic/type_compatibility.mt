@@ -75,6 +75,24 @@ public function types_compatible(expected: types.Type, actual: types.Type, sourc
     if types.type_equals(expected, actual):
         return true
 
+    # 3b Null literal: only a nullable target accepts it.  A typed null must
+    #    match the nullable base (`null[ptr[int]]` into `ptr[int]?`); the host's
+    #    `null_assignable_to?`.  External typed-null pointer compatibility is a
+    #    foreign-call concern handled by the call site.
+    match actual:
+        types.Type.ty_null as nt:
+            if not types.is_nullable_type(expected):
+                return false
+            let target = nt.target
+            if target == null:
+                return true
+            var target_type: types.Type
+            unsafe:
+                target_type = read(target)
+            return types_compatible(types.unwrap_nullable(expected), target_type, null)
+        _:
+            pass
+
     # 4  ref[T] ↔ ref[T]: compare referenced pointee types.
     let e_is_ref = types.is_ref_type(expected)
     let a_is_ref = types.is_ref_type(actual)
