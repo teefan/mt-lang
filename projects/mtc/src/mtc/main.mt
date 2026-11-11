@@ -57,6 +57,7 @@ import mtc.imported_bindings.registry as ib_registry
 import mtc.imported_bindings.main as ib_main
 import mtc.sexpr as sexpr_mod
 import mtc.std_catalog as std_catalog
+import mtc.docs_app as docs_app
 import mtc.toolchain_cli as toolchain_cli
 import mtc.wasm_preview as wasm_preview
 import mtc.version_info as ver
@@ -342,6 +343,9 @@ function dispatch_cli(raw_args: span[str]) -> int:
     if cmd == "imported-bindings":
         return imported_bindings_command(args)
 
+    if cmd == "docs":
+        return docs_command(args)
+
     if cmd == "toolchain":
         return toolchain_command(args)
 
@@ -357,6 +361,52 @@ function dispatch_cli(raw_args: span[str]) -> int:
     # Unknown command: the host prints its usage block to stderr and exits 1.
     cli_help.print_usage(true)
     return 1
+
+
+## `mtc docs [--port|-p PORT] [--open|-o]`: the host parses only those flags
+## and ignores everything after the first non-flag.
+function docs_command(args: span[str]) -> int:
+    var port = 0
+    var open_flag = false
+    var ai: ptr_uint = 1
+    while ai < args.len:
+        let arg = args[ai]
+        if arg == "--port" or arg == "-p":
+            if ai + 1 < args.len:
+                port = parse_docs_port(args[ai + 1])
+                ai += 2
+            else:
+                ai += 1
+            continue
+        if arg == "--open" or arg == "-o":
+            open_flag = true
+            ai += 1
+            continue
+        break
+
+    var root = docs_app.repo_root() else:
+        eprint_line("docs: documentation root not found")
+        return 1
+    defer: root.release()
+    return docs_app.serve(root.as_str(), port, open_flag)
+
+
+function parse_docs_port(value: str) -> int:
+    if value.len == 0:
+        return 0
+    var result: int = 0
+    var index: ptr_uint = 0
+    while index < value.len:
+        let ch = value.byte_at(index)
+        if ch < 48 or ch > 57:
+            return 0
+        result = result * 10 + int<-(ch - 48)
+        if result > 65535:
+            return 0
+        index += 1
+    if result <= 0 or result > 65535:
+        return 0
+    return result
 
 
 ## Ambient module roots for `parse`: the host resolves a file's module name

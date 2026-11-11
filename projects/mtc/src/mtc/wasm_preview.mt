@@ -6,63 +6,18 @@
 ## and letting `run` return 0 like the host's signal handler.
 
 import std.async as aio
-import std.async.libuv_runtime as aio_backend
-import std.bytes as bytes
-import std.c.libuv as libuv_c
-import std.env as env
 import std.fmt as fmt
 import std.fs as fs
-import std.libuv as libuv
-import std.mem.heap as heap
 import std.net as net
 import std.path as path_ops
-import std.process as process
 import std.stdio as stdio
 import std.str as text
 import std.string as string
 import std.terminal as terminal
 import std.vec as vec
 
-
-struct PreviewState:
-    listener: ptr[net.TcpListener]?
-
-
-## The signal callback and the coroutine run on the same libuv thread; a module
-## flag avoids reading through the state pointer in the loop condition.
-var preview_stop: bool = false
-
-
-function signal_as_handle(handle: ptr[libuv.uv_signal_t]) -> ptr[libuv.uv_handle_t]:
-    return unsafe: ptr[libuv.uv_handle_t]<-handle
-
-
-## Close the listener from the libuv signal callback.  This completes a pending
-## accept with a "listener released" failure, so the coroutine resumes and the
-## serve loop exits.
-function preview_signal_cb(handle: ptr[libuv.uv_signal_t], _signum: int) -> void:
-    let data = libuv.handle_get_data(signal_as_handle(handle))
-    if data == null:
-        return
-
-    preview_stop = true
-    let state = unsafe: ptr[PreviewState]<-data
-    unsafe:
-        let listener = read(state).listener
-        if listener != null:
-            var released = read(listener)
-            released.release()
-            read(state).listener = null
-
-
-function install_signal(loop: ptr[libuv.uv_loop_t], signum: int, state: ptr[PreviewState]) -> void:
-    let size = libuv.handle_size(libuv_c.uv_handle_type.UV_SIGNAL)
-    let raw = heap.must_alloc_zeroed_bytes(1, size)
-    let handle = unsafe: ptr[libuv.uv_signal_t]<-raw
-    if libuv.signal_init(loop, handle) != 0:
-        return
-    libuv.handle_set_data(signal_as_handle(handle), unsafe: ptr[void]<-state)
-    let _ = libuv.signal_start(handle, preview_signal_cb, signum)
+import mtc.browser as browser
+import mtc.http_util as http_util
 
 
 ## Serve `root_dir` on 127.0.0.1:`port` (0 picks an ephemeral port).  Blocks
@@ -75,7 +30,7 @@ public function serve_preview(root_dir: str, port: int) -> int:
 
 ## The outer accept loop is deliberately a *sync* driver: `wait_on` polls the
 ## runtime for one accept at a time and `run_on_proc` drives the per-connection
-## coroutine.  A CPS `while` across multiple awaits was not robust here (the
+## coroutine.  A CPS `while` across repeated awaits was not robust here (the
 ## resume state machine could spin after the first connection); keeping only
 ## one coroutine per request avoids that class of bug.
 function serve_with_runtime(runtime: aio.Runtime, root_dir: str, port: int) -> int:
@@ -118,17 +73,15 @@ function serve_with_runtime(runtime: aio.Runtime, root_dir: str, port: int) -> i
     message.append(" (press Ctrl-C to stop)\n")
     stdio.print_format(c"%.*s", int<-(message.len), message.data)
     let _ = terminal.flush_stdout()
-    open_browser(url.as_str())
+    browser.open(url.as_str())
 
-    let loop = aio_backend.runtime_loop(runtime)
-    let state = heap.must_alloc_zeroed[PreviewState](1)
+    let state = http_util.create_state()
     unsafe:
         read(state).listener = ptr_of(listener)
-    preview_stop = false
-    install_signal(loop, 2, state)
-    install_signal(loop, 15, state)
+    http_util.reset_stop()
+    http_util.install_stop_signals(state)
 
-    while not preview_stop:
+    while not http_util.should_stop():
         let accepted = aio.wait_on(runtime, listener.accept())
         match accepted:
             Result.failure as failure:
@@ -142,11 +95,7 @@ function serve_with_runtime(runtime: aio.Runtime, root_dir: str, port: int) -> i
                 )
                 connection.release()
 
-    let still_open = unsafe: read(state).listener != null
-    unsafe:
-        read(state).listener = null
-    if still_open:
-        listener.release()
+    http_util.close_listener(state, ref_of(listener))
     return 0
 
 
@@ -166,40 +115,40 @@ async function handle_connection(connection: net.TcpStream, root_dir: str) -> vo
                     return
                 buffer.append_span(chunk.as_span())
                 chunk.release()
-                headers_done = has_header_end(buffer.as_span())
+                headers_done = http_util.has_header_end(buffer.as_span())
                 if buffer.len() > 65536:
                     return
 
     let request_text = text.utf8_byte_span_as_str(buffer.as_span()) else:
-        await send_text(connection, 400, "Bad Request", "bad request\n", false)
+        await http_util.send_text(connection, 400, "Bad Request", "bad request\n", false)
         return
 
-    let first_line_end = preview_find_byte(request_text, 10)
+    let first_line_end = http_util.find_byte(request_text, 10)
     if first_line_end >= request_text.len:
-        await send_text(connection, 400, "Bad Request", "bad request\n", false)
+        await http_util.send_text(connection, 400, "Bad Request", "bad request\n", false)
         return
 
     var request_line = request_text.slice(0, first_line_end)
     if request_line.ends_with("\r"):
         request_line = request_line.slice(0, request_line.len - 1)
 
-    let method_end = preview_find_byte(request_line, 32)
+    let method_end = http_util.find_byte(request_line, 32)
     if method_end >= request_line.len:
-        await send_text(connection, 400, "Bad Request", "bad request\n", false)
+        await http_util.send_text(connection, 400, "Bad Request", "bad request\n", false)
         return
     let method = request_line.slice(0, method_end)
 
     var target_start = method_end + 1
     while target_start < request_line.len and request_line.byte_at(target_start) == 32:
         target_start += 1
-    let target_end = preview_find_byte_from(request_line, 32, target_start)
+    let target_end = http_util.find_byte_from(request_line, 32, target_start)
     var target = request_line.slice(target_start, target_end - target_start)
 
     if not method.equal("GET") and not method.equal("HEAD"):
-        await send_text(connection, 405, "Method Not Allowed", "method not allowed\n", false)
+        await http_util.send_text(connection, 405, "Method Not Allowed", "method not allowed\n", false)
         return
 
-    let question = preview_find_byte(target, 63)
+    let question = http_util.find_byte(target, 63)
     if question < target.len:
         target = target.slice(0, question)
 
@@ -213,70 +162,36 @@ async function handle_connection(connection: net.TcpStream, root_dir: str) -> vo
         relative = default_name.as_str()
 
     if not safe_relative_path(relative):
-        await send_text(connection, 404, "Not Found", "not found\n", false)
+        await http_util.send_text(connection, 404, "Not Found", "not found\n", false)
         return
 
     var candidate = path_ops.join(root_dir, relative)
     defer: candidate.release()
 
     var root_real = fs.canonicalize(root_dir) else:
-        await send_text(connection, 404, "Not Found", "not found\n", false)
+        await http_util.send_text(connection, 404, "Not Found", "not found\n", false)
         return
     defer: root_real.release()
 
     var candidate_real = fs.canonicalize(candidate.as_str()) else:
-        await send_text(connection, 404, "Not Found", "not found\n", false)
+        await http_util.send_text(connection, 404, "Not Found", "not found\n", false)
         return
     defer: candidate_real.release()
 
     if not path_within(candidate_real.as_str(), root_real.as_str()):
-        await send_text(connection, 404, "Not Found", "not found\n", false)
+        await http_util.send_text(connection, 404, "Not Found", "not found\n", false)
         return
 
     match fs.read_bytes(candidate_real.as_str()):
         Result.failure:
-            await send_text(connection, 404, "Not Found", "not found\n", false)
+            await http_util.send_text(connection, 404, "Not Found", "not found\n", false)
         Result.success as body_result:
             var body = body_result.value
             defer: body.release()
-            let content_type = mime_type(candidate_real.as_str())
-            await send_response(
+            let content_type = http_util.mime_type(candidate_real.as_str())
+            await http_util.send_response(
                 connection, 200, "OK", content_type, body.as_span(), method.equal("HEAD")
             )
-
-
-function has_header_end(data: span[ubyte]) -> bool:
-    if data.len < 4:
-        return false
-    var index: ptr_uint = 0
-    while index + 3 < data.len:
-        if (
-            unsafe: read(data.data + index) == 13
-            and read(data.data + index + 1) == 10
-            and read(data.data + index + 2) == 13
-            and read(data.data + index + 3) == 10
-        ):
-            return true
-        index += 1
-    return false
-
-
-function preview_find_byte(data: str, value: ubyte) -> ptr_uint:
-    var index: ptr_uint = 0
-    while index < data.len:
-        if data.byte_at(index) == value:
-            return index
-        index += 1
-    return data.len
-
-
-function preview_find_byte_from(data: str, value: ubyte, start: ptr_uint) -> ptr_uint:
-    var index = start
-    while index < data.len:
-        if data.byte_at(index) == value:
-            return index
-        index += 1
-    return data.len
 
 
 function safe_relative_path(path: str) -> bool:
@@ -322,91 +237,3 @@ function default_entry(root_dir: str) -> string.String:
         return best
     best.release()
     return string.String.from_str("index.html")
-
-
-function mime_type(path: str) -> str:
-    if path.ends_with(".html"):
-        return "text/html; charset=utf-8"
-    if path.ends_with(".js"):
-        return "text/javascript; charset=utf-8"
-    if path.ends_with(".css"):
-        return "text/css; charset=utf-8"
-    if path.ends_with(".json"):
-        return "application/json; charset=utf-8"
-    if path.ends_with(".wasm"):
-        return "application/wasm"
-    if path.ends_with(".wav"):
-        return "audio/wav"
-    if path.ends_with(".png"):
-        return "image/png"
-    if path.ends_with(".ppm"):
-        return "image/x-portable-pixmap"
-    return "application/octet-stream"
-
-
-async function send_text(
-    connection: net.TcpStream,
-    status: int,
-    message: str,
-    body: str,
-    head_only: bool,
-) -> void:
-    await send_response(
-        connection, status, message, "text/plain; charset=utf-8", text.as_byte_span(body), head_only
-    )
-
-
-async function send_response(
-    connection: net.TcpStream,
-    status: int,
-    message: str,
-    content_type: str,
-    body: span[ubyte],
-    head_only: bool,
-) -> void:
-    var status_text = fmt.to_string_int(status)
-    defer: status_text.release()
-    var length_text = fmt.to_string_ptr_uint(body.len)
-    defer: length_text.release()
-
-    var header = string.String.with_capacity(256)
-    defer: header.release()
-    header.append("HTTP/1.1 ")
-    header.append(status_text.as_str())
-    header.push_byte(32)
-    header.append(message)
-    header.append("\r\nContent-Type: ")
-    header.append(content_type)
-    header.append("\r\nContent-Length: ")
-    header.append(length_text.as_str())
-    header.append("\r\nCache-Control: no-cache\r\n")
-    header.append("Cross-Origin-Opener-Policy: same-origin\r\n")
-    header.append("Cross-Origin-Embedder-Policy: require-corp\r\n")
-    header.append("Connection: close\r\n\r\n")
-
-    let _ = await connection.write_bytes(text.as_byte_span(header.as_str()))
-    if not head_only and body.len > 0:
-        let _ = await connection.write_bytes(body)
-
-
-## The host's `Run#open_browser` (linux `xdg-open`, windows `cmd /c start`).
-## Runs in the sync setup, before the accept loop, so the detached process's
-## own libuv loop cannot interfere with the preview runtime.
-function open_browser(url: str) -> void:
-    var command = vec.Vec[str].create()
-    defer: command.release()
-    if env.get("OS").is_some():
-        command.push("cmd")
-        command.push("/c")
-        command.push("start")
-        command.push("")
-        command.push(url)
-    else:
-        command.push("xdg-open")
-        command.push(url)
-    match process.spawn_detached(command.as_span()):
-        Result.success:
-            pass
-        Result.failure as failure:
-            var error = failure.error
-            error.release()

@@ -39,10 +39,10 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (session 66; `box3d` closed; golden-vector naming test in `projects/mtc/test/imported_bindings_naming_test.mt`) |
 
-Rough completion against the per-track Definition of Done: **~98%**.  The
-self-hosting foundation, `lower` dump parity, the CLI behavior matrix, wasm and
-the imported bindings are done; the residue is the CLI's largest unported
-subsystems (`deps`, `docs`), the linter corpus (123 files), and bindgen
+Rough completion against the per-track Definition of Done: **~99%**.  The
+self-hosting foundation, `lower` dump parity, the CLI behavior matrix, wasm,
+docs and the imported bindings are done; the residue is the CLI's largest
+unported subsystem (`deps`), the linter corpus (123 files), and bindgen
 reproducibility.  LSP, DAP and formatter are closed at their documented
 differences.
 
@@ -148,6 +148,18 @@ The compiler fix behind this: `Task[void]` structs now carry the
 `run_on_proc`.  `tools/wasm_smoke.rb` drives host and self through a real
 preview session (entry/JS/WASM/HEAD/404/405/SIGTERM) and is the hard
 `wasm_smoke` gate.
+
+The `docs` command closed in the same session: `docs_app.mt` serves the
+reference index (`/`, `/reference/`, `/reference` 302), the stdlib catalog
+(`/stdlib`, `/stdlib/:name`), raw source and node-highlighted source
+(`/stdlib/:name/source/:file[/hl]`), JSON search (`/api/search?q=`), the copied
+CSS/JS assets, and a 404 page.  It reuses the shared `http_util` response/signal
+helpers, discovers modules/doc comments/declarations from `std/`, and runs the
+copy of the VS Code snapshot script with the 2026-dark theme.  `docs` parses
+`--port/-p`/`--open/-o`, prints `Serving Milk Tea docs at <url>` +
+`Press Ctrl+C to stop.`, and handles SIGINT.  `tools/docs_smoke.rb` compares
+host and self route statuses/content types and the byte-stable reference,
+source, highlight, CSS and JS bodies, and is the hard `docs_smoke` gate.
 
 Session-51 batch: the event synthetic bodies (host slot/snapshot shapes), the
 reused await-field recording plus nested-await hoisting in a direct-await
@@ -562,6 +574,7 @@ Session-64 third batch (package builds, `--bundle`/`--archive`):
 | `lower` dump parity (**closed**, keep at 0 real differ) | *The program* Track A; `docs/language-design.md` | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` (~1 min warm, ~4 min cold) |
 | CLI behavior parity | Track B; `tools/cli_parity.rb --help` | `rake "cli:parity"` |
 | Wasm build/preview | Track B item 1 (closed); `wasm_preview.mt` | `ruby tools/wasm_smoke.rb` |
+| Docs server | Track B item 2 (closed); `docs_app.mt` | `ruby tools/docs_smoke.rb` |
 | Linter corpus residue | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb -q` (618 files; `--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
 | Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb --json tmp/ib-parity.json`; regenerate `std/c/*.mt` and diff |
 | LSP feature parity / residue | Track E; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb record --server host\|self` + `compare`; `tools/lsp_project_audit.rb --workspace DIR [--canonical]`; `tools/lsp_recovery_probe.rb --check`; `tools/lsp_soak.rb` |
@@ -640,8 +653,8 @@ Iterate cheap, prove once:
    session 65 made the remaining surface measurable and closed the
    multi-operand forms: **89 cases / 82 match / 0 differ / 7 pending**
    (session 67 closed `toolchain doctor`, `run --bundle`, `run --archive`,
-   `build --platform wasm` and the wasm preview).  The unported subsystems
-   remain (`deps`, `docs`, locked/frozen).
+   `build --platform wasm`, the wasm preview and `docs`).  The unported
+   subsystems remain (`deps`, locked/frozen).
    `toolchain bootstrap|tools`, `build --kind static|shared`, the bindgen
    nullable flags and `--bundle`/`--archive` landed in the session-64 batches.
 3. **Linter corpus residue** — open: 495/123 of 618, **41/43 rules and 13/13
@@ -764,15 +777,12 @@ validation, and `lint --init`.  Remaining work:
    enabling compiler fix was the `Task[void]` `take_result` field (and
    `std.async.run_on_proc`).  **Do not** add an emcc row to `toolchain doctor`
    (the host has none).
-2. **`docs`** — port `lib/milk_tea/tooling/cli/commands/docs.rb` + `lib/milk_tea/tooling/docs_app.rb`
-   routes (`/`, `/reference`, `/reference/`, `/stdlib`, `/stdlib/:name`,
-   `/stdlib/:name/source/:file`, `/stdlib/:name/source/:file/hl`, `/api/search`)
-   onto `std/http/server.mt`, reusing `lib/milk_tea/tooling/{views,public}`
-   (541 lines) and `bindings/vscode/scripts/snapshot.js` +
-   `themes/2026-dark.json`; `--port/-p`, `--open/-o`, the
-   `Serving Milk Tea docs at <url>` line.  Acceptance: functional parity, not
-   byte-identical HTML.  Exercise it with a dedicated smoke tool, not
-   `cli_parity` (the host `docs` command starts a blocking server).
+2. **`docs` — CLOSED (session 67).**  `docs_app.mt` implements the reference,
+   stdlib, module, source, highlight, search, static-asset and 404 routes;
+   `--port/-p`/`--open/-o` and the two banner lines match.  HTML is generated
+   directly (functional, not byte-identical) while the reference index, source,
+   highlight, CSS and JS responses are byte-equal.  `tools/docs_smoke.rb` is the
+   hard `docs_smoke` gate (it uses SIGINT, the host's Ctrl+C path).
 3. **`deps`** (largest: 14 package files / 3,039 lines **including** the
    485-line `manager_cli.rb`; 2,554 non-CLI) — port
    `lib/milk_tea/packages/*` into `projects/mtc/src/mtc/packages/*.mt` and
@@ -1036,6 +1046,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `sexpr lower` | 665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 (the 2 are documented artifacts) | session 63 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | **82 match / 0 differ / 7 pending** of 89 (case-backed; the original 65/65; timings and `debug` node ids normalized) | session 67 | `ruby tools/cli_parity.rb -q` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 67 | `ruby tools/wasm_smoke.rb` |
+| docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 67 | `ruby tools/docs_smoke.rb` |
 | lint corpus | 495 agree / 123 differ of 618, hostfail 0, selffail 0; **41/43 rules, 13/13 fixers** | session 66 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 616/616 | session 64 | `ruby tools/unused_import_parity.rb` |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |

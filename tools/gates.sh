@@ -114,7 +114,7 @@ fi
 
 gate_kind() {
     case "$1" in
-        bootstrap|test_mt|dev_build|dev_tests|unused_import|recovery|format|dap|tools_check|bindings|bindings_parity|wasm_smoke) echo hard ;;
+        bootstrap|test_mt|dev_build|dev_tests|unused_import|recovery|format|dap|tools_check|bindings|bindings_parity|wasm_smoke|docs_smoke) echo hard ;;
         *) echo meter ;;
     esac
 }
@@ -137,6 +137,7 @@ gate_label() {
         sexpr_lower)    echo "sexpr lower parity (meter, ~1 min warm / ~4 min cold host cache)" ;;
         cli_parity)     echo "CLI parity (89 cases; 82 match / 7 pending; no allowlist)" ;;
         wasm_smoke)     echo "wasm preview end-to-end (host + self HTTP/signal smoke)" ;;
+        docs_smoke)     echo "docs server end-to-end (host + self routes/SIGINT smoke)" ;;
         scoreboard)     echo "parity scoreboard (meter)" ;;
         format)         echo "formatter parity all modes (712/712)" ;;
         lint_parity)    echo "corpus-wide lint parity (meter, ~5 min)" ;;
@@ -153,6 +154,7 @@ gate_label() {
         bindings_parity) echo "imported-bindings vs host parity report (29/29)" ;;
         dap)            echo "DAP smoke (asserting; lldb-dap required unless --allow-skip)" ;;
         wasm_smoke)     echo "^wasm smoke:" ;;
+        docs_smoke)     echo "^docs smoke:" ;;
         tools_check)    echo "Ruby/bash syntax check for the tools/ harnesses" ;;
         *)              echo "$1" ;;
     esac
@@ -184,6 +186,7 @@ gate_cmd() {
         bindings_parity) echo "ruby tools/imported_bindings_parity.rb --json tmp/gates/ib-parity.json" ;;
         dap)           echo "ruby tools/dap_smoke.rb" ;;
         wasm_smoke)    echo "ruby tools/wasm_smoke.rb --self build/stage2/mtc" ;;
+        docs_smoke)    echo "ruby tools/docs_smoke.rb --self build/stage2/mtc" ;;
         tools_check)   echo "for f in tools/*.rb; do ruby -c \"\$f\" >/dev/null || exit 1; done; bash -n tools/gates.sh tools/bootstrap.sh && echo 'tools syntax ok'" ;;
         *)             echo "true" ;;
     esac
@@ -316,7 +319,8 @@ gates_for_area() {
         host)      echo "bootstrap" ;;
         tests)     echo "dev_build dev_tests" ;;
         wasm)      echo "bootstrap test_mt cli_parity wasm_smoke" ;;
-        packages|docs_cli|toolchain) echo "bootstrap test_mt cli_parity" ;;
+        docs_cli)  echo "bootstrap test_mt cli_parity docs_smoke" ;;
+        packages|toolchain) echo "bootstrap test_mt cli_parity" ;;
         tools)     echo "tools_check" ;;
         docs|other) echo "" ;;
         *)         echo "bootstrap test_mt scoreboard" ;;
