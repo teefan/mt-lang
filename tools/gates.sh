@@ -135,7 +135,7 @@ gate_label() {
         sexpr_lex)      echo "sexpr lex parity (718/718)" ;;
         sexpr_parse)    echo "sexpr parse parity (714 match / 0 differ / 4 host-rejected of 718)" ;;
         sexpr_lower)    echo "sexpr lower parity (meter, ~1 min warm / ~4 min cold host cache)" ;;
-        cli_parity)     echo "CLI parity (89 cases; 77 match / 12 pending; no allowlist)" ;;
+        cli_parity)     echo "CLI parity (89 cases; 78 match / 11 pending; no allowlist)" ;;
         scoreboard)     echo "parity scoreboard (meter)" ;;
         format)         echo "formatter parity all modes (712/712)" ;;
         lint_parity)    echo "corpus-wide lint parity (meter, ~5 min)" ;;

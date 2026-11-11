@@ -29,6 +29,7 @@
 require "fileutils"
 require "open3"
 require "stringio"
+require "tmpdir"
 
 ROOT = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(File.join(ROOT, "lib"))
@@ -176,15 +177,30 @@ def materialize_fixtures
   end
 end
 
+# Cases that mutate their working directory (`lint --init`, future `deps`
+# writes) run host and self against the same pristine cwd: snapshot before the
+# host, restore before the self, so each implementation sees the same state.
+def snapshot_dir(path)
+  backup = Dir.mktmpdir("cli-parity-case-")
+  FileUtils.cp_r(File.join(path, "."), backup)
+  backup
+end
+
+def restore_dir(path, backup)
+  FileUtils.rm_rf(path)
+  FileUtils.mkdir_p(path)
+  FileUtils.cp_r(File.join(backup, "."), path)
+end
+
 # ── cases ───────────────────────────────────────────────────────────────────
 
-def case_entry(name, argv, cwd: nil, stdin: nil, pending: false)
-  { name:, argv:, cwd: cwd || FIXROOT, stdin:, pending: }
+def case_entry(name, argv, cwd: nil, stdin: nil, pending: false, isolate: false)
+  { name:, argv:, cwd: cwd || FIXROOT, stdin:, pending:, isolate: }
 end
 
 def build_cases
   cases = []
-  add = ->(name, argv, cwd: nil, pending: false) { cases << case_entry(name, argv, cwd:, pending:) }
+  add = ->(name, argv, cwd: nil, pending: false, isolate: false) { cases << case_entry(name, argv, cwd:, pending:, isolate:) }
   pkg = File.join(FIXROOT, "pkg")
 
   # Version / help / dispatch
@@ -228,7 +244,7 @@ def build_cases
   add.call("lint-clean", ["lint", "standalone/clean.mt"])
   add.call("lint-select", ["lint", "--select", "unused-local", "standalone/warns.mt"])
   add.call("lint-timings", ["lint", "--timings", "standalone/clean.mt"])
-  add.call("lint-init", ["lint", "--init"], cwd: File.join(FIXROOT, "initdir"), pending: true)
+  add.call("lint-init", ["lint", "--init"], cwd: File.join(FIXROOT, "initdir"), isolate: true)
   add.call("lint-unknown-flag", ["lint", "--bogus", "standalone/clean.mt"])
   add.call("format-check", ["format", "--check", "standalone/clean.mt"])
   add.call("format-conflict", ["format", "--check", "--write", "standalone/clean.mt"])
@@ -330,6 +346,7 @@ kept = File.join(ROOT, "tmp", "cli-parity", "cases")
 cases.each do |c|
   argv = c[:argv]
   name = c[:name]
+  isolate_backup = c[:isolate] ? snapshot_dir(c[:cwd]) : nil
 
   hout = StringIO.new
   herr = StringIO.new
@@ -344,6 +361,8 @@ cases.each do |c|
       herr.puts "harness exception: #{e.class}: #{e.message}"
       99
     end
+
+  restore_dir(c[:cwd], isolate_backup) if isolate_backup
 
   sout, serr, status = Open3.capture3(self_bin, *argv, chdir: c[:cwd])
   src = status.exitstatus
@@ -374,6 +393,8 @@ cases.each do |c|
     File.write(File.join(dir, "self.err"), serr)
     File.write(File.join(dir, "self.rc"), src.to_s)
   end
+
+  FileUtils.rm_rf(isolate_backup) if isolate_backup
 end
 
 FileUtils.rm_rf(File.join(ROOT, "tmp", "cli-parity", "fixtures")) unless keep

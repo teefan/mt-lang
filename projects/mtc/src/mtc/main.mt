@@ -43,6 +43,7 @@ import mtc.build as build_driver
 import mtc.build_cache as build_cache
 import mtc.pretty_printer.ast_formatter as fmt
 import mtc.linter.linter as linter
+import mtc.linter.config as lint_config
 import mtc.linter.scope_tracking as scope_tracking
 import mtc.linter.fix_engine as fix_engine
 import mtc.lsp.server as lsp
@@ -1063,6 +1064,64 @@ function report_check_summary(errors: ptr_uint, warnings: ptr_uint, file_count: 
 ## Lint source files and print `path:line: code: message` per warning, matching
 ## the Ruby `mtc lint` command.  Directories are expanded to their `.mt` files
 ## in sorted order.  Exits 1 when any warning is found.
+## `lint --init`: write the host's default `.mt-lint.yml` in the current
+## directory (the same 43-code select list and 120-column limit).
+function init_lint_config() -> int:
+    match fs.current_directory():
+        Result.failure:
+            eprint_line("cannot determine the current directory")
+            return 1
+        Result.success as cwd_payload:
+            var cwd = cwd_payload.value
+            defer: cwd.release()
+            var path = path_ops.join(cwd.as_str(), lint_config.CONFIG_FILE_NAME)
+            defer: path.release()
+            if fs.exists(path.as_str()):
+                var exists_msg = string.String.create()
+                defer: exists_msg.release()
+                exists_msg.append("lint config already exists at ")
+                exists_msg.append(path.as_str())
+                eprint_line(exists_msg.as_str())
+                return 1
+
+            var content = string.String.create()
+            defer: content.release()
+            content.append("# Default Milk Tea lint configuration.\n")
+            content.append("# Remove entries from `select` to disable rules globally.\n")
+            content.append("max_line_length: 120\n")
+            content.append("select:\n")
+            var codes = linter.known_rule_codes()
+            defer: codes.release()
+            var ci: ptr_uint = 0
+            while ci < codes.len():
+                let cp = codes.get(ci) else:
+                    break
+                content.append("  - ")
+                content.append(unsafe: read(cp))
+                content.push_byte(10)
+                ci += 1
+            content.append("ignore: []\n")
+
+            match fs.write_text(path.as_str(), content.as_str()):
+                Result.success:
+                    if not cli_quiet:
+                        var created = string.String.create()
+                        defer: created.release()
+                        created.append("created ")
+                        created.append(path.as_str())
+                        stdio.print_line(created.as_str())
+                    return 0
+                Result.failure as write_error:
+                    var write_failure = write_error.error
+                    defer: write_failure.release()
+                    var msg = string.String.create()
+                    defer: msg.release()
+                    msg.append("error: cannot write ")
+                    msg.append(path.as_str())
+                    eprint_line(msg.as_str())
+                    return 1
+
+
 function lint_command(args: span[str]) -> int:
     var input_paths = vec.Vec[str].create()
     defer: input_paths.release()
@@ -1073,6 +1132,8 @@ function lint_command(args: span[str]) -> int:
     var fix_mode = false
     var ignore_generated = false
     var timings = false
+    var init_mode = false
+    var locked_flag = false
     var roots = vec.Vec[str].create()
     defer: roots.release()
     var owned_roots = vec.Vec[string.String].create()
@@ -1101,6 +1162,11 @@ function lint_command(args: span[str]) -> int:
         # Accepted for CLI compatibility; package-graph resolution is not yet
         # implemented (mirrors `check`).
         if arg == "--locked" or arg == "--frozen":
+            locked_flag = true
+            i += 1
+            continue
+        if arg == "--init":
+            init_mode = true
             i += 1
             continue
         if arg == "--select":
@@ -1128,6 +1194,12 @@ function lint_command(args: span[str]) -> int:
             return 1
         input_paths.push(arg)
         i += 1
+
+    if init_mode:
+        if input_paths.len() > 0 or select_set.len() > 0 or ignore_set.len() > 0 or fix_mode or locked_flag:
+            eprint_line("--init does not accept source paths or lint options")
+            return 1
+        return init_lint_config()
 
     if input_paths.is_empty():
         eprint_line("missing source file path")

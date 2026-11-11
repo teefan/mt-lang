@@ -57,6 +57,56 @@ import mtc.linter.redundant_cast as redundant_cast
 import mtc.profile as profile_mod
 
 
+## The host's `Linter::KNOWN_RULE_CODES`, in registry order.  `lint --init`
+## emits this list, and rule validation uses the same table.
+public function known_rule_codes() -> vec.Vec[str]:
+    var codes = vec.Vec[str].create()
+    codes.push("borrow-and-mutate")
+    codes.push("constant-condition")
+    codes.push("dead-assignment")
+    codes.push("directional-ffi-arg")
+    codes.push("doc-tag")
+    codes.push("duplicate-if-condition")
+    codes.push("event-capacity")
+    codes.push("line-too-long")
+    codes.push("loop-single-iteration")
+    codes.push("missing-return")
+    codes.push("noop-compound-assignment")
+    codes.push("owning-release-double")
+    codes.push("owning-release-leak")
+    codes.push("platform-api-drift")
+    codes.push("prefer-conditional-expression")
+    codes.push("prefer-inline-if")
+    codes.push("prefer-inline-methods")
+    codes.push("prefer-is-variant")
+    codes.push("prefer-let")
+    codes.push("prefer-let-else")
+    codes.push("prefer-or-pattern")
+    codes.push("prefer-own-ptr")
+    codes.push("prefer-struct-with")
+    codes.push("prefer-try")
+    codes.push("prefer-var-else")
+    codes.push("redundant-bool-compare")
+    codes.push("redundant-cast")
+    codes.push("redundant-else")
+    codes.push("redundant-ignored-match-binding")
+    codes.push("redundant-null-check")
+    codes.push("redundant-return")
+    codes.push("redundant-type-annotation")
+    codes.push("redundant-unsafe")
+    codes.push("reserved-primitive-name")
+    codes.push("self-assignment")
+    codes.push("self-comparison")
+    codes.push("shadow")
+    codes.push("trailing-list-comma")
+    codes.push("unreachable-code")
+    codes.push("unused-import")
+    codes.push("unused-local")
+    codes.push("unused-param")
+    codes.push("useless-expression")
+    return codes
+
+
 ## `column` is the 1-based character column of the offending token and
 ## `length` its character length; both are 0 when the emitting rule does not
 ## track positions (most rules are line-granular).
