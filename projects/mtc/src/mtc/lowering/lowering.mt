@@ -28937,8 +28937,7 @@ function make_task_literal(inner: ptr[ir.Expr]) -> ptr[ir.Expr]:
     fields.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
     fields.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
     fields.push(ir.AggregateField(name = "release",     value = alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
-    if not is_void:
-        fields.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
+    fields.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
     fields.push(ir.AggregateField(name = "cancel",      value = alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = task_ty, fields = fields.as_span()))
 

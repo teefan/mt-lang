@@ -494,6 +494,12 @@ public function run_on(runtime: Runtime, task: Task[void]) -> void:
     task.release(task.frame)
 
 
+## Drive a task-root proc on an already-created runtime (the sync setup →
+## async loop bridge used by the wasm preview server).
+public function run_on_proc(runtime: Runtime, root: proc() -> Task[void]) -> void:
+    run_on(runtime, root())
+
+
 public function wait[T](root: proc() -> Task[T]) -> T:
     if current_runtime_active:
         return wait_on[T](current_runtime, root())

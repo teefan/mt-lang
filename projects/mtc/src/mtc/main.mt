@@ -58,6 +58,7 @@ import mtc.imported_bindings.main as ib_main
 import mtc.sexpr as sexpr_mod
 import mtc.std_catalog as std_catalog
 import mtc.toolchain_cli as toolchain_cli
+import mtc.wasm_preview as wasm_preview
 import mtc.version_info as ver
 import mtc.cli_help as cli_help
 
@@ -2519,7 +2520,9 @@ function build_command(args: span[str]) -> int:
     # Libraries are not cached (the cache materializes executables and its key
     # does not encode the artifact kind).  Asset staging and the bundle archive
     # are re-run on a hit, as the host's `build_cached` does.
-    let cache_enabled = use_cache and keep_c_path.is_none() and kind == build_driver.BuildKind.executable
+    # The cache stores a single executable; emcc's `.js`/`.wasm`/`.data`
+    # sidecars are not cached, so wasm builds always recompile.
+    let cache_enabled = use_cache and keep_c_path.is_none() and kind == build_driver.BuildKind.executable and platform != resolver.Platform.wasm
     var cache_key = string.String.create()
     defer: cache_key.release()
     if cache_enabled:
@@ -3099,6 +3102,37 @@ function run_command(args: span[str]) -> int:
                 entry_path_owner.release()
                 source_root_owner.release()
                 return 1
+    else if platform == resolver.Platform.wasm:
+        # The host's wasm run builds beside the source/package (a temp binary
+        # makes no sense for a previewable `.html` + sidecars).
+        match output_override:
+            Option.some as explicit:
+                output_path.release()
+                output_path = string.String.from_str(explicit.value)
+            Option.none:
+                match package_opt:
+                    Option.some as package_ref:
+                        let pkg = package_ref.value
+                        match pkg.output_path:
+                            Option.some as manifest_output:
+                                output_path.release()
+                                output_path = string.String.from_str(manifest_output.value.as_str())
+                            Option.none:
+                                output_path.release()
+                                var computed = path_ops.join(pkg.root_dir.as_str(), "build/bin")
+                                defer: computed.release()
+                                var with_platform = path_ops.join(computed.as_str(), platform_label(platform))
+                                defer: with_platform.release()
+                                var with_profile = path_ops.join(with_platform.as_str(), profile_name)
+                                defer: with_profile.release()
+                                var with_name = path_ops.join(with_profile.as_str(), pkg.name.as_str())
+                                defer: with_name.release()
+                                output_path = string.String.from_str(with_name.as_str())
+                    Option.none:
+                        var default_out = default_output_path(effective)
+                        defer: default_out.release()
+                        output_path.release()
+                        output_path = string.String.from_str(default_out.as_str())
     else if output_override.is_some():
         output_path.release()
         output_path = string.String.from_str(output_override.unwrap())
@@ -3146,7 +3180,7 @@ function run_command(args: span[str]) -> int:
 
     # Binary cache: reuse the previously built binary when nothing changed.
     # --keep-c always rebuilds so the saved C matches the produced binary.
-    let run_cache_enabled = use_cache and keep_c_path.is_none()
+    let run_cache_enabled = use_cache and keep_c_path.is_none() and platform != resolver.Platform.wasm
     var cache_key = string.String.create()
     defer: cache_key.release()
     if run_cache_enabled:
@@ -3215,6 +3249,9 @@ function run_command(args: span[str]) -> int:
             source_root_owner.release()
             if run_cache_enabled:
                 build_cache.store(cache_key.as_str(), owned_output.as_str())
+            if platform == resolver.Platform.wasm:
+                var preview_dir = path_ops.dirname(owned_output.as_str())
+                return wasm_preview.serve_preview(preview_dir, 0)
             return execute_binary(owned_output.as_str(), ref_of(program_args))
         Result.failure as failure:
             var message = failure.error

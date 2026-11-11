@@ -7008,8 +7008,11 @@ function emit_task_struct_type(e: ref[Emitter], c_name: str, elem: types.Type) -
 
     emit_line(e, "  void (*release)(void*);")
 
-    if not is_void:
-
+    # `take_result` is present for `Task[void]` too (it returns void); the async
+    # runtime's `run_on`/`wait_on` call it unconditionally.
+    if is_void:
+        emit_line(e, "  void (*take_result)(void*);")
+    else:
         emit_line(e, j3("  ", type_str, " (*take_result)(void*);"))
 
     emit_line(e, "  void (*cancel)(void*);")

@@ -39,11 +39,11 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (session 66; `box3d` closed; golden-vector naming test in `projects/mtc/test/imported_bindings_naming_test.mt`) |
 
-Rough completion against the per-track Definition of Done: **~97%**.  The
-self-hosting foundation, `lower` dump parity, the CLI behavior matrix and the
-imported bindings are done; the residue is the CLI's largest unported
-subsystems (`deps`, `docs`, wasm/emcc), the linter corpus (123 files), and
-bindgen reproducibility.  LSP, DAP and formatter are closed at their documented
+Rough completion against the per-track Definition of Done: **~98%**.  The
+self-hosting foundation, `lower` dump parity, the CLI behavior matrix, wasm and
+the imported bindings are done; the residue is the CLI's largest unported
+subsystems (`deps`, `docs`), the linter corpus (123 files), and bindgen
+reproducibility.  LSP, DAP and formatter are closed at their documented
 differences.
 
 Session-65 batches (measurement truth + CLI forms): `cli_parity`
@@ -130,7 +130,24 @@ host's non-debug/non-guard rendering (not the compiled debug source), and the C
 backend no longer emits a separator when every imported constant is pruned
 (which was one blank line in `emit-c`/saved-C output).  On the scratch package,
 host and self wasm builds produce byte-identical C, `.data`, and the same
-`.html/.js/.wasm/.mtdbg.json` set.  The preview server half of item 1 remains.
+`.html/.js/.wasm/.mtdbg.json` set.
+
+The preview server half of item 1 closed in the same session:
+`projects/mtc/src/mtc/wasm_preview.mt` serves the output directory on an
+ephemeral 127.0.0.1 port with the host's MIME table and headers
+(`Cache-Control: no-cache`, COOP/COEP, `Connection: close`), GET/HEAD, 404/405,
+default-entry selection, a canonicalising traversal guard, the
+`serving <url> (press Ctrl-C to stop)` banner, and `xdg-open`/`cmd /c start`.
+SIGINT/SIGTERM are libuv signal handles that close the listener; the outer
+accept loop is a sync `wait_on`/`run_on_proc` driver (one coroutine per request)
+because a CPS `while` across repeated awaits could spin after the first
+connection.  `run --platform wasm` now builds to the package/source
+`build/bin/wasm/<profile>/<name>.html` (not a temp path) and starts the preview.
+The compiler fix behind this: `Task[void]` structs now carry the
+`take_result` function-pointer field the runtime calls, and `std.async` gained
+`run_on_proc`.  `tools/wasm_smoke.rb` drives host and self through a real
+preview session (entry/JS/WASM/HEAD/404/405/SIGTERM) and is the hard
+`wasm_smoke` gate.
 
 Session-51 batch: the event synthetic bodies (host slot/snapshot shapes), the
 reused await-field recording plus nested-await hoisting in a direct-await
@@ -544,6 +561,7 @@ Session-64 third batch (package builds, `--bundle`/`--archive`):
 | --- | --- | --- |
 | `lower` dump parity (**closed**, keep at 0 real differ) | *The program* Track A; `docs/language-design.md` | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` (~1 min warm, ~4 min cold) |
 | CLI behavior parity | Track B; `tools/cli_parity.rb --help` | `rake "cli:parity"` |
+| Wasm build/preview | Track B item 1 (closed); `wasm_preview.mt` | `ruby tools/wasm_smoke.rb` |
 | Linter corpus residue | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb -q` (618 files; `--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
 | Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb --json tmp/ib-parity.json`; regenerate `std/c/*.mt` and diff |
 | LSP feature parity / residue | Track E; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb record --server host\|self` + `compare`; `tools/lsp_project_audit.rb --workspace DIR [--canonical]`; `tools/lsp_recovery_probe.rb --check`; `tools/lsp_soak.rb` |
@@ -621,9 +639,9 @@ Iterate cheap, prove once:
 2. **CLI behavior parity** — **original 65/65 matrix closed** (session 64);
    session 65 made the remaining surface measurable and closed the
    multi-operand forms: **89 cases / 82 match / 0 differ / 7 pending**
-   (session 67 closed `toolchain doctor`, `run --bundle`, `run --archive` and
-   `build --platform wasm`).  The unported subsystems remain (`deps`, `docs`,
-   the wasm preview server, locked/frozen).
+   (session 67 closed `toolchain doctor`, `run --bundle`, `run --archive`,
+   `build --platform wasm` and the wasm preview).  The unported subsystems
+   remain (`deps`, `docs`, locked/frozen).
    `toolchain bootstrap|tools`, `build --kind static|shared`, the bindgen
    nullable flags and `--bundle`/`--archive` landed in the session-64 batches.
 3. **Linter corpus residue** — open: 495/123 of 618, **41/43 rules and 13/13
@@ -727,25 +745,25 @@ fixed `pkg` fixture now builds and runs a real program (the old fixture used a
 bare `print`, so its build/run cases only compared a semantic-error path).
 
 Session 65 replaced the regex allowlist with case-backed pending metadata;
-session 67 closed `toolchain doctor`, `run --bundle`, `run --archive` and
-`build --platform wasm`, so the matrix is now **89 cases / 82 match / 0 differ /
-7 pending**.  The 65/65 figure is no longer the matrix; the
+session 67 closed `toolchain doctor`, `run --bundle`, `run --archive`,
+`build --platform wasm` and the wasm preview, so the matrix is now **89 cases /
+82 match / 0 differ / 7 pending**.  The 65/65 figure is no longer the matrix; the
 pending set is the work below, and a pending case that starts matching must be
 promoted (the harness fails otherwise).  The session-65
 second batch closed `parse`/`emit-c` multi+directory forms, `format`
 multi/directory and its batch summaries, `check`/`lint` unknown-flag
 validation, and `lint --init`.  Remaining work:
 
-1. **Wasm/emcc + preview** — `projects/mtc/src/mtc/build.mt` ignores `Platform.wasm`.  Port
-   `compile_wasm` and shell rendering (`lib/milk_tea/tooling/build.rb:26-69,704-779,900-937,953-960`,
-   `lib/milk_tea/tooling/templates/wasm_shell.html`), `--preload-file` for `build.assets`, `.html`
-   output, and `run --platform wasm` from `lib/milk_tea/tooling/run.rb`
-   (`WasmPreviewServer` 11–207, `run_wasm_preview` 353–378,
-   `wasm_target_requested?` 394–400 — **not** the 100-line
-   `cli/commands/run.rb`) on `std/http/server.mt`.
-   **Do not** add an emcc row to `toolchain doctor` (the host has none); reproduce
-   the host's emcc resolution and `C compiler not found` error path
-   (`build.rb:730,1112`).  Verify with emcc installed and byte-compare the HTML shell.
+1. **Wasm/emcc + preview — CLOSED (session 67).**  `build --platform wasm`
+   covers compiler resolution, the embedded shell/custom template, preload
+   flags, `.html` output rules and emcc sidecar cleanup; `run --platform wasm`
+   builds to the package/source output path and serves it through
+   `wasm_preview.mt` (MIME/COOP/COEP, GET/HEAD/404/405, traversal guard,
+   SIGINT/SIGTERM).  `tools/wasm_smoke.rb` is the hard `wasm_smoke` gate; the
+   host/self C and `.data` are byte-identical on the scratch package.  The
+   enabling compiler fix was the `Task[void]` `take_result` field (and
+   `std.async.run_on_proc`).  **Do not** add an emcc row to `toolchain doctor`
+   (the host has none).
 2. **`docs`** — port `lib/milk_tea/tooling/cli/commands/docs.rb` + `lib/milk_tea/tooling/docs_app.rb`
    routes (`/`, `/reference`, `/reference/`, `/stdlib`, `/stdlib/:name`,
    `/stdlib/:name/source/:file`, `/stdlib/:name/source/:file/hl`, `/api/search`)
@@ -1017,6 +1035,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `sexpr lex` / `parse` | lex 718/718; parse 714 match / 0 differ / 4 host-rejected of 718 | session 63 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
 | `sexpr lower` | 665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 (the 2 are documented artifacts) | session 63 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | **82 match / 0 differ / 7 pending** of 89 (case-backed; the original 65/65; timings and `debug` node ids normalized) | session 67 | `ruby tools/cli_parity.rb -q` |
+| wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 67 | `ruby tools/wasm_smoke.rb` |
 | lint corpus | 495 agree / 123 differ of 618, hostfail 0, selffail 0; **41/43 rules, 13/13 fixers** | session 66 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 616/616 | session 64 | `ruby tools/unused_import_parity.rb` |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
