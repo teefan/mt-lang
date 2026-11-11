@@ -148,7 +148,8 @@ gate_label() {
         valgrind_lsp)   echo "valgrind over an LSP drive (0 errors)" ;;
         neovim)         echo "headless-Neovim smoke (when tmp/ has the script)" ;;
         soak)           echo "long-session soak meter (~25 s): RSS slope for mixed requests" ;;
-        bindings)       echo "imported-bindings --all --check (3/25 of 28; parity gate in Phase 3)" ;;
+        bindings)       echo "imported-bindings --all --check (meter until Track D closes; 3/25 of 28)" ;;
+        bindings_parity) echo "imported-bindings vs host parity report (meter)" ;;
         dap)            echo "DAP smoke (asserting; lldb-dap required unless --allow-skip)" ;;
         tools_check)    echo "Ruby/bash syntax check for the tools/ harnesses" ;;
         *)              echo "$1" ;;
@@ -177,7 +178,8 @@ gate_cmd() {
         valgrind_lsp)  echo "command -v valgrind >/dev/null && gates_valgrind || echo 'skipped: valgrind not installed'" ;;
         neovim)        echo "gates_neovim" ;;
         soak)          echo "ruby tools/lsp_soak.rb --quiet" ;;
-        bindings)      echo "build/stage2/mtc imported-bindings --all --check" ;;
+        bindings)      echo "build/stage2/mtc imported-bindings --all --check --soft" ;;
+        bindings_parity) echo "ruby tools/imported_bindings_parity.rb --soft --json tmp/gates/ib-parity.json" ;;
         dap)           echo "ruby tools/dap_smoke.rb" ;;
         tools_check)   echo "for f in tools/*.rb; do ruby -c \"\$f\" >/dev/null || exit 1; done; bash -n tools/gates.sh tools/bootstrap.sh && echo 'tools syntax ok'" ;;
         *)             echo "true" ;;
@@ -203,6 +205,8 @@ gate_summary() {
         valgrind_lsp)   echo "ERROR SUMMARY|skipped" ;;
         neovim)         echo "HOVER|Error|skipped" ;;
         soak)           echo "^label=" ;;
+        bindings)       echo "verified|changed" ;;
+        bindings_parity) echo "^bindings=" ;;
         dap)            echo "differing rows|stderr:" ;;
         tools_check)    echo "tools syntax ok" ;;
         *)              echo "." ;;
@@ -302,7 +306,7 @@ gates_for_area() {
         loader)    echo "bootstrap test_mt cli_parity audit examples" ;;
         cli)       echo "bootstrap test_mt cli_parity" ;;
         formatter) echo "bootstrap format" ;;
-        bindings)  echo "bootstrap bindings" ;;
+        bindings)  echo "bootstrap bindings bindings_parity" ;;
         dap)       echo "bootstrap dap" ;;
         std)       echo "examples lint_parity" ;;
         examples)  echo "examples" ;;

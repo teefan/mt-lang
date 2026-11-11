@@ -11,6 +11,8 @@ public struct BindingEntry:
     policy_path: str
 
 
+public const ALL_COUNT: ptr_uint = 28
+
 public const ALL: array[BindingEntry, 28] = array[BindingEntry, 28](
     BindingEntry(
         name = "raymath", module_name = "std.raymath",

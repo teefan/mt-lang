@@ -3601,10 +3601,31 @@ function write_nullable_report(path: str, report: str) -> bool:
             return true
 
 
+const IB_MODE_WRITE: int = 0
+const IB_MODE_CHECK: int = 1
+const IB_MODE_STDOUT: int = 2
+
+const IB_OK: int = 0
+const IB_FAILED: int = 1
+const IB_CHANGED: int = 2
+const IB_NEW: int = 3
+
+
+## Outcome of generating one imported binding.  `first_diff_*` are meaningful
+## only for a check-mode status of `IB_CHANGED`.
+struct IbOutcome:
+    status: int
+    first_diff_offset: ptr_uint
+    first_diff_line: ptr_uint
+
+
 ## Regenerate imported binding modules from raw C bindings and JSON policies.
 function imported_bindings_command(args: span[str]) -> int:
     var do_all = false
     var do_check = false
+    var do_soft = false
+    var do_stdout = false
+    var json_path: str = ""
     var lib_name: str = ""
 
     var ai: ptr_uint = 1
@@ -3614,8 +3635,18 @@ function imported_bindings_command(args: span[str]) -> int:
             do_all = true
         else if arg == "--check":
             do_check = true
+        else if arg == "--soft":
+            do_soft = true
+        else if arg == "--stdout":
+            do_stdout = true
+        else if arg == "--json":
+            if ai + 1 >= args.len:
+                stdio.print_line("imported-bindings: missing value for --json")
+                return 1
+            ai += 1
+            json_path = args[ai]
         else if arg == "--help" or arg == "-h":
-            stdio.print_line("usage: mtc imported-bindings <name> [--check] [--all]")
+            stdio.print_line("usage: mtc imported-bindings <name>|--all [--check|--stdout] [--json PATH] [--soft]")
             return 0
         else if lib_name.len == 0:
             lib_name = arg
@@ -3624,37 +3655,178 @@ function imported_bindings_command(args: span[str]) -> int:
             return 1
         ai += 1
 
+    if do_soft and not do_check:
+        stdio.print_line("imported-bindings: --soft requires --check")
+        return 1
+    if do_stdout and do_all:
+        stdio.print_line("imported-bindings: --stdout requires a single library name")
+        return 1
+    if do_stdout and do_check:
+        stdio.print_line("imported-bindings: --stdout and --check are mutually exclusive")
+        return 1
+
+    var mode = IB_MODE_WRITE
+    if do_check:
+        mode = IB_MODE_CHECK
+    else if do_stdout:
+        mode = IB_MODE_STDOUT
+
+    var total: ptr_uint = 0
+    var verified: ptr_uint = 0
+    var changed: ptr_uint = 0
+    var created: ptr_uint = 0
+    var failed: ptr_uint = 0
+    var json_entries = string.String.create()
+    var json_first = true
+
     if do_all:
-        var failed: ptr_uint = 0
         var i: ptr_uint = 0
-        while i < 28:
+        while i < ib_registry.ALL_COUNT:
             let entry_ptr = get(ib_registry.ALL, i) else:
                 break
             let entry = unsafe: read(entry_ptr)
-            if regenerate_one(entry.policy_path, entry.binding_path, entry.raw_module_name, do_check) != 0:
+            let outcome = regenerate_one(entry.policy_path, entry.binding_path, entry.raw_module_name, mode)
+            total += 1
+            if outcome.status == IB_OK:
+                verified += 1
+            else if outcome.status == IB_CHANGED:
+                changed += 1
+            else if outcome.status == IB_NEW:
+                created += 1
+            else:
                 failed += 1
+            if json_path.len > 0:
+                append_ib_json_entry(ref_of(json_entries), ref_of(json_first),
+                    entry.name, entry.binding_path, outcome, mode)
             i += 1
-        if failed == 0:
-            stdio.print_line("all 28 imported bindings generated")
-        else:
-            stdio.print_format(c"%d binding(s) failed\n", int<-(failed))
+    else:
+        if lib_name.len == 0:
+            stdio.print_line("imported-bindings: missing library name or --all")
+            json_entries.release()
             return 1
-        return 0
 
-    if lib_name.len == 0:
-        stdio.print_line("imported-bindings: missing library name or --all")
+        let entry = find_ib_entry(lib_name) else:
+            stdio.print_format(c"imported-bindings: unknown library '%.*s'\n", int<-(lib_name.len), lib_name.data)
+            json_entries.release()
+            return 1
+
+        let outcome = regenerate_one(entry.policy_path, entry.binding_path, entry.raw_module_name, mode)
+        total = 1
+        if outcome.status == IB_OK:
+            verified = 1
+        else if outcome.status == IB_CHANGED:
+            changed = 1
+        else if outcome.status == IB_NEW:
+            created = 1
+        else:
+            failed = 1
+        if json_path.len > 0:
+            append_ib_json_entry(ref_of(json_entries), ref_of(json_first),
+                entry.name, entry.binding_path, outcome, mode)
+
+    if json_path.len > 0:
+        var json = string.String.create()
+        json.append("{\"bindings\":[")
+        json.append(json_entries.as_str())
+        json.append("],\"summary\":{\"total\":")
+        json.append(ptr_uint_to_str(total))
+        json.append(",\"verified\":")
+        json.append(ptr_uint_to_str(verified))
+        json.append(",\"changed\":")
+        json.append(ptr_uint_to_str(changed))
+        json.append(",\"new\":")
+        json.append(ptr_uint_to_str(created))
+        json.append(",\"failed\":")
+        json.append(ptr_uint_to_str(failed))
+        json.append("}}\n")
+        match fs.write_text(json_path, json.as_str()):
+            Result.failure as write_failure:
+                var write_error = write_failure.error
+                stdio.print_format(c"imported-bindings: could not write %.*s\n", int<-(json_path.len), json_path.data)
+                write_error.release()
+                json.release()
+                json_entries.release()
+                return 1
+            Result.success:
+                pass
+        json.release()
+    json_entries.release()
+
+    if do_all:
+        if mode == IB_MODE_CHECK:
+            stdio.print_format(c"verified %d / changed %d / new %d of %d\n",
+                int<-verified, int<-changed, int<-created, int<-total)
+        else:
+            stdio.print_format(c"generated %d imported bindings\n", int<-total)
+    if failed > 0:
+        stdio.print_format(c"%d binding(s) failed\n", int<-failed)
         return 1
-
-    let entry = find_ib_entry(lib_name) else:
-        stdio.print_format(c"imported-bindings: unknown library '%.*s'\n", int<-(lib_name.len), lib_name.data)
+    if mode == IB_MODE_CHECK and (changed + created) > 0 and not do_soft:
         return 1
+    return 0
 
-    return regenerate_one(entry.policy_path, entry.binding_path, entry.raw_module_name, do_check)
+
+function append_ib_json_entry(
+    buf: ref[string.String],
+    first: ref[bool],
+    name: str,
+    path: str,
+    outcome: IbOutcome,
+    mode: int,
+) -> void:
+    if not read(first):
+        buf.push_byte(',')
+    read(first) = false
+    buf.append("{\"name\":")
+    append_json_string(buf, name)
+    buf.append(",\"path\":")
+    append_json_string(buf, path)
+    buf.append(",\"status\":")
+    append_json_string(buf, ib_status_label(outcome.status, mode))
+    buf.append(",\"first_diff_offset\":")
+    buf.append(ptr_uint_to_str(outcome.first_diff_offset))
+    buf.append(",\"first_diff_line\":")
+    buf.append(ptr_uint_to_str(outcome.first_diff_line))
+    buf.push_byte('}')
+
+
+function ib_status_label(status: int, mode: int) -> str:
+    if status == IB_CHANGED:
+        return "changed"
+    if status == IB_NEW:
+        return "new"
+    if status == IB_FAILED:
+        return "failed"
+    if mode == IB_MODE_CHECK:
+        return "verified"
+    return "generated"
+
+
+function first_diff_offset(new_src: str, old_src: str) -> ptr_uint:
+    var limit = new_src.len
+    if old_src.len < limit:
+        limit = old_src.len
+    var i: ptr_uint = 0
+    while i < limit:
+        if new_src.byte_at(i) != old_src.byte_at(i):
+            return i
+        i += 1
+    return limit
+
+
+function line_at_offset(text: str, offset: ptr_uint) -> ptr_uint:
+    var line: ptr_uint = 1
+    var i: ptr_uint = 0
+    while i < offset and i < text.len:
+        if text.byte_at(i) == 10:
+            line += 1
+        i += 1
+    return line
 
 
 function find_ib_entry(name: str) -> Option[ib_registry.BindingEntry]:
     var i: ptr_uint = 0
-    while i < 28:
+    while i < ib_registry.ALL_COUNT:
         let entry_ptr = get(ib_registry.ALL, i) else:
             break
         let entry = unsafe: read(entry_ptr)
@@ -3664,7 +3836,7 @@ function find_ib_entry(name: str) -> Option[ib_registry.BindingEntry]:
     return Option[ib_registry.BindingEntry].none
 
 
-function regenerate_one(policy_path: str, output_path: str, raw_module_name: str, do_check: bool) -> int:
+function regenerate_one(policy_path: str, output_path: str, raw_module_name: str, mode: int) -> IbOutcome:
     # Resolve raw module path: std.c.raymath -> std/c/raymath.mt
     var raw_buf = string.String.with_capacity(raw_module_name.len + 3)
     var ri: ptr_uint = 0
@@ -3680,42 +3852,61 @@ function regenerate_one(policy_path: str, output_path: str, raw_module_name: str
 
     match ib_main.generate(policy_path, raw_path):
         Result.failure as p:
-            stdio.print_format(c"imported-bindings: %.*s\n", int<-(p.error.as_str().len), p.error.as_str().data)
+            if mode == IB_MODE_STDOUT:
+                var message = string.String.create()
+                message.append("imported-bindings: ")
+                message.append(p.error.as_str())
+                eprint_line(message.as_str())
+                message.release()
+            else:
+                stdio.print_format(c"imported-bindings: %.*s\n", int<-(p.error.as_str().len), p.error.as_str().data)
             p.error.release()
             raw_buf.release()
-            return 1
+            return IbOutcome(status = IB_FAILED, first_diff_offset = 0, first_diff_line = 0)
         Result.success as p:
-            if do_check:
+            if mode == IB_MODE_STDOUT:
+                stdio.print_format(c"%.*s", int<-(p.value.as_str().len), p.value.as_str().data)
+                p.value.release()
+                raw_buf.release()
+                return IbOutcome(status = IB_OK, first_diff_offset = 0, first_diff_line = 0)
+
+            if mode == IB_MODE_CHECK:
+                var status = IB_OK
+                var diff_offset: ptr_uint = 0
+                var diff_line: ptr_uint = 0
                 match fs.read_text(output_path):
                     Result.failure:
                         stdio.print_format(c"(new) %.*s would be generated\n", int<-(output_path.len), output_path.data)
-                        p.value.release()
-                        raw_buf.release()
-                        return 0
+                        status = IB_NEW
                     Result.success as existing:
                         let new_src = p.value.as_str()
                         let old_src = existing.value.as_str()
                         if new_src.equal(old_src):
                             stdio.print_format(c"verified %.*s\n", int<-(output_path.len), output_path.data)
                         else:
+                            diff_offset = first_diff_offset(new_src, old_src)
+                            diff_line = line_at_offset(new_src, diff_offset)
                             stdio.print_format(c"changed %.*s\n", int<-(output_path.len), output_path.data)
+                            status = IB_CHANGED
                         existing.value.release()
                 p.value.release()
-            else:
-                match fs.write_text(output_path, p.value.as_str()):
-                    Result.failure:
-                        stdio.print_format(c"imported-bindings: could not write %.*s\n", int<-(output_path.len), output_path.data)
-                        p.value.release()
-                        raw_buf.release()
-                        return 1
-                    Result.success:
-                        stdio.print_format(c"generated %.*s + %.*s -> %.*s\n",
-                            int<-(raw_module_name.len), raw_module_name.data,
-                            int<-(policy_path.len), policy_path.data,
-                            int<-(output_path.len), output_path.data)
-                p.value.release()
+                raw_buf.release()
+                return IbOutcome(status = status, first_diff_offset = diff_offset, first_diff_line = diff_line)
+
+            match fs.write_text(output_path, p.value.as_str()):
+                Result.failure:
+                    stdio.print_format(c"imported-bindings: could not write %.*s\n", int<-(output_path.len), output_path.data)
+                    p.value.release()
+                    raw_buf.release()
+                    return IbOutcome(status = IB_FAILED, first_diff_offset = 0, first_diff_line = 0)
+                Result.success:
+                    stdio.print_format(c"generated %.*s + %.*s -> %.*s\n",
+                        int<-(raw_module_name.len), raw_module_name.data,
+                        int<-(policy_path.len), policy_path.data,
+                        int<-(output_path.len), output_path.data)
+            p.value.release()
             raw_buf.release()
-            return 0
+            return IbOutcome(status = IB_OK, first_diff_offset = 0, first_diff_line = 0)
 function toolchain_command(args: span[str]) -> int:
     return toolchain_cli.run(args)
 

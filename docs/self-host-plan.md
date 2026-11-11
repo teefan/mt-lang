@@ -37,7 +37,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the live VS Code F5 check is the remaining manual step |
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
-| Imported bindings | bindgen self-hosted; **3 verified / 25 changed of 28** (session 65 re-confirmed; the self's `naming.mt` still lacks the host's OpenGL normalization machinery) |
+| Imported bindings | bindgen self-hosted; **3 verified / 26 changed of 29** against the host registry (the self registry has 28: `box3d` missing; per-bucket baseline in Track D) |
 
 Rough completion against the per-track Definition of Done: **~95%**.  The
 self-hosting foundation, `lower` dump parity and the CLI behavior matrix are
@@ -481,7 +481,7 @@ Session-64 third batch (package builds, `--bundle`/`--archive`):
 | `lower` dump parity (**closed**, keep at 0 real differ) | *The program* Track A; `docs/language-design.md` | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` (~1 min warm, ~4 min cold) |
 | CLI behavior parity | Track B; `tools/cli_parity.rb --help` | `rake "cli:parity"` |
 | Linter corpus residue | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb -q` (615 files; `--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
-| Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check`; regenerate `std/c/*.mt` and diff |
+| Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check` (`--soft` during Track D); `ruby tools/imported_bindings_parity.rb --soft --json tmp/ib-parity.json`; regenerate `std/c/*.mt` and diff |
 | LSP feature parity / residue | Track E; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb record --server host\|self` + `compare`; `tools/lsp_project_audit.rb --workspace DIR [--canonical]`; `tools/lsp_recovery_probe.rb --check`; `tools/lsp_soak.rb` |
 | DAP | Track F; `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both]` |
 | Formatter (`:tidy`, `:preserve`, `:canonical`) | Track E/formatter history at `d8a199c7` §7 | `ruby tools/format_parity.rb all -j 16` (712/712, counts drift) |
@@ -784,11 +784,17 @@ then ~20 s per full run); `rake "parity:scoreboard"` for the per-rule table.
    `projects/mtc/src/mtc/imported_bindings/naming.mt`, wire the call sites (host
    `lib/milk_tea/bindings/imported_bindings/generator.rb:707,875`), add the missing `snake_case` trailing normalization
    (`lib/milk_tea/bindings/imported_bindings/naming.rb:259`).
-2. **28-binding verification** — make `imported-bindings --all --check` emit a
-   machine-readable report and add `tools/imported_bindings_parity.rb` that
-   prints per-binding delta categories (baseline **3 verified / 25 changed**,
-   cosmetic emitter gaps).  Close to 28/28 (including the raylib Quaternion
-   member-ordering delta) or justify each residual byte-for-byte.
+2. **29-binding verification** — the measurement is in place.  The self-only
+   `imported-bindings` command now has `--stdout` (byte comparison), `--json`
+   (per-entry status + first diff offset/line), and `--soft`;
+   `tools/imported_bindings_parity.rb` compares self vs host vs checked-in and
+   classifies every changed binding.  Baseline at `c4e17df4`: **3 verified /
+   26 changed of 29** (the host registry has 29; the self registry has 28, so
+   `box3d` is missing).  Buckets: `duplicate-import` 1,
+   `type-name-snake-cased` 6, `missing-type-override` 7,
+   `type-opaque-mismatch` 6, `param-type-mapping` 4, `reserved-name` 1,
+   `missing-registry-entry` 1.  Target 29/29 (including the raylib Quaternion
+   member-ordering delta) or each residual justified byte-for-byte.
 3. **Bindgen gaps** — header-provenance filter in `walk` (`projects/mtc/src/mtc/bindgen.mt:346-445`;
    host `lib/milk_tea/bindings/bindgen/ast_parser.rb:105-132`, `allowed_declaration_name?`); unknown-type
    policy instead of echoing bare names (`projects/mtc/src/mtc/bindgen.mt:259`; host
@@ -942,7 +948,7 @@ when the tree moved.  Target = the Definition of Done above.
 | LSP soak | 68.1 KB/cycle raw / 19.9 KB/cycle least-squares at 200 cycles | session 38 | `ruby tools/lsp_soak.rb --cycles 100` |
 | formatter | 712/712 all three modes byte-identical | session 33 | `ruby tools/format_parity.rb all -j 16` |
 | DAP | zero differing rows except the documented self-better frame0 row; harness now asserts (non-zero on an unlisted diff) and requires a real `lldb-dap` | session 65 (assertion layer) | `ruby tools/dap_smoke.rb` (`--allow-skip` to waive a missing adapter) |
-| imported bindings | 3 verified / 25 changed of 28 (cosmetic emitter gaps) | session 65 re-confirmed | `build/stage2/mtc imported-bindings --all --check` |
+| imported bindings | 3 verified / 26 changed of 29 (host registry; self lacks `box3d`; buckets in Track D) | session 66 Phase 0 | `build/stage2/mtc imported-bindings --all --check --soft`; `ruby tools/imported_bindings_parity.rb --soft` |
 
 ## Porting notes
 
