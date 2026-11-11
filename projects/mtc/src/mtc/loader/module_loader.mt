@@ -856,7 +856,9 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
             reuse_cached_module(module_ptr, cache, bindings_ptr, ref_of(analyses), ref_of(diagnostics))
         oi += 1
     visited.release()
-    bindings.release()
+    # `bindings` must outlive the analyses: each Analysis keeps a stable handle
+    # to this map for later re-analysis (the fix engine).  Leaked at program end
+    # like the retained analyses, per the analyzer's arena convention.
 
     var owning_type_names = build_owning_type_names(ref_of(analyses))
 

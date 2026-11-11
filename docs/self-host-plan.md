@@ -33,7 +33,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | `sexpr lex` / `parse` | 0 differ (lex **718/718**; parse **714 match / 0 differ / 4 host-rejected of 718**; counts drift with the tree) |
 | `sexpr lower` | **665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 files** (session 63) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
 | `cli:parity` | **78 match / 0 differ / 11 case-backed pending** of 89 cases (session 65; `--timings` values and `debug`'s Ruby node ids are normalized). The pending set is `deps`, wasm, `toolchain doctor`, locked/frozen build, and bundle/archive run. |
-| Linter corpus | **495 agree / 123 differ** of 618 (session 66; hostfail 0, selffail 0); **41/43 rules, 12/13 fixers**.  The assignability batch improved `borrow-and-mutate` (29 self-only) and `loop-single-iteration` (8). |
+| Linter corpus | **495 agree / 123 differ** of 618 (session 66; hostfail 0, selffail 0); **41/43 rules, 13/13 fixers**.  The assignability batch improved `borrow-and-mutate` (29 self-only) and `loop-single-iteration` (8). |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the live VS Code F5 check is the remaining manual step |
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
@@ -85,9 +85,11 @@ The same session's analyzer batches closed the reserved-name diagnostics
 positions), the qualified return-mismatch rendering with the host's statement
 fallback for position-less literal returns, null assignability, immutable
 parameters, the member-assignment immutability ladder, and specialized
-editable-call recording.  The fix engine now re-analyzes candidates against the
-loader-backed imports.  Lint corpus: 495 agree / 123 differ of 618, with
-`borrow-and-mutate` 29 and `loop-single-iteration` 8 (both improved).
+editable-call recording.  The fix engine now follows the host's rule order and
+pass structure, refuses fixes on unresolved imports, validates the candidate
+parse, re-analyzes against the loader-backed imports, and generates the
+`redundant-unsafe` fix (13/13 fixers).  Lint corpus: 495 agree / 123 differ of
+618, with `borrow-and-mutate` 29 and `loop-single-iteration` 8 (both improved).
 
 Session-51 batch: the event synthetic bodies (host slot/snapshot shapes), the
 reused await-field recording plus nested-await hoisting in a direct-await
@@ -748,10 +750,15 @@ corpus count drifts with the tree; quote the set.  Closed with no residue:
 `prefer-inline-if`, `prefer-conditional-expression`.
 
 Still absent: the host's **`directional-ffi-arg`** (`lib/milk_tea/tooling/linter/rules.rb:513-531`)
-and **`platform-api-drift`** (`lib/milk_tea/tooling/linter/imports_platform.rb:32-62`) rules, and the
-**`redundant-unsafe`** fix generator (41 of 43 rules, 12 of 13 auto-fixable).
+and **`platform-api-drift`** (`lib/milk_tea/tooling/linter/imports_platform.rb:32-62`) rules.
 No corpus file currently triggers the two missing rules — a file that does would
-be the first visible difference.
+be the first visible difference.  The `redundant-unsafe` fix generator landed in
+session 66 (13/13 auto-fixable fixers); the fix engine now follows the host's
+`AUTO_FIXABLE_RULE_CODES` order, one batch per rule per pass, refuses fixes on
+an unresolved import, rejects a candidate that does not parse, and re-analyzes
+against the loader-backed imports.  Remaining fixer deltas: the host's
+`reserved-primitive-name` re-lint cross-check and its span-based edit anchors
+(the self re-finds the declaration text).
 
 Analyzer gaps that gate lint rows and LSP entries:
 
@@ -779,11 +786,10 @@ Analyzer gaps that gate lint rows and LSP entries:
   fix engine re-analyzes candidate sources against the loader-backed imports
   (`Analysis.imported_modules`), so `var r` in
   `examples/reflection_advanced.mt` is preserved.
-- **`--fix` unresolved-import guard** (session 28): the host's
-  `fix_source_single_pass` refuses all fixes when an import did not resolve; the
-  self proceeds.  The CLI lint path **does** fill
-  `options.unresolved_import_paths` now (`main.mt:1090-1103`, before the fix
-  branch); only the consumer is missing in `fix_engine.mt:79-108`.
+- **`--fix` unresolved-import guard — CLOSED (session 66).**  `fix_source`
+  returns the source unchanged when `options.unresolved_import_paths` is
+  non-empty; the loader's binding map is retained for the fix engine's
+  re-analysis.
 - **Reserved-name errors — CLOSED (session 66).**  Module-level consts,
   variables, functions and events plus parameters/locals now report the host's
   `<kind> <name> uses reserved built-in type name <name>` at the declaration
@@ -966,7 +972,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `sexpr lex` / `parse` | lex 718/718; parse 714 match / 0 differ / 4 host-rejected of 718 | session 63 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
 | `sexpr lower` | 665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 (the 2 are documented artifacts) | session 63 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | **78 match / 0 differ / 11 pending** of 89 (case-backed; the original 65/65; timings and `debug` node ids normalized) | session 65 | `ruby tools/cli_parity.rb -q` |
-| lint corpus | 495 agree / 123 differ of 618, hostfail 0, selffail 0; **41/43 rules, 12/13 fixers** | session 66 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| lint corpus | 495 agree / 123 differ of 618, hostfail 0, selffail 0; **41/43 rules, 13/13 fixers** | session 66 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 616/616 | session 64 | `ruby tools/unused_import_parity.rb` |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 43 | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |

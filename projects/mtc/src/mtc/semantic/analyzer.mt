@@ -11,6 +11,7 @@
 ## inconsistencies.
 
 import std.map as map_mod
+import std.mem.heap as heap
 import std.str
 import std.string as string
 import std.vec as vec
@@ -526,6 +527,18 @@ public function check_module_requiring_resolved_imports(file: ast.SourceFile, im
 
 
 public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?, module_name: str, source_path: str, require_resolved_imports: bool) -> Analysis:
+    # The loader's import map is a stack local that is intentionally leaked but
+    # not address-stable after `check_program` returns.  Store a stable shallow
+    # copy (the table itself is heap-owned and leaked) so a later re-analysis
+    # (the fix engine) can reuse the imports.
+    var stable_imported_modules = imported_modules
+    if imported_modules != null:
+        var stable: ptr[map_mod.Map[str, ModuleBinding]]
+        unsafe:
+            stable = ptr[map_mod.Map[str, ModuleBinding]]<-heap.must_alloc[map_mod.Map[str, ModuleBinding]](1)
+            read(stable) = read(imported_modules)
+        stable_imported_modules = stable
+
     var ctx = Context(
         value_names = map_mod.Map[str, bool].create(),
         type_names = map_mod.Map[str, bool].create(),
@@ -664,7 +677,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         const_values = ctx.const_values,
         module_name = module_name,
         module_kind = file.module_kind,
-        imported_modules = imported_modules,
+        imported_modules = stable_imported_modules,
         unsafe_statement_lines = required_unsafe_line_list(ref_of(ctx)),
         imported_type_members = collect_imported_type_members(ref_of(ctx)),
         uses_parallel_for = ctx.uses_parallel_for,

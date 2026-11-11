@@ -36,24 +36,24 @@ import mtc.semantic.analyzer as analyzer
 
 
 const MAX_PASSES: ptr_uint = 5
-const MAX_RULE_ITERATIONS: ptr_uint = 10
 
 
-## The fixable rule codes, in application order.
+## The fixable rule codes, in the host's `AUTO_FIXABLE_RULE_CODES` order.
 function fixable_codes() -> vec.Vec[str]:
     var codes = vec.Vec[str].create()
     codes.push("prefer-let")
-    codes.push("redundant-return")
-    codes.push("redundant-else")
-    codes.push("trailing-list-comma")
-    codes.push("redundant-cast")
-    codes.push("redundant-bool-compare")
-    codes.push("redundant-type-annotation")
     codes.push("redundant-ignored-match-binding")
-    codes.push("reserved-primitive-name")
     codes.push("prefer-let-else")
     codes.push("prefer-var-else")
     codes.push("prefer-inline-methods")
+    codes.push("redundant-bool-compare")
+    codes.push("redundant-cast")
+    codes.push("redundant-else")
+    codes.push("redundant-return")
+    codes.push("redundant-type-annotation")
+    codes.push("redundant-unsafe")
+    codes.push("reserved-primitive-name")
+    codes.push("trailing-list-comma")
     return codes
 
 
@@ -82,6 +82,11 @@ public function fix_source(
     path: str,
     options: linter.LintOptions,
 ) -> string.String:
+    # The host's `fix_source_single_pass`: refuse every fix when an import did
+    # not resolve, so a rewrite never runs against incomplete facts.
+    if options.unresolved_import_paths.len > 0:
+        return string.String.from_str(source)
+
     var current = string.String.from_str(source)
 
     var codes = fixable_codes()
@@ -90,6 +95,7 @@ public function fix_source(
     var config = lint_config.load_for_path(path)
     defer: config.release()
 
+    # One batch per rule per pass, then repeat (the host's five outer passes).
     var pass_index: ptr_uint = 0
     while pass_index < MAX_PASSES:
         var changed_in_pass = false
@@ -99,7 +105,12 @@ public function fix_source(
                 break
             let code = unsafe: read(code_ptr)
             if rule_enabled(code, options, ref_of(config)):
-                if fix_rule_to_fixpoint(ref_of(current), code, path, options):
+                var updated = fix_rule_single_pass(current.as_str(), code, path, options)
+                if updated.as_str() == current.as_str():
+                    updated.release()
+                else:
+                    current.release()
+                    current = updated
                     changed_in_pass = true
             ci += 1
         if not changed_in_pass:
@@ -145,28 +156,6 @@ function string_vec_contains(code: str, codes: ref[vec.Vec[string.String]]) -> b
                 return true
         i += 1
     return false
-
-
-## Re-lint and fix one rule until its warnings stop changing the source.
-## Returns true when any edit was applied.
-function fix_rule_to_fixpoint(
-    current: ref[string.String],
-    code: str,
-    path: str,
-    options: linter.LintOptions,
-) -> bool:
-    var changed = false
-    var iteration: ptr_uint = 0
-    while iteration < MAX_RULE_ITERATIONS:
-        var updated = fix_rule_single_pass(current.as_str(), code, path, options)
-        if updated.as_str() == current.as_str():
-            updated.release()
-            break
-        current.release()
-        read(current) = updated
-        changed = true
-        iteration += 1
-    return changed
 
 
 ## One lint-and-apply cycle for a single rule.
@@ -242,6 +231,9 @@ function fix_rule_single_pass(
     var candidate_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: candidate_diags.release()
     let candidate_file = parser.parse_source(candidate.as_str(), ref_of(candidate_diags))
+    if candidate_diags.len() > 0:
+        candidate.release()
+        return string.String.from_str(source)
     var candidate_analysis = analyze_with_imports(candidate_file, path, options)
     if introduces_new_errors(ref_of(analysis), ref_of(candidate_analysis)):
         candidate.release()
@@ -368,9 +360,122 @@ public function edits_for_warning(
         return prefer_let_else_edit(lines, line_index, false)
     if code.equal("prefer-inline-methods"):
         return prefer_inline_methods_edit(lines, line_index)
+    if code.equal("redundant-unsafe"):
+        return redundant_unsafe_edit(lines, line_index)
     if code.equal("unused-import"):
         return unused_import_edit(lines, line_index)
     return Option[FixEdit].none
+
+
+## Remove a redundant `unsafe:` wrapper: an inline expression drops the keyword
+## and the whitespace after it; a block statement dedents its body over the
+## removed `unsafe:` line (the host's `redundant_unsafe_edits`).
+function redundant_unsafe_edit(lines: ref[vec.Vec[string.String]], line_index: ptr_uint) -> Option[FixEdit]:
+    let text = line_text(lines, line_index)
+    let unsafe_pos = text.find_substring("unsafe:") else:
+        return Option[FixEdit].none
+    let keyword_end = unsafe_pos + 7
+    if keyword_end > text.len:
+        return Option[FixEdit].none
+
+    # Inline expression form: `... unsafe: expr ...`.
+    var remainder_start = keyword_end
+    while remainder_start < text.len and text.byte_at(remainder_start) == 32:
+        remainder_start += 1
+    if remainder_start < text.len:
+        let remainder = text.slice(remainder_start, text.len - remainder_start)
+        if not balanced_line(remainder):
+            return Option[FixEdit].none
+        return Option[FixEdit].some(value = FixEdit(
+            start_line = line_index,
+            start_char = unsafe_pos,
+            end_line = line_index,
+            end_char = remainder_start,
+            new_text = string.String.create()
+        ))
+
+    # Block form: `unsafe:` alone, body indented deeper.
+    let indent = text.slice(0, unsafe_pos)
+    var indent_ok = true
+    var ii: ptr_uint = 0
+    while ii < indent.len:
+        if indent.byte_at(ii) != 32:
+            indent_ok = false
+            break
+        ii += 1
+    if not indent_ok:
+        return Option[FixEdit].none
+
+    let body_start = line_index + 1
+    var body_indent: ptr_uint = 0
+    var last_body = body_start
+    var found_body = false
+    var i = body_start
+    while i < lines.len():
+        let candidate = line_text(lines, i)
+        if candidate.trim_ascii_whitespace().len == 0:
+            last_body = i
+            found_body = true
+            i += 1
+            continue
+        if candidate.len <= indent.len or not candidate.starts_with(indent):
+            break
+        if candidate.byte_at(indent.len) != 32:
+            break
+        if body_indent == 0:
+            var lead: ptr_uint = 0
+            while lead < candidate.len and candidate.byte_at(lead) == 32:
+                lead += 1
+            body_indent = lead - indent.len
+        last_body = i
+        found_body = true
+        i += 1
+
+    if not found_body or body_indent == 0 or last_body < body_start:
+        return Option[FixEdit].none
+
+    var checked = body_start
+    while checked <= last_body:
+        let candidate = line_text(lines, checked)
+        if candidate.trim_ascii_whitespace().len > 0:
+            if candidate.len < indent.len + body_indent or
+                    not candidate.starts_with(indent):
+                return Option[FixEdit].none
+        checked += 1
+
+    var replacement = string.String.create()
+    var ri = body_start
+    while ri <= last_body:
+        let candidate = line_text(lines, ri)
+        if candidate.trim_ascii_whitespace().len > 0:
+            replacement.append(candidate.slice(body_indent, candidate.len - body_indent))
+        if ri < last_body:
+            replacement.push_byte('\n')
+        ri += 1
+    replacement.push_byte('\n')
+
+    return Option[FixEdit].some(value = FixEdit(
+        start_line = line_index,
+        start_char = 0,
+        end_line = last_body + 1,
+        end_char = 0,
+        new_text = replacement
+    ))
+
+
+function balanced_line(text: str) -> bool:
+    var depth: int = 0
+    var i: ptr_uint = 0
+    while i < text.len:
+        let ch = text.byte_at(i)
+        if ch == '(' or ch == '[':
+            depth += 1
+        else if ch == ')' or ch == ']':
+            depth -= 1
+            if depth < 0:
+                return false
+        i += 1
+    return depth == 0
 
 
 ## Apply one edit to the line buffer.
