@@ -1565,6 +1565,7 @@ function declare_values_and_functions_extra(ctx: ref[Context], extra: span[ast.D
             d = read(extra.data + i)
         match d:
             ast.Decl.decl_const as c:
+                check_reserved_value_name(ctx, "constant", c.name, c.line, c.column)
                 if declare_value(ctx, c.name, c.line, c.column):
                     ctx.value_types.set(c.name, resolve_type(ctx, c.const_type))
                     let val = c.value else:
@@ -1573,6 +1574,7 @@ function declare_values_and_functions_extra(ctx: ref[Context], extra: span[ast.D
                     ctx.const_values.set(c.name, val)
                     record_decl_callable_sites(ctx, val)
             ast.Decl.decl_function as fun:
+                check_reserved_value_name(ctx, "function", fun.name, fun.line, fun.column)
                 if declare_value(ctx, fun.name, fun.line, fun.column):
                     ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type, ast.MethodKind.mk_plain, fun.is_async))
             _:
@@ -2340,6 +2342,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
             d = read(file.declarations.data + i)
         match d:
             ast.Decl.decl_const as c:
+                check_reserved_value_name(ctx, "constant", c.name, c.line, c.column)
                 if declare_value(ctx, c.name, c.line, c.column):
                     ctx.value_types.set(c.name, resolve_type(ctx, c.const_type))
                     record_decl_callable_sites(ctx, c.value)
@@ -2352,11 +2355,13 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                         Option.none:
                             pass
             ast.Decl.decl_var as v:
+                check_reserved_value_name(ctx, "module variable", v.name, v.line, v.column)
                 if declare_value(ctx, v.name, v.line, v.column):
                     let vt = v.var_type
                     if vt != null:
                         ctx.value_types.set(v.name, resolve_type(ctx, vt))
             ast.Decl.decl_function as fun:
+                check_reserved_value_name(ctx, "function", fun.name, fun.line, fun.column)
                 if declare_value(ctx, fun.name, fun.line, fun.column):
                     # Build the signature with the function's own type parameters
                     # in scope, so parameter/return patterns carry ty_var(T) for
@@ -2368,6 +2373,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                     if fun.type_params.len > 0:
                         ctx.function_type_params.set(fun.name, fun.type_params)
             ast.Decl.decl_extern_function as ef:
+                check_reserved_value_name(ctx, "function", ef.name, ef.line, 1)
                 enter_suppressed_type_params(ctx, ef.type_params)
                 # The declared type parameters are type *variables* in the
                 # signature (the host's binding types carry `T`); the suppression
@@ -2384,6 +2390,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                 record_mutating_param_indices(ctx, ef.name, ef.extern_params)
                 declare_value(ctx, ef.name, ef.line, 1)
             ast.Decl.decl_foreign_function as ff:
+                check_reserved_value_name(ctx, "function", ff.name, ff.line, 1)
                 enter_suppressed_type_params(ctx, ff.type_params)
                 enter_type_params(ctx, ff.type_params)
                 let sig = build_foreign_fn_sig(ctx, ff.name, ff.foreign_params, resolve_type(ctx, ff.return_type))
@@ -2394,6 +2401,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                 declare_value(ctx, ff.name, ff.line, 1)
                 record_decl_callable_sites(ctx, ff.mapping)
             ast.Decl.decl_event as ev:
+                check_reserved_value_name(ctx, "event", ev.name, ev.line, ev.column)
                 if declare_value(ctx, ev.name, ev.line, ev.column):
                     ctx.value_types.set(ev.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = ev.name))
             ast.Decl.decl_struct as s:
@@ -2428,6 +2436,11 @@ function declare_struct_event_values(ctx: ref[Context], struct_events: span[ast.
                 _:
                     pass
         ni += 1
+
+
+function check_reserved_value_name(ctx: ref[Context], kind_label: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
+    if is_reserved_value_name(name):
+        report(ctx, line, column, diag.reserved_value_message(kind_label, name))
 
 
 function declare_value(ctx: ref[Context], name: str, line: ptr_uint, column: ptr_uint) -> bool:
@@ -2766,8 +2779,12 @@ public function is_primitive_type_name(name: str) -> bool:
     )
 
 
+function is_reserved_value_name(name: str) -> bool:
+    return is_primitive_type_name(name) or name == "str" or name == "Option" or name == "Result"
+
+
 function is_reserved_name(name: str) -> bool:
-    return is_primitive_type_name(name) or name == "str"
+    return is_reserved_value_name(name)
 
 
 function is_generic_constructor_name(name: str) -> bool:
@@ -3091,10 +3108,10 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
         unsafe:
             p = read(m.method_params.data + pi)
         if seen.contains(p.name):
-            report(ctx, m.line, m.column, dup_param_message(m.name, p.name))
+            report(ctx, p.line, p.column, dup_param_message(m.name, p.name))
         seen.set(p.name, true)
         if is_reserved_name(p.name):
-            report(ctx, m.line, m.column, reserved_param_message(m.name, p.name))
+            report(ctx, p.line, p.column, diag.reserved_value_message("parameter", p.name))
         let param_ty = resolve_type_value(ctx, p.param_type)
         scope_set(ref_of(scope), p.name, param_ty)
         scope_set_storage(ref_of(scope), p.name, param_ty)
@@ -3155,10 +3172,10 @@ function check_function_body(ctx: ref[Context], node: ptr_uint, name: str, line:
         unsafe:
             p = read(params.data + pi)
         if seen.contains(p.name):
-            report(ctx, line, 1, dup_param_message(name, p.name))
+            report(ctx, p.line, p.column, dup_param_message(name, p.name))
         seen.set(p.name, true)
         if is_reserved_name(p.name):
-            report(ctx, line, 1, reserved_param_message(name, p.name))
+            report(ctx, p.line, p.column, diag.reserved_value_message("parameter", p.name))
         let param_ty = resolve_type_value(ctx, p.param_type)
         scope_set(ref_of(scope), p.name, param_ty)
         scope_set_storage(ref_of(scope), p.name, param_ty)
@@ -3444,7 +3461,11 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                     let vt = infer_expr(ctx, scope, rv)
                     ctx.expected_type_hint = ret_saved_hint
                     if incompatible_value(chk.ret, vt, rv):
-                        report(ctx, expr_source_line(rv), expr_source_column(rv), return_mismatch_message(chk.ret, vt))
+                        let rl = expr_source_line(rv)
+                        if rl == 0:
+                            report(ctx, r.line, r.column, return_mismatch_message(chk.ret, vt))
+                        else:
+                            report(ctx, rl, expr_source_column(rv), return_mismatch_message(chk.ret, vt))
             ast.Stmt.stmt_local as l:
                 check_local(ctx, scope, chk, l.is_let, l.name, l.stmt_type, l.value, l.else_binding, l.else_body, l.destructure_bindings, l.line, l.column, l.else_binding_line, l.else_binding_column)
             ast.Stmt.stmt_if as i:
@@ -4861,7 +4882,7 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlag
         scope_set_let(scope, name)
 
     if is_reserved_name(name):
-        report(ctx, line, column, reserved_local_message(name))
+        report(ctx, line, column, diag.reserved_value_message("local", name))
 
     check_local_else_body(ctx, scope, chk, else_binding, else_body, value_type, else_line, else_column)
 
@@ -9092,12 +9113,8 @@ function dup_param_message(func_name: str, param: str) -> str:
     return diag.dup_param_message(func_name, param)
 
 
-function reserved_param_message(func_name: str, param: str) -> str:
-    return diag.reserved_param_message(func_name, param)
-
-
-function reserved_local_message(name: str) -> str:
-    return diag.reserved_local_message(name)
+function reserved_value_message(kind_label: str, name: str) -> str:
+    return diag.reserved_value_message(kind_label, name)
 
 
 function make_task_type(inner: types.Type) -> types.Type:

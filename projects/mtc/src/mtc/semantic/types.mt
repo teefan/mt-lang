@@ -266,6 +266,47 @@ public function is_numeric(t: Type) -> bool:
 #  Rendering (mirrors Types::* #to_s), used for diagnostics
 # ---------------------------------------------------------------------------
 
+## The host's qualified `to_s` used by semantic diagnostics: named types carry
+## their defining module (`std.vec.Vec[int]`), while the display form drops it.
+public function type_to_diagnostic_string(t: Type) -> str:
+    match t:
+        Type.ty_named as n:
+            if n.module_name.len > 0:
+                var b = string.String.create()
+                b.append(n.module_name)
+                b.append(".")
+                b.append(n.name)
+                return b.as_str()
+            return n.name
+        Type.ty_opaque as o:
+            if o.module_name.len > 0:
+                var b = string.String.create()
+                b.append(o.module_name)
+                b.append(".")
+                b.append(o.name)
+                return b.as_str()
+            return o.name
+        Type.ty_imported as im:
+            var b = string.String.create()
+            if im.module_name.len > 0:
+                b.append(im.module_name)
+                b.append(".")
+            b.append(im.name)
+            if im.args.len > 0:
+                b.append("[")
+                var i: ptr_uint = 0
+                while i < im.args.len:
+                    if i > 0:
+                        b.append(", ")
+                    unsafe:
+                        b.append(type_to_diagnostic_string(read(im.args.data + i)))
+                    i += 1
+                b.append("]")
+            return b.as_str()
+        _:
+            return type_to_string(t)
+
+
 public function type_to_string(t: Type) -> str:
     match t:
         Type.ty_primitive as p:

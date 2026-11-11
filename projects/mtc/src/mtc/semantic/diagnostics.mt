@@ -11,9 +11,9 @@ import mtc.semantic.types as types
 public function return_mismatch_message(expected: types.Type, got: types.Type) -> str:
     var buf = string.String.create()
     buf.append("return type mismatch: expected ")
-    buf.append(types.type_to_string(expected))
+    buf.append(types.type_to_diagnostic_string(expected))
     buf.append(", got ")
-    buf.append(types.type_to_string(got))
+    buf.append(types.type_to_diagnostic_string(got))
     return buf.as_str()
 
 
@@ -288,19 +288,12 @@ public function dup_param_message(func_name: str, param: str) -> str:
     return buf.as_str()
 
 
-public function reserved_param_message(func_name: str, param: str) -> str:
+## The host's `<kind> <name> uses reserved built-in type name <name>`.
+public function reserved_value_message(kind_label: str, name: str) -> str:
     var buf = string.String.create()
-    buf.append("parameter ")
-    buf.append(param)
-    buf.append(" in function ")
-    buf.append(func_name)
-    buf.append(" shadows a reserved type name")
-    return buf.as_str()
-
-
-public function reserved_local_message(name: str) -> str:
-    var buf = string.String.create()
-    buf.append("local ")
+    buf.append(kind_label)
+    buf.append(" ")
     buf.append(name)
-    buf.append(" shadows a reserved type name")
+    buf.append(" uses reserved built-in type name ")
+    buf.append(name)
     return buf.as_str()

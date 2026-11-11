@@ -77,6 +77,13 @@ gained `--stdout`/`--json`; `tools/imported_bindings_parity.rb` reports
 29 verified / 0 changed, and both bindings gates are hard.  The host's 37
 OpenGL naming vectors are pinned in
 `projects/mtc/test/imported_bindings_naming_test.mt` (self suite 20/0).
+Bindgen reproducibility (Track D item 3) remains open and is deferred behind
+the linter/analyzer track.
+
+The same session's analyzer batch closed the reserved-name diagnostics
+(module consts/vars/functions/events, params/locals, host message and
+positions) and the qualified return-mismatch rendering with the host's
+statement fallback for position-less literal returns.
 
 Session-51 batch: the event synthetic bodies (host slot/snapshot shapes), the
 reused await-field recording plus nested-await hoisting in a direct-await
@@ -773,16 +780,17 @@ Analyzer gaps that gate lint rows and LSP entries:
   self proceeds.  The CLI lint path **does** fill
   `options.unresolved_import_paths` now (`main.mt:1090-1103`, before the fix
   branch); only the consumer is missing in `fix_engine.mt:79-108`.
-- **Reserved-name errors** (session 28): the host raises `function int uses
-  reserved built-in type name int` (module-level) and `local int uses reserved
-  built-in type name int` (locals); the self checks only locals/params with a
-  different message, and its module-level functions/consts/vars/events have no
-  check (`ensure_non_reserved_value_type_name!`/`ensure_non_reserved_name!`).
-- **Sema message rendering and return-mismatch position** (session 40): the host
-  renders `return type mismatch: expected X, got Y` with its qualified `to_s`
-  (`expected std.vec.Vec[int], got int`) at the return site; the self uses the
-  display form and reports `0:0`.  `cannot assign to immutable x` is byte-equal,
-  so the gap is this site's renderer/position.
+- **Reserved-name errors — CLOSED (session 66).**  Module-level consts,
+  variables, functions and events plus parameters/locals now report the host's
+  `<kind> <name> uses reserved built-in type name <name>` at the declaration
+  position; `Option`/`Result` joined the value-name set
+  (`ensure_non_reserved_value_type_name!`).
+- **Sema message rendering and return-mismatch position — CLOSED (session 66).**
+  `return type mismatch` renders the host's qualified `to_s`
+  (`expected std.vec.Vec[int], got int`); a position-less literal return falls
+  back to the return statement's position (the host's literal nodes carry no
+  position), so `return "x"` reports the `return` site rather than `0:0`.
+  `cannot assign to immutable x` remains byte-equal.
 
 Tool: `ruby tools/lint_parity.rb -q` (add `--host-cache FILE`; warm fill ~4 min,
 then ~20 s per full run); `rake "parity:scoreboard"` for the per-rule table.
@@ -806,7 +814,12 @@ then ~20 s per full run); `rake "parity:scoreboard"` for the per-rule table.
    changed of 29; the landed result is **29 verified / 0 changed / 0 new of
    29** (`box3d` added to the self registry).  `bindings` and
    `bindings_parity` are hard gates.
-3. **Bindgen gaps** — header-provenance filter in `walk` (`projects/mtc/src/mtc/bindgen.mt:346-445`;
+3. **Bindgen gaps — open (deferred after the imported-bindings closure).**  The
+   imported-binding generator is the compiler-critical path and is now 29/29;
+   bindgen is a separate 2,000-line emitter plus the host's per-binding
+   `RawBindings` option table.  The four code gaps below are mapped; the
+   verification tool must extract the host's raw-binding data and drive the
+   self CLI (the `bindings` gates cover imported bindings only).  Header-provenance filter in `walk` (`projects/mtc/src/mtc/bindgen.mt:346-445`;
    host `lib/milk_tea/bindings/bindgen/ast_parser.rb:105-132`, `allowed_declaration_name?`); unknown-type
    policy instead of echoing bare names (`projects/mtc/src/mtc/bindgen.mt:259`; host
    `lib/milk_tea/bindings/bindgen/type_mapper.rb:62` + `lib/milk_tea/bindings/bindgen/declaration.rb:123`); nested `const char*` → `cstr` in
