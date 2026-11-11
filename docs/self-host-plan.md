@@ -23,12 +23,12 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 65, 2026-11-11)
+## Status at a glance (session 66, 2026-11-11)
 
 | Area | State |
 | --- | --- |
-| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`, session 65 re-verified at `c5a9bcd4`); full self-test suite **19 files / 0 failed** |
-| `test/mt` | **60 files / 0 failed** (session 65 re-verified on stage2) |
+| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`, session 66 re-verified at `dacf0ac6`); full self-test suite **20 files / 0 failed** |
+| `test/mt` | **60 files / 0 failed** (session 66 re-verified on stage2) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **718/718**; parse **714 match / 0 differ / 4 host-rejected of 718**; counts drift with the tree) |
 | `sexpr lower` | **665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 files** (session 63) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
@@ -975,8 +975,8 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); 19 files / 0 failed | session 65 (`--fast`, at `c5a9bcd4`) | `tools/bootstrap.sh -j 16 --fast` |
-| `test/mt` | 60 files / 0 failed | session 65 | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); 20 files / 0 failed | session 66 (`--fast`, at `dacf0ac6`) | `tools/bootstrap.sh -j 16 --fast` |
+| `test/mt` | 60 files / 0 failed | session 66 | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 63 | `tools/gates.sh --only examples --run` |
 | `sexpr lex` / `parse` | lex 718/718; parse 714 match / 0 differ / 4 host-rejected of 718 | session 63 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
 | `sexpr lower` | 665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 (the 2 are documented artifacts) | session 63 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
