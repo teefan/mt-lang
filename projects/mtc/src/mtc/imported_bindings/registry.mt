@@ -11,9 +11,9 @@ public struct BindingEntry:
     policy_path: str
 
 
-public const ALL_COUNT: ptr_uint = 28
+public const ALL_COUNT: ptr_uint = 29
 
-public const ALL: array[BindingEntry, 28] = array[BindingEntry, 28](
+public const ALL: array[BindingEntry, 29] = array[BindingEntry, 29](
     BindingEntry(
         name = "raymath", module_name = "std.raymath",
         binding_path = "std/raymath.mt", raw_module_name = "std.c.raymath",
@@ -46,6 +46,10 @@ public const ALL: array[BindingEntry, 28] = array[BindingEntry, 28](
         name = "box2d", module_name = "std.box2d",
         binding_path = "std/box2d.mt", raw_module_name = "std.c.box2d",
         policy_path = "bindings/imported/box2d.binding.json"),
+    BindingEntry(
+        name = "box3d", module_name = "std.box3d",
+        binding_path = "std/box3d.mt", raw_module_name = "std.c.box3d",
+        policy_path = "bindings/imported/box3d.binding.json"),
     BindingEntry(
         name = "cjson", module_name = "std.cjson",
         binding_path = "std/cjson.mt", raw_module_name = "std.c.cjson",

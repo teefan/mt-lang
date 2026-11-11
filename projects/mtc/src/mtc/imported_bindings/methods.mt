@@ -1,5 +1,7 @@
-## Method extension emitter — scans generated module functions and emits
-## extending Type: function method() -> T: ... blocks for method specs.
+## Method extension emitter — builds `extending Type:` wrappers from the
+## generated foreign-function entries (not the raw declarations), matching the
+## host's `emit_methods`: the receiver is detected on the generated public type
+## and the inout/instance/static kind comes from the entry's parameter mode.
 
 import std.str
 import std.string as string
@@ -7,18 +9,31 @@ import std.vec as vec
 
 import mtc.imported_bindings.policy as policy
 import mtc.imported_bindings.naming as naming
-import mtc.imported_bindings.raw_scanner as raw
 
 # =============================================================================
 #  Types
 # =============================================================================
 
+public struct MethodParam:
+    name: string.String
+    param_type: string.String
+    mode: string.String
+    boundary_type: string.String
+
+
+extending MethodParam:
+    public editable function release() -> void:
+        this.name.release()
+        this.param_type.release()
+        this.mode.release()
+        this.boundary_type.release()
+
+
 public struct MethodFunc:
     public_name: string.String
     raw_name: string.String
-    params: vec.Vec[raw.RawFuncParam]
+    params: vec.Vec[MethodParam]
     return_type: string.String
-    module_alias: string.String
 
 
 extending MethodFunc:
@@ -27,10 +42,9 @@ extending MethodFunc:
         this.raw_name.release()
         release_params(ref_of(this.params))
         this.return_type.release()
-        this.module_alias.release()
 
 
-function release_params(v: ref[vec.Vec[raw.RawFuncParam]]) -> void:
+function release_params(v: ref[vec.Vec[MethodParam]]) -> void:
     var i: ptr_uint = 0
     while i < v.len():
         let p = v.get(i)
@@ -40,7 +54,7 @@ function release_params(v: ref[vec.Vec[raw.RawFuncParam]]) -> void:
     v.release()
 
 
-function release_method_funcs(v: ref[vec.Vec[MethodFunc]]) -> void:
+public function release_method_funcs(v: ref[vec.Vec[MethodFunc]]) -> void:
     var i: ptr_uint = 0
     while i < v.len():
         let p = v.get(i)
@@ -82,6 +96,21 @@ public function scan_generated_module(source: str) -> vec.Vec[MethodFunc]:
     return result
 
 
+public function scan_generated_lines(lines: span[string.String]) -> vec.Vec[MethodFunc]:
+    var result = vec.Vec[MethodFunc].create()
+    var i: ptr_uint = 0
+    while i < lines.len:
+        unsafe:
+            let line = read(lines.data + i)
+            match scan_method_line(line.as_str()):
+                Option.some as mf:
+                    result.push(mf.value)
+                Option.none:
+                    pass
+        i += 1
+    return result
+
+
 function scan_method_line(line: str) -> Option[MethodFunc]:
     var trimmed = line
     var si: ptr_uint = 0
@@ -112,7 +141,7 @@ function scan_method_line(line: str) -> Option[MethodFunc]:
         else if ch == ')':
             depth -= 1
         i += 1
-    var params = vec.Vec[raw.RawFuncParam].create()
+    var params = vec.Vec[MethodParam].create()
     if params_start < i - 1:
         params = parse_param_list(after_kw.slice(params_start, i - 1 - params_start))
 
@@ -120,42 +149,67 @@ function scan_method_line(line: str) -> Option[MethodFunc]:
     var return_type: str = "void"
     if i < after_kw.len:
         let rt_start = i
-        while i < after_kw.len and after_kw.byte_at(i) != ' ' and after_kw.byte_at(i) != '=':
-            i += 1
-        if i > rt_start:
-            return_type = after_kw.slice(rt_start, i - rt_start)
+        var rt_end = after_kw.len
+        let mapping = after_kw.slice(i, after_kw.len - i).find_substring(" = ")
+        match mapping:
+            Option.some as sep:
+                rt_end = i + sep.value
+            Option.none:
+                pass
+        while rt_end > rt_start and after_kw.byte_at(rt_end - 1) == ' ':
+            rt_end -= 1
+        if rt_end > rt_start:
+            return_type = after_kw.slice(rt_start, rt_end - rt_start)
 
-    var module_alias: str = ""
     var raw_name: str = ""
     let eq = after_kw.find_substring(" = ")
     let eq_pos = eq else:
         return Option[MethodFunc].some(value = MethodFunc(
             public_name = string.String.from_str(pub_name), raw_name = string.String.create(),
-            params = params, return_type = string.String.from_str(return_type),
-            module_alias = string.String.create()))
+            params = params, return_type = string.String.from_str(return_type)))
     let after_eq = after_kw.slice(eq_pos + 3, after_kw.len - eq_pos - 3)
     let dot = after_eq.find_substring(".")
     let dot_pos = dot else:
         return Option[MethodFunc].some(value = MethodFunc(
             public_name = string.String.from_str(pub_name), raw_name = string.String.create(),
-            params = params, return_type = string.String.from_str(return_type),
-            module_alias = string.String.create()))
-    module_alias = after_eq.slice(0, dot_pos)
-    raw_name = after_eq.slice(dot_pos + 1, after_eq.len - dot_pos - 1)
+            params = params, return_type = string.String.from_str(return_type)))
+    let mapped = after_eq.slice(dot_pos + 1, after_eq.len - dot_pos - 1)
+    var mapped_end: ptr_uint = 0
+    while mapped_end < mapped.len and mapped.byte_at(mapped_end) != '(' and
+            mapped.byte_at(mapped_end) != ' ':
+        mapped_end += 1
+    raw_name = mapped.slice(0, mapped_end)
     return Option[MethodFunc].some(value = MethodFunc(
         public_name = string.String.from_str(pub_name), raw_name = string.String.from_str(raw_name),
-        params = params, return_type = string.String.from_str(return_type),
-        module_alias = string.String.from_str(module_alias)))
+        params = params, return_type = string.String.from_str(return_type)))
 
 
-function parse_param_list(text: str) -> vec.Vec[raw.RawFuncParam]:
-    var result = vec.Vec[raw.RawFuncParam].create()
+function parse_param_list(text: str) -> vec.Vec[MethodParam]:
+    var result = vec.Vec[MethodParam].create()
     var pi: ptr_uint = 0
     while pi < text.len:
         while pi < text.len and text.byte_at(pi) == ' ':
             pi += 1
         if pi >= text.len:
             return result
+
+        # Optional parameter mode (`inout value: T`, `out x: T`).
+        var mode: str = ""
+        if starts_at(text, pi, "inout "):
+            mode = "inout"
+            pi += 6
+        else if starts_at(text, pi, "out "):
+            mode = "out"
+            pi += 4
+        else if starts_at(text, pi, "in "):
+            mode = "in"
+            pi += 3
+
+        while pi < text.len and text.byte_at(pi) == ' ':
+            pi += 1
+        if pi >= text.len:
+            return result
+
         let pname_start = pi
         while pi < text.len and text.byte_at(pi) != ':' and text.byte_at(pi) != ' ' and text.byte_at(pi) != ',':
             pi += 1
@@ -164,15 +218,41 @@ function parse_param_list(text: str) -> vec.Vec[raw.RawFuncParam]:
         let pname = text.slice(pname_start, pi - pname_start)
         while pi < text.len and (text.byte_at(pi) == ' ' or text.byte_at(pi) == ':'):
             pi += 1
+
         let ptype_start = pi
-        while pi < text.len and text.byte_at(pi) != ',':
+        var depth: int = 0
+        while pi < text.len:
+            let ch = text.byte_at(pi)
+            if ch == '[' or ch == '(' or ch == '{':
+                depth += 1
+            else if ch == ']' or ch == ')' or ch == '}':
+                if depth > 0:
+                    depth -= 1
+            else if ch == ',' and depth == 0:
+                break
             pi += 1
         var ptype_end = pi
         while ptype_end > ptype_start and text.byte_at(ptype_end - 1) == ' ':
             ptype_end -= 1
-        let ptype = text.slice(ptype_start, ptype_end - ptype_start)
+        let ptype_text = text.slice(ptype_start, ptype_end - ptype_start)
+
+        var ptype: str = ptype_text
+        var boundary: str = ""
+        let as_pos = ptype_text.find_substring(" as ")
+        match as_pos:
+            Option.some as pos:
+                ptype = ptype_text.slice(0, pos.value)
+                boundary = ptype_text.slice(pos.value + 4, ptype_text.len - pos.value - 4)
+            Option.none:
+                pass
+
         if pname.len > 0 and ptype.len > 0:
-            result.push(raw.RawFuncParam(name = string.String.from_str(pname), param_type = string.String.from_str(ptype)))
+            result.push(MethodParam(
+                name = string.String.from_str(pname),
+                param_type = string.String.from_str(ptype),
+                mode = string.String.from_str(mode),
+                boundary_type = string.String.from_str(boundary),
+            ))
         while pi < text.len and text.byte_at(pi) == ' ':
             pi += 1
         if pi < text.len and text.byte_at(pi) == ',':
@@ -187,82 +267,119 @@ function skip_arrow(text: str, start: ptr_uint) -> ptr_uint:
     return i
 
 
-# =============================================================================
-#  Method matching
-# =============================================================================
-
-function method_matches(raw_name: str, spec: policy.MethodSpec) -> bool:
-    # Check include prefixes against the raw name first
-    var raw_selected = true
-    if spec.include_kind != policy.IncludeKind.include_all:
-        raw_selected = false
-        var pi: ptr_uint = 0
-        while pi < spec.include_prefixes.len():
-            let prefix = spec.include_prefixes.get(pi)
-            if prefix != null and raw_name.starts_with(unsafe: read(prefix).as_str()):
-                raw_selected = true
-                break
-            pi += 1
-        if not raw_selected:
-            var ii: ptr_uint = 0
-            while ii < spec.include_list.len():
-                let iname = spec.include_list.get(ii)
-                if iname != null and unsafe: read(iname).as_str().equal(raw_name):
-                    raw_selected = true
-                    break
-                ii += 1
-    if not raw_selected:
+function starts_at(text: str, start: ptr_uint, pattern: str) -> bool:
+    if start + pattern.len > text.len:
         return false
+    var i: ptr_uint = 0
+    while i < pattern.len:
+        if text.byte_at(start + i) != pattern.byte_at(i):
+            return false
+        i += 1
+    return true
 
-    # Apply strip_prefix and renaming
-    var name = naming.strip_prefix_str(raw_name, spec.strip_prefix.as_str())
-    var buf = string.String.from_str(name)
+
+# =============================================================================
+#  Type helpers
+# =============================================================================
+
+## Strip import-alias qualifiers from a type (`rl.Vector2` -> `Vector2`,
+## `ptr[rl.Vector2]` -> `ptr[Vector2]`).  External method sources are generated
+## modules whose types may carry their own import aliases.
+function strip_alias_qualifiers(text: str) -> string.String:
+    var result = string.String.with_capacity(text.len)
+    var i: ptr_uint = 0
+    while i < text.len:
+        let ch = text.byte_at(i)
+        if is_ident_start(ch):
+            var j = i + 1
+            while j < text.len and is_ident_char(text.byte_at(j)):
+                j += 1
+            if j < text.len and text.byte_at(j) == '.':
+                i = j + 1
+                continue
+            result.append(text.slice(i, j - i))
+            i = j
+        else:
+            result.push_byte(ch)
+            i += 1
+    return result
+
+
+function is_ident_start(ch: ubyte) -> bool:
+    return (ch >= 65 and ch <= 90) or (ch >= 97 and ch <= 122) or ch == 95
+
+
+function is_ident_char(ch: ubyte) -> bool:
+    return is_ident_start(ch) or (ch >= 48 and ch <= 57)
+
+
+function receiver_matches(type_str: str, spec: policy.MethodSpec) -> bool:
+    if spec.receiver_types.len() > 0:
+        var i: ptr_uint = 0
+        while i < spec.receiver_types.len():
+            let item = spec.receiver_types.get(i)
+            if item != null and unsafe: read(item).as_str().equal(type_str):
+                return true
+            i += 1
+        return false
+    return spec.receiver_type.as_str().equal(type_str)
+
+
+function method_selected(key: str, spec: policy.MethodSpec) -> bool:
+    var ei: ptr_uint = 0
+    while ei < spec.exclude.len():
+        let en = spec.exclude.get(ei)
+        if en != null and unsafe: read(en).as_str().equal(key):
+            return false
+        ei += 1
+
+    if spec.include_kind == policy.IncludeKind.include_all:
+        return true
+
+    var ii: ptr_uint = 0
+    while ii < spec.include_list.len():
+        let iname = spec.include_list.get(ii)
+        if iname != null and unsafe: read(iname).as_str().equal(key):
+            return true
+        ii += 1
+
+    var pi: ptr_uint = 0
+    while pi < spec.include_prefixes.len():
+        let prefix = spec.include_prefixes.get(pi)
+        if prefix != null and key.starts_with(unsafe: read(prefix).as_str()):
+            return true
+        pi += 1
+    return false
+
+
+function method_public_name(key: str, spec: policy.MethodSpec) -> string.String:
+    var name = string.String.from_str(key)
     var ri: ptr_uint = 0
     while ri < spec.rename_rules.len():
         let rp = spec.rename_rules.get(ri)
         if rp != null:
             unsafe:
-                var next = naming.apply_rename_rule(buf.as_str(), read(rp).kind.as_str(), read(rp).pattern.as_str(), read(rp).replace_with.as_str())
-                buf.release()
-                buf = next
+                var next = naming.apply_rename_rule(
+                    name.as_str(),
+                    read(rp).kind.as_str(),
+                    read(rp).pattern.as_str(),
+                    read(rp).replace_with.as_str(),
+                )
+                name.release()
+                name = next
         ri += 1
-    var snaked = naming.snake_case(buf.as_str())
-    let final_name = snaked.as_str()
 
-    # Check exclude against transformed name
-    var ei: ptr_uint = 0
-    while ei < spec.exclude.len():
-        let en = spec.exclude.get(ei)
-        if en != null and unsafe: read(en).as_str().equal(final_name):
-            buf.release()
-            snaked.release()
-            return false
-        ei += 1
+    if spec.strip_prefix.len() > 0:
+        let stripped = naming.strip_prefix_str(name.as_str(), spec.strip_prefix.as_str())
+        var renamed = string.String.from_str(stripped)
+        name.release()
+        name = renamed
 
-    buf.release()
-    snaked.release()
-    return true
-
-
-function type_in_list(type_str: str, list: vec.Vec[string.String]) -> bool:
-    var i: ptr_uint = 0
-    while i < list.len():
-        let item = list.get(i)
-        if item != null and unsafe: read(item).as_str().equal(type_str):
-            return true
-        i += 1
-    return false
-
-
-function find_func_in_span(funcs: span[raw.RawFuncInfo], name: str) -> ptr[raw.RawFuncInfo]?:
-    var i: ptr_uint = 0
-    while i < funcs.len:
-        unsafe:
-            let fi = funcs.data + i
-            if fi.name.as_str().equal(name):
-                return fi
-        i += 1
-    return null
+    var sanitized = naming.sanitize_value_binding_name(name.as_str())
+    name.release()
+    var snaked = naming.snake_case(sanitized.as_str())
+    sanitized.release()
+    return snaked
 
 
 # =============================================================================
@@ -271,16 +388,12 @@ function find_func_in_span(funcs: span[raw.RawFuncInfo], name: str) -> ptr[raw.R
 
 public function generate(
     method_specs: vec.Vec[policy.MethodSpec],
-    raw_funcs: span[raw.RawFuncInfo],
-    raw_func_order: span[string.String],
+    function_entries: vec.Vec[MethodFunc],
     external_funcs: vec.Vec[MethodFunc],
     ext_module_alias: str,
     raw_module_alias: str,
 ) -> vec.Vec[string.String]:
     var lines = vec.Vec[string.String].create()
-    if method_specs.len() == 0:
-        return lines
-
     var mi: ptr_uint = 0
     while mi < method_specs.len():
         let spec_ptr = method_specs.get(mi) else:
@@ -290,14 +403,13 @@ public function generate(
         unsafe:
             let spec = read(spec_ptr)
             if spec.module_name.len() > 0:
-                block = emit_external_block(spec, external_funcs, ext_module_alias)
+                block = emit_block(spec, external_funcs, true, ext_module_alias)
             else:
-                block = emit_raw_block(spec, raw_funcs, raw_func_order, raw_module_alias)
+                block = emit_block(spec, function_entries, false, raw_module_alias)
         if block.len() > 0:
             merge_lines(ref_of(lines), ref_of(block))
         block.release()
         mi += 1
-
     return lines
 
 
@@ -310,171 +422,32 @@ function merge_lines(dest: ref[vec.Vec[string.String]], src: ref[vec.Vec[string.
         i += 1
 
 
-# =============================================================================
-#  Raw module method emission
-# =============================================================================
-
-function emit_raw_block(
+function emit_block(
     spec: policy.MethodSpec,
-    raw_funcs: span[raw.RawFuncInfo],
-    raw_func_order: span[string.String],
-    raw_alias: str,
-) -> vec.Vec[string.String]:
-    var result = vec.Vec[string.String].create()
-
-    var matching = vec.Vec[ptr[raw.RawFuncInfo]].create()
-    var ri: ptr_uint = 0
-    while ri < raw_func_order.len:
-        let order_name = unsafe: read(raw_func_order.data + ri)
-        if method_matches(order_name.as_str(), spec):
-            let fi = find_func_in_span(raw_funcs, order_name.as_str())
-            if fi != null:
-                matching.push(fi)
-        ri += 1
-
-    if matching.len() == 0:
-        matching.release()
-        return result
-
-    result.push(string.String.from_str(""))
-    var header = string.String.with_capacity(30)
-    header.append("extending ")
-    header.append(spec.receiver_type.as_str())
-    header.append(":")
-    result.push(header)
-
-    var method_lines = vec.Vec[string.String].create()
-    var ii: ptr_uint = 0
-    while ii < matching.len():
-        let fi_ptr = matching.get(ii) else:
-            ii += 1
-            continue
-        unsafe:
-            method_lines = emit_single_raw(read(fi_ptr), spec, raw_alias)
-        merge_lines(ref_of(result), ref_of(method_lines))
-        method_lines.release()
-        method_lines = vec.Vec[string.String].create()
-        ii += 1
-    matching.release()
-    return result
-
-
-function emit_single_raw(
-    fi: ptr[raw.RawFuncInfo],
-    spec: policy.MethodSpec,
-    raw_alias: str,
-) -> vec.Vec[string.String]:
-    var lines = vec.Vec[string.String].create()
-    unsafe:
-        let func = read(fi)
-        if func.params.len == 0:
-            return lines
-
-        let fp = func.params.get(0) else:
-            return lines
-        let first_type = read(fp).param_type.as_str()
-        # Strip import alias prefix if present (e.g. "c.Color" -> "Color")
-        var type_to_check = first_type
-        if raw_alias.len > 0 and first_type.starts_with(raw_alias):
-            let after_alias = first_type.slice(raw_alias.len, first_type.len - raw_alias.len)
-            if after_alias.starts_with("."):
-                type_to_check = after_alias.slice(1, after_alias.len - 1)
-        # Default receiver_types to [receiver_type] when empty
-        var receivers = spec.receiver_types
-        var has_default_receivers = false
-        if receivers.len() == 0:
-            receivers = vec.Vec[string.String].create()
-            receivers.push(string.String.from_str(spec.receiver_type.as_str()))
-            has_default_receivers = true
-        var method_kind = if not type_in_list(type_to_check, receivers): "static " else: ""
-        if has_default_receivers:
-            receivers.release()
-
-        var method_name = naming.strip_prefix_str(func.name.as_str(), spec.strip_prefix.as_str())
-        var snaked = naming.snake_case(method_name)
-        var sanitized = naming.sanitize_binding_name(snaked.as_str())
-
-        var sig = string.String.with_capacity(200)
-        sig.append("    public ")
-        sig.append(method_kind)
-        sig.append("function ")
-        sig.append(sanitized.as_str())
-        sig.append("(")
-        var spi: ptr_uint = if method_kind.len == 0: 1 else: 0
-        while spi < func.params.len:
-            let pp = func.params.get(spi) else:
-                spi += 1
-                continue
-            if spi != (if method_kind.len == 0: 1 else: 0):
-                sig.append(", ")
-            var pname = naming.snake_case(read(pp).name.as_str())
-            sig.append(pname.as_str())
-            sig.append(": ")
-            sig.append(read(pp).param_type.as_str())
-            pname.release()
-            spi += 1
-        sig.append(") -> ")
-        sig.append(func.return_type.as_str())
-        sig.append(":")
-        lines.push(sig)
-
-        var call_name_snaked = naming.snake_case(func.name.as_str())
-        var call_name = naming.sanitize_binding_name(call_name_snaked.as_str())
-
-        var call = string.String.with_capacity(200)
-        call.append("        ")
-        if not func.return_type.as_str().equal("void"):
-            call.append("return ")
-        call.append(call_name.as_str())
-        call.append("(")
-        if method_kind.len == 0:
-            call.append("this")
-        var need_comma = method_kind.len == 0
-        var ci: ptr_uint = if method_kind.len == 0: 1 else: 0
-        while ci < func.params.len:
-            let pp = func.params.get(ci) else:
-                ci += 1
-                continue
-            if need_comma:
-                call.append(", ")
-            else:
-                need_comma = true
-            var pname = naming.snake_case(read(pp).name.as_str())
-            call.append(pname.as_str())
-            pname.release()
-            ci += 1
-        call.append(")")
-        lines.push(call)
-        lines.push(string.String.from_str(""))
-
-        snaked.release()
-
-    return lines
-
-
-# =============================================================================
-#  External module method emission
-# =============================================================================
-
-function emit_external_block(
-    spec: policy.MethodSpec,
-    ext_funcs: vec.Vec[MethodFunc],
-    ext_alias: str,
+    entries: vec.Vec[MethodFunc],
+    use_public_key: bool,
+    call_alias: str,
 ) -> vec.Vec[string.String]:
     var result = vec.Vec[string.String].create()
 
     var matching = vec.Vec[ptr[MethodFunc]].create()
+    var seen = vec.Vec[string.String].create()
     var ei: ptr_uint = 0
-    while ei < ext_funcs.len():
-        let mf = ext_funcs.get(ei) else:
+    while ei < entries.len():
+        let entry_ptr = entries.get(ei) else:
             ei += 1
             continue
-        if method_matches(unsafe: read(mf).public_name.as_str(), spec):
-            matching.push(mf)
+        unsafe:
+            let entry = read(entry_ptr)
+            let key = if use_public_key: entry.public_name.as_str() else: entry.raw_name.as_str()
+            if method_selected(key, spec) and not string_in_list(ref_of(seen), key):
+                seen.push(string.String.from_str(key))
+                matching.push(entry_ptr)
         ei += 1
 
     if matching.len() == 0:
         matching.release()
+        release_strings(ref_of(seen))
         return result
 
     result.push(string.String.from_str(""))
@@ -484,116 +457,132 @@ function emit_external_block(
     header.append(":")
     result.push(header)
 
-    var method_lines = vec.Vec[string.String].create()
     var mi: ptr_uint = 0
     while mi < matching.len():
-        let mf_ptr = matching.get(mi) else:
+        let entry_ptr = matching.get(mi) else:
             mi += 1
             continue
+        var method_ptr: ptr[MethodFunc]
         unsafe:
-            method_lines = emit_single_external(read(mf_ptr), spec, ext_alias)
-        merge_lines(ref_of(result), ref_of(method_lines))
-        method_lines.release()
-        method_lines = vec.Vec[string.String].create()
+            method_ptr = read(entry_ptr)
+        var wrapper = emit_wrapper(method_ptr, spec, use_public_key, call_alias)
+        merge_lines(ref_of(result), ref_of(wrapper))
+        wrapper.release()
         mi += 1
+
     matching.release()
+    release_strings(ref_of(seen))
     return result
 
 
-function emit_single_external(
-    mf: ptr[MethodFunc],
+function string_in_list(list: ref[vec.Vec[string.String]], value: str) -> bool:
+    var i: ptr_uint = 0
+    while i < list.len():
+        let p = list.get(i)
+        if p != null and unsafe: read(p).as_str().equal(value):
+            return true
+        i += 1
+    return false
+
+
+function emit_wrapper(
+    entry_ptr: ptr[MethodFunc],
     spec: policy.MethodSpec,
-    ext_alias: str,
+    use_public_key: bool,
+    call_alias: str,
 ) -> vec.Vec[string.String]:
     var lines = vec.Vec[string.String].create()
+    var entry: MethodFunc
     unsafe:
-        let func = read(mf)
-        let pub_name = func.public_name.as_str()
-        var method_name = naming.strip_prefix_str(pub_name, spec.strip_prefix.as_str())
-        var snaked = naming.snake_case(method_name)
-        var sanitized = naming.sanitize_binding_name(snaked.as_str())
+        entry = read(entry_ptr)
 
-        var method_kind = "static "
-        if func.params.len > 0:
-            let fp = func.params.get(0)
-            if fp != null:
-                let first_type = read(fp).param_type.as_str()
-                var type_to_check = first_type
-                # Strip any module prefix (e.g. "rl.Vector2" -> "Vector2")
-                var dot_pos_opt = first_type.find_substring(".")
-                if dot_pos_opt.is_some():
-                    let dp = dot_pos_opt.unwrap()
-                    type_to_check = first_type.slice(dp + 1, first_type.len - dp - 1)
-                # Default receiver_types to [receiver_type]
-                var receivers = spec.receiver_types
-                var has_df = false
-                if receivers.len() == 0:
-                    receivers = vec.Vec[string.String].create()
-                    receivers.push(string.String.from_str(spec.receiver_type.as_str()))
-                    has_df = true
-                if type_in_list(type_to_check, receivers):
-                    method_kind = ""
-                if has_df:
-                    receivers.release()
+    let key = if use_public_key: entry.public_name.as_str() else: entry.raw_name.as_str()
+    if key.len == 0:
+        return lines
 
-        var sig = string.String.with_capacity(200)
-        sig.append("    public ")
-        sig.append(method_kind)
-        sig.append("function ")
-        sig.append(sanitized.as_str())
-        sig.append("(")
-        var spi: ptr_uint = if method_kind.len == 0: 1 else: 0
-        while spi < func.params.len:
-            let pp = func.params.get(spi) else:
-                spi += 1
-                continue
-            if spi != (if method_kind.len == 0: 1 else: 0):
-                sig.append(", ")
-            var pname = naming.snake_case(read(pp).name.as_str())
-            sig.append(pname.as_str())
-            sig.append(": ")
-            sig.append(read(pp).param_type.as_str())
-            pname.release()
-            spi += 1
-        sig.append(") -> ")
-        var rt = func.return_type.as_str()
-        # Strip module prefix (e.g. "rl.Vector2" -> "Vector2")
-        var rt_dot = rt.find_substring(".")
-        if rt_dot.is_some():
-            let dp = rt_dot.unwrap()
-            rt = rt.slice(dp + 1, rt.len - dp - 1)
-        sig.append(rt)
-        sig.append(":")
-        lines.push(sig)
+    var method_name = method_public_name(key, spec)
 
-        var call = string.String.with_capacity(200)
-        call.append("        ")
-        if not func.return_type.as_str().equal("void"):
-            call.append("return ")
-        call.append(ext_alias)
+    var kind: str = "static "
+    var drop_first = false
+    if entry.params.len() > 0:
+        let first = entry.params.get(0)
+        if first != null:
+            var first_type: string.String
+            var mode: str = ""
+            unsafe:
+                first_type = strip_alias_qualifiers(read(first).param_type.as_str())
+                mode = read(first).mode.as_str()
+            let base_type = first_type.as_str()
+            if receiver_matches(base_type, spec):
+                if mode.equal("inout"):
+                    kind = "editable "
+                    drop_first = true
+                else if mode.len == 0:
+                    kind = ""
+                    drop_first = true
+            first_type.release()
+
+    var signature = string.String.with_capacity(200)
+    signature.append("    public ")
+    signature.append(kind)
+    signature.append("function ")
+    signature.append(method_name.as_str())
+    signature.append("(")
+
+    let start: ptr_uint = if drop_first: 1 else: 0
+    var pi = start
+    var emitted = false
+    while pi < entry.params.len():
+        let param_ptr = entry.params.get(pi) else:
+            pi += 1
+            continue
+        unsafe:
+            let param = read(param_ptr)
+            if emitted:
+                signature.append(", ")
+            signature.append(param.name.as_str())
+            signature.append(": ")
+            var param_type = strip_alias_qualifiers(param.param_type.as_str())
+            signature.append(param_type.as_str())
+            param_type.release()
+            emitted = true
+        pi += 1
+    signature.append(") -> ")
+
+    var return_type = strip_alias_qualifiers(entry.return_type.as_str())
+    signature.append(return_type.as_str())
+    signature.append(":")
+    lines.push(signature)
+
+    var call = string.String.with_capacity(200)
+    call.append("        ")
+    if not return_type.as_str().equal("void"):
+        call.append("return ")
+    if use_public_key and call_alias.len > 0:
+        call.append(call_alias)
         call.append(".")
-        call.append(pub_name)
-        call.append("(")
-        if method_kind.len == 0:
-            call.append("this")
-        var need_comma = method_kind.len == 0
-        var ci: ptr_uint = if method_kind.len == 0: 1 else: 0
-        while ci < func.params.len:
-            let pp = func.params.get(ci) else:
-                ci += 1
-                continue
+    call.append(entry.public_name.as_str())
+    call.append("(")
+
+    var need_comma = false
+    if drop_first:
+        call.append("this")
+        need_comma = true
+    pi = start
+    while pi < entry.params.len():
+        let param_ptr = entry.params.get(pi) else:
+            pi += 1
+            continue
+        unsafe:
+            let param = read(param_ptr)
             if need_comma:
                 call.append(", ")
-            else:
-                need_comma = true
-            var pname = naming.snake_case(read(pp).name.as_str())
-            call.append(pname.as_str())
-            pname.release()
-            ci += 1
-        call.append(")")
-        lines.push(call)
-        lines.push(string.String.from_str(""))
+            call.append(param.name.as_str())
+            need_comma = true
+        pi += 1
+    call.append(")")
+    lines.push(call)
 
-        snaked.release()
-
+    return_type.release()
+    method_name.release()
     return lines

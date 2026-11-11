@@ -65,6 +65,7 @@ public struct TypeOverride:
     name: string.String
     mapping: string.String
     override_kind: string.String
+    const_type: string.String
 
 
 public struct FunctionParamOverride:
@@ -215,6 +216,7 @@ extending TypeOverride:
         this.name.release()
         this.mapping.release()
         this.override_kind.release()
+        this.const_type.release()
 
 
 extending FunctionParamOverride:
@@ -356,6 +358,7 @@ function parse_type_override(entry: ptr[json.Object]) -> TypeOverride:
         name = obj_str_empty(entry, "name"),
         mapping = obj_str_empty(entry, "mapping"),
         override_kind = obj_str_empty(entry, "kind"),
+        const_type = obj_str_empty(entry, "type"),
     )
 
 

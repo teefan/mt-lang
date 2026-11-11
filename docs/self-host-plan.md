@@ -37,13 +37,14 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the live VS Code F5 check is the remaining manual step |
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
-| Imported bindings | bindgen self-hosted; **3 verified / 26 changed of 29** against the host registry (the self registry has 28: `box3d` missing; per-bucket baseline in Track D) |
+| Imported bindings | **29/29 verified** against the host generator and the checked-in modules (session 66; `box3d` closed; golden-vector naming test in `projects/mtc/test/imported_bindings_naming_test.mt`) |
 
-Rough completion against the per-track Definition of Done: **~95%**.  The
-self-hosting foundation, `lower` dump parity and the CLI behavior matrix are
-done; the residue is the CLI's largest unported subsystems (`deps`, `docs`,
-wasm/emcc), the linter corpus (121 files), and bindings verification.  LSP,
-DAP and formatter are closed at their documented differences.
+Rough completion against the per-track Definition of Done: **~96%**.  The
+self-hosting foundation, `lower` dump parity, the CLI behavior matrix and the
+imported bindings are done; the residue is the CLI's largest unported
+subsystems (`deps`, `docs`, wasm/emcc), the linter corpus (121 files), and
+bindgen reproducibility.  LSP, DAP and formatter are closed at their documented
+differences.
 
 Session-65 batches (measurement truth + CLI forms): `cli_parity`
 replaced the ten `KNOWN_GAPS` regexes with case-backed `pending:` metadata (nine
@@ -67,6 +68,15 @@ out), and reported `differing rows: none` over the full drive. `gates.sh` labels
 were corrected and areas added for `packages`, `docs_cli`, `wasm`, `toolchain`
 and `tools`. Baseline re-confirmed: `cli_parity` 65/65 on the original matrix,
 bindings 3/25 of 28.
+
+Session-66 batch (Track D closed): the imported-bindings emitter now matches the
+host generator byte-for-byte on all 29 bindings (`box3d` added; type aliases,
+overrides, bare-alias resolution, function-type handle projection, method
+wrappers built from generated entries, tidy formatting).  The self-only command
+gained `--stdout`/`--json`; `tools/imported_bindings_parity.rb` reports
+29 verified / 0 changed, and both bindings gates are hard.  The host's 37
+OpenGL naming vectors are pinned in
+`projects/mtc/test/imported_bindings_naming_test.mt` (self suite 20/0).
 
 Session-51 batch: the event synthetic bodies (host slot/snapshot shapes), the
 reused await-field recording plus nested-await hoisting in a direct-await
@@ -481,7 +491,7 @@ Session-64 third batch (package builds, `--bundle`/`--archive`):
 | `lower` dump parity (**closed**, keep at 0 real differ) | *The program* Track A; `docs/language-design.md` | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` (~1 min warm, ~4 min cold) |
 | CLI behavior parity | Track B; `tools/cli_parity.rb --help` | `rake "cli:parity"` |
 | Linter corpus residue | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb -q` (615 files; `--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
-| Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check` (`--soft` during Track D); `ruby tools/imported_bindings_parity.rb --soft --json tmp/ib-parity.json`; regenerate `std/c/*.mt` and diff |
+| Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb --json tmp/ib-parity.json`; regenerate `std/c/*.mt` and diff |
 | LSP feature parity / residue | Track E; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb record --server host\|self` + `compare`; `tools/lsp_project_audit.rb --workspace DIR [--canonical]`; `tools/lsp_recovery_probe.rb --check`; `tools/lsp_soak.rb` |
 | DAP | Track F; `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both]` |
 | Formatter (`:tidy`, `:preserve`, `:canonical`) | Track E/formatter history at `d8a199c7` §7 | `ruby tools/format_parity.rb all -j 16` (712/712, counts drift) |
@@ -779,22 +789,23 @@ then ~20 s per full run); `rake "parity:scoreboard"` for the per-rule table.
 
 ### Track D — imported bindings and bindgen
 
-1. **OpenGL naming transforms** — port the six tables + seven functions
-   (`lib/milk_tea/bindings/imported_bindings/naming.rb:7-280`) into
-   `projects/mtc/src/mtc/imported_bindings/naming.mt`, wire the call sites (host
-   `lib/milk_tea/bindings/imported_bindings/generator.rb:707,875`), add the missing `snake_case` trailing normalization
-   (`lib/milk_tea/bindings/imported_bindings/naming.rb:259`).
-2. **29-binding verification** — the measurement is in place.  The self-only
-   `imported-bindings` command now has `--stdout` (byte comparison), `--json`
+1. **OpenGL naming transforms — CLOSED (session 66).**  The six tables and
+   seven functions are in `projects/mtc/src/mtc/imported_bindings/naming.mt`,
+   with the host's `snake_case` gsubs, full-gsub `replace`,
+   `openglize_binding_name`, split reserved sets, and the 37 golden vectors in
+   `projects/mtc/test/imported_bindings_naming_test.mt`.  The emitter keeps
+   type case, applies `types.overrides` (name/mapping/kind), resolves bare
+   raw aliases (`Uint16 -> ushort`, `enet_uint32 -> uint`), projects handles in
+   function-type params, builds method wrappers from the generated entries
+   (modes, public types, exclusions), and tidy-formats the assembled module.
+2. **29-binding verification — CLOSED (session 66).**  The self-only
+   `imported-bindings` command has `--stdout` (byte comparison), `--json`
    (per-entry status + first diff offset/line), and `--soft`;
    `tools/imported_bindings_parity.rb` compares self vs host vs checked-in and
-   classifies every changed binding.  Baseline at `c4e17df4`: **3 verified /
-   26 changed of 29** (the host registry has 29; the self registry has 28, so
-   `box3d` is missing).  Buckets: `duplicate-import` 1,
-   `type-name-snake-cased` 6, `missing-type-override` 7,
-   `type-opaque-mismatch` 6, `param-type-mapping` 4, `reserved-name` 1,
-   `missing-registry-entry` 1.  Target 29/29 (including the raylib Quaternion
-   member-ordering delta) or each residual justified byte-for-byte.
+   classifies every changed binding.  The Phase-0 baseline was 3 verified / 26
+   changed of 29; the landed result is **29 verified / 0 changed / 0 new of
+   29** (`box3d` added to the self registry).  `bindings` and
+   `bindings_parity` are hard gates.
 3. **Bindgen gaps** — header-provenance filter in `walk` (`projects/mtc/src/mtc/bindgen.mt:346-445`;
    host `lib/milk_tea/bindings/bindgen/ast_parser.rb:105-132`, `allowed_declaration_name?`); unknown-type
    policy instead of echoing bare names (`projects/mtc/src/mtc/bindgen.mt:259`; host
@@ -948,7 +959,7 @@ when the tree moved.  Target = the Definition of Done above.
 | LSP soak | 68.1 KB/cycle raw / 19.9 KB/cycle least-squares at 200 cycles | session 38 | `ruby tools/lsp_soak.rb --cycles 100` |
 | formatter | 712/712 all three modes byte-identical | session 33 | `ruby tools/format_parity.rb all -j 16` |
 | DAP | zero differing rows except the documented self-better frame0 row; harness now asserts (non-zero on an unlisted diff) and requires a real `lldb-dap` | session 65 (assertion layer) | `ruby tools/dap_smoke.rb` (`--allow-skip` to waive a missing adapter) |
-| imported bindings | 3 verified / 26 changed of 29 (host registry; self lacks `box3d`; buckets in Track D) | session 66 Phase 0 | `build/stage2/mtc imported-bindings --all --check --soft`; `ruby tools/imported_bindings_parity.rb --soft` |
+| imported bindings | **29 verified / 0 changed of 29** | session 66 | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 
 ## Porting notes
 

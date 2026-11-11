@@ -25,6 +25,7 @@ public struct RawTypeInfo:
     kind: RawDeclKind
     name: string.String
     c_name: string.String
+    target: string.String
 
 public struct RawConstInfo:
     name: string.String
@@ -63,6 +64,7 @@ extending RawTypeInfo:
     public editable function release() -> void:
         this.name.release()
         this.c_name.release()
+        this.target.release()
 
 
 extending RawConstInfo:
@@ -204,7 +206,7 @@ function extract_identifier_after(line: str, keyword: str) -> string.String:
     let name_start = i
     while i < rest.len:
         let ch = rest.byte_at(i)
-        if ch == ' ' or ch == ':' or ch == '<' or ch == '(' or ch == '\n':
+        if ch == ' ' or ch == ':' or ch == '<' or ch == '(' or ch == '[' or ch == '\n':
             break
         i += 1
     return string.String.from_str(rest.slice(name_start, i - name_start))
@@ -232,6 +234,41 @@ function extract_const_type(line: str, kw: str, name: str) -> str:
     return trimmed.slice(type_start, i - type_start)
 
 
+## The target of a bare `type Name = Target` alias, or "" when the target is
+## not a simple identifier (the host only recurses through bare TypeRefs).
+function extract_alias_target(line: str) -> str:
+    let trimmed = strip_indent(line)
+    var i: ptr_uint = 0
+    while i < trimmed.len and trimmed.byte_at(i) != '=':
+        i += 1
+    if i >= trimmed.len:
+        return ""
+    i += 1
+    while i < trimmed.len and trimmed.byte_at(i) == ' ':
+        i += 1
+    if i >= trimmed.len:
+        return ""
+    let start = i
+    while i < trimmed.len and trimmed.byte_at(i) != ' ':
+        i += 1
+    let target = trimmed.slice(start, i - start)
+    if target.len == 0:
+        return ""
+
+    var j: ptr_uint = 0
+    while j < target.len:
+        let ch = target.byte_at(j)
+        let is_letter = (ch >= 65 and ch <= 90) or (ch >= 97 and ch <= 122) or ch == 95
+        let is_digit = ch >= 48 and ch <= 57
+        if not is_letter and not (j > 0 and is_digit):
+            return ""
+        j += 1
+    let first = target.byte_at(0)
+    if not ((first >= 65 and first <= 90) or (first >= 97 and first <= 122) or first == 95):
+        return ""
+    return target
+
+
 function extract_func_sig(line: str, kw: str, name: str) -> (vec.Vec[RawFuncParam], str):
     var params = parse_func_params_from_line(line, kw)
     let return_type = extract_return_type(line)
@@ -240,19 +277,50 @@ function extract_func_sig(line: str, kw: str, name: str) -> (vec.Vec[RawFuncPara
 
 function extract_return_type(line: str) -> str:
     let trimmed = strip_indent(line)
-    # Find "->" and extract the return type after it
-    let arrow = trimmed.find_substring("->")
+
+    # Find the outer parameter list's closing paren first; a nested `fn(...)`
+    # parameter contains its own `->` that must not be mistaken for the
+    # function's return arrow.
+    var depth: int = 0
+    var i: ptr_uint = 0
+    var close_pos: ptr_uint = 0
+    var found_close = false
+    while i < trimmed.len:
+        let ch = trimmed.byte_at(i)
+        if ch == '(':
+            depth += 1
+        else if ch == ')':
+            depth -= 1
+            if depth == 0:
+                close_pos = i + 1
+                found_close = true
+                break
+        i += 1
+
+    if not found_close:
+        return "void"
+
+    let tail = trimmed.slice(close_pos, trimmed.len - close_pos)
+    let arrow = tail.find_substring("->")
     let arrow_pos = arrow else:
         return "void"
-    var i = arrow_pos + 2
-    while i < trimmed.len and trimmed.byte_at(i) == ' ':
-        i += 1
-    if i >= trimmed.len:
+
+    var start = close_pos + arrow_pos + 2
+    while start < trimmed.len and trimmed.byte_at(start) == ' ':
+        start += 1
+    if start >= trimmed.len:
         return "void"
-    let ret_start = i
-    while i < trimmed.len and trimmed.byte_at(i) != ' ':
-        i += 1
-    return trimmed.slice(ret_start, i - ret_start)
+
+    # The return type ends at the mapping separator ` = ` (or end of line).
+    var stop = start
+    while stop < trimmed.len:
+        if trimmed.byte_at(stop) == ' ' and stop + 2 < trimmed.len and
+                trimmed.byte_at(stop + 1) == '=' and trimmed.byte_at(stop + 2) == ' ':
+            break
+        stop += 1
+    while stop > start and trimmed.byte_at(stop - 1) == ' ':
+        stop -= 1
+    return trimmed.slice(start, stop - start)
 
 
 function parse_func_params_from_line(line: str, kw: str) -> vec.Vec[RawFuncParam]:
@@ -293,9 +361,19 @@ function parse_func_params_from_line(line: str, kw: str) -> vec.Vec[RawFuncParam
             # Skip whitespace and colon
             while pos < params_text.len and (params_text.byte_at(pos) == ' ' or params_text.byte_at(pos) == ':'):
                 pos += 1
-            # Extract param type
+            # Extract param type, splitting only on a comma at nesting depth 0
+            # (`fn(...)` and `ptr[...]` types contain their own commas).
             let type_start = pos
-            while pos < params_text.len and params_text.byte_at(pos) != ',':
+            var depth: int = 0
+            while pos < params_text.len:
+                let ch = params_text.byte_at(pos)
+                if ch == '[' or ch == '(' or ch == '{':
+                    depth += 1
+                else if ch == ']' or ch == ')' or ch == '}':
+                    if depth > 0:
+                        depth -= 1
+                else if ch == ',' and depth == 0:
+                    break
                 pos += 1
             while pos > type_start and params_text.byte_at(pos - 1) == ' ':
                 pos -= 1
@@ -409,7 +487,12 @@ function scan_line(
         var name = extract_identifier_after(line, if starts_with_keyword(line, "public type "): "public type " else: "type ")
         if name.len() > 0:
             let name_str = name.as_str()
-            types.push(RawTypeInfo(kind = RawDeclKind.raw_type_alias, name = string.String.from_str(name_str), c_name = string.String.create()))
+            types.push(RawTypeInfo(
+                kind = RawDeclKind.raw_type_alias,
+                name = string.String.from_str(name_str),
+                c_name = string.String.create(),
+                target = string.String.from_str(extract_alias_target(line)),
+            ))
             type_order.push(string.String.from_str(name_str))
         name.release()
         return
@@ -419,7 +502,12 @@ function scan_line(
         var name = extract_identifier_after(line, if starts_with_keyword(line, "public opaque "): "public opaque " else: "opaque ")
         if name.len() > 0:
             let c_name = extract_c_name(line)
-            types.push(RawTypeInfo(kind = RawDeclKind.raw_opaque, name = string.String.from_str(name.as_str()), c_name = string.String.from_str(c_name)))
+            types.push(RawTypeInfo(
+                kind = RawDeclKind.raw_opaque,
+                name = string.String.from_str(name.as_str()),
+                c_name = string.String.from_str(c_name),
+                target = string.String.create(),
+            ))
             type_order.push(string.String.from_str(name.as_str()))
         name.release()
         return
@@ -429,7 +517,12 @@ function scan_line(
         let kw = if starts_with_keyword(line, "public struct "): "public struct " else: "struct "
         var name = extract_identifier_after(line, kw)
         if name.len() > 0:
-            types.push(RawTypeInfo(kind = RawDeclKind.raw_struct, name = string.String.from_str(name.as_str()), c_name = string.String.create()))
+            types.push(RawTypeInfo(
+                kind = RawDeclKind.raw_struct,
+                name = string.String.from_str(name.as_str()),
+                c_name = string.String.create(),
+                target = string.String.create(),
+            ))
             type_order.push(string.String.from_str(name.as_str()))
         name.release()
         return
@@ -438,7 +531,12 @@ function scan_line(
         let kw = if starts_with_keyword(line, "public union "): "public union " else: "union "
         var name = extract_identifier_after(line, kw)
         if name.len() > 0:
-            types.push(RawTypeInfo(kind = RawDeclKind.raw_union, name = string.String.from_str(name.as_str()), c_name = string.String.create()))
+            types.push(RawTypeInfo(
+                kind = RawDeclKind.raw_union,
+                name = string.String.from_str(name.as_str()),
+                c_name = string.String.create(),
+                target = string.String.create(),
+            ))
             type_order.push(string.String.from_str(name.as_str()))
         name.release()
         return
@@ -447,7 +545,12 @@ function scan_line(
         let kw = if starts_with_keyword(line, "public enum "): "public enum " else: "enum "
         var name = extract_identifier_after(line, kw)
         if name.len() > 0:
-            types.push(RawTypeInfo(kind = RawDeclKind.raw_enum, name = string.String.from_str(name.as_str()), c_name = string.String.create()))
+            types.push(RawTypeInfo(
+                kind = RawDeclKind.raw_enum,
+                name = string.String.from_str(name.as_str()),
+                c_name = string.String.create(),
+                target = string.String.create(),
+            ))
             type_order.push(string.String.from_str(name.as_str()))
         name.release()
         return
@@ -456,7 +559,12 @@ function scan_line(
         let kw = if starts_with_keyword(line, "public flags "): "public flags " else: "flags "
         var name = extract_identifier_after(line, kw)
         if name.len() > 0:
-            types.push(RawTypeInfo(kind = RawDeclKind.raw_flags, name = string.String.from_str(name.as_str()), c_name = string.String.create()))
+            types.push(RawTypeInfo(
+                kind = RawDeclKind.raw_flags,
+                name = string.String.from_str(name.as_str()),
+                c_name = string.String.create(),
+                target = string.String.create(),
+            ))
             type_order.push(string.String.from_str(name.as_str()))
         name.release()
         return
