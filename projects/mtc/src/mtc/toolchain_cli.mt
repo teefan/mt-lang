@@ -21,6 +21,7 @@ import std.terminal as terminal
 import std.vec as vec
 
 import mtc.cli_help as cli_help
+import mtc.toolchain_bindings as raw_bindings
 
 
 ## One pinned upstream checkout: `dir` is relative to the data root, and the
@@ -274,7 +275,7 @@ public function run(args: span[str]) -> int:
     if sub == "doctor":
         if reject_extra_options(ref_of(remaining)):
             return 1
-        return doctor_command()
+        return doctor_command(quiet)
     if sub == "tools":
         if reject_extra_options(ref_of(remaining)):
             return 1
@@ -835,50 +836,377 @@ function cpu_count() -> ptr_uint:
 
 
 function is_executable(path: str) -> bool:
+    # `fs.metadata` is lstat-based; use the stat-based `fs.is_file` so a
+    # symlinked tool (`/usr/bin/cc` -> gcc) is accepted like Ruby's File.file?.
+    if not fs.is_file(path):
+        return false
     match fs.metadata(path):
         Result.success as meta:
-            let metadata = meta.value
-            if not metadata.is_file():
-                return false
-            return (metadata.mode & 73) != 0
+            return (meta.value.mode & 73) != 0
         Result.failure:
             return false
 
 
 ## ── doctor ──────────────────────────────────────────────────────────────────
 
-## The self's existing simplified check: the external tools the build flow
-## invokes.  (The host additionally reports Ruby, vendored-source sentinels and
-## raw-binding headers; those rows are listed as remaining work in Track B.)
-function doctor_command() -> int:
-    var all_ok = true
-    var checks: array[str, 6] = array[str, 6]("cc", "ar", "clang", "cmake", "ninja", "git")
-    var i: ptr_uint = 0
-    while i < 6:
-        let tool = checks[i]
-        if is_executable_on_path(tool):
-            stdio.print_format(c"ok   %.*s\n", int<-(tool.len), tool.data)
+## One accumulated `ok`/`fail` row (the host's `checks` tuples).
+struct CheckRow:
+    name: string.String
+    detail: string.String
+    ok: bool
+
+
+extending CheckRow:
+    public editable function release() -> void:
+        this.name.release()
+        this.detail.release()
+
+
+## The host's doctor output shape (`toolchain_cli.rb:112-182`): three preambles,
+## the system tools, the vendored-source sentinels, and the raw-binding headers,
+## then one `ok name: detail` / `fail name: detail` row per check.
+function doctor_command(quiet: bool) -> int:
+    let root_opt = compiler_root()
+    var data_root = data_root_dir(root_opt)
+    defer: data_root.release()
+
+    var overrides = load_overrides(data_root.as_str())
+    defer: release_overrides(ref_of(overrides))
+
+    var checks = vec.Vec[CheckRow].create()
+    defer: release_checks(ref_of(checks))
+
+    info(quiet, "Checking system tools...")
+    let ruby_detail = ruby_description()
+    push_check_owned(ref_of(checks), "ruby", true, ruby_detail)
+
+    let cc = env_or_default("CC", "cc")
+    let cc_ok = executable_available(cc)
+    push_check(ref_of(checks), "cc", cc_ok, cc)
+
+    let ar = env_or_default("AR", "ar")
+    push_check(ref_of(checks), "ar", executable_available(ar), ar)
+    push_check(ref_of(checks), "bundle", executable_available("bundle"), "bundle")
+    push_check(ref_of(checks), "git", executable_available("git"), "git")
+
+    let clang = env_or_default("CLANG", "clang")
+    push_check(ref_of(checks), "clang", executable_available(clang), clang)
+
+    let cmake = env_or_default("CMAKE", "cmake")
+    push_check(ref_of(checks), "cmake", executable_available(cmake), cmake)
+    push_check(ref_of(checks), "ninja", executable_available("ninja"), "ninja")
+
+    info(quiet, "Checking vendored libraries...")
+    var source_index: ptr_uint = 0
+    while source_index < source_count():
+        let src = source_at(source_index)
+        var checkout = path_ops.join(data_root.as_str(), src.dir)
+        var row_name = string.String.create()
+        row_name.append("source/")
+        row_name.append(src.name)
+        let missing = first_missing_sentinel(checkout.as_str(), src, ref_of(overrides))
+        if missing.is_none():
+            push_check(ref_of(checks), row_name.as_str(), true, checkout.as_str())
         else:
-            stdio.print_format(c"fail %.*s (not found on PATH)\n", int<-(tool.len), tool.data)
-            all_ok = false
-        i += 1
+            var detail = string.String.create()
+            match missing:
+                Option.some as relative:
+                    detail.append("missing ")
+                    detail.append(relative.value)
+                    detail.append(" under ")
+                    detail.append(checkout.as_str())
+                Option.none:
+                    pass
+            push_check(ref_of(checks), row_name.as_str(), false, detail.as_str())
+            detail.release()
+        row_name.release()
+        checkout.release()
+        source_index += 1
+
+    info(quiet, "Checking bindings...")
+    let binding_start = checks.len()
+    var binding_index: ptr_uint = 0
+    while binding_index < raw_bindings.binding_count():
+        let binding = raw_bindings.binding_at(binding_index)
+        var row_name = string.String.create()
+        row_name.append("binding/")
+        row_name.append(binding.name)
+
+        var ok = false
+        var detail = string.String.create()
+        match resolve_binding_header(binding, data_root.as_str()):
+            Option.some as found:
+                var header_path = found.value
+                ok = true
+                detail.append(binding.module_name)
+                detail.append(" -> ")
+                detail.append(header_path.as_str())
+                header_path.release()
+            Option.none:
+                if not cc_ok:
+                    detail.append("skipped (missing C compiler)")
+                else:
+                    var prepared = false
+                    if binding.prepare_source >= 0:
+                        prepared = prepare_binding_source(
+                            binding, data_root.as_str(), ref_of(overrides)
+                        )
+                    if prepared:
+                        match resolve_binding_header(binding, data_root.as_str()):
+                            Option.some as retried:
+                                var header_path = retried.value
+                                ok = true
+                                detail.append(binding.module_name)
+                                detail.append(" -> ")
+                                detail.append(header_path.as_str())
+                                header_path.release()
+                            Option.none:
+                                append_header_missing_message(ref_of(detail), binding)
+                    else:
+                        append_header_missing_message(ref_of(detail), binding)
+
+        insert_binding_check(ref_of(checks), binding_start, row_name.as_str(), ok, detail)
+        row_name.release()
+        binding_index += 1
+
+    info(quiet, "")
+    var all_ok = true
+    var check_index: ptr_uint = 0
+    while check_index < checks.len():
+        let row_ptr = checks.get(check_index) else:
+            break
+        unsafe:
+            let row = read(row_ptr)
+            var line = string.String.create()
+            if row.ok:
+                line.append("ok ")
+            else:
+                line.append("fail ")
+            line.append(row.name.as_str())
+            line.append(": ")
+            line.append(row.detail.as_str())
+            stdio.print_line(line.as_str())
+            line.release()
+            if not row.ok:
+                all_ok = false
+        check_index += 1
+
     if all_ok:
         return 0
     return 1
 
 
-function is_executable_on_path(name: str) -> bool:
-    var which_cmd = vec.Vec[str].create()
-    defer: which_cmd.release()
-    which_cmd.push("which")
-    which_cmd.push(name)
-    match process.capture(which_cmd.as_span()):
+function push_check(checks: ref[vec.Vec[CheckRow]], name: str, ok: bool, detail: str) -> void:
+    checks.push(CheckRow(
+        name = string.String.from_str(name),
+        detail = string.String.from_str(detail),
+        ok = ok,
+    ))
+
+
+function push_check_owned(checks: ref[vec.Vec[CheckRow]], name: str, ok: bool, detail: string.String) -> void:
+    checks.push(CheckRow(name = string.String.from_str(name), detail = detail, ok = ok))
+
+
+## Append a binding row to the binding block, keeping it sorted by name (the
+## host's `sort_by(&:name)`; the system and source rows precede the block).
+function insert_binding_check(
+    checks: ref[vec.Vec[CheckRow]],
+    start: ptr_uint,
+    name: str,
+    ok: bool,
+    detail: string.String,
+) -> void:
+    var index = checks.len()
+    while index > start:
+        let previous = checks.get(index - 1) else:
+            break
+        unsafe:
+            if read(previous).name.as_str().compare(name) <= 0:
+                break
+        index -= 1
+    if not checks.insert(index, CheckRow(name = string.String.from_str(name), detail = detail, ok = ok)):
+        fatal(c"toolchain doctor: check insert failed")
+
+
+function release_checks(checks: ref[vec.Vec[CheckRow]]) -> void:
+    var index: ptr_uint = 0
+    while index < checks.len():
+        let row = checks.get(index) else:
+            break
+        unsafe:
+            read(row).release()
+        index += 1
+    checks.release()
+
+
+function env_or_default(name: str, fallback: str) -> str:
+    match env.get(name):
+        Option.some as value:
+            if value.value.len > 0:
+                return value.value
+        Option.none:
+            pass
+    return fallback
+
+
+## The host's `executable_available?`: an absolute/relative path is checked
+## directly; a bare name is searched on `$PATH`.
+function executable_available(name: str) -> bool:
+    if name.len == 0:
+        return false
+
+    var index: ptr_uint = 0
+    while index < name.len:
+        if name.byte_at(index) == 47:
+            return is_executable(name)
+        index += 1
+
+    match env.get("PATH"):
+        Option.some as path:
+            let value = path.value
+            var start: ptr_uint = 0
+            var position: ptr_uint = 0
+            while position <= value.len:
+                if position == value.len or value.byte_at(position) == 58:
+                    let segment = value.slice(start, position - start)
+                    var candidate = path_ops.join(segment, name)
+                    let found = is_executable(candidate.as_str())
+                    candidate.release()
+                    if found:
+                        return true
+                    start = position + 1
+                position += 1
+            return false
+        Option.none:
+            return false
+
+
+## The host's `RUBY_DESCRIPTION` row detail.
+function ruby_description() -> string.String:
+    var command = vec.Vec[str].create()
+    defer: command.release()
+    command.push("ruby")
+    command.push("-e")
+    command.push("print RUBY_DESCRIPTION")
+    match process.capture(command.as_span()):
         Result.success as captured:
             var result = captured.value
             defer: result.release()
-            return result.status.exit_code == 0
+            if result.status.success():
+                match result.stdout_text():
+                    Option.some as text:
+                        return string.String.from_str(text.value)
+                    Option.none:
+                        pass
         Result.failure:
-            return false
+            pass
+    return string.String.from_str("ruby")
+
+
+## The first missing sentinel under `checkout` (the host's `missing`, which
+## applies the `config/upstream_versions.yml` sentinel overrides).
+function first_missing_sentinel(
+    checkout: str,
+    src: UpstreamSource,
+    overrides: ref[vec.Vec[SourceOverride]],
+) -> Option[str]:
+    let override = find_override(overrides, src.name)
+    if override != null:
+        let entry = unsafe: read(override)
+        if entry.has_sentinels:
+            var index: ptr_uint = 0
+            while index < entry.sentinels.len():
+                let sentinel_ptr = entry.sentinels.get(index) else:
+                    break
+                let sentinel = unsafe: read(sentinel_ptr).as_str()
+                var path = path_ops.join(checkout, sentinel)
+                let present = fs.exists(path.as_str())
+                path.release()
+                if not present:
+                    return Option[str].some(value = sentinel)
+                index += 1
+            return Option[str].none
+
+    var index: ptr_uint = 0
+    while index < src.sentinel_count:
+        let sentinel = src.sentinels[index]
+        var path = path_ops.join(checkout, sentinel)
+        let present = fs.exists(path.as_str())
+        path.release()
+        if not present:
+            return Option[str].some(value = sentinel)
+        index += 1
+    return Option[str].none
+
+
+function resolve_binding_header(
+    binding: raw_bindings.RawBinding,
+    data_root: str,
+) -> Option[string.String]:
+    if binding.env_var.len > 0:
+        match env.get(binding.env_var):
+            Option.some as value:
+                if value.value.len > 0 and fs.is_file(value.value):
+                    return Option[string.String].some(value = string.String.from_str(value.value))
+            Option.none:
+                pass
+
+    var index: ptr_uint = 0
+    while index < binding.candidate_count:
+        var candidate = binding_candidate(binding, index, data_root)
+        if fs.is_file(candidate.as_str()):
+            return Option[string.String].some(value = candidate)
+        candidate.release()
+        index += 1
+    return Option[string.String].none
+
+
+function binding_candidate(
+    binding: raw_bindings.RawBinding,
+    index: ptr_uint,
+    data_root: str,
+) -> string.String:
+    let candidate = binding.candidates[index]
+    if binding.candidates_from_root:
+        return path_ops.join(data_root, candidate)
+    return string.String.from_str(candidate)
+
+
+function append_header_missing_message(
+    detail: ref[string.String],
+    binding: raw_bindings.RawBinding,
+) -> void:
+    detail.append(binding.header_label)
+    detail.append(" header not found")
+    if binding.env_var.len > 0:
+        detail.append("; set ")
+        detail.append(binding.env_var)
+        detail.append(" or install ")
+        detail.append(binding.header_label)
+        detail.append(" headers")
+
+
+## Best-effort `prepare!` for a missing vendored header: bootstrap the source
+## the host's prepare lambda/vendored library would materialize.
+function prepare_binding_source(
+    binding: raw_bindings.RawBinding,
+    data_root: str,
+    overrides: ref[vec.Vec[SourceOverride]],
+) -> bool:
+    let src = source_at(ptr_uint<-binding.prepare_source)
+    var checkout = path_ops.join(data_root, src.dir)
+    defer: checkout.release()
+
+    if source_complete(checkout.as_str(), src, overrides):
+        return true
+
+    var failure_message = string.String.create()
+    defer: failure_message.release()
+    let revision = revision_for(src, overrides)
+    return bootstrap_source(
+        checkout.as_str(), src.url, revision, src, overrides, ref_of(failure_message)
+    )
 
 
 ## ── root discovery ──────────────────────────────────────────────────────────

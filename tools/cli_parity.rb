@@ -292,7 +292,7 @@ def build_cases
   add.call("std-unknown-sub", ["std", "bogus"])
   add.call("cache-status", ["cache", "status"])
   add.call("toolchain-no-sub", ["toolchain"])
-  add.call("toolchain-doctor", ["toolchain", "doctor"], pending: true)
+  add.call("toolchain-doctor", ["toolchain", "doctor"])
   add.call("deps-no-sub", ["deps"], pending: true)
   add.call("deps-unknown-sub", ["deps", "bogus"], pending: true)
   add.call("deps-tree", ["deps", "tree"], cwd: pkg, pending: true)
