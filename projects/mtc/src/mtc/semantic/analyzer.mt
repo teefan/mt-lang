@@ -7583,6 +7583,7 @@ function receiver_type_param_names(ctx: ref[Context], type_name: str) -> Option[
 public struct EditableSite:
     name: str
     line: ptr_uint
+    column: ptr_uint
 
 
 ## The host's `assignable_receiver?`: `infer_lvalue_receiver` with ref and
@@ -7615,7 +7616,7 @@ function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[sscope.
                     unsafe:
                         match read(receiver_expr):
                             ast.Expr.expr_identifier as id:
-                                ctx.editable_receiver_sites.push(EditableSite(name = id.name, line = id.line))
+                                ctx.editable_receiver_sites.push(EditableSite(name = id.name, line = id.line, column = id.column))
                                 if not editable_receiver_assignable(scope, id.name):
                                     report(ctx, line, column, editable_on_immutable_message(id.name, method_name))
                             _:
@@ -9104,7 +9105,7 @@ function record_mutating_args_for_indices(ctx: ref[Context], indices: ptr[map_mo
             if read(indices).contains(i):
                 match read(read(args.data + i).arg_value):
                     ast.Expr.expr_identifier as arg_id:
-                        ctx.mutating_argument_sites.push(EditableSite(name = arg_id.name, line = arg_id.line))
+                        ctx.mutating_argument_sites.push(EditableSite(name = arg_id.name, line = arg_id.line, column = arg_id.column))
                     _:
                         pass
         i += 1

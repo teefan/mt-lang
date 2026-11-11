@@ -290,7 +290,7 @@ function ctx_mark_editable_member(member_expr: ptr[ast.Expr], ctx: ref[ScopeCtx]
                         let sites = read(ctx).editable_sites
                         while si < sites.len:
                             let site = read(sites.data + si)
-                            if site.line == id.line and site.name.equal(id.name):
+                            if site.line == id.line and site.column == id.column and site.name.equal(id.name):
                                 ctx_mark_mutated(ctx, ma.receiver)
                                 return
                             si += 1
@@ -317,7 +317,7 @@ public function ctx_mark_mutating_args(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) 
                             let sites = read(ctx).mutating_sites
                             while si < sites.len:
                                 let site = read(sites.data + si)
-                                if site.line == id.line and site.name.equal(id.name):
+                                if site.line == id.line and site.column == id.column and site.name.equal(id.name):
                                     ctx_mark_mutated(ctx, value)
                                     break
                                 si += 1

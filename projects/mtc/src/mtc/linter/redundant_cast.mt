@@ -556,10 +556,31 @@ function check_literal_operand(ctx: ref[Ctx], op: str, operand: ptr[ast.Expr], s
                         let analysis = ctx.analysis else:
                             return
                         var is_enum = unsafe: read(analysis).static_member_types.contains(n.name)
+                        if not is_enum and n.module_name.len > 0:
+                            var key = string.String.create()
+                            key.append(n.module_name)
+                            key.append(".")
+                            key.append(n.name)
+                            is_enum = unsafe: read(analysis).static_member_types.contains(key.as_str())
+                            key.release()
                         if not is_enum:
                             return
-                    types.Type.ty_imported:
-                        pass
+                    types.Type.ty_imported as im:
+                        # Unlike the host's `EnumBase`, the self's imported
+                        # types do not carry their declaration kind; only an
+                        # imported enum has static members.
+                        let analysis = ctx.analysis else:
+                            return
+                        var is_enum = unsafe: read(analysis).static_member_types.contains(im.name)
+                        if not is_enum and im.module_name.len > 0:
+                            var key = string.String.create()
+                            key.append(im.module_name)
+                            key.append(".")
+                            key.append(im.name)
+                            is_enum = unsafe: read(analysis).static_member_types.contains(key.as_str())
+                            key.release()
+                        if not is_enum:
+                            return
                     _:
                         return
                 emit_diag(ctx, cast_line(operand), cast_column(operand), "integer literal coercion makes this cast redundant", target_name)

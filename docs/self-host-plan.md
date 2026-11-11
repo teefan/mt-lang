@@ -89,7 +89,10 @@ editable-call recording.  The fix engine now follows the host's rule order and
 pass structure, refuses fixes on unresolved imports, validates the candidate
 parse, re-analyzes against the loader-backed imports, and generates the
 `redundant-unsafe` fix (13/13 fixers).  Lint corpus: 495 agree / 123 differ of
-618, with `borrow-and-mutate` 29 and `loop-single-iteration` 8 (both improved).
+618, with `borrow-and-mutate` 29 and `loop-single-iteration` 8 (both improved);
+`prefer-own-ptr`'s candidate set now matches the host (20 self-only
+use-accounting rows remain), and the redundant-cast comparison sibling and
+editable-site matching were tightened.
 
 Session-51 batch: the event synthetic bodies (host slot/snapshot shapes), the
 reused await-field recording plus nested-await hoisting in a direct-await
@@ -742,10 +745,16 @@ the assignability batch improved `borrow-and-mutate` and
 was removed).  Per-rule deltas (session-66 re-read; **pairs are self-only /
 host-only**, in that order): `prefer-try` 75/39, `redundant-cast` 75/48,
 `prefer-let` 69/141, `borrow-and-mutate` 29/0, `shadow` 20/0,
-`prefer-own-ptr` 16/38, `constant-condition` 11/1, `prefer-or-pattern` 10/8,
+`prefer-own-ptr` 20/0, `constant-condition` 11/1, `prefer-or-pattern` 10/8,
 `loop-single-iteration` 8/0, `unreachable-code` 4/0, `prefer-var-else` 2/0, and
 one host-only `prefer-struct-with` (so that rule is not fully closed).  The
-corpus count drifts with the tree; quote the set.  Closed with no residue:
+corpus count drifts with the tree; quote the set.  The `prefer-own-ptr`
+candidate set now matches the host (annotated `ptr[...]` locals plus
+`must_alloc`-family and `alloc_expr/alloc_stmt/alloc_decl` initializers), so the
+38 host-only rows are gone; the remaining 20 are safe/unsafe use-accounting.
+`redundant-cast`'s integer-literal comparison sibling is restricted to
+primitives/enums, and the linter's editable-site records carry the receiver
+column (not just name/line).  Closed with no residue:
 `redundant-unsafe`, `owning-release-leak`, `owning-release-double`,
 `prefer-inline-if`, `prefer-conditional-expression`.
 
