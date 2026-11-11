@@ -569,7 +569,10 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
             unsafe:
                 emit_line(ref_of(e), render_constant(ref_of(e), read(c_ptr)))
             ci += 1
-        emit_line(ref_of(e), "")
+        # A module import can contribute constants that are all pruned; the
+        # host emits no separator when nothing was written.
+        if emitted_consts.len() > 0:
+            emit_line(ref_of(e), "")
 
     if program.globals.len > 0:
         var gi: ptr_uint = 0

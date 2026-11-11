@@ -2324,6 +2324,20 @@ function build_command(args: span[str]) -> int:
             return 1
     defer: release_package_option(ref_of(package_opt))
 
+    var build_template: Option[str] = Option[str].none
+    var build_assets: span[string.String] = span[string.String]()
+    match package_opt:
+        Option.some as package_ref:
+            let pkg = package_ref.value
+            match pkg.html_template:
+                Option.some as template:
+                    build_template = Option[str].some(value = template.value.as_str())
+                Option.none:
+                    pass
+            build_assets = pkg.assets.as_span()
+        Option.none:
+            pass
+
     var output_owner = string.String.create()
     defer: output_owner.release()
     var bundle_root = string.String.create()
@@ -2363,7 +2377,7 @@ function build_command(args: span[str]) -> int:
                 profile_name = pkg.profile
             if not has_cli_platform:
                 platform = platform_from_manifest(pkg.platform)
-            let extension = if platform == resolver.Platform.windows: ".exe" else: ""
+            let extension = artifact_extension(platform)
             if bundle_mode:
                 if platform == resolver.Platform.wasm:
                     eprint_line("bundle mode is supported only for native package builds")
@@ -2425,6 +2439,16 @@ function build_command(args: span[str]) -> int:
                     output_owner.append(computed.as_str())
                     clean_target.append(computed.as_str())
 
+    if platform == resolver.Platform.wasm:
+        match normalize_wasm_output_path(ref_of(output_owner)):
+            Result.failure as wasm_failure:
+                let message = wasm_failure.error.as_str()
+                eprint_line(message)
+                wasm_failure.error.release()
+                return 1
+            Result.success:
+                pass
+
     if not fs.exists(effective):
         var missing = string.String.create()
         defer: missing.release()
@@ -2473,9 +2497,6 @@ function build_command(args: span[str]) -> int:
     if kind == build_driver.BuildKind.executable and reject_missing_entrypoint(program, ir_program):
         return 1
 
-    if keep_c_path.is_some():
-        keep_c_to_file(ir_program, keep_c_path.unwrap())
-
     let output_dir = path_ops.dirname(output_owner.as_str())
     match fs.create_directories(output_dir):
         Result.failure as dir_failure:
@@ -2517,7 +2538,7 @@ function build_command(args: span[str]) -> int:
                 let copied = build_cache.materialize(cached.as_str(), output_owner.as_str())
                 cached.release()
                 if copied:
-                    match stage_package_assets(package_opt, output_owner.as_str(), bundle_mode):
+                    match stage_package_assets(package_opt, output_owner.as_str(), bundle_mode, platform):
                         Result.success:
                             pass
                         Result.failure as asset_failure:
@@ -2571,13 +2592,16 @@ function build_command(args: span[str]) -> int:
             Option.none:
                 pass
 
-    match build_driver.build(program, ir_program, output_owner.as_str(), c_compiler, roots.as_span(), sanitize, profile_name, debug_guards, kind):
+    match build_driver.build(
+        program, ir_program, output_owner.as_str(), c_compiler, roots.as_span(), sanitize, profile_name, debug_guards, kind,
+        platform, build_template, build_assets, keep_c_path
+    ):
         Result.success as built:
             var output = built.value
             defer: output.release()
             if cache_enabled:
                 build_cache.store(cache_key.as_str(), output.as_str())
-            match stage_package_assets(package_opt, output_owner.as_str(), bundle_mode):
+            match stage_package_assets(package_opt, output_owner.as_str(), bundle_mode, platform):
                 Result.success:
                     pass
                 Result.failure as asset_failure:
@@ -2626,6 +2650,10 @@ function build_command(args: span[str]) -> int:
                         int<-(display_path.len), display_path.data,
                         int<-(output_owner.as_str().len), output_owner.as_str().data,
                     )
+                if keep_c_path.is_some():
+                    var saved_path = loader.absolute_path(keep_c_path.unwrap())
+                    stdio.print_format(c"saved C to %.*s\n", int<-(saved_path.len), saved_path.data)
+                    saved_path.release()
             return 0
         Result.failure as failure:
             var message = failure.error
@@ -2679,6 +2707,31 @@ function resolve_bundle_paths(
         entry_output.append(".exe")
 
 
+## The host's `Build#artifact_extension`: `.html` for wasm, `.exe` for windows.
+function artifact_extension(platform: resolver.Platform) -> str:
+    if platform == resolver.Platform.wasm:
+        return ".html"
+    if platform == resolver.Platform.windows:
+        return ".exe"
+    return ""
+
+
+## The host's `normalize_output_path` for a wasm target: `.html` is required,
+## an extensionless path gets `.html`, any other extension is rejected.
+function normalize_wasm_output_path(path: ref[string.String]) -> Result[bool, string.String]:
+    if read(path).ends_with(".html"):
+        return Result[bool, string.String].success(value = true)
+
+    match path_ops.extension(read(path).as_str()):
+        Option.some:
+            var message = string.String.from_str("wasm output path must end with .html or omit the extension: ")
+            message.append(read(path).as_str())
+            return Result[bool, string.String].failure(error = message)
+        Option.none:
+            read(path).append(".html")
+            return Result[bool, string.String].success(value = true)
+
+
 ## Stage the bundle's assets and, for `--archive`, its tarball.  The host's
 ## `Build.build` re-stages on a cache hit; `build` and `run` share this step.
 function stage_run_bundle(
@@ -2687,11 +2740,12 @@ function stage_run_bundle(
     bundle_root: str,
     bundle_mode: bool,
     archive_mode: bool,
+    platform: resolver.Platform,
 ) -> Result[bool, string.String]:
     if not bundle_mode:
         return Result[bool, string.String].success(value = true)
 
-    match stage_package_assets(package_opt, output_path, true):
+    match stage_package_assets(package_opt, output_path, true, platform):
         Result.failure as asset_failure:
             return Result[bool, string.String].failure(error = asset_failure.error)
         Result.success:
@@ -2730,7 +2784,17 @@ function path_is_within(path: str, root: str) -> bool:
 ## Stage a package's `build.assets` beside the executable: packed into
 ## `assets.mtpack` in bundle mode, copied as-is otherwise (the host's
 ## `stage_runtime_assets`).
-function stage_package_assets(option: Option[package_manifest.PackageBuild], output_path: str, bundle_mode: bool) -> Result[bool, string.String]:
+function stage_package_assets(
+    option: Option[package_manifest.PackageBuild],
+    output_path: str,
+    bundle_mode: bool,
+    platform: resolver.Platform,
+) -> Result[bool, string.String]:
+    # The host's `runtime_asset_mappings_for` is empty for wasm; emcc's
+    # `--preload-file` packs the assets into the output `.data` instead.
+    if platform == resolver.Platform.wasm:
+        return Result[bool, string.String].success(value = true)
+
     match option:
         Option.none:
             return Result[bool, string.String].success(value = true)
@@ -2957,28 +3021,41 @@ function run_command(args: span[str]) -> int:
     # and entry name.  A plain run does not need it.
     var package_opt = Option[package_manifest.PackageBuild].none
     defer: release_package_option(ref_of(package_opt))
-    if bundle_mode:
-        var package_abs = loader.absolute_path(path)
-        defer: package_abs.release()
-        match package_manifest.load_package_for(package_abs.as_str()):
-            Result.success as loaded:
-                package_opt = loaded.value
-                match package_opt:
-                    Option.some as loaded_package:
-                        let pkg = loaded_package.value
-                        if not has_cli_profile:
-                            profile_name = pkg.profile
-                        if not has_cli_platform:
-                            platform = platform_from_manifest(pkg.platform)
-                    Option.none:
-                        pass
-            Result.failure as manifest_failure:
-                let message = manifest_failure.error.as_str()
-                eprint_line(message)
-                manifest_failure.error.release()
-                entry_path_owner.release()
-                source_root_owner.release()
-                return 1
+    var package_abs = loader.absolute_path(path)
+    defer: package_abs.release()
+    match package_manifest.load_package_for(package_abs.as_str()):
+        Result.success as loaded:
+            package_opt = loaded.value
+            match package_opt:
+                Option.some as loaded_package:
+                    let pkg = loaded_package.value
+                    if not has_cli_profile:
+                        profile_name = pkg.profile
+                    if not has_cli_platform:
+                        platform = platform_from_manifest(pkg.platform)
+                Option.none:
+                    pass
+        Result.failure as manifest_failure:
+            let message = manifest_failure.error.as_str()
+            eprint_line(message)
+            manifest_failure.error.release()
+            entry_path_owner.release()
+            source_root_owner.release()
+            return 1
+
+    var run_template: Option[str] = Option[str].none
+    var run_assets: span[string.String] = span[string.String]()
+    match package_opt:
+        Option.some as package_ref:
+            let pkg = package_ref.value
+            match pkg.html_template:
+                Option.some as template:
+                    run_template = Option[str].some(value = template.value.as_str())
+                Option.none:
+                    pass
+            run_assets = pkg.assets.as_span()
+        Option.none:
+            pass
 
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer: program.release()
@@ -3000,9 +3077,6 @@ function run_command(args: span[str]) -> int:
         entry_path_owner.release()
         source_root_owner.release()
         return 1
-
-    if keep_c_path.is_some():
-        keep_c_to_file(ir_program, keep_c_path.unwrap())
 
     var bundle_root = string.String.create()
     defer: bundle_root.release()
@@ -3039,6 +3113,18 @@ function run_command(args: span[str]) -> int:
         output_path.append(path_ops.basename(default_out.as_str()))
         output_path.push_byte('_')
         fmt_mod.append_long(ref_of(output_path), long<-time.now())
+
+    if platform == resolver.Platform.wasm:
+        match normalize_wasm_output_path(ref_of(output_path)):
+            Result.failure as wasm_failure:
+                let message = wasm_failure.error.as_str()
+                eprint_line(message)
+                wasm_failure.error.release()
+                entry_path_owner.release()
+                source_root_owner.release()
+                return 1
+            Result.success:
+                pass
 
     let output_dir = path_ops.dirname(output_path.as_str())
     match fs.create_directories(output_dir):
@@ -3082,7 +3168,7 @@ function run_command(args: span[str]) -> int:
                     var cached_output = string.String.from_str(output_path.as_str())
                     defer: cached_output.release()
                     match stage_run_bundle(
-                        package_opt, output_path.as_str(), bundle_root.as_str(), bundle_mode, archive_mode
+                        package_opt, output_path.as_str(), bundle_root.as_str(), bundle_mode, archive_mode, platform
                     ):
                         Result.success:
                             pass
@@ -3103,14 +3189,17 @@ function run_command(args: span[str]) -> int:
             Option.none:
                 pass
 
-    match build_driver.build(program, ir_program, output_path.as_str(), c_compiler, roots.as_span(), sanitize, profile_name, debug_guards, build_driver.BuildKind.executable):
+    match build_driver.build(
+        program, ir_program, output_path.as_str(), c_compiler, roots.as_span(), sanitize, profile_name, debug_guards,
+        build_driver.BuildKind.executable, platform, run_template, run_assets, keep_c_path
+    ):
         Result.success as built:
             var built_path = built.value
             defer: built_path.release()
             var owned_output = string.String.from_str(output_path.as_str())
             defer: owned_output.release()
             match stage_run_bundle(
-                package_opt, owned_output.as_str(), bundle_root.as_str(), bundle_mode, archive_mode
+                package_opt, owned_output.as_str(), bundle_root.as_str(), bundle_mode, archive_mode, platform
             ):
                 Result.success:
                     pass
@@ -5056,22 +5145,6 @@ function default_output_path(path: str) -> string.String:
     return j2_path(path, ".out")
 
 
-function keep_c_to_file(ir_program: ir.Program, output_path_str: str) -> void:
-    var c_source = c_backend.generate_c(ir_program, false, false, false)
-    defer: c_source.release()
-    match fs.write_text(output_path_str, c_source.as_str()):
-        Result.success:
-            if not cli_quiet:
-                stdio.print_format(c"saved C to %.*s\n", int<-(output_path_str.len), output_path_str.data)
-        Result.failure as failure:
-            var err = failure.error
-            defer: err.release()
-            stdio.print_format(
-                c"warning: could not write C to %.*s\n",
-                int<-(output_path_str.len), output_path_str.data,
-            )
-
-
 ## Milliseconds from the monotonic clock, used by `--timings` reports.
 function monotonic_ms() -> double:
     var ts = zero[time.TimeSpec]
@@ -6529,7 +6602,11 @@ function build_runner_file(source_path: str, options: TestRunOptions, output_pat
 
     # The host forces guards off for synthesized test runners, regardless of
     # the debug profile.
-    match build_driver.build(program, ir_program, output_path, options.cc, runner_roots.as_span(), options.sanitize, options.profile, Option[bool].some(value = false), build_driver.BuildKind.executable):
+    match build_driver.build(
+        program, ir_program, output_path, options.cc, runner_roots.as_span(), options.sanitize, options.profile,
+        Option[bool].some(value = false), build_driver.BuildKind.executable, resolver.Platform.linux,
+        Option[str].none, span[string.String](), Option[str].none
+    ):
         Result.success:
             return Result[bool, string.String].success(value = true)
         Result.failure as failure:

@@ -275,7 +275,7 @@ def build_cases
   add.call("build-kind-bogus", ["build", "standalone/clean.mt", "--kind", "bogus"])
   add.call("build-locked", ["build", "pkg", "-I", FIXROOT, "--locked", "--no-cache"], pending: true)
   add.call("build-frozen", ["build", "pkg", "-I", FIXROOT, "--frozen", "--no-cache"], pending: true)
-  add.call("build-wasm", ["build", "pkg", "-I", FIXROOT, "--platform", "wasm", "--no-cache"], pending: true)
+  add.call("build-wasm", ["build", "pkg", "-I", FIXROOT, "--platform", "wasm", "--no-cache"])
   add.call("run-package", ["run", "pkg", "-I", FIXROOT, "--no-cache"])
   add.call("run-standalone", ["run", "standalone/clean.mt", "-I", FIXROOT, "--no-cache"])
   add.call("run-no-operand-no-package", ["run"], cwd: FIXROOT)

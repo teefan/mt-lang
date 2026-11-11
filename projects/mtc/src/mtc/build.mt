@@ -4,6 +4,7 @@
 ## Build-cache checks and package-graph resolution are handled by the CLI layer
 ## (main.mt).
 
+import std.env as env
 import std.fs as fs
 import std.fmt as fmt
 import std.log as log
@@ -16,9 +17,11 @@ import std.vec as vec
 
 import mtc.debug_map as debug_map
 import mtc.loader.module_loader as loader
+import mtc.loader.path_resolver as resolver
 import mtc.ir as ir
 import mtc.c_backend.c_backend as c_backend
 import mtc.parser.ast as ast
+import mtc.wasm_shell as wasm_shell
 
 
 ## What the build produces: an executable (the default), a static archive
@@ -38,7 +41,42 @@ public enum BuildKind: ubyte
 ## When `sanitize` is true, the binary is compiled with AddressSanitizer and UBSan.
 ## On success the success value is the output path; on failure the error is a
 ## human-readable message.
-public function build(program: loader.Program, ir_program: ir.Program, output_path: str, c_compiler: str, roots: span[str], sanitize: bool, profile: str, debug_guards: Option[bool], kind: BuildKind) -> Result[string.String, string.String]:
+public function build(
+    program: loader.Program,
+    ir_program: ir.Program,
+    output_path: str,
+    c_compiler: str,
+    roots: span[str],
+    sanitize: bool,
+    profile: str,
+    debug_guards: Option[bool],
+    kind: BuildKind,
+    platform: resolver.Platform,
+    html_template: Option[str],
+    assets: span[string.String],
+    keep_c_path: Option[str],
+) -> Result[string.String, string.String]:
+    let is_wasm = platform == resolver.Platform.wasm
+    if is_wasm and not output_path.ends_with(".html"):
+        var message = string.String.from_str("wasm output path must end with .html or omit the extension: ")
+        message.append(output_path)
+        return Result[string.String, string.String].failure(error = message)
+    if is_wasm and kind != BuildKind.executable:
+        return Result[string.String, string.String].failure(
+            error = string.String.from_str("wasm target supports executable builds only")
+        )
+
+    let compiler = resolve_compiler(c_compiler, is_wasm)
+    if not compiler_available(compiler):
+        var message = string.String.from_str("C compiler not found: ")
+        message.append(compiler)
+        return Result[string.String, string.String].failure(error = message)
+    if is_wasm and not is_emscripten_compiler(compiler):
+        var message = string.String.from_str("unsupported C compiler backend for wasm target: ")
+        message.append(compiler)
+        message.append("; use Emscripten emcc")
+        return Result[string.String, string.String].failure(error = message)
+
     # Vendored static libraries (GLFW, the Tracy client) must exist before the
     # link step; build them on demand for raw bindings that require them.
     match prepare_vendored_libraries(program, roots):
@@ -62,6 +100,38 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
     var c_source = c_backend.generate_c(ir_program, is_debug, guards, kind != BuildKind.executable)
     defer: c_source.release()
 
+    # `--keep-c` saves the host's inspectable rendering: no `#line` directives
+    # and no debug loop guards, while the compiled source is the profile's
+    # source (the host's `CBackend.emit(..., emit_line_directives: false,
+    # debug_guards: false)`).
+    if keep_c_path.is_some():
+        let keep_path = keep_c_path.unwrap()
+        var saved_source = c_backend.generate_c(ir_program, false, false, false)
+        defer: saved_source.release()
+        let keep_dir = path_ops.dirname(keep_path)
+        match fs.create_directories(keep_dir):
+            Result.failure as dir_failure:
+                var dir_error = dir_failure.error
+                var message = string.String.from_str("could not write C to ")
+                message.append(keep_path)
+                message.append(": ")
+                message.append(dir_error.message.as_str())
+                dir_error.release()
+                return Result[string.String, string.String].failure(error = message)
+            Result.success:
+                pass
+        match fs.write_text(keep_path, saved_source.as_str()):
+            Result.failure as write_failure:
+                var write_error = write_failure.error
+                var message = string.String.from_str("could not write C to ")
+                message.append(keep_path)
+                message.append(": ")
+                message.append(write_error.message.as_str())
+                write_error.release()
+                return Result[string.String, string.String].failure(error = message)
+            Result.success:
+                pass
+
     # A unique temporary C path: concurrent builds (e.g. a parallel example
     # sweep) must not clobber each other's generated source.  A fixed
     # `/tmp/mtc_build.c` made one process compile another's C — spurious
@@ -83,28 +153,64 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
                 error = string.String.from_str("could not write generated C source")
             )
 
+    var shell_path = string.String.create()
+    defer: remove_shell_file(ref_of(shell_path))
+    if is_wasm:
+        var template_owner = string.String.create()
+        defer: template_owner.release()
+        var template_path: str = "<embedded wasm shell>"
+        match html_template:
+            Option.some as declared:
+                template_path = declared.value
+                match fs.read_text(declared.value):
+                    Result.success as payload:
+                        template_owner.release()
+                        template_owner = payload.value
+                    Result.failure as read_failure:
+                        var read_error = read_failure.error
+                        var message = string.String.from_str("could not read wasm HTML template: ")
+                        message.append(declared.value)
+                        read_error.release()
+                        return Result[string.String, string.String].failure(error = message)
+            Option.none:
+                template_owner.assign(wasm_shell.DEFAULT_TEMPLATE)
+
+        match wasm_shell.render(template_owner.as_str(), template_path):
+            Result.failure as render_failure:
+                return Result[string.String, string.String].failure(error = render_failure.error)
+            Result.success as rendered:
+                var shell_source = rendered.value
+                defer: shell_source.release()
+                match fs.create_temporary_file_in_system_temp("milk-tea-shell", ".html"):
+                    Result.success as created:
+                        shell_path.release()
+                        shell_path = created.value
+                    Result.failure as create_failure:
+                        var create_error = create_failure.error
+                        var message = string.String.from_str("could not create wasm shell file: ")
+                        message.append(create_error.message.as_str())
+                        create_error.release()
+                        return Result[string.String, string.String].failure(error = message)
+                match fs.write_text(shell_path.as_str(), shell_source.as_str()):
+                    Result.failure as write_failure:
+                        var write_error = write_failure.error
+                        var message = string.String.from_str("could not write wasm shell file: ")
+                        message.append(write_error.message.as_str())
+                        write_error.release()
+                        return Result[string.String, string.String].failure(error = message)
+                    Result.success:
+                        pass
+        clean_wasm_artifacts(output_path)
+
     var command = vec.Vec[str].create()
     defer: command.release()
-    command.push(c_compiler)
+    command.push(compiler)
     command.push("-std=c11")
-    command.push("-D_GNU_SOURCE")
-    if sanitize:
-        command.push("-fsanitize=address,undefined")
-        command.push("-fno-sanitize-recover=all")
-        command.push("-fno-omit-frame-pointer")
-    if is_debug:
-        command.push("-g")
-        command.push("-O0")
-    else:
-        command.push("-O3")
-        command.push("-DNDEBUG")
 
     # C ABI struct definitions (`fs_support.h`, etc.) live under `<root>/std/c`;
     # add the include path from whichever root contains that directory.
     var include_flag = std_c_include_flag(roots)
     defer: include_flag.release()
-    if include_flag.len() > 0:
-        command.push(include_flag.as_str())
 
     # Binding build flags (include paths and implementation defines) that the
     # raw std.c.* modules require but do not express as source directives — e.g.
@@ -112,58 +218,76 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
     # mirror the Ruby raw-binding registry entries.  They are needed to compile
     # the generated C, so they precede the input in every kind.
     var binding_flags = collect_binding_flags(program, roots)
-    defer: binding_flags.release()
-    var bfi: ptr_uint = 0
-    while bfi < binding_flags.len():
-        let flag_ptr = binding_flags.get(bfi) else:
-            break
-        unsafe:
-            command.push(read(flag_ptr).as_str())
-        bfi += 1
+    defer: release_owned_strings(ref_of(binding_flags))
+
+    # Link libraries declared via `link "..."` directives in external modules
+    # (e.g. `link "uv"` in std.c.fs → `-luv`) and the vendored static-library
+    # search paths plus their system dependencies.  Collected once for both the
+    # wasm and native command shapes; released after the compiler runs.
+    var link_flags = collect_link_flags(program)
+    defer: release_owned_strings(ref_of(link_flags))
+    var vendored_flags = collect_vendored_link_flags(program, roots)
+    defer: release_owned_strings(ref_of(vendored_flags))
+
+    var owned_args = vec.Vec[string.String].create()
+    defer: release_owned_strings(ref_of(owned_args))
 
     let is_static = kind == BuildKind.kind_static
     var object_path = string.String.create()
     defer: object_path.release()
-    if is_static:
-        object_path.append(c_path.as_str().slice(0, c_path.len() - 2))
-        object_path.append(".o")
-        command.push("-c")
-        command.push("-o")
-        command.push(object_path.as_str())
+
+    if is_wasm:
+        if is_debug:
+            command.push("-g")
+            command.push("-O0")
+        else:
+            command.push("-O3")
+            command.push("-DNDEBUG")
+        if include_flag.len() > 0:
+            command.push(include_flag.as_str())
+        push_owned_flags(ref_of(command), ref_of(binding_flags))
         command.push(c_path.as_str())
-    else:
-        if kind == BuildKind.kind_shared:
-            command.push("-fPIC")
-            command.push("-shared")
         command.push("-o")
         command.push(output_path)
-        command.push(c_path.as_str())
+        command.push("--shell-file")
+        command.push(shell_path.as_str())
+        command.push("-sINCOMING_MODULE_JS_API=canvas,print,printErr")
+        push_wasm_preloads(ref_of(command), ref_of(owned_args), assets)
+        push_owned_flags(ref_of(command), ref_of(link_flags))
+        push_owned_flags(ref_of(command), ref_of(vendored_flags))
+    else:
+        command.push("-D_GNU_SOURCE")
+        if sanitize:
+            command.push("-fsanitize=address,undefined")
+            command.push("-fno-sanitize-recover=all")
+            command.push("-fno-omit-frame-pointer")
+        if is_debug:
+            command.push("-g")
+            command.push("-O0")
+        else:
+            command.push("-O3")
+            command.push("-DNDEBUG")
 
-        # Link libraries declared via `link "..."` directives in external
-        # modules (e.g. `link "uv"` in std.c.fs → `-luv`).
-        var link_flags = collect_link_flags(program)
-        defer: link_flags.release()
-        var lfi: ptr_uint = 0
-        while lfi < link_flags.len():
-            let flag_ptr = link_flags.get(lfi) else:
-                break
-            unsafe:
-                command.push(read(flag_ptr).as_str())
-            lfi += 1
+        if include_flag.len() > 0:
+            command.push(include_flag.as_str())
+        push_owned_flags(ref_of(command), ref_of(binding_flags))
 
-        # Vendored static library search paths (`-L`) plus their static-link
-        # system dependencies.  The `-l<lib>` flags themselves come from the
-        # bindings' `link "..."` directives above; GNU ld applies `-L` to all
-        # `-l` options regardless of order.
-        var vendored_flags = collect_vendored_link_flags(program, roots)
-        defer: vendored_flags.release()
-        var vfi: ptr_uint = 0
-        while vfi < vendored_flags.len():
-            let flag_ptr = vendored_flags.get(vfi) else:
-                break
-            unsafe:
-                command.push(read(flag_ptr).as_str())
-            vfi += 1
+        if is_static:
+            object_path.append(c_path.as_str().slice(0, c_path.len() - 2))
+            object_path.append(".o")
+            command.push("-c")
+            command.push("-o")
+            command.push(object_path.as_str())
+            command.push(c_path.as_str())
+        else:
+            if kind == BuildKind.kind_shared:
+                command.push("-fPIC")
+                command.push("-shared")
+            command.push("-o")
+            command.push(output_path)
+            command.push(c_path.as_str())
+            push_owned_flags(ref_of(command), ref_of(link_flags))
+            push_owned_flags(ref_of(command), ref_of(vendored_flags))
 
     match process.capture(command.as_span()):
         Result.success as captured:
@@ -171,8 +295,16 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
             defer: result.stdout.release()
             defer: result.stderr.release()
             if result.status.exit_code != 0:
-                var message = string.String.from_str("C compiler exited with an error:\n")
-                message.append(result.stderr.as_str())
+                var details = string.String.from_str(result.stdout.as_str())
+                details.append(result.stderr.as_str())
+                if details.len() == 0:
+                    details.release()
+                    return Result[string.String, string.String].failure(
+                        error = string.String.from_str("C compiler failed")
+                    )
+                var message = string.String.from_str("C compiler failed:\n")
+                message.append(details.as_str())
+                details.release()
                 return Result[string.String, string.String].failure(error = message)
 
             if is_static:
@@ -233,10 +365,207 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
         Result.failure as failure:
             var err = failure.error
             err.release()
-            var message = string.String.from_str("could not launch C compiler '")
-            message.append(c_compiler)
-            message.append("'")
+            var message = string.String.from_str("C compiler not found: ")
+            message.append(compiler)
             return Result[string.String, string.String].failure(error = message)
+
+
+function env_or_default(name: str, fallback: str) -> str:
+    match env.get(name):
+        Option.some as value:
+            if value.value.len > 0:
+                return value.value
+        Option.none:
+            pass
+    return fallback
+
+
+## The host's `Build#resolve_compiler`: a wasm build with the default C
+## compiler uses `$EMCC` (default `emcc`); an explicit `--cc` is honoured.
+function resolve_compiler(requested: str, is_wasm: bool) -> str:
+    if not is_wasm:
+        return requested
+    let default_cc = env_or_default("CC", "cc")
+    if requested.equal("cc") or requested.equal(default_cc):
+        return env_or_default("EMCC", "emcc")
+    return requested
+
+
+function is_executable_file(path: str) -> bool:
+    if not fs.is_file(path):
+        return false
+    match fs.metadata(path):
+        Result.success as metadata:
+            return (metadata.value.mode & 73) != 0
+        Result.failure:
+            return false
+
+
+## The host's `compiler_available?`: a path is checked directly; a bare name is
+## searched on `$PATH`.
+function compiler_available(compiler: str) -> bool:
+    if compiler.len == 0:
+        return false
+
+    var index: ptr_uint = 0
+    while index < compiler.len:
+        if compiler.byte_at(index) == 47:
+            return is_executable_file(compiler)
+        index += 1
+
+    match env.get("PATH"):
+        Option.some as path:
+            let value = path.value
+            var start: ptr_uint = 0
+            var position: ptr_uint = 0
+            while position <= value.len:
+                if position == value.len or value.byte_at(position) == 58:
+                    let segment = value.slice(start, position - start)
+                    var candidate = path_ops.join(segment, compiler)
+                    let found = is_executable_file(candidate.as_str())
+                    candidate.release()
+                    if found:
+                        return true
+                    start = position + 1
+                position += 1
+            return false
+        Option.none:
+            return false
+
+
+function ascii_lower_byte(value: ubyte) -> ubyte:
+    if value >= 65 and value <= 90:
+        return value + 32
+    return value
+
+
+function is_compiler_separator(value: ubyte) -> bool:
+    return value == 45 or value == 95 or value == 46
+
+
+## The host's `emscripten_backend?`: the basename (without a known executable
+## suffix) split on `-_.` must contain an `emcc` token.
+function is_emscripten_compiler(compiler: str) -> bool:
+    let base = path_ops.basename(compiler)
+    var end = base.len
+
+    var dot = base.len
+    var index: ptr_uint = 0
+    while index < base.len:
+        if base.byte_at(index) == 46:
+            dot = index
+        index += 1
+    if dot < base.len:
+        let suffix = base.slice(dot, base.len - dot)
+        if (
+            suffix.equal(".exe")
+            or suffix.equal(".bat")
+            or suffix.equal(".cmd")
+            or suffix.equal(".com")
+            or suffix.equal(".sh")
+            or suffix.equal(".py")
+        ):
+            end = dot
+
+    var start: ptr_uint = 0
+    index = 0
+    while index <= end:
+        if index == end or is_compiler_separator(base.byte_at(index)):
+            let token = base.slice(start, index - start)
+            if token.len == 4:
+                if (
+                    ascii_lower_byte(token.byte_at(0)) == 101
+                    and ascii_lower_byte(token.byte_at(1)) == 109
+                    and ascii_lower_byte(token.byte_at(2)) == 99
+                    and ascii_lower_byte(token.byte_at(3)) == 99
+                ):
+                    return true
+            start = index + 1
+        index += 1
+    return false
+
+
+function push_owned_flags(command: ref[vec.Vec[str]], values: ref[vec.Vec[string.String]]) -> void:
+    var index: ptr_uint = 0
+    while index < values.len():
+        let value = values.get(index) else:
+            break
+        unsafe:
+            command.push(read(value).as_str())
+        index += 1
+
+
+## `--preload-file <abs>@/<basename>` per `build.assets` entry (the host's
+## `wasm_asset_flags`).  The mapping strings are owned by `owned` so the `str`
+## views in `command` stay valid until the compiler runs.
+function push_wasm_preloads(
+    command: ref[vec.Vec[str]],
+    owned: ref[vec.Vec[string.String]],
+    assets: span[string.String],
+) -> void:
+    var index: ptr_uint = 0
+    while index < assets.len:
+        let asset = assets[index]
+        let asset_path = asset.as_str()
+        var mapping = string.String.with_capacity(asset_path.len + 2)
+        mapping.append(asset_path)
+        mapping.push_byte(64)
+        mapping.push_byte(47)
+        mapping.append(path_ops.basename(asset_path))
+        command.push("--preload-file")
+        command.push(mapping.as_str())
+        owned.push(mapping)
+        index += 1
+
+
+function release_owned_strings(values: ref[vec.Vec[string.String]]) -> void:
+    var index: ptr_uint = 0
+    while index < values.len():
+        let value = values.get(index) else:
+            break
+        unsafe:
+            read(value).release()
+        index += 1
+    values.release()
+
+
+function remove_shell_file(path: ref[string.String]) -> void:
+    if read(path).len > 0:
+        match fs.remove(read(path).as_str()):
+            Result.failure as failure:
+                var error = failure.error
+                error.release()
+            Result.success:
+                pass
+    read(path).release()
+
+
+## The host's `clean_output_artifacts`: remove the target and the sidecars an
+## earlier emcc run may have left beside it.
+function clean_wasm_artifacts(output_path: str) -> void:
+    match fs.remove(output_path):
+        Result.failure as failure:
+            var error = failure.error
+            error.release()
+        Result.success:
+            pass
+
+    let base = output_path.slice(0, output_path.len - 5)
+    var extensions: array[str, 6] = array[str, 6](
+        ".js", ".wasm", ".data", ".worker.js", ".symbols", ".wasm.map"
+    )
+    var index: ptr_uint = 0
+    while index < 6:
+        var sidecar = string.String.from_str(base)
+        sidecar.append(extensions[index])
+        match fs.remove(sidecar.as_str()):
+            Result.failure as failure:
+                var error = failure.error
+                error.release()
+            Result.success:
+                pass
+        sidecar.release()
+        index += 1
 
 
 ## Write the `<output>.mtdbg.json` sidecar from the lowered IR.  A sidecar
