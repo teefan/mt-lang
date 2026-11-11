@@ -506,7 +506,7 @@ Session-64 third batch (package builds, `--bundle`/`--archive`):
 | --- | --- | --- |
 | `lower` dump parity (**closed**, keep at 0 real differ) | *The program* Track A; `docs/language-design.md` | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` (~1 min warm, ~4 min cold) |
 | CLI behavior parity | Track B; `tools/cli_parity.rb --help` | `rake "cli:parity"` |
-| Linter corpus residue | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb -q` (615 files; `--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
+| Linter corpus residue | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb -q` (618 files; `--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
 | Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb --json tmp/ib-parity.json`; regenerate `std/c/*.mt` and diff |
 | LSP feature parity / residue | Track E; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb record --server host\|self` + `compare`; `tools/lsp_project_audit.rb --workspace DIR [--canonical]`; `tools/lsp_recovery_probe.rb --check`; `tools/lsp_soak.rb` |
 | DAP | Track F; `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both]` |
@@ -587,10 +587,10 @@ Iterate cheap, prove once:
    locked/frozen, bundle/archive run).  `toolchain
    bootstrap|tools`, `build --kind static|shared`, the bindgen nullable flags
    and `--bundle`/`--archive` landed in the session-64 batches.
-3. **Linter corpus residue** — open: 496/122 of 618, **41/43 rules and 12/13
+3. **Linter corpus residue** — open: 495/123 of 618, **41/43 rules and 13/13
    fixers**, plus the analyzer gaps in Track C.
-4. **Imported bindings / bindgen** — open: 28/28 verification and the bindgen
-   gaps in Track D.
+4. **Imported bindings / bindgen** — imported bindings **closed at 29/29**;
+   bindgen reproducibility remains open (Track D item 3).
 5. **Final verification** — Track H, only after the tracks above reach their
    targets.
 
@@ -614,7 +614,7 @@ their listed residues (ref-lifetime modelling, the DAP F5 manual check) remain.
   default `lldb-dap` backend (breakpoints, stepping, evaluate; Milk Tea
   frames/locals via the debug map); process backend unchanged; `dap_smoke`
   green on both.
-- **Bindings/bindgen**: `imported-bindings --all --check` 28/28 verified (or each
+- **Bindings/bindgen**: `imported-bindings --all --check` 29/29 verified (or each
   residual delta justified as cosmetic with evidence); bindgen output
   reproducible for the repo's bindings.
 - **Formatter**: all modes byte-identical (712/712 at the session-33 audit;
