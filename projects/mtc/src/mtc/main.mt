@@ -262,32 +262,7 @@ function dispatch_cli(raw_args: span[str]) -> int:
         return lex_command(lf, machine, sexpr)
 
     if cmd == "parse":
-        var parse_file: Option[str] = Option[str].none
-        var parse_sexpr = false
-        var pi: ptr_uint = 1
-        while pi < args.len:
-            let a = args[pi]
-            if a == "--":
-                pi += 1
-                continue
-            if a == "--sexpr":
-                parse_sexpr = true
-            else if a.starts_with("-"):
-                stdio.print_format(c"unknown option: %.*s\n", int<-(a.len), a.data)
-                return 1
-            else:
-                match parse_file:
-                    Option.some:
-                        stdio.print_format(c"unknown option: %.*s\n", int<-(a.len), a.data)
-                        return 1
-                    Option.none:
-                        parse_file = Option[str].some(value = a)
-            pi += 1
-        let pf = parse_file else:
-            eprint_line("missing source file path")
-            cli_help.print_usage(true)
-            return 1
-        return parse_command(pf, parse_sexpr)
+        return parse_command(args)
 
     if cmd == "check":
         if args.len < 2:
@@ -429,7 +404,173 @@ function parse_module_name(file_path: str) -> string.String:
     return resolver.infer_module_name(abs_path, roots.as_span())
 
 
-function parse_command(file_path: str, sexpr: bool) -> int:
+## Expand PATH|DIR operands the way the host's `expand_source_paths` does:
+## each directory contributes its sorted `*.mt` files, every path appears once,
+## and `paths` holds borrowed views kept alive by `owner` (or by the argv span).
+function expand_source_operands(inputs: span[str], paths: ref[vec.Vec[str]], owner: ref[vec.Vec[string.String]]) -> void:
+    var ii: ptr_uint = 0
+    while ii < inputs.len:
+        let input = inputs[ii]
+        if fs.is_directory(input):
+            match fs.list_files_recursive(input):
+                Result.failure:
+                    pass
+                Result.success as entries_payload:
+                    var entries = entries_payload.value
+                    defer: entries.release()
+                    var dir_files = vec.Vec[str].create()
+                    defer: dir_files.release()
+                    var ei: ptr_uint = 0
+                    while ei < entries.len():
+                        let name = entries.get(ei) else:
+                            break
+                        if name.ends_with(".mt"):
+                            dir_files.push(name)
+                        ei += 1
+                    dir_files.sort_by(proc(left: ptr[str], right: ptr[str]) -> int: str.order(left, right))
+                    var di: ptr_uint = 0
+                    while di < dir_files.len():
+                        let name = dir_files.get(di) else:
+                            break
+                        owner.push(string.String.from_str(unsafe: read(name)))
+                        let stored = owner.get(owner.len() - 1) else:
+                            break
+                        push_unique_path(paths, unsafe: read(stored).as_str())
+                        di += 1
+        else:
+            push_unique_path(paths, input)
+        ii += 1
+
+
+function push_unique_path(paths: ref[vec.Vec[str]], candidate: str) -> void:
+    var i: ptr_uint = 0
+    while i < paths.len():
+        let existing = paths.get(i) else:
+            break
+        if unsafe: read(existing).equal(candidate):
+            return
+        i += 1
+    paths.push(candidate)
+
+
+## The host's `input_paths.length == 1 ? input_paths.first : join(", ")` label.
+function operand_label(inputs: span[str]) -> string.String:
+    var label = string.String.create()
+    if inputs.len == 1:
+        label.append(inputs[0])
+        return label
+    var i: ptr_uint = 0
+    while i < inputs.len:
+        if i > 0:
+            label.append(", ")
+        label.append(inputs[i])
+        i += 1
+    return label
+
+
+## Print the host's `unexpected argument(s) for <command>: <args>` plus that
+## command's usage block.
+function reject_unexpected_operands(command: str, args: span[str]) -> int:
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append("unexpected argument(s) for ")
+    detail.append(command)
+    detail.append(": ")
+    var i: ptr_uint = 1
+    while i < args.len:
+        if i > 1:
+            detail.append(" ")
+        detail.append(args[i])
+        i += 1
+    eprint_line(detail.as_str())
+    cli_help.print_command_help(command, true)
+    return 1
+
+
+## `mtc parse PATH|DIR [PATH|DIR ...] [--sexpr] [-I PATH]`.
+function parse_command(args: span[str]) -> int:
+    var sexpr = false
+    var inputs = vec.Vec[str].create()
+    defer: inputs.release()
+    var roots = vec.Vec[str].create()
+    defer: roots.release()
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
+    var platform = resolver.Platform.linux
+    var ai: ptr_uint = 1
+    while ai < args.len:
+        let arg = args[ai]
+        if arg == "--sexpr":
+            sexpr = true
+            ai += 1
+            continue
+        if arg == "--":
+            ai += 1
+            while ai < args.len:
+                inputs.push(args[ai])
+                ai += 1
+            continue
+        if arg == "-I" or arg == "--include-path" or arg == "--root":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: -I requires a directory")
+                return 1
+            roots.push(args[ai + 1])
+            ai += 2
+            continue
+        if arg == "--platform":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --platform requires linux, windows, or wasm")
+                return 1
+            match parse_platform_name(args[ai + 1]):
+                Option.some as plat:
+                    platform = plat.value
+                Option.none:
+                    return 1
+            ai += 2
+            continue
+        if arg.starts_with("-"):
+            return reject_unexpected_operands("parse", args)
+        inputs.push(arg)
+        ai += 1
+
+    if inputs.len() == 0:
+        eprint_line("missing source file path")
+        cli_help.print_usage(true)
+        return 1
+
+    var paths = vec.Vec[str].create()
+    defer: paths.release()
+    var expanded_owner = vec.Vec[string.String].create()
+    defer: expanded_owner.release()
+    expand_source_operands(inputs.as_span(), ref_of(paths), ref_of(expanded_owner))
+    if paths.len() == 0:
+        var label = operand_label(inputs.as_span())
+        defer: label.release()
+        var msg = string.String.create()
+        defer: msg.release()
+        msg.append("no .mt files found in ")
+        msg.append(label.as_str())
+        stdio.print_line(msg.as_str())
+        return 0
+
+    let multiple = paths.len() > 1
+    var pi: ptr_uint = 0
+    while pi < paths.len():
+        let path_ptr = paths.get(pi) else:
+            break
+        let path = unsafe: read(path_ptr)
+        if multiple and not sexpr:
+            stdio.print_format(c"# --- %.*s ---\n", int<-(path.len), path.data)
+        let rc = parse_one_path(path, sexpr)
+        if rc != 0:
+            return rc
+        if multiple and pi + 1 < paths.len():
+            stdio.print_line("")
+        pi += 1
+    return 0
+
+
+function parse_one_path(file_path: str, sexpr: bool) -> int:
     # Resolve to the active-platform variant (`name.mt` -> `name.linux.mt` when
     # a sibling exists), matching the Ruby loader's `load_file`.
     var abs_owner = loader.absolute_path(file_path)
@@ -516,22 +657,11 @@ function check_command(args: span[str]) -> int:
     var i: ptr_uint = 1
     while i < args.len:
         let arg = args[i]
-        if arg == "--root" or arg == "-I" or arg == "--include-path":
+        if arg == "-I" or arg == "--include-path":
             if i + 1 >= args.len:
                 stdio.print_line("error: -I requires a directory")
                 return 1
             roots.push(args[i + 1])
-            i += 2
-            continue
-        if arg == "--platform":
-            if i + 1 >= args.len:
-                stdio.print_line("error: --platform requires linux, windows, or wasm")
-                return 1
-            match parse_platform_name(args[i + 1]):
-                Option.some as plat:
-                    platform = plat.value
-                Option.none:
-                    return 1
             i += 2
             continue
         if arg == "-Werror" or arg == "--warnings-as-errors":
@@ -542,6 +672,14 @@ function check_command(args: span[str]) -> int:
             # Accepted for CLI compatibility; package-graph resolution is not yet implemented.
             i += 1
             continue
+        if arg == "--":
+            i += 1
+            while i < args.len:
+                input_paths.push(args[i])
+                i += 1
+            continue
+        if arg.starts_with("-"):
+            return reject_unexpected_operands("check", args)
         input_paths.push(arg)
         i += 1
 
@@ -943,18 +1081,9 @@ function lint_command(args: span[str]) -> int:
     var i: ptr_uint = 1
     while i < args.len:
         let arg = args[i]
-        if arg == "-I" or arg == "--root" or arg == "--include-path":
+        if arg == "-I" or arg == "--include-path":
             if i + 1 < args.len:
                 roots.push(args[i + 1])
-            i += 2
-            continue
-        if arg == "--platform":
-            if i + 1 < args.len:
-                match parse_platform_name(args[i + 1]):
-                    Option.some as plat:
-                        platform = plat.value
-                    Option.none:
-                        pass
             i += 2
             continue
         if arg == "--fix":
@@ -976,20 +1105,27 @@ function lint_command(args: span[str]) -> int:
             continue
         if arg == "--select":
             i += 1
-            if i < args.len:
-                collect_filter_codes(args[i], ref_of(select_set))
+            if i >= args.len:
+                eprint_line("--select requires a comma-separated list of rule codes")
+                return 1
+            collect_filter_codes(args[i], ref_of(select_set))
             i += 1
             continue
         if arg == "--ignore":
             i += 1
-            if i < args.len:
-                collect_filter_codes(args[i], ref_of(ignore_set))
+            if i >= args.len:
+                eprint_line("--ignore requires a comma-separated list of rule codes")
+                return 1
+            collect_filter_codes(args[i], ref_of(ignore_set))
             i += 1
             continue
         if arg.starts_with("-"):
-            # Other flags (--init, --locked, --profile) are silently skipped.
-            i += 1
-            continue
+            var unknown = string.String.create()
+            defer: unknown.release()
+            unknown.append("unknown lint flag: ")
+            unknown.append(arg)
+            eprint_line(unknown.as_str())
+            return 1
         input_paths.push(arg)
         i += 1
 
@@ -1458,20 +1594,99 @@ function lower_one_path(path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[
     return 0
 
 
-## Compile a checked program to C and print it (`mtc emit-c`).
-## Supports both `.mt` files and package directory targets.
-function emit_c_command(args: span[str]) -> int:
-    var roots = vec.Vec[str].create()
-    defer: roots.release()
-    var owned_roots = vec.Vec[string.String].create()
-    defer: owned_roots.release()
-    var platform = resolver.Platform.linux
-    let path = parse_source_operand(args, ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
-        return 1
+## Resolve one `emit-c` operand the way the host's `resolve_program_path` does:
+## a directory becomes its package's build entry (or the host's error); a file
+## is used as given.  The resolved path is copied into `out_owner`, its borrowed
+## view is pushed onto `out_paths`, and any package source root is registered.
+function resolve_emit_c_operand(
+    raw: str,
+    roots: ref[vec.Vec[str]],
+    owned_roots: ref[vec.Vec[string.String]],
+    out_paths: ref[vec.Vec[str]],
+    out_owner: ref[vec.Vec[string.String]],
+) -> bool:
+    if not fs.is_directory(raw):
+        add_module_roots(raw, roots, owned_roots)
+        out_owner.push(string.String.from_str(raw))
+        let stored = out_owner.get(out_owner.len() - 1) else:
+            return false
+        out_paths.push(unsafe: read(stored).as_str())
+        return true
 
+    var manifest_path = path_ops.join(raw, "package.toml")
+    defer: manifest_path.release()
+    if not fs.is_file(manifest_path.as_str()):
+        var msg = string.String.create()
+        defer: msg.release()
+        msg.append("no package.toml found in ")
+        msg.append(raw)
+        eprint_line(msg.as_str())
+        return false
+
+    match fs.read_text(manifest_path.as_str()):
+        Result.failure:
+            var msg = string.String.create()
+            defer: msg.release()
+            msg.append("failed to load package manifest for ")
+            msg.append(raw)
+            eprint_line(msg.as_str())
+            return false
+        Result.success as payload:
+            var text = payload.value
+            defer: text.release()
+
+            let entry_val = read_toml_str(text.as_str(), "build", "entry")
+            let entry = entry_val else:
+                var msg = string.String.create()
+                defer: msg.release()
+                msg.append("no build entry found for ")
+                msg.append(raw)
+                eprint_line(msg.as_str())
+                return false
+
+            var source_root = string.String.from_str("src")
+            match read_toml_str(text.as_str(), "package", "source_root"):
+                Option.some as sr:
+                    source_root.release()
+                    source_root = sr.value
+                Option.none:
+                    pass
+
+            var root_path = path_ops.join(raw, source_root.as_str())
+            owned_roots.push(root_path)
+            let root_stored = owned_roots.get(owned_roots.len() - 1) else:
+                source_root.release()
+                return false
+            roots.push(unsafe: read(root_stored).as_str())
+
+            var entry_path = path_ops.join(raw, entry.as_str())
+            if not fs.is_file(entry_path.as_str()):
+                var msg = string.String.create()
+                defer: msg.release()
+                msg.append("no build entry found for ")
+                msg.append(raw)
+                eprint_line(msg.as_str())
+                source_root.release()
+                entry_path.release()
+                return false
+
+            add_module_roots(entry_path.as_str(), roots, owned_roots)
+            out_owner.push(entry_path)
+            let stored = out_owner.get(out_owner.len() - 1) else:
+                source_root.release()
+                return false
+            out_paths.push(unsafe: read(stored).as_str())
+            source_root.release()
+            return true
+
+
+## Compile one checked program to C and print it.
+function emit_c_one_path(path: str, roots: ref[vec.Vec[str]], owned_roots: ref[vec.Vec[string.String]], platform: resolver.Platform) -> int:
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
-    let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+    let effective = effective_source_path(path, roots, ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+        entry_path_owner.release()
+        source_root_owner.release()
         return 1
     if not fs.exists(effective):
         var missing = string.String.create()
@@ -1479,6 +1694,8 @@ function emit_c_command(args: span[str]) -> int:
         missing.append("source file not found: ")
         missing.append(path)
         eprint_line(missing.as_str())
+        entry_path_owner.release()
+        source_root_owner.release()
         return 1
 
     var program = loader.check_program(effective, roots.as_span(), platform)
@@ -1502,6 +1719,85 @@ function emit_c_command(args: span[str]) -> int:
     stdio.print_format(c"%.*s", int<-(text.len), text.data)
     entry_path_owner.release()
     source_root_owner.release()
+    return 0
+
+
+## `mtc emit-c PATH|DIR [PATH|DIR ...] [-I PATH]`.
+function emit_c_command(args: span[str]) -> int:
+    var roots = vec.Vec[str].create()
+    defer: roots.release()
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
+    var inputs = vec.Vec[str].create()
+    defer: inputs.release()
+    var platform = resolver.Platform.linux
+    var ai: ptr_uint = 1
+    while ai < args.len:
+        let arg = args[ai]
+        if arg == "--":
+            ai += 1
+            while ai < args.len:
+                inputs.push(args[ai])
+                ai += 1
+            continue
+        if arg == "-I" or arg == "--include-path" or arg == "--root":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: -I requires a directory")
+                return 1
+            roots.push(args[ai + 1])
+            ai += 2
+            continue
+        if arg == "--platform":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --platform requires linux, windows, or wasm")
+                return 1
+            match parse_platform_name(args[ai + 1]):
+                Option.some as plat:
+                    platform = plat.value
+                Option.none:
+                    return 1
+            ai += 2
+            continue
+        if arg == "--locked" or arg == "--frozen":
+            ai += 1
+            continue
+        if arg.starts_with("-"):
+            return reject_unexpected_operands("emit-c", args)
+        inputs.push(arg)
+        ai += 1
+
+    if inputs.len() == 0:
+        eprint_line("missing source file path")
+        cli_help.print_usage(true)
+        return 1
+
+    var program_paths = vec.Vec[str].create()
+    defer: program_paths.release()
+    var resolved_owner = vec.Vec[string.String].create()
+    defer: resolved_owner.release()
+    var ii: ptr_uint = 0
+    while ii < inputs.len():
+        let raw_ptr = inputs.get(ii) else:
+            break
+        let raw = unsafe: read(raw_ptr)
+        if not resolve_emit_c_operand(raw, ref_of(roots), ref_of(owned_roots), ref_of(program_paths), ref_of(resolved_owner)):
+            return 1
+        ii += 1
+
+    let multiple = program_paths.len() > 1
+    var pi: ptr_uint = 0
+    while pi < program_paths.len():
+        let path_ptr = program_paths.get(pi) else:
+            break
+        let path = unsafe: read(path_ptr)
+        if multiple:
+            stdio.print_format(c"/* --- %.*s --- */\n", int<-(path.len), path.data)
+        let rc = emit_c_one_path(path, ref_of(roots), ref_of(owned_roots), platform)
+        if rc != 0:
+            return rc
+        if multiple and pi + 1 < program_paths.len():
+            stdio.print_line("")
+        pi += 1
     return 0
 
 
@@ -4079,10 +4375,150 @@ function command_summary_at(index: ptr_uint) -> CommandSummary:
     return CommandSummary(name = "completions", summary = "Print a shell completion script")
 
 
-## Format a source file: parse, pretty-print, and either print to stdout,
-## check for formatting diffs, or write back to the file.
+## Format one source file and apply the single-file output rules.
+function format_one_path(
+    path: str,
+    check_mode: bool,
+    write_mode: bool,
+    timings: bool,
+    mode: tidy.FormatMode,
+    explicit_max_line_length: ptr_uint,
+) -> int:
+    if cli_verbose:
+        if write_mode:
+            stdio.print_format(c"formatting %.*s\n", int<-(path.len), path.data)
+        else:
+            stdio.print_format(c"checking %.*s\n", int<-(path.len), path.data)
+
+    var format_profile = profile_mod.create()
+    defer: profile_mod.release(ref_of(format_profile))
+    var profile_ptr: ptr[profile_mod.Profile]? = null
+    if timings:
+        profile_ptr = ptr_of(format_profile)
+
+    match fs.read_text(path):
+        Result.success as content:
+            var source = content.value
+            defer: source.release()
+            let source_text = source.as_str()
+
+            let started_ms = monotonic_ms()
+            var formatted = tidy.format_source_profiled(source_text, path, mode, explicit_max_line_length, profile_ptr) else:
+                stdio.print_format(c"error: %.*s: parse error\n", int<-(path.len), path.data)
+                return 1
+            defer: formatted.release()
+            let fmt_text = formatted.as_str()
+
+            var exit_code = 0
+            if write_mode:
+                if source_text == fmt_text:
+                    stdio.print_format(c"already formatted %.*s\n", int<-(path.len), path.data)
+                else:
+                    match fs.write_text(path, fmt_text):
+                        Result.success:
+                            stdio.print_format(c"formatted %.*s\n", int<-(path.len), path.data)
+                        Result.failure as err:
+                            var msg = err.error
+                            defer: msg.release()
+                            stdio.print_format(c"error: cannot write %.*s\n", int<-(path.len), path.data)
+                            exit_code = 1
+            else if check_mode:
+                if source_text == fmt_text:
+                    stdio.print_format(c"already formatted %.*s\n", int<-(path.len), path.data)
+                else:
+                    stdio.print_format(c"needs formatting %.*s\n", int<-(path.len), path.data)
+                    exit_code = 1
+            else:
+                stdio.print_format(c"%.*s", int<-(fmt_text.len), fmt_text.data)
+            if timings:
+                print_format_profile(path, monotonic_ms() - started_ms, ref_of(format_profile))
+            return exit_code
+        Result.failure as err:
+            var msg = err.error
+            defer: msg.release()
+            stdio.print_format(c"error: cannot read %.*s\n", int<-(path.len), path.data)
+            return 1
+
+
+## Format several sources (a directory operand or more than one path).  The
+## host requires --check or --write here and prints a batch summary.
+function format_paths_command(
+    paths: ref[vec.Vec[str]],
+    check_mode: bool,
+    write_mode: bool,
+    mode: tidy.FormatMode,
+    explicit_max_line_length: ptr_uint,
+) -> int:
+    if check_mode:
+        var needs = vec.Vec[string.String].create()
+        defer: needs.release()
+        var pi: ptr_uint = 0
+        while pi < paths.len():
+            let path_ptr = paths.get(pi) else:
+                break
+            let path = unsafe: read(path_ptr)
+            match fs.read_text(path):
+                Result.success as content:
+                    var source = content.value
+                    defer: source.release()
+                    var formatted = tidy.format_source(source.as_str(), path, mode, explicit_max_line_length) else:
+                        stdio.print_format(c"error: %.*s: parse error\n", int<-(path.len), path.data)
+                        return 1
+                    defer: formatted.release()
+                    if source.as_str() != formatted.as_str():
+                        stdio.print_format(c"needs formatting %.*s\n", int<-(path.len), path.data)
+                        needs.push(string.String.from_str(path))
+                Result.failure as err:
+                    var msg = err.error
+                    defer: msg.release()
+                    stdio.print_format(c"error: cannot read %.*s\n", int<-(path.len), path.data)
+                    return 1
+            pi += 1
+        if needs.len() == 0:
+            stdio.print_format(c"all %d file(s) already formatted\n", int<-(paths.len()))
+            return 0
+        stdio.print_format(c"%d file(s) need formatting\n", int<-(needs.len()))
+        return 1
+
+    var changed: ptr_uint = 0
+    var pi: ptr_uint = 0
+    while pi < paths.len():
+        let path_ptr = paths.get(pi) else:
+            break
+        let path = unsafe: read(path_ptr)
+        match fs.read_text(path):
+            Result.success as content:
+                var source = content.value
+                defer: source.release()
+                var formatted = tidy.format_source(source.as_str(), path, mode, explicit_max_line_length) else:
+                    stdio.print_format(c"error: %.*s: parse error\n", int<-(path.len), path.data)
+                    return 1
+                defer: formatted.release()
+                if source.as_str() != formatted.as_str():
+                    match fs.write_text(path, formatted.as_str()):
+                        Result.success:
+                            stdio.print_format(c"formatted %.*s\n", int<-(path.len), path.data)
+                            changed += 1
+                        Result.failure as err:
+                            var msg = err.error
+                            defer: msg.release()
+                            stdio.print_format(c"error: cannot write %.*s\n", int<-(path.len), path.data)
+                            return 1
+            Result.failure as err:
+                var msg = err.error
+                defer: msg.release()
+                stdio.print_format(c"error: cannot read %.*s\n", int<-(path.len), path.data)
+                return 1
+        pi += 1
+    stdio.print_format(c"formatted %d of %d file(s)\n", int<-(changed), int<-(paths.len()))
+    return 0
+
+
+## `mtc format PATH|DIR [PATH|DIR ...] [--check|--write] [--safe|--canonical|
+## --preserve|--tidy] [--max-line-length N] [--timings]`.
 function format_command(args: span[str]) -> int:
-    var file_path: Option[str] = Option[str].none
+    var inputs = vec.Vec[str].create()
+    defer: inputs.release()
     var check_mode = false
     var write_mode = false
     var timings = false
@@ -4121,10 +4557,12 @@ function format_command(args: span[str]) -> int:
             continue
         if arg == "--max-line-length":
             if ai + 1 >= args.len:
-                stdio.print_line("error: --max-line-length requires a value")
+                eprint_line("missing value for --max-line-length")
+                cli_help.print_usage(true)
                 return 1
             let parsed = parse_positive_int(args[ai + 1]) else:
-                stdio.print_line("--max-line-length must be a positive integer")
+                eprint_line("--max-line-length must be a positive integer")
+                cli_help.print_usage(true)
                 return 1
             explicit_max_line_length = parsed
             ai += 2
@@ -4132,77 +4570,66 @@ function format_command(args: span[str]) -> int:
         if arg == "--":
             ai += 1
             while ai < args.len:
-                if file_path.is_none():
-                    file_path = Option[str].some(value= args[ai])
+                inputs.push(args[ai])
                 ai += 1
             continue
-        if file_path.is_none():
-            file_path = Option[str].some(value= arg)
-            ai += 1
-            continue
-        stdio.print_format(c"error: unknown option %.*s\n", int<-(arg.len), arg.data)
-        return 1
+        if arg.starts_with("-"):
+            var unknown = string.String.create()
+            defer: unknown.release()
+            unknown.append("unknown format option ")
+            unknown.append(arg)
+            eprint_line(unknown.as_str())
+            cli_help.print_usage(true)
+            return 1
+        inputs.push(arg)
+        ai += 1
 
     if check_mode and write_mode:
         eprint_line("format options --check and --write cannot be combined")
         cli_help.print_usage(true)
         return 1
 
-    let path = file_path else:
-        stdio.print_line("error: format requires a source file path")
+    if inputs.len() == 0:
+        eprint_line("missing source file path")
+        cli_help.print_usage(true)
         return 1
 
-    if cli_verbose:
-        if write_mode:
-            stdio.print_format(c"formatting %.*s\n", int<-(path.len), path.data)
-        else:
-            stdio.print_format(c"checking %.*s\n", int<-(path.len), path.data)
+    var has_directory = false
+    var di: ptr_uint = 0
+    while di < inputs.len():
+        let input_ptr = inputs.get(di) else:
+            break
+        if fs.is_directory(unsafe: read(input_ptr)):
+            has_directory = true
+        di += 1
 
-    var format_profile = profile_mod.create()
-    defer: profile_mod.release(ref_of(format_profile))
-    var profile_ptr: ptr[profile_mod.Profile]? = null
-    if timings:
-        profile_ptr = ptr_of(format_profile)
+    var paths = vec.Vec[str].create()
+    defer: paths.release()
+    var expanded_owner = vec.Vec[string.String].create()
+    defer: expanded_owner.release()
+    expand_source_operands(inputs.as_span(), ref_of(paths), ref_of(expanded_owner))
+    if paths.len() == 0:
+        var label = operand_label(inputs.as_span())
+        defer: label.release()
+        var msg = string.String.create()
+        defer: msg.release()
+        msg.append("no .mt files found in ")
+        msg.append(label.as_str())
+        stdio.print_line(msg.as_str())
+        return 0
 
-    match fs.read_text(path):
-        Result.success as content:
-            var source = content.value
-            defer: source.release()
-            let source_text = source.as_str()
-
-            let started_ms = monotonic_ms()
-            var formatted = tidy.format_source_profiled(source_text, path, mode, explicit_max_line_length, profile_ptr) else:
-                stdio.print_format(c"error: %.*s: parse error\n", int<-(path.len), path.data)
-                return 1
-            defer: formatted.release()
-            let fmt_text = formatted.as_str()
-
-            var exit_code = 0
-            if write_mode:
-                match fs.write_text(path, fmt_text):
-                    Result.success:
-                        stdio.print_format(c"formatted %.*s\n", int<-(path.len), path.data)
-                    Result.failure as err:
-                        var msg = err.error
-                        defer: msg.release()
-                        stdio.print_format(c"error: cannot write %.*s\n", int<-(path.len), path.data)
-                        exit_code = 1
-            else if check_mode:
-                if source_text == fmt_text:
-                    stdio.print_format(c"already formatted %.*s\n", int<-(path.len), path.data)
-                else:
-                    stdio.print_format(c"needs formatting %.*s\n", int<-(path.len), path.data)
-                    exit_code = 1
-            else:
-                stdio.print_format(c"%.*s", int<-(fmt_text.len), fmt_text.data)
-            if timings:
-                print_format_profile(path, monotonic_ms() - started_ms, ref_of(format_profile))
-            return exit_code
-        Result.failure as err:
-            var msg = err.error
-            defer: msg.release()
-            stdio.print_format(c"error: cannot read %.*s\n", int<-(path.len), path.data)
+    let multiple_sources = inputs.len() > 1 or has_directory
+    if multiple_sources:
+        if not check_mode and not write_mode:
+            eprint_line("format on multiple sources requires --check or --write")
+            cli_help.print_usage(true)
             return 1
+        return format_paths_command(ref_of(paths), check_mode, write_mode, mode, explicit_max_line_length)
+
+    let path_ptr = paths.get(0) else:
+        return 0
+    let path = unsafe: read(path_ptr)
+    return format_one_path(path, check_mode, write_mode, timings, mode, explicit_max_line_length)
 
 
 ## The default output path for a source build: the source path with its `.mt`
