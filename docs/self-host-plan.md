@@ -23,16 +23,16 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 67, 2026-11-11)
+## Status at a glance (session 68, 2026-11-12)
 
 | Area | State |
 | --- | --- |
 | Bootstrap fixed point | **holds** (`stage2.c == stage3.c`, session 66 re-verified at `dacf0ac6`); full self-test suite **20 files / 0 failed** |
 | `test/mt` | **60 files / 0 failed** (session 66 re-verified on stage2) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
-| `sexpr lex` / `parse` | 0 differ (lex **718/718**; parse **714 match / 0 differ / 4 host-rejected of 718**; counts drift with the tree) |
-| `sexpr lower` | **665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 files** (session 63) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
-| `cli:parity` | **82 match / 0 differ / 7 case-backed pending** of 89 cases (session 67; `toolchain doctor`, `run --bundle`, `run --archive` and `build --platform wasm` closed; `--timings` values and `debug`'s Ruby node ids are normalized). The pending set is `deps` (5 cases) and locked/frozen build (2). |
+| `sexpr lex` / `parse` | 0 differ (lex **738/738**; parse **734 match / 0 differ / 4 host-rejected of 738**; counts drift with the tree) |
+| `sexpr lower` | **683 match / 2 differ / 53 host-rejected / 0 self-rejected of 738 files** (session 68) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
+| `cli:parity` | **89 match / 0 differ / 0 pending** of 89 cases (session 68; `deps` — add/remove/update/tree/lock/publish/fetch — and `--locked`/`--frozen` closed, the pending set is empty; `--timings` values and `debug`'s Ruby node ids are normalized) |
 | Linter corpus | **510 agree / 114 differ** of 624 (session 67; hostfail 0, selffail 0); **41/43 rules, 13/13 fixers**.  Session 67 closed `borrow-and-mutate` (29 self-only) and the new-file `unused-local`/`prefer-let-else`/`prefer-try` rows; `loop-single-iteration` messages now match. |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the live VS Code F5 check is the remaining manual step |
@@ -40,11 +40,30 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (session 66; `box3d` closed; golden-vector naming test in `projects/mtc/test/imported_bindings_naming_test.mt`) |
 
 Rough completion against the per-track Definition of Done: **~99%**.  The
-self-hosting foundation, `lower` dump parity, the CLI behavior matrix, wasm,
-docs and the imported bindings are done; the residue is the CLI's largest
-unported subsystem (`deps`), the linter corpus (123 files), and bindgen
+self-hosting foundation, `lower` dump parity, the CLI behavior matrix (now
+including `deps` and `--locked`/`--frozen`), wasm, docs and the imported
+bindings are done; the residue is the linter corpus (114 files) and bindgen
 reproducibility.  LSP, DAP and formatter are closed at their documented
 differences.
+
+Session-68 batch (Track B closed; CLI parity 89/89): the `deps` subsystem is
+ported into `projects/mtc/src/mtc/packages/` (`version`, `paths`, `manifest`,
+`editor`, `solver`, `graph`, `lock`, `source`, `registry`, `manager_cli`) and
+wired as `mtc deps add|remove|update|tree|lock|publish|fetch`; `--locked` and
+`--frozen` now load the locked (or live) package graph and join its source roots
+to module resolution in `build`, `run` and `debug`.  Verified on a shared
+fixture: `package.lock` renders byte-identically (schema 2, SHA-256 instance
+ids), and `tree`/`fetch`/`add`/`update`/`publish` output, the registry
+`.tar.gz`/`versions.txt` artifacts and the allocation of `__mt_fmt_*`/proc temp
+names match the host.  Three lowering gaps the port exposed are fixed: a
+dotted imported type reference now follows a re-exported type alias
+(`aio.Runtime` -> `std.async.libuv_runtime.Runtime`) in
+`resolve_generic_type_ref`/`resolve_field_type_ref`, and the async statement
+paths reproduce the host's two asymmetries (no format-sink streaming and no
+prepared-expression cleanups; cstr temp frees still emit).  New in-language
+tests: `projects/mtc/test/packages_test.mt`, `package_version_test.mt`
+(22 self-test files, 0 failed).  Gates: fixed point holds, `test/mt` 60/0,
+`cli:parity` 89/89, lower 683/2/53/0 of 738, lex 738/738, parse 734/0/4.
 
 Session-65 batches (measurement truth + CLI forms): `cli_parity`
 replaced the ten `KNOWN_GAPS` regexes with case-backed `pending:` metadata (nine
@@ -661,14 +680,11 @@ Iterate cheap, prove once:
    `examples/sdl3` 34/34, `test/mt` 60/0.
 1. **`lower` dump parity** — **CLOSED** (session 63): 665/2/51/0 of 718, the
    two residuals are documented host artifacts.  See Track A.
-2. **CLI behavior parity** — **original 65/65 matrix closed** (session 64);
-   session 65 made the remaining surface measurable and closed the
-   multi-operand forms: **89 cases / 82 match / 0 differ / 7 pending**
-   (session 67 closed `toolchain doctor`, `run --bundle`, `run --archive`,
-   `build --platform wasm`, the wasm preview and `docs`).  The unported
-   subsystems remain (`deps`, locked/frozen).
-   `toolchain bootstrap|tools`, `build --kind static|shared`, the bindgen
-   nullable flags and `--bundle`/`--archive` landed in the session-64 batches.
+2. **CLI behavior parity — CLOSED (session 68)**: **89 cases / 89 match /
+   0 differ / 0 pending**.  Sessions 64–68 landed `debug`, the `test` argument
+   forms, `toolchain bootstrap|tools|doctor`, `build --kind static|shared`, the
+   bindgen nullable flags, `--bundle`/`--archive`, wasm build/preview, `docs`,
+   `deps` and `--locked`/`--frozen`.
 3. **Linter corpus residue** — open: 510/114 of 624, **41/43 rules and 13/13
    fixers**, plus the analyzer gaps in Track C.
 4. **Imported bindings / bindgen** — imported bindings **closed at 29/29**;
@@ -761,7 +777,7 @@ The two counted differs are the documented host artifacts, not work:
 Track A reached its stopping rule: **0 real differing files**.  Keep lex/parse
 at 0-diff and re-measure both after any lowering-adjacent change.
 
-### Track B — CLI parity (89 cases; 82 match, 7 pending)
+### Track B — CLI parity (89 cases; 89 match, 0 pending; **closed**)
 
 The **original 65-case behavior matrix is byte-equal** (session 64; `--timings`
 values and `debug`'s Ruby node ids normalized).  `debug`/`test`'s argument forms
@@ -771,10 +787,11 @@ bare `print`, so its build/run cases only compared a semantic-error path).
 
 Session 65 replaced the regex allowlist with case-backed pending metadata;
 session 67 closed `toolchain doctor`, `run --bundle`, `run --archive`,
-`build --platform wasm` and the wasm preview, so the matrix is now **89 cases /
-82 match / 0 differ / 7 pending**.  The 65/65 figure is no longer the matrix; the
-pending set is the work below, and a pending case that starts matching must be
-promoted (the harness fails otherwise).  The session-65
+`build --platform wasm` and the wasm preview; session 68 closed `deps` and the
+locked/frozen build, so the matrix is **89 cases / 89 match / 0 differ /
+0 pending** — the whole CLI surface is byte-equal.  A future gap adds a
+`pending:` case, and a pending case that starts matching must be promoted (the
+harness fails otherwise).  The session-65
 second batch closed `parse`/`emit-c` multi+directory forms, `format`
 multi/directory and its batch summaries, `check`/`lint` unknown-flag
 validation, and `lint --init`.  Remaining work:
@@ -795,24 +812,35 @@ validation, and `lint --init`.  Remaining work:
    directly (functional, not byte-identical) while the reference index, source,
    highlight, CSS and JS responses are byte-equal.  `tools/docs_smoke.rb` is the
    hard `docs_smoke` gate (it uses SIGINT, the host's Ctrl+C path).
-3. **`deps`** (largest: 14 package files / 3,039 lines **including** the
-   485-line `manager_cli.rb`; 2,554 non-CLI) — port
-   `lib/milk_tea/packages/*` into `projects/mtc/src/mtc/packages/*.mt` and
-   `deps add|remove|update|tree|lock|publish|fetch`; extend
-   `projects/mtc/src/mtc/loader/package_manifest.mt` (currently `source_root` only) into the full
-   manifest/graph, wire `--locked`/`--frozen` and the package graph into
-   `build`/`run`/`check`; network via `std/http`.  Verify against the host's
-   `test/packages/*` fixtures and a local-registry probe.
-4. **Harness** — the case-backed pending metadata is in place; promote each case
-   as its subsystem lands and exit only at `differ=0 pending=0`.  Timing
-   values are normalized (wall-clock measurements never compare byte-for-byte);
-   the report structure still is.
+3. **`deps` — CLOSED (session 68).**  `projects/mtc/src/mtc/packages/*.mt`
+   ports the whole subsystem: `version` (semver plus `^`/`~`/range
+   requirements), `manifest` (full `PackageManifest`/`DependencyView`, path/git/
+   registry validation with the host's messages), `paths`, `editor` (`add`/
+   `remove` through the host's textual `[dependencies]` rewrite), `solver`
+   (branching registry resolution with locked pins and cycle detection),
+   `graph` (source roots, `package_for_path`, `deps tree`), `lock` (schema 1/2,
+   SHA-256 instance ids, byte-identical rendering, `--check`), `source`
+   (identities, shared cache, git/registry materialization) and `registry`
+   (`$MILK_TEA_PACKAGE_REGISTRY`, filesystem/HTTP upstreams, `.tar.gz` +
+   `versions.txt`, sync-on-demand).  `deps add|remove|update|tree|lock|publish|
+   fetch` are wired in `main.mt`; `--locked`/`--frozen` load the locked (or live)
+   graph and add its source roots to module resolution in `build`, `run` and
+   `debug`.  Verified on a shared package fixture: the rendered `package.lock`
+   is byte-identical to the host's, and `tree`/`fetch`/`add`/`update`/`publish`
+   output plus the registry archive contents and `versions.txt` match.  The root
+   graph is `deps lock`'s (`Graph.load`), so a selective `update` pins the
+   unselected registry versions exactly as the host does.  In-language tests:
+   `projects/mtc/test/packages_test.mt`, `package_version_test.mt`.
+4. **Harness — closed.**  89/89 cases match with no pending entries; a future
+   gap adds a `pending:` case (the harness fails when one starts matching).
+   Timing values are normalized (wall-clock measurements never compare
+   byte-for-byte); the report structure is.
 
 Session-64 `toolchain`/`build --kind`/bindgen-nullable flips are recorded in
 the session-64 second batch above.  Session 67 closed `toolchain doctor` to
 byte parity (60 rows: 8 tools + 18 vendored sentinels + 34 raw-binding
-headers), `run --bundle`/`run --archive` and `build --platform wasm`; the
-remaining pending set is `deps` (5 cases) and locked/frozen build (2).
+headers), `run --bundle`/`run --archive` and `build --platform wasm`; session 68
+closed `deps` (5 cases) and locked/frozen build (2), emptying the pending set.
 
 Session-63 CLI flips: all 37 original diffs except `debug` — lex/parse/lower/
 emit-c diagnostics and formats, check/lint/format/debug messages and channels,
@@ -1050,15 +1078,15 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); 20 files / 0 failed | session 66 (`--fast`, at `dacf0ac6`) | `tools/bootstrap.sh -j 16 --fast` |
-| `test/mt` | 60 files / 0 failed | session 66 | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 68 (`--fast`) | `tools/bootstrap.sh -j 16 --fast` |
+| `test/mt` | 60 files / 0 failed | session 68 (stage2) | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 63 | `tools/gates.sh --only examples --run` |
-| `sexpr lex` / `parse` | lex 718/718; parse 714 match / 0 differ / 4 host-rejected of 718 | session 63 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718 (the 2 are documented artifacts) | session 63 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
-| `cli:parity` | **82 match / 0 differ / 7 pending** of 89 (case-backed; the original 65/65; timings and `debug` node ids normalized) | session 67 | `ruby tools/cli_parity.rb -q` |
+| `sexpr lex` / `parse` | lex 738/738; parse 734 match / 0 differ / 4 host-rejected of 738 | session 68 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 683 match / 2 differ / 53 host-rejected / 0 self-rejected of 738 (the 2 are documented artifacts) | session 68 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `cli:parity` | **89 match / 0 differ / 0 pending** of 89 (case-backed; timings and `debug` node ids normalized) | session 68 (stage2) | `ruby tools/cli_parity.rb -q` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 67 | `ruby tools/wasm_smoke.rb` |
 | docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 67 | `ruby tools/docs_smoke.rb` |
-| lint corpus | 510 agree / 114 differ of 624, hostfail 0, selffail 0; **41/43 rules, 13/13 fixers** | session 67 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| lint corpus | 512 agree / 122 differ of 634, hostfail 0, selffail 0; **41/43 rules, 13/13 fixers** | session 68 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 616/616 | session 64 | `ruby tools/unused_import_parity.rb` |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 43 | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |

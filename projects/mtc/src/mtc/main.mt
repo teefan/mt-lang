@@ -59,6 +59,11 @@ import mtc.sexpr as sexpr_mod
 import mtc.std_catalog as std_catalog
 import mtc.docs_app as docs_app
 import mtc.toolchain_cli as toolchain_cli
+import mtc.packages.manager_cli as package_manager_cli
+import mtc.packages.graph as package_graph
+import mtc.packages.lock as package_lock
+import mtc.packages.manifest as dep_manifest
+import mtc.packages.source as package_source
 import mtc.wasm_preview as wasm_preview
 import mtc.version_info as ver
 import mtc.cli_help as cli_help
@@ -348,6 +353,9 @@ function dispatch_cli(raw_args: span[str]) -> int:
 
     if cmd == "toolchain":
         return toolchain_command(args)
+
+    if cmd == "deps":
+        return package_manager_cli.run(args)
 
     if cmd == "std":
         return std_command(args)
@@ -2198,6 +2206,89 @@ function add_module_roots(source_path: str, roots: ref[vec.Vec[str]], owned: ref
         i += 1
 
 
+## Apply `--locked`/`--frozen` for an operand: a frozen build first requires a
+## current package.lock; a locked build loads the graph from the lockfile and
+## otherwise the live graph.  Either way the graph's source roots join the
+## module roots, mirroring the host's `module_roots_for` + `package_graph_for`.
+## Returns 0 on success, 1 after printing the error.
+function apply_package_resolution(
+    path: str,
+    locked: bool,
+    frozen: bool,
+    roots: ref[vec.Vec[str]],
+    owned_roots: ref[vec.Vec[string.String]],
+) -> int:
+    if frozen:
+        match package_lock.ensure_current(path, true):
+            Result.failure as check_failure:
+                var message = check_failure.error
+                eprint_line(message.as_str())
+                message.release()
+                return 1
+            Result.success:
+                pass
+
+    if not dep_manifest.manifest_exists_for(path):
+        return 0
+
+    var package_resolver = package_source.create_resolver(
+        if locked: package_source.ResolutionMode.reject else: package_source.ResolutionMode.materialize
+    )
+    defer: package_resolver.release()
+
+    var loaded = package_graph.PackageGraph(nodes = vec.Vec[package_graph.GraphNode].create(), root_index = 0)
+    var loaded_ok = false
+    if locked:
+        match package_lock.load_graph(path, ref_of(package_resolver)):
+            Result.failure as load_failure:
+                var message = load_failure.error
+                eprint_line(message.as_str())
+                message.release()
+                return 1
+            Result.success as graph_payload:
+                loaded = graph_payload.value
+                loaded_ok = true
+    else:
+        match package_graph.load(path, ref_of(package_resolver)):
+            Result.failure as load_failure:
+                var message = load_failure.error
+                eprint_line(message.as_str())
+                message.release()
+                return 1
+            Result.success as graph_payload:
+                loaded = graph_payload.value
+                loaded_ok = true
+    if not loaded_ok:
+        return 0
+    defer: loaded.release()
+
+    var graph_roots = package_graph.source_roots(ref_of(loaded))
+    defer: package_source.release_strings(ref_of(graph_roots))
+    var i: ptr_uint = 0
+    while i < graph_roots.len():
+        let root_entry = graph_roots.get(i) else:
+            break
+        let root = unsafe: read(root_entry).as_str()
+        if not contains_root(roots, root):
+            owned_roots.push(string.String.from_str(root))
+            let stored = owned_roots.get(owned_roots.len() - 1) else:
+                break
+            roots.push(unsafe: read(stored).as_str())
+        i += 1
+    return 0
+
+
+function contains_root(roots: ref[vec.Vec[str]], candidate: str) -> bool:
+    var i: ptr_uint = 0
+    while i < roots.len():
+        let root = roots.get(i) else:
+            return false
+        if unsafe: read(root).equal(candidate):
+            return true
+        i += 1
+    return false
+
+
 ## Build a program (`mtc build`).  Supports both single `.mt` files and package
 ## directory targets (reads package.toml for the entry point).
 function build_command(args: span[str]) -> int:
@@ -2219,6 +2310,8 @@ function build_command(args: span[str]) -> int:
     var kind = build_driver.BuildKind.executable
     var bundle_mode = false
     var archive_mode = false
+    var locked_flag = false
+    var frozen_flag = false
     var filtered = vec.Vec[str].create()
     defer: filtered.release()
     filtered.push("build")
@@ -2313,9 +2406,13 @@ function build_command(args: span[str]) -> int:
         if arg == "--timings":
             ai += 1
             continue
-        # Accepted for CLI compatibility; package-graph resolution is not yet
-        # implemented (mirrors `check`).
-        if arg == "--locked" or arg == "--frozen":
+        if arg == "--locked":
+            locked_flag = true
+            ai += 1
+            continue
+        if arg == "--frozen":
+            locked_flag = true
+            frozen_flag = true
             ai += 1
             continue
         if arg == "--profile":
@@ -2352,6 +2449,9 @@ function build_command(args: span[str]) -> int:
         filtered.push(arg)
         ai += 1
     let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
+        return 1
+
+    if apply_package_resolution(path, locked_flag, frozen_flag, ref_of(roots), ref_of(owned_roots)) != 0:
         return 1
 
     var entry_path_owner = string.String.create()
@@ -2940,6 +3040,8 @@ function run_command(args: span[str]) -> int:
     var debug_guards: Option[bool] = Option[bool].none
     var bundle_mode = false
     var archive_mode = false
+    var locked_flag = false
+    var frozen_flag = false
     var program_args = vec.Vec[str].create()
     defer: program_args.release()
     var filtered = vec.Vec[str].create()
@@ -2988,9 +3090,13 @@ function run_command(args: span[str]) -> int:
         if arg == "--timings":
             ai += 1
             continue
-        # Accepted for CLI compatibility; package-graph resolution is not yet
-        # implemented (mirrors `check`).
-        if arg == "--locked" or arg == "--frozen":
+        if arg == "--locked":
+            locked_flag = true
+            ai += 1
+            continue
+        if arg == "--frozen":
+            locked_flag = true
+            frozen_flag = true
             ai += 1
             continue
         if arg == "--cc":
@@ -3054,6 +3160,8 @@ function run_command(args: span[str]) -> int:
         filtered.push(arg)
         ai += 1
     let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
+        return 1
+    if apply_package_resolution(path, locked_flag, frozen_flag, ref_of(roots), ref_of(owned_roots)) != 0:
         return 1
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
@@ -4851,6 +4959,8 @@ function debug_command(args: span[str]) -> int:
     var owned_roots = vec.Vec[string.String].create()
     defer: owned_roots.release()
     var platform = resolver.Platform.linux
+    var locked_flag = false
+    var frozen_flag = false
 
     var filtered = vec.Vec[str].create()
     defer: filtered.release()
@@ -4876,10 +4986,22 @@ function debug_command(args: span[str]) -> int:
                     return 1
             ai += 2
             continue
+        if arg == "--locked":
+            locked_flag = true
+            ai += 1
+            continue
+        if arg == "--frozen":
+            locked_flag = true
+            frozen_flag = true
+            ai += 1
+            continue
         filtered.push(arg)
         ai += 1
 
     let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
+        return 1
+
+    if apply_package_resolution(path, locked_flag, frozen_flag, ref_of(roots), ref_of(owned_roots)) != 0:
         return 1
 
     var entry_path_owner = string.String.create()

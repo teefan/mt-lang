@@ -3311,6 +3311,31 @@ function emit_hoist_setup(output: ref[vec.Vec[ir.Stmt]], base: ptr_uint, collect
         i += 1
 
 
+## Append a window's cstr-temp frees only — the async statement paths drop the
+## prepared-expression cleanups but still free the foreign argument copies.
+function append_cstr_temp_cleanups(output: ref[vec.Vec[ir.Stmt]], collected: HoistSaved) -> void:
+    var i: ptr_uint = 0
+    while i < collected.cleanups.len:
+        let stmt = collected.cleanups.get(i) else:
+            fatal(c"lowering: missing hoisted cleanup statement")
+        if is_cstr_temp_free_stmt(unsafe: read(stmt)):
+            output.push(unsafe: read(stmt))
+        i += 1
+
+
+function is_cstr_temp_free_stmt(stmt: ir.Stmt) -> bool:
+    match stmt:
+        ir.Stmt.stmt_expression as es:
+            match unsafe: read(es.expression):
+                ir.Expr.expr_call as c:
+                    return c.callee == "mt_free_foreign_cstr_temp"
+                _:
+                    pass
+        _:
+            pass
+    return false
+
+
 ## Append a window's `cleanups` after the statement that used its value.
 function append_hoist_cleanups(output: ref[vec.Vec[ir.Stmt]], collected: HoistSaved) -> void:
     var i: ptr_uint = 0
@@ -3713,8 +3738,12 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 if init_val != null:
                     # The host's `env[:current_local_name]`: a dynamic format
                     # string later in this block names its result temp after the
-                    # most recent local declaration (`__fmt_<name>`).
-                    ctx.fmt_dest_name = c_name
+                    # most recent local declaration (`__fmt_<name>`).  Only the
+                    # synchronous `lower_local_decl_stmt` records it; the async
+                    # statement paths never do, so an async body's format result
+                    # uses the `fmt_str` counter (`__mt_fmt_str_N`).
+                    if not ctx.inside_async:
+                        ctx.fmt_dest_name = c_name
                     unsafe:
                         match read(init_val):
                             ast.Expr.expr_unary_op as un:
@@ -4262,9 +4291,13 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # Explicit format sinks (`String`/`str_buffer` append_format/
                 # assign_format, and `std.fmt.append_format/assign_format`) are
                 # statement-only: the host streams the format into the
-                # destination instead of building a `str` and copying it.
-                if lower_explicit_format_sink_stmt(ctx, output, ex.expression, ex.line):
-                    return
+                # destination instead of building a `str` and copying it.  An
+                # async body lowers its statements through
+                # `lower_async_expression_statement`, which has no sink case, so
+                # the ordinary call form is emitted there.
+                if not ctx.async_completion_active:
+                    if lower_explicit_format_sink_stmt(ctx, output, ex.expression, ex.line):
+                        return
                 let stmt_base = output.len()
                 let stmt_saved = begin_stmt_setup(ctx, HoistMode.hm_discard)
                 ctx.hoist_root_ep = ex.expression
@@ -4277,7 +4310,15 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # call (the host's `consuming_foreign_release_assignments`),
                 # before the statement's cstr cleanups.
                 append_foreign_consuming_releases(ctx, output, ex.expression)
-                append_hoist_cleanups(output, stmt_collected)
+                # The host's async statement paths (`lower_async_expression_
+                # statement` / `lower_async_non_await_statements`) never drain
+                # `prepared_expression_cleanups`, so an async body's prepared
+                # temps (a dynamic format string's release) are dropped there;
+                # the cstr temps of the same window are still freed.
+                if ctx.async_completion_active:
+                    append_cstr_temp_cleanups(output, stmt_collected)
+                else:
+                    append_hoist_cleanups(output, stmt_collected)
             ast.Stmt.stmt_when as wn:
                 lower_when_stmt(ctx, output, wn.discriminant, wn.branches, wn.else_body)
             ast.Stmt.stmt_parallel_block as pb:
@@ -4556,7 +4597,10 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
     # destination, so a later `f"..."` in this block (the guard's own else body
     # included) is named `__fmt_<storage>`.
     let storage_c = if name == "_": fresh_c_temp_name(ctx, "let_else_discard") else: utils.c_local_name(name)
-    ctx.fmt_dest_name = storage_c
+    # The same sync-only `current_local_name` rule as a plain local: the async
+    # statement paths never record it.
+    if not ctx.inside_async:
+        ctx.fmt_dest_name = storage_c
     var storage_ty: types.Type
     var storage_ref: ptr[ir.Expr]
     if ctx.async_cps_active and expr_is_direct_await(value_ptr):
@@ -6309,6 +6353,14 @@ function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.T
         let mod_ptr = ctx.analysis.imports.get(alias)
         if mod_ptr != null:
             let target_module = unsafe: read(mod_ptr)
+            # A re-exported type alias resolves to its target's type (e.g.
+            # `aio.Runtime` -> `std.async.libuv_runtime.Runtime`), matching the
+            # analyzer's alias erasure; a plain imported name stays imported.
+            match resolve_single_imported_type(ctx, target_module, type_name):
+                Option.some as alias_ty:
+                    return alias_ty.value
+                Option.none:
+                    pass
             var resolved_args = vec.Vec[types.Type].create()
             var ai: ptr_uint = 0
             while ai < t.arguments.len:
@@ -20594,7 +20646,13 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
         let mod_ptr = ctx.analysis.imports.get(alias)
         if mod_ptr != null:
             let target_module = unsafe: read(mod_ptr)
-            resolved = types.Type.ty_imported(module_name = target_module, name = type_name, args = span[types.Type]())
+            # Follow a re-exported type alias (e.g. `aio.Runtime` ->
+            # `std.async.libuv_runtime.Runtime`), like `resolve_type_ref`.
+            match resolve_single_imported_type(ctx, target_module, type_name):
+                Option.some as alias_ty:
+                    resolved = proc_alias_struct_type(ctx, alias_ty.value)
+                Option.none:
+                    resolved = types.Type.ty_imported(module_name = target_module, name = type_name, args = span[types.Type]())
         else:
             # A nested struct's qualified reference (`Rectangle.Edge`): its
             # registered type carries the parent-qualified linkage name.
