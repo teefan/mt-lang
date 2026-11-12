@@ -145,6 +145,10 @@ public struct LintOptions:
     ## analyzer's `mutating_argument_sites`): those bindings are mutated by the
     ## call, so prefer-let must not fire on them.
     mutating_sites: span[analyzer.EditableSite]
+    ## Identifier arguments recorded by the array/`str_buffer`→`span` coercion
+    ## (the analyzer's `mutable_lvalue_sites`): the callee may write through the
+    ## alias, so prefer-let must not fire on them either.
+    mutable_lvalue_sites: span[analyzer.EditableSite]
     max_line_length: ptr_uint
     select: span[str]
     ignore: span[str]
@@ -168,6 +172,7 @@ public function default_lint_options() -> LintOptions:
         unresolved_import_paths = span[str](),
         editable_sites = span[analyzer.EditableSite](),
         mutating_sites = span[analyzer.EditableSite](),
+        mutable_lvalue_sites = span[analyzer.EditableSite](),
         max_line_length = 0,
         select = span[str](),
         ignore = span[str](),
@@ -244,6 +249,7 @@ public function lint_source_with(
     unsafe:
         read(ref_of(scope)).editable_sites = options.editable_sites
         read(ref_of(scope)).mutating_sites = options.mutating_sites
+        read(ref_of(scope)).mutable_lvalue_sites = options.mutable_lvalue_sites
     lint_scope_ctx = ptr_of(scope)
     var ptr_state = own_ptr.PtrState.create()
     defer: ptr_state.release()
@@ -2625,6 +2631,12 @@ function lint_body_rules(params: span[ast.Param], body: ptr[ast.Stmt]?, path: st
     defer: flow_builder.cfg_release(ref_of(flow_cfg))
     var graph = flow_graph.empty_graph()
     defer: flow_graph.graph_release(ref_of(graph))
+    # The Cfg borrows this span: it must outlive the graph build (a span into a
+    # released Vector would dangle).
+    var muts = vec.Vec[flow_builder.MutationSite].create()
+    defer: muts.release()
+    fill_mutating_sites(ref_of(muts))
+    flow_builder.cfg_set_mutating_sites(ref_of(flow_cfg), muts.as_span())
     let graph_started = lint_profile_mark()
     flow_builder.build_graph_into(ref_of(flow_cfg), ref_of(graph), params, b)
     lint_profile_done("flow.graph", graph_started)
@@ -2634,7 +2646,7 @@ function lint_body_rules(params: span[ast.Param], body: ptr[ast.Stmt]?, path: st
         lint_dead_body(ref_of(flow_cfg), ref_of(graph), path, warnings)
         lint_profile_done("rule.dead_assignment", dead_started)
         let unreachable_started = lint_profile_mark()
-        lint_unreachable_in_body(body, path, warnings)
+        lint_unreachable_graph(ref_of(graph), path, warnings)
         lint_profile_done("rule.unreachable_code", unreachable_started)
         let borrow_started = lint_profile_mark()
         borrow_check_body(body, path, warnings)
@@ -2655,10 +2667,27 @@ function lint_body_rules(params: span[ast.Param], body: ptr[ast.Stmt]?, path: st
         ownership_walk_body(body, path, warnings, lint_owning_type_names, ref_of(graph))
         lint_profile_done("rule.owning_release", release_started)
     let prefer_started = lint_profile_mark()
-    prefer_else_walk_body(body, path, warnings)
-    # The combined prefer-let-else/prefer-var-else pass (the host's two phases
-    # share this walk).
+    # The host's two passes: every prefer-let-else candidate first, then every
+    # prefer-var-else candidate (each over the whole body).
+    prefer_else_walk_body(body, true, path, warnings)
+    prefer_else_walk_body(body, false, path, warnings)
     lint_profile_done("rule.prefer_let_else", prefer_started)
+
+
+## Hand the linter's recorded mutating (`out`/`inout`) argument sites to the
+## CFG builder (the host's `binding_resolution.mutating_argument_identifier_ids`).
+## Fill `sink` from the linter's recorded mutating-argument sites.  The caller
+## keeps `sink` alive for as long as the Cfg uses its span.
+function fill_mutating_sites(sink: ref[vec.Vec[flow_builder.MutationSite]]) -> void:
+    let cp = lint_scope_ctx else:
+        return
+    let sites = unsafe: read(cp).mutating_sites
+    unsafe:
+        var i: ptr_uint = 0
+        while i < sites.len:
+            let site = read(sites.data + i)
+            sink.push(flow_builder.MutationSite(name = site.name, line = site.line, column = site.column))
+            i += 1
 
 
 function lint_null_check_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -2915,10 +2944,11 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                     scope_pop(path, warnings)
                     ai += 1
                 scope_set_match_arm_depth(saved_arm_depth)
-                # The Match-preference rules are full-tier only.
+                # The Match-preference rules are full-tier only, in the host's
+                # order: conditional-expression, or-pattern, try.
                 if lint_full_tier:
-                    check_prefer_or_pattern_stmt(mt.arms, path, warnings)
                     check_prefer_conditional_expression_match(mt.arms, mt.line, mt.column, path, warnings)
+                    check_prefer_or_pattern_stmt(mt.arms, path, warnings)
                     check_prefer_try_stmt(mt.arms, expression_declared_line(mt.scrutinee), path, warnings)
             ast.Stmt.stmt_ret as r:
                 visit_expr_opt(r.value, path, warnings)
@@ -3086,8 +3116,8 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
             ast.Expr.expr_match as mm:
                 # The Match-expression preference rules are full-tier only.
                 if lint_full_tier:
-                    check_prefer_or_pattern_expr(mm.arms, path, warnings)
                     check_prefer_is_variant_expr(mm.arms, mm.line, mm.column, mm.length, mm.desugared_from_is, path, warnings)
+                    check_prefer_or_pattern_expr(mm.arms, path, warnings)
             _:
                 pass
 
@@ -3132,7 +3162,11 @@ function inline_simple_statement(stmt: ptr[ast.Stmt]) -> bool:
                 return false
 
 
-## Structural equality of two statement pointers — compare outline.
+## Structural equality of two statement pointers — the host's `node_fingerprint`
+## comparison: every field except positions (`line`/`column`/`length`,
+## `else_line`/`else_column`, `binding_line`/`binding_column`) must match.  The
+## prefer-or-pattern rule relies on this to merge arms whose bodies were built
+## as distinct nodes with the same shape.
 function stmts_structural_equal(a: ptr[ast.Stmt]?, b: ptr[ast.Stmt]?) -> bool:
     if a == null and b == null:
         return true
@@ -3143,14 +3177,7 @@ function stmts_structural_equal(a: ptr[ast.Stmt]?, b: ptr[ast.Stmt]?) -> bool:
             ast.Stmt.stmt_ret as ra:
                 match read(b):
                     ast.Stmt.stmt_ret as rb:
-                        if ra.value == null and rb.value == null:
-                            return true
-                        let rv_ptr = ra.value else:
-                            return false
-                        let rb_ptr = rb.value else:
-                            return false
-                        return exprs_structural_equal(rv_ptr, rb_ptr)
-                        return false
+                        return option_expr_equal(ra.value, rb.value)
                     _:
                         return false
             ast.Stmt.stmt_expression as ea:
@@ -3183,21 +3210,300 @@ function stmts_structural_equal(a: ptr[ast.Stmt]?, b: ptr[ast.Stmt]?) -> bool:
                         return true
                     _:
                         return false
-            ast.Stmt.stmt_block as blka:
+            ast.Stmt.stmt_local as la:
                 match read(b):
-                    ast.Stmt.stmt_block as blkb:
-                        if blka.statements.len != blkb.statements.len:
+                    ast.Stmt.stmt_local as lb:
+                        if la.is_let != lb.is_let or not la.name.equal(lb.name):
+                            return false
+                        if not option_type_ref_equal(la.stmt_type, lb.stmt_type):
+                            return false
+                        if not option_expr_equal(la.value, lb.value):
+                            return false
+                        if not option_str_equal(la.else_binding, lb.else_binding):
+                            return false
+                        if not stmts_structural_equal(la.else_body, lb.else_body):
+                            return false
+                        if not option_span_str_equal(la.destructure_bindings, lb.destructure_bindings):
+                            return false
+                        return option_str_equal(la.destructure_type_name, lb.destructure_type_name)
+                    _:
+                        return false
+            ast.Stmt.stmt_if as ia:
+                match read(b):
+                    ast.Stmt.stmt_if as ib:
+                        if ia.is_inline != ib.is_inline or ia.branches.len != ib.branches.len:
                             return false
                         var i: ptr_uint = 0
-                        while i < blka.statements.len:
-                            if not stmts_structural_equal(blka.statements.data + i, blkb.statements.data + i):
+                        while i < ia.branches.len:
+                            let ba = read(ia.branches.data + i)
+                            let bb = read(ib.branches.data + i)
+                            if not exprs_structural_equal(ba.condition, bb.condition):
+                                return false
+                            if not stmts_structural_equal(ba.body, bb.body):
+                                return false
+                            i += 1
+                        return stmts_structural_equal(ia.else_body, ib.else_body)
+                    _:
+                        return false
+            ast.Stmt.stmt_while as wa:
+                match read(b):
+                    ast.Stmt.stmt_while as wb:
+                        return wa.is_inline == wb.is_inline and exprs_structural_equal(wa.condition, wb.condition) and stmts_structural_equal(wa.body, wb.body)
+                    _:
+                        return false
+            ast.Stmt.stmt_for as fa:
+                match read(b):
+                    ast.Stmt.stmt_for as fb:
+                        if fa.is_inline != fb.is_inline or fa.threaded != fb.threaded:
+                            return false
+                        if fa.bindings.len != fb.bindings.len or fa.iterables.len != fb.iterables.len:
+                            return false
+                        var i: ptr_uint = 0
+                        while i < fa.bindings.len:
+                            if not read(fa.bindings.data + i).name.equal(read(fb.bindings.data + i).name):
+                                return false
+                            i += 1
+                        i = 0
+                        while i < fa.iterables.len:
+                            if not exprs_structural_equal(fa.iterables.data + i, fb.iterables.data + i):
+                                return false
+                            i += 1
+                        return stmts_structural_equal(fa.body, fb.body)
+                    _:
+                        return false
+            ast.Stmt.stmt_match as ma:
+                match read(b):
+                    ast.Stmt.stmt_match as mb:
+                        if ma.is_inline != mb.is_inline or ma.arms.len != mb.arms.len:
+                            return false
+                        if not exprs_structural_equal(ma.scrutinee, mb.scrutinee):
+                            return false
+                        var i: ptr_uint = 0
+                        while i < ma.arms.len:
+                            let aa = read(ma.arms.data + i)
+                            let ab = read(mb.arms.data + i)
+                            if not option_expr_equal(aa.pattern, ab.pattern):
+                                return false
+                            if not option_str_equal(aa.binding_name, ab.binding_name):
+                                return false
+                            if not stmts_structural_equal(aa.body, ab.body):
                                 return false
                             i += 1
                         return true
                     _:
                         return false
+            ast.Stmt.stmt_defer as da:
+                match read(b):
+                    ast.Stmt.stmt_defer as db:
+                        return option_expr_equal(da.expression, db.expression) and stmts_structural_equal(da.body, db.body)
+                    _:
+                        return false
+            ast.Stmt.stmt_unsafe as ua:
+                match read(b):
+                    ast.Stmt.stmt_unsafe as ub:
+                        return stmts_structural_equal(ua.body, ub.body)
+                    _:
+                        return false
+            ast.Stmt.stmt_static_assert as sa:
+                match read(b):
+                    ast.Stmt.stmt_static_assert as sb:
+                        return exprs_structural_equal(sa.condition, sb.condition) and option_expr_equal(sa.message, sb.message)
+                    _:
+                        return false
+            ast.Stmt.stmt_when as wa:
+                match read(b):
+                    ast.Stmt.stmt_when as wb:
+                        if wa.branches.len != wb.branches.len:
+                            return false
+                        if not exprs_structural_equal(wa.discriminant, wb.discriminant):
+                            return false
+                        var i: ptr_uint = 0
+                        while i < wa.branches.len:
+                            let ba = read(wa.branches.data + i)
+                            let bb = read(wb.branches.data + i)
+                            if not exprs_structural_equal(ba.pattern, bb.pattern):
+                                return false
+                            if not option_str_equal(ba.binding_name, bb.binding_name):
+                                return false
+                            if not stmt_spans_equal(ba.body, bb.body):
+                                return false
+                            i += 1
+                        return stmts_structural_equal(wa.else_body, wb.else_body)
+                    _:
+                        return false
+            ast.Stmt.stmt_parallel_block as pa:
+                match read(b):
+                    ast.Stmt.stmt_parallel_block as pb:
+                        return stmt_spans_equal(pa.bodies, pb.bodies)
+                    _:
+                        return false
+            ast.Stmt.stmt_gather as ga:
+                match read(b):
+                    ast.Stmt.stmt_gather as gb:
+                        return expr_spans_equal(ga.handles, gb.handles)
+                    _:
+                        return false
+            ast.Stmt.stmt_error_block as ea:
+                match read(b):
+                    ast.Stmt.stmt_error_block as eb:
+                        return ea.message.equal(eb.message) and stmts_structural_equal(ea.body, eb.body)
+                    _:
+                        return false
+            ast.Stmt.stmt_error as ea:
+                match read(b):
+                    ast.Stmt.stmt_error as eb:
+                        return ea.message.equal(eb.message)
+                    _:
+                        return false
+            ast.Stmt.stmt_block as blka:
+                match read(b):
+                    ast.Stmt.stmt_block as blkb:
+                        return stmt_spans_equal(blka.statements, blkb.statements)
+                    _:
+                        return false
+            ast.Stmt.stmt_emit as ea:
+                # An emitted declaration is rare in a match arm; compare by
+                # identity rather than reimplementing the declaration fingerprint.
+                match read(b):
+                    ast.Stmt.stmt_emit as eb:
+                        return ea.declaration == eb.declaration
+                    _:
+                        return false
             _:
                 return false
+
+
+function stmt_spans_equal(a: span[ast.Stmt], b: span[ast.Stmt]) -> bool:
+    if a.len != b.len:
+        return false
+    var i: ptr_uint = 0
+    unsafe:
+        while i < a.len:
+            if not stmts_structural_equal(a.data + i, b.data + i):
+                return false
+            i += 1
+    return true
+
+
+function expr_spans_equal(a: span[ast.Expr], b: span[ast.Expr]) -> bool:
+    if a.len != b.len:
+        return false
+    var i: ptr_uint = 0
+    unsafe:
+        while i < a.len:
+            if not exprs_structural_equal(a.data + i, b.data + i):
+                return false
+            i += 1
+    return true
+
+
+function option_expr_equal(a: ptr[ast.Expr]?, b: ptr[ast.Expr]?) -> bool:
+    if a == null and b == null:
+        return true
+    if a == null or b == null:
+        return false
+    return exprs_structural_equal(a, b)
+
+
+function option_str_equal(a: Option[str], b: Option[str]) -> bool:
+    match a:
+        Option.some as av:
+            match b:
+                Option.some as bv:
+                    return av.value.equal(bv.value)
+                Option.none:
+                    return false
+        Option.none:
+            match b:
+                Option.none:
+                    return true
+                Option.some:
+                    return false
+
+
+function option_span_str_equal(a: Option[span[str]], b: Option[span[str]]) -> bool:
+    match a:
+        Option.some as av:
+            match b:
+                Option.some as bv:
+                    if av.value.len != bv.value.len:
+                        return false
+                    var i: ptr_uint = 0
+                    while i < av.value.len:
+                        if not unsafe: read(av.value.data + i).equal(unsafe: read(bv.value.data + i)):
+                            return false
+                        i += 1
+                    return true
+                Option.none:
+                    return false
+        Option.none:
+            match b:
+                Option.none:
+                    return true
+                Option.some:
+                    return false
+
+
+function option_type_ref_equal(a: ptr[ast.TypeRef]?, b: ptr[ast.TypeRef]?) -> bool:
+    if a == null and b == null:
+        return true
+    if a == null or b == null:
+        return false
+    return type_refs_structural_equal(a, b)
+
+
+function qualified_names_structural_equal(a: ast.QualifiedName, b: ast.QualifiedName) -> bool:
+    if a.parts.len != b.parts.len or a.type_arguments.len != b.type_arguments.len:
+        return false
+    var i: ptr_uint = 0
+    unsafe:
+        while i < a.parts.len:
+            if not read(a.parts.data + i).equal(read(b.parts.data + i)):
+                return false
+            i += 1
+        i = 0
+        while i < a.type_arguments.len:
+            if not type_refs_structural_equal(a.type_arguments.data + i, b.type_arguments.data + i):
+                return false
+            i += 1
+    return true
+
+
+function type_refs_structural_equal(a: ptr[ast.TypeRef], b: ptr[ast.TypeRef]) -> bool:
+    unsafe:
+        let ta = read(a)
+        let tb = read(b)
+        if ta.nullable != tb.nullable:
+            return false
+        if ta.is_proc != tb.is_proc or ta.is_fn != tb.is_fn or ta.is_dyn != tb.is_dyn or ta.is_tuple != tb.is_tuple:
+            return false
+        if not option_str_equal(ta.lifetime, tb.lifetime):
+            return false
+        if not qualified_names_structural_equal(ta.name, tb.name):
+            return false
+        if ta.arguments.len != tb.arguments.len:
+            return false
+        var i: ptr_uint = 0
+        while i < ta.arguments.len:
+            if not type_refs_structural_equal(ta.arguments.data + i, tb.arguments.data + i):
+                return false
+            i += 1
+        if ta.fn_params.len != tb.fn_params.len:
+            return false
+        i = 0
+        while i < ta.fn_params.len:
+            var pa = read(ta.fn_params.data + i)
+            var pb = read(tb.fn_params.data + i)
+            if not pa.name.equal(pb.name):
+                return false
+            if not type_refs_structural_equal(ptr_of(pa.param_type), ptr_of(pb.param_type)):
+                return false
+            if not option_expr_equal(pa.default_value, pb.default_value):
+                return false
+            i += 1
+        if not option_type_ref_equal(ta.fn_return, tb.fn_return):
+            return false
+        return qualified_names_structural_equal(ta.dyn_interface, tb.dyn_interface)
 
 
 function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
@@ -3218,7 +3524,19 @@ function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
             ast.Expr.expr_integer_literal as ia:
                 match read(b):
                     ast.Expr.expr_integer_literal as ib:
-                        return ia.value == ib.value
+                        return ia.lexeme.equal(ib.lexeme) and ia.value == ib.value
+                    _:
+                        return false
+            ast.Expr.expr_float_literal as ia:
+                match read(b):
+                    ast.Expr.expr_float_literal as ib:
+                        return ia.lexeme.equal(ib.lexeme) and ia.value == ib.value
+                    _:
+                        return false
+            ast.Expr.expr_char_literal as ca:
+                match read(b):
+                    ast.Expr.expr_char_literal as cb:
+                        return ca.lexeme.equal(cb.lexeme) and ca.value == cb.value
                     _:
                         return false
             ast.Expr.expr_bool_literal as ba:
@@ -3230,12 +3548,40 @@ function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
             ast.Expr.expr_string_literal as sa:
                 match read(b):
                     ast.Expr.expr_string_literal as sb:
-                        return sa.value.equal(sb.value)
+                        return sa.lexeme.equal(sb.lexeme) and sa.value.equal(sb.value) and sa.is_cstring == sb.is_cstring
                     _:
                         return false
-            ast.Expr.expr_null_literal:
+            ast.Expr.expr_null_literal as na:
                 match read(b):
-                    ast.Expr.expr_null_literal:
+                    ast.Expr.expr_null_literal as nb:
+                        return option_type_ref_equal(na.target_type, nb.target_type)
+                    _:
+                        return false
+            ast.Expr.expr_format_string as fa:
+                match read(b):
+                    ast.Expr.expr_format_string as fb:
+                        if fa.parts.len != fb.parts.len:
+                            return false
+                        var i: ptr_uint = 0
+                        while i < fa.parts.len:
+                            match read(fa.parts.data + i):
+                                ast.FormatStringPart.fmt_text as ta:
+                                    match read(fb.parts.data + i):
+                                        ast.FormatStringPart.fmt_text as tb:
+                                            if not ta.value.equal(tb.value):
+                                                return false
+                                        _:
+                                            return false
+                                ast.FormatStringPart.fmt_expr as ea:
+                                    match read(fb.parts.data + i):
+                                        ast.FormatStringPart.fmt_expr as eb:
+                                            if not exprs_structural_equal(ea.expression, eb.expression):
+                                                return false
+                                            if not format_specs_equal(ea.format_spec, eb.format_spec):
+                                                return false
+                                        _:
+                                            return false
+                            i += 1
                         return true
                     _:
                         return false
@@ -3248,10 +3594,149 @@ function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
                             return false
                         var i: ptr_uint = 0
                         while i < ca.args.len:
-                            if not exprs_structural_equal(read(ca.args.data + i).arg_value, read(cb.args.data + i).arg_value):
+                            let aa = read(ca.args.data + i)
+                            let ab = read(cb.args.data + i)
+                            if not option_str_equal(aa.arg_name, ab.arg_name):
+                                return false
+                            if not exprs_structural_equal(aa.arg_value, ab.arg_value):
                                 return false
                             i += 1
                         return true
+                    _:
+                        return false
+            ast.Expr.expr_index_access as xa:
+                match read(b):
+                    ast.Expr.expr_index_access as xb:
+                        return exprs_structural_equal(xa.receiver, xb.receiver) and exprs_structural_equal(xa.index, xb.index)
+                    _:
+                        return false
+            ast.Expr.expr_specialization as spa:
+                match read(b):
+                    ast.Expr.expr_specialization as spb:
+                        if not exprs_structural_equal(spa.callee, spb.callee):
+                            return false
+                        if spa.arguments.len != spb.arguments.len:
+                            return false
+                        var i: ptr_uint = 0
+                        while i < spa.arguments.len:
+                            if not type_refs_structural_equal(read(spa.arguments.data + i).value, read(spb.arguments.data + i).value):
+                                return false
+                            i += 1
+                        return true
+                    _:
+                        return false
+            ast.Expr.expr_if as ifa:
+                match read(b):
+                    ast.Expr.expr_if as ifb:
+                        return exprs_structural_equal(ifa.condition, ifb.condition) and exprs_structural_equal(ifa.then_expr, ifb.then_expr) and exprs_structural_equal(ifa.else_expr, ifb.else_expr)
+                    _:
+                        return false
+            ast.Expr.expr_match as mma:
+                match read(b):
+                    ast.Expr.expr_match as mmb:
+                        if mma.arms.len != mmb.arms.len or mma.desugared_from_is != mmb.desugared_from_is:
+                            return false
+                        if not exprs_structural_equal(mma.scrutinee, mmb.scrutinee):
+                            return false
+                        var i: ptr_uint = 0
+                        while i < mma.arms.len:
+                            let aa = read(mma.arms.data + i)
+                            let ab = read(mmb.arms.data + i)
+                            if not option_expr_equal(aa.pattern, ab.pattern):
+                                return false
+                            if not option_str_equal(aa.binding_name, ab.binding_name):
+                                return false
+                            if not exprs_structural_equal(aa.value, ab.value):
+                                return false
+                            i += 1
+                        return true
+                    _:
+                        return false
+            ast.Expr.expr_proc as pa:
+                match read(b):
+                    ast.Expr.expr_proc as pb:
+                        if pa.method_params.len != pb.method_params.len:
+                            return false
+                        var i: ptr_uint = 0
+                        while i < pa.method_params.len:
+                            var ra = read(pa.method_params.data + i)
+                            var rb = read(pb.method_params.data + i)
+                            if not ra.name.equal(rb.name):
+                                return false
+                            if not type_refs_structural_equal(ptr_of(ra.param_type), ptr_of(rb.param_type)):
+                                return false
+                            if not option_expr_equal(ra.default_value, rb.default_value):
+                                return false
+                            i += 1
+                        if not option_type_ref_equal(pa.return_type, pb.return_type):
+                            return false
+                        return stmts_structural_equal(pa.body, pb.body)
+                    _:
+                        return false
+            ast.Expr.expr_await as awa:
+                match read(b):
+                    ast.Expr.expr_await as awb:
+                        return exprs_structural_equal(awa.expression, awb.expression)
+                    _:
+                        return false
+            ast.Expr.expr_detach as dta:
+                match read(b):
+                    ast.Expr.expr_detach as dtb:
+                        return exprs_structural_equal(dta.expression, dtb.expression)
+                    _:
+                        return false
+            ast.Expr.expr_expression_list as ela:
+                match read(b):
+                    ast.Expr.expr_expression_list as elb:
+                        return expr_spans_equal(ela.elements, elb.elements)
+                    _:
+                        return false
+            ast.Expr.expr_named as na:
+                match read(b):
+                    ast.Expr.expr_named as nb:
+                        return na.name.equal(nb.name) and exprs_structural_equal(na.value, nb.value)
+                    _:
+                        return false
+            ast.Expr.expr_range as rga:
+                match read(b):
+                    ast.Expr.expr_range as rgb:
+                        return exprs_structural_equal(rga.start_expr, rgb.start_expr) and exprs_structural_equal(rga.end_expr, rgb.end_expr)
+                    _:
+                        return false
+            ast.Expr.expr_prefix_cast as pca:
+                match read(b):
+                    ast.Expr.expr_prefix_cast as pcb:
+                        return type_refs_structural_equal(pca.target_type, pcb.target_type) and exprs_structural_equal(pca.expression, pcb.expression)
+                    _:
+                        return false
+            ast.Expr.expr_unsafe as usa:
+                match read(b):
+                    ast.Expr.expr_unsafe as usb:
+                        return exprs_structural_equal(usa.expression, usb.expression)
+                    _:
+                        return false
+            ast.Expr.expr_sizeof as sza:
+                match read(b):
+                    ast.Expr.expr_sizeof as szb:
+                        return type_refs_structural_equal(sza.target_type, szb.target_type)
+                    _:
+                        return false
+            ast.Expr.expr_alignof as ala:
+                match read(b):
+                    ast.Expr.expr_alignof as alb:
+                        return type_refs_structural_equal(ala.target_type, alb.target_type)
+                    _:
+                        return false
+            ast.Expr.expr_offsetof as ofa:
+                match read(b):
+                    ast.Expr.expr_offsetof as ofb:
+                        return ofa.field.equal(ofb.field) and type_refs_structural_equal(ofa.target_type, ofb.target_type)
+                    _:
+                        return false
+            ast.Expr.expr_error as era:
+                match read(b):
+                    ast.Expr.expr_error as erb:
+                        return era.message.equal(erb.message)
                     _:
                         return false
             ast.Expr.expr_unary_op as ua:
@@ -3268,6 +3753,17 @@ function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
                         return false
             _:
                 return false
+
+
+function format_specs_equal(a: ptr[ast.FormatSpec]?, b: ptr[ast.FormatSpec]?) -> bool:
+    if a == null and b == null:
+        return true
+    if a == null or b == null:
+        return false
+    unsafe:
+        let sa = read(a)
+        let sb = read(b)
+        return sa.spec_kind == sb.spec_kind and sa.value == sb.value and sa.uppercase == sb.uppercase
 
 
 ## Is `expr` a wildcard pattern (_)?
@@ -3539,6 +4035,11 @@ function check_prefer_or_pattern_stmt(arms: span[ast.MatchArm], path: str, warni
             if wildcard_pattern(prev.pattern) or wildcard_pattern(curr.pattern):
                 i += 1
                 continue
+            # Expanded or-pattern alternatives (`A | B:`) share one body object;
+            # the host's `.equal?` guard skips those (they are already merged).
+            if prev.body == curr.body:
+                i += 1
+                continue
             if stmts_structural_equal(prev.body, curr.body):
                 let pat_line = expression_line(curr.pattern)
                 if pat_line == 0:
@@ -3563,6 +4064,9 @@ function check_prefer_or_pattern_expr(arms: span[ast.MatchExprArm], path: str, w
                 i += 1
                 continue
             if wildcard_pattern(prev.pattern) or wildcard_pattern(curr.pattern):
+                i += 1
+                continue
+            if prev.value == curr.value:
                 i += 1
                 continue
             if exprs_structural_equal(prev.value, curr.value):
@@ -3723,30 +4227,38 @@ function expr_source_sig(expr: ptr[ast.Expr]) -> str:
 
 
 
-function prefer_else_walk_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function prefer_else_walk_body(body: ptr[ast.Stmt]?, want_let: bool, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     let bp = body else:
         return
     unsafe:
         match read(bp):
             ast.Stmt.stmt_block as blk:
-                prefer_else_walk_stmts(blk.statements, path, warnings)
+                prefer_else_walk_stmts(blk.statements, want_let, path, warnings)
             _:
                 pass
 
 
-function prefer_else_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+## The host's `ignored_binding_name?`: `_` and `_`-prefixed names never carry
+## a prefer-else hint.
+function prefer_else_ignored_name(name: str) -> bool:
+    if name.len == 0:
+        return true
+    if name.byte_at(0) == 95:
+        return true
+    return false
+
+
+function prefer_else_walk_stmts(stmts: span[ast.Stmt], want_let: bool, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    # The host's `walk_statement_lists` yields the current list first and then
+    # recurses into each statement's bodies, so outer candidates precede inner.
     var i: ptr_uint = 0
-    while i < stmts.len:
-        unsafe:
-            prefer_else_recurse_into(stmts.data + i, path, warnings)
-        i += 1
-    if stmts.len < 2:
-        return
-    i = 0
     while i + 1 < stmts.len:
         unsafe:
             match read(stmts.data + i):
                 ast.Stmt.stmt_local as loc:
+                    if loc.is_let != want_let:
+                        i += 1
+                        continue
                     if loc.value == null:
                         i += 1
                         continue
@@ -3754,6 +4266,9 @@ function prefer_else_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[
                         i += 1
                         continue
                     if loc.else_binding.is_some() or loc.else_body != null:
+                        i += 1
+                        continue
+                    if prefer_else_ignored_name(loc.name):
                         i += 1
                         continue
                     match read(stmts.data + i + 1):
@@ -3768,27 +4283,57 @@ function prefer_else_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[
                             let guard_name = prefer_else_guard_name(cond, loc.name) else:
                                 i += 1
                                 continue
-                            let guard_body = read(iff.branches.data + 0).body
-                            if not always_returns_body(guard_body):
+                            # A `var ... else` only helps when the binding is
+                            # actually reassigned (the host's
+                            # `prefer_var_else_binding_mutated?`).
+                            if not want_let and not prefer_else_binding_mutated(loc.name):
                                 i += 1
                                 continue
-                            if loc.is_let:
-                                var buf = string.String.create()
-                                buf.append("nullable guard for '")
-                                buf.append(loc.name)
-                                buf.append("' can use let ... else")
-                                push_warning(warnings, path, loc.line, "prefer-let-else", buf.as_str(), "hint")
-                            else:
-                                var buf = string.String.create()
-                                buf.append("nullable guard for '")
-                                buf.append(loc.name)
-                                buf.append("' can use var ... else")
-                                push_warning(warnings, path, loc.line, "prefer-var-else", buf.as_str(), "hint")
+                            let guard_body = read(iff.branches.data + 0).body
+                            if not prefer_else_body_terminates(guard_body):
+                                i += 1
+                                continue
+                            let span = condition_span(cond, iff.line, false)
+                            var buf = string.String.create()
+                            buf.append("nullable guard for '")
+                            buf.append(loc.name)
+                            buf.append("' can use ")
+                            buf.append(if want_let: "let" else: "var")
+                            buf.append(" ... else")
+                            push_warning_at(warnings, path, span.line, span.column, span.length, if want_let: "prefer-let-else" else: "prefer-var-else", buf.as_str(), "hint")
                         _:
                             pass
                 _:
                     pass
         i += 1
+    i = 0
+    while i < stmts.len:
+        unsafe:
+            prefer_else_recurse_into(stmts.data + i, want_let, path, warnings)
+        i += 1
+
+
+## The host's `ControlFlow::Termination.block_always_terminates?`: a fresh
+## graph over the guard body, whose continuation must be unreachable.
+function prefer_else_body_terminates(body: ptr[ast.Stmt]?) -> bool:
+    if body == null:
+        return false
+    var cfg = flow_builder.empty_cfg()
+    defer: flow_builder.cfg_release(ref_of(cfg))
+    var graph = flow_graph.empty_graph()
+    defer: flow_graph.graph_release(ref_of(graph))
+    flow_builder.build_graph_termination_into(ref_of(cfg), ref_of(graph), body)
+    let entry = unsafe: read(ref_of(graph)).entry_id
+    let exit = unsafe: read(ref_of(graph)).exit_id
+    return not flow_graph.graph_reaches(ref_of(graph), entry, exit)
+
+
+## The host's `prefer_var_else_binding_mutated?`: the innermost open scope's
+## binding for `name` was reassigned.
+function prefer_else_binding_mutated(name: str) -> bool:
+    let cp = lint_scope_ctx else:
+        return false
+    return scope_tracking.ctx_binding_mutated(unsafe: ref_of(read(cp)), name)
 
 
 ## Check if `condition` is `name == null` or `null == name`, returning true
@@ -3822,40 +4367,30 @@ function prefer_else_guard_name(condition: ptr[ast.Expr], name: str) -> Option[b
                 return Option[bool].none
 
 
-function prefer_else_recurse_into(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function prefer_else_recurse_into(stmt: ptr[ast.Stmt], want_let: bool, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_if as iff:
                 var bi: ptr_uint = 0
                 while bi < iff.branches.len:
-                    prefer_else_walk_body(read(iff.branches.data + bi).body, path, warnings)
+                    prefer_else_walk_body(read(iff.branches.data + bi).body, want_let, path, warnings)
                     bi += 1
-                prefer_else_walk_body(iff.else_body, path, warnings)
+                prefer_else_walk_body(iff.else_body, want_let, path, warnings)
             ast.Stmt.stmt_match as mt:
                 var ai: ptr_uint = 0
                 while ai < mt.arms.len:
-                    prefer_else_walk_body(read(mt.arms.data + ai).body, path, warnings)
+                    prefer_else_walk_body(read(mt.arms.data + ai).body, want_let, path, warnings)
                     ai += 1
             ast.Stmt.stmt_while as wh:
-                prefer_else_walk_body(wh.body, path, warnings)
+                prefer_else_walk_body(wh.body, want_let, path, warnings)
             ast.Stmt.stmt_for as fr:
-                prefer_else_walk_body(fr.body, path, warnings)
+                prefer_else_walk_body(fr.body, want_let, path, warnings)
             ast.Stmt.stmt_unsafe as un:
-                prefer_else_walk_body(un.body, path, warnings)
+                prefer_else_walk_body(un.body, want_let, path, warnings)
             ast.Stmt.stmt_defer as df:
-                prefer_else_walk_body(df.body, path, warnings)
-            ast.Stmt.stmt_when as wn:
-                var wi: ptr_uint = 0
-                while wi < wn.branches.len:
-                    var wsi: ptr_uint = 0
-                    let wbr = read(wn.branches.data + wi)
-                    while wsi < wbr.body.len:
-                        prefer_else_recurse_into(wbr.body.data + wsi, path, warnings)
-                        wsi += 1
-                    wi += 1
-                prefer_else_walk_body(wn.else_body, path, warnings)
+                prefer_else_walk_body(df.body, want_let, path, warnings)
             ast.Stmt.stmt_block as blk:
-                prefer_else_walk_stmts(blk.statements, path, warnings)
+                prefer_else_walk_stmts(blk.statements, want_let, path, warnings)
             _:
                 pass
 
@@ -4351,15 +4886,18 @@ function prefer_struct_with_fields(analysis: ref[analyzer.Analysis], ty: types.T
 ## The host compares the copied source's type with the target struct's by
 ## qualified name (`source_type.to_s == struct_type.to_s`).  A local struct
 ## constructor records the moduleless `ty_named` form while an annotation
-## carries the module, so an empty module matches any.
+## carries the module, so an empty module matches any; a `ty_imported` and a
+## `ty_named` naming the same module/type render identically and compare equal.
 function prefer_struct_with_same_type(a: types.Type, b: types.Type) -> bool:
     match a:
         types.Type.ty_named as na:
             match b:
                 types.Type.ty_named as nb:
-                    if not na.name.equal(nb.name):
+                    return named_modules_match(na.name, na.module_name, nb.name, nb.module_name)
+                types.Type.ty_imported as ib:
+                    if ib.args.len > 0:
                         return false
-                    return na.module_name.equal(nb.module_name) or na.module_name.len == 0 or nb.module_name.len == 0
+                    return named_modules_match(na.name, na.module_name, ib.name, ib.module_name)
                 _:
                     return false
         types.Type.ty_imported as ia:
@@ -4369,11 +4907,19 @@ function prefer_struct_with_same_type(a: types.Type, b: types.Type) -> bool:
                 types.Type.ty_imported as ib:
                     if ib.args.len > 0:
                         return false
-                    return ia.name.equal(ib.name) and ia.module_name.equal(ib.module_name)
+                    return named_modules_match(ia.name, ia.module_name, ib.name, ib.module_name)
+                types.Type.ty_named as nb:
+                    return named_modules_match(ia.name, ia.module_name, nb.name, nb.module_name)
                 _:
                     return false
         _:
             return false
+
+
+function named_modules_match(name_a: str, module_a: str, name_b: str, module_b: str) -> bool:
+    if not name_a.equal(name_b):
+        return false
+    return module_a.equal(module_b) or module_a.len == 0 or module_b.len == 0
 
 
 ## The host's `(field_names - changed_names) == copied_names`: every copied
@@ -6920,55 +7466,58 @@ function key_in(keys: ref[vec.Vec[ptr_uint]], key: ptr_uint) -> bool:
 
 
 
-function lint_unreachable_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    let bp = body else:
-        return
+## The host's `emit_unreachable_warnings`: every CFG node not reachable from
+## the entry, except the exit node, anchored at its statement's own span.
+function lint_unreachable_graph(graph: ref[flow_graph.CfgGraph], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var reachable = ownership_reachable_ids(graph)
+    defer: reachable.release()
+    var ni: ptr_uint = 0
+    let count = unsafe: read(graph).nodes.len()
+    while ni < count:
+        let slot = unsafe: read(graph).nodes.get(ni) else:
+            break
+        let node = unsafe: read(slot)
+        let id = unsafe: read(node).id
+        let is_exit = unsafe: read(node).kind.equal("exit")
+        let has_statement = unsafe: read(node).statement != 0
+        if not ownership_ids_contain(ref_of(reachable), id) and not is_exit and has_statement:
+            let line = unreachable_line(node)
+            let column = unreachable_column(node)
+            let length = unreachable_length(node)
+            push_warning_at(warnings, path, line, column, length, "unreachable-code", "unreachable code", "warning")
+        ni += 1
+
+
+## The host's `statement.line` for the node's stored statement: an if-condition
+## node holds its `IfBranch`, a match-binding node its `MatchArm` (whose line is
+## the pattern's), every other node a statement.
+function unreachable_line(node: ptr[flow_graph.CfgNode]) -> ptr_uint:
     unsafe:
-        match read(bp):
-            ast.Stmt.stmt_block as blk:
-                lint_unreachable_stmts(blk.statements, path, warnings)
-            _:
-                pass
+        let kind = read(node).kind
+        if kind.equal("match_binding"):
+            let arm = reinterpret[ptr[ast.MatchArm]](read(node).statement)
+            return expression_line(read(arm).pattern)
+        return read(node).line
 
 
-function lint_unreachable_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var dead = false
-    var si: ptr_uint = 0
-    while si < stmts.len:
-        unsafe:
-            if dead:
-                let sp = stmts.data + si
-                # The host anchors on the statement's own span with the bare
-                # message ("unreachable code").
-                push_warning_at(warnings, path, statement_line(sp), statement_column(sp), statement_length(sp), "unreachable-code", "unreachable code", "warning")
-                si += 1
-                continue
-            if stmt_always_returns(stmts.data + si):
-                dead = true
-            # Also recurse into nested blocks.
-            match read(stmts.data + si):
-                ast.Stmt.stmt_if as iff:
-                    var bi: ptr_uint = 0
-                    while bi < iff.branches.len:
-                        lint_unreachable_in_body(read(iff.branches.data + bi).body, path, warnings)
-                        bi += 1
-                    lint_unreachable_in_body(iff.else_body, path, warnings)
-                ast.Stmt.stmt_while as wh:
-                    lint_unreachable_in_body(wh.body, path, warnings)
-                ast.Stmt.stmt_for as fr:
-                    lint_unreachable_in_body(fr.body, path, warnings)
-                ast.Stmt.stmt_match as mt:
-                    var ai: ptr_uint = 0
-                    while ai < mt.arms.len:
-                        lint_unreachable_in_body(read(mt.arms.data + ai).body, path, warnings)
-                        ai += 1
-                ast.Stmt.stmt_unsafe as un:
-                    lint_unreachable_in_body(un.body, path, warnings)
-                ast.Stmt.stmt_block as blk:
-                    lint_unreachable_stmts(blk.statements, path, warnings)
-                _:
-                    pass
-        si += 1
+function unreachable_column(node: ptr[flow_graph.CfgNode]) -> ptr_uint:
+    unsafe:
+        let kind = read(node).kind
+        if kind.equal("match_binding"):
+            let arm = reinterpret[ptr[ast.MatchArm]](read(node).statement)
+            return expression_column(read(arm).pattern)
+        return read(node).column
+
+
+function unreachable_length(node: ptr[flow_graph.CfgNode]) -> ptr_uint:
+    unsafe:
+        let kind = read(node).kind
+        if kind.equal("if_condition"):
+            let branch = reinterpret[ptr[ast.IfBranch]](read(node).statement)
+            return read(branch).length
+        if kind.equal("match_binding"):
+            return 0
+        return statement_length(reinterpret[ptr[ast.Stmt]](read(node).statement))
 
 
 # =============================================================================
@@ -7147,15 +7696,28 @@ function lint_loop_single_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref
                 pass
 
 
+## The host's `Termination.loop_body_always_terminates?`: a fresh loop-body
+## graph whose fall-through/`continue` target is unreachable from the entry.
+## This is what excludes a body that can `continue` before its `return` — the
+## AST return heuristic over-reported those.
+function loop_body_always_terminates(body: ptr[ast.Stmt]?) -> bool:
+    if body == null:
+        return false
+    var cfg = flow_builder.empty_cfg()
+    defer: flow_builder.cfg_release(ref_of(cfg))
+    var graph = flow_graph.empty_graph()
+    defer: flow_graph.graph_release(ref_of(graph))
+    flow_builder.build_graph_loop_body_into(ref_of(cfg), ref_of(graph), body)
+    let entry = unsafe: read(ref_of(graph)).entry_id
+    let exit = unsafe: read(ref_of(graph)).exit_id
+    return not flow_graph.graph_reaches(ref_of(graph), entry, exit)
+
+
 function lint_loop_single_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     unsafe:
         match read(sp):
             ast.Stmt.stmt_while as wh:
-                let always_exits = always_returns_body(wh.body)
-                # The host's CFG predicate does not report these `while true`
-                # bodies; the AST predicate would, so keep the exemption until
-                # the CFG termination port (Track C7).
-                if always_exits and not is_true_literal(wh.condition):
+                if loop_body_always_terminates(wh.body):
                     push_warning(
                         warnings, path, wh.line, "loop-single-iteration",
                         "loop body always exits on the first iteration - consider replacing with an 'if' block",
@@ -7163,8 +7725,7 @@ function lint_loop_single_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.V
                     )
                 lint_loop_single_in_body(wh.body, path, warnings)
             ast.Stmt.stmt_for as fr:
-                let always_exits = always_returns_body(fr.body)
-                if always_exits:
+                if loop_body_always_terminates(fr.body):
                     push_warning(
                         warnings, path, fr.line, "loop-single-iteration",
                         "loop body always exits on the first iteration - consider iterating directly without a loop",

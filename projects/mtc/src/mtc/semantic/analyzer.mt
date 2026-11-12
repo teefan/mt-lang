@@ -278,6 +278,11 @@ struct Context:
     ## the argument's line: the call mutates that binding (the host's
     ## `mutating_argument_identifier_ids`), which the linter's prefer-let needs.
     mutating_argument_sites: vec.Vec[EditableSite]
+    ## Identifier arguments the host's `array_to_span_call_argument_compatible?`
+    ## records: an array (or `str_buffer`) passed where a `span` is expected is
+    ## a mutable lvalue (the host's `mutable_lvalue_argument_identifier_ids`),
+    ## so prefer-let must treat the binding as reassigned.
+    mutable_lvalue_sites: vec.Vec[EditableSite]
     ## Per foreign function name, the parameter indices carrying an `out`/`inout`
     ## passing mode, so a call site can record its mutating identifier arguments.
     mutating_param_indices: map_mod.Map[str, map_mod.Map[ptr_uint, bool]]
@@ -478,6 +483,10 @@ public struct Analysis:
     ## Identifier arguments passed to `out`/`inout` foreign parameters, with
     ## their lines (the host's `mutating_argument_identifier_ids`).
     mutating_argument_sites: vec.Vec[EditableSite]
+    ## Identifier arguments recorded by the array/`str_buffer`→`span` coercion
+    ## (the host's `mutable_lvalue_argument_identifier_ids`): the callee may
+    ## write through the alias, so prefer-let treats the binding as reassigned.
+    mutable_lvalue_sites: vec.Vec[EditableSite]
     ## Per foreign function name, the parameter indices carrying an `out`/`inout`
     ## passing mode (exported so importing modules can record mutating arguments
     ## of `alias.fn(...)` calls too).
@@ -566,6 +575,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         this_types = vec.Vec[ThisTypeEntry].create(),
         import_order = vec.Vec[str].create(),
         mutating_argument_sites = vec.Vec[EditableSite].create(),
+        mutable_lvalue_sites = vec.Vec[EditableSite].create(),
         mutating_param_indices = map_mod.Map[str, map_mod.Map[ptr_uint, bool]].create(),
         suppressed_type_names = map_mod.Map[str, bool].create(),
         function_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
@@ -697,6 +707,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         import_order = ctx.import_order,
         when_declarations = when_extra,
         mutating_argument_sites = ctx.mutating_argument_sites,
+        mutable_lvalue_sites = ctx.mutable_lvalue_sites,
         mutating_param_indices = ctx.mutating_param_indices,
         source_path = source_path,
         identifier_sites = ctx.identifier_sites,
@@ -5761,6 +5772,20 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
         scope_leave(scope)
         return types.primitive("bool")
     let rt = infer_expr(ctx, scope, right)
+    # The host's `harmonize_binary_float_literal_types` (and the expected-type
+    # propagation into both operands): an unsuffixed float-literal operand is
+    # *re-inferred* with the peer's float type, so `double<-x * 1000.0`
+    # records `1000.0` as `double` and the linter/lowering see that type.
+    let hint = ctx.expected_type_hint
+    if types.is_float_type(hint) and is_arithmetic_binary_op(op):
+        if is_bare_float_literal_expr_or_unary(left):
+            record_expr_type(ctx, left, hint)
+        if is_bare_float_literal_expr_or_unary(right):
+            record_expr_type(ctx, right, hint)
+    if is_bare_float_literal_expr_or_unary(left) and types.is_float_type(rt):
+        record_expr_type(ctx, left, rt)
+    if is_bare_float_literal_expr_or_unary(right) and types.is_float_type(lt):
+        record_expr_type(ctx, right, lt)
     if is_comparison_op(op):
         return types.primitive("bool")
     # SIMD arithmetic: vector ⊕ vector (same element and lane count) yields the
@@ -5785,14 +5810,14 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
         # expected type reaches both operands, so a bare float literal in a
         # float context takes that type (`val / 4294967296.0` in a `next_double`
         # body is a double binary) and the promoted result is the context's.
-        let hint = ctx.expected_type_hint
-        if types.is_float_type(hint) and is_arithmetic_binary_op(op):
+        let expected_hint = ctx.expected_type_hint
+        if types.is_float_type(expected_hint) and is_arithmetic_binary_op(op):
             var lt_eff = lt
             var rt_eff = rt
             if is_bare_float_literal_expr(left):
-                lt_eff = hint
+                lt_eff = expected_hint
             if is_bare_float_literal_expr(right):
-                rt_eff = hint
+                rt_eff = expected_hint
             if not types.type_equals(lt_eff, lt) or not types.type_equals(rt_eff, rt):
                 match exprs.common_numeric_type(lt_eff, rt_eff):
                     Option.some as common:
@@ -5881,6 +5906,22 @@ function is_bare_float_literal_expr(ep: ptr[ast.Expr]) -> bool:
 ## operands (the host's `propagating_expected_type`: `+ - * / % << >>`).
 function is_arithmetic_binary_op(op: str) -> bool:
     return op == "+" or op == "-" or op == "*" or op == "/" or op == "%" or op == "<<" or op == ">>"
+
+
+## An unsuffixed float literal, optionally under unary `+`/`-`: the host's
+## `float_literal_expression?` restricted to literals whose type may adopt the
+## expected/peer float type (`1.0f`/`1.0d` keep their explicit type).
+function is_bare_float_literal_expr_or_unary(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_float_literal as lit:
+                return not (lit.lexeme.ends_with("f") or lit.lexeme.ends_with("d"))
+            ast.Expr.expr_unary_op as u:
+                if u.operator == "+" or u.operator == "-":
+                    return is_bare_float_literal_expr_or_unary(u.operand)
+                return false
+            _:
+                return false
 
 
 ## A float literal, optionally under unary +/- (Ruby's float_literal_expression?).
@@ -9092,6 +9133,8 @@ function check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast
 ## narrowing-int checks on numeric literal sources (mirroring Ruby's
 ## exact_compile_time_numeric_compatibility?).
 function check_signature_call(ctx: ref[Context], display_name: str, sig: FnSig, args: span[ast.Argument], arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> void:
+    if not any_named:
+        record_mutable_lvalue_argument_sites(ctx, sig, args, arg_types)
     if sig.is_extern:
         return
     if not sig.is_variadic and (arg_types.len > sig.params.len or arg_types.len < sig.required_count):
@@ -9110,6 +9153,47 @@ function check_signature_call(ctx: ref[Context], display_name: str, sig: FnSig, 
             if incompatible_value(pe.ty, atype, arg_expr):
                 report(ctx, line, column, argument_message(pe.name, display_name, pe.ty, atype))
         i += 1
+
+
+## The host's `array_to_span_call_argument_compatible?`: an array or
+## `str_buffer` argument passed where a `span` parameter is expected is a
+## mutable lvalue (the callee may write through the span), recorded for the
+## linter's prefer-let (the host's `mutable_lvalue_argument_identifier_ids`).
+function record_mutable_lvalue_argument_sites(ctx: ref[Context], sig: FnSig, args: span[ast.Argument], arg_types: span[types.Type]) -> void:
+    var i: ptr_uint = 0
+    while i < arg_types.len and i < sig.params.len and i < args.len:
+        unsafe:
+            let pe = read(sig.params.data + i)
+            let atype = read(arg_types.data + i)
+            let argument = read(args.data + i)
+            match read(argument.arg_value):
+                ast.Expr.expr_identifier as aid:
+                    if mutable_lvalue_span_argument(pe.ty, atype):
+                        ctx.mutable_lvalue_sites.push(EditableSite(name = aid.name, line = aid.line, column = aid.column))
+                _:
+                    pass
+        i += 1
+
+
+## Does the coercion `actual` → `expected` go through a span, where the actual
+## is an array/`str_buffer` lvalue?  Mirrors the host's rule pair.
+function mutable_lvalue_span_argument(expected: types.Type, actual: types.Type) -> bool:
+    match expected:
+        types.Type.ty_generic as eg:
+            if not eg.name.equal("span") or eg.args.len < 1:
+                return false
+            let elem = unsafe: read(eg.args.data + 0)
+            match actual:
+                types.Type.ty_generic as ag:
+                    if ag.name.equal("array") and ag.args.len >= 1:
+                        return types.type_equals(unsafe: read(ag.args.data + 0), elem)
+                    if ag.name.equal("str_buffer"):
+                        return types.is_char_type(elem)
+                _:
+                    pass
+            return false
+        _:
+            return false
 
 
 ## Record which parameter indices of a foreign function carry an `out`/`inout`

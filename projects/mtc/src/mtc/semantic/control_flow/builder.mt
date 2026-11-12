@@ -29,6 +29,18 @@ public struct CfgNode:
     id: ptr_uint
 
 
+## Identifier arguments the semantic analyzer recorded as belonging to a
+## mutating parameter (the host's `binding_resolution.mutating_argument_identifier_ids`
+## — `out`/`inout` foreign parameters).  The linter's CFG builder receives them
+## so a call through such a parameter writes the binding; the analyzer and
+## lowering paths leave the list empty, exactly like the host's nil
+## `binding_resolution`.
+public struct MutationSite:
+    name: str
+    line: ptr_uint
+    column: ptr_uint
+
+
 ## Top-level CFG container.  `binding_map` is a name→ID mapping for every local
 ## declaration.  Ids start at 1, so 0 reads as "not a binding of this body"
 ## (the host's nil); `next_id` is the next unassigned ID.  `binding_names` is
@@ -39,6 +51,7 @@ public struct Cfg:
     binding_map: map_mod.Map[str, ptr_uint]
     next_id: ptr_uint
     binding_names: vec.Vec[str]
+    mutating_sites: span[MutationSite]
 
 
 ## Return an empty Cfg struct literal.  Safe to return by value because the
@@ -50,7 +63,14 @@ public function empty_cfg() -> Cfg:
         binding_map = map_mod.Map[str, ptr_uint].create(),
         next_id = 1,
         binding_names = vec.Vec[str].create(),
+        mutating_sites = span[MutationSite](),
     )
+
+
+## Install the analyzer-recorded mutating argument sites.  Must be called
+## before a build so the call arms can turn them into writes.
+public function cfg_set_mutating_sites(cfg: ref[Cfg], sites: span[MutationSite]) -> void:
+    read(cfg).mutating_sites = sites
 
 
 ## Reset the Cfg to empty, keeping its allocations, so one Cfg can serve every
@@ -90,6 +110,31 @@ public function build_graph_into(cfg: ref[Cfg], graph: ref[graph_mod.CfgGraph], 
     assign_param_ids(cfg, params)
     collect_binding_ids(body, cfg)
     collect_binding_ids_extra(body, cfg)
+    graph_mod.graph_clear(graph)
+    let exit_id = graph_mod.graph_add_node(graph, "exit", 0, 0, 0)
+    graph.exit_id = exit_id
+    let entry_id = build_graph_body(cfg, graph, body, exit_id, 0, 0)
+    graph.entry_id = entry_id
+
+
+## The host's `Builder#build_loop_body`: the continuation (`exit_id`, the
+## back-edge / fall-through) and a separate `break_exit` target.  A loop body
+## "always terminates on its first iteration" exactly when `exit_id` is not
+## reachable from the entry — `continue` flows to `exit_id`, `break` to
+## `break_exit`, so a body whose only exits are `return`/`break` qualifies.
+public function build_graph_loop_body_into(cfg: ref[Cfg], graph: ref[graph_mod.CfgGraph], body: ptr[ast.Stmt]?) -> void:
+    graph_mod.graph_clear(graph)
+    let exit_id = graph_mod.graph_add_node(graph, "exit", 0, 0, 0)
+    graph.exit_id = exit_id
+    let break_exit_id = graph_mod.graph_add_node(graph, "break_exit", 0, 0, 0)
+    let entry_id = build_graph_body(cfg, graph, body, exit_id, break_exit_id, exit_id)
+    graph.entry_id = entry_id
+
+
+## The host's `Builder#build` over a branch body (`Termination`'s fresh graph).
+## `break`/`continue` fall through to the continuation, exactly as the host's
+## nil targets do.
+public function build_graph_termination_into(cfg: ref[Cfg], graph: ref[graph_mod.CfgGraph], body: ptr[ast.Stmt]?) -> void:
     graph_mod.graph_clear(graph)
     let exit_id = graph_mod.graph_add_node(graph, "exit", 0, 0, 0)
     graph.exit_id = exit_id
@@ -321,6 +366,7 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmt: 
                     let success = graph_mod.graph_node(g, success_id) else:
                         return next_id
                     collect_local_decl_writes(cfg, success, l.name, l.line, l.column)
+                    collect_write_sites_from_expression(cfg, success, l.value, l.line)
                     graph_mod.graph_add_edge(g, cond_id, success_id)
                     graph_mod.graph_set_edge_label(g, cond_id, success_id, "non_null")
                     # The success arm continues into the next statement (the
@@ -335,6 +381,7 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmt: 
                     return next_id
                 collect_read_sites(cfg, node, l.value)
                 collect_local_decl_writes(cfg, node, l.name, l.line, l.column)
+                collect_write_sites_from_expression(cfg, node, l.value, l.line)
                 match l.destructure_bindings:
                     Option.some as names:
                         var di: ptr_uint = 0
@@ -519,6 +566,21 @@ function push_write_site(cfg: ref[Cfg], node: ptr[graph_mod.CfgNode], name: str,
         read(node).write_sites.push(graph_mod.WriteSite(key = key, name = name, line = line, column = column, origin = origin))
 
 
+## Is this identifier argument one the analyzer recorded as a mutating
+## (`out`/`inout`) call argument?  Matched by name and position: the analyzer's
+## record carries no expression pointer.
+function is_mutating_site(cfg: ref[Cfg], name: str, line: ptr_uint, column: ptr_uint) -> bool:
+    let sites = read(cfg).mutating_sites
+    var i: ptr_uint = 0
+    unsafe:
+        while i < sites.len:
+            let site = read(sites.data + i)
+            if site.line == line and site.column == column and site.name.equal(name):
+                return true
+            i += 1
+    return false
+
+
 ## The host's `read_identifiers`: every identifier an expression reads, in
 ## source order, keyed to its binding.
 function collect_read_sites(cfg: ref[Cfg], node: ptr[graph_mod.CfgNode], expr: ptr[ast.Expr]?) -> void:
@@ -640,6 +702,9 @@ function collect_write_sites_from_expression(cfg: ref[Cfg], node: ptr[graph_mod.
                                         push_write_site(cfg, node, oid.name, line, 0, "call_argument")
                                     _:
                                         pass
+                        ast.Expr.expr_identifier as iid:
+                            if is_mutating_site(cfg, iid.name, iid.line, iid.column):
+                                push_write_site(cfg, node, iid.name, line, 0, "call_argument")
                         _:
                             pass
                     match call_argument_mutation_target(value):

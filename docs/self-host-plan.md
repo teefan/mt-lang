@@ -23,7 +23,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 68, 2026-11-12)
+## Status at a glance (session 69, 2026-11-12)
 
 | Area | State |
 | --- | --- |
@@ -33,18 +33,45 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | `sexpr lex` / `parse` | 0 differ (lex **738/738**; parse **734 match / 0 differ / 4 host-rejected of 738**; counts drift with the tree) |
 | `sexpr lower` | **683 match / 2 differ / 53 host-rejected / 0 self-rejected of 738 files** (session 68) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
 | `cli:parity` | **89 match / 0 differ / 0 pending** of 89 cases (session 68; `deps` — add/remove/update/tree/lock/publish/fetch — and `--locked`/`--frozen` closed, the pending set is empty; `--timings` values and `debug`'s Ruby node ids are normalized) |
-| Linter corpus | **571 agree / 63 differ** of 634 (session 68; hostfail 0, selffail 0); **41/43 rules, 13/13 fixers**.  Session 68 closed `prefer-try` (76/40 -> 0/0), `prefer-let` (75/141 -> 2/2), `redundant-cast` (75/48 -> 2/8), `shadow` (20/0 -> 0/0) and `prefer-own-ptr` (19/0 -> 0/0). |
+| Linter corpus | **631 agree / 3 differ** of 634 (session 69; hostfail 0, selffail 0); **41/43 rules, 13/13 fixers**.  Session 69 closed the whole per-rule residue: `prefer-let-else`/`prefer-var-else` (anchor at the `if` line, ignored names, var mutation gate, CFG termination), `prefer-or-pattern` (shared-body identity + full node fingerprint), `loop-single-iteration`/`unreachable-code` (host CFG reachability), `constant-condition` (mutating-argument writes, array/`str_buffer`→`span` mutable lvalues, float-literal harmonization), `redundant-cast` (pointer-sized integers, float-literal operand types), `prefer-let` (mutable-lvalue arguments) and `prefer-struct-with` (imported/named type identity).  The 3 residual rows are documented self-better/host-artifact rows. |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the live VS Code F5 check is the remaining manual step |
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (session 66; `box3d` closed; golden-vector naming test in `projects/mtc/test/imported_bindings_naming_test.mt`) |
 
-Rough completion against the per-track Definition of Done: **~99%**.  The
+Rough completion against the per-track Definition of Done: **~99.5%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix (now
-including `deps` and `--locked`/`--frozen`), wasm, docs and the imported
-bindings are done; the residue is the linter corpus (114 files) and bindgen
-reproducibility.  LSP, DAP and formatter are closed at their documented
-differences.
+including `deps` and `--locked`/`--frozen`), wasm, docs, the linter corpus and
+the imported bindings are done; the residue is bindgen reproducibility and the
+two linter rules no corpus file triggers.  LSP, DAP and formatter are closed at
+their documented differences.
+
+Session-69 batch (Track C closed at its documented residue; lint 571/63 ->
+631/3): seven rule families plus two analyzer facts fields closed the whole
+per-rule residue.  The linter now mirrors the host's **CFG reachability** for
+`loop-single-iteration` (`Builder#build_loop_body`: the fall-through/`continue`
+target must be unreachable) and `unreachable-code` (nodes unreachable from the
+entry, anchored at their statement's own span, including `if`/`match` nodes),
+and its **`Termination.block_always_terminates?`** for `prefer-let-else`/`var-else`
+(a fresh branch graph).  `prefer-let-else` anchors at the `if` line with the
+host's source condition span, skips `_`-prefixed names, and `prefer-var-else`
+requires the innermost scope's binding to be mutated.  `prefer-or-pattern`
+skips identity-shared bodies (expanded `A | B` alternatives) and compares a full
+`node_fingerprint`-equivalent structural equality (locals, if/while/for/match,
+when, defer, casts, specializations, format strings, proc bodies, type refs).
+`constant-condition` gained the CFG's mutating-argument writes (analyzer
+`mutating_argument_sites` -> `Cfg.mutating_sites`; the span is owned by
+`lint_body_rules`), local-initializer write collection (`ptr_of`/`ref_of`), and
+the host's float-literal harmonization/re-recording in `infer_binary`
+(`double<-x * 1000.0` types `1000.0` as `double`).  `redundant-cast` treats
+`ptr_int`/`ptr_uint` as pointer-width fixed-width integers (host
+`Primitive#fixed_width_integer?`).  `prefer-let` now marks the host's
+`mutable_lvalue_argument_identifier_ids` (array/`str_buffer` -> `span`
+arguments; new `Analysis.mutable_lvalue_sites` threaded into the linter).
+`prefer-struct-with` equates `ty_named`/`ty_imported` by qualified name, and
+`prefer-conditional-expression`/`prefer-try`/`prefer-or-pattern` emit in the
+host's match order.  Gates: lint 631/3 (the 3 documented below), dev self-tests
+22/0, `test/mt` 60/0, lower 683/2/53/0 unchanged, bootstrap fixed point holds.
 
 Session-68 batch (Track B closed; CLI parity 89/89): the `deps` subsystem is
 ported into `projects/mtc/src/mtc/packages/` (`version`, `paths`, `manifest`,
@@ -704,7 +731,9 @@ their listed residues (ref-lifetime modelling, the DAP F5 manual check) remain.
   all matches; `deps`/`docs`/wasm/bundle/toolchain functional.
 - **Linter**: per-rule counts/messages/severities/positions equal the host on
   `examples/language_baseline.mt`, `examples/memory_stress_test.mt` and the whole-corpus sweep;
-  every host rule/fix exists.
+  every host rule/fix exists.  Residual rows are acceptable only when proven a
+  host artifact or a documented self-better fact (the three current rows are in
+  *Deliberate differences*).
 - **LSP**: harness 0 unintended entries (only the documented rows); the audit's
   completion class closed; `debugInfo` byte-equal; `[LSP perf]` ≤ ~10 ms per
   edit (met); valgrind clean (met).  **Met at session 31–38.**
@@ -848,14 +877,25 @@ package build/run entry points, `new`, `completions`, `std`, `test`, `cache`,
 `toolchain`, `snapshot`.  Session 64 closed `debug` (shared renderer) and
 `test`'s argument forms.
 
-### Track C — linter corpus residue (539/95 of 634; 41/43 rules)
+### Track C — linter corpus residue (631/3 of 634; 41/43 rules)
 
-State: **571 agree / 63 differ of 634, hostfail 0, selffail 0** (session 68).
-Per-rule deltas (session-68 re-read; **pairs are self-only / host-only**, in
-that order): `constant-condition` 11/1, `prefer-or-pattern` 10/10,
-`loop-single-iteration` 9/0, `unreachable-code` 5/0, `redundant-cast` 2/8,
-`prefer-let` 2/2, `prefer-var-else` 2/0, and one host-only
-`prefer-struct-with`.  The corpus count drifts with the tree; quote the set.
+State: **631 agree / 3 differ of 634, hostfail 0, selffail 0** (session 69).
+The residual three rows are documented under *Deliberate differences*: two
+`redundant-cast` rows in `std/cli.mt` (the self's flow-refined type exposes a
+genuinely redundant nullable-pointer cast the host's unrefined fact misses) and
+one in `projects/mtc/src/mtc/main.mt` (the host's character-indexed source scan
+misses a cast after multibyte text; the self uses byte columns), plus one
+host-only `constant-condition` in `examples/reflection_advanced.mt` (the host's
+inline-if non-chosen branch lacks a binding id, so its constant propagation
+keeps `count = 0`).  The corpus count drifts with the tree; quote the set.
+
+Session-69 linter batch (571/63 -> 631/3): see the session-69 batch in *Status
+at a glance* for the per-rule mechanics.  Closing summary by rule (pairs are
+self-only / host-only before -> after): `constant-condition` 11/1 -> 0/1,
+`prefer-or-pattern` 10/10 -> 0/0, `loop-single-iteration` 9/0 -> 0/0,
+`unreachable-code` 5/0 -> 0/0, `redundant-cast` 2/8 -> 3/0,
+`prefer-let` 2/2 -> 0/0, `prefer-var-else` 2/0 -> 0/0,
+`prefer-struct-with` 0/1 -> 0/0.
 
 Session-68 linter batch:
 - **`prefer-let` receiver mutation (75/141 -> 7/5).**  The analyzer now records
@@ -1070,6 +1110,24 @@ ones:
   --sexpr` -> rc 134 `loop iteration limit exceeded in str_is_valid_utf8`),
   while only the Ruby host (which has no guard) completes.  Not a parity gap;
   the non-`--sexpr` formatting path completes on both C compilers.
+- **Linter corpus residue (3 rows, all deliberate):**
+  - `std/cli.mt:727,740` — `redundant-cast` on `ptr[X]<-value`.  The self's
+    flow analysis narrows `value` to non-null after `if value == null: break`,
+    so its recorded expression type is `ptr[X]` and the cast is genuinely
+    redundant; the host's fact carries the declared `ptr[X]?`, so it misses the
+    hint.  Removing the cast is type-correct under the self's refinement.
+  - `projects/mtc/src/mtc/main.mt:5757` — `redundant-cast` parentheses after
+    multibyte text (`c"── Tokens …"`).  The host's `check_redundant_cast_parens`
+    starts `line.index("<-", column - 1)` with a **character** index on a line
+    whose earlier bytes are multibyte, so it never finds the `<-`; the self uses
+    the compiler's byte columns and correctly reports the redundant parens.
+  - `examples/reflection_advanced.mt:65` — host-only `constant-condition`
+    (`inline if DEBUG_OFF:` branch assignment).  The host's analyzer does not
+    bind expressions in the non-chosen inline branch, so its constant
+    propagation keeps `count = 0` and reports the following `if count != 0` as
+    always false; the self's name-keyed facts see the assignment and (correctly)
+    do not report.  Reproducing the host would need its per-declaration binding
+    ids in the linter CFG and would reintroduce the false positive.
 - **Better-than-host behaviours to preserve:** malformed-frame `-32700` + keep
   serving, synchronous facts with no lag, faster cold start, deterministic
   binding-map iteration; a capability the host lacks is not automatically a
@@ -1118,7 +1176,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `cli:parity` | **89 match / 0 differ / 0 pending** of 89 (case-backed; timings and `debug` node ids normalized) | session 68 (stage2) | `ruby tools/cli_parity.rb -q` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 67 | `ruby tools/wasm_smoke.rb` |
 | docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 67 | `ruby tools/docs_smoke.rb` |
-| lint corpus | 571 agree / 63 differ of 634, hostfail 0, selffail 0; **41/43 rules, 13/13 fixers** | session 68 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| lint corpus | 631 agree / 3 differ of 634, hostfail 0, selffail 0; **41/43 rules, 13/13 fixers** (the 3 are documented deliberate rows) | session 69 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 616/616 | session 64 | `ruby tools/unused_import_parity.rb` |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 43 | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |

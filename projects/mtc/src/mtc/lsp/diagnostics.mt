@@ -90,6 +90,7 @@ public function collect_diagnostics(ws: ref[workspace.Workspace], uri: str, root
             options.unresolved_import_paths = unresolved.as_span()
             options.editable_sites = read(last_analysis_ptr).editable_receiver_sites.as_span()
             options.mutating_sites = read(last_analysis_ptr).mutating_argument_sites.as_span()
+            options.mutable_lvalue_sites = read(last_analysis_ptr).mutable_lvalue_sites.as_span()
             options.analysis = last_analysis_ptr
             var providers = scope_tracking.build_import_method_providers(
                 read(last_analysis_ptr).source_file,

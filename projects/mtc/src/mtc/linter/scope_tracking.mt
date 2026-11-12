@@ -74,6 +74,10 @@ public struct ScopeCtx:
     ## (recorded by the analyzer): the call mutates them, so prefer-let must
     ## not fire.
     mutating_sites: span[analyzer.EditableSite]
+    ## Identifier arguments recorded by the array/`str_buffer`→`span` coercion
+    ## (the host's `mutable_lvalue_argument_identifier_ids`): the callee may
+    ## write through the alias, so prefer-let must not fire on them either.
+    mutable_lvalue_sites: span[analyzer.EditableSite]
 
 
 # =============================================================================
@@ -102,6 +106,7 @@ public function ctx_init(ctx: ref[ScopeCtx], buf: ptr[ScopeEntry]) -> void:
     read(ctx).generic_function_depth = 0
     read(ctx).editable_sites = span[analyzer.EditableSite]()
     read(ctx).mutating_sites = span[analyzer.EditableSite]()
+    read(ctx).mutable_lvalue_sites = span[analyzer.EditableSite]()
 
 
 public function ctx_set_generic_depth(ctx: ref[ScopeCtx], depth: ptr_uint) -> void:
@@ -168,6 +173,27 @@ public function ctx_scope_count(ctx: ref[ScopeCtx], idx: ptr_uint) -> ptr_uint:
 
 public function ctx_entry(ctx: ref[ScopeCtx], start: ptr_uint, offset: ptr_uint) -> Binding:
     return unsafe: read(read(ctx).buf + start + offset).binding
+
+
+## The host's `prefer_var_else_binding_mutated?`: the innermost open scope's
+## binding for `name` was marked mutated.  A binding declared in an already
+## popped nested scope is not found, so its `var ... else` is not reported — the
+## host looks only at `@scopes.last` too.
+public function ctx_binding_mutated(ctx: ref[ScopeCtx], name: str) -> bool:
+    let c = unsafe: read(ctx)
+    if c.scope_count == 0:
+        return false
+    let si = c.scope_count - 1
+    let start = c.scope_starts[si]
+    let count = c.scope_counts[si]
+    var i: ptr_uint = 0
+    while i < count:
+        unsafe:
+            let entry = read(c.buf + start + i)
+            if entry.name.equal(name):
+                return entry.binding.mutated
+        i += 1
+    return false
 
 
 ## The host's `declare_local`: ignored names (`_`-prefixed) never enter a
@@ -332,14 +358,9 @@ public function ctx_mark_mutating_args(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) 
                     let value = read(cl.args.data + ai).arg_value
                     match read(value):
                         ast.Expr.expr_identifier as id:
-                            var si: ptr_uint = 0
-                            let sites = read(ctx).mutating_sites
-                            while si < sites.len:
-                                let site = read(sites.data + si)
-                                if site.line == id.line and site.column == id.column and site.name.equal(id.name):
-                                    ctx_mark_mutated(ctx, value)
-                                    break
-                                si += 1
+                            if ctx_mutating_site_contains(read(ctx).mutating_sites, id.name, id.line, id.column) or
+                               ctx_mutating_site_contains(read(ctx).mutable_lvalue_sites, id.name, id.line, id.column):
+                                ctx_mark_mutated(ctx, value)
                         ast.Expr.expr_unary_op as u:
                             if u.operator.equal("out") or u.operator.equal("inout"):
                                 ctx_mark_mutated(ctx, u.operand)
@@ -348,6 +369,17 @@ public function ctx_mark_mutating_args(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) 
                     ai += 1
             _:
                 pass
+
+
+function ctx_mutating_site_contains(sites: span[analyzer.EditableSite], name: str, line: ptr_uint, column: ptr_uint) -> bool:
+    var i: ptr_uint = 0
+    unsafe:
+        while i < sites.len:
+            let site = read(sites.data + i)
+            if site.line == line and site.column == column and site.name.equal(name):
+                return true
+            i += 1
+    return false
 
 
 ## When a `ref_of(x)` / `ptr_of(x)` call creates a writable alias, mark the

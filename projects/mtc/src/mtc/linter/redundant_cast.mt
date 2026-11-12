@@ -61,12 +61,14 @@ function literal_fits(target_name: str, value: long) -> bool:
     return false
 
 
-## Fixed-width integers only (the host's `fixed_width_integer?`): the
-## pointer-sized `ptr_int`/`ptr_uint` are not implicit-cast candidates.
+## Fixed-width integers, including the pointer-sized `ptr_int`/`ptr_uint`
+## (the host's `Primitive#fixed_width_integer?` treats them as pointer-width
+## fixed integers).
 function fixed_width_integer(name: str) -> bool:
     return (
         name == "byte" or name == "short" or name == "int" or name == "long"
         or name == "ubyte" or name == "ushort" or name == "uint" or name == "ulong"
+        or name == "ptr_int" or name == "ptr_uint"
     )
 
 
@@ -75,7 +77,7 @@ function float_name(name: str) -> bool:
 
 
 function signed_integer(name: str) -> bool:
-    return name == "byte" or name == "short" or name == "int" or name == "long"
+    return name == "byte" or name == "short" or name == "int" or name == "long" or name == "ptr_int"
 
 
 function integer_width(name: str) -> ptr_uint:
@@ -85,7 +87,7 @@ function integer_width(name: str) -> ptr_uint:
         return 2
     if name == "int" or name == "uint":
         return 4
-    if name == "long" or name == "ulong":
+    if name == "long" or name == "ulong" or name == "ptr_int" or name == "ptr_uint":
         return 8
     return 0
 
