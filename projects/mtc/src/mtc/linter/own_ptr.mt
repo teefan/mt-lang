@@ -45,13 +45,14 @@ extending PtrState:
     public editable function record_local(name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?) -> void:
         if name.len == 0 or value == null:
             return
-        # The host: with a type annotation only the annotation decides
-        # (`ptr[` in its text); without one the initializer must be a heap
-        # allocation or an `alloc_expr`/`alloc_stmt`/`alloc_decl` wrapper.
+        # The host's `record_ptr_candidate`: an annotated declaration tests
+        # `type_ref_source(...).include?("ptr[")`, but `type_ref_source` returns
+        # the *last* name part — always the bare `ptr`/`const_ptr` head — so that
+        # test never passes.  Only an unannotated heap allocation or an
+        # `alloc_expr`/`alloc_stmt`/`alloc_decl` wrapper records a candidate.
         if stmt_type != null:
-            if not is_ptr_type(stmt_type):
-                return
-        else if not (is_heap_alloc(value) or is_alloc_wrapper(value)):
+            return
+        if not (is_heap_alloc(value) or is_alloc_wrapper(value)):
             return
         var i: ptr_uint = 0
         while i < this.candidates.len():
@@ -113,17 +114,6 @@ extending PtrState:
 
 
 ## An explicit `ptr[...]`/`const_ptr[...]` annotation.
-function is_ptr_type(tr: ptr[ast.TypeRef]?) -> bool:
-    let t = tr else:
-        return false
-    unsafe:
-        let parts = read(t).name.parts
-        if parts.len == 0:
-            return false
-        let last = read(parts.data + parts.len - 1)
-        return last.equal("ptr") or last.equal("const_ptr")
-
-
 ## The host's `heap_alloc_call?` / `alloc_wrapper_name`: a `heap.must_alloc…`
 ## family call, or a call whose callee name wraps one.
 function is_heap_alloc(value: ptr[ast.Expr]?) -> bool:

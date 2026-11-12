@@ -238,7 +238,7 @@ public function lint_source_with(
     # frame's buffer (see scope_tracking's header); the walk emits the scope
     # warnings where the host's visitor does — `shadow` at each declaration,
     # `unused-local`/`unused-param`/`prefer-let`/`prefer-own-ptr` at each pop.
-    var scope_entries: array[scope_tracking.ScopeEntry, 4096]
+    var scope_entries: array[scope_tracking.ScopeEntry, scope_tracking.SCOPE_WINDOW_TOTAL]
     var scope: scope_tracking.ScopeCtx
     scope_tracking.ctx_init(ref_of(scope), ptr_of(scope_entries[0]))
     unsafe:

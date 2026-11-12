@@ -923,6 +923,11 @@ function test_loop_normal_with_break_clean() -> void:
 
 @[test]
 function test_prefer_own_ptr_flagged() -> void:
+    # The host's `record_ptr_candidate` never records an annotated declaration
+    # (its `type_ref_source(...).include?("ptr[")` test compares against the
+    # bare `ptr` name part) and `heap.must_alloc[T](...)` parses through a
+    # `Specialization` callee, which `heap_alloc_call?` does not match either.
+    # So this shape stays clean, exactly like the host.
     var source = <<-SRC
         import std.mem.heap as heap
         function demo() -> int:
@@ -931,7 +936,7 @@ function test_prefer_own_ptr_flagged() -> void:
                 read(p) = 42
                 return read(p)
     SRC
-    expect_one(source, "prefer-own-ptr")
+    expect_none(source, "prefer-own-ptr")
 
 
 @[test]

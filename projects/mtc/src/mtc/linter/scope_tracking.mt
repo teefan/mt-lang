@@ -38,6 +38,8 @@ public const BINDING_LOCAL: ptr_uint = 0
 public const BINDING_PARAM: ptr_uint = 1
 const MAX_SCOPES: ptr_uint = 32
 const MAX_ENTRIES: ptr_uint = 128
+## One MAX_ENTRIES window per scope, for the 32 scopes the ctx supports.
+public const SCOPE_WINDOW_TOTAL: ptr_uint = 32 * MAX_ENTRIES
 
 public struct Binding:
     name: str
@@ -60,8 +62,8 @@ public struct ScopeEntry:
 ## the ctx only stores counters and a pointer to that buffer.
 public struct ScopeCtx:
     buf: ptr[ScopeEntry]
-    scope_starts: array[ptr_uint, 32]
-    scope_counts: array[ptr_uint, 32]
+    scope_starts: array[ptr_uint, MAX_SCOPES]
+    scope_counts: array[ptr_uint, MAX_SCOPES]
     scope_count: ptr_uint
     generic_function_depth: ptr_uint
     match_arm_depth: ptr_uint
@@ -112,10 +114,13 @@ public function ctx_set_match_arm_depth(ctx: ref[ScopeCtx], depth: ptr_uint) -> 
 
 public function ctx_push_scope(ctx: ref[ScopeCtx]) -> void:
     let c = unsafe: read(ctx)
-    if c.scope_count >= 32:
+    if c.scope_count >= MAX_SCOPES:
         fatal(c"scope tracking overflow in lint pass")
+    # Every scope owns a MAX_ENTRIES-wide window: a scope holding more than a
+    # dozen locals must not spill into the next scope's window (that made a
+    # sibling block's bindings look like outer ones and reported `shadow`).
     let si = c.scope_count
-    read(ctx).scope_starts[si] = si * 16
+    read(ctx).scope_starts[si] = si * MAX_ENTRIES
     read(ctx).scope_counts[si] = 0
     read(ctx).scope_count = si + 1
 
@@ -134,11 +139,13 @@ public function ctx_pop_scope(ctx: ref[ScopeCtx]) -> ptr_uint:
 
 
 ## The host's `declare_local` shadow check: any *outer* scope (not the
-## innermost) already holds the name, and match-arm bindings never shadow.
+## innermost) already holds the name.  A match arm's scope is an outer scope
+## like any other, so an arm binding or a local in an arm body reports shadow
+## the same way.
 ## True means the caller emits `shadow` for the declaration.
 public function ctx_shadows_outer(ctx: ref[ScopeCtx], name: str) -> bool:
     let c = unsafe: read(ctx)
-    if c.scope_count <= 1 or c.match_arm_depth != 0:
+    if c.scope_count <= 1:
         return false
     var si: ptr_uint = 0
     while si < c.scope_count - 1:
