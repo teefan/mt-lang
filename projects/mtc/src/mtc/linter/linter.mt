@@ -1128,6 +1128,41 @@ function push_warning_at(
 #  Line resolution — descend to the first sub-expression that carries a line.
 # =============================================================================
 
+## The expression node's own `line` field, with no fallback into its children —
+## the host reads `scrutinee.line` directly, so a node kind that carries no line
+## (a call, binary, literal, …) reports 0 and the warning renders with no
+## position (`path:: code: message`).
+function expression_declared_line(expr: ptr[ast.Expr]?) -> ptr_uint:
+    let ep = expr else:
+        return 0
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier as id:
+                return id.line
+            ast.Expr.expr_char_literal as ch:
+                return ch.line
+            ast.Expr.expr_member_access as m:
+                return m.line
+            ast.Expr.expr_match as mm:
+                return mm.line
+            ast.Expr.expr_null_literal as nl:
+                return nl.line
+            ast.Expr.expr_detach as dt:
+                return dt.line
+            ast.Expr.expr_expression_list as el:
+                return el.line
+            ast.Expr.expr_range as rg:
+                return rg.line
+            ast.Expr.expr_prefix_cast as pc:
+                return pc.line
+            ast.Expr.expr_unsafe as us:
+                return us.line
+            ast.Expr.expr_error as er:
+                return er.line
+            _:
+                return 0
+
+
 function expression_line(expr: ptr[ast.Expr]?) -> ptr_uint:
     let ep = expr else:
         return 0
@@ -2884,7 +2919,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                 if lint_full_tier:
                     check_prefer_or_pattern_stmt(mt.arms, path, warnings)
                     check_prefer_conditional_expression_match(mt.arms, mt.line, mt.column, path, warnings)
-                    check_prefer_try_stmt(mt.arms, path, warnings)
+                    check_prefer_try_stmt(mt.arms, expression_declared_line(mt.scrutinee), path, warnings)
             ast.Stmt.stmt_ret as r:
                 visit_expr_opt(r.value, path, warnings)
                 if r.value != null:
@@ -3833,7 +3868,12 @@ struct TryArmPair:
     early_is_first: bool
     base: str
 
-function check_prefer_try_stmt(arms: span[ast.MatchArm], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_prefer_try_stmt(arms: span[ast.MatchArm], anchor_line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    # The host needs the scrutinee's resolved variant type, and the analyzer
+    # records no expression types inside a generic body (see `resolve_expr_type`
+    # in redundant_cast), so the rule never fires there.
+    if lint_generic_depth > 0:
+        return
     if arms.len != 2:
         return
     unsafe:
@@ -3853,8 +3893,7 @@ function check_prefer_try_stmt(arms: span[ast.MatchArm], path: str, warnings: re
                     buf.append("this ")
                     buf.append(pair.base)
                     buf.append(" match only propagates the failure branch; consider `expr?`")
-                    let line = unsafe: expression_line(read(arms.data + 0).pattern)
-                    push_warning(warnings, path, line, "prefer-try", buf.as_str(), "hint")
+                    push_warning(warnings, path, anchor_line, "prefer-try", buf.as_str(), "hint")
             _:
                 pass
 
@@ -3885,13 +3924,16 @@ function try_short_circuit_base(short_pat: ptr[ast.Expr], other_pat: ptr[ast.Exp
     unsafe:
         match read(short_pat):
             ast.Expr.expr_member_access as m:
-                let recv_name = identifier_name_of(m.receiver) else:
+                # `Result[int, E].failure` names the head through a specialization
+                # (`Result[int, E]`), so compare the written base name — the
+                # host compares the resolved variant's base name instead.
+                let recv_name = member_type_base_name(m.receiver) else:
                     return Option[str].none
                 if m.member_name == "failure":
                     # Check that the other arm is success or some
                     match read(other_pat):
                         ast.Expr.expr_member_access as om:
-                            let other_recv = identifier_name_of(om.receiver) else:
+                            let other_recv = member_type_base_name(om.receiver) else:
                                 return Option[str].none
                             if om.member_name == "success" and other_recv.equal(recv_name):
                                 return Option[str].some(value = "Result")
@@ -3901,7 +3943,7 @@ function try_short_circuit_base(short_pat: ptr[ast.Expr], other_pat: ptr[ast.Exp
                 if m.member_name == "none":
                     match read(other_pat):
                         ast.Expr.expr_member_access as om:
-                            let other_recv = identifier_name_of(om.receiver) else:
+                            let other_recv = member_type_base_name(om.receiver) else:
                                 return Option[str].none
                             if om.member_name == "some" and other_recv.equal(recv_name):
                                 return Option[str].some(value = "Option")
@@ -3935,6 +3977,20 @@ function is_option_none_expr(value: ptr[ast.Expr]) -> bool:
     return false
 
 
+## The written `Type` of a `Type.member` / `Type[..].member` receiver: the bare
+## identifier, or a specialization's base identifier.
+function member_type_base_name(receiver: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                return Option[str].some(value = id.name)
+            ast.Expr.expr_specialization as sp:
+                return identifier_name_of(sp.callee)
+            _:
+                return Option[str].none
+    return Option[str].none
+
+
 function is_result_failure_propagation(value: ptr[ast.Expr], binding_name: Option[str]) -> bool:
     let bn = binding_name else:
         return false
@@ -3945,7 +4001,7 @@ function is_result_failure_propagation(value: ptr[ast.Expr], binding_name: Optio
                     ast.Expr.expr_member_access as m:
                         if m.member_name != "failure":
                             return false
-                        let recv_name = identifier_name_of(m.receiver) else:
+                        let recv_name = member_type_base_name(m.receiver) else:
                             return false
                         if not recv_name.equal("Result"):
                             return false

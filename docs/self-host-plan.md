@@ -33,7 +33,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | `sexpr lex` / `parse` | 0 differ (lex **738/738**; parse **734 match / 0 differ / 4 host-rejected of 738**; counts drift with the tree) |
 | `sexpr lower` | **683 match / 2 differ / 53 host-rejected / 0 self-rejected of 738 files** (session 68) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
 | `cli:parity` | **89 match / 0 differ / 0 pending** of 89 cases (session 68; `deps` — add/remove/update/tree/lock/publish/fetch — and `--locked`/`--frozen` closed, the pending set is empty; `--timings` values and `debug`'s Ruby node ids are normalized) |
-| Linter corpus | **547 agree / 87 differ** of 634 (session 68; hostfail 0, selffail 0); **41/43 rules, 13/13 fixers**.  Session 68 closed `prefer-let` (75/141 -> 2/2), `redundant-cast` (75/48 -> 2/8), `shadow` (20/0 -> 0/0) and `prefer-own-ptr` (19/0 -> 0/0). |
+| Linter corpus | **571 agree / 63 differ** of 634 (session 68; hostfail 0, selffail 0); **41/43 rules, 13/13 fixers**.  Session 68 closed `prefer-try` (76/40 -> 0/0), `prefer-let` (75/141 -> 2/2), `redundant-cast` (75/48 -> 2/8), `shadow` (20/0 -> 0/0) and `prefer-own-ptr` (19/0 -> 0/0). |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the live VS Code F5 check is the remaining manual step |
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
@@ -850,13 +850,12 @@ package build/run entry points, `new`, `completions`, `std`, `test`, `cache`,
 
 ### Track C — linter corpus residue (539/95 of 634; 41/43 rules)
 
-State: **547 agree / 87 differ of 634, hostfail 0, selffail 0** (session 68).
+State: **571 agree / 63 differ of 634, hostfail 0, selffail 0** (session 68).
 Per-rule deltas (session-68 re-read; **pairs are self-only / host-only**, in
-that order): `prefer-try` 76/40, `constant-condition` 11/1,
-`prefer-or-pattern` 10/10, `loop-single-iteration` 9/0, `unreachable-code` 5/0,
-`redundant-cast` 2/8, `prefer-let` 2/2, `prefer-var-else` 2/0, and one
-host-only `prefer-struct-with`.  The corpus count drifts with the tree; quote
-the set.
+that order): `constant-condition` 11/1, `prefer-or-pattern` 10/10,
+`loop-single-iteration` 9/0, `unreachable-code` 5/0, `redundant-cast` 2/8,
+`prefer-let` 2/2, `prefer-var-else` 2/0, and one host-only
+`prefer-struct-with`.  The corpus count drifts with the tree; quote the set.
 
 Session-68 linter batch:
 - **`prefer-let` receiver mutation (75/141 -> 7/5).**  The analyzer now records
@@ -869,6 +868,12 @@ Session-68 linter batch:
   qualified `ty_named` with a `ty_imported` of the same module/type (the
   host's `to_s` comparison), so `ptr[Expr]` from a local alias and from an
   import are one type.
+- **`prefer-try` (76/40 -> 0/0).**  Three fixes: the anchor is the scrutinee's
+  *own* line (a node kind with no line renders the host's positionless
+  `path::` form, now supported by the lint printer); `Result[int, E].failure`'s
+  specialization receiver counts as the written base name on both the pattern
+  and the propagated return; and the rule is suppressed inside generic bodies
+  (the host's facts carry no expression types there).
 - **`shadow` (20/0 -> 0/0).**  Two bugs: the scope window stride was a fixed
   16 entries while a scope may hold up to 128, so a large function scope spilled
   into the next scope's window and a sibling block's bindings looked like outer
@@ -1113,7 +1118,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `cli:parity` | **89 match / 0 differ / 0 pending** of 89 (case-backed; timings and `debug` node ids normalized) | session 68 (stage2) | `ruby tools/cli_parity.rb -q` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 67 | `ruby tools/wasm_smoke.rb` |
 | docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 67 | `ruby tools/docs_smoke.rb` |
-| lint corpus | 547 agree / 87 differ of 634, hostfail 0, selffail 0; **41/43 rules, 13/13 fixers** | session 68 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| lint corpus | 571 agree / 63 differ of 634, hostfail 0, selffail 0; **41/43 rules, 13/13 fixers** | session 68 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 616/616 | session 64 | `ruby tools/unused_import_parity.rb` |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 43 | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |

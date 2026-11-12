@@ -888,13 +888,21 @@ function check_command(args: span[str]) -> int:
                                 break
                             unsafe:
                                 let lw = read(lwp)
-                                stdio.print_format(
-                                    c"%.*s:%d: %.*s: %.*s\n",
-                                    int<-(lw.path.len), lw.path.data,
-                                    int<-(lw.line),
-                                    int<-(lw.code.len), lw.code.data,
-                                    int<-(lw.message.len), lw.message.data,
-                                )
+                                if lw.line == 0:
+                                    stdio.print_format(
+                                        c"%.*s:: %.*s: %.*s\n",
+                                        int<-(lw.path.len), lw.path.data,
+                                        int<-(lw.code.len), lw.code.data,
+                                        int<-(lw.message.len), lw.message.data,
+                                    )
+                                else:
+                                    stdio.print_format(
+                                        c"%.*s:%d: %.*s: %.*s\n",
+                                        int<-(lw.path.len), lw.path.data,
+                                        int<-(lw.line),
+                                        int<-(lw.code.len), lw.code.data,
+                                        int<-(lw.message.len), lw.message.data,
+                                    )
                             lwi += 1
                         total_warnings += lwarns.len()
                         if total_errors == 0 and warnings == 0:
@@ -1429,13 +1437,21 @@ function lint_command(args: span[str]) -> int:
                         break
                     unsafe:
                         let w = read(wp)
-                        stdio.print_format(
-                            c"%.*s:%d: %.*s: %.*s\n",
-                            int<-(w.path.len), w.path.data,
-                            int<-(w.line),
-                            int<-(w.code.len), w.code.data,
-                            int<-(w.message.len), w.message.data,
-                        )
+                        if w.line == 0:
+                            stdio.print_format(
+                                c"%.*s:: %.*s: %.*s\n",
+                                int<-(w.path.len), w.path.data,
+                                int<-(w.code.len), w.code.data,
+                                int<-(w.message.len), w.message.data,
+                            )
+                        else:
+                            stdio.print_format(
+                                c"%.*s:%d: %.*s: %.*s\n",
+                                int<-(w.path.len), w.path.data,
+                                int<-(w.line),
+                                int<-(w.code.len), w.code.data,
+                                int<-(w.message.len), w.message.data,
+                            )
                     wi += 1
             Result.failure as read_err:
                 var em = read_err.error
