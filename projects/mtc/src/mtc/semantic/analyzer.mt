@@ -5811,6 +5811,17 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
             return rt
         if is_float_literal_expr(right) and types.is_float_type(lt):
             return lt
+        # A shift's result is its left operand's type (the host's `<<`/`>>`
+        # arm); the amount never promotes the result.
+        if op.equal("<<") or op.equal(">>"):
+            return lt
+        # Otherwise the promoted common type (an int operand with a float
+        # sibling is float), exactly like Ruby's `common_numeric_type`.
+        match exprs.common_numeric_type(lt, rt):
+            Option.some as promoted:
+                return promoted.value
+            Option.none:
+                pass
         return lt
     # `str + str` concatenates (the host's infer_binary `"+"` case).
     if op == "+" and types.is_str(lt) and types.is_str(rt):
@@ -7613,18 +7624,45 @@ function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[sscope.
         Option.some as sig:
             match sig.value.method_kind:
                 ast.MethodKind.mk_editable:
-                    unsafe:
-                        match read(receiver_expr):
-                            ast.Expr.expr_identifier as id:
-                                ctx.editable_receiver_sites.push(EditableSite(name = id.name, line = id.line, column = id.column))
-                                if not editable_receiver_assignable(scope, id.name):
-                                    report(ctx, line, column, editable_on_immutable_message(id.name, method_name))
-                            _:
-                                pass
+                    # The host records the receiver *expression*; its linter then
+                    # walks member/index receivers to the root binding
+                    # (`mark_mutated`), so `datagram.data.release()` marks
+                    # `datagram`.  Record the root identifier's site for that walk.
+                    match editable_receiver_root(receiver_expr):
+                        Option.some as root:
+                            ctx.editable_receiver_sites.push(EditableSite(name = root.value.name, line = root.value.line, column = root.value.column))
+                            if not editable_receiver_assignable(scope, root.value.name):
+                                report(ctx, line, column, editable_on_immutable_message(root.value.name, method_name))
+                        Option.none:
+                            pass
                 _:
                     pass
         Option.none:
             pass
+
+
+struct ReceiverRoot:
+    name: str
+    line: ptr_uint
+    column: ptr_uint
+
+
+## The root identifier of a receiver expression, through member and index
+## accesses only.  A call receiver (`read(x).field.release()`) stops the walk:
+## the host's `mark_mutated` never enters a call, and `infer_lvalue_receiver`
+## accepts a `read` receiver without a mutability check.
+function editable_receiver_root(receiver_expr: ptr[ast.Expr]) -> Option[ReceiverRoot]:
+    unsafe:
+        match read(receiver_expr):
+            ast.Expr.expr_identifier as id:
+                return Option[ReceiverRoot].some(value = ReceiverRoot(name = id.name, line = id.line, column = id.column))
+            ast.Expr.expr_member_access as ma:
+                return editable_receiver_root(ma.receiver)
+            ast.Expr.expr_index_access as ix:
+                return editable_receiver_root(ix.receiver)
+            _:
+                pass
+    return Option[ReceiverRoot].none
 
 
 ## The struct type named by a static-method receiver: a bare local struct name

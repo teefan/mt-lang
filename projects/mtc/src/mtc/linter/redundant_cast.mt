@@ -169,8 +169,28 @@ function type_name_of(t: types.Type) -> str:
 
 
 ## Host `same_resolved_type?` (`left.equal?(right) || left.to_s == right.to_s`)
-## as a structural comparison over the self-host's type model.
+## as a structural comparison over the self-host's type model.  A qualified
+## `ty_named` and a `ty_imported` naming the same module/type are the same
+## nominal type (`ptr[Expr]` arrived at through a local alias vs an import) —
+## the host's `to_s` renders both identically.
 function same_type(left: types.Type, right: types.Type) -> bool:
+    match left:
+        types.Type.ty_named as named:
+            match right:
+                types.Type.ty_imported as imported:
+                    if named.module_name.len > 0:
+                        return named.name.equal(imported.name) and named.module_name.equal(imported.module_name)
+                _:
+                    pass
+        types.Type.ty_imported as imported:
+            match right:
+                types.Type.ty_named as named:
+                    if named.module_name.len > 0:
+                        return named.name.equal(imported.name) and named.module_name.equal(imported.module_name)
+                _:
+                    pass
+        _:
+            pass
     match left:
         types.Type.ty_primitive as lp:
             match right:

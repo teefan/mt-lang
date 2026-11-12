@@ -245,16 +245,6 @@ public function ctx_mark_mutated(ctx: ref[ScopeCtx], target: ptr[ast.Expr]) -> v
                 ctx_mark_mutated(ctx, ia.receiver)
             ast.Expr.expr_member_access as ma:
                 ctx_mark_mutated(ctx, ma.receiver)
-            ast.Expr.expr_call as call:
-                match read(call.callee):
-                    ast.Expr.expr_identifier as callee_id:
-                        if callee_id.name.equal("read"):
-                            var ai: ptr_uint = 0
-                            while ai < call.args.len:
-                                ctx_mark_mutated(ctx, read(call.args.data + ai).arg_value)
-                                ai += 1
-                    _:
-                        pass
             _:
                 pass
 
@@ -279,25 +269,47 @@ public function ctx_mark_editable_receiver(call: ptr[ast.Expr], ctx: ref[ScopeCt
 
 
 ## `x.method(...)` / `x.method[T](...)`: mark the receiver when the analyzer
-## recorded an editable site at the same name/line.
+## recorded an editable site at the same name/line.  The analyzer records the
+## receiver's *root* identifier (its lvalue walk reaches the binding through
+## members/indexes), so the same walk runs here.
 function ctx_mark_editable_member(member_expr: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
     unsafe:
         match read(member_expr):
             ast.Expr.expr_member_access as ma:
-                match read(ma.receiver):
-                    ast.Expr.expr_identifier as id:
-                        var si: ptr_uint = 0
-                        let sites = read(ctx).editable_sites
-                        while si < sites.len:
-                            let site = read(sites.data + si)
-                            if site.line == id.line and site.column == id.column and site.name.equal(id.name):
-                                ctx_mark_mutated(ctx, ma.receiver)
-                                return
-                            si += 1
-                    _:
-                        pass
+                let root = receiver_root_identifier(ma.receiver) else:
+                    return
+                var si: ptr_uint = 0
+                let sites = read(ctx).editable_sites
+                while si < sites.len:
+                    let site = read(sites.data + si)
+                    if site.line == root.line and site.column == root.column and site.name.equal(root.name):
+                        ctx_mark_mutated(ctx, ma.receiver)
+                        return
+                    si += 1
             _:
                 pass
+
+
+struct RootIdentifier:
+    name: str
+    line: ptr_uint
+    column: ptr_uint
+
+
+## The root identifier of a receiver expression, through member and index
+## accesses only (the analyzer's walk stops at a call receiver too).
+function receiver_root_identifier(receiver: ptr[ast.Expr]) -> Option[RootIdentifier]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                return Option[RootIdentifier].some(value = RootIdentifier(name = id.name, line = id.line, column = id.column))
+            ast.Expr.expr_member_access as ma:
+                return receiver_root_identifier(ma.receiver)
+            ast.Expr.expr_index_access as ix:
+                return receiver_root_identifier(ix.receiver)
+            _:
+                pass
+    return Option[RootIdentifier].none
 
 
 ## Mark bindings mutated by a call's arguments: an identifier the analyzer

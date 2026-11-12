@@ -33,7 +33,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | `sexpr lex` / `parse` | 0 differ (lex **738/738**; parse **734 match / 0 differ / 4 host-rejected of 738**; counts drift with the tree) |
 | `sexpr lower` | **683 match / 2 differ / 53 host-rejected / 0 self-rejected of 738 files** (session 68) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
 | `cli:parity` | **89 match / 0 differ / 0 pending** of 89 cases (session 68; `deps` — add/remove/update/tree/lock/publish/fetch — and `--locked`/`--frozen` closed, the pending set is empty; `--timings` values and `debug`'s Ruby node ids are normalized) |
-| Linter corpus | **510 agree / 114 differ** of 624 (session 67; hostfail 0, selffail 0); **41/43 rules, 13/13 fixers**.  Session 67 closed `borrow-and-mutate` (29 self-only) and the new-file `unused-local`/`prefer-let-else`/`prefer-try` rows; `loop-single-iteration` messages now match. |
+| Linter corpus | **539 agree / 95 differ** of 634 (session 68; hostfail 0, selffail 0); **41/43 rules, 13/13 fixers**.  Session 68 closed the `prefer-let` receiver-mutation family (75/141 -> 7/5) and the `redundant-cast` type-identity family (75/48 -> 2/8). |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the live VS Code F5 check is the remaining manual step |
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
@@ -848,17 +848,33 @@ package build/run entry points, `new`, `completions`, `std`, `test`, `cache`,
 `toolchain`, `snapshot`.  Session 64 closed `debug` (shared renderer) and
 `test`'s argument forms.
 
-### Track C — linter corpus residue (510/114 of 624; 41/43 rules)
+### Track C — linter corpus residue (539/95 of 634; 41/43 rules)
 
-State: **510 agree / 114 differ of 624, hostfail 0, selffail 0** (session 67;
-the borrow-and-mutate batch closed its 29 self-only rows and the new docs
-files were made lint-clean).  Per-rule deltas (session-67 re-read; **pairs are
-self-only / host-only**, in that order): `prefer-try` 75/39, `redundant-cast`
-75/48, `prefer-let` 70/141, `shadow` 20/0, `prefer-own-ptr` 20/0,
-`constant-condition` 11/1, `prefer-or-pattern` 10/8,
-`loop-single-iteration` 8/0, `unreachable-code` 4/0, `prefer-var-else` 2/0, and
-one host-only `prefer-struct-with` (so that rule is not fully closed).  The
-corpus count drifts with the tree; quote the set.  The `prefer-own-ptr`
+State: **539 agree / 95 differ of 634, hostfail 0, selffail 0** (session 68).
+Per-rule deltas (session-68 re-read; **pairs are self-only / host-only**, in
+that order): `prefer-try` 76/40, `prefer-own-ptr` 20/0, `shadow` 20/0,
+`constant-condition` 11/1, `prefer-or-pattern` 10/10,
+`loop-single-iteration` 9/0, `prefer-let` 7/5, `unreachable-code` 5/0,
+`redundant-cast` 2/8, `prefer-var-else` 2/0, and one host-only
+`prefer-struct-with`.  The corpus count drifts with the tree; quote the set.
+
+Session-68 linter batch:
+- **`prefer-let` receiver mutation (75/141 -> 7/5).**  The analyzer now records
+  an editable method's receiver at its *root* identifier (walking member/index
+  receivers, stopping at a call — the host's `mark_mutated` shape), so
+  `datagram.data.release()` marks `datagram`; the linter's site match uses the
+  same walk.  The linter's `ctx_mark_mutated` no longer descends into
+  `read(x)` targets (the host's does not either).
+- **`redundant-cast` type identity (75/48 -> 2/8).**  `same_type` equates a
+  qualified `ty_named` with a `ty_imported` of the same module/type (the
+  host's `to_s` comparison), so `ptr[Expr]` from a local alias and from an
+  import are one type.
+- **Binary numeric promotion.**  `infer_binary`'s numeric fallback now returns
+  the promoted `common_numeric_type` (an `int` operand with a `float` sibling
+  is `float`), with dedicated arms for a bare integer/float literal adapting to
+  the sibling and for shifts (`<<`/`>>` keep the left type after literal
+  harmonization).  This fixed both the linter's `int<-((CONST) * 0.1)` false
+  positive and three `lower` regressions the first attempt introduced.  The `prefer-own-ptr`
 candidate set now matches the host (annotated `ptr[...]` locals plus
 `must_alloc`-family and `alloc_expr/alloc_stmt/alloc_decl` initializers), so the
 38 host-only rows are gone; the remaining 20 are safe/unsafe use-accounting.
@@ -1086,7 +1102,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `cli:parity` | **89 match / 0 differ / 0 pending** of 89 (case-backed; timings and `debug` node ids normalized) | session 68 (stage2) | `ruby tools/cli_parity.rb -q` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 67 | `ruby tools/wasm_smoke.rb` |
 | docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 67 | `ruby tools/docs_smoke.rb` |
-| lint corpus | 512 agree / 122 differ of 634, hostfail 0, selffail 0; **41/43 rules, 13/13 fixers** | session 68 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| lint corpus | 539 agree / 95 differ of 634, hostfail 0, selffail 0; **41/43 rules, 13/13 fixers** | session 68 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 616/616 | session 64 | `ruby tools/unused_import_parity.rb` |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 43 | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
