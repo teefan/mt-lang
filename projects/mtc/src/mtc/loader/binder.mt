@@ -195,6 +195,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
         method_type_params = analysis.method_type_params,
         function_type_params = function_type_params,
         mutating_param_indices = analysis.mutating_param_indices,
+        directional_param_modes = analysis.directional_param_modes,
         private_interfaces = private_interfaces,
     )
 

@@ -50,6 +50,7 @@ import mtc.lexer.trivia as triv
 import mtc.formatter.tidy as tidy
 import mtc.linter.config as lint_config
 import mtc.linter.scope_tracking as scope_tracking
+import mtc.linter.platform_drift as platform_drift
 import mtc.linter.nullcheck as nullcheck
 import mtc.linter.own_ptr as own_ptr
 import mtc.linter.constprop as constprop
@@ -149,6 +150,9 @@ public struct LintOptions:
     ## (the analyzer's `mutable_lvalue_sites`): the callee may write through the
     ## alias, so prefer-let must not fire on them either.
     mutable_lvalue_sites: span[analyzer.EditableSite]
+    ## `directional-ffi-arg` sites recorded by the analyzer's call checks: the
+    ## linter emits each at its call's visit, in the host's order.
+    directional_ffi_sites: span[analyzer.DirectionalFfiSite]
     max_line_length: ptr_uint
     select: span[str]
     ignore: span[str]
@@ -173,6 +177,7 @@ public function default_lint_options() -> LintOptions:
         editable_sites = span[analyzer.EditableSite](),
         mutating_sites = span[analyzer.EditableSite](),
         mutable_lvalue_sites = span[analyzer.EditableSite](),
+        directional_ffi_sites = span[analyzer.DirectionalFfiSite](),
         max_line_length = 0,
         select = span[str](),
         ignore = span[str](),
@@ -250,6 +255,7 @@ public function lint_source_with(
         read(ref_of(scope)).editable_sites = options.editable_sites
         read(ref_of(scope)).mutating_sites = options.mutating_sites
         read(ref_of(scope)).mutable_lvalue_sites = options.mutable_lvalue_sites
+    lint_directional_sites = options.directional_ffi_sites
     lint_scope_ctx = ptr_of(scope)
     var ptr_state = own_ptr.PtrState.create()
     defer: ptr_state.release()
@@ -273,6 +279,22 @@ public function lint_source_with(
     scope_tracking.lint_unused_imports(file, path, options.unresolved_import_paths, options.method_providers, options.analysis, ref_of(unused_imports))
     lint_profile_done("rule.unused_import", unused_started)
     drain_scope_warnings(ref_of(unused_imports), ref_of(warnings))
+
+    # platform-api-drift, after unused-import and before the declaration walk
+    # (the host's `visit_source_file` order).
+    if lint_full_tier:
+        let drift_started = lint_profile_mark()
+        var drift = platform_drift.check_platform_api_drift(file, path, source)
+        defer: drift.release()
+        var di: ptr_uint = 0
+        while di < drift.len():
+            let dp = drift.get(di) else:
+                break
+            di += 1
+            unsafe:
+                let d = read(dp)
+                push_warning_at(warnings, path, d.line, d.column, d.length, d.code, d.message, d.severity)
+        lint_profile_done("rule.platform_api_drift", drift_started)
 
     # Module-level reserved names (the host's `seed_module_bindings`).
     let reserved_started = lint_profile_mark()
@@ -978,6 +1000,11 @@ var lint_profile: ptr[profile_mod.Profile]? = null
 ## The active lint tier (the host's `full_tier?`): set by `lint_source_with`
 ## from the options; the walk's gated rules read it.
 var lint_full_tier: bool = true
+
+
+## The analyzer-recorded `directional-ffi-arg` sites (emitted at each call's
+## visit so they interleave with the host's expression warnings).
+var lint_directional_sites: span[analyzer.DirectionalFfiSite] = span[analyzer.DirectionalFfiSite]()
 
 
 ## A phase start for the profile (0 when not profiling, so instrumented sites
@@ -2767,6 +2794,31 @@ function lint_redundant_cast_binary(op: str, left: ptr[ast.Expr], right: ptr[ast
     drain_cast_diags(path, warnings)
 
 
+## The host's `check_directional_ffi_call`: emit the sites recorded for this
+## call's callee.  Each warning spans its argument expression.
+function lint_directional_ffi(callee: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let sites = lint_directional_sites
+    if sites.len == 0:
+        return
+    let key = unsafe: reinterpret[ptr_uint](callee)
+    var i: ptr_uint = 0
+    while i < sites.len:
+        unsafe:
+            let site = read(sites.data + i)
+            if site.callee_key == key:
+                let arg_expr = reinterpret[ptr[ast.Expr]](site.argument_key)
+                var buf = string.String.create()
+                buf.append("pass the lvalue directly to '")
+                buf.append(site.function_name)
+                buf.append("'; parameter '")
+                buf.append(site.parameter_name)
+                buf.append("' already declares ")
+                buf.append(site.mode_label)
+                buf.append(" passing")
+                push_warning_at(warnings, path, expression_line(arg_expr), expression_column(arg_expr), expression_length(arg_expr), "directional-ffi-arg", buf.as_str(), "hint")
+        i += 1
+
+
 ## One function or extending method: params, the statement walk with the
 ## nested scope pops inside it, the per-body rule group, `redundant-return`,
 ## the function scope's pop, then `missing-return` — the host's order.
@@ -3025,6 +3077,7 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
                 scope_mark_alias_source(expr)
                 scope_mark_editable_receiver(expr)
                 scope_mark_mutating_args(expr)
+                lint_directional_ffi(call.callee, path, warnings)
             ast.Expr.expr_index_access as ix:
                 visit_expr(ix.receiver, path, warnings)
                 visit_expr(ix.index, path, warnings)

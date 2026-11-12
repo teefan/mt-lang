@@ -872,6 +872,7 @@ function check_command(args: span[str]) -> int:
                                 options.editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
                                 options.mutating_sites = read(root_analysis_ptr).mutating_argument_sites.as_span()
                                 options.mutable_lvalue_sites = read(root_analysis_ptr).mutable_lvalue_sites.as_span()
+                                options.directional_ffi_sites = read(root_analysis_ptr).directional_ffi_sites.as_span()
                                 options.analysis = root_analysis_ptr
                     let maybe_analysis = options.analysis
                     if maybe_analysis != null:
@@ -1383,6 +1384,7 @@ function lint_command(args: span[str]) -> int:
                             options.editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
                             options.mutating_sites = read(root_analysis_ptr).mutating_argument_sites.as_span()
                             options.mutable_lvalue_sites = read(root_analysis_ptr).mutable_lvalue_sites.as_span()
+                            options.directional_ffi_sites = read(root_analysis_ptr).directional_ffi_sites.as_span()
                             options.analysis = root_analysis_ptr
 
                 var file_profile: ptr[profile_mod.Profile]? = null

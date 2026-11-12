@@ -157,6 +157,24 @@ public struct EventInfo:
 ## (mtc.loader.binder); the type lives here to keep the analyzer free of a
 ## dependency on the loader.  Exposes public functions (call checks), structs
 ## (construction field checks), value types (const/var), and enum/variant static
+## A directional (`in`/`out`/`inout`) FFI parameter: its passing mode and
+## declared name (for the `directional-ffi-arg` hint message).
+public struct DirectionalParamInfo:
+    mode_label: str
+    name: str
+
+
+## A recorded `directional-ffi-arg` site: the call's *callee* expression
+## pointer (so the linter emits at the call's visit, in the host's order), the
+## argument expression pointer (for the warning span), and the message parts.
+public struct DirectionalFfiSite:
+    callee_key: ptr_uint
+    argument_key: ptr_uint
+    function_name: str
+    parameter_name: str
+    mode_label: str
+
+
 ## members (member-access validation).
 public struct ModuleBinding:
     functions: map_mod.Map[str, FnSig]
@@ -206,6 +224,10 @@ public struct ModuleBinding:
     ## imported `alias.fn(...)` call can record its mutating identifier
     ## arguments (the host's `mutating_argument_identifier_ids`).
     mutating_param_indices: map_mod.Map[str, map_mod.Map[ptr_uint, bool]]
+    ## Per foreign function name, the `in`/`out`/`inout` parameters (index ->
+    ## mode/name), so an importer's `alias.fn(...)` call can record
+    ## `directional-ffi-arg` sites (the host's binding `passing_mode`).
+    directional_param_modes: map_mod.Map[str, map_mod.Map[ptr_uint, DirectionalParamInfo]]
     private_interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
 
 
@@ -286,6 +308,13 @@ struct Context:
     ## Per foreign function name, the parameter indices carrying an `out`/`inout`
     ## passing mode, so a call site can record its mutating identifier arguments.
     mutating_param_indices: map_mod.Map[str, map_mod.Map[ptr_uint, bool]]
+    ## Per foreign function name, every `in`/`out`/`inout` parameter's mode and
+    ## name: a call whose argument re-states the direction (`out x`,
+    ## `ptr_of(x)`, `ptr[X]<-x`) records a `directional-ffi-arg` hint site.
+    directional_param_modes: map_mod.Map[str, map_mod.Map[ptr_uint, DirectionalParamInfo]]
+    ## Recorded `directional-ffi-arg` sites for this module, emitted by the
+    ## linter at the call's visit.
+    directional_ffi_sites: vec.Vec[DirectionalFfiSite]
     # Names known to be generic type/value parameters in the current
     # declaration context (struct fields, `extending Type[T]` methods, foreign
     # value params, interface methods).  Used ONLY to suppress "unknown type"
@@ -491,6 +520,11 @@ public struct Analysis:
     ## passing mode (exported so importing modules can record mutating arguments
     ## of `alias.fn(...)` calls too).
     mutating_param_indices: map_mod.Map[str, map_mod.Map[ptr_uint, bool]]
+    ## Per foreign function name, the `in`/`out`/`inout` parameters (exported so
+    ## importing modules can record `directional-ffi-arg` sites).
+    directional_param_modes: map_mod.Map[str, map_mod.Map[ptr_uint, DirectionalParamInfo]]
+    ## The module's recorded `directional-ffi-arg` sites.
+    directional_ffi_sites: vec.Vec[DirectionalFfiSite]
     # The module's source file path, propagated so lowering can emit `#line`
     # directives that map generated C back to the .mt source (debug builds).
     source_path: str
@@ -577,6 +611,8 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         mutating_argument_sites = vec.Vec[EditableSite].create(),
         mutable_lvalue_sites = vec.Vec[EditableSite].create(),
         mutating_param_indices = map_mod.Map[str, map_mod.Map[ptr_uint, bool]].create(),
+        directional_param_modes = map_mod.Map[str, map_mod.Map[ptr_uint, DirectionalParamInfo]].create(),
+        directional_ffi_sites = vec.Vec[DirectionalFfiSite].create(),
         suppressed_type_names = map_mod.Map[str, bool].create(),
         function_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
         method_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
@@ -709,6 +745,8 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         mutating_argument_sites = ctx.mutating_argument_sites,
         mutable_lvalue_sites = ctx.mutable_lvalue_sites,
         mutating_param_indices = ctx.mutating_param_indices,
+        directional_param_modes = ctx.directional_param_modes,
+        directional_ffi_sites = ctx.directional_ffi_sites,
         source_path = source_path,
         identifier_sites = ctx.identifier_sites,
         declaration_sites = ctx.declaration_sites,
@@ -2417,6 +2455,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                 ctx.type_params.clear()
                 ctx.functions.set(ef.name, sig)
                 record_mutating_param_indices(ctx, ef.name, ef.extern_params)
+                record_directional_param_modes(ctx, ef.name, ef.extern_params)
                 declare_value(ctx, ef.name, ef.line, 1)
             ast.Decl.decl_foreign_function as ff:
                 check_reserved_value_name(ctx, "function", ff.name, ff.line, 1)
@@ -2427,6 +2466,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                 ctx.type_params.clear()
                 ctx.functions.set(ff.name, sig)
                 record_mutating_param_indices(ctx, ff.name, ff.foreign_params)
+                record_directional_param_modes(ctx, ff.name, ff.foreign_params)
                 declare_value(ctx, ff.name, ff.line, 1)
                 record_decl_callable_sites(ctx, ff.mapping)
             ast.Decl.decl_event as ev:
@@ -7333,6 +7373,9 @@ function try_imported_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: 
                             let mpi_ptr = read(binding_ptr).mutating_param_indices.get(ma.member_name)
                             if mpi_ptr != null:
                                 record_mutating_args_for_indices(ctx, ptr[map_mod.Map[ptr_uint, bool]]<-mpi_ptr, args)
+                            let dpm_ptr = read(binding_ptr).directional_param_modes.get(ma.member_name)
+                            if dpm_ptr != null:
+                                record_directional_ffi_sites(ctx, callee, sig.name, ptr[map_mod.Map[ptr_uint, DirectionalParamInfo]]<-dpm_ptr, args)
                             # A generic exported function infers its type arguments
                             # from the call's arguments (`iter.iter_filter(it, pred)`
                             # -> `Iter[int]`), exactly as a local call does.
@@ -9115,6 +9158,9 @@ function check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast
                 let sig = read(sigp)
                 record_mutating_argument_sites(ctx, id.name, args)
                 check_signature_call(ctx, id.name, sig, args, arg_types, any_named, id.line, id.column)
+                let dpm_ptr = ctx.directional_param_modes.get(id.name)
+                if dpm_ptr != null:
+                    record_directional_ffi_sites(ctx, callee, id.name, ptr[map_mod.Map[ptr_uint, DirectionalParamInfo]]<-dpm_ptr, args)
                 let tps_ptr = ctx.function_type_params.get(id.name)
                 if tps_ptr != null:
                     var subs = map_mod.Map[str, types.Type].create()
@@ -9218,6 +9264,99 @@ function record_mutating_argument_sites(ctx: ref[Context], name: str, args: span
     let indices_ptr = ctx.mutating_param_indices.get(name) else:
         return
     record_mutating_args_for_indices(ctx, indices_ptr, args)
+
+
+## Record every `in`/`out`/`inout` parameter of a foreign/extern function
+## (index -> mode label + declared name), so call sites can flag a legacy
+## directional argument (the host's `directional-ffi-arg` rule).
+function record_directional_param_modes(ctx: ref[Context], name: str, params: span[ast.ForeignParam]) -> void:
+    var modes = map_mod.Map[ptr_uint, DirectionalParamInfo].create()
+    var i: ptr_uint = 0
+    unsafe:
+        while i < params.len:
+            let p = read(params.data + i)
+            match p.param_mode:
+                ast.ForeignParamMode.fmode_in:
+                    modes.set(i, DirectionalParamInfo(mode_label = "in", name = p.name))
+                ast.ForeignParamMode.fmode_out:
+                    modes.set(i, DirectionalParamInfo(mode_label = "out", name = p.name))
+                ast.ForeignParamMode.fmode_inout:
+                    modes.set(i, DirectionalParamInfo(mode_label = "inout", name = p.name))
+                _:
+                    pass
+            i += 1
+    if modes.len() > 0:
+        ctx.directional_param_modes.set(name, modes)
+
+
+## Record a `directional-ffi-arg` site for every argument whose shape
+## re-states the parameter's direction: `in x`/`out x`/`inout x`,
+## `ptr_of(x)`/`ref_of(x)`, or a pointer-like cast of an lvalue (the host's
+## `legacy_directional_argument_expression?`).
+function record_directional_ffi_sites(ctx: ref[Context], callee: ptr[ast.Expr], function_name: str, modes: ptr[map_mod.Map[ptr_uint, DirectionalParamInfo]], args: span[ast.Argument]) -> void:
+    var i: ptr_uint = 0
+    unsafe:
+        while i < args.len:
+            if read(modes).contains(i):
+                let argument = read(args.data + i)
+                if legacy_directional_argument(argument.arg_value):
+                    let info_ptr = read(modes).get(i) else:
+                        i += 1
+                        continue
+                    let info = read(info_ptr)
+                    ctx.directional_ffi_sites.push(DirectionalFfiSite(
+                        callee_key = reinterpret[ptr_uint](callee),
+                        argument_key = reinterpret[ptr_uint](argument.arg_value),
+                        function_name = function_name,
+                        parameter_name = info.name,
+                        mode_label = info.mode_label,
+                    ))
+            i += 1
+
+
+function legacy_directional_argument(expr: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_unary_op as u:
+                return u.operator.equal("in") or u.operator.equal("out") or u.operator.equal("inout")
+            ast.Expr.expr_call as cl:
+                match read(cl.callee):
+                    ast.Expr.expr_identifier as id:
+                        if id.name.equal("ptr_of") or id.name.equal("ref_of"):
+                            return cl.args.len == 1
+                    _:
+                        pass
+                return false
+            ast.Expr.expr_prefix_cast as pc:
+                if pointer_like_type_ref(pc.target_type):
+                    return lvalue_expression(pc.expression) or legacy_directional_argument(pc.expression)
+                return false
+            _:
+                return false
+
+
+## A non-nullable `ptr`/`const_ptr`/`ref` type-ref (the host's
+## `pointer_like_type_ref?`; a qualified `a.ptr` is not pointer-like).
+function pointer_like_type_ref(tr: ptr[ast.TypeRef]) -> bool:
+    unsafe:
+        let t = read(tr)
+        if t.nullable or t.name.parts.len != 1:
+            return false
+        let name = read(t.name.parts.data + 0)
+        return name.equal("ptr") or name.equal("const_ptr") or name.equal("ref")
+
+
+function lvalue_expression(expr: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_identifier:
+                return true
+            ast.Expr.expr_member_access:
+                return true
+            ast.Expr.expr_index_access:
+                return true
+            _:
+                return false
 
 
 function record_mutating_args_for_indices(ctx: ref[Context], indices: ptr[map_mod.Map[ptr_uint, bool]], args: span[ast.Argument]) -> void:

@@ -33,7 +33,7 @@ session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`;
 | `sexpr lex` / `parse` | 0 differ (lex **738/738**; parse **734 match / 0 differ / 4 host-rejected of 738**; counts drift with the tree) |
 | `sexpr lower` | **683 match / 2 differ / 53 host-rejected / 0 self-rejected of 738 files** (session 68) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
 | `cli:parity` | **89 match / 0 differ / 0 pending** of 89 cases (session 68; `deps` — add/remove/update/tree/lock/publish/fetch — and `--locked`/`--frozen` closed, the pending set is empty; `--timings` values and `debug`'s Ruby node ids are normalized) |
-| Linter corpus | **631 agree / 3 differ** of 634 (session 69; hostfail 0, selffail 0); **41/43 rules, 13/13 fixers**.  Session 69 closed the whole per-rule residue: `prefer-let-else`/`prefer-var-else` (anchor at the `if` line, ignored names, var mutation gate, CFG termination), `prefer-or-pattern` (shared-body identity + full node fingerprint), `loop-single-iteration`/`unreachable-code` (host CFG reachability), `constant-condition` (mutating-argument writes, array/`str_buffer`→`span` mutable lvalues, float-literal harmonization), `redundant-cast` (pointer-sized integers, float-literal operand types), `prefer-let` (mutable-lvalue arguments) and `prefer-struct-with` (imported/named type identity).  The 3 residual rows are documented self-better/host-artifact rows. |
+| Linter corpus | **632 agree / 3 differ** of 635 (session 69; hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  Session 69 closed the whole per-rule residue and the two missing rules: `prefer-let-else`/`prefer-var-else` (anchor at the `if` line, ignored names, var mutation gate, CFG termination), `prefer-or-pattern` (shared-body identity + full node fingerprint), `loop-single-iteration`/`unreachable-code` (host CFG reachability), `constant-condition` (mutating-argument writes, array/`str_buffer`→`span` mutable lvalues, float-literal harmonization), `redundant-cast` (pointer-sized integers, float-literal operand types), `prefer-let` (mutable-lvalue arguments) and `prefer-struct-with` (imported/named type identity); `directional-ffi-arg` and `platform-api-drift` are now ported.  The 3 residual rows are documented self-better/host-artifact rows. |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the live VS Code F5 check is the remaining manual step |
 | Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
@@ -70,8 +70,19 @@ the host's float-literal harmonization/re-recording in `infer_binary`
 arguments; new `Analysis.mutable_lvalue_sites` threaded into the linter).
 `prefer-struct-with` equates `ty_named`/`ty_imported` by qualified name, and
 `prefer-conditional-expression`/`prefer-try`/`prefer-or-pattern` emit in the
-host's match order.  Gates: lint 631/3 (the 3 documented below), dev self-tests
-22/0, `test/mt` 60/0, lower 683/2/53/0 unchanged, bootstrap fixed point holds.
+host's match order.  The two rules the corpus never triggered are ported in the
+same session: **`directional-ffi-arg`** (the analyzer records `in`/`out`/`inout`
+foreign/extern parameters per function and exports them through `ModuleBinding`;
+call checks record a site when an argument re-states the direction via
+`in/out/inout x`, `ptr_of(x)`/`ref_of(x)`, or a pointer-like cast of an lvalue,
+and the linter emits it at the call's visit with the host's message) and
+**`platform-api-drift`** (`linter/platform_drift.mt`: platform-variant sibling
+discovery, a full exported-surface renderer for every declaration kind, the
+host's anchor ladder and `missing`/`extra` summary text; verified
+message-for-message against the host linter on scratch `.linux`/`.windows`
+fixture pairs).  Gates: lint 632/3 of 635 (the 3 documented below), dev
+self-tests 22/0, `test/mt` 60/0, lower 683/2/53/0 unchanged, bootstrap fixed
+point holds.
 
 Session-68 batch (Track B closed; CLI parity 89/89): the `deps` subsystem is
 ported into `projects/mtc/src/mtc/packages/` (`version`, `paths`, `manifest`,
@@ -940,10 +951,13 @@ column (not just name/line).  Closed with no residue:
 `redundant-unsafe`, `owning-release-leak`, `owning-release-double`,
 `prefer-inline-if`, `prefer-conditional-expression`.
 
-Still absent: the host's **`directional-ffi-arg`** (`lib/milk_tea/tooling/linter/rules.rb:513-531`)
-and **`platform-api-drift`** (`lib/milk_tea/tooling/linter/imports_platform.rb:32-62`) rules.
-No corpus file currently triggers the two missing rules — a file that does would
-be the first visible difference.  The `redundant-unsafe` fix generator landed in
+Closed in session 69: **`directional-ffi-arg`**
+(`lib/milk_tea/tooling/linter/rules.rb:513-531`) and **`platform-api-drift`**
+(`lib/milk_tea/tooling/linter/imports_platform.rb:32-62`).  The directional rule
+is analyzer-recorded (local and imported `alias.fn(...)` calls) and emitted at
+the call visit; the platform rule lives in `linter/platform_drift.mt` and was
+verified message-for-message against the host linter on scratch platform-pair
+fixtures.  All 43 host rule codes now exist.  The `redundant-unsafe` fix generator landed in
 session 66 (13/13 auto-fixable fixers); the fix engine now follows the host's
 `AUTO_FIXABLE_RULE_CODES` order, one batch per rule per pass, refuses fixes on
 an unresolved import, rejects a candidate that does not parse, and re-analyzes
@@ -1128,6 +1142,14 @@ ones:
     always false; the self's name-keyed facts see the assignment and (correctly)
     do not report.  Reproducing the host would need its per-declaration binding
     ids in the linter CFG and would reintroduce the false positive.
+- **`platform-api-drift` in the CLI:** the host `lint` command analyzes each
+  operand from a bare `Parser.parse` (empty module name) while sibling files
+  load through `ModuleLoader` (inferred names), so its module-name guard skips
+  every CLI comparison; the rule only fires through the LSP.  The self compares
+  the sibling paths it discovered (same stem, hence the same module by
+  construction) and reports in both the CLI and the LSP — the rule's intent.
+  Verified message-for-message against the host linter invoked directly, which
+  loads the root through the module loader.
 - **Better-than-host behaviours to preserve:** malformed-frame `-32700` + keep
   serving, synchronous facts with no lag, faster cold start, deterministic
   binding-map iteration; a capability the host lacks is not automatically a
@@ -1176,7 +1198,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `cli:parity` | **89 match / 0 differ / 0 pending** of 89 (case-backed; timings and `debug` node ids normalized) | session 68 (stage2) | `ruby tools/cli_parity.rb -q` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 67 | `ruby tools/wasm_smoke.rb` |
 | docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 67 | `ruby tools/docs_smoke.rb` |
-| lint corpus | 631 agree / 3 differ of 634, hostfail 0, selffail 0; **41/43 rules, 13/13 fixers** (the 3 are documented deliberate rows) | session 69 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| lint corpus | 632 agree / 3 differ of 635, hostfail 0, selffail 0; **43/43 rules, 13/13 fixers** (the 3 are documented deliberate rows) | session 69 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 616/616 | session 64 | `ruby tools/unused_import_parity.rb` |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 43 | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
