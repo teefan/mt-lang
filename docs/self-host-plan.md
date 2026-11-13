@@ -15,8 +15,9 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-71-2026-11-13)
-- [Handoff](#handoff-session-71)
+- [Status at a glance](#status-at-a-glance-session-72-2026-11-13)
+- [Session 72 — the `check`/analyzer surface](#session-72--the-checkanalyzer-surface)
+- [Handoff](#handoff-session-72)
 - [How to start a work session](#how-to-start-a-work-session)
 - [The program — tracks and stopping rules (all closed)](#the-program--tracks-and-stopping-rules-all-closed)
 - [Deliberate differences (do not chase)](#deliberate-differences-do-not-chase)
@@ -148,29 +149,71 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
-## Handoff (session 71)
+## Handoff (session 72)
 
-The parity program is complete: every track is at its documented stopping
-point and the Track H matrix passed on the frozen tree.  The session-71 commit
-carries the bindgen reproducibility port (with `tools/bindgen_parity.rb`), the
-bare `build`/`run` package-root fix (CLI 89 -> 92 cases), and the DAP
-`configurationDone`/launch ordering fix (with `tools/dap_async_probe.rb`).
+**Read this first, then *Status at a glance* and the Ledger.**  The parity
+program is closed: every track is at its documented stopping point and the
+session-72 tree holds the fixed point.  This session (a) measured and closed the
+one surface no gate had ever compared (`check`, the semantic analyzer's
+verdict), (b) closed the last real `lower` residue, and (c) made the compiler
+faster than the host.
 
-To re-verify a change: build the dev compiler
-(`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`), run
-`tmp/mtc-dev test projects/mtc -I . --timeout 120`, and measure only the class
-the change can move with the matching harness; run `tools/gates.sh` (or
-`tools/bootstrap.sh -j 16 --fast` for the fixed point) once on frozen sources.
-Do not replay the whole matrix for a docs-only change.
+Three commits, all on `selfhost`:
 
-What is deliberately not done:
-- a desktop VS Code F5 click-through — the protocol path is covered by
-  `tools/dap_async_probe.rb` against the real `lldb-dap`; the headless UI drive
-  reproduced the pre-fix timeout and the fix is verified at the wire level;
-- a *new* Track G item: throughput is closed (the self is now 3.2x faster than
-  the host on `emit-c`); reopen only if a fresh profile shows a hotspot;
-- the documented differences and the lower/linter residue rows
-  (*Deliberate differences* — do not chase).
+| Commit | What |
+| --- | --- |
+| `5f8931d0` | **`check`/analyzer surface.** Constant-value coercion (the plan's last open analyzer item), `check`'s rendering/channels/severity counters/exit codes, the loader's platform-suffix guard, `prefer-try`'s anchor column. Added `tools/diag_parity.rb` and `tools/check_parity.rb`. |
+| `9ba8901c` | **Last real `lower` residue.** `%g` double rendering (now Ruby's round-trip `Float#to_s`), module-qualified named types in IR dumps, and an index literal inheriting the assignment's element type. |
+| `d9c09335` | **Track G closed.** The variant lookup was quadratic; `emit-c` went 260.6 s -> 17.1 s (15.2x). The self now beats the host. |
+
+### Verified numbers (session 72, frozen tree)
+
+`check` **501 agree / 0 verdict / 0 position / 3 message of 504**; `lower`
+**684 / 2 / 53 / 0 of 739**; `lex` 739/739; `parse` 735/0/4; `cli` **92/92**;
+lint **501/3 of 504** on `std`+`examples` (632/3 of 635 corpus-wide);
+formatter 739/739 in all three modes; examples 49/49; imported bindings 29/29;
+bindgen 33/34 + 1 custom; self-tests 22/0; `test/mt` 60/0; bootstrap fixed
+point holds.  Throughput: `emit-c` 17.1 s vs the host's 54.3 s, full `build`
+32.7 s vs 76.3 s, `bootstrap --fast` 157 s.
+
+### How to start
+
+Build the dev compiler
+(`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~35 s),
+run `tmp/mtc-dev test projects/mtc -I . --timeout 120`, and measure only the
+class the change can move with the matching harness.  Run the tier-2 proofs
+once on frozen sources: `tools/gates.sh` prints the set for the diff (`--run`
+executes it, logs under `tmp/gates/`); `tools/bootstrap.sh -j 16 --fast` is the
+fixed point.  **Do not replay the ledger's baselines unless the tree moved.**
+
+### Open items, in priority order
+
+1. **`mtc test` is barely covered by the CLI matrix.**  The matrix has 92 cases
+   but exactly one `test` case (`test-missing-operand`), while the host and the
+   self both implement `--format`/`--jobs`/`--mem`/`--sanitize`/`--timeout`/`-n`.
+   This is the largest remaining *measurement* gap: the behavior may well match,
+   but nothing proves it.  Add cases to `tools/cli_parity.rb` (a fixture tree
+   with passing, failing and compile-fail files; each flag; the `-n` filter; a
+   directory vs a file operand) and fix whatever diverges.  Note `--jobs` is a
+   documented deliberate difference (the self runs sequentially — same results,
+   same order, throughput only), so pin its *output* rather than its timing.
+2. **Track G follow-ups are recorded, not pending.**  The post-fix profile is
+   flat; `String.as_str()`'s per-call UTF-8 revalidation (~7%) is a documented
+   invariant, and the ~2% scans are over small collections.  Reopen only with a
+   fresh `perf record` showing a hotspot.
+3. **Optional/manual.**  A desktop VS Code F5 click-through (the protocol path
+   is proven by `tools/dap_async_probe.rb` against the real `lldb-dap`), and the
+   LSP ref-lifetime modelling decision (`docs/lsp-design.md` §8).
+
+**Do not chase** the documented differences — the 2 `lower` artifacts, the 3
+`check`/linter message rows, the LSP audit rows, the DAP frame0 row, or the
+self-only/better behaviours.  They are listed in *Deliberate differences* with
+the reason each is a host artifact or a deliberate extension.
+
+### Session records (historical — the handoff above supersedes them)
+
+These are the per-session batch logs kept for provenance.  They describe how
+earlier sessions reached the current state; none of them is pending work.
 
 Session-69 batch (Track C closed at its documented residue; lint 571/63 ->
 631/3): seven rule families plus two analyzer facts fields closed the whole
@@ -969,8 +1012,9 @@ click-through) remain.
 ```
 Continue the Milk Tea self-host work in /home/teefan/Projects/Ruby/mt-lang
 (branch `selfhost`). The parity program is closed (Track H passed; session 72
-closed the analyzer/`check` surface and the last real `lower` residue): start
-from this file's Status at a glance, not a ranked item. Work in tiers:
+closed the analyzer/`check` surface, the last real `lower` residue, and Track G
+throughput): start from this file's Handoff, then the top open item — the
+`mtc test` CLI-matrix coverage gap. Work in tiers:
 iterate on the dev compiler
 (ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev, ~35 s;
 tmp/mtc-dev test projects/mtc -I . --timeout 120), measure only the class you
