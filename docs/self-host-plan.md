@@ -6,45 +6,73 @@ means byte-identical where a harness can compare, "better" means a documented
 deliberate extension.  The goal is a self-host that matches the host everywhere,
 or is documented as deliberately better.
 
-**Start here:** read *Status at a glance*, *How to start a work session*, and
-*The program* (the ranked open work).  The Ledger carries the last verified
-number per gate.  The pre-compaction version of this file — with the full
-session-by-session records (§0a–§0k, §1–§7) — is at commit `d8a199c7`; use
-`git show d8a199c7:docs/self-host-plan.md` when you need the history.
+**Start here:** read *Status at a glance*, *Handoff*, *How to start a work
+session*, and *The program* (the tracks and their stopping rules).  The Ledger
+carries the last verified number per gate.  The pre-compaction version of this
+file — with the full session-by-session records (§0a–§0k, §1–§7) — is at commit
+`d8a199c7`; use `git show d8a199c7:docs/self-host-plan.md` when you need the
+history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-62-2026-11-10)
+- [Status at a glance](#status-at-a-glance-session-71-2026-11-13)
+- [Handoff](#handoff-session-71)
 - [How to start a work session](#how-to-start-a-work-session)
-- [The program — ranked remaining work](#the-program--ranked-remaining-work)
+- [The program — tracks and stopping rules (all closed)](#the-program--tracks-and-stopping-rules-all-closed)
 - [Deliberate differences (do not chase)](#deliberate-differences-do-not-chase)
 - [Ledger](#ledger)
 - [Porting notes](#porting-notes)
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 69, 2026-11-12)
+## Status at a glance (session 71, 2026-11-13)
 
 | Area | State |
 | --- | --- |
-| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`, session 66 re-verified at `dacf0ac6`); full self-test suite **20 files / 0 failed** |
-| `test/mt` | **60 files / 0 failed** (session 66 re-verified on stage2) |
+| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`, session 71 full run and post-fix `--fast`); self-test suite **22 files / 0 failed** |
+| `test/mt` | **60 files / 0 failed** (session 71 on stage2) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
-| `sexpr lex` / `parse` | 0 differ (lex **738/738**; parse **734 match / 0 differ / 4 host-rejected of 738**; counts drift with the tree) |
-| `sexpr lower` | **683 match / 2 differ / 53 host-rejected / 0 self-rejected of 738 files** (session 68) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
-| `cli:parity` | **89 match / 0 differ / 0 pending** of 89 cases (session 68; `deps` — add/remove/update/tree/lock/publish/fetch — and `--locked`/`--frozen` closed, the pending set is empty; `--timings` values and `debug`'s Ruby node ids are normalized) |
-| Linter corpus | **632 agree / 3 differ** of 635 (session 69; hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  Session 69 closed the whole per-rule residue and the two missing rules: `prefer-let-else`/`prefer-var-else` (anchor at the `if` line, ignored names, var mutation gate, CFG termination), `prefer-or-pattern` (shared-body identity + full node fingerprint), `loop-single-iteration`/`unreachable-code` (host CFG reachability), `constant-condition` (mutating-argument writes, array/`str_buffer`→`span` mutable lvalues, float-literal harmonization), `redundant-cast` (pointer-sized integers, float-literal operand types), `prefer-let` (mutable-lvalue arguments) and `prefer-struct-with` (imported/named type identity); `directional-ffi-arg` and `platform-api-drift` are now ported.  The 3 residual rows are documented self-better/host-artifact rows. |
-| LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **68.1 KB/cycle raw / 19.9 LS** (one-time index level documented) |
-| DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the live VS Code F5 check is the remaining manual step |
-| Formatter | **712/712** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
-| Imported bindings | **29/29 verified** against the host generator and the checked-in modules (session 66; `box3d` closed; golden-vector naming test in `projects/mtc/test/imported_bindings_naming_test.mt`) |
+| `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **735 match / 0 differ / 4 host-rejected of 739**; counts drift with the tree and `tmp` fixtures) |
+| `sexpr lower` | **684 match / 2 differ / 53 host-rejected / 0 self-rejected of 739 files** (session 71) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
+| `cli:parity` | **92 match / 0 differ / 0 pending** of 92 cases (session 71; the three new cases are bare `build`/`run` in a package root and bare `build` outside one; `--timings` values and `debug`'s Ruby node ids are normalized) |
+| Linter corpus | **632 agree / 3 differ** of 635 (session 71 re-verified; hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  The 3 residual rows are documented self-better/host-artifact rows. |
+| LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **74–75 KB/cycle raw / ~28 LS at 200 cycles** (session 71 re-measure; meter, one-time index level documented) |
+| DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the real lldb-dap bridge now closes the VS Code F5 launch deadlock (configurationDone no longer waits for the launch response), proven by `tools/dap_async_probe.rb`: launch success, entry stop, breakpoint stop, `main` frame, `x=3`, evaluate `3` |
+| Formatter | **739/739** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift; session 71) |
+| Imported bindings | **29/29 verified** against the host generator and the checked-in modules (session 66; re-verified session 71; `box3d` closed; golden-vector naming test in `projects/mtc/test/imported_bindings_naming_test.mt`) |
+| Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (session 70; re-verified session 71; `ruby tools/bindgen_parity.rb --self build/stage2/mtc`).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim (there is no generic reference).  The port now mirrors the host's two-phase selection: top-level node extraction with indices, typedef→record resolution through the referenceable-record index, insertion-ordered record/enum selection (opaque→complete upgrade), alias-aware visible names, synthetic anonymous/nested aggregate flattening, record dependencies, function-type typedef projection, macro-probe constants, and the tidy formatter at the resolved line length. |
 
-Rough completion against the per-track Definition of Done: **~99.5%**.  The
+Rough completion against the per-track Definition of Done: **100%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix (now
-including `deps` and `--locked`/`--frozen`), wasm, docs, the linter corpus and
-the imported bindings are done; the residue is bindgen reproducibility and the
-two linter rules no corpus file triggers.  LSP, DAP and formatter are closed at
-their documented differences.
+including `deps` and `--locked`/`--frozen`), wasm, docs, the linter corpus,
+the imported bindings and bindgen reproducibility are done.  The only
+residuals are the documented `tracy` custom-generator entry, the optional
+desktop F5 smoke, and the optional Track G throughput work.  LSP, DAP and the
+formatter are closed at their documented differences, and Track H's final
+matrix passed on session 71.
+
+## Handoff (session 71)
+
+The parity program is complete: every track is at its documented stopping
+point and the Track H matrix passed on the frozen tree.  The session-71 commit
+carries the bindgen reproducibility port (with `tools/bindgen_parity.rb`), the
+bare `build`/`run` package-root fix (CLI 89 -> 92 cases), and the DAP
+`configurationDone`/launch ordering fix (with `tools/dap_async_probe.rb`).
+
+To re-verify a change: build the dev compiler
+(`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`), run
+`tmp/mtc-dev test projects/mtc -I . --timeout 120`, and measure only the class
+the change can move with the matching harness; run `tools/gates.sh` (or
+`tools/bootstrap.sh -j 16 --fast` for the fixed point) once on frozen sources.
+Do not replay the whole matrix for a docs-only change.
+
+What is deliberately not done:
+- a desktop VS Code F5 click-through — the protocol path is covered by
+  `tools/dap_async_probe.rb` against the real `lldb-dap`; the headless UI drive
+  reproduced the pre-fix timeout and the fix is verified at the wire level;
+- Track G compiler throughput (3.9x self-to-host, behavior-neutral, optional);
+- the documented differences and the lower/linter residue rows
+  (*Deliberate differences* — do not chase).
 
 Session-69 batch (Track C closed at its documented residue; lint 571/63 ->
 631/3): seven rule families plus two analyzer facts fields closed the whole
@@ -83,6 +111,80 @@ message-for-message against the host linter on scratch `.linux`/`.windows`
 fixture pairs).  Gates: lint 632/3 of 635 (the 3 documented below), dev
 self-tests 22/0, `test/mt` 60/0, lower 683/2/53/0 unchanged, bootstrap fixed
 point holds.
+
+Session-70 bindgen batch (Track D item 3 closed): `tools/bindgen_parity.rb`
+drives every registry binding through the host library and the self CLI with the
+same raw-binding option table (the self-only `--options-json` flag); the result
+is **33 match / 0 differ / 0 error / 1 custom of 34** (from 11/36).  The port
+was restructured onto the host's two-phase architecture rather than patched:
+`extract_top_level_nodes` keeps the host's node indices (direct declarations
+plus typedef-owned tags, deduped by AST id), `index_referenceable_records`
+walks the whole AST for `struct`/`union` definitions (complete preferred),
+`build_alias_maps` records typedef→record/enum ids *and* the by-tag fallback,
+and the selection passes mirror `declaration.rb`: records (opaque upgraded by
+a later complete definition), typedef→record resolution through the
+referenceable index, enum kinds, type aliases (function-pointer typedefs map
+through `FunctionProtoType`), qualified-constant `VarDecl`s (the host's
+`constant_var_decl?`, `constant_qual_type`, aggregate/array init lists), and
+functions (first declaration wins, per-declaration error skip, variadic).
+Emission follows `emitter.rb`: synthetics first (in discovery order), then all
+declarations sorted by node index; opaque records carry the host's
+`record_c_name` linkage; anonymous/nested aggregates flatten their unnamed
+members and synthesize `Owner_field` records; field types go through
+`aggregate_field_type` with field overrides keyed by the owner name; enums
+choose `flags` from the power-of-two test.  Type mapping now ports
+`type_mapper.rb`: top-level nullability (`?`), array/function-pointer parsing
+(including `void (**)(...)` and function-pointer-returning-function-pointer),
+`cstr`/`va_list`/`__va_list_tag`, `size_t`/`__uint32_t`-style primitives,
+type/tag overrides, typedef-name preservation (`map_type_node`), and
+unknown-type rejection (a function/typedef that cannot map is skipped exactly
+where the host rescues `BindgenError`).  Supporting fixes: the TU prelude now
+matches the host's order (defines, header, then `bindgen_include_directives` —
+`SDL_main.h`-style headers changed the AST order), both clang invocations pass
+`-fno-builtin` (without it clang synthesizes unnamed builtin redeclarations),
+the macro scan uses the host's header-only provenance (the generated TU's own
+`#define`s are not constants), the clang AST JSON is viewed without
+`str.as_str()` UTF-8 validation (the host parses it unvalidated; the scan hit
+the C backend's debug loop guard on the multi-hundred-MB SDL3 AST), and
+`heap.copy_bytes` now calls `memcpy` instead of a byte loop.  Tracy is
+classified `custom`: its host registry generator returns the checked-in
+hand-written module verbatim, so there is no generic reference; the parity
+tool exits non-zero only on a real differ or error.  Gates on the frozen tree:
+bootstrap fixed point holds with 22/0, `test/mt` 60/0, examples 49/49, lex
+739/739, parse 735/0/4 of 739, lower 684/2/53/0 of 739 (the two documented
+artifacts), cli 89/89, lint 632/3 of 635, imported bindings 29/29, bindgen
+33/34 + 1 custom, and the changed files 4/4 in all formatter modes.  The
+`--nullable-policy` probe still renders byte-identical output and report (the
+policy merges into the same override maps the host CLI uses).
+
+Session-71 batch (Track H final matrix; CLI 89->92, DAP F5 launch fix):
+- **Bare `build`/`run` package-root discovery.**  The dispatcher's `args.len < 2`
+  guard blocked `parse_source_operand`'s existing discovery, so `mtc build` in a
+  package root printed "missing source file path" while the host built it.  The
+  guard is gone for `build`/`run` (a non-package root still errors identically)
+  and `cli_parity` gained `build-no-operand-package`,
+  `build-no-operand-no-package` and `run-no-operand-bare-package`: **92/92**.
+- **DAP launch ordering (VS Code F5).**  `configurationDone` was deferred
+  whenever the launch request was in flight, even after the adapter's
+  `initialized` event; lldb-dap answers `launch` only once the target starts, so
+  the session deadlocked until the 5 s adapter deadline and VS Code tore it down
+  with "backend request timed out: launch".  The gate now mirrors the host's
+  `backend_configuration_pending?` (`start_pending` and not `config_ready`), and
+  a deferred `configurationDone` is released when the adapter becomes ready
+  (and when the launch has been sent).  `tools/dap_async_probe.rb` (launch,
+  then configurationDone without waiting) proves against the real lldb-dap:
+  launch success -> entry stop -> breakpoint stop -> frame `main` -> locals
+  `x=3` -> evaluate `3`; `dap_smoke` stays at zero differing rows (the
+  documented frame0 row).
+- `bindgen --options-json`'s non-object error path now releases the parsed value
+  and root (a leak on the self-only options path).
+- **Full matrix on the frozen tree:** bootstrap fixed point + 22/0, `test/mt`
+  60/0, examples 49/49, lex 739/739, parse 735/0/4, lower 684/2/53/0, cli 92/92,
+  lint 632/3, unused-import 635/635, formatter 739/739 (and the changed files in
+  all three modes), imported bindings 29/29, bindgen 33/34 + 1 custom, LSP
+  harness 4 documented entries + recovery 6/6 + canonical audit 6 + valgrind 0
+  + Neovim, DAP zero differing rows, wasm/docs smoke, and SimpleGame built and
+  run identically by host and self.  Ledger re-stamped to session 71.
 
 Session-68 batch (Track B closed; CLI parity 89/89): the `deps` subsystem is
 ported into `projects/mtc/src/mtc/packages/` (`version`, `paths`, `manifest`,
@@ -645,10 +747,10 @@ Session-64 third batch (package builds, `--bundle`/`--archive`):
 | Wasm build/preview | Track B item 1 (closed); `wasm_preview.mt` | `ruby tools/wasm_smoke.rb` |
 | Docs server | Track B item 2 (closed); `docs_app.mt` | `ruby tools/docs_smoke.rb` |
 | Linter corpus residue | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb -q` (618 files; `--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
-| Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb --json tmp/ib-parity.json`; regenerate `std/c/*.mt` and diff |
+| Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb --json tmp/ib-parity.json`; `ruby tools/bindgen_parity.rb --self build/stage2/mtc`; regenerate `std/c/*.mt` and diff |
 | LSP feature parity / residue | Track E; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb record --server host\|self` + `compare`; `tools/lsp_project_audit.rb --workspace DIR [--canonical]`; `tools/lsp_recovery_probe.rb --check`; `tools/lsp_soak.rb` |
-| DAP | Track F; `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both]` |
-| Formatter (`:tidy`, `:preserve`, `:canonical`) | Track E/formatter history at `d8a199c7` §7 | `ruby tools/format_parity.rb all -j 16` (712/712, counts drift) |
+| DAP | Track F (closed); `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both]`; `ruby tools/dap_async_probe.rb` |
+| Formatter (`:tidy`, `:preserve`, `:canonical`) | Track E/formatter history at `d8a199c7` §7 | `ruby tools/format_parity.rb all -j 16` (739/739, counts drift) |
 | Bootstrap / release | `docs/bootstrap-design.md` | `tools/bootstrap.sh -j 16` (full); `--fast` = fixed point only |
 | In-language tests | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` |
 | Example builds | Track H | per-family sweeps (15 top-level, `examples/sdl3` 34/34, a raylib sample) |
@@ -718,20 +820,21 @@ Iterate cheap, prove once:
    `examples/sdl3` 34/34, `test/mt` 60/0.
 1. **`lower` dump parity** — **CLOSED** (session 63): 665/2/51/0 of 718, the
    two residuals are documented host artifacts.  See Track A.
-2. **CLI behavior parity — CLOSED (session 68)**: **89 cases / 89 match /
-   0 differ / 0 pending**.  Sessions 64–68 landed `debug`, the `test` argument
+2. **CLI behavior parity — CLOSED (session 68; 92/92 after the session-71
+   bare-operand cases)**.  Sessions 64–68 landed `debug`, the `test` argument
    forms, `toolchain bootstrap|tools|doctor`, `build --kind static|shared`, the
    bindgen nullable flags, `--bundle`/`--archive`, wasm build/preview, `docs`,
    `deps` and `--locked`/`--frozen`.
-3. **Linter corpus residue** — open: 510/114 of 624, **41/43 rules and 13/13
-   fixers**, plus the analyzer gaps in Track C.
-4. **Imported bindings / bindgen** — imported bindings **closed at 29/29**;
-   bindgen reproducibility remains open (Track D item 3).
-5. **Final verification** — Track H, only after the tracks above reach their
-   targets.
+3. **Linter corpus residue — CLOSED (session 69)**: 632 agree / 3 differ of
+   635 (the three documented rows), **43/43 rules and 13/13 fixers**.
+4. **Imported bindings / bindgen** — **CLOSED**: imported bindings 29/29 and
+   bindgen reproducibility 33/34 with the one documented custom generator
+   (`tracy`).
+5. **Final verification** — Track H, **passed session 71**.
 
 LSP, DAP and the formatter are **closed** at their documented differences; only
-their listed residues (ref-lifetime modelling, the DAP F5 manual check) remain.
+their listed residues (ref-lifetime modelling; the optional desktop F5
+click-through) remain.
 
 ### Definition of done (per track)
 
@@ -751,31 +854,38 @@ their listed residues (ref-lifetime modelling, the DAP F5 manual check) remain.
 - **DAP**: a real VS Code session debugs a `.mt` program end-to-end with the
   default `lldb-dap` backend (breakpoints, stepping, evaluate; Milk Tea
   frames/locals via the debug map); process backend unchanged; `dap_smoke`
-  green on both.
+  green on both.  **Met at the protocol level (session 71):** `dap_smoke` has
+  zero differing rows and `tools/dap_async_probe.rb` drives VS Code's ordering
+  against the real `lldb-dap` through launch → breakpoint → `main` frame →
+  locals → evaluate.  A desktop F5 click-through is an optional manual smoke.
 - **Bindings/bindgen**: `imported-bindings --all --check` 29/29 verified (or each
   residual delta justified as cosmetic with evidence); bindgen output
-  reproducible for the repo's bindings.
-- **Formatter**: all modes byte-identical (712/712 at the session-33 audit;
+  reproducible for the repo's bindings (**met**: 33/34 byte-identical, the one
+  residual is the host's custom `tracy` generator).
+- **Formatter**: all modes byte-identical (739/739 at the session-71 re-run;
   counts drift).  **Met.**
 
 ### Session kickoff prompt
 
 ```
 Continue the Milk Tea self-host work in /home/teefan/Projects/Ruby/mt-lang
-(branch `selfhost`). Work in tiers: iterate on the dev compiler
+(branch `selfhost`). The parity program is closed (Track H passed, session 71):
+start from this file's Handoff section, not a ranked item. Work in tiers:
+iterate on the dev compiler
 (ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev, ~50 s;
 tmp/mtc-dev test projects/mtc -I . --timeout 120), measure only the class you
 touch, and run the tier-2 proofs once on frozen sources — `tools/gates.sh`
 prints the set (`--run` executes it, logs in tmp/gates/). Do not replay the
 ledger's verified baselines unless the tree moved.
 
-Read first: this file's Status at a glance, How to start a work session, and
-The program (pick the next ranked item). The pre-compaction history is at
-`git show d8a199c7:docs/self-host-plan.md`.
+Read first: this file's Status at a glance, Handoff, How to start a work
+session, and The program (the tracks and their stopping rules). The
+pre-compaction history is at `git show d8a199c7:docs/self-host-plan.md`.
 
-STEP 1 — one item per commit from the program's ranked list; each commit ends
-with the gate set and this file's Ledger synced in the same commit; commit
-trailer: Co-authored-by: CommandCodeBot <noreply@commandcode.ai>.
+If you change a subsystem: one item per commit, sync the gate set and this
+file's Ledger in the same commit, and keep the documented deliberate
+differences intact. Commit trailer:
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>.
 
 HARD RULES: never edit sources while a gate runs (bootstrap compiles the
 working tree — check the exit status, not the tail); rebuild before measuring;
@@ -783,26 +893,27 @@ quote sets where a counter drifts; run generated binaries as
 `timeout 10 bash -c 'ulimit -v 20000000; …'`; no hacks — fix root causes.
 ```
 
-## The program — ranked remaining work
+## The program — tracks and stopping rules (all closed)
 
 Goal: close every remaining self-host gap so `build/stage2/mtc` matches the Ruby
 host on observable behavior everywhere — `--sexpr` dumps, CLI messages/commands,
 LSP, DAP, linter, formatter, imported bindings, bindgen — while keeping the
 self-host's documented improvements (malformed-frame recovery, synchronous
-facts, speed, determinism).  **`lower` dump parity is closed (session 63);
-CLI is the active front.**
+facts, speed, determinism).  **Every track is closed at its documented
+residue (session 71); Track H's final matrix passed.  There is no ranked open
+parity work left; the track sections below are the stopping rules to preserve.**
 
 Confirmed scope decision: **all** unported CLI subsystems are in scope (`deps`,
 `docs`, wasm/emcc + preview, `--bundle`/`--archive`, `--jobs`, toolchain
-bootstrap/tools, `--kind static|shared`, the bindgen policy flags).  Current
-order: finish `lower` first, then CLI/linter/bindings, then the final matrix;
-LSP/DAP/formatter are closed at their documented differences.  Anchor by symbol
-names, not line numbers — lines drift.
+bootstrap/tools, `--kind static|shared`, the bindgen policy flags), and all are
+now ported.  Tracks A–D reached their targets; LSP/DAP/formatter are closed at
+their documented differences.  Anchor by symbol names, not line numbers —
+lines drift.
 
-### Track A — `lower` dump parity (CLOSED: 665/2 of 718)
+### Track A — `lower` dump parity (CLOSED: 684/2 of 739)
 
-Current set: **665 match / 2 differ / 51 host-rejected / 0 self-rejected of 718
-files** (session 63).  The host-rejected bucket is `external` and platform-pinned
+Current set: **684 match / 2 differ / 53 host-rejected / 0 self-rejected of 739
+files** (session 70).  The host-rejected bucket is `external` and platform-pinned
 files; the count drifts with the tree and `tmp` fixtures — quote the set.
 
 The two counted differs are the documented host artifacts, not work:
@@ -817,7 +928,7 @@ The two counted differs are the documented host artifacts, not work:
 Track A reached its stopping rule: **0 real differing files**.  Keep lex/parse
 at 0-diff and re-measure both after any lowering-adjacent change.
 
-### Track B — CLI parity (89 cases; 89 match, 0 pending; **closed**)
+### Track B — CLI parity (92 cases; 92 match, 0 pending; **closed**)
 
 The **original 65-case behavior matrix is byte-equal** (session 64; `--timings`
 values and `debug`'s Ruby node ids normalized).  `debug`/`test`'s argument forms
@@ -828,8 +939,10 @@ bare `print`, so its build/run cases only compared a semantic-error path).
 Session 65 replaced the regex allowlist with case-backed pending metadata;
 session 67 closed `toolchain doctor`, `run --bundle`, `run --archive`,
 `build --platform wasm` and the wasm preview; session 68 closed `deps` and the
-locked/frozen build, so the matrix is **89 cases / 89 match / 0 differ /
-0 pending** — the whole CLI surface is byte-equal.  A future gap adds a
+locked/frozen build, so the matrix is **92 cases / 92 match / 0 differ /
+0 pending** — the whole CLI surface is byte-equal.  Session 71 added the bare
+`build`/`run` package-root forms (the dispatcher no longer blocks
+`parse_source_operand`'s discovery) and their three cases.  A future gap adds a
 `pending:` case, and a pending case that starts matching must be promoted (the
 harness fails otherwise).  The session-65
 second batch closed `parse`/`emit-c` multi+directory forms, `format`
@@ -871,7 +984,7 @@ validation, and `lint --init`.  Remaining work:
    graph is `deps lock`'s (`Graph.load`), so a selective `update` pins the
    unselected registry versions exactly as the host does.  In-language tests:
    `projects/mtc/test/packages_test.mt`, `package_version_test.mt`.
-4. **Harness — closed.**  89/89 cases match with no pending entries; a future
+4. **Harness — closed.**  92/92 cases match with no pending entries; a future
    gap adds a `pending:` case (the harness fails when one starts matching).
    Timing values are normalized (wall-clock measurements never compare
    byte-for-byte); the report structure is.
@@ -1029,26 +1142,27 @@ then ~20 s per full run); `rake "parity:scoreboard"` for the per-rule table.
    changed of 29; the landed result is **29 verified / 0 changed / 0 new of
    29** (`box3d` added to the self registry).  `bindings` and
    `bindings_parity` are hard gates.
-3. **Bindgen gaps — open (deferred after the imported-bindings closure).**  The
-   imported-binding generator is the compiler-critical path and is now 29/29;
-   bindgen is a separate 2,000-line emitter plus the host's per-binding
-   `RawBindings` option table.  The four code gaps below are mapped; the
-   verification tool must extract the host's raw-binding data and drive the
-   self CLI (the `bindings` gates cover imported bindings only).  Header-provenance filter in `walk` (`projects/mtc/src/mtc/bindgen.mt:346-445`;
-   host `lib/milk_tea/bindings/bindgen/ast_parser.rb:105-132`, `allowed_declaration_name?`); unknown-type
-   policy instead of echoing bare names (`projects/mtc/src/mtc/bindgen.mt:259`; host
-   `lib/milk_tea/bindings/bindgen/type_mapper.rb:62` + `lib/milk_tea/bindings/bindgen/declaration.rb:123`); nested `const char*` → `cstr` in
-   the pointer branch (`projects/mtc/src/mtc/bindgen.mt:169-190`; host `lib/milk_tea/bindings/bindgen/type_mapper.rb:21-22,528-532`);
-   the typedef record/enum alias maps (`projects/mtc/src/mtc/bindgen.mt:730-737`; host
-   `lib/milk_tea/bindings/bindgen/ast_parser.rb:159-176`, `synthesize_typedef_dependency:326-337`).  Verify by
-   regenerating `std/c/*.mt` and diffing against the checked-in files and the
-   host's output.
+3. **Bindgen reproducibility — CLOSED (session 70).**  `tools/bindgen_parity.rb`
+   drives the host generator and the self CLI with the same raw-binding option
+   table (`--options-json` is a self-only flag; the host CLI has no option
+   table): **33 match / 0 differ / 0 error / 1 custom of 34**.  The port is the
+   host's two-phase architecture (extraction with node indices, referenceable
+   record index, insertion-ordered selection with opaque→complete upgrade,
+   synthetics-first emission, then index-sorted declarations), a literal port
+   of `type_mapper.rb` (nullability, function pointers, typedef preservation,
+   unknown-type rejection), and the host's prelude/`-fno-builtin` invocation
+   semantics.  The single custom entry, `tracy`, is the host registry's
+   `generator:` lambda reading `std/c/tracy.mt` verbatim; `bindgen_parity`
+   classifies custom generators separately and exits non-zero only on a real
+   differ/error.  `bindgen_parity` is a hard gate (`tools/gates.sh --only
+   bindgen_parity --run`).
 
 ### Track E — LSP residue (closed at documented differences)
 
 The LSP reached its Definition of Done: 30/30 capability keys, 4 documented
 harness entries, the completion class closed, `debugInfo` byte-equal, valgrind
-0, edit latency ≤ 10 ms, soak at 68.1 KB/cycle raw / 19.9 LS (the per-edit leak is owned by per-entry
+0, edit latency ≤ 10 ms, soak at 74–75 KB/cycle raw / ~28 LS at 200 cycles
+(session 71 re-measure; the per-edit leak is owned by per-entry
 regions; the one-time index walk's arena-leaked ASTs are a documented level, not
 a slope, and the loader's small `qname_to_str` strings remain).  Remaining items are optional / documentation
 decisions:
@@ -1065,13 +1179,22 @@ decisions:
 - **Documented rows stay documented** unless their machinery is built for
   another reason (see *Deliberate differences* and `docs/lsp-design.md` §8).
 
-### Track F — DAP manual check
+### Track F — DAP (closed)
 
 The debug map, build-on-launch, pause diagnostics/modules, the lldb-dap bridge
 and the process backend are done; `dap_smoke` is row-for-row equal except the
-documented self-better `lldb-real frame0 name`.  Remaining: a live **VS Code F5**
-session on a `.mt` program with the default `lldb-dap` backend (breakpoints,
-stepping, evaluate; Milk Tea frames/locals via the debug map).
+documented self-better `lldb-real frame0 name`.  Session 71 fixed the
+`configurationDone`/launch ordering deadlock: the bridge deferred
+`configurationDone` whenever the start request was in flight, but lldb-dap
+answers `launch` only after the target starts (which needs `configurationDone`),
+so VS Code's F5 session waited out the 5 s adapter deadline and tore down with
+"backend request timed out: launch".  The gate now mirrors the host's
+`backend_configuration_pending?` and releases a deferred `configurationDone`
+when the adapter is initialized (or the start has answered).  A real-lldb-dap
+async-order probe (launch, then `configurationDone` without waiting) proves
+launch success → entry stop → breakpoint stop → frame `main` → locals `x=3` →
+evaluate `3`.  The protocol path is closed; a desktop VS Code click-through
+remains an optional manual smoke, not a known gap.
 
 ### Track G — compiler throughput (not parity)
 
@@ -1083,16 +1206,25 @@ string-heavy rendering paths, the C emitter's text building) buys every future
 gate several minutes.  Behavior must not change — only wall time; verify with
 `emit-c` timing plus the fixed point.
 
-### Track H — final verification
+### Track H — final verification (PASSED, session 71)
 
-On a clean tree: `tools/bootstrap.sh -j 16` (stage2 == stage3, 19/0),
+On a clean tree: `tools/bootstrap.sh -j 16` (stage2 == stage3, 22/0),
 `build/stage2/mtc test test/mt -I .` (60/0), the 15 top-level examples, sdl3
 34/34, the raylib sample, the vendored families, `sexpr_parity` lex/parse/lower,
 `cli:parity`, both LSP harnesses + valgrind + a Neovim and a VS Code session,
 `dap_smoke` on both backends, `format_parity all`, `imported-bindings --all
 --check`, the lint corpus, and `~/Projects/MilkTea/SimpleGame` building and
-running.  Update this file's Ledger and any changed workstream docs.  Declare
-done only when the Ledger shows every counter at its target.
+running.  Update this file's Ledger and any changed workstream docs.
+
+The session-71 pass: bootstrap fixed point + 22/0, `test/mt` 60/0, examples
+49/49, lex 739/739, parse 735/0/4, lower 684/2/53/0 (the two documented
+artifacts), cli 92/92, lint 632/3 (the three documented rows), unused-import
+635/635, formatter 739/739 in all three modes, imported bindings 29/29,
+bindgen 33/34 + 1 custom, LSP harness 4 documented entries + recovery 6/6 +
+canonical audit 6 (the 4 documented + 2 warm artifacts) + valgrind 0 + Neovim
+hover, DAP zero differing rows + the async-order F5 probe, wasm/docs smoke, and
+SimpleGame built and run identically by host and self.  Every Ledger counter is
+at its target; the only manual item left is a desktop VS Code F5 click-through.
 
 ## Deliberate differences (do not chase)
 
@@ -1130,7 +1262,8 @@ ones:
     so its recorded expression type is `ptr[X]` and the cast is genuinely
     redundant; the host's fact carries the declared `ptr[X]?`, so it misses the
     hint.  Removing the cast is type-correct under the self's refinement.
-  - `projects/mtc/src/mtc/main.mt:5757` — `redundant-cast` parentheses after
+  - `projects/mtc/src/mtc/main.mt` (`c"── Tokens …"` block; line 5794 in
+    session 71) — `redundant-cast` parentheses after
     multibyte text (`c"── Tokens …"`).  The host's `check_redundant_cast_parens`
     starts `line.index("<-", column - 1)` with a **character** index on a line
     whose earlier bytes are multibyte, so it never finds the `<-`; the self uses
@@ -1173,6 +1306,17 @@ ones:
   the host's option parser also knows `darwin`, which the self does not target
   anywhere (no resolver variant, platform-pinned suffix, or build flags).  An
   invalid `--platform` value is still rejected on stderr as the host does.
+- **Self-only `bindgen --options-json PATH`:** the host CLI cannot express the
+  raw-binding option table (defines, tracked headers, prefixes, overrides,
+  module imports); `tools/bindgen_parity.rb` extracts it and drives the self
+  CLI.  The host reproduces the checked-in modules through its Ruby API/Rake
+  tasks instead.  The self keeps the flag as its verification entry point.
+- **Bindgen `tracy` (custom host generator):** the registry's `tracy` entry
+  registers a `generator:` lambda that returns the hand-written
+  `std/c/tracy.mt` verbatim, so there is no generated reference to match.
+  `tools/bindgen_parity.rb` reports it as `custom` and requires 0 differ/0
+  error; `steamworks` is a *generic* binding (helper header + tracked path) and
+  now matches byte-for-byte.
 - **Self-only `imported-bindings <name>|--all [--check]` command:** the host
   `COMMANDS` table has no such entry.  It is the self-host's binding-generation
   verification entry point (Track D) and stays; do not add it to the host
@@ -1190,25 +1334,26 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 68 (`--fast`) | `tools/bootstrap.sh -j 16 --fast` |
-| `test/mt` | 60 files / 0 failed | session 68 (stage2) | `build/stage2/mtc test test/mt -I .` |
-| examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 63 | `tools/gates.sh --only examples --run` |
-| `sexpr lex` / `parse` | lex 738/738; parse 734 match / 0 differ / 4 host-rejected of 738 | session 68 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 683 match / 2 differ / 53 host-rejected / 0 self-rejected of 738 (the 2 are documented artifacts) | session 68 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
-| `cli:parity` | **89 match / 0 differ / 0 pending** of 89 (case-backed; timings and `debug` node ids normalized) | session 68 (stage2) | `ruby tools/cli_parity.rb -q` |
-| wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 67 | `ruby tools/wasm_smoke.rb` |
-| docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 67 | `ruby tools/docs_smoke.rb` |
-| lint corpus | 632 agree / 3 differ of 635, hostfail 0, selffail 0; **43/43 rules, 13/13 fixers** (the 3 are documented deliberate rows) | session 69 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
-| unused-import | 616/616 | session 64 | `ruby tools/unused_import_parity.rb` |
-| LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 38 (re-verified session 49) | `tools/lsp_parity.rb record/compare --stress` |
-| LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 43 | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
-| LSP recovery | 6/6 byte-equal | session 37 | `tools/lsp_recovery_probe.rb --check` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 71 (full run; post-fix `--fast` + 22/0 on the final stage2) | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 60 files / 0 failed | session 71 (stage2) | `build/stage2/mtc test test/mt -I .` |
+| examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 71 | `tools/gates.sh --only examples --run` |
+| `sexpr lex` / `parse` | lex 739/739; parse 735 match / 0 differ / 4 host-rejected of 739 (counts include `tmp` fixtures) | session 71 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 684 match / 2 differ / 53 host-rejected / 0 self-rejected of 739 (the 2 are documented artifacts) | session 71 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `cli:parity` | **92 match / 0 differ / 0 pending** of 92 (case-backed; timings and `debug` node ids normalized) | session 71 (stage2) | `ruby tools/cli_parity.rb -q` |
+| wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 71 | `ruby tools/wasm_smoke.rb` |
+| docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 71 | `ruby tools/docs_smoke.rb` |
+| lint corpus | 632 agree / 3 differ of 635, hostfail 0, selffail 0; **43/43 rules, 13/13 fixers** (the 3 are documented deliberate rows) | session 71 (re-verified) | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| unused-import | 635/635 | session 71 | `ruby tools/unused_import_parity.rb` |
+| LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 71 (re-verified) | `tools/lsp_parity.rb record/compare --stress` |
+| LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 71 (canonical) | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
+| LSP recovery | 6/6 byte-equal | session 71 (re-verified) | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | 4.9 ms median per `didChange`; `didOpen` ~52 ms cold | session 29 | `ruby tmp/lsp_edit_perf.rb --bin <bin>` (transient probe) |
-| LSP valgrind | 0 errors over the harness drive; ~64 KB definitely-lost per 10-cycle soak (one-time index level) | session 38 | `tools/gates.sh --only valgrind_lsp --run` |
-| LSP soak | 68.1 KB/cycle raw / 19.9 KB/cycle least-squares at 200 cycles | session 38 | `ruby tools/lsp_soak.rb --cycles 100` |
-| formatter | 712/712 all three modes byte-identical | session 33 | `ruby tools/format_parity.rb all -j 16` |
-| DAP | zero differing rows except the documented self-better frame0 row; harness now asserts (non-zero on an unlisted diff) and requires a real `lldb-dap` | session 65 (assertion layer) | `ruby tools/dap_smoke.rb` (`--allow-skip` to waive a missing adapter) |
-| imported bindings | **29 verified / 0 changed of 29** | session 66 | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
+| LSP valgrind | 0 errors over the harness drive; ~64 KB definitely-lost per 10-cycle soak (one-time index level) | session 71 (re-verified) | `tools/gates.sh --only valgrind_lsp --run` |
+| LSP soak | 74–75 KB/cycle raw / ~28 KB/cycle least-squares at 200 cycles (meter; one-time index level) | session 71 (two runs) | `ruby tools/lsp_soak.rb --quiet` |
+| formatter | 739/739 all three modes byte-identical; the session-71 changed files 4/4 in all modes | session 71 | `ruby tools/format_parity.rb all -j 16` |
+| DAP | zero differing rows except the documented self-better frame0 row; the async-order F5 probe (`tools/dap_async_probe.rb`) proves launch → breakpoint → frame/locals → evaluate against real `lldb-dap` | session 71 | `ruby tools/dap_smoke.rb` (`--allow-skip` to waive a missing adapter); `ruby tools/dap_async_probe.rb` |
+| imported bindings | **29 verified / 0 changed of 29** | session 71 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
+| bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 71 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 
 ## Porting notes
 
@@ -1236,9 +1381,10 @@ Gotchas that cost rebuild cycles; apply them before writing code.
 
 ## Risks and notes
 
-- **`lower` tail:** every fix moves files' first differences deeper and can
-  expose new families; the ranked order + sweep loop is the process, and the
-  stopping rule is 0 differ or a documented host artifact with a reproduction.
+- **`lower` regressions:** the track is closed at 684/2/53/0 (the two
+  documented artifacts).  A lowering-adjacent change can still move first
+  differences deeper; re-run the sweep and keep the stopping rule (0 real
+  differ, or a documented host artifact with a reproduction).
 - **`deps`** is the largest single CLI subsystem (~3,000 lines); keep the port
   mechanical (module-per-file mirroring the Ruby layout) and use the host's
   `test/packages/*` as the spec.

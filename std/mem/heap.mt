@@ -313,11 +313,8 @@ public function copy_bytes(destination: ptr[ubyte]?, source: ptr[ubyte]?, size_b
     if destination == null or source == null:
         fatal(c"heap.copy_bytes requires non-null pointers for non-empty copies")
 
-    var index: ptr_uint = 0
-    while index < size_bytes:
-        unsafe:
-            read(destination + index) = read(source + index)
-        index += 1
+    unsafe:
+        cstring.copy_bytes(ptr[void]<-destination, ptr[void]<-source, size_bytes)
 
 
 public function move_bytes(destination: ptr[ubyte]?, source: ptr[ubyte]?, size_bytes: ptr_uint) -> void:

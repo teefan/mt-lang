@@ -14,6 +14,8 @@ import std.str as str
 import std.string as string
 import std.time as time
 import std.vec as vec
+import std.json as json_mod
+import std.map as map_mod
 import std.stdio as stdio
 import std.process as process
 import std.libuv as libuv
@@ -301,17 +303,9 @@ function dispatch_cli(raw_args: span[str]) -> int:
         return emit_c_command(args)
 
     if cmd == "build":
-        if args.len < 2:
-            eprint_line("missing source file path")
-            cli_help.print_usage(true)
-            return 1
         return build_command(args)
 
     if cmd == "run":
-        if args.len < 2:
-            eprint_line("missing source file path")
-            cli_help.print_usage(true)
-            return 1
         return run_command(args)
 
     if cmd == "run-module":
@@ -3859,6 +3853,7 @@ function bindgen_command(args: span[str]) -> int:
     var output: Option[str] = Option[str].none
     var nullable_report: Option[str] = Option[str].none
     var nullable_policy: Option[str] = Option[str].none
+    var options_json: Option[str] = Option[str].none
     var link_libs = vec.Vec[str].create()
     var includes = vec.Vec[str].create()
     var clang_args = vec.Vec[str].create()
@@ -3912,6 +3907,12 @@ function bindgen_command(args: span[str]) -> int:
                 let _ = cli_help.print_command_help("bindgen", true)
                 return 1
             nullable_policy = Option[str].some(value = args[ai])
+        else if arg == "--options-json":
+            ai += 1
+            if ai >= args.len:
+                eprint_line("bindgen: --options-json requires a path")
+                return 1
+            options_json = Option[str].some(value = args[ai])
         else if arg == "--help" or arg == "-h":
             stdio.print_line("usage: mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG] [--nullable-policy PATH] [--nullable-report PATH]")
             return 0
@@ -3966,9 +3967,37 @@ function bindgen_command(args: span[str]) -> int:
         return_overrides = policy.return_overrides,
         param_overrides = policy.param_overrides,
         report_header_path = header_abs.as_str(),
+        bindgen_defines = vec.Vec[str].create(),
+        bindgen_include_directives = vec.Vec[str].create(),
+        module_imports = vec.Vec[bindgen.ModuleImport].create(),
+        tracked_header_paths = vec.Vec[str].create(),
+        tracked_header_prefixes = vec.Vec[str].create(),
+        declaration_name_prefixes = vec.Vec[str].create(),
+        excluded_declaration_names = vec.Vec[str].create(),
+        type_name_overrides = map_mod.Map[str, str].create(),
+        type_overrides = map_mod.Map[str, str].create(),
+        function_param_type_overrides = map_mod.Map[str, map_mod.Map[str, str]].create(),
+        function_return_type_overrides = map_mod.Map[str, str].create(),
+        field_type_overrides = map_mod.Map[str, map_mod.Map[str, str]].create(),
+        allow_static_inline_functions = false,
+        strip_leading_underscores = false,
     )
     defer: opts.module_name.release()
     defer: opts.header_path.release()
+    var options_root: ptr[json_mod.Value]? = null
+    defer: release_options_root(options_root)
+    match options_json:
+        Option.some as options_path:
+            match bindgen.load_options_json(options_path.value, ref_of(opts)):
+                Result.success as loaded_root:
+                    options_root = loaded_root.value
+                Result.failure as load_failure:
+                    let message = load_failure.error.as_str()
+                    eprint_line(message)
+                    load_failure.error.release()
+                    return 1
+        Option.none:
+            pass
 
     if nullable_report.is_some():
         let report_arg = nullable_report.unwrap()
@@ -4032,6 +4061,12 @@ function bindgen_command(args: span[str]) -> int:
             eprint_line(mt)
             failure.error.release()
             return 1
+
+
+function release_options_root(root: ptr[json_mod.Value]?) -> void:
+    let r = root else:
+        return
+    bindgen.release_options_json(r)
 
 
 ## Write the nullable-policy report, creating its parent directory.  Reports a

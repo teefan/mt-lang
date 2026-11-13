@@ -138,11 +138,23 @@ public function configuration_done(
     req_seq: ptr_uint,
 ) -> void:
     ses.configuration_done = true
-    if backend.start_pending:
+    if backend.has_pending_start or (backend.start_pending and not backend.config_ready):
         backend.has_deferred_config = true
         backend.deferred_config_client_seq = req_seq
         return
     proceed_configuration(ses, backend, req_seq)
+
+
+## Send a deferred configurationDone once the adapter is initialized (or the
+## start request has already answered) and the launch request has been sent
+## (the host's `backend_configuration_pending?` gate).
+function flush_deferred_configuration(ses: ref[session.Session], backend: ref[lldb.Backend]) -> void:
+    if not backend.has_deferred_config:
+        return
+    if backend.has_pending_start or (backend.start_pending and not backend.config_ready):
+        return
+    backend.has_deferred_config = false
+    proceed_configuration(ses, backend, backend.deferred_config_client_seq)
 
 
 ## Send configurationDone to the adapter (then auto-continue when the launch
@@ -355,6 +367,7 @@ function dispatch_response(
                 deadline_after(REQUEST_TIMEOUT_SECONDS),
             )
             backend.has_pending_start = false
+            flush_deferred_configuration(ses, backend)
         else:
             backend.has_pending_start = false
             var message = backend_error_message(msg)
@@ -370,9 +383,7 @@ function dispatch_response(
             var message = backend_error_message(msg)
             defer: message.release()
             wire.write_error_command(ses.reserve_seq(), pending.client_seq, pending.command.as_str(), message.as_str())
-        if backend.has_deferred_config:
-            backend.has_deferred_config = false
-            proceed_configuration(ses, backend, backend.deferred_config_client_seq)
+        flush_deferred_configuration(ses, backend)
         return
 
     if pending.kind == lldb.KIND_CONFIG_DONE:
@@ -497,6 +508,7 @@ function handle_event(ses: ref[session.Session], backend: ref[lldb.Backend], msg
 
     if event_name.equal("initialized"):
         backend.config_ready = true
+        flush_deferred_configuration(ses, backend)
         return
 
     if event_name.equal("stopped"):
@@ -627,9 +639,7 @@ function expire_pendings(ses: ref[session.Session], backend: ref[lldb.Backend]) 
                         message.release()
                     if pending.kind == lldb.KIND_START:
                         backend.start_pending = false
-                        if backend.has_deferred_config:
-                            backend.has_deferred_config = false
-                            proceed_configuration(ses, backend, backend.deferred_config_client_seq)
+                        flush_deferred_configuration(ses, backend)
                     pending.command.release()
                     pending.arguments_text.release()
                 Option.none:

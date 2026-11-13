@@ -6,10 +6,10 @@ request: `tools/dap_smoke.rb` reports **zero differing rows** across the
 process sessions and the lldb sessions (the embedded fake adapter and a real
 `/usr/bin/lldb-dap`), with one documented self-better row — the debug-map frame
 name maps on the self where the host loses its map on a program-cache hit.
-The live VS Code F5 check is the remaining manual step; the extension's argv
-order is fixed (`dap` first, then `--backend`/`--adapter-path`).
-Last updated: 2026-10-04 (session 34 — the bridge, the unified loop, build-on-launch,
-the debug map and the frame/variable/expression rewriters).
+The VS Code F5 launch ordering was fixed in session 71 (see §9/§10); a real
+async-order probe proves launch → breakpoint → frame/locals → evaluate.  The
+extension's argv order is fixed (`dap` first, then `--backend`/`--adapter-path`).
+Last updated: 2026-11-13 (session 71 — the configurationDone/launch ordering fix).
 9 modules, ~4,540 lines plus the shared `mtc/debug_map.mt` (829) — 26 commands
 dispatched.
 
@@ -239,7 +239,8 @@ adapter child, its stdin framing, the adapter→client pending table (5 s) and
 the client→adapter reverse table (15 s) — and `lldb_policy.mt` owns the
 policy: deferred client `initialize` with merged capabilities, suppressed
 adapter `initialized`, launch/attach forwarding, `configurationDone` gated on
-the start response (and released by its timeout, like the host), breakpoint
+the adapter's `initialized` event / the start request answering (the host's
+`backend_configuration_pending?`, released when either arrives), breakpoint
 sync with the host's `breakpoint changed` events, event rewriting (SIGSTOP →
 pause, continued dedup), the debug-map frame/variable/expression rewriters and
 pause diagnostics.  `--adapter-path` is honored (`.rb` under ruby), and the
@@ -294,12 +295,14 @@ Remaining gaps, in the order they affect the VS Code experience:
 | 2 | **No lldb-dap backend** (the extension's default) — **landed** (session 34, 2026-10-04) | `lldb_backend.mt` spawns the adapter and tracks pending requests (adapter seq → client seq, 5 s deadlines; the reverse table 15 s), and `lldb_policy.mt` drives the handshake — the client initialize response is deferred until the adapter's, capabilities are merged (static set + adapter's, `supportsSetVariable` follows setExpression, `exceptionBreakpointFilters` overridden when non-empty), the adapter's `initialized` is suppressed, launch/attach forward (client-only keys stripped, `program` replaced, `stopOnEntry` forced for launch), `configurationDone` syncs the stored breakpoints first, terminate falls back to disconnect, and unknown commands forward. `tools/dap_smoke.rb` drives both servers against an embedded fake adapter (`runInTerminal` reverse request included) and every row matches |
 | 3 | **No debug map** — **landed** (session 34, 2026-10-04) | `projects/mtc/src/mtc/debug_map.mt` ports the host's writer/loader (`version / functions[] (name, cName, params, locals, sourcePath, line) / binaryPath / programSourcePath`, paths relative to the sidecar; `line: 0` is treated as synthetic and omitted like the host), `build.mt` writes `<output>.mtdbg.json` on the success branch, and `debug_map_test.mt` locks the model + round trip. The sidecar is semantically equal to the host's on the smoke fixture. The bridge loads it at launch (or via the `modules` fallback) and rewrites stackTrace frame names + the frame map, scope variables references, Locals variable names (`__mt_*` dropped) and evaluate/setVariable/setExpression/dataBreakpointInfo expressions through the host's token scanner |
 | 4 | **Pause diagnostics / `modules`-driven map loading** — **landed** (session 34, 2026-10-04) | On a pause-requested stop the bridge issues the 8-level `stackTrace` and emits the host's console `output` summary (informative-frame selection and frame formatting ported from `pause_diagnostics.rb`); the SIGSTOP-exception stop is rewritten to `reason: "pause"`. The `modules` fallback loads a sidecar from the adapter's module list when a stackTrace arrives without one |
-| 5 | **Real lldb-dap end-to-end / VS Code** — **landed** (session 34, 2026-10-04) | the smoke's real section builds the `.mt` source with each server (so each side's own map is exercised) and drives breakpoint → `stopped(breakpoint)` → `stackTrace` (`frame0 name` = `add`, source `main.mt`) → scopes/variables (`a,b,total`) → evaluate → next → continue → `exited`/`terminated`. Every row matches except `lldb-real frame0 name` (self `add`, host `main_add` — the host's program-cache hit skips its map; documented self-better difference). The live VS Code F5 remains a manual check |
+| 5 | **Real lldb-dap end-to-end / VS Code** — **landed** (session 34, 2026-10-04; F5 ordering fixed session 71, 2026-11-13) | the smoke's real section builds the `.mt` source with each server (so each side's own map is exercised) and drives breakpoint → `stopped(breakpoint)` → `stackTrace` (`frame0 name` = `add`, source `main.mt`) → scopes/variables (`a,b,total`) → evaluate → next → continue → `exited`/`terminated`. Every row matches except `lldb-real frame0 name` (self `add`, host `main_add` — the host's program-cache hit skips its map; documented self-better difference). Session 71 removed the `configurationDone` deferral on the launch response: an async-order probe (launch, then `configurationDone` without waiting, matching VS Code) gets launch success → entry stop → breakpoint stop → frame `main` → locals `x=3` → evaluate `3` from the real `lldb-dap`. A desktop F5 click-through is an optional manual smoke, not a known gap |
 
 Verification: `ruby tools/dap_smoke.rb [--self-bin PATH]` must show zero
 differing rows except the documented one, and a real VS Code session
 (`bindings/vscode`, `backend: lldb-dap`) must stop on a breakpoint and show
 locals — the same end-to-end check `docs/lsp-design.md` requires for
-user-visible LSP changes.  The extension's descriptor factory now emits
+user-visible LSP changes.  The session-71 async-order probe
+(`ruby tools/dap_async_probe.rb`) is the automated stand-in for the F5
+click-through.  The extension's descriptor factory now emits
 `mtc dap --backend=… [--adapter-path=…] …extraArgs` (the old `unshift` put the
 flag before the subcommand and both CLIs rejected it).

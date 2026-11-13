@@ -82,7 +82,7 @@ infer_area() {
         projects/mtc/src/mtc/loader/*)            echo loader ;;
         projects/mtc/src/mtc/formatter/*)         echo formatter ;;
         projects/mtc/src/mtc/dap/*)               echo dap ;;
-        projects/mtc/src/mtc/imported_bindings/*|bindings/*|lib/milk_tea/bindings/*) echo bindings ;;
+        projects/mtc/src/mtc/imported_bindings/*|projects/mtc/src/mtc/bindgen.mt|bindings/*|lib/milk_tea/bindings/*) echo bindings ;;
         projects/mtc/src/mtc/packages/*)          echo packages ;;
         projects/mtc/src/mtc/docs_cli.mt|projects/mtc/src/mtc/docs_app.mt) echo docs_cli ;;
         projects/mtc/src/mtc/wasm*.mt|projects/mtc/src/mtc/wasm/*) echo wasm ;;
@@ -114,7 +114,7 @@ fi
 
 gate_kind() {
     case "$1" in
-        bootstrap|test_mt|dev_build|dev_tests|unused_import|recovery|format|dap|tools_check|bindings|bindings_parity|wasm_smoke|docs_smoke) echo hard ;;
+        bootstrap|test_mt|dev_build|dev_tests|unused_import|recovery|format|dap|tools_check|bindings|bindings_parity|bindgen_parity|wasm_smoke|docs_smoke) echo hard ;;
         *) echo meter ;;
     esac
 }
@@ -152,7 +152,8 @@ gate_label() {
         soak)           echo "long-session soak meter (~25 s): RSS slope for mixed requests" ;;
         bindings)       echo "imported-bindings --all --check (29/29)" ;;
         bindings_parity) echo "imported-bindings vs host parity report (29/29)" ;;
-        dap)            echo "DAP smoke (asserting; lldb-dap required unless --allow-skip)" ;;
+        bindgen_parity) echo "bindgen reproducibility vs the host (33 match / 1 custom)" ;;
+        dap)            echo "DAP smoke + async launch-order probe (lldb-dap required)" ;;
         wasm_smoke)     echo "^wasm smoke:" ;;
         docs_smoke)     echo "^docs smoke:" ;;
         tools_check)    echo "Ruby/bash syntax check for the tools/ harnesses" ;;
@@ -184,7 +185,8 @@ gate_cmd() {
         soak)          echo "ruby tools/lsp_soak.rb --quiet" ;;
         bindings)      echo "build/stage2/mtc imported-bindings --all --check" ;;
         bindings_parity) echo "ruby tools/imported_bindings_parity.rb --json tmp/gates/ib-parity.json" ;;
-        dap)           echo "ruby tools/dap_smoke.rb" ;;
+        bindgen_parity) echo "ruby tools/bindgen_parity.rb --self build/stage2/mtc -q" ;;
+        dap)           echo "ruby tools/dap_smoke.rb && ruby tools/dap_async_probe.rb" ;;
         wasm_smoke)    echo "ruby tools/wasm_smoke.rb --self build/stage2/mtc" ;;
         docs_smoke)    echo "ruby tools/docs_smoke.rb --self build/stage2/mtc" ;;
         tools_check)   echo "for f in tools/*.rb; do ruby -c \"\$f\" >/dev/null || exit 1; done; bash -n tools/gates.sh tools/bootstrap.sh && echo 'tools syntax ok'" ;;
@@ -213,7 +215,8 @@ gate_summary() {
         soak)           echo "^label=" ;;
         bindings)       echo "verified|changed" ;;
         bindings_parity) echo "^bindings=" ;;
-        dap)            echo "differing rows|stderr:" ;;
+        bindgen_parity) echo "^files=" ;;
+        dap)            echo "differing rows|dap async probe|stderr:" ;;
         tools_check)    echo "tools syntax ok" ;;
         *)              echo "." ;;
     esac
@@ -312,7 +315,7 @@ gates_for_area() {
         loader)    echo "bootstrap test_mt cli_parity audit examples" ;;
         cli)       echo "bootstrap test_mt cli_parity" ;;
         formatter) echo "bootstrap format" ;;
-        bindings)  echo "bootstrap bindings bindings_parity" ;;
+        bindings)  echo "bootstrap bindings bindings_parity bindgen_parity" ;;
         dap)       echo "bootstrap dap" ;;
         std)       echo "examples lint_parity" ;;
         examples)  echo "examples" ;;
