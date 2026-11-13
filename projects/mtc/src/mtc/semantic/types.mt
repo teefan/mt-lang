@@ -511,6 +511,34 @@ public function is_unsigned_integer_name(name: str) -> bool:
     )
 
 
+## True when the integer constant `value` fits `name`'s range — the host's
+## `value_fits_integer_type?` (`predicates.rb:123`).  A fixed-width integer's
+## range is `[-2^(w-1), 2^(w-1)-1]` signed, `[0, 2^w-1]` unsigned.
+public function integer_constant_fits(name: str, value: long) -> bool:
+    if not is_fixed_width_integer_name(name):
+        return false
+    # `char` is a byte-sized unsigned code unit but neither signed nor unsigned
+    # in the host's predicates; its literal range is the host's
+    # `integer_constant_fits_in_char?`: 0..255.
+    if name == "char":
+        return value >= 0 and value <= 255
+    let width = integer_width(name)
+    if is_signed_integer_name(name):
+        let max_value: long = (long<-1 << (width - 1)) - 1
+        let min_value: long = -(long<-1 << (width - 1))
+        return value >= min_value and value <= max_value
+    if is_unsigned_integer_name(name):
+        # `2^w - 1` does not fit a signed `long` for w=64, so every non-negative
+        # value fits there.
+        if value < 0:
+            return false
+        if width >= 64:
+            return true
+        let max_value: long = (long<-1 << width) - 1
+        return value <= max_value
+    return false
+
+
 ## Structural equality of two types.  Needed because variant == is not
 ## supported in the self-host C backend; this function pattern-matches
 ## both sides and compares fields manually.

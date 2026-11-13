@@ -3001,7 +3001,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                 if lint_full_tier:
                     check_prefer_conditional_expression_match(mt.arms, mt.line, mt.column, path, warnings)
                     check_prefer_or_pattern_stmt(mt.arms, path, warnings)
-                    check_prefer_try_stmt(mt.arms, expression_declared_line(mt.scrutinee), path, warnings)
+                    check_prefer_try_stmt(mt.arms, expression_declared_line(mt.scrutinee), expression_column(mt.scrutinee), path, warnings)
             ast.Stmt.stmt_ret as r:
                 visit_expr_opt(r.value, path, warnings)
                 if r.value != null:
@@ -4456,7 +4456,7 @@ struct TryArmPair:
     early_is_first: bool
     base: str
 
-function check_prefer_try_stmt(arms: span[ast.MatchArm], anchor_line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_prefer_try_stmt(arms: span[ast.MatchArm], anchor_line: ptr_uint, anchor_column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     # The host needs the scrutinee's resolved variant type, and the analyzer
     # records no expression types inside a generic body (see `resolve_expr_type`
     # in redundant_cast), so the rule never fires there.
@@ -4481,7 +4481,7 @@ function check_prefer_try_stmt(arms: span[ast.MatchArm], anchor_line: ptr_uint, 
                     buf.append("this ")
                     buf.append(pair.base)
                     buf.append(" match only propagates the failure branch; consider `expr?`")
-                    push_warning(warnings, path, anchor_line, "prefer-try", buf.as_str(), "hint")
+                    push_warning_at(warnings, path, anchor_line, anchor_column, 0, "prefer-try", buf.as_str(), "hint")
             _:
                 pass
 

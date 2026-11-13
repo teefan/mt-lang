@@ -25,31 +25,98 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 71, 2026-11-13)
+## Status at a glance (session 72, 2026-11-13)
 
 | Area | State |
 | --- | --- |
-| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`, session 71 full run and post-fix `--fast`); self-test suite **22 files / 0 failed** |
-| `test/mt` | **60 files / 0 failed** (session 71 on stage2) |
+| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** |
+| `test/mt` | **60 files / 0 failed** (session 72 on stage2) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **735 match / 0 differ / 4 host-rejected of 739**; counts drift with the tree and `tmp` fixtures) |
-| `sexpr lower` | **684 match / 2 differ / 53 host-rejected / 0 self-rejected of 739 files** (session 71) — the two differ are the documented `memory_stress_test` artifact and the `main.mt` `--sexpr` loop guard; **Track A closed** |
-| `cli:parity` | **92 match / 0 differ / 0 pending** of 92 cases (session 71; the three new cases are bare `build`/`run` in a package root and bare `build` outside one; `--timings` values and `debug`'s Ruby node ids are normalized) |
-| Linter corpus | **632 agree / 3 differ** of 635 (session 71 re-verified; hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  The 3 residual rows are documented self-better/host-artifact rows. |
-| LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **74–75 KB/cycle raw / ~28 LS at 200 cycles** (session 71 re-measure; meter, one-time index level documented) |
-| DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the real lldb-dap bridge now closes the VS Code F5 launch deadlock (configurationDone no longer waits for the launch response), proven by `tools/dap_async_probe.rb`: launch success, entry stop, breakpoint stop, `main` frame, `x=3`, evaluate `3` |
-| Formatter | **739/739** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift; session 71) |
-| Imported bindings | **29/29 verified** against the host generator and the checked-in modules (session 66; re-verified session 71; `box3d` closed; golden-vector naming test in `projects/mtc/test/imported_bindings_naming_test.mt`) |
-| Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (session 70; re-verified session 71; `ruby tools/bindgen_parity.rb --self build/stage2/mtc`).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim (there is no generic reference).  The port now mirrors the host's two-phase selection: top-level node extraction with indices, typedef→record resolution through the referenceable-record index, insertion-ordered record/enum selection (opaque→complete upgrade), alias-aware visible names, synthetic anonymous/nested aggregate flattening, record dependencies, function-type typedef projection, macro-probe constants, and the tidy formatter at the resolved line length. |
+| `sexpr lower` | **683 match / 3 differ / 53 host-rejected / 0 self-rejected of 739 files** (session 72; the baseline tree measures the same 683/3/53/0, so the session-71 "684/2" count was stale — `examples/sdl3/demo/woodeneye.mt` was already differing and is now counted).  The three differ are `memory_stress_test` (leaked auto-lifetime), `main.mt` (`--sexpr` loop guard) and `woodeneye` (a pre-existing double-literal rendering difference in `std/math` constants, present before this session's changes) |
+| `cli:parity` | **92 match / 0 differ / 0 pending** of 92 cases (`--timings` values and `debug`'s Ruby node ids are normalized) |
+| **`check` diagnostics (new)** | **501 agree / 0 verdict / 0 position / 3 message of 504** files (`tools/diag_parity.rb check`; the 3 message rows are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows).  Before this session: 44 verdict, 177 position diffs and a wholly different rendering. |
+| Linter corpus | **632 agree / 3 differ** of 635 (hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  The 3 residual rows are documented self-better/host-artifact rows. |
+| LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **74–75 KB/cycle raw / ~28 LS at 200 cycles** (meter, one-time index level documented) |
+| DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the real lldb-dap bridge closes the VS Code F5 launch deadlock (configurationDone no longer waits for the launch response), proven by `tools/dap_async_probe.rb` |
+| Formatter | **739/739** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
+| Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
+| Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 72).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
 
 Rough completion against the per-track Definition of Done: **100%**.  The
-self-hosting foundation, `lower` dump parity, the CLI behavior matrix (now
-including `deps` and `--locked`/`--frozen`), wasm, docs, the linter corpus,
-the imported bindings and bindgen reproducibility are done.  The only
-residuals are the documented `tracy` custom-generator entry, the optional
-desktop F5 smoke, and the optional Track G throughput work.  LSP, DAP and the
-formatter are closed at their documented differences, and Track H's final
-matrix passed on session 71.
+self-hosting foundation, `lower` dump parity, the CLI behavior matrix, wasm,
+docs, the linter corpus, the imported bindings and bindgen reproducibility are
+done, and session 72 added the analyzer/`check` surface that no gate had
+measured.  The only residuals are the documented `tracy` custom-generator
+entry, the optional desktop F5 smoke, and the optional Track G throughput work.
+
+## Session 72 — the `check`/analyzer surface
+
+`check` is the only command that reports the semantic analyzer's verdict, and no
+gate compared it: `sexpr_parity` only compares files both compilers *accept*
+(its `hostfail` bucket hides every accept/reject disagreement) and
+`cli_parity`'s `check` fixtures abort at `unknown callable print` before any
+diagnostic renders.  Session 72 measured that surface and closed it.
+
+New harnesses (keep both; they are the only measurement of this class):
+
+- **`tools/diag_parity.rb [parse|check] [TARGET...]`** — compares the diagnostic
+  *verdict* (does the file check?), the `code: message` set, and the positions,
+  independent of rendering.  Retries a host killed by a signal (parallel Ruby
+  hosts are OOM casualties, not disagreements).  Live: `check` **0 verdict / 0
+  position / 3 message of 504**; `parse` **0 differing of 504**.
+- **`tools/check_parity.rb [TARGET...]`** — byte-for-byte `stdout`/`stderr`/exit
+  of `check`, for the rendering half.
+
+The gaps it found, and their fixes:
+
+1. **Constant-value coercion (the plan's last open analyzer item).**  The host's
+   `exact_compile_time_numeric_compatibility?` folds an expression's integer
+   value and accepts it when the value fits the numeric target's range; the self
+   accepted *every* numeric literal regardless of value and rejected named
+   constants.  `semantic/type_compatibility.mt` gained `fold_int_constant`
+   (literals, named consts, unary `-`/`~`, integer arithmetic/bitwise) and
+   `constant_fits_target` (tri-state: fits / does-not-fit / not-static), and
+   `semantic/types.mt` gained `integer_constant_fits` (the host's
+   `value_fits_integer_type?`, `char` in `0..255`).  The rule is applied at
+   return, assignment and local-initializer sites through
+   `incompatible_value_with_consts`; a binary operator is *not* folded (the host
+   types its literal operands with the expected type instead).
+   `infer_expr_inner` now lets a bare integer literal adopt a fitting expected
+   integer type (the host's `infer_integer_literal`; `char` excluded, so
+   `let nl: char = 10` still lowers `char<-10`), and `infer_binary` propagates
+   the numeric expected type into both operands.  Result: `return 300` into
+   `ubyte` is rejected, `return 200` and `const C: uint = 200; return C` are
+   accepted, `300 + 0` is rejected while `200 + 56` is accepted — all equal to
+   the host.  A type that already equals the target short-circuits the range
+   test, so a `ulong` literal the parser stores as a negative `long`
+   (`14695981039346656037`) keeps its declared type.
+2. **`check` rendered lint results through the `lint` one-liner on stdout.**  The
+   host funnels every `check` diagnostic through `ErrorFormatter` — a full block
+   on **stderr**, sorted by `[line, column]` — and buckets severities
+   (`39 warnings; 59 notes`), printing the separator blank line but no count
+   line for a hint-only file.  `main.mt` gained
+   `print_severity_diagnostic_block`, `sort_lint_warnings_by_location` and a
+   three-counter summary; a positionless diagnostic renders the bare message
+   (the host's `ErrorFormatter` fallback for a node with no line), and a
+   whole-file load failure renders `<message>: <path>`.
+3. **The platform guard was missing from the loader.**  The host's
+   `resolve_source_path` raises when a file pinned to one platform
+   (`std/fs.windows.mt`) is loaded for another; the self analyzed and linted it.
+   `loader/module_loader.mt` now returns a one-diagnostic program
+   (`empty_program_with_diagnostics`), which `check` renders byte-identically.
+4. **The `checked <path> as <module>` line** was verbose-gated and only fired on
+   a clean analysis; the host prints it unless `--quiet`, for a file that
+   produced *no* diagnostics of any severity (its `elsif module_name` arm), with
+   the operand spelled as passed.  `lint` results also now use the absolute
+   path (`File.expand_path`), matching the host's `resolved_path`.
+5. **`prefer-try` anchored at column 0** instead of the scrutinee's column
+   (`linter/linter.mt`).
+
+Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
+683/3/53/0 (identical to the pre-session baseline), lex 739/739, parse
+735/0/4, `cli:parity` 92/92, lint corpus 501/3 of 504 on `std`+`examples`
+(the documented rows).
 
 ## Handoff (session 71)
 
@@ -746,7 +813,8 @@ Session-64 third batch (package builds, `--bundle`/`--archive`):
 | CLI behavior parity | Track B; `tools/cli_parity.rb --help` | `rake "cli:parity"` |
 | Wasm build/preview | Track B item 1 (closed); `wasm_preview.mt` | `ruby tools/wasm_smoke.rb` |
 | Docs server | Track B item 2 (closed); `docs_app.mt` | `ruby tools/docs_smoke.rb` |
-| Linter corpus residue | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb -q` (618 files; `--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
+| Linter corpus residue | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb -q` (`--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
+| Analyzer / `check` diagnostics | the session-72 section; Track C's analyzer notes | `ruby tools/diag_parity.rb check -j 8 std examples`; `ruby tools/check_parity.rb` |
 | Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb --json tmp/ib-parity.json`; `ruby tools/bindgen_parity.rb --self build/stage2/mtc`; regenerate `std/c/*.mt` and diff |
 | LSP feature parity / residue | Track E; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb record --server host\|self` + `compare`; `tools/lsp_project_audit.rb --workspace DIR [--canonical]`; `tools/lsp_recovery_probe.rb --check`; `tools/lsp_soak.rb` |
 | DAP | Track F (closed); `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both]`; `ruby tools/dap_async_probe.rb` |
@@ -1087,11 +1155,13 @@ Analyzer gaps that gate lint rows and LSP entries:
   positive generic-vs-scalar split (`ptr[int]` → `str`) and the
   `call_argument_compatible?`/`implicit_ref_argument_compatible?` argument-only
   coercions; the self's fallback is still permissive for those pairs.
-- **Constant-value coercion** (session 23): a folded constant that fits a narrow
-  integer target is host-accepted and self-rejected (`return sdl.ALPHA_OPAQUE`
-  from `-> ubyte`); the host folds via `evaluate_compile_time_const_value`
-  (`semantic_analyzer/top_level.rb:280`) + `numeric_constant_fits_type?`, the
-  self's `is_numeric_literal_valued_expr` sees only literal nodes/`if`-chains.
+- **Constant-value coercion — CLOSED (session 72).**  The host folds via
+  `evaluate_compile_time_const_value` (`semantic_analyzer/top_level.rb:280`) +
+  `numeric_constant_fits_type?`; the self now folds through
+  `type_compatibility.fold_int_constant` + `constant_fits_target` and
+  `types.integer_constant_fits` at the return/assignment/local sites (see the
+  session-72 section).  `return sdl.ALPHA_OPAQUE` from `-> ubyte` is accepted,
+  `return 300` is rejected, both matching the host.
 - **Member-assignment immutability — CLOSED (session 66).**  The host's
   `infer_lvalue_receiver` ladder is ported: `ref[T]`, mutable raw pointers and
   `own[T]` receivers are assignable; `const_ptr` reports
@@ -1256,6 +1326,16 @@ ones:
   --sexpr` -> rc 134 `loop iteration limit exceeded in str_is_valid_utf8`),
   while only the Ruby host (which has no guard) completes.  Not a parity gap;
   the non-`--sexpr` formatting path completes on both C compilers.
+- **`lower` `examples/sdl3/demo/woodeneye.mt`:** the self renders `std/math`'s
+  `double` constants with 6 significant digits (`PI = 3.14159` where the host
+  prints `3.141592653589793`).  Pre-existing in the constant-dump path (the
+  pre-change tree produces byte-identical output) and previously hidden in the
+  `hostfail` bucket; not introduced by session 72.
+- **`check` diagnostic residue (3 rows, all deliberate):** the new `check` sweep
+  (`tools/diag_parity.rb check`) reaches **0 verdict / 0 position** differences
+  over `std`+`examples`; its 3 message rows are exactly the `std/cli.mt`
+  `redundant-cast` pair and the `examples/reflection_advanced.mt` host-only
+  `constant-condition` documented below, seen through `check`'s renderer.
 - **Linter corpus residue (3 rows, all deliberate):**
   - `std/cli.mt:727,740` — `redundant-cast` on `ptr[X]<-value`.  The self's
     flow analysis narrows `value` to non-null after `if value == null: break`,
@@ -1334,15 +1414,16 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 71 (full run; post-fix `--fast` + 22/0 on the final stage2) | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 60 files / 0 failed | session 71 (stage2) | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 72 (post-change `--fast` + 22/0) | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 60 files / 0 failed | session 72 (stage2) | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 71 | `tools/gates.sh --only examples --run` |
-| `sexpr lex` / `parse` | lex 739/739; parse 735 match / 0 differ / 4 host-rejected of 739 (counts include `tmp` fixtures) | session 71 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 684 match / 2 differ / 53 host-rejected / 0 self-rejected of 739 (the 2 are documented artifacts) | session 71 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
-| `cli:parity` | **92 match / 0 differ / 0 pending** of 92 (case-backed; timings and `debug` node ids normalized) | session 71 (stage2) | `ruby tools/cli_parity.rb -q` |
+| `sexpr lex` / `parse` | lex 739/739; parse 735 match / 0 differ / 4 host-rejected of 739 (counts include `tmp` fixtures) | session 72 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 683 match / 3 differ / 53 host-rejected / 0 self-rejected of 739 (the 3: documented `memory_stress_test` + `main.mt` artifacts, plus the pre-existing `woodeneye` double-literal row; the session-71 "684/2" was stale — the pre-change baseline measures the same 683/3/53/0) | session 72 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `cli:parity` | **92 match / 0 differ / 0 pending** of 92 (case-backed; timings and `debug` node ids normalized) | session 72 (stage2) | `ruby tools/cli_parity.rb -q` |
+| **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** (`std`+`examples`; the 3 are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows) | session 72 | `ruby tools/diag_parity.rb check -j 8 std examples`; byte-level: `ruby tools/check_parity.rb` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 71 | `ruby tools/wasm_smoke.rb` |
 | docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 71 | `ruby tools/docs_smoke.rb` |
-| lint corpus | 632 agree / 3 differ of 635, hostfail 0, selffail 0; **43/43 rules, 13/13 fixers** (the 3 are documented deliberate rows) | session 71 (re-verified) | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| lint corpus | 632 agree / 3 differ of 635, hostfail 0, selffail 0; **43/43 rules, 13/13 fixers** (the 3 are documented deliberate rows) | session 72 (re-verified) | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 635/635 | session 71 | `ruby tools/unused_import_parity.rb` |
 | LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 71 (re-verified) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 71 (canonical) | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1350,10 +1431,10 @@ when the tree moved.  Target = the Definition of Done above.
 | LSP edit latency | 4.9 ms median per `didChange`; `didOpen` ~52 ms cold | session 29 | `ruby tmp/lsp_edit_perf.rb --bin <bin>` (transient probe) |
 | LSP valgrind | 0 errors over the harness drive; ~64 KB definitely-lost per 10-cycle soak (one-time index level) | session 71 (re-verified) | `tools/gates.sh --only valgrind_lsp --run` |
 | LSP soak | 74–75 KB/cycle raw / ~28 KB/cycle least-squares at 200 cycles (meter; one-time index level) | session 71 (two runs) | `ruby tools/lsp_soak.rb --quiet` |
-| formatter | 739/739 all three modes byte-identical; the session-71 changed files 4/4 in all modes | session 71 | `ruby tools/format_parity.rb all -j 16` |
+| formatter | 739/739 all three modes byte-identical | session 72 | `ruby tools/format_parity.rb all -j 16` |
 | DAP | zero differing rows except the documented self-better frame0 row; the async-order F5 probe (`tools/dap_async_probe.rb`) proves launch → breakpoint → frame/locals → evaluate against real `lldb-dap` | session 71 | `ruby tools/dap_smoke.rb` (`--allow-skip` to waive a missing adapter); `ruby tools/dap_async_probe.rb` |
-| imported bindings | **29 verified / 0 changed of 29** | session 71 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
-| bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 71 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
+| imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
+| bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 72 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 
 ## Porting notes
 

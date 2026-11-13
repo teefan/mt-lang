@@ -114,7 +114,7 @@ fi
 
 gate_kind() {
     case "$1" in
-        bootstrap|test_mt|dev_build|dev_tests|unused_import|recovery|format|dap|tools_check|bindings|bindings_parity|bindgen_parity|wasm_smoke|docs_smoke) echo hard ;;
+        bootstrap|test_mt|dev_build|dev_tests|unused_import|recovery|format|dap|tools_check|bindings|bindings_parity|bindgen_parity|wasm_smoke|docs_smoke|diag_parity) echo hard ;;
         *) echo meter ;;
     esac
 }
@@ -135,12 +135,13 @@ gate_label() {
         sexpr_lex)      echo "sexpr lex parity (718/718)" ;;
         sexpr_parse)    echo "sexpr parse parity (714 match / 0 differ / 4 host-rejected of 718)" ;;
         sexpr_lower)    echo "sexpr lower parity (meter, ~1 min warm / ~4 min cold host cache)" ;;
-        cli_parity)     echo "CLI parity (89 cases; 82 match / 7 pending; no allowlist)" ;;
+        cli_parity)     echo "CLI parity (92 cases; 92 match; no allowlist)" ;;
         wasm_smoke)     echo "wasm preview end-to-end (host + self HTTP/signal smoke)" ;;
         docs_smoke)     echo "docs server end-to-end (host + self routes/SIGINT smoke)" ;;
         scoreboard)     echo "parity scoreboard (meter)" ;;
         format)         echo "formatter parity all modes (712/712)" ;;
         lint_parity)    echo "corpus-wide lint parity (meter, ~5 min)" ;;
+        diag_parity)    echo "check diagnostic parity: verdict/message/position (~2 min)" ;;
         unused_import)  echo "unused-import parity (616/616, ~30 min)" ;;
         harness)        echo "LSP harness 30/30 + 4 documented entries (~3 min)" ;;
         recovery)       echo "LSP recovery probe (byte-compared)" ;;
@@ -204,6 +205,7 @@ gate_summary() {
         scoreboard)     echo "^cli |^lex |^parse |^lint " ;;
         format)         echo "differ|match" ;;
         lint_parity)    echo "^files=" ;;
+        diag_parity)    echo "^mode=" ;;
         unused_import)  echo "^files=" ;;
         harness)        echo "TOTAL differing|capabilities:" ;;
         recovery)       echo "recovery parity" ;;
@@ -307,11 +309,11 @@ EOF
 
 gates_for_area() {
     case "$1" in
-        analyzer)  echo "bootstrap test_mt cli_parity scoreboard lint_parity unused_import harness recovery fixtures audit examples valgrind_lsp neovim" ;;
-        linter)    echo "bootstrap test_mt cli_parity scoreboard lint_parity unused_import harness fixtures audit" ;;
+        analyzer)  echo "bootstrap test_mt cli_parity diag_parity scoreboard lint_parity unused_import harness recovery fixtures audit examples valgrind_lsp neovim" ;;
+        linter)    echo "bootstrap test_mt cli_parity diag_parity scoreboard lint_parity unused_import harness fixtures audit" ;;
         lsp)       echo "bootstrap harness recovery fixtures audit valgrind_lsp neovim soak" ;;
         codegen)   echo "bootstrap test_mt sexpr_lower examples" ;;
-        parser)    echo "bootstrap sexpr_lex sexpr_parse recovery cli_parity scoreboard" ;;
+        parser)    echo "bootstrap sexpr_lex sexpr_parse diag_parity recovery cli_parity scoreboard" ;;
         loader)    echo "bootstrap test_mt cli_parity audit examples" ;;
         cli)       echo "bootstrap test_mt cli_parity" ;;
         formatter) echo "bootstrap format" ;;

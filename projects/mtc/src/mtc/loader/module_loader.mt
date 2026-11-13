@@ -54,6 +54,34 @@ public struct LoadDiagnostic:
     symbol_name: string.String
 
 
+## A Program that carries only a whole-file load failure (the platform guard):
+## no modules, no analyses, one diagnostic.  The caller returns it directly so
+## the CLI reports the failure the way the host's raised `ModuleLoadError`
+## propagates out of `check_program`.
+function empty_program_with_diagnostics(path: str, message: string.String) -> Program:
+    var diagnostics = vec.Vec[LoadDiagnostic].create()
+    diagnostics.push(LoadDiagnostic(
+        path = string.String.from_str(path),
+        line = 0,
+        column = 0,
+        length = 0,
+        message = message,
+        severity = "error",
+        code = "load/error",
+        symbol_name = string.String.from_str(""),
+    ))
+    return Program(
+        modules = vec.Vec[LoadedModule].create(),
+        order = vec.Vec[ptr_uint].create(),
+        analyses = vec.Vec[analyzer.Analysis].create(),
+        diagnostics = diagnostics,
+        owning_type_names = vec.Vec[str].create(),
+        root_index = 0,
+        unresolved_import_paths = vec.Vec[string.String].create(),
+        modules_owned = true,
+    )
+
+
 ## The result of loading and checking a program: every parsed module, a
 ## dependency-first ordering (indices into `modules`), the per-module semantic
 ## `Analysis` values (retained in canonical lowering order — see
@@ -745,6 +773,21 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
     var root_abs = absolute_path(root_path)
     defer: root_abs.release()
     var root_resolved = resolver.resolve_source_path(root_abs.as_str(), platform)
+    # The host's `resolve_source_path` raises when a file pinned to one platform
+    # (`name.windows.mt`) is loaded for another — the platform guard that keeps
+    # `std/fs.windows.mt` out of a linux analysis.  Report it as a load failure
+    # so `check`/`build` reject the file exactly as the host does.
+    match resolver.platform_suffix_for_path(root_abs.as_str()):
+        Option.some as pinned:
+            if pinned.value != platform:
+                var message = string.String.create()
+                message.append("source file targets platform ")
+                message.append(resolver.platform_suffix(pinned.value))
+                message.append("; active platform is ")
+                message.append(resolver.platform_suffix(platform))
+                return empty_program_with_diagnostics(root_abs.as_str(), message)
+        Option.none:
+            pass
     var root_name_owner = resolver.infer_module_name(root_resolved.as_str(), norm_roots)
     defer: root_name_owner.release()
 

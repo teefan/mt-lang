@@ -3458,6 +3458,20 @@ function unknown_type_message(name: str) -> str:
 ## Assignment-site incompatibility check.  Delegates to the full positive
 ## type-compatibility rule (type_compatibility.mt), negating the result so this
 ## function continues to return true when types are incompatible.
+##
+## `const_values` is the analysis' `const` table, which the host's
+## `exact_compile_time_numeric_compatibility?` folds against — a named constant
+## whose value fits a numeric target is assignable (`const C: uint = 200;
+## let x: ubyte = C`), one that does not is rejected (`256` into `ubyte`).
+function incompatible_value_with_consts(
+    target: types.Type,
+    source_ty: types.Type,
+    source_expr: ptr[ast.Expr]?,
+    const_values: ref[map_mod.Map[str, ptr[ast.Expr]]],
+) -> bool:
+    return not compat.types_compatible_with_consts(target, source_ty, source_expr, ptr_of(const_values))
+
+
 function incompatible_value(target: types.Type, source_ty: types.Type, source_expr: ptr[ast.Expr]?) -> bool:
     return not compat.types_compatible(target, source_ty, source_expr)
 
@@ -3542,7 +3556,7 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                     ctx.expected_type_hint = chk.ret
                     let vt = infer_expr(ctx, scope, rv)
                     ctx.expected_type_hint = ret_saved_hint
-                    if incompatible_value(chk.ret, vt, rv):
+                    if incompatible_value_with_consts(chk.ret, vt, rv, ref_of(ctx.const_values)):
                         let rl = expr_source_line(rv)
                         if rl == 0:
                             report(ctx, r.line, r.column, return_mismatch_message(chk.ret, vt))
@@ -3671,7 +3685,7 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                     ctx.expected_type_hint = target_ty
                 let vt = infer_expr(ctx, scope, a.value)
                 ctx.expected_type_hint = assign_saved_hint
-                if a.operator == "=" and incompatible_value(target_ty, vt, a.value):
+                if a.operator == "=" and incompatible_value_with_consts(target_ty, vt, a.value, ref_of(ctx.const_values)):
                     report(ctx, a.line, a.column, assign_message(target_ty, vt))
                 check_assign_target_immutable(ctx, scope, a.target, a.line, a.column)
             _:
@@ -4991,7 +5005,7 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlag
     # it is compared against the unwrapped (narrowed) value type instead.
     if has_declared and has_value:
         let compared = if has_guard: narrowed else: value_type
-        if incompatible_value(declared, compared, value):
+        if incompatible_value_with_consts(declared, compared, value, ref_of(ctx.const_values)):
             report(ctx, line, column, local_mismatch_message(declared, compared, name))
 
     # Bind the name for later inference: prefer the declared type, but narrow a
@@ -5283,6 +5297,23 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                     Option.some as st:
                         return types.primitive(st.value)
                     Option.none:
+                        pass
+                # The host's `infer_integer_literal`: a bare literal takes the
+                # expected integer type when its value fits (`return 200 + 56`
+                # in a `-> ubyte` body types both operands as ubyte).  An
+                # out-of-range value falls through to the narrowing ladder and
+                # is rejected by the assignment check.
+                let hint = ctx.expected_type_hint
+                match hint:
+                    types.Type.ty_primitive as hp:
+                        # `char` is deliberately excluded: the host types the
+                        # literal as `int` and lowers it through an explicit
+                        # `char<-N` cast (`let nl: char = 10`), even though
+                        # `integer_constant_fits` accepts the value for
+                        # assignability.
+                        if hp.name != "char" and types.is_fixed_width_integer_name(hp.name) and types.integer_constant_fits(hp.name, long<-lit.value):
+                            return hint
+                    _:
                         pass
                 # A bare literal picks the narrowest fixed-width type that
                 # holds its value: int -> long -> ulong (the host's
@@ -5797,6 +5828,20 @@ function check_proc_body(ctx: ref[Context], scope: ref[sscope.Scope], param_type
 
 
 function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> types.Type:
+    # The host's `propagating_expected_type`: an arithmetic binary's numeric
+    # expected type reaches both operands, so a literal operand takes it when
+    # its value fits (`return 200 + 56` in a `-> ubyte` body).
+    let outer_hint = ctx.expected_type_hint
+    var operand_hint: types.Type = types.Type.ty_error
+    if is_arithmetic_binary_op(op):
+        match outer_hint:
+            types.Type.ty_primitive as hp:
+                if types.is_numeric_name(hp.name):
+                    operand_hint = outer_hint
+            _:
+                pass
+    if not types.is_error(operand_hint):
+        ctx.expected_type_hint = operand_hint
     # Always infer both operands so nested calls in either side are checked.
     let lt = infer_expr(ctx, scope, left)
     if op.equal("and") or op.equal("or"):
@@ -5810,8 +5855,10 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
         let _short_circuit_ty = infer_expr(ctx, scope, right)
         refs.release()
         scope_leave(scope)
+        ctx.expected_type_hint = outer_hint
         return types.primitive("bool")
     let rt = infer_expr(ctx, scope, right)
+    ctx.expected_type_hint = outer_hint
     # The host's `harmonize_binary_float_literal_types` (and the expected-type
     # propagation into both operands): an unsuffixed float-literal operand is
     # *re-inferred* with the peer's float type, so `double<-x * 1000.0`
@@ -5867,10 +5914,13 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
         # A literal operand adapts to the other operand's numeric type, so
         # `48 + value` types as `value`'s type and `1 << uint<-x` as uint —
         # mirrors Ruby's harmonize_binary_integer_literal_types /
-        # harmonize_binary_float_literal_types.
-        if is_bare_integer_literal(left) and types.is_integer_type(rt):
+        # harmonize_binary_float_literal_types.  The adaptation is gated on the
+        # literal's *value* fitting the peer type (the host re-infers the literal
+        # with that expected type): `300 + 0` in a `ubyte` body keeps `300` an
+        # `int`, so the binary is `int` and the assignment check rejects it.
+        if is_bare_integer_literal(left) and types.is_integer_type(rt) and integer_literal_fits_type(left, rt):
             return rt
-        if is_bare_integer_literal(right) and types.is_integer_type(lt):
+        if is_bare_integer_literal(right) and types.is_integer_type(lt) and integer_literal_fits_type(right, lt):
             return lt
         if is_float_literal_expr(left) and types.is_float_type(rt):
             return rt
@@ -5929,6 +5979,30 @@ function is_bare_integer_literal(ep: ptr[ast.Expr]) -> bool:
                 return true
             _:
                 return false
+
+
+## True when the integer literal's value fits `target`'s range — the gate on
+## binary operand harmonization (the host re-infers the literal with the peer
+## type only when the value fits it).
+function integer_literal_fits_type(ep: ptr[ast.Expr], target: types.Type) -> bool:
+    let name = primitive_name_or_empty(target)
+    if not types.is_fixed_width_integer_name(name):
+        return false
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_integer_literal as lit:
+                return types.integer_constant_fits(name, long<-lit.value)
+            _:
+                return false
+
+
+## The primitive name of `t`, or the empty string.
+function primitive_name_or_empty(t: types.Type) -> str:
+    match t:
+        types.Type.ty_primitive as p:
+            return p.name
+        _:
+            return ""
 
 
 ## A bare float literal — no `f`/`d` suffix — takes an expected float type

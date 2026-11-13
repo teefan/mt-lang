@@ -782,6 +782,7 @@ function check_command(args: span[str]) -> int:
 
     var total_errors: ptr_uint = 0
     var total_warnings: ptr_uint = 0
+    var total_notes: ptr_uint = 0
     var file_count: ptr_uint = 0
 
     var fi: ptr_uint = 0
@@ -817,23 +818,26 @@ function check_command(args: span[str]) -> int:
         var program = loader.check_program(effective, file_roots.as_span(), platform)
         defer: program.release()
 
+        # The host lints with `File.expand_path(path)`, so a relative operand
+        # still renders the diagnostic's absolute path.
+        var lint_path_owner = loader.absolute_path(effective)
+        defer: lint_path_owner.release()
+        let lint_path = lint_path_owner.as_str()
+
         let errors = program.diagnostic_error_count()
         let warnings = program.diagnostic_warning_count()
 
-        if errors == 0 and warnings == 0:
-            # The host's `info` line is verbose-only; default runs stay silent.
-            if cli_verbose:
-                let module_name = program.root_module_name()
-                stdio.print_format(
-                    c"checked %.*s as %.*s\n",
-                    int<-(effective.len), effective.data,
-                    int<-(module_name.len), module_name.data,
-                )
-        else:
+        # The host's `check` prints a file's diagnostics (semantic then lint,
+        # sorted by location) and reports `checked <path> as <module>` only when
+        # the file produced none at all — the `elsif module_name` arm.
+        var file_diagnostic_count: ptr_uint = 0
+        if errors > 0 or warnings > 0:
             let printed_errors = print_program_diagnostics(ref_of(program))
             file_count += 1
             total_errors += printed_errors
+            file_diagnostic_count += printed_errors
             total_warnings += warnings
+            file_diagnostic_count += warnings
 
         # Run linter on clean files to catch style hints.
         if errors == 0:
@@ -875,43 +879,67 @@ function check_command(args: span[str]) -> int:
                     var providers = scope_tracking.build_import_method_providers(lfile, program.analyses.as_span())
                     defer: providers.release()
                     options.method_providers = providers.as_span()
-                    var lwarns = linter.lint_source_with(lfile, src.as_str(), effective, options)
+                    var lwarns = linter.lint_source_with(lfile, src.as_str(), lint_path, options)
                     defer: lwarns.release()
                     if lwarns.len() > 0:
+                        # The host's `check` sorts a file's diagnostics by
+                        # `[line, column]` before printing (its `sort_by_location`);
+                        # `lint` keeps emission order.
+                        sort_lint_warnings_by_location(lwarns)
+                        file_diagnostic_count += lwarns.len()
                         var lwi: ptr_uint = 0
                         while lwi < lwarns.len():
                             let lwp = lwarns.get(lwi) else:
                                 break
                             unsafe:
                                 let lw = read(lwp)
-                                if lw.line == 0:
-                                    stdio.print_format(
-                                        c"%.*s:: %.*s: %.*s\n",
-                                        int<-(lw.path.len), lw.path.data,
-                                        int<-(lw.code.len), lw.code.data,
-                                        int<-(lw.message.len), lw.message.data,
-                                    )
-                                else:
-                                    stdio.print_format(
-                                        c"%.*s:%d: %.*s: %.*s\n",
-                                        int<-(lw.path.len), lw.path.data,
-                                        int<-(lw.line),
-                                        int<-(lw.code.len), lw.code.data,
-                                        int<-(lw.message.len), lw.message.data,
-                                    )
+                                # The host's `check` renders every lint result
+                                # through `ErrorFormatter` (a full block on
+                                # stderr), not the one-line `lint` form, and
+                                # buckets it by severity: warnings and hints
+                                # carry their own counters ("39 warnings; 59
+                                # notes"), so an all-hint file prints no summary.
+                                match lw.severity:
+                                    "warning":
+                                        total_warnings += 1
+                                    "hint":
+                                        total_notes += 1
+                                    "info":
+                                        total_notes += 1
+                                    _:
+                                        total_warnings += 1
+                                print_severity_diagnostic_block(
+                                    lw.path,
+                                    src.as_str(),
+                                    lw.line,
+                                    lw.column,
+                                    lw.length,
+                                    lw.severity,
+                                    lw.code,
+                                    lw.message,
+                                )
                             lwi += 1
-                        total_warnings += lwarns.len()
-                        if total_errors == 0 and warnings == 0:
-                            file_count += 1
                 Result.failure as read_err:
                     var em = read_err.error
                     em.release()
+
+        if file_diagnostic_count == 0:
+            # The host's `elsif module_name` arm: a file with no diagnostics at
+            # all reports its resolved module name.  Prints unless `--quiet`.
+            if not cli_quiet:
+                let module_name = program.root_module_name()
+                stdio.print_format(
+                    c"checked %.*s as %.*s\n",
+                    int<-(source_path.len), source_path.data,
+                    int<-(module_name.len), module_name.data,
+                )
 
         entry_path_owner.release()
         source_root_owner.release()
         fi += 1
 
-    report_check_summary(total_errors, total_warnings, file_count, warnings_as_errors)
+    let _ = terminal.flush_stderr()
+    report_check_summary(total_errors, total_warnings, total_notes, warnings_as_errors)
     if total_errors > 0:
         return 1
     if warnings_as_errors and total_warnings > 0:
@@ -973,6 +1001,17 @@ function print_program_diagnostics(program: ref[loader.Program]) -> ptr_uint:
                 printed_errors += 1
             var block = string.String.create()
             defer: block.release()
+            if rd.code.equal("load/error"):
+                # A whole-file load failure has no position, and the host renders
+                # it as `<message>: <path>` (its `ErrorFormatter` falls back to
+                # the bare message when `line`/`column` are absent).
+                block.append(message)
+                block.append(": ")
+                block.append(location)
+                block.append("\n")
+                let _ = terminal.write_stderr(block.as_str())
+                i += 1
+                continue
             block.append(prefix)
             block.append("[")
             block.append(rd.code)
@@ -1094,6 +1133,113 @@ function print_diagnostic_block(path: str, source: str, line: ptr_uint, column: 
     let _ = terminal.write_stderr(block.as_str())
 
 
+## Stable sort of lint warnings by `[line, column]`, the host's
+## `sort_by_location` for `check` output.  Insertion sort keeps the ties in
+## emission order, as Ruby's stable `sort_by` does.
+function sort_lint_warnings_by_location(warnings: ref[vec.Vec[linter.Warning]]) -> void:
+    var i: ptr_uint = 1
+    while i < warnings.len():
+        let cur_ptr = warnings.get(i) else:
+            break
+        let cur = unsafe: read(cur_ptr)
+        var j = i
+        while j > 0:
+            let prev_ptr = warnings.get(j - 1) else:
+                break
+            let prev = unsafe: read(prev_ptr)
+            if prev.line < cur.line or (prev.line == cur.line and prev.column <= cur.column):
+                break
+            let dst_ptr = warnings.get(j) else:
+                break
+            unsafe:
+                read(dst_ptr) = prev
+            j -= 1
+        let slot_ptr = warnings.get(j) else:
+            break
+        unsafe:
+            read(slot_ptr) = cur
+        i += 1
+
+
+## Render one diagnostic in the host `ErrorFormatter` block form with its own
+## severity label:
+##
+##     warning[code]: message -- path:line:col
+##        |
+##         2 | <source line>
+##           | <caret run>
+##
+## `length` is the caret run length (1 for a single character).  A positionless
+## diagnostic (line 0) renders the host's header line only, with the
+## `path::` shape it uses when there is no `line`/`column`.
+function print_severity_diagnostic_block(
+    path: str,
+    source: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    length: ptr_uint,
+    severity: str,
+    code: str,
+    message: str,
+) -> void:
+    var block = string.String.create()
+    defer: block.release()
+    if line == 0:
+        # The host's `ErrorFormatter` returns the bare message when the
+        # diagnostic carries no `line` — a rule anchored at a positionless node
+        # (a call, binary, or literal scrutinee) prints just its text.
+        block.append(message)
+        block.append("\n")
+        let _ = terminal.write_stderr(block.as_str())
+        return
+    block.append(severity)
+    block.append("[")
+    block.append(code)
+    block.append("]: ")
+    block.append(message)
+    block.append(" -- ")
+    block.append(path)
+    block.append(":")
+    block.append(ptr_uint_to_str(line))
+    block.append(":")
+    block.append(ptr_uint_to_str(column))
+    block.append("\n")
+    if line >= 1:
+        var current_line: ptr_uint = 1
+        var pos: ptr_uint = 0
+        while pos < source.len and current_line < line:
+            if source.byte_at(pos) == 10:
+                current_line += 1
+            pos += 1
+        let line_start = pos
+        while pos < source.len and source.byte_at(pos) != 10:
+            pos += 1
+        let line_end = pos
+        if line_start <= line_end:
+            let source_line = source.slice(line_start, line_end - line_start)
+            var gutter = rjust_line_number(line)
+            defer: gutter.release()
+            block.append("   |\n")
+            block.append(gutter.as_str())
+            block.append(" | ")
+            block.append(source_line)
+            block.append("\n")
+            block.append("      | ")
+            var sp: ptr_uint = 1
+            while sp < column:
+                block.push_byte(32)
+                sp += 1
+            # The host's `ErrorFormatter`: a length of one is a lone `^`, a
+            # longer span is `^` followed by `length-1` tildes.
+            block.push_byte(94)
+            var tildes: ptr_uint = if length > 1: length - 1 else: 0
+            while tildes > 0:
+                block.push_byte(126)
+                tildes -= 1
+            block.append("\n")
+    let _ = terminal.write_stderr(block.as_str())
+
+
 ## Append "<n> <singular|plural>" (e.g. "1 error", "3 errors") to `buf`.
 function append_count_phrase(buf: ref[string.String], n: ptr_uint, singular: str, plural: str) -> void:
     buf.append(ptr_uint_to_str(n))
@@ -1106,11 +1252,18 @@ function append_count_phrase(buf: ref[string.String], n: ptr_uint, singular: str
 
 ## Print the trailing check summary the way the Ruby CLI does: a blank line,
 ## then `<N errors[; M warnings][; K notes]>` plus ` found` when there is at
-## least one error, on stderr (`1 error found`, `2 warnings`).
-function report_check_summary(errors: ptr_uint, warnings: ptr_uint, file_count: ptr_uint, warnings_as_errors: bool) -> void:
+## least one error, on stderr (`1 error found`, `2 warnings`).  A run whose only
+## diagnostics are notes/hints prints no summary at all (the host's
+## `elsif warning_count > 0` gate).
+function report_check_summary(errors: ptr_uint, warnings: ptr_uint, notes: ptr_uint, warnings_as_errors: bool) -> void:
+    if errors == 0 and warnings == 0 and notes == 0:
+        return
+    # The host prints the separator blank line for *any* diagnostic, but the
+    # count line only when there is an error or a warning — a hint-only run
+    # ends with the blank line alone (its `elsif warning_count > 0` gate).
+    eprint_line("")
     if errors == 0 and warnings == 0:
         return
-    eprint_line("")
     var body = string.String.create()
     defer: body.release()
     if errors > 0:
@@ -1119,6 +1272,10 @@ function report_check_summary(errors: ptr_uint, warnings: ptr_uint, file_count: 
         if errors > 0:
             body.append("; ")
         append_count_phrase(ref_of(body), warnings, "warning", "warnings")
+    if notes > 0:
+        if errors > 0 or warnings > 0:
+            body.append("; ")
+        append_count_phrase(ref_of(body), notes, "note", "notes")
     if errors > 0:
         body.append(" found")
     eprint_line(body.as_str())
