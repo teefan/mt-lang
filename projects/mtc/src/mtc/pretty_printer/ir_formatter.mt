@@ -14,6 +14,7 @@ import std.str
 import std.string as string
 import std.fmt as fmt
 
+import mtc.float_text as float_text
 import mtc.ir as ir
 import mtc.semantic.types as types
 
@@ -104,12 +105,6 @@ function long_to_str(value: long) -> str:
 function ptr_uint_to_str(value: ptr_uint) -> str:
     var buf = string.String.create()
     fmt.append_ptr_uint(ref_of(buf), value)
-    return buf.as_str()
-
-
-function double_to_str(value: double) -> str:
-    var buf = string.String.create()
-    fmt.append_double(ref_of(buf), value)
     return buf.as_str()
 
 
@@ -213,7 +208,10 @@ function binding_name(name: str, linkage_name: str) -> str:
 
 
 function render_type(t: types.Type) -> str:
-    return types.type_to_string(t)
+    # The host's IR formatter interpolates its type objects, whose `to_s`
+    # carries the defining module (`examples.sdl3.demo.woodeneye.Player`), not
+    # the LSP/display form.
+    return types.type_to_qualified_string(t)
 
 
 function is_ptr_type(t: types.Type) -> bool:
@@ -759,7 +757,9 @@ function render_expression(ep: ptr[ir.Expr], parent_precedence: int) -> str:
                 # not `-1`).
                 return ptr_uint_to_str(e.value)
             ir.Expr.expr_float_literal as e:
-                return double_to_str(e.value)
+                # Ruby's `Float#to_s`: the shortest decimal that round-trips,
+                # not `sprintf("%g")`'s six significant digits.
+                return float_text.double_to_str(e.value)
             ir.Expr.expr_string_literal as e:
                 if e.cstring:
                     return j2("c", inspect_str(e.value))

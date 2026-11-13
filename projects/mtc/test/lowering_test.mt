@@ -415,8 +415,8 @@ function test_const_aggregate_through_imported_type_alias() -> void:
     var text = irfmt.format_program(ir_program)
     defer: text.release()
     let formatted = text.as_str()
-    expect(formatted.contains_substring("const LITERAL as main_LITERAL: Color = Color(r = 1, g = 2, b = 3, a = 4)"))
-    expect(formatted.contains_substring("const PARSED as main_PARSED: Color = Color(r = 18, g = 3, b = 4, a = 255)"))
+    expect(formatted.contains_substring("const LITERAL as main_LITERAL: raw.Color = raw.Color(r = 1, g = 2, b = 3, a = 4)"))
+    expect(formatted.contains_substring("const PARSED as main_PARSED: raw.Color = raw.Color(r = 18, g = 3, b = 4, a = 255)"))
 
     # The aggregate's type is the alias chain's end (raw.mt's Color), not the
     # naming module, and the interpreted values are typed by the field's type.

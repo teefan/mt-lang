@@ -33,7 +33,7 @@ history.
 | `test/mt` | **60 files / 0 failed** (session 72 on stage2) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **735 match / 0 differ / 4 host-rejected of 739**; counts drift with the tree and `tmp` fixtures) |
-| `sexpr lower` | **683 match / 3 differ / 53 host-rejected / 0 self-rejected of 739 files** (session 72; the baseline tree measures the same 683/3/53/0, so the session-71 "684/2" count was stale — `examples/sdl3/demo/woodeneye.mt` was already differing and is now counted).  The three differ are `memory_stress_test` (leaked auto-lifetime), `main.mt` (`--sexpr` loop guard) and `woodeneye` (a pre-existing double-literal rendering difference in `std/math` constants, present before this session's changes) |
+| `sexpr lower` | **684 match / 2 differ / 53 host-rejected / 0 self-rejected of 739 files** (session 72) — the two differ are the documented `memory_stress_test` (leaked auto-lifetime) and `main.mt` (`--sexpr` loop guard) artifacts.  Session 72 closed the third row (`woodeneye`, hidden in `hostfail`) by fixing `%g` double rendering (now Ruby's round-trip `Float#to_s`), module-qualified named types in IR dumps, and an index literal taking the assignment's element type |
 | `cli:parity` | **92 match / 0 differ / 0 pending** of 92 cases (`--timings` values and `debug`'s Ruby node ids are normalized) |
 | **`check` diagnostics (new)** | **501 agree / 0 verdict / 0 position / 3 message of 504** files (`tools/diag_parity.rb check`; the 3 message rows are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows).  Before this session: 44 verdict, 177 position diffs and a wholly different rendering. |
 | Linter corpus | **632 agree / 3 differ** of 635 (hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  The 3 residual rows are documented self-better/host-artifact rows. |
@@ -113,10 +113,38 @@ The gaps it found, and their fixes:
 5. **`prefer-try` anchored at column 0** instead of the scrutinee's column
    (`linter/linter.mt`).
 
+The same session then closed the last real `lower` residue, which had been
+sitting in the `hostfail` bucket:
+
+6. **`double` rendering used `%g`** — the IR formatter printed six significant
+   digits, so `std/math`'s `PI` dumped `3.14159` where Ruby's `Float#to_s` gives
+   the round-tripping `3.141592653589793`.  `ir_formatter.double_to_str` now
+   delegates to `float_text.double_to_str` (the existing Ruby-compatible
+   renderer, already used by the C backend and the LSP AST dump).
+7. **Named types rendered unqualified in IR dumps** — the host interpolates its
+   type objects, whose `to_s` carries the defining module
+   (`examples.sdl3.demo.woodeneye.Player`); the self used the LSP *display* form
+   (`Player`).  Added `types.type_to_qualified_string` (recursive into nullable
+   / generic / imported arguments) and pointed `render_type` at it.  The display
+   form is untouched — `type_to_string` still drops the module for the LSP and
+   diagnostics, which is what those surfaces need.
+8. **An index literal took the assignment's element type** — `infer_expr`'s
+   `expr_index_access` inferred the index with the ambient
+   `expected_type_hint`, so `state.players[i].color[0] = ubyte<-…` typed that
+   `0` as `ubyte` where the host types every index `int`.  The index is now
+   inferred with the hint cleared (the host's `infer_index_access` passes no
+   expected type).
+
+Result: `lower` **684 match / 2 differ / 53 host-rejected / 0 self-rejected**,
+exactly the two documented host artifacts — Track A's stopping rule.  The three
+files that had been counted as differs are now identical or reduced to the
+documented artifacts; line-level residue on the formerly-differing files fell by
+roughly 1,160 lines.
+
 Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
-683/3/53/0 (identical to the pre-session baseline), lex 739/739, parse
-735/0/4, `cli:parity` 92/92, lint corpus 501/3 of 504 on `std`+`examples`
-(the documented rows).
+684/2/53/0, lex 739/739, parse 735/0/4, `cli:parity` 92/92, `check` diagnostics
+501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
+rows), formatter 739/739 in all three modes.
 
 ## Handoff (session 71)
 
@@ -937,8 +965,9 @@ click-through) remain.
 
 ```
 Continue the Milk Tea self-host work in /home/teefan/Projects/Ruby/mt-lang
-(branch `selfhost`). The parity program is closed (Track H passed, session 71):
-start from this file's Handoff section, not a ranked item. Work in tiers:
+(branch `selfhost`). The parity program is closed (Track H passed; session 72
+closed the analyzer/`check` surface and the last real `lower` residue): start
+from this file's Status at a glance, not a ranked item. Work in tiers:
 iterate on the dev compiler
 (ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev, ~50 s;
 tmp/mtc-dev test projects/mtc -I . --timeout 120), measure only the class you
@@ -968,8 +997,10 @@ host on observable behavior everywhere — `--sexpr` dumps, CLI messages/command
 LSP, DAP, linter, formatter, imported bindings, bindgen — while keeping the
 self-host's documented improvements (malformed-frame recovery, synchronous
 facts, speed, determinism).  **Every track is closed at its documented
-residue (session 71); Track H's final matrix passed.  There is no ranked open
-parity work left; the track sections below are the stopping rules to preserve.**
+residue (session 72); Track H's final matrix passed, and session 72 measured the
+one surface no gate had covered (`check`) and cleared it.  There is no ranked
+open parity work left; the track sections below are the stopping rules to
+preserve.**
 
 Confirmed scope decision: **all** unported CLI subsystems are in scope (`deps`,
 `docs`, wasm/emcc + preview, `--bundle`/`--archive`, `--jobs`, toolchain
@@ -981,7 +1012,7 @@ lines drift.
 ### Track A — `lower` dump parity (CLOSED: 684/2 of 739)
 
 Current set: **684 match / 2 differ / 53 host-rejected / 0 self-rejected of 739
-files** (session 70).  The host-rejected bucket is `external` and platform-pinned
+files** (session 72).  The host-rejected bucket is `external` and platform-pinned
 files; the count drifts with the tree and `tmp` fixtures — quote the set.
 
 The two counted differs are the documented host artifacts, not work:
@@ -992,6 +1023,11 @@ The two counted differs are the documented host artifacts, not work:
 2. **`projects/mtc/src/mtc/main.mt`** — the `--sexpr` loop-guard artifact (the
    dump exceeds the generated C loop guard's UTF-8 scan); documented under
    *Deliberate differences*.
+
+Session 72 also removed the third row that had been hiding in the `hostfail`
+bucket (`examples/sdl3/demo/woodeneye`): `%g` double rendering, unqualified
+named types in IR dumps, and an index literal inheriting the assignment's
+element type.  See the session-72 section.
 
 Track A reached its stopping rule: **0 real differing files**.  Keep lex/parse
 at 0-diff and re-measure both after any lowering-adjacent change.
@@ -1326,11 +1362,6 @@ ones:
   --sexpr` -> rc 134 `loop iteration limit exceeded in str_is_valid_utf8`),
   while only the Ruby host (which has no guard) completes.  Not a parity gap;
   the non-`--sexpr` formatting path completes on both C compilers.
-- **`lower` `examples/sdl3/demo/woodeneye.mt`:** the self renders `std/math`'s
-  `double` constants with 6 significant digits (`PI = 3.14159` where the host
-  prints `3.141592653589793`).  Pre-existing in the constant-dump path (the
-  pre-change tree produces byte-identical output) and previously hidden in the
-  `hostfail` bucket; not introduced by session 72.
 - **`check` diagnostic residue (3 rows, all deliberate):** the new `check` sweep
   (`tools/diag_parity.rb check`) reaches **0 verdict / 0 position** differences
   over `std`+`examples`; its 3 message rows are exactly the `std/cli.mt`
@@ -1418,7 +1449,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `test/mt` | 60 files / 0 failed | session 72 (stage2) | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 71 | `tools/gates.sh --only examples --run` |
 | `sexpr lex` / `parse` | lex 739/739; parse 735 match / 0 differ / 4 host-rejected of 739 (counts include `tmp` fixtures) | session 72 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 683 match / 3 differ / 53 host-rejected / 0 self-rejected of 739 (the 3: documented `memory_stress_test` + `main.mt` artifacts, plus the pre-existing `woodeneye` double-literal row; the session-71 "684/2" was stale — the pre-change baseline measures the same 683/3/53/0) | session 72 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | **684 match / 2 differ / 53 host-rejected / 0 self-rejected** of 739 (the 2 are the documented `memory_stress_test` + `main.mt` artifacts; session 72 closed the third row by fixing double rendering, type qualification and index hinting) | session 72 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | **92 match / 0 differ / 0 pending** of 92 (case-backed; timings and `debug` node ids normalized) | session 72 (stage2) | `ruby tools/cli_parity.rb -q` |
 | **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** (`std`+`examples`; the 3 are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows) | session 72 | `ruby tools/diag_parity.rb check -j 8 std examples`; byte-level: `ruby tools/check_parity.rb` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 71 | `ruby tools/wasm_smoke.rb` |
@@ -1462,10 +1493,10 @@ Gotchas that cost rebuild cycles; apply them before writing code.
 
 ## Risks and notes
 
-- **`lower` regressions:** the track is closed at 684/2/53/0 (the two
-  documented artifacts).  A lowering-adjacent change can still move first
-  differences deeper; re-run the sweep and keep the stopping rule (0 real
-  differ, or a documented host artifact with a reproduction).
+- **`lower` regressions:** the track is closed at 684/2/53/0 (the two documented
+  artifacts).  A lowering-adjacent change can still move first differences
+  deeper; re-run the sweep and keep the stopping rule (0 real differ, or a
+  documented host artifact with a reproduction).
 - **`deps`** is the largest single CLI subsystem (~3,000 lines); keep the port
   mechanical (module-per-file mirroring the Ruby layout) and use the host's
   `test/packages/*` as the spec.

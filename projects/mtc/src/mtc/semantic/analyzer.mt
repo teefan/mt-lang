@@ -5361,7 +5361,14 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 return resolve_member_access(ctx, scope, ma.receiver, ma.member_name, false, ma.line, ma.column)
             ast.Expr.expr_index_access as ix:
                 let rt = infer_expr(ctx, scope, ix.receiver)
+                # An index is an integer position: the host's `infer_index_access`
+                # infers it with no expected type, so the enclosing assignment's
+                # element type must not leak into it (`players[i].color[0] =
+                # ubyte<-…` keeps the `0` an `int`, not a `ubyte`).
+                let index_saved_hint = ctx.expected_type_hint
+                ctx.expected_type_hint = types.Type.ty_error
                 let _ix = infer_expr(ctx, scope, ix.index)
+                ctx.expected_type_hint = index_saved_hint
                 if types.is_raw_pointer(rt) and not in_generic_body(ctx):
                     if ctx.unsafe_depth == 0:
                         report(ctx, 0, 0, "pointer indexing requires unsafe")
