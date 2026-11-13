@@ -42,13 +42,15 @@ history.
 | Formatter | **739/739** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
 | Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 72).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
+| Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
 
 Rough completion against the per-track Definition of Done: **100%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix, wasm,
 docs, the linter corpus, the imported bindings and bindgen reproducibility are
 done, and session 72 added the analyzer/`check` surface that no gate had
 measured.  The only residuals are the documented `tracy` custom-generator
-entry, the optional desktop F5 smoke, and the optional Track G throughput work.
+entry and the optional desktop F5 smoke.  Track G (throughput) closed in session
+72: the self is now faster than the host.
 
 ## Session 72 — the `check`/analyzer surface
 
@@ -165,7 +167,8 @@ What is deliberately not done:
 - a desktop VS Code F5 click-through — the protocol path is covered by
   `tools/dap_async_probe.rb` against the real `lldb-dap`; the headless UI drive
   reproduced the pre-fix timeout and the fix is verified at the wire level;
-- Track G compiler throughput (3.9x self-to-host, behavior-neutral, optional);
+- a *new* Track G item: throughput is closed (the self is now 3.2x faster than
+  the host on `emit-c`); reopen only if a fresh profile shows a hotspot;
 - the documented differences and the lower/linter residue rows
   (*Deliberate differences* — do not chase).
 
@@ -856,7 +859,7 @@ Session-64 third batch (package builds, `--bundle`/`--archive`):
 Iterate cheap, prove once:
 
 - **Tier 1 — per edit.**  Build the dev compiler
-  (`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~50 s)
+  (`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~35 s)
   and run `tmp/mtc-dev test projects/mtc -I . --timeout 120`.  Measure only the
   class you touch: a focused `ruby tools/lint_parity.rb -q <paths>`, a single
   file's host-vs-self diff, `ruby tools/sexpr_parity.rb lower -q <path>` (the
@@ -969,7 +972,7 @@ Continue the Milk Tea self-host work in /home/teefan/Projects/Ruby/mt-lang
 closed the analyzer/`check` surface and the last real `lower` residue): start
 from this file's Status at a glance, not a ranked item. Work in tiers:
 iterate on the dev compiler
-(ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev, ~50 s;
+(ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev, ~35 s;
 tmp/mtc-dev test projects/mtc -I . --timeout 120), measure only the class you
 touch, and run the tier-2 proofs once on frozen sources — `tools/gates.sh`
 prints the set (`--run` executes it, logs in tmp/gates/). Do not replay the
@@ -1302,15 +1305,50 @@ launch success → entry stop → breakpoint stop → frame `main` → locals `x
 evaluate `3`.  The protocol path is closed; a desktop VS Code click-through
 remains an optional manual smoke, not a known gap.
 
-### Track G — compiler throughput (not parity)
+### Track G — compiler throughput (CLOSED: the self is now faster than the host)
 
-The self compiles its own sources in ~157 s (`emit-c` of
-`projects/mtc/src/mtc/main.mt`) where the host takes ~40 s (3.9×); a full
-bootstrap pays it twice.  One profiling session on the self's front-end/lowering/
-C-emit (candidates: repeated analysis/type resolution per module, the
-string-heavy rendering paths, the C emitter's text building) buys every future
-gate several minutes.  Behavior must not change — only wall time; verify with
-`emit-c` timing plus the fixed point.
+**Measured (session 72).**  `perf record` on `emit-c` of
+`projects/mtc/src/mtc/main.mt` put **46.3% of all samples in one function**:
+the `collect_generic_variants` scan, reached through
+`c_backend.expr_result_type` -> `collect_gv_from_expr` -> `collect_gv_from_stmts`.
+The cause was not the scan itself but *where it ran*:
+`find_variant_decl_by_c_name` rebuilt the whole variant lookup - a recursive
+walk of every declaration and expression in the program - **on every call**.
+That function runs once per type registered for an equality helper, so `emit-c`
+was quadratic in program size.
+
+**Fix.**  Build the lookup once in `generate_c` into a new
+`Emitter.variant_decl_by_name` map (`program.variants` plus the concrete
+`Option`/`Result` instances lowering keeps outside the IR), and have
+`find_variant_decl_by_c_name` / `emit_variant_equality_helpers` read it.  The
+duplicate `collect_generic_variants(program)` call in `generate_c` folds into the
+first one, and `emit_variant_equality_helpers` drops its now-unused `program`
+parameter.
+
+**Result.**  C output is byte-identical: diffing the two `emit-c` dumps shows
+zero differences outside the intentionally removed parameter.
+
+| Measure | Before | After | Host |
+| --- | --- | --- | --- |
+| `emit-c` of `main.mt` | 260.6 s | **17.1 s** (15.2x) | 54.3 s |
+| full `build` (incl. `cc`) | n/a | **32.7 s** | 76.3 s |
+| `tools/bootstrap.sh --fast` | ~19 min | **2.6 min** | n/a |
+
+The self now outruns the Ruby host on both measurements (3.2x on `emit-c`,
+2.3x on a full build).  Behavior is unchanged: lower 684/2/53/0, CLI 92/92,
+self-tests 22/0, `test/mt` 60/0, examples 49/49, and the bootstrap fixed point
+holds.
+
+**Probed and deliberately not done.**  The post-fix profile is flat (no symbol
+above 12%).  `String.as_str()` revalidates UTF-8 on every call (~7% of
+`emit-c` self time via `str_is_valid_utf8`, plus part of `str_byte_at`'s 12%).
+Caching validity inside `String` would save ~1-2 s of a 17 s run, but
+`docs/language-design.md` requires the borrowed-text boundary to enforce UTF-8,
+so the check is a documented invariant, not an oversight.  The other visible
+costs (`lowering.find_func_in_source`, `find_imported_analysis`, ~2% each) are
+linear scans over one module's declarations or the program's analyses - the
+collections are small, and caching them would add state for no measured win.
+Nothing further is worth pursuing without a fresh profile showing a hotspot.
 
 ### Track H — final verification (PASSED, session 71)
 
@@ -1466,6 +1504,7 @@ when the tree moved.  Target = the Definition of Done above.
 | DAP | zero differing rows except the documented self-better frame0 row; the async-order F5 probe (`tools/dap_async_probe.rb`) proves launch → breakpoint → frame/locals → evaluate against real `lldb-dap` | session 71 | `ruby tools/dap_smoke.rb` (`--allow-skip` to waive a missing adapter); `ruby tools/dap_async_probe.rb` |
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 | bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 72 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
+| throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
 
 ## Porting notes
 
@@ -1502,8 +1541,9 @@ Gotchas that cost rebuild cycles; apply them before writing code.
   `test/packages/*` as the spec.
 - **emcc** may not be installed here; reproduce the host's detection/error text
   and verify the wasm path where emcc is available.
-- **Throughput prices every gate** (3.9× self-to-host); Track G is optional but
-  pays back across all future sessions.
+- **Throughput is closed** (session 72): the self beats the host on `emit-c`
+  and on a full build, so gates no longer pay a self-host penalty.  Re-profile
+  before reopening Track G.
 - **History:** the full session records were removed from this file; they remain
   at `d8a199c7` and earlier.  If a compact digest of sessions 44–50 is wanted,
   add it in ≤30 lines rather than growing the file.

@@ -45,6 +45,13 @@ struct Emitter:
     used_labels: map_mod.Map[str, bool]
     # Variant C struct names whose equality helpers must be emitted.
     variant_eq_set: map_mod.Map[str, bool]
+    # Variant declarations keyed by C linkage name: `program.variants` plus the
+    # concretely-instantiated `Option`/`Result` instances that lowering keeps
+    # outside the IR's `:variants` section.  Built once per generation so a
+    # lookup does not rescan the whole program (that scan is a recursive walk of
+    # every expression, and it used to run on *every* `find_variant_decl_by_c_name`
+    # call — the dominant cost of `emit-c` on a large program).
+    variant_decl_by_name: map_mod.Map[str, ir.VariantDecl]
     # Struct C struct names whose equality helpers must be emitted.
     struct_eq_set: map_mod.Map[str, bool]
     # Field layouts of external (raw-module ABI) structs registered for equality
@@ -152,6 +159,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
         str_lit_map = map_mod.Map[str, str].create(),
         used_labels = map_mod.Map[str, bool].create(),
         variant_eq_set = map_mod.Map[str, bool].create(),
+        variant_decl_by_name = map_mod.Map[str, ir.VariantDecl].create(),
         struct_eq_set = map_mod.Map[str, bool].create(),
         external_eq_fields = map_mod.Map[str, span[ir.Field]].create(),
         opt_type_set = map_mod.Map[str, types.Type].create(),
@@ -197,6 +205,27 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     var emitted = emitted_functions(program)
     let funcs = emitted.as_span()
 
+    # One variant lookup for the whole generation: `program.variants` plus the
+    # concretely-instantiated `Option`/`Result` instances lowering keeps outside
+    # the IR's `:variants` section.  `collect_generic_variants` walks every
+    # declaration and expression, so it runs exactly once here rather than on
+    # each lookup.
+    var gv_i: ptr_uint = 0
+    while gv_i < program.variants.len:
+        unsafe:
+            let vd = read(program.variants.data + gv_i)
+            e.variant_decl_by_name.set(vd.linkage_name, vd)
+        gv_i += 1
+    var gen_variants = collect_generic_variants(program)
+    gv_i = 0
+    while gv_i < gen_variants.len():
+        let gv_ptr = gen_variants.get(gv_i) else:
+            break
+        unsafe:
+            let vd = read(gv_ptr)
+            e.variant_decl_by_name.set(vd.linkage_name, vd)
+        gv_i += 1
+
     # Pre-scan functions for aggregate equality to know which helpers to emit
     # and whether the str-equality helper is required by a helper body.
     scan_variant_equality(ref_of(e), funcs, program)
@@ -220,7 +249,6 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     let has_str_literals = str_lits.len() > 0
     var checked_index_types = collect_checked_index_types(funcs)
     var checked_span_index_types = collect_checked_span_index_types(funcs)
-    var gen_variants = collect_generic_variants(program)
     var tuple_types = filter_declared_tuple_types(collect_tuple_types(funcs, program, ref_of(gen_variants)), program)
     var opt_structs = collect_opt_struct_decls(program, ref_of(opaques))
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
@@ -554,7 +582,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
 
     if e.variant_eq_set.len() > 0 or e.struct_eq_set.len() > 0:
         emit_equality_forward_decls(ref_of(e), program)
-        emit_variant_equality_helpers(ref_of(e), program)
+        emit_variant_equality_helpers(ref_of(e))
         emit_struct_equality_helpers(ref_of(e), program)
 
     if slice_has_str or slice_has_str_index or slice_has_str_concat or slice_span_types.len() > 0:
@@ -5620,29 +5648,13 @@ function scan_expr_for_variant_eq(e: ref[Emitter], ep: ptr[ir.Expr], program: ir
 ## Emit static `mt_variant_eq_<name>` helper functions for every variant type
 ## registered during the pre-scan.  Each helper compares discriminants first,
 ## then switches on the arm to compare payload fields.
-function emit_variant_equality_helpers(e: ref[Emitter], program: ir.Program) -> void:
-    var var_lookup = map_mod.Map[str, ir.VariantDecl].create()
-    var svi: ptr_uint = 0
-    while svi < program.variants.len:
-        unsafe:
-            let vd = read(program.variants.data + svi)
-            var_lookup.set(vd.linkage_name, vd)
-        svi += 1
-    var gen = collect_generic_variants(program)
-    var gvi: ptr_uint = 0
-    while gvi < gen.len():
-        let gv_ptr = gen.get(gvi) else:
-            break
-        unsafe:
-            let vd = read(gv_ptr)
-            var_lookup.set(vd.linkage_name, vd)
-        gvi += 1
+function emit_variant_equality_helpers(e: ref[Emitter]) -> void:
     var keys = e.variant_eq_set.keys()
     while true:
         let kp = keys.next() else:
             break
         let variant_name = unsafe: read(kp)
-        let vd_ptr = var_lookup.get(variant_name) else:
+        let vd_ptr = e.variant_decl_by_name.get(variant_name) else:
             continue
         let vd = unsafe: read(vd_ptr)
         emit_variant_eq_helper(e, vd)
@@ -5730,7 +5742,7 @@ function register_equality_type(e: ref[Emitter], ty: types.Type, program: ir.Pro
     let cname = c_type(base)
     if cname.len == 0 or cname == "void" or cname == "mt_str":
         return
-    match find_variant_decl_by_c_name(program, cname):
+    match find_variant_decl_by_c_name(e, cname):
         Option.some as vd:
             if not e.variant_eq_set.contains(cname):
                 e.variant_eq_set.set(cname, true)
@@ -5805,27 +5817,14 @@ function equality_fields_for(e: ref[Emitter], program: ir.Program, name: str) ->
     return Option[span[ir.Field]].none
 
 
-function find_variant_decl_by_c_name(program: ir.Program, cname: str) -> Option[ir.VariantDecl]:
-    var i: ptr_uint = 0
-    while i < program.variants.len:
-        unsafe:
-            let vd = read(program.variants.data + i)
-            if vd.linkage_name == cname:
-                return Option[ir.VariantDecl].some(value = vd)
-        i += 1
-    # Concrete Option/Result instances are not in `program.variants`; they are
-    # collected from the types in use.
-    var gen = collect_generic_variants(program)
-    var gi: ptr_uint = 0
-    while gi < gen.len():
-        let gv_ptr = gen.get(gi) else:
-            break
-        unsafe:
-            let vd = read(gv_ptr)
-            if vd.linkage_name == cname:
-                return Option[ir.VariantDecl].some(value = vd)
-        gi += 1
-    return Option[ir.VariantDecl].none
+## Look a variant up by C linkage name in the generation-wide
+## `variant_decl_by_name` map (built once in `generate_c`).  It covers
+## `program.variants` and the concretely-instantiated `Option`/`Result` instances
+## lowering keeps outside the IR's `:variants` section.
+function find_variant_decl_by_c_name(e: ref[Emitter], cname: str) -> Option[ir.VariantDecl]:
+    let vd_ptr = e.variant_decl_by_name.get(cname) else:
+        return Option[ir.VariantDecl].none
+    return Option[ir.VariantDecl].some(value = unsafe: read(vd_ptr))
 
 
 function find_struct_decl_by_c_name(program: ir.Program, cname: str) -> Option[ir.StructDecl]:
@@ -5848,7 +5847,7 @@ function equality_helpers_need_str(e: ref[Emitter], program: ir.Program) -> bool
         let kp = keys.next() else:
             break
         let name = unsafe: read(kp)
-        match find_variant_decl_by_c_name(program, name):
+        match find_variant_decl_by_c_name(e, name):
             Option.some as vd:
                 var ai: ptr_uint = 0
                 while ai < vd.value.arms.len:

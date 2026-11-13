@@ -91,7 +91,7 @@ self-hosted compiler, and matching the host everywhere is the program's goal.
   `git diff --name-only` (or `--areas`), prints it, and `--run` executes it in order
   (each gate logs to `tmp/gates/<id>.log`; hard gates stop the run, meters continue).
   - **Tier 1 — per edit / per workstream (minutes)**: rebuild the dev compiler
-    (`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~50 s), run
+    (`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~35 s), run
     `tmp/mtc-dev test projects/mtc -I . --timeout 120`, and measure **only the class you
     touched** — a focused `ruby tools/lint_parity.rb -q <paths>`, one file's host-vs-self
     lint diff, `tmp/diag_probe.rb`, `ruby tools/sexpr_parity.rb lex|parse -q
