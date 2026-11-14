@@ -203,6 +203,8 @@
     "loader.package_manifest": "package_manifest",
     "loader.path_resolver": "resolver",
     "lowering.async": "async_mod",
+    "lowering.comptime": "comptime",
+    "lowering.comptime_types": "comptime_types",
     "lowering.lowering": "lowering",
     "lowering.proc_renumber": "proc_renumber",
     "lowering.utils": "utils",
@@ -299,7 +301,7 @@
       "projects/mtc/src/mtc/lowering/async.mt:322:function:bool_type",
       "projects/mtc/src/mtc/lowering/async.mt:326:function:int_type",
       "projects/mtc/src/mtc/lowering/async.mt:330:function:void_type",
-      "projects/mtc/src/mtc/lowering/lowering.mt:42:struct:LoweringError",
+      "projects/mtc/src/mtc/lowering/lowering.mt:44:struct:LoweringError",
       "projects/mtc/src/mtc/lsp/navigation.mt:750:function:analysis_for_document",
       "projects/mtc/src/mtc/lsp/navigation.mt:761:function:ast_for_document",
       "projects/mtc/src/mtc/lsp/protocol.mt:108:function:read_message",
@@ -334,8 +336,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 787,
-    "duplicated_lines": 5230,
+    "windows": 789,
+    "duplicated_lines": 5256,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -478,6 +480,7 @@
       "30c855a8a2b2019f284a4f37f09641d91ee675ff",
       "315f578721094d30ed842380b012043b084b6675",
       "31e1cf643d4dc702fa4e8fb7129719a64a3d5085",
+      "3202eabdb3af5c5f9a5468555f2cc3f2ce912844",
       "3345a32d07242db81db5b0fcd770098a9c7678d4",
       "3347098fce9262651b389050942b3fdf37e6586d",
       "33b3397788019bb6825ca0dea5f2fa412ca97dc4",
@@ -639,6 +642,7 @@
       "6442893fd2feef89082d6f048fab0b553165e014",
       "64ac5e1abd5f055186f2ddbd501e66d8056d94c4",
       "64fcbb4095f2f72a5cf38747e1251e3b596e209f",
+      "652355af9a0bfed1c1d386ac400555b59ad9451d",
       "6593c1e72ccb9629e2b8fb41c934cc1946638801",
       "65a627a64227afe4e4d126a3ab41f2723ed567a4",
       "65dfce7261dd2769048b39f943bcbf033564f10c",
@@ -1127,7 +1131,7 @@
     ]
   },
   "sizes": {
-    "total_code": 122956,
+    "total_code": 123024,
     "functions_over_limit": 35,
     "files_over_limit": 12,
     "files": {
@@ -1408,10 +1412,10 @@
         "max_function": 5
       },
       "projects/mtc/src/mtc/loader/module_loader.mt": {
-        "lines": 1785,
-        "code": 1338,
-        "max_line": 256,
-        "max_function": 192
+        "lines": 1807,
+        "code": 1352,
+        "max_line": 297,
+        "max_function": 193
       },
       "projects/mtc/src/mtc/loader/package_manifest.mt": {
         "lines": 610,
@@ -1431,9 +1435,21 @@
         "max_line": 136,
         "max_function": 63
       },
+      "projects/mtc/src/mtc/lowering/comptime.mt": {
+        "lines": 1553,
+        "code": 1330,
+        "max_line": 259,
+        "max_function": 66
+      },
+      "projects/mtc/src/mtc/lowering/comptime_types.mt": {
+        "lines": 27,
+        "code": 17,
+        "max_line": 76,
+        "max_function": 0
+      },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 31017,
-        "code": 23714,
+        "lines": 29518,
+        "code": 22421,
         "max_line": 817,
         "max_function": 909
       },

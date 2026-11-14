@@ -31,6 +31,8 @@ import mtc.parser.ast as ast
 import mtc.parser.literal_parsing as lparse
 import mtc.c_naming as naming
 import mtc.lowering.async as async_mod
+import mtc.lowering.comptime as comptime
+import mtc.lowering.comptime_types as comptime_types
 import mtc.lowering.utils as utils
 import mtc.lowering.proc_renumber as proc_renumber
 import mtc.strings
@@ -192,7 +194,7 @@ struct HoistSaved:
     array_exempt: ptr[ast.Expr]?
 
 
-struct LoweringContext:
+public struct LoweringContext:
     module_name: str
     analysis: analyzer.Analysis
     # True while lowering the program's root module: the root async `main`'s
@@ -340,7 +342,7 @@ struct LoweringContext:
     event_error_emitted: bool
     # Active comptime element during inline for unrolling — used by lower_expr to
     # substitute loop variable member accesses (.type, .value) with known values.
-    inline_for_element: Option[ComptimeElement]
+    inline_for_element: Option[comptime_types.ComptimeElement]
     # Stack of pending `defer` cleanup groups, one per open lexical block during
     # function-body lowering.  `defer` appends its lowered cleanup to the top
     # group; block exit and `return` flush the groups (innermost-first, each in
@@ -1029,7 +1031,7 @@ function find_func_in_source(sf: ast.SourceFile, name: str) -> Option[ast.Decl]:
 ## Find an imported module's analysis by its module name.  The `program_analyses`
 ## span is in dependency-first order; returns the first analysis whose
 ## `module_name` matches.
-function find_imported_analysis(ctx: ref[LoweringContext], module_name: str) -> Option[analyzer.Analysis]:
+public function find_imported_analysis(ctx: ref[LoweringContext], module_name: str) -> Option[analyzer.Analysis]:
     var i: ptr_uint = 0
     while i < ctx.program_analyses.len:
         var a: analyzer.Analysis
@@ -1264,7 +1266,7 @@ function create_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[
         pending_tuple_linkages = map_mod.Map[str, bool].create(),
         subscription_emitted = false,
         event_error_emitted = false,
-        inline_for_element = Option[ComptimeElement].none,
+        inline_for_element = Option[comptime_types.ComptimeElement].none,
         defer_stack = vec.Vec[DeferGroup].create(),
         hoist_mode = HoistMode.hm_off,
         hoist_stmts = vec.Vec[ir.Stmt].create(),
@@ -1882,7 +1884,7 @@ function append_selected_when_decls(ctx: ref[LoweringContext], discriminant: ptr
                 let br = unsafe: read(branches.data + bi)
                 match try_evaluate_const_expr(ctx, br.pattern):
                     Option.some as pv:
-                        if const_values_eq(dv.value, pv.value):
+                        if comptime.const_values_eq(dv.value, pv.value):
                             var ddi: ptr_uint = 0
                             while ddi < br.body.len:
                                 unsafe:
@@ -2141,7 +2143,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                                         # (an expression-list or call constant) emits a
                                         # tuple constant as an `IR::ArrayLiteral`.
                                         if const_value_literal_path:
-                                            match const_tuple_array_literal(c_val, c_ty):
+                                            match comptime.const_tuple_array_literal(c_val, c_ty):
                                                 Option.some as al:
                                                     c_val = al.value
                                                 Option.none:
@@ -2161,7 +2163,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                                             # falls back to rewriting the imported constant
                                             # reference to its declaration initializer and
                                             # lowering that AST with the expected type.
-                                            if not const_value_ir_representable(ctx, c_val, c_ty):
+                                            if not comptime.const_value_ir_representable(ctx, c_val, c_ty):
                                                 match lower_imported_const_initializer(ctx, unsafe: ptr[ast.Expr]<-val_ptr, c_ty):
                                                     Option.some as iv:
                                                         c_val = unsafe: read(iv.value)
@@ -2615,7 +2617,29 @@ function collect_includes(program: loader.Program) -> span[ir.Include]:
     if program.analyses.len() > 0:
         let a_ptr = program.analyses.get(program.root_index) else:
             fatal(c"collect_includes: root analysis missing")
-        emit_raw_module_includes(ref_of(by_name), ref_of(include_visited), ref_of(includes), ref_of(seen), unsafe: read(a_ptr).module_name)
+        let root_name = unsafe: read(a_ptr).module_name
+        if program.cycle_module_names.len() > 0:
+            # The host checks cycle members (and their acyclic dependencies)
+            # before the root's remaining closure, so their raw-module
+            # directives are inserted first.  Reproduce that insertion order:
+            # each cycle member's dependency closure (cycle edges skipped, as
+            # the host's forward bindings do), then the root's closure.
+            var cycle_set = map_mod.Map[str, bool].create()
+            var ci: ptr_uint = 0
+            while ci < program.cycle_module_names.len():
+                let name_ptr = program.cycle_module_names.get(ci) else:
+                    break
+                cycle_set.set(unsafe: read(name_ptr), true)
+                ci += 1
+            ci = 0
+            while ci < program.cycle_module_names.len():
+                let name_ptr = program.cycle_module_names.get(ci) else:
+                    break
+                emit_ordered_raw_includes(ref_of(by_name), ref_of(cycle_set), ref_of(include_visited), ref_of(includes), ref_of(seen), unsafe: read(name_ptr))
+                ci += 1
+            emit_ordered_raw_includes(ref_of(by_name), ref_of(cycle_set), ref_of(include_visited), ref_of(includes), ref_of(seen), root_name)
+        else:
+            emit_raw_module_includes(ref_of(by_name), ref_of(include_visited), ref_of(includes), ref_of(seen), root_name)
 
     return includes.as_span()
 
@@ -2641,6 +2665,37 @@ function emit_raw_module_includes(by_name: ref[map_mod.Map[str, analyzer.Analysi
             _:
                 pass
         i += 1
+    emit_raw_directives(analysis, includes, seen)
+
+
+## The cycle-aware variant of `emit_raw_module_includes`: cycle members are
+## skipped on the recursive walk (the host's forward bindings), and each cycle
+## member's own closure is walked separately before the root's.  `visited` is
+## the analysis insertion order, not just a dedup set.
+function emit_ordered_raw_includes(by_name: ref[map_mod.Map[str, analyzer.Analysis]], cycle_set: ref[map_mod.Map[str, bool]], visited: ref[map_mod.Map[str, bool]], includes: ref[vec.Vec[ir.Include]], seen: ref[map_mod.Map[str, bool]], name: str) -> void:
+    if visited.contains(name):
+        return
+    visited.set(name, true)
+    let ap = by_name.get(name) else:
+        return
+    let analysis = unsafe: read(ap)
+    var i: ptr_uint = 0
+    while i < analysis.source_file.imports.len:
+        var import_decl: ast.Decl
+        unsafe:
+            import_decl = read(analysis.source_file.imports.data + i)
+        match import_decl:
+            ast.Decl.decl_import as imported:
+                let dep = analyzer.qname_to_str(imported.path)
+                if not cycle_set.contains(dep):
+                    emit_ordered_raw_includes(by_name, cycle_set, visited, includes, seen, dep)
+            _:
+                pass
+        i += 1
+    emit_raw_directives(analysis, includes, seen)
+
+
+function emit_raw_directives(analysis: analyzer.Analysis, includes: ref[vec.Vec[ir.Include]], seen: ref[map_mod.Map[str, bool]]) -> void:
     if is_raw_module(analysis.module_kind):
         var di: ptr_uint = 0
         while di < analysis.directives.len:
@@ -5625,7 +5680,7 @@ function find_imported_opaque_decl(ctx: ref[LoweringContext], module_name: str, 
     return false
 
 
-function qualify_type(ctx: ref[LoweringContext], t: types.Type) -> types.Type:
+public function qualify_type(ctx: ref[LoweringContext], t: types.Type) -> types.Type:
     match t:
         types.Type.ty_named as n:
             if is_raw_type_param_name(n.name):
@@ -6224,7 +6279,7 @@ function dyn_type_args(ctx: ref[LoweringContext], qn: ast.QualifiedName) -> span
 ## `span[T]` / `ptr[T]` / `const_ptr[T]` / `ref[T]` as generic instances.  Returns
 ## `ty_error` only for truly unresolvable forms, and `dyn`/`ty_error` for scalar
 ## type refs; callers should fall back to the analyzer's inferred type.
-function resolve_type_ref(ctx: ref[LoweringContext], tp: ptr[ast.TypeRef]) -> types.Type:
+public function resolve_type_ref(ctx: ref[LoweringContext], tp: ptr[ast.TypeRef]) -> types.Type:
     unsafe:
         let t = read(tp)
         if t.is_fn or t.is_proc:
@@ -6483,7 +6538,7 @@ function resolve_array_length_type(ctx: ref[LoweringContext], tp: ptr[ast.TypeRe
         # A module-level integer constant used as a length: fold to its value.
         let const_ptr = ctx.analysis.const_values.get(text)
         if const_ptr != null:
-            return types.literal_int(const_eval_int(ctx, unsafe: read(const_ptr)))
+            return types.literal_int(comptime.const_eval_int(ctx, unsafe: read(const_ptr)))
         return types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = text)
     # A module-qualified constant (`array[b3.BodyId, human.BONE_COUNT]`): fold it
     # through the alias's module, evaluating the constant's value expression in
@@ -6780,7 +6835,7 @@ function is_numeric_const_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> 
     match try_evaluate_const_expr(ctx, ep):
         Option.some as value:
             match value.value:
-                ConstValue.cv_int:
+                comptime_types.ConstValue.cv_int:
                     return true
                 _:
                     return false
@@ -7021,7 +7076,7 @@ function lower_custom_iter_for(ctx: ref[LoweringContext], output: ref[vec.Vec[ir
     ctx.loop_defer_depth = saved_loop_depth
 
 
-function array_length_of(t: types.Type) -> long:
+public function array_length_of(t: types.Type) -> long:
     match t:
         types.Type.ty_generic as g:
             if g.args.len == 2:
@@ -7046,7 +7101,7 @@ function lower_array_as_span(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
     # from the declaration's type annotation.
     var length = array_length_of(array_ty)
     if length == 0:
-        length = const_array_length(ctx, receiver)
+        length = comptime.const_array_length(ctx, receiver)
     let recv = lower_expr(ctx, receiver)
     let zero_index = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))
     # The host's `lower_array_to_span_expression` uses a plain `IR::Index` for
@@ -7176,32 +7231,6 @@ function lower_with_call(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], rec
         fields.push(ir.AggregateField(name = fname, value = fval))
         fi += 1
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = recv_ty, fields = fields.as_span()))
-
-
-## Recover the declared length of a const/var array referenced by `receiver` by
-## resolving its declaration's type annotation.  Returns 0 when the receiver is
-## not a module-level const/var array identifier.
-function const_array_length(ctx: ref[LoweringContext], receiver: ptr[ast.Expr]) -> long:
-    var name: str
-    unsafe:
-        match read(receiver):
-            ast.Expr.expr_identifier as id:
-                name = id.name
-            _:
-                return 0
-    var di: ptr_uint = 0
-    while di < ctx.analysis.source_file.declarations.len:
-        var d: ast.Decl
-        unsafe:
-            d = read(ctx.analysis.source_file.declarations.data + di)
-        match d:
-            ast.Decl.decl_const as c:
-                if c.name == name:
-                    return array_length_of(resolve_type_ref(ctx, c.const_type))
-            _:
-                pass
-        di += 1
-    return 0
 
 
 # =============================================================================
@@ -8868,7 +8897,7 @@ function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[ir.Expr
                 match ctx.inline_for_element:
                     Option.some as ce:
                         match ce.value:
-                            ComptimeElement.ce_struct_field as sf:
+                            comptime_types.ComptimeElement.ce_struct_field as sf:
                                 field_name = sf.name
                             _:
                                 pass
@@ -10330,7 +10359,7 @@ function soa_member_array_type(ctx: ref[LoweringContext], soa_ty: types.Type, fi
                 let count_ty = unsafe: read(g.args.data + 1)
                 match count_ty:
                     types.Type.ty_literal_int as lit:
-                        match comptime_lookup_struct_fields(ctx, nominal_type_name(elem_ty)):
+                        match comptime.comptime_lookup_struct_fields(ctx, nominal_type_name(elem_ty)):
                             Option.some as fields:
                                 var fi: ptr_uint = 0
                                 while fi < fields.value.len:
@@ -10360,7 +10389,7 @@ function soa_field_type(ctx: ref[LoweringContext], soa_ty: types.Type, field_nam
                 let elem_ty = unsafe: read(g.args.data + 0)
                 # The element may be module-qualified (`ty_imported`) or a bare
                 # named struct; search the current module and the program.
-                match comptime_lookup_struct_fields(ctx, nominal_type_name(elem_ty)):
+                match comptime.comptime_lookup_struct_fields(ctx, nominal_type_name(elem_ty)):
                     Option.some as fields:
                         var fi: ptr_uint = 0
                         while fi < fields.value.len:
@@ -10388,7 +10417,7 @@ function generic_first_arg(t: types.Type) -> types.Type:
 
 ## The result type carried by a lowered IR expression (used to recover a local's
 ## type when the analyzer left it unresolved, e.g. `span[T](...)` construction).
-function ir_expr_type(ep: ptr[ir.Expr]) -> types.Type:
+public function ir_expr_type(ep: ptr[ir.Expr]) -> types.Type:
     unsafe:
         match read(ep):
             ir.Expr.expr_name as x:
@@ -16960,7 +16989,7 @@ function contextual_numeric_cast(
                     match try_evaluate_const_expr(ctx, value_ast):
                         Option.some as cv:
                             match cv.value:
-                                ConstValue.cv_int as iv:
+                                comptime_types.ConstValue.cv_int as iv:
                                     if numeric_int_fits_context(iv.value, context_ty):
                                         return cast_to_type(value, context_ty)
                                 _:
@@ -19995,7 +20024,7 @@ function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
 ## emitted declaration (keyed by concrete C name), auto-dereferencing a pointer
 ## or ref receiver.  Returns none for non-generic structs (handled by the
 ## analyzer's recorded member type) or unknown fields.
-function concrete_field_type(ctx: ref[LoweringContext], recv_ty: types.Type, member: str) -> Option[types.Type]:
+public function concrete_field_type(ctx: ref[LoweringContext], recv_ty: types.Type, member: str) -> Option[types.Type]:
     var base = recv_ty
     if types.is_nullable_type(base):
         base = types.unwrap_nullable(base)
@@ -20734,7 +20763,7 @@ function lower_enum_decl(ctx: ref[LoweringContext], name: str, backing_type: ptr
             # expected type); a flags/enum-member expression keeps its own type.
             coerced = retag_pure_integer_const(coerced, backing)
             value_expr = alloc_expr(coerced)
-            next_auto = const_eval_int(ctx, explicit) + 1
+            next_auto = comptime.const_eval_int(ctx, explicit) + 1
         else:
             value_expr = alloc_expr(ir.Expr.expr_integer_literal(value = next_auto, ty = backing))
             next_auto += 1
@@ -20748,79 +20777,6 @@ function lower_enum_decl(ctx: ref[LoweringContext], name: str, backing_type: ptr
         members = ir_members.as_span(),
         is_flags = is_flags,
     )
-
-
-## Compile-time integer evaluation for enum/flags member values and array-length
-## constants (literals, other integer constants by name, plus the
-## arithmetic/bitwise/shift operators).  A bare `expr_identifier` resolves
-## through `ctx.analysis.const_values`, so a length like `WIDTH * HEIGHT` (each a
-## module-level `const int`) folds to its product instead of 0.
-function const_eval_int(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> long:
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_integer_literal as lit:
-                return long<-lit.value
-            ast.Expr.expr_char_literal as ch:
-                return long<-ch.value
-            ast.Expr.expr_identifier as id:
-                let const_ptr = ctx.analysis.const_values.get(id.name)
-                if const_ptr != null:
-                    return const_eval_int(ctx, read(const_ptr))
-                return 0
-            ast.Expr.expr_unary_op as un:
-                let v = const_eval_int(ctx, un.operand)
-                if un.operator == "-":
-                    return -v
-                if un.operator == "~":
-                    return ~v
-                return v
-            ast.Expr.expr_binary_op as bin:
-                let l = const_eval_int(ctx, bin.left)
-                let r = const_eval_int(ctx, bin.right)
-                if bin.operator == "+":
-                    return l + r
-                if bin.operator == "-":
-                    return l - r
-                if bin.operator == "*":
-                    return l * r
-                if bin.operator == "/":
-                    return l / r
-                if bin.operator == "%":
-                    return l % r
-                if bin.operator == "<<":
-                    return l << r
-                if bin.operator == ">>":
-                    return l >> r
-                if bin.operator == "|":
-                    return l | r
-                if bin.operator == "&":
-                    return l & r
-                if bin.operator == "^":
-                    return l ^ r
-                return 0
-            ast.Expr.expr_sizeof as sz:
-                let target = resolve_type_ref(ctx, sz.target_type)
-                match layout_size(ctx, target):
-                    Option.some as v:
-                        return v.value
-                    Option.none:
-                        return 0
-            ast.Expr.expr_alignof as al:
-                let target = resolve_type_ref(ctx, al.target_type)
-                match layout_alignment(ctx, target):
-                    Option.some as v:
-                        return v.value
-                    Option.none:
-                        return 0
-            ast.Expr.expr_offsetof as off:
-                let target = resolve_type_ref(ctx, off.target_type)
-                match layout_offset_of(ctx, target, off.field):
-                    Option.some as v:
-                        return v.value
-                    Option.none:
-                        return 0
-            _:
-                return 0
 
 
 ## Option-returning compile-time integer evaluation for static_assert folding:
@@ -23013,7 +22969,7 @@ function fallback_type_raw(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> type
                 return types.Type.ty_error
 
 
-function is_comparison_operator(op: str) -> bool:
+public function is_comparison_operator(op: str) -> bool:
     return (
         op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">="
         or op == "and" or op == "or"
@@ -23672,7 +23628,7 @@ function find_qualified_constant(ctx: ref[LoweringContext], name: str) -> Option
 #  IR allocation
 # =============================================================================
 
-function alloc_expr(value: ir.Expr) -> ptr[ir.Expr]:
+public function alloc_expr(value: ir.Expr) -> ptr[ir.Expr]:
     var node = heap_mod.must_alloc[ir.Expr](1)
     unsafe:
         read(node) = value
@@ -23990,7 +23946,7 @@ function ast_expr_cstr_backed(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> b
                         match try_evaluate_const_expr(ctx, ep):
                             Option.some as cv:
                                 match cv.value:
-                                    ConstValue.cv_str:
+                                    comptime_types.ConstValue.cv_str:
                                         return true
                                     _:
                                         return false
@@ -24873,13 +24829,6 @@ function fmt_append_helper_name(expr: ptr[ir.Expr]) -> str:
 #  Compile-time evaluation and lowering (when, inline if, inline match)
 # =============================================================================
 
-## A compile-time constant value: integer, boolean, string, or type.
-variant ConstValue:
-    cv_int(value: long)
-    cv_bool(value: bool)
-    cv_str(value: str)
-    cv_type(ty: types.Type)
-
 
 ## Lower a `when` statement: evaluate the discriminant at compile time,
 ## find the matching branch, and only emit that branch's body.
@@ -24893,7 +24842,7 @@ function lower_when_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]
                     br = read(branches.data + i)
                 match try_evaluate_const_expr(ctx, br.pattern):
                     Option.some as pv:
-                        if const_values_equal(val.value, pv.value):
+                        if comptime.const_values_equal(val.value, pv.value):
                             lower_span_stmts(ctx, output, br.body)
                             return
                     Option.none:
@@ -24921,7 +24870,7 @@ function lower_inline_if_statement(ctx: ref[LoweringContext], output: ref[vec.Ve
         match try_evaluate_const_expr(ctx, br.condition):
             Option.some as val:
                 match val.value:
-                    ConstValue.cv_bool as bv:
+                    comptime_types.ConstValue.cv_bool as bv:
                         if bv.value:
                             lower_block_stmts(ctx, output, br.body)
                             return
@@ -24958,7 +24907,7 @@ function lower_inline_match_statement(ctx: ref[LoweringContext], output: ref[vec
                     return
                 match try_evaluate_const_expr(ctx, pattern_ptr):
                     Option.some as pv:
-                        if const_values_equal(val.value, pv.value):
+                        if comptime.const_values_equal(val.value, pv.value):
                             if arm.body != null:
                                 unsafe:
                                     lower_block_stmts(ctx, output, ptr[ast.Stmt]<-arm.body)
@@ -24983,7 +24932,7 @@ function lower_inline_while(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.St
         match try_evaluate_const_expr(ctx, condition):
             Option.some as val:
                 match val.value:
-                    ConstValue.cv_bool as bv:
+                    comptime_types.ConstValue.cv_bool as bv:
                         if not bv.value:
                             return
                     _:
@@ -25007,13 +24956,13 @@ function lower_inline_for_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir
     var first_iterable: ast.Expr
     unsafe:
         first_iterable = read(iterables.data + 0)
-    match comptime_iterable_elements(ctx, ptr_of(first_iterable)):
+    match comptime.comptime_iterable_elements(ctx, ptr_of(first_iterable)):
         Option.some as elements:
             var i: ptr_uint = 0
             while i < elements.value.len:
                 let bp = body_ptr
                 if bp != null:
-                    var elem: ComptimeElement
+                    var elem: comptime_types.ComptimeElement
                     unsafe:
                         elem = read(elements.value.data + i)
                     # For struct fields: check if the body is a type-guard pattern
@@ -25022,129 +24971,6 @@ function lower_inline_for_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir
                 i += 1
         Option.none:
             pass
-
-
-## Extract the compile-time iterable for known comptime builtins (fields_of,
-## members_of) as a span of struct-field or enum-member info pairs.
-## Returns none for unrecognised expressions.
-variant ComptimeElement:
-    ce_struct_field(name: str, field_type: types.Type)
-    ce_enum_member(name: str, member_value: long)
-    ce_attribute
-
-
-function comptime_iterable_elements(ctx: ref[LoweringContext], iterable: ptr[ast.Expr]) -> Option[span[ComptimeElement]]:
-    unsafe:
-        match read(iterable):
-            ast.Expr.expr_call as call:
-                match read(call.callee):
-                    ast.Expr.expr_identifier as id:
-                        if id.name == "fields_of" and call.args.len == 1:
-                            return comptime_fields_of(ctx, call.args.data + 0)
-                        if id.name == "members_of" and call.args.len == 1:
-                            return comptime_members_of(ctx, call.args.data + 0)
-                        if id.name == "attributes_of" and call.args.len >= 1:
-                            return comptime_attributes_of(ctx, call.args)
-                    _:
-                        pass
-            _:
-                pass
-    return Option[span[ComptimeElement]].none
-
-
-function comptime_fields_of(ctx: ref[LoweringContext], args_data: ptr[ast.Argument]) -> Option[span[ComptimeElement]]:
-    let type_name: str = comptime_resolve_type_arg_name(ctx, args_data)
-    if type_name.len == 0:
-        return Option[span[ComptimeElement]].none
-    let entries = comptime_lookup_struct_fields(ctx, type_name) else:
-        return Option[span[ComptimeElement]].none
-    var elements = vec.Vec[ComptimeElement].create()
-    var ei: ptr_uint = 0
-    while ei < entries.len:
-        var entry: analyzer.FieldEntry
-        unsafe:
-            entry = read(entries.data + ei)
-        elements.push(ComptimeElement.ce_struct_field(name = entry.name, field_type = qualify_type(ctx, entry.ty)))
-        ei += 1
-    return Option[span[ComptimeElement]].some(value = elements.as_span())
-
-
-## Look up a struct's field list by name, searching the current module first and
-## then every program analysis.  Cross-module search lets a generic reflective
-## helper defined in one module (e.g. `std.fmt.format_value[T]`) reflect over a
-## struct type defined in another module.
-function comptime_lookup_struct_fields(ctx: ref[LoweringContext], type_name: str) -> Option[span[analyzer.FieldEntry]]:
-    let local = ctx.analysis.structs.get(type_name)
-    if local != null:
-        return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(local))
-    var i: ptr_uint = 0
-    while i < ctx.program_analyses.len:
-        var a: analyzer.Analysis
-        unsafe:
-            a = read(ctx.program_analyses.data + i)
-        let p = a.structs.get(type_name)
-        if p != null:
-            return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(p))
-        i += 1
-    return Option[span[analyzer.FieldEntry]].none
-
-
-function comptime_members_of(ctx: ref[LoweringContext], args_data: ptr[ast.Argument]) -> Option[span[ComptimeElement]]:
-    let type_name: str = comptime_resolve_type_arg_name(ctx, args_data)
-    if type_name.len == 0:
-        return Option[span[ComptimeElement]].none
-    let names = comptime_lookup_member_names(ctx, type_name) else:
-        return Option[span[ComptimeElement]].none
-    var elements = vec.Vec[ComptimeElement].create()
-    var ni: ptr_uint = 0
-    while ni < names.len:
-        var member_name: str
-        unsafe:
-            member_name = read(names.data + ni)
-        let mv = comptime_enum_member_value(ctx, type_name, member_name)
-        elements.push(ComptimeElement.ce_enum_member(name = member_name, member_value = mv))
-        ni += 1
-    return Option[span[ComptimeElement]].some(value = elements.as_span())
-
-
-## Look up an enum/variant's member names by type name, searching the current
-## module first and then every program analysis, so `members_of(alias.Enum)`
-## reflects an enum declared in another module.
-function comptime_lookup_member_names(ctx: ref[LoweringContext], type_name: str) -> Option[span[str]]:
-    let local = ctx.analysis.match_case_names.get(type_name)
-    if local != null:
-        return Option[span[str]].some(value = unsafe: read(local))
-    var i: ptr_uint = 0
-    while i < ctx.program_analyses.len:
-        var a: analyzer.Analysis
-        unsafe:
-            a = read(ctx.program_analyses.data + i)
-        let p = a.match_case_names.get(type_name)
-        if p != null:
-            return Option[span[str]].some(value = unsafe: read(p))
-        i += 1
-    return Option[span[str]].none
-
-
-## Look up the integer value of an enum member by scanning the source file of the
-## analysis that declares the enum (searched program-wide).
-function comptime_enum_member_value(ctx: ref[LoweringContext], type_name: str, member_name: str) -> long:
-    var fi: ptr_uint = 0
-    while fi <= ctx.program_analyses.len:
-        var file: ast.SourceFile
-        unsafe:
-            if fi == 0:
-                file = ctx.analysis.source_file
-            else:
-                file = read(ctx.program_analyses.data + (fi - 1)).source_file
-        let found = enum_member_value_in_file(ctx, file, type_name, member_name)
-        match found:
-            Option.some as v:
-                return v.value
-            Option.none:
-                pass
-        fi += 1
-    return 0
 
 
 ## The value of `type_name.member_name` in the module that declares the enum —
@@ -25193,7 +25019,7 @@ function enum_member_value_of_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr])
                 return Option[long].none
 
 
-function enum_member_value_in_file(ctx: ref[LoweringContext], file: ast.SourceFile, type_name: str, member_name: str) -> Option[long]:
+public function enum_member_value_in_file(ctx: ref[LoweringContext], file: ast.SourceFile, type_name: str, member_name: str) -> Option[long]:
     var di: ptr_uint = 0
     while di < file.declarations.len:
         var d: ast.Decl
@@ -25214,7 +25040,7 @@ function enum_member_value_in_file(ctx: ref[LoweringContext], file: ast.SourceFi
                                 match try_evaluate_const_expr(ctx, vp):
                                     Option.some as cv_val:
                                         match cv_val.value:
-                                            ConstValue.cv_int as iv:
+                                            comptime_types.ConstValue.cv_int as iv:
                                                 auto_val = iv.value
                                             _:
                                                 pass
@@ -25231,113 +25057,19 @@ function enum_member_value_in_file(ctx: ref[LoweringContext], file: ast.SourceFi
     return Option[long].none
 
 
-function comptime_attributes_of(ctx: ref[LoweringContext], args: span[ast.Argument]) -> Option[span[ComptimeElement]]:
-    if args.len == 0:
-        return Option[span[ComptimeElement]].none
-    # `attributes_of(field_of(Type, field)[, name])` reflects the field's
-    # attributes; `attributes_of(Type[, name])` the declaration's.
-    unsafe:
-        let first = read(args.data + 0)
-        match read(first.arg_value):
-            ast.Expr.expr_call as call:
-                match read(call.callee):
-                    ast.Expr.expr_identifier as cid:
-                        if cid.name == "field_of" and call.args.len == 2:
-                            let type_name = comptime_type_arg_name(call.args.data + 0)
-                            let field_name = comptime_arg_name(call.args.data + 1)
-                            return comptime_elements_for_attribute_apps(comptime_field_attr_apps(ctx, type_name, field_name), comptime_attr_filter(args))
-                    _:
-                        pass
-            _:
-                pass
-    var type_name = ""
-    unsafe:
-        type_name = comptime_resolve_type_arg_name(ctx, args.data + 0)
-    return comptime_elements_for_attribute_apps(comptime_attr_apps(ctx, type_name), comptime_attr_filter(args))
-
-
-## The attribute-name filter of `attributes_of(target, name)`, or "" when the
-## call has no filter argument.
-function comptime_attr_filter(args: span[ast.Argument]) -> str:
-    if args.len < 2:
-        return ""
-    unsafe:
-        return comptime_arg_name(args.data + 1)
-
-
-## Build one element per attribute application matching `filter` (all of them
-## when the filter is empty).
-function comptime_elements_for_attribute_apps(apps: span[ast.AttributeApplication], filter: str) -> Option[span[ComptimeElement]]:
-    var elements = vec.Vec[ComptimeElement].create()
-    var ai: ptr_uint = 0
-    while ai < apps.len:
-        var app: ast.AttributeApplication
-        unsafe:
-            app = read(apps.data + ai)
-        if filter.len == 0 or attribute_application_name_is(app, filter):
-            elements.push(ComptimeElement.ce_attribute)
-        ai += 1
-    return Option[span[ComptimeElement]].some(value = elements.as_span())
-
-
-function attribute_application_name_is(app: ast.AttributeApplication, name: str) -> bool:
+public function attribute_application_name_is(app: ast.AttributeApplication, name: str) -> bool:
     if app.name.parts.len == 0:
         return false
     unsafe:
         return read(app.name.parts.data + (app.name.parts.len - 1)) == name
 
 
-## The attribute applications recorded for the declaration `type_name`,
-## searching the current module first and then every program analysis.
-function comptime_attr_apps(ctx: ref[LoweringContext], type_name: str) -> span[ast.AttributeApplication]:
-    if type_name.len == 0:
-        return span[ast.AttributeApplication]()
-    let local = ctx.analysis.attribute_applications.get(type_name)
-    if local != null:
-        return unsafe: read(local)
-    var i: ptr_uint = 0
-    while i < ctx.program_analyses.len:
-        var a: analyzer.Analysis
-        unsafe:
-            a = read(ctx.program_analyses.data + i)
-        let p = a.attribute_applications.get(type_name)
-        if p != null:
-            return unsafe: read(p)
-        i += 1
-    return span[ast.AttributeApplication]()
-
-
-## The attribute applications recorded for `Type.field`, searching the current
-## module first and then every program analysis.
-function comptime_field_attr_apps(ctx: ref[LoweringContext], type_name: str, field_name: str) -> span[ast.AttributeApplication]:
-    if type_name.len == 0 or field_name.len == 0:
-        return span[ast.AttributeApplication]()
-    var key_buf = string.String.create()
-    key_buf.append(type_name)
-    key_buf.append(".")
-    key_buf.append(field_name)
-    let key = key_buf.as_str()
-    let local = ctx.analysis.field_attribute_applications.get(key)
-    if local != null:
-        return unsafe: read(local)
-    var i: ptr_uint = 0
-    while i < ctx.program_analyses.len:
-        var a: analyzer.Analysis
-        unsafe:
-            a = read(ctx.program_analyses.data + i)
-        let p = a.field_attribute_applications.get(key)
-        if p != null:
-            return unsafe: read(p)
-        i += 1
-    return span[ast.AttributeApplication]()
-
-
 ## Lower one iteration of an inline for loop.  For struct fields, detect and
 ## handle `size_of(field.type)` and `field.type != X` patterns at comptime.
 ## For enum members and attributes, emit the body with a dummy binding.
-function lower_inline_for_iteration(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], binding_name: str, elem: ComptimeElement, body_ptr: ptr[ast.Stmt]) -> void:
+function lower_inline_for_iteration(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], binding_name: str, elem: comptime_types.ComptimeElement, body_ptr: ptr[ast.Stmt]) -> void:
     match elem:
-        ComptimeElement.ce_struct_field as f:
+        comptime_types.ComptimeElement.ce_struct_field as f:
             lower_inline_for_field_iter(ctx, output, binding_name, f.name, f.field_type, body_ptr)
         _:
             var iter_stmts = vec.Vec[ir.Stmt].create()
@@ -25346,9 +25078,9 @@ function lower_inline_for_iteration(ctx: ref[LoweringContext], output: ref[vec.V
             # (`const_value` + `substitute_const_value`): no local is declared;
             # member reads (`.name`, `.value`) are substituted.
             ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = types.primitive("int"), pointer = Option[bool].some(value = false)))
-            ctx.inline_for_element = Option[ComptimeElement].some(value = elem)
+            ctx.inline_for_element = Option[comptime_types.ComptimeElement].some(value = elem)
             lower_block_stmts(ctx, ref_of(iter_stmts), body_ptr)
-            ctx.inline_for_element = Option[ComptimeElement].none
+            ctx.inline_for_element = Option[comptime_types.ComptimeElement].none
             ctx.locals.pop()
             if iter_stmts.len() > 0:
                 output.push(ir.Stmt.stmt_block(body = iter_stmts.as_span()))
@@ -25356,7 +25088,7 @@ function lower_inline_for_iteration(ctx: ref[LoweringContext], output: ref[vec.V
 
 ## Lower one inline for iteration over a struct field, handling size_of(field.type).
 function lower_inline_for_field_iter(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], binding_name: str, field_name: str, field_ty: types.Type, body_ptr: ptr[ast.Stmt]) -> void:
-    ctx.inline_for_element = Option[ComptimeElement].some(value = ComptimeElement.ce_struct_field(name = field_name, field_type = field_ty))
+    ctx.inline_for_element = Option[comptime_types.ComptimeElement].some(value = comptime_types.ComptimeElement.ce_struct_field(name = field_name, field_type = field_ty))
     var iter_stmts = vec.Vec[ir.Stmt].create()
     let binding_c = utils.c_local_name(binding_name)
     # The host binds the field handle as a compile-time constant and declares no
@@ -25365,7 +25097,7 @@ function lower_inline_for_field_iter(ctx: ref[LoweringContext], output: ref[vec.
     ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = field_ty, pointer = Option[bool].some(value = false)))
     lower_inline_for_field_body(ctx, ref_of(iter_stmts), body_ptr, field_ty)
     ctx.locals.pop()
-    ctx.inline_for_element = Option[ComptimeElement].none
+    ctx.inline_for_element = Option[comptime_types.ComptimeElement].none
     if iter_stmts.len() > 0:
         output.push(ir.Stmt.stmt_block(body = iter_stmts.as_span()))
 
@@ -25418,7 +25150,7 @@ function extract_field_type_compare(ctx: ref[LoweringContext], cond: ptr[ast.Exp
         match read(cond):
             ast.Expr.expr_binary_op as bin:
                 if bin.operator == "==" or bin.operator == "!=":
-                    let rhs_ty = comptime_expr_to_type(ctx, bin.right)
+                    let rhs_ty = comptime.comptime_expr_to_type(ctx, bin.right)
                     if not types.is_error(rhs_ty):
                         let equal = types.type_to_string(field_ty) == types.type_to_string(rhs_ty)
                         if bin.operator == "==":
@@ -25429,73 +25161,8 @@ function extract_field_type_compare(ctx: ref[LoweringContext], cond: ptr[ast.Exp
     return Option[bool].none
 
 
-## Resolve a bare identifier to a compile-time type value: an in-scope generic
-## type parameter (via the active substitution) or a primitive/`str` type name.
-## Returns none for ordinary value identifiers.
-function comptime_identifier_type(ctx: ref[LoweringContext], name: str) -> Option[types.Type]:
-    let subst = ctx.type_substitution.get(name)
-    if subst != null:
-        return Option[types.Type].some(value = unsafe: read(subst))
-    if name == "str":
-        return Option[types.Type].some(value = types.Type.ty_str)
-    if types.is_numeric_name(name) or types.is_integer_name(name) or name == "float" or name == "double" or name == "bool" or name == "char" or name == "void" or name == "cstr":
-        return Option[types.Type].some(value = types.primitive(name))
-    return Option[types.Type].none
-
-
-function comptime_expr_to_type(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> types.Type:
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_identifier as id:
-                if types.is_numeric_name(id.name) or types.is_integer_name(id.name) or id.name == "float" or id.name == "double":
-                    return types.primitive(id.name)
-            _:
-                pass
-    return types.Type.ty_error
-
-
-function comptime_element_type(ctx: ref[LoweringContext], elem: ComptimeElement) -> types.Type:
-    match elem:
-        ComptimeElement.ce_struct_field:
-            return types.Type.ty_error  # field_handle — opaque
-        ComptimeElement.ce_enum_member:
-            return types.Type.ty_error  # member_handle — opaque
-        ComptimeElement.ce_attribute:
-            return types.Type.ty_error  # attribute_handle — opaque
-
-
-## Extract the type name from a comptime argument like `Particle`, `Labeled`, or a
-## module-qualified `types.EntityKind` (the analyzer keys its type tables by the
-## bare name, so the qualifier is dropped).
-function comptime_type_arg_name(arg_ptr: ptr[ast.Argument]) -> str:
-    unsafe:
-        let arg = read(arg_ptr)
-        match read(arg.arg_value):
-            ast.Expr.expr_identifier as id:
-                return id.name
-            ast.Expr.expr_member_access as ma:
-                return ma.member_name
-            _:
-                pass
-    return ""
-
-
-## Like `comptime_type_arg_name`, but resolves an in-scope generic type
-## parameter (e.g. `fields_of(T)` inside `count_fields[T]()`) through the active
-## substitution to the concrete struct/enum name.  Without this, `T` would be
-## looked up literally and reflection over a type parameter would find nothing.
-function comptime_resolve_type_arg_name(ctx: ref[LoweringContext], arg_ptr: ptr[ast.Argument]) -> str:
-    let raw = comptime_type_arg_name(arg_ptr)
-    if raw.len == 0:
-        return raw
-    let subst = ctx.type_substitution.get(raw)
-    if subst != null:
-        return type_simple_name(unsafe: read(subst))
-    return raw
-
-
 ## The bare (unqualified) name of a named/imported/generic type, or "" otherwise.
-function type_simple_name(t: types.Type) -> str:
+public function type_simple_name(t: types.Type) -> str:
     match t:
         types.Type.ty_named as n:
             return n.name
@@ -25507,20 +25174,6 @@ function type_simple_name(t: types.Type) -> str:
             return ""
 
 
-## Extract a string argument value from a comptime argument.
-function comptime_arg_name(arg_ptr: ptr[ast.Argument]) -> str:
-    unsafe:
-        let arg = read(arg_ptr)
-        match read(arg.arg_value):
-            ast.Expr.expr_identifier as id:
-                return id.name
-            ast.Expr.expr_string_literal as s:
-                return s.value
-            _:
-                pass
-    return ""
-
-
 ## While lowering an inline for body, detect member access on the loop variable
 ## (`.value` for enum members, `.type` for struct fields) and substitute the
 ## comptime-known value.
@@ -25528,7 +25181,7 @@ function inline_for_member_subst(ctx: ref[LoweringContext], receiver: ptr[ast.Ex
     match ctx.inline_for_element:
         Option.some as elem_val:
             match elem_val.value:
-                ComptimeElement.ce_enum_member as m:
+                comptime_types.ComptimeElement.ce_enum_member as m:
                     unsafe:
                         match read(receiver):
                             ast.Expr.expr_identifier as id:
@@ -25538,7 +25191,7 @@ function inline_for_member_subst(ctx: ref[LoweringContext], receiver: ptr[ast.Ex
                                     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_string_literal(value = m.name, ty = types.Type.ty_str, cstring = false)))
                             _:
                                 pass
-                ComptimeElement.ce_struct_field as f:
+                comptime_types.ComptimeElement.ce_struct_field as f:
                     unsafe:
                         match read(receiver):
                             ast.Expr.expr_identifier as id:
@@ -25562,7 +25215,7 @@ function inline_for_type_subst(ctx: ref[LoweringContext], binding_name: str) -> 
     match ctx.inline_for_element:
         Option.some as elem_val:
             match elem_val.value:
-                ComptimeElement.ce_struct_field as f:
+                comptime_types.ComptimeElement.ce_struct_field as f:
                     # Check if there's a local binding with this name.  We can't
                     # directly check by name since the binding could be from
                     # another scope.  Assume the binding_name matches the current
@@ -25575,38 +25228,8 @@ function inline_for_type_subst(ctx: ref[LoweringContext], binding_name: str) -> 
     return types.Type.ty_error
 
 
-## Compare two compile-time values for equality.  Integer values are compared
-## with each other; booleans with booleans; strings with strings; types with types.
-function const_values_equal(l: ConstValue, r: ConstValue) -> bool:
-    match l:
-        ConstValue.cv_int as li:
-            match r:
-                ConstValue.cv_int as ri:
-                    return li.value == ri.value
-                _:
-                    return false
-        ConstValue.cv_bool as lb:
-            match r:
-                ConstValue.cv_bool as rb:
-                    return lb.value == rb.value
-                _:
-                    return false
-        ConstValue.cv_str as ls:
-            match r:
-                ConstValue.cv_str as rs:
-                    return ls.value == rs.value
-                _:
-                    return false
-        ConstValue.cv_type as lt:
-            match r:
-                ConstValue.cv_type as rt:
-                    return types_are_equal(lt.ty, rt.ty)
-                _:
-                    return false
-
-
 ## Simple type equality check for primitive/named types.
-function types_are_equal(a: types.Type, b: types.Type) -> bool:
+public function types_are_equal(a: types.Type, b: types.Type) -> bool:
     let ta = types.type_to_string(a)
     let tb = types.type_to_string(b)
     return ta == tb
@@ -25616,25 +25239,25 @@ function types_are_equal(a: types.Type, b: types.Type) -> bool:
 ## type identifier, and the active comptime element's members (`field.name`,
 ## `field.type`, `member.name`, `member.value`).  The host evaluates the same
 ## way through the loop variable's `const_value` substitution.
-function inline_for_eval_const(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[ConstValue]:
+function inline_for_eval_const(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[comptime_types.ConstValue]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
-                return Option[ConstValue].some(value = ConstValue.cv_int(value = long<-lit.value))
+                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = long<-lit.value))
             ast.Expr.expr_char_literal as c:
-                return Option[ConstValue].some(value = ConstValue.cv_int(value = long<-c.value))
+                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = long<-c.value))
             ast.Expr.expr_bool_literal as b:
-                return Option[ConstValue].some(value = ConstValue.cv_bool(value = b.value))
+                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = b.value))
             ast.Expr.expr_string_literal as s:
-                return Option[ConstValue].some(value = ConstValue.cv_str(value = s.value))
+                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_str(value = s.value))
             ast.Expr.expr_identifier as id:
                 if id.name == "true":
-                    return Option[ConstValue].some(value = ConstValue.cv_bool(value = true))
+                    return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = true))
                 if id.name == "false":
-                    return Option[ConstValue].some(value = ConstValue.cv_bool(value = false))
-                match comptime_identifier_type(ctx, id.name):
+                    return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = false))
+                match comptime.comptime_identifier_type(ctx, id.name):
                     Option.some as ty:
-                        return Option[ConstValue].some(value = ConstValue.cv_type(ty = ty.value))
+                        return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_type(ty = ty.value))
                     Option.none:
                         pass
             ast.Expr.expr_member_access as ma:
@@ -25643,16 +25266,16 @@ function inline_for_eval_const(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> 
                         match ctx.inline_for_element:
                             Option.some as elem_val:
                                 match elem_val.value:
-                                    ComptimeElement.ce_enum_member as m:
+                                    comptime_types.ComptimeElement.ce_enum_member as m:
                                         if ma.member_name == "name":
-                                            return Option[ConstValue].some(value = ConstValue.cv_str(value = m.name))
+                                            return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_str(value = m.name))
                                         if ma.member_name == "value":
-                                            return Option[ConstValue].some(value = ConstValue.cv_int(value = m.member_value))
-                                    ComptimeElement.ce_struct_field as f:
+                                            return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = m.member_value))
+                                    comptime_types.ComptimeElement.ce_struct_field as f:
                                         if ma.member_name == "name":
-                                            return Option[ConstValue].some(value = ConstValue.cv_str(value = f.name))
+                                            return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_str(value = f.name))
                                         if ma.member_name == "type":
-                                            return Option[ConstValue].some(value = ConstValue.cv_type(ty = f.field_type))
+                                            return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_type(ty = f.field_type))
                                     _:
                                         pass
                             Option.none:
@@ -25663,7 +25286,7 @@ function inline_for_eval_const(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> 
                 return inline_for_eval_const(ctx, pc.expression)
             _:
                 pass
-    return Option[ConstValue].none
+    return Option[comptime_types.ConstValue].none
 
 
 ## Compile-time truth value of an inline-for body condition.  The host lowers a
@@ -25687,7 +25310,7 @@ function inline_for_eval_bool(ctx: ref[LoweringContext], cond: ptr[ast.Expr]) ->
                         Option.some as lv:
                             match inline_for_eval_const(ctx, bin.right):
                                 Option.some as rv:
-                                    let eq = const_values_equal(lv.value, rv.value)
+                                    let eq = comptime.const_values_equal(lv.value, rv.value)
                                     if bin.operator == "==":
                                         return Option[bool].some(value = eq)
                                     return Option[bool].some(value = not eq)
@@ -25715,7 +25338,7 @@ function inline_for_eval_bool(ctx: ref[LoweringContext], cond: ptr[ast.Expr]) ->
                 match inline_for_eval_const(ctx, cond):
                     Option.some as cv:
                         match cv.value:
-                            ConstValue.cv_bool as b:
+                            comptime_types.ConstValue.cv_bool as b:
                                 return Option[bool].some(value = b.value)
                             _:
                                 pass
@@ -25752,7 +25375,7 @@ function lower_inline_for_if_fold(ctx: ref[LoweringContext], output: ref[vec.Vec
 ## expression.  Supports literals, module constants, `const function` calls, and
 ## struct/variant/array literals.  Returns none when the expression is not
 ## compile-time known, in which case the initializer is lowered normally.
-function try_const_value_ir(ctx: ref[LoweringContext], ep: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+public function try_const_value_ir(ctx: ref[LoweringContext], ep: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
@@ -25777,7 +25400,7 @@ function try_const_value_ir(ctx: ref[LoweringContext], ep: ptr[ast.Expr], env: r
                     return Option[ptr[ir.Expr]].some(value = unsafe: read(entry))
                 let decl_val = find_const_value_ast(ctx, id.name)
                 if decl_val != null:
-                    match const_decl_type(ctx, id.name):
+                    match comptime.const_decl_type(ctx, id.name):
                         Option.some as dt:
                             return try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-decl_val, env, dt.value)
                         Option.none:
@@ -25793,7 +25416,7 @@ function try_const_value_ir(ctx: ref[LoweringContext], ep: ptr[ast.Expr], env: r
                     Option.some as lv:
                         match try_const_value_ir(ctx, bin.right, env):
                             Option.some as rv:
-                                return const_fold_binary_ir(ctx, bin.operator, lv.value, rv.value)
+                                return comptime.const_fold_binary_ir(ctx, bin.operator, lv.value, rv.value)
                             Option.none:
                                 pass
                     Option.none:
@@ -25802,7 +25425,7 @@ function try_const_value_ir(ctx: ref[LoweringContext], ep: ptr[ast.Expr], env: r
             ast.Expr.expr_unary_op as un:
                 match try_const_value_ir(ctx, un.operand, env):
                     Option.some as ov:
-                        return const_fold_unary_ir(ctx, un.operator, ov.value)
+                        return comptime.const_fold_unary_ir(ctx, un.operator, ov.value)
                     Option.none:
                         pass
                 return Option[ptr[ir.Expr]].none
@@ -25856,7 +25479,7 @@ function try_const_value_ir(ctx: ref[LoweringContext], ep: ptr[ast.Expr], env: r
                                 if target_name == "bool":
                                     let truth = if is_float_operand: fvalue != 0.0 else: value != 0
                                     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = truth, ty = target)))
-                                let width = const_integer_width(target_name)
+                                let width = comptime.const_integer_width(target_name)
                                 if width > 0:
                                     var iv = if is_float_operand: long<-fvalue else: value
                                     iv = wrap_int_value(iv, width, types.is_signed_integer_name(target_name))
@@ -25881,7 +25504,7 @@ function try_const_value_ir(ctx: ref[LoweringContext], ep: ptr[ast.Expr], env: r
             ast.Expr.expr_expression_list as els:
                 return try_const_tuple_ir(ctx, els.elements, env)
             ast.Expr.expr_if as iff:
-                match const_env_eval_bool(ctx, env, iff.condition):
+                match comptime.const_env_eval_bool(ctx, env, iff.condition):
                     Option.some as cv:
                         if cv.value:
                             return try_const_value_ir(ctx, iff.then_expr, env)
@@ -25896,7 +25519,7 @@ function try_const_value_ir(ctx: ref[LoweringContext], ep: ptr[ast.Expr], env: r
                             var arm: ast.MatchExprArm
                             unsafe:
                                 arm = read(m.arms.data + ai)
-                            match const_match_pattern(ctx, env, arm.pattern, sv.value):
+                            match comptime.const_match_pattern(ctx, env, arm.pattern, sv.value):
                                 Option.some as matched:
                                     if matched.value:
                                         return try_const_value_ir(ctx, arm.value, env)
@@ -25930,14 +25553,6 @@ function try_const_value_ir(ctx: ref[LoweringContext], ep: ptr[ast.Expr], env: r
             _:
                 return Option[ptr[ir.Expr]].none
     return Option[ptr[ir.Expr]].none
-
-
-## Integer width used when folding a prefix cast: the fixed-width primitives
-## plus the pointer-sized integers (host `POINTER_INTEGER_WIDTH`).
-function const_integer_width(name: str) -> int:
-    if name == "ptr_int" or name == "ptr_uint":
-        return 64
-    return types.integer_width(name)
 
 
 ## Round a double to the nearest 32-bit float value (host `float32_round`).
@@ -26036,70 +25651,6 @@ function retype_const_literal(v: ir.Expr, target_ty: types.Type) -> ir.Expr:
             _:
                 pass
     return v
-
-
-## True when a folded constant value can be represented by
-## `lower_compile_time_literal` for `ty` — the host returns nil (falling back to
-## the AST initializer) when an integer stands for a non-integer primitive such
-## as `char`, or a value's shape does not fit.  Unknown shapes are accepted so
-## the folding path is only abandoned where the host would abandon it.
-function const_value_ir_representable(ctx: ref[LoweringContext], v: ir.Expr, ty: types.Type) -> bool:
-    match ty:
-        types.Type.ty_primitive as p:
-            match v:
-                ir.Expr.expr_boolean_literal:
-                    return p.name == "bool"
-                ir.Expr.expr_integer_literal:
-                    return types.is_integer_type(ty) or types.is_float_type(ty)
-                ir.Expr.expr_unsigned_integer_literal:
-                    return types.is_integer_type(ty) or types.is_float_type(ty)
-                ir.Expr.expr_float_literal:
-                    return types.is_float_type(ty)
-                ir.Expr.expr_string_literal:
-                    return p.name == "cstr"
-                _:
-                    return false
-        types.Type.ty_str:
-            match v:
-                ir.Expr.expr_string_literal:
-                    return true
-                _:
-                    return false
-        types.Type.ty_generic as g:
-            if g.name == "array" and g.args.len == 2:
-                let element_ty = unsafe: read(g.args.data + 0)
-                match v:
-                    ir.Expr.expr_array_literal as al:
-                        var i: ptr_uint = 0
-                        while i < al.elements.len:
-                            if not const_value_ir_representable(ctx, unsafe: read(al.elements.data + i), element_ty):
-                                return false
-                            i += 1
-                        return true
-                    _:
-                        return false
-            return true
-        types.Type.ty_named:
-            pass
-        types.Type.ty_imported:
-            pass
-        _:
-            return true
-    match v:
-        ir.Expr.expr_aggregate_literal as ag:
-            var i: ptr_uint = 0
-            while i < ag.fields.len:
-                let field = unsafe: read(ag.fields.data + i)
-                match concrete_field_type(ctx, ty, field.name):
-                    Option.some as ft:
-                        if not const_value_ir_representable(ctx, unsafe: read(field.value), ft.value):
-                            return false
-                    Option.none:
-                        pass
-                i += 1
-            return true
-        _:
-            return true
 
 
 ## The host's `rewrite_static_storage_initializer` fallback: lower the
@@ -26223,38 +25774,10 @@ function coerce_const_value(ctx: ref[LoweringContext], v: ir.Expr, target_ty: ty
     return v
 
 
-## The host's `lower_const_value_literal` path for a constant whose value is an
-## expression list or a call/specialization: when the declared type is a tuple
-## the folded aggregate is emitted as an `IR::ArrayLiteral` whose element
-## literals are all typed `int` — the host's fallback element type, since its
-## `Types::Tuple` has no `arguments` to pick an element type from.
-function const_tuple_array_literal(value: ir.Expr, ty: types.Type) -> Option[ir.Expr]:
-    match ty:
-        types.Type.ty_tuple:
-            pass
-        _:
-            return Option[ir.Expr].none
-    match value:
-        ir.Expr.expr_aggregate_literal as ag:
-            var elements = vec.Vec[ir.Expr].create()
-            var i: ptr_uint = 0
-            while i < ag.fields.len:
-                let field = unsafe: read(ag.fields.data + i)
-                match retype_int_element_literal(unsafe: read(field.value)):
-                    Option.some as lit:
-                        elements.push(lit.value)
-                    Option.none:
-                        return Option[ir.Expr].none
-                i += 1
-            return Option[ir.Expr].some(value = ir.Expr.expr_array_literal(ty = ty, elements = elements.as_span()))
-        _:
-            return Option[ir.Expr].none
-
-
 ## Re-type a folded element literal to `int` (the host's
 ## `lower_const_value_literal` fallback element type): integers are masked to
 ## the 32-bit width, other literal kinds keep their value under the `int` type.
-function retype_int_element_literal(v: ir.Expr) -> Option[ir.Expr]:
+public function retype_int_element_literal(v: ir.Expr) -> Option[ir.Expr]:
     let int_ty = types.primitive("int")
     match v:
         ir.Expr.expr_integer_literal as lit:
@@ -26465,7 +25988,7 @@ function layout_aggregate_info(ctx: ref[LoweringContext], fields: span[analyzer.
     ))
 
 
-function layout_size(ctx: ref[LoweringContext], ty: types.Type) -> Option[long]:
+public function layout_size(ctx: ref[LoweringContext], ty: types.Type) -> Option[long]:
     match layout_info(ctx, ty):
         Option.some as info:
             return Option[long].some(value = info.value.size)
@@ -26473,7 +25996,7 @@ function layout_size(ctx: ref[LoweringContext], ty: types.Type) -> Option[long]:
             return Option[long].none
 
 
-function layout_alignment(ctx: ref[LoweringContext], ty: types.Type) -> Option[long]:
+public function layout_alignment(ctx: ref[LoweringContext], ty: types.Type) -> Option[long]:
     match layout_info(ctx, ty):
         Option.some as info:
             return Option[long].some(value = info.value.alignment)
@@ -26483,7 +26006,7 @@ function layout_alignment(ctx: ref[LoweringContext], ty: types.Type) -> Option[l
 
 ## Byte offset of a field (host `Layout.offset_of`) for structs, spans, and
 ## str_buffers; unions and other shapes are not modelled.
-function layout_offset_of(ctx: ref[LoweringContext], ty: types.Type, field: str) -> Option[long]:
+public function layout_offset_of(ctx: ref[LoweringContext], ty: types.Type, field: str) -> Option[long]:
     match ty:
         types.Type.ty_generic as g:
             if g.name == "span" and g.args.len == 1:
@@ -26602,23 +26125,6 @@ function try_const_typed_value_ir(ctx: ref[LoweringContext], ep: ptr[ast.Expr], 
     return try_const_value_ir(ctx, ep, env)
 
 
-## The declared type of a module-level constant, used to give expression-list
-## initializers their declared array type when folding a reference to it.
-function const_decl_type(ctx: ref[LoweringContext], name: str) -> Option[types.Type]:
-    let decls = ctx.analysis.source_file.declarations
-    var i: ptr_uint = 0
-    while i < decls.len:
-        unsafe:
-            match read(decls.data + i):
-                ast.Decl.decl_const as c:
-                    if c.name == name:
-                        return Option[types.Type].some(value = resolve_type_ref(ctx, c.const_type))
-                _:
-                    pass
-        i += 1
-    return Option[types.Type].none
-
-
 function try_const_tuple_ir(ctx: ref[LoweringContext], elements: span[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     var values = vec.Vec[ir.Expr].create()
     var tys = vec.Vec[types.Type].create()
@@ -26649,9 +26155,9 @@ function try_const_index_ir(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], 
             unsafe:
                 match read(index):
                     ast.Expr.expr_range as r:
-                        let s_opt = const_env_eval_int(ctx, env, r.start_expr) else:
+                        let s_opt = comptime.const_env_eval_int(ctx, env, r.start_expr) else:
                             return Option[ptr[ir.Expr]].none
-                        let e_opt = const_env_eval_int(ctx, env, r.end_expr) else:
+                        let e_opt = comptime.const_env_eval_int(ctx, env, r.end_expr) else:
                             return Option[ptr[ir.Expr]].none
                         match read(rv.value):
                             ir.Expr.expr_array_literal as al:
@@ -26674,7 +26180,7 @@ function try_const_index_ir(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], 
                                 return Option[ptr[ir.Expr]].none
                     _:
                         pass
-            let idx_opt = const_env_eval_int(ctx, env, index) else:
+            let idx_opt = comptime.const_env_eval_int(ctx, env, index) else:
                 return Option[ptr[ir.Expr]].none
             unsafe:
                 match read(rv.value):
@@ -26721,7 +26227,7 @@ function imported_const_value_ir(ctx: ref[LoweringContext], receiver: ptr[ast.Ex
     let decl_val = find_const_value_ast(ctx, member)
     if decl_val != null:
         var empty_env = map_mod.Map[str, ptr[ir.Expr]].create()
-        match const_decl_type(ctx, member):
+        match comptime.const_decl_type(ctx, member):
             Option.some as dt:
                 result = try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-decl_val, ref_of(empty_env), dt.value)
             Option.none:
@@ -26753,7 +26259,7 @@ function try_const_member_ir(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
             unsafe:
                 match read(rv.value):
                     ir.Expr.expr_aggregate_literal as ag:
-                        return const_field_value(ag.fields, member)
+                        return comptime.const_field_value(ag.fields, member)
                     ir.Expr.expr_string_literal as sl:
                         if member == "len":
                             return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-sl.value.len, ty = types.primitive("int"))))
@@ -26767,111 +26273,6 @@ function try_const_member_ir(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
     return Option[ptr[ir.Expr]].none
 
 
-function const_fold_binary_ir(ctx: ref[LoweringContext], op: str, l: ptr[ir.Expr], r: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
-    let int_ty = types.primitive("int")
-    let float_ty = types.primitive("float")
-    unsafe:
-        match read(l):
-            ir.Expr.expr_integer_literal as li:
-                match read(r):
-                    ir.Expr.expr_integer_literal as ri:
-                        let result = apply_int_op(op, li.value, ri.value)
-                        if is_comparison_operator(op):
-                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = result != 0, ty = ctx.bool_ty)))
-                        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = result, ty = int_ty)))
-                    ir.Expr.expr_float_literal as rf:
-                        return const_fold_float_ir(ctx, op, double<-li.value, rf.value)
-                    _:
-                        return Option[ptr[ir.Expr]].none
-            ir.Expr.expr_float_literal as lf:
-                match read(r):
-                    ir.Expr.expr_float_literal as rf:
-                        return const_fold_float_ir(ctx, op, lf.value, rf.value)
-                    ir.Expr.expr_integer_literal as ri:
-                        return const_fold_float_ir(ctx, op, lf.value, double<-ri.value)
-                    _:
-                        return Option[ptr[ir.Expr]].none
-            ir.Expr.expr_string_literal as ls:
-                match read(r):
-                    ir.Expr.expr_string_literal as rs:
-                        if op == "+":
-                            var buf = string.String.create()
-                            buf.append(ls.value)
-                            buf.append(rs.value)
-                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_string_literal(value = buf.as_str(), ty = types.Type.ty_str, cstring = false)))
-                        if op == "==":
-                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = ls.value == rs.value, ty = ctx.bool_ty)))
-                        if op == "!=":
-                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = ls.value != rs.value, ty = ctx.bool_ty)))
-                    _:
-                        return Option[ptr[ir.Expr]].none
-            ir.Expr.expr_boolean_literal as lb:
-                match read(r):
-                    ir.Expr.expr_boolean_literal as rb:
-                        if op == "and":
-                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = lb.value and rb.value, ty = ctx.bool_ty)))
-                        if op == "or":
-                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = lb.value or rb.value, ty = ctx.bool_ty)))
-                        if op == "==":
-                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = lb.value == rb.value, ty = ctx.bool_ty)))
-                        if op == "!=":
-                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = lb.value != rb.value, ty = ctx.bool_ty)))
-                    _:
-                        return Option[ptr[ir.Expr]].none
-            _:
-                return Option[ptr[ir.Expr]].none
-    return Option[ptr[ir.Expr]].none
-
-
-function const_fold_float_ir(ctx: ref[LoweringContext], op: str, l: double, r: double) -> Option[ptr[ir.Expr]]:
-    var result: double = 0.0
-    if op == "+":
-        result = l + r
-    else if op == "-":
-        result = l - r
-    else if op == "*":
-        result = l * r
-    else if op == "/":
-        result = l / r
-    else if op == "==":
-        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = l == r, ty = ctx.bool_ty)))
-    else if op == "!=":
-        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = l != r, ty = ctx.bool_ty)))
-    else if op == "<":
-        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = l < r, ty = ctx.bool_ty)))
-    else if op == "<=":
-        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = l <= r, ty = ctx.bool_ty)))
-    else if op == ">":
-        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = l > r, ty = ctx.bool_ty)))
-    else if op == ">=":
-        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = l >= r, ty = ctx.bool_ty)))
-    else:
-        return Option[ptr[ir.Expr]].none
-    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_float_literal(value = result, ty = types.primitive("float"))))
-
-
-function const_fold_unary_ir(ctx: ref[LoweringContext], op: str, operand: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
-    unsafe:
-        match read(operand):
-            ir.Expr.expr_integer_literal as li:
-                if op == "-":
-                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = -li.value, ty = li.ty)))
-                if op == "~":
-                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = ~li.value, ty = li.ty)))
-                return Option[ptr[ir.Expr]].none
-            ir.Expr.expr_float_literal as lf:
-                if op == "-":
-                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_float_literal(value = -lf.value, ty = lf.ty)))
-                return Option[ptr[ir.Expr]].none
-            ir.Expr.expr_boolean_literal as lb:
-                if op == "not":
-                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = not lb.value, ty = ctx.bool_ty)))
-                return Option[ptr[ir.Expr]].none
-            _:
-                return Option[ptr[ir.Expr]].none
-    return Option[ptr[ir.Expr]].none
-
-
 ## Evaluate a call in constant position: struct literals, variant-arm literals,
 ## `const function` calls, and `const` methods (static and instance).
 function try_const_call_ir(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
@@ -26880,7 +26281,7 @@ function try_const_call_ir(ctx: ref[LoweringContext], callee: ptr[ast.Expr], arg
             ast.Expr.expr_identifier as id:
                 # A struct of this module, or a local type alias re-exporting one
                 # (`type Color = c.Color`), constructs an aggregate literal.
-                match const_aggregate_target_type(ctx, ctx.module_name, id.name):
+                match comptime.const_aggregate_target_type(ctx, ctx.module_name, id.name):
                     Option.some as target:
                         return try_const_struct_literal_ir(ctx, target.value, args, env)
                     Option.none:
@@ -26911,7 +26312,7 @@ function try_const_call_ir(ctx: ref[LoweringContext], callee: ptr[ast.Expr], arg
                         # the alias chain like the runtime construction path.
                         let alias_module_ptr = ctx.analysis.imports.get(rid.name)
                         if alias_module_ptr != null:
-                            match const_aggregate_target_type(ctx, read(alias_module_ptr), ma.member_name):
+                            match comptime.const_aggregate_target_type(ctx, read(alias_module_ptr), ma.member_name):
                                 Option.some as target:
                                     return try_const_struct_literal_ir(ctx, target.value, args, env)
                                 Option.none:
@@ -26944,7 +26345,7 @@ function try_const_call_ir(ctx: ref[LoweringContext], callee: ptr[ast.Expr], arg
                 # `this.area()` inside a const method body).
                 match try_const_value_ir(ctx, ma.receiver, env):
                     Option.some as rv:
-                        match const_receiver_struct_name(rv.value):
+                        match comptime.const_receiver_struct_name(rv.value):
                             Option.some as sn:
                                 return try_const_method_value(ctx, env, sn.value, ma.member_name, Option[ptr[ir.Expr]].some(value = rv.value), args)
                             Option.none:
@@ -26955,18 +26356,6 @@ function try_const_call_ir(ctx: ref[LoweringContext], callee: ptr[ast.Expr], arg
             _:
                 return Option[ptr[ir.Expr]].none
     return Option[ptr[ir.Expr]].none
-
-
-## The struct name of a compile-time receiver value (its IR type's simple name).
-function const_receiver_struct_name(value: ptr[ir.Expr]) -> Option[str]:
-    match ir_expr_type(value):
-        types.Type.ty_named as n:
-            return Option[str].some(value = n.name)
-        types.Type.ty_imported as im:
-            return Option[str].some(value = im.name)
-        _:
-            return Option[str].none
-    return Option[str].none
 
 
 ## Evaluate a `const` method call by binding `this` (for instance methods) and
@@ -27036,7 +26425,7 @@ function try_const_array_literal_ir(ctx: ref[LoweringContext], type_args: span[a
                     Option.some as ev:
                         # Elements take the element type contextually too: a folded
                         # `array[ubyte, 4](0, 0, 0, 0)` keeps ubyte elements.
-                        let retyped = const_value_to_field_type(ev.value, element_ty)
+                        let retyped = comptime.const_value_to_field_type(ev.value, element_ty)
                         elements.push(unsafe: read(retyped))
                     Option.none:
                         return Option[ptr[ir.Expr]].none
@@ -27052,63 +26441,23 @@ function try_const_attribute_arg_ir(ctx: ref[LoweringContext], type_args: span[a
     if type_args.len != 1 or args.len != 2:
         return Option[ptr[ir.Expr]].none
     let type_ty = resolve_type_ref(ctx, unsafe: read(type_args.data + 0).value)
-    let arg_name = comptime_arg_name(unsafe: args.data + 1)
+    let arg_name = comptime.comptime_arg_name(unsafe: args.data + 1)
     if arg_name.len == 0:
         return Option[ptr[ir.Expr]].none
     # Unwrap `attribute_of(field_of(Type, field), attr)` to (type, field, attr).
     let attr_call = unsafe: read(args.data + 0).arg_value
-    let attr_ident = comptime_inner_arg_name(attr_call, "attribute_of", 1)
+    let attr_ident = comptime.comptime_inner_arg_name(attr_call, "attribute_of", 1)
     if attr_ident.len == 0:
         return Option[ptr[ir.Expr]].none
-    let field_call = comptime_inner_arg_expr(attr_call, "attribute_of", 0)
+    let field_call = comptime.comptime_inner_arg_expr(attr_call, "attribute_of", 0)
     if field_call == null:
         return Option[ptr[ir.Expr]].none
     let field_call_ptr = ptr[ast.Expr]<-field_call
-    let type_name = comptime_inner_arg_name(field_call_ptr, "field_of", 0)
-    let field_name = comptime_inner_arg_name(field_call_ptr, "field_of", 1)
+    let type_name = comptime.comptime_inner_arg_name(field_call_ptr, "field_of", 0)
+    let field_name = comptime.comptime_inner_arg_name(field_call_ptr, "field_of", 1)
     if type_name.len == 0 or field_name.len == 0:
         return Option[ptr[ir.Expr]].none
     return find_attribute_arg_literal(ctx, type_name, field_name, attr_ident, arg_name, type_ty)
-
-
-## The name of argument `index` of a call expression `callee_name(...)`, or "".
-## The argument's value must be an identifier or string literal.
-function comptime_inner_arg_name(ep: ptr[ast.Expr], callee_name: str, index: ptr_uint) -> str:
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_call as ac:
-                match read(ac.callee):
-                    ast.Expr.expr_identifier as acid:
-                        if acid.name == callee_name and ac.args.len > index:
-                            let val = read(ac.args.data + index).arg_value
-                            match read(val):
-                                ast.Expr.expr_identifier as v:
-                                    return v.name
-                                ast.Expr.expr_string_literal as s:
-                                    return s.value
-                                _:
-                                    pass
-                    _:
-                        pass
-            _:
-                pass
-    return ""
-
-
-## The expression of argument `index` of a call `callee_name(...)`, or null.
-function comptime_inner_arg_expr(ep: ptr[ast.Expr], callee_name: str, index: ptr_uint) -> ptr[ast.Expr]?:
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_call as ac:
-                match read(ac.callee):
-                    ast.Expr.expr_identifier as acid:
-                        if acid.name == callee_name and ac.args.len > index:
-                            return read(ac.args.data + index).arg_value
-                    _:
-                        pass
-            _:
-                pass
-    return null
 
 
 ## The IR literal for attribute argument `arg_name` of `@[attr(...)]` applied to
@@ -27215,126 +26564,6 @@ function attribute_arg_value_to_ir(ctx: ref[LoweringContext], ep: ptr[ast.Expr],
     return Option[ptr[ir.Expr]].none
 
 
-## Resolve the struct a constant aggregate constructor names, following the same
-## alias routing the runtime construction path uses
-## (`lower_aggregate_literal_impl`): `rl.Color(r = 1)` with
-## `type Color = c.Color` in std.raylib constructs std.c.raylib's struct Color,
-## so the folded literal carries that type and its field types come from it.
-function const_aggregate_target_type(ctx: ref[LoweringContext], owner_module: str, name: str) -> Option[types.Type]:
-    match find_imported_analysis(ctx, owner_module):
-        Option.some as owner:
-            if owner.value.structs.contains(name):
-                if owner_module == ctx.module_name:
-                    return Option[types.Type].some(value = types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = name))
-                return Option[types.Type].some(value = types.Type.ty_imported(module_name = owner_module, name = name, args = span[types.Type]()))
-            let alias_ptr = owner.value.type_alias_types.get(name)
-            if alias_ptr != null:
-                var base = unsafe: read(alias_ptr)
-                if types.is_nullable_type(base):
-                    base = types.unwrap_nullable(base)
-                match const_struct_alias_target(ctx, base):
-                    Option.some as target:
-                        return Option[types.Type].some(value = target.value)
-                    Option.none:
-                        pass
-        Option.none:
-            pass
-    return Option[types.Type].none
-
-
-## The struct a type alias re-exports (`type Color = c.Color` names std.c.raylib's
-## struct Color).  Only a struct target is an aggregate constructor; an alias of
-## an enum/flags/opaque is not folded.
-function const_struct_alias_target(ctx: ref[LoweringContext], t: types.Type) -> Option[types.Type]:
-    match t:
-        types.Type.ty_named as nm:
-            if nm.module_name.len == 0 or nm.module_name == ctx.module_name:
-                if ctx.analysis.structs.contains(nm.name):
-                    return Option[types.Type].some(value = t)
-                return Option[types.Type].none
-            match find_imported_analysis(ctx, nm.module_name):
-                Option.some as owner:
-                    if owner.value.structs.contains(nm.name):
-                        return Option[types.Type].some(value = t)
-                Option.none:
-                    pass
-            return Option[types.Type].none
-        types.Type.ty_imported as im:
-            match find_imported_analysis(ctx, im.module_name):
-                Option.some as owner:
-                    if owner.value.structs.contains(im.name):
-                        return Option[types.Type].some(value = t)
-                Option.none:
-                    pass
-            return Option[types.Type].none
-        _:
-            return Option[types.Type].none
-    return Option[types.Type].none
-
-
-## Re-type a folded constant value by the type of the aggregate field it
-## initializes, mirroring the host's `lower_compile_time_literal`
-## (`lowering/utils.rb:361-395`): the interpreted value carries no type of its
-## own, so the field decides the literal's kind — `hex_digit(c) * 16 +
-## hex_digit(c)` folds to a `ubyte` literal in a `ubyte` field, and an integer
-## value in a `float` field becomes a float literal.
-function const_value_to_field_type(value: ptr[ir.Expr], field_ty: types.Type) -> ptr[ir.Expr]:
-    var target = field_ty
-    if types.is_nullable_type(target):
-        target = types.unwrap_nullable(target)
-    # The host recurses into an array target (`lower_compile_time_literal`'s
-    # Array case): each element takes the *element* type, so a zeroed
-    # `array[ubyte, 4](0, 0, 0, 0)` field keeps ubyte elements.
-    match target:
-        types.Type.ty_generic as ag:
-            if ag.name == "array" and ag.args.len == 2:
-                let element_ty = unsafe: read(ag.args.data + 0)
-                unsafe:
-                    match read(value):
-                        ir.Expr.expr_array_literal as al:
-                            var elements = vec.Vec[ir.Expr].create()
-                            var ei: ptr_uint = 0
-                            while ei < al.elements.len:
-                                let retyped = const_value_to_field_type(alloc_expr(read(al.elements.data + ei)), element_ty)
-                                elements.push(unsafe: read(retyped))
-                                ei += 1
-                            return alloc_expr(ir.Expr.expr_array_literal(ty = target, elements = elements.as_span()))
-                        _:
-                            pass
-        _:
-            pass
-    var target_is_str = false
-    var target_is_cstr = false
-    match target:
-        types.Type.ty_str:
-            target_is_str = true
-        types.Type.ty_primitive as p:
-            if p.name == "str" or p.name == "cstr":
-                target_is_str = true
-            target_is_cstr = p.name == "cstr"
-        _:
-            pass
-    unsafe:
-        match read(value):
-            ir.Expr.expr_integer_literal as lit:
-                if types.is_integer_type(target):
-                    return alloc_expr(ir.Expr.expr_integer_literal(value = lit.value, ty = target))
-                if types.is_float_type(target):
-                    return alloc_expr(ir.Expr.expr_float_literal(value = double<-lit.value, ty = target))
-            ir.Expr.expr_float_literal as fl:
-                if types.is_float_type(target):
-                    return alloc_expr(ir.Expr.expr_float_literal(value = fl.value, ty = target))
-            ir.Expr.expr_boolean_literal as b:
-                if types.is_bool(target):
-                    return alloc_expr(ir.Expr.expr_boolean_literal(value = b.value, ty = target))
-            ir.Expr.expr_string_literal as s:
-                if target_is_str:
-                    return alloc_expr(ir.Expr.expr_string_literal(value = s.value, ty = target, cstring = target_is_cstr))
-            _:
-                pass
-    return value
-
-
 ## Fold a struct construction into an aggregate literal of `target`'s type.  The
 ## target is the struct the constructor names, resolved through its alias chain
 ## by `const_aggregate_target_type`, so the fields come from the declaring module.
@@ -27368,7 +26597,7 @@ function try_const_struct_literal_ir(ctx: ref[LoweringContext], target: types.Ty
                     Option.some as field_ty:
                         field_value = int_literal_to_context_type(arg.arg_value, field_ty.value, field_value)
                         field_value = null_literal_to_context_type(arg.arg_value, field_ty.value, field_value)
-                        field_value = const_value_to_field_type(field_value, field_ty.value)
+                        field_value = comptime.const_value_to_field_type(field_value, field_ty.value)
                     Option.none:
                         pass
                 fields.push(ir.AggregateField(name = field_name, value = field_value))
@@ -27431,524 +26660,21 @@ function try_const_function_value(ctx: ref[LoweringContext], func_name: str, arg
     return try_const_value_body(ctx, body_ptr, ref_of(env))
 
 
-## Control-flow outcome of executing compile-time statements.
-variant ConstFlow:
-    cf_value(value: ptr[ir.Expr])
-    cf_break
-    cf_continue
-    cf_fallthrough
-    cf_stuck
-
-
 ## Evaluate a const block body to its `return` value.  Returns none when the
 ## body cannot be folded or completes without returning.
 function try_const_value_body(ctx: ref[LoweringContext], body: ptr[ast.Stmt]?, env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
-    match const_flow_body(ctx, env, body):
-        ConstFlow.cf_value as v:
+    match comptime.const_flow_body(ctx, env, body):
+        comptime_types.ConstFlow.cf_value as v:
             return Option[ptr[ir.Expr]].some(value = v.value)
-        ConstFlow.cf_break:
+        comptime_types.ConstFlow.cf_break:
             return Option[ptr[ir.Expr]].none
-        ConstFlow.cf_continue:
+        comptime_types.ConstFlow.cf_continue:
             return Option[ptr[ir.Expr]].none
-        ConstFlow.cf_fallthrough:
+        comptime_types.ConstFlow.cf_fallthrough:
             return Option[ptr[ir.Expr]].none
-        ConstFlow.cf_stuck:
+        comptime_types.ConstFlow.cf_stuck:
             return Option[ptr[ir.Expr]].none
     return Option[ptr[ir.Expr]].none
-
-
-function const_flow_body(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], body: ptr[ast.Stmt]?) -> ConstFlow:
-    let b = body else:
-        return ConstFlow.cf_fallthrough
-    return const_flow_stmt(ctx, env, b)
-
-
-function const_flow_stmts(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], stmts: span[ast.Stmt]) -> ConstFlow:
-    var i: ptr_uint = 0
-    while i < stmts.len:
-        match const_flow_stmt(ctx, env, unsafe: ptr[ast.Stmt]<-(stmts.data + i)):
-            ConstFlow.cf_fallthrough:
-                pass
-            ConstFlow.cf_stuck:
-                return ConstFlow.cf_stuck
-            ConstFlow.cf_break:
-                return ConstFlow.cf_break
-            ConstFlow.cf_continue:
-                return ConstFlow.cf_continue
-            ConstFlow.cf_value as v:
-                return ConstFlow.cf_value(value = v.value)
-        i += 1
-    return ConstFlow.cf_fallthrough
-
-
-function const_flow_stmt(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], sp: ptr[ast.Stmt]) -> ConstFlow:
-    unsafe:
-        match read(sp):
-            ast.Stmt.stmt_block as blk:
-                return const_flow_stmts(ctx, env, blk.statements)
-            ast.Stmt.stmt_ret as r:
-                let val_ptr = r.value else:
-                    return ConstFlow.cf_value(value = alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty)))
-                match try_const_value_ir(ctx, val_ptr, env):
-                    Option.some as v:
-                        return ConstFlow.cf_value(value = v.value)
-                    Option.none:
-                        return ConstFlow.cf_stuck
-            ast.Stmt.stmt_break:
-                return ConstFlow.cf_break
-            ast.Stmt.stmt_continue:
-                return ConstFlow.cf_continue
-            ast.Stmt.stmt_pass:
-                return ConstFlow.cf_fallthrough
-            ast.Stmt.stmt_local as loc:
-                let init_ptr = loc.value else:
-                    return ConstFlow.cf_fallthrough
-                match try_const_value_ir(ctx, init_ptr, env):
-                    Option.some as lv:
-                        return const_bind_local(ctx, env, loc.name, loc.destructure_bindings, loc.else_binding, loc.else_body, lv.value)
-                    Option.none:
-                        return ConstFlow.cf_stuck
-            ast.Stmt.stmt_assignment as asg:
-                match try_const_value_ir(ctx, asg.value, env):
-                    Option.some as rv:
-                        match const_assign_target(ctx, env, asg.target, asg.operator, rv.value):
-                            Option.some:
-                                return ConstFlow.cf_fallthrough
-                            Option.none:
-                                return ConstFlow.cf_stuck
-                    Option.none:
-                        return ConstFlow.cf_stuck
-            ast.Stmt.stmt_expression as ex:
-                match try_const_value_ir(ctx, ex.expression, env):
-                    Option.some:
-                        return ConstFlow.cf_fallthrough
-                    Option.none:
-                        return ConstFlow.cf_stuck
-            ast.Stmt.stmt_if as ifs:
-                return const_flow_if(ctx, env, ifs.branches, ifs.else_body)
-            ast.Stmt.stmt_while as ws:
-                return const_flow_while(ctx, env, ws.condition, ws.body)
-            ast.Stmt.stmt_for as fs:
-                return const_flow_for(ctx, env, fs.bindings, fs.iterables, fs.body)
-            ast.Stmt.stmt_match as ms:
-                return const_flow_match_stmt(ctx, env, ms.scrutinee, ms.arms)
-            ast.Stmt.stmt_unsafe as us:
-                return const_flow_body(ctx, env, us.body)
-            _:
-                return ConstFlow.cf_stuck
-    return ConstFlow.cf_stuck
-
-
-function const_bind_local(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], name: str, destructure_bindings: Option[span[str]], else_binding: Option[str], else_body: ptr[ast.Stmt]?, value: ptr[ir.Expr]) -> ConstFlow:
-    match destructure_bindings:
-        Option.some as names:
-            match const_bind_destructure(env, names.value, value):
-                Option.some:
-                    return ConstFlow.cf_fallthrough
-                Option.none:
-                    return ConstFlow.cf_stuck
-        Option.none:
-            pass
-    # `let x = present else: ...` unwraps the payload; a `none`/`failure` arm
-    # (or a plain nullable value) takes the else branch, binding `else as e`
-    # to the failure error when present.
-    if else_body != null:
-        var failed = false
-        var payload: ptr[ir.Expr]? = null
-        unsafe:
-            match read(value):
-                ir.Expr.expr_variant_literal as vl:
-                    if vl.arm_name == "none" or vl.arm_name == "failure":
-                        failed = true
-                        match else_binding:
-                            Option.some as eb:
-                                match const_field_value(vl.fields, "error"):
-                                    Option.some as ef:
-                                        env.set(eb.value, ef.value)
-                                    Option.none:
-                                        pass
-                            Option.none:
-                                pass
-                    else:
-                        match const_field_value(vl.fields, "value"):
-                            Option.some as vf:
-                                payload = vf.value
-                            Option.none:
-                                pass
-                _:
-                    payload = value
-        if failed:
-            return const_flow_body(ctx, env, else_body)
-        let pv = payload else:
-            return ConstFlow.cf_stuck
-        if name != "_":
-            env.set(name, pv)
-        return ConstFlow.cf_fallthrough
-    if name != "_":
-        env.set(name, value)
-    return ConstFlow.cf_fallthrough
-
-
-## Bind a destructuring pattern (`let (a, b) = ...`, `let Pt(x, y) = ...`) by
-## positional order of the value's fields/elements.
-function const_bind_destructure(env: ref[map_mod.Map[str, ptr[ir.Expr]]], names: span[str], value: ptr[ir.Expr]) -> Option[bool]:
-    unsafe:
-        match read(value):
-            ir.Expr.expr_aggregate_literal as ag:
-                if ag.fields.len != names.len:
-                    return Option[bool].none
-                var i: ptr_uint = 0
-                while i < names.len:
-                    env.set(read(names.data + i), read(ag.fields.data + i).value)
-                    i += 1
-                return Option[bool].some(value = true)
-            ir.Expr.expr_array_literal as al:
-                if al.elements.len != names.len:
-                    return Option[bool].none
-                var ai: ptr_uint = 0
-                while ai < names.len:
-                    env.set(read(names.data + ai), al.elements.data + ai)
-                    ai += 1
-                return Option[bool].some(value = true)
-            _:
-                return Option[bool].none
-    return Option[bool].none
-
-
-function const_field_value(fields: span[ir.AggregateField], name: str) -> Option[ptr[ir.Expr]]:
-    var i: ptr_uint = 0
-    while i < fields.len:
-        var f: ir.AggregateField
-        unsafe:
-            f = read(fields.data + i)
-        if f.name == name:
-            return Option[ptr[ir.Expr]].some(value = f.value)
-        i += 1
-    return Option[ptr[ir.Expr]].none
-
-
-function const_assign_target(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], target: ptr[ast.Expr], operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
-    unsafe:
-        match read(target):
-            ast.Expr.expr_identifier as id:
-                if operator == "=":
-                    env.set(id.name, new_value)
-                    return Option[bool].some(value = true)
-                let old_ptr = env.get(id.name) else:
-                    return Option[bool].none
-                match const_apply_binop(ctx, operator, read(old_ptr), new_value):
-                    Option.some as folded:
-                        env.set(id.name, folded.value)
-                        return Option[bool].some(value = true)
-                    Option.none:
-                        return Option[bool].none
-            ast.Expr.expr_member_access as ma:
-                return const_assign_member(ctx, env, ma.receiver, ma.member_name, operator, new_value)
-            ast.Expr.expr_index_access as ia:
-                return const_assign_index(ctx, env, ia.receiver, ia.index, operator, new_value)
-            _:
-                return Option[bool].none
-    return Option[bool].none
-
-
-## Apply a compound assignment (`+=`) or plain `=` to a compile-time value.
-function const_apply_binop(ctx: ref[LoweringContext], operator: str, old: ptr[ir.Expr], new_value: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
-    if operator == "=":
-        return Option[ptr[ir.Expr]].some(value = new_value)
-    if operator.len < 2:
-        return Option[ptr[ir.Expr]].none
-    let op = operator.slice(0, operator.len - 1)
-    return const_fold_binary_ir(ctx, op, old, new_value)
-
-
-function const_assign_member(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], receiver: ptr[ast.Expr], member: str, operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
-    unsafe:
-        match read(receiver):
-            ast.Expr.expr_identifier as rid:
-                let old_ptr = env.get(rid.name) else:
-                    return Option[bool].none
-                match read(read(old_ptr)):
-                    ir.Expr.expr_aggregate_literal as ag:
-                        var fields = vec.Vec[ir.AggregateField].create()
-                        var i: ptr_uint = 0
-                        var replaced = false
-                        while i < ag.fields.len:
-                            var f: ir.AggregateField
-                            f = read(ag.fields.data + i)
-                            if f.name == member:
-                                match const_apply_binop(ctx, operator, f.value, new_value):
-                                    Option.some as folded:
-                                        fields.push(ir.AggregateField(name = f.name, value = folded.value))
-                                        replaced = true
-                                    Option.none:
-                                        return Option[bool].none
-                            else:
-                                fields.push(f)
-                            i += 1
-                        if not replaced:
-                            return Option[bool].none
-                        env.set(rid.name, alloc_expr(ir.Expr.expr_aggregate_literal(ty = ag.ty, fields = fields.as_span())))
-                        return Option[bool].some(value = true)
-                    _:
-                        return Option[bool].none
-            _:
-                return Option[bool].none
-    return Option[bool].none
-
-
-function const_assign_index(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], receiver: ptr[ast.Expr], index: ptr[ast.Expr], operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
-    unsafe:
-        match read(receiver):
-            ast.Expr.expr_identifier as rid:
-                let idx_opt = const_env_eval_int(ctx, env, index) else:
-                    return Option[bool].none
-                let old_ptr = env.get(rid.name) else:
-                    return Option[bool].none
-                match read(read(old_ptr)):
-                    ir.Expr.expr_array_literal as al:
-                        if idx_opt < 0 or idx_opt >= long<-al.elements.len:
-                            return Option[bool].none
-                        var elements = vec.Vec[ir.Expr].create()
-                        var i: ptr_uint = 0
-                        while i < al.elements.len:
-                            if long<-i == idx_opt:
-                                match const_apply_binop(ctx, operator, al.elements.data + i, new_value):
-                                    Option.some as folded:
-                                        elements.push(read(folded.value))
-                                    Option.none:
-                                        return Option[bool].none
-                            else:
-                                elements.push(read(al.elements.data + i))
-                            i += 1
-                        env.set(rid.name, alloc_expr(ir.Expr.expr_array_literal(ty = al.ty, elements = elements.as_span())))
-                        return Option[bool].some(value = true)
-                    _:
-                        return Option[bool].none
-            _:
-                return Option[bool].none
-    return Option[bool].none
-
-
-function const_flow_if(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> ConstFlow:
-    var bi: ptr_uint = 0
-    while bi < branches.len:
-        var br: ast.IfBranch
-        unsafe:
-            br = read(branches.data + bi)
-        match const_env_eval_bool(ctx, env, br.condition):
-            Option.some as cv:
-                if cv.value:
-                    return const_flow_body(ctx, env, br.body)
-            Option.none:
-                return ConstFlow.cf_stuck
-        bi += 1
-    if else_body != null:
-        return const_flow_body(ctx, env, else_body)
-    return ConstFlow.cf_fallthrough
-
-
-function const_flow_while(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], condition: ptr[ast.Expr], body: ptr[ast.Stmt]?) -> ConstFlow:
-    var iteration: ptr_uint = 0
-    while iteration < 100000:
-        match const_env_eval_bool(ctx, env, condition):
-            Option.some as cv:
-                if not cv.value:
-                    return ConstFlow.cf_fallthrough
-            Option.none:
-                return ConstFlow.cf_stuck
-        match const_flow_body(ctx, env, body):
-            ConstFlow.cf_fallthrough:
-                pass
-            ConstFlow.cf_continue:
-                pass
-            ConstFlow.cf_break:
-                return ConstFlow.cf_fallthrough
-            ConstFlow.cf_value as v:
-                return ConstFlow.cf_value(value = v.value)
-            ConstFlow.cf_stuck:
-                return ConstFlow.cf_stuck
-        iteration += 1
-    return ConstFlow.cf_stuck
-
-
-function const_flow_for(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body: ptr[ast.Stmt]?) -> ConstFlow:
-    if bindings.len != 1 or iterables.len != 1:
-        return ConstFlow.cf_stuck
-    var binding: ast.ForBinding
-    var iterable: ast.Expr
-    unsafe:
-        binding = read(bindings.data + 0)
-        iterable = read(iterables.data + 0)
-    match const_iterable_values(ctx, env, ptr_of(iterable)):
-        Option.some as vals:
-            var vi: ptr_uint = 0
-            while vi < vals.value.len:
-                unsafe:
-                    env.set(binding.name, read(vals.value.data + vi))
-                match const_flow_body(ctx, env, body):
-                    ConstFlow.cf_fallthrough:
-                        pass
-                    ConstFlow.cf_continue:
-                        pass
-                    ConstFlow.cf_break:
-                        return ConstFlow.cf_fallthrough
-                    ConstFlow.cf_value as v:
-                        return ConstFlow.cf_value(value = v.value)
-                    ConstFlow.cf_stuck:
-                        return ConstFlow.cf_stuck
-                vi += 1
-            return ConstFlow.cf_fallthrough
-        Option.none:
-            return ConstFlow.cf_stuck
-    return ConstFlow.cf_stuck
-
-
-## The element values of a compile-time iterable: an integer range, an array or
-## string value, or a slice `arr[a..b]` / `str[a..b]`.
-function const_iterable_values(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[span[ptr[ir.Expr]]]:
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_range as r:
-                let s_opt = const_env_eval_int(ctx, env, r.start_expr) else:
-                    return Option[span[ptr[ir.Expr]]].none
-                let e_opt = const_env_eval_int(ctx, env, r.end_expr) else:
-                    return Option[span[ptr[ir.Expr]]].none
-                var range_vals = vec.Vec[ptr[ir.Expr]].create()
-                var v = s_opt
-                while v < e_opt:
-                    range_vals.push(alloc_expr(ir.Expr.expr_integer_literal(value = v, ty = types.primitive("int"))))
-                    v += 1
-                    if range_vals.len() > 100000:
-                        return Option[span[ptr[ir.Expr]]].none
-                return Option[span[ptr[ir.Expr]]].some(value = range_vals.as_span())
-            ast.Expr.expr_index_access:
-                pass
-            _:
-                pass
-    match try_const_value_ir(ctx, ep, env):
-        Option.some as v:
-            unsafe:
-                match read(v.value):
-                    ir.Expr.expr_array_literal as al:
-                        var elems = vec.Vec[ptr[ir.Expr]].create()
-                        var i: ptr_uint = 0
-                        while i < al.elements.len:
-                            elems.push(al.elements.data + i)
-                            i += 1
-                        return Option[span[ptr[ir.Expr]]].some(value = elems.as_span())
-                    ir.Expr.expr_string_literal as sl:
-                        var chars = vec.Vec[ptr[ir.Expr]].create()
-                        var ci: ptr_uint = 0
-                        while ci < sl.value.len:
-                            chars.push(alloc_expr(ir.Expr.expr_integer_literal(value = long<-sl.value.byte_at(ci), ty = types.primitive("ubyte"))))
-                            ci += 1
-                        return Option[span[ptr[ir.Expr]]].some(value = chars.as_span())
-                    _:
-                        return Option[span[ptr[ir.Expr]]].none
-        Option.none:
-            return Option[span[ptr[ir.Expr]]].none
-    return Option[span[ptr[ir.Expr]]].none
-
-
-function const_flow_match_stmt(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> ConstFlow:
-    match try_const_value_ir(ctx, scrutinee, env):
-        Option.some as sv:
-            var ai: ptr_uint = 0
-            while ai < arms.len:
-                var arm: ast.MatchArm
-                unsafe:
-                    arm = read(arms.data + ai)
-                match const_match_pattern(ctx, env, arm.pattern, sv.value):
-                    Option.some as matched:
-                        if matched.value:
-                            return const_flow_body(ctx, env, arm.body)
-                    Option.none:
-                        return ConstFlow.cf_stuck
-                ai += 1
-            return ConstFlow.cf_stuck
-        Option.none:
-            return ConstFlow.cf_stuck
-    return ConstFlow.cf_stuck
-
-
-## True when a match pattern matches the scrutinee value: literals compare by
-## value and `_` (or a missing pattern) is the wildcard.
-function const_match_pattern(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], pattern: ptr[ast.Expr]?, value: ptr[ir.Expr]) -> Option[bool]:
-    let pp = pattern else:
-        return Option[bool].some(value = true)
-    unsafe:
-        match read(pp):
-            ast.Expr.expr_identifier as pid:
-                if pid.name == "_":
-                    return Option[bool].some(value = true)
-            _:
-                pass
-    match try_const_value_ir(ctx, pp, env):
-        Option.some as pv:
-            return const_value_eq_ir(pv.value, value)
-        Option.none:
-            return Option[bool].none
-    return Option[bool].none
-
-
-function const_value_eq_ir(a: ptr[ir.Expr], b: ptr[ir.Expr]) -> Option[bool]:
-    unsafe:
-        match read(a):
-            ir.Expr.expr_integer_literal as ai:
-                match read(b):
-                    ir.Expr.expr_integer_literal as bi:
-                        return Option[bool].some(value = ai.value == bi.value)
-                    _:
-                        return Option[bool].none
-            ir.Expr.expr_string_literal as as_:
-                match read(b):
-                    ir.Expr.expr_string_literal as bs:
-                        return Option[bool].some(value = as_.value == bs.value)
-                    _:
-                        return Option[bool].none
-            ir.Expr.expr_boolean_literal as ab:
-                match read(b):
-                    ir.Expr.expr_boolean_literal as bb:
-                        return Option[bool].some(value = ab.value == bb.value)
-                    _:
-                        return Option[bool].none
-            _:
-                return Option[bool].none
-    return Option[bool].none
-
-
-function const_env_eval_int(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[long]:
-    match try_const_value_ir(ctx, ep, env):
-        Option.some as v:
-            unsafe:
-                match read(v.value):
-                    ir.Expr.expr_integer_literal as il:
-                        return Option[long].some(value = il.value)
-                    ir.Expr.expr_boolean_literal as bl:
-                        if bl.value:
-                            return Option[long].some(value = 1)
-                        return Option[long].some(value = 0)
-                    _:
-                        return Option[long].none
-        Option.none:
-            return Option[long].none
-    return Option[long].none
-
-
-function const_env_eval_bool(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[bool]:
-    match try_const_value_ir(ctx, ep, env):
-        Option.some as v:
-            unsafe:
-                match read(v.value):
-                    ir.Expr.expr_boolean_literal as bl:
-                        return Option[bool].some(value = bl.value)
-                    ir.Expr.expr_integer_literal as il:
-                        return Option[bool].some(value = il.value != 0)
-                    _:
-                        return Option[bool].none
-        Option.none:
-            return Option[bool].none
-    return Option[bool].none
 
 
 ## Compile-time evaluation of `==` / `!=` over constant operands, used to fold
@@ -27961,7 +26687,7 @@ function try_const_equality(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Opt
         match read(ep):
             ast.Expr.expr_binary_op as bin:
                 if bin.operator == "==" or bin.operator == "!=":
-                    match const_operand_eq(ctx, bin.left, bin.right):
+                    match comptime.const_operand_eq(ctx, bin.left, bin.right):
                         Option.some as eq:
                             if bin.operator == "==":
                                 return Option[bool].some(value = eq.value)
@@ -27976,7 +26702,7 @@ function try_const_equality(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Opt
 ## Resolve an operand expression to its constant form: identifiers naming module
 ## constants resolve to the constant's value expression (recursively); every
 ## other expression is returned as-is.
-function resolve_const_operand(ctx: ref[LoweringContext], ep: ptr[ast.Expr], depth: int) -> Option[ptr[ast.Expr]]:
+public function resolve_const_operand(ctx: ref[LoweringContext], ep: ptr[ast.Expr], depth: int) -> Option[ptr[ast.Expr]]:
     if depth > 32:
         return Option[ptr[ast.Expr]].none
     unsafe:
@@ -28011,165 +26737,6 @@ function find_const_value_ast(ctx: ref[LoweringContext], name: str) -> ptr[ast.E
                     pass
         i += 1
     return null
-
-
-## Structural equality of two constant operand expressions.
-function const_operand_eq(ctx: ref[LoweringContext], left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[bool]:
-    let lp = resolve_const_operand(ctx, left, 0) else:
-        return Option[bool].none
-    let rp = resolve_const_operand(ctx, right, 0) else:
-        return Option[bool].none
-    unsafe:
-        match read(lp):
-            ast.Expr.expr_integer_literal as li:
-                match read(rp):
-                    ast.Expr.expr_integer_literal as ri:
-                        return Option[bool].some(value = li.value == ri.value)
-                    _:
-                        return Option[bool].none
-            ast.Expr.expr_float_literal as lf:
-                match read(rp):
-                    ast.Expr.expr_float_literal as rf:
-                        return Option[bool].some(value = lf.value == rf.value)
-                    _:
-                        return Option[bool].none
-            ast.Expr.expr_bool_literal as lb:
-                match read(rp):
-                    ast.Expr.expr_bool_literal as rb:
-                        return Option[bool].some(value = lb.value == rb.value)
-                    _:
-                        return Option[bool].none
-            ast.Expr.expr_char_literal as lc:
-                match read(rp):
-                    ast.Expr.expr_char_literal as rc:
-                        return Option[bool].some(value = lc.value == rc.value)
-                    _:
-                        return Option[bool].none
-            ast.Expr.expr_string_literal as ls:
-                match read(rp):
-                    ast.Expr.expr_string_literal as rs:
-                        return Option[bool].some(value = ls.value == rs.value)
-                    _:
-                        return Option[bool].none
-            ast.Expr.expr_null_literal:
-                match read(rp):
-                    ast.Expr.expr_null_literal:
-                        return Option[bool].some(value = true)
-                    _:
-                        return Option[bool].none
-            ast.Expr.expr_call as lcall:
-                match read(rp):
-                    ast.Expr.expr_call as rcall:
-                        return const_call_eq(ctx, lcall.callee, lcall.args, rcall.callee, rcall.args)
-                    _:
-                        return Option[bool].none
-            _:
-                return Option[bool].none
-    return Option[bool].none
-
-
-## Compare two aggregate/literal constructor calls.  Struct and variant
-## literals compare named fields (order-independent); array constructors
-## compare positional elements.
-function const_call_eq(ctx: ref[LoweringContext], lcallee: ptr[ast.Expr], largs: span[ast.Argument], rcallee: ptr[ast.Expr], rargs: span[ast.Argument]) -> Option[bool]:
-    unsafe:
-        match read(lcallee):
-            ast.Expr.expr_identifier as lid:
-                match read(rcallee):
-                    ast.Expr.expr_identifier as rid:
-                        if lid.name != rid.name:
-                            return Option[bool].none
-                        return const_fields_eq(ctx, largs, rargs)
-                    _:
-                        return Option[bool].none
-            ast.Expr.expr_member_access as lma:
-                match read(rcallee):
-                    ast.Expr.expr_member_access as rma:
-                        if lma.member_name != rma.member_name:
-                            return Option[bool].none
-                        if not const_expr_names_equal(lma.receiver, rma.receiver):
-                            return Option[bool].none
-                        return const_fields_eq(ctx, largs, rargs)
-                    _:
-                        return Option[bool].none
-            ast.Expr.expr_specialization as lspec:
-                match read(rcallee):
-                    ast.Expr.expr_specialization as rspec:
-                        if not const_expr_names_equal(lspec.callee, rspec.callee):
-                            return Option[bool].none
-                        return const_positional_eq(ctx, largs, rargs)
-                    _:
-                        return Option[bool].none
-            _:
-                return Option[bool].none
-    return Option[bool].none
-
-
-function const_expr_names_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
-    unsafe:
-        match read(a):
-            ast.Expr.expr_identifier as aid:
-                match read(b):
-                    ast.Expr.expr_identifier as bid:
-                        return aid.name == bid.name
-                    _:
-                        return false
-            _:
-                return false
-
-
-function const_fields_eq(ctx: ref[LoweringContext], largs: span[ast.Argument], rargs: span[ast.Argument]) -> Option[bool]:
-    if largs.len != rargs.len:
-        return Option[bool].none
-    var right_by_name = map_mod.Map[str, ptr[ast.Expr]].create()
-    var ri: ptr_uint = 0
-    while ri < rargs.len:
-        var ra: ast.Argument
-        unsafe:
-            ra = read(rargs.data + ri)
-        match ra.arg_name:
-            Option.some as nm:
-                right_by_name.set(nm.value, ra.arg_value)
-            Option.none:
-                return Option[bool].none
-        ri += 1
-    var li: ptr_uint = 0
-    while li < largs.len:
-        var la: ast.Argument
-        unsafe:
-            la = read(largs.data + li)
-        let lname = la.arg_name else:
-            return Option[bool].none
-        let rvp = right_by_name.get(lname) else:
-            return Option[bool].none
-        match const_operand_eq(ctx, la.arg_value, unsafe: read(rvp)):
-            Option.some as eq:
-                if not eq.value:
-                    return Option[bool].some(value = false)
-            Option.none:
-                return Option[bool].none
-        li += 1
-    return Option[bool].some(value = true)
-
-
-function const_positional_eq(ctx: ref[LoweringContext], largs: span[ast.Argument], rargs: span[ast.Argument]) -> Option[bool]:
-    if largs.len != rargs.len:
-        return Option[bool].none
-    var i: ptr_uint = 0
-    while i < largs.len:
-        var la: ast.Argument
-        var ra: ast.Argument
-        unsafe:
-            la = read(largs.data + i)
-            ra = read(rargs.data + i)
-        match const_operand_eq(ctx, la.arg_value, ra.arg_value):
-            Option.some as eq:
-                if not eq.value:
-                    return Option[bool].some(value = false)
-            Option.none:
-                return Option[bool].none
-        i += 1
-    return Option[bool].some(value = true)
 
 
 ## Lower a span of statements (from a when branch) into the output vec.
@@ -28300,19 +26867,19 @@ function find_enum_member_value(members: span[ast.EnumMember], name: str) -> lon
     return -1
 
 
-function try_evaluate_const_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[ConstValue]:
+function try_evaluate_const_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[comptime_types.ConstValue]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
-                return Option[ConstValue].some(value = ConstValue.cv_int(value = long<-lit.value))
+                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = long<-lit.value))
             ast.Expr.expr_float_literal as lit:
-                return Option[ConstValue].some(value = ConstValue.cv_int(value = long<-(lit.value)))
+                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = long<-(lit.value)))
             ast.Expr.expr_bool_literal as b:
-                return Option[ConstValue].some(value = ConstValue.cv_bool(value = b.value))
+                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = b.value))
             ast.Expr.expr_string_literal as s:
-                return Option[ConstValue].some(value = ConstValue.cv_str(value = s.value))
+                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_str(value = s.value))
             ast.Expr.expr_char_literal as ch:
-                return Option[ConstValue].some(value = ConstValue.cv_int(value = long<-ch.value))
+                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = long<-ch.value))
             ast.Expr.expr_identifier as id:
                 let cv_entry = ctx.analysis.const_values.get(id.name)
                 if cv_entry != null:
@@ -28320,18 +26887,18 @@ function try_evaluate_const_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -
                         let cv_val = read(cv_entry)
                         return try_evaluate_const_expr(ctx, cv_val)
                 if id.name == "true":
-                    return Option[ConstValue].some(value = ConstValue.cv_bool(value = true))
+                    return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = true))
                 if id.name == "false":
-                    return Option[ConstValue].some(value = ConstValue.cv_bool(value = false))
+                    return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = false))
                 # A bare type name or an in-scope generic type parameter evaluates
                 # to a compile-time type value, enabling `inline if T == int` and
                 # `field.type == float` dispatch.
-                match comptime_identifier_type(ctx, id.name):
+                match comptime.comptime_identifier_type(ctx, id.name):
                     Option.some as tv:
-                        return Option[ConstValue].some(value = ConstValue.cv_type(ty = tv.value))
+                        return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_type(ty = tv.value))
                     Option.none:
                         pass
-                return Option[ConstValue].none
+                return Option[comptime_types.ConstValue].none
             ast.Expr.expr_member_access as ma:
                 # `field.type` inside an `inline for` over `fields_of(T)` resolves
                 # to the current field's type as a compile-time type value.
@@ -28339,15 +26906,15 @@ function try_evaluate_const_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -
                     match ctx.inline_for_element:
                         Option.some as elem_val:
                             match elem_val.value:
-                                ComptimeElement.ce_struct_field as sf:
-                                    return Option[ConstValue].some(value = ConstValue.cv_type(ty = sf.field_type))
+                                comptime_types.ComptimeElement.ce_struct_field as sf:
+                                    return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_type(ty = sf.field_type))
                                 _:
                                     pass
                         Option.none:
                             pass
                 match try_evaluate_const_expr(ctx, ma.receiver):
                     Option.some as rv:
-                        return Option[ConstValue].some(value = rv.value)
+                        return Option[comptime_types.ConstValue].some(value = rv.value)
                     Option.none:
                         pass
                 # An imported module constant (`alias.CONST`): evaluate its
@@ -28364,7 +26931,7 @@ function try_evaluate_const_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -
                                     var saved_analysis = ctx.analysis
                                     ctx.module_name = owner.value.module_name
                                     ctx.analysis = owner.value
-                                    var imported_cv = Option[ConstValue].none
+                                    var imported_cv = Option[comptime_types.ConstValue].none
                                     let chain = ctx.analysis.const_values.get(ma.member_name)
                                     if chain != null:
                                         imported_cv = try_evaluate_const_expr(ctx, unsafe: read(chain))
@@ -28372,7 +26939,7 @@ function try_evaluate_const_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -
                                     ctx.analysis = saved_analysis
                                     match imported_cv:
                                         Option.some as cv:
-                                            return Option[ConstValue].some(value = cv.value)
+                                            return Option[comptime_types.ConstValue].some(value = cv.value)
                                         Option.none:
                                             pass
                                 Option.none:
@@ -28383,8 +26950,8 @@ function try_evaluate_const_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -
                 # from the enum's backing integer.
                 let enum_val = try_lookup_enum_value(ctx, ma.receiver, ma.member_name)
                 if enum_val >= 0:
-                    return Option[ConstValue].some(value = ConstValue.cv_int(value = enum_val))
-                return Option[ConstValue].none
+                    return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = enum_val))
+                return Option[comptime_types.ConstValue].none
             ast.Expr.expr_binary_op as bin:
                 return evaluate_const_binary(ctx, bin.operator, bin.left, bin.right)
             ast.Expr.expr_unary_op as un:
@@ -28392,47 +26959,47 @@ function try_evaluate_const_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -
             ast.Expr.expr_prefix_cast as pc:
                 return evaluate_const_prefix_cast(ctx, pc.target_type, pc.expression)
             _:
-                return Option[ConstValue].none
+                return Option[comptime_types.ConstValue].none
 
 
 ## The host's `CompileTime.evaluate_prefix_cast`: fold a constant through the
 ## cast's target primitive, wrapping integers to the target width/signedness
 ## (`uint<-MoverBit` → 2, `ubyte<-300` → 44).  A non-primitive target or a
 ## non-numeric operand stays unfolded.
-function evaluate_const_prefix_cast(ctx: ref[LoweringContext], target_type: ptr[ast.TypeRef], expression: ptr[ast.Expr]) -> Option[ConstValue]:
+function evaluate_const_prefix_cast(ctx: ref[LoweringContext], target_type: ptr[ast.TypeRef], expression: ptr[ast.Expr]) -> Option[comptime_types.ConstValue]:
     match try_evaluate_const_expr(ctx, expression):
         Option.some as inner:
             match inner.value:
-                ConstValue.cv_int as iv:
+                comptime_types.ConstValue.cv_int as iv:
                     let target_ty = resolve_type_ref(ctx, target_type)
                     match target_ty:
                         types.Type.ty_primitive as p:
                             if p.name == "bool":
-                                return Option[ConstValue].some(value = ConstValue.cv_bool(value = iv.value != 0))
+                                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = iv.value != 0))
                             if types.is_integer_type(target_ty):
                                 let width = types.integer_width(p.name)
                                 if width <= 0:
-                                    return Option[ConstValue].none
-                                return Option[ConstValue].some(value = ConstValue.cv_int(value = wrap_const_integer(iv.value, width, types.is_signed_integer_name(p.name))))
+                                    return Option[comptime_types.ConstValue].none
+                                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = wrap_const_integer(iv.value, width, types.is_signed_integer_name(p.name))))
                             if types.is_float_type(target_ty):
-                                return Option[ConstValue].some(value = ConstValue.cv_int(value = iv.value))
+                                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = iv.value))
                         _:
                             pass
-                ConstValue.cv_bool as bv:
+                comptime_types.ConstValue.cv_bool as bv:
                     let target_ty = resolve_type_ref(ctx, target_type)
                     match target_ty:
                         types.Type.ty_primitive as p:
                             if p.name == "bool":
-                                return Option[ConstValue].some(value = inner.value)
+                                return Option[comptime_types.ConstValue].some(value = inner.value)
                             if types.is_integer_type(target_ty):
-                                return Option[ConstValue].some(value = ConstValue.cv_int(value = if bv.value: 1 else: 0))
+                                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = if bv.value: 1 else: 0))
                         _:
                             pass
                 _:
                     pass
         Option.none:
             pass
-    return Option[ConstValue].none
+    return Option[comptime_types.ConstValue].none
 
 
 function wrap_const_integer(value: long, width: int, signed: bool) -> long:
@@ -28448,93 +27015,43 @@ function wrap_const_integer(value: long, width: int, signed: bool) -> long:
     return wrapped
 
 
-function evaluate_const_unary(ctx: ref[LoweringContext], op: str, operand: ptr[ast.Expr]) -> Option[ConstValue]:
+function evaluate_const_unary(ctx: ref[LoweringContext], op: str, operand: ptr[ast.Expr]) -> Option[comptime_types.ConstValue]:
     match try_evaluate_const_expr(ctx, operand):
         Option.some as val:
             match val.value:
-                ConstValue.cv_int as iv:
+                comptime_types.ConstValue.cv_int as iv:
                     if op == "-":
-                        return Option[ConstValue].some(value = ConstValue.cv_int(value = -iv.value))
+                        return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = -iv.value))
                     if op == "~":
-                        return Option[ConstValue].some(value = ConstValue.cv_int(value = ~iv.value))
-                    return Option[ConstValue].none
-                ConstValue.cv_bool as bv:
+                        return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = ~iv.value))
+                    return Option[comptime_types.ConstValue].none
+                comptime_types.ConstValue.cv_bool as bv:
                     if op == "not":
-                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = not bv.value))
-                    return Option[ConstValue].none
+                        return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = not bv.value))
+                    return Option[comptime_types.ConstValue].none
                 _:
-                    return Option[ConstValue].none
+                    return Option[comptime_types.ConstValue].none
         Option.none:
-            return Option[ConstValue].none
+            return Option[comptime_types.ConstValue].none
 
 
-function evaluate_const_binary(ctx: ref[LoweringContext], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[ConstValue]:
+function evaluate_const_binary(ctx: ref[LoweringContext], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[comptime_types.ConstValue]:
     match try_evaluate_const_expr(ctx, left):
         Option.some as lv:
             match try_evaluate_const_expr(ctx, right):
                 Option.some as rv:
-                    return const_binary_op(op, lv.value, rv.value)
+                    return comptime.const_binary_op(op, lv.value, rv.value)
                 Option.none:
-                    return Option[ConstValue].none
+                    return Option[comptime_types.ConstValue].none
         Option.none:
-            return Option[ConstValue].none
+            return Option[comptime_types.ConstValue].none
 
 
-function const_binary_op(op: str, left_val: ConstValue, right_val: ConstValue) -> Option[ConstValue]:
-    match left_val:
-        ConstValue.cv_int as li:
-            match right_val:
-                ConstValue.cv_int as ri:
-                    # Comparison operators yield a bool; arithmetic/bitwise yield
-                    # an int.  Without this split, `SELECTOR == 2` would evaluate
-                    # to `cv_int(1)` and an `inline if` (which only accepts
-                    # `cv_bool`) would drop both branches.
-                    if is_const_comparison_op(op):
-                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = apply_int_op(op, li.value, ri.value) != 0))
-                    return Option[ConstValue].some(value = ConstValue.cv_int(value = apply_int_op(op, li.value, ri.value)))
-                _:
-                    return Option[ConstValue].none
-        ConstValue.cv_bool as lb:
-            match right_val:
-                ConstValue.cv_bool as rb:
-                    if op == "and":
-                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = lb.value and rb.value))
-                    if op == "or":
-                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = lb.value or rb.value))
-                    if op == "==":
-                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = lb.value == rb.value))
-                    if op == "!=":
-                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = lb.value != rb.value))
-                    return Option[ConstValue].none
-                _:
-                    return Option[ConstValue].none
-        ConstValue.cv_str as ls:
-            match right_val:
-                ConstValue.cv_str as rs:
-                    if op == "==":
-                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = ls.value == rs.value))
-                    if op == "!=":
-                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = not ls.value == rs.value))
-                    return Option[ConstValue].none
-                _:
-                    return Option[ConstValue].none
-        ConstValue.cv_type as lt:
-            match right_val:
-                ConstValue.cv_type as rt:
-                    if op == "==":
-                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = types_are_equal(lt.ty, rt.ty)))
-                    if op == "!=":
-                        return Option[ConstValue].some(value = ConstValue.cv_bool(value = not types_are_equal(lt.ty, rt.ty)))
-                    return Option[ConstValue].none
-                _:
-                    return Option[ConstValue].none
-
-
-function is_const_comparison_op(op: str) -> bool:
+public function is_const_comparison_op(op: str) -> bool:
     return op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">="
 
 
-function apply_int_op(op: str, l: long, r: long) -> long:
+public function apply_int_op(op: str, l: long, r: long) -> long:
     if op == "+":
         return l + r
     if op == "-":
@@ -29175,22 +27692,6 @@ function multi_for_stop(items_name: str, iterable_type: types.Type) -> ptr[ir.Ex
 ## parameter (i.e. the struct/deferred type requires monomorphization).
 ## Lifetime-only parameters (`@a`) are erased at the C level and the struct
 ## can be emitted directly without specialization.
-function const_values_eq(a: ConstValue, b: ConstValue) -> bool:
-    match a:
-        ConstValue.cv_int as ai:
-            match b:
-                ConstValue.cv_int as bi:
-                    return ai.value == bi.value
-                _:
-                    return false
-        ConstValue.cv_str as as_:
-            match b:
-                ConstValue.cv_str as bs:
-                    return as_.value == bs.value
-                _:
-                    return false
-        _:
-            return false
 
 
 function has_non_lifetime_type_params(params: span[ast.TypeParam]) -> bool:

@@ -79,6 +79,7 @@ function empty_program_with_diagnostics(path: str, message: string.String) -> Pr
         root_index = 0,
         unresolved_import_paths = vec.Vec[string.String].create(),
         modules_owned = true,
+        cycle_module_names = vec.Vec[str].create(),
     )
 
 
@@ -102,6 +103,11 @@ public struct Program:
     ## `ModuleCache`) holds shallow copies of the cache's modules — the cache
     ## owns their storage — so `release` frees only the modules vector itself.
     modules_owned: bool
+    ## Module names that participate in an import cycle, in parse order (the
+    ## host's graph-key order).  Empty for an acyclic program.  Lowering uses
+    ## this to reproduce the host's analysis-cache insertion order when it
+    ## collects raw-module includes.
+    cycle_module_names: vec.Vec[str]
 
 
 extending LoadedModule:
@@ -239,6 +245,7 @@ extending Program:
         this.order.release()
         this.analyses.release()
         this.owning_type_names.release()
+        this.cycle_module_names.release()
 
         var d: ptr_uint = 0
         while d < this.diagnostics.len():
@@ -666,6 +673,20 @@ function module_needs_rebuild(cache: ptr[ModuleCache]?, run: ref[LoadRun], modul
                 return true
         di += 1
     return false
+
+
+## The cycle members' module names in parse order (the host's graph-key order).
+## Lowering uses this to reproduce the host's analysis insertion order.
+function collect_cycle_module_names(modules: ref[vec.Vec[LoadedModule]], cycle_members: ref[map_mod.Map[ptr_uint, bool]]) -> vec.Vec[str]:
+    var names = vec.Vec[str].create()
+    var i: ptr_uint = 0
+    while i < modules.len():
+        if cycle_members.contains(i):
+            let module_ptr = modules.get(i) else:
+                break
+            names.push(unsafe: read(module_ptr).module_name.as_str())
+        i += 1
+    return names
 
 
 ## Cycle members from the resolved dependency paths recorded by the parse walk:
@@ -1204,6 +1225,7 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
     var analyses = vec.Vec[analyzer.Analysis].create()
 
     var cycle_members = detect_cycle_members(ref_of(run), ref_of(visited), modules.len())
+    var cycle_module_names = collect_cycle_module_names(ref_of(modules), ref_of(cycle_members))
     if cycle_members.len() > 0:
         check_cyclic_program(ref_of(modules), ref_of(visited), ref_of(order), ref_of(run), cache, ref_of(cycle_members), bindings_ptr, ref_of(analyses), ref_of(diagnostics), require_resolved_imports, ref_of(order_positions))
     else:
@@ -1248,7 +1270,7 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
         ci += 1
     analyses.release()
 
-    return Program(modules = modules, order = order, analyses = canonical_analyses, diagnostics = diagnostics, owning_type_names = owning_type_names, root_index = root_index, unresolved_import_paths = unresolved_import_paths, modules_owned = cache == null)
+    return Program(modules = modules, order = order, analyses = canonical_analyses, diagnostics = diagnostics, owning_type_names = owning_type_names, root_index = root_index, unresolved_import_paths = unresolved_import_paths, modules_owned = cache == null, cycle_module_names = cycle_module_names)
 
 
 ## Canonical module order: depth-first post-order over the module names sorted
