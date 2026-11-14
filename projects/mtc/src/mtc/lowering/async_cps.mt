@@ -17,6 +17,7 @@ import mtc.c_naming as naming
 
 import mtc.lowering.async as async_mod
 import mtc.lowering.format as format
+import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.lowering as lowering
 import mtc.lowering.tasks as tasks
 import mtc.strings
@@ -199,8 +200,8 @@ public function lower_async_fn(ctx: ref[lowering.LoweringContext], name: str, li
     ctx.async_await_fields = vec.Vec[ir.Field].create()
     ctx.async_local_seen = map_mod.Map[str, bool].create()
     ctx.async_format_str_fields = vec.Vec[str].create()
-    let sig = lowering.find_fn_sig(ctx, name)
-    let res_ty = lowering.resolve_return_type(ctx, sig, return_type)
+    let sig = type_helpers.find_fn_sig(ctx, name)
+    let res_ty = type_helpers.resolve_return_type(ctx, sig, return_type)
     let bool_ty = ctx.bool_ty
     let int_ty = types.primitive("int")
     let void_t = ctx.void_ty
@@ -253,7 +254,7 @@ public function lower_async_fn(ctx: ref[lowering.LoweringContext], name: str, li
         var p: ast.Param
         unsafe:
             p = read(params.data + pi)
-        let p_ty = lowering.resolve_param_type(ctx, sig, pi, p.param_type)
+        let p_ty = type_helpers.resolve_param_type(ctx, sig, pi, p.param_type)
         ctor_param_names.push(p.name)
         ctor_param_tys.push(p_ty)
         ctor_field_tys.push(async_param_field_type(receiver_ty_opt, receiver_editable, p.name, p_ty))
@@ -926,9 +927,9 @@ public function async_hoist_awaits(ctx: ref[lowering.LoweringContext], output: r
                 let tmp = strings.join_two("__mt_async_tmp_", lowering.pw1_str(ctx.async_tmp_counter))
                 let field_name = strings.join_two("local_", tmp)
                 let frame_cname = strings.join_two("__mt_frame->", field_name)
-                var result_ty = lowering.expr_type(ctx, ep)
+                var result_ty = type_helpers.expr_type(ctx, ep)
                 if types.is_error(result_ty):
-                    result_ty = lowering.expr_type(ctx, ie.then_expr)
+                    result_ty = type_helpers.expr_type(ctx, ie.then_expr)
                 async_register_local_field(ctx, tmp, field_name, frame_cname, result_ty)
                 async_move_last_local_field_to(ctx, field_index)
                 output.push(async_frame_field_assignment(ctx, field_name, result_ty, lowering.alloc_expr(ir.Expr.expr_zero_init(ty = result_ty))))
@@ -1184,7 +1185,7 @@ function async_local_value_type(ctx: ref[lowering.LoweringContext], val: ptr[ast
             ast.Expr.expr_call as cl:
                 match read(cl.callee):
                     ast.Expr.expr_member_access:
-                        match lowering.expr_type(ctx, val):
+                        match type_helpers.expr_type(ctx, val):
                             types.Type.ty_function as fnt:
                                 return unsafe: read(fnt.return_type)
                             _:
@@ -1193,7 +1194,7 @@ function async_local_value_type(ctx: ref[lowering.LoweringContext], val: ptr[ast
                         pass
             _:
                 pass
-    return lowering.expr_type(ctx, val)
+    return type_helpers.expr_type(ctx, val)
 
 
 ## The host's prepared array-call temp for a value lowered with hoisting off:
@@ -1497,12 +1498,12 @@ public function async_emit_await(ctx: ref[lowering.LoweringContext], output: ref
 ## linkage `<module>_main`.  Here we build a root proc from the constructor,
 ## drive it via `std.async.wait[int]` / `run` for void, and release the proc.
 public function build_async_main_entrypoint(ctx: ref[lowering.LoweringContext], name: str) -> Option[ir.Function]:
-    let sig = lowering.find_fn_sig(ctx, name)
-    let task_ret = lowering.fn_sig_return_type(sig)
+    let sig = type_helpers.find_fn_sig(ctx, name)
+    let task_ret = type_helpers.fn_sig_return_type(sig)
     let inner_ty = extract_task_element_type(ctx, task_ret)
     let is_void_ret = tasks.is_void_type_lowered(inner_ty)
     # Supported result types: int (wait[int]) and void (run).
-    if not (is_void_ret or lowering.is_int_type(inner_ty)):
+    if not (is_void_ret or type_helpers.is_int_type(inner_ty)):
         return Option[ir.Function].none
 
     let int_ty = types.primitive("int")

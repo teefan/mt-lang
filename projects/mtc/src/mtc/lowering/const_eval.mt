@@ -13,6 +13,7 @@ import mtc.semantic.types as types
 import mtc.lowering.comptime as comptime
 import mtc.lowering.comptime_types as comptime_types
 import mtc.lowering.layout as layout_mod
+import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.lowering as lowering
 
 
@@ -31,7 +32,7 @@ function enum_member_value_of_expr(ctx: ref[lowering.LoweringContext], ep: ptr[a
     unsafe:
         match read(ep):
             ast.Expr.expr_member_access as ma:
-                let operand_ty = lowering.expr_type(ctx, ep)
+                let operand_ty = type_helpers.expr_type(ctx, ep)
                 var enum_name = ""
                 var enum_module = ""
                 match operand_ty:

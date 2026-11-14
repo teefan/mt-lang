@@ -213,6 +213,7 @@
     "lowering.lowering": "lowering",
     "lowering.proc_renumber": "proc_renumber",
     "lowering.tasks": "tasks",
+    "lowering.type_helpers": "type_helpers",
     "lowering.utils": "utils",
     "lsp.call_hierarchy": "call_hier",
     "lsp.code_actions": "code_actions",
@@ -307,7 +308,7 @@
       "projects/mtc/src/mtc/lowering/async.mt:322:function:bool_type",
       "projects/mtc/src/mtc/lowering/async.mt:326:function:int_type",
       "projects/mtc/src/mtc/lowering/async.mt:330:function:void_type",
-      "projects/mtc/src/mtc/lowering/lowering.mt:50:struct:LoweringError",
+      "projects/mtc/src/mtc/lowering/lowering.mt:51:struct:LoweringError",
       "projects/mtc/src/mtc/lsp/navigation.mt:750:function:analysis_for_document",
       "projects/mtc/src/mtc/lsp/navigation.mt:761:function:ast_for_document",
       "projects/mtc/src/mtc/lsp/protocol.mt:108:function:read_message",
@@ -1137,7 +1138,7 @@
     ]
   },
   "sizes": {
-    "total_code": 123090,
+    "total_code": 123106,
     "functions_over_limit": 35,
     "files_over_limit": 12,
     "files": {
@@ -1442,14 +1443,14 @@
         "max_function": 63
       },
       "projects/mtc/src/mtc/lowering/async_cps.mt": {
-        "lines": 1749,
-        "code": 1308,
+        "lines": 1750,
+        "code": 1309,
         "max_line": 314,
         "max_function": 587
       },
       "projects/mtc/src/mtc/lowering/comptime.mt": {
-        "lines": 1555,
-        "code": 1332,
+        "lines": 1556,
+        "code": 1333,
         "max_line": 259,
         "max_function": 66
       },
@@ -1460,14 +1461,14 @@
         "max_function": 0
       },
       "projects/mtc/src/mtc/lowering/const_eval.mt": {
-        "lines": 1821,
-        "code": 1563,
+        "lines": 1822,
+        "code": 1564,
         "max_line": 253,
         "max_function": 178
       },
       "projects/mtc/src/mtc/lowering/format.mt": {
-        "lines": 1165,
-        "code": 948,
+        "lines": 1166,
+        "code": 949,
         "max_line": 330,
         "max_function": 139
       },
@@ -1484,8 +1485,8 @@
         "max_function": 84
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 23909,
-        "code": 17879,
+        "lines": 22965,
+        "code": 17172,
         "max_line": 817,
         "max_function": 909
       },
@@ -1500,6 +1501,12 @@
         "code": 194,
         "max_line": 228,
         "max_function": 134
+      },
+      "projects/mtc/src/mtc/lowering/type_helpers.mt": {
+        "lines": 962,
+        "code": 719,
+        "max_line": 224,
+        "max_function": 128
       },
       "projects/mtc/src/mtc/lowering/utils.mt": {
         "lines": 180,

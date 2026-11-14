@@ -15,6 +15,7 @@ import mtc.semantic.types as types
 import mtc.lowering.comptime_types as comptime_types
 import mtc.lowering.const_eval as const_eval
 import mtc.lowering.layout as layout_mod
+import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.lowering as lowering
 
 
@@ -565,7 +566,7 @@ public function const_fold_binary_ir(ctx: ref[lowering.LoweringContext], op: str
                 match read(r):
                     ir.Expr.expr_integer_literal as ri:
                         let result = lowering.apply_int_op(op, li.value, ri.value)
-                        if lowering.is_comparison_operator(op):
+                        if type_helpers.is_comparison_operator(op):
                             return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = result != 0, ty = ctx.bool_ty)))
                         return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = result, ty = int_ty)))
                     ir.Expr.expr_float_literal as rf:

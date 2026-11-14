@@ -13,6 +13,7 @@ import mtc.semantic.types as types
 
 import mtc.lowering.comptime_types as comptime_types
 import mtc.lowering.const_eval as const_eval
+import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.lowering as lowering
 import mtc.strings
 
@@ -270,7 +271,7 @@ public function ast_expr_cstr_backed(ctx: ref[lowering.LoweringContext], ep: ptr
             ast.Expr.expr_string_literal:
                 return true
             ast.Expr.expr_identifier as id:
-                match lowering.find_local_binding(ctx, id.name):
+                match type_helpers.find_local_binding(ctx, id.name):
                     Option.some as lb:
                         match lb.value.ty:
                             types.Type.ty_primitive as p:
@@ -321,7 +322,7 @@ public function update_cstr_metadata_for_assignment_mt(ctx: ref[lowering.Lowerin
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
-                match lowering.find_local_binding(ctx, id.name):
+                match type_helpers.find_local_binding(ctx, id.name):
                     Option.some as lb:
                         var backed = false
                         if operator == "=":
@@ -695,7 +696,7 @@ function lower_format_sink_target(ctx: ref[lowering.LoweringContext], info: Form
                 pass
     else:
         let fn_name = if info.is_assign: "assign_format" else: "append_format"
-        sink_value = lowering.coerce_arg_to_ref_param(lowering.find_imported_fn_sig(ctx, "std.fmt", fn_name), 0, recv)
+        sink_value = lowering.coerce_arg_to_ref_param(type_helpers.find_imported_fn_sig(ctx, "std.fmt", fn_name), 0, recv)
     return FormatSinkTarget.fst_string(value = sink_value)
 
 

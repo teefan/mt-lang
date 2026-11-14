@@ -32,6 +32,7 @@ import mtc.parser.literal_parsing as lparse
 import mtc.c_naming as naming
 import mtc.lowering.async as async_mod
 import mtc.lowering.async_cps as async_cps
+import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.comptime as comptime
 import mtc.lowering.comptime_types as comptime_types
 import mtc.lowering.const_eval as const_eval
@@ -1159,7 +1160,7 @@ function lower_specialized_function(ctx: ref[LoweringContext], name: str, spec_k
 
 ## Replace type-parameter references (`ty_var`) in a type with their concrete
 ## values from the substitution map.  Other type variants pass through unchanged.
-function substitute_type_params(ctx: ref[LoweringContext], ty: types.Type, sub: ref[map_mod.Map[str, types.Type]]) -> types.Type:
+public function substitute_type_params(ctx: ref[LoweringContext], ty: types.Type, sub: ref[map_mod.Map[str, types.Type]]) -> types.Type:
     match ty:
         types.Type.ty_var as v:
             let concrete = sub.get(v.name)
@@ -1370,13 +1371,13 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
                     # context) would instantiate bogus concrete types.  Its
                     # specializations record their own return types.
                     if fun.type_params.len == 0:
-                        let ret = resolve_return_type(ref_of(ctx), find_fn_sig(ref_of(ctx), fun.name), fun.return_type)
+                        let ret = type_helpers.resolve_return_type(ref_of(ctx), type_helpers.find_fn_sig(ref_of(ctx), fun.name), fun.return_type)
                         sink.set(naming.qualified_c_name(analysis.module_name, fun.name), ret)
                 ast.Decl.decl_extern_function as ext:
                     # External functions use their bare C name as the linkage name
                     # (no module prefix), so a cross-module call `c.func(...)` can
                     # resolve the result type from that same bare-name key.
-                    let ext_ret = if ext.return_type != null: resolve_return_type(ref_of(ctx), Option[analyzer.FnSig].none, ext.return_type) else: types.primitive("void")
+                    let ext_ret = if ext.return_type != null: type_helpers.resolve_return_type(ref_of(ctx), Option[analyzer.FnSig].none, ext.return_type) else: types.primitive("void")
                     sink.set(ext.name, ext_ret)
                 ast.Decl.decl_foreign_function as ff:
                     # Foreign functions are called cross-module by their Milk Tea
@@ -2897,7 +2898,7 @@ function lower_method(ctx: ref[LoweringContext], c_name: str, receiver_ty: types
     ctx.cstr_backed_names.clear()
     var saved_current_fn = ctx.current_function_linkage
     ctx.current_function_linkage = c_name
-    let sig = find_fn_sig(ctx, m.name)
+    let sig = type_helpers.find_fn_sig(ctx, m.name)
 
     var ir_params = vec.Vec[ir.Param].create()
     var param_setup = vec.Vec[ir.Stmt].create()
@@ -2914,7 +2915,7 @@ function lower_method(ctx: ref[LoweringContext], c_name: str, receiver_ty: types
         var p: ast.Param
         unsafe:
             p = read(m.method_params.data + pi)
-        let param_ty = resolve_param_type(ctx, sig, pi, p.param_type)
+        let param_ty = type_helpers.resolve_param_type(ctx, sig, pi, p.param_type)
         let c_pname = utils.c_local_name(p.name)
         # Params are never pointer-lowered: `ptr`/`ref`/`own` types already
         # render as C pointers.  Matches the host (always `pointer: false`).
@@ -2924,7 +2925,7 @@ function lower_method(ctx: ref[LoweringContext], c_name: str, receiver_ty: types
         ctx.locals.push(LocalBinding(name = p.name, c_name = c_pname, ty = param_ty, pointer = Option[bool].some(value = is_ptr)))
         pi += 1
 
-    let ret_ty = resolve_return_type(ctx, sig, m.return_type)
+    let ret_ty = type_helpers.resolve_return_type(ctx, sig, m.return_type)
     var saved_fn_ret = ctx.current_fn_return_type
     ctx.current_fn_return_type = ret_ty
     let body_stmts = prepend_param_setup(ref_of(param_setup), lower_function_body(ctx, m.body))
@@ -3059,7 +3060,7 @@ function lower_function(ctx: ref[LoweringContext], name: str, params: span[ast.P
     ctx.cstr_backed_names.clear()
     var saved_current_fn = ctx.current_function_linkage
     ctx.current_function_linkage = naming.qualified_c_name(ctx.module_name, name)
-    let sig = find_fn_sig(ctx, name)
+    let sig = type_helpers.find_fn_sig(ctx, name)
 
     var ir_params = vec.Vec[ir.Param].create()
     var param_setup = vec.Vec[ir.Stmt].create()
@@ -3068,7 +3069,7 @@ function lower_function(ctx: ref[LoweringContext], name: str, params: span[ast.P
         var p: ast.Param
         unsafe:
             p = read(params.data + pi)
-        let param_ty = resolve_param_type(ctx, sig, pi, p.param_type)
+        let param_ty = type_helpers.resolve_param_type(ctx, sig, pi, p.param_type)
         let c_name = utils.c_local_name(p.name)
         let f_ptr = false
         let link_name = array_param_input_name(param_ty, c_name, ref_of(param_setup))
@@ -3076,7 +3077,7 @@ function lower_function(ctx: ref[LoweringContext], name: str, params: span[ast.P
         ctx.locals.push(LocalBinding(name = p.name, c_name = c_name, ty = param_ty, pointer = Option[bool].some(value = f_ptr)))
         pi += 1
 
-    var ret_ty = resolve_return_type(ctx, sig, return_type)
+    var ret_ty = type_helpers.resolve_return_type(ctx, sig, return_type)
     if is_async:
         ret_ty = tasks.make_task_type(ret_ty)
     ctx.inside_async = is_async
@@ -3105,9 +3106,9 @@ function lower_function(ctx: ref[LoweringContext], name: str, params: span[ast.P
 ## `span[str]` bridge), each returning `int` or `void`.  Mirrors Ruby's
 ## build_root_main_entrypoint (:none / :span_str signatures).
 function build_root_main_entrypoint(ctx: ref[LoweringContext], name: str, params: span[ast.Param]) -> Option[ir.Function]:
-    let sig = find_fn_sig(ctx, name)
-    let user_return = fn_sig_return_type(sig)
-    if not (types.is_void(user_return) or is_int_type(user_return)):
+    let sig = type_helpers.find_fn_sig(ctx, name)
+    let user_return = type_helpers.fn_sig_return_type(sig)
+    if not (types.is_void(user_return) or type_helpers.is_int_type(user_return)):
         return Option[ir.Function].none
 
     let int_ty = types.primitive("int")
@@ -3547,7 +3548,7 @@ public function lower_block(ctx: ref[LoweringContext], body_ptr: ptr[ast.Stmt]?)
     # (`block.rb:16`), so a refinement pushed while lowering this block's
     # statements must not escape it.
     let flow_saved = ctx.flow_scopes.len()
-    defer: restore_flow_refinements(ctx, flow_saved)
+    defer: type_helpers.restore_flow_refinements(ctx, flow_saved)
     # `fmt_dest_name` is block-scoped (the host's per-block `env` copy): a local
     # declared inside this block names this block's format results, and the
     # name is restored on exit so sibling blocks are unaffected.
@@ -3863,7 +3864,7 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                     if declared_ref0 != null:
                         storage_is_array = is_array_type(resolve_type_ref(ctx, unsafe: ptr[ast.TypeRef]<-declared_ref0))
                     if not storage_is_array:
-                        storage_is_array = is_array_type(expr_type(ctx, init))
+                        storage_is_array = is_array_type(type_helpers.expr_type(ctx, init))
                     # The async statement preparers materialize array calls
                     # unconditionally (they never pass the sync root exemption).
                     if storage_is_array and not ctx.async_completion_active:
@@ -3928,7 +3929,7 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                         unsafe:
                             match read(ptr[ast.Expr]<-init):
                                 ast.Expr.expr_identifier:
-                                    ty = qualify_type(ctx, fallback_type(ctx, ptr[ast.Expr]<-init))
+                                    ty = qualify_type(ctx, type_helpers.fallback_type(ctx, ptr[ast.Expr]<-init))
                                 ast.Expr.expr_call as call:
                                     match foreign_wrapper_call_return_type(ctx, call.callee):
                                         Option.some as declared:
@@ -3939,7 +3940,7 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                                     # The host's inference gives a detach value the
                                     # singleton `Handle`, while its lowered call
                                     # node carries `ptr[void]`.
-                                    ty = qualify_type(ctx, expr_type(ctx, ptr[ast.Expr]<-init))
+                                    ty = qualify_type(ctx, type_helpers.expr_type(ctx, ptr[ast.Expr]<-init))
                                     if types.is_error(ty):
                                         ty = qualify_type(ctx, ir_expr_type(value_expr))
                                 _:
@@ -3954,8 +3955,8 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                                     # while the binary lowering passes the
                                     # aggregate as the expected type and computes
                                     # the scalar operand type instead.
-                                    let recorded = expr_type(ctx, ptr[ast.Expr]<-init)
-                                    if is_numeric_aggregate_type(recorded):
+                                    let recorded = type_helpers.expr_type(ctx, ptr[ast.Expr]<-init)
+                                    if type_helpers.is_numeric_aggregate_type(recorded):
                                         match ir_expr_type(value_expr):
                                             types.Type.ty_primitive:
                                                 ty = qualify_type(ctx, recorded)
@@ -4071,12 +4072,12 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                         # nullable unwraps to its base, then the pointee/referent.
                         # Falls back to the recorded `read(...)` type when the
                         # handle is not a pointer.
-                        var deref_ty = expr_type(ctx, inner.value)
+                        var deref_ty = type_helpers.expr_type(ctx, inner.value)
                         if types.is_nullable_type(deref_ty) and is_nullable_pointer_like(deref_ty):
                             deref_ty = types.unwrap_nullable(deref_ty)
                         let pointee_ty = types.pointer_element(deref_ty)
                         if types.is_error(pointee_ty):
-                            deref_ty = expr_type(ctx, target_expr)
+                            deref_ty = type_helpers.expr_type(ctx, target_expr)
                         else:
                             deref_ty = pointee_ty
                         let target = alloc_expr(ir.Expr.expr_unary(operator = "*", operand = deref_target, ty = deref_ty))
@@ -4102,7 +4103,7 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                 let hoist_base = output.len()
                 let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
                 ctx.hoist_root_ep = asg.value
-                if is_array_type(expr_type(ctx, asg.target)) and not ctx.async_completion_active:
+                if is_array_type(type_helpers.expr_type(ctx, asg.target)) and not ctx.async_completion_active:
                     ctx.array_call_exempt = asg.value
                 var value = lower_expr(ctx, asg.value)
                 let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
@@ -4113,7 +4114,7 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                 # must not retype a `null` RHS (the declared `ptr[T]?` wins).
                 var target_ty = ir_expr_type(target)
                 if types.is_error(target_ty) or types.is_void(target_ty):
-                    target_ty = expr_type(ctx, asg.target)
+                    target_ty = type_helpers.expr_type(ctx, asg.target)
                 # A bare literal takes the target's type (the host's
                 # `lower_contextual_expression` with the target as the expected
                 # type): `i = 1` / `i += 1` on a `ptr_uint` target emits a
@@ -4131,12 +4132,12 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                 # Native math compound assignment (`a += b`, `a *= 2.0`): the C
                 # aggregate structs have no operators, so expand component-wise
                 # and emit a plain assignment.
-                if is_compound_assignment_operator(asg.operator):
-                    var math_name = nominal_type_name(target_ty)
-                    if not is_vec_math_name(math_name):
-                        math_name = nominal_type_name(ir_expr_type(target))
-                    if is_vec_math_name(math_name):
-                        let expanded = lower_vec_binary_op(ctx, compound_base_operator(asg.operator), target, value, target_ty, math_name)
+                if type_helpers.is_compound_assignment_operator(asg.operator):
+                    var math_name = type_helpers.nominal_type_name(target_ty)
+                    if not type_helpers.is_vec_math_name(math_name):
+                        math_name = type_helpers.nominal_type_name(ir_expr_type(target))
+                    if type_helpers.is_vec_math_name(math_name):
+                        let expanded = type_helpers.lower_vec_binary_op(ctx, type_helpers.compound_base_operator(asg.operator), target, value, target_ty, math_name)
                         output.push(ir.Stmt.stmt_assignment(target = target, operator = "=", value = expanded))
                         let math_cleanups = if format.format_owning_target_type(ctx, target_ty, 0):
                             format.drop_format_release_cleanups(hoist_collected)
@@ -4286,10 +4287,10 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                 ctx.loop_break_native = true
                 # The body sees the condition's truthy refinements (the host's
                 # `lower_while_stmt`, `loops.rb:28`).
-                var while_refs = lowering_flow_refinements(ctx, w.condition, true)
-                let while_flow_saved = push_flow_refinements(ctx, ref_of(while_refs))
+                var while_refs = type_helpers.lowering_flow_refinements(ctx, w.condition, true)
+                let while_flow_saved = type_helpers.push_flow_refinements(ctx, ref_of(while_refs))
                 let body_span = lower_block(ctx, w.body)
-                restore_flow_refinements(ctx, while_flow_saved)
+                type_helpers.restore_flow_refinements(ctx, while_flow_saved)
                 var body = vec.Vec[ir.Stmt].create()
                 append_span_stmts(ref_of(body), body_span)
                 if contains_label_target(body.as_span(), cl):
@@ -4549,8 +4550,8 @@ function lower_emitted_decl(ctx: ref[LoweringContext], decl: ast.Decl) -> void:
     let prefix = naming.module_c_prefix(ctx.module_name)
     match decl:
         ast.Decl.decl_function as fun:
-            let sig = find_fn_sig(ctx, fun.name)
-            let ret_ty = resolve_return_type(ctx, sig, fun.return_type)
+            let sig = type_helpers.find_fn_sig(ctx, fun.name)
+            let ret_ty = type_helpers.resolve_return_type(ctx, sig, fun.return_type)
             var params = vec.Vec[ir.Param].create()
             let saved_locals_len = ctx.locals.len()
             var pi: ptr_uint = 0
@@ -4558,7 +4559,7 @@ function lower_emitted_decl(ctx: ref[LoweringContext], decl: ast.Decl) -> void:
                 var p: ast.Param
                 unsafe:
                     p = read(fun.method_params.data + pi)
-                let p_ty = resolve_param_type(ctx, sig, pi, p.param_type)
+                let p_ty = type_helpers.resolve_param_type(ctx, sig, pi, p.param_type)
                 let pc = utils.c_local_name(p.name)
                 params.push(ir.Param(name = p.name, linkage_name = pc, ty = p_ty, pointer = Option[bool].some(value = false)))
                 ctx.locals.push(LocalBinding(name = p.name, c_name = pc, ty = p_ty, pointer = Option[bool].some(value = false)))
@@ -4640,10 +4641,10 @@ function push_emitted_constant(ctx: ref[LoweringContext], c: ir.Constant) -> voi
 ## scalar), else the inferred type of its initializer.
 public function local_decl_type(ctx: ref[LoweringContext], declared: ptr[ast.TypeRef]?, value: ptr[ast.Expr]) -> types.Type:
     let annotation = declared else:
-        return qualify_type(ctx, expr_type(ctx, value))
+        return qualify_type(ctx, type_helpers.expr_type(ctx, value))
     let resolved = resolve_type_ref(ctx, annotation)
     if types.is_error(resolved):
-        return qualify_type(ctx, expr_type(ctx, value))
+        return qualify_type(ctx, type_helpers.expr_type(ctx, value))
     return qualify_type(ctx, resolved)
 
 
@@ -5385,7 +5386,7 @@ function lower_binding_read(ctx: ref[LoweringContext], lb: LocalBinding) -> ptr[
             # flow-refined visible type; its storage type stays the binding's.
             # A nullable refined to its (non-pointer-like) base projects
             # `.value`; a pointer-like base keeps the storage name.
-            match flow_scope_binding(ctx, lb.name):
+            match type_helpers.flow_scope_binding(ctx, lb.name):
                 Option.some as refined:
                     let visible = refined.value
                     let storage_ty = lb.ty
@@ -5422,12 +5423,12 @@ function lower_assignment_target(ctx: ref[LoweringContext], target_ast: ptr[ast.
     unsafe:
         match read(target_ast):
             ast.Expr.expr_identifier as id:
-                match find_local_binding(ctx, id.name):
+                match type_helpers.find_local_binding(ctx, id.name):
                     Option.some as lb:
                         match lb.value.projection:
                             BindingProjection.plain:
                                 let storage_ty = lb.value.ty
-                                match flow_scope_binding(ctx, id.name):
+                                match type_helpers.flow_scope_binding(ctx, id.name):
                                     Option.some as refined:
                                         if assignment_target_visible(storage_ty, refined.value):
                                             return alloc_expr(ir.Expr.expr_name(name = lb.value.c_name, ty = refined.value, pointer = lb.value.pointer))
@@ -5441,12 +5442,12 @@ function lower_assignment_target(ctx: ref[LoweringContext], target_ast: ptr[ast.
                         # too, so a guard-narrowed one takes the visible type
                         # on an assignment target the same way
                         # (`lint_reserved_out` inside `if != null`).
-                        match find_qualified_constant(ctx, id.name):
+                        match type_helpers.find_qualified_constant(ctx, id.name):
                             Option.some as qc:
                                 let declared = ctx.analysis.value_types.get(id.name)
                                 if declared != null:
                                     let storage_ty = read(declared)
-                                    match flow_scope_binding(ctx, id.name):
+                                    match type_helpers.flow_scope_binding(ctx, id.name):
                                         Option.some as refined:
                                             if assignment_target_visible(storage_ty, refined.value):
                                                 return alloc_expr(ir.Expr.expr_name(name = qc.value, ty = refined.value, pointer = Option[bool].some(value = false)))
@@ -6177,7 +6178,7 @@ function generic_c_type_raw(name: str, args: span[types.Type]) -> str:
 ## follow the chain through the alias target to get the underlying type from the
 ## originating module (e.g. `ty_imported("std.c.raylib", "CameraMode")`).
 ## Returns none if `type_name` is not a type alias in the target module.
-function resolve_single_imported_type(ctx: ref[LoweringContext], target_module: str, type_name: str) -> Option[types.Type]:
+public function resolve_single_imported_type(ctx: ref[LoweringContext], target_module: str, type_name: str) -> Option[types.Type]:
     return resolve_imported_alias_type(ctx.program_analyses, target_module, type_name)
 
 
@@ -6612,7 +6613,7 @@ public function lower_if_chain_at(ctx: ref[LoweringContext], output: ref[vec.Vec
     var branch: ast.IfBranch
     unsafe:
         branch = read(branches.data + index)
-    let base_saved = push_flow_refinements(ctx, prior_false)
+    let base_saved = type_helpers.push_flow_refinements(ctx, prior_false)
     let cond_base = output.len()
     # A condition is a *prepared* position: a statement-lowered foreign call
     # materializes into `__mt_foreign_result_N` with its cleanups before the
@@ -6626,20 +6627,20 @@ public function lower_if_chain_at(ctx: ref[LoweringContext], output: ref[vec.Vec
     # The body's visible env: the prior falsy refinements plus this
     # condition's truthy refinements (the host's `merge_refinements`).
     var true_refs = map_mod.Map[str, types.Type].create()
-    merge_flow_refinements(ref_of(true_refs), prior_false)
-    var cond_true = lowering_flow_refinements(ctx, branch.condition, true)
-    merge_flow_refinements(ref_of(true_refs), ref_of(cond_true))
+    type_helpers.merge_flow_refinements(ref_of(true_refs), prior_false)
+    var cond_true = type_helpers.lowering_flow_refinements(ctx, branch.condition, true)
+    type_helpers.merge_flow_refinements(ref_of(true_refs), ref_of(cond_true))
     var then_body = vec.Vec[ir.Stmt].create()
     append_hoist_cleanups(ref_of(then_body), cond_collected)
-    let then_saved = push_flow_refinements(ctx, ref_of(true_refs))
+    let then_saved = type_helpers.push_flow_refinements(ctx, ref_of(true_refs))
     then_body.append_span(lower_block(ctx, branch.body))
-    restore_flow_refinements(ctx, then_saved)
+    type_helpers.restore_flow_refinements(ctx, then_saved)
 
     # The cumulative falsy refinements for the next branch.
     var next_false = map_mod.Map[str, types.Type].create()
-    merge_flow_refinements(ref_of(next_false), prior_false)
-    var cond_false = lowering_flow_refinements(ctx, branch.condition, false)
-    merge_flow_refinements(ref_of(next_false), ref_of(cond_false))
+    type_helpers.merge_flow_refinements(ref_of(next_false), prior_false)
+    var cond_false = type_helpers.lowering_flow_refinements(ctx, branch.condition, false)
+    type_helpers.merge_flow_refinements(ref_of(next_false), ref_of(cond_false))
 
     # A source-level `if` always carries an else body in the host's IR — an
     # empty one when the source has no else clause.
@@ -6647,9 +6648,9 @@ public function lower_if_chain_at(ctx: ref[LoweringContext], output: ref[vec.Vec
     if index + 1 < branches.len:
         lower_if_chain_at(ctx, ref_of(else_inner), branches, index + 1, else_body, ref_of(next_false), false)
     else:
-        let else_saved = push_flow_refinements(ctx, ref_of(next_false))
+        let else_saved = type_helpers.push_flow_refinements(ctx, ref_of(next_false))
         else_inner.append_span(lower_block(ctx, else_body))
-        restore_flow_refinements(ctx, else_saved)
+        type_helpers.restore_flow_refinements(ctx, else_saved)
     var else_stmts = vec.Vec[ir.Stmt].create()
     append_hoist_cleanups(ref_of(else_stmts), cond_collected)
     else_stmts.append_span(else_inner.as_span())
@@ -6661,7 +6662,7 @@ public function lower_if_chain_at(ctx: ref[LoweringContext], output: ref[vec.Vec
     if ctx.async_nonawait_body and else_stmts.len() == 0:
         else_opt = Option[span[ir.Stmt]].none
     output.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = else_opt))
-    restore_flow_refinements(ctx, base_saved)
+    type_helpers.restore_flow_refinements(ctx, base_saved)
 
     # The host's post-if rule (`block.rb:707`): an else-less `if` whose branches
     # all terminate narrows the enclosing block's env after the statement.
@@ -6672,10 +6673,10 @@ public function lower_if_chain_at(ctx: ref[LoweringContext], output: ref[vec.Vec
         var final_false = map_mod.Map[str, types.Type].create()
         var bi: ptr_uint = 0
         while bi < branches.len:
-            var cond_false_i = lowering_flow_refinements(ctx, unsafe: read(branches.data + bi).condition, false)
-            merge_flow_refinements(ref_of(final_false), ref_of(cond_false_i))
+            var cond_false_i = type_helpers.lowering_flow_refinements(ctx, unsafe: read(branches.data + bi).condition, false)
+            type_helpers.merge_flow_refinements(ref_of(final_false), ref_of(cond_false_i))
             bi += 1
-        let _post_scope = push_flow_refinements(ctx, ref_of(final_false))
+        let _post_scope = type_helpers.push_flow_refinements(ctx, ref_of(final_false))
 
 
 function if_branches_all_terminate(branches: span[ast.IfBranch]) -> bool:
@@ -6686,7 +6687,7 @@ function if_branches_all_terminate(branches: span[ast.IfBranch]) -> bool:
         var br: ast.IfBranch
         unsafe:
             br = read(branches.data + i)
-        if not ast_block_always_terminates(br.body):
+        if not type_helpers.ast_block_always_terminates(br.body):
             return false
         i += 1
     return true
@@ -6718,8 +6719,8 @@ function lower_for_range(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]
 
     # The host's `infer_range_loop_type`: an integer-literal bound takes the
     # other bound's type, so `for i in 0..span.len` is a `ptr_uint` loop.
-    var loop_type = expr_type(ctx, start)
-    var stop_ty = expr_type(ctx, stop)
+    var loop_type = type_helpers.expr_type(ctx, start)
+    var stop_ty = type_helpers.expr_type(ctx, stop)
     if not types.type_equals(loop_type, stop_ty):
         if ast_is_integer_literal(start) and types.is_integer_type(stop_ty):
             loop_type = stop_ty
@@ -7145,11 +7146,11 @@ function lower_simd_with_call(ctx: ref[LoweringContext], receiver: ptr[ast.Expr]
 ## fields replaced.  Mirrors Ruby's :struct_with lowering.
 function lower_with_call(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], recv_ty: types.Type, args: span[ast.Argument]) -> ptr[ir.Expr]:
     let recv = lower_expr(ctx, receiver)
-    let name = nominal_type_name(recv_ty)
+    let name = type_helpers.nominal_type_name(recv_ty)
     var field_names = vec.Vec[str].create()
     var field_types = vec.Vec[types.Type].create()
-    if is_vec_math_name(name):
-        vec_math_fields(name, ref_of(field_names), ref_of(field_types))
+    if type_helpers.is_vec_math_name(name):
+        type_helpers.vec_math_fields(name, ref_of(field_names), ref_of(field_types))
     else:
         var struct_name = name
         if struct_name.len == 0:
@@ -7749,8 +7750,8 @@ function lower_parallel_for(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.St
     let index_c = utils.c_local_name(index_name)
     # The host's `infer_range_loop_type`: an integer-literal bound takes the
     # other bound's type.
-    var loop_type = expr_type(ctx, start_ptr)
-    var stop_ty = expr_type(ctx, end_ptr)
+    var loop_type = type_helpers.expr_type(ctx, start_ptr)
+    var stop_ty = type_helpers.expr_type(ctx, end_ptr)
     if not types.type_equals(loop_type, stop_ty):
         if ast_is_integer_literal(start_ptr) and types.is_integer_type(stop_ty):
             loop_type = stop_ty
@@ -8363,10 +8364,10 @@ function lower_short_circuit_binary(
             append_span_stmts(ref_of(ctx.hoist_stmts), right_stored.as_span())
         # The right operand sees the left operand's refinement (the host's
         # `binary_right_env`, `resolve.rb:967`).
-        var right_refs = lowering_flow_refinements(ctx, left_ep, operator == "and")
-        let right_flow_saved = push_flow_refinements(ctx, ref_of(right_refs))
+        var right_refs = type_helpers.lowering_flow_refinements(ctx, left_ep, operator == "and")
+        let right_flow_saved = type_helpers.push_flow_refinements(ctx, ref_of(right_refs))
         let right = lower_expr(ctx, right_ep)
-        restore_flow_refinements(ctx, right_flow_saved)
+        type_helpers.restore_flow_refinements(ctx, right_flow_saved)
         let right_collected = collect_stmt_setup(ctx, right_saved)
         append_cleanup_stmts(ref_of(ctx.hoist_cleanups), left_collected.cleanups)
         append_cleanup_stmts(ref_of(ctx.hoist_cleanups), right_collected.cleanups)
@@ -8423,10 +8424,10 @@ function lower_short_circuit_binary(
     let left = lower_expr(ctx, left_ep)
     let left_has_setup = ctx.hoist_stmts.len > setup_base
     let right_saved = begin_stmt_setup(ctx, ctx.hoist_mode)
-    var right_refs = lowering_flow_refinements(ctx, left_ep, operator == "and")
-    let right_flow_saved = push_flow_refinements(ctx, ref_of(right_refs))
+    var right_refs = type_helpers.lowering_flow_refinements(ctx, left_ep, operator == "and")
+    let right_flow_saved = type_helpers.push_flow_refinements(ctx, ref_of(right_refs))
     let right = lower_expr(ctx, right_ep)
-    restore_flow_refinements(ctx, right_flow_saved)
+    type_helpers.restore_flow_refinements(ctx, right_flow_saved)
     let right_collected = collect_stmt_setup(ctx, right_saved)
     let right_has_setup = right_collected.stmts.len > 0
     append_cleanup_stmts(ref_of(ctx.hoist_cleanups), right_collected.cleanups)
@@ -8463,9 +8464,9 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
-                return alloc_expr(ir.Expr.expr_integer_literal(value = long<-lit.value, ty = expr_type(ctx, ep)))
+                return alloc_expr(ir.Expr.expr_integer_literal(value = long<-lit.value, ty = type_helpers.expr_type(ctx, ep)))
             ast.Expr.expr_float_literal as lit:
-                return alloc_expr(ir.Expr.expr_float_literal(value = lit.value, ty = expr_type(ctx, ep)))
+                return alloc_expr(ir.Expr.expr_float_literal(value = lit.value, ty = type_helpers.expr_type(ctx, ep)))
             ast.Expr.expr_char_literal as lit:
                 return alloc_expr(ir.Expr.expr_integer_literal(value = long<-lit.value, ty = types.primitive("ubyte")))
             ast.Expr.expr_bool_literal as b:
@@ -8475,20 +8476,20 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                 let hoist_saved = suspend_stmt_setup(ctx)
                 # Each branch sees the condition's truthy/falsy refinements (the
                 # host's `then_env`/`else_env`, `expressions.rb:1101`).
-                var then_refs = lowering_flow_refinements(ctx, ie.condition, true)
-                let then_flow_saved = push_flow_refinements(ctx, ref_of(then_refs))
+                var then_refs = type_helpers.lowering_flow_refinements(ctx, ie.condition, true)
+                let then_flow_saved = type_helpers.push_flow_refinements(ctx, ref_of(then_refs))
                 var then_e = lower_expr(ctx, ie.then_expr)
-                restore_flow_refinements(ctx, then_flow_saved)
-                var else_refs = lowering_flow_refinements(ctx, ie.condition, false)
-                let else_flow_saved = push_flow_refinements(ctx, ref_of(else_refs))
+                type_helpers.restore_flow_refinements(ctx, then_flow_saved)
+                var else_refs = type_helpers.lowering_flow_refinements(ctx, ie.condition, false)
+                let else_flow_saved = type_helpers.push_flow_refinements(ctx, ref_of(else_refs))
                 var else_e = lower_expr(ctx, ie.else_expr)
-                restore_flow_refinements(ctx, else_flow_saved)
+                type_helpers.restore_flow_refinements(ctx, else_flow_saved)
                 resume_stmt_setup(ctx, hoist_saved)
                 # The conditional's type is the host's branch-common inference
                 # (`conditional_common_type`), and each branch is lowered
                 # contextually to it (`lower_contextual_expression`), so
                 # `if flag: 0 else: <ptr_uint call>` emits `ptr_uint` literals.
-                var ty = expr_type(ctx, ep)
+                var ty = type_helpers.expr_type(ctx, ep)
                 if types.is_error(ty) or types.type_to_string(ty) == "void":
                     ty = ir_expr_type(then_e)
                 then_e = literal_value_to_context_type(ctx, ie.then_expr, ty, then_e)
@@ -8505,13 +8506,13 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                 let replacement = ctx.mapping_replacements.get(id.name)
                 if replacement != null:
                     return unsafe: read(replacement)
-                match find_local_binding(ctx, id.name):
+                match type_helpers.find_local_binding(ctx, id.name):
                     Option.some as lb:
                         return lower_binding_read(ctx, lb.value)
                     Option.none:
                         if ctx.function_returns.contains(id.name) or ctx.analysis.functions.contains(id.name):
                             let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
-                            var fn_ty = expr_type(ctx, ep)
+                            var fn_ty = type_helpers.expr_type(ctx, ep)
                             match fn_ty:
                                 types.Type.ty_function as fnt:
                                     # Only wrap in proc struct when the expected type
@@ -8545,7 +8546,7 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                                 linkage_name = ev_info.event_c_name,
                             )
                             return alloc_expr(ir.Expr.expr_name(name = naming.qualified_c_name(ctx.module_name, id.name), ty = ev_ty, pointer = Option[bool].some(value = false)))
-                        match find_qualified_constant(ctx, id.name):
+                        match type_helpers.find_qualified_constant(ctx, id.name):
                             Option.some as qc:
                                 # A module-level value's read carries its *declared*
                                 # storage type (the host's binding type), not the
@@ -8553,14 +8554,14 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                                 # `Nullable` here would let a guarded global read
                                 # masquerade as non-null in the IR (the
                                 # `opaque_backing_names` global).
-                                var value_ty = expr_type(ctx, ep)
+                                var value_ty = type_helpers.expr_type(ctx, ep)
                                 let declared_ty_ptr = ctx.analysis.value_types.get(id.name)
                                 if declared_ty_ptr != null:
                                     value_ty = unsafe: read(declared_ty_ptr)
                                 return alloc_expr(ir.Expr.expr_name(name = qc.value, ty = value_ty, pointer = Option[bool].some(value = false)))
                             Option.none:
                                 pass
-                        return alloc_expr(ir.Expr.expr_name(name = id.name, ty = expr_type(ctx, ep), pointer = Option[bool].some(value = false)))
+                        return alloc_expr(ir.Expr.expr_name(name = id.name, ty = type_helpers.expr_type(ctx, ep), pointer = Option[bool].some(value = false)))
             ast.Expr.expr_binary_op as bin:
                 if (bin.operator == "and" or bin.operator == "or") and ctx.hoist_mode != HoistMode.hm_off:
                     return lower_short_circuit_binary(ctx, bin.operator, bin.left, bin.right, ep)
@@ -8568,10 +8569,10 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                 var right: ptr[ir.Expr]
                 if bin.operator == "and" or bin.operator == "or":
                     let hoist_saved = suspend_stmt_setup(ctx)
-                    var right_refs = lowering_flow_refinements(ctx, bin.left, bin.operator == "and")
-                    let right_flow_saved = push_flow_refinements(ctx, ref_of(right_refs))
+                    var right_refs = type_helpers.lowering_flow_refinements(ctx, bin.left, bin.operator == "and")
+                    let right_flow_saved = type_helpers.push_flow_refinements(ctx, ref_of(right_refs))
                     right = lower_expr(ctx, bin.right)
-                    restore_flow_refinements(ctx, right_flow_saved)
+                    type_helpers.restore_flow_refinements(ctx, right_flow_saved)
                     resume_stmt_setup(ctx, hoist_saved)
                 else:
                     right = lower_expr(ctx, bin.right)
@@ -8592,13 +8593,13 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                     if is_equality_struct_type(ctx, eq_ty) and types.type_equals(eq_ty, ir_expr_type(right)) and register_external_struct_layout(ctx, eq_ty):
                         return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = ctx.bool_ty))
                 # `str + str` concatenates into a thread-local scratch buffer.
-                if bin.operator == "+" and is_str_typed(ir_expr_type(left)) and is_str_typed(ir_expr_type(right)):
+                if bin.operator == "+" and type_helpers.is_str_typed(ir_expr_type(left)) and type_helpers.is_str_typed(ir_expr_type(right)):
                     var concat_args = vec.Vec[ir.Expr].create()
                     unsafe:
                         concat_args.push(read(left))
                         concat_args.push(read(right))
                     return alloc_expr(ir.Expr.expr_call(callee = "mt_str_concat", arguments = concat_args.as_span(), ty = types.Type.ty_str))
-                var result_ty = expr_type(ctx, ep)
+                var result_ty = type_helpers.expr_type(ctx, ep)
                 # A comparison is always `bool` (the host's `infer_expression_type`
                 # BinaryOp arm); the analyzer can miss it inside a constant
                 # initializer (`not (glfwInit() != 0)`).
@@ -8614,10 +8615,10 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                 # (field arithmetic such as `this.x - other.x`) is scalar in the
                 # host's lowering inference: no vector rule matches the operands,
                 # so `common_numeric_type` (else the left type) wins.
-                if is_vec_math_name(nominal_type_name(result_ty)) and not (
-                    is_vec_math_name(nominal_type_name(ir_expr_type(left))) or is_vec_math_name(nominal_type_name(ir_expr_type(right)))
+                if type_helpers.is_vec_math_name(type_helpers.nominal_type_name(result_ty)) and not (
+                    type_helpers.is_vec_math_name(type_helpers.nominal_type_name(ir_expr_type(left))) or type_helpers.is_vec_math_name(type_helpers.nominal_type_name(ir_expr_type(right)))
                 ):
-                    match common_numeric_type(ir_expr_type(left), ir_expr_type(right)):
+                    match type_helpers.common_numeric_type(ir_expr_type(left), ir_expr_type(right)):
                         Option.some as common_ty:
                             result_ty = common_ty.value
                         Option.none:
@@ -8638,13 +8639,13 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                 # inside methods on vec types).
                 let lt = ir_expr_type(left)
                 let rt = ir_expr_type(right)
-                let rn = nominal_type_name(result_ty)
-                if is_vec_math_name(rn) and (
-                    is_vec_math_name(nominal_type_name(lt)) or is_vec_math_name(nominal_type_name(rt))
+                let rn = type_helpers.nominal_type_name(result_ty)
+                if type_helpers.is_vec_math_name(rn) and (
+                    type_helpers.is_vec_math_name(type_helpers.nominal_type_name(lt)) or type_helpers.is_vec_math_name(type_helpers.nominal_type_name(rt))
                 ) and (
                     bin.operator == "+" or bin.operator == "-" or bin.operator == "*" or bin.operator == "/"
                 ):
-                    return lower_vec_binary_op(ctx, bin.operator, left, right, result_ty, rn)
+                    return type_helpers.lower_vec_binary_op(ctx, bin.operator, left, right, result_ty, rn)
                 # Pointer arithmetic (`p + i` / `p - i`) yields the pointer
                 # operand's concrete type; the analyzer's generically-recorded
                 # type may have dropped its arguments inside a monomorphized body.
@@ -8662,7 +8663,7 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                 # integer (e.g. `text.len - n`, where `.len` is typed `ptr_uint`
                 # by lowering but the analyzer recorded a wrong type): trust the
                 # lowered operand types when both are the same integer type.
-                if is_arithmetic_operator(bin.operator) and not is_integer_scrutinee(result_ty):
+                if type_helpers.is_arithmetic_operator(bin.operator) and not is_integer_scrutinee(result_ty):
                     let lt = ir_expr_type(left)
                     let rt = ir_expr_type(right)
                     if is_integer_scrutinee(lt) and types.type_to_string(lt) == types.type_to_string(rt):
@@ -8720,7 +8721,7 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                 # to `double` (the analyzer's hint propagation records the
                 # contextual type).  An explicit `f`/`d` suffix keeps its own
                 # type.
-                if is_pure_arithmetic_operator(bin.operator) and types.is_float_type(result_ty):
+                if type_helpers.is_pure_arithmetic_operator(bin.operator) and types.is_float_type(result_ty):
                     if is_bare_float_literal(bin.left) and not types.type_equals(ir_expr_type(left), result_ty):
                         left = float_literal_to_context_type(bin.left, result_ty, left)
                     if is_bare_float_literal(bin.right) and not types.type_equals(ir_expr_type(right), result_ty):
@@ -8745,13 +8746,13 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                 # also the result type, which the analyzer may have under-widened.
                 # Enum/flags operands unwrap to their integer backing first, so
                 # enum comparisons cast to the backing type like Ruby.
-                let bal_lt = enum_backing_or_self(ctx, ir_expr_type(left))
-                let bal_rt = enum_backing_or_self(ctx, ir_expr_type(right))
-                match promoted_binary_operand_type(bin.operator, bal_lt, bal_rt):
+                let bal_lt = type_helpers.enum_backing_or_self(ctx, ir_expr_type(left))
+                let bal_rt = type_helpers.enum_backing_or_self(ctx, ir_expr_type(right))
+                match type_helpers.promoted_binary_operand_type(bin.operator, bal_lt, bal_rt):
                     Option.some as op_ty:
-                        left = cast_to_type(left, op_ty.value)
-                        right = cast_to_type(right, op_ty.value)
-                        if is_pure_arithmetic_operator(bin.operator):
+                        left = type_helpers.cast_to_type(left, op_ty.value)
+                        right = type_helpers.cast_to_type(right, op_ty.value)
+                        if type_helpers.is_pure_arithmetic_operator(bin.operator):
                             result_ty = op_ty.value
                     Option.none:
                         pass
@@ -8760,9 +8761,9 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                 let operand = lower_expr(ctx, un.operand)
                 let op_ty = ir_expr_type(operand)
                 if un.operator == "-":
-                    let vname = nominal_type_name(op_ty)
-                    if is_vec_math_name(vname):
-                        return lower_vec_unary_neg(ctx, operand, vname)
+                    let vname = type_helpers.nominal_type_name(op_ty)
+                    if type_helpers.is_vec_math_name(vname):
+                        return type_helpers.lower_vec_unary_neg(ctx, operand, vname)
                 # The host types a unary with its *operand's* lowered type
                 # (`infer_expression_type`'s UnaryOp arm; `not` is bool), not the
                 # analyzer's recorded expression type.
@@ -8855,7 +8856,7 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                                                 # A reference is not a call; an actual
                                                 # call site elsewhere records the edge.
                                                 pass
-                                            var fn_ty = expr_type(ctx, ep)
+                                            var fn_ty = type_helpers.expr_type(ctx, ep)
                                             let vcached = ctx.specialization_cache.get(vspec_key)
                                             if vcached != null:
                                                 let sf = unsafe: read(vcached)
@@ -8932,7 +8933,7 @@ var proc_counter: ptr_uint = 0
 ## capture procs use null env; capturing procs use a heap-allocated env struct
 ## with ref-counting.
 function lower_proc_expr(ctx: ref[LoweringContext], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body_ptr: ptr[ast.Stmt], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
-    let proc_ty = expr_type(ctx, ep)
+    let proc_ty = type_helpers.expr_type(ctx, ep)
     var ret_ty = ctx.void_ty
     if return_type != null:
         ret_ty = resolve_type_ref(ctx, return_type)
@@ -10202,7 +10203,7 @@ function lower_index_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], 
     let recv_ty_pre = ir_expr_type(recv)
     if is_array_type(recv_ty_pre) or is_span_type(recv_ty_pre):
         receiver_type = recv_ty_pre
-    if is_str_typed(receiver_type) or is_str_typed(ir_expr_type(recv)):
+    if type_helpers.is_str_typed(receiver_type) or type_helpers.is_str_typed(ir_expr_type(recv)):
         # str byte read → mt_str_index(text, index) with a bounds check.  The
         # host passes the lowered index through unchanged (the helper's
         # `uintptr_t` parameter converts it in C).
@@ -10211,7 +10212,7 @@ function lower_index_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], 
             str_args.push(read(recv))
             str_args.push(read(index_expr))
         return alloc_expr(ir.Expr.expr_call(callee = "mt_str_index", arguments = str_args.as_span(), ty = types.primitive("ubyte")))
-    var elem_ty = qualify_type(ctx, expr_type(ctx, ep))
+    var elem_ty = qualify_type(ctx, type_helpers.expr_type(ctx, ep))
     # Prefer the element type of the lowered receiver: the analyzer's recorded
     # element type may carry unresolved generic parameters (see above).
     if is_array_type(recv_ty_pre) or is_span_type(recv_ty_pre):
@@ -10251,7 +10252,7 @@ function lower_range_index_read(ctx: ref[LoweringContext], receiver: ptr[ast.Exp
     let ptr_uint_ty = types.primitive("ptr_uint")
     let start = coerce_index_bound_to_ptr_uint(ctx, literal_value_to_context_type(ctx, start_expr, ptr_uint_ty, lower_expr(ctx, start_expr)))
     let stop = coerce_index_bound_to_ptr_uint(ctx, literal_value_to_context_type(ctx, end_expr, ptr_uint_ty, lower_expr(ctx, end_expr)))
-    if is_str_typed(recv_ty) or is_str_typed(ir_expr_type(recv)):
+    if type_helpers.is_str_typed(recv_ty) or type_helpers.is_str_typed(ir_expr_type(recv)):
         var args = vec.Vec[ir.Expr].create()
         unsafe:
             args.push(read(recv))
@@ -10262,7 +10263,7 @@ function lower_range_index_read(ctx: ref[LoweringContext], receiver: ptr[ast.Exp
     if types.is_error(elem_ty):
         elem_ty = qualify_type(ctx, generic_first_arg(ir_expr_type(recv)))
     if types.is_error(elem_ty):
-        elem_ty = qualify_type(ctx, expr_type(ctx, ep))
+        elem_ty = qualify_type(ctx, type_helpers.expr_type(ctx, ep))
     let span_ty = types.Type.ty_generic(name = "span", args = sp_type(elem_ty))
     var span_arg = recv
     if is_array_type(recv_ty):
@@ -10318,7 +10319,7 @@ public function index_receiver_type(ctx: ref[LoweringContext], receiver: ptr[ast
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
-                match find_local_binding(ctx, id.name):
+                match type_helpers.find_local_binding(ctx, id.name):
                     Option.some as lb:
                         return lb.value.ty
                     Option.none:
@@ -10328,7 +10329,7 @@ public function index_receiver_type(ctx: ref[LoweringContext], receiver: ptr[ast
                     return mvt
             _:
                 pass
-    return expr_type(ctx, receiver)
+    return type_helpers.expr_type(ctx, receiver)
 
 
 public function is_array_type(t: types.Type) -> bool:
@@ -10365,7 +10366,7 @@ function soa_member_array_type(ctx: ref[LoweringContext], soa_ty: types.Type, fi
                 let count_ty = unsafe: read(g.args.data + 1)
                 match count_ty:
                     types.Type.ty_literal_int as lit:
-                        match comptime.comptime_lookup_struct_fields(ctx, nominal_type_name(elem_ty)):
+                        match comptime.comptime_lookup_struct_fields(ctx, type_helpers.nominal_type_name(elem_ty)):
                             Option.some as fields:
                                 var fi: ptr_uint = 0
                                 while fi < fields.value.len:
@@ -10395,7 +10396,7 @@ function soa_field_type(ctx: ref[LoweringContext], soa_ty: types.Type, field_nam
                 let elem_ty = unsafe: read(g.args.data + 0)
                 # The element may be module-qualified (`ty_imported`) or a bare
                 # named struct; search the current module and the program.
-                match comptime.comptime_lookup_struct_fields(ctx, nominal_type_name(elem_ty)):
+                match comptime.comptime_lookup_struct_fields(ctx, type_helpers.nominal_type_name(elem_ty)):
                     Option.some as fields:
                         var fi: ptr_uint = 0
                         while fi < fields.value.len:
@@ -10523,7 +10524,7 @@ function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span
                         # The analyzer may record the referent type unqualified
                         # (e.g. `ref[Counter]` with `Counter` module-less);
                         # qualify it so the element matches the host.
-                        var result_ty = qualify_type(ctx, expr_type(ctx, call_ep))
+                        var result_ty = qualify_type(ctx, type_helpers.expr_type(ctx, call_ep))
                         # When expr_type returns void or error (e.g. the analyzer
                         # did not record a type for the builtin), compute the
                         # correct result type from the argument's type.  Also
@@ -10620,7 +10621,7 @@ function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span
                         var base = ir_expr_type(inner)
                         if types.is_nullable_type(base):
                             base = types.unwrap_nullable(base)
-                        var elem_ty = expr_type(ctx, call_ep)
+                        var elem_ty = type_helpers.expr_type(ctx, call_ep)
                         if types.is_raw_pointer(base) or types.is_ref_type(base) or types.is_own_type(base):
                             elem_ty = types.pointer_element(base)
                         return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = inner, ty = qualify_type(ctx, elem_ty)))
@@ -10636,7 +10637,7 @@ function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span
                         let idx_ir = lower_expr(ctx, idx_val)
                         var elem_ty = generic_first_arg(recv_ty)
                         if types.is_error(elem_ty):
-                            elem_ty = expr_type(ctx, call_ep)
+                            elem_ty = type_helpers.expr_type(ctx, call_ep)
                         if types.is_nullable_type(elem_ty):
                             elem_ty = types.unwrap_nullable(elem_ty)
                         if is_array_type(recv_ty):
@@ -10677,7 +10678,7 @@ function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span
                 if extern_ptr != null:
                     return lower_plain_call(ctx, read(extern_ptr), args, call_ep, null)
                 # Proc-typed local: `p(args)` → `p.invoke(p.env, args)`.
-                match find_local_binding(ctx, id.name):
+                match type_helpers.find_local_binding(ctx, id.name):
                     Option.some as lb:
                         if is_proc_type(lb.value.ty):
                             return lower_proc_call(ctx, lb.value, args, call_ep)
@@ -10687,7 +10688,7 @@ function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span
                             # not a bare C-name call); the call's type falls back
                             # to the callee's own signature when the analyzer
                             # recorded none (the `lower_proc_call` rule).
-                            var ret_ty = expr_type(ctx, call_ep)
+                            var ret_ty = type_helpers.expr_type(ctx, call_ep)
                             match lb.value.ty:
                                 types.Type.ty_function as ft:
                                     if is_void_type(ret_ty):
@@ -10718,7 +10719,7 @@ function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span
                 # expr_type on the callee may not have the correct type if the
                 # analyzer only records the call expression type, so also check
                 # the identifier against the source file's variable declarations.
-                var callee_ty = expr_type(ctx, callee)
+                var callee_ty = type_helpers.expr_type(ctx, callee)
                 if not is_proc_type(callee_ty):
                     callee_ty = module_var_type(ctx, id.name)
                 if is_proc_type(callee_ty):
@@ -10765,13 +10766,13 @@ function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span
                         pass
                 var callee_c = naming.qualified_c_name(ctx.module_name, id.name)
                 if ctx.is_root_module and id.name == "main":
-                    match find_fn_sig(ctx, id.name):
+                    match type_helpers.find_fn_sig(ctx, id.name):
                         Option.some as main_sig:
                             if main_sig.value.is_async:
                                 callee_c = naming.qualified_c_name(ctx.module_name, "__async_main")
                         Option.none:
                             pass
-                return lower_plain_call_sig(ctx, callee_c, plain_args, call_ep, ret_type_ptr, find_fn_sig(ctx, id.name))
+                return lower_plain_call_sig(ctx, callee_c, plain_args, call_ep, ret_type_ptr, type_helpers.find_fn_sig(ctx, id.name))
             ast.Expr.expr_specialization as spec:
                 # When the specialisation callee is a member access
                 # (e.g. `r.unpack[CompactHeader]()`), try method resolution
@@ -10913,7 +10914,7 @@ function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span
                             let c_name = naming.qualified_c_name(target_module, ma.member_name)
                             var ret_ty = cross_module_return_type(ctx, c_name, call_ep)
                             var ret_type_ptr = types.alloc_type(ret_ty)
-                            var cross_sig = find_imported_fn_sig(ctx, target_module, ma.member_name)
+                            var cross_sig = type_helpers.find_imported_fn_sig(ctx, target_module, ma.member_name)
                             var cross_args = args
                             match find_imported_analysis(ctx, target_module):
                                 Option.some as imported:
@@ -11207,7 +11208,7 @@ function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span
                         unsafe:
                             ir_args.push(read(lowered))
                         si += 1
-                    return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
+                    return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = type_helpers.expr_type(ctx, call_ep)))
                 # Method found — try method resolution with the recovered type name.
                 var resolved_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = recv_name)
                 match resolve_method_info(ctx, resolved_ty, ma.member_name):
@@ -11228,12 +11229,12 @@ function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span
                             unsafe:
                                 ir_args.push(read(lowered))
                             si += 1
-                        return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
+                        return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = type_helpers.expr_type(ctx, call_ep)))
             ast.Expr.expr_index_access as ix:
                 # Calling a proc held in an array or span element: `ops[i](args)`.
                 # The element type comes from the receiver when the analyzer did
                 # not record one for the index expression.
-                var elem_ty = expr_type(ctx, callee)
+                var elem_ty = type_helpers.expr_type(ctx, callee)
                 if not is_proc_type(elem_ty):
                     elem_ty = generic_first_arg(index_receiver_type(ctx, ix.receiver))
                 if is_proc_type(elem_ty):
@@ -11260,13 +11261,13 @@ function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span
                         unsafe:
                             invoke_args.push(read(lowered))
                         ai += 1
-                    var call_ty = expr_type(ctx, call_ep)
+                    var call_ty = type_helpers.expr_type(ctx, call_ep)
                     if is_void_type(call_ty) or types.is_error(call_ty) or is_proc_type(call_ty):
                         call_ty = proc_return_type(callee_ty)
                     let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = callee_expr, member = "invoke", ty = proc_invoke_field_type(callee_ty)))
                     return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = call_ty))
                 if is_fn_type(callee_ty):
-                    return lower_call_with_callee_expr(ctx, callee_expr, args, call_ep, types.alloc_type(expr_type(ctx, call_ep)), empty_fn_sig())
+                    return lower_call_with_callee_expr(ctx, callee_expr, args, call_ep, types.alloc_type(type_helpers.expr_type(ctx, call_ep)), empty_fn_sig())
                 return alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty))
 
 
@@ -11300,7 +11301,7 @@ function cross_module_return_type(ctx: ref[LoweringContext], c_name: str, call_e
             ret_ty = read(sc).return_type
         if not types.is_error(ret_ty):
             return ret_ty
-    return expr_type(ctx, call_ep)
+    return type_helpers.expr_type(ctx, call_ep)
 
 
 function is_cross_module_function_async(ctx: ref[LoweringContext], c_name: str) -> bool:
@@ -11399,8 +11400,8 @@ function lower_specialization_call(ctx: ref[LoweringContext], spec_callee: ptr[a
                         # A `char` element casts its integer literal (`array[char,
                         # 512](0, …)` — the host's `contextual_numeric_cast` char
                         # arm), applied after the fold so it is not folded away.
-                        if prim_name(element_ty) == "char" and is_integer_like_value_type(ctx, ir_expr_type(element_value)):
-                            element_value = cast_to_type(element_value, element_ty)
+                        if type_helpers.prim_name(element_ty) == "char" and is_integer_like_value_type(ctx, ir_expr_type(element_value)):
+                            element_value = type_helpers.cast_to_type(element_value, element_ty)
                         elements.push(read(element_value))
                         ai += 1
                     return alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span()))
@@ -11498,7 +11499,7 @@ function lower_specialization_call(ctx: ref[LoweringContext], spec_callee: ptr[a
                     # and an unrefined one its storage type.
                     match unsafe: read(arg.arg_value):
                         ast.Expr.expr_identifier as aid:
-                            match visible_local_type(ctx, aid.name):
+                            match type_helpers.visible_local_type(ctx, aid.name):
                                 Option.some as visible:
                                     source_ty = visible.value
                                 Option.none:
@@ -11957,7 +11958,7 @@ function ir_expr_deref_type(e: ptr[ir.Expr]) -> types.Type:
 
 ## The type-constructor name ("ref", "ptr", "const_ptr") for a builtin
 ## address-of function, or an empty string when `func_name` is not one.
-function builtin_addr_type_name(func_name: str) -> str:
+public function builtin_addr_type_name(func_name: str) -> str:
     if func_name == "ref_of":
         return "ref"
     if func_name == "ptr_of":
@@ -12282,7 +12283,7 @@ function infer_type_param_from_args(ctx: ref[LoweringContext], param_name: str, 
         # parsed back for multi-component return types (e.g. an imported struct).
         var arg_ty: types.Type
         if p.param_type.is_proc or p.param_type.is_fn:
-            arg_ty = fallback_type_raw(ctx, unsafe: read(args.data + i).arg_value)
+            arg_ty = type_helpers.fallback_type_raw(ctx, unsafe: read(args.data + i).arg_value)
             if not is_proc_type(arg_ty) and not is_fn_type(arg_ty):
                 arg_ty = speculative_expr_type(ctx, unsafe: read(args.data + i).arg_value)
         else:
@@ -12330,9 +12331,9 @@ function infer_foreign_type_param_from_args(ctx: ref[LoweringContext], param_nam
         unsafe:
             p = read(params.data + i)
             a = read(args.data + i)
-        var arg_ty = expr_type(ctx, a.arg_value)
+        var arg_ty = type_helpers.expr_type(ctx, a.arg_value)
         if types.is_error(arg_ty) or types.is_void(arg_ty):
-            arg_ty = fallback_type_raw(ctx, a.arg_value)
+            arg_ty = type_helpers.fallback_type_raw(ctx, a.arg_value)
         arg_ty = substitute_type_params(ctx, arg_ty, ref_of(ctx.type_substitution))
         arg_ty = expand_generic_arg_type(ctx, arg_ty)
         if not types.is_error(arg_ty) and not types.is_void(arg_ty):
@@ -12984,7 +12985,7 @@ function lower_adapt_call(ctx: ref[LoweringContext], iface_type_ref: ptr[ast.Typ
         fatal(c"dyn lowering: adapt requires exactly one argument")
     var arg = unsafe: read(args.data + 0)
     let arg_value = lower_expr(ctx, arg.arg_value)
-    let arg_type = expr_type(ctx, arg.arg_value)
+    let arg_type = type_helpers.expr_type(ctx, arg.arg_value)
     let concrete_type = if types.is_ref_type(arg_type): types.pointer_element(arg_type) else: arg_type
     let iface_type_ref_val = unsafe: read(iface_type_ref)
     let iface_use_name = unsafe: analyzer.qname_to_str(iface_type_ref_val.name)
@@ -13659,7 +13660,7 @@ function primitive_receiver_name(t: types.Type) -> Option[str]:
 ## Extract a type name from a specialization receiver when the analyzer's
 ## expr_type returned void.  For `expr_specialization(callee = member_access("string", "String"), ...)`,
 ## returns `Option.some("String")`.
-function try_spec_type_name(receiver: ptr[ast.Expr]) -> Option[str]:
+public function try_spec_type_name(receiver: ptr[ast.Expr]) -> Option[str]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_specialization as spec:
@@ -14513,7 +14514,7 @@ function try_generic_method_call(ctx: ref[LoweringContext], recv_ty: types.Type,
         # (e.g. a local bound from a cross-module call `da.check()` returning
         # `Vec[Diag]`).  The analyzer's recorded receiver type still carries the
         # generic form with type args, so recover owner + args from it.
-        info_opt = generic_receiver_info(ctx, expr_type(ctx, receiver))
+        info_opt = generic_receiver_info(ctx, type_helpers.expr_type(ctx, receiver))
     if info_opt.is_none():
         # Fallback for identifier receivers (`this`, locals): the analyzer's
         # recorded type can lack recoverable type arguments, but the binding's
@@ -16543,7 +16544,7 @@ function lower_expression_match(ctx: ref[LoweringContext], scrutinee: ptr[ast.Ex
     # the enclosing statement's setup, with the expression replaced by a read of
     # the result.
     if ctx.hoist_mode != HoistMode.hm_off:
-        var result_ty = expr_type(ctx, ep)
+        var result_ty = type_helpers.expr_type(ctx, ep)
         if types.is_error(result_ty) or types.type_to_string(result_ty) == "void":
             result_ty = ctx.bool_ty
         let temp = fresh_c_temp_name(ctx, "match_expr")
@@ -16571,7 +16572,7 @@ function lower_expression_match(ctx: ref[LoweringContext], scrutinee: ptr[ast.Ex
     # A genuine multi-arm match expression in a non-return position is not
     # supported inline (needs statement hoisting); `return match` is handled at
     # the statement boundary in `lower_stmt`.  Fall back to a placeholder.
-    let result_ty2 = expr_type(ctx, ep)
+    let result_ty2 = type_helpers.expr_type(ctx, ep)
     return alloc_expr(ir.Expr.expr_name(name = "match_expr", ty = result_ty2, pointer = Option[bool].some(value = false)))
 
 
@@ -16786,7 +16787,7 @@ function lower_plain_call_spec(ctx: ref[LoweringContext], c_name: str, args: spa
         unsafe:
             ret_ty = read(ov)
     else:
-        ret_ty = expr_type(ctx, call_ep)
+        ret_ty = type_helpers.expr_type(ctx, call_ep)
     return alloc_expr(ir.Expr.expr_call(callee = c_name, arguments = ir_args.as_span(), ty = ret_ty))
 
 
@@ -16844,7 +16845,7 @@ function lower_call_with_callee(ctx: ref[LoweringContext], c_name: str, callee_e
         unsafe:
             ret_ty = read(ov)
     else:
-        ret_ty = expr_type(ctx, call_ep)
+        ret_ty = type_helpers.expr_type(ctx, call_ep)
     match callee_expr:
         Option.some as c:
             return alloc_expr(ir.Expr.expr_call_indirect(callee = c.value, arguments = ir_args.as_span(), ty = ret_ty))
@@ -16977,13 +16978,13 @@ function contextual_numeric_cast(
             return value
     if context_name == "char":
         if is_integer_like_value_type(ctx, actual_ty):
-            return cast_to_type(value, context_ty)
+            return type_helpers.cast_to_type(value, context_ty)
         return value
     if not types.is_numeric_name(context_name):
         return value
     if (context_name == "float" or context_name == "double") and allow_int_to_float:
         if is_integer_like_value_type(ctx, actual_ty):
-            return cast_to_type(value, context_ty)
+            return type_helpers.cast_to_type(value, context_ty)
     if not is_enum_value_type(ctx, actual_ty):
         unsafe:
             match read(value_ast):
@@ -16997,13 +16998,13 @@ function contextual_numeric_cast(
                             match cv.value:
                                 comptime_types.ConstValue.cv_int as iv:
                                     if numeric_int_fits_context(iv.value, context_ty):
-                                        return cast_to_type(value, context_ty)
+                                        return type_helpers.cast_to_type(value, context_ty)
                                 _:
                                     pass
                         Option.none:
                             pass
     if external_numeric and external_numeric_compatible(actual_ty, context_ty):
-        return cast_to_type(value, context_ty)
+        return type_helpers.cast_to_type(value, context_ty)
     return value
 
 
@@ -17012,13 +17013,13 @@ function contextual_numeric_cast(
 function is_integer_like_value_type(ctx: ref[LoweringContext], t: types.Type) -> bool:
     if types.is_integer_type(t):
         return true
-    let backing = enum_backing_or_self(ctx, t)
+    let backing = type_helpers.enum_backing_or_self(ctx, t)
     return types.is_integer_type(backing)
 
 
 ## True when the value type is an enum/flags nominal (the host's `EnumBase`).
 function is_enum_value_type(ctx: ref[LoweringContext], t: types.Type) -> bool:
-    let backing = enum_backing_or_self(ctx, t)
+    let backing = type_helpers.enum_backing_or_self(ctx, t)
     return not types.type_equals(backing, t)
 
 
@@ -17078,7 +17079,7 @@ function external_numeric_assignment_target(ctx: ref[LoweringContext], ep: ptr[a
     unsafe:
         match read(ep):
             ast.Expr.expr_member_access as ma:
-                return is_external_module_type(expr_type(ctx, ma.receiver))
+                return is_external_module_type(type_helpers.expr_type(ctx, ma.receiver))
             _:
                 return false
 
@@ -17124,7 +17125,7 @@ function is_contextual_binary_expr(ep: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(ep):
             ast.Expr.expr_binary_op as b:
-                return is_pure_arithmetic_operator(b.operator)
+                return type_helpers.is_pure_arithmetic_operator(b.operator)
             ast.Expr.expr_unsafe as u:
                 return is_contextual_binary_expr(u.expression)
             _:
@@ -17192,10 +17193,10 @@ function lower_contextual_binary(ctx: ref[LoweringContext], ep: ptr[ast.Expr], e
                 if is_bare_float_literal(bin.right) and types.is_float_type(left_ty):
                     right = float_literal_to_context_type(bin.right, left_ty, right)
                     right_ty = ir_expr_type(right)
-                match promoted_binary_operand_type(bin.operator, left_ty, right_ty):
+                match type_helpers.promoted_binary_operand_type(bin.operator, left_ty, right_ty):
                     Option.some as op_ty:
-                        left = cast_to_type(left, op_ty.value)
-                        right = cast_to_type(right, op_ty.value)
+                        left = type_helpers.cast_to_type(left, op_ty.value)
+                        right = type_helpers.cast_to_type(right, op_ty.value)
                         return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = op_ty.value))
                     Option.none:
                         return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = left_ty))
@@ -17500,7 +17501,7 @@ function task_root_proc_bridge_proc_type(ctx: ref[LoweringContext], sig: Option[
                 param_ty = read(s.value.params.data + index).ty
             let task_ty = task_root_proc_task_type(param_ty) else:
                 return Option[types.Type].none
-            if types.type_equals(expr_type(ctx, arg_ast), task_ty):
+            if types.type_equals(type_helpers.expr_type(ctx, arg_ast), task_ty):
                 return Option[types.Type].some(value = param_ty)
             return Option[types.Type].none
         Option.none:
@@ -17627,7 +17628,7 @@ function lower_foreign_call_direct(ctx: ref[LoweringContext], info: ForeignInfo,
             # A variadic slot has no declared type; the host still converts a
             # `str` value at the raw C boundary (`TextFormat("%s", value)`).
             lowered = lower_expr(ctx, arg.arg_value)
-            if is_str_typed(ir_expr_type(lowered)):
+            if type_helpers.is_str_typed(ir_expr_type(lowered)):
                 lowered = lower_cstr_argument(ctx, arg.arg_value, lowered)
         lowered_args.push(lowered)
         i += 1
@@ -17716,7 +17717,7 @@ function append_foreign_consuming_releases(ctx: ref[LoweringContext], output: re
             unsafe:
                 match read(arg.arg_value):
                     ast.Expr.expr_identifier as aid:
-                        match find_local_binding(ctx, aid.name):
+                        match type_helpers.find_local_binding(ctx, aid.name):
                             Option.some as lb:
                                 let b = lb.value
                                 # The binding's *storage* type: a guard-bound
@@ -17748,7 +17749,7 @@ function append_foreign_consuming_releases(ctx: ref[LoweringContext], output: re
                         pass
         i += 1
     if refinements.len() > 0:
-        let _post = push_flow_refinements(ctx, ref_of(refinements))
+        let _post = type_helpers.push_flow_refinements(ctx, ref_of(refinements))
 
 
 ## True when a lowered IR expression is a call to the malloc-backed
@@ -18252,13 +18253,13 @@ function walk_mapping_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr], top_ret
                 # The rebuilt node keeps the analyzer's recorded type (the host
                 # lowers the mapping through `lower_expression`): a comparison
                 # (`= c.glfwInit() != 0`) is `bool`, not its left operand's type.
-                var bty = expr_type(ctx, ep)
+                var bty = type_helpers.expr_type(ctx, ep)
                 if types.is_error(bty) or types.type_to_string(bty) == "void":
                     bty = ir_expr_type(l)
                 return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = l, right = r, ty = bty))
             ast.Expr.expr_unary_op as un:
                 let operand = walk_mapping_expr(ctx, un.operand, top_ret_ty, owner_module)
-                var uty = expr_type(ctx, ep)
+                var uty = type_helpers.expr_type(ctx, ep)
                 if types.is_error(uty) or types.type_to_string(uty) == "void":
                     uty = ir_expr_type(operand)
                 return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = uty))
@@ -18332,7 +18333,7 @@ function member_receiver_is_local(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) 
     unsafe:
         match read(ep):
             ast.Expr.expr_identifier as id:
-                if find_local_binding(ctx, id.name).is_some():
+                if type_helpers.find_local_binding(ctx, id.name).is_some():
                     return true
                 return ctx.mapping_replacements.get(id.name) != null
             _:
@@ -19159,7 +19160,7 @@ function imported_extern_call(ctx: ref[LoweringContext], target_module: str, nam
                 if ef.name == name:
                     var ret = ctx.void_ty
                     if ef.return_type != null:
-                        ret = qualify_type(ctx, resolve_return_type(ctx, Option[analyzer.FnSig].none, ef.return_type))
+                        ret = qualify_type(ctx, type_helpers.resolve_return_type(ctx, Option[analyzer.FnSig].none, ef.return_type))
                     result = Option[ForeignInfo].some(value = ForeignInfo(
                         c_name = extern_c_name(ef.name, ef.mapping),
                         return_ty = ret,
@@ -19238,7 +19239,7 @@ function lower_extern_call(ctx: ref[LoweringContext], info: ForeignInfo, args: s
         unsafe:
             ir_args.push(read(lowered))
         i += 1
-    return alloc_expr(ir.Expr.expr_call(callee = info.c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
+    return alloc_expr(ir.Expr.expr_call(callee = info.c_name, arguments = ir_args.as_span(), ty = type_helpers.expr_type(ctx, call_ep)))
 
 
 ## Pre-scan function declarations to record each one's resolved return type in
@@ -19257,7 +19258,7 @@ function collect_function_returns(ctx: ref[LoweringContext], decls: span[ast.Dec
                 # instantiate bogus concrete types.  Specializations record
                 # their own return types.
                 if fun.type_params.len == 0:
-                    var ret = resolve_return_type(ctx, find_fn_sig(ctx, fun.name), fun.return_type)
+                    var ret = type_helpers.resolve_return_type(ctx, type_helpers.find_fn_sig(ctx, fun.name), fun.return_type)
                     if fun.is_async:
                         ret = tasks.make_task_type(ret)
                     ctx.function_returns.set(fun.name, ret)
@@ -19411,7 +19412,7 @@ function lower_proc_call(ctx: ref[LoweringContext], lb: LocalBinding, args: span
     # shape).  The analyzer does not always record a type for a call through a
     # proc VALUE (`let _s = scaler(10.0)` came out void), so fall back to the
     # closure's own signature, which carries the real return type.
-    var call_ty = expr_type(ctx, call_ep)
+    var call_ty = type_helpers.expr_type(ctx, call_ep)
     if is_void_type(call_ty) or types.is_error(call_ty) or is_proc_type(call_ty):
         call_ty = proc_return_type(lb.ty)
     let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "invoke", ty = proc_invoke_field_type(lb.ty)))
@@ -19441,7 +19442,7 @@ function lower_proc_field_call(ctx: ref[LoweringContext], field_expr: ptr[ir.Exp
     # As in `lower_proc_call`: a call through a proc-typed field may not have a
     # recorded type, so take the return type from the field's own signature, and
     # type the `invoke` member with its field signature.
-    var call_ty = expr_type(ctx, call_ep)
+    var call_ty = type_helpers.expr_type(ctx, call_ep)
     if is_void_type(call_ty) or types.is_error(call_ty) or is_proc_type(call_ty):
         call_ty = proc_return_type(field_proc_ty)
     let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = field_expr, member = "invoke", ty = proc_invoke_field_type(field_proc_ty)))
@@ -19461,7 +19462,7 @@ function lower_fn_field_call(ctx: ref[LoweringContext], field_expr: ptr[ir.Expr]
         unsafe:
             call_args.push(read(lowered))
         i += 1
-    var call_ty = expr_type(ctx, call_ep)
+    var call_ty = type_helpers.expr_type(ctx, call_ep)
     match ir_expr_type(field_expr):
         types.Type.ty_function as ffn:
             call_ty = unsafe: read(ffn.return_type)
@@ -19478,7 +19479,7 @@ function function_return_type(ctx: ref[LoweringContext], name: str) -> types.Typ
     if ret_ptr != null:
         unsafe:
             return read(ret_ptr)
-    return fn_sig_return_type(find_fn_sig(ctx, name))
+    return type_helpers.fn_sig_return_type(type_helpers.find_fn_sig(ctx, name))
 
 
 ## The C name an external function maps to: its explicit `= c.name` mapping value
@@ -19570,7 +19571,7 @@ function foreign_mapping_is_simple(mapping: ptr[ast.Expr]) -> bool:
 ## (`p.x`).  Method calls are resolved through `lower_method_resolved` and
 ## `lower_dyn_method_call`; other member forms (atomic, str_buffer, event) are
 ## dispatched by their type.
-function imported_field_type(ctx: ref[LoweringContext], recv_ty: types.Type, member: str) -> Option[types.Type]:
+public function imported_field_type(ctx: ref[LoweringContext], recv_ty: types.Type, member: str) -> Option[types.Type]:
     var base = recv_ty
     if types.is_nullable_type(base):
         base = types.unwrap_nullable(base)
@@ -19689,7 +19690,7 @@ public function method_receiver_type(ctx: ref[LoweringContext], receiver: ptr[as
         ctx.fmt_counter.set(ctx.fmt_dest_name, saved_fmt_n)
         if not types.is_error(lowered_ty) and not types.type_to_string(lowered_ty) == "void":
             return lowered_ty
-    return expr_type(ctx, receiver)
+    return type_helpers.expr_type(ctx, receiver)
 
 
 function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], member: str, ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
@@ -19717,7 +19718,7 @@ function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
                         pointer = Option[bool].some(value = false),
                     ))
                 if ctx.analysis.static_member_types.contains(id.name):
-                    var member_ty = expr_type(ctx, ep)
+                    var member_ty = type_helpers.expr_type(ctx, ep)
                     match member_ty:
                         types.Type.ty_error:
                             # Const initializers can miss the analyzer's type map;
@@ -19738,7 +19739,7 @@ function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
                         Option.some as imported:
                             if imported.value.type_names.contains(member):
                                 let c_name = imported_member_c_name(ctx, imported.value, target_module, member)
-                                var member_ty = expr_type(ctx, ep)
+                                var member_ty = type_helpers.expr_type(ctx, ep)
                                 # If the member is a re-exported type alias, use
                                 # the originating module's type so c_type() produces
                                 # the correct C name.
@@ -19757,7 +19758,7 @@ function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
                                 let c_name = imported_member_c_name(ctx, imported.value, target_module, member)
                                 return alloc_expr(ir.Expr.expr_name(
                                     name = c_name,
-                                    ty = expr_type(ctx, ep),
+                                    ty = type_helpers.expr_type(ctx, ep),
                                     pointer = Option[bool].some(value = false),
                                 ))
                         Option.none:
@@ -19837,7 +19838,7 @@ function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
                                                     member_c_name = naming.qualified_member_c_name(target_module, inner_ma.member_name, member)
                                                 return alloc_expr(ir.Expr.expr_name(
                                                     name = member_c_name,
-                                                    ty = expr_type(ctx, ep),
+                                                    ty = type_helpers.expr_type(ctx, ep),
                                                     pointer = Option[bool].some(value = false),
                                                 ))
                                 Option.none:
@@ -19874,12 +19875,12 @@ function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
                     return alloc_expr(ir.Expr.expr_index(
                         receiver = member_expr,
                         index = idx,
-                        ty = expr_type(ctx, ep),
+                        ty = type_helpers.expr_type(ctx, ep),
                     ))
             _:
                 pass
     let recv = lower_expr(ctx, receiver)
-    var member_ty = expr_type(ctx, ep)
+    var member_ty = type_helpers.expr_type(ctx, ep)
     let recv_ty = ir_expr_type(recv)
     # A `ref` receiver auto-dereferences for member access (matching the host's
     # `unwrap_ref`), so `.data`/`.len` on `ref[span[T]]` must be typed against
@@ -19896,9 +19897,9 @@ function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
     # str synthetic fields: `.data` is ptr[char], `.len` is ptr_uint.  Like span,
     # the analyzer does not type these reliably (a `var n = text.len` would
     # otherwise be mis-typed as str).
-    else if is_str_typed(member_recv_ty) and member == "data":
+    else if type_helpers.is_str_typed(member_recv_ty) and member == "data":
         member_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("char")))
-    else if is_str_typed(member_recv_ty) and member == "len":
+    else if type_helpers.is_str_typed(member_recv_ty) and member == "len":
         member_ty = types.primitive("ptr_uint")
     # SoA synthetic fields: `points.x` is the per-lane array
     # `array[<element field type>, N]` (the host's `Types::SoA#field`).
@@ -19910,11 +19911,11 @@ function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
                 pass
     # vec/mat/quat field types: the analyzer doesn't record these reliably
     # since these are builtin types, not declared structs.
-    else if is_vec_math_name(nominal_type_name(member_recv_ty)):
-        let vname = nominal_type_name(member_recv_ty)
+    else if type_helpers.is_vec_math_name(type_helpers.nominal_type_name(member_recv_ty)):
+        let vname = type_helpers.nominal_type_name(member_recv_ty)
         var field_names = vec.Vec[str].create()
         var field_types = vec.Vec[types.Type].create()
-        vec_math_fields(vname, ref_of(field_names), ref_of(field_types))
+        type_helpers.vec_math_fields(vname, ref_of(field_names), ref_of(field_types))
         var fi: ptr_uint = 0
         var found = false
         while fi < field_names.len():
@@ -20631,7 +20632,7 @@ public function variant_arm_info(info: VariantInfo, arm_name: str) -> Option[Var
 ## `resolve_scalar_type_ref`, and single-name local types (structs/unions/enums)
 ## to a module-qualified `ty_imported`.  Compound types (arrays/spans/generics)
 ## resolve later.
-function resolve_field_type_ref(ctx: ref[LoweringContext], tref: ast.TypeRef) -> types.Type:
+public function resolve_field_type_ref(ctx: ref[LoweringContext], tref: ast.TypeRef) -> types.Type:
     var local_tref = tref
     let scalar = resolve_scalar_type_ref(ptr_of(local_tref))
     if not types.is_error(scalar):
@@ -20713,7 +20714,7 @@ function resolve_field_type_ref(ctx: ref[LoweringContext], tref: ast.TypeRef) ->
 
 ## Look up the resolved type of a module-level variable declared in the source
 ## file.  Used when `expr_type(ctx, callee)` fails for proc variables.
-function module_var_type(ctx: ref[LoweringContext], name: str) -> types.Type:
+public function module_var_type(ctx: ref[LoweringContext], name: str) -> types.Type:
     var di: ptr_uint = 0
     while di < ctx.analysis.source_file.declarations.len:
         var d: ast.Decl
@@ -21071,7 +21072,7 @@ function lower_match(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], s
     else:
         append_span_stmts(output, window_collected.stmts.as_span())
         defer: append_span_stmts(output, window_collected.cleanups.as_span())
-    var scrutinee_ty = expr_type(ctx, scrutinee)
+    var scrutinee_ty = type_helpers.expr_type(ctx, scrutinee)
     let lowered_ty = ir_expr_type(scrutinee_expr)
     if not types.is_error(lowered_ty) and not types.type_to_string(lowered_ty) == "void":
         scrutinee_ty = lowered_ty
@@ -21171,7 +21172,7 @@ function fatal_arg_is_cstr(ctx: ref[LoweringContext], arg: ptr[ast.Expr]) -> boo
                 return lit.is_cstring
             _:
                 pass
-    match expr_type(ctx, arg):
+    match type_helpers.expr_type(ctx, arg):
         types.Type.ty_primitive as p:
             return p.name == "cstr"
         _:
@@ -21360,7 +21361,7 @@ function lower_string_match(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.St
 ## type for the match, or — when that is unknown — the lowered type of the first
 ## arm whose value type is known.  Used to type the hoisted result temp.
 function current_return_type(ctx: ref[LoweringContext], match_expr: ptr[ast.Expr]) -> types.Type:
-    var ty = qualify_type(ctx, expr_type(ctx, match_expr))
+    var ty = qualify_type(ctx, type_helpers.expr_type(ctx, match_expr))
     if not types.is_error(ty) and not types.type_to_string(ty) == "void":
         return ty
     unsafe:
@@ -21387,7 +21388,7 @@ function infer_match_arm_type(ctx: ref[LoweringContext], arms: span[ast.MatchExp
         var arm: ast.MatchExprArm
         unsafe:
             arm = read(arms.data + i)
-        let vt = qualify_type(ctx, expr_type(ctx, arm.value))
+        let vt = qualify_type(ctx, type_helpers.expr_type(ctx, arm.value))
         if not types.is_error(vt) and not types.type_to_string(vt) == "void":
             return vt
         i += 1
@@ -21427,7 +21428,7 @@ function lower_match_expression_local(ctx: ref[LoweringContext], output: ref[vec
 ## not already a name so it is evaluated once.  Shared by `let x = match ...`
 ## (lower_match_expression_local) and the `return match ...` hoist.
 function lower_match_expr_to_ref(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
-    var scrutinee_ty = expr_type(ctx, scrutinee)
+    var scrutinee_ty = type_helpers.expr_type(ctx, scrutinee)
     var scrutinee_expr = lower_expr(ctx, scrutinee)
     # Prefer the lowered scrutinee's type (more accurate for prelude/field types).
     let lowered_sty = ir_expr_type(scrutinee_expr)
@@ -22681,951 +22682,6 @@ function variant_base_name(name: str) -> Option[str]:
 
 
 # =============================================================================
-#  Type resolution helpers
-# =============================================================================
-
-public function find_fn_sig(ctx: ref[LoweringContext], name: str) -> Option[analyzer.FnSig]:
-    let sig_ptr = ctx.analysis.functions.get(name)
-    if sig_ptr == null:
-        return Option[analyzer.FnSig].none
-    unsafe:
-        return Option[analyzer.FnSig].some(value = read(sig_ptr))
-
-
-## Look up a function's FnSig in an imported module's analysis.
-public function find_imported_fn_sig(ctx: ref[LoweringContext], module_name: str, name: str) -> Option[analyzer.FnSig]:
-    match find_imported_analysis(ctx, module_name):
-        Option.some as imported:
-            let sig_ptr = imported.value.functions.get(name)
-            if sig_ptr == null:
-                return Option[analyzer.FnSig].none
-            return Option[analyzer.FnSig].some(value = unsafe: read(sig_ptr))
-        Option.none:
-            return Option[analyzer.FnSig].none
-
-
-function fn_sig_param_type(sig: Option[analyzer.FnSig], index: ptr_uint) -> types.Type:
-    match sig:
-        Option.some as s:
-            if index < s.value.params.len:
-                unsafe:
-                    return read(s.value.params.data + index).ty
-            return types.Type.ty_error
-        Option.none:
-            return types.Type.ty_error
-
-
-public function fn_sig_return_type(sig: Option[analyzer.FnSig]) -> types.Type:
-    match sig:
-        Option.some as s:
-            if s.value.has_return_type:
-                return s.value.return_type
-            return types.primitive("void")
-        Option.none:
-            return types.primitive("void")
-
-
-## A parameter's lowered type: resolved from the AST type ref (so tuple/array/
-## span params carry full structure), falling back to the analyzer's signature.
-public function resolve_param_type(ctx: ref[LoweringContext], sig: Option[analyzer.FnSig], index: ptr_uint, param_type: ast.TypeRef) -> types.Type:
-    var local_tref = param_type
-    let resolved = resolve_type_ref(ctx, ptr_of(local_tref))
-    if not types.is_error(resolved):
-        return qualify_type(ctx, resolved)
-    return qualify_type(ctx, fn_sig_param_type(sig, index))
-
-
-## A function's lowered return type: resolved from the AST return type ref (so
-## tuple/array/span returns carry full structure), falling back to the signature.
-public function resolve_return_type(ctx: ref[LoweringContext], sig: Option[analyzer.FnSig], return_type: ptr[ast.TypeRef]?) -> types.Type:
-    let annotation = return_type else:
-        return qualify_type(ctx, fn_sig_return_type(sig))
-    let resolved = resolve_type_ref(ctx, annotation)
-    if not types.is_error(resolved):
-        return qualify_type(ctx, resolved)
-    return qualify_type(ctx, fn_sig_return_type(sig))
-
-
-## The resolved type of an AST expression, preferring the analyzer's recorded
-## type (keyed by node pointer identity).  A recorded `ty_error` is permissive
-## — the lowering recovers via `fallback_type`.  An identifier that names a
-## local (or a refined module value) takes the *lowering env's* visible type:
-## the host's `infer_expression_type` skips its sema-type cache for identifiers
-## (`resolve.rb:706`) and reads `lookup_value`, so the analyzer's CFG refinement
-## must not leak in where the host's lowering scope has none.
-public function expr_type(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> types.Type:
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_identifier as id:
-                match visible_local_type(ctx, id.name):
-                    Option.some as visible:
-                        return visible.value
-                    Option.none:
-                        pass
-            _:
-                pass
-    let key = unsafe: reinterpret[ptr_uint](ep)
-    let tp = ctx.analysis.resolved_expr_types.get(key)
-    if tp != null:
-        let recorded = unsafe: read(tp)
-        if not types.is_error(recorded):
-            # Inside a generic specialization the analyzer's recorded type may
-            # still mention type parameters (e.g. `Vec[T].data` is `ptr[T]`);
-            # apply the active substitution so locals and member accesses carry
-            # the concrete type.
-            return substitute_type_params(ctx, recorded, ref_of(ctx.type_substitution))
-    return fallback_type(ctx, ep)
-
-
-## Resolve `import_alias.TypeName` to `ty_imported` when the member names a
-## struct, enum, variant, or type alias in the imported module.
-function import_qualified_type(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[types.Type]:
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_member_access as ma:
-                match read(ma.receiver):
-                    ast.Expr.expr_identifier as id:
-                        let mod_ptr = ctx.analysis.imports.get(id.name)
-                        if mod_ptr == null:
-                            return Option[types.Type].none
-                        let target_module = read(mod_ptr)
-                        var ai: ptr_uint = 0
-                        while ai < ctx.program_analyses.len:
-                            var a: analyzer.Analysis = read(ctx.program_analyses.data + ai)
-                            if a.module_name == target_module:
-                                if a.structs.contains(ma.member_name) or a.type_names.contains(ma.member_name):
-                                    # Follow the type alias chain so re-exported types
-                                    # (e.g. `type CameraMode = c.CameraMode`) resolve to
-                                    # the originating std.c.* module's type.
-                                    let opt_alias = resolve_single_imported_type(ctx, target_module, ma.member_name)
-                                    match opt_alias:
-                                        Option.some as resolved:
-                                            return Option[types.Type].some(value = resolved.value)
-                                        Option.none:
-                                            return Option[types.Type].some(value = types.Type.ty_imported(module_name = target_module, name = ma.member_name, args = span[types.Type]()))
-                            ai += 1
-                    _:
-                        pass
-            _:
-                pass
-    return Option[types.Type].none
-
-
-## The return type of a cross-module call `alias.func(...)`, resolved from the
-## shared `program_returns` table.  Ordinary functions are keyed by their
-## module-qualified C name; `std.c.*` external functions are keyed by their bare
-## C name (matching `collect_program_returns`).  Returns `ty_error` when the
-## receiver is not an import alias or the function is unknown.
-function imported_call_return_type(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], func_name: str) -> types.Type:
-    unsafe:
-        match read(receiver):
-            ast.Expr.expr_identifier as id:
-                let mod_ptr = ctx.analysis.imports.get(id.name) else:
-                    return types.Type.ty_error
-                let target_module = read(mod_ptr)
-                # External (std.c.*) functions are keyed by bare name; ordinary
-                # functions by module-qualified name.  Try the bare name first for
-                # std.c.* aliases, then the qualified name.
-                if target_module.starts_with("std.c."):
-                    let bare_ptr = read(ctx.program_returns).get(func_name)
-                    if bare_ptr != null:
-                        return read(bare_ptr)
-                let linkage = naming.qualified_c_name(target_module, func_name)
-                let ret_ptr = read(ctx.program_returns).get(linkage) else:
-                    return types.Type.ty_error
-                return read(ret_ptr)
-            _:
-                return types.Type.ty_error
-
-
-## Like `fallback_type_raw`, but applies the active generic substitution so a
-## recovered field/local type (`ptr[T]`) becomes concrete inside a
-## specialization.
-function fallback_type(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> types.Type:
-    return substitute_type_params(ctx, fallback_type_raw(ctx, ep), ref_of(ctx.type_substitution))
-
-
-function fallback_type_raw(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> types.Type:
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_integer_literal:
-                return types.primitive("int")
-            ast.Expr.expr_float_literal:
-                return types.primitive("float")
-            ast.Expr.expr_char_literal:
-                return types.primitive("ubyte")
-            ast.Expr.expr_bool_literal:
-                return ctx.bool_ty
-            ast.Expr.expr_identifier as id:
-                match visible_local_type(ctx, id.name):
-                    Option.some as visible:
-                        return visible.value
-                    Option.none:
-                        pass
-                let mvt = module_var_type(ctx, id.name)
-                if not types.is_error(mvt):
-                    return mvt
-                # Function reference: its function type, named after the
-                # function and carrying its variadic flag, the way the
-                # host's `infer_expression_type` returns the function
-                # binding's own type (`Types::Function#name`; the
-                # analyzer's `argument_inference_type` refinement does
-                # the same for call arguments).
-                match find_fn_sig(ctx, id.name):
-                    Option.some as s:
-                        var ret = s.value.return_type
-                        if not s.value.has_return_type:
-                            ret = ctx.void_ty
-                        var param_types = vec.Vec[types.Type].create()
-                        var param_names = vec.Vec[str].create()
-                        var pi: ptr_uint = 0
-                        while pi < s.value.params.len:
-                            unsafe:
-                                param_types.push(read(s.value.params.data + pi).ty)
-                                param_names.push(read(s.value.params.data + pi).name)
-                            pi += 1
-                        return types.Type.ty_function(name = id.name, params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = s.value.is_variadic, is_proc = false, param_names = param_names.as_span())
-                    Option.none:
-                        pass
-                return types.Type.ty_error
-            ast.Expr.expr_binary_op as bin:
-                if is_comparison_operator(bin.operator):
-                    return ctx.bool_ty
-                return fallback_type_raw(ctx, bin.left)
-            ast.Expr.expr_unary_op as un:
-                return fallback_type_raw(ctx, un.operand)
-            ast.Expr.expr_call as call:
-                match read(call.callee):
-                    ast.Expr.expr_identifier as id:
-                        # Builtin address-of / pointer-of: infer the correct
-                        # result type from the argument's type instead of
-                        # falling to void (#1194).
-                        if call.args.len > 0:
-                            let inner_kind = id.name
-                            let inner_type_name = builtin_addr_type_name(inner_kind)
-                            if inner_type_name.len > 0:
-                                let inner_ty = fallback_type_raw(ctx, unsafe: read(call.args.data + 0).arg_value)
-                                if not types.is_error(inner_ty) and not types.is_void(inner_ty):
-                                    return types.Type.ty_generic(name = inner_type_name, args = sp_type(inner_ty))
-                        let foreign_ptr = ctx.foreign_map.get(id.name)
-                        if foreign_ptr != null:
-                            return read(foreign_ptr).return_ty
-                        return fn_sig_return_type(find_fn_sig(ctx, id.name))
-                    ast.Expr.expr_member_access as ma:
-                        # Cross-module call `alias.func(...)` (ordinary or external):
-                        # the analyzer does not record a resolved type for these, so
-                        # recover the callee's return type from the shared
-                        # program_returns table (keyed by its C linkage name — the
-                        # module-qualified name for ordinary functions, the bare
-                        # name for std.c.* external functions).
-                        return imported_call_return_type(ctx, ma.receiver, ma.member_name)
-                    _:
-                        return types.Type.ty_error
-            ast.Expr.expr_member_access as ma:
-                match import_qualified_type(ctx, ep):
-                    Option.some as ty:
-                        return ty.value
-                    Option.none:
-                        pass
-                # A field access on a struct value (`rect.height`) resolves to
-                # the field's type, not the receiver's type.  Recover the
-                # receiver's type and look the field up; fall back to the
-                # receiver type only when the field cannot be resolved.
-                let recv_fallback = fallback_type_raw(ctx, ma.receiver)
-                match concrete_field_type(ctx, recv_fallback, ma.member_name):
-                    Option.some as ft:
-                        return ft.value
-                    Option.none:
-                        pass
-                match imported_field_type(ctx, recv_fallback, ma.member_name):
-                    Option.some as ft:
-                        return ft.value
-                    Option.none:
-                        pass
-                return recv_fallback
-            ast.Expr.expr_specialization as spec:
-                match try_spec_type_name(ep):
-                    Option.some as tn:
-                        return types.Type.ty_generic(name = tn.value, args = sp_type(types.Type.ty_error))
-                    Option.none:
-                        return types.Type.ty_error
-            # Proc expressions: reconstruct the ty_function(is_proc=true) from the
-            # AST so proc_invoke_field_type and callers can compute the correct
-            # invoke field type instead of falling to ty_error / void.
-            ast.Expr.expr_proc as pr:
-                var param_types = vec.Vec[types.Type].create()
-                var pi: ptr_uint = 0
-                var proc_param_names = vec.Vec[str].create()
-                while pi < pr.method_params.len:
-                    unsafe:
-                        let p = read(pr.method_params.data + pi)
-                        param_types.push(resolve_field_type_ref(ctx, p.param_type))
-                        proc_param_names.push(p.name)
-                    pi += 1
-                var ret = ctx.void_ty
-                let rt = pr.return_type
-                if rt != null:
-                    # Full resolution (not scalar-only) so a struct / imported
-                    # return type resolves correctly — needed for generic-method
-                    # type-param inference (e.g. `map_error[F]`'s F from the proc's
-                    # return type).
-                    ret = resolve_field_type_ref(ctx, unsafe: read(rt))
-                return types.Type.ty_function(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true, param_names = proc_param_names.as_span())
-            _:
-                return types.Type.ty_error
-
-
-public function is_comparison_operator(op: str) -> bool:
-    return (
-        op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">="
-        or op == "and" or op == "or"
-    )
-
-
-## True when a type is exactly `str` (`ty_str`).
-function is_str_typed(t: types.Type) -> bool:
-    match t:
-        types.Type.ty_str:
-            return true
-        _:
-            return false
-
-
-## True for integer/bitwise arithmetic operators whose result type matches the
-## (same-typed) operands.
-function is_arithmetic_operator(op: str) -> bool:
-    return (
-        op == "+" or op == "-" or op == "*" or op == "/" or op == "%"
-        or op == "&" or op == "|" or op == "^" or op == "<<" or op == ">>"
-    )
-
-
-## True for the arithmetic operators whose result type is the promoted operand
-## type (excludes comparisons, which yield bool, and shifts/bitwise).
-function is_pure_arithmetic_operator(op: str) -> bool:
-    return op == "+" or op == "-" or op == "*" or op == "/" or op == "%"
-
-
-## The common type both operands of a balanced binary operator are cast to, or
-## none when no balancing applies.  Arithmetic and comparison balance to the
-## common numeric type; `%` to the common integer type; shifts, bitwise, and
-## logical operators do not balance.  Mirrors Ruby's promoted_binary_operand_type.
-function promoted_binary_operand_type(operator: str, left: types.Type, right: types.Type) -> Option[types.Type]:
-    if (
-        operator == "+" or operator == "-" or operator == "*" or operator == "/"
-        or operator == "<" or operator == "<=" or operator == ">" or operator == ">="
-        or operator == "==" or operator == "!="
-    ):
-        # Vector/matrix/quaternion arithmetic: same-type operations pass through;
-        # scalar * vector uses the vector type; scalar / vector is unsupported.
-        let lp = nominal_type_name(left)
-        let rp = nominal_type_name(right)
-        if is_vec_math_name(lp) and lp == rp:
-            return Option[types.Type].some(value = left)
-        if is_vec_math_name(lp) and types.is_numeric(right) and operator == "*":
-            return Option[types.Type].some(value = left)
-        if is_vec_math_name(rp) and types.is_numeric(left) and operator == "*":
-            return Option[types.Type].some(value = right)
-        return common_numeric_type(left, right)
-    if operator == "%":
-        return common_integer_type(left, right)
-    return Option[types.Type].none
-
-
-function is_vec_math_name(name: str) -> bool:
-    return (
-        name == "vec2" or name == "vec3" or name == "vec4"
-        or name == "ivec2" or name == "ivec3" or name == "ivec4"
-        or name == "mat3" or name == "mat4" or name == "quat"
-    )
-
-
-function lower_vec_unary_neg(ctx: ref[LoweringContext], operand: ptr[ir.Expr], name: str) -> ptr[ir.Expr]:
-    var field_names = vec.Vec[str].create()
-    var field_types = vec.Vec[types.Type].create()
-    vec_math_fields(name, ref_of(field_names), ref_of(field_types))
-    var fields = vec.Vec[ir.AggregateField].create()
-    let ty = ir_expr_type(operand)
-    var i: ptr_uint = 0
-    while i < field_names.len():
-        let fname_ptr = field_names.get(i) else:
-            fatal(c"lowering: vec unary neg missing field name")
-        let ft_ptr = field_types.get(i) else:
-            fatal(c"lowering: vec unary neg missing field type")
-        let fname = unsafe: read(fname_ptr)
-        let field_ty = unsafe: read(ft_ptr)
-        let field_access = alloc_expr(ir.Expr.expr_member(receiver = operand, member = fname, ty = field_ty))
-        var neg_val: ptr[ir.Expr]
-        if is_vec_math_name(nominal_type_name(field_ty)):
-            neg_val = lower_vec_unary_neg(ctx, field_access, nominal_type_name(field_ty))
-        else:
-            neg_val = alloc_expr(ir.Expr.expr_unary(operator = "-", operand = field_access, ty = field_ty))
-        fields.push(ir.AggregateField(name = fname, value = neg_val))
-        i += 1
-    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = ty, fields = fields.as_span()))
-
-
-## Populate `field_names` and `field_types` for a vector/math type name.
-## Mirrors the field set used by `lower_vec_unary_neg` and `lower_vec_binary_op`.
-function vec_math_fields(name: str, names: ref[vec.Vec[str]], ftypes: ref[vec.Vec[types.Type]]) -> void:
-    if name == "vec2" or name == "ivec2":
-        names.push("x")
-        names.push("y")
-    else if name == "vec3" or name == "ivec3":
-        names.push("x")
-        names.push("y")
-        names.push("z")
-    else if name == "vec4" or name == "ivec4" or name == "quat":
-        names.push("x")
-        names.push("y")
-        names.push("z")
-        names.push("w")
-    else if name == "mat3":
-        names.push("col0")
-        names.push("col1")
-        names.push("col2")
-    else if name == "mat4":
-        names.push("col0")
-        names.push("col1")
-        names.push("col2")
-        names.push("col3")
-    var fi: ptr_uint = 0
-    while fi < names.len():
-        var ft = types.primitive("float")
-        if name.starts_with("ivec"):
-            ft = types.primitive("int")
-        else if name == "mat3":
-            ft = types.primitive("vec3")
-        else if name == "mat4":
-            ft = types.primitive("vec4")
-        ftypes.push(ft)
-        fi += 1
-
-
-## Lower a binary arithmetic operator on vector/matrix/quaternion types to a
-## component-wise aggregate literal.  Mirrors Ruby's lower_vector_binary_op /
-## lower_aggregate_binary_op.
-function lower_vec_binary_op(ctx: ref[LoweringContext], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr], result_ty: types.Type, name: str) -> ptr[ir.Expr]:
-    let left_ty = ir_expr_type(left)
-    let right_ty = ir_expr_type(right)
-    var field_names = vec.Vec[str].create()
-    var field_types = vec.Vec[types.Type].create()
-    vec_math_fields(name, ref_of(field_names), ref_of(field_types))
-    var fields = vec.Vec[ir.AggregateField].create()
-    # An operand is scalar if its type is NOT a known vec/mat/quat type.
-    # Using nominal_type_name instead of is_numeric handles float literals that
-    # the analyzer may not type correctly in this binary context.
-    let left_is_scalar = not is_vec_math_name(nominal_type_name(left_ty))
-    let right_is_scalar = not is_vec_math_name(nominal_type_name(right_ty))
-    var i: ptr_uint = 0
-    while i < field_names.len():
-        let fn_ptr = field_names.get(i) else:
-            fatal(c"lowering: vec binary missing field name")
-        let ft_ptr = field_types.get(i) else:
-            fatal(c"lowering: vec binary missing field type")
-        let fname = unsafe: read(fn_ptr)
-        let ftype = unsafe: read(ft_ptr)
-        var left_field: ptr[ir.Expr]
-        var right_field: ptr[ir.Expr]
-        if left_is_scalar:
-            left_field = left
-        else:
-            left_field = alloc_expr(ir.Expr.expr_member(receiver = left, member = fname, ty = ftype))
-        if right_is_scalar:
-            right_field = right
-        else:
-            right_field = alloc_expr(ir.Expr.expr_member(receiver = right, member = fname, ty = ftype))
-        # If the field type is itself a vec/mat type (e.g. mat4 column is vec4),
-        # recurse to lower the inner operation component-wise.
-        var field_val: ptr[ir.Expr]
-        let ftype_name = nominal_type_name(ftype)
-        if is_vec_math_name(ftype_name):
-            field_val = lower_vec_binary_op(ctx, operator, left_field, right_field, ftype, ftype_name)
-        else:
-            field_val = alloc_expr(ir.Expr.expr_binary(operator = operator, left = left_field, right = right_field, ty = ftype))
-        fields.push(ir.AggregateField(name = fname, value = field_val))
-        i += 1
-    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = result_ty, fields = fields.as_span()))
-
-
-## True for compound assignment operators (`+=`, `*=`, ...).
-function is_compound_assignment_operator(op: str) -> bool:
-    return (
-        op == "+=" or op == "-=" or op == "*=" or op == "/=" or op == "%="
-        or op == "&=" or op == "|=" or op == "^=" or op == "<<=" or op == ">>="
-    )
-
-
-## The binary operator underlying a compound assignment (`+=` -> `+`).
-function compound_base_operator(op: str) -> str:
-    if op == "+=":
-        return "+"
-    if op == "-=":
-        return "-"
-    if op == "*=":
-        return "*"
-    if op == "/=":
-        return "/"
-    if op == "%=":
-        return "%"
-    if op == "&=":
-        return "&"
-    if op == "|=":
-        return "|"
-    if op == "^=":
-        return "^"
-    if op == "<<=":
-        return "<<"
-    if op == ">>=":
-        return ">>"
-    return op
-
-
-function nominal_type_name(t: types.Type) -> str:
-    match t:
-        types.Type.ty_primitive as p:
-            return p.name
-        types.Type.ty_named as n:
-            return n.name
-        types.Type.ty_imported as im:
-            return im.name
-        _:
-            return ""
-
-
-## True for the numeric aggregate types (simd lanes, vec/mat/quat), whose
-## arithmetic result the analyzer records as the aggregate itself.
-function is_numeric_aggregate_type(t: types.Type) -> bool:
-    if types.is_simd_type(t):
-        return true
-    return is_vec_math_name(nominal_type_name(t))
-
-
-## The common numeric type of two operands (mirrors Ruby's common_numeric_type):
-## identical types pass through; two integers use common_integer_type; two floats
-## use the wider float; a float paired with a fixed-width integer uses the float.
-function common_numeric_type(left: types.Type, right: types.Type) -> Option[types.Type]:
-    if types.type_equals(left, right):
-        return Option[types.Type].some(value = left)
-    if not (types.is_numeric(left) and types.is_numeric(right)):
-        return Option[types.Type].none
-    if types.is_integer_type(left) and types.is_integer_type(right):
-        return common_integer_type(left, right)
-    if types.is_float_type(left) and types.is_float_type(right):
-        return Option[types.Type].some(value = wider_float_type(left, right))
-    let float_ty = if types.is_float_type(left): left else: right
-    let int_ty = if types.is_float_type(left): right else: left
-    if not (types.is_integer_type(int_ty) and types.is_fixed_width_integer_name(prim_name(int_ty))):
-        return Option[types.Type].none
-    return Option[types.Type].some(value = float_ty)
-
-
-## The common integer type of two operands (mirrors Ruby's common_integer_type):
-## identical types pass through; both must be fixed-width integers.  Same
-## signedness takes the wider type; mixed signedness promotes to the narrowest
-## signed type that holds both ranges (`uint` vs `int` → `long`), with no answer
-## once the unsigned side is 64-bit.  Shared with the semantic conditional
-## common-type rule.
-function common_integer_type(left: types.Type, right: types.Type) -> Option[types.Type]:
-    return sem_exprs.common_integer_type(left, right)
-
-
-## The wider of two float primitives (mirrors Ruby's wider_float_type).
-function wider_float_type(left: types.Type, right: types.Type) -> types.Type:
-    if float_width_of(left) >= float_width_of(right):
-        return left
-    return right
-
-
-function float_width_of(t: types.Type) -> int:
-    if prim_name(t) == "double":
-        return 64
-    return 32
-
-
-## The primitive type name of `t`, or the empty string for non-primitives.
-function prim_name(t: types.Type) -> str:
-    match t:
-        types.Type.ty_primitive as p:
-            return p.name
-        _:
-            return ""
-
-
-## Wrap `ep` in a cast to `target` unless it already has that type (mirrors
-## Ruby's cast_expression).  A redundant cast is elided by the C backend.
-function cast_to_type(ep: ptr[ir.Expr], target: types.Type) -> ptr[ir.Expr]:
-    if types.type_equals(ir_expr_type(ep), target):
-        return ep
-    return alloc_expr(ir.Expr.expr_cast(target_type = target, expression = ep, ty = target))
-
-
-## The backing primitive of an enum or flags type, or `t` unchanged for any
-## other type.  Mirrors Ruby unwrapping Types::EnumBase to its backing_type so
-## enum/flags operands balance (and cast) to their integer backing.
-function enum_backing_or_self(ctx: ref[LoweringContext], t: types.Type) -> types.Type:
-    match t:
-        types.Type.ty_named as n:
-            # The builtin event enum has no AST declaration to scan; its backing
-            # is the host's `Types::Enum` int (`type_declaration.rb`'s builtin
-            # registration).
-            if n.name == "EventError" and n.module_name.len == 0:
-                return types.primitive("int")
-            let owner = if n.module_name.len > 0: n.module_name else: ctx.module_name
-            match find_enum_backing(ctx, owner, n.name):
-                Option.some as b:
-                    return b.value
-                Option.none:
-                    return t
-        types.Type.ty_imported as im:
-            if im.args.len != 0:
-                return t
-            match find_enum_backing(ctx, im.module_name, im.name):
-                Option.some as b:
-                    return b.value
-                Option.none:
-                    return t
-        _:
-            return t
-
-
-## The backing primitive type of the enum or flags named `enum_name` in
-## `module_name`, or none when no such declaration exists.  Scans the owning
-## module's AST declarations (the analyzer keeps no separate backing table).
-function find_enum_backing(ctx: ref[LoweringContext], module_name: str, enum_name: str) -> Option[types.Type]:
-    if module_name == ctx.module_name:
-        return scan_enum_backing(ctx.analysis.source_file.declarations, enum_name)
-    match find_imported_analysis(ctx, module_name):
-        Option.some as a:
-            return scan_enum_backing(a.value.source_file.declarations, enum_name)
-        Option.none:
-            return Option[types.Type].none
-
-
-## Find an enum/flags declaration named `enum_name` in `decls` and return its
-## resolved backing primitive type.
-function scan_enum_backing(decls: span[ast.Decl], enum_name: str) -> Option[types.Type]:
-    var i: ptr_uint = 0
-    while i < decls.len:
-        var d: ast.Decl
-        unsafe:
-            d = read(decls.data + i)
-        match d:
-            ast.Decl.decl_enum as en:
-                if en.name == enum_name:
-                    return Option[types.Type].some(value = enum_backing_type(en.backing_type))
-            ast.Decl.decl_flags as fl:
-                if fl.name == enum_name:
-                    return Option[types.Type].some(value = enum_backing_type(fl.backing_type))
-            _:
-                pass
-        i += 1
-    return Option[types.Type].none
-
-
-## Resolve an enum/flags backing-type annotation to a primitive type; the
-## default backing is int when the annotation is absent (mirrors lower_enum_decl).
-function enum_backing_type(annotation: ptr[ast.TypeRef]?) -> types.Type:
-    let a = annotation else:
-        return types.primitive("int")
-    let resolved = resolve_scalar_type_ref(a)
-    if types.is_error(resolved):
-        return types.primitive("int")
-    return resolved
-
-
-public function is_int_type(t: types.Type) -> bool:
-    match t:
-        types.Type.ty_primitive as p:
-            return p.name == "int"
-        _:
-            return false
-
-
-public function find_local_binding(ctx: ref[LoweringContext], name: str) -> Option[LocalBinding]:
-    if ctx.locals.len() == 0:
-        return Option[LocalBinding].none
-    var i = ctx.locals.len()
-    while i > 0:
-        i -= 1
-        let lb_ptr = ctx.locals.get(i) else:
-            break
-        unsafe:
-            if read(lb_ptr).name == name:
-                return Option[LocalBinding].some(value = read(lb_ptr))
-    return Option[LocalBinding].none
-
-
-## The visible (flow-refined) type of `name` in the innermost refinement scope
-## that mentions it.  The host's `lookup_value(...)[:type]`; nil when no scope
-## narrows the name.
-function flow_scope_binding(ctx: ref[LoweringContext], name: str) -> Option[types.Type]:
-    var i = ctx.flow_scopes.len()
-    while i > 0:
-        i -= 1
-        let scope_ptr = ctx.flow_scopes.get(i) else:
-            break
-        unsafe:
-            let found = read(scope_ptr).get(name)
-            if found != null:
-                return Option[types.Type].some(value = read(found))
-    return Option[types.Type].none
-
-
-## The type inference sees for a name — the host's `infer_expression_type`
-## identifier arm: the refinement scope's narrowed type, else the local
-## binding's storage type, else a module-level value's declared type.
-function visible_local_type(ctx: ref[LoweringContext], name: str) -> Option[types.Type]:
-    match flow_scope_binding(ctx, name):
-        Option.some as narrowed:
-            return Option[types.Type].some(value = narrowed.value)
-        Option.none:
-            pass
-    match find_local_binding(ctx, name):
-        Option.some as lb:
-            return Option[types.Type].some(value = lb.value.ty)
-        Option.none:
-            pass
-    let declared = ctx.analysis.value_types.get(name)
-    if declared != null:
-        return Option[types.Type].some(value = unsafe: read(declared))
-    return Option[types.Type].none
-
-
-## Merge `incoming` into `existing`: a conflicting type deletes the entry (the
-## host's `merge_refinements`, `utils.rb:593`).
-function merge_flow_refinements(existing: ref[map_mod.Map[str, types.Type]], incoming: ref[map_mod.Map[str, types.Type]]) -> void:
-    var entries = incoming.entries()
-    while true:
-        if not entries.next():
-            break
-        let entry = entries.current()
-        unsafe:
-            let key = read(entry.key)
-            let new_val = read(entry.value)
-            let cur_ptr = existing.get(key)
-            if cur_ptr != null:
-                if not types.type_equals(read(cur_ptr), new_val):
-                    let _removed = existing.remove(key)
-            else:
-                existing.set(key, new_val)
-
-
-## Push a refinement map as a new visible scope (skipped when empty); returns
-## the stack length `restore_flow_refinements` restores.  The host's
-## `env_with_refinements` makes a fresh `FlowScope` layer, so the pushed map is
-## a copy rather than the caller's.
-function push_flow_refinements(ctx: ref[LoweringContext], refinements: ref[map_mod.Map[str, types.Type]]) -> ptr_uint:
-    let saved = ctx.flow_scopes.len()
-    if refinements.len() == 0:
-        return saved
-    var scope = map_mod.Map[str, types.Type].create()
-    merge_flow_refinements(ref_of(scope), refinements)
-    ctx.flow_scopes.push(scope)
-    return saved
-
-
-function restore_flow_refinements(ctx: ref[LoweringContext], saved: ptr_uint) -> void:
-    while ctx.flow_scopes.len() > saved:
-        let _dropped = ctx.flow_scopes.pop()
-
-
-## The lowering's `flow_refinements` (`utils.rb:606`): the binding types a
-## condition narrows when it is true (`truthy`) or false.  Only null tests
-## narrow; `not` flips, and `and`/`or` recurse with the host's short-circuit
-## scopes (the right operand sees the left's refinement).
-function lowering_flow_refinements(ctx: ref[LoweringContext], cond: ptr[ast.Expr], truthy: bool) -> map_mod.Map[str, types.Type]:
-    var result = map_mod.Map[str, types.Type].create()
-    unsafe:
-        match read(cond):
-            ast.Expr.expr_unary_op as u:
-                if u.operator == "not":
-                    return lowering_flow_refinements(ctx, u.operand, not truthy)
-            ast.Expr.expr_binary_op as b:
-                if b.operator == "and":
-                    # Only the truthy side refines: `a and b` being false says
-                    # nothing about `a`, so the host's `flow_refinements` falls
-                    # through to `{}` for the falsy case (`utils.rb:612-618`).
-                    if truthy:
-                        var left = lowering_flow_refinements(ctx, b.left, true)
-                        merge_flow_refinements(ref_of(result), ref_of(left))
-                        let saved = push_flow_refinements(ctx, ref_of(left))
-                        var right = lowering_flow_refinements(ctx, b.right, true)
-                        restore_flow_refinements(ctx, saved)
-                        merge_flow_refinements(ref_of(result), ref_of(right))
-                    return result
-                if b.operator == "or":
-                    # Symmetric with `and`: only the falsy side refines.
-                    if not truthy:
-                        var left_f = lowering_flow_refinements(ctx, b.left, false)
-                        merge_flow_refinements(ref_of(result), ref_of(left_f))
-                        let saved = push_flow_refinements(ctx, ref_of(left_f))
-                        var right = lowering_flow_refinements(ctx, b.right, false)
-                        restore_flow_refinements(ctx, saved)
-                        merge_flow_refinements(ref_of(result), ref_of(right))
-                    return result
-                if b.operator == "==" or b.operator == "!=":
-                    return lowering_null_test_refinements(ctx, cond, truthy)
-            _:
-                pass
-    return result
-
-
-## Null-test refinements (`utils.rb:634`): `x == null` truthy (and `!=` falsy)
-## narrows to the bare null; the other direction narrows to the nullable's base.
-## A local's storage type is its binding; a module-level value's is its declared
-## type (the host seeds module bindings into its env).
-function lowering_null_test_refinements(ctx: ref[LoweringContext], condp: ptr[ast.Expr], truthy: bool) -> map_mod.Map[str, types.Type]:
-    var result = map_mod.Map[str, types.Type].create()
-    unsafe:
-        match read(condp):
-            ast.Expr.expr_binary_op as b:
-                if b.operator != "==" and b.operator != "!=":
-                    return result
-                var name_value: str = ""
-                var found = false
-                match read(b.left):
-                    ast.Expr.expr_identifier as id:
-                        if read(b.right) is ast.Expr.expr_null_literal:
-                            name_value = id.name
-                            found = true
-                    _:
-                        pass
-                if not found:
-                    match read(b.right):
-                        ast.Expr.expr_identifier as id2:
-                            if read(b.left) is ast.Expr.expr_null_literal:
-                                name_value = id2.name
-                                found = true
-                        _:
-                            pass
-                if not found:
-                    return result
-                var storage: Option[types.Type] = Option[types.Type].none
-                match find_local_binding(ctx, name_value):
-                    Option.some as lb:
-                        storage = Option[types.Type].some(value = lb.value.ty)
-                    Option.none:
-                        let declared = ctx.analysis.value_types.get(name_value)
-                        if declared != null:
-                            storage = Option[types.Type].some(value = read(declared))
-                match storage:
-                    Option.some as st:
-                        match st.value:
-                            types.Type.ty_nullable as nl:
-                                let null_result = if b.operator == "==": truthy else: not truthy
-                                if null_result:
-                                    result.set(name_value, types.Type.ty_null(target = null))
-                                else:
-                                    result.set(name_value, read(nl.base))
-                            _:
-                                pass
-                    Option.none:
-                        pass
-            _:
-                pass
-    return result
-
-
-## The host's `cfg_block_always_terminates?` as the lowering applies it
-## (`block.rb:707`): the host's termination builder has no break/continue
-## targets, so a `break`/`continue` falls through to the block exit and does
-## NOT terminate.
-function ast_block_always_terminates(body: ptr[ast.Stmt]?) -> bool:
-    let b = body else:
-        return false
-    unsafe:
-        match read(ptr[ast.Stmt]<-b):
-            ast.Stmt.stmt_block as blk:
-                if blk.statements.len == 0:
-                    return false
-                return ast_stmt_terminates(blk.statements.data + (blk.statements.len - 1))
-            _:
-                return ast_stmt_terminates(ptr[ast.Stmt]<-b)
-
-
-function ast_stmt_terminates(sp: ptr[ast.Stmt]) -> bool:
-    unsafe:
-        match read(sp):
-            ast.Stmt.stmt_ret:
-                return true
-            ast.Stmt.stmt_block as blk:
-                if blk.statements.len == 0:
-                    return false
-                return ast_stmt_terminates(blk.statements.data + (blk.statements.len - 1))
-            ast.Stmt.stmt_unsafe as u:
-                return ast_block_always_terminates(u.body)
-            ast.Stmt.stmt_error_block as eb:
-                return ast_stmt_terminates(eb.body)
-            ast.Stmt.stmt_if as iff:
-                if iff.else_body == null:
-                    return false
-                if not ast_block_always_terminates(iff.else_body):
-                    return false
-                var bi: ptr_uint = 0
-                while bi < iff.branches.len:
-                    if not ast_block_always_terminates(read(iff.branches.data + bi).body):
-                        return false
-                    bi += 1
-                return iff.branches.len > 0
-            ast.Stmt.stmt_match as m:
-                if m.arms.len == 0:
-                    return false
-                var ai: ptr_uint = 0
-                while ai < m.arms.len:
-                    if not ast_block_always_terminates(read(m.arms.data + ai).body):
-                        return false
-                    ai += 1
-                return true
-            ast.Stmt.stmt_expression as e:
-                return ast_expression_always_aborts(e.expression)
-            _:
-                return false
-    return false
-
-
-## The host's `fatal_expression?` (`builder.rb:256`): a `fatal(...)` call or a
-## literal-false `assert`/`expect` always aborts.
-function ast_expression_always_aborts(ep: ptr[ast.Expr]) -> bool:
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_call as call:
-                match read(call.callee):
-                    ast.Expr.expr_identifier as id:
-                        if id.name == "fatal":
-                            return true
-                        if call.args.len == 0:
-                            return false
-                        match read(read(call.args.data + 0).arg_value):
-                            ast.Expr.expr_bool_literal as b:
-                                return (id.name == "assert" or id.name == "expect") and not b.value
-                            _:
-                                return false
-                    _:
-                        return false
-            _:
-                return false
-    return false
-
-
-function find_qualified_constant(ctx: ref[LoweringContext], name: str) -> Option[str]:
-    if ctx.analysis.type_names.contains(name) or ctx.analysis.value_types.contains(name):
-        return Option[str].some(value = naming.qualified_c_name(ctx.module_name, name))
-    var import_values = ctx.analysis.imports.values()
-    while true:
-        let target_ptr = import_values.next() else:
-            break
-        let target_module = unsafe: read(target_ptr)
-        match find_imported_analysis(ctx, target_module):
-            Option.some as imported:
-                if imported.value.type_names.contains(name) or imported.value.value_types.contains(name):
-                    return Option[str].some(value = naming.qualified_c_name(target_module, name))
-            Option.none:
-                pass
-    return Option[str].none
-
-
-# =============================================================================
 #  C-name mangling (mirrors lowering/utils.rb)
 # =============================================================================
 
@@ -23652,7 +22708,7 @@ public function alloc_stmt(value: ir.Stmt) -> ptr[ir.Stmt]:
 ## Returns `ty_error` for compound/nullable/callable/tuple forms (which must
 ## be resolved by their initializer instead), signalling the caller to fall
 ## back.  `dyn[...]` resolves to `ty_dyn`.
-function resolve_scalar_type_ref(declared: ptr[ast.TypeRef]) -> types.Type:
+public function resolve_scalar_type_ref(declared: ptr[ast.TypeRef]) -> types.Type:
     unsafe:
         let t = read(declared)
         if t.is_dyn:
