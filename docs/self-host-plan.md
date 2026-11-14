@@ -16,9 +16,10 @@ history.
 ## Contents
 
 - [Status at a glance](#status-at-a-glance-session-73-2026-11-13)
+- [Session 74 — decisions closed](#session-74--decisions-closed)
 - [Session 73 — the `mtc test` CLI matrix](#session-73--the-mtc-test-cli-matrix)
 - [Session 72 — the `check`/analyzer surface](#session-72--the-checkanalyzer-surface)
-- [Handoff](#handoff-session-73)
+- [Handoff](#handoff-session-74)
 - [How to start a work session](#how-to-start-a-work-session)
 - [The program — tracks and stopping rules (all closed)](#the-program--tracks-and-stopping-rules-all-closed)
 - [Deliberate differences (do not chase)](#deliberate-differences-do-not-chase)
@@ -54,6 +55,25 @@ done, and session 72 added the analyzer/`check` surface that no gate had
 measured.  The only residuals are the documented `tracy` custom-generator entry
 and the optional desktop F5 smoke.  Track G (throughput) closed in session 72:
 the self is now faster than the host.
+
+## Session 74 — decisions closed
+
+Docs-only session.  Session 73 landed as `747050f6` (the CLI matrix and the
+command-surface fixes; its ledger test-matrix count is 43, not 42 — the
+second-batch `test-package-no-operand` case).  The two remaining LSP decisions
+are closed rather than ported:
+
+1. **Ref-lifetime modelling — do not port.**  The host rewrites a bare field
+   `ref[T]` into `ref[@_mt_N, T]` (`type_declaration.rb:516-522`) and leaks that
+   synthesized name into `lower` dumps and LSP details.  Reproducing it would
+   close the `memory_stress_test` `lower` artifact and the audit's `mst@224:18`
+   row, but it reproduces an internal-name leak; under the "parity or better"
+   bar the self's declared `ref[T]` is the better answer.  Both rows stay in
+   *Deliberate differences*.
+2. **Imported enum/flags member locations — keep the host behaviour.**  For
+   `alias.Enum.member` the self resolves the member text and drops the location,
+   matching the host's classifier miss.  Pointing at the imported declaration is
+   legal but is a self-better extension with no measured user benefit; not done.
 
 ## Session 73 — the `mtc test` CLI matrix
 
@@ -301,7 +321,7 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
-## Handoff (session 73)
+## Handoff (session 74)
 
 **Read this first, then *Status at a glance* and the Ledger.**  The parity
 program stays closed, and session 73 closed the last *measurement* gaps: the
@@ -309,7 +329,7 @@ program stays closed, and session 73 closed the last *measurement* gaps: the
 command.  The matrix is now **224/224**, and the fixes it forced are in the
 commands themselves (see the session-73 section).
 
-Changes in the working tree (uncommitted):
+Session 73's changes landed as `747050f6`:
 
 | Area | What |
 | --- | --- |
@@ -348,8 +368,9 @@ moved.**
    invariant, and the ~2% scans are over small collections.  Reopen only with a
    fresh `perf record` showing a hotspot.
 2. **Optional/manual.**  A desktop VS Code F5 click-through (the protocol path
-   is proven by `tools/dap_async_probe.rb` against the real `lldb-dap`), and the
-   LSP ref-lifetime modelling decision (`docs/lsp-design.md` §8).
+   is proven by `tools/dap_async_probe.rb` against the real `lldb-dap`).  The
+   LSP ref-lifetime and imported-member-location decisions are closed (session
+   74, above).
 
 **Do not chase** the documented differences — the 2 `lower` artifacts, the
 documented `check`/linter rows (3 `check` messages, 4 linter corpus files), the
@@ -1481,18 +1502,18 @@ harness entries, the completion class closed, `debugInfo` byte-equal, valgrind
 0, edit latency ≤ 10 ms, soak at 74–75 KB/cycle raw / ~28 LS at 200 cycles
 (session 71 re-measure; the per-edit leak is owned by per-entry
 regions; the one-time index walk's arena-leaked ASTs are a documented level, not
-a slope, and the loader's small `qname_to_str` strings remain).  Remaining items are optional / documentation
-decisions:
+a slope, and the loader's small `qname_to_str` strings remain).  Both remaining
+documentation decisions are **CLOSED (session 74)** — see that section:
 
-- **Ref-lifetime modelling** — the host's synthesized `ref[@_mt_N, T]` lifetime
-  in a field detail (`mst@224:18`), where the self renders the declared
-  `ref[T]`.  This is a documented deliberate difference; porting the host's
-  `lib/milk_tea/core/semantic_analyzer/type_declaration.rb:516-522` auto-lifetime rewrite is only worth it if the
-  same machinery is needed elsewhere.
-- **Imported enum/flags member locations** — for `alias.Enum.member` the self
-  resolves the member text and deliberately drops the location (matching the
-  host's classifier miss).  Pointing both at the imported declaration would be a
-  documented self-better difference; decide and document, don't drift into it.
+- **Ref-lifetime modelling — not ported.**  The host's synthesized
+  `ref[@_mt_N, T]` lifetime in a field detail (`mst@224:18`), where the self
+  renders the declared `ref[T]`.  Porting
+  `lib/milk_tea/core/semantic_analyzer/type_declaration.rb:516-522` would close
+  that row and the `memory_stress_test` `lower` artifact, but it reproduces an
+  internal-name leak; the declared `ref[T]` is the better answer.
+- **Imported enum/flags member locations — kept host-identical.**  For
+  `alias.Enum.member` the self resolves the member text and deliberately drops
+  the location (matching the host's classifier miss).
 - **Documented rows stay documented** unless their machinery is built for
   another reason (see *Deliberate differences* and `docs/lsp-design.md` §8).
 
