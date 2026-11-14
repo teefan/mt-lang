@@ -80,6 +80,16 @@ locals/parameters in the files that use it.
 
 Current state: **131 modules, 0 alias violations**.
 
+### Operation vocabulary
+
+One spelling per operation family: `create_*` constructs a value, `alloc_*`
+allocates memory, `find_*` searches a collection/table, `resolve_*` resolves a
+name/type, `render_*` produces text, `emit_*` writes C source, and compiler
+nodes use the short `decl`/`expr` nouns already carried by their types.  The
+retired spellings (`new_*`, `lookup_*`, `*_declaration`, `*_expression`) are a
+hard, baseline-diffed guard violation, so a new inconsistency fails at the
+gate.
+
 ### Dead exports
 
 Top-level `public` declarations are indexed against every identifier in
@@ -184,6 +194,7 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 | source files / lines / code lines | 132 / 154,135 / 122,610 |
 | layering edges / violations | 108 / 0 |
 | naming violations | 0 |
+| vocabulary violations | 0 |
 | alias violations | 0 (131 modules) |
 | dead exports (unused / test-only) | 35 / 6 |
 | duplication (windows / duplicated lines) | 786 / 5,206 (window 12) |
