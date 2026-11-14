@@ -18,7 +18,8 @@
 #                  [--run] [--quiet]
 #
 #   --areas LIST   comma-separated areas (analyzer,linter,lsp,codegen,parser,
-#                  loader,cli,formatter,std,examples,bindings,dap,docs,tools,…)
+#                  loader,cli,formatter,std,examples,bindings,dap,docs,tools,
+#                  refactor,…)
 #   --diff REF     infer the areas from `git diff REF --name-only` (default HEAD)
 #   --tier N       print/run only that tier (default all)
 #   --only LIST    restrict to these gate ids (comma-separated)
@@ -89,10 +90,12 @@ infer_area() {
         projects/mtc/src/mtc/toolchain_cli.mt)    echo toolchain ;;
         projects/mtc/src/mtc/main.mt|projects/mtc/src/mtc/build*.mt|projects/mtc/src/mtc/build_cache.mt|projects/mtc/src/mtc/version_info.mt) echo cli ;;
         projects/mtc/test/*|test/mt/*)            echo tests ;;
+        lib/milk_tea/tooling/refactor_guard.rb)   echo refactor_tools ;;
         lib/*)                                    echo host ;;
         std/*)                                    echo std ;;
         examples/*)                               echo examples ;;
         docs/*)                                   echo docs ;;
+        tools/refactor_guard.rb|tools/refactor_baseline.json|test/tooling/refactor_guard_test.rb) echo refactor_tools ;;
         tools/*|Rakefile)                         echo tools ;;
         *)                                        echo other ;;
     esac
@@ -114,14 +117,14 @@ fi
 
 gate_kind() {
     case "$1" in
-        bootstrap|test_mt|dev_build|dev_tests|unused_import|recovery|format|dap|tools_check|bindings|bindings_parity|bindgen_parity|wasm_smoke|docs_smoke|diag_parity) echo hard ;;
+        bootstrap|test_mt|dev_build|dev_tests|unused_import|recovery|format|dap|tools_check|bindings|bindings_parity|bindgen_parity|wasm_smoke|docs_smoke|diag_parity|refactor_guard|guard_tests|cli_parity|sexpr_lex|sexpr_parse) echo hard ;;
         *) echo meter ;;
     esac
 }
 
 gate_tier() {
     case "$1" in
-        dev_build|dev_tests|tools_check) echo 1 ;;
+        dev_build|dev_tests|tools_check|refactor_guard|guard_tests) echo 1 ;;
         *) echo 2 ;;
     esac
 }
@@ -130,19 +133,22 @@ gate_label() {
     case "$1" in
         dev_build)      echo "dev build to tmp/mtc-dev (~50 s)" ;;
         dev_tests)      echo "self-host suite, one process per file (~1 min)" ;;
-        bootstrap)      echo "bootstrap --fast: fixed point only (~12 min)" ;;
+        bootstrap)      echo "bootstrap --fast: fixed point only (~3 min)" ;;
         test_mt)        echo "test/mt under stage2 (60 files / 0 failed)" ;;
-        sexpr_lex)      echo "sexpr lex parity (718/718)" ;;
-        sexpr_parse)    echo "sexpr parse parity (714 match / 0 differ / 4 host-rejected of 718)" ;;
+        sexpr_lex)      echo "sexpr lex parity (739/739)" ;;
+        sexpr_parse)    echo "sexpr parse parity (735 match / 0 differ / 4 host-rejected of 739)" ;;
         sexpr_lower)    echo "sexpr lower parity (meter, ~1 min warm / ~4 min cold host cache)" ;;
         cli_parity)     echo "CLI parity (224 cases; 224 match; no allowlist)" ;;
         wasm_smoke)     echo "wasm preview end-to-end (host + self HTTP/signal smoke)" ;;
         docs_smoke)     echo "docs server end-to-end (host + self routes/SIGINT smoke)" ;;
         scoreboard)     echo "parity scoreboard (meter)" ;;
-        format)         echo "formatter parity all modes (712/712)" ;;
+        format)         echo "formatter parity all modes (739/739)" ;;
         lint_parity)    echo "corpus-wide lint parity (meter, ~5 min)" ;;
         diag_parity)    echo "check diagnostic parity: verdict/message/position (~2 min)" ;;
-        unused_import)  echo "unused-import parity (616/616, ~30 min)" ;;
+        check_parity)   echo "byte-level check output parity (meter)" ;;
+        unused_import)  echo "unused-import parity (635/635, ~30 min)" ;;
+        refactor_guard) echo "structural guard: layering/naming/markers (fast)" ;;
+        guard_tests)    echo "refactor guard unit tests" ;;
         harness)        echo "LSP harness 30/30 + 4 documented entries (~3 min)" ;;
         recovery)       echo "LSP recovery probe (byte-compared)" ;;
         fixtures)       echo "LSP fixture sweep vs baselines (when tmp/ has it)" ;;
@@ -155,8 +161,6 @@ gate_label() {
         bindings_parity) echo "imported-bindings vs host parity report (29/29)" ;;
         bindgen_parity) echo "bindgen reproducibility vs the host (33 match / 1 custom)" ;;
         dap)            echo "DAP smoke + async launch-order probe (lldb-dap required)" ;;
-        wasm_smoke)     echo "^wasm smoke:" ;;
-        docs_smoke)     echo "^docs smoke:" ;;
         tools_check)    echo "Ruby/bash syntax check for the tools/ harnesses" ;;
         *)              echo "$1" ;;
     esac
@@ -190,6 +194,9 @@ gate_cmd() {
         dap)           echo "ruby tools/dap_smoke.rb && ruby tools/dap_async_probe.rb" ;;
         wasm_smoke)    echo "ruby tools/wasm_smoke.rb --self build/stage2/mtc" ;;
         docs_smoke)    echo "ruby tools/docs_smoke.rb --self build/stage2/mtc" ;;
+        refactor_guard) echo "ruby tools/refactor_guard.rb --check -q" ;;
+        guard_tests)   echo "ruby -Ilib -Itest test/tooling/refactor_guard_test.rb" ;;
+        check_parity)  echo "ruby tools/check_parity.rb -q --host-cache tmp/check-host-cache" ;;
         tools_check)   echo "for f in tools/*.rb; do ruby -c \"\$f\" >/dev/null || exit 1; done; bash -n tools/gates.sh tools/bootstrap.sh && echo 'tools syntax ok'" ;;
         *)             echo "true" ;;
     esac
@@ -219,6 +226,9 @@ gate_summary() {
         bindings_parity) echo "^bindings=" ;;
         bindgen_parity) echo "^files=" ;;
         dap)            echo "differing rows|dap async probe|stderr:" ;;
+        refactor_guard) echo "^refactor_guard:" ;;
+        guard_tests)    echo "runs, .* failures" ;;
+        check_parity)   echo "^files=" ;;
         tools_check)    echo "tools syntax ok" ;;
         *)              echo "." ;;
     esac
@@ -309,24 +319,26 @@ EOF
 
 gates_for_area() {
     case "$1" in
-        analyzer)  echo "bootstrap test_mt cli_parity diag_parity scoreboard lint_parity unused_import harness recovery fixtures audit examples valgrind_lsp neovim" ;;
-        linter)    echo "bootstrap test_mt cli_parity diag_parity scoreboard lint_parity unused_import harness fixtures audit" ;;
-        lsp)       echo "bootstrap harness recovery fixtures audit valgrind_lsp neovim soak" ;;
-        codegen)   echo "bootstrap test_mt sexpr_lower examples" ;;
-        parser)    echo "bootstrap sexpr_lex sexpr_parse diag_parity recovery cli_parity scoreboard" ;;
-        loader)    echo "bootstrap test_mt cli_parity audit examples" ;;
-        cli)       echo "bootstrap test_mt cli_parity" ;;
-        formatter) echo "bootstrap format" ;;
-        bindings)  echo "bootstrap bindings bindings_parity bindgen_parity" ;;
-        dap)       echo "bootstrap dap" ;;
+        analyzer)  echo "dev_tests refactor_guard bootstrap test_mt cli_parity check_parity diag_parity scoreboard lint_parity unused_import harness recovery fixtures audit examples valgrind_lsp neovim" ;;
+        linter)    echo "dev_tests refactor_guard bootstrap test_mt cli_parity diag_parity scoreboard lint_parity unused_import harness fixtures audit" ;;
+        lsp)       echo "dev_tests refactor_guard bootstrap harness recovery fixtures audit valgrind_lsp neovim soak" ;;
+        codegen)   echo "dev_tests refactor_guard bootstrap test_mt sexpr_lower examples" ;;
+        parser)    echo "dev_tests refactor_guard bootstrap sexpr_lex sexpr_parse diag_parity recovery cli_parity scoreboard" ;;
+        loader)    echo "dev_tests refactor_guard bootstrap test_mt cli_parity audit examples" ;;
+        cli)       echo "dev_tests refactor_guard bootstrap test_mt cli_parity" ;;
+        formatter) echo "dev_tests refactor_guard bootstrap format" ;;
+        bindings)  echo "dev_tests refactor_guard bootstrap bindings bindings_parity bindgen_parity" ;;
+        dap)       echo "dev_tests refactor_guard bootstrap dap" ;;
         std)       echo "examples lint_parity" ;;
         examples)  echo "examples" ;;
         host)      echo "bootstrap" ;;
-        tests)     echo "dev_build dev_tests" ;;
-        wasm)      echo "bootstrap test_mt cli_parity wasm_smoke" ;;
-        docs_cli)  echo "bootstrap test_mt cli_parity docs_smoke" ;;
-        packages|toolchain) echo "bootstrap test_mt cli_parity" ;;
-        tools)     echo "tools_check" ;;
+        tests)     echo "dev_build dev_tests refactor_guard" ;;
+        wasm)      echo "dev_tests refactor_guard bootstrap test_mt cli_parity wasm_smoke" ;;
+        docs_cli)  echo "dev_tests refactor_guard bootstrap test_mt cli_parity docs_smoke" ;;
+        packages|toolchain) echo "dev_tests refactor_guard bootstrap test_mt cli_parity" ;;
+        tools)     echo "tools_check guard_tests refactor_guard" ;;
+        refactor_tools) echo "tools_check guard_tests refactor_guard" ;;
+        refactor)  echo "dev_tests refactor_guard test_mt cli_parity scoreboard" ;;
         docs|other) echo "" ;;
         *)         echo "bootstrap test_mt scoreboard" ;;
     esac
