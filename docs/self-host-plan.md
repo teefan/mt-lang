@@ -16,10 +16,11 @@ history.
 ## Contents
 
 - [Status at a glance](#status-at-a-glance-session-73-2026-11-13)
+- [Session 75 — refactoring safety suite](#session-75--refactoring-safety-suite)
 - [Session 74 — decisions closed](#session-74--decisions-closed)
 - [Session 73 — the `mtc test` CLI matrix](#session-73--the-mtc-test-cli-matrix)
 - [Session 72 — the `check`/analyzer surface](#session-72--the-checkanalyzer-surface)
-- [Handoff](#handoff-session-74)
+- [Handoff](#handoff-session-75)
 - [How to start a work session](#how-to-start-a-work-session)
 - [The program — tracks and stopping rules (all closed)](#the-program--tracks-and-stopping-rules-all-closed)
 - [Deliberate differences (do not chase)](#deliberate-differences-do-not-chase)
@@ -46,6 +47,7 @@ history.
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
 | Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 72).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
 | Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
+| **Refactoring safety (new)** | structural guard: 103 edges / **0 layering violations**; 13 frozen naming deviations; **35 unused + 6 test-only** public declarations; 5,196 duplicated lines; 35 functions ≥ 200 lines; 0 markers.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` |
 
 Rough completion against the per-track Definition of Done: **100%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix (including
@@ -55,6 +57,43 @@ done, and session 72 added the analyzer/`check` surface that no gate had
 measured.  The only residuals are the documented `tracy` custom-generator entry
 and the optional desktop F5 smoke.  Track G (throughput) closed in session 72:
 the self is now faster than the host.
+
+## Session 75 — refactoring safety suite
+
+The parity program proves behavior, not shape; a refactoring pass had no
+structural oracle and `dev_tests` never ran for source edits.  This session adds
+the safety suite (protocol: `docs/refactoring.md`):
+
+- **`RefactorGuard`** (`lib/milk_tea/tooling/refactor_guard.rb`, CLI
+  `tools/refactor_guard.rb`, baseline `tools/refactor_baseline.json`, 11 tests in
+  `test/tooling/refactor_guard_test.rb`) checks layering ranks (an import may
+  target an equal or lower rank; same-rank cycles allowed), naming (files,
+  snake_case functions, PascalCase types, UPPER_SNAKE consts), dead exports
+  (cross-tree textual index), duplication (normalized 12-line windows), size,
+  markers, and test-tree counts.  `--check` is the hard invariant set; `--strict`
+  adds new dead exports; `--ratchet` adds code/duplication growth and test-count
+  drops.  The rank table was calibrated against the real import graph: `c_naming`
+  ranks with `semantic` (it mangles semantic types), `linter`/`formatter` share a
+  rank (fix candidates use tidy), `pretty_printer` ranks with `ir`, and
+  `imported_bindings` with `formatter`; the result is 0 upward edges.
+- **Gates**: new hard tier-1 `refactor_guard` and `guard_tests`; `dev_tests` now
+  runs for every self-host source area; `cli_parity`, `sexpr lex` and
+  `sexpr parse` are promoted from meter to hard (all at exact parity); the
+  previously unwired `check_parity` oracle is an analyzer meter.  New explicit
+  area: `tools/gates.sh --areas refactor --run` = dev build, dev tests, guard,
+  `test/mt`, CLI parity, scoreboard.  Stale labels/counts were corrected and the
+  duplicate dead `wasm_smoke`/`docs_smoke` arms removed.
+- **Baseline (session 75)**: 131 files / 154,257 lines / 122,711 code lines;
+  103 import edges, **0 layering violations**; 13 frozen naming deviations
+  (1 PascalCase function, 12 lowercase consts); **35 unused + 6 test-only**
+  public declarations; 5,196 duplicated lines (781 window clusters); 35 functions
+  >= 200 lines; 12 files >= 2,000 code lines; 0 markers; test trees 22 / 60.
+  The dead-export candidates and long-function list are the refactor's first
+  triage targets, not defects introduced here.
+- **Verification**: guard tests **11/11**; `--check`, `--check --strict`,
+  `--check --strict --ratchet` all green on the frozen tree; `rake test:tooling`
+  picks the new test up; `bash -n tools/gates.sh`; the refactor area prints the
+  expected six gates.  29 stray `__mt_test_runner_*` sidecars were removed.
 
 ## Session 74 — decisions closed
 
@@ -331,13 +370,17 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
-## Handoff (session 74)
+## Handoff (session 75)
 
 **Read this first, then *Status at a glance* and the Ledger.**  The parity
 program stays closed, and session 73 closed the last *measurement* gaps: the
 `mtc test` CLI surface, then a command-surface sweep over every remaining
 command.  The matrix is now **224/224**, and the fixes it forced are in the
 commands themselves (see the session-73 section).
+
+Session 75 added the refactoring safety suite (structural guard, gate wiring,
+committed baseline); use `tools/gates.sh --areas refactor --run` and read
+`docs/refactoring.md` before changing the self-host's shape.
 
 Session 73's changes landed as `747050f6`:
 
@@ -418,6 +461,7 @@ sections and *Deliberate differences*.
 | Formatter (`:tidy`, `:preserve`, `:canonical`) | Track E/formatter history at `d8a199c7` §7 | `ruby tools/format_parity.rb all -j 16` (739/739, counts drift) |
 | Bootstrap / release | `docs/bootstrap-design.md` | `tools/bootstrap.sh -j 16` (full); `--fast` = fixed point only |
 | In-language tests | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` |
+| Refactoring pass | `docs/refactoring.md`; `tools/refactor_guard.rb --help` | `tools/gates.sh --areas refactor --run`; `ruby tools/refactor_guard.rb --check --strict --ratchet` |
 | Example builds | Track H | per-family sweeps (15 top-level, `examples/sdl3` 34/34, a raylib sample) |
 
 ### Verification tiers
@@ -474,6 +518,10 @@ Iterate cheap, prove once:
   killed run poisons the next bootstrap.
 - **Sync this file's Ledger (and any changed workstream doc) in the same commit
   as the code change.**
+- **Structural changes**: run `ruby tools/refactor_guard.rb --check` with the
+  behavioral gates (`docs/refactoring.md`).  Refresh
+  `tools/refactor_baseline.json` only for a deliberate structural change, never
+  to silence a check.
 - **Generated binaries are not deliverables** — clean stray runners and scratch
   artifacts; gitignored gate output under `tmp/` and `build/` may stay.
 - Commit trailer: `Co-authored-by: CommandCodeBot <noreply@commandcode.ai>`.
@@ -499,6 +547,9 @@ Iterate cheap, prove once:
    bindgen reproducibility 33/34 with the one documented custom generator
    (`tracy`).
 5. **Final verification** — Track H, **passed session 71**.
+6. **Refactoring safety suite** — **LANDED (session 75)**: behavioral gate set
+   (hard exact-parity oracles + `dev_tests` on every source area) and the
+   structural guard with a committed baseline; see `docs/refactoring.md`.
 
 LSP, DAP and the formatter are **closed** at their documented differences; only
 their listed residues (ref-lifetime modelling; the optional desktop F5
@@ -1112,6 +1163,7 @@ when the tree moved.  Target = the Definition of Done above.
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 | bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 73 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
+| refactor guard | **0 layering violations** (103 edges); 13 frozen naming deviations; 35 unused / 6 test-only exports; 5,196 duplicated lines; 0 markers; **guard tests 11/11** | session 75 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 

@@ -102,9 +102,9 @@ self-hosted compiler, and matching the host everywhere is the program's goal.
     `tools/bootstrap.sh -j 16` (fixed point + 14/14 self-tests) and
     `build/stage2/mtc test test/mt -I .` (60/0) are the hard proofs; then the area
     sweeps — linter: `rake parity:scoreboard`, `ruby tools/lint_parity.rb -q`
-    (609 files; read its summary, it is not expected to reach 0 yet),
-    `ruby tools/unused_import_parity.rb` (609/609), `ruby tools/cli_parity.rb`
-    (23 match / 38 differ / 0 pending expected); LSP: `tools/lsp_parity.rb
+    (635 files; read its summary, it is not expected to reach 0 yet),
+    `ruby tools/unused_import_parity.rb` (635/635), `ruby tools/cli_parity.rb`
+    (224 match / 0 differ / 0 pending); LSP: `tools/lsp_parity.rb
     record|compare` (30/30 + the 4 documented entries),
     `tools/lsp_recovery_probe.rb --check`, `tools/lsp_project_audit.rb --workspace DIR`
     (drift ±10 — compare differing *sets*), valgrind on an LSP drive + the Neovim smoke;
@@ -118,6 +118,13 @@ self-hosted compiler, and matching the host everywhere is the program's goal.
     when the tree moved or a number is surprising.
 - **Never edit sources while a gate runs**: `bootstrap.sh` compiles the working tree, so an edit
   mid-run silently corrupts the result — check the exit status, not just the tail.
+- **Refactoring the self-host (session 75)**: behavior and structure are guarded separately.
+  Run `tools/gates.sh --areas refactor --run` (dev build, dev tests, structural guard,
+  `test/mt`, CLI parity, scoreboard) and read `docs/refactoring.md`.
+  `ruby tools/refactor_guard.rb --check` is the fast invariant check (layering, naming,
+  markers); `--check --strict --ratchet` adds new dead exports and code/duplication growth
+  against `tools/refactor_baseline.json`.  Refresh the baseline only with a reviewed
+  structural change, never to silence a check.
 - **Live state**: `docs/self-host-plan.md` is the single source of truth — the session protocol,
   the ranked program, the ledger, and the §0j/§0k session records.  Sync it in the same commit as
   the code change.  Session plans under `~/.commandcode/plans/` are transient working notes,
