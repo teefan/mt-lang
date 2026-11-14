@@ -207,6 +207,7 @@
     "lowering.comptime_types": "comptime_types",
     "lowering.const_eval": "const_eval",
     "lowering.inline": "inline_mod",
+    "lowering.layout": "layout_mod",
     "lowering.lowering": "lowering",
     "lowering.proc_renumber": "proc_renumber",
     "lowering.utils": "utils",
@@ -303,7 +304,7 @@
       "projects/mtc/src/mtc/lowering/async.mt:322:function:bool_type",
       "projects/mtc/src/mtc/lowering/async.mt:326:function:int_type",
       "projects/mtc/src/mtc/lowering/async.mt:330:function:void_type",
-      "projects/mtc/src/mtc/lowering/lowering.mt:46:struct:LoweringError",
+      "projects/mtc/src/mtc/lowering/lowering.mt:47:struct:LoweringError",
       "projects/mtc/src/mtc/lsp/navigation.mt:750:function:analysis_for_document",
       "projects/mtc/src/mtc/lsp/navigation.mt:761:function:ast_for_document",
       "projects/mtc/src/mtc/lsp/protocol.mt:108:function:read_message",
@@ -1133,7 +1134,7 @@
     ]
   },
   "sizes": {
-    "total_code": 123047,
+    "total_code": 123054,
     "functions_over_limit": 35,
     "files_over_limit": 12,
     "files": {
@@ -1438,8 +1439,8 @@
         "max_function": 63
       },
       "projects/mtc/src/mtc/lowering/comptime.mt": {
-        "lines": 1554,
-        "code": 1331,
+        "lines": 1555,
+        "code": 1332,
         "max_line": 259,
         "max_function": 66
       },
@@ -1450,8 +1451,8 @@
         "max_function": 0
       },
       "projects/mtc/src/mtc/lowering/const_eval.mt": {
-        "lines": 1820,
-        "code": 1562,
+        "lines": 1821,
+        "code": 1563,
         "max_line": 253,
         "max_function": 178
       },
@@ -1461,9 +1462,15 @@
         "max_line": 201,
         "max_function": 55
       },
+      "projects/mtc/src/mtc/lowering/layout.mt": {
+        "lines": 285,
+        "code": 238,
+        "max_line": 164,
+        "max_function": 84
+      },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 27279,
-        "code": 20526,
+        "lines": 27004,
+        "code": 20293,
         "max_line": 817,
         "max_function": 909
       },

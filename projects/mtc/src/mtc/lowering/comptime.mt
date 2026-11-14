@@ -14,6 +14,7 @@ import mtc.semantic.types as types
 
 import mtc.lowering.comptime_types as comptime_types
 import mtc.lowering.const_eval as const_eval
+import mtc.lowering.layout as layout_mod
 import mtc.lowering.lowering as lowering
 
 
@@ -93,21 +94,21 @@ public function const_eval_int(ctx: ref[lowering.LoweringContext], ep: ptr[ast.E
                 return 0
             ast.Expr.expr_sizeof as sz:
                 let target = lowering.resolve_type_ref(ctx, sz.target_type)
-                match lowering.layout_size(ctx, target):
+                match layout_mod.layout_size(ctx, target):
                     Option.some as v:
                         return v.value
                     Option.none:
                         return 0
             ast.Expr.expr_alignof as al:
                 let target = lowering.resolve_type_ref(ctx, al.target_type)
-                match lowering.layout_alignment(ctx, target):
+                match layout_mod.layout_alignment(ctx, target):
                     Option.some as v:
                         return v.value
                     Option.none:
                         return 0
             ast.Expr.expr_offsetof as off:
                 let target = lowering.resolve_type_ref(ctx, off.target_type)
-                match lowering.layout_offset_of(ctx, target, off.field):
+                match layout_mod.layout_offset_of(ctx, target, off.field):
                     Option.some as v:
                         return v.value
                     Option.none:

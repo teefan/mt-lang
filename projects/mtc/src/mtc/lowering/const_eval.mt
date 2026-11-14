@@ -12,6 +12,7 @@ import mtc.semantic.types as types
 
 import mtc.lowering.comptime as comptime
 import mtc.lowering.comptime_types as comptime_types
+import mtc.lowering.layout as layout_mod
 import mtc.lowering.lowering as lowering
 
 
@@ -259,21 +260,21 @@ public function try_const_value_ir(ctx: ref[lowering.LoweringContext], ep: ptr[a
                         return Option[ptr[ir.Expr]].none
             ast.Expr.expr_sizeof as sz:
                 let target = lowering.resolve_type_ref(ctx, sz.target_type)
-                match lowering.layout_size(ctx, target):
+                match layout_mod.layout_size(ctx, target):
                     Option.some as v:
                         return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = v.value, ty = types.primitive("ptr_uint"))))
                     Option.none:
                         return Option[ptr[ir.Expr]].none
             ast.Expr.expr_alignof as al:
                 let target = lowering.resolve_type_ref(ctx, al.target_type)
-                match lowering.layout_alignment(ctx, target):
+                match layout_mod.layout_alignment(ctx, target):
                     Option.some as v:
                         return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = v.value, ty = types.primitive("ptr_uint"))))
                     Option.none:
                         return Option[ptr[ir.Expr]].none
             ast.Expr.expr_offsetof as off:
                 let target = lowering.resolve_type_ref(ctx, off.target_type)
-                match lowering.layout_offset_of(ctx, target, off.field):
+                match layout_mod.layout_offset_of(ctx, target, off.field):
                     Option.some as v:
                         return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = v.value, ty = types.primitive("ptr_uint"))))
                     Option.none:
