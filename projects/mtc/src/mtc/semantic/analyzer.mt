@@ -1215,7 +1215,7 @@ function collect_import_aliases(ctx: ref[Context], file: ast.SourceFile) -> void
         match d:
             ast.Decl.decl_import as imp:
                 let module_name = qname_to_str(imp.path)
-                if not ctx.require_resolved_imports or lookup_binding(ctx, module_name) != null:
+                if not ctx.require_resolved_imports or find_binding(ctx, module_name) != null:
                     ctx.import_aliases.set(import_alias_name(imp.path, imp.alias_name), module_name)
                     if not vec_contains_str(ref_of(ctx.import_order), module_name):
                         ctx.import_order.push(module_name)
@@ -1330,7 +1330,7 @@ function register_module_type_name(ctx: ref[Context], name: str) -> void:
 ## per-kind maps (`types` holds opaques and unions; enums/flags/variants live in
 ## `static_member_types`; aliases in `type_alias_types`), so the count sums them.
 function record_import_symbol_count(ctx: ref[Context], module_name: str) -> void:
-    let binding_ptr = lookup_binding(ctx, module_name) else:
+    let binding_ptr = find_binding(ctx, module_name) else:
         ctx.import_symbol_counts.set(module_name, 0)
         return
     let binding = unsafe: read(binding_ptr)
@@ -1811,7 +1811,7 @@ public function is_builtin_completion_type(name: str) -> bool:
 ## own module, which a prelude method does not have.  No-op when the binding is
 ## absent (single-file checks without a loaded program).
 function merge_prelude_binding_methods(ctx: ref[Context], module_name: str) -> void:
-    let binding_ptr = lookup_binding(ctx, module_name) else:
+    let binding_ptr = find_binding(ctx, module_name) else:
         return
     unsafe:
         let binding = read(binding_ptr)
@@ -2194,7 +2194,7 @@ function canonical_extending_base(ctx: ref[Context], type_name: ptr[ast.TypeRef]
     var depth: int = 0
     while depth < 10:
         depth += 1
-        let binding_ptr = lookup_binding(ctx, target_module) else:
+        let binding_ptr = find_binding(ctx, target_module) else:
             break
         let resolved_ptr = unsafe: read(binding_ptr).type_alias_types.get(name)
         if resolved_ptr == null:
@@ -2654,7 +2654,7 @@ function resolve_imported_type(ctx: ref[Context], name: ast.QualifiedName) -> Op
         type_name = read(name.parts.data + 1)
     let module_name_ptr = ctx.import_aliases.get(alias) else:
         return Option[types.Type].none
-    let binding_ptr = lookup_binding(ctx, unsafe: read(module_name_ptr)) else:
+    let binding_ptr = find_binding(ctx, unsafe: read(module_name_ptr)) else:
         return Option[types.Type].none
     unsafe:
         let binding = read(binding_ptr)
@@ -2787,7 +2787,7 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
             let mod_ptr = ctx.import_aliases.get(alias_name)
             if mod_ptr != null:
                 let target_module = unsafe: read(mod_ptr)
-                let binding_ptr = lookup_binding(ctx, target_module)
+                let binding_ptr = find_binding(ctx, target_module)
                 if binding_ptr != null:
                     let value_ptr = unsafe: read(binding_ptr).const_values.get(member_name)
                     if value_ptr != null:
@@ -2997,7 +2997,7 @@ function resolve_interface_methods(ctx: ref[Context], qname: ast.QualifiedName) 
         let iface = unsafe: read(qname.parts.data + 1)
         let module_name_ptr = ctx.import_aliases.get(alias) else:
             return Option[span[ast.InterfaceMethod]].none
-        let binding_ptr = lookup_binding(ctx, unsafe: read(module_name_ptr)) else:
+        let binding_ptr = find_binding(ctx, unsafe: read(module_name_ptr)) else:
             return Option[span[ast.InterfaceMethod]].none
         unsafe:
             let methods_ptr = read(binding_ptr).interfaces.get(iface)
@@ -4465,7 +4465,7 @@ function scrutinee_type_module(t: types.Type) -> str:
 function match_case_names_for(ctx: ref[Context], module_name: str, type_name: str) -> ptr[span[str]]?:
     if module_name.len == 0 or module_name == ctx.module_name:
         return ctx.match_case_names.get(type_name)
-    let binding_ptr = lookup_binding(ctx, module_name) else:
+    let binding_ptr = find_binding(ctx, module_name) else:
         return null
     return unsafe: read(binding_ptr).match_case_names.get(type_name)
 
@@ -5738,7 +5738,7 @@ function match_arm_payload_type(ctx: ref[Context], scrutinee_ty: types.Type, pat
     else:
         # An imported variant: the exporter's resolved arm fields and declared
         # type parameters travel on the module binding.
-        let binding = lookup_binding(ctx, module_name) else:
+        let binding = find_binding(ctx, module_name) else:
             return Option[types.Type].none
         let decls_ptr = unsafe: read(binding).variant_arm_fields.get(key) else:
             return Option[types.Type].none
@@ -6301,7 +6301,7 @@ function method_type_params_of(ctx: ref[Context], recv: types.Type, method_name:
 
 
 function binding_method_type_params(ctx: ref[Context], module_name: str, key: str) -> Option[span[ast.TypeParam]]:
-    let binding = lookup_binding(ctx, module_name) else:
+    let binding = find_binding(ctx, module_name) else:
         return Option[span[ast.TypeParam]].none
     let tps_ptr = unsafe: read(binding).method_type_params.get(key) else:
         return Option[span[ast.TypeParam]].none
@@ -6334,7 +6334,7 @@ function check_imported_specialization_call(ctx: ref[Context], scope: ref[sscope
                             return types.Type.ty_error
                         let module_name_ptr = ctx.import_aliases.get(alias_id.name) else:
                             return types.Type.ty_error
-                        let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
+                        let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
                             return types.Type.ty_error
                         let tps_ptr = read(binding_ptr).function_type_params.get(ma.member_name) else:
                             return types.Type.ty_error
@@ -6434,7 +6434,7 @@ function collect_binding_alias_members(
         var fields = span[FieldEntry]()
         match target:
             types.Type.ty_imported as tim:
-                let target_binding = lookup_binding(ctx, tim.module_name)
+                let target_binding = find_binding(ctx, tim.module_name)
                 if target_binding != null:
                     let fp = unsafe: read(target_binding).structs.get(tim.name)
                     if fp != null:
@@ -6586,7 +6586,7 @@ function cast_side_incompatible(ctx: ref[Context], t: types.Type) -> bool:
         types.Type.ty_named as n:
             return not ctx.static_member_types.contains(n.name)
         types.Type.ty_imported as im:
-            let binding = lookup_binding(ctx, im.module_name) else:
+            let binding = find_binding(ctx, im.module_name) else:
                 return false
             return not unsafe: read(binding).static_member_types.contains(im.name)
         _:
@@ -6626,7 +6626,7 @@ function callee_constructs_str(ctx: ref[Context], scope: ref[sscope.Scope], call
                             return false
                         let module_name = ctx.import_aliases.get(alias_id.name) else:
                             return false
-                        let binding = lookup_binding(ctx, read(module_name)) else:
+                        let binding = find_binding(ctx, read(module_name)) else:
                             return false
                         let alias_type = read(binding).type_alias_types.get(ma.member_name) else:
                             return false
@@ -7211,7 +7211,7 @@ function check_imported_constraint(ctx: ref[Context], struct_module: str, struct
         return
     if not unsafe: read(alias_module_ptr) == struct_module:
         return
-    let binding_ptr = lookup_binding(ctx, struct_module) else:
+    let binding_ptr = find_binding(ctx, struct_module) else:
         return
     unsafe:
         let impl_ptr = read(binding_ptr).implemented.get(struct_name)
@@ -7411,7 +7411,7 @@ function check_hook_call(ctx: ref[Context], hook_name: str, type_args: span[ast.
     match arg_type:
         types.Type.ty_named as n:
             if ctx.structs.contains(n.name):
-                match lookup_method_anywhere(ctx, n.name, hook_name):
+                match find_method_anywhere(ctx, n.name, hook_name):
                     Option.some:
                         pass
                     Option.none:
@@ -7444,7 +7444,7 @@ function try_imported_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: 
                             return Option[types.Type].none
                         let module_name_ptr = ctx.import_aliases.get(id.name) else:
                             return Option[types.Type].none
-                        let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
+                        let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
                             return Option[types.Type].none
 
                         let sig_ptr = read(binding_ptr).functions.get(ma.member_name)
@@ -7490,7 +7490,7 @@ function try_imported_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: 
                             let target = read(ptr[types.Type]<-alias_ptr)
                             match target:
                                 types.Type.ty_imported as tim:
-                                    let target_binding = lookup_binding(ctx, tim.module_name) else:
+                                    let target_binding = find_binding(ctx, tim.module_name) else:
                                         return Option[types.Type].none
                                     if read(target_binding).structs.contains(tim.name):
                                         return Option[types.Type].some(value = target)
@@ -7514,7 +7514,7 @@ function try_imported_member(ctx: ref[Context], scope: ref[sscope.Scope], receiv
                     return Option[types.Type].none
                 let module_name_ptr = ctx.import_aliases.get(id.name) else:
                     return Option[types.Type].none
-                let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
+                let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
                     return Option[types.Type].none
                 let value_ptr = read(binding_ptr).value_types.get(member)
                 if value_ptr != null:
@@ -7525,7 +7525,7 @@ function try_imported_member(ctx: ref[Context], scope: ref[sscope.Scope], receiv
 
 
 ## Resolve a module name to its import binding, if bindings were provided.
-function lookup_binding(ctx: ref[Context], module_name: str) -> ptr[ModuleBinding]?:
+function find_binding(ctx: ref[Context], module_name: str) -> ptr[ModuleBinding]?:
     let imported = ctx.imported_modules else:
         return null
     unsafe:
@@ -7652,7 +7652,7 @@ function unwrap_ref(t: types.Type) -> types.Type:
 function generic_receiver_has_method(ctx: ref[Context], t: types.Type, method_name: str) -> bool:
     match t:
         types.Type.ty_generic as g:
-            match lookup_method_anywhere(ctx, g.name, method_name):
+            match find_method_anywhere(ctx, g.name, method_name):
                 Option.some:
                     return true
                 Option.none:
@@ -7849,7 +7849,7 @@ function static_struct_receiver_type(ctx: ref[Context], scope: ref[sscope.Scope]
                             return Option[types.Type].none
                         let module_name_ptr = ctx.import_aliases.get(alias_id.name) else:
                             return Option[types.Type].none
-                        let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
+                        let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
                             return Option[types.Type].none
                         if read(binding_ptr).structs.contains(inner.member_name):
                             return Option[types.Type].some(value = types.Type.ty_imported(
@@ -7874,7 +7874,7 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
             if sig_ptr != null:
                 return Option[FnSig].some(value = unsafe: read(sig_ptr))
             if n.module_name.len > 0:
-                let bp = lookup_binding(ctx, n.module_name)
+                let bp = find_binding(ctx, n.module_name)
                 if bp != null:
                     let bound = unsafe: read(bp).method_sigs.get(method_key(n.name, method_name))
                     if bound != null:
@@ -7889,9 +7889,9 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
             # type may arrive as a bare name from an imported signature): the
             # editable check needs the kind, so the search must not stop at the
             # current module.
-            return lookup_method_anywhere(ctx, n.name, method_name)
+            return find_method_anywhere(ctx, n.name, method_name)
         types.Type.ty_imported as im:
-            let bp = lookup_binding(ctx, im.module_name)
+            let bp = find_binding(ctx, im.module_name)
             if bp != null:
                 let sp = unsafe: read(bp).method_sigs.get(method_key(im.name, method_name))
                 if sp != null:
@@ -7912,9 +7912,9 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
             # is declared, so fall back to any interface that declares the name.
             return resolve_any_interface_method(ctx, method_name)
         types.Type.ty_str:
-            return lookup_method_anywhere(ctx, "str", method_name)
+            return find_method_anywhere(ctx, "str", method_name)
         types.Type.ty_primitive as p:
-            return lookup_method_anywhere(ctx, p.name, method_name)
+            return find_method_anywhere(ctx, p.name, method_name)
         # str_buffer[N], atomic[T] and ptr[T] builtin methods.
         types.Type.ty_generic as g:
             if g.name == "str_buffer":
@@ -8046,7 +8046,7 @@ function ptr_method_sig(args: span[types.Type], method_name: str) -> Option[FnSi
 ## reachable imported binding.  Underpins method calls on str and primitive
 ## receivers, whose methods live in whichever module extended the type (e.g.
 ## `str` methods in std.str).  Missing -> none (permissive; not flagged).
-function lookup_method_anywhere(ctx: ref[Context], type_name: str, method_name: str) -> Option[FnSig]:
+function find_method_anywhere(ctx: ref[Context], type_name: str, method_name: str) -> Option[FnSig]:
     let key = method_key(type_name, method_name)
     let local_ptr = ctx.method_sigs.get(key)
     if local_ptr != null:
@@ -8141,7 +8141,7 @@ function resolve_any_interface_method(ctx: ref[Context], method_name: str) -> Op
             break
         let module_name_ptr = ctx.import_aliases.get(unsafe: read(alias_ptr)) else:
             continue
-        let binding_ptr = lookup_binding(ctx, unsafe: read(module_name_ptr)) else:
+        let binding_ptr = find_binding(ctx, unsafe: read(module_name_ptr)) else:
             continue
         match interface_method_in_map(ctx, unsafe: read(binding_ptr).interfaces, method_name):
             Option.some as sig:
@@ -8177,7 +8177,7 @@ function try_imported_type(ctx: ref[Context], scope: ref[sscope.Scope], receiver
                     return Option[types.Type].none
                 let module_name_ptr = ctx.import_aliases.get(id.name) else:
                     return Option[types.Type].none
-                let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
+                let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
                     return Option[types.Type].none
                 let binding = read(binding_ptr)
                 let alias_type = binding.type_alias_types.get(member)
@@ -8204,7 +8204,7 @@ function specialization_imported_receiver(ctx: ref[Context], scope: ref[sscope.S
                                     return Option[types.Type].none
                                 let module_name_ptr = ctx.import_aliases.get(alias_id.name) else:
                                     return Option[types.Type].none
-                                let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
+                                let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
                                     return Option[types.Type].none
                                 if not read(binding_ptr).structs.contains(ma.member_name) and not read(binding_ptr).types.contains(ma.member_name):
                                     return Option[types.Type].none
@@ -8359,7 +8359,7 @@ function binding_declaring_type(ctx: ref[Context], own: ptr[ModuleBinding]?, typ
         return own
     let bindings = ctx.imported_modules else:
         return null
-    # Deterministic pick (smallest module name), like `lookup_method_anywhere`:
+    # Deterministic pick (smallest module name), like `find_method_anywhere`:
     # the choice must not depend on map iteration order.
     var chosen_name: str = ""
     var chosen: ptr[ModuleBinding]? = null
@@ -8386,7 +8386,7 @@ function imported_method_signature(ctx: ref[Context], own: ptr[ModuleBinding]?, 
     let bindings = ctx.imported_modules else:
         return null
     # Deterministic pick (smallest module name) for the same reason as
-    # `lookup_method_anywhere`.
+    # `find_method_anywhere`.
     var chosen_name: str = ""
     var chosen: ptr[FnSig]? = null
     unsafe:
@@ -8417,7 +8417,7 @@ function imported_method_call_type(
 ) -> Option[types.Type]:
     match recv:
         types.Type.ty_imported as imported:
-            let own = lookup_binding(ctx, imported.module_name)
+            let own = find_binding(ctx, imported.module_name)
             let sig_ptr = imported_method_signature(ctx, own, imported.name, member) else:
                 return Option[types.Type].none
             let sig = unsafe: read(sig_ptr)
@@ -8436,7 +8436,7 @@ function imported_method_return_type(ctx: ref[Context], recv: types.Type, member
     # imported signature) resolves its methods through the visible bindings.
     match recv:
         types.Type.ty_named as named:
-            let own = if named.module_name.len > 0: lookup_binding(ctx, named.module_name) else: null
+            let own = if named.module_name.len > 0: find_binding(ctx, named.module_name) else: null
             let sig_ptr = imported_method_signature(ctx, own, named.name, member) else:
                 return Option[types.Type].none
             let sig = unsafe: read(sig_ptr)
@@ -8447,7 +8447,7 @@ function imported_method_return_type(ctx: ref[Context], recv: types.Type, member
             pass
     match recv:
         types.Type.ty_imported as imported:
-            let own = lookup_binding(ctx, imported.module_name)
+            let own = find_binding(ctx, imported.module_name)
             let sig_ptr = imported_method_signature(ctx, own, imported.name, member) else:
                 return Option[types.Type].none
 
@@ -8540,7 +8540,7 @@ function imported_static_member(ctx: ref[Context], scope: ref[sscope.Scope], rec
                             return Option[types.Type].none
                         let module_name_ptr = ctx.import_aliases.get(id.name) else:
                             return Option[types.Type].none
-                        let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
+                        let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
                             return Option[types.Type].none
                         if not read(binding_ptr).static_member_types.contains(inner.member_name):
                             return Option[types.Type].none
@@ -8912,7 +8912,7 @@ function check_imported_member_args(ctx: ref[Context], module_name: str, type_na
 ## public or private.  `check_member` uses it to route a foreign `ty_named`
 ## through the binding only for types whose fields the binding actually owns.
 function binding_has_struct_type(ctx: ref[Context], module_name: str, type_name: str) -> bool:
-    let binding_ptr = lookup_binding(ctx, module_name) else:
+    let binding_ptr = find_binding(ctx, module_name) else:
         return false
     let binding = unsafe: read(binding_ptr)
     return (
@@ -8924,7 +8924,7 @@ function binding_has_struct_type(ctx: ref[Context], module_name: str, type_name:
 function check_imported_member_depth(ctx: ref[Context], module_name: str, type_name: str, member: str, args: span[types.Type], is_method_call: bool, line: ptr_uint, column: ptr_uint, depth: int) -> types.Type:
     if depth > 10:
         return types.Type.ty_error
-    let binding_ptr = lookup_binding(ctx, module_name) else:
+    let binding_ptr = find_binding(ctx, module_name) else:
         return types.Type.ty_error
 
     unsafe:
@@ -9410,7 +9410,7 @@ function legacy_directional_argument(expr: ptr[ast.Expr]) -> bool:
                 return false
             ast.Expr.expr_prefix_cast as pc:
                 if pointer_like_type_ref(pc.target_type):
-                    return lvalue_expression(pc.expression) or legacy_directional_argument(pc.expression)
+                    return lvalue_expr(pc.expression) or legacy_directional_argument(pc.expression)
                 return false
             _:
                 return false
@@ -9427,7 +9427,7 @@ function pointer_like_type_ref(tr: ptr[ast.TypeRef]) -> bool:
         return name.equal("ptr") or name.equal("const_ptr") or name.equal("ref")
 
 
-function lvalue_expression(expr: ptr[ast.Expr]) -> bool:
+function lvalue_expr(expr: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(expr):
             ast.Expr.expr_identifier:

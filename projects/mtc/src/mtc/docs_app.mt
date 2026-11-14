@@ -818,7 +818,7 @@ function extract_declarations(source: str) -> vec.Vec[Declaration]:
 
             var kind = string.String.create()
             var name = string.String.create()
-            let classified = classify_declaration(stripped, ref_of(kind), ref_of(name))
+            let classified = classify_decl(stripped, ref_of(kind), ref_of(name))
             if not classified:
                 kind.release()
                 name.release()
@@ -868,7 +868,7 @@ struct DeclarationKeyword:
     kind: str
 
 
-function classify_declaration(stripped: str, kind: ref[string.String], name: ref[string.String]) -> bool:
+function classify_decl(stripped: str, kind: ref[string.String], name: ref[string.String]) -> bool:
     if stripped.starts_with("extending "):
         let rest = stripped.slice(10, stripped.len - 10)
         let end = declaration_name_end(rest)

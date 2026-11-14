@@ -1624,7 +1624,7 @@ function tc_body(body: ptr[ast.Stmt]?, ts: span[token_mod.Token], loc_index: ref
             ast.Stmt.stmt_block as blk:
                 tc_statement_list(blk.statements, ts, loc_index, warned, path, warnings)
             _:
-                tc_each_statement_expression(bp, ts, loc_index, warned, path, warnings)
+                tc_each_statement_expr(bp, ts, loc_index, warned, path, warnings)
                 tc_recurse_statement(bp, ts, loc_index, warned, path, warnings)
 
 
@@ -1632,7 +1632,7 @@ function tc_statement_list(stmts: span[ast.Stmt], ts: span[token_mod.Token], loc
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:
-            tc_each_statement_expression(stmts.data + i, ts, loc_index, warned, path, warnings)
+            tc_each_statement_expr(stmts.data + i, ts, loc_index, warned, path, warnings)
         i += 1
     i = 0
     while i < stmts.len:
@@ -1670,7 +1670,7 @@ function tc_recurse_statement(stmt: ptr[ast.Stmt], ts: span[token_mod.Token], lo
 ## The direct expressions of a statement (Ruby's each_statement_expression) —
 ## does not descend into nested statement bodies, except for the transparent
 ## `when` / `unsafe` / error blocks.
-function tc_each_statement_expression(stmt: ptr[ast.Stmt], ts: span[token_mod.Token], loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]], warned: ref[map_mod.Map[ptr_uint, bool]], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function tc_each_statement_expr(stmt: ptr[ast.Stmt], ts: span[token_mod.Token], loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]], warned: ref[map_mod.Map[ptr_uint, bool]], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_local as loc:
@@ -1707,14 +1707,14 @@ function tc_each_statement_expression(stmt: ptr[ast.Stmt], ts: span[token_mod.To
                     let br = read(wn.branches.data + wbi)
                     var wsi: ptr_uint = 0
                     while wsi < br.body.len:
-                        tc_each_statement_expression(br.body.data + wsi, ts, loc_index, warned, path, warnings)
+                        tc_each_statement_expr(br.body.data + wsi, ts, loc_index, warned, path, warnings)
                         wsi += 1
                     wbi += 1
                 tc_each_stmt_expr_in_body(wn.else_body, ts, loc_index, warned, path, warnings)
             ast.Stmt.stmt_unsafe as un:
                 tc_each_stmt_expr_in_body(un.body, ts, loc_index, warned, path, warnings)
             ast.Stmt.stmt_error_block as eb:
-                tc_each_statement_expression(eb.body, ts, loc_index, warned, path, warnings)
+                tc_each_statement_expr(eb.body, ts, loc_index, warned, path, warnings)
             _:
                 pass
 
@@ -1727,10 +1727,10 @@ function tc_each_stmt_expr_in_body(body: ptr[ast.Stmt]?, ts: span[token_mod.Toke
             ast.Stmt.stmt_block as blk:
                 var i: ptr_uint = 0
                 while i < blk.statements.len:
-                    tc_each_statement_expression(blk.statements.data + i, ts, loc_index, warned, path, warnings)
+                    tc_each_statement_expr(blk.statements.data + i, ts, loc_index, warned, path, warnings)
                     i += 1
             _:
-                tc_each_statement_expression(bp, ts, loc_index, warned, path, warnings)
+                tc_each_statement_expr(bp, ts, loc_index, warned, path, warnings)
 
 
 
@@ -1820,7 +1820,7 @@ function check_redundant_bool_compare(operator: str, left: ptr[ast.Expr], right:
 
 
 ## A pure expression statement with no side effects has a useless result.
-function is_pure_expression(expr: ptr[ast.Expr]) -> bool:
+function is_pure_expr(expr: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(expr):
             ast.Expr.expr_integer_literal:
@@ -1880,8 +1880,8 @@ function contains_side_effect(expr: ptr[ast.Expr]) -> bool:
                 return false
 
 
-function check_useless_expression(expr: ptr[ast.Expr], stmt_line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    if not is_pure_expression(expr):
+function check_useless_expr(expr: ptr[ast.Expr], stmt_line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    if not is_pure_expr(expr):
         return
     unsafe:
         match read(expr):
@@ -2113,7 +2113,7 @@ function last_block_statement(body: ptr[ast.Stmt]?) -> ptr[ast.Stmt]?:
 # =============================================================================
 
 ## A call/specialization to `fatal` or `static_assert(false)` never returns.
-function terminating_expression(expr: ptr[ast.Expr]) -> bool:
+function terminating_expr(expr: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(expr):
             ast.Expr.expr_call as call:
@@ -2257,7 +2257,7 @@ function stmt_always_returns(stmt: ptr[ast.Stmt]) -> bool:
             ast.Stmt.stmt_ret:
                 return true
             ast.Stmt.stmt_expression as ex:
-                return terminating_expression(ex.expression)
+                return terminating_expr(ex.expression)
             ast.Stmt.stmt_if as iff:
                 if not block_is_nonempty(iff.else_body):
                     return false
@@ -3020,7 +3020,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                 lint_unsafe_depth -= 1
             ast.Stmt.stmt_expression as ex:
                 visit_expr(ex.expression, path, warnings)
-                check_useless_expression(ex.expression, ex.line, path, warnings)
+                check_useless_expr(ex.expression, ex.line, path, warnings)
             ast.Stmt.stmt_static_assert as sa:
                 visit_expr(sa.condition, path, warnings)
                 visit_expr_opt(sa.message, path, warnings)
@@ -4157,7 +4157,7 @@ function check_prefer_conditional_expression_if(branches: span[ast.IfBranch], el
         return
     stmts.push(else_s)
 
-    report_conditional_expression(ref_of(stmts), line, column, "if", path, warnings)
+    report_conditional_expr(ref_of(stmts), line, column, "if", path, warnings)
 
 
 function check_prefer_conditional_expression_match(arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -4189,13 +4189,13 @@ function check_prefer_conditional_expression_match(arms: span[ast.MatchArm], lin
             stmts.push(s)
         ai += 1
 
-    report_conditional_expression(ref_of(stmts), line, column, "match", path, warnings)
+    report_conditional_expr(ref_of(stmts), line, column, "match", path, warnings)
 
 
-## The host's `report_conditional_expression`: every single-statement branch
+## The host's `report_conditional_expr`: every single-statement branch
 ## either returns a value or assigns the same target, and the message names the
 ## kind and (for an assignment) the target.
-function report_conditional_expression(stmts: ref[vec.Vec[ptr[ast.Stmt]]], line: ptr_uint, column: ptr_uint, kind: str, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function report_conditional_expr(stmts: ref[vec.Vec[ptr[ast.Stmt]]], line: ptr_uint, column: ptr_uint, kind: str, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     if stmts.len() == 0:
         return
     if lint_loop_depth > 0:

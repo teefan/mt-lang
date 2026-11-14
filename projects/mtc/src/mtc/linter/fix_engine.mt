@@ -1357,7 +1357,7 @@ function prefer_inline_methods_edit(lines: ref[vec.Vec[string.String]], line_ind
     var struct_index: ptr_uint = 0
     var have_struct = false
     while struct_index < lines.len():
-        if is_struct_declaration(line_text(lines, struct_index), name):
+        if is_struct_decl(line_text(lines, struct_index), name):
             have_struct = true
             break
         struct_index += 1
@@ -1457,7 +1457,7 @@ function extending_target_name(text: str) -> Option[str]:
 
 ## True when the line declares `struct <name>` (the host's
 ## `/\A\s*struct\s+<name>\b/`).
-function is_struct_declaration(text: str, name: str) -> bool:
+function is_struct_decl(text: str, name: str) -> bool:
     var i: ptr_uint = 0
     while i < text.len and (text.byte_at(i) == ' ' or text.byte_at(i) == '\t'):
         i += 1

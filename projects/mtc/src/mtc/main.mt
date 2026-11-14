@@ -359,7 +359,7 @@ function dispatch_cli(raw_args: span[str]) -> int:
         return run_module_command(args)
 
     if cmd == "new":
-        return new_command(args)
+        return scaffold_command(args)
 
     if cmd == "completions":
         return completions_command(args)
@@ -1931,7 +1931,7 @@ function lint_command(args: span[str]) -> int:
 
                 var file_profile: ptr[profile_mod.Profile]? = null
                 if timings:
-                    file_profile = new_heap_profile()
+                    file_profile = create_heap_profile()
                 options.profile = file_profile
 
                 if fix_mode:
@@ -4203,7 +4203,7 @@ function resolve_app_module(name: str, roots: ref[vec.Vec[str]]) -> Option[strin
 ## Scaffold a new application package (`mtc new my-project`): package.toml with
 ## a snake_case package name derived from the directory basename, plus an
 ## `src/main.mt` entry — mirroring Ruby's ProjectScaffold.
-function new_command(args: span[str]) -> int:
+function scaffold_command(args: span[str]) -> int:
     if args.len < 2:
         eprint_line("missing project name")
         cli_help.print_usage(true)
@@ -6099,7 +6099,7 @@ struct LintTimingEntry:
 
 
 ## A heap profile for one linted file.
-function new_heap_profile() -> ptr[profile_mod.Profile]:
+function create_heap_profile() -> ptr[profile_mod.Profile]:
     let memory = unsafe: ptr[profile_mod.Profile]<-heap.must_alloc[profile_mod.Profile](1)
     unsafe:
         read(memory) = profile_mod.create()

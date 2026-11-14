@@ -495,7 +495,7 @@ function scan_parameter_list_opener(tokens: span[token_mod.Token], index: ptr_ui
 
 ## `name: T` immediately after `(`/`,` or a foreign mode keyword
 ## (the host's `parameter_declaration_token?`).
-function scan_is_parameter_declaration(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+function scan_is_parameter_decl(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
     let next_idx = scan_next_index(tokens, index) else:
         return false
     if scan_kind_at(tokens, next_idx) != tk.TokenKind.colon:
@@ -511,8 +511,8 @@ function scan_is_parameter_declaration(tokens: span[token_mod.Token], index: ptr
 ## True when the parameter list containing `index` belongs to a callable
 ## declaration (`function f(...)`, `fn(...)`, `proc(...)`)
 ## (the host's `callable_parameter_declaration_token?`).
-function scan_is_callable_parameter_declaration(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
-    if not scan_is_parameter_declaration(tokens, index):
+function scan_is_callable_parameter_decl(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    if not scan_is_parameter_decl(tokens, index):
         return false
     let opener = scan_parameter_list_opener(tokens, index) else:
         return false
@@ -589,10 +589,10 @@ function scan_line_has_enum_header(tokens: span[token_mod.Token], line: ptr_uint
 ## True when the token is a struct/union field declaration: first on its line,
 ## followed by `:` and not part of a parameter list or match arm
 ## (the host's `field_declaration_token?`).
-function scan_is_field_declaration(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+function scan_is_field_decl(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
     if not scan_first_on_line(tokens, index):
         return false
-    if scan_is_parameter_declaration(tokens, index):
+    if scan_is_parameter_decl(tokens, index):
         return false
     if scan_is_match_arm_binding(tokens, index):
         return false
@@ -616,7 +616,7 @@ function scan_is_match_arm_binding(tokens: span[token_mod.Token], index: ptr_uin
 ## member whose list head is a variant arm name
 ## (the host's `variant_payload_field_declaration_token?`).
 function scan_is_variant_payload_field(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
-    if not scan_is_parameter_declaration(tokens, index):
+    if not scan_is_parameter_decl(tokens, index):
         return false
     let opener = scan_parameter_list_opener(tokens, index) else:
         return false
@@ -1101,7 +1101,7 @@ function scan_is_char_literal(kind: tk.TokenKind) -> bool:
 ## standalone block keyword — the host's `keyword_field_declaration_token?`
 ## (which is what colors a `null` ending an `if …:` line as a field
 ## declaration).
-function scan_is_keyword_field_declaration(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+function scan_is_keyword_field_decl(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
     let kind = scan_kind_at(tokens, index)
     if kind == tk.TokenKind.tk_unsafe or kind == tk.TokenKind.tk_else or
        kind == tk.TokenKind.tk_defer or kind == tk.TokenKind.tk_parallel:
@@ -1185,11 +1185,11 @@ function classify_scan_identifier(
             return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5)
     if scan_is_match_arm_binding(tokens, index):
         return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5)
-    if scan_is_callable_parameter_declaration(tokens, index):
+    if scan_is_callable_parameter_decl(tokens, index):
         return TokenClass(token_type = TOKEN_PARAMETER, token_mod = 1)
     if scan_is_variant_payload_field(tokens, index):
         return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 1)
-    if scan_is_field_declaration(tokens, index):
+    if scan_is_field_decl(tokens, index):
         return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 1)
     if scan_is_destructure_let(tokens, index):
         return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5)
@@ -1339,7 +1339,7 @@ function classify_scan_identifier(
             # (the host passes `parameter_declaration_token?` into
             # `semantic_value_binding_entry`; the `in` of a `for … in name:`
             # line answers that predicate there too).
-            if kind.value == scope_mod.BINDING_PARAM and scan_is_parameter_declaration(tokens, index):
+            if kind.value == scope_mod.BINDING_PARAM and scan_is_parameter_decl(tokens, index):
                 return TokenClass(token_type = TOKEN_PARAMETER, token_mod = 1)
             return scan_binding_class(kind.value)
         Option.none:
@@ -1935,7 +1935,7 @@ function compute_token_data(
                     token_type = TOKEN_TYPE_PARAM
                 else if scan_is_keyword_type_annotation(tokens, ti):
                     token_type = TOKEN_TYPE
-                else if scan_is_keyword_field_declaration(tokens, ti):
+                else if scan_is_keyword_field_decl(tokens, ti):
                     token_type = TOKEN_PROPERTY
                     token_mod = 1
                 else if scan_prev_is_dot(tokens, ti):
@@ -2113,7 +2113,7 @@ function emit_fstring_entries(
             let hash_col = part.expr_col - 2
             if hash_col > cursor:
                 emit_span(data, first_line, cursor, hash_col - cursor, TOKEN_STRING, 0, prev_line, prev_char)
-            emit_fstring_expression(data, part, first_line, facts, prev_line, prev_char)
+            emit_fstring_expr(data, part, first_line, facts, prev_line, prev_char)
             let raw_len = part.source.len + (if part.has_spec: 1 + part.spec.len else: 0)
             cursor = part.expr_col + raw_len + 1
             i = expr_end + 1
@@ -2226,7 +2226,7 @@ function fstring_format_spec_suffix(suffix: str) -> bool:
 ## to the document's coordinates first (the host's
 ## `interpolation_expression_tokens`), so the classifier's scope lookups see the
 ## f-string's own line.
-function emit_fstring_expression(
+function emit_fstring_expr(
     data: ref[vec.Vec[uint]],
     part: FstringPart,
     line: uint,
@@ -2298,7 +2298,7 @@ function scan_sub_token_class(facts: ref[ScanFacts], tokens: span[token_mod.Toke
     if token_kind_to_type(kind) == TOKEN_KEYWORD:
         if scan_is_keyword_type_annotation(tokens, index):
             return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
-        if scan_is_keyword_field_declaration(tokens, index):
+        if scan_is_keyword_field_decl(tokens, index):
             return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 1)
         if scan_prev_is_dot(tokens, index):
             return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0)

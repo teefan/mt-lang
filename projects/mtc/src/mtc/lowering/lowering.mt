@@ -201,7 +201,7 @@ struct LoweringContext:
     locals: vec.Vec[LocalBinding]
     # Lowering-side flow refinements — the host's `FlowScope` stack
     # (`lowering/utils.rb:567-650`).  Each entry maps a local (or module-level
-    # value) to its *visible*, narrowed type; `lookup_local` still answers the
+    # value) to its *visible*, narrowed type; `find_local_binding` still answers the
     # storage type, so reads keep the declared type while inference
     # (`infer_expression_type`) and assignment targets see the refinement.
     # `lower_block` truncates the stack at block exit (the host duplicates its
@@ -608,9 +608,9 @@ function ensure_str_buffer_struct(ctx: ref[LoweringContext], sb_ty: types.Type) 
 ## import to `std.c.libuv.uv_handle_s` and looks up its `c_name = "uv_handle_t"`.
 ## For `type NativeHandle = libuv.uv_handle_t` where `libuv.uv_handle_t` is
 ## itself a type alias, the recursive `ty_imported` branch walks the chain.
-function lookup_decl_c_name_cross(analysis: analyzer.Analysis, tv: types.Type, type_name: str, analyses: span[analyzer.Analysis]) -> Option[str]:
+function find_decl_c_name_cross(analysis: analyzer.Analysis, tv: types.Type, type_name: str, analyses: span[analyzer.Analysis]) -> Option[str]:
     # First try the current module's declarations.
-    match lookup_decl_c_name(analysis, type_name):
+    match find_decl_c_name(analysis, type_name):
         Option.some as cn:
             return Option[str].some(value = cn.value)
         Option.none:
@@ -620,7 +620,7 @@ function lookup_decl_c_name_cross(analysis: analyzer.Analysis, tv: types.Type, t
         types.Type.ty_imported as im:
             # std.c.* raw ABI types — they ARE the C types.
             if im.module_name.starts_with("std.c."):
-                return lookup_decl_c_name_in_module(im.module_name, im.name, analyses)
+                return find_decl_c_name_in_module(im.module_name, im.name, analyses)
             # Non-std.c imported types may be type aliases themselves
             # (e.g. `type uv_handle_t = c.uv_handle_t` in `std.libuv`).
             # Follow the chain through the imported module's type aliases.
@@ -639,21 +639,21 @@ function lookup_decl_c_name_cross(analysis: analyzer.Analysis, tv: types.Type, t
             if has_a and found_a.type_alias_types.contains(im.name):
                 let resolved_ptr = found_a.type_alias_types.get(im.name) else:
                     fatal(c"lowering: chained type alias lookup inconsistency")
-                return lookup_decl_c_name_cross(analysis, unsafe: read(resolved_ptr), im.name, analyses)
+                return find_decl_c_name_cross(analysis, unsafe: read(resolved_ptr), im.name, analyses)
         _:
             pass
     return Option[str].none
 
 
 ## Look up the backing c_name of a type in a specific module's analysis.
-function lookup_decl_c_name_in_module(module_name: str, type_name: str, analyses: span[analyzer.Analysis]) -> Option[str]:
+function find_decl_c_name_in_module(module_name: str, type_name: str, analyses: span[analyzer.Analysis]) -> Option[str]:
     var ai: ptr_uint = 0
     while ai < analyses.len:
         var a: analyzer.Analysis
         unsafe:
             a = read(analyses.data + ai)
         if a.module_name == module_name:
-            return lookup_decl_c_name(a, type_name)
+            return find_decl_c_name(a, type_name)
         ai += 1
     return Option[str].none
 
@@ -661,7 +661,7 @@ function lookup_decl_c_name_in_module(module_name: str, type_name: str, analyses
 ## Look up the backing C type name (`= c"..."`) for a struct, opaque, or union
 ## declaration by scanning the analysis' source file.  Returns `Option[str].none`
 ## when no backing name was provided.
-function lookup_decl_c_name(analysis: analyzer.Analysis, type_name: str) -> Option[str]:
+function find_decl_c_name(analysis: analyzer.Analysis, type_name: str) -> Option[str]:
     var i: ptr_uint = 0
     while i < analysis.source_file.declarations.len:
         var d: ast.Decl
@@ -881,7 +881,7 @@ public function lower(program: loader.Program) -> ir.Program:
             # without explicit declarations (e.g. enum fields used as types like
             # `uv_tcp_flags`) have no valid C type to map to and are skipped.
             if type_is_from_std_c(tv):
-                match lookup_decl_c_name_cross(ta_analysis, tv, kn, program.analyses.as_span()):
+                match find_decl_c_name_cross(ta_analysis, tv, kn, program.analyses.as_span()):
                     Option.some:
                         pass
                     Option.none:
@@ -918,7 +918,7 @@ public function lower(program: loader.Program) -> ir.Program:
                 name = kn,
                 qualified_name = naming.qualified_c_name(ta_analysis.module_name, kn),
                 target_type = qualified_tv,
-                backing_c_name = lookup_decl_c_name_cross(ta_analysis, tv, kn, program.analyses.as_span()),
+                backing_c_name = find_decl_c_name_cross(ta_analysis, tv, kn, program.analyses.as_span()),
             ))
         tai += 1
 
@@ -1214,7 +1214,7 @@ function generic_instance_contains(ctx: ref[LoweringContext], name: str) -> bool
 
 ## Create a fully initialised LoweringContext for a single module.  Every field is
 ## set explicitly so all code paths start from a known clean state.
-function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map_mod.Map[str, types.Type]], pl_field_types: ptr[map_mod.Map[str, types.Type]], prog_analyses: span[analyzer.Analysis], lod_modules: span[loader.LoadedModule], gen_instances: ptr[map_mod.Map[str, GenericReceiver]], spec_infos: ptr[map_mod.Map[str, SpecInfo]]) -> LoweringContext:
+function create_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map_mod.Map[str, types.Type]], pl_field_types: ptr[map_mod.Map[str, types.Type]], prog_analyses: span[analyzer.Analysis], lod_modules: span[loader.LoadedModule], gen_instances: ptr[map_mod.Map[str, GenericReceiver]], spec_infos: ptr[map_mod.Map[str, SpecInfo]]) -> LoweringContext:
     return LoweringContext(
         module_name = analysis.module_name,
         analysis = analysis,
@@ -1349,7 +1349,7 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
             mi += 1
             continue
         var analysis = unsafe: read(a_ptr)
-        var ctx = new_lowering_context(analysis, ptr_of(read(sink)), ptr_of(read(prelude_arm_field_types)), program.analyses.as_span(), program.modules.as_span(), ptr_of(read(gen_instances)), ptr_of(discarded_spec_infos))
+        var ctx = create_lowering_context(analysis, ptr_of(read(sink)), ptr_of(read(prelude_arm_field_types)), program.analyses.as_span(), program.modules.as_span(), ptr_of(read(gen_instances)), ptr_of(discarded_spec_infos))
         var di: ptr_uint = 0
         while di < analysis.source_file.declarations.len:
             var d: ast.Decl
@@ -1362,7 +1362,7 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
                     # context) would instantiate bogus concrete types.  Its
                     # specializations record their own return types.
                     if fun.type_params.len == 0:
-                        let ret = resolve_return_type(ref_of(ctx), lookup_fn_sig(ref_of(ctx), fun.name), fun.return_type)
+                        let ret = resolve_return_type(ref_of(ctx), find_fn_sig(ref_of(ctx), fun.name), fun.return_type)
                         sink.set(naming.qualified_c_name(analysis.module_name, fun.name), ret)
                 ast.Decl.decl_extern_function as ext:
                     # External functions use their bare C name as the linkage name
@@ -1917,7 +1917,7 @@ function decl_lowering_pass(d: ast.Decl) -> ptr_uint:
 
 
 function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]], synthetic_functions: ref[vec.Vec[ir.Function]], synthetic_enums: ref[vec.Vec[ir.EnumDecl]], emitted_functions: ptr[vec.Vec[ir.Function]], emitted_structs: ptr[vec.Vec[ir.StructDecl]], emitted_constants: ptr[vec.Vec[ir.Constant]], spec_infos: ref[map_mod.Map[str, SpecInfo]], expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]]) -> ir.Program:
-    var ctx = new_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)))
+    var ctx = create_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)))
     ctx.is_root_module = is_root
     ctx.pending_emitted_functions = emitted_functions
     ctx.pending_emitted_structs = emitted_structs
@@ -2836,7 +2836,7 @@ function lower_method(ctx: ref[LoweringContext], c_name: str, receiver_ty: types
     ctx.cstr_backed_names.clear()
     var saved_current_fn = ctx.current_function_linkage
     ctx.current_function_linkage = c_name
-    let sig = lookup_fn_sig(ctx, m.name)
+    let sig = find_fn_sig(ctx, m.name)
 
     var ir_params = vec.Vec[ir.Param].create()
     var param_setup = vec.Vec[ir.Stmt].create()
@@ -2998,7 +2998,7 @@ function lower_function(ctx: ref[LoweringContext], name: str, params: span[ast.P
     ctx.cstr_backed_names.clear()
     var saved_current_fn = ctx.current_function_linkage
     ctx.current_function_linkage = naming.qualified_c_name(ctx.module_name, name)
-    let sig = lookup_fn_sig(ctx, name)
+    let sig = find_fn_sig(ctx, name)
 
     var ir_params = vec.Vec[ir.Param].create()
     var param_setup = vec.Vec[ir.Stmt].create()
@@ -3044,7 +3044,7 @@ function lower_function(ctx: ref[LoweringContext], name: str, params: span[ast.P
 ## `span[str]` bridge), each returning `int` or `void`.  Mirrors Ruby's
 ## build_root_main_entrypoint (:none / :span_str signatures).
 function build_root_main_entrypoint(ctx: ref[LoweringContext], name: str, params: span[ast.Param]) -> Option[ir.Function]:
-    let sig = lookup_fn_sig(ctx, name)
+    let sig = find_fn_sig(ctx, name)
     let user_return = fn_sig_return_type(sig)
     if not (types.is_void(user_return) or is_int_type(user_return)):
         return Option[ir.Function].none
@@ -4488,7 +4488,7 @@ function lower_emitted_decl(ctx: ref[LoweringContext], decl: ast.Decl) -> void:
     let prefix = naming.module_c_prefix(ctx.module_name)
     match decl:
         ast.Decl.decl_function as fun:
-            let sig = lookup_fn_sig(ctx, fun.name)
+            let sig = find_fn_sig(ctx, fun.name)
             let ret_ty = resolve_return_type(ctx, sig, fun.return_type)
             var params = vec.Vec[ir.Param].create()
             let saved_locals_len = ctx.locals.len()
@@ -5361,7 +5361,7 @@ function lower_assignment_target(ctx: ref[LoweringContext], target_ast: ptr[ast.
     unsafe:
         match read(target_ast):
             ast.Expr.expr_identifier as id:
-                match lookup_local(ctx, id.name):
+                match find_local_binding(ctx, id.name):
                     Option.some as lb:
                         match lb.value.projection:
                             BindingProjection.plain:
@@ -5380,7 +5380,7 @@ function lower_assignment_target(ctx: ref[LoweringContext], target_ast: ptr[ast.
                         # too, so a guard-narrowed one takes the visible type
                         # on an assignment target the same way
                         # (`lint_reserved_out` inside `if != null`).
-                        match lookup_qualified_constant(ctx, id.name):
+                        match find_qualified_constant(ctx, id.name):
                             Option.some as qc:
                                 let declared = ctx.analysis.value_types.get(id.name)
                                 if declared != null:
@@ -6674,7 +6674,7 @@ function lower_for_range(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]
     # constant expression (`compile_time_numeric_const_expression?`) — a literal,
     # a module constant, an enum member or a fold of those — and hoists the
     # `__mt_for_stop_N` temp only otherwise.
-    let inline_stop = is_numeric_const_expression(ctx, stop)
+    let inline_stop = is_numeric_const_expr(ctx, stop)
 
     let saved_break = ctx.loop_break_label
     let saved_continue = ctx.loop_continue_label
@@ -6776,7 +6776,7 @@ function ast_is_integer_literal(ep: ptr[ast.Expr]) -> bool:
 ## True when `ep` folds to a numeric compile-time constant (the host's
 ## `compile_time_numeric_const_expression?`): a literal, a module constant
 ## (recursively), an enum member's value, or an arithmetic fold of those.
-function is_numeric_const_expression(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> bool:
+function is_numeric_const_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> bool:
     match try_evaluate_const_expr(ctx, ep):
         Option.some as value:
             match value.value:
@@ -8470,7 +8470,7 @@ function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[ir.Expr
                 let replacement = ctx.mapping_replacements.get(id.name)
                 if replacement != null:
                     return unsafe: read(replacement)
-                match lookup_local(ctx, id.name):
+                match find_local_binding(ctx, id.name):
                     Option.some as lb:
                         return lower_binding_read(ctx, lb.value)
                     Option.none:
@@ -8510,7 +8510,7 @@ function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[ir.Expr
                                 linkage_name = ev_info.event_c_name,
                             )
                             return alloc_expr(ir.Expr.expr_name(name = naming.qualified_c_name(ctx.module_name, id.name), ty = ev_ty, pointer = Option[bool].some(value = false)))
-                        match lookup_qualified_constant(ctx, id.name):
+                        match find_qualified_constant(ctx, id.name):
                             Option.some as qc:
                                 # A module-level value's read carries its *declared*
                                 # storage type (the host's binding type), not the
@@ -8746,7 +8746,7 @@ function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[ir.Expr
             ast.Expr.expr_expression_list as lst:
                 return lower_tuple_literal_with_names(ctx, lst.elements)
             ast.Expr.expr_proc as pr:
-                return lower_proc_expression(ctx, pr.method_params, pr.return_type, pr.body, ep)
+                return lower_proc_expr(ctx, pr.method_params, pr.return_type, pr.body, ep)
             ast.Expr.expr_await as aw:
                 let inner = lower_expr(ctx, aw.expression)
                 return unwrap_task_value(inner)
@@ -8896,7 +8896,7 @@ var proc_counter: ptr_uint = 0
 ## with invoke/release/retain function pointers and a capture env pointer.  No-
 ## capture procs use null env; capturing procs use a heap-allocated env struct
 ## with ref-counting.
-function lower_proc_expression(ctx: ref[LoweringContext], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body_ptr: ptr[ast.Stmt], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_proc_expr(ctx: ref[LoweringContext], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body_ptr: ptr[ast.Stmt], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let proc_ty = expr_type(ctx, ep)
     var ret_ty = ctx.void_ty
     if return_type != null:
@@ -10283,7 +10283,7 @@ function index_receiver_type(ctx: ref[LoweringContext], receiver: ptr[ast.Expr])
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
-                match lookup_local(ctx, id.name):
+                match find_local_binding(ctx, id.name):
                     Option.some as lb:
                         return lb.value.ty
                     Option.none:
@@ -10642,7 +10642,7 @@ function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span
                 if extern_ptr != null:
                     return lower_plain_call(ctx, read(extern_ptr), args, call_ep, null)
                 # Proc-typed local: `p(args)` → `p.invoke(p.env, args)`.
-                match lookup_local(ctx, id.name):
+                match find_local_binding(ctx, id.name):
                     Option.some as lb:
                         if is_proc_type(lb.value.ty):
                             return lower_proc_call(ctx, lb.value, args, call_ep)
@@ -10730,13 +10730,13 @@ function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span
                         pass
                 var callee_c = naming.qualified_c_name(ctx.module_name, id.name)
                 if ctx.is_root_module and id.name == "main":
-                    match lookup_fn_sig(ctx, id.name):
+                    match find_fn_sig(ctx, id.name):
                         Option.some as main_sig:
                             if main_sig.value.is_async:
                                 callee_c = naming.qualified_c_name(ctx.module_name, "__async_main")
                         Option.none:
                             pass
-                return lower_plain_call_sig(ctx, callee_c, plain_args, call_ep, ret_type_ptr, lookup_fn_sig(ctx, id.name))
+                return lower_plain_call_sig(ctx, callee_c, plain_args, call_ep, ret_type_ptr, find_fn_sig(ctx, id.name))
             ast.Expr.expr_specialization as spec:
                 # When the specialisation callee is a member access
                 # (e.g. `r.unpack[CompactHeader]()`), try method resolution
@@ -10878,7 +10878,7 @@ function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span
                             let c_name = naming.qualified_c_name(target_module, ma.member_name)
                             var ret_ty = cross_module_return_type(ctx, c_name, call_ep)
                             var ret_type_ptr = types.alloc_type(ret_ty)
-                            var cross_sig = lookup_imported_fn_sig(ctx, target_module, ma.member_name)
+                            var cross_sig = find_imported_fn_sig(ctx, target_module, ma.member_name)
                             var cross_args = args
                             match find_imported_analysis(ctx, target_module):
                                 Option.some as imported:
@@ -15620,8 +15620,8 @@ function lower_event_method(ctx: ref[LoweringContext], recv: ptr[ir.Expr], recv_
     fatal(c"lowering: unknown event method")
 
 
-## The host's `event_slot_pointer_expression`: `&event->slots[index]`.
-function event_slot_pointer_expression(info: ref[EventRuntimeInfo], event_expr: ptr[ir.Expr], slot_index_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
+## The host's `event_slot_pointer_expr`: `&event->slots[index]`.
+function event_slot_pointer_expr(info: ref[EventRuntimeInfo], event_expr: ptr[ir.Expr], slot_index_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.slot_c_name)
     let slots_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(long<-(info.capacity))))
     let slots_member = alloc_expr(ir.Expr.expr_member(receiver = event_expr, member = "slots", ty = slots_ty))
@@ -15636,34 +15636,34 @@ function event_slot_local_decl(info: ref[EventRuntimeInfo], event_expr: ptr[ir.E
         name = local_name,
         linkage_name = local_name,
         ty = types.Type.ty_generic(name = "ptr", args = sp_type(slot_ty)),
-        value = event_slot_pointer_expression(info, event_expr, slot_index_expr),
+        value = event_slot_pointer_expr(info, event_expr, slot_index_expr),
         line = 0,
         source_path = "",
     )
 
 
-function event_slot_field_expression(slot_pointer_expr: ptr[ir.Expr], field_name: str, field_ty: types.Type) -> ptr[ir.Expr]:
+function event_slot_field_expr(slot_pointer_expr: ptr[ir.Expr], field_name: str, field_ty: types.Type) -> ptr[ir.Expr]:
     return alloc_expr(ir.Expr.expr_member(receiver = slot_pointer_expr, member = field_name, ty = field_ty))
 
 
-function event_slot_active_expression(slot_pointer_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
-    return event_slot_field_expression(slot_pointer_expr, "active", types.primitive("bool"))
+function event_slot_active_expr(slot_pointer_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    return event_slot_field_expr(slot_pointer_expr, "active", types.primitive("bool"))
 
 
-function event_slot_wait_frame_expression(slot_pointer_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
-    return event_slot_field_expression(slot_pointer_expr, "wait_frame", types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))))
+function event_slot_wait_frame_expr(slot_pointer_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    return event_slot_field_expr(slot_pointer_expr, "wait_frame", types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))))
 
 
 function active_event_slot_continue_guard(slot_pointer_expr: ptr[ir.Expr]) -> ir.Stmt:
     return ir.Stmt.stmt_if(
-        condition = event_slot_active_expression(slot_pointer_expr),
+        condition = event_slot_active_expr(slot_pointer_expr),
         then_body = span_from_one(ir.Stmt.stmt_continue),
         else_body = Option[span[ir.Stmt]].none,
     )
 
 
 function inactive_event_slot_continue_guard(slot_pointer_expr: ptr[ir.Expr]) -> ir.Stmt:
-    let not_active = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = event_slot_active_expression(slot_pointer_expr), ty = types.primitive("bool")))
+    let not_active = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = event_slot_active_expr(slot_pointer_expr), ty = types.primitive("bool")))
     return ir.Stmt.stmt_if(
         condition = not_active,
         then_body = span_from_one(ir.Stmt.stmt_continue),
@@ -15671,8 +15671,8 @@ function inactive_event_slot_continue_guard(slot_pointer_expr: ptr[ir.Expr]) -> 
     )
 
 
-function event_next_generation_expression(slot_pointer_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
-    let generation = event_slot_field_expression(slot_pointer_expr, "generation", types.primitive("ptr_uint"))
+function event_next_generation_expr(slot_pointer_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    let generation = event_slot_field_expr(slot_pointer_expr, "generation", types.primitive("ptr_uint"))
     return alloc_expr(ir.Expr.expr_binary(operator = "+", left = generation, right = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = types.primitive("ptr_uint"))), ty = types.primitive("ptr_uint")))
 
 
@@ -15687,14 +15687,14 @@ function event_slot_activate_statements(info: ref[EventRuntimeInfo], slot_pointe
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     var statements = vec.Vec[ir.Stmt].create()
-    statements.push(event_slot_assign(event_slot_active_expression(slot_pointer_expr), alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
-    statements.push(event_slot_assign(event_slot_field_expression(slot_pointer_expr, "once", bool_ty), alloc_expr(ir.Expr.expr_boolean_literal(value = once, ty = bool_ty))))
-    statements.push(event_slot_assign(event_slot_field_expression(slot_pointer_expr, "generation", ptr_uint_ty), generation_expr))
-    statements.push(event_slot_assign(event_slot_field_expression(slot_pointer_expr, "state", void_ptr_ty), alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr_ty))))
+    statements.push(event_slot_assign(event_slot_active_expr(slot_pointer_expr), alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
+    statements.push(event_slot_assign(event_slot_field_expr(slot_pointer_expr, "once", bool_ty), alloc_expr(ir.Expr.expr_boolean_literal(value = once, ty = bool_ty))))
+    statements.push(event_slot_assign(event_slot_field_expr(slot_pointer_expr, "generation", ptr_uint_ty), generation_expr))
+    statements.push(event_slot_assign(event_slot_field_expr(slot_pointer_expr, "state", void_ptr_ty), alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr_ty))))
     if listener_expr != null:
         let le = unsafe: ptr[ir.Expr]<-listener_expr
-        statements.push(event_slot_assign(event_slot_field_expression(slot_pointer_expr, "listener", event_listener_type(info)), le))
-    statements.push(event_slot_assign(event_slot_wait_frame_expression(slot_pointer_expr), wait_frame_expr))
+        statements.push(event_slot_assign(event_slot_field_expr(slot_pointer_expr, "listener", event_listener_type(info)), le))
+    statements.push(event_slot_assign(event_slot_wait_frame_expr(slot_pointer_expr), wait_frame_expr))
     return statements.as_span()
 
 
@@ -15705,12 +15705,12 @@ function event_slot_activate_stateful_statements(info: ref[EventRuntimeInfo], sl
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     var statements = vec.Vec[ir.Stmt].create()
-    statements.push(event_slot_assign(event_slot_active_expression(slot_pointer_expr), alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
-    statements.push(event_slot_assign(event_slot_field_expression(slot_pointer_expr, "once", bool_ty), alloc_expr(ir.Expr.expr_boolean_literal(value = once, ty = bool_ty))))
-    statements.push(event_slot_assign(event_slot_field_expression(slot_pointer_expr, "generation", ptr_uint_ty), generation_expr))
-    statements.push(event_slot_assign(event_slot_field_expression(slot_pointer_expr, "state", void_ptr_ty), state_expr))
-    statements.push(event_slot_assign(event_slot_field_expression(slot_pointer_expr, "listener", event_listener_type(info)), listener_expr))
-    statements.push(event_slot_assign(event_slot_wait_frame_expression(slot_pointer_expr), wait_frame_expr))
+    statements.push(event_slot_assign(event_slot_active_expr(slot_pointer_expr), alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
+    statements.push(event_slot_assign(event_slot_field_expr(slot_pointer_expr, "once", bool_ty), alloc_expr(ir.Expr.expr_boolean_literal(value = once, ty = bool_ty))))
+    statements.push(event_slot_assign(event_slot_field_expr(slot_pointer_expr, "generation", ptr_uint_ty), generation_expr))
+    statements.push(event_slot_assign(event_slot_field_expr(slot_pointer_expr, "state", void_ptr_ty), state_expr))
+    statements.push(event_slot_assign(event_slot_field_expr(slot_pointer_expr, "listener", event_listener_type(info)), listener_expr))
+    statements.push(event_slot_assign(event_slot_wait_frame_expr(slot_pointer_expr), wait_frame_expr))
     return statements.as_span()
 
 
@@ -15719,24 +15719,24 @@ function event_slot_clear_statements(slot_pointer_expr: ptr[ir.Expr]) -> span[ir
     let bool_ty = types.primitive("bool")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     var statements = vec.Vec[ir.Stmt].create()
-    statements.push(event_slot_assign(event_slot_active_expression(slot_pointer_expr), alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty))))
-    statements.push(event_slot_assign(event_slot_field_expression(slot_pointer_expr, "once", bool_ty), alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty))))
-    statements.push(event_slot_assign(event_slot_wait_frame_expression(slot_pointer_expr), alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr_ty))))
+    statements.push(event_slot_assign(event_slot_active_expr(slot_pointer_expr), alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty))))
+    statements.push(event_slot_assign(event_slot_field_expr(slot_pointer_expr, "once", bool_ty), alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty))))
+    statements.push(event_slot_assign(event_slot_wait_frame_expr(slot_pointer_expr), alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr_ty))))
     return statements.as_span()
 
 
 ## The host's `snapshot_field_expression`: `snapshots[index].field`.
-function event_snapshot_field_expression(info: ref[EventRuntimeInfo], snapshots_expr: ptr[ir.Expr], index_expr: ptr[ir.Expr], field_name: str, field_ty: types.Type) -> ptr[ir.Expr]:
+function event_snapshot_field_expr(info: ref[EventRuntimeInfo], snapshots_expr: ptr[ir.Expr], index_expr: ptr[ir.Expr], field_name: str, field_ty: types.Type) -> ptr[ir.Expr]:
     let snapshot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = strings.join_two(info.linkage_name, "__snapshot"))
     let snapshot_index = alloc_expr(ir.Expr.expr_index(receiver = snapshots_expr, index = index_expr, ty = snapshot_ty))
     return alloc_expr(ir.Expr.expr_member(receiver = snapshot_index, member = field_name, ty = field_ty))
 
 
-function event_subscription_field_expression(subscription_expr: ptr[ir.Expr], field_name: str, field_ty: types.Type) -> ptr[ir.Expr]:
+function event_subscription_field_expr(subscription_expr: ptr[ir.Expr], field_name: str, field_ty: types.Type) -> ptr[ir.Expr]:
     return alloc_expr(ir.Expr.expr_member(receiver = subscription_expr, member = field_name, ty = field_ty))
 
 
-function event_wait_frame_field_expression(frame_expr: ptr[ir.Expr], field_name: str, field_ty: types.Type) -> ptr[ir.Expr]:
+function event_wait_frame_field_expr(frame_expr: ptr[ir.Expr], field_name: str, field_ty: types.Type) -> ptr[ir.Expr]:
     return alloc_expr(ir.Expr.expr_member(receiver = frame_expr, member = field_name, ty = field_ty))
 
 
@@ -15754,8 +15754,8 @@ function event_subscription_success_literal(result_type: types.Type, slot_expr: 
     return alloc_expr(ir.Expr.expr_variant_literal(ty = result_type, arm_name = "success", fields = fields.as_span()))
 
 
-## The host's `void_value_expression`: `(void) 0`.
-function void_value_expression() -> ptr[ir.Expr]:
+## The host's `void_value_expr`: `(void) 0`.
+function void_value_expr() -> ptr[ir.Expr]:
     return alloc_expr(ir.Expr.expr_cast(
         target_type = types.primitive("void"),
         expression = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("int"))),
@@ -15764,7 +15764,7 @@ function void_value_expression() -> ptr[ir.Expr]:
 
 
 function event_wait_success_literal(result_type: types.Type, payload_expr: ptr[ir.Expr]?) -> ptr[ir.Expr]:
-    var value = void_value_expression()
+    var value = void_value_expr()
     if payload_expr != null:
         value = unsafe: ptr[ir.Expr]<-payload_expr
     var fields = vec.Vec[ir.AggregateField].create()
@@ -15787,12 +15787,12 @@ function event_unsubscribe_call(info: ref[EventRuntimeInfo], event_expr: ptr[ir.
     ))
 
 
-function event_listener_call_expression(info: ref[EventRuntimeInfo], snapshots_expr: ptr[ir.Expr], dispatch_index_expr: ptr[ir.Expr], payload_expr: ptr[ir.Expr]?) -> ptr[ir.Expr]:
+function event_listener_call_expr(info: ref[EventRuntimeInfo], snapshots_expr: ptr[ir.Expr], dispatch_index_expr: ptr[ir.Expr], payload_expr: ptr[ir.Expr]?) -> ptr[ir.Expr]:
     let listener_ty = event_listener_type(info)
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     let listener = alloc_expr(ir.Expr.expr_cast(
         target_type = listener_ty,
-        expression = event_snapshot_field_expression(info, snapshots_expr, dispatch_index_expr, "listener", void_ptr_ty),
+        expression = event_snapshot_field_expr(info, snapshots_expr, dispatch_index_expr, "listener", void_ptr_ty),
         ty = listener_ty,
     ))
     var arguments = vec.Vec[ir.Expr].create()
@@ -15802,17 +15802,17 @@ function event_listener_call_expression(info: ref[EventRuntimeInfo], snapshots_e
     return alloc_expr(ir.Expr.expr_call_indirect(callee = listener, arguments = arguments.as_span(), ty = types.primitive("void")))
 
 
-function event_stateful_listener_call_expression(info: ref[EventRuntimeInfo], snapshots_expr: ptr[ir.Expr], dispatch_index_expr: ptr[ir.Expr], payload_expr: ptr[ir.Expr]?) -> ptr[ir.Expr]:
+function event_stateful_listener_call_expr(info: ref[EventRuntimeInfo], snapshots_expr: ptr[ir.Expr], dispatch_index_expr: ptr[ir.Expr], payload_expr: ptr[ir.Expr]?) -> ptr[ir.Expr]:
     let listener_ty = event_stateful_listener_type(info)
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     let listener = alloc_expr(ir.Expr.expr_cast(
         target_type = listener_ty,
-        expression = event_snapshot_field_expression(info, snapshots_expr, dispatch_index_expr, "listener", void_ptr_ty),
+        expression = event_snapshot_field_expr(info, snapshots_expr, dispatch_index_expr, "listener", void_ptr_ty),
         ty = listener_ty,
     ))
     var arguments = vec.Vec[ir.Expr].create()
     unsafe:
-        arguments.push(read(event_snapshot_field_expression(info, snapshots_expr, dispatch_index_expr, "state", void_ptr_ty)))
+        arguments.push(read(event_snapshot_field_expr(info, snapshots_expr, dispatch_index_expr, "state", void_ptr_ty)))
     if payload_expr != null:
         unsafe:
             arguments.push(read(unsafe: ptr[ir.Expr]<-payload_expr))
@@ -15899,7 +15899,7 @@ function build_event_subscribe_fn(ctx: ref[LoweringContext], info: ref[EventRunt
     var loop_body = vec.Vec[ir.Stmt].create()
     loop_body.push(event_slot_local_decl(info, event_expr, slot_index_expr, "__mt_slot"))
     loop_body.push(active_event_slot_continue_guard(slot_pointer_expr))
-    loop_body.push(ir.Stmt.stmt_local(name = "__mt_generation", linkage_name = "__mt_generation", ty = ptr_uint_ty, value = event_next_generation_expression(slot_pointer_expr), line = 0, source_path = ""))
+    loop_body.push(ir.Stmt.stmt_local(name = "__mt_generation", linkage_name = "__mt_generation", ty = ptr_uint_ty, value = event_next_generation_expr(slot_pointer_expr), line = 0, source_path = ""))
     let listener_cast = alloc_expr(ir.Expr.expr_cast(target_type = void_ptr_ty, expression = listener_expr, ty = void_ptr_ty))
     let activate = event_slot_activate_statements(info, slot_pointer_expr, generation_expr, once, alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr_ty)), listener_cast)
     var ai: ptr_uint = 0
@@ -15952,7 +15952,7 @@ function build_event_subscribe_stateful_fn(ctx: ref[LoweringContext], info: ref[
     var loop_body = vec.Vec[ir.Stmt].create()
     loop_body.push(event_slot_local_decl(info, event_expr, slot_index_expr, "__mt_slot"))
     loop_body.push(active_event_slot_continue_guard(slot_pointer_expr))
-    loop_body.push(ir.Stmt.stmt_local(name = "__mt_generation", linkage_name = "__mt_generation", ty = ptr_uint_ty, value = event_next_generation_expression(slot_pointer_expr), line = 0, source_path = ""))
+    loop_body.push(ir.Stmt.stmt_local(name = "__mt_generation", linkage_name = "__mt_generation", ty = ptr_uint_ty, value = event_next_generation_expr(slot_pointer_expr), line = 0, source_path = ""))
     let activate = event_slot_activate_stateful_statements(info, slot_pointer_expr, generation_expr, once, state_expr, alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr_ty)), listener_expr)
     var ai: ptr_uint = 0
     while ai < activate.len:
@@ -15980,7 +15980,7 @@ function build_event_unsubscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, e
     let sub_ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription")
     let event_expr = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     let subscription_expr = alloc_expr(ir.Expr.expr_name(name = "subscription", ty = sub_ty, pointer = Option[bool].some(value = false)))
-    let slot_index_expr = event_subscription_field_expression(subscription_expr, "slot", ptr_uint_ty)
+    let slot_index_expr = event_subscription_field_expr(subscription_expr, "slot", ptr_uint_ty)
     let slot_pointer_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_slot", ty = slot_ptr_ty, pointer = Option[bool].some(value = false)))
     let false_value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty))
     let true_value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))
@@ -15993,15 +15993,15 @@ function build_event_unsubscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, e
     ))
     body.push(event_slot_local_decl(info, event_expr, slot_index_expr, "__mt_slot"))
     body.push(ir.Stmt.stmt_if(
-        condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = event_slot_active_expression(slot_pointer_expr), ty = bool_ty)),
+        condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = event_slot_active_expr(slot_pointer_expr), ty = bool_ty)),
         then_body = span_from_one(ir.Stmt.stmt_return(value = false_value, line = 0, source_path = "")),
         else_body = Option[span[ir.Stmt]].none,
     ))
     body.push(ir.Stmt.stmt_if(
         condition = alloc_expr(ir.Expr.expr_binary(
             operator = "!=",
-            left = event_slot_field_expression(slot_pointer_expr, "generation", ptr_uint_ty),
-            right = event_subscription_field_expression(subscription_expr, "generation", ptr_uint_ty),
+            left = event_slot_field_expr(slot_pointer_expr, "generation", ptr_uint_ty),
+            right = event_subscription_field_expr(subscription_expr, "generation", ptr_uint_ty),
             ty = bool_ty,
         )),
         then_body = span_from_one(ir.Stmt.stmt_return(value = false_value, line = 0, source_path = "")),
@@ -16048,49 +16048,49 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     var collect_body = vec.Vec[ir.Stmt].create()
     collect_body.push(event_slot_local_decl(info, event_expr, slot_index_expr, "__mt_slot"))
     collect_body.push(inactive_event_slot_continue_guard(slot_pointer_expr))
-    collect_body.push(event_slot_assign(event_snapshot_field_expression(info, snapshots_expr, snapshot_count_expr, "slot", ptr_uint_ty), slot_index_expr))
-    collect_body.push(event_slot_assign(event_snapshot_field_expression(info, snapshots_expr, snapshot_count_expr, "generation", ptr_uint_ty), event_slot_field_expression(slot_pointer_expr, "generation", ptr_uint_ty)))
-    collect_body.push(event_slot_assign(event_snapshot_field_expression(info, snapshots_expr, snapshot_count_expr, "once", bool_ty), event_slot_field_expression(slot_pointer_expr, "once", bool_ty)))
+    collect_body.push(event_slot_assign(event_snapshot_field_expr(info, snapshots_expr, snapshot_count_expr, "slot", ptr_uint_ty), slot_index_expr))
+    collect_body.push(event_slot_assign(event_snapshot_field_expr(info, snapshots_expr, snapshot_count_expr, "generation", ptr_uint_ty), event_slot_field_expr(slot_pointer_expr, "generation", ptr_uint_ty)))
+    collect_body.push(event_slot_assign(event_snapshot_field_expr(info, snapshots_expr, snapshot_count_expr, "once", bool_ty), event_slot_field_expr(slot_pointer_expr, "once", bool_ty)))
     collect_body.push(event_slot_assign(
-        event_snapshot_field_expression(info, snapshots_expr, snapshot_count_expr, "wait_slot", bool_ty),
+        event_snapshot_field_expr(info, snapshots_expr, snapshot_count_expr, "wait_slot", bool_ty),
         alloc_expr(ir.Expr.expr_binary(
             operator = "!=",
-            left = event_slot_wait_frame_expression(slot_pointer_expr),
+            left = event_slot_wait_frame_expr(slot_pointer_expr),
             right = alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr_ty)),
             ty = bool_ty,
         )),
     ))
     collect_body.push(event_slot_assign(
-        event_snapshot_field_expression(info, snapshots_expr, snapshot_count_expr, "stateful", bool_ty),
+        event_snapshot_field_expr(info, snapshots_expr, snapshot_count_expr, "stateful", bool_ty),
         alloc_expr(ir.Expr.expr_binary(
             operator = "!=",
-            left = event_slot_field_expression(slot_pointer_expr, "state", void_ptr_ty),
+            left = event_slot_field_expr(slot_pointer_expr, "state", void_ptr_ty),
             right = alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr_ty)),
             ty = bool_ty,
         )),
     ))
-    collect_body.push(event_slot_assign(event_snapshot_field_expression(info, snapshots_expr, snapshot_count_expr, "state", void_ptr_ty), event_slot_field_expression(slot_pointer_expr, "state", void_ptr_ty)))
-    collect_body.push(event_slot_assign(event_snapshot_field_expression(info, snapshots_expr, snapshot_count_expr, "listener", void_ptr_ty), event_slot_field_expression(slot_pointer_expr, "listener", void_ptr_ty)))
+    collect_body.push(event_slot_assign(event_snapshot_field_expr(info, snapshots_expr, snapshot_count_expr, "state", void_ptr_ty), event_slot_field_expr(slot_pointer_expr, "state", void_ptr_ty)))
+    collect_body.push(event_slot_assign(event_snapshot_field_expr(info, snapshots_expr, snapshot_count_expr, "listener", void_ptr_ty), event_slot_field_expr(slot_pointer_expr, "listener", void_ptr_ty)))
     collect_body.push(ir.Stmt.stmt_assignment(target = snapshot_count_expr, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
 
     let snapshot_subscription_expr = event_subscription_literal(
-        event_snapshot_field_expression(info, snapshots_expr, dispatch_index_expr, "slot", ptr_uint_ty),
-        event_snapshot_field_expression(info, snapshots_expr, dispatch_index_expr, "generation", ptr_uint_ty),
+        event_snapshot_field_expr(info, snapshots_expr, dispatch_index_expr, "slot", ptr_uint_ty),
+        event_snapshot_field_expr(info, snapshots_expr, dispatch_index_expr, "generation", ptr_uint_ty),
     )
     let wait_slot_condition = alloc_expr(ir.Expr.expr_binary(
         operator = "and",
-        left = event_slot_active_expression(slot_pointer_expr),
+        left = event_slot_active_expr(slot_pointer_expr),
         right = alloc_expr(ir.Expr.expr_binary(
             operator = "and",
             left = alloc_expr(ir.Expr.expr_binary(
                 operator = "==",
-                left = event_slot_field_expression(slot_pointer_expr, "generation", ptr_uint_ty),
-                right = event_snapshot_field_expression(info, snapshots_expr, dispatch_index_expr, "generation", ptr_uint_ty),
+                left = event_slot_field_expr(slot_pointer_expr, "generation", ptr_uint_ty),
+                right = event_snapshot_field_expr(info, snapshots_expr, dispatch_index_expr, "generation", ptr_uint_ty),
                 ty = bool_ty,
             )),
             right = alloc_expr(ir.Expr.expr_binary(
                 operator = "!=",
-                left = event_slot_wait_frame_expression(slot_pointer_expr),
+                left = event_slot_wait_frame_expr(slot_pointer_expr),
                 right = alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr_ty)),
                 ty = bool_ty,
             )),
@@ -16098,25 +16098,25 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
         )),
         ty = bool_ty,
     ))
-    let waiter_frame_expr = event_wait_frame_field_expression(frame_pointer_expr, "waiter_frame", void_ptr_ty)
+    let waiter_frame_expr = event_wait_frame_field_expr(frame_pointer_expr, "waiter_frame", void_ptr_ty)
     var wait_then_body = vec.Vec[ir.Stmt].create()
     wait_then_body.push(ir.Stmt.stmt_local(
         name = "__mt_wait_frame",
         linkage_name = "__mt_wait_frame",
         ty = wait_frame_ptr_ty,
-        value = alloc_expr(ir.Expr.expr_cast(target_type = wait_frame_ptr_ty, expression = event_slot_wait_frame_expression(slot_pointer_expr), ty = wait_frame_ptr_ty)),
+        value = alloc_expr(ir.Expr.expr_cast(target_type = wait_frame_ptr_ty, expression = event_slot_wait_frame_expr(slot_pointer_expr), ty = wait_frame_ptr_ty)),
         line = 0,
         source_path = "",
     ))
     wait_then_body.push(ir.Stmt.stmt_expression(expression = event_unsubscribe_call(info, event_expr, snapshot_subscription_expr), line = 0, source_path = ""))
-    wait_then_body.push(event_slot_assign(event_wait_frame_field_expression(frame_pointer_expr, "result", info.wait_result_ty), event_wait_success_literal(info.wait_result_ty, payload_expr)))
-    wait_then_body.push(event_slot_assign(event_wait_frame_field_expression(frame_pointer_expr, "ready", bool_ty), alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
+    wait_then_body.push(event_slot_assign(event_wait_frame_field_expr(frame_pointer_expr, "result", info.wait_result_ty), event_wait_success_literal(info.wait_result_ty, payload_expr)))
+    wait_then_body.push(event_slot_assign(event_wait_frame_field_expr(frame_pointer_expr, "ready", bool_ty), alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
     var wake_body = vec.Vec[ir.Stmt].create()
     wake_body.push(ir.Stmt.stmt_local(name = "__mt_waiter_frame", linkage_name = "__mt_waiter_frame", ty = void_ptr_ty, value = waiter_frame_expr, line = 0, source_path = ""))
     wake_body.push(event_slot_assign(waiter_frame_expr, alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr_ty))))
     wake_body.push(ir.Stmt.stmt_expression(
         expression = alloc_expr(ir.Expr.expr_call_indirect(
-            callee = event_wait_frame_field_expression(frame_pointer_expr, "waiter", event_task_wake_fn_type()),
+            callee = event_wait_frame_field_expr(frame_pointer_expr, "waiter", event_task_wake_fn_type()),
             arguments = single_expr_span(alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))),
             ty = void_ty,
         )),
@@ -16136,25 +16136,25 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     var dispatch_body = vec.Vec[ir.Stmt].create()
     var already_handled_body = vec.Vec[ir.Stmt].create()
     already_handled_body.push(ir.Stmt.stmt_if(
-        condition = event_snapshot_field_expression(info, snapshots_expr, dispatch_index_expr, "once", bool_ty),
+        condition = event_snapshot_field_expr(info, snapshots_expr, dispatch_index_expr, "once", bool_ty),
         then_body = span_from_one(ir.Stmt.stmt_expression(expression = event_unsubscribe_call(info, event_expr, snapshot_subscription_expr), line = 0, source_path = "")),
         else_body = Option[span[ir.Stmt]].none,
     ))
     already_handled_body.push(ir.Stmt.stmt_if(
-        condition = event_snapshot_field_expression(info, snapshots_expr, dispatch_index_expr, "stateful", bool_ty),
-        then_body = span_from_one(ir.Stmt.stmt_expression(expression = event_stateful_listener_call_expression(info, snapshots_expr, dispatch_index_expr, payload_expr), line = 0, source_path = "")),
-        else_body = Option[span[ir.Stmt]].some(value = span_from_one(ir.Stmt.stmt_expression(expression = event_listener_call_expression(info, snapshots_expr, dispatch_index_expr, payload_expr), line = 0, source_path = ""))),
+        condition = event_snapshot_field_expr(info, snapshots_expr, dispatch_index_expr, "stateful", bool_ty),
+        then_body = span_from_one(ir.Stmt.stmt_expression(expression = event_stateful_listener_call_expr(info, snapshots_expr, dispatch_index_expr, payload_expr), line = 0, source_path = "")),
+        else_body = Option[span[ir.Stmt]].some(value = span_from_one(ir.Stmt.stmt_expression(expression = event_listener_call_expr(info, snapshots_expr, dispatch_index_expr, payload_expr), line = 0, source_path = ""))),
     ))
     var wait_slot_body = vec.Vec[ir.Stmt].create()
     wait_slot_body.push(event_slot_local_decl(
         info,
         event_expr,
-        event_snapshot_field_expression(info, snapshots_expr, dispatch_index_expr, "slot", ptr_uint_ty),
+        event_snapshot_field_expr(info, snapshots_expr, dispatch_index_expr, "slot", ptr_uint_ty),
         "__mt_slot",
     ))
     wait_slot_body.push(ir.Stmt.stmt_if(condition = wait_slot_condition, then_body = wait_then_body.as_span(), else_body = Option[span[ir.Stmt]].none))
     dispatch_body.push(ir.Stmt.stmt_if(
-        condition = event_snapshot_field_expression(info, snapshots_expr, dispatch_index_expr, "wait_slot", bool_ty),
+        condition = event_snapshot_field_expr(info, snapshots_expr, dispatch_index_expr, "wait_slot", bool_ty),
         then_body = wait_slot_body.as_span(),
         else_body = Option[span[ir.Stmt]].some(value = already_handled_body.as_span()),
     ))
@@ -16197,7 +16197,7 @@ function build_event_wait_ready_fn(info: ref[EventRuntimeInfo], slot_cn: str, ev
         else_body = Option[span[ir.Stmt]].none,
     ))
     body.push(ir.Stmt.stmt_local(name = "__mt_wait_frame", linkage_name = "__mt_wait_frame", ty = wf_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = wf_ptr_ty, expression = raw_expr, ty = wf_ptr_ty)), line = 0, source_path = ""))
-    body.push(ir.Stmt.stmt_return(value = event_wait_frame_field_expression(frame_expr, "ready", bool_ty), line = 0, source_path = ""))
+    body.push(ir.Stmt.stmt_return(value = event_wait_frame_field_expr(frame_expr, "ready", bool_ty), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     return ir.Function(name = strings.join_two(info.wait_ready_c_name, "_fn"), linkage_name = info.wait_ready_c_name, params = params.as_span(), return_type = bool_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
@@ -16230,12 +16230,12 @@ function build_event_wait_set_waiter_fn(info: ref[EventRuntimeInfo], slot_cn: st
     ready_then.push(call_waiter)
     ready_then.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     body.push(ir.Stmt.stmt_if(
-        condition = event_wait_frame_field_expression(frame_expr, "ready", bool_ty),
+        condition = event_wait_frame_field_expr(frame_expr, "ready", bool_ty),
         then_body = ready_then.as_span(),
         else_body = Option[span[ir.Stmt]].none,
     ))
-    body.push(event_slot_assign(event_wait_frame_field_expression(frame_expr, "waiter_frame", void_ptr_ty), waiter_frame_expr))
-    body.push(event_slot_assign(event_wait_frame_field_expression(frame_expr, "waiter", wake_ty), waiter_expr))
+    body.push(event_slot_assign(event_wait_frame_field_expr(frame_expr, "waiter_frame", void_ptr_ty), waiter_frame_expr))
+    body.push(event_slot_assign(event_wait_frame_field_expr(frame_expr, "waiter", wake_ty), waiter_expr))
     body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
@@ -16264,13 +16264,13 @@ function build_event_wait_release_fn(info: ref[EventRuntimeInfo], slot_cn: str, 
     body.push(ir.Stmt.stmt_local(name = "__mt_wait_frame", linkage_name = "__mt_wait_frame", ty = wf_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = wf_ptr_ty, expression = raw_expr, ty = wf_ptr_ty)), line = 0, source_path = ""))
     let event_cast = alloc_expr(ir.Expr.expr_cast(
         target_type = event_ptr_ty,
-        expression = event_wait_frame_field_expression(frame_expr, "event", void_ptr_ty),
+        expression = event_wait_frame_field_expr(frame_expr, "event", void_ptr_ty),
         ty = event_ptr_ty,
     ))
     body.push(ir.Stmt.stmt_if(
-        condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = event_wait_frame_field_expression(frame_expr, "ready", bool_ty), ty = bool_ty)),
+        condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = event_wait_frame_field_expr(frame_expr, "ready", bool_ty), ty = bool_ty)),
         then_body = span_from_one(ir.Stmt.stmt_expression(
-            expression = event_unsubscribe_call(info, event_cast, event_wait_frame_field_expression(frame_expr, "subscription", sub_ty)),
+            expression = event_unsubscribe_call(info, event_cast, event_wait_frame_field_expr(frame_expr, "subscription", sub_ty)),
             line = 0,
             source_path = "",
         )),
@@ -16299,7 +16299,7 @@ function build_event_wait_take_result_fn(ctx: ref[LoweringContext], info: ref[Ev
         else_body = Option[span[ir.Stmt]].none,
     ))
     body.push(ir.Stmt.stmt_local(name = "__mt_wait_frame", linkage_name = "__mt_wait_frame", ty = wf_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = wf_ptr_ty, expression = raw_expr, ty = wf_ptr_ty)), line = 0, source_path = ""))
-    body.push(ir.Stmt.stmt_return(value = event_wait_frame_field_expression(frame_expr, "result", info.wait_result_ty), line = 0, source_path = ""))
+    body.push(ir.Stmt.stmt_return(value = event_wait_frame_field_expr(frame_expr, "result", info.wait_result_ty), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     return ir.Function(name = strings.join_two(info.wait_take_result_c_name, "_fn"), linkage_name = info.wait_take_result_c_name, params = params.as_span(), return_type = info.wait_result_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
@@ -16333,21 +16333,21 @@ function build_event_wait_fn(ctx: ref[LoweringContext], info: ref[EventRuntimeIn
     var loop_body = vec.Vec[ir.Stmt].create()
     loop_body.push(event_slot_local_decl(info, event_expr, slot_index_expr, "__mt_slot"))
     loop_body.push(active_event_slot_continue_guard(slot_pointer_expr))
-    loop_body.push(ir.Stmt.stmt_local(name = "__mt_generation", linkage_name = "__mt_generation", ty = ptr_uint_ty, value = event_next_generation_expression(slot_pointer_expr), line = 0, source_path = ""))
+    loop_body.push(ir.Stmt.stmt_local(name = "__mt_generation", linkage_name = "__mt_generation", ty = ptr_uint_ty, value = event_next_generation_expr(slot_pointer_expr), line = 0, source_path = ""))
     let wf_size_expr = alloc_expr(ir.Expr.expr_sizeof(target_type = wait_frame_ty, ty = ptr_uint_ty))
     let alloc_call = alloc_expr(ir.Expr.expr_call(callee = "mt_async_alloc", arguments = single_expr_span(wf_size_expr), ty = void_ptr_ty))
     loop_body.push(ir.Stmt.stmt_local(name = "__mt_wait_frame", linkage_name = "__mt_wait_frame", ty = wf_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = wf_ptr_ty, expression = alloc_call, ty = wf_ptr_ty)), line = 0, source_path = ""))
     let frame_deref = alloc_expr(ir.Expr.expr_unary(operator = "*", operand = frame_expr, ty = wait_frame_ty))
     loop_body.push(event_slot_assign(frame_deref, alloc_expr(ir.Expr.expr_zero_init(ty = wait_frame_ty))))
     let event_cast = alloc_expr(ir.Expr.expr_cast(target_type = void_ptr_ty, expression = event_expr, ty = void_ptr_ty))
-    loop_body.push(event_slot_assign(event_wait_frame_field_expression(frame_expr, "event", void_ptr_ty), event_cast))
+    loop_body.push(event_slot_assign(event_wait_frame_field_expr(frame_expr, "event", void_ptr_ty), event_cast))
     let activate = event_slot_activate_statements(info, slot_pointer_expr, generation_expr, true, raw_frame_expr, null)
     var ai: ptr_uint = 0
     while ai < activate.len:
         unsafe:
             loop_body.push(read(activate.data + ai))
         ai += 1
-    loop_body.push(event_slot_assign(event_wait_frame_field_expression(frame_expr, "subscription", sub_ty), event_subscription_literal(slot_index_expr, generation_expr)))
+    loop_body.push(event_slot_assign(event_wait_frame_field_expr(frame_expr, "subscription", sub_ty), event_subscription_literal(slot_index_expr, generation_expr)))
     loop_body.push(ir.Stmt.stmt_return(value = event_task_literal(info, frame_expr), line = 0, source_path = ""))
     var body = vec.Vec[ir.Stmt].create()
     body.push(ir.Stmt.stmt_for(init = init, condition = cond, post = post, body = loop_body.as_span()))
@@ -17681,7 +17681,7 @@ function append_foreign_consuming_releases(ctx: ref[LoweringContext], output: re
             unsafe:
                 match read(arg.arg_value):
                     ast.Expr.expr_identifier as aid:
-                        match lookup_local(ctx, aid.name):
+                        match find_local_binding(ctx, aid.name):
                             Option.some as lb:
                                 let b = lb.value
                                 # The binding's *storage* type: a guard-bound
@@ -18297,7 +18297,7 @@ function member_receiver_is_local(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) 
     unsafe:
         match read(ep):
             ast.Expr.expr_identifier as id:
-                if lookup_local(ctx, id.name).is_some():
+                if find_local_binding(ctx, id.name).is_some():
                     return true
                 return ctx.mapping_replacements.get(id.name) != null
             _:
@@ -18792,7 +18792,7 @@ function lower_foreign_arg(ctx: ref[LoweringContext], info: ForeignInfo, param: 
                     return null_literal_to_context_type(arg, in_ty, lowered_val)
                 let in_target = types.Type.ty_generic(name = "const_ptr", args = sp_type(in_ty))
                 var address: ptr[ir.Expr]
-                match addr_operand_expression(lowered_val):
+                match addr_operand_expr(lowered_val):
                     Option.some as op:
                         let op_ty = ir_expr_type(op.value)
                         if types.type_equals(op_ty, in_target):
@@ -18851,7 +18851,7 @@ function lower_foreign_arg(ctx: ref[LoweringContext], info: ForeignInfo, param: 
                     slot_ty = types.unwrap_nullable(slot_ty)
                 let slot_is_pointer = types.is_raw_pointer(slot_ty) or types.is_ref_type(slot_ty) or types.is_own_type(slot_ty)
                 let slot_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(qualify_type(ctx, slot_ty)))
-                match addr_operand_expression(lowered):
+                match addr_operand_expr(lowered):
                     Option.some as op:
                         return alloc_expr(ir.Expr.expr_cast(target_type = slot_ptr_ty, expression = op.value, ty = slot_ptr_ty))
                     Option.none:
@@ -18987,7 +18987,7 @@ function resolve_alias_targeting_module(analyses: span[analyzer.Analysis], modul
 ## `pointer: true` (a C pointer variable, e.g. an editable method's `this`
 ## receiver) is itself the pointer, and `*p` unwraps to `p`.  None for
 ## everything else (which takes `IR::AddressOf`).
-function addr_operand_expression(ep: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
+function addr_operand_expr(ep: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(ep):
             ir.Expr.expr_name as n:
@@ -19195,7 +19195,7 @@ function lower_extern_call(ctx: ref[LoweringContext], info: ForeignInfo, args: s
                 if types.is_nullable_type(slot_ty) and is_nullable_pointer_like(slot_ty):
                     slot_ty = types.unwrap_nullable(slot_ty)
                 let slot_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(qualify_type(ctx, slot_ty)))
-                match addr_operand_expression(lowered):
+                match addr_operand_expr(lowered):
                     Option.some as op:
                         lowered = alloc_expr(ir.Expr.expr_cast(target_type = slot_ptr_ty, expression = op.value, ty = slot_ptr_ty))
                     Option.none:
@@ -19222,7 +19222,7 @@ function collect_function_returns(ctx: ref[LoweringContext], decls: span[ast.Dec
                 # instantiate bogus concrete types.  Specializations record
                 # their own return types.
                 if fun.type_params.len == 0:
-                    var ret = resolve_return_type(ctx, lookup_fn_sig(ctx, fun.name), fun.return_type)
+                    var ret = resolve_return_type(ctx, find_fn_sig(ctx, fun.name), fun.return_type)
                     if fun.is_async:
                         ret = make_task_type(ret)
                     ctx.function_returns.set(fun.name, ret)
@@ -19443,7 +19443,7 @@ function function_return_type(ctx: ref[LoweringContext], name: str) -> types.Typ
     if ret_ptr != null:
         unsafe:
             return read(ret_ptr)
-    return fn_sig_return_type(lookup_fn_sig(ctx, name))
+    return fn_sig_return_type(find_fn_sig(ctx, name))
 
 
 ## The C name an external function maps to: its explicit `= c.name` mapping value
@@ -22722,7 +22722,7 @@ function variant_base_name(name: str) -> Option[str]:
 #  Type resolution helpers
 # =============================================================================
 
-function lookup_fn_sig(ctx: ref[LoweringContext], name: str) -> Option[analyzer.FnSig]:
+function find_fn_sig(ctx: ref[LoweringContext], name: str) -> Option[analyzer.FnSig]:
     let sig_ptr = ctx.analysis.functions.get(name)
     if sig_ptr == null:
         return Option[analyzer.FnSig].none
@@ -22731,7 +22731,7 @@ function lookup_fn_sig(ctx: ref[LoweringContext], name: str) -> Option[analyzer.
 
 
 ## Look up a function's FnSig in an imported module's analysis.
-function lookup_imported_fn_sig(ctx: ref[LoweringContext], module_name: str, name: str) -> Option[analyzer.FnSig]:
+function find_imported_fn_sig(ctx: ref[LoweringContext], module_name: str, name: str) -> Option[analyzer.FnSig]:
     match find_imported_analysis(ctx, module_name):
         Option.some as imported:
             let sig_ptr = imported.value.functions.get(name)
@@ -22909,7 +22909,7 @@ function fallback_type_raw(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> type
                 # binding's own type (`Types::Function#name`; the
                 # analyzer's `argument_inference_type` refinement does
                 # the same for call arguments).
-                match lookup_fn_sig(ctx, id.name):
+                match find_fn_sig(ctx, id.name):
                     Option.some as s:
                         var ret = s.value.return_type
                         if not s.value.has_return_type:
@@ -22948,7 +22948,7 @@ function fallback_type_raw(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> type
                         let foreign_ptr = ctx.foreign_map.get(id.name)
                         if foreign_ptr != null:
                             return read(foreign_ptr).return_ty
-                        return fn_sig_return_type(lookup_fn_sig(ctx, id.name))
+                        return fn_sig_return_type(find_fn_sig(ctx, id.name))
                     ast.Expr.expr_member_access as ma:
                         # Cross-module call `alias.func(...)` (ordinary or external):
                         # the analyzer does not record a resolved type for these, so
@@ -23310,7 +23310,7 @@ function enum_backing_or_self(ctx: ref[LoweringContext], t: types.Type) -> types
             if n.name == "EventError" and n.module_name.len == 0:
                 return types.primitive("int")
             let owner = if n.module_name.len > 0: n.module_name else: ctx.module_name
-            match lookup_enum_backing(ctx, owner, n.name):
+            match find_enum_backing(ctx, owner, n.name):
                 Option.some as b:
                     return b.value
                 Option.none:
@@ -23318,7 +23318,7 @@ function enum_backing_or_self(ctx: ref[LoweringContext], t: types.Type) -> types
         types.Type.ty_imported as im:
             if im.args.len != 0:
                 return t
-            match lookup_enum_backing(ctx, im.module_name, im.name):
+            match find_enum_backing(ctx, im.module_name, im.name):
                 Option.some as b:
                     return b.value
                 Option.none:
@@ -23330,7 +23330,7 @@ function enum_backing_or_self(ctx: ref[LoweringContext], t: types.Type) -> types
 ## The backing primitive type of the enum or flags named `enum_name` in
 ## `module_name`, or none when no such declaration exists.  Scans the owning
 ## module's AST declarations (the analyzer keeps no separate backing table).
-function lookup_enum_backing(ctx: ref[LoweringContext], module_name: str, enum_name: str) -> Option[types.Type]:
+function find_enum_backing(ctx: ref[LoweringContext], module_name: str, enum_name: str) -> Option[types.Type]:
     if module_name == ctx.module_name:
         return scan_enum_backing(ctx.analysis.source_file.declarations, enum_name)
     match find_imported_analysis(ctx, module_name):
@@ -23380,7 +23380,7 @@ function is_int_type(t: types.Type) -> bool:
             return false
 
 
-function lookup_local(ctx: ref[LoweringContext], name: str) -> Option[LocalBinding]:
+function find_local_binding(ctx: ref[LoweringContext], name: str) -> Option[LocalBinding]:
     if ctx.locals.len() == 0:
         return Option[LocalBinding].none
     var i = ctx.locals.len()
@@ -23419,7 +23419,7 @@ function visible_local_type(ctx: ref[LoweringContext], name: str) -> Option[type
             return Option[types.Type].some(value = narrowed.value)
         Option.none:
             pass
-    match lookup_local(ctx, name):
+    match find_local_binding(ctx, name):
         Option.some as lb:
             return Option[types.Type].some(value = lb.value.ty)
         Option.none:
@@ -23540,7 +23540,7 @@ function lowering_null_test_refinements(ctx: ref[LoweringContext], condp: ptr[as
                 if not found:
                     return result
                 var storage: Option[types.Type] = Option[types.Type].none
-                match lookup_local(ctx, name_value):
+                match find_local_binding(ctx, name_value):
                     Option.some as lb:
                         storage = Option[types.Type].some(value = lb.value.ty)
                     Option.none:
@@ -23646,7 +23646,7 @@ function ast_expression_always_aborts(ep: ptr[ast.Expr]) -> bool:
     return false
 
 
-function lookup_qualified_constant(ctx: ref[LoweringContext], name: str) -> Option[str]:
+function find_qualified_constant(ctx: ref[LoweringContext], name: str) -> Option[str]:
     if ctx.analysis.type_names.contains(name) or ctx.analysis.value_types.contains(name):
         return Option[str].some(value = naming.qualified_c_name(ctx.module_name, name))
     var import_values = ctx.analysis.imports.values()
@@ -23974,7 +23974,7 @@ function ast_expr_cstr_backed(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> b
             ast.Expr.expr_string_literal:
                 return true
             ast.Expr.expr_identifier as id:
-                match lookup_local(ctx, id.name):
+                match find_local_binding(ctx, id.name):
                     Option.some as lb:
                         match lb.value.ty:
                             types.Type.ty_primitive as p:
@@ -24025,7 +24025,7 @@ function update_cstr_metadata_for_assignment_mt(ctx: ref[LoweringContext], targe
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
-                match lookup_local(ctx, id.name):
+                match find_local_binding(ctx, id.name):
                     Option.some as lb:
                         var backed = false
                         if operator == "=":
@@ -24399,7 +24399,7 @@ function lower_format_sink_target(ctx: ref[LoweringContext], info: FormatSinkInf
                 pass
     else:
         let fn_name = if info.is_assign: "assign_format" else: "append_format"
-        sink_value = coerce_arg_to_ref_param(lookup_imported_fn_sig(ctx, "std.fmt", fn_name), 0, recv)
+        sink_value = coerce_arg_to_ref_param(find_imported_fn_sig(ctx, "std.fmt", fn_name), 0, recv)
     return FormatSinkTarget.fst_string(value = sink_value)
 
 
@@ -27068,7 +27068,7 @@ function try_const_attribute_arg_ir(ctx: ref[LoweringContext], type_args: span[a
     let field_name = comptime_inner_arg_name(field_call_ptr, "field_of", 1)
     if type_name.len == 0 or field_name.len == 0:
         return Option[ptr[ir.Expr]].none
-    return lookup_attribute_arg_literal(ctx, type_name, field_name, attr_ident, arg_name, type_ty)
+    return find_attribute_arg_literal(ctx, type_name, field_name, attr_ident, arg_name, type_ty)
 
 
 ## The name of argument `index` of a call expression `callee_name(...)`, or "".
@@ -27113,7 +27113,7 @@ function comptime_inner_arg_expr(ep: ptr[ast.Expr], callee_name: str, index: ptr
 
 ## The IR literal for attribute argument `arg_name` of `@[attr(...)]` applied to
 ## `Type.field`, if present.
-function lookup_attribute_arg_literal(ctx: ref[LoweringContext], type_name: str, field_name: str, attr_name: str, arg_name: str, ty: types.Type) -> Option[ptr[ir.Expr]]:
+function find_attribute_arg_literal(ctx: ref[LoweringContext], type_name: str, field_name: str, attr_name: str, arg_name: str, ty: types.Type) -> Option[ptr[ir.Expr]]:
     var di: ptr_uint = 0
     while di < ctx.analysis.source_file.declarations.len:
         var d: ast.Decl
@@ -29451,7 +29451,7 @@ function lower_async_fn(ctx: ref[LoweringContext], name: str, link_base: str, re
     ctx.async_await_fields = vec.Vec[ir.Field].create()
     ctx.async_local_seen = map_mod.Map[str, bool].create()
     ctx.async_format_str_fields = vec.Vec[str].create()
-    let sig = lookup_fn_sig(ctx, name)
+    let sig = find_fn_sig(ctx, name)
     let res_ty = resolve_return_type(ctx, sig, return_type)
     let bool_ty = ctx.bool_ty
     let int_ty = types.primitive("int")
@@ -30749,7 +30749,7 @@ function async_emit_await(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt
 ## linkage `<module>_main`.  Here we build a root proc from the constructor,
 ## drive it via `std.async.wait[int]` / `run` for void, and release the proc.
 function build_async_main_entrypoint(ctx: ref[LoweringContext], name: str) -> Option[ir.Function]:
-    let sig = lookup_fn_sig(ctx, name)
+    let sig = find_fn_sig(ctx, name)
     let task_ret = fn_sig_return_type(sig)
     let inner_ty = extract_task_element_type(ctx, task_ret)
     let is_void_ret = is_void_type_lowered(inner_ty)

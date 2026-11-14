@@ -108,6 +108,19 @@ module MilkTea
     PASCAL_TYPE_RE = /^[A-Z][A-Za-z0-9]*$/
     UPPER_SNAKE_RE = /^[A-Z][A-Z0-9_]*$/
 
+    # The operation vocabulary: `create_*` constructs a value, `alloc_*`
+    # allocates, `find_*` searches a collection/table, and compiler nodes use
+    # the short `decl`/`expr` nouns.  The retired spellings are guarded so a
+    # new inconsistency fails at the gate.
+    VOCABULARY_PREFIXES = {
+      "new_" => "create_ (or alloc_)",
+      "lookup_" => "find_ (or resolve_)",
+    }.freeze
+    VOCABULARY_SUFFIXES = {
+      "_declaration" => "_decl",
+      "_expression" => "_expr",
+    }.freeze
+
     class FileEntry
       attr_reader :path, :relative, :area, :lines
 
@@ -376,6 +389,35 @@ module MilkTea
       violations.sort_by { |violation| [violation[:path], violation[:line], violation[:name]] }
     end
 
+    def vocabulary_violations
+      violations = []
+      entries.each do |entry|
+        entry.declarations.each do |declaration|
+          next unless declaration[:kind] == "function"
+
+          name = declaration[:name]
+          prefix = VOCABULARY_PREFIXES.keys.find { |candidate| name.start_with?(candidate) }
+          suffix = VOCABULARY_SUFFIXES.keys.find { |candidate| name.end_with?(candidate) }
+          if prefix
+            violations << {
+              path: entry.relative,
+              line: declaration[:line],
+              name: name,
+              expected: "retired prefix #{prefix} (use #{VOCABULARY_PREFIXES[prefix]})",
+            }
+          elsif suffix
+            violations << {
+              path: entry.relative,
+              line: declaration[:line],
+              name: name,
+              expected: "retired suffix #{suffix} (use #{VOCABULARY_SUFFIXES[suffix]})",
+            }
+          end
+        end
+      end
+      violations.sort_by { |violation| [violation[:path], violation[:line], violation[:name]] }
+    end
+
     def dead_exports
       declarations = entries.flat_map do |entry|
         entry.lines.each_with_index.filter_map do |line, index|
@@ -561,6 +603,7 @@ module MilkTea
         source: { files: source_files.length, lines: entries.sum { |entry| entry.lines.length } },
         layers: layers,
         naming: { violations: naming_violations },
+        vocabulary: { violations: vocabulary_violations },
         aliases: alias_report,
         dead_exports: dead_exports,
         duplication: duplication_report,
@@ -579,6 +622,7 @@ module MilkTea
           "exceptions" => report[:layers][:exceptions].sort,
         },
         "naming" => report[:naming][:violations].map { |violation| format_violation(violation) }.sort,
+        "vocabulary" => report[:vocabulary][:violations].map { |violation| format_violation(violation) }.sort,
         "aliases" => report[:aliases][:canon].sort.to_h,
         "dead_exports" => {
           "unused" => report[:dead_exports][:unused].map { |declaration| format_declaration(declaration) }.sort,
@@ -642,6 +686,10 @@ module MilkTea
       baseline_naming = Array(baseline && baseline["naming"])
       current_naming = report[:naming][:violations].map { |violation| format_violation(violation) }
       (current_naming - baseline_naming).sort.each { |entry| failures << "naming: #{entry}" }
+
+      baseline_vocabulary = Array(baseline && baseline["vocabulary"])
+      current_vocabulary = report[:vocabulary][:violations].map { |violation| format_violation(violation) }
+      (current_vocabulary - baseline_vocabulary).sort.each { |entry| failures << "vocabulary: #{entry}" }
 
       baseline_markers = Array(baseline && baseline["markers"])
       current_markers = report[:markers].map { |marker| format_marker(marker) }
@@ -707,6 +755,11 @@ module MilkTea
 
       io.puts "aliases: #{report[:aliases][:canon].length} modules, #{report[:aliases][:violations].length} violations"
       report[:aliases][:violations].first(top).each { |violation| io.puts "  #{violation}" }
+
+      io.puts "vocabulary: #{report[:vocabulary][:violations].length} violations"
+      report[:vocabulary][:violations].first(top).each do |violation|
+        io.puts "  #{violation[:path]}:#{violation[:line]}: #{violation[:name]} (#{violation[:expected]})"
+      end
 
       io.puts "naming: #{report[:naming][:violations].length} violations"
       report[:naming][:violations].first(top).each do |violation|

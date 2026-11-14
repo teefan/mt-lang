@@ -324,7 +324,7 @@ public struct SexprContext:
     type_kinds: map_mod.Map[str, str]
 
 
-public function new_sexpr_ctx(module_name: str) -> SexprContext:
+public function create_sexpr_context(module_name: str) -> SexprContext:
     return SexprContext(
         module_name = module_name,
         struct_names = map_mod.Map[str, bool].create(),
@@ -1097,7 +1097,7 @@ public function dump_ir(program: ir.Program) -> string.String:
 ## analyses a raw enum renders `Types::Struct` where the host renders
 ## `Types::Enum`/`Types::Flags`/`Types::Opaque` (session 43, item 3g).
 public function dump_ir_with_analyses(program: ir.Program, analyses: span[analyzer.Analysis]) -> string.String:
-    var ctx = new_sexpr_ctx(program.module_name)
+    var ctx = create_sexpr_context(program.module_name)
     var si: ptr_uint = 0
     while si < program.structs.len:
         ctx.struct_names.set(unsafe: read(program.structs.data + si).name, true)
@@ -3030,7 +3030,7 @@ function decl_value(ctx: ref[SexprContext], dp: ptr[ast.Decl], raw: bool) -> Sex
 
 
 public function dump_ast(file: ast.SourceFile, module_name: str) -> string.String:
-    var ctx = new_sexpr_ctx(module_name)
+    var ctx = create_sexpr_context(module_name)
     var buf = string.String.create()
     var module_field = field_nil("module_name")
     if module_name.len > 0:

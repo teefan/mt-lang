@@ -130,6 +130,39 @@ class MilkTeaRefactorGuardTest < Minitest::Test
     end
   end
 
+  def test_vocabulary_rules
+    with_tree(
+      "#{SOURCE}/parser/parser.mt" => <<~MT,
+        function new_thing() -> void:
+            pass
+
+        function lookup_thing() -> void:
+            pass
+
+        function parse_declaration() -> void:
+            pass
+
+        function render_expression() -> void:
+            pass
+
+        function create_thing() -> void:
+            pass
+
+        function find_thing() -> void:
+            pass
+
+        function parse_decl() -> void:
+            pass
+
+        function render_expr() -> void:
+            pass
+      MT
+    ) do |dir|
+      names = guard(dir).vocabulary_violations.map { |violation| violation[:name] }
+      assert_equal %w[lookup_thing new_thing parse_declaration render_expression], names.sort
+    end
+  end
+
   def test_dead_export_classification
     with_tree(
       "#{SOURCE}/parser/parser.mt" => <<~MT,

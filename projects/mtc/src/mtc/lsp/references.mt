@@ -450,7 +450,7 @@ function emit_identifier_reference(w: ref[ReferenceScan], bindings: ref[vec.Vec[
 ## A local binding's own declaration — the host's declaration arm on the scoped
 ## path (a parameter, a `let`/`var`, a `for` or match binding).  The AST records
 ## the statement's line, so the name's column is read off that line.
-function emit_scoped_declaration(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_mod.Binding]], results: ref[vec.Vec[refidx.ReferenceEntry]], name: str, line: ptr_uint) -> void:
+function emit_scoped_decl(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_mod.Binding]], results: ref[vec.Vec[refidx.ReferenceEntry]], name: str, line: ptr_uint) -> void:
     if not w.scoped or not w.include_declaration:
         return
     if not name.equal(w.name):
@@ -578,7 +578,7 @@ function walk_reference_param_defaults(w: ref[ReferenceScan], bindings: ref[vec.
     var pi: ptr_uint = 0
     while pi < params.len:
         let param = unsafe: read(params.data + pi)
-        emit_scoped_declaration(w, bindings, results, param.name, param.line)
+        emit_scoped_decl(w, bindings, results, param.name, param.line)
         walk_reference_expr_opt(w, bindings, results, param.default_value)
         pi += 1
 
@@ -591,7 +591,7 @@ function walk_reference_stmt(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_
             ast.Stmt.stmt_block as blk:
                 walk_reference_stmts(w, bindings, results, blk.statements)
             ast.Stmt.stmt_local as loc:
-                emit_scoped_declaration(w, bindings, results, loc.name, loc.line)
+                emit_scoped_decl(w, bindings, results, loc.name, loc.line)
                 walk_reference_expr_opt(w, bindings, results, loc.value)
                 walk_reference_stmt(w, bindings, results, loc.else_body)
             ast.Stmt.stmt_assignment as asn:
@@ -616,7 +616,7 @@ function walk_reference_stmt(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_
                 var fbi: ptr_uint = 0
                 while fbi < fr.bindings.len:
                     let binding = read(fr.bindings.data + fbi)
-                    emit_scoped_declaration(w, bindings, results, binding.name, binding.line)
+                    emit_scoped_decl(w, bindings, results, binding.name, binding.line)
                     fbi += 1
                 walk_reference_stmt(w, bindings, results, fr.body)
             ast.Stmt.stmt_match as mt:
@@ -627,7 +627,7 @@ function walk_reference_stmt(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_
                     walk_reference_expr_opt(w, bindings, results, arm.pattern)
                     match arm.binding_name:
                         Option.some as binding_name:
-                            emit_scoped_declaration(w, bindings, results, binding_name.value, arm.binding_line)
+                            emit_scoped_decl(w, bindings, results, binding_name.value, arm.binding_line)
                         Option.none:
                             pass
                     walk_reference_stmt(w, bindings, results, arm.body)
@@ -718,7 +718,7 @@ function walk_reference_expr(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_
                     walk_reference_expr_opt(w, bindings, results, arm.pattern)
                     match arm.binding_name:
                         Option.some as binding_name:
-                            emit_scoped_declaration(w, bindings, results, binding_name.value, arm.binding_line)
+                            emit_scoped_decl(w, bindings, results, binding_name.value, arm.binding_line)
                         Option.none:
                             pass
                     walk_reference_expr(w, bindings, results, arm.value)
@@ -997,7 +997,7 @@ function resolve_static_receiver_method(
                 owner = types.nominal_module(read(type_ptr))
                 owner_module_known = true
 
-    match extending_method_declaration(file_ast, analysis, receiver.name, method_name):
+    match extending_method_decl(file_ast, analysis, receiver.name, method_name):
         Option.some as declared:
             if declared.value.kind != ast.MethodKind.mk_static:
                 return Option[StaticMethodTarget].none
@@ -1026,7 +1026,7 @@ function resolve_static_receiver_method(
     var owner_ast = owner_doc.ast_file
     var owner_analysis = owner_doc.analysis
 
-    match extending_method_declaration(owner_ast, ref_of(owner_analysis), receiver.name, method_name):
+    match extending_method_decl(owner_ast, ref_of(owner_analysis), receiver.name, method_name):
         Option.some as declared:
             if declared.value.kind != ast.MethodKind.mk_static:
                 return Option[StaticMethodTarget].none
@@ -1058,7 +1058,7 @@ function static_target_location_path(
 
 ## The method `method_name` declared in one of `file`'s `extending` blocks for
 ## the receiver type `type_name`.
-function extending_method_declaration(
+function extending_method_decl(
     file: ast.SourceFile,
     analysis: ref[analyzer.Analysis],
     type_name: str,

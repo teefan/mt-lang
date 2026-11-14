@@ -11,7 +11,7 @@
 ##
 ## Milk Tea variant-arm payloads are not nameable parameter types, so the
 ## per-arm rendering logic is inlined directly into the dispatch `match`
-## blocks (emit_declaration / emit_statement / render_expression); only
+## blocks (emit_decl / emit_statement / render_expr); only
 ## struct-typed helpers (render_param, render_interface_method, emit_method,
 ## ...) are factored out.
 ##
@@ -61,7 +61,7 @@ struct Formatter:
     line_starts: vec.Vec[ptr_uint]
 
 
-function new_formatter(file: ast.SourceFile) -> Formatter:
+function create_formatter(file: ast.SourceFile) -> Formatter:
     return Formatter(
         buffer = string.String.create(),
         indent = 0,
@@ -75,7 +75,7 @@ function new_formatter(file: ast.SourceFile) -> Formatter:
 
 
 public function format_source_file(file: ast.SourceFile) -> string.String:
-    var f = new_formatter(file)
+    var f = create_formatter(file)
     emit_source_file(ref_of(f), file)
     return f.buffer
 
@@ -86,7 +86,7 @@ public function format_source_file(file: ast.SourceFile) -> string.String:
 ## mirroring `PrettyPrinter::ASTFormatter#format(node, trivia:)`.  `mtc parse`
 ## stays trivia-free like the host's.
 public function format_source_file_with_trivia(file: ast.SourceFile, source: str, trivia: span[triv.TriviaEntry]) -> string.String:
-    var f = new_formatter(file)
+    var f = create_formatter(file)
     build_comment_state(ref_of(f), source, trivia)
     emit_source_file(ref_of(f), file)
     return f.buffer
@@ -430,16 +430,16 @@ function render_type_ptr(t: ptr[ast.TypeRef]?) -> str:
         return render_type(read(tp))
 
 
-## Render one expression the formatter's way (`Formatter#render_expression`),
+## Render one expression the formatter's way (`Formatter#render_expr`),
 ## used by hover's enum-member value text (`Mask.a` → `1 << 0`; the host's
 ## `enum_member_value_text`).  `file` only supplies the formatter's module kind.
 public function render_expression_text(file: ast.SourceFile, e: ast.Expr) -> str:
-    var f = new_formatter(file)
+    var f = create_formatter(file)
     defer:
         f.comments.release()
         f.blank_lines.release()
         f.line_starts.release()
-    return render_expression(ref_of(f), e, 0)
+    return render_expr(ref_of(f), e, 0)
 
 
 public function render_type(t: ast.TypeRef) -> str:
@@ -709,7 +709,7 @@ function emit_source_file(f: ref[Formatter], file: ast.SourceFile) -> void:
         var i: ptr_uint = 0
         while i < file.directives.len:
             unsafe:
-                emit_declaration(f, read(file.directives.data + i))
+                emit_decl(f, read(file.directives.data + i))
             i += 1
         wrote_section = true
 
@@ -725,7 +725,7 @@ function emit_source_file(f: ref[Formatter], file: ast.SourceFile) -> void:
         var decl: ast.Decl
         unsafe:
             decl = read(file.declarations.data + i)
-        emit_declaration(f, decl)
+        emit_decl(f, decl)
         if i + 1 < file.declarations.len:
             var next_decl: ast.Decl
             unsafe:
@@ -756,10 +756,10 @@ function declaration_separator_required(f: ref[Formatter], d: ast.Decl, next_dec
         if raw_block_decl(d) or raw_block_decl(next_decl):
             return true
         return raw_group(d) != raw_group(next_decl)
-    return block_declaration(d) or block_declaration(next_decl)
+    return block_decl(d) or block_decl(next_decl)
 
 
-function block_declaration(d: ast.Decl) -> bool:
+function block_decl(d: ast.Decl) -> bool:
     match d:
         ast.Decl.decl_function:
             return true
@@ -815,7 +815,7 @@ function raw_group(d: ast.Decl) -> int:
 #  Declarations
 # =============================================================================
 
-function emit_declaration(f: ref[Formatter], d: ast.Decl) -> void:
+function emit_decl(f: ref[Formatter], d: ast.Decl) -> void:
     let d_line = decl_line(d)
     flush_leading_comments_before(f, d_line)
     var header_idx = f.line_starts.len()
@@ -877,12 +877,12 @@ function emit_declaration(f: ref[Formatter], d: ast.Decl) -> void:
             var ni: ptr_uint = 0
             while ni < st.nested_types.len:
                 unsafe:
-                    emit_declaration(f, read(st.nested_types.data + ni))
+                    emit_decl(f, read(st.nested_types.data + ni))
                 ni += 1
             var ei: ptr_uint = 0
             while ei < st.struct_events.len:
                 unsafe:
-                    emit_declaration(f, read(st.struct_events.data + ei))
+                    emit_decl(f, read(st.struct_events.data + ei))
                 ei += 1
             f.indent -= 1
         ast.Decl.decl_union as u:
@@ -1102,7 +1102,7 @@ function emit_decl_span(f: ref[Formatter], decls: span[ast.Decl]) -> void:
     var i: ptr_uint = 0
     while i < decls.len:
         unsafe:
-            emit_declaration(f, read(decls.data + i))
+            emit_decl(f, read(decls.data + i))
         i += 1
 
 
@@ -1356,7 +1356,7 @@ function emit_emit(f: ref[Formatter], declaration: ptr[ast.Decl]?) -> void:
         return
     let before = f.buffer.len()
     unsafe:
-        emit_declaration(f, read(decl))
+        emit_decl(f, read(decl))
     splice_emit_prefix(f, before)
 
 
@@ -1429,7 +1429,7 @@ function emit_when_stmt(f: ref[Formatter], discriminant: ptr[ast.Expr], branches
 
 function rx(f: ref[Formatter], ep: ptr[ast.Expr], parent: int) -> str:
     unsafe:
-        return render_expression(f, read(ep), parent)
+        return render_expr(f, read(ep), parent)
 
 
 function rx_opt(f: ref[Formatter], ep: ptr[ast.Expr]?) -> str:
@@ -1445,12 +1445,12 @@ function render_expr_span(f: ref[Formatter], exprs: span[ast.Expr], sep: str) ->
         if i > 0:
             buf.append(sep)
         unsafe:
-            buf.append(render_expression(f, read(exprs.data + i), 0))
+            buf.append(render_expr(f, read(exprs.data + i), 0))
         i += 1
     return buf.as_str()
 
 
-function render_expression(f: ref[Formatter], e: ast.Expr, parent: int) -> str:
+function render_expr(f: ref[Formatter], e: ast.Expr, parent: int) -> str:
     match e:
         ast.Expr.expr_identifier as x:
             return x.name
@@ -1591,12 +1591,12 @@ function escape_format_text(value: str) -> str:
 
 function render_postfix(f: ref[Formatter], ep: ptr[ast.Expr]) -> str:
     unsafe:
-        if postfix_expression(read(ep)):
-            return render_expression(f, read(ep), POSTFIX_PRECEDENCE)
-        return strings.join_three("(", render_expression(f, read(ep), 0), ")")
+        if postfix_expr(read(ep)):
+            return render_expr(f, read(ep), POSTFIX_PRECEDENCE)
+        return strings.join_three("(", render_expr(f, read(ep), 0), ")")
 
 
-function postfix_expression(e: ast.Expr) -> bool:
+function postfix_expr(e: ast.Expr) -> bool:
     match e:
         ast.Expr.expr_identifier:
             return true
@@ -1627,7 +1627,7 @@ function render_type_argument_list(args: span[ast.TypeArgument]) -> str:
 
 
 function render_match_expr(f: ref[Formatter], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], parent: int) -> str:
-    let sugared = render_is_expression(f, scrutinee, arms, parent)
+    let sugared = render_is_expr(f, scrutinee, arms, parent)
     if sugared.len > 0:
         return sugared
     let scrutinee_text = rx(f, scrutinee, IF_EXPRESSION_PRECEDENCE)
@@ -1700,7 +1700,7 @@ function proc_single_return_value(body: ptr[ast.Stmt]) -> ptr[ast.Expr]?:
 #  `is` re-sugaring
 # =============================================================================
 
-function render_is_expression(f: ref[Formatter], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], parent: int) -> str:
+function render_is_expr(f: ref[Formatter], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], parent: int) -> str:
     if arms.len != 2:
         return ""
     var first: ast.MatchExprArm

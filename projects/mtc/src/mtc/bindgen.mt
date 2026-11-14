@@ -1905,7 +1905,7 @@ function enum_backing_qual_type(node: ptr[json.Object]) -> str:
     return "int"
 
 
-function new_decl(kind: str, c_name: str, mt_name: str, index: ptr_uint) -> CDecl:
+function create_decl(kind: str, c_name: str, mt_name: str, index: ptr_uint) -> CDecl:
     return CDecl(
         kind = string.String.from_str(kind),
         c_name = string.String.from_str(c_name),
@@ -1973,7 +1973,7 @@ function select_record_declarations(
                     node_name,
                     opts
                 ):
-                    var projection = new_decl("type_alias", node_name, visible_type_name(node_name, opts), index)
+                    var projection = create_decl("type_alias", node_name, visible_type_name(node_name, opts), index)
                     projection.qual_type = string.String.from_str(visible_type_name(primary_alias, opts))
                     type_aliases.push(projection)
                     continue
@@ -1990,7 +1990,7 @@ function select_record_declarations(
                 continue
             let visible = visible_type_name(original_name, opts)
             let complete = record_complete_definition(record)
-            var candidate = new_decl(if complete: tag else: "opaque", original_name, visible, index)
+            var candidate = create_decl(if complete: tag else: "opaque", original_name, visible, index)
             candidate.is_complete = complete
             candidate.node = record
             candidate.linkage = string.String.from_str(record_c_name(record))
@@ -2059,7 +2059,7 @@ function select_enum_declarations(
             if original_name == "" or not allowed_declaration_name(original_name, opts):
                 continue
             let visible = visible_type_name(original_name, opts)
-            var candidate = new_decl("enum", original_name, visible, index)
+            var candidate = create_decl("enum", original_name, visible, index)
             candidate.node = node
             var members = enum_member_list(node)
             candidate.qual_type = string.String.from_str(enum_backing_qual_type(node))
@@ -2129,7 +2129,7 @@ function select_type_alias_declarations(
             if unresolved_alias_target(name, mapped.as_str(), opts):
                 mapped.release()
                 continue
-            var declaration = new_decl("type_alias", name, visible_type_name(name, opts), index)
+            var declaration = create_decl("type_alias", name, visible_type_name(name, opts), index)
             declaration.qual_type = mapped
             decls.push(declaration)
 
@@ -2144,9 +2144,9 @@ function map_function_pointer_typedef(node: ptr[json.Object], opts: ref[BindgenO
     apply_nullability(ref_of(mapped), function_pointer_surface_nullability(type_qual_text(node, true)))
     return mapped
 
-## The host's `macro_probe_declaration?` / `constant_name_for`.
+## The host's `macro_probe_decl?` / `constant_name_for`.
 
-function macro_probe_declaration(node: ptr[json.Object]) -> bool:
+function macro_probe_decl(node: ptr[json.Object]) -> bool:
     return str_has_prefix(jget_str(node, "name"), MACRO_PROBE_PREFIX)
 
 
@@ -2179,7 +2179,7 @@ function constant_qual_type(node: ptr[json.Object]) -> str:
         let to = read(tp).as_object() else:
             return ""
         let qual_type = jget_str(to, "qualType")
-        if macro_probe_declaration(node) and qual_type.contains_substring("typeof"):
+        if macro_probe_decl(node) and qual_type.contains_substring("typeof"):
             let desugared = jget_str(to, "desugaredQualType")
             if desugared != "":
                 return desugared
@@ -2259,7 +2259,7 @@ function string_literal_macro_compatible_c_type(qual_type: str) -> bool:
 ## string literal maps through its surface type.
 
 function macro_string_constant_type(node: ptr[json.Object], initializer: ptr[json.Object]?) -> Option[string.String]:
-    if not macro_probe_declaration(node):
+    if not macro_probe_decl(node):
         return Option[string.String].none
     if not constant_expression_kind(initializer).equal("StringLiteral"):
         return Option[string.String].none
@@ -2313,7 +2313,7 @@ function select_constant_declarations(
                     type_text.release()
                     continue
                 Option.some as lowered:
-                    var declaration = new_decl("const", name, name, index)
+                    var declaration = create_decl("const", name, name, index)
                     declaration.qual_type = type_text
                     declaration.value_text = lowered.value
                     decls.push(declaration)
@@ -2354,7 +2354,7 @@ function select_function_declarations(
             if name == "" or not allowed_declaration_name(name, opts):
                 continue
             bindgen_map_failed = false
-            var declaration = new_decl("function", name, name, index)
+            var declaration = create_decl("function", name, name, index)
             declaration.is_variadic = is_variadic_function(node)
             declaration.qual_type = string.String.from_str(type_qual_text(node, false))
 
@@ -2842,7 +2842,7 @@ function emit_flattened_anonymous(
             i += 1
 
 
-function emit_aggregate_declaration(
+function emit_aggregate_decl(
     buf: ref[string.String],
     kind_text: str,
     name: str,
@@ -2874,7 +2874,7 @@ function emit_synthetic(buf: ref[string.String], synthetic_decl: SyntheticDecl, 
             buf.append("\"")
         buf.append("\n")
         return
-    emit_aggregate_declaration(buf, kind_text, synthetic_decl.name.as_str(), node_non_null(synthetic_decl.node), opts)
+    emit_aggregate_decl(buf, kind_text, synthetic_decl.name.as_str(), node_non_null(synthetic_decl.node), opts)
 
 
 function emit_decl(buf: ref[string.String], d: CDecl, opts: ref[BindgenOptions]) -> void:
@@ -2894,7 +2894,7 @@ function emit_decl(buf: ref[string.String], d: CDecl, opts: ref[BindgenOptions])
     if k == "struct" or k == "union":
         if d.node == null:
             return
-        emit_aggregate_declaration(buf, k, name, node_non_null(d.node), opts)
+        emit_aggregate_decl(buf, k, name, node_non_null(d.node), opts)
         return
 
     if k == "enum" or k == "flags":

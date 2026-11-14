@@ -71,7 +71,7 @@ struct Emitter:
     # Array-returning calls that appear nested in argument position are hoisted
     # into temp array locals before the enclosing statement; this maps each such
     # call expression (by pointer identity) to its temp C name so
-    # `render_expression` substitutes the temp instead of re-emitting the call.
+    # `render_expr` substitutes the temp instead of re-emitting the call.
     array_call_temps: map_mod.Map[ptr_uint, str]
     array_call_temp_counter: ptr_uint
     # Debug profile: emit `#line <n> "<path>"` before line-carrying statements
@@ -2197,7 +2197,7 @@ function c_type(t: types.Type) -> str:
 
 
 ## C type for a generic instance: span -> mt_span_ELEM, ptr/const_ptr/ref ->
-## pointer.  Arrays are declarators (handled by c_declaration), not plain types.
+## pointer.  Arrays are declarators (handled by c_decl), not plain types.
 function generic_c_type(name: str, args: span[types.Type]) -> str:
     if name == "span" and args.len == 1:
         return span_type_name(unsafe: read(args.data + 0))
@@ -2869,7 +2869,7 @@ function emit_tuple_type_def(e: ref[Emitter], t: types.Type) -> void:
                     Option.none:
                         pass
                 unsafe:
-                    emit_line(e, strings.join_four("  ", c_declaration(read(tup.elements.data + i), fname), ";", ""))
+                    emit_line(e, strings.join_four("  ", c_decl(read(tup.elements.data + i), fname), ";", ""))
                 i += 1
         _:
             pass
@@ -2918,12 +2918,12 @@ function emit_array_call(e: ref[Emitter], ep: ptr[ir.Expr], out_arg: str) -> str
                 var i: ptr_uint = 0
                 while i < call.arguments.len:
                     buf.append(", ")
-                    buf.append(render_expression(e, call.arguments.data + i))
+                    buf.append(render_expr(e, call.arguments.data + i))
                     i += 1
                 buf.append(")")
                 return buf.as_str()
             _:
-                return render_expression(e, ep)
+                return render_expr(e, ep)
 
 
 function is_array_type(t: types.Type) -> bool:
@@ -3068,17 +3068,17 @@ function c_fn_ptr_declarator(t: types.Type, name: str) -> str:
 
 
 ## A struct/variant field declaration: a void-typed field materializes as a
-## `uint8_t` placeholder (the host's `c_field_declaration`), since C forbids
+## `uint8_t` placeholder (the host's `c_field_decl`), since C forbids
 ## `void` members (`WorkState[void]`, `Result[void, E].success`).
-function c_field_declaration(t: types.Type, name: str) -> str:
+function c_field_decl(t: types.Type, name: str) -> str:
     if is_void_type(t):
         return strings.join_three("uint8_t ", name, "")
-    return c_declaration(t, name)
+    return c_decl(t, name)
 
 
 ## A C declaration `TYPE NAME`.  Array types place the length after the name
 ## (`int32_t xs[3]`); everything else in Phase 3 is a plain `TYPE NAME`.
-function c_declaration(t: types.Type, name: str) -> str:
+function c_decl(t: types.Type, name: str) -> str:
     if is_array_type(t):
         let inner_name = if name.len > 0 and name.byte_at(0) == '*': strings.join_three("(", name, ")") else: name
         let elem_t = array_element_type(t)
@@ -3087,7 +3087,7 @@ function c_declaration(t: types.Type, name: str) -> str:
         # declares as `float name[N][M]` (N rows of M), matching row-major
         # indexing `name[row][col]` and the Ruby backend.
         if is_array_type(elem_t):
-            return c_declaration(elem_t, strings.join_four(inner_name, "[", long_to_str(array_length(t)), "]"))
+            return c_decl(elem_t, strings.join_four(inner_name, "[", long_to_str(array_length(t)), "]"))
         # Array of function pointers needs the array declarator inside the
         # parenthesized name: `void (*slots[16])(int32_t)`, not
         # `void (*)(int32_t) slots[16]`.  A proc element is a plain struct value
@@ -3123,13 +3123,13 @@ function c_declaration(t: types.Type, name: str) -> str:
             if (g.name == "ptr" or g.name == "own" or g.name == "ref") and g.args.len >= 1:
                 let inner = unsafe: read(g.args.data + (g.args.len - 1))
                 if is_array_type(inner):
-                    return c_declaration(inner, strings.join_two("*", name))
+                    return c_decl(inner, strings.join_two("*", name))
                 let base = unsafe: c_type(inner)
                 return strings.join_three(base, " *", name)
             if g.name == "const_ptr" and g.args.len == 1:
                 let inner = unsafe: read(g.args.data + 0)
                 if is_array_type(inner):
-                    return c_declaration(inner, strings.join_two("*", name))
+                    return c_decl(inner, strings.join_two("*", name))
                 let base = unsafe: c_type(inner)
                 return strings.join_four("const ", base, "*", name)
             if g.name == "str_buffer" and g.args.len >= 1:
@@ -3164,7 +3164,7 @@ function emit_enum(e: ref[Emitter], enum_decl: ir.EnumDecl) -> void:
         unsafe:
             let m = read(enum_decl.members.data + i)
             let suffix = if i == enum_decl.members.len - 1: "" else: ","
-            emit_line(e, strings.join_six("  ", m.linkage_name, " = ", render_expression(e, m.value), suffix, ""))
+            emit_line(e, strings.join_six("  ", m.linkage_name, " = ", render_expr(e, m.value), suffix, ""))
         i += 1
     emit_line(e, "};")
 
@@ -3179,7 +3179,7 @@ function emit_struct(e: ref[Emitter], s: ir.StructDecl) -> void:
     while i < s.fields.len:
         unsafe:
             let f = read(s.fields.data + i)
-            emit_line(e, strings.join_four("  ", c_field_declaration(f.ty, f.name), ";", ""))
+            emit_line(e, strings.join_four("  ", c_field_decl(f.ty, f.name), ";", ""))
         i += 1
     emit_line(e, struct_closer(s.packed, s.alignment))
 
@@ -3205,7 +3205,7 @@ function emit_union(e: ref[Emitter], u: ir.UnionDecl) -> void:
     while i < u.fields.len:
         unsafe:
             let f = read(u.fields.data + i)
-            emit_line(e, strings.join_four("  ", c_declaration(f.ty, f.name), ";", ""))
+            emit_line(e, strings.join_four("  ", c_decl(f.ty, f.name), ";", ""))
         i += 1
     emit_line(e, "};")
 
@@ -3409,9 +3409,9 @@ function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
                 while fi < arm.fields.len:
                     let f = read(arm.fields.data + fi)
                     if not is_void_type(f.ty) and c_type(f.ty) == outer_c:
-                        emit_line(e, strings.join_four("  ", c_declaration(f.ty, strings.join_two("*", f.name)), ";", ""))
+                        emit_line(e, strings.join_four("  ", c_decl(f.ty, strings.join_two("*", f.name)), ";", ""))
                     else:
-                        emit_line(e, strings.join_four("  ", c_field_declaration(f.ty, f.name), ";", ""))
+                        emit_line(e, strings.join_four("  ", c_field_decl(f.ty, f.name), ";", ""))
                     fi += 1
                 emit_line(e, "};")
                 emit_line(e, strings.join_three("typedef struct ", arm.linkage_name, strings.join_two(" ", strings.join_two(arm.linkage_name, ";"))))
@@ -3812,7 +3812,7 @@ function function_signature(func: ir.Function, export_public: bool) -> str:
     buf.append(prefix)
     # A function returning `array[T, N]` cannot return it by value in C; it is
     # lowered to a `void` function with a leading `T (*__mt_out)[N]` out-param
-    # (mirrors Ruby's c_function_declaration / array_out_param_declaration).
+    # (mirrors Ruby's c_function_declaration / array_out_param_decl).
     if is_array_type(func.return_type):
         buf.append("void")
     else:
@@ -3828,7 +3828,7 @@ function function_signature(func: ir.Function, export_public: bool) -> str:
 function function_params(func: ir.Function) -> str:
     var parts = vec.Vec[str].create()
     if is_array_type(func.return_type):
-        parts.push(array_out_param_declaration(func.return_type, "__mt_out"))
+        parts.push(array_out_param_decl(func.return_type, "__mt_out"))
     var i: ptr_uint = 0
     while i < func.params.len:
         unsafe:
@@ -3836,10 +3836,10 @@ function function_params(func: ir.Function) -> str:
             # A pointer-lowered parameter (e.g. an editable method receiver)
             # carries its base type with `pointer = true`; the `*` is added
             # here.  Mirrors Ruby's
-            # `c_declaration(param.pointer ? pointer_to(param.type) : param.type, ...)`
+            # `c_decl(param.pointer ? pointer_to(param.type) : param.type, ...)`
             # (a nil `pointer` — the async ctor params — is not a pointer).
             let pty = if p.pointer.unwrap_or(false): types.Type.ty_generic(name = "ptr", args = sp_elem(p.ty)) else: p.ty
-            parts.push(c_declaration(pty, p.linkage_name))
+            parts.push(c_decl(pty, p.linkage_name))
         i += 1
     if parts.len() == 0:
         return "void"
@@ -3857,8 +3857,8 @@ function function_params(func: ir.Function) -> str:
 
 ## The C declaration of an array out-parameter: `T (*name)[N]`.  Used for the
 ## synthetic `__mt_out` first parameter of an array-returning function.
-function array_out_param_declaration(t: types.Type, name: str) -> str:
-    return c_declaration(t, strings.join_three("(*", name, ")"))
+function array_out_param_decl(t: types.Type, name: str) -> str:
+    return c_decl(t, strings.join_three("(*", name, ")"))
 
 
 function emit_function(e: ref[Emitter], func: ir.Function, export_public: bool) -> void:
@@ -4029,7 +4029,7 @@ function materialize_array_calls_in_children(e: ref[Emitter], ep: ptr[ir.Expr], 
 
 
 ## Emit `T tmp[N]; f(&tmp, args...);` for an array-returning call and record the
-## call's temp so render_expression substitutes it.
+## call's temp so render_expr substitutes it.
 function hoist_array_call_to_temp(e: ref[Emitter], ep: ptr[ir.Expr], level: ptr_uint) -> void:
     let key = unsafe: reinterpret[ptr_uint](ep)
     if e.array_call_temps.get(key) != null:
@@ -4041,7 +4041,7 @@ function hoist_array_call_to_temp(e: ref[Emitter], ep: ptr[ir.Expr], level: ptr_
     fmt.append_ptr_uint(ref_of(tname), e.array_call_temp_counter)
     let temp = tname.as_str()
     let indent = indent_c(level)
-    emit_line(e, strings.join_three(indent, c_declaration(arr_ty, temp), ";"))
+    emit_line(e, strings.join_three(indent, c_decl(arr_ty, temp), ";"))
     emit_line(e, strings.join_three(indent, emit_array_call(e, ep, strings.join_two("&", temp)), ";"))
     e.array_call_temps.set(key, temp)
 
@@ -4051,7 +4051,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
     # Materialize any array-returning call nested in argument position into a
     # temp array local before this statement (C cannot use an array-returning
     # call as a value/argument).  Records substitutions consumed by
-    # render_expression.
+    # render_expr.
     materialize_stmt_array_calls(e, sp, level)
     # Debug profile: map the statement back to its source location so gdb
     # reports the .mt line rather than the generated C line.
@@ -4092,20 +4092,20 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                         # first, then copy into the out-param.
                         emit_line(e, strings.join_two(indent, "{"))
                         let inner = indent_c(level + 1)
-                        emit_line(e, strings.join_five(inner, c_declaration(e.current_fn_return_type, "__mt_ret"), " = ", render_initializer(e, value), ";"))
+                        emit_line(e, strings.join_five(inner, c_decl(e.current_fn_return_type, "__mt_ret"), " = ", render_initializer(e, value), ";"))
                         emit_line(e, strings.join_two(inner, "memcpy(*__mt_out, __mt_ret, sizeof(*__mt_out));"))
                         emit_line(e, strings.join_two(inner, "return;"))
                         emit_line(e, strings.join_two(indent, "}"))
                     else:
-                        emit_line(e, strings.join_six(indent, "memcpy(*__mt_out, ", render_expression(e, value), ", sizeof(*__mt_out)", ");", ""))
+                        emit_line(e, strings.join_six(indent, "memcpy(*__mt_out, ", render_expr(e, value), ", sizeof(*__mt_out)", ");", ""))
                         emit_line(e, strings.join_two(indent, "return;"))
                     return
-                emit_line(e, strings.join_four(indent, "return ", render_expression(e, value), ";"))
+                emit_line(e, strings.join_four(indent, "return ", render_expr(e, value), ";"))
             ir.Stmt.stmt_local as loc:
                 if is_array_type(loc.ty) and expr_is_array_call(e, loc.value):
                     # `let a = <array-returning call>` — declare the array, then
                     # call the callee with `&a` as its out-param.
-                    emit_line(e, strings.join_three(indent, c_declaration(loc.ty, loc.linkage_name), ";"))
+                    emit_line(e, strings.join_three(indent, c_decl(loc.ty, loc.linkage_name), ";"))
                     emit_line(e, strings.join_three(indent, emit_array_call(e, loc.value, strings.join_two("&", loc.linkage_name)), ";"))
                 else if aggregate_has_array_call_field(e, loc.value):
                     # `let s = S(arr = <array-returning call>, ...)` — build the
@@ -4114,40 +4114,40 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     unsafe:
                         match read(loc.value):
                             ir.Expr.expr_aggregate_literal as agg:
-                                emit_aggregate_with_array_call_fields(e, indent, c_declaration(loc.ty, loc.linkage_name), loc.linkage_name, agg.fields)
+                                emit_aggregate_with_array_call_fields(e, indent, c_decl(loc.ty, loc.linkage_name), loc.linkage_name, agg.fields)
                             _:
                                 pass
                 else if is_array_type(loc.ty) and not array_direct_initializer(loc.value):
-                    emit_line(e, strings.join_three(indent, c_declaration(loc.ty, loc.linkage_name), ";"))
-                    emit_line(e, strings.join_six(indent, "memcpy(", loc.linkage_name, ", ", render_expression(e, loc.value), strings.join_three(", sizeof(", loc.linkage_name, "));")))
+                    emit_line(e, strings.join_three(indent, c_decl(loc.ty, loc.linkage_name), ";"))
+                    emit_line(e, strings.join_six(indent, "memcpy(", loc.linkage_name, ", ", render_expr(e, loc.value), strings.join_three(", sizeof(", loc.linkage_name, "));")))
                 else:
-                    emit_line(e, strings.join_five(indent, c_declaration(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), ";"))
+                    emit_line(e, strings.join_five(indent, c_decl(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), ";"))
             ir.Stmt.stmt_assignment as asg:
                 # `arr = <array-returning call>` — call the callee with `&arr`.
                 if asg.operator == "=" and is_array_type(expr_result_type(asg.target)) and expr_is_array_call(e, asg.value):
-                    let target_c = render_expression(e, asg.target)
+                    let target_c = render_expr(e, asg.target)
                     emit_line(e, strings.join_three(indent, emit_array_call(e, asg.value, strings.join_three("&(", target_c, ")")), ";"))
                     return
                 # `arr = {a, b, ...}` — C forbids assigning an initializer list to
                 # an array; bind it to a temp array and memcpy into the target.
                 if asg.operator == "=" and is_array_type(expr_result_type(asg.target)) and array_direct_initializer(asg.value):
-                    let target_c = render_expression(e, asg.target)
+                    let target_c = render_expr(e, asg.target)
                     let arr_ty = expr_result_type(asg.target)
                     emit_line(e, strings.join_two(indent, "{"))
                     let inner = indent_c(level + 1)
-                    emit_line(e, strings.join_five(inner, c_declaration(arr_ty, "__mt_arr_tmp"), " = ", render_initializer(e, asg.value), ";"))
+                    emit_line(e, strings.join_five(inner, c_decl(arr_ty, "__mt_arr_tmp"), " = ", render_initializer(e, asg.value), ";"))
                     emit_line(e, strings.join_six(inner, "memcpy(", target_c, ", __mt_arr_tmp, sizeof(__mt_arr_tmp)", ");", ""))
                     emit_line(e, strings.join_two(indent, "}"))
                     return
                 # `arr = other_arr` — C forbids assigning one array to another;
                 # emit a memcpy of the whole array instead.
                 if asg.operator == "=" and is_array_type(expr_result_type(asg.target)):
-                    let target_c = render_expression(e, asg.target)
-                    emit_line(e, strings.join_six(indent, "memcpy(", target_c, ", ", render_expression(e, asg.value), strings.join_three(", sizeof(", target_c, "));")))
+                    let target_c = render_expr(e, asg.target)
+                    emit_line(e, strings.join_six(indent, "memcpy(", target_c, ", ", render_expr(e, asg.value), strings.join_three(", sizeof(", target_c, "));")))
                     return
-                emit_line(e, strings.join_six(indent, render_expression(e, asg.target), " ", asg.operator, " ", strings.join_two(render_expression(e, asg.value), ";")))
+                emit_line(e, strings.join_six(indent, render_expr(e, asg.target), " ", asg.operator, " ", strings.join_two(render_expr(e, asg.value), ";")))
             ir.Stmt.stmt_expression as ex:
-                emit_line(e, strings.join_three(indent, render_expression(e, ex.expression), ";"))
+                emit_line(e, strings.join_three(indent, render_expr(e, ex.expression), ";"))
             ir.Stmt.stmt_block as blk:
                 if block_requires_scope(blk.body):
                     emit_line(e, strings.join_two(indent, "{"))
@@ -4161,13 +4161,13 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 if e.debug_guards:
                     let guard_name = next_loop_guard_name(e)
                     emit_line(e, strings.join_four(indent, "{ uintptr_t ", guard_name, " = 0;"))
-                    emit_line(e, strings.join_four(indent, "while (", render_expression(e, w.condition), ") {"))
+                    emit_line(e, strings.join_four(indent, "while (", render_expr(e, w.condition), ") {"))
                     emit_loop_guard(e, guard_name, level + 1)
                     emit_stmts(e, w.body, level + 1)
                     emit_line(e, strings.join_two(indent, "}"))
                     emit_line(e, strings.join_two(indent, "}"))
                 else:
-                    emit_line(e, strings.join_four(indent, "while (", render_expression(e, w.condition), ") {"))
+                    emit_line(e, strings.join_four(indent, "while (", render_expr(e, w.condition), ") {"))
                     emit_stmts(e, w.body, level + 1)
                     emit_line(e, strings.join_two(indent, "}"))
             ir.Stmt.stmt_for as f:
@@ -4179,7 +4179,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     for_header.append("for (")
                     for_header.append(render_for_clause(e, f.init))
                     for_header.append("; ")
-                    for_header.append(render_expression(e, f.condition))
+                    for_header.append(render_expr(e, f.condition))
                     for_header.append("; ")
                     for_header.append(render_for_clause(e, f.post))
                     for_header.append(") {")
@@ -4194,7 +4194,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     header.append("for (")
                     header.append(render_for_clause(e, f.init))
                     header.append("; ")
-                    header.append(render_expression(e, f.condition))
+                    header.append(render_expr(e, f.condition))
                     header.append("; ")
                     header.append(render_for_clause(e, f.post))
                     header.append(") {")
@@ -4223,7 +4223,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
 function emit_switch(e: ref[Emitter], expression: ptr[ir.Expr], cases: span[ir.SwitchCase], exhaustive: bool, level: ptr_uint) -> void:
     let indent = indent_c(level)
     let case_indent = indent_c(level + 1)
-    emit_line(e, strings.join_four(indent, "switch (", render_expression(e, expression), ") {"))
+    emit_line(e, strings.join_four(indent, "switch (", render_expr(e, expression), ") {"))
     var has_default = false
     var i: ptr_uint = 0
     while i < cases.len:
@@ -4235,7 +4235,7 @@ function emit_switch(e: ref[Emitter], expression: ptr[ir.Expr], cases: span[ir.S
             else:
                 let value = sc.value else:
                     fatal(c"c_backend: non-default switch case missing value")
-                emit_line(e, strings.join_four(case_indent, "case ", render_expression(e, value), ": {"))
+                emit_line(e, strings.join_four(case_indent, "case ", render_expr(e, value), ": {"))
             emit_stmts(e, sc.body, level + 2)
             if not body_terminates(sc.body):
                 emit_line(e, strings.join_two(indent_c(level + 2), "break;"))
@@ -4305,7 +4305,7 @@ function else_stmts_or_empty(else_body: Option[span[ir.Stmt]]) -> span[ir.Stmt]:
 ## into `else if` (mirrors control_flow_emission.rb emit_if_statement).
 function emit_if(e: ref[Emitter], condition: ptr[ir.Expr], then_body: span[ir.Stmt], else_body: span[ir.Stmt], level: ptr_uint) -> void:
     let indent = indent_c(level)
-    emit_line(e, strings.join_four(indent, "if (", render_expression(e, condition), ") {"))
+    emit_line(e, strings.join_four(indent, "if (", render_expr(e, condition), ") {"))
     emit_stmts(e, then_body, level + 1)
     emit_else(e, else_body, level)
 
@@ -4316,7 +4316,7 @@ function emit_else(e: ref[Emitter], else_body: span[ir.Stmt], level: ptr_uint) -
         unsafe:
             match read(else_body.data + 0):
                 ir.Stmt.stmt_if as nested:
-                    emit_line(e, strings.join_four(indent, "} else if (", render_expression(e, nested.condition), ") {"))
+                    emit_line(e, strings.join_four(indent, "} else if (", render_expr(e, nested.condition), ") {"))
                     emit_stmts(e, nested.then_body, level + 1)
                     emit_else(e, else_stmts_or_empty(nested.else_body), level)
                     return
@@ -4336,11 +4336,11 @@ function render_for_clause(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as loc:
-                return strings.join_five(c_declaration(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), "", "")
+                return strings.join_five(c_decl(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), "", "")
             ir.Stmt.stmt_assignment as asg:
-                return strings.join_five(render_expression(e, asg.target), " ", asg.operator, " ", render_expression(e, asg.value))
+                return strings.join_five(render_expr(e, asg.target), " ", asg.operator, " ", render_expr(e, asg.value))
             ir.Stmt.stmt_expression as ex:
-                return render_expression(e, ex.expression)
+                return render_expr(e, ex.expression)
             _:
                 fatal(c"c_backend: unsupported for-loop clause")
 
@@ -4349,7 +4349,7 @@ function render_for_clause(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
 #  Expression emission (mirrors c_backend/expressions.rb)
 # =============================================================================
 
-function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+function render_expr(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     # An array-returning call hoisted into a temp (materialized before the
     # enclosing statement) renders as the temp name instead of re-emitting the
     # call (which C cannot use in value position).
@@ -4383,11 +4383,11 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return render_string_literal(e, s.value, s.cstring)
             ir.Expr.expr_unary as un:
                 if un.operator == "not":
-                    return strings.join_two("!", wrap_expression(e, un.operand))
-                return strings.join_two(un.operator, wrap_expression(e, un.operand))
+                    return strings.join_two("!", wrap_expr(e, un.operand))
+                return strings.join_two(un.operator, wrap_expr(e, un.operand))
             ir.Expr.expr_binary as bin:
                 if is_str_equality(bin.operator, bin.left, bin.right):
-                    let call = strings.join_five("mt_str_equal(", render_expression(e, bin.left), ", ", render_expression(e, bin.right), ")")
+                    let call = strings.join_five("mt_str_equal(", render_expr(e, bin.left), ", ", render_expr(e, bin.right), ")")
                     if bin.operator == "!=":
                         return strings.join_two("!", call)
                     return call
@@ -4424,7 +4424,7 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
             ir.Expr.expr_variant_literal as vl:
                 return strings.join_four("(", c_type(vl.ty), ")", render_variant_initializer(e, vl.ty, vl.arm_name, vl.fields, true))
             ir.Expr.expr_zero_init as z:
-                return render_zero_expression(z.ty)
+                return render_zero_expr(z.ty)
             ir.Expr.expr_null_literal as nl:
                 if is_value_nullable(nl.ty):
                     return strings.join_three("(", c_type(nl.ty), "){0}")
@@ -4433,7 +4433,7 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 # A cast whose target C type equals its operand's C type is a
                 # no-op: emit the bare operand (mirrors Ruby's no_op_cast?).
                 if no_op_cast(cast.expression, cast.target_type):
-                    return render_expression(e, cast.expression)
+                    return render_expr(e, cast.expression)
                 var cast_buf = string.String.create()
                 cast_buf.append("(")
                 cast_buf.append(c_type(cast.target_type))
@@ -4441,15 +4441,15 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 cast_buf.append(emit_cast_operand(e, cast.expression))
                 return cast_buf.as_str()
             ir.Expr.expr_checked_index as ci:
-                return strings.join_five("(*", checked_array_index_helper_name(ci.receiver_type), "(", wrap_member_receiver(e, ci.receiver), strings.join_three(", ", render_expression(e, ci.index), "))"))
+                return strings.join_five("(*", checked_array_index_helper_name(ci.receiver_type), "(", wrap_member_receiver(e, ci.receiver), strings.join_three(", ", render_expr(e, ci.index), "))"))
             ir.Expr.expr_checked_span_index as cs:
-                return strings.join_five("(*", checked_span_index_helper_name(cs.receiver_type), "(", render_expression(e, cs.receiver), strings.join_three(", ", render_expression(e, cs.index), "))"))
+                return strings.join_five("(*", checked_span_index_helper_name(cs.receiver_type), "(", render_expr(e, cs.receiver), strings.join_three(", ", render_expr(e, cs.index), "))"))
             ir.Expr.expr_nullable_index as ni:
-                return strings.join_five(nullable_array_index_helper_name(ni.receiver_type), "(", wrap_member_receiver(e, ni.receiver), ", ", strings.join_two(render_expression(e, ni.index), ")"))
+                return strings.join_five(nullable_array_index_helper_name(ni.receiver_type), "(", wrap_member_receiver(e, ni.receiver), ", ", strings.join_two(render_expr(e, ni.index), ")"))
             ir.Expr.expr_nullable_span_index as ns:
-                return strings.join_five(nullable_span_index_helper_name(ns.receiver_type), "(", render_expression(e, ns.receiver), ", ", strings.join_two(render_expression(e, ns.index), ")"))
+                return strings.join_five(nullable_span_index_helper_name(ns.receiver_type), "(", render_expr(e, ns.receiver), ", ", strings.join_two(render_expr(e, ns.index), ")"))
             ir.Expr.expr_index as ix:
-                return strings.join_four(wrap_member_receiver(e, ix.receiver), "[", render_expression(e, ix.index), "]")
+                return strings.join_four(wrap_member_receiver(e, ix.receiver), "[", render_expr(e, ix.index), "]")
             ir.Expr.expr_address_of as addr:
                 return render_address_of(e, addr.expression)
             ir.Expr.expr_sizeof as sz:
@@ -4476,13 +4476,13 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 rbuf.append(" __s; ")
                 rbuf.append(c_type(rin.ty))
                 rbuf.append(" __t; }){ .__s = (")
-                rbuf.append(render_expression(e, rin.expression))
+                rbuf.append(render_expr(e, rin.expression))
                 rbuf.append(") }).__t")
                 return rbuf.as_str()
             ir.Expr.expr_array_literal as arr:
-                return render_array_literal_expression(e, arr.ty, arr.elements)
+                return render_array_literal_expr(e, arr.ty, arr.elements)
             ir.Expr.expr_conditional as cond:
-                return strings.join_five(emit_conditional_condition(e, cond.condition), " ? ", render_expression(e, cond.then_expression), " : ", render_expression(e, cond.else_expression))
+                return strings.join_five(emit_conditional_condition(e, cond.condition), " ? ", render_expr(e, cond.then_expression), " : ", render_expr(e, cond.else_expression))
             ir.Expr.expr_stmt_expr as se:
                 return render_stmt_expr(e, se.setup, se.result)
             ir.Expr.expr_simd_lane_with as lw:
@@ -4492,17 +4492,17 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 lbuf.append("({ ")
                 lbuf.append(c_type(lw.ty))
                 lbuf.append(" _mt_with = ")
-                lbuf.append(wrap_expression(e, lw.src))
+                lbuf.append(wrap_expr(e, lw.src))
                 lbuf.append("; ((")
                 lbuf.append(c_type(types.simd_element_type(lw.ty)))
                 lbuf.append("*)&_mt_with)[")
-                lbuf.append(render_expression(e, lw.index))
+                lbuf.append(render_expr(e, lw.index))
                 lbuf.append("] = ")
-                lbuf.append(wrap_expression(e, lw.value))
+                lbuf.append(wrap_expr(e, lw.value))
                 lbuf.append("; _mt_with; })")
                 return lbuf.as_str()
             ir.Expr.expr_assignment as asg:
-                return strings.join_five(render_expression(e, asg.target), " ", asg.operator, " ", render_expression(e, asg.value))
+                return strings.join_five(render_expr(e, asg.target), " ", asg.operator, " ", render_expr(e, asg.value))
             _:
                 fatal(c"c_backend: unsupported expression")
 
@@ -4510,7 +4510,7 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
 ## Render a GCC/Clang statement-expression `({ setup...; result; })`.  Only the
 ## statement kinds produced by dynamic format-string lowering are supported
 ## (local declaration, assignment, and expression statement); sub-expressions go
-## through `render_expression` so their string literals still register globally.
+## through `render_expr` so their string literals still register globally.
 ## `_Static_assert(<condition>, "<message>");` — a string-literal message is
 ## emitted as a bare C string (the host's `emit_static_assert`), regardless of
 ## its IR type; any other message expression renders normally.
@@ -4520,8 +4520,8 @@ function render_static_assert(e: ref[Emitter], condition: ptr[ir.Expr], message:
         ir.Expr.expr_string_literal as lit:
             message_text.append(c_string_literal(lit.value))
         _:
-            message_text.append(render_expression(e, message))
-    return strings.join_five("_Static_assert(", render_expression(e, condition), ", ", message_text.as_str(), ");")
+            message_text.append(render_expr(e, message))
+    return strings.join_five("_Static_assert(", render_expr(e, condition), ", ", message_text.as_str(), ");")
 
 
 function render_stmt_expr(e: ref[Emitter], setup: span[ir.Stmt], result: ptr[ir.Expr]) -> str:
@@ -4532,7 +4532,7 @@ function render_stmt_expr(e: ref[Emitter], setup: span[ir.Stmt], result: ptr[ir.
         buf.append(render_stmt_expr_stmt(e, unsafe: setup.data + i))
         buf.append(" ")
         i += 1
-    buf.append(render_expression(e, result))
+    buf.append(render_expr(e, result))
     buf.append("; })")
     return buf.as_str()
 
@@ -4541,11 +4541,11 @@ function render_stmt_expr_stmt(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as loc:
-                return strings.join_four(c_declaration(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), ";")
+                return strings.join_four(c_decl(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), ";")
             ir.Stmt.stmt_assignment as asg:
-                return strings.join_six(render_expression(e, asg.target), " ", asg.operator, " ", render_expression(e, asg.value), ";")
+                return strings.join_six(render_expr(e, asg.target), " ", asg.operator, " ", render_expr(e, asg.value), ";")
             ir.Stmt.stmt_expression as ex:
-                return strings.join_two(render_expression(e, ex.expression), ";")
+                return strings.join_two(render_expr(e, ex.expression), ";")
             _:
                 fatal(c"c_backend: statement-expression supports only local/assignment/expression statements")
 
@@ -4557,7 +4557,7 @@ function render_address_of(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     unsafe:
         match read(ep):
             ir.Expr.expr_checked_index as ci:
-                return strings.join_four(checked_array_index_helper_name(ci.receiver_type), "(", wrap_member_receiver(e, ci.receiver), strings.join_three(", ", render_expression(e, ci.index), ")"))
+                return strings.join_four(checked_array_index_helper_name(ci.receiver_type), "(", wrap_member_receiver(e, ci.receiver), strings.join_three(", ", render_expr(e, ci.index), ")"))
             _:
                 return render_address_of_operand(e, ep)
 
@@ -4573,9 +4573,9 @@ function checked_array_index_helper_name(receiver_type: types.Type) -> str:
     match elem:
         types.Type.ty_function:
             # The host names a function/proc element after its C declaration
-            # with a placeholder name (`c_declaration(element, "value")`), e.g.
+            # with a placeholder name (`c_decl(element, "value")`), e.g.
             # `mt_proc_proc_int value` -> `mt_proc_proc_int_value`.
-            buf.append(naming.sanitize_c_identifier(c_declaration(elem, "value")))
+            buf.append(naming.sanitize_c_identifier(c_decl(elem, "value")))
         _:
             buf.append(naming.type_c_key(elem))
     buf.append("_")
@@ -4590,7 +4590,7 @@ function checked_span_index_helper_name(receiver_type: types.Type) -> str:
                 let elem = unsafe: read(g.args.data + 0)
                 match elem:
                     types.Type.ty_function:
-                        return strings.join_two("mt_checked_span_index_", naming.sanitize_c_identifier(c_declaration(elem, "value")))
+                        return strings.join_two("mt_checked_span_index_", naming.sanitize_c_identifier(c_decl(elem, "value")))
                     _:
                         pass
         _:
@@ -4606,7 +4606,7 @@ function nullable_array_index_helper_name(receiver_type: types.Type) -> str:
     buf.append("mt_nullable_index_array_")
     match elem:
         types.Type.ty_function:
-            buf.append(naming.sanitize_c_identifier(c_declaration(elem, "value")))
+            buf.append(naming.sanitize_c_identifier(c_decl(elem, "value")))
         _:
             buf.append(naming.type_c_key(elem))
     buf.append("_")
@@ -4621,7 +4621,7 @@ function nullable_span_index_helper_name(receiver_type: types.Type) -> str:
                 let elem = unsafe: read(g.args.data + 0)
                 match elem:
                     types.Type.ty_function:
-                        return strings.join_two("mt_nullable_span_index_", naming.sanitize_c_identifier(c_declaration(elem, "value")))
+                        return strings.join_two("mt_nullable_span_index_", naming.sanitize_c_identifier(c_decl(elem, "value")))
                     _:
                         pass
         _:
@@ -5081,7 +5081,7 @@ function render_initializer(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
             ir.Expr.expr_zero_init as z:
                 return render_zero_initializer(z.ty)
             _:
-                return render_expression(e, ep)
+                return render_expr(e, ep)
 
 
 ## Render a variant literal in initializer position:
@@ -5165,11 +5165,11 @@ function render_zero_initializer(t: types.Type) -> str:
 
 
 ## The zero value of a type in expression position.
-function render_zero_expression(t: types.Type) -> str:
+function render_zero_expr(t: types.Type) -> str:
     match t:
         types.Type.ty_opaque as op:
             if op.module_name.starts_with("std.c."):
-                return strings.join_four("(", c_declaration(t, ""), ") ", render_zero_initializer(t))
+                return strings.join_four("(", c_decl(t, ""), ") ", render_zero_initializer(t))
             return "NULL"
         types.Type.ty_primitive as p:
             # vec2/vec3/vec4/mat*/quat are struct-like aggregates: a bare
@@ -5181,7 +5181,7 @@ function render_zero_expression(t: types.Type) -> str:
         types.Type.ty_str:
             return strings.join_four("(", c_type(t), ")", " { 0 }")
         _:
-            return strings.join_four("(", c_declaration(t, ""), ") ", render_zero_initializer(t))
+            return strings.join_four("(", c_decl(t, ""), ") ", render_zero_initializer(t))
 
 
 ## True for an expression whose C form is a void expression (a cast to `void`,
@@ -5304,7 +5304,7 @@ function emit_aggregate_with_array_call_fields(e: ref[Emitter], indent: str, dec
 ## An array literal in expression position needs a C compound literal:
 ## `(int32_t [3]) { 10, 20, 30 }`.  A bare braced list is only valid as an
 ## initializer, e.g. in a local declaration.
-function render_array_literal_expression(e: ref[Emitter], ty: types.Type, elements: span[ir.Expr]) -> str:
+function render_array_literal_expr(e: ref[Emitter], ty: types.Type, elements: span[ir.Expr]) -> str:
     var length = array_length(ty)
     if length == 0:
         length = int<-elements.len
@@ -5355,8 +5355,8 @@ function render_array_literal_initializer(e: ref[Emitter], elements: span[ir.Exp
 ## parentheses; anything else is wrapped.  Mirrors wrap_member_receiver.
 function wrap_member_receiver(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     if is_postfix_expr(ep):
-        return render_expression(e, ep)
-    return strings.join_three("(", render_expression(e, ep), ")")
+        return render_expr(e, ep)
+    return strings.join_three("(", render_expr(e, ep), ")")
 
 
 function is_postfix_expr(ep: ptr[ir.Expr]) -> bool:
@@ -5464,7 +5464,7 @@ function variant_c_name_for_type(ty: types.Type) -> str:
 function render_variant_equality(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
     let variant_name = variant_c_name_for_type(expr_result_type(left))
     let fn_name = variant_equality_helper_name(variant_name)
-    let call = strings.join_five(strings.join_two(fn_name, "("), render_expression(e, left), ", ", render_expression(e, right), ")")
+    let call = strings.join_five(strings.join_two(fn_name, "("), render_expr(e, left), ", ", render_expr(e, right), ")")
     if operator == "!=":
         return strings.join_two("!", call)
     return call
@@ -5496,7 +5496,7 @@ function is_null_literal_expr(ep: ptr[ir.Expr]) -> bool:
 function render_nullable_null_comparison(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
     unsafe:
         let operand = if is_null_literal_expr(left): right else: left
-        let access = strings.join_three(render_expression(e, operand), ".has_value", "")
+        let access = strings.join_three(render_expr(e, operand), ".has_value", "")
         if operator == "==":
             return strings.join_two("!", access)
         return access
@@ -5986,7 +5986,7 @@ function is_struct_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Exp
 function render_struct_equality(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
     let cname = c_type(expr_result_type(left))
     let fn_name = struct_equality_helper_name(cname)
-    let call = strings.join_five(strings.join_two(fn_name, "("), render_expression(e, left), ", ", render_expression(e, right), ")")
+    let call = strings.join_five(strings.join_two(fn_name, "("), render_expr(e, left), ", ", render_expr(e, right), ")")
     if operator == "!=":
         return strings.join_two("!", call)
     return call
@@ -6040,7 +6040,7 @@ function render_call(e: ref[Emitter], callee: str, arguments: span[ir.Expr]) -> 
         if i > 0:
             buf.append(", ")
         unsafe:
-            buf.append(render_expression(e, arguments.data + i))
+            buf.append(render_expr(e, arguments.data + i))
         i += 1
     buf.append(")")
     return buf.as_str()
@@ -6048,7 +6048,7 @@ function render_call(e: ref[Emitter], callee: str, arguments: span[ir.Expr]) -> 
 
 ## Render a call through a function-pointer expression: `(*callee)(args)`.
 function render_indirect_call(e: ref[Emitter], callee: ptr[ir.Expr], arguments: span[ir.Expr]) -> str:
-    let callee_text = unsafe: render_expression(e, callee)
+    let callee_text = unsafe: render_expr(e, callee)
     let needs_wrap = not unsafe: is_postfix_expr(callee)
     var buf = string.String.create()
     if needs_wrap:
@@ -6062,7 +6062,7 @@ function render_indirect_call(e: ref[Emitter], callee: ptr[ir.Expr], arguments: 
         if i > 0:
             buf.append(", ")
         unsafe:
-            buf.append(render_expression(e, arguments.data + i))
+            buf.append(render_expr(e, arguments.data + i))
         i += 1
     buf.append(")")
     return buf.as_str()
@@ -6076,7 +6076,7 @@ function render_binary(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right
 
 
 function render_binary_operand(e: ref[Emitter], ep: ptr[ir.Expr], parent_precedence: int, is_right: bool) -> str:
-    let text = render_expression(e, ep)
+    let text = render_expr(e, ep)
     unsafe:
         match read(ep):
             ir.Expr.expr_conditional:
@@ -6090,8 +6090,8 @@ function render_binary_operand(e: ref[Emitter], ep: ptr[ir.Expr], parent_precede
                 return text
 
 
-function wrap_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
-    let text = render_expression(e, ep)
+function wrap_expr(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+    let text = render_expr(e, ep)
     unsafe:
         match read(ep):
             ir.Expr.expr_name:
@@ -6136,7 +6136,7 @@ function wrap_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
 ## condition is itself a conditional (mirrors Ruby's emit_conditional_condition).
 ## All other kinds render bare because `?:` binds looser than every operator.
 function emit_conditional_condition(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
-    let text = render_expression(e, ep)
+    let text = render_expr(e, ep)
     unsafe:
         match read(ep):
             ir.Expr.expr_conditional:
@@ -6166,7 +6166,7 @@ function no_op_cast(ep: ptr[ir.Expr], target_ty: types.Type) -> bool:
 ## binary expressions, ternaries).  Otherwise emit it bare.  Mirrors the
 ## operands Ruby's emit_cast_operand passes through without parentheses.
 function emit_cast_operand(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
-    let text = render_expression(e, ep)
+    let text = render_expr(e, ep)
     unsafe:
         match read(ep):
             ir.Expr.expr_binary:
@@ -6292,9 +6292,9 @@ function expr_result_type(ep: ptr[ir.Expr]) -> types.Type:
 function render_constant(e: ref[Emitter], c: ir.Constant) -> str:
     var buf = string.String.create()
     buf.append("static const ")
-    # Use c_declaration so array types get C-native `TYPE NAME[N]` syntax
+    # Use c_decl so array types get C-native `TYPE NAME[N]` syntax
     # (mirrors Ruby, which does not emit a struct typedef for arrays).
-    buf.append(c_declaration(c.ty, c.linkage_name))
+    buf.append(c_decl(c.ty, c.linkage_name))
     buf.append(" = ")
     unsafe:
         buf.append(render_initializer_exp(e, c.value))
@@ -6309,17 +6309,17 @@ function render_initializer_exp(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
             ir.Expr.expr_aggregate_literal as agg:
                 return render_aggregate_initializer(e, agg.fields)
             _:
-                return render_expression(e, ep)
+                return render_expr(e, ep)
 
 
 ## Emit a module-level global variable (event, var, etc.).
 function render_global(e: ref[Emitter], g: ir.Global) -> str:
     var buf = string.String.create()
     buf.append("static ")
-    # Use c_declaration so array types get C-native `TYPE NAME[N]` syntax
+    # Use c_decl so array types get C-native `TYPE NAME[N]` syntax
     # rather than the backend-internal `array_elem_N` struct type name (which
     # has no typedef emitted).
-    buf.append(c_declaration(g.ty, g.linkage_name))
+    buf.append(c_decl(g.ty, g.linkage_name))
     # Emit the static initializer.  Scalars zero-init to `0`, aggregates/arrays
     # to `{ 0 }`, and value-carrying initializers (e.g. a no-capture `proc`
     # aggregate of function pointers) render their concrete constant form.
@@ -7750,7 +7750,7 @@ function emit_type_aliases(e: ref[Emitter], program: ir.Program) -> void:
                 Option.some as cname:
                     emit_line(e, strings.join_five("typedef ", cname.value, " ", ta.qualified_name, ";"))
                 Option.none:
-                    let c_type_str = c_declaration(ta.target_type, ta.qualified_name)
+                    let c_type_str = c_decl(ta.target_type, ta.qualified_name)
                     emit_line(e, strings.join_three("typedef ", c_type_str, ";"))
         ai += 1
     if program.type_aliases.len > 0:

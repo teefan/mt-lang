@@ -112,7 +112,7 @@ function resolve_local_definition(
     if scope_mod.local_binding_line(ref_of(bindings), name, target_line).is_none():
         return Option[CursorResult].none
 
-    match first_local_declaration(ast_file, name, target_line):
+    match first_local_decl(ast_file, name, target_line):
         Option.some as site:
             var line_text = cursor.source_line(source, site.value.line)
             var column: ptr_uint = 0
@@ -139,7 +139,7 @@ function resolve_local_definition(
 ## (1-based), anywhere in the file: the host's `find_local_declaration_ast_node`
 ## walk.  Destructured names and `as` bindings are not a `LocalDecl`'s own name,
 ## so they never match — as in the host.
-function first_local_declaration(file: ast.SourceFile, name: str, before_line: ptr_uint) -> Option[LocalDeclSite]:
+function first_local_decl(file: ast.SourceFile, name: str, before_line: ptr_uint) -> Option[LocalDeclSite]:
     var di: ptr_uint = 0
     while di < file.declarations.len:
         var decl: ast.Decl
@@ -313,7 +313,7 @@ function is_definition_keyword_kind(kind: tk.TokenKind) -> bool:
 ## `hash`, `extending ptr[T]:` in std/mem/ptr.mt for `ptr`) — and only then as the
 ## module file itself.  Definition-only: the hover's alias arm answers the module,
 ## as the host's hover does.
-function import_alias_member_declaration(
+function import_alias_member_decl(
     ws: ref[workspace.Workspace],
     module_name: str,
     name: str,
@@ -1698,7 +1698,7 @@ function resolve_cursor(
         if alias_module_ptr != null:
             let alias_module = read(alias_module_ptr)
             if not for_hover:
-                match import_alias_member_declaration(ws, alias_module, target.text):
+                match import_alias_member_decl(ws, alias_module, target.text):
                     Option.some as member_decl:
                         return Option[CursorResult].some(value = member_decl.value)
                     Option.none:

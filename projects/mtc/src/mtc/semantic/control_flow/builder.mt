@@ -366,7 +366,7 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], stmt:
                     let success = flow_graph.graph_node(g, success_id) else:
                         return next_id
                     collect_local_decl_writes(cfg, success, l.name, l.line, l.column)
-                    collect_write_sites_from_expression(cfg, success, l.value, l.line)
+                    collect_write_sites_from_expr(cfg, success, l.value, l.line)
                     flow_graph.graph_add_edge(g, cond_id, success_id)
                     flow_graph.graph_set_edge_label(g, cond_id, success_id, "non_null")
                     # The success arm continues into the next statement (the
@@ -381,7 +381,7 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], stmt:
                     return next_id
                 collect_read_sites(cfg, node, l.value)
                 collect_local_decl_writes(cfg, node, l.name, l.line, l.column)
-                collect_write_sites_from_expression(cfg, node, l.value, l.line)
+                collect_write_sites_from_expr(cfg, node, l.value, l.line)
                 match l.destructure_bindings:
                     Option.some as names:
                         var di: ptr_uint = 0
@@ -410,7 +410,7 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], stmt:
                         push_write_site(cfg, node, id.name, a.line, id.column, "assignment")
                     _:
                         pass
-                collect_write_sites_from_expression(cfg, node, a.value, a.line)
+                collect_write_sites_from_expr(cfg, node, a.value, a.line)
                 flow_graph.graph_add_edge(g, node_id, next_id)
                 return node_id
             ast.Stmt.stmt_if as sif:
@@ -510,13 +510,13 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], stmt:
                 collect_read_sites(cfg, node, r.value)
                 return node_id
             ast.Stmt.stmt_expression as e:
-                let fatal = is_fatal_expression(e.expression)
+                let fatal = is_fatal_expr(e.expression)
                 let kind = if fatal: "fatal" else: "expression"
                 let node_id = flow_graph.graph_add_node(g, kind, stmt_key, e.line, 0)
                 let node = flow_graph.graph_node(g, node_id) else:
                     return next_id
                 collect_read_sites(cfg, node, e.expression)
-                collect_write_sites_from_expression(cfg, node, e.expression, e.line)
+                collect_write_sites_from_expr(cfg, node, e.expression, e.line)
                 if not fatal:
                     flow_graph.graph_add_edge(g, node_id, next_id)
                 return node_id
@@ -684,13 +684,13 @@ function collect_target_side_effect_reads(cfg: ref[Cfg], node: ptr[flow_graph.Cf
 
 ## The host's `write_targets_from_expression`: the bindings an expression
 ## writes through (`out`/`inout` arguments and the `ref_of`/`ptr_of` family).
-function collect_write_sites_from_expression(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], expr: ptr[ast.Expr]?, line: ptr_uint) -> void:
+function collect_write_sites_from_expr(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], expr: ptr[ast.Expr]?, line: ptr_uint) -> void:
     let e = expr else:
         return
     unsafe:
         match read(ptr[ast.Expr]<-e):
             ast.Expr.expr_call as cl:
-                collect_write_sites_from_expression(cfg, node, cl.callee, line)
+                collect_write_sites_from_expr(cfg, node, cl.callee, line)
                 var ai: ptr_uint = 0
                 while ai < cl.args.len:
                     let value = read(cl.args.data + ai).arg_value
@@ -716,54 +716,54 @@ function collect_write_sites_from_expression(cfg: ref[Cfg], node: ptr[flow_graph
                                     pass
                         Option.none:
                             pass
-                    collect_write_sites_from_expression(cfg, node, value, line)
+                    collect_write_sites_from_expr(cfg, node, value, line)
                     ai += 1
             ast.Expr.expr_member_access as ma:
-                collect_write_sites_from_expression(cfg, node, ma.receiver, line)
+                collect_write_sites_from_expr(cfg, node, ma.receiver, line)
             ast.Expr.expr_index_access as ix:
-                collect_write_sites_from_expression(cfg, node, ix.receiver, line)
-                collect_write_sites_from_expression(cfg, node, ix.index, line)
+                collect_write_sites_from_expr(cfg, node, ix.receiver, line)
+                collect_write_sites_from_expr(cfg, node, ix.index, line)
             ast.Expr.expr_specialization as sp:
-                collect_write_sites_from_expression(cfg, node, sp.callee, line)
+                collect_write_sites_from_expr(cfg, node, sp.callee, line)
             ast.Expr.expr_unary_op as u:
-                collect_write_sites_from_expression(cfg, node, u.operand, line)
+                collect_write_sites_from_expr(cfg, node, u.operand, line)
             ast.Expr.expr_binary_op as b:
-                collect_write_sites_from_expression(cfg, node, b.left, line)
-                collect_write_sites_from_expression(cfg, node, b.right, line)
+                collect_write_sites_from_expr(cfg, node, b.left, line)
+                collect_write_sites_from_expr(cfg, node, b.right, line)
             ast.Expr.expr_range as r:
-                collect_write_sites_from_expression(cfg, node, r.start_expr, line)
-                collect_write_sites_from_expression(cfg, node, r.end_expr, line)
+                collect_write_sites_from_expr(cfg, node, r.start_expr, line)
+                collect_write_sites_from_expr(cfg, node, r.end_expr, line)
             ast.Expr.expr_expression_list as el:
                 var ei: ptr_uint = 0
                 while ei < el.elements.len:
-                    collect_write_sites_from_expression(cfg, node, el.elements.data + ei, line)
+                    collect_write_sites_from_expr(cfg, node, el.elements.data + ei, line)
                     ei += 1
             ast.Expr.expr_if as ife:
-                collect_write_sites_from_expression(cfg, node, ife.condition, line)
-                collect_write_sites_from_expression(cfg, node, ife.then_expr, line)
-                collect_write_sites_from_expression(cfg, node, ife.else_expr, line)
+                collect_write_sites_from_expr(cfg, node, ife.condition, line)
+                collect_write_sites_from_expr(cfg, node, ife.then_expr, line)
+                collect_write_sites_from_expr(cfg, node, ife.else_expr, line)
             ast.Expr.expr_match as me:
-                collect_write_sites_from_expression(cfg, node, me.scrutinee, line)
+                collect_write_sites_from_expr(cfg, node, me.scrutinee, line)
                 var ai: ptr_uint = 0
                 while ai < me.arms.len:
                     let arm = read(me.arms.data + ai)
-                    collect_write_sites_from_expression(cfg, node, arm.pattern, line)
-                    collect_write_sites_from_expression(cfg, node, arm.value, line)
+                    collect_write_sites_from_expr(cfg, node, arm.pattern, line)
+                    collect_write_sites_from_expr(cfg, node, arm.value, line)
                     ai += 1
             ast.Expr.expr_unsafe as us:
-                collect_write_sites_from_expression(cfg, node, us.expression, line)
+                collect_write_sites_from_expr(cfg, node, us.expression, line)
             ast.Expr.expr_prefix_cast as pc:
-                collect_write_sites_from_expression(cfg, node, pc.expression, line)
+                collect_write_sites_from_expr(cfg, node, pc.expression, line)
             ast.Expr.expr_await as aw:
-                collect_write_sites_from_expression(cfg, node, aw.expression, line)
+                collect_write_sites_from_expr(cfg, node, aw.expression, line)
             ast.Expr.expr_detach as det:
-                collect_write_sites_from_expression(cfg, node, det.expression, line)
+                collect_write_sites_from_expr(cfg, node, det.expression, line)
             ast.Expr.expr_format_string as fs:
                 var pi: ptr_uint = 0
                 while pi < fs.parts.len:
                     match read(fs.parts.data + pi):
                         ast.FormatStringPart.fmt_expr as fe:
-                            collect_write_sites_from_expression(cfg, node, fe.expression, line)
+                            collect_write_sites_from_expr(cfg, node, fe.expression, line)
                         _:
                             pass
                     pi += 1
@@ -804,7 +804,7 @@ function call_argument_mutation_target(expression: ptr[ast.Expr]) -> Option[ptr[
 
 ## The host's `fatal_expression?`: a `fatal(...)` call, or an `assert`/`expect`
 ## whose first argument is the literal `false`, terminates the flow.
-function is_fatal_expression(expr: ptr[ast.Expr]?) -> bool:
+function is_fatal_expr(expr: ptr[ast.Expr]?) -> bool:
     let e = expr else:
         return false
     unsafe:

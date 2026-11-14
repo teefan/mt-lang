@@ -3,7 +3,7 @@
 ## plus base_formatter.rb) so that `mtc lower` output matches the Ruby compiler.
 ##
 ## Expressions render to single-line strings (IR has no multi-line expression
-## forms — procs are lowered to functions), so `render_expression` is a pure
+## forms — procs are lowered to functions), so `render_expr` is a pure
 ## string builder.  Only statement/declaration emitters touch the line buffer.
 ##
 ## Output strings are built with std.string.String and returned as `str` views;
@@ -307,11 +307,11 @@ function emit_program(f: ref[Formatter], program: ir.Program) -> void:
 # =============================================================================
 
 function emit_constant(f: ref[Formatter], c: ir.Constant) -> void:
-    emit_line(f, strings.join_six("const ", binding_name(c.name, c.linkage_name), ": ", render_type(c.ty), " = ", render_expression(c.value, 0)))
+    emit_line(f, strings.join_six("const ", binding_name(c.name, c.linkage_name), ": ", render_type(c.ty), " = ", render_expr(c.value, 0)))
 
 
 function emit_global(f: ref[Formatter], g: ir.Global) -> void:
-    emit_line(f, strings.join_six("var ", binding_name(g.name, g.linkage_name), ": ", render_type(g.ty), " = ", render_expression(g.value, 0)))
+    emit_line(f, strings.join_six("var ", binding_name(g.name, g.linkage_name), ": ", render_type(g.ty), " = ", render_expr(g.value, 0)))
 
 
 function emit_opaque(f: ref[Formatter], o: ir.OpaqueDecl) -> void:
@@ -394,13 +394,13 @@ function emit_enum(f: ref[Formatter], e: ir.EnumDecl) -> void:
     while i < e.members.len:
         unsafe:
             let m = read(e.members.data + i)
-            emit_line(f, strings.join_three(binding_name(m.name, m.linkage_name), " = ", render_expression(m.value, 0)))
+            emit_line(f, strings.join_three(binding_name(m.name, m.linkage_name), " = ", render_expr(m.value, 0)))
         i += 1
     f.indent -= 1
 
 
 function emit_static_assert(f: ref[Formatter], condition: ptr[ir.Expr], message: ptr[ir.Expr]) -> void:
-    emit_line(f, strings.join_five("static_assert(", render_expression(condition, 0), ", ", render_expression(message, 0), ")"))
+    emit_line(f, strings.join_five("static_assert(", render_expr(condition, 0), ", ", render_expr(message, 0), ")"))
 
 
 function emit_function(f: ref[Formatter], func: ir.Function) -> void:
@@ -450,16 +450,16 @@ function emit_statement(f: ref[Formatter], sp: ptr[ir.Stmt]) -> void:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as s:
-                emit_line(f, strings.join_six("let ", binding_name(s.name, s.linkage_name), ": ", render_type(s.ty), " = ", render_expression(s.value, 0)))
+                emit_line(f, strings.join_six("let ", binding_name(s.name, s.linkage_name), ": ", render_type(s.ty), " = ", render_expr(s.value, 0)))
             ir.Stmt.stmt_assignment as s:
-                emit_line(f, strings.join_five(render_expression(s.target, 0), " ", s.operator, " ", render_expression(s.value, 0)))
+                emit_line(f, strings.join_five(render_expr(s.target, 0), " ", s.operator, " ", render_expr(s.value, 0)))
             ir.Stmt.stmt_block as s:
                 emit_line(f, "block:")
                 f.indent += 1
                 emit_stmt_body(f, s.body)
                 f.indent -= 1
             ir.Stmt.stmt_if as s:
-                emit_line(f, strings.join_three("if ", render_expression(s.condition, 0), ":"))
+                emit_line(f, strings.join_three("if ", render_expr(s.condition, 0), ":"))
                 f.indent += 1
                 emit_stmt_body(f, s.then_body)
                 f.indent -= 1
@@ -473,7 +473,7 @@ function emit_statement(f: ref[Formatter], sp: ptr[ir.Stmt]) -> void:
                     Option.none:
                         pass
             ir.Stmt.stmt_switch as s:
-                emit_line(f, strings.join_three("switch ", render_expression(s.expression, 0), ":"))
+                emit_line(f, strings.join_three("switch ", render_expr(s.expression, 0), ":"))
                 f.indent += 1
                 var ci: ptr_uint = 0
                 while ci < s.cases.len:
@@ -483,21 +483,21 @@ function emit_statement(f: ref[Formatter], sp: ptr[ir.Stmt]) -> void:
                     else:
                         let value = sc.value else:
                             fatal(c"ir_formatter: non-default switch case missing value")
-                        emit_line(f, strings.join_three("case ", render_expression(value, 0), ":"))
+                        emit_line(f, strings.join_three("case ", render_expr(value, 0), ":"))
                     f.indent += 1
                     emit_stmt_body(f, sc.body)
                     f.indent -= 1
                     ci += 1
                 f.indent -= 1
             ir.Stmt.stmt_while as s:
-                emit_line(f, strings.join_three("while ", render_expression(s.condition, 0), ":"))
+                emit_line(f, strings.join_three("while ", render_expr(s.condition, 0), ":"))
                 f.indent += 1
                 emit_stmt_body(f, s.body)
                 f.indent -= 1
             ir.Stmt.stmt_for as s:
                 let init = render_for_clause(s.init)
                 let post = render_for_clause(s.post)
-                emit_line(f, strings.join_six("for ", init, "; ", render_expression(s.condition, 0), strings.join_three("; ", post, ":"), ""))
+                emit_line(f, strings.join_six("for ", init, "; ", render_expr(s.condition, 0), strings.join_three("; ", post, ":"), ""))
                 f.indent += 1
                 emit_stmt_body(f, s.body)
                 f.indent -= 1
@@ -515,20 +515,20 @@ function emit_statement(f: ref[Formatter], sp: ptr[ir.Stmt]) -> void:
                 let value = s.value else:
                     emit_line(f, "return")
                     return
-                emit_line(f, strings.join_two("return ", render_expression(value, 0)))
+                emit_line(f, strings.join_two("return ", render_expr(value, 0)))
             ir.Stmt.stmt_expression as s:
-                emit_line(f, render_expression(s.expression, 0))
+                emit_line(f, render_expr(s.expression, 0))
 
 
 function render_for_clause(sp: ptr[ir.Stmt]) -> str:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as s:
-                return strings.join_five(s.linkage_name, ": ", render_type(s.ty), " = ", render_expression(s.value, 0))
+                return strings.join_five(s.linkage_name, ": ", render_type(s.ty), " = ", render_expr(s.value, 0))
             ir.Stmt.stmt_assignment as s:
-                return strings.join_five(render_expression(s.target, 0), " ", s.operator, " ", render_expression(s.value, 0))
+                return strings.join_five(render_expr(s.target, 0), " ", s.operator, " ", render_expr(s.value, 0))
             ir.Stmt.stmt_expression as s:
-                return render_expression(s.expression, 0)
+                return render_expr(s.expression, 0)
             _:
                 return ""
 
@@ -544,7 +544,7 @@ function render_args(items: span[ir.Expr]) -> str:
         if i > 0:
             buf.append(", ")
         unsafe:
-            buf.append(render_expression(items.data + i, 0))
+            buf.append(render_expr(items.data + i, 0))
         i += 1
     return buf.as_str()
 
@@ -559,12 +559,12 @@ function render_agg_fields(fields: span[ir.AggregateField]) -> str:
             let fld = read(fields.data + i)
             buf.append(fld.name)
             buf.append(" = ")
-            buf.append(render_expression(fld.value, 0))
+            buf.append(render_expr(fld.value, 0))
         i += 1
     return buf.as_str()
 
 
-function postfix_expression(ep: ptr[ir.Expr]) -> bool:
+function postfix_expr(ep: ptr[ir.Expr]) -> bool:
     unsafe:
         match read(ep):
             ir.Expr.expr_name:
@@ -582,9 +582,9 @@ function postfix_expression(ep: ptr[ir.Expr]) -> bool:
 
 
 function render_postfix(ep: ptr[ir.Expr]) -> str:
-    if postfix_expression(ep):
-        return render_expression(ep, POSTFIX_PRECEDENCE)
-    return strings.join_three("(", render_expression(ep, 0), ")")
+    if postfix_expr(ep):
+        return render_expr(ep, POSTFIX_PRECEDENCE)
+    return strings.join_three("(", render_expr(ep, 0), ")")
 
 
 function expr_type(ep: ptr[ir.Expr]) -> types.Type:
@@ -665,7 +665,7 @@ function pointer_receiver(ep: ptr[ir.Expr]) -> bool:
                 return is_ptr_type(expr_type(ep))
 
 
-function render_expression(ep: ptr[ir.Expr], parent_precedence: int) -> str:
+function render_expr(ep: ptr[ir.Expr], parent_precedence: int) -> str:
     unsafe:
         match read(ep):
             ir.Expr.expr_name as e:
@@ -674,35 +674,35 @@ function render_expression(ep: ptr[ir.Expr], parent_precedence: int) -> str:
                 let operator = if pointer_receiver(e.receiver): "->" else: "."
                 return wrap(strings.join_three(render_postfix(e.receiver), operator, e.member), parent_precedence, POSTFIX_PRECEDENCE)
             ir.Expr.expr_index as e:
-                return wrap(strings.join_four(render_postfix(e.receiver), "[", render_expression(e.index, 0), "]"), parent_precedence, POSTFIX_PRECEDENCE)
+                return wrap(strings.join_four(render_postfix(e.receiver), "[", render_expr(e.index, 0), "]"), parent_precedence, POSTFIX_PRECEDENCE)
             ir.Expr.expr_checked_index as e:
-                return strings.join_six("checked_index<", render_type(e.receiver_type), ">(", render_expression(e.receiver, 0), strings.join_three(", ", render_expression(e.index, 0), ")"), "")
+                return strings.join_six("checked_index<", render_type(e.receiver_type), ">(", render_expr(e.receiver, 0), strings.join_three(", ", render_expr(e.index, 0), ")"), "")
             ir.Expr.expr_checked_span_index as e:
-                return strings.join_six("checked_span_index<", render_type(e.receiver_type), ">(", render_expression(e.receiver, 0), strings.join_three(", ", render_expression(e.index, 0), ")"), "")
+                return strings.join_six("checked_span_index<", render_type(e.receiver_type), ">(", render_expr(e.receiver, 0), strings.join_three(", ", render_expr(e.index, 0), ")"), "")
             ir.Expr.expr_nullable_index as e:
-                return strings.join_six("nullable_index<", render_type(e.receiver_type), ">(", render_expression(e.receiver, 0), strings.join_three(", ", render_expression(e.index, 0), ")"), "")
+                return strings.join_six("nullable_index<", render_type(e.receiver_type), ">(", render_expr(e.receiver, 0), strings.join_three(", ", render_expr(e.index, 0), ")"), "")
             ir.Expr.expr_nullable_span_index as e:
-                return strings.join_six("nullable_span_index<", render_type(e.receiver_type), ">(", render_expression(e.receiver, 0), strings.join_three(", ", render_expression(e.index, 0), ")"), "")
+                return strings.join_six("nullable_span_index<", render_type(e.receiver_type), ">(", render_expr(e.receiver, 0), strings.join_three(", ", render_expr(e.index, 0), ")"), "")
             ir.Expr.expr_call as e:
                 return wrap(strings.join_four(e.callee, "(", render_args(e.arguments), ")"), parent_precedence, POSTFIX_PRECEDENCE)
             ir.Expr.expr_call_indirect as e:
-                return wrap(strings.join_four("indirect(", render_expression(e.callee, 0), strings.join_two(", ", render_args(e.arguments)), ")"), parent_precedence, POSTFIX_PRECEDENCE)
+                return wrap(strings.join_four("indirect(", render_expr(e.callee, 0), strings.join_two(", ", render_args(e.arguments)), ")"), parent_precedence, POSTFIX_PRECEDENCE)
             ir.Expr.expr_unary as e:
-                let operand = render_expression(e.operand, UNARY_PRECEDENCE)
+                let operand = render_expr(e.operand, UNARY_PRECEDENCE)
                 let text = if e.operator == "not": strings.join_two("not ", operand) else: strings.join_two(e.operator, operand)
                 return wrap(text, parent_precedence, UNARY_PRECEDENCE)
             ir.Expr.expr_binary as e:
                 let current = precedence(e.operator)
-                let left = render_expression(e.left, current)
-                let right = render_expression(e.right, current + 1)
+                let left = render_expr(e.left, current)
+                let right = render_expr(e.right, current + 1)
                 return wrap(strings.join_five(left, " ", e.operator, " ", right), parent_precedence, current)
             ir.Expr.expr_conditional as e:
-                let condition = render_expression(e.condition, IF_EXPRESSION_PRECEDENCE)
-                let then_expr = render_expression(e.then_expression, IF_EXPRESSION_PRECEDENCE)
-                let else_expr = render_expression(e.else_expression, IF_EXPRESSION_PRECEDENCE)
+                let condition = render_expr(e.condition, IF_EXPRESSION_PRECEDENCE)
+                let then_expr = render_expr(e.then_expression, IF_EXPRESSION_PRECEDENCE)
+                let else_expr = render_expr(e.else_expression, IF_EXPRESSION_PRECEDENCE)
                 return wrap(strings.join_six("if ", condition, ": ", then_expr, strings.join_two(" else: ", else_expr), ""), parent_precedence, IF_EXPRESSION_PRECEDENCE)
             ir.Expr.expr_reinterpret as e:
-                return strings.join_six("reinterpret[", render_type(e.target_type), " <- ", render_type(e.source_type), strings.join_three("](", render_expression(e.expression, 0), ")"), "")
+                return strings.join_six("reinterpret[", render_type(e.target_type), " <- ", render_type(e.source_type), strings.join_three("](", render_expr(e.expression, 0), ")"), "")
             ir.Expr.expr_sizeof as e:
                 return strings.join_three("size_of(", render_type(e.target_type), ")")
             ir.Expr.expr_alignof as e:
@@ -731,9 +731,9 @@ function render_expression(ep: ptr[ir.Expr], parent_precedence: int) -> str:
             ir.Expr.expr_zero_init as e:
                 return strings.join_three("zero[", render_type(e.ty), "]")
             ir.Expr.expr_address_of as e:
-                return wrap(strings.join_two("&", render_expression(e.expression, UNARY_PRECEDENCE)), parent_precedence, UNARY_PRECEDENCE)
+                return wrap(strings.join_two("&", render_expr(e.expression, UNARY_PRECEDENCE)), parent_precedence, UNARY_PRECEDENCE)
             ir.Expr.expr_cast as e:
-                return strings.join_three(render_type(e.target_type), "<-", render_expression(e.expression, 0))
+                return strings.join_three(render_type(e.target_type), "<-", render_expr(e.expression, 0))
             ir.Expr.expr_aggregate_literal as e:
                 return strings.join_four(render_type(e.ty), "(", render_agg_fields(e.fields), ")")
             ir.Expr.expr_variant_literal as e:
@@ -743,8 +743,8 @@ function render_expression(ep: ptr[ir.Expr], parent_precedence: int) -> str:
             ir.Expr.expr_array_literal as e:
                 return strings.join_four(render_type(e.ty), "(", render_args(e.elements), ")")
             ir.Expr.expr_stmt_expr as e:
-                return strings.join_three("stmt_expr(", render_expression(e.result, 0), ")")
+                return strings.join_three("stmt_expr(", render_expr(e.result, 0), ")")
             ir.Expr.expr_simd_lane_with as e:
-                return strings.join_six(render_expression(e.src, 0), ".with(", render_expression(e.index, 0), ", ", render_expression(e.value, 0), ")")
+                return strings.join_six(render_expr(e.src, 0), ".with(", render_expr(e.index, 0), ", ", render_expr(e.value, 0), ")")
             ir.Expr.expr_assignment as e:
-                return strings.join_five(render_expression(e.target, 0), " ", e.operator, " ", render_expression(e.value, 0))
+                return strings.join_five(render_expr(e.target, 0), " ", e.operator, " ", render_expr(e.value, 0))

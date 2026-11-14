@@ -55,7 +55,7 @@ public struct ParserState:
 
 # =============================================================================
 #  Loop guard — per-declaration safety net against parser bugs.
-#  The caller (parse_declaration) resets step_counter to zero before each
+#  The caller (parse_decl) resets step_counter to zero before each
 #  top-level declaration, so a single stuck loop aborts quickly without
 #  blocking legitimate large files (cumulative steps across many declarations
 #  are intentionally not counted — only steps within one declaration matter).
