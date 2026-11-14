@@ -99,8 +99,8 @@ self-hosted compiler, and matching the host everywhere is the program's goal.
     file / resolved import-closure digest; the self always runs live).
     Do not run the corpus-wide sweep or the audit as the iteration loop.
   - **Tier 2 — once per commit, on frozen sources, backgrounded**:
-    `tools/bootstrap.sh -j 16` (fixed point + 14/14 self-tests) and
-    `build/stage2/mtc test test/mt -I .` (60/0) are the hard proofs; then the area
+    `tools/bootstrap.sh -j 16` (fixed point + 21/0 self-tests) and
+    `build/stage2/mtc test test/mt -I .` (61/0) are the hard proofs; then the area
     sweeps — linter: `rake parity:scoreboard`, `ruby tools/lint_parity.rb -q`
     (635 files; read its summary, it is not expected to reach 0 yet),
     `ruby tools/unused_import_parity.rb` (635/635), `ruby tools/cli_parity.rb`

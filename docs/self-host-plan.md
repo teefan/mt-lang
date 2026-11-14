@@ -34,8 +34,8 @@ history.
 
 | Area | State |
 | --- | --- |
-| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** |
-| `test/mt` | **60 files / 0 failed** (session 72 on stage2) |
+| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **21 files / 0 failed** |
+| `test/mt` | **61 files / 0 failed** (session 76) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **735 match / 0 differ / 4 host-rejected of 739**; counts drift with the tree and `tmp` fixtures) |
 | `sexpr lower` | **685 match / 2 differ / 53 host-rejected / 0 self-rejected of 740 files** (session 76) — the two differ are the documented `memory_stress_test` (leaked auto-lifetime) and `main.mt` (`--sexpr` loop guard) artifacts.  Session 72 closed the `woodeneye` row; session 76 closed a `dap/server.mt` row that session 73's DAP change had introduced (a guard-narrowed `null` assignment took the refined type instead of the target's storage type) |
@@ -87,20 +87,24 @@ First pass of the refactoring program (`docs/refactoring.md`).  Three batches:
    Locked by the extended `test_null_literal_takes_context_type` (fails before,
    passes after).  `lower` is now **685 match / 2 differ / 53 host-rejected /
    0 self-rejected of 740**.
+5. **Test-tree hygiene.**  `heap_region_test.mt` (a `std.mem.heap` test) moved
+   from `projects/mtc/test` to `test/mt` (suite split now **21 / 61**), and the
+   empty `projects/mtc/src/support/` directory was removed.  The shared
+   test-helper extraction is deferred: it needs a `projects/mtc/test` module
+   root in `dev_tests` and bootstrap.
 
 Current structure: **132 files / 154,135 lines / 122,610 code lines**; 108 import
-edges, **0 layering / 0 alias / 0 naming violations**; 35 unused + 6 test-only
-public declarations; 786 duplication clusters / 5,206 duplicated lines; 35
-functions >= 200 lines; 12 files >= 2,000 code lines.
+edges, **0 layering / 0 alias / 0 naming / 0 vocabulary violations**; 35 unused
++ 6 test-only public declarations; 786 duplication clusters / 5,206 duplicated
+lines; 35 functions >= 200 lines; 12 files >= 2,000 code lines.
 
-Verification after each batch: dev build, **22/0** self-host suite; guard tests
-**13/13**; `--check --strict --ratchet` green; baseline refreshed.  Final pass:
-bootstrap fixed point holds, `test/mt` 60/0, CLI 224/224, `lower` 685/2/53/0.
+Verification after each batch: dev build, **21/0** self-host suite; guard tests
+**14/14**; `--check --strict --ratchet` green; baseline refreshed.  Final pass:
+bootstrap fixed point holds, `test/mt` 61/0, CLI 224/224, `lower` 685/2/53/0.
 
-Next in the program: the remaining naming vocabulary (retire `new_`/`lookup_`,
-standardize `_declaration`/`_expression`), test-tree hygiene, then the file
-splits largest-first (lowering, c_backend, main, analyzer, linter, parser,
-bindgen).
+Next in the program: the file splits largest-first (lowering, c_backend, main,
+analyzer, linter, parser, bindgen).  The shared test-helper extraction is
+deferred behind a `projects/mtc/test` module root in `dev_tests`/bootstrap.
 
 ## Session 75 — refactoring safety suite
 
@@ -138,7 +142,7 @@ the safety suite (protocol: `docs/refactoring.md`):
   `--check --ratchet` all green on the frozen tree; `rake test:tooling`
   picks the new test up; `bash -n tools/gates.sh`.  The first full
   `tools/gates.sh --areas refactor --run` passed **6/6 rc=0 in 2m34s**
-  (dev build; dev suite 22/0; guard ok; `test/mt` 60/0; CLI 224/224;
+  (dev build; dev suite 21/0; guard ok; `test/mt` 61/0; CLI 224/224;
   scoreboard meter).  29 stray `__mt_test_runner_*` sidecars were removed.
 
 ## Session 74 — decisions closed
@@ -526,7 +530,7 @@ Iterate cheap, prove once:
   gate set for the working-tree diff (or accepts `--areas linter`); `--run`
   executes them with logs under `tmp/gates/`.  Hard proofs: `tools/bootstrap.sh
   -j 16 --fast` (fixed point; the full form also runs the suite) and
-  `build/stage2/mtc test test/mt -I .` (60/0), then the sweep that covers the
+  `build/stage2/mtc test test/mt -I .` (61/0), then the sweep that covers the
   area (lower/lint/CLI/LSP/DAP/format).
 - **Batch the ceremony, not the care.**  Land 3–5 fixes per commit, each
   verified against the host before the next; run tier 2 once on the frozen tree.
@@ -1188,8 +1192,8 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 73 (gate `--fast` + stage2 suite 22/0) | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 60 files / 0 failed | session 73 (stage2) | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **21 files / 0 failed** | session 76 | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 61 files / 0 failed | session 76 | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 71 | `tools/gates.sh --only examples --run` |
 | `sexpr lex` / `parse` | lex 739/739; parse 735 match / 0 differ / 4 host-rejected of 739 (counts include `tmp` fixtures) | session 72 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
 | `sexpr lower` | **685 match / 2 differ / 53 host-rejected / 0 self-rejected** of 740 (the 2 are the documented `memory_stress_test` + `main.mt` artifacts; session 76 closed the `dap/server.mt` row introduced by session 73's DAP change) | session 76 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |

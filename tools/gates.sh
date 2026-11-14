@@ -134,7 +134,7 @@ gate_label() {
         dev_build)      echo "dev build to tmp/mtc-dev (~50 s)" ;;
         dev_tests)      echo "self-host suite, one process per file (~1 min)" ;;
         bootstrap)      echo "bootstrap --fast: fixed point only (~3 min)" ;;
-        test_mt)        echo "test/mt under stage2 (60 files / 0 failed)" ;;
+        test_mt)        echo "test/mt under stage2 (61 files / 0 failed)" ;;
         sexpr_lex)      echo "sexpr lex parity (739/739)" ;;
         sexpr_parse)    echo "sexpr parse parity (735 match / 0 differ / 4 host-rejected of 739)" ;;
         sexpr_lower)    echo "sexpr lower parity (meter, ~1 min warm / ~4 min cold host cache)" ;;

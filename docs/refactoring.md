@@ -123,7 +123,7 @@ to repeated emission/frame boilerplate, not as an absolute quality score.
 2. **Iterate cheap.**
    ```sh
    ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev   # ~35 s
-   tmp/mtc-dev test projects/mtc -I . --timeout 120                        # 22 files
+   tmp/mtc-dev test projects/mtc -I . --timeout 120                        # 21 files
    ruby tools/refactor_guard.rb --check
    ```
    Then the focused parity harness for the class you touched (lint, sexpr,
@@ -190,4 +190,4 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 | functions ≥ 200 lines | 35 |
 | files ≥ 2,000 code lines | 12 |
 | markers | 0 |
-| test files (projects/mtc / test/mt) | 22 / 60 |
+| test files (projects/mtc / test/mt) | 21 / 61 |
