@@ -11,6 +11,7 @@ import mtc.semantic.types as types
 import mtc.ir as ir
 import mtc.c_naming as naming
 import mtc.lowering.utils as utils
+import mtc.strings
 
 
 # =============================================================================
@@ -274,7 +275,7 @@ public function build_async_frame(module_name: str, name: str, has_await: bool, 
     let bool_ty = types.primitive("bool")
     let int_ty = types.primitive("int")
     let ptr_void = types.Type.ty_generic(name = "ptr", args = utils.sp_type(types.primitive("void")))
-    let frame_c = naming.qualified_c_name(module_name, utils.j2(name, "_frame"))
+    let frame_c = naming.qualified_c_name(module_name, strings.join_two(name, "_frame"))
 
     var fields = vec.Vec[ir.Field].create()
     fields.push(ir.Field(name = "ready",          ty = bool_ty))

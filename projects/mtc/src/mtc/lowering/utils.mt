@@ -14,56 +14,12 @@ import std.mem.heap as heap_mod
 import mtc.ir as ir
 import mtc.semantic.types as types
 import mtc.c_naming as naming
+import mtc.strings
 
 
 # =============================================================================
 #  String concatenation
 # =============================================================================
-
-public function j2(a: str, b: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    return buf.as_str()
-
-
-public function j3(a: str, b: str, c: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    buf.append(c)
-    return buf.as_str()
-
-
-public function j4(a: str, b: str, c: str, d: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    buf.append(c)
-    buf.append(d)
-    return buf.as_str()
-
-
-public function j5(a: str, b: str, c: str, d: str, e: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    buf.append(c)
-    buf.append(d)
-    buf.append(e)
-    return buf.as_str()
-
-
-public function j6(a: str, b: str, c: str, d: str, e: str, f: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    buf.append(c)
-    buf.append(d)
-    buf.append(e)
-    buf.append(f)
-    return buf.as_str()
-
 
 # =============================================================================
 #  Single-element span helpers
@@ -181,7 +137,7 @@ public function c_local_name(name: str) -> str:
     if name.len == 0:
         return "value"
     if c_reserved_identifier(name):
-        return j2(name, "_")
+        return strings.join_two(name, "_")
     return name
 
 

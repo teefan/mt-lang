@@ -42,6 +42,7 @@ module MilkTea
     LAYER_RANKS = {
       "float_text" => 0,
       "http_util" => 0,
+      "strings" => 0,
       "profile" => 0,
       "version_info" => 0,
       "cli_help" => 0,

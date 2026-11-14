@@ -33,6 +33,7 @@ import mtc.c_naming as naming
 import mtc.lowering.async as async_mod
 import mtc.lowering.utils as utils
 import mtc.lowering.proc_renumber as proc_renumber
+import mtc.strings
 
 
 ## A lowering-stage error.  The lowering resolves types structurally and
@@ -542,7 +543,7 @@ function event_listener_type(info: ref[EventRuntimeInfo]) -> types.Type:
     if info.has_payload:
         params.push(info.payload_type)
         names.push("payload")
-    return types.Type.ty_function(name = j2(info.name, "__listener"), params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
+    return types.Type.ty_function(name = strings.join_two(info.name, "__listener"), params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
 
 
 ## The typed stateful listener: the host's `event_stateful_listener_function_type`,
@@ -556,7 +557,7 @@ function event_stateful_listener_type(info: ref[EventRuntimeInfo]) -> types.Type
     if info.has_payload:
         params.push(info.payload_type)
         names.push("payload")
-    return types.Type.ty_function(name = j2(info.name, "__stateful_listener"), params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
+    return types.Type.ty_function(name = strings.join_two(info.name, "__stateful_listener"), params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
 
 
 # =============================================================================
@@ -576,7 +577,7 @@ function ensure_str_buffer_struct(ctx: ref[LowerCtx], sb_ty: types.Type) -> void
                     n_str = types.type_to_string(read(g.args.data + 0))
         _:
             pass
-    let c_name = j3("mt_str_buffer_", n_str, "")
+    let c_name = strings.join_three("mt_str_buffer_", n_str, "")
     if ctx.str_buffer_structs.contains(c_name):
         return
     ctx.str_buffer_structs.set(c_name, c_name)
@@ -1408,7 +1409,7 @@ function spec_arg_type_to_s(t: types.Type) -> str:
             return "str"
         types.Type.ty_named as n:
             if n.module_name.len > 0:
-                return j3(n.module_name, ".", n.name)
+                return strings.join_three(n.module_name, ".", n.name)
             return n.name
         types.Type.ty_imported as im:
             var buf = string.String.create()
@@ -1479,13 +1480,13 @@ function spec_arg_type_to_s(t: types.Type) -> str:
                     buf.append(spec_arg_type_to_s(read(fnt.return_type)))
                 return buf.as_str()
             if fnt.name.len > 0:
-                return j2("fn ", fnt.name)
+                return strings.join_two("fn ", fnt.name)
             return "fn "
         types.Type.ty_var as v:
             return v.name
         types.Type.ty_opaque as o:
             if o.module_name.len > 0:
-                return j3(o.module_name, ".", o.name)
+                return strings.join_three(o.module_name, ".", o.name)
             return o.name
         _:
             return types.type_to_string(t)
@@ -1539,7 +1540,7 @@ function build_decl_visits(analysis: analyzer.Analysis, analyses: span[analyzer.
                         is_main = fun.name == "main",
                     ))
                 else:
-                    let dk = j2("fn:", fun.name)
+                    let dk = strings.join_two("fn:", fun.name)
                     visits.push(DeclVisit(
                         instance = true, linkage = "",
                         owner_module = module_name, decl_key = dk,
@@ -2698,8 +2699,8 @@ function str_less_than(left: str, right: str) -> bool:
 ## everything else uses `"quotes"` (mirrors Ruby's normalized_include_header).
 function normalized_include_header(header_name: str) -> str:
     if standard_c_runtime_header(header_name):
-        return j3("<", header_name, ">")
-    return j3("\"", header_name, "\"")
+        return strings.join_three("<", header_name, ">")
+    return strings.join_three("\"", header_name, "\"")
 
 
 function standard_c_runtime_header(header_name: str) -> bool:
@@ -2947,7 +2948,7 @@ function canonical_type_name(module_name: str, t: types.Type) -> str:
 function array_param_input_name(param_ty: types.Type, c_name: str, setup: ref[vec.Vec[ir.Stmt]]) -> str:
     if not is_array_type(param_ty):
         return c_name
-    let input_name = j2(c_name, "_input")
+    let input_name = strings.join_two(c_name, "_input")
     let input_ref = alloc_expr(ir.Expr.expr_name(name = input_name, ty = param_ty, pointer = Option[bool].some(value = false)))
     setup.push(ir.Stmt.stmt_local(name = c_name, linkage_name = c_name, ty = param_ty, value = input_ref, line = 0, source_path = ""))
     return input_name
@@ -4138,9 +4139,9 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     let cond_collected = collect_stmt_setup(ctx, cond_saved)
                     emit_hoist_setup(ref_of(wbody), cond_base, cond_collected)
                     ctx.async_tmp_counter += 1
-                    let cond_tmp = j2("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
-                    let cond_field = j2("local_", cond_tmp)
-                    let cond_frame = j2("__mt_frame->", cond_field)
+                    let cond_tmp = strings.join_two("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
+                    let cond_field = strings.join_two("local_", cond_tmp)
+                    let cond_frame = strings.join_two("__mt_frame->", cond_field)
                     var cond_name: str
                     if ctx.async_cps_active:
                         async_register_local_field(ctx, cond_tmp, cond_field, cond_frame, ctx.bool_ty)
@@ -4506,7 +4507,7 @@ function lower_emitted_decl(ctx: ref[LowerCtx], decl: ast.Decl) -> void:
                 let _popped = ctx.locals.pop()
             push_emitted_function(ctx, ir.Function(
                 name = fun.name,
-                linkage_name = j2(prefix, fun.name),
+                linkage_name = strings.join_two(prefix, fun.name),
                 params = params.as_span(),
                 return_type = ret_ty,
                 body = body,
@@ -4524,7 +4525,7 @@ function lower_emitted_decl(ctx: ref[LowerCtx], decl: ast.Decl) -> void:
                 fi += 1
             push_emitted_struct(ctx, ir.StructDecl(
                 name = st.name,
-                linkage_name = j2(prefix, st.name),
+                linkage_name = strings.join_two(prefix, st.name),
                 fields = fields.as_span(),
                 packed = st.packed,
                 alignment = 0,
@@ -4614,7 +4615,7 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
         let task_ir = lower_expr(ctx, inner)
         let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
         storage_ty = extract_task_element_type(ctx, task_ty)
-        let gfield = if name == "_": j2("local_discard_", pw1_str(line)) else: j2("local_", name)
+        let gfield = if name == "_": strings.join_two("local_discard_", pw1_str(line)) else: strings.join_two("local_", name)
         async_register_unused_field(ctx, gfield, storage_ty)
         let frame_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false)))
         let target = alloc_expr(ir.Expr.expr_member(receiver = frame_ref, member = gfield, ty = storage_ty))
@@ -4648,7 +4649,7 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
         if ctx.async_cps_active:
             # The host's CF path spills the guard's storage to the frame field and
             # binds the success name to that same field (no plain local, no copy).
-            let gfield = if name == "_": j2("local_discard_", pw1_str(line)) else: j2("local_", name)
+            let gfield = if name == "_": strings.join_two("local_discard_", pw1_str(line)) else: strings.join_two("local_", name)
             async_register_unused_field(ctx, gfield, storage_ty)
             let frame_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false)))
             output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_ref, member = gfield, ty = storage_ty)), operator = "=", value = value_ir))
@@ -4693,8 +4694,8 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
         # binding project the success value out of it, so a suspend/resume keeps
         # the absent case as well as the payload.  The field already holds the
         # initializer (spilled above), so no copy is emitted.
-        let gfield = j2("local_", name)
-        let gcname = j2("__mt_frame->", gfield)
+        let gfield = strings.join_two("local_", name)
+        let gcname = strings.join_two("__mt_frame->", gfield)
         async_register_unused_field(ctx, gfield, storage_ty)
         ctx.locals.push(LocalBinding(name = name, c_name = gcname, ty = success_ty, pointer = Option[bool].some(value = false), projection = guard_binding_projection(kind, storage_ty)))
         return
@@ -4999,8 +5000,8 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
         # spilled prepared temp), unlike a `let … else:` guard whose field keeps
         # the full storage.
         let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
-        let afield = j2("local_", name)
-        let acname = j2("__mt_frame->", afield)
+        let afield = strings.join_two("local_", name)
+        let acname = strings.join_two("__mt_frame->", afield)
         async_register_local_field(ctx, name, afield, acname, success_ty)
         output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = afield, ty = success_ty)), operator = "=", value = success_val))
         return
@@ -6032,9 +6033,9 @@ function prelude_variant_instance_type(name: str, args: span[types.Type]) -> typ
 function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.Type]) -> types.Type:
     var base_name = name
     if name == "Option":
-        base_name = j2("std_option_", name)
+        base_name = strings.join_two("std_option_", name)
     if name == "Result":
-        base_name = j2("std_result_", name)
+        base_name = strings.join_two("std_result_", name)
     let c_name = generic_c_type_raw(base_name, args)
     var si: ptr_uint = 0
     while si < ctx.pending_generic_variants.len():
@@ -6049,9 +6050,9 @@ function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.
         let elem = unsafe: read(args.data + 0)
         var sf = vec.Vec[ir.Field].create()
         sf.push(ir.Field(name = "value", ty = elem))
-        arms.push(ir.VariantArm(name = "some", linkage_name = j3(c_name, "_", "some"), fields = sf.as_span()))
-        arms.push(ir.VariantArm(name = "none", linkage_name = j3(c_name, "_", "none"), fields = span[ir.Field]()))
-        unsafe: read(ctx.prelude_arm_field_types).set(j3(c_name, "_", "some"), elem)
+        arms.push(ir.VariantArm(name = "some", linkage_name = strings.join_three(c_name, "_", "some"), fields = sf.as_span()))
+        arms.push(ir.VariantArm(name = "none", linkage_name = strings.join_three(c_name, "_", "none"), fields = span[ir.Field]()))
+        unsafe: read(ctx.prelude_arm_field_types).set(strings.join_three(c_name, "_", "some"), elem)
     else if name == "Result" and args.len >= 2:
         let ok = unsafe: read(args.data + 0)
         let err = unsafe: read(args.data + 1)
@@ -6059,10 +6060,10 @@ function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.
         sf.push(ir.Field(name = "value", ty = ok))
         var ef = vec.Vec[ir.Field].create()
         ef.push(ir.Field(name = "error", ty = err))
-        arms.push(ir.VariantArm(name = "success", linkage_name = j3(c_name, "_", "success"), fields = sf.as_span()))
-        arms.push(ir.VariantArm(name = "failure", linkage_name = j3(c_name, "_", "failure"), fields = ef.as_span()))
-        unsafe: read(ctx.prelude_arm_field_types).set(j3(c_name, "_", "success"), ok)
-        unsafe: read(ctx.prelude_arm_field_types).set(j3(c_name, "_", "failure"), err)
+        arms.push(ir.VariantArm(name = "success", linkage_name = strings.join_three(c_name, "_", "success"), fields = sf.as_span()))
+        arms.push(ir.VariantArm(name = "failure", linkage_name = strings.join_three(c_name, "_", "failure"), fields = ef.as_span()))
+        unsafe: read(ctx.prelude_arm_field_types).set(strings.join_three(c_name, "_", "success"), ok)
+        unsafe: read(ctx.prelude_arm_field_types).set(strings.join_three(c_name, "_", "failure"), err)
     ctx.pending_generic_variants.push(ir.VariantDecl(
         name = c_name, linkage_name = c_name,
         arms = arms.as_span(), source_module = Option[str].none,
@@ -6688,12 +6689,12 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
     var index_linkage: str = index_c
     var stop_linkage: str = stop_c
     if ctx.async_cps_active:
-        let idx_field = j2("local_for_", index_name)
-        index_linkage = j2("__mt_frame->", idx_field)
+        let idx_field = strings.join_two("local_for_", index_name)
+        index_linkage = strings.join_two("__mt_frame->", idx_field)
         async_register_local_field(ctx, index_name, idx_field, index_linkage, loop_type)
         if not inline_stop:
-            let stp_field = j2("local_", stop_c)
-            stop_linkage = j2("__mt_frame->", stp_field)
+            let stp_field = strings.join_two("local_", stop_c)
+            stop_linkage = strings.join_two("__mt_frame->", stp_field)
             async_register_local_field(ctx, stop_c, stp_field, stop_linkage, loop_type)
     else:
         ctx.locals.push(LocalBinding(name = index_name, c_name = index_c, ty = loop_type, pointer = Option[bool].some(value = false)))
@@ -6821,11 +6822,11 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     var idx_linkage: str = index_c
     var items_linkage: str = items_c
     if ctx.async_cps_active:
-        let idx_field = j2("local_", index_c)
-        idx_linkage = j2("__mt_frame->", idx_field)
+        let idx_field = strings.join_two("local_", index_c)
+        idx_linkage = strings.join_two("__mt_frame->", idx_field)
         async_register_local_field(ctx, index_c, idx_field, idx_linkage, ptr_uint_ty)
-        let items_field = j2("local_", items_c)
-        items_linkage = j2("__mt_frame->", items_field)
+        let items_field = strings.join_two("local_", items_c)
+        items_linkage = strings.join_two("__mt_frame->", items_field)
         async_register_local_field(ctx, items_c, items_field, items_linkage, iterable_type)
 
     ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = element_type, pointer = Option[bool].some(value = false)))
@@ -6857,8 +6858,8 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
 
     var loop_body = vec.Vec[ir.Stmt].create()
     if ctx.async_cps_active:
-        let elt_field = j2("local_for_elt_", binding_name)
-        let elt_cname = j2("__mt_frame->", elt_field)
+        let elt_field = strings.join_two("local_for_elt_", binding_name)
+        let elt_cname = strings.join_two("__mt_frame->", elt_field)
         async_register_local_field(ctx, binding_name, elt_field, elt_cname, element_type)
         loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = elt_cname, ty = element_type, pointer = Option[bool].some(value = false))), operator = "=", value = item_value))
     else:
@@ -7678,7 +7679,7 @@ function validate_pfor_no_ref_captures(captures: span[ir.Expr]) -> void:
         match unsafe: read(captures.data + ci):
             ir.Expr.expr_name as nm:
                 if types.is_ref_type(nm.ty):
-                    fatal(j3("cannot capture '", nm.name, "' of type ref across thread boundary — ref values are not safe to share across threads"))
+                    fatal(strings.join_three("cannot capture '", nm.name, "' of type ref across thread boundary — ref values are not safe to share across threads"))
             _:
                 pass
         ci += 1
@@ -7755,8 +7756,8 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
 
     parallel_cnt += 1
     let uid = parallel_uid(ctx, "pfor")
-    let cap_name = j2("mt_pfor_cap_", uid)
-    let worker_name = j2("mt_pfor_work_", uid)
+    let cap_name = strings.join_two("mt_pfor_cap_", uid)
+    let worker_name = strings.join_two("mt_pfor_work_", uid)
 
     var array_capture_names = map_mod.Map[str, bool].create()
     var cap_fields = vec.Vec[ir.Field].create()
@@ -7940,8 +7941,8 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
                         pass
             ci += 1
         let captureless = captures.len() == 0
-        let cap_name = j3("mt_spawn_cap_", uid_base, j2("_", pw1_str(bi)))
-        let worker_name = j3("mt_spawn_work_", uid_base, j2("_", pw1_str(bi)))
+        let cap_name = strings.join_three("mt_spawn_cap_", uid_base, strings.join_two("_", pw1_str(bi)))
+        let worker_name = strings.join_three("mt_spawn_work_", uid_base, strings.join_two("_", pw1_str(bi)))
         var cap_ty = void_ptr
         var cap_init = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr))
         var worker_body = vec.Vec[ir.Stmt].create()
@@ -8041,7 +8042,7 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
         ctx.pending_synthetic_functions.push(worker)
         infos.push(SpawnBlockInfo(
             worker_name = worker_name,
-            cap_local_name = j2("mt_spawn_cap_", pw1_str(bi)),
+            cap_local_name = strings.join_two("mt_spawn_cap_", pw1_str(bi)),
             cap_ty = cap_ty,
             cap_init = cap_init,
             capture_names = capture_names,
@@ -8194,7 +8195,7 @@ function lower_detach_expr(ctx: ref[LowerCtx], expression: ptr[ast.Expr], ep: pt
     let void_ptr = void_ptr_ty()
     parallel_cnt += 1
     let uid = parallel_uid(ctx, "detach")
-    let worker_name = j2("mt_detach_work_", uid)
+    let worker_name = strings.join_two("mt_detach_work_", uid)
     let lowered_call = lower_expr(ctx, expression)
     var wb = vec.Vec[ir.Stmt].create()
     wb.push(ir.Stmt.stmt_expression(expression = lowered_call, line = 0, source_path = ctx.analysis.source_path))
@@ -8329,9 +8330,9 @@ function lower_short_circuit_binary(
         append_cleanup_stmts(ref_of(ctx.hoist_cleanups), left_collected.cleanups)
         append_cleanup_stmts(ref_of(ctx.hoist_cleanups), right_collected.cleanups)
         ctx.async_tmp_counter += 1
-        let tmp = j2("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
-        let field_name = j2("local_", tmp)
-        let frame_cname = j2("__mt_frame->", field_name)
+        let tmp = strings.join_two("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
+        let field_name = strings.join_two("local_", tmp)
+        let frame_cname = strings.join_two("__mt_frame->", field_name)
         let field_count_before = async_local_field_count(ctx)
         async_register_unused_field(ctx, field_name, bool_ty)
         if async_local_field_count(ctx) > field_count_before:
@@ -8948,7 +8949,7 @@ function lower_proc_expression_typed_named(ctx: ref[LowerCtx], method_params: sp
     let local_name = if name_hint.len > 0: name_hint else: fresh_c_temp_name(ctx, "proc_expr")
     var env_decl_name = ""
     if has_captures:
-        env_decl_name = fresh_c_temp_name(ctx, j2(local_name, "_env"))
+        env_decl_name = fresh_c_temp_name(ctx, strings.join_two(local_name, "_env"))
 
     # Proc struct type: { env, invoke, release, retain }, named from the
     # signature (`naming.proc_type_c_name`, the host's `proc_type_name`) so that
@@ -9472,7 +9473,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
         let cap = unsafe: read(captures.data + ci)
         let env_ref = alloc_expr(ir.Expr.expr_name(name = env_local_name, ty = env_ptr_ty, pointer = Option[bool].some(value = false)))
         let member = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = cap.name, ty = cap.ty))
-        let bc = j2("__mt_capture_", cap.name)
+        let bc = strings.join_two("__mt_capture_", cap.name)
         body_stmts.push(ir.Stmt.stmt_local(name = cap.name, linkage_name = bc, ty = cap.ty, value = member, line = 0, source_path = ""))
         ctx.locals.push(LocalBinding(name = cap.name, c_name = bc, ty = cap.ty, pointer = Option[bool].some(value = false)))
         ci += 1
@@ -10230,7 +10231,7 @@ function lower_range_index_read(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], sta
         args.push(read(span_arg))
         args.push(read(start))
         args.push(read(stop))
-    let callee = j2("mt_span_slice_", naming.type_c_key(elem_ty))
+    let callee = strings.join_two("mt_span_slice_", naming.type_c_key(elem_ty))
     return alloc_expr(ir.Expr.expr_call(callee = callee, arguments = args.as_span(), ty = span_ty))
 
 
@@ -11439,7 +11440,7 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                                 return alloc_expr(ir.Expr.expr_call(callee = hook_name.value, arguments = ir_args.as_span(), ty = ret_ty))
                             Option.none:
                                 pass
-                    let fn_name = j2("mt_", j2(id.name, "_func"))
+                    let fn_name = strings.join_two("mt_", strings.join_two(id.name, "_func"))
                     return alloc_expr(ir.Expr.expr_call(callee = fn_name, arguments = ir_args.as_span(), ty = ret_ty))
                 # Builtin `reinterpret[T](value)` → `IR::ReinterpretExpr` (the
                 # host always emits the bit reinterpret; the C backend copies
@@ -12017,8 +12018,8 @@ function lower_monomorphized_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], typ
         if callee_name == "Task":
             return lower_task_constructor(ctx, type_args, call_args, call_ep)
         if ctx.loaded_modules.len <= 1:
-            fatal(j2("lowering: monomorphization failed for ", callee_name))
-        fatal(j2("lowering: could not find generic function decl for ", callee_name))
+            fatal(strings.join_two("lowering: monomorphization failed for ", callee_name))
+        fatal(strings.join_two("lowering: could not find generic function decl for ", callee_name))
 
     # Name the specialization by its OWNER module so the same instance reached
     # from multiple caller modules dedups to one definition (see
@@ -12509,7 +12510,7 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], gm: GenericFunctionM
                 tpi += 1
             lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key, pre_instantiated)
         _:
-            fatal(j2("lowering: monomorphization failed, expected function decl for ", gm.module_name))
+            fatal(strings.join_two("lowering: monomorphization failed, expected function decl for ", gm.module_name))
 
 
 ## Lower an uncached generic function specialization from a pre-built type
@@ -12623,7 +12624,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
                         body_validated = body_validated,
                         creation_normal_call = creation_normal_call,
                         reachers = if creation_normal_call: make_spec_reachers(creator) else: vec.Vec[str].create(),
-                        decl_key = j2("fn:", fun.name),
+                        decl_key = strings.join_two("fn:", fun.name),
                         args_key = fn_args_key.as_str(),
                         creator = creator,
                         pre_instantiated = pre_instantiated,
@@ -12655,7 +12656,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             ctx.fmt_counter_visible = saved_fmt_visible
             ctx.cstr_backed_names = saved_cstr_backed
         _:
-            fatal(j2("lowering: monomorphization failed, expected function decl for ", gm.module_name))
+            fatal(strings.join_two("lowering: monomorphization failed, expected function decl for ", gm.module_name))
 
 
 ## Lower a payload variant arm constructor `Variant.arm(field = value, ...)` to an
@@ -12966,7 +12967,7 @@ function lower_adapt_call(ctx: ref[LowerCtx], iface_type_ref: ptr[ast.TypeRef], 
             var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
             # The vtable constant has the `DynVtable` type; its address is a
             # `ptr[DynVtable]`, then cast to `void*` for the fat-pointer field.
-            let vtable_ty = types.Type.ty_dyn_vtable(interface_name = iface_name, linkage_name = j2("mt_vtable_", iface_name))
+            let vtable_ty = types.Type.ty_dyn_vtable(interface_name = iface_name, linkage_name = strings.join_two("mt_vtable_", iface_name))
             let vtable_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(vtable_ty))
             return alloc_expr(ir.Expr.expr_aggregate_literal(
                 ty = types.Type.ty_dyn(iface = iface_name, args = type_args.as_span()),
@@ -13082,12 +13083,12 @@ function interface_type_params(file: ast.SourceFile, iface_name: str) -> span[as
 ## vtable struct type declaration once per interface, and the wrapper functions +
 ## global vtable constant once per (type, interface) pair.  Returns the vtable global name.
 function ensure_dyn_vtable(ctx: ref[LowerCtx], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> str:
-    let vtable_c_name = j5("mt_vtable_", concrete_name, "_", iface_name, "")
+    let vtable_c_name = strings.join_five("mt_vtable_", concrete_name, "_", iface_name, "")
     if ctx.dyn_generated_vtables.contains(vtable_c_name):
         return vtable_c_name
 
     # Ensure the vtable struct type exists (once per interface), with type subsitution.
-    let vtable_type_c_name = j3("mt_vtable_", iface_name, "")
+    let vtable_type_c_name = strings.join_three("mt_vtable_", iface_name, "")
     ensure_dyn_vtable_struct(ctx, iface_name, methods, type_args, type_params)
 
     # Generate wrapper functions and vtable constant.
@@ -13130,7 +13131,7 @@ function substitute_type_arg_by_name(t: types.Type, name: str, type_args: span[t
 
 ## Ensure the dyn struct type `mt_dyn_{iface}` exists.
 function ensure_dyn_struct_type(ctx: ref[LowerCtx], iface_name: str) -> void:
-    let name = j3("mt_dyn_", iface_name, "")
+    let name = strings.join_three("mt_dyn_", iface_name, "")
     var iter = ctx.pending_dyn_structs.iter()
     while true:
         let s_ptr = iter.next() else:
@@ -13147,7 +13148,7 @@ function ensure_dyn_struct_type(ctx: ref[LowerCtx], iface_name: str) -> void:
 ## Ensure the vtable struct type `mt_vtable_{iface}` exists.  Fields are function
 ## pointer types so the C backend can render calls through them directly.
 function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], iface_name: str, methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> void:
-    let vtable_type_c_name = j3("mt_vtable_", iface_name, "")
+    let vtable_type_c_name = strings.join_three("mt_vtable_", iface_name, "")
     var iter = ctx.pending_dyn_vtable_structs.iter()
     while true:
         let s_ptr = iter.next() else:
@@ -13180,7 +13181,7 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], iface_name: str, methods: 
         let fn_ty = types.Type.ty_function(name = "", params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = fn_param_names.as_span())
         fields.push(ir.Field(name = m.name, ty = fn_ty))
         mi += 1
-    let vtable_decl = ir.StructDecl(name = j2("vtable_", iface_name), linkage_name = vtable_type_c_name, fields = fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none)
+    let vtable_decl = ir.StructDecl(name = strings.join_two("vtable_", iface_name), linkage_name = vtable_type_c_name, fields = fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none)
     ctx.pending_dyn_vtable_structs.push(vtable_decl)
     ctx.pending_synthetic_structs.push(vtable_decl)
 
@@ -13211,7 +13212,7 @@ function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concret
         var m: ast.InterfaceMethod
         unsafe:
             m = read(methods.data + mi)
-        let wrapper_c_name = j3("__dyn_", concrete_name, j2("_", m.name))
+        let wrapper_c_name = strings.join_three("__dyn_", concrete_name, strings.join_two("_", m.name))
         var wrapper_params = vec.Vec[ir.Param].create()
         wrapper_params.push(ir.Param(name = "data", linkage_name = "data", ty = void_ptr, pointer = Option[bool].some(value = false)))
         var pi: ptr_uint = 0
@@ -13421,7 +13422,7 @@ function dyn_vtable_c_type(t: types.Type) -> str:
     # `dyn_vtable_iface_name` reads the interface name from the type itself;
     # `type_to_string` renders the full `dyn[Shape]` spelling, which is not a
     # valid symbol.
-    return j3("mt_vtable_", dyn_vtable_iface_name(t), "")
+    return strings.join_three("mt_vtable_", dyn_vtable_iface_name(t), "")
 
 
 ## The interface name of a `dyn[I]` receiver, for the `DynVtable` type.
@@ -13441,7 +13442,7 @@ function dyn_vtable_iface_name(t: types.Type) -> str:
 ## what the host's `dyn_vtable_struct_type` always builds the slot from
 ## (`data: ptr[void]` followed by the method's own parameters).
 function dyn_vtable_method_fn_type(ctx: ref[LowerCtx], iface_name: str, method_name: str) -> types.Type:
-    let vtable_type_c_name = j3("mt_vtable_", iface_name, "")
+    let vtable_type_c_name = strings.join_three("mt_vtable_", iface_name, "")
     var iter = ctx.pending_dyn_vtable_structs.iter()
     while true:
         let s_ptr = iter.next() else:
@@ -13529,7 +13530,7 @@ function method_link_name(module_name: str, type_name: str, method_name: str, is
         return primitive_method_c_name(type_name, method_name, is_static)
     var name = naming.qualified_member_c_name(module_name, type_name, method_name)
     if is_static:
-        return j2(name, "_static")
+        return strings.join_two(name, "_static")
     return name
 
 
@@ -15136,26 +15137,6 @@ function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type,
 
 
 ## String concatenation helpers.
-function j2(a: str, b: str) -> str:
-    return utils.j2(a, b)
-
-
-function j3(a: str, b: str, c: str) -> str:
-    return utils.j3(a, b, c)
-
-
-function j4(a: str, b: str, c: str, d: str) -> str:
-    return utils.j4(a, b, c, d)
-
-
-function j5(a: str, b: str, c: str, d: str, e: str) -> str:
-    return utils.j5(a, b, c, d, e)
-
-
-function j6(a: str, b: str, c: str, d: str, e: str, f: str) -> str:
-    return utils.j6(a, b, c, d, e, f)
-
-
 ## Build a "arg_N" string from an integer index.
 function jstr_i(prefix: str, n: ptr_uint) -> str:
     var buf = string.String.create()
@@ -15299,7 +15280,7 @@ function is_any_event_suffix(ctx: ref[LowerCtx], name: str) -> bool:
             # rather than the registry key's dotted form.
             var stem = info.name
             if info.owner_type_name.len > 0:
-                stem = j3(info.owner_type_name, "_", info.name)
+                stem = strings.join_three(info.owner_type_name, "_", info.name)
             if base.ends_with(stem):
                 return true
     return false
@@ -15339,7 +15320,7 @@ function event_owner_for_receiver(ctx: ref[LowerCtx], t: types.Type) -> str:
         types.Type.ty_named as n:
             match n.linkage_name:
                 Option.some as lk:
-                    let prefix = j2(naming.sanitize_event_part(ctx.module_name), "_")
+                    let prefix = strings.join_two(naming.sanitize_event_part(ctx.module_name), "_")
                     let linkage = lk.value
                     if linkage.len > prefix.len and linkage.starts_with(prefix):
                         return linkage.slice(prefix.len, linkage.len - prefix.len)
@@ -15433,8 +15414,8 @@ function ensure_event_runtime(ctx: ref[LowerCtx], owner: str, event_name: str) -
     if has_payload:
         payload_name = Option[str].some(value = naming.type_to_s_qualified(payload_ty))
     let linkage = naming.event_linkage_name(ctx.module_name, ev.owner_type_name, event_name, payload_name, long<-(ev.capacity))
-    let slot_cn = j2(linkage, "__slot")
-    let snapshot_cn = j2(linkage, "__snapshot")
+    let slot_cn = strings.join_two(linkage, "__slot")
+    let snapshot_cn = strings.join_two(linkage, "__snapshot")
     let event_cn = linkage
     # Subscription struct: { slot, generation } — the shared handle.  The host's
     # `ensure_subscription_runtime` runs before the first per-event struct, and
@@ -15486,7 +15467,7 @@ function ensure_event_runtime(ctx: ref[LowerCtx], owner: str, event_name: str) -
     wait_result_args.push(event_error_ty)
     let wait_result_ty = ensure_generic_variant(ctx, "Result", wait_result_args.as_span())
     let wake_fn_ty = types.Type.ty_function(name = "", params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
-    let wait_frame_cn = j2(linkage, "__wait_frame")
+    let wait_frame_cn = strings.join_two(linkage, "__wait_frame")
     ctx.pending_synthetic_structs.push(ir.StructDecl(
         name = wait_frame_cn, linkage_name = wait_frame_cn,
         fields = sp_field6(
@@ -15515,18 +15496,18 @@ function ensure_event_runtime(ctx: ref[LowerCtx], owner: str, event_name: str) -
         has_payload = has_payload, payload_type = payload_ty,
         owner = ev.owner_type_name,
         slot_c_name = slot_cn, event_c_name = event_cn,
-        subscribe_c_name = j2(linkage, "__subscribe"),
-        subscribe_once_c_name = j2(linkage, "__subscribe_once"),
-        subscribe_stateful_c_name = j2(linkage, "__subscribe_stateful"),
-        subscribe_once_stateful_c_name = j2(linkage, "__subscribe_once_stateful"),
-        unsubscribe_c_name = j2(linkage, "__unsubscribe"),
-        emit_c_name = j2(linkage, "__emit"),
-        wait_c_name = j2(linkage, "__wait"),
+        subscribe_c_name = strings.join_two(linkage, "__subscribe"),
+        subscribe_once_c_name = strings.join_two(linkage, "__subscribe_once"),
+        subscribe_stateful_c_name = strings.join_two(linkage, "__subscribe_stateful"),
+        subscribe_once_stateful_c_name = strings.join_two(linkage, "__subscribe_once_stateful"),
+        unsubscribe_c_name = strings.join_two(linkage, "__unsubscribe"),
+        emit_c_name = strings.join_two(linkage, "__emit"),
+        wait_c_name = strings.join_two(linkage, "__wait"),
         wait_frame_c_name = wait_frame_cn,
-        wait_ready_c_name = j2(linkage, "__wait__ready"),
-        wait_set_waiter_c_name = j2(linkage, "__wait__set_waiter"),
-        wait_release_c_name = j2(linkage, "__wait__release"),
-        wait_take_result_c_name = j2(linkage, "__wait__take_result"),
+        wait_ready_c_name = strings.join_two(linkage, "__wait__ready"),
+        wait_set_waiter_c_name = strings.join_two(linkage, "__wait__set_waiter"),
+        wait_release_c_name = strings.join_two(linkage, "__wait__release"),
+        wait_take_result_c_name = strings.join_two(linkage, "__wait__take_result"),
         wait_result_ty = wait_result_ty,
     )
     ctx.event_runtimes.set(runtime_key, info)
@@ -15740,7 +15721,7 @@ function event_slot_clear_statements(slot_pointer_expr: ptr[ir.Expr]) -> span[ir
 
 ## The host's `snapshot_field_expression`: `snapshots[index].field`.
 function event_snapshot_field_expression(info: ref[EventRuntimeInfo], snapshots_expr: ptr[ir.Expr], index_expr: ptr[ir.Expr], field_name: str, field_ty: types.Type) -> ptr[ir.Expr]:
-    let snapshot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = j2(info.linkage_name, "__snapshot"))
+    let snapshot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = strings.join_two(info.linkage_name, "__snapshot"))
     let snapshot_index = alloc_expr(ir.Expr.expr_index(receiver = snapshots_expr, index = index_expr, ty = snapshot_ty))
     return alloc_expr(ir.Expr.expr_member(receiver = snapshot_index, member = field_name, ty = field_ty))
 
@@ -15927,7 +15908,7 @@ function build_event_subscribe_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "listener", linkage_name = "listener", ty = listener_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(callee, "_fn"), linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
+    return ir.Function(name = strings.join_two(callee, "_fn"), linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a per-event stateful subscribe (or subscribe_once) synthetic function.
@@ -15980,7 +15961,7 @@ function build_event_subscribe_stateful_fn(ctx: ref[LowerCtx], info: ref[EventRu
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "state", linkage_name = "state", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "listener", linkage_name = "listener", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(callee, "_fn"), linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
+    return ir.Function(name = strings.join_two(callee, "_fn"), linkage_name = callee, params = params.as_span(), return_type = sub_result_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a per-event unsubscribe synthetic function.
@@ -16030,7 +16011,7 @@ function build_event_unsubscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, e
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "subscription", linkage_name = "subscription", ty = sub_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(info.unsubscribe_c_name, "_fn"), linkage_name = info.unsubscribe_c_name, params = params.as_span(), return_type = bool_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
+    return ir.Function(name = strings.join_two(info.unsubscribe_c_name, "_fn"), linkage_name = info.unsubscribe_c_name, params = params.as_span(), return_type = bool_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a per-event emit synthetic function.
@@ -16041,7 +16022,7 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
     let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.slot_c_name)
     let slot_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(slot_ty))
-    let snapshot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = j2(info.linkage_name, "__snapshot"))
+    let snapshot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = strings.join_two(info.linkage_name, "__snapshot"))
     let snapshots_ty = types.Type.ty_generic(name = "array", args = sp_type2(snapshot_ty, types.literal_int(long<-(info.capacity))))
     let wait_frame_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.wait_frame_c_name)
     let wait_frame_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(wait_frame_ty))
@@ -16191,7 +16172,7 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     if info.has_payload:
         params.push(ir.Param(name = "payload", linkage_name = "payload", ty = info.payload_type, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(info.emit_c_name, "_fn"), linkage_name = info.emit_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
+    return ir.Function(name = strings.join_two(info.emit_c_name, "_fn"), linkage_name = info.emit_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a per-event wait ready vtable function.
@@ -16213,7 +16194,7 @@ function build_event_wait_ready_fn(info: ref[EventRuntimeInfo], slot_cn: str, ev
     body.push(ir.Stmt.stmt_return(value = event_wait_frame_field_expression(frame_expr, "ready", bool_ty), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(info.wait_ready_c_name, "_fn"), linkage_name = info.wait_ready_c_name, params = params.as_span(), return_type = bool_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
+    return ir.Function(name = strings.join_two(info.wait_ready_c_name, "_fn"), linkage_name = info.wait_ready_c_name, params = params.as_span(), return_type = bool_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a per-event wait set_waiter vtable function.
@@ -16254,7 +16235,7 @@ function build_event_wait_set_waiter_fn(info: ref[EventRuntimeInfo], slot_cn: st
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "waiter_frame", linkage_name = "waiter_frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     params.push(ir.Param(name = "waiter", linkage_name = "waiter", ty = wake_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(info.wait_set_waiter_c_name, "_fn"), linkage_name = info.wait_set_waiter_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
+    return ir.Function(name = strings.join_two(info.wait_set_waiter_c_name, "_fn"), linkage_name = info.wait_set_waiter_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a per-event wait release vtable function.
@@ -16293,7 +16274,7 @@ function build_event_wait_release_fn(info: ref[EventRuntimeInfo], slot_cn: str, 
     body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(info.wait_release_c_name, "_fn"), linkage_name = info.wait_release_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
+    return ir.Function(name = strings.join_two(info.wait_release_c_name, "_fn"), linkage_name = info.wait_release_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a per-event wait take_result vtable function.
@@ -16315,7 +16296,7 @@ function build_event_wait_take_result_fn(ctx: ref[LowerCtx], info: ref[EventRunt
     body.push(ir.Stmt.stmt_return(value = event_wait_frame_field_expression(frame_expr, "result", info.wait_result_ty), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(info.wait_take_result_c_name, "_fn"), linkage_name = info.wait_take_result_c_name, params = params.as_span(), return_type = info.wait_result_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
+    return ir.Function(name = strings.join_two(info.wait_take_result_c_name, "_fn"), linkage_name = info.wait_take_result_c_name, params = params.as_span(), return_type = info.wait_result_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build the per-event wait function.
@@ -16367,7 +16348,7 @@ function build_event_wait_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], sl
     body.push(ir.Stmt.stmt_return(value = event_immediate_failure_task_literal(info), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
-    return ir.Function(name = j2(info.wait_c_name, "_fn"), linkage_name = info.wait_c_name, params = params.as_span(), return_type = task_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
+    return ir.Function(name = strings.join_two(info.wait_c_name, "_fn"), linkage_name = info.wait_c_name, params = params.as_span(), return_type = task_ty, body = body.as_span(), entry_point = false, public_export = false, method_receiver_param = false)
 
 
 ## Build a span from a single IR statement.
@@ -17519,7 +17500,7 @@ function foreign_call_needs_materialized_value(ctx: ref[LowerCtx], info: Foreign
             arg = read(args.data + i)
         var total = mapping_reference_count(mapping, param.name)
         if param.boundary_type.is_some():
-            total += mapping_reference_count(mapping, j2(param.name, "_public"))
+            total += mapping_reference_count(mapping, strings.join_two(param.name, "_public"))
         if total > 1 and not duplicable_foreign_ast(arg.arg_value):
             return true
         i += 1
@@ -17954,7 +17935,7 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
             param = read(info.params.data + i)
             arg = read(args.data + i)
         if param.boundary_type.is_some():
-            let pub_alias = j2(param.name, "_public")
+            let pub_alias = strings.join_two(param.name, "_public")
             if mapping_references_name(mapping, pub_alias):
                 let declared_ty = foreign_param_context_type(ctx, info, param)
                 let public_ir = literal_value_to_context_type(ctx, arg.arg_value, declared_ty, lower_expr(ctx, arg.arg_value))
@@ -17983,7 +17964,7 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
             # projection share one evaluation.
             var source_arg = arg2
             if param2.boundary_type.is_some():
-                let pub_alias2 = j2(param2.name, "_public")
+                let pub_alias2 = strings.join_two(param2.name, "_public")
                 if mapping_reference_count(mapping, pub_alias2) > 0:
                     let alias_id = alloc_ast_expr(ast.Expr.expr_identifier(name = pub_alias2, line = 0, column = 0))
                     source_arg = ast.Argument(arg_name = arg2.arg_name, arg_value = alias_id)
@@ -19950,7 +19931,7 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
     var member_type = member_ty
     match event_info_for_receiver(ctx, recv_ty, member):
         Option.some as evi:
-            member_name = j2("__event_", member)
+            member_name = strings.join_two("__event_", member)
             var ev_info = ensure_event_runtime(ctx, evi.value.owner_type_name, member)
             var ev_payload: ptr[types.Type]? = null
             if ev_info.has_payload:
@@ -19965,7 +19946,7 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
             # A member already typed as an event (an imported event, a
             # module-level registration) keeps its bare-name resolution.
             if is_event_type(ctx, member_ty):
-                member_name = j2("__event_", member)
+                member_name = strings.join_two("__event_", member)
                 let ev_name = event_name_from_type(member_ty)
                 if ctx.analysis.events.contains(ev_name):
                     var ev_info = ensure_event_runtime(ctx, "", ev_name)
@@ -20216,7 +20197,7 @@ function lower_struct_decl(ctx: ref[LowerCtx], name: str, packed: bool, alignmen
                             payload_type = ev_payload,
                             linkage_name = info.event_c_name,
                         )
-                        fname = j2("__event_", nt.name)
+                        fname = strings.join_two("__event_", nt.name)
                     Option.none:
                         pass
             _:
@@ -20253,8 +20234,8 @@ function lower_nested_struct_decls(ctx: ref[LowerCtx], nested: span[ast.Decl], p
                     # (`<mod>_Rectangle_Edge`) while the IR `:name` stays plain —
                     # the host's `resolve_nested_struct_fields` qualified name,
                     # flattened for C.
-                    let qname = j3(parent_name, ".", s.name)
-                    let qlink = j3(parent_linkage, "_", s.name)
+                    let qname = strings.join_three(parent_name, ".", s.name)
+                    let qlink = strings.join_three(parent_linkage, "_", s.name)
                     match lower_struct_decl(ctx, s.name, s.packed, s.alignment, Option[str].some(value = qname), qlink):
                         Option.some as sd:
                             structs.push(sd.value)
@@ -20364,7 +20345,7 @@ function collect_variants(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> void:
                 if vr.type_params.len == 0 or not is_prelude_variant_name(vr.name):
                     let info = build_variant_info(ctx, vr.variant_arms)
                     ctx.variants.set(vr.name, info)
-                    ctx.variants.set(j2(j2(ctx.module_name, "."), vr.name), info)
+                    ctx.variants.set(strings.join_two(strings.join_two(ctx.module_name, "."), vr.name), info)
                 if vr.type_params.len == 0:
                     register_imported_variant_arm_fields(ctx, ctx.module_name, ctx.analysis, vr.name, vr.variant_arms)
             _:
@@ -20426,7 +20407,7 @@ function install_imported_variants(ctx: ref[LowerCtx]) -> void:
                                 # scrutinee names this module's type resolves to;
                                 # two modules may declare the same bare name
                                 # (`mtc.ir.Expr` vs `mtc.parser.ast.Expr`).
-                                ctx.variants.set(j2(j2(target_module, "."), vr.name), info)
+                                ctx.variants.set(strings.join_two(strings.join_two(target_module, "."), vr.name), info)
                             # Register arm payload field types keyed by the
                             # module-qualified payload struct C name, for EVERY
                             # imported variant — even when its bare name collides
@@ -21166,7 +21147,7 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
         if ts == "void" or ts == "<error>" or ts.starts_with("("):
             ctx.locals = saved_locals
             return
-        fatal(j2("lowering: match requires known type, got ", ts))
+        fatal(strings.join_two("lowering: match requires known type, got ", ts))
     var enum_module = enum_source_module(ctx, scrutinee_ty, ctx.module_name)
     var cases = vec.Vec[ir.SwitchCase].create()
     var i: ptr_uint = 0
@@ -22008,8 +21989,8 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                             # Spill the match arm's payload struct to a frame
                             # field so pattern-bindings and `as` binding survive
                             # await inside the arm body.
-                            let mfield = j2("local_", payload_c)
-                            let mcname = j2("__mt_frame->", mfield)
+                            let mfield = strings.join_two("local_", payload_c)
+                            let mcname = strings.join_two("__mt_frame->", mfield)
                             async_register_local_field(ctx, payload_c, mfield, mcname, payload_ty)
                             blk.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = mcname, ty = payload_ty, pointer = Option[bool].some(value = false))), operator = "=", value = arm_data))
                         else:
@@ -22091,8 +22072,8 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                                     _:
                                         pass
                                 if ctx.async_cps_active:
-                                    let vfield = j4("local_", payload_c, "_", id.name)
-                                    let vcname = j2("__mt_frame->", vfield)
+                                    let vfield = strings.join_four("local_", payload_c, "_", id.name)
+                                    let vcname = strings.join_two("__mt_frame->", vfield)
                                     async_register_local_field(ctx, id.name, vfield, vcname, field_ty)
                                     blk.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = vcname, ty = field_ty, pointer = Option[bool].some(value = false))), operator = "=", value = field_expr))
                                 else:
@@ -22308,7 +22289,7 @@ function variant_registry_key(ctx: ref[LowerCtx], variant_name: str, ty: types.T
         base = bn.unwrap()
     let (_, decl_module) = variant_declared_identity(ty, ctx.module_name)
     if decl_module.len > 0:
-        let qualified = j2(j2(decl_module, "."), base)
+        let qualified = strings.join_two(strings.join_two(decl_module, "."), base)
         if ctx.variants.contains(qualified):
             return qualified
     return variant_name
@@ -24071,8 +24052,8 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
     let str_ty = types.Type.ty_str
     let ptr_uint_ty = types.primitive("ptr_uint")
     let base = format_string_result_base(ctx)
-    let cap_name = j2(base, "_cap")
-    let off_name = j2(base, "_off")
+    let cap_name = strings.join_two(base, "_cap")
+    let off_name = strings.join_two(base, "_off")
     let result_c = base
 
     # Pass 1: lower each interpolation into a typed temp.
@@ -24557,7 +24538,7 @@ function format_sink_string_callee(helper: str) -> str:
     if helper == "mt_format_append_cstr":
         return "std_fmt_append_cstr"
     let prefix = "mt_format_"
-    return j2("std_fmt_", helper.slice(prefix.len, helper.len - prefix.len))
+    return strings.join_two("std_fmt_", helper.slice(prefix.len, helper.len - prefix.len))
 
 
 ## One String-sink append call (host `explicit_format_sink_append_call`).
@@ -29032,7 +29013,7 @@ function lower_task_constructor(ctx: ref[LowerCtx], type_args: span[ast.TypeArgu
         unsafe:
             arg = read(call_args.data + i)
         var val = lower_expr(ctx, arg.arg_value)
-        var fname = if arg.arg_name.is_some(): arg.arg_name.unwrap() else: j2("_", pw1_str(i))
+        var fname = if arg.arg_name.is_some(): arg.arg_name.unwrap() else: strings.join_two("_", pw1_str(i))
         fields.push(ir.AggregateField(name = fname, value = val))
         i += 1
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = task_ty, fields = fields.as_span()))
@@ -29275,7 +29256,7 @@ function async_prepass_stmt_match_bindings(ctx: ref[LowerCtx], sp: ptr[ast.Stmt]
                         Option.some:
                             if async_mod.stmt_has_await(arm.body):
                                 async_binding_cnt += 1
-                                ctx.async_match_binding_names.set(reinterpret[ptr_uint](arm_ptr), j2("local_match_binding_", pw1_str(async_binding_cnt)))
+                                ctx.async_match_binding_names.set(reinterpret[ptr_uint](arm_ptr), strings.join_two("local_match_binding_", pw1_str(async_binding_cnt)))
                         Option.none:
                             pass
                     ai += 1
@@ -29474,8 +29455,8 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     # `<mod>_Type_method`); the frame/resume names derive from it with the
     # host's double underscore (`#{constructor_linkage_name}__frame`,
     # `...__resume`; `functions.rb:199-200`).
-    let frame_c = j2(link_base, "__frame")
-    let resume_c = j2(link_base, "__resume")
+    let frame_c = strings.join_two(link_base, "__frame")
+    let resume_c = strings.join_two(link_base, "__resume")
     let task_ty = make_task_type(res_ty)
     let has_await = async_mod.body_has_await(body)
     # The host analyzes the normalized body before lowering it
@@ -29543,7 +29524,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         # a pointer-flagged base-typed name (the host's env: `type:
         # param_binding.type, pointer:`), whose frame storage is `ptr[T]`.
         let binding_ptr = async_param_pointer(receiver_ty_opt, receiver_editable, pname)
-        ctx.locals.push(LocalBinding(name = pname, c_name = j2("__mt_frame->param_", pname), ty = pty, pointer = binding_ptr))
+        ctx.locals.push(LocalBinding(name = pname, c_name = strings.join_two("__mt_frame->param_", pname), ty = pty, pointer = binding_ptr))
         pib += 1
 
     if has_await:
@@ -29653,7 +29634,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     # helpers to the program-wide `@artifacts.synthetic_functions` tail (after
     # every module's functions), while the constructor stays in the declaring
     # module's list (`functions.rb:199-215`).
-    ctx.pending_synthetic_functions.push(ir.Function(name = j2(name, "__resume"), linkage_name = resume_c, params = vparam_s, return_type = void_t, body = resume_body.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = strings.join_two(name, "__resume"), linkage_name = resume_c, params = vparam_s, return_type = void_t, body = resume_body.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
 
     # -- frame struct (base + state + result + params + spilled locals + awaits) --
     var ff = vec.Vec[ir.Field].create()
@@ -29672,7 +29653,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         unsafe:
             pfname = read(ptr[str]<-ctor_param_names.data + pif)
             pfty = read(ptr[types.Type]<-ctor_field_tys.data + pif)
-        ff.push(ir.Field(name = j2("param_", pfname), ty = pfty))
+        ff.push(ir.Field(name = strings.join_two("param_", pfname), ty = pfty))
         pif += 1
     var lfi: ptr_uint = 0
     while lfi < ctx.async_local_fields.len():
@@ -29703,17 +29684,17 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
 
 
     # -- vtable linkage names --
-    let ready_lk  = j2(link_base, "__ready")
-    let waiter_lk = j2(link_base, "__set_waiter")
-    let release_lk = j2(link_base, "__release")
-    let take_lk   = j2(link_base, "__take_result")
-    let cancel_lk = j2(link_base, "__cancel")
+    let ready_lk  = strings.join_two(link_base, "__ready")
+    let waiter_lk = strings.join_two(link_base, "__set_waiter")
+    let release_lk = strings.join_two(link_base, "__release")
+    let take_lk   = strings.join_two(link_base, "__take_result")
+    let cancel_lk = strings.join_two(link_base, "__cancel")
 
     # -- vtable: ready (fresh vec) --
     var vrdy = vec.Vec[ir.Stmt].create()
     vrdy.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
     vrdy.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), line = 0, source_path = ""))
-    ctx.pending_synthetic_functions.push(ir.Function(name = j2(ready_lk, "_fn"), linkage_name = ready_lk, params = vparam_s, return_type = bool_ty, body = vrdy.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = strings.join_two(ready_lk, "_fn"), linkage_name = ready_lk, params = vparam_s, return_type = bool_ty, body = vrdy.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
 
     # -- vtable: set_waiter (fresh vec) --
     let wake_fn_ty = async_wake_fn_type(ctx)
@@ -29734,7 +29715,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     sw_params.push(ir.Param(name = "frame", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
     sw_params.push(ir.Param(name = "waiter_frame", linkage_name = "waiter_frame", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
     sw_params.push(ir.Param(name = "waiter", linkage_name = "waiter", ty = wake_fn_ty, pointer = Option[bool].some(value = false)))
-    ctx.pending_synthetic_functions.push(ir.Function(name = j2(waiter_lk, "_fn"), linkage_name = waiter_lk, params = sw_params.as_span(), return_type = void_t, body = vsw.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = strings.join_two(waiter_lk, "_fn"), linkage_name = waiter_lk, params = sw_params.as_span(), return_type = void_t, body = vsw.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
 
     # -- vtable: release (fresh vec) --
     var vrel = vec.Vec[ir.Stmt].create()
@@ -29776,7 +29757,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             Option.none:
                 pass
         if not rp_is_ptr and contains_proc_storage_type(ctx, rpty):
-            let rp_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = j2("param_", rpname), ty = rpty))
+            let rp_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = strings.join_two("param_", rpname), ty = rpty))
             proc_nullable_release_stmts(ctx, rp_field, rpty, ref_of(vrel))
         rpi += 1
     var rli: ptr_uint = 0
@@ -29813,12 +29794,12 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             Option.none:
                 pass
         if rpp_is_ptr:
-            let rpp_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = j2("param_", rpp_name), ty = rpp_ty))
+            let rpp_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = strings.join_two("param_", rpp_name), ty = rpp_ty))
             vrel.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "mt_async_free", arguments = single_expr_span(rpp_field), ty = void_t)), line = 0, source_path = ""))
         rppi += 1
     vrel.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "mt_async_free", arguments = single_expr_span(raw_expr), ty = void_t)), line = 0, source_path = ""))
     vrel.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    ctx.pending_synthetic_functions.push(ir.Function(name = j2(release_lk, "_fn"), linkage_name = release_lk, params = vparam_s, return_type = void_t, body = vrel.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = strings.join_two(release_lk, "_fn"), linkage_name = release_lk, params = vparam_s, return_type = void_t, body = vrel.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
 
     # -- vtable: take_result (fresh vec) --
     # The host emits this vtable entry for every async function; a void result's
@@ -29830,7 +29811,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     else:
         vtr.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
         vtr.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), line = 0, source_path = ""))
-    ctx.pending_synthetic_functions.push(ir.Function(name = j2(take_lk, "_fn"), linkage_name = take_lk, params = vparam_s, return_type = res_ty, body = vtr.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = strings.join_two(take_lk, "_fn"), linkage_name = take_lk, params = vparam_s, return_type = res_ty, body = vtr.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
 
     # -- vtable: cancel (fresh vec) --
     var vcn = vec.Vec[ir.Stmt].create()
@@ -29874,7 +29855,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             Option.none:
                 pass
         if not cp_is_ptr and contains_proc_storage_type(ctx, cpty):
-            let cp_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = j2("param_", cpname), ty = cpty))
+            let cp_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = strings.join_two("param_", cpname), ty = cpty))
             proc_nullable_release_stmts(ctx, cp_field, cpty, ref_of(vcn))
         cpi += 1
     var cli: ptr_uint = 0
@@ -29911,7 +29892,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             Option.none:
                 pass
         if cpp_is_ptr:
-            let cpp_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = j2("param_", cpp_name), ty = cpp_ty))
+            let cpp_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = strings.join_two("param_", cpp_name), ty = cpp_ty))
             vcn.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "mt_async_free", arguments = single_expr_span(cpp_field), ty = void_t)), line = 0, source_path = ""))
         cppi += 1
     vcn.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = bool_true)), line = 0, source_path = ""))
@@ -29926,7 +29907,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     )), line = 0, source_path = ""))
     vcn.push(ir.Stmt.stmt_if(condition = cn_waiter_frame, then_body = cn_wake_body.as_span(), else_body = Option[span[ir.Stmt]].none))
     vcn.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    ctx.pending_synthetic_functions.push(ir.Function(name = j2(cancel_lk, "_fn"), linkage_name = cancel_lk, params = vparam_s, return_type = void_t, body = vcn.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
+    ctx.pending_synthetic_functions.push(ir.Function(name = strings.join_two(cancel_lk, "_fn"), linkage_name = cancel_lk, params = vparam_s, return_type = void_t, body = vcn.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
 
     # -- constructor function --
     let size_expr = alloc_expr(ir.Expr.expr_sizeof(target_type = frame_ty, ty = ptr_ty))
@@ -29965,7 +29946,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         # The store target is typed with the frame field; the value Name carries
         # the declared parameter type with the pointer flag (the host's
         # `param_type` vs `field_type` split).
-        let field_expr = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = j2("param_", pname), ty = fty))
+        let field_expr = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = strings.join_two("param_", pname), ty = fty))
         let arg_pointer = async_param_pointer(receiver_ty_opt, receiver_editable, pname)
         let arg_expr = alloc_expr(ir.Expr.expr_name(name = pname, ty = pty, pointer = arg_pointer))
         ctor_body.push(ir.Stmt.stmt_assignment(target = field_expr, operator = "=", value = arg_expr))
@@ -30034,7 +30015,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
 
 ## The C label for async resume state `n` (goto target in the dispatch switch).
 function async_state_label(resume_c: str, n: int) -> str:
-    return j3(resume_c, "_state_", int_to_str(n))
+    return strings.join_three(resume_c, "_state_", int_to_str(n))
 
 
 ## True when an AST expression is directly an `await` (not wrapped).
@@ -30111,9 +30092,9 @@ function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], e
                 let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
                 let result_ty = extract_task_element_type(ctx, task_ty)
                 ctx.async_tmp_counter += 1
-                let tmp = j2("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
-                let field_name = j2("local_", tmp)
-                let frame_cname = j2("__mt_frame->", field_name)
+                let tmp = strings.join_two("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
+                let field_name = strings.join_two("local_", tmp)
+                let frame_cname = strings.join_two("__mt_frame->", field_name)
                 async_register_local_field(ctx, tmp, field_name, frame_cname, result_ty)
                 # The store target is the host's `IR::Member(frame, field)`
                 # (`async_frame_field_expression`), not the `__mt_frame->…` text
@@ -30188,9 +30169,9 @@ function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], e
                 var else_setup = vec.Vec[ir.Stmt].create()
                 let else_h = async_hoist_awaits(ctx, ref_of(else_setup), ie.else_expr)
                 ctx.async_tmp_counter += 1
-                let tmp = j2("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
-                let field_name = j2("local_", tmp)
-                let frame_cname = j2("__mt_frame->", field_name)
+                let tmp = strings.join_two("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
+                let field_name = strings.join_two("local_", tmp)
+                let frame_cname = strings.join_two("__mt_frame->", field_name)
                 var result_ty = expr_type(ctx, ep)
                 if types.is_error(result_ty):
                     result_ty = expr_type(ctx, ie.then_expr)
@@ -30313,7 +30294,7 @@ function async_collect_stmt_fields(ctx: ref[LowerCtx], stmt: ast.Stmt, sink: ref
                         storage_ty = resolve_type_ref(ctx, unsafe: ptr[ast.TypeRef]<-l.stmt_type)
                 else if val != null:
                     storage_ty = async_local_value_type(ctx, unsafe: ptr[ast.Expr]<-val)
-                sink.push(AsyncFieldEntry(name = j2("local_", l.name), ty = storage_ty))
+                sink.push(AsyncFieldEntry(name = strings.join_two("local_", l.name), ty = storage_ty))
             async_collect_body_fields(ctx, l.else_body, sink, counter)
         ast.Stmt.stmt_if as sif:
             var bi: ptr_uint = 0
@@ -30394,8 +30375,8 @@ function async_collect_expr_fields(ctx: ref[LowerCtx], ep: ptr[ast.Expr], sink: 
                     async_collect_expr_fields(ctx, b.left, ref_of(children), counter)
                     async_collect_expr_fields(ctx, b.right, ref_of(children), counter)
                     read(counter) = read(counter) + 1
-                    let tmp = j2("__mt_async_tmp_", pw1_str(read(counter)))
-                    sink.push(AsyncFieldEntry(name = j2("local_", tmp), ty = ctx.bool_ty))
+                    let tmp = strings.join_two("__mt_async_tmp_", pw1_str(read(counter)))
+                    sink.push(AsyncFieldEntry(name = strings.join_two("local_", tmp), ty = ctx.bool_ty))
                     var ci: ptr_uint = 0
                     while ci < children.len():
                         let child_ptr = children.get(ci) else:
@@ -30517,7 +30498,7 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
     if loc_name == "_":
         let dv = loc_value else:
             return
-        let field_name = j2("local_discard_", pw1_str(line))
+        let field_name = strings.join_two("local_discard_", pw1_str(line))
         if expr_is_direct_await(dv):
             let task_ir = lower_expr(ctx, direct_await_inner(dv))
             let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
@@ -30532,8 +30513,8 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
             output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = field_name, ty = value_ty)), operator = "=", value = value_ir))
         return
 
-    let field_name = j2("local_", loc_name)
-    let frame_cname = j2("__mt_frame->", field_name)
+    let field_name = strings.join_two("local_", loc_name)
+    let frame_cname = strings.join_two("__mt_frame->", field_name)
 
     let v = loc_value else:
         # No initializer: reserve the frame field with the declared type.
@@ -30700,7 +30681,7 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
     if reusable.len > 0:
         await_field = reusable
     else:
-        await_field = j2("await_", int_to_str(int<-idx))
+        await_field = strings.join_two("await_", int_to_str(int<-idx))
     # The host records every await field, including one that reuses a local's
     # storage (`reuse_existing_storage`): the release/cancel builders iterate
     # them all, while the frame type dedups an entry whose field already exists.
@@ -30836,7 +30817,7 @@ function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir
     var arg_names = vec.Vec[str].create()
     var ai: ptr_uint = 0
     while ai < params.len:
-        let an = j2("__mt_async_main_arg_", int_to_str(int<-ai + 1))
+        let an = strings.join_two("__mt_async_main_arg_", int_to_str(int<-ai + 1))
         let pty = unsafe: read(params.data + ai).ty
         let cval = call_args.get(ai) else:
             return Option[ir.Function].none

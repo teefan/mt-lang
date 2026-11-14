@@ -11,6 +11,7 @@ import std.string as string
 import std.fmt as fmt
 
 import mtc.semantic.types as types
+import mtc.strings
 
 
 ## Replace every maximal run of non-alphanumeric characters (and underscores)
@@ -134,7 +135,7 @@ public function proc_type_c_name(t: types.Type) -> str:
                 raw.append(type_to_s_qualified(read(fnt.return_type)))
         _:
             raw.append(type_to_s_qualified(t))
-    return j2("mt_proc_", sanitize_c_identifier(raw.as_str()))
+    return strings.join_two("mt_proc_", sanitize_c_identifier(raw.as_str()))
 
 
 ## The C identifier prefix for a module (`std.str` -> `std_str`).
@@ -235,7 +236,7 @@ public function type_c_key(t: types.Type) -> str:
         types.Type.ty_var as v:
             return sanitize_identifier(v.name)
         types.Type.ty_dyn as d:
-            return j2("dyn_", sanitize_identifier(d.iface))
+            return strings.join_two("dyn_", sanitize_identifier(d.iface))
         types.Type.ty_opaque as op:
             return qualified_c_name(op.module_name, op.name)
         types.Type.ty_imported as im:
@@ -301,11 +302,11 @@ public function type_to_s_qualified(t: types.Type) -> str:
     match t:
         types.Type.ty_named as n:
             if n.module_name.len > 0:
-                return j3(n.module_name, ".", n.name)
+                return strings.join_three(n.module_name, ".", n.name)
             return n.name
         types.Type.ty_imported as im:
             if im.args.len == 0:
-                return j3(im.module_name, ".", im.name)
+                return strings.join_three(im.module_name, ".", im.name)
             var buf = string.String.create()
             buf.append(im.module_name)
             buf.append(".")
@@ -442,16 +443,3 @@ function tuple_names_are_default(names: span[str]) -> bool:
     return true
 
 
-function j2(a: str, b: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    return buf.as_str()
-
-
-function j3(a: str, b: str, c: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    buf.append(c)
-    return buf.as_str()

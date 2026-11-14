@@ -17,16 +17,10 @@ import mtc.ir as ir
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.c_naming as naming
+import mtc.strings
 
 
 ## Two-string concatenation helper.
-function j2(a: str, b: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    return buf.as_str()
-
-
 ## A field of an `sv_node` (`:name value`).
 public struct SexprField:
     name: str
@@ -457,7 +451,7 @@ function named_type_class(ctx: ref[SexprCtx], name: str) -> str:
 ## (`external`) module's enum/flags/opaque render their own class — the IR holds
 ## no declaration for them (session 43, item 3g).
 function imported_type_class(ctx: ref[SexprCtx], module_name: str, name: str) -> str:
-    let kind = ctx.type_kinds.get(j2(module_name, j2(".", name)))
+    let kind = ctx.type_kinds.get(strings.join_two(module_name, strings.join_two(".", name)))
     if kind != null:
         return unsafe: read(kind)
     return named_type_class(ctx, name)
@@ -565,8 +559,8 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
             # kind map like an imported one (`std.c.box2d.b2HexColor` is the raw
             # module's enum, and no IR declaration carries it).
             if n.module_name.len > 0:
-                return node(j2("Types::", imported_type_class(ctx, n.module_name, n.name)), nf.as_span())
-            return node(j2("Types::", named_type_class(ctx, n.name)), nf.as_span())
+                return node(strings.join_two("Types::", imported_type_class(ctx, n.module_name, n.name)), nf.as_span())
+            return node(strings.join_two("Types::", named_type_class(ctx, n.name)), nf.as_span())
         types.Type.ty_variant_arm_payload as ap:
             # The host tags the payload distinctly but renders its fields through
             # the `Types::Struct` branch (`:name`, `:module_name`).
@@ -587,8 +581,8 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
                 # StructInstance.
                 let kind = imported_type_class(ctx, im.module_name, im.name)
                 let cls = if kind == "Variant" or im.name == "Option" or im.name == "Result": "VariantInstance" else: "StructInstance"
-                return node(j2("Types::", cls), imf.as_span())
-            return node(j2("Types::", imported_type_class(ctx, im.module_name, im.name)), imf.as_span())
+                return node(strings.join_two("Types::", cls), imf.as_span())
+            return node(strings.join_two("Types::", imported_type_class(ctx, im.module_name, im.name)), imf.as_span())
         types.Type.ty_generic as g:
             if g.name == "Option" or g.name == "Result":
                 var vf = vec.Vec[SexprField].create()
@@ -1089,7 +1083,7 @@ function register_decl_kinds(ctx: ref[SexprCtx], a: analyzer.Analysis) -> void:
             _:
                 pass
         if name.len > 0:
-            let _prev = ctx.type_kinds.set(j2(j2(a.module_name, "."), name), kind)
+            let _prev = ctx.type_kinds.set(strings.join_two(strings.join_two(a.module_name, "."), name), kind)
         di += 1
 
 

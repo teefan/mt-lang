@@ -24,7 +24,7 @@ import mtc.float_text as float_text
 import mtc.ir as ir
 import mtc.semantic.types as types
 import mtc.c_naming as naming
-import mtc.lowering.utils as utils
+import mtc.strings
 
 
 ## A backend-stage error raised for unrecoverable code-generation failures.
@@ -282,7 +282,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
             let header = read(program.includes.data + i).header
             if not seen_headers.contains(header):
                 seen_headers.set(header, true)
-                emit_line(ref_of(e), j2("#include ", header))
+                emit_line(ref_of(e), strings.join_two("#include ", header))
                 if use_offsetof and header == "<string.h>" and not seen_headers.contains("<stddef.h>"):
                     seen_headers.set("<stddef.h>", true)
                     emit_line(ref_of(e), "#include <stddef.h>")
@@ -385,7 +385,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
             let ty_ptr = span_types.get(si) else:
                 break
             unsafe:
-                emit_line(ref_of(e), j3("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";"))
+                emit_line(ref_of(e), strings.join_three("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";"))
             si += 1
         if span_types.len() > 0:
             emit_line(ref_of(e), "")
@@ -394,13 +394,13 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
         while i < sorted.len:
             unsafe:
                 let s = read(sorted.data + i)
-                emit_line(ref_of(e), j3("typedef struct ", s.linkage_name, j2(" ", j2(s.linkage_name, ";"))))
+                emit_line(ref_of(e), strings.join_three("typedef struct ", s.linkage_name, strings.join_two(" ", strings.join_two(s.linkage_name, ";"))))
             i += 1
         i = 0
         while i < program.unions.len:
             unsafe:
                 let u = read(program.unions.data + i)
-                emit_line(ref_of(e), j3("typedef union ", u.linkage_name, j2(" ", j2(u.linkage_name, ";"))))
+                emit_line(ref_of(e), strings.join_three("typedef union ", u.linkage_name, strings.join_two(" ", strings.join_two(u.linkage_name, ";"))))
             i += 1
         i = 0
         while i < tuple_types.len():
@@ -427,7 +427,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
                 break
             unsafe:
                 let os = read(os_ptr)
-                emit_line(ref_of(e), j3("typedef struct ", os.decl.linkage_name, j2(" ", j2(os.decl.linkage_name, ";"))))
+                emit_line(ref_of(e), strings.join_three("typedef struct ", os.decl.linkage_name, strings.join_two(" ", strings.join_two(os.decl.linkage_name, ";"))))
             i += 1
         emit_line(ref_of(e), "")
 
@@ -514,7 +514,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
             let ty_ptr = span_types.get(span_si) else:
                 break
             unsafe:
-                emit_line(ref_of(e), j3("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";"))
+                emit_line(ref_of(e), strings.join_three("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";"))
             span_si += 1
         span_si = 0
         while span_si < span_types.len():
@@ -530,7 +530,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
         i = 0
         while i < funcs.len:
             unsafe:
-                emit_line(ref_of(e), j2(function_signature(read(funcs.data + i), export_public), ";"))
+                emit_line(ref_of(e), strings.join_two(function_signature(read(funcs.data + i), export_public), ";"))
             i += 1
         emit_line(ref_of(e), "")
 
@@ -1045,26 +1045,6 @@ function reach_from_expr(ep: ptr[ir.Expr], func_names: ref[map_mod.Map[str, bool
 #  String helpers
 # =============================================================================
 
-function j2(a: str, b: str) -> str:
-    return utils.j2(a, b)
-
-
-function j3(a: str, b: str, c: str) -> str:
-    return utils.j3(a, b, c)
-
-
-function j4(a: str, b: str, c: str, d: str) -> str:
-    return utils.j4(a, b, c, d)
-
-
-function j5(a: str, b: str, c: str, d: str, e: str) -> str:
-    return utils.j5(a, b, c, d, e)
-
-
-function j6(a: str, b: str, c: str, d: str, e: str, f: str) -> str:
-    return utils.j6(a, b, c, d, e, f)
-
-
 function emit_line(e: ref[Emitter], text: str) -> void:
     e.buffer.append(text)
     e.buffer.append("\n")
@@ -1092,9 +1072,9 @@ function long_to_str(value: long) -> str:
 ## the host emits (`0.2f`).
 function c_float_literal(value: double, is_float32: bool) -> str:
     let s = float_text.double_to_str(value)
-    var text = if float_literal_needs_decimal(s): j2(s, ".0") else: s
+    var text = if float_literal_needs_decimal(s): strings.join_two(s, ".0") else: s
     if is_float32:
-        return j2(text, "f")
+        return strings.join_two(text, "f")
     return text
 
 
@@ -1320,10 +1300,10 @@ function emit_str_slice_helper(e: ref[Emitter]) -> void:
 
 function emit_span_slice_helper(e: ref[Emitter], span_ty: types.Type) -> void:
     let span_name = span_type_name(array_element_type(span_ty))
-    let helper = j2("mt_span_slice_", naming.type_c_key(array_element_type(span_ty)))
-    emit_line(e, j5("static inline ", span_name, " ", helper, j3("(", span_name, " span, uintptr_t start, uintptr_t stop) {")))
+    let helper = strings.join_two("mt_span_slice_", naming.type_c_key(array_element_type(span_ty)))
+    emit_line(e, strings.join_five("static inline ", span_name, " ", helper, strings.join_three("(", span_name, " span, uintptr_t start, uintptr_t stop) {")))
     emit_line(e, "  if (start > stop || stop > span.len) mt_fatal(\"span slice out of bounds\");")
-    emit_line(e, j5("  return (", span_name, "){ .data = span.data + start, .len = stop - start };", "", ""))
+    emit_line(e, strings.join_five("  return (", span_name, "){ .data = span.data + start, .len = stop - start };", "", ""))
     emit_line(e, "}")
     emit_line(e, "")
 
@@ -1357,16 +1337,16 @@ function emit_fatal_str_helper(e: ref[Emitter]) -> void:
 
 
 function str_literal_name(index: ptr_uint) -> str:
-    return j2("mt_str_lit_", ptr_uint_to_str(index))
+    return strings.join_two("mt_str_lit_", ptr_uint_to_str(index))
 
 
 function render_str_literal_constant(value: str, index: ptr_uint) -> str:
-    return j6(
+    return strings.join_six(
         "static const mt_str ",
         str_literal_name(index),
         " = { .data = ",
         c_string_literal(value),
-        j3(", .len = ", ptr_uint_to_str(value.len), " };"),
+        strings.join_three(", .len = ", ptr_uint_to_str(value.len), " };"),
         "",
     )
 
@@ -1685,7 +1665,7 @@ function collect_gv_from_type(ty: types.Type, seen: ref[map_mod.Map[str, bool]],
                     let f = unsafe: read(arm.fields.data + fi)
                     fields.push(f)
                     fi += 1
-                arms.push(ir.VariantArm(name = arm.name, linkage_name = j3(c_name, "_", arm.name), fields = fields.as_span()))
+                arms.push(ir.VariantArm(name = arm.name, linkage_name = strings.join_three(c_name, "_", arm.name), fields = fields.as_span()))
                 ai += 1
             result.push(ir.VariantDecl(
                 name = c_name,
@@ -2114,7 +2094,7 @@ function c_type(t: types.Type) -> str:
         types.Type.ty_str:
             return "mt_str"
         types.Type.ty_dyn as d:
-            return j3("mt_dyn_", d.iface, "")
+            return strings.join_three("mt_dyn_", d.iface, "")
         types.Type.ty_dyn_vtable as dv:
             return dv.linkage_name
         types.Type.ty_opaque as op:
@@ -2130,8 +2110,8 @@ function c_type(t: types.Type) -> str:
                 let backing_map = unsafe: read(ptr[map_mod.Map[str, str]]<-opaque_backing_names)
                 let backing_ptr = backing_map.get(type_key)
                 if backing_ptr != null:
-                    return j2(unsafe: read(backing_ptr), "*")
-            return j2(type_key, "*")
+                    return strings.join_two(unsafe: read(backing_ptr), "*")
+            return strings.join_two(type_key, "*")
         types.Type.ty_function as fnt:
             # A proc value is the synthesized `mt_proc_<sig>` closure struct; a
             # plain function type is a raw function pointer.
@@ -2148,7 +2128,7 @@ function c_type(t: types.Type) -> str:
                     if backing_ptr != null:
                         return unsafe: read(backing_ptr)
                 if im.name == "sockaddr" or im.name == "sockaddr_storage" or im.name == "sockaddr_in" or im.name == "sockaddr_in6" or im.name == "tm":
-                    return j2("struct ", im.name)
+                    return strings.join_two("struct ", im.name)
                 return im.name
             var base = naming.qualified_c_name(im.module_name, im.name)
             if im.args.len == 0:
@@ -2207,13 +2187,13 @@ function c_type(t: types.Type) -> str:
                             # for values, so nullability adds nothing; a raw
                             # module's opaque C name is the struct itself.
                             if op.module_name.starts_with("std.c."):
-                                return j2(c_type(base), "*")
+                                return strings.join_two(c_type(base), "*")
                             return c_type(base)
                         _:
                             return c_type(base)
-                return j2("mt_opt_", naming.type_c_key(base))
+                return strings.join_two("mt_opt_", naming.type_c_key(base))
         _:
-            fatal(j2("c_backend: unsupported C type: ", types.type_to_string(t)))
+            fatal(strings.join_two("c_backend: unsupported C type: ", types.type_to_string(t)))
 
 
 ## C type for a generic instance: span -> mt_span_ELEM, ptr/const_ptr/ref ->
@@ -2228,7 +2208,7 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
                 return c_type(inner)
             _:
                 pass
-        return j2(c_type(inner), "*")
+        return strings.join_two(c_type(inner), "*")
     if name == "const_ptr" and args.len == 1:
         let inner = unsafe: read(args.data + 0)
         match inner:
@@ -2236,7 +2216,7 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
                 return c_type(inner)
             _:
                 pass
-        return j3("const ", c_type(inner), "*")
+        return strings.join_three("const ", c_type(inner), "*")
     if name == "own" and args.len == 1:
         let inner = unsafe: read(args.data + 0)
         match inner:
@@ -2244,7 +2224,7 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
                 return c_type(inner)
             _:
                 pass
-        return j2(c_type(inner), "*")
+        return strings.join_two(c_type(inner), "*")
     if name == "ref" and args.len >= 1:
         let inner = unsafe: read(args.data + (args.len - 1))
         match inner:
@@ -2252,27 +2232,27 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
                 return c_type(inner)
             _:
                 pass
-        return j2(c_type(inner), "*")
+        return strings.join_two(c_type(inner), "*")
     # str_buffer[N] → mt_str_buffer_N
     if name == "str_buffer" and args.len >= 1:
-        return j3("mt_str_buffer_", naming.type_c_key(unsafe: read(args.data + 0)), "")
+        return strings.join_three("mt_str_buffer_", naming.type_c_key(unsafe: read(args.data + 0)), "")
     # atomic[T] → _Atomic <c_type(T)>
     if name == "atomic" and args.len == 1:
-        return j3("_Atomic ", c_type(unsafe: read(args.data + 0)), "")
+        return strings.join_three("_Atomic ", c_type(unsafe: read(args.data + 0)), "")
     # Task[T] → mt_task_<T>
     if name == "Task" and args.len == 1:
-        return j3("mt_task_", naming.type_c_key(unsafe: read(args.data + 0)), "")
+        return strings.join_three("mt_task_", naming.type_c_key(unsafe: read(args.data + 0)), "")
     # SoA[T, N] → mt_soa_<T>_N
     if name == "SoA" and args.len >= 2:
         let elem_name = c_type(unsafe: read(args.data + 0))
         let count_str = naming.type_c_key(unsafe: read(args.data + 1))
-        return j4("mt_soa_", elem_name, "_", count_str)
+        return strings.join_four("mt_soa_", elem_name, "_", count_str)
     # simd[T, N] → mt_simd_<T>xN (a GCC vector typedef)
     if name == "simd" and args.len >= 2:
-        return j4("mt_simd_", naming.type_c_key(unsafe: read(args.data + 0)), "x", naming.type_c_key(unsafe: read(args.data + 1)))
+        return strings.join_four("mt_simd_", naming.type_c_key(unsafe: read(args.data + 0)), "x", naming.type_c_key(unsafe: read(args.data + 1)))
     # array[T, N] in type position (e.g. sizeof) → <elem>[<N>]
     if name == "array" and args.len >= 2:
-        return j3(c_type(unsafe: read(args.data + 0)), "[", j2(naming.type_c_key(unsafe: read(args.data + 1)), "]"))
+        return strings.join_three(c_type(unsafe: read(args.data + 0)), "[", strings.join_two(naming.type_c_key(unsafe: read(args.data + 1)), "]"))
     # Generic variant: `<name>_<type0>_<type1>_...`.  The caller module prefix
     # is added by `qualified_c_name` when the type is `ty_imported`.
     # Prelude types (Option, Result) carry the prefix in their raw name from the
@@ -2295,7 +2275,7 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
 
 
 function span_type_name(element: types.Type) -> str:
-    return j2("mt_span_", naming.type_c_key(element))
+    return strings.join_two("mt_span_", naming.type_c_key(element))
 
 
 # =============================================================================
@@ -2304,7 +2284,7 @@ function span_type_name(element: types.Type) -> str:
 
 ## The C typedef name for a simd[E, N] type.
 function simd_type_name(t: types.Type) -> str:
-    return j4("mt_simd_", naming.type_c_key(types.simd_element_type(t)), "x", long_to_str(types.simd_lane_count(t)))
+    return strings.join_four("mt_simd_", naming.type_c_key(types.simd_element_type(t)), "x", long_to_str(types.simd_lane_count(t)))
 
 
 ## The byte size of a primitive C scalar type, or 0 when it is not a scalar.
@@ -2429,7 +2409,7 @@ function emit_simd_typedefs(e: ref[Emitter], simd_types: vec.Vec[types.Type]) ->
                 pass
         if elem_size > 0:
             let width = types.simd_lane_count(t) * elem_size
-            emit_line(e, j5("typedef ", elem_c, " ", simd_type_name(t), j3(" __attribute__((__vector_size__(", long_to_str(width), ")));")))
+            emit_line(e, strings.join_five("typedef ", elem_c, " ", simd_type_name(t), strings.join_three(" __attribute__((__vector_size__(", long_to_str(width), ")));")))
         i += 1
 
 
@@ -2667,10 +2647,10 @@ function span_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], col
 function emit_span_type(e: ref[Emitter], t: types.Type) -> void:
     let element = array_element_type(t)
     let name = span_type_name(element)
-    emit_line(e, j3("typedef struct ", name, " {"))
-    emit_line(e, j3("  ", c_type(element), " *data;"))
+    emit_line(e, strings.join_three("typedef struct ", name, " {"))
+    emit_line(e, strings.join_three("  ", c_type(element), " *data;"))
     emit_line(e, "  uintptr_t len;")
-    emit_line(e, j3("} ", name, ";"))
+    emit_line(e, strings.join_three("} ", name, ";"))
 
 
 # =============================================================================
@@ -2870,12 +2850,12 @@ function tuple_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], co
 
 function emit_tuple_type_forward(e: ref[Emitter], t: types.Type) -> void:
     let name = naming.tuple_type_c_name(t)
-    emit_line(e, j3("typedef struct ", name, j2(" ", j2(name, ";"))))
+    emit_line(e, strings.join_three("typedef struct ", name, strings.join_two(" ", strings.join_two(name, ";"))))
 
 
 function emit_tuple_type_def(e: ref[Emitter], t: types.Type) -> void:
     let name = naming.tuple_type_c_name(t)
-    emit_line(e, j3("struct ", name, " {"))
+    emit_line(e, strings.join_three("struct ", name, " {"))
     match t:
         types.Type.ty_tuple as tup:
             var i: ptr_uint = 0
@@ -2889,7 +2869,7 @@ function emit_tuple_type_def(e: ref[Emitter], t: types.Type) -> void:
                     Option.none:
                         pass
                 unsafe:
-                    emit_line(e, j4("  ", c_declaration(read(tup.elements.data + i), fname), ";", ""))
+                    emit_line(e, strings.join_four("  ", c_declaration(read(tup.elements.data + i), fname), ";", ""))
                 i += 1
         _:
             pass
@@ -2897,7 +2877,7 @@ function emit_tuple_type_def(e: ref[Emitter], t: types.Type) -> void:
 
 
 function tuple_field_name(index: ptr_uint) -> str:
-    return j2("_", ptr_uint_to_str(index))
+    return strings.join_two("_", ptr_uint_to_str(index))
 
 
 ## True when an array local has a brace-initializable value (array literal or
@@ -3032,15 +3012,15 @@ function primitive_c_type(name: str) -> str:
     if name == "cstr":
         return "const char*"
     if name == "vec2" or name == "ivec2":
-        return j2("mt_", name)
+        return strings.join_two("mt_", name)
     if name == "vec3" or name == "ivec3":
-        return j2("mt_", name)
+        return strings.join_two("mt_", name)
     if name == "vec4" or name == "ivec4":
-        return j2("mt_", name)
+        return strings.join_two("mt_", name)
     if name == "mat3" or name == "mat4":
-        return j2("mt_", name)
+        return strings.join_two("mt_", name)
     if name == "quat":
-        return j2("mt_", name)
+        return strings.join_two("mt_", name)
     fatal(c"c_backend: unsupported primitive type")
 
 
@@ -3092,7 +3072,7 @@ function c_fn_ptr_declarator(t: types.Type, name: str) -> str:
 ## `void` members (`WorkState[void]`, `Result[void, E].success`).
 function c_field_declaration(t: types.Type, name: str) -> str:
     if is_void_type(t):
-        return j3("uint8_t ", name, "")
+        return strings.join_three("uint8_t ", name, "")
     return c_declaration(t, name)
 
 
@@ -3100,14 +3080,14 @@ function c_field_declaration(t: types.Type, name: str) -> str:
 ## (`int32_t xs[3]`); everything else in Phase 3 is a plain `TYPE NAME`.
 function c_declaration(t: types.Type, name: str) -> str:
     if is_array_type(t):
-        let inner_name = if name.len > 0 and name.byte_at(0) == '*': j3("(", name, ")") else: name
+        let inner_name = if name.len > 0 and name.byte_at(0) == '*': strings.join_three("(", name, ")") else: name
         let elem_t = array_element_type(t)
         # When the element is itself an array, emit correct C multi-dimensional
         # syntax with the OUTER dimension first: `array[array[float, M], N]`
         # declares as `float name[N][M]` (N rows of M), matching row-major
         # indexing `name[row][col]` and the Ruby backend.
         if is_array_type(elem_t):
-            return c_declaration(elem_t, j4(inner_name, "[", long_to_str(array_length(t)), "]"))
+            return c_declaration(elem_t, strings.join_four(inner_name, "[", long_to_str(array_length(t)), "]"))
         # Array of function pointers needs the array declarator inside the
         # parenthesized name: `void (*slots[16])(int32_t)`, not
         # `void (*)(int32_t) slots[16]`.  A proc element is a plain struct value
@@ -3115,11 +3095,11 @@ function c_declaration(t: types.Type, name: str) -> str:
         match elem_t:
             types.Type.ty_function as ef:
                 if ef.is_proc:
-                    return j6(c_type(elem_t), " ", inner_name, "[", long_to_str(array_length(t)), "]")
-                return c_fn_ptr_declarator(elem_t, j4(inner_name, "[", long_to_str(array_length(t)), "]"))
+                    return strings.join_six(c_type(elem_t), " ", inner_name, "[", long_to_str(array_length(t)), "]")
+                return c_fn_ptr_declarator(elem_t, strings.join_four(inner_name, "[", long_to_str(array_length(t)), "]"))
             _:
                 pass
-        return j6(c_type(elem_t), " ", inner_name, "[", long_to_str(array_length(t)), "]")
+        return strings.join_six(c_type(elem_t), " ", inner_name, "[", long_to_str(array_length(t)), "]")
     # Function-pointer types need declarator syntax: `ret_type (*name)(...)`.
     # A proc type is the synthesized `mt_proc_<sig>` struct (a plain value).
     # Pointer/reference types: `T*` instead of `ptr_T`.
@@ -3127,7 +3107,7 @@ function c_declaration(t: types.Type, name: str) -> str:
     match t:
         types.Type.ty_function as f:
             if f.is_proc:
-                return j3(c_type(t), " ", name)
+                return strings.join_three(c_type(t), " ", name)
             return c_fn_ptr_declarator(t, name)
         types.Type.ty_nullable as nl:
             # A nullable function pointer (`fn(...)?`) lowers to a plain function
@@ -3143,22 +3123,22 @@ function c_declaration(t: types.Type, name: str) -> str:
             if (g.name == "ptr" or g.name == "own" or g.name == "ref") and g.args.len >= 1:
                 let inner = unsafe: read(g.args.data + (g.args.len - 1))
                 if is_array_type(inner):
-                    return c_declaration(inner, j2("*", name))
+                    return c_declaration(inner, strings.join_two("*", name))
                 let base = unsafe: c_type(inner)
-                return j3(base, " *", name)
+                return strings.join_three(base, " *", name)
             if g.name == "const_ptr" and g.args.len == 1:
                 let inner = unsafe: read(g.args.data + 0)
                 if is_array_type(inner):
-                    return c_declaration(inner, j2("*", name))
+                    return c_declaration(inner, strings.join_two("*", name))
                 let base = unsafe: c_type(inner)
-                return j4("const ", base, "*", name)
+                return strings.join_four("const ", base, "*", name)
             if g.name == "str_buffer" and g.args.len >= 1:
-                let c_name = j3("mt_str_buffer_", naming.type_c_key(unsafe: read(g.args.data + 0)), "")
-                return j3(c_name, " ", name)
-            return j3(generic_c_type(g.name, g.args), " ", name)
+                let c_name = strings.join_three("mt_str_buffer_", naming.type_c_key(unsafe: read(g.args.data + 0)), "")
+                return strings.join_three(c_name, " ", name)
+            return strings.join_three(generic_c_type(g.name, g.args), " ", name)
         _:
             pass
-    return j3(c_type(t), " ", name)
+    return strings.join_three(c_type(t), " ", name)
 
 
 # =============================================================================
@@ -3175,7 +3155,7 @@ function emit_enums_block(e: ref[Emitter], program: ir.Program) -> void:
 
 
 function emit_enum(e: ref[Emitter], enum_decl: ir.EnumDecl) -> void:
-    emit_line(e, j4("typedef ", c_type(enum_decl.backing_type), " ", j2(enum_decl.linkage_name, ";")))
+    emit_line(e, strings.join_four("typedef ", c_type(enum_decl.backing_type), " ", strings.join_two(enum_decl.linkage_name, ";")))
     if enum_decl.members.len == 0:
         return
     emit_line(e, "enum {")
@@ -3184,7 +3164,7 @@ function emit_enum(e: ref[Emitter], enum_decl: ir.EnumDecl) -> void:
         unsafe:
             let m = read(enum_decl.members.data + i)
             let suffix = if i == enum_decl.members.len - 1: "" else: ","
-            emit_line(e, j6("  ", m.linkage_name, " = ", render_expression(e, m.value), suffix, ""))
+            emit_line(e, strings.join_six("  ", m.linkage_name, " = ", render_expression(e, m.value), suffix, ""))
         i += 1
     emit_line(e, "};")
 
@@ -3194,12 +3174,12 @@ function emit_enum(e: ref[Emitter], enum_decl: ir.EnumDecl) -> void:
 # =============================================================================
 
 function emit_struct(e: ref[Emitter], s: ir.StructDecl) -> void:
-    emit_line(e, j3("struct ", s.linkage_name, " {"))
+    emit_line(e, strings.join_three("struct ", s.linkage_name, " {"))
     var i: ptr_uint = 0
     while i < s.fields.len:
         unsafe:
             let f = read(s.fields.data + i)
-            emit_line(e, j4("  ", c_field_declaration(f.ty, f.name), ";", ""))
+            emit_line(e, strings.join_four("  ", c_field_declaration(f.ty, f.name), ";", ""))
         i += 1
     emit_line(e, struct_closer(s.packed, s.alignment))
 
@@ -3211,21 +3191,21 @@ function emit_struct(e: ref[Emitter], s: ir.StructDecl) -> void:
 ## rendering exactly.
 function struct_closer(packed: bool, alignment: int) -> str:
     if packed and alignment > 0:
-        return j3("} __attribute__((packed, aligned(", long_to_str(long<-alignment), ")));")
+        return strings.join_three("} __attribute__((packed, aligned(", long_to_str(long<-alignment), ")));")
     if packed:
         return "} __attribute__((packed));"
     if alignment > 0:
-        return j3("} __attribute__((aligned(", long_to_str(long<-alignment), ")));")
+        return strings.join_three("} __attribute__((aligned(", long_to_str(long<-alignment), ")));")
     return "};"
 
 
 function emit_union(e: ref[Emitter], u: ir.UnionDecl) -> void:
-    emit_line(e, j3("union ", u.linkage_name, " {"))
+    emit_line(e, strings.join_three("union ", u.linkage_name, " {"))
     var i: ptr_uint = 0
     while i < u.fields.len:
         unsafe:
             let f = read(u.fields.data + i)
-            emit_line(e, j4("  ", c_declaration(f.ty, f.name), ";", ""))
+            emit_line(e, strings.join_four("  ", c_declaration(f.ty, f.name), ";", ""))
         i += 1
     emit_line(e, "};")
 
@@ -3255,8 +3235,8 @@ function emit_soa_types(e: ref[Emitter], funcs: span[ir.Function], program: ir.P
 
 ## Emit a single SoA struct definition.
 function emit_one_soa(e: ref[Emitter], elem_struct_name: str, count_str: str, structs: span[ir.StructDecl]) -> void:
-    let soa_name = j4("mt_soa_", elem_struct_name, "_", count_str)
-    emit_line(e, j3("typedef struct ", soa_name, " {"))
+    let soa_name = strings.join_four("mt_soa_", elem_struct_name, "_", count_str)
+    emit_line(e, strings.join_three("typedef struct ", soa_name, " {"))
     var svi: ptr_uint = 0
     while svi < structs.len:
         unsafe:
@@ -3276,13 +3256,13 @@ function emit_one_soa(e: ref[Emitter], elem_struct_name: str, count_str: str, st
                     emit_line(e, decl_buf.as_str())
                     sfi += 1
         svi += 1
-    emit_line(e, j3("} ", soa_name, ";"))
+    emit_line(e, strings.join_three("} ", soa_name, ";"))
     emit_line(e, "")
 
 
 ## Register an SoA type if it hasn't been emitted yet, keyed by its C name.
 function register_soa(e: ref[Emitter], elem_c_name: str, count_str: str, seen: ref[map_mod.Map[str, bool]]) -> bool:
-    let key = j3(elem_c_name, "_", count_str)
+    let key = strings.join_three(elem_c_name, "_", count_str)
     if seen.contains(key):
         return false
     seen.set(key, true)
@@ -3386,13 +3366,13 @@ function variant_has_payload(vd: ir.VariantDecl) -> bool:
 ## Forward typedefs for a variant: the outer tagged struct plus one per payload
 ## arm (no-payload arms have no payload struct).  Mirrors emit_forward_declarations.
 function emit_variant_forward(e: ref[Emitter], vd: ir.VariantDecl) -> void:
-    emit_line(e, j3("typedef struct ", vd.linkage_name, j2(" ", j2(vd.linkage_name, ";"))))
+    emit_line(e, strings.join_three("typedef struct ", vd.linkage_name, strings.join_two(" ", strings.join_two(vd.linkage_name, ";"))))
     var i: ptr_uint = 0
     while i < vd.arms.len:
         unsafe:
             let arm = read(vd.arms.data + i)
             if arm.fields.len > 0:
-                emit_line(e, j3("typedef struct ", arm.linkage_name, j2(" ", j2(arm.linkage_name, ";"))))
+                emit_line(e, strings.join_three("typedef struct ", arm.linkage_name, strings.join_two(" ", strings.join_two(arm.linkage_name, ";"))))
         i += 1
 
 
@@ -3411,7 +3391,7 @@ function c_safe_field_name(name: str) -> str:
         or name == "return" or name == "if" or name == "else" or name == "while"
         or name == "for" or name == "do" or name == "goto"
     ):
-        return j2(name, "_")
+        return strings.join_two(name, "_")
     return name
 
 
@@ -3424,21 +3404,21 @@ function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
         unsafe:
             let arm = read(vd.arms.data + i)
             if arm.fields.len > 0:
-                emit_line(e, j3("struct ", arm.linkage_name, " {"))
+                emit_line(e, strings.join_three("struct ", arm.linkage_name, " {"))
                 var fi: ptr_uint = 0
                 while fi < arm.fields.len:
                     let f = read(arm.fields.data + fi)
                     if not is_void_type(f.ty) and c_type(f.ty) == outer_c:
-                        emit_line(e, j4("  ", c_declaration(f.ty, j2("*", f.name)), ";", ""))
+                        emit_line(e, strings.join_four("  ", c_declaration(f.ty, strings.join_two("*", f.name)), ";", ""))
                     else:
-                        emit_line(e, j4("  ", c_field_declaration(f.ty, f.name), ";", ""))
+                        emit_line(e, strings.join_four("  ", c_field_declaration(f.ty, f.name), ";", ""))
                     fi += 1
                 emit_line(e, "};")
-                emit_line(e, j3("typedef struct ", arm.linkage_name, j2(" ", j2(arm.linkage_name, ";"))))
+                emit_line(e, strings.join_three("typedef struct ", arm.linkage_name, strings.join_two(" ", strings.join_two(arm.linkage_name, ";"))))
         i += 1
 
     # Kind enum
-    emit_line(e, j3("typedef int32_t ", outer_c, "_kind;"))
+    emit_line(e, strings.join_three("typedef int32_t ", outer_c, "_kind;"))
     if vd.arms.len > 0:
         emit_line(e, "enum {")
         i = 0
@@ -3446,27 +3426,27 @@ function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
             unsafe:
                 let arm = read(vd.arms.data + i)
                 let suffix = if i == vd.arms.len - 1: "" else: ","
-                emit_line(e, j6("  ", outer_c, "_kind_", arm.name, j3(" = ", ptr_uint_to_str(i), suffix), ""))
+                emit_line(e, strings.join_six("  ", outer_c, "_kind_", arm.name, strings.join_three(" = ", ptr_uint_to_str(i), suffix), ""))
             i += 1
         emit_line(e, "};")
 
     # Data union (only if at least one arm has payload)
     if variant_has_payload(vd):
-        emit_line(e, j3("union ", outer_c, "__data {"))
+        emit_line(e, strings.join_three("union ", outer_c, "__data {"))
         i = 0
         while i < vd.arms.len:
             unsafe:
                 let arm = read(vd.arms.data + i)
                 if arm.fields.len > 0:
-                    emit_line(e, j6("  struct ", arm.linkage_name, " ", c_safe_field_name(arm.name), ";", ""))
+                    emit_line(e, strings.join_six("  struct ", arm.linkage_name, " ", c_safe_field_name(arm.name), ";", ""))
             i += 1
         emit_line(e, "};")
 
     # Outer tagged struct
-    emit_line(e, j3("struct ", outer_c, " {"))
-    emit_line(e, j3("  ", outer_c, "_kind kind;"))
+    emit_line(e, strings.join_three("struct ", outer_c, " {"))
+    emit_line(e, strings.join_three("  ", outer_c, "_kind kind;"))
     if variant_has_payload(vd):
-        emit_line(e, j3("  union ", outer_c, "__data data;"))
+        emit_line(e, strings.join_three("  union ", outer_c, "__data data;"))
     emit_line(e, "};")
 
 
@@ -3582,7 +3562,7 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
                 let base = read(nl.base)
                 if is_pointer_like_for_nullable(base):
                     return Option[str].none
-                return Option[str].some(value = j2("mt_opt_", naming.type_c_key(base)))
+                return Option[str].some(value = strings.join_two("mt_opt_", naming.type_c_key(base)))
         types.Type.ty_generic as g:
             if g.name == "array" and g.args.len >= 1:
                 return by_value_dep_key(unsafe: read(g.args.data + 0))
@@ -3590,7 +3570,7 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
             # a struct field of that type depends on the full str_buffer struct
             # definition being ordered first.
             if g.name == "str_buffer" and g.args.len >= 1:
-                return Option[str].some(value = j3("mt_str_buffer_", naming.type_c_key(unsafe: read(g.args.data + 0)), ""))
+                return Option[str].some(value = strings.join_three("mt_str_buffer_", naming.type_c_key(unsafe: read(g.args.data + 0)), ""))
             # Pointer-like generics need only a forward declaration, not a
             # by-value dependency.
             if (
@@ -3604,7 +3584,7 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
             # definition.  The Task struct itself is also a dependency target
             # for variants that embed Task instances by value.
             if g.name == "Task" and g.args.len >= 1:
-                return Option[str].some(value = j3("mt_task_", naming.type_c_key(unsafe: read(g.args.data + 0)), ""))
+                return Option[str].some(value = strings.join_three("mt_task_", naming.type_c_key(unsafe: read(g.args.data + 0)), ""))
             # A generic variant instance embedded by value (e.g.
             # `Option[span[str]]` → `Option_span_str`): it depends on the concrete
             # instance's full definition being ordered first.  Uses the same name
@@ -3878,7 +3858,7 @@ function function_params(func: ir.Function) -> str:
 ## The C declaration of an array out-parameter: `T (*name)[N]`.  Used for the
 ## synthetic `__mt_out` first parameter of an array-returning function.
 function array_out_param_declaration(t: types.Type, name: str) -> str:
-    return c_declaration(t, j3("(*", name, ")"))
+    return c_declaration(t, strings.join_three("(*", name, ")"))
 
 
 function emit_function(e: ref[Emitter], func: ir.Function, export_public: bool) -> void:
@@ -3887,7 +3867,7 @@ function emit_function(e: ref[Emitter], func: ir.Function, export_public: bool) 
     e.current_fn_return_type = func.return_type
     e.current_fn_linkage = func.linkage_name
     e.array_call_temps = map_mod.Map[ptr_uint, str].create()
-    emit_line(e, j2(function_signature(func, export_public), " {"))
+    emit_line(e, strings.join_two(function_signature(func, export_public), " {"))
     emit_stmts(e, func.body, 1)
     emit_line(e, "}")
     e.current_fn_return_type = types.primitive("void")
@@ -4061,8 +4041,8 @@ function hoist_array_call_to_temp(e: ref[Emitter], ep: ptr[ir.Expr], level: ptr_
     fmt.append_ptr_uint(ref_of(tname), e.array_call_temp_counter)
     let temp = tname.as_str()
     let indent = indent_c(level)
-    emit_line(e, j3(indent, c_declaration(arr_ty, temp), ";"))
-    emit_line(e, j3(indent, emit_array_call(e, ep, j2("&", temp)), ";"))
+    emit_line(e, strings.join_three(indent, c_declaration(arr_ty, temp), ";"))
+    emit_line(e, strings.join_three(indent, emit_array_call(e, ep, strings.join_two("&", temp)), ";"))
     e.array_call_temps.set(key, temp)
 
 
@@ -4089,7 +4069,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
     unsafe:
         match read(sp):
             ir.Stmt.stmt_static_assert as sa:
-                emit_line(e, j2(indent, render_static_assert(e, sa.condition, sa.message)))
+                emit_line(e, strings.join_two(indent, render_static_assert(e, sa.condition, sa.message)))
                 return
             _:
                 pass
@@ -4097,36 +4077,36 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
         match read(sp):
             ir.Stmt.stmt_return as r:
                 let value = r.value else:
-                    emit_line(e, j2(indent, "return;"))
+                    emit_line(e, strings.join_two(indent, "return;"))
                     return
                 # Array-returning function: write into `*__mt_out` (either by
                 # calling the array-returning callee with `__mt_out`, or by
                 # memcpy'ing the array value) then `return;`.
                 if is_array_type(e.current_fn_return_type):
                     if expr_is_array_call(e, value):
-                        emit_line(e, j3(indent, emit_array_call(e, value, "__mt_out"), ";"))
-                        emit_line(e, j2(indent, "return;"))
+                        emit_line(e, strings.join_three(indent, emit_array_call(e, value, "__mt_out"), ";"))
+                        emit_line(e, strings.join_two(indent, "return;"))
                     else if array_direct_initializer(value):
                         # `return {a, b, ...}`: an array literal can't be memcpy'd
                         # from a bare initializer list, so bind it to a temp array
                         # first, then copy into the out-param.
-                        emit_line(e, j2(indent, "{"))
+                        emit_line(e, strings.join_two(indent, "{"))
                         let inner = indent_c(level + 1)
-                        emit_line(e, j5(inner, c_declaration(e.current_fn_return_type, "__mt_ret"), " = ", render_initializer(e, value), ";"))
-                        emit_line(e, j2(inner, "memcpy(*__mt_out, __mt_ret, sizeof(*__mt_out));"))
-                        emit_line(e, j2(inner, "return;"))
-                        emit_line(e, j2(indent, "}"))
+                        emit_line(e, strings.join_five(inner, c_declaration(e.current_fn_return_type, "__mt_ret"), " = ", render_initializer(e, value), ";"))
+                        emit_line(e, strings.join_two(inner, "memcpy(*__mt_out, __mt_ret, sizeof(*__mt_out));"))
+                        emit_line(e, strings.join_two(inner, "return;"))
+                        emit_line(e, strings.join_two(indent, "}"))
                     else:
-                        emit_line(e, j6(indent, "memcpy(*__mt_out, ", render_expression(e, value), ", sizeof(*__mt_out)", ");", ""))
-                        emit_line(e, j2(indent, "return;"))
+                        emit_line(e, strings.join_six(indent, "memcpy(*__mt_out, ", render_expression(e, value), ", sizeof(*__mt_out)", ");", ""))
+                        emit_line(e, strings.join_two(indent, "return;"))
                     return
-                emit_line(e, j4(indent, "return ", render_expression(e, value), ";"))
+                emit_line(e, strings.join_four(indent, "return ", render_expression(e, value), ";"))
             ir.Stmt.stmt_local as loc:
                 if is_array_type(loc.ty) and expr_is_array_call(e, loc.value):
                     # `let a = <array-returning call>` — declare the array, then
                     # call the callee with `&a` as its out-param.
-                    emit_line(e, j3(indent, c_declaration(loc.ty, loc.linkage_name), ";"))
-                    emit_line(e, j3(indent, emit_array_call(e, loc.value, j2("&", loc.linkage_name)), ";"))
+                    emit_line(e, strings.join_three(indent, c_declaration(loc.ty, loc.linkage_name), ";"))
+                    emit_line(e, strings.join_three(indent, emit_array_call(e, loc.value, strings.join_two("&", loc.linkage_name)), ";"))
                 else if aggregate_has_array_call_field(e, loc.value):
                     # `let s = S(arr = <array-returning call>, ...)` — build the
                     # struct with the array-call field omitted, then fill it via
@@ -4138,41 +4118,41 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                             _:
                                 pass
                 else if is_array_type(loc.ty) and not array_direct_initializer(loc.value):
-                    emit_line(e, j3(indent, c_declaration(loc.ty, loc.linkage_name), ";"))
-                    emit_line(e, j6(indent, "memcpy(", loc.linkage_name, ", ", render_expression(e, loc.value), j3(", sizeof(", loc.linkage_name, "));")))
+                    emit_line(e, strings.join_three(indent, c_declaration(loc.ty, loc.linkage_name), ";"))
+                    emit_line(e, strings.join_six(indent, "memcpy(", loc.linkage_name, ", ", render_expression(e, loc.value), strings.join_three(", sizeof(", loc.linkage_name, "));")))
                 else:
-                    emit_line(e, j5(indent, c_declaration(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), ";"))
+                    emit_line(e, strings.join_five(indent, c_declaration(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), ";"))
             ir.Stmt.stmt_assignment as asg:
                 # `arr = <array-returning call>` — call the callee with `&arr`.
                 if asg.operator == "=" and is_array_type(expr_result_type(asg.target)) and expr_is_array_call(e, asg.value):
                     let target_c = render_expression(e, asg.target)
-                    emit_line(e, j3(indent, emit_array_call(e, asg.value, j3("&(", target_c, ")")), ";"))
+                    emit_line(e, strings.join_three(indent, emit_array_call(e, asg.value, strings.join_three("&(", target_c, ")")), ";"))
                     return
                 # `arr = {a, b, ...}` — C forbids assigning an initializer list to
                 # an array; bind it to a temp array and memcpy into the target.
                 if asg.operator == "=" and is_array_type(expr_result_type(asg.target)) and array_direct_initializer(asg.value):
                     let target_c = render_expression(e, asg.target)
                     let arr_ty = expr_result_type(asg.target)
-                    emit_line(e, j2(indent, "{"))
+                    emit_line(e, strings.join_two(indent, "{"))
                     let inner = indent_c(level + 1)
-                    emit_line(e, j5(inner, c_declaration(arr_ty, "__mt_arr_tmp"), " = ", render_initializer(e, asg.value), ";"))
-                    emit_line(e, j6(inner, "memcpy(", target_c, ", __mt_arr_tmp, sizeof(__mt_arr_tmp)", ");", ""))
-                    emit_line(e, j2(indent, "}"))
+                    emit_line(e, strings.join_five(inner, c_declaration(arr_ty, "__mt_arr_tmp"), " = ", render_initializer(e, asg.value), ";"))
+                    emit_line(e, strings.join_six(inner, "memcpy(", target_c, ", __mt_arr_tmp, sizeof(__mt_arr_tmp)", ");", ""))
+                    emit_line(e, strings.join_two(indent, "}"))
                     return
                 # `arr = other_arr` — C forbids assigning one array to another;
                 # emit a memcpy of the whole array instead.
                 if asg.operator == "=" and is_array_type(expr_result_type(asg.target)):
                     let target_c = render_expression(e, asg.target)
-                    emit_line(e, j6(indent, "memcpy(", target_c, ", ", render_expression(e, asg.value), j3(", sizeof(", target_c, "));")))
+                    emit_line(e, strings.join_six(indent, "memcpy(", target_c, ", ", render_expression(e, asg.value), strings.join_three(", sizeof(", target_c, "));")))
                     return
-                emit_line(e, j6(indent, render_expression(e, asg.target), " ", asg.operator, " ", j2(render_expression(e, asg.value), ";")))
+                emit_line(e, strings.join_six(indent, render_expression(e, asg.target), " ", asg.operator, " ", strings.join_two(render_expression(e, asg.value), ";")))
             ir.Stmt.stmt_expression as ex:
-                emit_line(e, j3(indent, render_expression(e, ex.expression), ";"))
+                emit_line(e, strings.join_three(indent, render_expression(e, ex.expression), ";"))
             ir.Stmt.stmt_block as blk:
                 if block_requires_scope(blk.body):
-                    emit_line(e, j2(indent, "{"))
+                    emit_line(e, strings.join_two(indent, "{"))
                     emit_stmts(e, blk.body, level + 1)
-                    emit_line(e, j2(indent, "}"))
+                    emit_line(e, strings.join_two(indent, "}"))
                 else:
                     emit_stmts(e, blk.body, level)
             ir.Stmt.stmt_if as iff:
@@ -4180,20 +4160,20 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
             ir.Stmt.stmt_while as w:
                 if e.debug_guards:
                     let guard_name = next_loop_guard_name(e)
-                    emit_line(e, j4(indent, "{ uintptr_t ", guard_name, " = 0;"))
-                    emit_line(e, j4(indent, "while (", render_expression(e, w.condition), ") {"))
+                    emit_line(e, strings.join_four(indent, "{ uintptr_t ", guard_name, " = 0;"))
+                    emit_line(e, strings.join_four(indent, "while (", render_expression(e, w.condition), ") {"))
                     emit_loop_guard(e, guard_name, level + 1)
                     emit_stmts(e, w.body, level + 1)
-                    emit_line(e, j2(indent, "}"))
-                    emit_line(e, j2(indent, "}"))
+                    emit_line(e, strings.join_two(indent, "}"))
+                    emit_line(e, strings.join_two(indent, "}"))
                 else:
-                    emit_line(e, j4(indent, "while (", render_expression(e, w.condition), ") {"))
+                    emit_line(e, strings.join_four(indent, "while (", render_expression(e, w.condition), ") {"))
                     emit_stmts(e, w.body, level + 1)
-                    emit_line(e, j2(indent, "}"))
+                    emit_line(e, strings.join_two(indent, "}"))
             ir.Stmt.stmt_for as f:
                 if e.debug_guards:
                     let guard_name = next_loop_guard_name(e)
-                    emit_line(e, j4(indent, "{ uintptr_t ", guard_name, " = 0;"))
+                    emit_line(e, strings.join_four(indent, "{ uintptr_t ", guard_name, " = 0;"))
                     var for_header = string.String.create()
                     for_header.append(indent)
                     for_header.append("for (")
@@ -4206,8 +4186,8 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     emit_line(e, for_header.as_str())
                     emit_loop_guard(e, guard_name, level + 1)
                     emit_stmts(e, f.body, level + 1)
-                    emit_line(e, j2(indent, "}"))
-                    emit_line(e, j2(indent, "}"))
+                    emit_line(e, strings.join_two(indent, "}"))
+                    emit_line(e, strings.join_two(indent, "}"))
                 else:
                     var header = string.String.create()
                     header.append(indent)
@@ -4220,18 +4200,18 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     header.append(") {")
                     emit_line(e, header.as_str())
                     emit_stmts(e, f.body, level + 1)
-                    emit_line(e, j2(indent, "}"))
+                    emit_line(e, strings.join_two(indent, "}"))
             ir.Stmt.stmt_switch as sw:
                 emit_switch(e, sw.expression, sw.cases, sw.exhaustive, level)
             ir.Stmt.stmt_goto as g:
-                emit_line(e, j4(indent, "goto ", g.label, ";"))
+                emit_line(e, strings.join_four(indent, "goto ", g.label, ";"))
             ir.Stmt.stmt_label as lbl:
                 if e.used_labels.contains(lbl.name):
-                    emit_line(e, j3(indent, lbl.name, ":;"))
+                    emit_line(e, strings.join_three(indent, lbl.name, ":;"))
             ir.Stmt.stmt_break:
-                emit_line(e, j2(indent, "break;"))
+                emit_line(e, strings.join_two(indent, "break;"))
             ir.Stmt.stmt_continue:
-                emit_line(e, j2(indent, "continue;"))
+                emit_line(e, strings.join_two(indent, "continue;"))
             _:
                 fatal(c"c_backend: unsupported statement")
 
@@ -4243,7 +4223,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
 function emit_switch(e: ref[Emitter], expression: ptr[ir.Expr], cases: span[ir.SwitchCase], exhaustive: bool, level: ptr_uint) -> void:
     let indent = indent_c(level)
     let case_indent = indent_c(level + 1)
-    emit_line(e, j4(indent, "switch (", render_expression(e, expression), ") {"))
+    emit_line(e, strings.join_four(indent, "switch (", render_expression(e, expression), ") {"))
     var has_default = false
     var i: ptr_uint = 0
     while i < cases.len:
@@ -4251,19 +4231,19 @@ function emit_switch(e: ref[Emitter], expression: ptr[ir.Expr], cases: span[ir.S
             let sc = read(cases.data + i)
             if sc.is_default:
                 has_default = true
-                emit_line(e, j2(case_indent, "default: {"))
+                emit_line(e, strings.join_two(case_indent, "default: {"))
             else:
                 let value = sc.value else:
                     fatal(c"c_backend: non-default switch case missing value")
-                emit_line(e, j4(case_indent, "case ", render_expression(e, value), ": {"))
+                emit_line(e, strings.join_four(case_indent, "case ", render_expression(e, value), ": {"))
             emit_stmts(e, sc.body, level + 2)
             if not body_terminates(sc.body):
-                emit_line(e, j2(indent_c(level + 2), "break;"))
-            emit_line(e, j2(case_indent, "}"))
+                emit_line(e, strings.join_two(indent_c(level + 2), "break;"))
+            emit_line(e, strings.join_two(case_indent, "}"))
         i += 1
     if exhaustive and not has_default:
-        emit_line(e, j2(case_indent, "default: __builtin_unreachable();"))
-    emit_line(e, j2(indent, "}"))
+        emit_line(e, strings.join_two(case_indent, "default: __builtin_unreachable();"))
+    emit_line(e, strings.join_two(indent, "}"))
 
 
 ## True when a statement sequence always transfers control (mirrors
@@ -4325,7 +4305,7 @@ function else_stmts_or_empty(else_body: Option[span[ir.Stmt]]) -> span[ir.Stmt]:
 ## into `else if` (mirrors control_flow_emission.rb emit_if_statement).
 function emit_if(e: ref[Emitter], condition: ptr[ir.Expr], then_body: span[ir.Stmt], else_body: span[ir.Stmt], level: ptr_uint) -> void:
     let indent = indent_c(level)
-    emit_line(e, j4(indent, "if (", render_expression(e, condition), ") {"))
+    emit_line(e, strings.join_four(indent, "if (", render_expression(e, condition), ") {"))
     emit_stmts(e, then_body, level + 1)
     emit_else(e, else_body, level)
 
@@ -4336,18 +4316,18 @@ function emit_else(e: ref[Emitter], else_body: span[ir.Stmt], level: ptr_uint) -
         unsafe:
             match read(else_body.data + 0):
                 ir.Stmt.stmt_if as nested:
-                    emit_line(e, j4(indent, "} else if (", render_expression(e, nested.condition), ") {"))
+                    emit_line(e, strings.join_four(indent, "} else if (", render_expression(e, nested.condition), ") {"))
                     emit_stmts(e, nested.then_body, level + 1)
                     emit_else(e, else_stmts_or_empty(nested.else_body), level)
                     return
                 _:
                     pass
     if else_body.len > 0:
-        emit_line(e, j2(indent, "} else {"))
+        emit_line(e, strings.join_two(indent, "} else {"))
         emit_stmts(e, else_body, level + 1)
-        emit_line(e, j2(indent, "}"))
+        emit_line(e, strings.join_two(indent, "}"))
     else:
-        emit_line(e, j2(indent, "}"))
+        emit_line(e, strings.join_two(indent, "}"))
 
 
 ## Render a `for` init/post clause (no indent, no trailing `;`) — mirrors
@@ -4356,9 +4336,9 @@ function render_for_clause(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as loc:
-                return j5(c_declaration(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), "", "")
+                return strings.join_five(c_declaration(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), "", "")
             ir.Stmt.stmt_assignment as asg:
-                return j5(render_expression(e, asg.target), " ", asg.operator, " ", render_expression(e, asg.value))
+                return strings.join_five(render_expression(e, asg.target), " ", asg.operator, " ", render_expression(e, asg.value))
             ir.Stmt.stmt_expression as ex:
                 return render_expression(e, ex.expression)
             _:
@@ -4403,13 +4383,13 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return render_string_literal(e, s.value, s.cstring)
             ir.Expr.expr_unary as un:
                 if un.operator == "not":
-                    return j2("!", wrap_expression(e, un.operand))
-                return j2(un.operator, wrap_expression(e, un.operand))
+                    return strings.join_two("!", wrap_expression(e, un.operand))
+                return strings.join_two(un.operator, wrap_expression(e, un.operand))
             ir.Expr.expr_binary as bin:
                 if is_str_equality(bin.operator, bin.left, bin.right):
-                    let call = j5("mt_str_equal(", render_expression(e, bin.left), ", ", render_expression(e, bin.right), ")")
+                    let call = strings.join_five("mt_str_equal(", render_expression(e, bin.left), ", ", render_expression(e, bin.right), ")")
                     if bin.operator == "!=":
-                        return j2("!", call)
+                        return strings.join_two("!", call)
                     return call
                 if is_variant_equality(bin.operator, bin.left, bin.right, e):
                     return render_variant_equality(e, bin.operator, bin.left, bin.right)
@@ -4438,16 +4418,16 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                         _:
                             pass
                 let operator = if pointer_member_receiver(member.receiver): "->" else: "."
-                return j3(wrap_member_receiver(e, member.receiver), operator, member.member)
+                return strings.join_three(wrap_member_receiver(e, member.receiver), operator, member.member)
             ir.Expr.expr_aggregate_literal as agg:
                 return render_aggregate_literal(e, agg.ty, agg.fields)
             ir.Expr.expr_variant_literal as vl:
-                return j4("(", c_type(vl.ty), ")", render_variant_initializer(e, vl.ty, vl.arm_name, vl.fields, true))
+                return strings.join_four("(", c_type(vl.ty), ")", render_variant_initializer(e, vl.ty, vl.arm_name, vl.fields, true))
             ir.Expr.expr_zero_init as z:
                 return render_zero_expression(z.ty)
             ir.Expr.expr_null_literal as nl:
                 if is_value_nullable(nl.ty):
-                    return j3("(", c_type(nl.ty), "){0}")
+                    return strings.join_three("(", c_type(nl.ty), "){0}")
                 return "NULL"
             ir.Expr.expr_cast as cast:
                 # A cast whose target C type equals its operand's C type is a
@@ -4461,15 +4441,15 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 cast_buf.append(emit_cast_operand(e, cast.expression))
                 return cast_buf.as_str()
             ir.Expr.expr_checked_index as ci:
-                return j5("(*", checked_array_index_helper_name(ci.receiver_type), "(", wrap_member_receiver(e, ci.receiver), j3(", ", render_expression(e, ci.index), "))"))
+                return strings.join_five("(*", checked_array_index_helper_name(ci.receiver_type), "(", wrap_member_receiver(e, ci.receiver), strings.join_three(", ", render_expression(e, ci.index), "))"))
             ir.Expr.expr_checked_span_index as cs:
-                return j5("(*", checked_span_index_helper_name(cs.receiver_type), "(", render_expression(e, cs.receiver), j3(", ", render_expression(e, cs.index), "))"))
+                return strings.join_five("(*", checked_span_index_helper_name(cs.receiver_type), "(", render_expression(e, cs.receiver), strings.join_three(", ", render_expression(e, cs.index), "))"))
             ir.Expr.expr_nullable_index as ni:
-                return j5(nullable_array_index_helper_name(ni.receiver_type), "(", wrap_member_receiver(e, ni.receiver), ", ", j2(render_expression(e, ni.index), ")"))
+                return strings.join_five(nullable_array_index_helper_name(ni.receiver_type), "(", wrap_member_receiver(e, ni.receiver), ", ", strings.join_two(render_expression(e, ni.index), ")"))
             ir.Expr.expr_nullable_span_index as ns:
-                return j5(nullable_span_index_helper_name(ns.receiver_type), "(", render_expression(e, ns.receiver), ", ", j2(render_expression(e, ns.index), ")"))
+                return strings.join_five(nullable_span_index_helper_name(ns.receiver_type), "(", render_expression(e, ns.receiver), ", ", strings.join_two(render_expression(e, ns.index), ")"))
             ir.Expr.expr_index as ix:
-                return j4(wrap_member_receiver(e, ix.receiver), "[", render_expression(e, ix.index), "]")
+                return strings.join_four(wrap_member_receiver(e, ix.receiver), "[", render_expression(e, ix.index), "]")
             ir.Expr.expr_address_of as addr:
                 return render_address_of(e, addr.expression)
             ir.Expr.expr_sizeof as sz:
@@ -4485,7 +4465,7 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 buf.append(")")
                 return buf.as_str()
             ir.Expr.expr_offsetof as off:
-                return j5("offsetof(", c_type(off.target_type), ", ", off.field, ")")
+                return strings.join_five("offsetof(", c_type(off.target_type), ", ", off.field, ")")
             ir.Expr.expr_reinterpret as rin:
                 # Bit reinterpret (not a numeric cast): a union compound literal
                 # copies the source bits into the target representation, so
@@ -4502,7 +4482,7 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
             ir.Expr.expr_array_literal as arr:
                 return render_array_literal_expression(e, arr.ty, arr.elements)
             ir.Expr.expr_conditional as cond:
-                return j5(emit_conditional_condition(e, cond.condition), " ? ", render_expression(e, cond.then_expression), " : ", render_expression(e, cond.else_expression))
+                return strings.join_five(emit_conditional_condition(e, cond.condition), " ? ", render_expression(e, cond.then_expression), " : ", render_expression(e, cond.else_expression))
             ir.Expr.expr_stmt_expr as se:
                 return render_stmt_expr(e, se.setup, se.result)
             ir.Expr.expr_simd_lane_with as lw:
@@ -4522,7 +4502,7 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 lbuf.append("; _mt_with; })")
                 return lbuf.as_str()
             ir.Expr.expr_assignment as asg:
-                return j5(render_expression(e, asg.target), " ", asg.operator, " ", render_expression(e, asg.value))
+                return strings.join_five(render_expression(e, asg.target), " ", asg.operator, " ", render_expression(e, asg.value))
             _:
                 fatal(c"c_backend: unsupported expression")
 
@@ -4541,7 +4521,7 @@ function render_static_assert(e: ref[Emitter], condition: ptr[ir.Expr], message:
             message_text.append(c_string_literal(lit.value))
         _:
             message_text.append(render_expression(e, message))
-    return j5("_Static_assert(", render_expression(e, condition), ", ", message_text.as_str(), ");")
+    return strings.join_five("_Static_assert(", render_expression(e, condition), ", ", message_text.as_str(), ");")
 
 
 function render_stmt_expr(e: ref[Emitter], setup: span[ir.Stmt], result: ptr[ir.Expr]) -> str:
@@ -4561,11 +4541,11 @@ function render_stmt_expr_stmt(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as loc:
-                return j4(c_declaration(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), ";")
+                return strings.join_four(c_declaration(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), ";")
             ir.Stmt.stmt_assignment as asg:
-                return j6(render_expression(e, asg.target), " ", asg.operator, " ", render_expression(e, asg.value), ";")
+                return strings.join_six(render_expression(e, asg.target), " ", asg.operator, " ", render_expression(e, asg.value), ";")
             ir.Stmt.stmt_expression as ex:
-                return j2(render_expression(e, ex.expression), ";")
+                return strings.join_two(render_expression(e, ex.expression), ";")
             _:
                 fatal(c"c_backend: statement-expression supports only local/assignment/expression statements")
 
@@ -4577,13 +4557,13 @@ function render_address_of(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     unsafe:
         match read(ep):
             ir.Expr.expr_checked_index as ci:
-                return j4(checked_array_index_helper_name(ci.receiver_type), "(", wrap_member_receiver(e, ci.receiver), j3(", ", render_expression(e, ci.index), ")"))
+                return strings.join_four(checked_array_index_helper_name(ci.receiver_type), "(", wrap_member_receiver(e, ci.receiver), strings.join_three(", ", render_expression(e, ci.index), ")"))
             _:
                 return render_address_of_operand(e, ep)
 
 
 function render_address_of_operand(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
-    return j2("&", wrap_member_receiver(e, ep))
+    return strings.join_two("&", wrap_member_receiver(e, ep))
 
 
 function checked_array_index_helper_name(receiver_type: types.Type) -> str:
@@ -4610,12 +4590,12 @@ function checked_span_index_helper_name(receiver_type: types.Type) -> str:
                 let elem = unsafe: read(g.args.data + 0)
                 match elem:
                     types.Type.ty_function:
-                        return j2("mt_checked_span_index_", naming.sanitize_c_identifier(c_declaration(elem, "value")))
+                        return strings.join_two("mt_checked_span_index_", naming.sanitize_c_identifier(c_declaration(elem, "value")))
                     _:
                         pass
         _:
             pass
-    return j2("mt_checked_span_index_", naming.type_c_key(receiver_type))
+    return strings.join_two("mt_checked_span_index_", naming.type_c_key(receiver_type))
 
 
 ## The host's `nullable_array_index_helper_name` (`reinterpret.rb:141`): the
@@ -4641,12 +4621,12 @@ function nullable_span_index_helper_name(receiver_type: types.Type) -> str:
                 let elem = unsafe: read(g.args.data + 0)
                 match elem:
                     types.Type.ty_function:
-                        return j2("mt_nullable_span_index_", naming.sanitize_c_identifier(c_declaration(elem, "value")))
+                        return strings.join_two("mt_nullable_span_index_", naming.sanitize_c_identifier(c_declaration(elem, "value")))
                     _:
                         pass
         _:
             pass
-    return j2("mt_nullable_span_index_", naming.type_c_key(receiver_type))
+    return strings.join_two("mt_nullable_span_index_", naming.type_c_key(receiver_type))
 
 
 # =============================================================================
@@ -5189,19 +5169,19 @@ function render_zero_expression(t: types.Type) -> str:
     match t:
         types.Type.ty_opaque as op:
             if op.module_name.starts_with("std.c."):
-                return j4("(", c_declaration(t, ""), ") ", render_zero_initializer(t))
+                return strings.join_four("(", c_declaration(t, ""), ") ", render_zero_initializer(t))
             return "NULL"
         types.Type.ty_primitive as p:
             # vec2/vec3/vec4/mat*/quat are struct-like aggregates: a bare
             # `{ 0 }` is only valid as an initializer, so expression position
             # needs a compound literal.
             if is_vec_math_name(p.name):
-                return j4("(", c_type(t), ")", " { 0 }")
+                return strings.join_four("(", c_type(t), ")", " { 0 }")
             return render_zero_initializer(t)
         types.Type.ty_str:
-            return j4("(", c_type(t), ")", " { 0 }")
+            return strings.join_four("(", c_type(t), ")", " { 0 }")
         _:
-            return j4("(", c_declaration(t, ""), ") ", render_zero_initializer(t))
+            return strings.join_four("(", c_declaration(t, ""), ") ", render_zero_initializer(t))
 
 
 ## True for an expression whose C form is a void expression (a cast to `void`,
@@ -5252,7 +5232,7 @@ function render_aggregate_initializer(e: ref[Emitter], fields: span[ir.Aggregate
 
 
 function render_aggregate_literal(e: ref[Emitter], ty: types.Type, fields: span[ir.AggregateField]) -> str:
-    return j4("(", c_type(ty), ")", render_aggregate_initializer(e, fields))
+    return strings.join_four("(", c_type(ty), ")", render_aggregate_initializer(e, fields))
 
 
 ## True when `ep` is a named (non-positional) struct aggregate literal with at
@@ -5309,13 +5289,13 @@ function render_aggregate_omitting_array_calls(e: ref[Emitter], fields: span[ir.
 ## struct aggregate with array-returning-call fields.  `target_ref` is the C
 ## lvalue of the struct (e.g. `light`).
 function emit_aggregate_with_array_call_fields(e: ref[Emitter], indent: str, decl: str, target_ref: str, fields: span[ir.AggregateField]) -> void:
-    emit_line(e, j5(indent, decl, " = ", render_aggregate_omitting_array_calls(e, fields), ";"))
+    emit_line(e, strings.join_five(indent, decl, " = ", render_aggregate_omitting_array_calls(e, fields), ";"))
     var i: ptr_uint = 0
     while i < fields.len:
         unsafe:
             let f = read(fields.data + i)
             if expr_is_array_call(e, f.value):
-                emit_line(e, j3(indent, emit_array_call(e, f.value, j4("&", target_ref, ".", f.name)), ";"))
+                emit_line(e, strings.join_three(indent, emit_array_call(e, f.value, strings.join_four("&", target_ref, ".", f.name)), ";"))
         i += 1
 
 
@@ -5376,7 +5356,7 @@ function render_array_literal_initializer(e: ref[Emitter], elements: span[ir.Exp
 function wrap_member_receiver(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     if is_postfix_expr(ep):
         return render_expression(e, ep)
-    return j3("(", render_expression(e, ep), ")")
+    return strings.join_three("(", render_expression(e, ep), ")")
 
 
 function is_postfix_expr(ep: ptr[ir.Expr]) -> bool:
@@ -5429,7 +5409,7 @@ function render_string_literal(e: ref[Emitter], value: str, cstring: bool) -> st
     if name_ptr != null:
         unsafe:
             return read(name_ptr)
-    return j5("(mt_str){ .data = ", c_string_literal(value), ", .len = ", ptr_uint_to_str(value.len), " }")
+    return strings.join_five("(mt_str){ .data = ", c_string_literal(value), ", .len = ", ptr_uint_to_str(value.len), " }")
 
 
 function is_str_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> bool:
@@ -5484,9 +5464,9 @@ function variant_c_name_for_type(ty: types.Type) -> str:
 function render_variant_equality(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
     let variant_name = variant_c_name_for_type(expr_result_type(left))
     let fn_name = variant_equality_helper_name(variant_name)
-    let call = j5(j2(fn_name, "("), render_expression(e, left), ", ", render_expression(e, right), ")")
+    let call = strings.join_five(strings.join_two(fn_name, "("), render_expression(e, left), ", ", render_expression(e, right), ")")
     if operator == "!=":
-        return j2("!", call)
+        return strings.join_two("!", call)
     return call
 
 
@@ -5516,16 +5496,16 @@ function is_null_literal_expr(ep: ptr[ir.Expr]) -> bool:
 function render_nullable_null_comparison(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
     unsafe:
         let operand = if is_null_literal_expr(left): right else: left
-        let access = j3(render_expression(e, operand), ".has_value", "")
+        let access = strings.join_three(render_expression(e, operand), ".has_value", "")
         if operator == "==":
-            return j2("!", access)
+            return strings.join_two("!", access)
         return access
 
 
 ## Static helper generation for variant equality (mirrors Ruby's
 ## `variant_equality_helper_name`).
 function variant_equality_helper_name(variant_c_name: str) -> str:
-    return j3("mt_variant_eq_", variant_c_name, "")
+    return strings.join_three("mt_variant_eq_", variant_c_name, "")
 
 
 ## Walk every reachable function's IR body and register every variant type
@@ -5665,9 +5645,9 @@ function emit_variant_equality_helpers(e: ref[Emitter]) -> void:
 function emit_variant_eq_helper(e: ref[Emitter], vd: ir.VariantDecl) -> void:
     let outer_c = vd.linkage_name
     let fn_name = variant_equality_helper_name(outer_c)
-    let struct_ty = j3("struct ", outer_c, "")
+    let struct_ty = strings.join_three("struct ", outer_c, "")
 
-    e.buffer.append(j5("static bool ", fn_name, "(", struct_ty, " left, "))
+    e.buffer.append(strings.join_five("static bool ", fn_name, "(", struct_ty, " left, "))
     e.buffer.append(struct_ty)
     e.buffer.append(" right) {")
     e.buffer.push_byte(10)
@@ -5685,8 +5665,8 @@ function emit_variant_eq_helper(e: ref[Emitter], vd: ir.VariantDecl) -> void:
         var arm: ir.VariantArm
         unsafe:
             arm = read(vd.arms.data + ai)
-        let kind_name = j4(outer_c, "_kind_", arm.name, "")
-        e.buffer.append(j3("    case ", kind_name, ":"))
+        let kind_name = strings.join_four(outer_c, "_kind_", arm.name, "")
+        e.buffer.append(strings.join_three("    case ", kind_name, ":"))
         e.buffer.push_byte(10)
 
         if arm.fields.len > 0:
@@ -5697,8 +5677,8 @@ function emit_variant_eq_helper(e: ref[Emitter], vd: ir.VariantDecl) -> void:
                 var field: ir.Field
                 unsafe:
                     field = read(arm.fields.data + fi)
-                let left_expr = j5("left.data.", arm.name, ".", field.name, "")
-                let right_expr = j5("right.data.", arm.name, ".", field.name, "")
+                let left_expr = strings.join_five("left.data.", arm.name, ".", field.name, "")
+                let right_expr = strings.join_five("right.data.", arm.name, ".", field.name, "")
                 emit_variant_field_compare(e, left_expr, right_expr, field.ty)
                 fi += 1
             e.buffer.append("      }")
@@ -5897,20 +5877,20 @@ function emit_equality_forward_decls(e: ref[Emitter], program: ir.Program) -> vo
         let kp = keys.next() else:
             break
         let name = unsafe: read(kp)
-        let struct_ty = j3("struct ", name, "")
-        emit_line(e, j6("static bool ", variant_equality_helper_name(name), "(", struct_ty, " left, ", j3(struct_ty, " right);", "")))
+        let struct_ty = strings.join_three("struct ", name, "")
+        emit_line(e, strings.join_six("static bool ", variant_equality_helper_name(name), "(", struct_ty, " left, ", strings.join_three(struct_ty, " right);", "")))
     keys = e.struct_eq_set.keys()
     while true:
         let kp = keys.next() else:
             break
         let name = unsafe: read(kp)
-        let struct_ty = j3("struct ", name, "")
-        emit_line(e, j6("static bool ", struct_equality_helper_name(name), "(", struct_ty, " left, ", j3(struct_ty, " right);", "")))
+        let struct_ty = strings.join_three("struct ", name, "")
+        emit_line(e, strings.join_six("static bool ", struct_equality_helper_name(name), "(", struct_ty, " left, ", strings.join_three(struct_ty, " right);", "")))
     emit_line(e, "")
 
 
 function struct_equality_helper_name(struct_c_name: str) -> str:
-    return j3("mt_struct_eq_", struct_c_name, "")
+    return strings.join_three("mt_struct_eq_", struct_c_name, "")
 
 
 ## Emit one `mt_struct_eq_<name>` helper per registered struct type.
@@ -5930,8 +5910,8 @@ function emit_struct_equality_helpers(e: ref[Emitter], program: ir.Program) -> v
 
 function emit_struct_eq_helper(e: ref[Emitter], outer_c: str, fields: span[ir.Field]) -> void:
     let fn_name = struct_equality_helper_name(outer_c)
-    let struct_ty = j3("struct ", outer_c, "")
-    e.buffer.append(j5("static bool ", fn_name, "(", struct_ty, " left, "))
+    let struct_ty = strings.join_three("struct ", outer_c, "")
+    e.buffer.append(strings.join_five("static bool ", fn_name, "(", struct_ty, " left, "))
     e.buffer.append(struct_ty)
     e.buffer.append(" right) {")
     e.buffer.push_byte(10)
@@ -5941,7 +5921,7 @@ function emit_struct_eq_helper(e: ref[Emitter], outer_c: str, fields: span[ir.Fi
         unsafe:
             field = read(fields.data + fi)
         if not is_void_type(field.ty):
-            emit_eq_field_guard(e, j3("left.", field.name, ""), j3("right.", field.name, ""), field.ty, 1)
+            emit_eq_field_guard(e, strings.join_three("left.", field.name, ""), strings.join_three("right.", field.name, ""), field.ty, 1)
         fi += 1
     e.buffer.append("  return true;")
     e.buffer.push_byte(10)
@@ -5958,32 +5938,32 @@ function emit_struct_eq_helper(e: ref[Emitter], outer_c: str, fields: span[ir.Fi
 function emit_eq_field_guard(e: ref[Emitter], left_expr: str, right_expr: str, field_ty: types.Type, indent: ptr_uint) -> void:
     let pad = indent_c(indent)
     if is_str_type(field_ty):
-        e.buffer.append(j5(pad, "if (!mt_str_equal(", left_expr, ", ", j5(right_expr, ")) return false;", "", "", "")))
+        e.buffer.append(strings.join_five(pad, "if (!mt_str_equal(", left_expr, ", ", strings.join_five(right_expr, ")) return false;", "", "", "")))
     else if types.is_nullable_type(field_ty) and not is_pointer_like_for_nullable(types.unwrap_nullable(field_ty)):
         let base = types.unwrap_nullable(field_ty)
-        e.buffer.append(j6(pad, "if (", left_expr, ".has_value != ", right_expr, j3(".has_value) return false;", "", "")))
+        e.buffer.append(strings.join_six(pad, "if (", left_expr, ".has_value != ", right_expr, strings.join_three(".has_value) return false;", "", "")))
         e.buffer.push_byte(10)
-        e.buffer.append(j4(pad, "if (", left_expr, ".has_value) {"))
+        e.buffer.append(strings.join_four(pad, "if (", left_expr, ".has_value) {"))
         e.buffer.push_byte(10)
-        emit_eq_field_guard(e, j3(left_expr, ".value", ""), j3(right_expr, ".value", ""), base, indent + 1)
-        e.buffer.append(j2(pad, "}"))
+        emit_eq_field_guard(e, strings.join_three(left_expr, ".value", ""), strings.join_three(right_expr, ".value", ""), base, indent + 1)
+        e.buffer.append(strings.join_two(pad, "}"))
         e.buffer.push_byte(10)
     else if is_array_type(field_ty):
         let elem_ty = array_element_type(field_ty)
         let count = array_length(field_ty)
-        e.buffer.append(j4(pad, "for (uintptr_t index = 0; index < ", long_to_str(count), "; index++) {"))
+        e.buffer.append(strings.join_four(pad, "for (uintptr_t index = 0; index < ", long_to_str(count), "; index++) {"))
         e.buffer.push_byte(10)
-        emit_eq_field_guard(e, j5(left_expr, "[index]", "", "", ""), j5(right_expr, "[index]", "", "", ""), elem_ty, indent + 1)
-        e.buffer.append(j2(pad, "}"))
+        emit_eq_field_guard(e, strings.join_five(left_expr, "[index]", "", "", ""), strings.join_five(right_expr, "[index]", "", "", ""), elem_ty, indent + 1)
+        e.buffer.append(strings.join_two(pad, "}"))
         e.buffer.push_byte(10)
     else:
         let cname = c_type(field_ty)
         if e.variant_eq_set.contains(cname):
-            e.buffer.append(j6(pad, "if (!", variant_equality_helper_name(cname), "(", left_expr, j5(", ", right_expr, ")) return false;", "", "")))
+            e.buffer.append(strings.join_six(pad, "if (!", variant_equality_helper_name(cname), "(", left_expr, strings.join_five(", ", right_expr, ")) return false;", "", "")))
         else if e.struct_eq_set.contains(cname):
-            e.buffer.append(j6(pad, "if (!", struct_equality_helper_name(cname), "(", left_expr, j5(", ", right_expr, ")) return false;", "", "")))
+            e.buffer.append(strings.join_six(pad, "if (!", struct_equality_helper_name(cname), "(", left_expr, strings.join_five(", ", right_expr, ")) return false;", "", "")))
         else:
-            e.buffer.append(j6(pad, "if (", left_expr, " != ", right_expr, j3(") return false;", "", "")))
+            e.buffer.append(strings.join_six(pad, "if (", left_expr, " != ", right_expr, strings.join_three(") return false;", "", "")))
         e.buffer.push_byte(10)
 
 
@@ -6006,9 +5986,9 @@ function is_struct_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Exp
 function render_struct_equality(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
     let cname = c_type(expr_result_type(left))
     let fn_name = struct_equality_helper_name(cname)
-    let call = j5(j2(fn_name, "("), render_expression(e, left), ", ", render_expression(e, right), ")")
+    let call = strings.join_five(strings.join_two(fn_name, "("), render_expression(e, left), ", ", render_expression(e, right), ")")
     if operator == "!=":
-        return j2("!", call)
+        return strings.join_two("!", call)
     return call
 
 
@@ -6092,7 +6072,7 @@ function render_binary(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right
     let parent = binary_precedence(operator)
     let left_text = render_binary_operand(e, left, parent, false)
     let right_text = render_binary_operand(e, right, parent, true)
-    return j5(left_text, " ", c_operator(operator), " ", right_text)
+    return strings.join_five(left_text, " ", c_operator(operator), " ", right_text)
 
 
 function render_binary_operand(e: ref[Emitter], ep: ptr[ir.Expr], parent_precedence: int, is_right: bool) -> str:
@@ -6100,11 +6080,11 @@ function render_binary_operand(e: ref[Emitter], ep: ptr[ir.Expr], parent_precede
     unsafe:
         match read(ep):
             ir.Expr.expr_conditional:
-                return j3("(", text, ")")
+                return strings.join_three("(", text, ")")
             ir.Expr.expr_binary as child:
                 let child_precedence = binary_precedence(child.operator)
                 if child_precedence < parent_precedence or (is_right and child_precedence == parent_precedence):
-                    return j3("(", text, ")")
+                    return strings.join_three("(", text, ")")
                 return text
             _:
                 return text
@@ -6149,7 +6129,7 @@ function wrap_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
             ir.Expr.expr_offsetof:
                 return text
             _:
-                return j3("(", text, ")")
+                return strings.join_three("(", text, ")")
 
 
 ## The condition operand of a `? :` conditional: parenthesized only when the
@@ -6160,7 +6140,7 @@ function emit_conditional_condition(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     unsafe:
         match read(ep):
             ir.Expr.expr_conditional:
-                return j3("(", text, ")")
+                return strings.join_three("(", text, ")")
             _:
                 return text
 
@@ -6190,13 +6170,13 @@ function emit_cast_operand(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     unsafe:
         match read(ep):
             ir.Expr.expr_binary:
-                return j3("(", text, ")")
+                return strings.join_three("(", text, ")")
             ir.Expr.expr_call_indirect:
-                return j3("(", text, ")")
+                return strings.join_three("(", text, ")")
             ir.Expr.expr_conditional:
-                return j3("(", text, ")")
+                return strings.join_three("(", text, ")")
             ir.Expr.expr_variant_literal:
-                return j3("(", text, ")")
+                return strings.join_three("(", text, ")")
             _:
                 return text
 
@@ -6767,7 +6747,7 @@ function emit_task_forward_decls(e: ref[Emitter], seen: ref[map_mod.Map[str, boo
         let kp = keys.next() else:
             break
         let c_name = unsafe: read(kp)
-        emit_line(e, j5("typedef struct ", c_name, " ", c_name, ";"))
+        emit_line(e, strings.join_five("typedef struct ", c_name, " ", c_name, ";"))
     if seen.len() > 0:
         emit_line(e, "")
 
@@ -6993,11 +6973,11 @@ function emit_task_struct_type(e: ref[Emitter], c_name: str, elem: types.Type) -
 
     let type_str = c_type(elem)
 
-    emit_line(e, j3("struct ", c_name, " {"))
+    emit_line(e, strings.join_three("struct ", c_name, " {"))
 
     if not is_void:
 
-        emit_line(e, j3("  ", type_str, " value;"))
+        emit_line(e, strings.join_three("  ", type_str, " value;"))
 
     emit_line(e, "  void* frame;")
 
@@ -7012,13 +6992,13 @@ function emit_task_struct_type(e: ref[Emitter], c_name: str, elem: types.Type) -
     if is_void:
         emit_line(e, "  void (*take_result)(void*);")
     else:
-        emit_line(e, j3("  ", type_str, " (*take_result)(void*);"))
+        emit_line(e, strings.join_three("  ", type_str, " (*take_result)(void*);"))
 
     emit_line(e, "  void (*cancel)(void*);")
 
     emit_line(e, "};")
 
-    emit_line(e, j3("typedef struct ", c_name, j2(" ", j2(c_name, ";"))))
+    emit_line(e, strings.join_three("typedef struct ", c_name, strings.join_two(" ", strings.join_two(c_name, ";"))))
 
     emit_line(e, "")
 
@@ -7310,7 +7290,7 @@ function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], opaques: re
                     let bare_key = bare_opaque_name(base)
                     if bare_key.len > 0 and opaques.get(bare_key) != null:
                         return
-                    let opt_key = j2("mt_opt_", c_key)
+                    let opt_key = strings.join_two("mt_opt_", c_key)
                     if not needed.contains(opt_key):
                         needed.set(opt_key, types.Type.ty_nullable(base = types.alloc_type(base)))
         types.Type.ty_generic as g:
@@ -7743,7 +7723,7 @@ function emit_opaque_forward_decls(e: ref[Emitter], program: ir.Program) -> void
             od = read(program.opaques.data + i)
         if od.forward_declarable and not seen.contains(od.linkage_name) and naming.is_c_identifier(od.linkage_name):
             seen.set(od.linkage_name, true)
-            emit_line(e, j5("typedef struct ", od.linkage_name, " ", od.linkage_name, ";"))
+            emit_line(e, strings.join_five("typedef struct ", od.linkage_name, " ", od.linkage_name, ";"))
             emitted = true
         i += 1
     if emitted:
@@ -7768,10 +7748,10 @@ function emit_type_aliases(e: ref[Emitter], program: ir.Program) -> void:
         if not skip:
             match ta.backing_c_name:
                 Option.some as cname:
-                    emit_line(e, j5("typedef ", cname.value, " ", ta.qualified_name, ";"))
+                    emit_line(e, strings.join_five("typedef ", cname.value, " ", ta.qualified_name, ";"))
                 Option.none:
                     let c_type_str = c_declaration(ta.target_type, ta.qualified_name)
-                    emit_line(e, j3("typedef ", c_type_str, ";"))
+                    emit_line(e, strings.join_three("typedef ", c_type_str, ";"))
         ai += 1
     if program.type_aliases.len > 0:
         emit_line(e, "")

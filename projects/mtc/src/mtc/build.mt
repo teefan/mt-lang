@@ -21,6 +21,7 @@ import mtc.loader.path_resolver as resolver
 import mtc.ir as ir
 import mtc.c_backend.c_backend as c_backend
 import mtc.parser.ast as ast
+import mtc.strings
 import mtc.wasm_shell as wasm_shell
 
 
@@ -733,7 +734,7 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
         var raylib_src = vendored_raylib_include(roots, "src")
         defer: raylib_src.release()
         if raylib_src.len() > 0:
-            result.push(string.String.from_str(j2("-I", raylib_src.as_str())))
+            result.push(string.String.from_str(strings.join_two("-I", raylib_src.as_str())))
         result.push(string.String.from_str("-DMT_LANG_GL_REGISTRY_HAVE_RAYLIB"))
         result.push(string.String.from_str("-DPLATFORM_DESKTOP_GLFW"))
         result.push(string.String.from_str("-DGRAPHICS_API_OPENGL_43"))
@@ -745,7 +746,7 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
         var include_dir = vendored_raylib_include(roots, "examples/shapes")
         defer: include_dir.release()
         if include_dir.len() > 0:
-            result.push(string.String.from_str(j2("-I", include_dir.as_str())))
+            result.push(string.String.from_str(strings.join_two("-I", include_dir.as_str())))
         result.push(string.String.from_str("-DRAYGUI_IMPLEMENTATION"))
         result.push(string.String.from_str("-DGRAPHICS_API_OPENGL_43"))
 
@@ -765,50 +766,50 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
         var glfw_include = vendored_tree_path(roots, "glfw-upstream/include")
         defer: glfw_include.release()
         if glfw_include.len() > 0:
-            result.push(string.String.from_str(j2("-I", glfw_include.as_str())))
+            result.push(string.String.from_str(strings.join_two("-I", glfw_include.as_str())))
         result.push(string.String.from_str("-DMT_LANG_GL_REGISTRY_HAVE_GLFW"))
 
     if uses_tracy:
         var tracy_inner = vendored_tree_path(roots, "tracy-upstream/public/tracy")
         defer: tracy_inner.release()
         if tracy_inner.len() > 0:
-            result.push(string.String.from_str(j2("-I", tracy_inner.as_str())))
+            result.push(string.String.from_str(strings.join_two("-I", tracy_inner.as_str())))
         var tracy_public = vendored_tree_path(roots, "tracy-upstream/public")
         defer: tracy_public.release()
         if tracy_public.len() > 0:
-            result.push(string.String.from_str(j2("-I", tracy_public.as_str())))
+            result.push(string.String.from_str(strings.join_two("-I", tracy_public.as_str())))
         result.push(string.String.from_str("-DTRACY_ENABLE"))
 
     if uses_cjson:
         var cjson_include = vendored_tree_path(roots, "cjson-upstream")
         defer: cjson_include.release()
         if cjson_include.len() > 0:
-            result.push(string.String.from_str(j2("-I", cjson_include.as_str())))
+            result.push(string.String.from_str(strings.join_two("-I", cjson_include.as_str())))
 
     if uses_box2d:
         var box2d_include = vendored_tree_path(roots, "box2d-upstream/include")
         defer: box2d_include.release()
         if box2d_include.len() > 0:
-            result.push(string.String.from_str(j2("-I", box2d_include.as_str())))
+            result.push(string.String.from_str(strings.join_two("-I", box2d_include.as_str())))
 
     if uses_box3d:
         var box3d_include = vendored_tree_path(roots, "box3d-upstream/include")
         defer: box3d_include.release()
         if box3d_include.len() > 0:
-            result.push(string.String.from_str(j2("-I", box3d_include.as_str())))
+            result.push(string.String.from_str(strings.join_two("-I", box3d_include.as_str())))
 
     if uses_sdl3:
         var sdl3_include = vendored_tree_path(roots, "sdl3-upstream/include")
         defer: sdl3_include.release()
         if sdl3_include.len() > 0:
-            result.push(string.String.from_str(j2("-I", sdl3_include.as_str())))
+            result.push(string.String.from_str(strings.join_two("-I", sdl3_include.as_str())))
         result.push(string.String.from_str("-DSDL_MAIN_HANDLED"))
 
     if uses_flecs:
         var flecs_include = vendored_tree_path(roots, "flecs-upstream/distr")
         defer: flecs_include.release()
         if flecs_include.len() > 0:
-            result.push(string.String.from_str(j2("-I", flecs_include.as_str())))
+            result.push(string.String.from_str(strings.join_two("-I", flecs_include.as_str())))
 
     if uses_pcre2:
         match vendored_source_root(roots, "pcre2-upstream"):
@@ -826,13 +827,13 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
         var sw_include = vendored_tree_path(roots, "steamworks-sdk-upstream/public")
         defer: sw_include.release()
         if sw_include.len() > 0:
-            result.push(string.String.from_str(j2("-I", sw_include.as_str())))
+            result.push(string.String.from_str(strings.join_two("-I", sw_include.as_str())))
 
     if uses_libuv:
         var uv_include = vendored_tree_path(roots, "libuv-upstream/include")
         defer: uv_include.release()
         if uv_include.len() > 0:
-            result.push(string.String.from_str(j2("-I", uv_include.as_str())))
+            result.push(string.String.from_str(strings.join_two("-I", uv_include.as_str())))
 
     return result
 
@@ -841,7 +842,7 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
 ## (`third_party/raylib-upstream/<sub>`), searched under each module root.
 ## Returns an empty string when no root contains the vendored tree.
 function vendored_raylib_include(roots: span[str], sub: str) -> string.String:
-    return vendored_tree_path(roots, j2("raylib-upstream/", sub))
+    return vendored_tree_path(roots, strings.join_two("raylib-upstream/", sub))
 
 
 ## Absolute path to `third_party/<sub>` under whichever module root contains it,
@@ -1035,8 +1036,8 @@ function prepare_vendored_raylib(roots: span[str]) -> Result[bool, string.String
     var si: ptr_uint = 0
     while si < 6:
         let source_name = sources[si]
-        let source_file = j2(src_dir.as_str(), j2("/", source_name))
-        let object_file = j2(build_dir.as_str(), j2("/", j2(source_name, ".o")))
+        let source_file = strings.join_two(src_dir.as_str(), strings.join_two("/", source_name))
+        let object_file = strings.join_two(build_dir.as_str(), strings.join_two("/", strings.join_two(source_name, ".o")))
 
         var compile = vec.Vec[str].create()
         defer: compile.release()
@@ -1922,8 +1923,3 @@ function run_build_tool(command: span[str], label: str) -> Result[bool, string.S
 
 
 ## Multi-string join helper (mirrors c_backend j2).
-function j2(a: str, b: str) -> str:
-    var buf = string.String.create()
-    buf.append(a)
-    buf.append(b)
-    return buf.as_str()
