@@ -4584,20 +4584,20 @@ function is_integer_name(name: str) -> bool:
     return types.is_integer_name(name)
 
 
-const int_suffix_ub: str = "ub"
-const int_suffix_us: str = "us"
-const int_suffix_ul: str = "ul"
-const int_suffix_iz: str = "iz"
+const INT_SUFFIX_UB: str = "ub"
+const INT_SUFFIX_US: str = "us"
+const INT_SUFFIX_UL: str = "ul"
+const INT_SUFFIX_IZ: str = "iz"
 
 
 public function integer_suffix_type_name(lexeme: str) -> Option[str]:
-    if lexeme.ends_with(int_suffix_ub):
+    if lexeme.ends_with(INT_SUFFIX_UB):
         return Option[str].some(value = "ubyte")
-    if lexeme.ends_with(int_suffix_us):
+    if lexeme.ends_with(INT_SUFFIX_US):
         return Option[str].some(value = "ushort")
-    if lexeme.ends_with(int_suffix_ul):
+    if lexeme.ends_with(INT_SUFFIX_UL):
         return Option[str].some(value = "ulong")
-    if lexeme.ends_with(int_suffix_iz):
+    if lexeme.ends_with(INT_SUFFIX_IZ):
         return Option[str].some(value = "ptr_int")
     let last = lexeme.byte_at(lexeme.len - 1)
     if last == 'u':

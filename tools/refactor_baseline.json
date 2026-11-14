@@ -144,21 +144,7 @@
     ],
     "exceptions": []
   },
-  "naming": [
-    "projects/mtc/src/mtc/lsp/definition_index.mt:524:DeclarationTokenOf:function name snake_case",
-    "projects/mtc/src/mtc/semantic/analyzer.mt:4587:int_suffix_ub:const name UPPER_SNAKE",
-    "projects/mtc/src/mtc/semantic/analyzer.mt:4588:int_suffix_us:const name UPPER_SNAKE",
-    "projects/mtc/src/mtc/semantic/analyzer.mt:4589:int_suffix_ul:const name UPPER_SNAKE",
-    "projects/mtc/src/mtc/semantic/analyzer.mt:4590:int_suffix_iz:const name UPPER_SNAKE",
-    "projects/mtc/src/mtc/semantic/types.mt:1137:kind_unknown:const name UPPER_SNAKE",
-    "projects/mtc/src/mtc/semantic/types.mt:1138:kind_scalar:const name UPPER_SNAKE",
-    "projects/mtc/src/mtc/semantic/types.mt:1139:kind_nominal:const name UPPER_SNAKE",
-    "projects/mtc/src/mtc/semantic/types.mt:1140:kind_generic:const name UPPER_SNAKE",
-    "projects/mtc/src/mtc/semantic/types.mt:511:cat_bool:const name UPPER_SNAKE",
-    "projects/mtc/src/mtc/semantic/types.mt:512:cat_numeric:const name UPPER_SNAKE",
-    "projects/mtc/src/mtc/semantic/types.mt:513:cat_str:const name UPPER_SNAKE",
-    "projects/mtc/src/mtc/semantic/types.mt:514:cat_other:const name UPPER_SNAKE"
-  ],
+  "naming": [],
   "dead_exports": {
     "unused": [
       "projects/mtc/src/mtc/c_backend/c_backend.mt:31:struct:CBackendError",

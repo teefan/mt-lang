@@ -508,24 +508,24 @@ public function type_to_string(t: Type) -> str:
 #  as compatible.
 # ---------------------------------------------------------------------------
 
-const cat_bool: int = 1
-const cat_numeric: int = 2
-const cat_str: int = 3
-const cat_other: int = 0
+const CAT_BOOL: int = 1
+const CAT_NUMERIC: int = 2
+const CAT_STR: int = 3
+const CAT_OTHER: int = 0
 
 
 function scalar_category(t: Type) -> int:
     match t:
         Type.ty_primitive as p:
             if p.name == "bool":
-                return cat_bool
+                return CAT_BOOL
             if is_numeric_name(p.name):
-                return cat_numeric
-            return cat_other
+                return CAT_NUMERIC
+            return CAT_OTHER
         Type.ty_str:
-            return cat_str
+            return CAT_STR
         _:
-            return cat_other
+            return CAT_OTHER
 
 
 ## Width in bits of an integer primitive, 0 for non-integers.  Pointer-sized
@@ -1134,10 +1134,10 @@ function nominal_definitely_different(a: Type, b: Type) -> bool:
     return not module_a == module_b
 
 
-const kind_unknown: int = 0
-const kind_scalar: int = 1
-const kind_nominal: int = 2
-const kind_generic: int = 3
+const KIND_UNKNOWN: int = 0
+const KIND_SCALAR: int = 1
+const KIND_NOMINAL: int = 2
+const KIND_GENERIC: int = 3
 
 
 ## Coarse structural kind for definite-difference comparison.  Error, type
@@ -1146,17 +1146,17 @@ const kind_generic: int = 3
 function type_kind(t: Type) -> int:
     match t:
         Type.ty_primitive:
-            return kind_scalar
+            return KIND_SCALAR
         Type.ty_str:
-            return kind_scalar
+            return KIND_SCALAR
         Type.ty_named:
-            return kind_nominal
+            return KIND_NOMINAL
         Type.ty_imported:
-            return kind_nominal
+            return KIND_NOMINAL
         Type.ty_generic:
-            return kind_generic
+            return KIND_GENERIC
         _:
-            return kind_unknown
+            return KIND_UNKNOWN
 
 
 function scalar_definitely_different(a: Type, b: Type) -> bool:
@@ -1231,21 +1231,21 @@ public function definitely_different(a: Type, b: Type) -> bool:
 
     let ka = type_kind(a)
     let kb = type_kind(b)
-    if ka == kind_unknown or kb == kind_unknown:
+    if ka == KIND_UNKNOWN or kb == KIND_UNKNOWN:
         return false
-    if ka == kind_scalar and kb == kind_scalar:
+    if ka == KIND_SCALAR and kb == KIND_SCALAR:
         return scalar_definitely_different(a, b)
-    if ka == kind_nominal and kb == kind_nominal:
+    if ka == KIND_NOMINAL and kb == KIND_NOMINAL:
         return nominal_definitely_different(a, b)
-    if ka == kind_generic and kb == kind_generic:
+    if ka == KIND_GENERIC and kb == KIND_GENERIC:
         return generic_definitely_different(a, b)
     # Cross-kind: only a nominal-vs-scalar pair is provably incompatible.  Any
     # pairing that involves a generic stays permissive because of implicit
     # coercions — a `ref[T]` parameter borrows a `T` argument, an array coerces
     # to a span, and a mutable pointer coerces to a const pointer.
-    if ka == kind_nominal and kb == kind_scalar:
+    if ka == KIND_NOMINAL and kb == KIND_SCALAR:
         return true
-    if ka == kind_scalar and kb == kind_nominal:
+    if ka == KIND_SCALAR and kb == KIND_NOMINAL:
         return true
     return false
 
@@ -1266,7 +1266,7 @@ public function definitely_incompatible(target: Type, source: Type) -> bool:
     if tn:
         return definitely_incompatible(unwrap_nullable(target), source)
     if sn:
-        if type_kind(target) == kind_unknown or type_kind(unwrap_nullable(source)) == kind_unknown:
+        if type_kind(target) == KIND_UNKNOWN or type_kind(unwrap_nullable(source)) == KIND_UNKNOWN:
             return false
         if contains_type_var(target) or contains_type_var(source):
             return false
@@ -1318,7 +1318,7 @@ public function definitely_incompatible(target: Type, source: Type) -> bool:
 
     let tc = scalar_category(target)
     let sc = scalar_category(source)
-    if tc == cat_other or sc == cat_other:
+    if tc == CAT_OTHER or sc == CAT_OTHER:
         return false
     return tc != sc
 

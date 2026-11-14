@@ -482,11 +482,11 @@ function index_tokens(
             let entry = tokens.get(map_key)
             if entry == null:
                 var list = vec.Vec[DefinitionToken].create()
-                list.push(DeclarationTokenOf(token))
+                list.push(declaration_token_of(token))
                 tokens.set(map_key, list)
             else:
                 map_key.release()
-                unsafe: read(entry).push(DeclarationTokenOf(token))
+                unsafe: read(entry).push(declaration_token_of(token))
             # `_` is a discard, never a symbol (the host's extraction skips it).
             if not (previous_kind == KIND_VARIABLE and lexeme.equal("_")):
                 symbols.push(SymbolEntry(
@@ -521,7 +521,7 @@ function symbol_kind_for_keyword(kind: tk.TokenKind) -> int:
     return KIND_STRUCT
 
 
-function DeclarationTokenOf(token: token_mod.Token) -> DefinitionToken:
+function declaration_token_of(token: token_mod.Token) -> DefinitionToken:
     return DefinitionToken(
         line = token.line,
         column = token.column,
