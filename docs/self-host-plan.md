@@ -38,7 +38,7 @@ history.
 | `test/mt` | **60 files / 0 failed** (session 72 on stage2) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **735 match / 0 differ / 4 host-rejected of 739**; counts drift with the tree and `tmp` fixtures) |
-| `sexpr lower` | **684 match / 2 differ / 53 host-rejected / 0 self-rejected of 739 files** (session 72) — the two differ are the documented `memory_stress_test` (leaked auto-lifetime) and `main.mt` (`--sexpr` loop guard) artifacts.  Session 72 closed the third row (`woodeneye`, hidden in `hostfail`) by fixing `%g` double rendering (now Ruby's round-trip `Float#to_s`), module-qualified named types in IR dumps, and an index literal taking the assignment's element type |
+| `sexpr lower` | **685 match / 2 differ / 53 host-rejected / 0 self-rejected of 740 files** (session 76) — the two differ are the documented `memory_stress_test` (leaked auto-lifetime) and `main.mt` (`--sexpr` loop guard) artifacts.  Session 72 closed the `woodeneye` row; session 76 closed a `dap/server.mt` row that session 73's DAP change had introduced (a guard-narrowed `null` assignment took the refined type instead of the target's storage type) |
 | `cli:parity` | **224 match / 0 differ / 0 pending** of 224 cases (`--timings` values, `debug`'s Ruby node ids and the synthesized test-runner path normalized; 43 `test` cases plus the second-batch sweep: global extraction, resolution flags, per-command operand models, missing/empty operands, completions/std/snapshot/cache/lsp/dap/bindgen/deps) |
 | **`check` diagnostics (new)** | **501 agree / 0 verdict / 0 position / 3 message of 504** files (`tools/diag_parity.rb check`; the 3 message rows are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows).  Before this session: 44 verdict, 177 position diffs and a wholly different rendering. |
 | Linter corpus | **631 agree / 4 differ** of 635 (hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  The 4 rows are documented: two self-only `redundant-cast` in `std/cli.mt`, the self-only `prefer-let` cluster in `std/fs.windows.mt` (the host loses its facts on a platform-pinned root), the host-only `constant-condition` in `examples/reflection_advanced.mt`, and the host-only positionless `prefer-or-pattern` in `projects/mtc/src/mtc/main.mt`. |
@@ -79,14 +79,23 @@ First pass of the refactoring program (`docs/refactoring.md`).  Three batches:
    and `package_source` are common locals).  Five type renames: `Context`
    (`redundant_cast`), `LoweringContext`, `ScopeContext`, `SexprContext`,
    `MethodDecl` — 621 replacements in seven files.
+4. **`lower` regression found and fixed** (`d9892739`).  The refactor gate
+   surfaced a third `lower` differ: session 73's `adapter_watch = null` arm in
+   `dap/server.mt` is flow-refined to `Types::Null`, and the assignment
+   lowering used that refined type as the RHS context.  The host passes the
+   lowered target's storage type (`block.rb:527,555`); the self now does too.
+   Locked by the extended `test_null_literal_takes_context_type` (fails before,
+   passes after).  `lower` is now **685 match / 2 differ / 53 host-rejected /
+   0 self-rejected of 740**.
 
-Current structure: **132 files / 154,129 lines / 122,608 code lines**; 108 import
+Current structure: **132 files / 154,135 lines / 122,610 code lines**; 108 import
 edges, **0 layering / 0 alias / 0 naming violations**; 35 unused + 6 test-only
 public declarations; 786 duplication clusters / 5,206 duplicated lines; 35
 functions >= 200 lines; 12 files >= 2,000 code lines.
 
 Verification after each batch: dev build, **22/0** self-host suite; guard tests
-**13/13**; `--check --strict --ratchet` green; baseline refreshed.
+**13/13**; `--check --strict --ratchet` green; baseline refreshed.  Final pass:
+bootstrap fixed point holds, `test/mt` 60/0, CLI 224/224, `lower` 685/2/53/0.
 
 Next in the program: the remaining naming vocabulary (retire `new_`/`lookup_`,
 standardize `_declaration`/`_expression`), test-tree hygiene, then the file
@@ -673,10 +682,10 @@ now ported.  Tracks A–D reached their targets; LSP/DAP/formatter are closed at
 their documented differences.  Anchor by symbol names, not line numbers —
 lines drift.
 
-### Track A — `lower` dump parity (CLOSED: 684/2 of 739)
+### Track A — `lower` dump parity (CLOSED: 685/2 of 740)
 
-Current set: **684 match / 2 differ / 53 host-rejected / 0 self-rejected of 739
-files** (session 72).  The host-rejected bucket is `external` and platform-pinned
+Current set: **685 match / 2 differ / 53 host-rejected / 0 self-rejected of 740
+files** (session 76).  The host-rejected bucket is `external` and platform-pinned
 files; the count drifts with the tree and `tmp` fixtures — quote the set.
 
 The two counted differs are the documented host artifacts, not work:
@@ -1183,7 +1192,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `test/mt` | 60 files / 0 failed | session 73 (stage2) | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 71 | `tools/gates.sh --only examples --run` |
 | `sexpr lex` / `parse` | lex 739/739; parse 735 match / 0 differ / 4 host-rejected of 739 (counts include `tmp` fixtures) | session 72 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | **684 match / 2 differ / 53 host-rejected / 0 self-rejected** of 739 (the 2 are the documented `memory_stress_test` + `main.mt` artifacts; session 72 closed the third row by fixing double rendering, type qualification and index hinting) | session 72 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | **685 match / 2 differ / 53 host-rejected / 0 self-rejected** of 740 (the 2 are the documented `memory_stress_test` + `main.mt` artifacts; session 76 closed the `dap/server.mt` row introduced by session 73's DAP change) | session 76 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | **224 match / 0 differ / 0 pending** of 224 (case-backed; timings, `debug` node ids and the synthesized test-runner path normalized) | session 73 | `ruby tools/cli_parity.rb -q` |
 | `mtc test` matrix | **43 cases**, included in `cli:parity` 224/224: file/dir operands, human/TAP/JUnit, filters, death tests, `--timeout/--mem/--jobs/--sanitize`, `--locked/--frozen`, validation errors, build-error channels | session 73 | `ruby tools/cli_parity.rb -f '^test-'` |
 | **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** (`std`+`examples`; the 3 are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows) | session 72 | `ruby tools/diag_parity.rb check -j 8 std examples`; byte-level: `ruby tools/check_parity.rb` |
@@ -1230,7 +1239,7 @@ Gotchas that cost rebuild cycles; apply them before writing code.
 
 ## Risks and notes
 
-- **`lower` regressions:** the track is closed at 684/2/53/0 (the two documented
+- **`lower` regressions:** the track is closed at 685/2/53/0 (the two documented
   artifacts).  A lowering-adjacent change can still move first differences
   deeper; re-run the sweep and keep the stopping rule (0 real differ, or a
   documented host artifact with a reproduction).

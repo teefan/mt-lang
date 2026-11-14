@@ -181,7 +181,7 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 132 / 154,129 / 122,608 |
+| source files / lines / code lines | 132 / 154,135 / 122,610 |
 | layering edges / violations | 108 / 0 |
 | naming violations | 0 |
 | alias violations | 0 (131 modules) |
