@@ -7451,6 +7451,56 @@ function is_null_ir_expr(ep: ptr[ir.Expr]) -> bool:
 public function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(callee):
+            ast.Expr.expr_identifier:
+                return lower_identifier_call(ctx, callee, args, call_ep)
+            ast.Expr.expr_specialization:
+                return lower_specialization_callee_call(ctx, callee, args, call_ep)
+            ast.Expr.expr_member_access:
+                return lower_member_call(ctx, callee, args, call_ep)
+            ast.Expr.expr_index_access as ix:
+                # Calling a proc held in an array or span element: `ops[i](args)`.
+                # The element type comes from the receiver when the analyzer did
+                # not record one for the index expression.
+                var elem_ty = type_helpers.expr_type(ctx, callee)
+                if not is_proc_type(elem_ty):
+                    elem_ty = generic_first_arg(index_receiver_type(ctx, ix.receiver))
+                if is_proc_type(elem_ty):
+                    let elem_recv = lower_expr(ctx, callee)
+                    return lower_proc_field_call(ctx, elem_recv, args, call_ep)
+                return alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty))
+            _:
+                # Call through a callable *value* expression (e.g. a chain call
+                # `f(a)(b)`): the host lowers the callee once and shares the node
+                # in the `invoke` callee and the `env` argument.
+                let callee_expr = lower_expr(ctx, callee)
+                let callee_ty = ir_expr_type(callee_expr)
+                if is_proc_type(callee_ty):
+                    let void_ptr = ctx.ptr_void_ty
+                    let env_member = alloc_expr(ir.Expr.expr_member(receiver = callee_expr, member = "env", ty = void_ptr))
+                    var invoke_args = vec.Vec[ir.Expr].create()
+                    unsafe:
+                        invoke_args.push(read(env_member))
+                    var ai: ptr_uint = 0
+                    while ai < args.len:
+                        let arg = unsafe: read(args.data + ai)
+                        var lowered = lower_expr(ctx, arg.arg_value)
+                        lowered = literal_value_to_context_type(ctx, arg.arg_value, proc_param_type_at(callee_ty, ai), lowered)
+                        unsafe:
+                            invoke_args.push(read(lowered))
+                        ai += 1
+                    var call_ty = type_helpers.expr_type(ctx, call_ep)
+                    if is_void_type(call_ty) or types.is_error(call_ty) or is_proc_type(call_ty):
+                        call_ty = proc_return_type(callee_ty)
+                    let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = callee_expr, member = "invoke", ty = proc_invoke_field_type(callee_ty)))
+                    return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = call_ty))
+                if is_fn_type(callee_ty):
+                    return lower_call_with_callee_expr(ctx, callee_expr, args, call_ep, types.alloc_type(type_helpers.expr_type(ctx, call_ep)), empty_fn_sig())
+                return alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty))
+
+
+function lower_identifier_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    unsafe:
+        match read(callee):
             ast.Expr.expr_identifier as id:
                 if id.name == "fatal":
                     # `fatal(cstr)` → mt_fatal(const char*); `fatal(str)` →
@@ -7462,98 +7512,7 @@ public function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], arg
                     return lower_plain_call(ctx, fatal_callee, args, call_ep, null)
                 if id.name == "ptr_of" or id.name == "ref_of" or id.name == "const_ptr_of":
                     if args.len == 1:
-                        let inner = lower_expr(ctx, read(args.data + 0).arg_value)
-                        let inner_ty = ir_expr_type(inner)
-                        # The analyzer may record the referent type unqualified
-                        # (e.g. `ref[Counter]` with `Counter` module-less);
-                        # qualify it so the element matches the host.
-                        var result_ty = qualify_type(ctx, type_helpers.expr_type(ctx, call_ep))
-                        # When expr_type returns void or error (e.g. the analyzer
-                        # did not record a type for the builtin), compute the
-                        # correct result type from the argument's type.  Also
-                        # recompute when the recorded type is a pointer to a void
-                        # element (`ptr[void]`) but the argument has a concrete
-                        # type — the analyzer sometimes records the untyped
-                        # `ptr[void]` for a builtin whose operand is a member
-                        # access it did not resolve, which would otherwise mask the
-                        # real referent type.
-                        let outer_kind = if id.name == "ptr_of": "ptr" else: if id.name == "ref_of": "ref" else: "const_ptr"
-                        let recorded_elem = types.pointer_element(result_ty)
-                        let recorded_elem_bad = types.is_void(recorded_elem) or types.is_error(recorded_elem)
-                        let inner_is_concrete = not (types.is_error(inner_ty) or types.is_void(inner_ty))
-                        if types.is_error(result_ty) or types.is_void(result_ty) or (recorded_elem_bad and inner_is_concrete):
-                            result_ty = types.Type.ty_generic(name = outer_kind, args = sp_type(inner_ty))
-                        # The host's `:ptr_of` on a ref-typed argument wraps the
-                        # reference value in a cast to the result pointer type
-                        # (`calls.rb`'s `IR::Cast` branch); it does not retype the
-                        # Name.  `const_ptr_of`/`ref_of` go through the address
-                        # path instead.
-                        if id.name == "ptr_of" and types.is_ref_type(inner_ty):
-                            return alloc_expr(ir.Expr.expr_cast(target_type = result_ty, expression = inner, ty = result_ty))
-                        # When the argument is already a pointer/ref value (e.g. a
-                        # `ref[T]` parameter, which is a pointer in C), taking its
-                        # address again would produce `T**`.  Use the pointer value
-                        # directly; if it is a `*p` deref, use the underlying `p`.
-                        # Mirrors Ruby's ref_of/ptr_of/const_ptr_of handling.
-                        match read(inner):
-                            ir.Expr.expr_name as nm:
-                                if nm.pointer.unwrap_or(false) or types.is_ref_type(nm.ty) or types.is_own_type(nm.ty):
-                                    # The operand is already a pointer *value* whose
-                                    # MT type is a reference (`ref[T]`), or the
-                                    # binding itself is pointer-lowered, so the
-                                    # builtin returns it directly.  A mere
-                                    # raw-pointer MT type (`var p: ptr[int]`) is a
-                                    # stored pointer value: `ptr_of(p)` must take
-                                    # its address (`&p`), like the host's
-                                    # `lower_addr_expression`.  Rebuild the result
-                                    # type from the lowered pointer's element type:
-                                    # a monomorphized `this` is a concrete
-                                    # collapsed struct, whereas the analyzer
-                                    # recorded the bare generic-body type
-                                    # (`ref[StateMachine]`), which would break
-                                    # type-parameter inference at call sites.
-                                    var direct_ty = result_ty
-                                    if types.is_raw_pointer(nm.ty) or types.is_ref_type(nm.ty) or types.is_own_type(nm.ty):
-                                        let elem = types.pointer_element(nm.ty)
-                                        var kind = "ref"
-                                        if id.name == "ptr_of":
-                                            kind = "ptr"
-                                        if id.name == "const_ptr_of":
-                                            kind = "const_ptr"
-                                        direct_ty = types.Type.ty_generic(name = kind, args = sp_type(elem))
-                                    # The host's `lower_addr_expression` wraps a
-                                    # pointer-lowered Name in `cast_expression(name,
-                                    # target_type)`: the Name keeps its own type and a
-                                    # differing target becomes an `IR::Cast`
-                                    # (`ref_of(this)` on an editable receiver).
-                                    if types.type_equals(nm.ty, direct_ty):
-                                        return inner
-                                    return alloc_expr(ir.Expr.expr_cast(target_type = direct_ty, expression = inner, ty = direct_ty))
-                                # ref[T] is already a pointer in C, so ptr_of/const_ptr_of
-                                # on a ref variable returns the variable directly as a raw
-                                # pointer to the referent; ref_of returns it as-is.
-                                if types.is_ref_type(nm.ty):
-                                    let ref_elem = types.pointer_element(nm.ty)
-                                    let elem_sp = sp_type(ref_elem)
-                                    var adjusted_ty = result_ty
-                                    if id.name == "ptr_of":
-                                        adjusted_ty = types.Type.ty_generic(name = "ptr", args = elem_sp)
-                                    if id.name == "const_ptr_of":
-                                        adjusted_ty = types.Type.ty_generic(name = "const_ptr", args = elem_sp)
-                                    if id.name == "ref_of":
-                                        pass
-                                    return alloc_expr(ir.Expr.expr_name(name = nm.name, ty = adjusted_ty, pointer = Option[bool].some(value = true)))
-                            ir.Expr.expr_unary as un:
-                                if un.operator == "*":
-                                    # The host casts the deref's operand to the
-                                    # target when the types differ and returns it
-                                    # unchanged otherwise.
-                                    if types.type_equals(ir_expr_type(un.operand), result_ty):
-                                        return un.operand
-                                    return alloc_expr(ir.Expr.expr_cast(target_type = result_ty, expression = un.operand, ty = result_ty))
-                            _:
-                                pass
-                        return alloc_expr(ir.Expr.expr_address_of(expression = inner, ty = result_ty))
+                        return lower_addr_builtin_call(ctx, id.name, args, call_ep)
                 # `read(p)` as an rvalue → pointer dereference `*p`.  The result
                 # type is the pointer's element type (more reliable than the
                 # analyzer's generically-recorded type inside monomorphized
@@ -7620,102 +7579,210 @@ public function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], arg
                 let extern_ptr = ctx.extern_map.get(id.name)
                 if extern_ptr != null:
                     return lower_plain_call(ctx, read(extern_ptr), args, call_ep, null)
-                # Proc-typed local: `p(args)` → `p.invoke(p.env, args)`.
-                match type_helpers.find_local_binding(ctx, id.name):
-                    Option.some as lb:
-                        if is_proc_type(lb.value.ty):
-                            return lower_proc_call(ctx, lb.value, args, call_ep)
-                        if is_fn_type(lb.value.ty):
-                            # The host's callee is an `IR::Name` carrying the
-                            # function type (a call through the local's value,
-                            # not a bare C-name call); the call's type falls back
-                            # to the callee's own signature when the analyzer
-                            # recorded none (the `lower_proc_call` rule).
-                            var ret_ty = type_helpers.expr_type(ctx, call_ep)
-                            match lb.value.ty:
-                                types.Type.ty_function as ft:
-                                    if is_void_type(ret_ty):
-                                        ret_ty = unsafe: read(ft.return_type)
-                                _:
-                                    pass
-                            let ret_type_ptr = types.alloc_type(ret_ty)
-                            # A guard-projected binding is read as a member chain,
-                            # so it cannot be spelled as a bare callee name.
-                            match lb.value.projection:
-                                BindingProjection.plain:
-                                    let callee_expr = alloc_expr(ir.Expr.expr_name(name = lb.value.c_name, ty = lb.value.ty, pointer = Option[bool].some(value = false)))
-                                    return lower_call_with_callee_expr(ctx, callee_expr, args, call_ep, ret_type_ptr, empty_fn_sig())
-                                _:
-                                    return lower_call_with_callee_expr(ctx, lower_binding_read(ctx, lb.value), args, call_ep, ret_type_ptr, empty_fn_sig())
+                return lower_plain_identifier_call(ctx, callee, id.name, args, call_ep)
+            _:
+                fatal(c"lowering: lower_identifier_call called with a non-identifier")
+
+
+function lower_addr_builtin_call(ctx: ref[LoweringContext], name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    unsafe:
+        let inner = lower_expr(ctx, read(args.data + 0).arg_value)
+        let inner_ty = ir_expr_type(inner)
+        # The analyzer may record the referent type unqualified
+        # (e.g. `ref[Counter]` with `Counter` module-less);
+        # qualify it so the element matches the host.
+        var result_ty = qualify_type(ctx, type_helpers.expr_type(ctx, call_ep))
+        # When expr_type returns void or error (e.g. the analyzer
+        # did not record a type for the builtin), compute the
+        # correct result type from the argument's type.  Also
+        # recompute when the recorded type is a pointer to a void
+        # element (`ptr[void]`) but the argument has a concrete
+        # type — the analyzer sometimes records the untyped
+        # `ptr[void]` for a builtin whose operand is a member
+        # access it did not resolve, which would otherwise mask the
+        # real referent type.
+        let outer_kind = if name == "ptr_of": "ptr" else: if name == "ref_of": "ref" else: "const_ptr"
+        let recorded_elem = types.pointer_element(result_ty)
+        let recorded_elem_bad = types.is_void(recorded_elem) or types.is_error(recorded_elem)
+        let inner_is_concrete = not (types.is_error(inner_ty) or types.is_void(inner_ty))
+        if types.is_error(result_ty) or types.is_void(result_ty) or (recorded_elem_bad and inner_is_concrete):
+            result_ty = types.Type.ty_generic(name = outer_kind, args = sp_type(inner_ty))
+        # The host's `:ptr_of` on a ref-typed argument wraps the
+        # reference value in a cast to the result pointer type
+        # (`calls.rb`'s `IR::Cast` branch); it does not retype the
+        # Name.  `const_ptr_of`/`ref_of` go through the address
+        # path instead.
+        if name == "ptr_of" and types.is_ref_type(inner_ty):
+            return alloc_expr(ir.Expr.expr_cast(target_type = result_ty, expression = inner, ty = result_ty))
+        # When the argument is already a pointer/ref value (e.g. a
+        # `ref[T]` parameter, which is a pointer in C), taking its
+        # address again would produce `T**`.  Use the pointer value
+        # directly; if it is a `*p` deref, use the underlying `p`.
+        # Mirrors Ruby's ref_of/ptr_of/const_ptr_of handling.
+        match read(inner):
+            ir.Expr.expr_name as nm:
+                if nm.pointer.unwrap_or(false) or types.is_ref_type(nm.ty) or types.is_own_type(nm.ty):
+                    # The operand is already a pointer *value* whose
+                    # MT type is a reference (`ref[T]`), or the
+                    # binding itself is pointer-lowered, so the
+                    # builtin returns it directly.  A mere
+                    # raw-pointer MT type (`var p: ptr[int]`) is a
+                    # stored pointer value: `ptr_of(p)` must take
+                    # its address (`&p`), like the host's
+                    # `lower_addr_expression`.  Rebuild the result
+                    # type from the lowered pointer's element type:
+                    # a monomorphized `this` is a concrete
+                    # collapsed struct, whereas the analyzer
+                    # recorded the bare generic-body type
+                    # (`ref[StateMachine]`), which would break
+                    # type-parameter inference at call sites.
+                    var direct_ty = result_ty
+                    if types.is_raw_pointer(nm.ty) or types.is_ref_type(nm.ty) or types.is_own_type(nm.ty):
+                        let elem = types.pointer_element(nm.ty)
+                        var kind = "ref"
+                        if name == "ptr_of":
+                            kind = "ptr"
+                        if name == "const_ptr_of":
+                            kind = "const_ptr"
+                        direct_ty = types.Type.ty_generic(name = kind, args = sp_type(elem))
+                    # The host's `lower_addr_expression` wraps a
+                    # pointer-lowered Name in `cast_expression(name,
+                    # target_type)`: the Name keeps its own type and a
+                    # differing target becomes an `IR::Cast`
+                    # (`ref_of(this)` on an editable receiver).
+                    if types.type_equals(nm.ty, direct_ty):
+                        return inner
+                    return alloc_expr(ir.Expr.expr_cast(target_type = direct_ty, expression = inner, ty = direct_ty))
+                # ref[T] is already a pointer in C, so ptr_of/const_ptr_of
+                # on a ref variable returns the variable directly as a raw
+                # pointer to the referent; ref_of returns it as-is.
+                if types.is_ref_type(nm.ty):
+                    let ref_elem = types.pointer_element(nm.ty)
+                    let elem_sp = sp_type(ref_elem)
+                    var adjusted_ty = result_ty
+                    if name == "ptr_of":
+                        adjusted_ty = types.Type.ty_generic(name = "ptr", args = elem_sp)
+                    if name == "const_ptr_of":
+                        adjusted_ty = types.Type.ty_generic(name = "const_ptr", args = elem_sp)
+                    if name == "ref_of":
+                        pass
+                    return alloc_expr(ir.Expr.expr_name(name = nm.name, ty = adjusted_ty, pointer = Option[bool].some(value = true)))
+            ir.Expr.expr_unary as un:
+                if un.operator == "*":
+                    # The host casts the deref's operand to the
+                    # target when the types differ and returns it
+                    # unchanged otherwise.
+                    if types.type_equals(ir_expr_type(un.operand), result_ty):
+                        return un.operand
+                    return alloc_expr(ir.Expr.expr_cast(target_type = result_ty, expression = un.operand, ty = result_ty))
+            _:
+                pass
+        return alloc_expr(ir.Expr.expr_address_of(expression = inner, ty = result_ty))
+
+
+function lower_plain_identifier_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    unsafe:
+        # Proc-typed local: `p(args)` → `p.invoke(p.env, args)`.
+        match type_helpers.find_local_binding(ctx, name):
+            Option.some as lb:
+                if is_proc_type(lb.value.ty):
+                    return lower_proc_call(ctx, lb.value, args, call_ep)
+                if is_fn_type(lb.value.ty):
+                    # The host's callee is an `IR::Name` carrying the
+                    # function type (a call through the local's value,
+                    # not a bare C-name call); the call's type falls back
+                    # to the callee's own signature when the analyzer
+                    # recorded none (the `lower_proc_call` rule).
+                    var ret_ty = type_helpers.expr_type(ctx, call_ep)
+                    match lb.value.ty:
+                        types.Type.ty_function as ft:
+                            if is_void_type(ret_ty):
+                                ret_ty = unsafe: read(ft.return_type)
+                        _:
+                            pass
+                    let ret_type_ptr = types.alloc_type(ret_ty)
+                    # A guard-projected binding is read as a member chain,
+                    # so it cannot be spelled as a bare callee name.
+                    match lb.value.projection:
+                        BindingProjection.plain:
+                            let callee_expr = alloc_expr(ir.Expr.expr_name(name = lb.value.c_name, ty = lb.value.ty, pointer = Option[bool].some(value = false)))
+                            return lower_call_with_callee_expr(ctx, callee_expr, args, call_ep, ret_type_ptr, empty_fn_sig())
+                        _:
+                            return lower_call_with_callee_expr(ctx, lower_binding_read(ctx, lb.value), args, call_ep, ret_type_ptr, empty_fn_sig())
+            Option.none:
+                pass
+        match find_generic_function(ctx, name):
+            Option.some as gm:
+                match try_inferred_generic_call(ctx, Option[str].none, name, args, call_ep):
+                    Option.some as gen_call:
+                        return gen_call.value
                     Option.none:
                         pass
-                match find_generic_function(ctx, id.name):
-                    Option.some as gm:
-                        match try_inferred_generic_call(ctx, Option[str].none, id.name, args, call_ep):
-                            Option.some as gen_call:
-                                return gen_call.value
-                            Option.none:
-                                pass
-                    Option.none:
-                        pass
-                # Module-level proc variable: call through proc struct.
-                # expr_type on the callee may not have the correct type if the
-                # analyzer only records the call expression type, so also check
-                # the identifier against the source file's variable declarations.
-                var callee_ty = type_helpers.expr_type(ctx, callee)
-                if not is_proc_type(callee_ty):
-                    callee_ty = module_var_type(ctx, id.name)
-                if is_proc_type(callee_ty):
-                    let c_name = naming.qualified_c_name(ctx.module_name, id.name)
-                    let lb = LocalBinding(name = id.name, c_name = c_name, ty = callee_ty, pointer = Option[bool].some(value = false))
-                    return lower_proc_call(ctx, lb, args, call_ep)
-                # Compile-time builtins: evaluate to constant literals rather than
-                # emitting runtime function calls.  has_attribute returns a bool;
-                # field_of / callable_of / attribute_of return opaque handles
-                # (zero-init at the IR level since they are consumed only by
-                # other compile-time builtins).
-                if id.name == "has_attribute":
-                    return alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = ctx.bool_ty))
-                if id.name == "field_of" or id.name == "callable_of" or id.name == "attribute_of":
-                    return alloc_expr(ir.Expr.expr_zero_init(ty = types.Type.ty_error))
-                # A `const function` call in an ordinary expression is a normal
-                # runtime call (the host emits `examples_comptime_square`); the
-                # compile-time evaluation belongs to const initializers, which
-                # route through `try_const_typed_value_ir` above.
-                # A module-level variable of plain *function* type
-                # (`var f: fn() -> void = noop_scene_draw`) is called through its
-                # value: the host's callee is an `IR::Name` carrying the function
-                # type, not a bare C name (`examples/box3d/*`'s `s_scene_draw()`).
-                # `module_var_type` only answers for module-level variables, so a
-                # function declaration still takes the direct-call path below.
-                match module_var_type(ctx, id.name):
-                    types.Type.ty_function as fn_var_ty:
-                        let c_name = naming.qualified_c_name(ctx.module_name, id.name)
-                        let callee_expr = alloc_expr(ir.Expr.expr_name(name = c_name, ty = module_var_type(ctx, id.name), pointer = Option[bool].some(value = false)))
-                        return lower_call_with_callee_expr(ctx, callee_expr, args, call_ep, unsafe: fn_var_ty.return_type, empty_fn_sig())
+            Option.none:
+                pass
+        # Module-level proc variable: call through proc struct.
+        # expr_type on the callee may not have the correct type if the
+        # analyzer only records the call expression type, so also check
+        # the identifier against the source file's variable declarations.
+        var callee_ty = type_helpers.expr_type(ctx, callee)
+        if not is_proc_type(callee_ty):
+            callee_ty = module_var_type(ctx, name)
+        if is_proc_type(callee_ty):
+            let c_name = naming.qualified_c_name(ctx.module_name, name)
+            let lb = LocalBinding(name = name, c_name = c_name, ty = callee_ty, pointer = Option[bool].some(value = false))
+            return lower_proc_call(ctx, lb, args, call_ep)
+        # Compile-time builtins: evaluate to constant literals rather than
+        # emitting runtime function calls.  has_attribute returns a bool;
+        # field_of / callable_of / attribute_of return opaque handles
+        # (zero-init at the IR level since they are consumed only by
+        # other compile-time builtins).
+        if name == "has_attribute":
+            return alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = ctx.bool_ty))
+        if name == "field_of" or name == "callable_of" or name == "attribute_of":
+            return alloc_expr(ir.Expr.expr_zero_init(ty = types.Type.ty_error))
+        # A `const function` call in an ordinary expression is a normal
+        # runtime call (the host emits `examples_comptime_square`); the
+        # compile-time evaluation belongs to const initializers, which
+        # route through `try_const_typed_value_ir` above.
+        # A module-level variable of plain *function* type
+        # (`var f: fn() -> void = noop_scene_draw`) is called through its
+        # value: the host's callee is an `IR::Name` carrying the function
+        # type, not a bare C name (`examples/box3d/*`'s `s_scene_draw()`).
+        # `module_var_type` only answers for module-level variables, so a
+        # function declaration still takes the direct-call path below.
+        match module_var_type(ctx, name):
+            types.Type.ty_function as fn_var_ty:
+                let c_name = naming.qualified_c_name(ctx.module_name, name)
+                let callee_expr = alloc_expr(ir.Expr.expr_name(name = c_name, ty = module_var_type(ctx, name), pointer = Option[bool].some(value = false)))
+                return lower_call_with_callee_expr(ctx, callee_expr, args, call_ep, unsafe: fn_var_ty.return_type, empty_fn_sig())
+            _:
+                pass
+        var ret_ty = function_return_type(ctx, name)
+        var ret_type_ptr = types.alloc_type(ret_ty)
+        var plain_args = args
+        match find_func_in_source(ctx.analysis.source_file, name):
+            Option.some as fd:
+                match fd.value:
+                    ast.Decl.decl_function as fun:
+                        plain_args = expand_default_args(fun.method_params, args)
                     _:
                         pass
-                var ret_ty = function_return_type(ctx, id.name)
-                var ret_type_ptr = types.alloc_type(ret_ty)
-                var plain_args = args
-                match find_func_in_source(ctx.analysis.source_file, id.name):
-                    Option.some as fd:
-                        match fd.value:
-                            ast.Decl.decl_function as fun:
-                                plain_args = expand_default_args(fun.method_params, args)
-                            _:
-                                pass
-                    Option.none:
-                        pass
-                var callee_c = naming.qualified_c_name(ctx.module_name, id.name)
-                if ctx.is_root_module and id.name == "main":
-                    match type_helpers.find_fn_sig(ctx, id.name):
-                        Option.some as main_sig:
-                            if main_sig.value.is_async:
-                                callee_c = naming.qualified_c_name(ctx.module_name, "__async_main")
-                        Option.none:
-                            pass
-                return lower_plain_call_sig(ctx, callee_c, plain_args, call_ep, ret_type_ptr, type_helpers.find_fn_sig(ctx, id.name))
+            Option.none:
+                pass
+        var callee_c = naming.qualified_c_name(ctx.module_name, name)
+        if ctx.is_root_module and name == "main":
+            match type_helpers.find_fn_sig(ctx, name):
+                Option.some as main_sig:
+                    if main_sig.value.is_async:
+                        callee_c = naming.qualified_c_name(ctx.module_name, "__async_main")
+                Option.none:
+                    pass
+        return lower_plain_call_sig(ctx, callee_c, plain_args, call_ep, ret_type_ptr, type_helpers.find_fn_sig(ctx, name))
+
+
+function lower_specialization_callee_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    unsafe:
+        match read(callee):
             ast.Expr.expr_specialization as spec:
                 # When the specialisation callee is a member access
                 # (e.g. `r.unpack[CompactHeader]()`), try method resolution
@@ -7755,6 +7822,13 @@ public function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], arg
                         _:
                             pass
                 return lower_specialization_call(ctx, spec.callee, spec.arguments, args, call_ep)
+            _:
+                fatal(c"lowering: lower_specialization_callee_call called with a non-specialization")
+
+
+function lower_member_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    unsafe:
+        match read(callee):
             ast.Expr.expr_member_access as ma:
                 match read(ma.receiver):
                     ast.Expr.expr_identifier as recv_id:
@@ -7943,6 +8017,15 @@ public function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], arg
                                 pass
                     _:
                         pass
+                return lower_member_dispatch(ctx, callee, args, call_ep)
+            _:
+                fatal(c"lowering: lower_member_call called with a non-member callee")
+
+
+function lower_member_dispatch(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_member_access as ma:
                 # Method call: receiver.method(args).  Resolve the method from the
                 # receiver's type and lower to a direct C function call.
                 let recv_ty = method_receiver_type(ctx, ma.receiver)
@@ -7989,6 +8072,15 @@ public function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], arg
                 if ts == "dyn" or is_dyn_type(recv_ty):
                     let recv_ir = lower_expr(ctx, ma.receiver)
                     return lower_dyn_method_call(ctx, recv_ir, ma.member_name, args, call_ep)
+                return lower_member_field_call(ctx, callee, args, call_ep, recv_ty)
+            _:
+                fatal(c"lowering: lower_member_dispatch called with a non-member callee")
+
+
+function lower_member_field_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr], recv_ty: types.Type) -> ptr[ir.Expr]:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_member_access as ma:
                 # Fallback: treat as a direct C call with the member as callee.
                 # But first, check if the member is an fn/proc struct field — if so,
                 # lower as a direct field access call instead of a method call.
@@ -8173,45 +8265,8 @@ public function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], arg
                                 ir_args.push(read(lowered))
                             si += 1
                         return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = type_helpers.expr_type(ctx, call_ep)))
-            ast.Expr.expr_index_access as ix:
-                # Calling a proc held in an array or span element: `ops[i](args)`.
-                # The element type comes from the receiver when the analyzer did
-                # not record one for the index expression.
-                var elem_ty = type_helpers.expr_type(ctx, callee)
-                if not is_proc_type(elem_ty):
-                    elem_ty = generic_first_arg(index_receiver_type(ctx, ix.receiver))
-                if is_proc_type(elem_ty):
-                    let elem_recv = lower_expr(ctx, callee)
-                    return lower_proc_field_call(ctx, elem_recv, args, call_ep)
-                return alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty))
             _:
-                # Call through a callable *value* expression (e.g. a chain call
-                # `f(a)(b)`): the host lowers the callee once and shares the node
-                # in the `invoke` callee and the `env` argument.
-                let callee_expr = lower_expr(ctx, callee)
-                let callee_ty = ir_expr_type(callee_expr)
-                if is_proc_type(callee_ty):
-                    let void_ptr = ctx.ptr_void_ty
-                    let env_member = alloc_expr(ir.Expr.expr_member(receiver = callee_expr, member = "env", ty = void_ptr))
-                    var invoke_args = vec.Vec[ir.Expr].create()
-                    unsafe:
-                        invoke_args.push(read(env_member))
-                    var ai: ptr_uint = 0
-                    while ai < args.len:
-                        let arg = unsafe: read(args.data + ai)
-                        var lowered = lower_expr(ctx, arg.arg_value)
-                        lowered = literal_value_to_context_type(ctx, arg.arg_value, proc_param_type_at(callee_ty, ai), lowered)
-                        unsafe:
-                            invoke_args.push(read(lowered))
-                        ai += 1
-                    var call_ty = type_helpers.expr_type(ctx, call_ep)
-                    if is_void_type(call_ty) or types.is_error(call_ty) or is_proc_type(call_ty):
-                        call_ty = proc_return_type(callee_ty)
-                    let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = callee_expr, member = "invoke", ty = proc_invoke_field_type(callee_ty)))
-                    return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = call_ty))
-                if is_fn_type(callee_ty):
-                    return lower_call_with_callee_expr(ctx, callee_expr, args, call_ep, types.alloc_type(type_helpers.expr_type(ctx, call_ep)), empty_fn_sig())
-                return alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty))
+                fatal(c"lowering: lower_member_field_call called with a non-member callee")
 
 
 ## The result type of a cross-module call, resolved from the shared program-wide

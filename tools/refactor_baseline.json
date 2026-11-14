@@ -1143,8 +1143,8 @@
     ]
   },
   "sizes": {
-    "total_code": 123335,
-    "functions_over_limit": 34,
+    "total_code": 123376,
+    "functions_over_limit": 33,
     "files_over_limit": 12,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
@@ -1502,10 +1502,10 @@
         "max_function": 84
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 18355,
-        "code": 13524,
+        "lines": 18410,
+        "code": 13565,
         "max_line": 483,
-        "max_function": 764
+        "max_function": 459
       },
       "projects/mtc/src/mtc/lowering/match.mt": {
         "lines": 1569,
