@@ -34,6 +34,7 @@ import mtc.lowering.async as async_mod
 import mtc.lowering.comptime as comptime
 import mtc.lowering.comptime_types as comptime_types
 import mtc.lowering.const_eval as const_eval
+import mtc.lowering.format as format
 import mtc.lowering.inline as inline_mod
 import mtc.lowering.layout as layout_mod
 import mtc.lowering.tasks as tasks
@@ -165,7 +166,7 @@ struct PendingSpecialization:
 
 
 ## Statement-position hoisting mode (see `begin_stmt_setup`).
-enum HoistMode:
+public enum HoistMode:
     # No window: a multi-step expression setup falls back to the inline StmtExpr.
     hm_off
     # A `return` value: the value must survive the cleanups, so the foreign
@@ -186,7 +187,7 @@ enum HoistMode:
 
 ## The state saved when a hoisting window opens, plus the statements a closed
 ## window collected: `stmts` are emitted before the statement, `cleanups` after.
-struct HoistSaved:
+public struct HoistSaved:
     mode: HoistMode
     stmts: vec.Vec[ir.Stmt]
     cleanups: vec.Vec[ir.Stmt]
@@ -2941,7 +2942,7 @@ function lower_method(ctx: ref[LoweringContext], c_name: str, receiver_ty: types
 
 
 ## A single-element `span[types.Type]` convenience helper.
-function sp_type(t: types.Type) -> span[types.Type]:
+public function sp_type(t: types.Type) -> span[types.Type]:
     return utils.sp_type(t)
 
 
@@ -2953,7 +2954,7 @@ function sp_fields2(f1: ir.AggregateField, f2: ir.AggregateField) -> span[ir.Agg
     return utils.sp_fields2(f1, f2)
 
 
-function sp_type2(t1: types.Type, t2: types.Type) -> span[types.Type]:
+public function sp_type2(t1: types.Type, t2: types.Type) -> span[types.Type]:
     return utils.sp_type2(t1, t2)
 
 
@@ -3336,7 +3337,7 @@ function cleanup_safe_return_expr(ep: ptr[ast.Expr]) -> bool:
 ## collected instead of wrapped in an inline `StmtExpr`, mirroring the host's
 ## `prepare_expression_with_cleanups`.  Returns the enclosing state; close the
 ## window with `collect_stmt_setup`.
-function begin_stmt_setup(ctx: ref[LoweringContext], mode: HoistMode) -> HoistSaved:
+public function begin_stmt_setup(ctx: ref[LoweringContext], mode: HoistMode) -> HoistSaved:
     let saved = HoistSaved(mode = ctx.hoist_mode, stmts = ctx.hoist_stmts, cleanups = ctx.hoist_cleanups, stmt_emitted = ctx.hoist_stmt_emitted, root_ep = ctx.hoist_root_ep, array_exempt = ctx.array_call_exempt)
     ctx.hoist_mode = mode
     ctx.hoist_stmts = vec.Vec[ir.Stmt].create()
@@ -3349,7 +3350,7 @@ function begin_stmt_setup(ctx: ref[LoweringContext], mode: HoistMode) -> HoistSa
 
 ## Close a hoisting window: restore the enclosing state and return what the
 ## window collected (`stmts` before the statement, `cleanups` after it).
-function collect_stmt_setup(ctx: ref[LoweringContext], saved: HoistSaved) -> HoistSaved:
+public function collect_stmt_setup(ctx: ref[LoweringContext], saved: HoistSaved) -> HoistSaved:
     let collected = HoistSaved(mode = ctx.hoist_mode, stmts = ctx.hoist_stmts, cleanups = ctx.hoist_cleanups, stmt_emitted = ctx.hoist_stmt_emitted, root_ep = ctx.hoist_root_ep, array_exempt = ctx.array_call_exempt)
     ctx.hoist_mode = saved.mode
     ctx.hoist_stmts = saved.stmts
@@ -3362,7 +3363,7 @@ function collect_stmt_setup(ctx: ref[LoweringContext], saved: HoistSaved) -> Hoi
 
 ## Insert a window's `stmts` into `output` at `base`, so they precede every
 ## statement the statement lowering contributed.
-function emit_hoist_setup(output: ref[vec.Vec[ir.Stmt]], base: ptr_uint, collected: HoistSaved) -> void:
+public function emit_hoist_setup(output: ref[vec.Vec[ir.Stmt]], base: ptr_uint, collected: HoistSaved) -> void:
     var i: ptr_uint = 0
     while i < collected.stmts.len:
         let stmt = collected.stmts.get(i) else:
@@ -3476,7 +3477,7 @@ function record_or_emit_local_cleanups(ctx: ref[LoweringContext], output: ref[ve
         let stmt = cleanups.get(i) else:
             break
         let value = unsafe: read(stmt)
-        if is_format_release_stmt(value):
+        if format.is_format_release_stmt(value):
             record_defer(ctx, single_stmt_span(value))
         else:
             output.push(value)
@@ -3487,14 +3488,14 @@ function record_or_emit_local_cleanups(ctx: ref[LoweringContext], output: ref[ve
 ## buffer (str/cstr or a struct containing one) — the host's `reject_format_
 ## releases_for_assignment` rule in `lower_return_stmt`.
 function filter_return_format_cleanups(ctx: ref[LoweringContext], return_ty: types.Type, cleanups: vec.Vec[ir.Stmt]) -> vec.Vec[ir.Stmt]:
-    if not format_owning_target_type(ctx, return_ty, 0):
+    if not format.format_owning_target_type(ctx, return_ty, 0):
         return cleanups
     var kept = vec.Vec[ir.Stmt].create()
     var i: ptr_uint = 0
     while i < cleanups.len:
         let stmt = cleanups.get(i) else:
             break
-        if not is_format_release_stmt(unsafe: read(stmt)):
+        if not format.is_format_release_stmt(unsafe: read(stmt)):
             kept.push(unsafe: read(stmt))
         i += 1
     return kept
@@ -3999,13 +4000,13 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                 # remaining cleanups become block defers (the host's
                 # `local_defers.concat(prepared_cleanups)`), not immediate
                 # post-statement statements.
-                let local_cleanups = if format_owning_target_type(ctx, ty, 0):
-                    drop_format_release_cleanups(hoist_collected)
+                let local_cleanups = if format.format_owning_target_type(ctx, ty, 0):
+                    format.drop_format_release_cleanups(hoist_collected)
                 else:
                     hoist_collected
                 record_or_emit_local_cleanups(ctx, output, local_cleanups.cleanups)
                 ctx.locals.push(LocalBinding(name = loc.name, c_name = c_name, ty = ty, pointer = Option[bool].some(value = false)))
-                if cstr_backed_binding(ctx, ty, init, value_expr):
+                if format.cstr_backed_binding(ctx, ty, init, value_expr):
                     ctx.cstr_backed_names.set(c_name, true)
                 # A proc-containing local owns a reference: its release runs as a
                 # defer at every scope exit (guarded, for a zero-initialized var
@@ -4088,8 +4089,8 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                         emit_hoist_setup(output, hoist_base, hoist_collected)
                         value = contextual_value_to_type(ctx, asg.value, deref_ty, value, types.is_float_type(deref_ty) and not is_foreign_call_initializer(ctx, asg.value), false)
                         output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
-                        let read_target_cleanups = if format_owning_target_type(ctx, deref_ty, 0):
-                            drop_format_release_cleanups(hoist_collected)
+                        let read_target_cleanups = if format.format_owning_target_type(ctx, deref_ty, 0):
+                            format.drop_format_release_cleanups(hoist_collected)
                         else:
                             hoist_collected
                         record_or_emit_local_cleanups(ctx, output, read_target_cleanups.cleanups)
@@ -4125,7 +4126,7 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                     types.is_float_type(target_ty) and not is_foreign_call_initializer(ctx, asg.value),
                     external_numeric_assignment_target(ctx, asg.target),
                 )
-                update_cstr_metadata_for_assignment_mt(ctx, asg.target, asg.value, value, asg.operator)
+                format.update_cstr_metadata_for_assignment_mt(ctx, asg.target, asg.value, value, asg.operator)
                 # Native math compound assignment (`a += b`, `a *= 2.0`): the C
                 # aggregate structs have no operators, so expand component-wise
                 # and emit a plain assignment.
@@ -4136,8 +4137,8 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                     if is_vec_math_name(math_name):
                         let expanded = lower_vec_binary_op(ctx, compound_base_operator(asg.operator), target, value, target_ty, math_name)
                         output.push(ir.Stmt.stmt_assignment(target = target, operator = "=", value = expanded))
-                        let math_cleanups = if format_owning_target_type(ctx, target_ty, 0):
-                            drop_format_release_cleanups(hoist_collected)
+                        let math_cleanups = if format.format_owning_target_type(ctx, target_ty, 0):
+                            format.drop_format_release_cleanups(hoist_collected)
                         else:
                             hoist_collected
                         record_or_emit_local_cleanups(ctx, output, math_cleanups.cleanups)
@@ -4163,8 +4164,8 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                     output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = rhs_ref))
                 else:
                     output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
-                let assign_cleanups = if format_owning_target_type(ctx, target_ty, 0):
-                    drop_format_release_cleanups(hoist_collected)
+                let assign_cleanups = if format.format_owning_target_type(ctx, target_ty, 0):
+                    format.drop_format_release_cleanups(hoist_collected)
                 else:
                     hoist_collected
                 record_or_emit_local_cleanups(ctx, output, assign_cleanups.cleanups)
@@ -4362,7 +4363,7 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                 # `lower_async_expression_statement`, which has no sink case, so
                 # the ordinary call form is emitted there.
                 if not ctx.async_completion_active:
-                    if lower_explicit_format_sink_stmt(ctx, output, ex.expression, ex.line):
+                    if format.lower_explicit_format_sink_stmt(ctx, output, ex.expression, ex.line):
                         return
                 let stmt_base = output.len()
                 let stmt_saved = begin_stmt_setup(ctx, HoistMode.hm_discard)
@@ -4729,8 +4730,8 @@ function lower_guard_local(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
             let guard_path = if ctx.async_nonawait_body: "" else: ctx.analysis.source_path
             output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = guard_line, source_path = guard_path))
             storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = Option[bool].some(value = false)))
-        let guard_cleanups = if format_owning_target_type(ctx, storage_ty, 0):
-            drop_format_release_cleanups(hoist_collected)
+        let guard_cleanups = if format.format_owning_target_type(ctx, storage_ty, 0):
+            format.drop_format_release_cleanups(hoist_collected)
         else:
             hoist_collected
         record_or_emit_local_cleanups(ctx, output, guard_cleanups.cleanups)
@@ -5577,7 +5578,7 @@ function register_external_struct_layout(ctx: ref[LoweringContext], ty: types.Ty
 ## name may be import-qualified (`types.Transform` for `engine.types`), which a
 ## lookup by that written name in the current module would miss — the value's own
 ## type carries the authoritative module and name.
-function struct_fields_of(ctx: ref[LoweringContext], t: types.Type) -> Option[span[analyzer.FieldEntry]]:
+public function struct_fields_of(ctx: ref[LoweringContext], t: types.Type) -> Option[span[analyzer.FieldEntry]]:
     var module_name: str
     var struct_name: str
     match t:
@@ -8791,13 +8792,13 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                 # statement (the host's `prepare_expression_with_cleanups`);
                 # a lazily-evaluated region keeps the inline statement-expression
                 # form, which cannot carry the post-statement release.
-                if format_string_all_static(fs.parts):
-                    return format_string_static_literal(fs.parts)
+                if format.format_string_all_static(fs.parts):
+                    return format.format_string_static_literal(fs.parts)
                 if ctx.hoist_mode == HoistMode.hm_off:
                     var fmt_setup = vec.Vec[ir.Stmt].create()
-                    let fmt_result = build_format_string_dynamic(ctx, fs.parts, ref_of(fmt_setup))
+                    let fmt_result = format.build_format_string_dynamic(ctx, fs.parts, ref_of(fmt_setup))
                     return alloc_expr(ir.Expr.expr_stmt_expr(setup = fmt_setup.as_span(), result = fmt_result, ty = types.Type.ty_str))
-                let fmt_result = build_format_string_dynamic(ctx, fs.parts, ref_of(ctx.hoist_stmts))
+                let fmt_result = format.build_format_string_dynamic(ctx, fs.parts, ref_of(ctx.hoist_stmts))
                 # The result temp owns its buffer and outlives the statement
                 # (the host's `register_prepared_temp!(…, cstr_backed: true)`),
                 # so a `str as cstr` boundary may pass its `data` directly.
@@ -8811,7 +8812,7 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                 # owns the buffer drops it (`filter_return_format_cleanups`), and
                 # an assignment/local-target arm drops it through
                 # `drop_format_release_cleanups`.
-                ctx.hoist_cleanups.push(format_str_release_stmt(fmt_result))
+                ctx.hoist_cleanups.push(format.format_str_release_stmt(fmt_result))
                 return fmt_result
             ast.Expr.expr_detach as dt:
                 return lower_detach_expr(ctx, dt.expression, ep)
@@ -13760,7 +13761,7 @@ function resolve_primitive_method_info(ctx: ref[LoweringContext], type_name: str
     return Option[MethodInfo].none
 
 
-function resolve_method_info(ctx: ref[LoweringContext], receiver_ty: types.Type, method_name: str) -> Option[MethodInfo]:
+public function resolve_method_info(ctx: ref[LoweringContext], receiver_ty: types.Type, method_name: str) -> Option[MethodInfo]:
     # Auto-deref pointer / ref receivers so a method call on `this` inside an
     # editable method (where `this` is `ptr[T]`) resolves against `T`, not the
     # builtin "ptr" name (which would mis-name the call `<module>_ptr_<method>`).
@@ -14043,7 +14044,7 @@ function type_contains_array_storage_at(ctx: ref[LoweringContext], ty: types.Typ
 ## This mirrors the Ruby lowerer's implicit receiver borrow/deref and, in
 ## particular, makes `this.method()` calls inside editable methods (where `this`
 ## is already a pointer) pass `this` directly instead of `&this`.
-function build_receiver_arg(ctx: ref[LoweringContext], recv: ptr[ir.Expr], method_kind: ast.MethodKind, is_async: bool) -> Option[ptr[ir.Expr]]:
+public function build_receiver_arg(ctx: ref[LoweringContext], recv: ptr[ir.Expr], method_kind: ast.MethodKind, is_async: bool) -> Option[ptr[ir.Expr]]:
     if method_kind == ast.MethodKind.mk_static:
         return Option[ptr[ir.Expr]].none
     let recv_ty = ir_expr_type(recv)
@@ -15193,7 +15194,7 @@ function is_void_type(t: types.Type) -> bool:
 
 
 ## True when a type is a str_buffer[N] type.
-function is_str_buffer_type(t: types.Type) -> bool:
+public function is_str_buffer_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
             return g.name == "str_buffer"
@@ -16455,7 +16456,7 @@ function lower_str_buffer_method(ctx: ref[LoweringContext], recv: ptr[ir.Expr], 
     let str_ty = types.Type.ty_str
     let bool_ty = ctx.bool_ty
     let cap = str_buffer_capacity_of(recv_ty)
-    let data_member = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "data", ty = str_buffer_data_member_type(cap)))
+    let data_member = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "data", ty = format.str_buffer_data_member_type(cap)))
     let data_elem = alloc_expr(ir.Expr.expr_index(receiver = data_member, index = alloc_expr(ir.Expr.expr_integer_literal(value = 0z, ty = ptr_uint_ty)), ty = char_ty))
     let data_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(char_ty))
     let data_addr = alloc_expr(ir.Expr.expr_address_of(expression = data_elem, ty = data_ptr))
@@ -16525,7 +16526,7 @@ function lower_str_buffer_method(ctx: ref[LoweringContext], recv: ptr[ir.Expr], 
     fatal(c"str_buffer lowering: unknown method")
 
 
-function sp_expr2(e1: ptr[ir.Expr], e2: ptr[ir.Expr]) -> span[ir.Expr]:
+public function sp_expr2(e1: ptr[ir.Expr], e2: ptr[ir.Expr]) -> span[ir.Expr]:
     var buf = vec.Vec[ir.Expr].create()
     unsafe:
         buf.push(read(e1))
@@ -16603,7 +16604,7 @@ function expr_is_bool_literal(ep: ptr[ast.Expr], want: bool) -> bool:
                 return false
 
 
-function sp_expr3(e1: ptr[ir.Expr], e2: ptr[ir.Expr], e3: ptr[ir.Expr]) -> span[ir.Expr]:
+public function sp_expr3(e1: ptr[ir.Expr], e2: ptr[ir.Expr], e3: ptr[ir.Expr]) -> span[ir.Expr]:
     var buf = vec.Vec[ir.Expr].create()
     unsafe:
         buf.push(read(e1))
@@ -17391,7 +17392,7 @@ function coerce_arg_to_span_param(sig: Option[analyzer.FnSig], index: ptr_uint, 
 
 ## Apply the implicit ref-argument bridge to the callee signature's parameter
 ## `index` (the host's `implicit_ref_argument_bridge?` + `ref_of` lowering).
-function coerce_arg_to_ref_param(sig: Option[analyzer.FnSig], index: ptr_uint, arg: ptr[ir.Expr]) -> ptr[ir.Expr]:
+public function coerce_arg_to_ref_param(sig: Option[analyzer.FnSig], index: ptr_uint, arg: ptr[ir.Expr]) -> ptr[ir.Expr]:
     match sig:
         Option.some as s:
             if index >= s.value.params.len:
@@ -17926,7 +17927,7 @@ function is_str_buffer_char_ptr_boundary(param: ast.ForeignParam) -> bool:
 
 ## The capacity N of a concrete `str_buffer[N]` type (the `ty_literal_int` type
 ## argument), or 0 when it cannot be recovered.
-function str_buffer_capacity_of(ty: types.Type) -> long:
+public function str_buffer_capacity_of(ty: types.Type) -> long:
     match ty:
         types.Type.ty_generic as g:
             if g.name == "str_buffer" and g.args.len >= 1:
@@ -18799,7 +18800,7 @@ function lower_cstr_argument(ctx: ref[LoweringContext], arg: ptr[ast.Expr], lowe
                 return lowered_str
         _:
             pass
-    if is_cstr_backed_lowered(ctx, lowered_str) or ast_expr_cstr_backed(ctx, arg):
+    if format.is_cstr_backed_lowered(ctx, lowered_str) or format.ast_expr_cstr_backed(ctx, arg):
         let data_member = alloc_expr(ir.Expr.expr_member(receiver = lowered_str, member = "data", ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("char")))))
         return alloc_expr(ir.Expr.expr_cast(target_type = cstr_ty, expression = data_member, ty = cstr_ty))
     return alloc_expr(ir.Expr.expr_call(
@@ -19641,7 +19642,7 @@ function find_struct_field_tref(sf: ast.SourceFile, struct_name: str, member: st
 ## receiver is a member access or identifier (both side-effect-free to lower), the
 ## lowered IR type resolves fields in their owner module's context
 ## (`imported_field_type`), so prefer it; fall back to `expr_type` otherwise.
-function method_receiver_type(ctx: ref[LoweringContext], receiver: ptr[ast.Expr]) -> types.Type:
+public function method_receiver_type(ctx: ref[LoweringContext], receiver: ptr[ast.Expr]) -> types.Type:
     var side_effect_free = false
     unsafe:
         match read(receiver):
@@ -22691,7 +22692,7 @@ function find_fn_sig(ctx: ref[LoweringContext], name: str) -> Option[analyzer.Fn
 
 
 ## Look up a function's FnSig in an imported module's analysis.
-function find_imported_fn_sig(ctx: ref[LoweringContext], module_name: str, name: str) -> Option[analyzer.FnSig]:
+public function find_imported_fn_sig(ctx: ref[LoweringContext], module_name: str, name: str) -> Option[analyzer.FnSig]:
     match find_imported_analysis(ctx, module_name):
         Option.some as imported:
             let sig_ptr = imported.value.functions.get(name)
@@ -23340,7 +23341,7 @@ function is_int_type(t: types.Type) -> bool:
             return false
 
 
-function find_local_binding(ctx: ref[LoweringContext], name: str) -> Option[LocalBinding]:
+public function find_local_binding(ctx: ref[LoweringContext], name: str) -> Option[LocalBinding]:
     if ctx.locals.len() == 0:
         return Option[LocalBinding].none
     var i = ctx.locals.len()
@@ -23679,1154 +23680,6 @@ function is_builtin_type_name(name: str) -> bool:
         or name == "ivec2" or name == "ivec3" or name == "ivec4"
         or name == "mat3" or name == "mat4" or name == "quat"
     )
-
-
-# =============================================================================
-#  Format string lowering (f"...")
-# =============================================================================
-
-## True when a format string has no interpolations (only literal text parts),
-## so it can collapse to a plain string literal with no runtime building.
-function format_string_all_static(parts: span[ast.FormatStringPart]) -> bool:
-    var i: ptr_uint = 0
-    while i < parts.len:
-        match unsafe: read(parts.data + i):
-            ast.FormatStringPart.fmt_expr:
-                return false
-            _:
-                pass
-        i += 1
-    return true
-
-
-## The combined literal text of an all-static format string.
-function format_string_static_literal(parts: span[ast.FormatStringPart]) -> ptr[ir.Expr]:
-    var buf = string.String.create()
-    var i: ptr_uint = 0
-    while i < parts.len:
-        match unsafe: read(parts.data + i):
-            ast.FormatStringPart.fmt_text as t:
-                buf.append(t.value)
-            _:
-                pass
-        i += 1
-    return alloc_expr(ir.Expr.expr_string_literal(value = buf.as_str(), ty = types.Type.ty_str, cstring = false))
-
-
-## The append/length plan for a single interpolation, selected from the value's
-## type and an optional format spec.  `len_kind`: 0 = call `len_helper(x)`,
-## 1 = `x.len` (str), 2 = precision (`mt_format_double_precision_len(x, N)`).
-struct FormatPlan:
-    append_helper: str
-    len_helper: str
-    arg_ty: types.Type
-    len_kind: int
-    precision: int
-
-
-function fmt_is_signed_int_name(name: str) -> bool:
-    return name == "byte" or name == "short" or name == "int" or name == "long" or name == "ptr_int"
-
-
-function fmt_plan(ctx: ref[LoweringContext], val_ty: types.Type, spec_ptr: ptr[ast.FormatSpec]?) -> FormatPlan:
-    let long_ty = types.primitive("long")
-    let ulong_ty = types.primitive("ulong")
-    let double_ty = types.primitive("double")
-    # Resolve the primitive name of the value (str is its own kind).
-    var is_str = false
-    var prim_name: str = ""
-    match val_ty:
-        types.Type.ty_str:
-            is_str = true
-        types.Type.ty_primitive as p:
-            prim_name = p.name
-        _:
-            prim_name = ""
-    if spec_ptr != null:
-        let spec = unsafe: read(spec_ptr)
-        let signed = fmt_is_signed_int_name(prim_name)
-        match spec.spec_kind:
-            ast.FormatSpecKind.precision:
-                return FormatPlan(append_helper = "mt_format_append_double_precision", len_helper = "", arg_ty = double_ty, len_kind = 2, precision = spec.value)
-            ast.FormatSpecKind.hex:
-                if signed:
-                    return FormatPlan(append_helper = if spec.uppercase: "mt_format_append_long_hex_upper" else: "mt_format_append_long_hex", len_helper = "mt_format_long_hex_len", arg_ty = long_ty, len_kind = 0, precision = 0)
-                return FormatPlan(append_helper = if spec.uppercase: "mt_format_append_ulong_hex_upper" else: "mt_format_append_ulong_hex", len_helper = "mt_format_ulong_hex_len", arg_ty = ulong_ty, len_kind = 0, precision = 0)
-            ast.FormatSpecKind.octal:
-                if signed:
-                    return FormatPlan(append_helper = "mt_format_append_long_oct", len_helper = "mt_format_long_oct_len", arg_ty = long_ty, len_kind = 0, precision = 0)
-                return FormatPlan(append_helper = "mt_format_append_ulong_oct", len_helper = "mt_format_ulong_oct_len", arg_ty = ulong_ty, len_kind = 0, precision = 0)
-            ast.FormatSpecKind.binary:
-                if signed:
-                    return FormatPlan(append_helper = "mt_format_append_long_bin", len_helper = "mt_format_long_bin_len", arg_ty = long_ty, len_kind = 0, precision = 0)
-                return FormatPlan(append_helper = "mt_format_append_ulong_bin", len_helper = "mt_format_ulong_bin_len", arg_ty = ulong_ty, len_kind = 0, precision = 0)
-    if is_str:
-        return FormatPlan(append_helper = "mt_format_append_str", len_helper = "", arg_ty = types.Type.ty_str, len_kind = 1, precision = 0)
-    if prim_name == "cstr":
-        return FormatPlan(append_helper = "mt_format_append_cstr", len_helper = "mt_format_cstr_len", arg_ty = types.primitive("cstr"), len_kind = 0, precision = 0)
-    if prim_name == "bool":
-        return FormatPlan(append_helper = "mt_format_append_bool", len_helper = "mt_format_bool_len", arg_ty = ctx.bool_ty, len_kind = 0, precision = 0)
-    if prim_name == "float":
-        return FormatPlan(append_helper = "mt_format_append_float", len_helper = "mt_format_float_len", arg_ty = types.primitive("float"), len_kind = 0, precision = 0)
-    if prim_name == "double":
-        return FormatPlan(append_helper = "mt_format_append_double", len_helper = "mt_format_double_len", arg_ty = double_ty, len_kind = 0, precision = 0)
-    if prim_name == "ubyte" or prim_name == "ushort" or prim_name == "uint":
-        return FormatPlan(append_helper = "mt_format_append_uint", len_helper = "mt_format_uint_len", arg_ty = types.primitive("uint"), len_kind = 0, precision = 0)
-    if prim_name == "ptr_uint":
-        return FormatPlan(append_helper = "mt_format_append_ptr_uint", len_helper = "mt_format_ptr_uint_len", arg_ty = types.primitive("ptr_uint"), len_kind = 0, precision = 0)
-    if prim_name == "long" or prim_name == "ptr_int":
-        return FormatPlan(append_helper = "mt_format_append_long", len_helper = "mt_format_long_len", arg_ty = long_ty, len_kind = 0, precision = 0)
-    if prim_name == "ulong":
-        return FormatPlan(append_helper = "mt_format_append_ulong", len_helper = "mt_format_ulong_len", arg_ty = ulong_ty, len_kind = 0, precision = 0)
-    # Custom format hooks: a struct implementing `format_len() -> ptr_uint` and
-    # `append_format(output: ref[std.string.String]) -> void` renders through
-    # those methods (`len_kind = 3`; the helper fields hold the method C names).
-    if spec_ptr == null:
-        match resolve_method_info(ctx, val_ty, "format_len"):
-            Option.some as lmi:
-                match resolve_method_info(ctx, val_ty, "append_format"):
-                    Option.some as ami:
-                        if lmi.value.method_kind != ast.MethodKind.mk_editable and ami.value.method_kind != ast.MethodKind.mk_editable:
-                            return FormatPlan(append_helper = ami.value.c_name, len_helper = lmi.value.c_name, arg_ty = val_ty, len_kind = 3, precision = 0)
-                    Option.none:
-                        pass
-            Option.none:
-                pass
-    # byte/short/int and any integer-like fallback (e.g. an int-backed enum cast
-    # to int in C) format as a signed 32-bit integer.
-    return FormatPlan(append_helper = "mt_format_append_int", len_helper = "mt_format_int_len", arg_ty = types.primitive("int"), len_kind = 0, precision = 0)
-
-
-## The result temp the next dynamic format string in this function gets, and
-## its `_cap`/`_off` companions: the host's
-## `build_dynamic_format_string_temp_setup` — `__fmt_<dest>` (with a `_2`/`_3`
-## suffix for a destination's repeats, via the per-function counter) when the
-## most recent local declaration in scope names one, else
-## `fresh_c_temp_name(ctx, "fmt_str")` (`__mt_fmt_str_N`).
-function format_string_result_base(ctx: ref[LoweringContext]) -> str:
-    if ctx.fmt_dest_name.len > 0:
-        # The env creates its counter slot at the first use (the host's
-        # `env[:fmt_counter] ||= {}`).
-        if not ctx.fmt_counter_visible:
-            ctx.fmt_counter.clear()
-            ctx.fmt_counter_visible = true
-        var n: ptr_uint = 1
-        let n_ptr = ctx.fmt_counter.get(ctx.fmt_dest_name)
-        if n_ptr != null:
-            n = unsafe: read(n_ptr) + 1
-        ctx.fmt_counter.set(ctx.fmt_dest_name, n)
-        var buf = string.String.create()
-        buf.append("__fmt_")
-        buf.append(ctx.fmt_dest_name)
-        if n > 1:
-            buf.append("_")
-            fmt.append_ptr_uint(ref_of(buf), n)
-        return buf.as_str()
-    return fresh_c_temp_name(ctx, "fmt_str")
-
-
-## The post-statement release of a dynamic format string's result (the host's
-## `mt_format_str_release` cleanup; emitted with nil line/path like the other
-## hoisted statements).
-function format_str_release_stmt(temp: ptr[ir.Expr]) -> ir.Stmt:
-    return ir.Stmt.stmt_expression(
-        expression = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_release", arguments = single_expr_span(temp), ty = types.primitive("void"))),
-        line = 0, source_path = "",
-    )
-
-
-## True when `stmt` is an `mt_format_str_release(...)` statement.
-function is_format_release_stmt(stmt: ir.Stmt) -> bool:
-    match stmt:
-        ir.Stmt.stmt_expression as es:
-            match unsafe: read(es.expression):
-                ir.Expr.expr_call as c:
-                    return c.callee == "mt_format_str_release"
-                _:
-                    pass
-        _:
-            pass
-    return false
-
-
-## Drop a window's format-string releases — the host's
-## `reject_format_releases_for_assignment`: a dynamic format string stored into
-## a `str`/`cstr` binding (or a struct containing one) transfers ownership of
-## its buffer, so its temp must not be released after the statement.
-function drop_format_release_cleanups(collected: HoistSaved) -> HoistSaved:
-    var kept = vec.Vec[ir.Stmt].create()
-    var i: ptr_uint = 0
-    while i < collected.cleanups.len:
-        let st = collected.cleanups.get(i) else:
-            break
-        if not is_format_release_stmt(unsafe: read(st)):
-            kept.push(unsafe: read(st))
-        i += 1
-    var result = collected
-    result.cleanups = kept
-    return result
-
-
-## True for a type that owns a dynamic format string's buffer when assigned to —
-## the host's `cstr_trackable_type?`/`struct_contains_string_field?`: `str`,
-## `cstr`, or a struct whose fields (recursively) contain one.
-function format_owning_target_type(ctx: ref[LoweringContext], ty: types.Type, depth: ptr_uint) -> bool:
-    if depth > 8:
-        return false
-    match ty:
-        types.Type.ty_str:
-            return true
-        types.Type.ty_primitive as p:
-            return p.name == "cstr"
-        types.Type.ty_named:
-            pass
-        types.Type.ty_imported:
-            pass
-        _:
-            return false
-    let fields = struct_fields_of(ctx, ty) else:
-        return false
-    var fi: ptr_uint = 0
-    while fi < fields.len:
-        if format_owning_target_type(ctx, unsafe: read(fields.data + fi).ty, depth + 1):
-            return true
-        fi += 1
-    return false
-
-
-## True when a local's value is backed by a C-string buffer that outlives the
-## enclosing statement — the host's `cstr_backed_storage_value?`: a `cstr`
-## local, or a `str` local whose value is a cstr-typed expression, a string
-## literal, a dynamic format string, or another cstr-backed local.
-function cstr_backed_binding(ctx: ref[LoweringContext], ty: types.Type, init: ptr[ast.Expr]?, value_expr: ptr[ir.Expr]) -> bool:
-    match ty:
-        types.Type.ty_primitive as p:
-            if p.name == "cstr":
-                return true
-        types.Type.ty_str:
-            # The lowered value is a `cstr`-typed expression, another
-            # cstr-backed local's read, or a dynamic format string's result temp
-            # (registered when the format was built) — the host's
-            # prepared-identifier check.
-            match ir_expr_type(value_expr):
-                types.Type.ty_primitive as vp:
-                    if vp.name == "cstr":
-                        return true
-                _:
-                    pass
-            if is_cstr_backed_lowered(ctx, value_expr):
-                return true
-            let ip = init else:
-                return false
-            return ast_expr_cstr_backed(ctx, ip)
-        _:
-            return false
-    return false
-
-
-## The host's `cstr_backed_expression?`: a *syntactic* predicate — a string
-## literal, a `cstr`-typed or cstr-backed local's read, or an `if`/`unsafe`
-## whose parts are all cstr-backed (`let t = if flag: "a" else: "b"` is
-## cstr-backed, so `draw_text(t, …)` passes `t.data` directly).
-function ast_expr_cstr_backed(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> bool:
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_string_literal:
-                return true
-            ast.Expr.expr_identifier as id:
-                match find_local_binding(ctx, id.name):
-                    Option.some as lb:
-                        match lb.value.ty:
-                            types.Type.ty_primitive as p:
-                                if p.name == "cstr":
-                                    return true
-                            _:
-                                pass
-                        return ctx.cstr_backed_names.contains(lb.value.c_name)
-                    Option.none:
-                        # A module constant whose compile-time value is a string
-                        # literal is cstr-backed (the host's
-                        # `binding.const_value.is_a?(String)`).
-                        match const_eval.try_evaluate_const_expr(ctx, ep):
-                            Option.some as cv:
-                                match cv.value:
-                                    comptime_types.ConstValue.cv_str:
-                                        return true
-                                    _:
-                                        return false
-                            Option.none:
-                                return false
-            ast.Expr.expr_if as iff:
-                return ast_expr_cstr_backed(ctx, iff.then_expr) and ast_expr_cstr_backed(ctx, iff.else_expr)
-            ast.Expr.expr_unsafe as u:
-                return ast_expr_cstr_backed(ctx, u.expression)
-            _:
-                return false
-
-
-## True when a lowered value is a cstr-backed local's read (or a format-string
-## temp), so a `str as cstr` foreign boundary can pass its `data` pointer
-## directly — the host's `cstr_backed_expression?` on the prepared identifier.
-function is_cstr_backed_lowered(ctx: ref[LoweringContext], ep: ptr[ir.Expr]) -> bool:
-    unsafe:
-        match read(ep):
-            ir.Expr.expr_name as n:
-                return ctx.cstr_backed_names.contains(n.name)
-            _:
-                return false
-
-
-## The host's `update_cstr_metadata_for_assignment!`: an assignment to a `str`
-## local refreshes whether its storage is still cstr-backed.  `= <cstr-backed
-## value>` keeps it; every other assignment and every compound assignment
-## clears it (`skybox_file_name = dropped_path` turns a literal-backed local
-## into a plain `str`, so a later `str as cstr` boundary must copy it).
-function update_cstr_metadata_for_assignment_mt(ctx: ref[LoweringContext], target: ptr[ast.Expr], value_ast: ptr[ast.Expr], value_ir: ptr[ir.Expr], operator: str) -> void:
-    unsafe:
-        match read(target):
-            ast.Expr.expr_identifier as id:
-                match find_local_binding(ctx, id.name):
-                    Option.some as lb:
-                        var backed = false
-                        if operator == "=":
-                            match lb.value.ty:
-                                types.Type.ty_primitive as p:
-                                    if p.name == "cstr":
-                                        backed = true
-                                types.Type.ty_str:
-                                    backed = is_cstr_backed_lowered(ctx, value_ir) or ast_expr_cstr_backed(ctx, value_ast)
-                                _:
-                                    pass
-                        if backed:
-                            ctx.cstr_backed_names.set(lb.value.c_name, true)
-                        else:
-                            let _removed = ctx.cstr_backed_names.remove(lb.value.c_name)
-                    Option.none:
-                        pass
-            _:
-                pass
-
-
-## Build a dynamic format string: the host's
-## `build_dynamic_format_string_temp_setup` — the interpolation temps first (in
-## part order, their nested setups included), then the capacity local (seeded
-## with the static text length), the per-interpolation length accumulations
-## (`cap = cap + len(...)`), the result local (`mt_format_str_make`) and the
-## write offset, then the append statements.  Returns the result temp's
-## identifier; the caller hoists `output` and owns the release.
-function build_format_string_dynamic(ctx: ref[LoweringContext], parts: span[ast.FormatStringPart], output: ref[vec.Vec[ir.Stmt]]) -> ptr[ir.Expr]:
-    let str_ty = types.Type.ty_str
-    let ptr_uint_ty = types.primitive("ptr_uint")
-    let base = format_string_result_base(ctx)
-    let cap_name = strings.join_two(base, "_cap")
-    let off_name = strings.join_two(base, "_off")
-    let result_c = base
-
-    # Pass 1: lower each interpolation into a typed temp.
-    var static_len: ptr_uint = 0
-    var temps = vec.Vec[str].create()
-    var plans = vec.Vec[FormatPlan].create()
-    var expected_lengths = vec.Vec[str].create()
-    var pi: ptr_uint = 0
-    while pi < parts.len:
-        match unsafe: read(parts.data + pi):
-            ast.FormatStringPart.fmt_text as t:
-                static_len += t.value.len
-            ast.FormatStringPart.fmt_expr as ex:
-                let lowered = lower_expr(ctx, ex.expression)
-                let val_ty = ir_expr_type(lowered)
-                let plan = fmt_plan(ctx, val_ty, ex.format_spec)
-                let temp_c = fresh_c_temp_name(ctx, "fmt_part")
-                var temp_ty: types.Type = plan.arg_ty
-                var temp_val: ptr[ir.Expr] = lowered
-                if plan.len_kind == 1:
-                    temp_ty = str_ty
-                else if plan.len_kind == 3:
-                    pass
-                else if not types.type_equals(ir_expr_type(lowered), plan.arg_ty):
-                    # The host's `cast_expression`: a cast is emitted only when
-                    # the lowered value's type differs from the append
-                    # argument's.
-                    temp_val = alloc_expr(ir.Expr.expr_cast(target_type = plan.arg_ty, expression = lowered, ty = plan.arg_ty))
-                output.push(ir.Stmt.stmt_local(name = temp_c, linkage_name = temp_c, ty = temp_ty, value = temp_val, line = 0, source_path = ""))
-                temps.push(temp_c)
-                plans.push(plan)
-                if plan.len_kind == 3:
-                    # The host's custom part computes its expected length into
-                    # `__mt_fmt_part_len_N` at the temp, before the capacity
-                    # accumulation.
-                    let len_c = fresh_c_temp_name(ctx, "fmt_part_len")
-                    let temp_ref = alloc_expr(ir.Expr.expr_name(name = temp_c, ty = temp_ty, pointer = Option[bool].some(value = false)))
-                    var hook_args = vec.Vec[ir.Expr].create()
-                    unsafe:
-                        hook_args.push(read(temp_ref))
-                    output.push(ir.Stmt.stmt_local(
-                        name = len_c,
-                        linkage_name = len_c,
-                        ty = ptr_uint_ty,
-                        value = alloc_expr(ir.Expr.expr_call(callee = plan.len_helper, arguments = hook_args.as_span(), ty = ptr_uint_ty)),
-                        line = 0,
-                        source_path = "",
-                    ))
-                    expected_lengths.push(len_c)
-                else:
-                    expected_lengths.push("")
-            _:
-                pass
-        pi += 1
-
-    # The capacity local (the static text's length), then one accumulation per
-    # interpolation (the host writes `cap = cap + len(...)`).
-    output.push(ir.Stmt.stmt_local(name = cap_name, linkage_name = cap_name, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-static_len, ty = ptr_uint_ty)), line = 0, source_path = ""))
-    var ai: ptr_uint = 0
-    while ai < temps.len():
-        let temp_c = temps.get(ai) else:
-            fatal(c"format string: missing interpolation temp")
-        let plan = plans.get(ai) else:
-            fatal(c"format string: missing interpolation plan")
-        var temp_ty: types.Type = unsafe: read(plan).arg_ty
-        if unsafe: read(plan).len_kind == 1:
-            temp_ty = str_ty
-        let temp_ref = alloc_expr(ir.Expr.expr_name(name = unsafe: read(temp_c), ty = temp_ty, pointer = Option[bool].some(value = false)))
-        var len_expr = fmt_len_expr(unsafe: read(plan), temp_ref, ptr_uint_ty)
-        if unsafe: read(plan).len_kind == 3:
-            let len_name_ptr = expected_lengths.get(ai) else:
-                fatal(c"format string: missing custom length")
-            len_expr = alloc_expr(ir.Expr.expr_name(name = unsafe: read(len_name_ptr), ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
-        let cap_ref = alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
-        output.push(ir.Stmt.stmt_assignment(
-            target = alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false))),
-            operator = "=",
-            value = alloc_expr(ir.Expr.expr_binary(operator = "+", left = cap_ref, right = len_expr, ty = ptr_uint_ty)),
-        ))
-        ai += 1
-
-    # Allocate the result buffer and reset the write offset.
-    var make_args = vec.Vec[ir.Expr].create()
-    unsafe:
-        make_args.push(read(alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))))
-    output.push(ir.Stmt.stmt_local(name = result_c, linkage_name = result_c, ty = str_ty, value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_make", arguments = make_args.as_span(), ty = str_ty)), line = 0, source_path = ""))
-    output.push(ir.Stmt.stmt_local(name = off_name, linkage_name = off_name, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
-
-    # Pass 2: append each part in order.
-    var expr_index: ptr_uint = 0
-    pi = 0
-    while pi < parts.len:
-        match unsafe: read(parts.data + pi):
-            ast.FormatStringPart.fmt_text as t:
-                var append_args = vec.Vec[ir.Expr].create()
-                unsafe:
-                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = Option[bool].some(value = false)))))
-                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))))
-                    append_args.push(read(alloc_expr(ir.Expr.expr_string_literal(value = t.value, ty = str_ty, cstring = false))))
-                output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false))), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_str", arguments = append_args.as_span(), ty = ptr_uint_ty))))
-            ast.FormatStringPart.fmt_expr:
-                let temp_ptr = temps.get(expr_index) else:
-                    fatal(c"format string: missing interpolation temp")
-                let plan_ptr = plans.get(expr_index) else:
-                    fatal(c"format string: missing interpolation plan")
-                let temp_c = unsafe: read(temp_ptr)
-                let plan = unsafe: read(plan_ptr)
-                expr_index += 1
-                var temp_ty: types.Type = plan.arg_ty
-                if plan.len_kind == 1:
-                    temp_ty = str_ty
-                if plan.len_kind == 3:
-                    # Custom hook: the host's slice form — a `String` view over
-                    # the result at `offset`, the hook call, the expected-length
-                    # check, the offset advance and the NUL terminator.
-                    let len_name_ptr = expected_lengths.get(expr_index - 1) else:
-                        fatal(c"format string: missing custom length")
-                    let part = FormatSinkPart(kind = 3, text = "", temp = temp_c, plan = plan, expected_length = unsafe: read(len_name_ptr))
-                    let result_ref = alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = Option[bool].some(value = false)))
-                    format_sink_buffer_part_stmts(ctx, output, part, result_ref, off_name)
-                    pi += 1
-                    continue
-                var append_args = vec.Vec[ir.Expr].create()
-                unsafe:
-                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = Option[bool].some(value = false)))))
-                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))))
-                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = temp_c, ty = temp_ty, pointer = Option[bool].some(value = false)))))
-                    if plan.len_kind == 2:
-                        append_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-(plan.precision), ty = types.primitive("int")))))
-                output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false))), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = plan.append_helper, arguments = append_args.as_span(), ty = ptr_uint_ty))))
-        pi += 1
-
-    return alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = Option[bool].some(value = false)))
-
-
-## The length expression for one interpolation temp, per its plan's `len_kind`.
-function fmt_len_expr(plan: FormatPlan, temp_ref: ptr[ir.Expr], ptr_uint_ty: types.Type) -> ptr[ir.Expr]:
-    if plan.len_kind == 1:
-        return alloc_expr(ir.Expr.expr_member(receiver = temp_ref, member = "len", ty = ptr_uint_ty))
-    if plan.len_kind == 3:
-        # Custom hook: `<Type>.format_len(value)` (by-value receiver).
-        var hook_args = vec.Vec[ir.Expr].create()
-        unsafe:
-            hook_args.push(read(temp_ref))
-        return alloc_expr(ir.Expr.expr_call(callee = plan.len_helper, arguments = hook_args.as_span(), ty = ptr_uint_ty))
-    var args = vec.Vec[ir.Expr].create()
-    unsafe:
-        args.push(read(temp_ref))
-    if plan.len_kind == 2:
-        unsafe:
-            args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-(plan.precision), ty = types.primitive("int")))))
-        return alloc_expr(ir.Expr.expr_call(callee = "mt_format_double_precision_len", arguments = args.as_span(), ty = ptr_uint_ty))
-    return alloc_expr(ir.Expr.expr_call(callee = plan.len_helper, arguments = args.as_span(), ty = ptr_uint_ty))
-
-
-# =============================================================================
-#  Explicit format sinks (`String`/`str_buffer` append_format/assign_format)
-#
-#  The host streams a statement-form format string into its destination instead
-#  of building a `str` and copying it (`lower_explicit_format_sink_expression_
-#  statement`, lowering/expressions.rb:488).  Three forms are recognised:
-#    - `std.fmt.append_format(ref, f"...")` / `assign_format`
-#    - `String.append_format(f"...")` / `assign_format`
-#    - `str_buffer[N].append_format(f"...")` / `assign_format`
-#  The dynamic form emits the parts' temps, copies `str`/`cstr` arguments whose
-#  buffer the sink may overwrite, then the destination-specific stream:
-#  `std_string_String_append`/`std_fmt_append_*` for a String, or a single
-#  `__mt_fmt_sink_offset_N` through a `str` view for a str_buffer.
-# =============================================================================
-
-
-## True when `t` is `std.string.String` (or a ref/pointer to it).
-function is_std_string_type(t: types.Type) -> bool:
-    var effective = t
-    if types.is_ref_type(effective) or types.is_raw_pointer(effective):
-        effective = types.pointer_element(effective)
-    match effective:
-        types.Type.ty_named as n:
-            return n.name == "String" and n.module_name == "std.string"
-        types.Type.ty_imported as im:
-            return im.name == "String" and im.module_name == "std.string"
-        _:
-            return false
-
-
-## A `String` sink method: the receiver may be a nominal `String` whose module
-## name the analyzer did not qualify, so also accept the resolved method's
-## `std_string_String_*` linkage (a user struct named `String` resolves to its
-## own module prefix and is not treated as a sink).
-function is_std_string_sink_method(ctx: ref[LoweringContext], receiver_ty: types.Type, method_name: str) -> bool:
-    if is_std_string_type(receiver_ty):
-        return true
-    match resolve_method_info(ctx, receiver_ty, method_name):
-        Option.some as mi:
-            return mi.value.c_name.starts_with("std_string_String_")
-        Option.none:
-            return false
-
-
-## The `data` member's type: the host's `str_buffer_storage_capacity` is `N + 1`.
-function str_buffer_data_member_type(cap: long) -> types.Type:
-    return types.Type.ty_generic(name = "array", args = sp_type2(types.primitive("char"), types.literal_int(cap + 1)))
-
-
-struct FormatSinkInfo:
-    is_assign: bool
-    is_buffer: bool
-    sink_ep: ptr[ast.Expr]
-    format_parts: span[ast.FormatStringPart]
-    ## `String.append_format` passes its receiver through the editable-method
-    ## borrow; `std.fmt.append_format` uses the declared `ref[String]` parameter.
-    method_form: bool
-
-
-variant FormatSinkTarget:
-    fst_string(value: ptr[ir.Expr])
-    fst_buffer(
-        receiver: ptr[ir.Expr],
-        data_pointer: ptr[ir.Expr],
-        len_pointer: ptr[ir.Expr],
-        dirty_pointer: ptr[ir.Expr],
-        capacity: ptr[ir.Expr],
-    )
-
-
-struct FormatSinkPart:
-    kind: int  # 0 text, 1 expression, 2 precision, 3 custom hook
-    text: str
-    temp: str
-    plan: FormatPlan
-    expected_length: str
-
-
-## Recognise a statement-form explicit format sink (host
-## `explicit_format_sink_call_info`).
-function explicit_format_sink_info(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[FormatSinkInfo]:
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_call as call:
-                match read(call.callee):
-                    ast.Expr.expr_member_access as ma:
-                        # `std.fmt.append_format(ref, f"...")` / `assign_format`.
-                        if call.args.len == 2:
-                            match read(ma.receiver):
-                                ast.Expr.expr_identifier as id:
-                                    let imp = ctx.analysis.imports.get(id.name)
-                                    if imp != null and read(imp) == "std.fmt":
-                                        if ma.member_name == "append_format" or ma.member_name == "assign_format":
-                                            let fmt_arg = read(call.args.data + 1).arg_value
-                                            match read(fmt_arg):
-                                                ast.Expr.expr_format_string as fs:
-                                                    return Option[FormatSinkInfo].some(value = FormatSinkInfo(
-                                                        is_assign = ma.member_name == "assign_format",
-                                                        is_buffer = false,
-                                                        sink_ep = read(call.args.data + 0).arg_value,
-                                                        format_parts = fs.parts,
-                                                        method_form = false,
-                                                    ))
-                                                _:
-                                                    pass
-                                _:
-                                    pass
-                        # `String.append_format(f"...")` / `str_buffer[N].…`.
-                        # Only the `*_format` methods are sinks; `.assign` and
-                        # `.append` take a `str` and keep the ordinary path.
-                        if call.args.len == 1 and (ma.member_name == "append_format" or ma.member_name == "assign_format"):
-                            let fmt_arg = read(call.args.data + 0).arg_value
-                            match read(fmt_arg):
-                                ast.Expr.expr_format_string as fs:
-                                    let recv_ty = method_receiver_type(ctx, ma.receiver)
-                                    if is_str_buffer_type(recv_ty):
-                                        return Option[FormatSinkInfo].some(value = FormatSinkInfo(
-                                            is_assign = ma.member_name == "assign_format",
-                                            is_buffer = true,
-                                            sink_ep = ma.receiver,
-                                            format_parts = fs.parts,
-                                            method_form = false,
-                                        ))
-                                    if is_std_string_sink_method(ctx, recv_ty, ma.member_name):
-                                        return Option[FormatSinkInfo].some(value = FormatSinkInfo(
-                                            is_assign = ma.member_name == "assign_format",
-                                            is_buffer = false,
-                                            sink_ep = ma.receiver,
-                                            format_parts = fs.parts,
-                                            method_form = true,
-                                        ))
-                                _:
-                                    pass
-                    _:
-                        pass
-            _:
-                pass
-    return Option[FormatSinkInfo].none
-
-
-## Lower the sink destination (host `explicit_format_sink_target`).
-function lower_format_sink_target(ctx: ref[LoweringContext], info: FormatSinkInfo) -> FormatSinkTarget:
-    let char_ty = types.primitive("char")
-    let ptr_uint_ty = types.primitive("ptr_uint")
-    let bool_ty = ctx.bool_ty
-    let char_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(char_ty))
-    let len_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(ptr_uint_ty))
-    let dirty_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(bool_ty))
-    if info.is_buffer:
-        let recv = lower_expr(ctx, info.sink_ep)
-        let recv_ty = ir_expr_type(recv)
-        let cap = str_buffer_capacity_of(recv_ty)
-        let data_member = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "data", ty = str_buffer_data_member_type(cap)))
-        let data_elem = alloc_expr(ir.Expr.expr_index(
-            receiver = data_member,
-            index = alloc_expr(ir.Expr.expr_integer_literal(value = 0z, ty = ptr_uint_ty)),
-            ty = char_ty,
-        ))
-        let data_addr = alloc_expr(ir.Expr.expr_address_of(expression = data_elem, ty = char_ptr_ty))
-        let len_addr = alloc_expr(ir.Expr.expr_address_of(
-            expression = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "len", ty = ptr_uint_ty)),
-            ty = len_ptr_ty,
-        ))
-        let dirty_addr = alloc_expr(ir.Expr.expr_address_of(
-            expression = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "dirty", ty = bool_ty)),
-            ty = dirty_ptr_ty,
-        ))
-        return FormatSinkTarget.fst_buffer(
-            receiver = recv,
-            data_pointer = data_addr,
-            len_pointer = len_addr,
-            dirty_pointer = dirty_addr,
-            capacity = alloc_expr(ir.Expr.expr_integer_literal(value = cap, ty = ptr_uint_ty)),
-        )
-    let recv = lower_expr(ctx, info.sink_ep)
-    var sink_value = recv
-    if info.method_form:
-        match build_receiver_arg(ctx, recv, ast.MethodKind.mk_editable, false):
-            Option.some as arg:
-                sink_value = arg.value
-            Option.none:
-                pass
-    else:
-        let fn_name = if info.is_assign: "assign_format" else: "append_format"
-        sink_value = coerce_arg_to_ref_param(find_imported_fn_sig(ctx, "std.fmt", fn_name), 0, recv)
-    return FormatSinkTarget.fst_string(value = sink_value)
-
-
-## Lower every format part into a typed temp (the host's pass 1 in
-## `build_dynamic_format_string_parts`).  Text parts carry their literal; an
-## interpolation gets a `__mt_fmt_part_N` temp and a `FormatPlan`.  A custom
-## hook also gets the host's `__mt_fmt_part_len_N` expected-length local.
-function build_format_sink_parts(
-    ctx: ref[LoweringContext],
-    parts: span[ast.FormatStringPart],
-    setup: ref[vec.Vec[ir.Stmt]],
-) -> vec.Vec[FormatSinkPart]:
-    var result_parts = vec.Vec[FormatSinkPart].create()
-    let str_ty = types.Type.ty_str
-    let ptr_uint_ty = types.primitive("ptr_uint")
-    var pi: ptr_uint = 0
-    while pi < parts.len:
-        match unsafe: read(parts.data + pi):
-            ast.FormatStringPart.fmt_text as t:
-                if t.value.len > 0:
-                    result_parts.push(FormatSinkPart(
-                        kind = 0,
-                        text = t.value,
-                        temp = "",
-                        plan = FormatPlan(append_helper = "", len_helper = "", arg_ty = types.Type.ty_error, len_kind = 0, precision = 0),
-                        expected_length = "",
-                    ))
-            ast.FormatStringPart.fmt_expr as ex:
-                let lowered = lower_expr(ctx, ex.expression)
-                let val_ty = ir_expr_type(lowered)
-                let plan = fmt_plan(ctx, val_ty, ex.format_spec)
-                let temp_c = fresh_c_temp_name(ctx, "fmt_part")
-                var temp_ty = plan.arg_ty
-                var temp_val = lowered
-                if plan.len_kind == 1:
-                    temp_ty = str_ty
-                else if plan.len_kind == 3:
-                    pass
-                else if not types.type_equals(ir_expr_type(lowered), plan.arg_ty):
-                    temp_val = alloc_expr(ir.Expr.expr_cast(target_type = plan.arg_ty, expression = lowered, ty = plan.arg_ty))
-                setup.push(ir.Stmt.stmt_local(name = temp_c, linkage_name = temp_c, ty = temp_ty, value = temp_val, line = 0, source_path = ""))
-                var kind = 1
-                if plan.len_kind == 2:
-                    kind = 2
-                else if plan.len_kind == 3:
-                    kind = 3
-                var expected_length = ""
-                if plan.len_kind == 3:
-                    let len_c = fresh_c_temp_name(ctx, "fmt_part_len")
-                    let temp_ref = alloc_expr(ir.Expr.expr_name(name = temp_c, ty = temp_ty, pointer = Option[bool].some(value = false)))
-                    var hook_args = vec.Vec[ir.Expr].create()
-                    unsafe:
-                        hook_args.push(read(temp_ref))
-                    setup.push(ir.Stmt.stmt_local(
-                        name = len_c,
-                        linkage_name = len_c,
-                        ty = ptr_uint_ty,
-                        value = alloc_expr(ir.Expr.expr_call(callee = plan.len_helper, arguments = hook_args.as_span(), ty = ptr_uint_ty)),
-                        line = 0,
-                        source_path = "",
-                    ))
-                    expected_length = len_c
-                result_parts.push(FormatSinkPart(kind = kind, text = "", temp = temp_c, plan = plan, expected_length = expected_length))
-        pi += 1
-    return result_parts
-
-
-## Copy the parts whose buffer the sink may overwrite: a `str` argument for any
-## sink, a `cstr` argument for a `str_buffer` sink (the host's
-## `copy_explicit_format_sink_str_parts`).  Returns the rewritten parts.
-function copy_format_sink_parts(
-    ctx: ref[LoweringContext],
-    parts: vec.Vec[FormatSinkPart],
-    is_buffer: bool,
-    setup: ref[vec.Vec[ir.Stmt]],
-    cleanups: ref[vec.Vec[ir.Stmt]],
-) -> vec.Vec[FormatSinkPart]:
-    var copied = vec.Vec[FormatSinkPart].create()
-    let str_ty = types.Type.ty_str
-    let ptr_uint_ty = types.primitive("ptr_uint")
-    let void_ty = types.primitive("void")
-    var i: ptr_uint = 0
-    while i < parts.len:
-        let part_ptr = parts.get(i) else:
-            break
-        var part = unsafe: read(part_ptr)
-        let is_str_part = part.kind == 1 and part.plan.append_helper == "mt_format_append_str"
-        let is_cstr_part = part.kind == 1 and is_buffer and part.plan.append_helper == "mt_format_append_cstr"
-        if is_str_part or is_cstr_part:
-            let param_ty = if is_cstr_part: types.primitive("cstr") else: str_ty
-            let param = alloc_expr(ir.Expr.expr_name(name = part.temp, ty = param_ty, pointer = Option[bool].some(value = false)))
-            let copy_c = fresh_c_temp_name(ctx, "fmt_sink_str")
-            let copy_ref = alloc_expr(ir.Expr.expr_name(name = copy_c, ty = str_ty, pointer = Option[bool].some(value = false)))
-            ctx.cstr_backed_names.set(copy_c, true)
-            var len_expr = alloc_expr(ir.Expr.expr_member(receiver = param, member = "len", ty = ptr_uint_ty))
-            if is_cstr_part:
-                var len_args = vec.Vec[ir.Expr].create()
-                unsafe:
-                    len_args.push(read(param))
-                len_expr = alloc_expr(ir.Expr.expr_call(callee = "mt_format_cstr_len", arguments = len_args.as_span(), ty = ptr_uint_ty))
-            var make_args = vec.Vec[ir.Expr].create()
-            unsafe:
-                make_args.push(read(len_expr))
-            setup.push(ir.Stmt.stmt_local(
-                name = copy_c,
-                linkage_name = copy_c,
-                ty = str_ty,
-                value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_make", arguments = make_args.as_span(), ty = str_ty)),
-                line = 0,
-                source_path = "",
-            ))
-            let append_callee = if is_cstr_part: "mt_format_append_cstr" else: "mt_format_append_str"
-            setup.push(ir.Stmt.stmt_expression(
-                expression = alloc_expr(ir.Expr.expr_call(
-                    callee = append_callee,
-                    arguments = sp_expr3(copy_ref, alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), param),
-                    ty = ptr_uint_ty,
-                )),
-                line = 0,
-                source_path = "",
-            ))
-            var release_args = vec.Vec[ir.Expr].create()
-            unsafe:
-                release_args.push(read(copy_ref))
-            cleanups.push(ir.Stmt.stmt_expression(
-                expression = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_release", arguments = release_args.as_span(), ty = void_ty)),
-                line = 0,
-                source_path = "",
-            ))
-            part.temp = copy_c
-            part.plan = FormatPlan(append_helper = "mt_format_append_str", len_helper = part.plan.len_helper, arg_ty = str_ty, len_kind = 1, precision = 0)
-        copied.push(part)
-        i += 1
-    return copied
-
-
-## The `std.fmt` append callee for a plan: `append` uses the String method,
-## `append_cstr` the cstr helper, everything else `std_fmt_<helper>`.
-function format_sink_string_callee(helper: str) -> str:
-    if helper == "mt_format_append_str":
-        return "std_string_String_append"
-    if helper == "mt_format_append_cstr":
-        return "std_fmt_append_cstr"
-    let prefix = "mt_format_"
-    return strings.join_two("std_fmt_", helper.slice(prefix.len, helper.len - prefix.len))
-
-
-## One String-sink append call (host `explicit_format_sink_append_call`).
-function format_sink_string_append_call(part: FormatSinkPart, sink_value: ptr[ir.Expr]) -> ptr[ir.Expr]:
-    let void_ty = types.primitive("void")
-    let int_ty = types.primitive("int")
-    if part.kind == 0:
-        return alloc_expr(ir.Expr.expr_call(
-            callee = "std_string_String_append",
-            arguments = sp_expr2(sink_value, alloc_expr(ir.Expr.expr_string_literal(value = part.text, ty = types.Type.ty_str, cstring = false))),
-            ty = void_ty,
-        ))
-    let temp_ref = alloc_expr(ir.Expr.expr_name(name = part.temp, ty = part.plan.arg_ty, pointer = Option[bool].some(value = false)))
-    if part.kind == 2:
-        return alloc_expr(ir.Expr.expr_call(
-            callee = "std_fmt_append_double_precision",
-            arguments = sp_expr3(sink_value, temp_ref, alloc_expr(ir.Expr.expr_integer_literal(value = long<-(part.plan.precision), ty = int_ty))),
-            ty = void_ty,
-        ))
-    if part.kind == 3:
-        return alloc_expr(ir.Expr.expr_call(callee = part.plan.append_helper, arguments = sp_expr2(temp_ref, sink_value), ty = void_ty))
-    return alloc_expr(ir.Expr.expr_call(callee = format_sink_string_callee(part.plan.append_helper), arguments = sp_expr2(sink_value, temp_ref), ty = void_ty))
-
-
-## Append one part into a str_buffer sink through the `str` view `{data, len=cap}`,
-## advancing `offset_name` (host `format_string_part_append_statements`).
-function format_sink_buffer_part_stmts(
-    ctx: ref[LoweringContext],
-    stmts: ref[vec.Vec[ir.Stmt]],
-    part: FormatSinkPart,
-    view: ptr[ir.Expr],
-    offset_name: str,
-) -> void:
-    let ptr_uint_ty = types.primitive("ptr_uint")
-    let char_ty = types.primitive("char")
-    let void_ty = types.primitive("void")
-    let int_ty = types.primitive("int")
-    let offset_ref = alloc_expr(ir.Expr.expr_name(name = offset_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
-    if part.kind == 0:
-        var args = vec.Vec[ir.Expr].create()
-        unsafe:
-            args.push(read(view))
-            args.push(read(offset_ref))
-            args.push(read(alloc_expr(ir.Expr.expr_string_literal(value = part.text, ty = types.Type.ty_str, cstring = false))))
-        stmts.push(ir.Stmt.stmt_assignment(
-            target = offset_ref,
-            operator = "=",
-            value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_str", arguments = args.as_span(), ty = ptr_uint_ty)),
-        ))
-        return
-    let temp_ref = alloc_expr(ir.Expr.expr_name(name = part.temp, ty = part.plan.arg_ty, pointer = Option[bool].some(value = false)))
-    if part.kind == 2:
-        var prec_args = vec.Vec[ir.Expr].create()
-        unsafe:
-            prec_args.push(read(view))
-            prec_args.push(read(offset_ref))
-            prec_args.push(read(temp_ref))
-            prec_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-(part.plan.precision), ty = int_ty))))
-        stmts.push(ir.Stmt.stmt_assignment(
-            target = offset_ref,
-            operator = "=",
-            value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_double_precision", arguments = prec_args.as_span(), ty = ptr_uint_ty)),
-        ))
-        return
-    if part.kind == 3:
-        # The host's custom-hook slice: build a `String` view over the buffer at
-        # `view.data + offset`, call `<Type>.append_format(value, &out)`, verify
-        # the hook wrote exactly the expected length, advance the offset and
-        # NUL-terminate.
-        let string_ty = types.Type.ty_imported(module_name = "std.string", name = "String", args = span[types.Type]())
-        let ref_string_ty = types.Type.ty_generic(name = "ref", args = sp_type(string_ty))
-        let ubyte_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("ubyte")))
-        let data_field_ty = types.Type.ty_nullable(base = types.alloc_type(ubyte_ptr_ty))
-        let char_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(char_ty))
-        let view_data = alloc_expr(ir.Expr.expr_member(receiver = view, member = "data", ty = char_ptr_ty))
-        let slice_sum = alloc_expr(ir.Expr.expr_binary(operator = "+", left = view_data, right = offset_ref, ty = char_ptr_ty))
-        let slice_data = alloc_expr(ir.Expr.expr_cast(target_type = data_field_ty, expression = slice_sum, ty = data_field_ty))
-        let output_name = fresh_c_temp_name(ctx, "fmt_part_output")
-        let output_value = alloc_expr(ir.Expr.expr_name(name = output_name, ty = string_ty, pointer = Option[bool].some(value = false)))
-        let expected_length = alloc_expr(ir.Expr.expr_name(name = part.expected_length, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
-        var fields = vec.Vec[ir.AggregateField].create()
-        fields.push(ir.AggregateField(name = "data", value = slice_data))
-        fields.push(ir.AggregateField(name = "len", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))))
-        fields.push(ir.AggregateField(name = "capacity", value = expected_length))
-        fields.push(ir.AggregateField(name = "owns_storage", value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = ctx.bool_ty))))
-        stmts.push(ir.Stmt.stmt_local(
-            name = output_name,
-            linkage_name = output_name,
-            ty = string_ty,
-            value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = string_ty, fields = fields.as_span())),
-            line = 0,
-            source_path = "",
-        ))
-        var hook_args = vec.Vec[ir.Expr].create()
-        unsafe:
-            hook_args.push(read(temp_ref))
-            hook_args.push(read(alloc_expr(ir.Expr.expr_address_of(expression = output_value, ty = ref_string_ty))))
-        stmts.push(ir.Stmt.stmt_expression(
-            expression = alloc_expr(ir.Expr.expr_call(callee = part.plan.append_helper, arguments = hook_args.as_span(), ty = void_ty)),
-            line = 0,
-            source_path = "",
-        ))
-        let output_len = alloc_expr(ir.Expr.expr_member(receiver = output_value, member = "len", ty = ptr_uint_ty))
-        var fatal_args = vec.Vec[ir.Expr].create()
-        unsafe:
-            fatal_args.push(read(alloc_expr(ir.Expr.expr_string_literal(value = "custom format hook length mismatch", ty = types.primitive("cstr"), cstring = true))))
-        var then_body = vec.Vec[ir.Stmt].create()
-        then_body.push(ir.Stmt.stmt_expression(
-            expression = alloc_expr(ir.Expr.expr_call(callee = "mt_fatal", arguments = fatal_args.as_span(), ty = void_ty)),
-            line = 0,
-            source_path = "",
-        ))
-        stmts.push(ir.Stmt.stmt_if(
-            condition = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = output_len, right = expected_length, ty = ctx.bool_ty)),
-            then_body = then_body.as_span(),
-            else_body = Option[span[ir.Stmt]].none,
-        ))
-        let offset_next = alloc_expr(ir.Expr.expr_binary(operator = "+", left = offset_ref, right = output_len, ty = ptr_uint_ty))
-        stmts.push(ir.Stmt.stmt_assignment(target = offset_ref, operator = "=", value = offset_next))
-        stmts.push(ir.Stmt.stmt_assignment(
-            target = alloc_expr(ir.Expr.expr_index(receiver = view_data, index = offset_ref, ty = char_ty)),
-            operator = "=",
-            value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = char_ty)),
-        ))
-        return
-    var args = vec.Vec[ir.Expr].create()
-    unsafe:
-        args.push(read(view))
-        args.push(read(offset_ref))
-        args.push(read(temp_ref))
-    stmts.push(ir.Stmt.stmt_assignment(
-        target = offset_ref,
-        operator = "=",
-        value = alloc_expr(ir.Expr.expr_call(callee = part.plan.append_helper, arguments = args.as_span(), ty = ptr_uint_ty)),
-    ))
-
-
-## The static-format sink call (host `explicit_format_sink_runtime_call`).
-function explicit_format_sink_runtime_call(
-    ctx: ref[LoweringContext],
-    is_assign: bool,
-    target: FormatSinkTarget,
-    text_value: ptr[ir.Expr],
-) -> ptr[ir.Expr]:
-    let void_ty = types.primitive("void")
-    match target:
-        FormatSinkTarget.fst_buffer as buf:
-            let callee = if is_assign: "mt_str_buffer_assign" else: "mt_str_buffer_append"
-            var args = vec.Vec[ir.Expr].create()
-            unsafe:
-                args.push(read(text_value))
-                args.push(read(buf.data_pointer))
-                args.push(read(buf.capacity))
-                args.push(read(buf.len_pointer))
-                args.push(read(buf.dirty_pointer))
-            return alloc_expr(ir.Expr.expr_call(callee = callee, arguments = args.as_span(), ty = void_ty))
-        FormatSinkTarget.fst_string as s:
-            let callee = if is_assign: "std_string_String_assign" else: "std_string_String_append"
-            return alloc_expr(ir.Expr.expr_call(callee = callee, arguments = sp_expr2(s.value, text_value), ty = void_ty))
-
-
-## Emit the dynamic sink stream (host `lower_explicit_format_sink_expression_
-## statement`'s non-static branch).
-function emit_format_sink_dynamic(
-    ctx: ref[LoweringContext],
-    stmts: ref[vec.Vec[ir.Stmt]],
-    info: FormatSinkInfo,
-    target: FormatSinkTarget,
-    parts: vec.Vec[FormatSinkPart],
-    line: ptr_uint,
-    path: str,
-) -> void:
-    let ptr_uint_ty = types.primitive("ptr_uint")
-    if not info.is_buffer:
-        match target:
-            FormatSinkTarget.fst_string as s:
-                if info.is_assign:
-                    stmts.push(ir.Stmt.stmt_expression(
-                        expression = alloc_expr(ir.Expr.expr_call(callee = "std_string_String_clear", arguments = single_expr_span(s.value), ty = types.primitive("void"))),
-                        line = line,
-                        source_path = path,
-                    ))
-                var i: ptr_uint = 0
-                while i < parts.len:
-                    let part_ptr = parts.get(i) else:
-                        break
-                    stmts.push(ir.Stmt.stmt_expression(
-                        expression = format_sink_string_append_call(unsafe: read(part_ptr), s.value),
-                        line = line,
-                        source_path = path,
-                    ))
-                    i += 1
-            _:
-                pass
-        return
-    match target:
-        FormatSinkTarget.fst_buffer as buf:
-            if info.is_assign:
-                var clear_args = vec.Vec[ir.Expr].create()
-                unsafe:
-                    clear_args.push(read(buf.data_pointer))
-                    clear_args.push(read(buf.capacity))
-                    clear_args.push(read(buf.len_pointer))
-                    clear_args.push(read(buf.dirty_pointer))
-                stmts.push(ir.Stmt.stmt_expression(
-                    expression = alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_clear", arguments = clear_args.as_span(), ty = types.primitive("void"))),
-                    line = line,
-                    source_path = path,
-                ))
-            let offset_name = fresh_c_temp_name(ctx, "fmt_sink_offset")
-            var offset_init: ptr[ir.Expr] = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))
-            if not info.is_assign:
-                var len_args = vec.Vec[ir.Expr].create()
-                unsafe:
-                    len_args.push(read(buf.data_pointer))
-                    len_args.push(read(buf.capacity))
-                    len_args.push(read(buf.len_pointer))
-                    len_args.push(read(buf.dirty_pointer))
-                offset_init = alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_len", arguments = len_args.as_span(), ty = ptr_uint_ty))
-            stmts.push(ir.Stmt.stmt_local(name = offset_name, linkage_name = offset_name, ty = ptr_uint_ty, value = offset_init, line = 0, source_path = ""))
-            var view_fields = vec.Vec[ir.AggregateField].create()
-            view_fields.push(ir.AggregateField(name = "data", value = buf.data_pointer))
-            view_fields.push(ir.AggregateField(name = "len", value = buf.capacity))
-            let view = alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_str, fields = view_fields.as_span()))
-            var i: ptr_uint = 0
-            while i < parts.len:
-                let part_ptr = parts.get(i) else:
-                    break
-                format_sink_buffer_part_stmts(ctx, stmts, unsafe: read(part_ptr), view, offset_name)
-                i += 1
-            stmts.push(ir.Stmt.stmt_assignment(
-                target = alloc_expr(ir.Expr.expr_unary(
-                    operator = "*",
-                    operand = buf.len_pointer,
-                    ty = ptr_uint_ty,
-                )),
-                operator = "=",
-                value = alloc_expr(ir.Expr.expr_name(name = offset_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false))),
-            ))
-        _:
-            pass
-
-
-## Lower a statement-form explicit format sink.  Returns false when the
-## expression is not a sink, so the ordinary expression-statement path runs.
-function lower_explicit_format_sink_stmt(
-    ctx: ref[LoweringContext],
-    output: ref[vec.Vec[ir.Stmt]],
-    ep: ptr[ast.Expr],
-    line: ptr_uint,
-) -> bool:
-    let info = explicit_format_sink_info(ctx, ep) else:
-        return false
-    let base = output.len()
-    let saved = begin_stmt_setup(ctx, HoistMode.hm_value)
-    ctx.hoist_root_ep = ep
-    let sink_cleanup_start = ctx.hoist_cleanups.len
-    let target = lower_format_sink_target(ctx, info)
-    let sink_cleanup_end = ctx.hoist_cleanups.len
-    if format_string_all_static(info.format_parts):
-        let text = format_string_static_literal(info.format_parts)
-        ctx.hoist_stmts.push(ir.Stmt.stmt_expression(
-            expression = explicit_format_sink_runtime_call(ctx, info.is_assign, target, text),
-            line = line,
-            source_path = ctx.analysis.source_path,
-        ))
-    else:
-        var parts = build_format_sink_parts(ctx, info.format_parts, ref_of(ctx.hoist_stmts))
-        let part_cleanup_end = ctx.hoist_cleanups.len
-        var copy_cleanups = vec.Vec[ir.Stmt].create()
-        let copied = copy_format_sink_parts(ctx, parts, info.is_buffer, ref_of(ctx.hoist_stmts), ref_of(copy_cleanups))
-        emit_format_sink_dynamic(ctx, ref_of(ctx.hoist_stmts), info, target, copied, line, ctx.analysis.source_path)
-        let collected = collect_stmt_setup(ctx, saved)
-        emit_hoist_setup(output, base, collected)
-        var ci: ptr_uint = 0
-        while ci < copy_cleanups.len:
-            let stmt = copy_cleanups.get(ci) else:
-                break
-            output.push(unsafe: read(stmt))
-            ci += 1
-        ci = sink_cleanup_start
-        while ci < sink_cleanup_end:
-            let stmt = collected.cleanups.get(ci) else:
-                break
-            output.push(unsafe: read(stmt))
-            ci += 1
-        ci = part_cleanup_end
-        while ci < collected.cleanups.len:
-            let stmt = collected.cleanups.get(ci) else:
-                break
-            output.push(unsafe: read(stmt))
-            ci += 1
-        return true
-    let collected = collect_stmt_setup(ctx, saved)
-    emit_hoist_setup(output, base, collected)
-    var ci: ptr_uint = 0
-    while ci < collected.cleanups.len:
-        let stmt = collected.cleanups.get(ci) else:
-            break
-        output.push(unsafe: read(stmt))
-        ci += 1
-    return true
-
-
-
-
-
-## Map a type to its format-length helper name.
-function fmt_len_helper_name(expr: ptr[ir.Expr]) -> str:
-    return "mt_format_int_len"
-
-
-## Map a type to its format-append helper name.
-function fmt_append_helper_name(expr: ptr[ir.Expr]) -> str:
-    let t = ir_expr_type(expr)
-    if types.is_integer_type(t):
-        return "mt_format_append_int"
-    match t:
-        types.Type.ty_str:
-            return "mt_format_append_str"
-        _:
-            return "mt_format_append_int"
 
 
 public function attribute_application_name_is(app: ast.AttributeApplication, name: str) -> bool:
@@ -26378,12 +25231,12 @@ function lower_async_local(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
     while fci < hoist_collected.cleanups.len:
         let fcp = hoist_collected.cleanups.get(fci) else:
             break
-        if is_format_release_stmt(unsafe: read(fcp)):
+        if format.is_format_release_stmt(unsafe: read(fcp)):
             has_format_release = true
         fci += 1
     if has_format_release:
         async_record_format_str_field(ctx, field_name)
-        local_cleanups = drop_format_release_cleanups(hoist_collected)
+        local_cleanups = format.drop_format_release_cleanups(hoist_collected)
     record_or_emit_local_cleanups(ctx, output, local_cleanups.cleanups)
 
 
