@@ -13,6 +13,7 @@ import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 
 import mtc.lowering.comptime_types as comptime_types
+import mtc.lowering.const_eval as const_eval
 import mtc.lowering.lowering as lowering
 
 
@@ -224,7 +225,7 @@ function comptime_enum_member_value(ctx: ref[lowering.LoweringContext], type_nam
                 file = ctx.analysis.source_file
             else:
                 file = read(ctx.program_analyses.data + (fi - 1)).source_file
-        let found = lowering.enum_member_value_in_file(ctx, file, type_name, member_name)
+        let found = const_eval.enum_member_value_in_file(ctx, file, type_name, member_name)
         match found:
             Option.some as v:
                 return v.value
@@ -864,7 +865,7 @@ function const_flow_stmt(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Ma
             ast.Stmt.stmt_ret as r:
                 let val_ptr = r.value else:
                     return comptime_types.ConstFlow.cf_value(value = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty)))
-                match lowering.try_const_value_ir(ctx, val_ptr, env):
+                match const_eval.try_const_value_ir(ctx, val_ptr, env):
                     Option.some as v:
                         return comptime_types.ConstFlow.cf_value(value = v.value)
                     Option.none:
@@ -878,13 +879,13 @@ function const_flow_stmt(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Ma
             ast.Stmt.stmt_local as loc:
                 let init_ptr = loc.value else:
                     return comptime_types.ConstFlow.cf_fallthrough
-                match lowering.try_const_value_ir(ctx, init_ptr, env):
+                match const_eval.try_const_value_ir(ctx, init_ptr, env):
                     Option.some as lv:
                         return const_bind_local(ctx, env, loc.name, loc.destructure_bindings, loc.else_binding, loc.else_body, lv.value)
                     Option.none:
                         return comptime_types.ConstFlow.cf_stuck
             ast.Stmt.stmt_assignment as asg:
-                match lowering.try_const_value_ir(ctx, asg.value, env):
+                match const_eval.try_const_value_ir(ctx, asg.value, env):
                     Option.some as rv:
                         match const_assign_target(ctx, env, asg.target, asg.operator, rv.value):
                             Option.some:
@@ -894,7 +895,7 @@ function const_flow_stmt(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Ma
                     Option.none:
                         return comptime_types.ConstFlow.cf_stuck
             ast.Stmt.stmt_expression as ex:
-                match lowering.try_const_value_ir(ctx, ex.expression, env):
+                match const_eval.try_const_value_ir(ctx, ex.expression, env):
                     Option.some:
                         return comptime_types.ConstFlow.cf_fallthrough
                     Option.none:
@@ -1200,7 +1201,7 @@ function const_iterable_values(ctx: ref[lowering.LoweringContext], env: ref[map_
                 pass
             _:
                 pass
-    match lowering.try_const_value_ir(ctx, ep, env):
+    match const_eval.try_const_value_ir(ctx, ep, env):
         Option.some as v:
             unsafe:
                 match read(v.value):
@@ -1226,7 +1227,7 @@ function const_iterable_values(ctx: ref[lowering.LoweringContext], env: ref[map_
 
 
 function const_flow_match_stmt(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> comptime_types.ConstFlow:
-    match lowering.try_const_value_ir(ctx, scrutinee, env):
+    match const_eval.try_const_value_ir(ctx, scrutinee, env):
         Option.some as sv:
             var ai: ptr_uint = 0
             while ai < arms.len:
@@ -1258,7 +1259,7 @@ public function const_match_pattern(ctx: ref[lowering.LoweringContext], env: ref
                     return Option[bool].some(value = true)
             _:
                 pass
-    match lowering.try_const_value_ir(ctx, pp, env):
+    match const_eval.try_const_value_ir(ctx, pp, env):
         Option.some as pv:
             return const_value_eq_ir(pv.value, value)
         Option.none:
@@ -1293,7 +1294,7 @@ function const_value_eq_ir(a: ptr[ir.Expr], b: ptr[ir.Expr]) -> Option[bool]:
 
 
 public function const_env_eval_int(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[long]:
-    match lowering.try_const_value_ir(ctx, ep, env):
+    match const_eval.try_const_value_ir(ctx, ep, env):
         Option.some as v:
             unsafe:
                 match read(v.value):
@@ -1311,7 +1312,7 @@ public function const_env_eval_int(ctx: ref[lowering.LoweringContext], env: ref[
 
 
 public function const_env_eval_bool(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[bool]:
-    match lowering.try_const_value_ir(ctx, ep, env):
+    match const_eval.try_const_value_ir(ctx, ep, env):
         Option.some as v:
             unsafe:
                 match read(v.value):
@@ -1328,9 +1329,9 @@ public function const_env_eval_bool(ctx: ref[lowering.LoweringContext], env: ref
 
 ## Structural equality of two constant operand expressions.
 public function const_operand_eq(ctx: ref[lowering.LoweringContext], left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[bool]:
-    let lp = lowering.resolve_const_operand(ctx, left, 0) else:
+    let lp = const_eval.resolve_const_operand(ctx, left, 0) else:
         return Option[bool].none
-    let rp = lowering.resolve_const_operand(ctx, right, 0) else:
+    let rp = const_eval.resolve_const_operand(ctx, right, 0) else:
         return Option[bool].none
     unsafe:
         match read(lp):
@@ -1494,7 +1495,7 @@ public function const_binary_op(op: str, left_val: comptime_types.ConstValue, ri
                     # an int.  Without this split, `SELECTOR == 2` would evaluate
                     # to `cv_int(1)` and an `inline if` (which only accepts
                     # `cv_bool`) would drop both branches.
-                    if lowering.is_const_comparison_op(op):
+                    if const_eval.is_const_comparison_op(op):
                         return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = lowering.apply_int_op(op, li.value, ri.value) != 0))
                     return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = lowering.apply_int_op(op, li.value, ri.value)))
                 _:
