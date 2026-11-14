@@ -4046,7 +4046,13 @@ function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp
                 var value = lower_expr(ctx, asg.value)
                 let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
                 emit_hoist_setup(output, hoist_base, hoist_collected)
-                let target_ty = expr_type(ctx, asg.target)
+                # The host passes the lowered target's *storage* type as the
+                # expected type (`block.rb:527,555`), not the analyzer's
+                # flow-refined type: inside `if x == null`, the refined `null`
+                # must not retype a `null` RHS (the declared `ptr[T]?` wins).
+                var target_ty = ir_expr_type(target)
+                if types.is_error(target_ty) or types.is_void(target_ty):
+                    target_ty = expr_type(ctx, asg.target)
                 # A bare literal takes the target's type (the host's
                 # `lower_contextual_expression` with the target as the expected
                 # type): `i = 1` / `i += 1` on a `ptr_uint` target emits a

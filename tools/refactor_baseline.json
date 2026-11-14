@@ -1125,7 +1125,7 @@
     ]
   },
   "sizes": {
-    "total_code": 122608,
+    "total_code": 122610,
     "functions_over_limit": 35,
     "files_over_limit": 12,
     "files": {
@@ -1430,10 +1430,10 @@
         "max_function": 63
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 31011,
-        "code": 23712,
+        "lines": 31017,
+        "code": 23714,
         "max_line": 817,
-        "max_function": 903
+        "max_function": 909
       },
       "projects/mtc/src/mtc/lowering/proc_renumber.mt": {
         "lines": 831,

@@ -474,6 +474,12 @@ function test_null_literal_takes_context_type() -> void:
             var p: ptr[int]? = null
             var q: S? = null
             return 0
+
+        function guard_assign() -> int:
+            var narrowed: ptr[int]? = null
+            if narrowed == null:
+                narrowed = null
+            return 0
     SRC
     var root = fs.create_temporary_directory_in_system_temp("mtc_null_") else:
         return
@@ -493,6 +499,10 @@ function test_null_literal_takes_context_type() -> void:
     expect(dumped.contains_substring(":name \"g\" :linkage_name \"main_g\" :type (Types::Nullable :base (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"int\")))) :value (IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name \"ptr\""))
     expect(dumped.contains_substring(":name \"p\" :linkage_name \"p\" :type (Types::Nullable :base (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"int\")))) :value (IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name \"ptr\""))
     expect(dumped.contains_substring(":name \"q\" :linkage_name \"q\" :type (Types::Nullable :base (Types::Struct :name \"S\" :module_name \"main\")) :value (IR::NullLiteral :type (Types::Nullable :base (Types::Struct :name \"S\" :module_name \"main\"))"))
+    ## An assignment inside the matching guard uses the target's storage type:
+    ## the refined `null` must not retype the RHS (the host's `block.rb:527,555`
+    ## passes `target.type` to `lower_contextual_expression`).
+    expect(dumped.contains_substring(":operator \"=\" :value (IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"int\"))))"))
 
 
 # =============================================================================
