@@ -281,20 +281,39 @@ function deps_publish(args: span[str]) -> int:
 # =============================================================================
 
 function deps_fetch_command(args: span[str]) -> int:
+    # The host parses `fetch` operands/flags first (`-` options are errors even
+    # before the path check), then falls back to the current package root.
     var index: ptr_uint = 2
-    var path: string.String
-    match target_path(args, ref_of(index)):
-        Result.failure as path_failure:
-            var message = path_failure.error
-            let result = fail_with_help(message.as_str())
-            message.release()
-            return result
-        Result.success as path_payload:
-            path = path_payload.value
-    defer: path.release()
+    var path_value: Option[string.String] = Option[string.String].none
+    while index < args.len:
+        let arg = args[index]
+        if arg.starts_with("-"):
+            return unknown_option("unknown deps option ", arg)
+        match path_value:
+            Option.some:
+                return unknown_option("unknown deps option ", arg)
+            Option.none:
+                path_value = Option[string.String].some(value = string.String.from_str(arg))
+        index += 1
 
-    if index < args.len:
-        return unknown_option("unknown deps option ", args[index])
+    var path: string.String
+    match path_value:
+        Option.some as provided:
+            path = provided.value
+        Option.none:
+            match fs.current_directory():
+                Result.success as cwd_payload:
+                    var manifest_path = path_ops.join(cwd_payload.value.as_str(), "package.toml")
+                    let is_package = fs.is_file(manifest_path.as_str())
+                    manifest_path.release()
+                    if is_package:
+                        path = cwd_payload.value
+                    else:
+                        cwd_payload.value.release()
+                        return fail_with_help("missing package path")
+                Result.failure:
+                    return fail_with_help("missing package path")
+    defer: path.release()
 
     match fetch_locked(path.as_str()):
         Result.failure as fetch_failure:
@@ -400,7 +419,7 @@ function deps_add(args: span[str]) -> int:
     match target_path(args, ref_of(index)):
         Result.failure as path_failure:
             var message = path_failure.error
-            let result = fail_with_help(message.as_str())
+            let result = fail_message(message.as_str())
             message.release()
             return result
         Result.success as path_payload:
@@ -823,7 +842,7 @@ function deps_remove(args: span[str]) -> int:
     match target_path(args, ref_of(index)):
         Result.failure as path_failure:
             var message = path_failure.error
-            let result = fail_with_help(message.as_str())
+            let result = fail_message(message.as_str())
             message.release()
             return result
         Result.success as path_payload:
@@ -920,7 +939,7 @@ function deps_update(args: span[str]) -> int:
     match target_path(args, ref_of(index)):
         Result.failure as path_failure:
             var message = path_failure.error
-            let result = fail_with_help(message.as_str())
+            let result = fail_message(message.as_str())
             message.release()
             return result
         Result.success as path_payload:

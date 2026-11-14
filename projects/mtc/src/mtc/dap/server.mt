@@ -57,7 +57,12 @@ public function run(args: span[str]) -> int:
     defer: release_backend(backend_ptr)
 
     let loop = create_loop()
-    let stdin_watch = watch_fd(loop, 0, POLL_STDIN, state)
+    let stdin_watch_opt = watch_fd(loop, 0, POLL_STDIN, state)
+    let stdin_watch = stdin_watch_opt else:
+        # A non-pollable stdin (a regular file, /dev/null, or a closed stream):
+        # the host's blocking reader sees EOF and exits cleanly, so an adapter
+        # launched by hand or from a test harness must not abort.
+        return 0
     let timer = create_timer(loop)
 
     var child = zero[process.ChildProcess]
@@ -70,7 +75,11 @@ public function run(args: span[str]) -> int:
         let backend_ref = unsafe: ref_of(read(backend_ptr))
         if adapter_watch == null and backend_ref.running:
             if backend_ref.framer != null:
-                adapter_watch = watch_fd(loop, backend_ref.child.stdout_fd, POLL_ADAPTER, state)
+                match watch_fd(loop, backend_ref.child.stdout_fd, POLL_ADAPTER, state):
+                    Option.some as adapter_handle:
+                        adapter_watch = adapter_handle.value
+                    Option.none:
+                        adapter_watch = null
         drain_client_messages(ref_of(ses), state, backend_ref, ref_of(child), ref_of(has_child))
         lldb_policy.pump(ref_of(ses), backend_ref)
         drain_child(ref_of(ses), ref_of(child), ref_of(has_child))
@@ -114,7 +123,7 @@ function configure_backend(ses: ref[session.Session], args: span[str]) -> void:
     unknown.append("dap: unsupported backend '")
     unknown.append(ses.backend_kind.as_str())
     unknown.append("'; running the process backend")
-    log.warn(unknown.as_str())
+    log.debug(unknown.as_str())
     unknown.release()
 
 
@@ -149,7 +158,7 @@ function create_loop() -> ptr[libuv.uv_loop_t]:
 
 
 ## Register a readable/disconnect poll handle for `fd`.
-function watch_fd(loop: ptr[libuv.uv_loop_t], fd: int, kind: int, state: ptr[LoopState]) -> ptr[libuv.uv_poll_t]:
+function watch_fd(loop: ptr[libuv.uv_loop_t], fd: int, kind: int, state: ptr[LoopState]) -> Option[ptr[libuv.uv_poll_t]]:
     let handle_size = libuv.handle_size(libuv.uv_handle_type.UV_POLL)
     let handle = unsafe: ptr[libuv.uv_poll_t]<-heap.must_alloc_zeroed_bytes(1, handle_size)
     let ctx = heap.must_alloc[PollContext](1)
@@ -157,11 +166,15 @@ function watch_fd(loop: ptr[libuv.uv_loop_t], fd: int, kind: int, state: ptr[Loo
         read(ctx) = PollContext(kind = kind, state = state)
         libuv.handle_set_data(ptr[libuv.uv_handle_t]<-handle, ptr[void]<-ctx)
     if libuv.poll_init(loop, handle, fd) != 0:
-        fatal(c"dap: uv_poll_init failed")
+        # Not pollable with this backend (a regular file or a closed
+        # descriptor): report the stream as absent and let the caller decide.
+        heap.release(ctx)
+        heap.release(handle)
+        return Option[ptr[libuv.uv_poll_t]].none
     let events = int<-(libuv.uv_poll_event.UV_READABLE | libuv.uv_poll_event.UV_DISCONNECT)
     if libuv.poll_start(handle, events, poll_callback) != 0:
         fatal(c"dap: uv_poll_start failed")
-    return handle
+    return Option[ptr[libuv.uv_poll_t]].some(value = handle)
 
 
 ## Poll callback: append available bytes to the stream's framer.

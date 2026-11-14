@@ -11,7 +11,6 @@ import std.cjson as cjson
 import std.mem.arena as arena
 import std.log as log
 
-import mtc.version_info as version_info
 
 import mtc.lsp.call_hierarchy as call_hier
 import mtc.lsp.code_actions as code_actions
@@ -53,13 +52,6 @@ public function run(args: span[str]) -> int:
     var ws = workspace.Workspace.create(root)
     defer: ws.release()
 
-    var startup_msg = string.String.create()
-    startup_msg.append("lsp: starting server  mtc 0.1.0 (")
-    startup_msg.append(version_info.GIT_REVISION)
-    startup_msg.append(")")
-    log.info(startup_msg.as_str())
-    startup_msg.release()
-
     var running = true
     while running:
         var read_status: ptr_uint = proto.READ_OK
@@ -90,7 +82,6 @@ public function run(args: span[str]) -> int:
                 # reported (JSON-RPC ParseError, id null) and the loop goes on,
                 # so one bad message never takes the server down.
                 if read_status == proto.READ_EOF:
-                    log.info("lsp: EOF, shutting down")
                     running = false
                 else:
                     log.warn("lsp: malformed message ignored")
@@ -99,7 +90,6 @@ public function run(args: span[str]) -> int:
         # superseded parses and analyses retired can be freed at this boundary.
         ws.drain_retired_regions()
 
-    log.info("lsp: server stopped")
     return 0
 
 
@@ -118,9 +108,9 @@ function monotonic_ms() -> double:
 
 
 function parse_log_level(args: span[str]) -> void:
-    # The host's default: lifecycle, per-request timings and warnings, without
-    # the per-message trace (`trace`/`debug` stay opt-in via --log-level).
-    log.set_level(log.Level.info)
+    # The host's CLI default is `warn` (its help says so); the extension may
+    # raise it via the CLI flag or the trace setting.
+    log.set_level(log.Level.warn)
     var i: ptr_uint = 1
     while i < args.len:
         if args[i] == "--log-level":

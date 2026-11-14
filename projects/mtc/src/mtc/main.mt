@@ -115,9 +115,68 @@ function dispatch_cli(raw_args: span[str]) -> int:
         cli_help.print_help(false)
         return 0
 
-    # Global flags (`-v`/`--verbose`, `-q`/`--quiet`, `--color MODE`,
-    # `-I`/`--include-path DIR`) may appear before the command; strip them here.
-    # Scanning stops at `--` so `run` program arguments pass through untouched.
+    # Global flags (`-v`/`--verbose`, `-q`/`--quiet`, `--color MODE`) are
+    # extracted first, exactly like the host's `extract_global_options!`: a
+    # global flag between `-I` and its value is gone before the include pass
+    # runs, so the include pass then consumes the following token.  Scanning
+    # stops at `--`.
+    var after_globals = vec.Vec[str].create()
+    defer: after_globals.release()
+    var gi: ptr_uint = 0
+    var forwarding = false
+    while gi < raw_args.len:
+        let a = raw_args[gi]
+        if forwarding:
+            after_globals.push(a)
+            gi += 1
+            continue
+        if a == "--":
+            forwarding = true
+            after_globals.push(a)
+            gi += 1
+            continue
+        if a == "-v" or a == "--verbose":
+            cli_verbose = true
+            gi += 1
+            continue
+        if a == "-q" or a == "--quiet":
+            cli_quiet = true
+            gi += 1
+            continue
+        if a == "--color" or a.starts_with("--color="):
+            var value = ""
+            var has_value = true
+            if a.starts_with("--color="):
+                value = a.slice(8, a.len - 8)
+                gi += 1
+            else if gi + 1 < raw_args.len:
+                value = raw_args[gi + 1]
+                gi += 2
+            else:
+                has_value = false
+                gi += 1
+            if value != "auto" and value != "always" and value != "never":
+                var invalid = string.String.create()
+                defer: invalid.release()
+                invalid.append("--color must be auto, always, or never")
+                if has_value:
+                    invalid.append(" (got ")
+                    invalid.append(value)
+                    invalid.append(")")
+                eprint_line(invalid.as_str())
+                return 1
+            cli_color = value
+            continue
+        after_globals.push(a)
+        gi += 1
+
+    # Module roots (`-I DIR` / `--include-path DIR`) are extracted next, like
+    # the host's `extract_include_paths!`, and put back after the command name
+    # (the host hands them to the module loader; the commands here parse them
+    # from their own arguments).  Unlike the host, scanning also stops at `--`,
+    # so `run app -- -I x` forwards the argument to the program instead of
+    # swallowing it.  The first flag is the one an unsupported-command error
+    # names (the host's `@include_path_flags.first`).
     var filtered = vec.Vec[str].create()
     defer: filtered.release()
     var include_pairs = vec.Vec[str].create()
@@ -126,8 +185,10 @@ function dispatch_cli(raw_args: span[str]) -> int:
     var saw_dashdash = false
     var saw_include = false
     var include_flag = ""
-    while fi < raw_args.len:
-        let a = raw_args[fi]
+    while fi < after_globals.len():
+        let a_ptr = after_globals.get(fi) else:
+            break
+        let a = unsafe: read(a_ptr)
         if saw_dashdash:
             filtered.push(a)
             fi += 1
@@ -137,43 +198,27 @@ function dispatch_cli(raw_args: span[str]) -> int:
             filtered.push(a)
             fi += 1
             continue
-        if a == "-v" or a == "--verbose":
-            cli_verbose = true
-            fi += 1
-            continue
-        if a == "-q" or a == "--quiet":
-            cli_quiet = true
-            fi += 1
-            continue
-        if a == "--color" or a.starts_with("--color="):
-            var value = ""
-            if a.starts_with("--color="):
-                value = a.slice(8, a.len - 8)
-                fi += 1
-            else if fi + 1 < raw_args.len:
-                value = raw_args[fi + 1]
-                fi += 2
-            else:
-                fi += 1
-            if value != "auto" and value != "always" and value != "never":
-                var invalid = string.String.create()
-                defer: invalid.release()
-                invalid.append("--color must be auto, always, or never (got ")
-                invalid.append(value)
-                invalid.append(")")
-                eprint_line(invalid.as_str())
-                return 1
-            cli_color = value
-            continue
         if a == "-I" or a == "--include-path":
-            if fi + 1 < raw_args.len and not raw_args[fi + 1].starts_with("-"):
+            var has_next = false
+            var next_value = ""
+            if fi + 1 < after_globals.len():
+                let next_ptr = after_globals.get(fi + 1) else:
+                    break
+                next_value = unsafe: read(next_ptr)
+                has_next = true
+            if has_next and not next_value.starts_with("-"):
+                if not saw_include:
+                    include_flag = a
+                    saw_include = true
                 include_pairs.push(a)
-                include_pairs.push(raw_args[fi + 1])
-                saw_include = true
-                include_flag = a
+                include_pairs.push(next_value)
                 fi += 2
             else:
-                eprint_line("missing value for -I")
+                var missing = string.String.create()
+                defer: missing.release()
+                missing.append("missing value for ")
+                missing.append(a)
+                eprint_line(missing.as_str())
                 fi += 1
             continue
         filtered.push(a)
@@ -241,7 +286,9 @@ function dispatch_cli(raw_args: span[str]) -> int:
         return 0
 
     if cmd == "lex":
-        var machine = false
+        # The host's `lex_command`: `--sexpr` is recognized anywhere, any other
+        # argument (flags included) is the path when none is set yet, and a
+        # second argument is `unknown option: <arg>` on stderr.
         var sexpr = false
         var lex_file: Option[str] = Option[str].none
         var li: ptr_uint = 1
@@ -250,26 +297,27 @@ function dispatch_cli(raw_args: span[str]) -> int:
             if a == "--":
                 li += 1
                 continue
-            if a == "--machine":
-                machine = true
-            else if a == "--sexpr":
+            if a == "--sexpr":
                 sexpr = true
-            else if a.starts_with("-"):
-                stdio.print_format(c"unknown option: %.*s\n", int<-(a.len), a.data)
-                return 1
-            else:
-                match lex_file:
-                    Option.some:
-                        stdio.print_format(c"unknown option: %.*s\n", int<-(a.len), a.data)
-                        return 1
-                    Option.none:
-                        lex_file = Option[str].some(value = a)
+                li += 1
+                continue
+            match lex_file:
+                Option.some:
+                    var unknown = string.String.create()
+                    defer: unknown.release()
+                    unknown.append("unknown option: ")
+                    unknown.append(a)
+                    eprint_line(unknown.as_str())
+                    cli_help.print_usage(true)
+                    return 1
+                Option.none:
+                    lex_file = Option[str].some(value = a)
             li += 1
         let lf = lex_file else:
             eprint_line("missing source file path")
             cli_help.print_usage(true)
             return 1
-        return lex_command(lf, machine, sexpr)
+        return lex_command(lf, sexpr)
 
     if cmd == "parse":
         return parse_command(args)
@@ -309,10 +357,6 @@ function dispatch_cli(raw_args: span[str]) -> int:
         return run_command(args)
 
     if cmd == "run-module":
-        if args.len < 2:
-            eprint_line("missing source file path")
-            cli_help.print_usage(true)
-            return 1
         return run_module_command(args)
 
     if cmd == "new":
@@ -328,9 +372,13 @@ function dispatch_cli(raw_args: span[str]) -> int:
         return format_command(args)
 
     if cmd == "lsp":
+        if validate_lsp_args(args) != 0:
+            return 1
         return lsp.run(args)
 
     if cmd == "dap":
+        if validate_dap_args(args) != 0:
+            return 1
         return dap.run(args)
 
     if cmd == "cache":
@@ -363,6 +411,134 @@ function dispatch_cli(raw_args: span[str]) -> int:
     # Unknown command: the host prints its usage block to stderr and exits 1.
     cli_help.print_usage(true)
     return 1
+
+
+## The host's `lsp_command` flag parser: `--log-level LEVEL|--log-level=LEVEL`
+## (trace/debug/info/warn/error), the `--stdio` no-op, and errors for any other
+## option or positional.  Ruby renders an invalid level with `inspect` (quoted)
+## and a missing value as the literal `nil`.
+function validate_lsp_args(args: span[str]) -> int:
+    var i: ptr_uint = 1
+    while i < args.len:
+        let arg = args[i]
+        if arg == "--log-level":
+            if i + 1 >= args.len:
+                eprint_line("lsp: invalid --log-level nil (expected trace, debug, info, warn, or error)")
+                return 1
+            let value = args[i + 1]
+            if not lsp_log_level_valid(value):
+                var msg = string.String.create()
+                defer: msg.release()
+                msg.append("lsp: invalid --log-level \"")
+                msg.append(value)
+                msg.append("\" (expected trace, debug, info, warn, or error)")
+                eprint_line(msg.as_str())
+                return 1
+            i += 2
+            continue
+        if arg.starts_with("--log-level=") and arg.len > 12:
+            let value = arg.slice(12, arg.len - 12)
+            if not lsp_log_level_valid(value):
+                var msg = string.String.create()
+                defer: msg.release()
+                msg.append("lsp: invalid --log-level \"")
+                msg.append(value)
+                msg.append("\" (expected trace, debug, info, warn, or error)")
+                eprint_line(msg.as_str())
+                return 1
+            i += 1
+            continue
+        if arg == "--stdio":
+            i += 1
+            continue
+        if arg.starts_with("-"):
+            var unknown = string.String.create()
+            defer: unknown.release()
+            unknown.append("lsp: unknown option ")
+            unknown.append(arg)
+            eprint_line(unknown.as_str())
+            return 1
+        var unexpected = string.String.create()
+        defer: unexpected.release()
+        unexpected.append("lsp: unexpected argument ")
+        unexpected.append(arg)
+        eprint_line(unexpected.as_str())
+        return 1
+    return 0
+
+
+function lsp_log_level_valid(value: str) -> bool:
+    return (
+        value == "trace" or value == "debug" or value == "info"
+        or value == "warn" or value == "error"
+    )
+
+
+## The host's `dap_command` flag parser.  `--log-level` is swallowed (a missing
+## value is tolerated), `--backend` accepts any value, and `--adapter-path` must
+## name an existing file.  Unknown options and positionals are errors.
+function validate_dap_args(args: span[str]) -> int:
+    var i: ptr_uint = 1
+    while i < args.len:
+        let arg = args[i]
+        if arg == "--log-level":
+            if i + 1 < args.len:
+                i += 2
+            else:
+                i += 1
+            continue
+        if arg.starts_with("--log-level=") and arg.len > 12:
+            i += 1
+            continue
+        if arg == "--backend":
+            if i + 1 < args.len:
+                i += 2
+            else:
+                i += 1
+            continue
+        if arg.starts_with("--backend=") and arg.len > 10:
+            i += 1
+            continue
+        if arg == "--adapter-path":
+            var value = ""
+            if i + 1 < args.len:
+                value = args[i + 1]
+                i += 2
+            else:
+                i += 1
+            if not fs.is_file(value):
+                dap_adapter_not_found(value)
+                return 1
+            continue
+        if arg.starts_with("--adapter-path=") and arg.len > 15:
+            let value = arg.slice(15, arg.len - 15)
+            if not fs.is_file(value):
+                dap_adapter_not_found(value)
+                return 1
+            i += 1
+            continue
+        if arg.starts_with("-"):
+            var unknown = string.String.create()
+            defer: unknown.release()
+            unknown.append("dap: unknown option ")
+            unknown.append(arg)
+            eprint_line(unknown.as_str())
+            return 1
+        var unexpected = string.String.create()
+        defer: unexpected.release()
+        unexpected.append("dap: unexpected argument ")
+        unexpected.append(arg)
+        eprint_line(unexpected.as_str())
+        return 1
+    return 0
+
+
+function dap_adapter_not_found(value: str) -> void:
+    var msg = string.String.create()
+    defer: msg.release()
+    msg.append("dap: adapter path not found: ")
+    msg.append(value)
+    eprint_line(msg.as_str())
 
 
 ## `mtc docs [--port|-p PORT] [--open|-o]`: the host parses only those flags
@@ -522,74 +698,145 @@ function operand_label(inputs: span[str]) -> string.String:
     return label
 
 
-## Print the host's `unexpected argument(s) for <command>: <args>` plus that
-## command's usage block.
-function reject_unexpected_operands(command: str, args: span[str]) -> int:
-    var detail = string.String.create()
-    defer: detail.release()
-    detail.append("unexpected argument(s) for ")
-    detail.append(command)
-    detail.append(": ")
-    var i: ptr_uint = 1
+## The host's `extract_resolution_flags!`: pull `--locked`, `--frozen` and
+## `-Werror`/`--warnings-as-errors` out of the operand list (already stripped of
+## the command's own flags), stopping at `--`.  Every other argument is copied
+## to `remaining` in order.
+struct ResolutionFlags:
+    locked: bool
+    frozen: bool
+    warnings_as_errors: bool
+
+
+function extract_resolution_flags_span(args: span[str], remaining: ref[vec.Vec[str]]) -> ResolutionFlags:
+    var resolution = ResolutionFlags(locked = false, frozen = false, warnings_as_errors = false)
+    var i: ptr_uint = 0
     while i < args.len:
-        if i > 1:
-            detail.append(" ")
-        detail.append(args[i])
+        let arg = args[i]
+        if arg == "--locked":
+            resolution.locked = true
+        else if arg == "--frozen":
+            resolution.locked = true
+            resolution.frozen = true
+        else if arg == "-Werror" or arg == "--warnings-as-errors":
+            resolution.warnings_as_errors = true
+        else if arg == "--":
+            var rest = i + 1
+            while rest < args.len:
+                remaining.push(args[rest])
+                rest += 1
+            return resolution
+        else:
+            remaining.push(arg)
         i += 1
-    eprint_line(detail.as_str())
-    cli_help.print_command_help(command, true)
-    return 1
+    return resolution
 
 
-## `mtc parse PATH|DIR [PATH|DIR ...] [--sexpr] [-I PATH]`.
+## The host's `validate_source_operands`: after resolution-flag extraction, an
+## operand starting with `-` is an error.  Prints the message plus the command's
+## help block to stderr.
+function validate_source_operands(command: str, operands: span[str]) -> int:
+    var i: ptr_uint = 0
+    while i < operands.len:
+        if operands[i].starts_with("-"):
+            var detail = string.String.create()
+            defer: detail.release()
+            detail.append("unexpected argument(s) for ")
+            detail.append(command)
+            detail.append(": ")
+            var j: ptr_uint = 0
+            while j < operands.len:
+                if j > 0:
+                    detail.append(" ")
+                detail.append(operands[j])
+                j += 1
+            eprint_line(detail.as_str())
+            cli_help.print_command_help(command, true)
+            return 1
+        i += 1
+    return 0
+
+
+## Split the include pairs `dispatch_cli` puts back after the command name
+## (`-I DIR` / `--include-path DIR`) from the command's own operands and flags.
+function split_include_pairs(args: span[str], roots: ref[vec.Vec[str]], rest: ref[vec.Vec[str]]) -> void:
+    var i: ptr_uint = 0
+    while i < args.len:
+        let arg = args[i]
+        if (arg == "-I" or arg == "--include-path") and i + 1 < args.len:
+            roots.push(args[i + 1])
+            i += 2
+            continue
+        rest.push(arg)
+        i += 1
+
+
+## The host's `ensure_current_lockfile!` for one operand: a frozen run requires
+## a current package.lock and reports `package manifest not found ...` /
+## `package.lock is missing ...` / `package.lock is out of date ...`.
+function ensure_current_lockfile_at(path: str) -> int:
+    match package_lock.ensure_current(path, true):
+        Result.failure as failure:
+            var message = failure.error
+            eprint_line(message.as_str())
+            message.release()
+            return 1
+        Result.success:
+            return 0
+
+
+## The host's per-file package-graph resolution for a locked run: load the
+## locked graph, add its source roots, and report `package lock not found ...`.
+function apply_locked_resolution(path: str, resolution: ResolutionFlags, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]]) -> int:
+    if not resolution.locked:
+        return 0
+    match apply_package_resolution_result(path, true, false, roots, owned):
+        Result.failure as failure:
+            var message = failure.error
+            eprint_line(message.as_str())
+            message.release()
+            return 1
+        Result.success:
+            return 0
+
+
+## Copy one root vector onto another (borrowed views; the owner keeps them alive).
+function copy_roots(source: ref[vec.Vec[str]], dest: ref[vec.Vec[str]]) -> void:
+    var i: ptr_uint = 0
+    while i < source.len():
+        let root_ptr = source.get(i) else:
+            break
+        dest.push(unsafe: read(root_ptr))
+        i += 1
+
+
+## `mtc parse PATH|DIR [PATH|DIR ...] [--sexpr] [--locked|--frozen] [-I PATH]`.
 function parse_command(args: span[str]) -> int:
     var sexpr = false
-    var inputs = vec.Vec[str].create()
-    defer: inputs.release()
-    var roots = vec.Vec[str].create()
-    defer: roots.release()
-    var owned_roots = vec.Vec[string.String].create()
-    defer: owned_roots.release()
-    var platform = resolver.Platform.linux
-    var ai: ptr_uint = 1
-    while ai < args.len:
-        let arg = args[ai]
-        if arg == "--sexpr":
+    var stripped = vec.Vec[str].create()
+    defer: stripped.release()
+    var si: ptr_uint = 1
+    while si < args.len:
+        if args[si] == "--sexpr":
             sexpr = true
-            ai += 1
-            continue
-        if arg == "--":
-            ai += 1
-            while ai < args.len:
-                inputs.push(args[ai])
-                ai += 1
-            continue
-        if arg == "-I" or arg == "--include-path" or arg == "--root":
-            if ai + 1 >= args.len:
-                stdio.print_line("error: -I requires a directory")
-                return 1
-            roots.push(args[ai + 1])
-            ai += 2
-            continue
-        if arg == "--platform":
-            if ai + 1 >= args.len:
-                stdio.print_line("error: --platform requires linux, windows, or wasm")
-                return 1
-            match parse_platform_name(args[ai + 1]):
-                Option.some as plat:
-                    platform = plat.value
-                Option.none:
-                    return 1
-            ai += 2
-            continue
-        if arg.starts_with("-"):
-            return reject_unexpected_operands("parse", args)
-        inputs.push(arg)
-        ai += 1
-
-    if inputs.len() == 0:
+        else:
+            stripped.push(args[si])
+        si += 1
+    if stripped.is_empty():
         eprint_line("missing source file path")
         cli_help.print_usage(true)
+        return 1
+
+    var roots = vec.Vec[str].create()
+    defer: roots.release()
+    var no_includes = vec.Vec[str].create()
+    defer: no_includes.release()
+    split_include_pairs(stripped.as_span(), ref_of(roots), ref_of(no_includes))
+
+    var inputs = vec.Vec[str].create()
+    defer: inputs.release()
+    let resolution = extract_resolution_flags_span(no_includes.as_span(), ref_of(inputs))
+    if validate_source_operands("parse", inputs.as_span()) != 0:
         return 1
 
     var paths = vec.Vec[str].create()
@@ -607,12 +854,31 @@ function parse_command(args: span[str]) -> int:
         stdio.print_line(msg.as_str())
         return 0
 
+    if resolution.frozen:
+        var fi: ptr_uint = 0
+        while fi < paths.len():
+            let fp = paths.get(fi) else:
+                break
+            if ensure_current_lockfile_at(unsafe: read(fp)) != 0:
+                return 1
+            fi += 1
+
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
     let multiple = paths.len() > 1
     var pi: ptr_uint = 0
     while pi < paths.len():
         let path_ptr = paths.get(pi) else:
             break
         let path = unsafe: read(path_ptr)
+        if resolution.locked:
+            var locked_roots = vec.Vec[str].create()
+            defer: locked_roots.release()
+            copy_roots(ref_of(roots), ref_of(locked_roots))
+            var locked_owned = vec.Vec[string.String].create()
+            defer: locked_owned.release()
+            if apply_locked_resolution(path, resolution, ref_of(locked_roots), ref_of(locked_owned)) != 0:
+                return 1
         if multiple and not sexpr:
             stdio.print_format(c"# --- %.*s ---\n", int<-(path.len), path.data)
         let rc = parse_one_path(path, sexpr)
@@ -634,7 +900,13 @@ function parse_one_path(file_path: str, sexpr: bool) -> int:
 
     match fs.read_text(resolved.as_str()):
         Result.failure:
-            stdio.print_format(c"error: cannot read '%.*s'\n", int<-(file_path.len), file_path.data)
+            # The host's loader raises `source file not found` with the
+            # expanded path, rendered by the top-level handler on stderr.
+            var missing = string.String.create()
+            defer: missing.release()
+            missing.append("source file not found: ")
+            missing.append(abs_owner.as_str())
+            eprint_line(missing.as_str())
             return 1
         Result.success as payload:
             var content = payload.value
@@ -693,11 +965,10 @@ function parse_one_path(file_path: str, sexpr: bool) -> int:
 ## directory.
 ##
 ## Flags:
-##   -I DIR, --root DIR    module search root (repeatable)
-##   --platform NAME       target platform (linux|windows|wasm, default: linux)
+##   -I DIR, --include-path DIR    module search root (repeatable)
 ##   -Werror               treat warnings as errors
-##   --locked              (accepted — requires package-graph resolution)
-##   --frozen              (accepted — implies --locked)
+##   --locked              resolve dependencies from package.lock
+##   --frozen              require a current package.lock (implies --locked)
 function check_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer: roots.release()
@@ -706,40 +977,17 @@ function check_command(args: span[str]) -> int:
     var input_paths = vec.Vec[str].create()
     defer: input_paths.release()
     var platform = resolver.Platform.linux
-    var warnings_as_errors = false
 
-    var i: ptr_uint = 1
-    while i < args.len:
-        let arg = args[i]
-        if arg == "-I" or arg == "--include-path":
-            if i + 1 >= args.len:
-                stdio.print_line("error: -I requires a directory")
-                return 1
-            roots.push(args[i + 1])
-            i += 2
-            continue
-        if arg == "-Werror" or arg == "--warnings-as-errors":
-            warnings_as_errors = true
-            i += 1
-            continue
-        if arg == "--locked" or arg == "--frozen":
-            # Accepted for CLI compatibility; package-graph resolution is not yet implemented.
-            i += 1
-            continue
-        if arg == "--":
-            i += 1
-            while i < args.len:
-                input_paths.push(args[i])
-                i += 1
-            continue
-        if arg.starts_with("-"):
-            return reject_unexpected_operands("check", args)
-        input_paths.push(arg)
-        i += 1
-
-    if input_paths.is_empty():
+    var stripped = vec.Vec[str].create()
+    defer: stripped.release()
+    split_include_pairs(unsafe: span[str](data = args.data + 1, len = args.len - 1), ref_of(roots), ref_of(stripped))
+    if stripped.is_empty():
         eprint_line("missing source file path")
         cli_help.print_usage(true)
+        return 1
+    let resolution = extract_resolution_flags_span(stripped.as_span(), ref_of(input_paths))
+    let warnings_as_errors = resolution.warnings_as_errors
+    if validate_source_operands("check", input_paths.as_span()) != 0:
         return 1
 
     # Expand directories to their .mt files.
@@ -777,8 +1025,25 @@ function check_command(args: span[str]) -> int:
         si += 1
 
     if source_files.is_empty():
-        stdio.print_line("no .mt files found")
+        var label = operand_label(input_paths.as_span())
+        defer: label.release()
+        var msg = string.String.create()
+        defer: msg.release()
+        msg.append("no .mt files found in ")
+        msg.append(label.as_str())
+        stdio.print_line(msg.as_str())
         return 0
+
+    # The host's `ensure_current_lockfiles!`: every expanded path must belong to
+    # a package whose lock is current.
+    if resolution.frozen:
+        var ffi: ptr_uint = 0
+        while ffi < source_files.len():
+            let fp = source_files.get(ffi) else:
+                break
+            if ensure_current_lockfile_at(unsafe: read(fp).as_str()) != 0:
+                return 1
+            ffi += 1
 
     var total_errors: ptr_uint = 0
     var total_warnings: ptr_uint = 0
@@ -793,18 +1058,41 @@ function check_command(args: span[str]) -> int:
 
         var file_roots = vec.Vec[str].create()
         defer: file_roots.release()
-        var rj: ptr_uint = 0
-        while rj < roots.len():
-            let rp = roots.get(rj) else:
-                break
-            unsafe:
-                file_roots.push(read(rp))
-            rj += 1
+        copy_roots(ref_of(roots), ref_of(file_roots))
 
         var entry_path_owner = string.String.create()
         var source_root_owner = string.String.create()
         let effective = effective_source_path(source_path, ref_of(file_roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
             continue
+
+        # The host's diagnostics loop re-reads the file with `read_source_file`,
+        # which raises for a missing operand and aborts the command before any
+        # summary (the operand is rendered as given, not expanded).
+        if not fs.exists(effective):
+            var missing = string.String.create()
+            defer: missing.release()
+            missing.append("source file not found: ")
+            missing.append(source_path)
+            eprint_line(missing.as_str())
+            entry_path_owner.release()
+            source_root_owner.release()
+            return 1
+
+        var file_owned = vec.Vec[string.String].create()
+        defer: file_owned.release()
+        if resolution.locked:
+            match apply_package_resolution_result(effective, true, false, ref_of(file_roots), ref_of(file_owned)):
+                Result.failure as resolution_failure:
+                    var message = resolution_failure.error
+                    eprint_line(message.as_str())
+                    message.release()
+                    total_errors += 1
+                    entry_path_owner.release()
+                    source_root_owner.release()
+                    fi += 1
+                    continue
+                Result.success:
+                    pass
 
         # Ruby's `roots_for_path` always appends the discovered project root, so
         # `mtc check examples/x.mt` resolves `std.*` without an explicit `-I`.
@@ -1065,6 +1353,62 @@ function print_program_diagnostics(program: ref[loader.Program]) -> ptr_uint:
         i += 1
     let _ = terminal.flush_stderr()
     return printed_errors
+
+
+## The single-line form of a program's first error.  The test runner formats a
+## build failure after the synthesized source has been deleted, so the host's
+## `ErrorFormatter` has no source context: a semantic error renders as its
+## location line, a module error renders bare (it carries no line/column), and
+## a whole-file load failure as `<message>: <path>`.
+function first_error_line(program: ref[loader.Program]) -> string.String:
+    var text = string.String.create()
+    var i: ptr_uint = 0
+    while i < program.diagnostics.len():
+        let d = program.diagnostics.get(i) else:
+            break
+        unsafe:
+            let rd = read(d)
+            if rd.severity == "error":
+                if rd.code.equal("module/error"):
+                    text.append(rd.message.as_str())
+                else if rd.code.equal("load/error"):
+                    text.append(rd.message.as_str())
+                    text.append(": ")
+                    text.append(rd.path.as_str())
+                else:
+                    text.append("error[")
+                    text.append(rd.code)
+                    text.append("]: ")
+                    text.append(rd.message.as_str())
+                    text.append(" -- ")
+                    text.append(rd.path.as_str())
+                    text.append(":")
+                    text.append(ptr_uint_to_str(rd.line))
+                    text.append(":")
+                    text.append(ptr_uint_to_str(rd.column))
+                return text
+        i += 1
+    return text
+
+
+## Write `text` to stderr with a trailing newline unless it already ends with
+## one (the host prints exception messages through `@err.puts`).
+function eprint_message(text: str) -> void:
+    let _ = terminal.write_stderr(text)
+    if text.len == 0 or text.byte_at(text.len - 1) != 10:
+        let _ = terminal.write_stderr("\n")
+    let _ = terminal.flush_stderr()
+
+
+## The host's `read_source_file` missing-file error: `source file not found:
+## <path>` on stderr, with the operand as given.  Returns 1 for `return`.
+function report_missing_source(path: str) -> int:
+    var missing = string.String.create()
+    defer: missing.release()
+    missing.append("source file not found: ")
+    missing.append(path)
+    eprint_line(missing.as_str())
+    return 1
 
 
 ## Print a lexer error in the host CLI's `error[lex/error]` block form.
@@ -1354,19 +1698,20 @@ function lint_command(args: span[str]) -> int:
     var timings = false
     var init_mode = false
     var locked_flag = false
+    var frozen_flag = false
     var roots = vec.Vec[str].create()
     defer: roots.release()
     var owned_roots = vec.Vec[string.String].create()
     defer: owned_roots.release()
     var platform = resolver.Platform.linux
-    var i: ptr_uint = 1
-    while i < args.len:
-        let arg = args[i]
-        if arg == "-I" or arg == "--include-path":
-            if i + 1 < args.len:
-                roots.push(args[i + 1])
-            i += 2
-            continue
+    var stripped = vec.Vec[str].create()
+    defer: stripped.release()
+    split_include_pairs(unsafe: span[str](data = args.data + 1, len = args.len - 1), ref_of(roots), ref_of(stripped))
+    var i: ptr_uint = 0
+    while i < stripped.len():
+        let arg_ptr = stripped.get(i) else:
+            break
+        let arg = unsafe: read(arg_ptr)
         if arg == "--fix":
             fix_mode = true
             i += 1
@@ -1379,10 +1724,13 @@ function lint_command(args: span[str]) -> int:
             timings = true
             i += 1
             continue
-        # Accepted for CLI compatibility; package-graph resolution is not yet
-        # implemented (mirrors `check`).
-        if arg == "--locked" or arg == "--frozen":
+        if arg == "--locked":
             locked_flag = true
+            i += 1
+            continue
+        if arg == "--frozen":
+            locked_flag = true
+            frozen_flag = true
             i += 1
             continue
         if arg == "--init":
@@ -1391,20 +1739,34 @@ function lint_command(args: span[str]) -> int:
             continue
         if arg == "--select":
             i += 1
-            if i >= args.len:
+            if i >= stripped.len():
                 eprint_line("--select requires a comma-separated list of rule codes")
                 return 1
-            collect_filter_codes(args[i], ref_of(select_set))
+            let value_ptr = stripped.get(i) else:
+                eprint_line("--select requires a comma-separated list of rule codes")
+                return 1
+            collect_filter_codes(unsafe: read(value_ptr), ref_of(select_set))
             i += 1
             continue
         if arg == "--ignore":
             i += 1
-            if i >= args.len:
+            if i >= stripped.len():
                 eprint_line("--ignore requires a comma-separated list of rule codes")
                 return 1
-            collect_filter_codes(args[i], ref_of(ignore_set))
+            let value_ptr = stripped.get(i) else:
+                eprint_line("--ignore requires a comma-separated list of rule codes")
+                return 1
+            collect_filter_codes(unsafe: read(value_ptr), ref_of(ignore_set))
             i += 1
             continue
+        if arg == "--":
+            i += 1
+            while i < stripped.len():
+                let rest_ptr = stripped.get(i) else:
+                    break
+                input_paths.push(unsafe: read(rest_ptr))
+                i += 1
+            break
         if arg.starts_with("-"):
             var unknown = string.String.create()
             defer: unknown.release()
@@ -1459,6 +1821,25 @@ function lint_command(args: span[str]) -> int:
             source_files.push(string.String.from_str(path))
         si += 1
 
+    if source_files.is_empty():
+        var label = operand_label(input_paths.as_span())
+        defer: label.release()
+        var msg = string.String.create()
+        defer: msg.release()
+        msg.append("no .mt files found in ")
+        msg.append(label.as_str())
+        stdio.print_line(msg.as_str())
+        return 0
+
+    if frozen_flag:
+        var ffi: ptr_uint = 0
+        while ffi < source_files.len():
+            let fp = source_files.get(ffi) else:
+                break
+            if ensure_current_lockfile_at(unsafe: read(fp).as_str()) != 0:
+                return 1
+            ffi += 1
+
     var total_warnings: ptr_uint = 0
     var files_with_warnings: ptr_uint = 0
 
@@ -1509,6 +1890,17 @@ function lint_command(args: span[str]) -> int:
                         lint_target = eff.value
                     Option.none:
                         pass
+                var lint_owned = vec.Vec[string.String].create()
+                defer: lint_owned.release()
+                if locked_flag:
+                    match apply_package_resolution_result(lint_target, true, false, ref_of(lint_roots), ref_of(lint_owned)):
+                        Result.failure as resolution_failure:
+                            var message = resolution_failure.error
+                            eprint_line(message.as_str())
+                            message.release()
+                            return 1
+                        Result.success:
+                            pass
                 add_module_roots(lint_target, ref_of(lint_roots), ref_of(owned_roots))
                 if lint_roots.is_empty():
                     lint_roots.push(path_ops.dirname(lint_target))
@@ -1611,6 +2003,14 @@ function lint_command(args: span[str]) -> int:
             Result.failure as read_err:
                 var em = read_err.error
                 em.release()
+                # The host's `read_source_file` raises `source file not found`
+                # with the operand as given, rendered by the top-level handler.
+                var missing = string.String.create()
+                defer: missing.release()
+                missing.append("source file not found: ")
+                missing.append(fp)
+                eprint_line(missing.as_str())
+                return 1
         fi += 1
 
     if fix_mode:
@@ -1676,7 +2076,12 @@ function parse_platform_name(name: str) -> Option[resolver.Platform]:
         return Option[resolver.Platform].some(value = resolver.Platform.windows)
     if name == "wasm":
         return Option[resolver.Platform].some(value = resolver.Platform.wasm)
-    stdio.print_line("error: --platform must be linux, windows, or wasm")
+    var bad = string.String.create()
+    defer: bad.release()
+    bad.append("unknown platform ")
+    bad.append(name)
+    bad.append("; expected linux|windows|wasm")
+    eprint_line(bad.as_str())
     return Option[resolver.Platform].none
 
 
@@ -1700,7 +2105,7 @@ function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]], owned_r
     var i: ptr_uint = 1
     while i < args.len:
         let arg = args[i]
-        if arg == "--root" or arg == "-I" or arg == "--include-path":
+        if arg == "-I" or arg == "--include-path":
             if i + 1 >= args.len:
                 stdio.print_line("error: -I requires a directory")
                 return Option[str].none
@@ -1709,7 +2114,7 @@ function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]], owned_r
             continue
         if arg == "--platform":
             if i + 1 >= args.len:
-                stdio.print_line("error: --platform requires linux, windows, or wasm")
+                eprint_missing_option_value(arg)
                 return Option[str].none
             match parse_platform_name(args[i + 1]):
                 Option.some as plat:
@@ -1774,91 +2179,98 @@ function reject_missing_entrypoint(program: loader.Program, ir_program: ir.Progr
     return true
 
 
-## Lower a checked program to IR and print it (`mtc lower`).
-## Supports both `.mt` files and package directory targets.
+## Lower one or more source files to IR (`mtc lower`).  Mirrors the host's
+## command: `--sexpr` is stripped anywhere, resolution flags are extracted, the
+## operands are expanded (directories contribute every `.mt` file) and validated,
+## and multiple outputs are separated by `# --- <path> ---` headers.
 function lower_command(args: span[str]) -> int:
-    var roots = vec.Vec[str].create()
-    defer: roots.release()
-    var owned_roots = vec.Vec[string.String].create()
-    defer: owned_roots.release()
-    var platform = resolver.Platform.linux
     var sexpr = false
-    var filtered = vec.Vec[str].create()
-    defer: filtered.release()
-    filtered.push("lower")
-    var fi: ptr_uint = 1
-    while fi < args.len:
-        if args[fi] == "--sexpr":
+    var stripped = vec.Vec[str].create()
+    defer: stripped.release()
+    var si: ptr_uint = 1
+    while si < args.len:
+        if args[si] == "--sexpr":
             sexpr = true
         else:
-            filtered.push(args[fi])
-        fi += 1
-    let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
+            stripped.push(args[si])
+        si += 1
+    if stripped.is_empty():
+        eprint_line("missing source file path")
+        cli_help.print_usage(true)
         return 1
-    if fs.is_directory(path):
-        var manifest = path_ops.join(path, "package.toml")
-        defer: manifest.release()
-        if not fs.is_file(manifest.as_str()):
-            return lower_directory(path, ref_of(roots), ref_of(owned_roots), platform, sexpr)
-    return lower_one_path(path, ref_of(roots), ref_of(owned_roots), platform, sexpr)
 
+    var roots = vec.Vec[str].create()
+    defer: roots.release()
+    var no_includes = vec.Vec[str].create()
+    defer: no_includes.release()
+    split_include_pairs(stripped.as_span(), ref_of(roots), ref_of(no_includes))
 
-## Expand a directory operand to its `.mt` files (sorted) and lower each one,
-## printing the host's `# --- <path> ---` header when there is more than one.
-function lower_directory(dir: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]], platform: resolver.Platform, sexpr: bool) -> int:
-    match fs.list_files_recursive(dir):
-        Result.failure as failure:
-            var err = failure.error
-            defer: err.release()
-            var msg = string.String.create()
-            defer: msg.release()
-            msg.append("cannot read ")
-            msg.append(dir)
-            eprint_line(msg.as_str())
+    var inputs = vec.Vec[str].create()
+    defer: inputs.release()
+    let resolution = extract_resolution_flags_span(no_includes.as_span(), ref_of(inputs))
+    if validate_source_operands("lower", inputs.as_span()) != 0:
+        return 1
+
+    var paths = vec.Vec[str].create()
+    defer: paths.release()
+    var expanded_owner = vec.Vec[string.String].create()
+    defer: expanded_owner.release()
+    expand_source_operands(inputs.as_span(), ref_of(paths), ref_of(expanded_owner))
+    if paths.len() == 0:
+        var label = operand_label(inputs.as_span())
+        defer: label.release()
+        var msg = string.String.create()
+        defer: msg.release()
+        msg.append("no .mt files found in ")
+        msg.append(label.as_str())
+        stdio.print_line(msg.as_str())
+        return 0
+
+    if resolution.frozen:
+        var fi: ptr_uint = 0
+        while fi < paths.len():
+            let fp = paths.get(fi) else:
+                break
+            if ensure_current_lockfile_at(unsafe: read(fp)) != 0:
+                return 1
+            fi += 1
+
+    let platform = resolver.Platform.linux
+    let multiple = paths.len() > 1
+    var pi: ptr_uint = 0
+    while pi < paths.len():
+        let path_ptr = paths.get(pi) else:
+            break
+        let path = unsafe: read(path_ptr)
+        var file_roots = vec.Vec[str].create()
+        defer: file_roots.release()
+        copy_roots(ref_of(roots), ref_of(file_roots))
+        var file_owned = vec.Vec[string.String].create()
+        defer: file_owned.release()
+        if apply_locked_resolution(path, resolution, ref_of(file_roots), ref_of(file_owned)) != 0:
             return 1
-        Result.success as entries_payload:
-            var entries = entries_payload.value
-            defer: entries.release()
-            var files = vec.Vec[str].create()
-            defer: files.release()
-            var ei: ptr_uint = 0
-            while ei < entries.len():
-                let name = entries.get(ei) else:
-                    break
-                if name.ends_with(".mt"):
-                    files.push(name)
-                ei += 1
-            if files.len() == 0:
-                stdio.print_format(c"no .mt files found in %.*s\n", int<-(dir.len), dir.data)
-                return 0
-            files.sort_by(proc(left: ptr[str], right: ptr[str]) -> int: str.order(left, right))
-            let multiple = files.len() > 1
-            var fi: ptr_uint = 0
-            while fi < files.len():
-                let file_ptr = files.get(fi) else:
-                    break
-                let file = unsafe: read(file_ptr)
-                if multiple and not sexpr:
-                    stdio.print_format(c"# --- %.*s ---\n", int<-(file.len), file.data)
-                let rc = lower_one_path(file, roots, owned, platform, sexpr)
-                if rc != 0:
-                    return rc
-                fi += 1
-            return 0
+        let rc = lower_one_path(path, ref_of(file_roots), ref_of(file_owned), platform, sexpr, multiple and not sexpr)
+        if rc != 0:
+            return rc
+        pi += 1
     return 0
 
 
 ## Lower one source file and print the rendered IR (or its `--sexpr` dump).
-function lower_one_path(path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]], platform: resolver.Platform, sexpr: bool) -> int:
+## The header is printed after a successful check, matching the host's loop
+## (`check_program` raises before the header on an invalid file).
+function lower_one_path(path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]], platform: resolver.Platform, sexpr: bool, header: bool) -> int:
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
     let effective = effective_source_path(path, roots, ref_of(entry_path_owner), ref_of(source_root_owner)) else:
         return 1
     if not fs.exists(effective):
+        var missing_abs = loader.absolute_path(path)
+        defer: missing_abs.release()
         var missing = string.String.create()
         defer: missing.release()
         missing.append("source file not found: ")
-        missing.append(path)
+        missing.append(missing_abs.as_str())
         eprint_line(missing.as_str())
         entry_path_owner.release()
         source_root_owner.release()
@@ -1873,6 +2285,9 @@ function lower_one_path(path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[
         entry_path_owner.release()
         source_root_owner.release()
         return 1
+
+    if header:
+        stdio.print_format(c"# --- %.*s ---\n", int<-(path.len), path.data)
 
     if reject_external_root(program):
         entry_path_owner.release()
@@ -1991,10 +2406,12 @@ function emit_c_one_path(path: str, roots: ref[vec.Vec[str]], owned_roots: ref[v
         source_root_owner.release()
         return 1
     if not fs.exists(effective):
+        var missing_abs = loader.absolute_path(path)
+        defer: missing_abs.release()
         var missing = string.String.create()
         defer: missing.release()
         missing.append("source file not found: ")
-        missing.append(path)
+        missing.append(missing_abs.as_str())
         eprint_line(missing.as_str())
         entry_path_owner.release()
         source_root_owner.release()
@@ -2024,55 +2441,26 @@ function emit_c_one_path(path: str, roots: ref[vec.Vec[str]], owned_roots: ref[v
     return 0
 
 
-## `mtc emit-c PATH|DIR [PATH|DIR ...] [-I PATH]`.
+## `mtc emit-c PATH|DIR [PATH|DIR ...] [--locked|--frozen] [-I PATH]`.
 function emit_c_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer: roots.release()
-    var owned_roots = vec.Vec[string.String].create()
-    defer: owned_roots.release()
-    var inputs = vec.Vec[str].create()
-    defer: inputs.release()
-    var platform = resolver.Platform.linux
-    var ai: ptr_uint = 1
-    while ai < args.len:
-        let arg = args[ai]
-        if arg == "--":
-            ai += 1
-            while ai < args.len:
-                inputs.push(args[ai])
-                ai += 1
-            continue
-        if arg == "-I" or arg == "--include-path" or arg == "--root":
-            if ai + 1 >= args.len:
-                stdio.print_line("error: -I requires a directory")
-                return 1
-            roots.push(args[ai + 1])
-            ai += 2
-            continue
-        if arg == "--platform":
-            if ai + 1 >= args.len:
-                stdio.print_line("error: --platform requires linux, windows, or wasm")
-                return 1
-            match parse_platform_name(args[ai + 1]):
-                Option.some as plat:
-                    platform = plat.value
-                Option.none:
-                    return 1
-            ai += 2
-            continue
-        if arg == "--locked" or arg == "--frozen":
-            ai += 1
-            continue
-        if arg.starts_with("-"):
-            return reject_unexpected_operands("emit-c", args)
-        inputs.push(arg)
-        ai += 1
-
-    if inputs.len() == 0:
+    var no_includes = vec.Vec[str].create()
+    defer: no_includes.release()
+    split_include_pairs(unsafe: span[str](data = args.data + 1, len = args.len - 1), ref_of(roots), ref_of(no_includes))
+    if no_includes.is_empty():
         eprint_line("missing source file path")
         cli_help.print_usage(true)
         return 1
 
+    var inputs = vec.Vec[str].create()
+    defer: inputs.release()
+    let resolution = extract_resolution_flags_span(no_includes.as_span(), ref_of(inputs))
+    if validate_source_operands("emit-c", inputs.as_span()) != 0:
+        return 1
+
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
     var program_paths = vec.Vec[str].create()
     defer: program_paths.release()
     var resolved_owner = vec.Vec[string.String].create()
@@ -2086,15 +2474,34 @@ function emit_c_command(args: span[str]) -> int:
             return 1
         ii += 1
 
+    # The host checks the lock for the raw operands after resolving package
+    # directories to their entry.
+    if resolution.frozen:
+        var fi: ptr_uint = 0
+        while fi < inputs.len():
+            let fp = inputs.get(fi) else:
+                break
+            if ensure_current_lockfile_at(unsafe: read(fp)) != 0:
+                return 1
+            fi += 1
+
+    let platform = resolver.Platform.linux
     let multiple = program_paths.len() > 1
     var pi: ptr_uint = 0
     while pi < program_paths.len():
         let path_ptr = program_paths.get(pi) else:
             break
         let path = unsafe: read(path_ptr)
+        var file_roots = vec.Vec[str].create()
+        defer: file_roots.release()
+        copy_roots(ref_of(roots), ref_of(file_roots))
+        var file_owned = vec.Vec[string.String].create()
+        defer: file_owned.release()
+        if apply_locked_resolution(path, resolution, ref_of(file_roots), ref_of(file_owned)) != 0:
+            return 1
         if multiple:
             stdio.print_format(c"/* --- %.*s --- */\n", int<-(path.len), path.data)
-        let rc = emit_c_one_path(path, ref_of(roots), ref_of(owned_roots), platform)
+        let rc = emit_c_one_path(path, ref_of(file_roots), ref_of(file_owned), platform)
         if rc != 0:
             return rc
         if multiple and pi + 1 < program_paths.len():
@@ -2389,18 +2796,35 @@ function apply_package_resolution(
     roots: ref[vec.Vec[str]],
     owned_roots: ref[vec.Vec[string.String]],
 ) -> int:
+    match apply_package_resolution_result(path, locked, frozen, roots, owned_roots):
+        Result.failure as resolution_failure:
+            var message = resolution_failure.error
+            eprint_line(message.as_str())
+            message.release()
+            return 1
+        Result.success:
+            return 0
+
+
+## The quiet form: errors are returned to the caller.  `mtc test` resolves a
+## package per test file, where the host reports the failure as that file's
+## build error rather than a command-level message.
+function apply_package_resolution_result(
+    path: str,
+    locked: bool,
+    frozen: bool,
+    roots: ref[vec.Vec[str]],
+    owned_roots: ref[vec.Vec[string.String]],
+) -> Result[bool, string.String]:
     if frozen:
         match package_lock.ensure_current(path, true):
             Result.failure as check_failure:
-                var message = check_failure.error
-                eprint_line(message.as_str())
-                message.release()
-                return 1
+                return Result[bool, string.String].failure(error = check_failure.error)
             Result.success:
                 pass
 
     if not dep_manifest.manifest_exists_for(path):
-        return 0
+        return Result[bool, string.String].success(value = true)
 
     var package_resolver = package_source.create_resolver(
         if locked: package_source.ResolutionMode.reject else: package_source.ResolutionMode.materialize
@@ -2412,25 +2836,19 @@ function apply_package_resolution(
     if locked:
         match package_lock.load_graph(path, ref_of(package_resolver)):
             Result.failure as load_failure:
-                var message = load_failure.error
-                eprint_line(message.as_str())
-                message.release()
-                return 1
+                return Result[bool, string.String].failure(error = load_failure.error)
             Result.success as graph_payload:
                 loaded = graph_payload.value
                 loaded_ok = true
     else:
         match package_graph.load(path, ref_of(package_resolver)):
             Result.failure as load_failure:
-                var message = load_failure.error
-                eprint_line(message.as_str())
-                message.release()
-                return 1
+                return Result[bool, string.String].failure(error = load_failure.error)
             Result.success as graph_payload:
                 loaded = graph_payload.value
                 loaded_ok = true
     if not loaded_ok:
-        return 0
+        return Result[bool, string.String].success(value = true)
     defer: loaded.release()
 
     var graph_roots = package_graph.source_roots(ref_of(loaded))
@@ -2446,7 +2864,7 @@ function apply_package_resolution(
                 break
             roots.push(unsafe: read(stored).as_str())
         i += 1
-    return 0
+    return Result[bool, string.String].success(value = true)
 
 
 function contains_root(roots: ref[vec.Vec[str]], candidate: str) -> bool:
@@ -2491,7 +2909,7 @@ function build_command(args: span[str]) -> int:
         let arg = args[ai]
         if arg == "-o" or arg == "--output":
             if ai + 1 >= args.len:
-                stdio.print_line("error: -o requires an output path")
+                eprint_missing_option_value(arg)
                 return 1
             output_override = Option[str].some(value= args[ai + 1])
             ai += 2
@@ -2537,7 +2955,7 @@ function build_command(args: span[str]) -> int:
             return 1
         if arg == "--keep-c":
             if ai + 1 >= args.len:
-                stdio.print_line("error: --keep-c requires a path")
+                eprint_missing_option_value(arg)
                 return 1
             keep_c_path = Option[str].some(value= args[ai + 1])
             ai += 2
@@ -2554,7 +2972,7 @@ function build_command(args: span[str]) -> int:
             use_cache = false
             ai += 1
             continue
-        if arg == "-I" or arg == "--root" or arg == "--include-path":
+        if arg == "-I" or arg == "--include-path":
             filtered.push(arg)
             if ai + 1 < args.len:
                 filtered.push(args[ai + 1])
@@ -2588,18 +3006,23 @@ function build_command(args: span[str]) -> int:
             continue
         if arg == "--profile":
             if ai + 1 >= args.len:
-                stdio.print_line("error: --profile requires a profile name (debug or release)")
+                eprint_missing_option_value(arg)
                 return 1
             profile_name = args[ai + 1]
             if not profile_name == "debug" and not profile_name == "release":
-                stdio.print_line("error: --profile must be debug or release")
+                var bad_profile = string.String.create()
+                defer: bad_profile.release()
+                bad_profile.append("unknown profile ")
+                bad_profile.append(profile_name)
+                bad_profile.append("; expected debug|release")
+                eprint_line(bad_profile.as_str())
                 return 1
             has_cli_profile = true
             ai += 2
             continue
         if arg == "--platform":
             if ai + 1 >= args.len:
-                stdio.print_line("error: --platform requires linux, windows, or wasm")
+                eprint_missing_option_value(arg)
                 return 1
             match parse_platform_name(args[ai + 1]):
                 Option.some as plat:
@@ -3232,14 +3655,14 @@ function run_command(args: span[str]) -> int:
             continue
         if arg == "-o" or arg == "--output":
             if ai + 1 >= args.len:
-                stdio.print_line("error: -o requires an output path")
+                eprint_missing_option_value(arg)
                 return 1
             output_override = Option[str].some(value = args[ai + 1])
             ai += 2
             continue
         if arg == "--keep-c":
             if ai + 1 >= args.len:
-                stdio.print_line("error: --keep-c requires a path")
+                eprint_missing_option_value(arg)
                 return 1
             keep_c_path = Option[str].some(value = args[ai + 1])
             ai += 2
@@ -3291,7 +3714,7 @@ function run_command(args: span[str]) -> int:
             archive_mode = true
             ai += 1
             continue
-        if arg == "-I" or arg == "--root" or arg == "--include-path":
+        if arg == "-I" or arg == "--include-path":
             filtered.push(arg)
             if ai + 1 < args.len:
                 filtered.push(args[ai + 1])
@@ -3299,18 +3722,23 @@ function run_command(args: span[str]) -> int:
             continue
         if arg == "--profile":
             if ai + 1 >= args.len:
-                stdio.print_line("error: --profile requires a profile name (debug or release)")
+                eprint_missing_option_value(arg)
                 return 1
             profile_name = args[ai + 1]
             if not profile_name == "debug" and not profile_name == "release":
-                stdio.print_line("error: --profile must be debug or release")
+                var bad_profile = string.String.create()
+                defer: bad_profile.release()
+                bad_profile.append("unknown profile ")
+                bad_profile.append(profile_name)
+                bad_profile.append("; expected debug|release")
+                eprint_line(bad_profile.as_str())
                 return 1
             has_cli_profile = true
             ai += 2
             continue
         if arg == "--platform":
             if ai + 1 >= args.len:
-                stdio.print_line("error: --platform requires linux, windows, or wasm")
+                eprint_missing_option_value(arg)
                 return 1
             match parse_platform_name(args[ai + 1]):
                 Option.some as plat:
@@ -3339,10 +3767,12 @@ function run_command(args: span[str]) -> int:
     let effective = effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
         return 1
     if not fs.exists(effective):
+        var missing_abs = loader.absolute_path(path)
+        defer: missing_abs.release()
         var missing = string.String.create()
         defer: missing.release()
         missing.append("source file not found: ")
-        missing.append(path)
+        missing.append(missing_abs.as_str())
         eprint_line(missing.as_str())
         return 1
 
@@ -3634,29 +4064,65 @@ function run_module_command(args: span[str]) -> int:
     defer: roots.release()
 
     var ai: ptr_uint = 1
+    var separator_index: ptr_uint = 0
+    var has_separator = false
     while ai < args.len:
         let arg = args[ai]
         if arg == "--":
+            # `parse_build_options` turns everything after `--` into positionals.
+            if ai + 1 < args.len:
+                module_name = Option[str].some(value = args[ai + 1])
+                module_index = ai + 1
+                separator_index = ai
+                has_separator = true
             break
-        if arg == "--root" or arg == "-I" or arg == "--include-path":
+        if arg == "-I" or arg == "--include-path":
             if ai + 1 >= args.len:
                 stdio.print_line("error: -I requires a directory")
                 return 1
             roots.push(args[ai + 1])
             ai += 2
             continue
-        if arg == "-o" or arg == "--cc" or arg == "--profile" or arg == "--platform" or arg == "--keep-c":
+        if arg == "-o" or arg == "--output" or arg == "--cc" or arg == "--profile" or arg == "--platform" or arg == "--keep-c":
+            if ai + 1 >= args.len:
+                eprint_missing_option_value(arg)
+                return 1
             ai += 2
             continue
-        if arg.starts_with("-"):
+        if arg == "--kind":
+            if ai + 1 >= args.len:
+                eprint_missing_option_value(arg)
+                return 1
+            let kind_name = args[ai + 1]
+            if not is_known_build_kind(kind_name):
+                var bad_kind = string.String.create()
+                defer: bad_kind.release()
+                bad_kind.append("unknown build kind ")
+                bad_kind.append(kind_name)
+                bad_kind.append("; expected executable|static|shared")
+                eprint_line(bad_kind.as_str())
+                cli_help.print_usage(true)
+                return 1
+            ai += 2
+            continue
+        if arg == "--bundle" or arg == "--archive" or arg == "--locked" or arg == "--frozen" or arg == "--no-cache" or arg == "--timings" or arg == "--debug-guards" or arg == "--no-debug-guards":
             ai += 1
             continue
+        if arg.starts_with("-"):
+            var unknown_opt = string.String.create()
+            defer: unknown_opt.release()
+            unknown_opt.append("unknown build option ")
+            unknown_opt.append(arg)
+            eprint_line(unknown_opt.as_str())
+            cli_help.print_usage(true)
+            return 1
         module_name = Option[str].some(value = arg)
         module_index = ai
         break
 
     let name = module_name else:
-        stdio.print_line("missing module name")
+        eprint_line("missing module name")
+        cli_help.print_usage(true)
         return 1
 
     # Ambient roots: the current directory plus its enclosing project root.
@@ -3676,7 +4142,11 @@ function run_module_command(args: span[str]) -> int:
         add_module_roots(cwd.as_str(), ref_of(roots), ref_of(owned_roots))
 
     var resolved = resolve_app_module(name, ref_of(roots)) else:
-        stdio.print_format(c"run-module module not found: %.*s\n", int<-(name.len), name.data)
+        var not_found = string.String.create()
+        defer: not_found.release()
+        not_found.append("run-module module not found: ")
+        not_found.append(name)
+        eprint_line(not_found.as_str())
         return 1
     defer: resolved.release()
 
@@ -3685,6 +4155,10 @@ function run_module_command(args: span[str]) -> int:
     run_args.push("run")
     var ri: ptr_uint = 1
     while ri < args.len:
+        if has_separator and ri == separator_index:
+            # `parse_build_options` drops the `--` itself.
+            ri += 1
+            continue
         if ri == module_index:
             run_args.push(resolved.as_str())
         else:
@@ -3886,7 +4360,7 @@ function completions_command(args: span[str]) -> int:
         stdio.print_line("_mtc() {")
         stdio.print_line("  local cur=\"${COMP_WORDS[COMP_CWORD]}\"")
         stdio.print_line("  if [ \"${COMP_CWORD}\" -eq 1 ]; then")
-        stdio.print_line("    COMPREPLY=( $(compgen -W \"check build run run-module test new format lint lex parse lower emit-c completions help version\" -- \"${cur}\") )")
+        stdio.print_line("    COMPREPLY=( $(compgen -W \"check build run run-module test new format lint lex parse lower emit-c debug deps toolchain bindgen cache docs std snapshot lsp dap completions help version\" -- \"${cur}\") )")
         stdio.print_line("  fi")
         stdio.print_line("}")
         stdio.print_line("complete -F _mtc mtc")
@@ -3943,14 +4417,8 @@ function print_human_size(bytes: ptr_uint) -> void:
 
 function cache_command(args: span[str]) -> int:
     if args.len < 2:
-        stdio.print_line("mtc cache <subcommand>")
-        stdio.print_line("")
-        stdio.print_line("Commands:")
-        stdio.print_line("  purge   Delete the build cache")
-        stdio.print_line("  status  Show cache entry count and total size")
-        stdio.print_line("")
-        stdio.print_line("Flags:")
-        stdio.print_line("  --help  Show cache command help")
+        eprint_line("missing cache subcommand")
+        let _ = cli_help.print_command_help("cache", true)
         return 1
     let sub = args[1]
     if sub == "--help" or sub == "-h":
@@ -4005,8 +4473,6 @@ function cache_command(args: span[str]) -> int:
 ## Generate a binding module from a C header.
 ## Usage: mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]
 function bindgen_command(args: span[str]) -> int:
-    var module_name: Option[str] = Option[str].none
-    var header: Option[str] = Option[str].none
     var output: Option[str] = Option[str].none
     var nullable_report: Option[str] = Option[str].none
     var nullable_policy: Option[str] = Option[str].none
@@ -4016,31 +4482,44 @@ function bindgen_command(args: span[str]) -> int:
     var clang_args = vec.Vec[str].create()
     var clang_str: str = ""
 
-    var ai: ptr_uint = 1
+    # The host consumes the first two operands as MODULE and HEADER before it
+    # parses any option (`BindgenCLI#start`), so options must follow them.
+    if args.len < 3:
+        eprint_line("missing module name or header path")
+        let _ = cli_help.print_command_help("bindgen", true)
+        return 1
+    let mod_name = args[1]
+    let header_path = args[2]
+
+    var ai: ptr_uint = 3
     while ai < args.len:
         let arg = args[ai]
         if arg == "-o" or arg == "--output":
             ai += 1
             if ai >= args.len:
-                stdio.print_line("bindgen: -o requires an output path")
+                eprint_line("missing value for -o")
+                let _ = cli_help.print_command_help("bindgen", true)
                 return 1
             output = Option[str].some(value = args[ai])
         else if arg == "--link":
             ai += 1
             if ai >= args.len:
-                stdio.print_line("bindgen: --link requires a library name")
+                eprint_line("missing value for --link")
+                let _ = cli_help.print_command_help("bindgen", true)
                 return 1
             link_libs.push(args[ai])
         else if arg == "--include":
             ai += 1
             if ai >= args.len:
-                stdio.print_line("bindgen: --include requires a header name")
+                eprint_line("missing value for --include")
+                let _ = cli_help.print_command_help("bindgen", true)
                 return 1
             includes.push(args[ai])
         else if arg == "--clang":
             ai += 1
             if ai >= args.len:
-                stdio.print_line("bindgen: --clang requires a path")
+                eprint_line("missing value for --clang")
+                let _ = cli_help.print_command_help("bindgen", true)
                 return 1
             clang_str = args[ai]
         else if arg == "--clang-arg":
@@ -4070,24 +4549,15 @@ function bindgen_command(args: span[str]) -> int:
                 eprint_line("bindgen: --options-json requires a path")
                 return 1
             options_json = Option[str].some(value = args[ai])
-        else if arg == "--help" or arg == "-h":
-            stdio.print_line("usage: mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG] [--nullable-policy PATH] [--nullable-report PATH]")
-            return 0
-        else if module_name.is_none():
-            module_name = Option[str].some(value = arg)
-        else if header.is_none():
-            header = Option[str].some(value = arg)
         else:
-            stdio.print_line("bindgen: unexpected argument")
+            var unknown_opt = string.String.create()
+            defer: unknown_opt.release()
+            unknown_opt.append("unknown bindgen option ")
+            unknown_opt.append(arg)
+            eprint_line(unknown_opt.as_str())
+            let _ = cli_help.print_command_help("bindgen", true)
             return 1
         ai += 1
-
-    let mod_name = module_name else:
-        stdio.print_line("bindgen: missing module name")
-        return 1
-    let header_path = header else:
-        stdio.print_line("bindgen: missing header path")
-        return 1
 
     var policy: bindgen.NullablePolicy
     match nullable_policy:
@@ -4570,7 +5040,8 @@ struct StdCatalogEntry:
 ## mirroring the Ruby CLI's StdCatalog.
 function std_command(args: span[str]) -> int:
     if args.len < 2:
-        stdio.print_line("missing std subcommand (expected list or show)")
+        eprint_line("missing std subcommand (expected list or show)")
+        let _ = cli_help.print_command_help("std", true)
         return 1
     let sub = args[1]
     if sub == "list":
@@ -4580,13 +5051,18 @@ function std_command(args: span[str]) -> int:
             if args[ai] == "--json":
                 as_json = true
             else:
-                stdio.print_format(c"unknown std list option %.*s\n", int<-(args[ai].len), args[ai].data)
+                var unknown_opt = string.String.create()
+                defer: unknown_opt.release()
+                unknown_opt.append("unknown std list option ")
+                unknown_opt.append(args[ai])
+                eprint_line(unknown_opt.as_str())
                 return 1
             ai += 1
         return std_list_command(as_json)
     if sub == "show":
         if args.len < 3:
-            stdio.print_line("missing module name")
+            eprint_line("missing module name")
+            let _ = cli_help.print_command_help("std", true)
             return 1
         return std_show_command(args[2])
     var unknown_sub = string.String.create()
@@ -5008,14 +5484,14 @@ function snapshot_command(args: span[str]) -> int:
         let arg = args[ai]
         if arg == "--theme" or arg == "-t":
             if ai + 1 >= args.len:
-                stdio.print_line("snapshot: missing value for --theme")
+                eprint_line("snapshot: missing value for --theme")
                 return 1
             theme_path_opt = Option[str].some(value = args[ai + 1])
             ai += 2
             continue
         if arg == "--output" or arg == "-o":
             if ai + 1 >= args.len:
-                stdio.print_line("snapshot: missing value for --output")
+                eprint_line("snapshot: missing value for --output")
                 return 1
             output_path_opt = Option[str].some(value = args[ai + 1])
             ai += 2
@@ -5025,10 +5501,18 @@ function snapshot_command(args: span[str]) -> int:
             ai += 1
             continue
         if arg.starts_with("-"):
-            stdio.print_format(c"snapshot: unknown option %.*s\n", int<-(arg.len), arg.data)
+            var unknown = string.String.create()
+            defer: unknown.release()
+            unknown.append("snapshot: unknown option ")
+            unknown.append(arg)
+            eprint_line(unknown.as_str())
             return 1
         if input_path_opt.is_some():
-            stdio.print_format(c"snapshot: unexpected argument %.*s\n", int<-(arg.len), arg.data)
+            var unexpected = string.String.create()
+            defer: unexpected.release()
+            unexpected.append("snapshot: unexpected argument ")
+            unexpected.append(arg)
+            eprint_line(unexpected.as_str())
             return 1
         input_path_opt = Option[str].some(value = arg)
         ai += 1
@@ -5039,7 +5523,11 @@ function snapshot_command(args: span[str]) -> int:
         return 1
 
     if not fs.is_file(input_path):
-        stdio.print_format(c"snapshot: source file not found: %.*s\n", int<-(input_path.len), input_path.data)
+        var missing = string.String.create()
+        defer: missing.release()
+        missing.append("snapshot: source file not found: ")
+        missing.append(input_path)
+        eprint_line(missing.as_str())
         return 1
 
     var roots = vec.Vec[str].create()
@@ -5076,12 +5564,26 @@ function snapshot_command(args: span[str]) -> int:
             resolved_theme.append(default_theme.as_str())
             default_theme.release()
 
-    if not fs.is_file(resolved_theme.as_str()):
-        stdio.print_format(
-            c"snapshot: theme file not found: %.*s\n",
-            int<-(resolved_theme.as_str().len), resolved_theme.as_str().data,
-        )
+    # The host expands the theme path before checking it, so the message and
+    # the `-t` argument carry the absolute path.
+    var theme_abs = loader.absolute_path(resolved_theme.as_str())
+    defer: theme_abs.release()
+    if not fs.is_file(theme_abs.as_str()):
+        var theme_missing = string.String.create()
+        defer: theme_missing.release()
+        theme_missing.append("snapshot: theme file not found: ")
+        theme_missing.append(theme_abs.as_str())
+        eprint_line(theme_missing.as_str())
         return 1
+
+    var ws = workspace.Workspace.create(pr)
+    defer: ws.release()
+    var ri: ptr_uint = roots.len()
+    while ri > 0:
+        ri -= 1
+        let root_ptr = roots.get(ri) else:
+            break
+        ws.module_roots.insert(0, string.String.from_str(unsafe: read(root_ptr)))
 
     var semantic_json_owned: Option[string.String] = Option[string.String].none
     var semantic_temp_path: Option[string.String] = Option[string.String].none
@@ -5090,7 +5592,7 @@ function snapshot_command(args: span[str]) -> int:
             Result.success as src_payload:
                 var source = src_payload.value
                 defer: source.release()
-                var entries_json = sem_tokens.snapshot_semantic_entries(source.as_str())
+                var entries_json = sem_tokens.snapshot_entries_for(ref_of(ws), input_path, source.as_str())
                 if entries_json.len() > 2:
                     match fs.create_temporary_file_in_system_temp("mt_semantic_", ".json"):
                         Result.success as tmp_payload:
@@ -5117,7 +5619,7 @@ function snapshot_command(args: span[str]) -> int:
     node_cmd.push(snapshot_js.as_str())
     node_cmd.push(input_path)
     node_cmd.push("-t")
-    node_cmd.push(resolved_theme.as_str())
+    node_cmd.push(theme_abs.as_str())
     match output_path_opt:
         Option.some as op:
             node_cmd.push("-o")
@@ -5170,50 +5672,39 @@ function debug_command(args: span[str]) -> int:
     defer: roots.release()
     var owned_roots = vec.Vec[string.String].create()
     defer: owned_roots.release()
-    var platform = resolver.Platform.linux
-    var locked_flag = false
-    var frozen_flag = false
-
-    var filtered = vec.Vec[str].create()
-    defer: filtered.release()
-    filtered.push("debug")
-    var ai: ptr_uint = 1
-    while ai < args.len:
-        let arg = args[ai]
-        if arg == "--root" or arg == "-I" or arg == "--include-path":
-            if ai + 1 >= args.len:
-                stdio.print_line("error: -I requires a directory")
-                return 1
-            roots.push(args[ai + 1])
-            ai += 2
-            continue
-        if arg == "--platform":
-            if ai + 1 >= args.len:
-                stdio.print_line("error: --platform requires linux, windows, or wasm")
-                return 1
-            match parse_platform_name(args[ai + 1]):
-                Option.some as plat:
-                    platform = plat.value
-                Option.none:
-                    return 1
-            ai += 2
-            continue
-        if arg == "--locked":
-            locked_flag = true
-            ai += 1
-            continue
-        if arg == "--frozen":
-            locked_flag = true
-            frozen_flag = true
-            ai += 1
-            continue
-        filtered.push(arg)
-        ai += 1
-
-    let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
+    var stripped = vec.Vec[str].create()
+    defer: stripped.release()
+    split_include_pairs(unsafe: span[str](data = args.data + 1, len = args.len - 1), ref_of(roots), ref_of(stripped))
+    if stripped.is_empty():
+        eprint_line("missing source file path")
+        cli_help.print_usage(true)
         return 1
 
-    if apply_package_resolution(path, locked_flag, frozen_flag, ref_of(roots), ref_of(owned_roots)) != 0:
+    var inputs = vec.Vec[str].create()
+    defer: inputs.release()
+    let resolution = extract_resolution_flags_span(stripped.as_span(), ref_of(inputs))
+    if validate_source_operands("debug", inputs.as_span()) != 0:
+        return 1
+
+    var paths = vec.Vec[str].create()
+    defer: paths.release()
+    var expanded_owner = vec.Vec[string.String].create()
+    defer: expanded_owner.release()
+    expand_source_operands(inputs.as_span(), ref_of(paths), ref_of(expanded_owner))
+    if paths.len() == 0:
+        var label = operand_label(inputs.as_span())
+        defer: label.release()
+        var msg = string.String.create()
+        defer: msg.release()
+        msg.append("no .mt files found in ")
+        msg.append(label.as_str())
+        eprint_line(msg.as_str())
+        return 1
+    let path_ptr = paths.get(0) else:
+        return 1
+    let path = unsafe: read(path_ptr)
+
+    if apply_package_resolution(path, resolution.locked, resolution.frozen, ref_of(roots), ref_of(owned_roots)) != 0:
         return 1
 
     var entry_path_owner = string.String.create()
@@ -5253,10 +5744,10 @@ struct CommandSummary:
     summary: str
 
 
-## The self-host's implemented command set with the same one-line summaries as
-## Ruby's CLI::COMMANDS (used by the zsh/fish completion scripts).
+## The self-host's command set with Ruby's `CLI::COMMANDS` order and summaries
+## (used by the bash/zsh/fish completion scripts).
 function command_summary_count() -> ptr_uint:
-    return 19
+    return 23
 
 
 function command_summary_at(index: ptr_uint) -> CommandSummary:
@@ -5277,25 +5768,33 @@ function command_summary_at(index: ptr_uint) -> CommandSummary:
     if index == 7:
         return CommandSummary(name = "lint", summary = "Lint source files and report warnings")
     if index == 8:
-        return CommandSummary(name = "lsp", summary = "Start the language server (stdio JSON-RPC)")
-    if index == 9:
         return CommandSummary(name = "lex", summary = "Print the lexer token stream")
-    if index == 10:
+    if index == 9:
         return CommandSummary(name = "parse", summary = "Parse source and print the AST")
-    if index == 11:
+    if index == 10:
         return CommandSummary(name = "lower", summary = "Lower source to IR and print it")
-    if index == 12:
+    if index == 11:
         return CommandSummary(name = "emit-c", summary = "Compile source to C and print it")
+    if index == 12:
+        return CommandSummary(name = "debug", summary = "Print tokens, AST, facts, and diagnostics")
     if index == 13:
-        return CommandSummary(name = "bindgen", summary = "Generate a binding module from a C header")
+        return CommandSummary(name = "deps", summary = "Manage package dependencies")
     if index == 14:
         return CommandSummary(name = "toolchain", summary = "Manage the native toolchain")
     if index == 15:
-        return CommandSummary(name = "std", summary = "List standard library modules and print their source")
+        return CommandSummary(name = "bindgen", summary = "Generate a binding module from a C header")
     if index == 16:
-        return CommandSummary(name = "snapshot", summary = "Render a highlighted HTML snapshot")
+        return CommandSummary(name = "cache", summary = "Inspect and manage the build cache")
     if index == 17:
-        return CommandSummary(name = "debug", summary = "Print tokens, AST facts, and diagnostics")
+        return CommandSummary(name = "docs", summary = "Serve the local documentation site")
+    if index == 18:
+        return CommandSummary(name = "std", summary = "List standard library modules and print their source")
+    if index == 19:
+        return CommandSummary(name = "snapshot", summary = "Render a highlighted HTML snapshot")
+    if index == 20:
+        return CommandSummary(name = "lsp", summary = "Start the Language Server Protocol server")
+    if index == 21:
+        return CommandSummary(name = "dap", summary = "Start the Debug Adapter Protocol server")
     return CommandSummary(name = "completions", summary = "Print a shell completion script")
 
 
@@ -5360,8 +5859,7 @@ function format_one_path(
         Result.failure as err:
             var msg = err.error
             defer: msg.release()
-            stdio.print_format(c"error: cannot read %.*s\n", int<-(path.len), path.data)
-            return 1
+            return report_missing_source(path)
 
 
 ## Format several sources (a directory operand or more than one path).  The
@@ -5395,8 +5893,7 @@ function format_paths_command(
                 Result.failure as err:
                     var msg = err.error
                     defer: msg.release()
-                    stdio.print_format(c"error: cannot read %.*s\n", int<-(path.len), path.data)
-                    return 1
+                    return report_missing_source(path)
             pi += 1
         if needs.len() == 0:
             stdio.print_format(c"all %d file(s) already formatted\n", int<-(paths.len()))
@@ -5431,8 +5928,7 @@ function format_paths_command(
             Result.failure as err:
                 var msg = err.error
                 defer: msg.release()
-                stdio.print_format(c"error: cannot read %.*s\n", int<-(path.len), path.data)
-                return 1
+                return report_missing_source(path)
         pi += 1
     stdio.print_format(c"formatted %d of %d file(s)\n", int<-(changed), int<-(paths.len()))
     return 0
@@ -5908,7 +6404,7 @@ function lex_integer_value(lexeme: str) -> ulong:
     return value
 
 
-function lex_command(file_path: str, machine: bool, sexpr: bool) -> int:
+function lex_command(file_path: str, sexpr: bool) -> int:
     if not fs.exists(file_path):
         var missing = string.String.create()
         defer: missing.release()
@@ -5947,90 +6443,70 @@ function lex_command(file_path: str, machine: bool, sexpr: bool) -> int:
                 diags.release()
                 return 0
 
-            if machine:
-                stdio.print_format(c"── Tokens  %d  ──\n", int<-(tokens.len()))
-                # Machine-readable: kind line col start end
-                var j: ptr_uint = 0
-                while j < tokens.len():
-                    let tok = tokens.get(j) else:
-                        break
-                    unsafe:
-                        let t = read(tok)
-                        let kn = token_mod.kind_name(t.kind)
-                        stdio.print_format(
-                            c"%s %d %d %d %d\n",
-                            kn,
-                            int<-(t.line),
-                            int<-(t.column),
-                            int<-(t.start_offset),
-                            int<-(t.end_offset),
-                        )
-                    j += 1
-            else:
-                # The host prints `PP.pp(tokens)` — Ruby's pretty-printed array
-                # of `MilkTea::Token` Data objects, one field per line.
-                var k: ptr_uint = 0
-                while k < tokens.len():
-                    let tok = tokens.get(k) else:
-                        break
-                    unsafe:
-                        let t = read(tok)
-                        let lexeme = token_mod.token_lexeme(t, source)
-                        var line = string.String.create()
-                        defer: line.release()
-                        if k == 0:
-                            line.append("[#<data MilkTea::Token")
-                        else:
-                            line.append(" #<data MilkTea::Token")
-                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
-                        line.clear()
-                        line.append("  type=:")
-                        line.append(token_mod.kind_name(t.kind))
+            # The host prints `PP.pp(tokens)` — Ruby's pretty-printed array
+            # of `MilkTea::Token` Data objects, one field per line.
+            var k: ptr_uint = 0
+            while k < tokens.len():
+                let tok = tokens.get(k) else:
+                    break
+                unsafe:
+                    let t = read(tok)
+                    let lexeme = token_mod.token_lexeme(t, source)
+                    var line = string.String.create()
+                    defer: line.release()
+                    if k == 0:
+                        line.append("[#<data MilkTea::Token")
+                    else:
+                        line.append(" #<data MilkTea::Token")
+                    stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                    line.clear()
+                    line.append("  type=:")
+                    line.append(token_mod.kind_name(t.kind))
+                    line.append(",")
+                    stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                    line.clear()
+                    line.append("  lexeme=")
+                    append_ruby_inspect(ref_of(line), lexeme)
+                    line.append(",")
+                    stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                    line.clear()
+                    line.append("  literal=")
+                    append_lex_token_literal(ref_of(line), t.kind, lexeme)
+                    line.append(",")
+                    stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                    line.clear()
+                    line.append("  line=")
+                    fmt_mod.append_ptr_uint(ref_of(line), t.line)
+                    line.append(",")
+                    stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                    line.clear()
+                    line.append("  column=")
+                    fmt_mod.append_ptr_uint(ref_of(line), t.column)
+                    line.append(",")
+                    stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                    line.clear()
+                    line.append("  start_offset=")
+                    fmt_mod.append_ptr_uint(ref_of(line), t.start_offset)
+                    line.append(",")
+                    stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                    line.clear()
+                    line.append("  end_offset=")
+                    fmt_mod.append_ptr_uint(ref_of(line), t.end_offset)
+                    line.append(",")
+                    stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                    line.clear()
+                    line.append("  leading_trivia=[]")
+                    line.append(",")
+                    stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                    line.clear()
+                    line.append("  trailing_trivia=[]")
+                    line.append(">")
+                    if k + 1 == tokens.len():
+                        line.append("]")
+                    else:
                         line.append(",")
-                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
-                        line.clear()
-                        line.append("  lexeme=")
-                        append_ruby_inspect(ref_of(line), lexeme)
-                        line.append(",")
-                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
-                        line.clear()
-                        line.append("  literal=")
-                        append_lex_token_literal(ref_of(line), t.kind, lexeme)
-                        line.append(",")
-                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
-                        line.clear()
-                        line.append("  line=")
-                        fmt_mod.append_ptr_uint(ref_of(line), t.line)
-                        line.append(",")
-                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
-                        line.clear()
-                        line.append("  column=")
-                        fmt_mod.append_ptr_uint(ref_of(line), t.column)
-                        line.append(",")
-                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
-                        line.clear()
-                        line.append("  start_offset=")
-                        fmt_mod.append_ptr_uint(ref_of(line), t.start_offset)
-                        line.append(",")
-                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
-                        line.clear()
-                        line.append("  end_offset=")
-                        fmt_mod.append_ptr_uint(ref_of(line), t.end_offset)
-                        line.append(",")
-                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
-                        line.clear()
-                        line.append("  leading_trivia=[]")
-                        line.append(",")
-                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
-                        line.clear()
-                        line.append("  trailing_trivia=[]")
-                        line.append(">")
-                        if k + 1 == tokens.len():
-                            line.append("]")
-                        else:
-                            line.append(",")
-                        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
-                    k += 1
+                    stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+                k += 1
             diags.release()
 
     return 0
@@ -6047,6 +6523,16 @@ enum TestStatus: ubyte
     ok   = 0
     skip = 1
     fail = 2
+
+
+## Why a test file's run stopped.  `build_error` is distinct from a test
+## failure: the host lets that exception escape the file (so a file operand
+## renders one diagnostic line and emits no machine output, while a directory
+## run reports the file-level `(build error)` row and continues).
+enum TestFileOutcome: ubyte
+    ok          = 0
+    test_failed = 1
+    build_error = 2
 
 
 ## A single parsed test outcome for machine-readable (TAP/JUnit) emission.
@@ -6261,9 +6747,8 @@ function is_compile_fail_fixture(source: str) -> bool:
 
 ## Run a compile-fail fixture: type-check the file and verify every
 ## `# expect-error:` substring appears in some error diagnostic.  Returns 0 when
-## the expectations are satisfied and 1 otherwise; `header` prints the
-## directory-mode `# <file>` line.
-function run_compile_fail_file(file_path: str, source_text: str, options: TestRunOptions, header: bool, results: ref[vec.Vec[TestResult]]) -> int:
+## the expectations are satisfied and 1 otherwise.
+function run_compile_fail_file(file_path: str, source_text: str, options: TestRunOptions, results: ref[vec.Vec[TestResult]]) -> int:
     var expected = vec.Vec[str].create()
     defer: expected.release()
     collect_expect_errors(source_text, ref_of(expected))
@@ -6330,8 +6815,6 @@ function run_compile_fail_file(file_path: str, source_text: str, options: TestRu
         else:
             results.push(TestResult(name = name, status = TestStatus.fail, detail = string.String.from_str(fail_reason.as_str()), has_detail = true))
     else:
-        if header:
-            stdio.print_format(c"# %.*s\n", int<-(file_path.len), file_path.data)
         if passed:
             stdio.print_format(c"ok   - %.*s (compile-fail)\n", int<-(file_path.len), file_path.data)
         else:
@@ -6359,6 +6842,7 @@ struct TestRunOptions:
     cc: str
     profile: str
     platform: resolver.Platform
+    locked: bool
 
 
 ## How a discovered test file runs (`TestFileKind.lex_error` aborts the run:
@@ -6391,17 +6875,17 @@ function test_command(args: span[str]) -> int:
     var cc = "cc"
     var profile = "debug"
     var platform = resolver.Platform.linux
+    var locked = false
+    var frozen = false
+
+    # The host extracts the test-limit flags first (`extract_test_limit_flags!`),
+    # so an invalid --timeout/--mem/--jobs/-n/--format is reported before an
+    # unknown build option even when it appears later on the command line.
+    var remaining = vec.Vec[str].create()
+    defer: remaining.release()
     var ai: ptr_uint = 1
     while ai < args.len:
         let arg = args[ai]
-        if arg == "--root" or arg == "-I" or arg == "--include-path":
-            if ai + 1 >= args.len:
-                eprint_line("missing value for -I")
-                ai += 1
-                continue
-            roots.push(args[ai + 1])
-            ai += 2
-            continue
         if arg == "-n" or arg == "--name":
             if ai + 1 >= args.len:
                 eprint_line("-n requires a name substring")
@@ -6460,16 +6944,46 @@ function test_command(args: span[str]) -> int:
             ai += 1
             continue
         if arg == "--":
-            var rest = ai + 1
+            var rest = ai
             while rest < args.len:
-                positional.push(args[rest])
+                remaining.push(args[rest])
+                rest += 1
+            break
+        remaining.push(arg)
+        ai += 1
+
+    var bi: ptr_uint = 0
+    while bi < remaining.len():
+        let arg_ptr = remaining.get(bi) else:
+            break
+        let arg = unsafe: read(arg_ptr)
+        if arg == "-I" or arg == "--include-path":
+            if bi + 1 >= remaining.len():
+                eprint_line("missing value for -I")
+                bi += 1
+                continue
+            let value_ptr = remaining.get(bi + 1) else:
+                eprint_line("missing value for -I")
+                break
+            roots.push(unsafe: read(value_ptr))
+            bi += 2
+            continue
+        if arg == "--":
+            var rest = bi + 1
+            while rest < remaining.len():
+                let rest_ptr = remaining.get(rest) else:
+                    break
+                positional.push(unsafe: read(rest_ptr))
                 rest += 1
             break
         if arg == "-o" or arg == "--output" or arg == "--keep-c" or arg == "--cc" or arg == "--profile" or arg == "--platform":
-            if ai + 1 >= args.len:
+            if bi + 1 >= remaining.len():
                 eprint_missing_option_value(arg)
                 return 1
-            let value = args[ai + 1]
+            let value_ptr = remaining.get(bi + 1) else:
+                eprint_missing_option_value(arg)
+                return 1
+            let value = unsafe: read(value_ptr)
             if arg == "--cc":
                 cc = value
             else if arg == "--profile":
@@ -6497,13 +7011,16 @@ function test_command(args: span[str]) -> int:
                     bad_platform.append("; expected linux|windows|wasm")
                     eprint_line(bad_platform.as_str())
                     return 1
-            ai += 2
+            bi += 2
             continue
         if arg == "--kind":
-            if ai + 1 >= args.len:
+            if bi + 1 >= remaining.len():
                 eprint_missing_option_value(arg)
                 return 1
-            let kind_name = args[ai + 1]
+            let kind_ptr = remaining.get(bi + 1) else:
+                eprint_missing_option_value(arg)
+                return 1
+            let kind_name = unsafe: read(kind_ptr)
             if not is_known_build_kind(kind_name):
                 var bad_kind = string.String.create()
                 defer: bad_kind.release()
@@ -6513,10 +7030,19 @@ function test_command(args: span[str]) -> int:
                 eprint_line(bad_kind.as_str())
                 cli_help.print_usage(true)
                 return 1
-            ai += 2
+            bi += 2
             continue
-        if arg == "--bundle" or arg == "--archive" or arg == "--locked" or arg == "--frozen" or arg == "--no-cache" or arg == "--timings" or arg == "--debug-guards" or arg == "--no-debug-guards":
-            ai += 1
+        if arg == "--locked":
+            locked = true
+            bi += 1
+            continue
+        if arg == "--frozen":
+            locked = true
+            frozen = true
+            bi += 1
+            continue
+        if arg == "--bundle" or arg == "--archive" or arg == "--no-cache" or arg == "--timings" or arg == "--debug-guards" or arg == "--no-debug-guards":
+            bi += 1
             continue
         if arg.starts_with("-"):
             var unknown_opt = string.String.create()
@@ -6527,7 +7053,7 @@ function test_command(args: span[str]) -> int:
             cli_help.print_usage(true)
             return 1
         positional.push(arg)
-        ai += 1
+        bi += 1
 
     var cwd_owner = string.String.create()
     defer: cwd_owner.release()
@@ -6553,6 +7079,16 @@ function test_command(args: span[str]) -> int:
             cli_help.print_usage(true)
             return 1
 
+    if frozen:
+        match package_lock.ensure_current(path, true):
+            Result.failure as check_failure:
+                var message = check_failure.error
+                eprint_line(message.as_str())
+                message.release()
+                return 1
+            Result.success:
+                pass
+
     let options = TestRunOptions(
         roots = roots.as_span(),
         name_filter = name_filter,
@@ -6564,6 +7100,7 @@ function test_command(args: span[str]) -> int:
         cc = cc,
         profile = profile,
         platform = platform,
+        locked = locked,
     )
 
     if fs.is_directory(path):
@@ -6599,7 +7136,7 @@ function run_test_file_path(path: str, options: TestRunOptions) -> int:
             if is_compile_fail_fixture(source_text):
                 var results = vec.Vec[TestResult].create()
                 defer: release_test_results(ref_of(results))
-                rc = run_compile_fail_file(path, source_text, options, false, ref_of(results))
+                rc = run_compile_fail_file(path, source_text, options, ref_of(results))
                 emit_machine_output(options.format, ref_of(results))
                 return rc
 
@@ -6619,9 +7156,15 @@ function run_test_file_path(path: str, options: TestRunOptions) -> int:
 
             var results = vec.Vec[TestResult].create()
             defer: release_test_results(ref_of(results))
-            rc = run_tests_from_source(path, source_text, options, false, ref_of(results))
+            let outcome = run_tests_from_source(path, source_text, options, false, ref_of(results))
+            # The host lets a build failure escape the file operand: no machine
+            # report is emitted, only the one diagnostic line.
+            if outcome == TestFileOutcome.build_error:
+                return 1
             emit_machine_output(options.format, ref_of(results))
-            return rc
+            if outcome == TestFileOutcome.test_failed:
+                return 1
+            return 0
 
 
 ## Emit TAP/JUnit for a completed run; human mode prints nothing extra.
@@ -6688,11 +7231,16 @@ function run_test_directory(directory: str, options: TestRunOptions) -> int:
                 match fs.read_text(entry_name):
                     Result.success as content:
                         var source = content.value
+                        # The host prints the file header before running it, so a
+                        # file that fails validation still shows its header.
+                        if not machine:
+                            stdio.print_format(c"# %.*s\n", int<-(entry_name.len), entry_name.data)
                         var file_rc: int = 0
                         if kind == TestFileKind.compile_fail:
-                            file_rc = run_compile_fail_file(entry_name, source.as_str(), options, true, ref_of(results))
+                            file_rc = run_compile_fail_file(entry_name, source.as_str(), options, ref_of(results))
                         else:
-                            file_rc = run_tests_from_source(entry_name, source.as_str(), options, true, ref_of(results))
+                            let outcome = run_tests_from_source(entry_name, source.as_str(), options, true, ref_of(results))
+                            file_rc = if outcome == TestFileOutcome.ok: 0 else: 1
                         if file_rc != 0:
                             failed += 1
                         source.release()
@@ -6793,9 +7341,11 @@ function has_test_attribute(attributes: span[ast.AttributeApplication]) -> bool:
 
 ## Run the @[test]/@[expect_fatal] functions of an already-read source.  The
 ## host's `run_test_file`: a file may not define `main`, filtered tests must
-## take no parameters, a file with no tests reports (file operands only) and a
-## directory run prints its `# <file>` header first.
-function run_tests_from_source(file_path: str, source: str, options: TestRunOptions, header: bool, results: ref[vec.Vec[TestResult]]) -> int:
+## take no parameters, and a file with no tests reports (file operands only).
+## `directory` selects the host's channel/error shape: the directory loop guards
+## a build failure into the file's `(build error)` row, while a file operand
+## lets it escape.
+function run_tests_from_source(file_path: str, source: str, options: TestRunOptions, directory: bool, results: ref[vec.Vec[TestResult]]) -> TestFileOutcome:
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
     let file = parser.parse_source(source, ref_of(parse_diags))
@@ -6839,48 +7389,55 @@ function run_tests_from_source(file_path: str, source: str, options: TestRunOpti
                     pass
         di += 1
 
-    if has_main:
-        var main_error = string.String.create()
-        defer: main_error.release()
-        main_error.append("a test file must not define 'main': ")
-        main_error.append(file_path)
-        eprint_line(main_error.as_str())
-        return 1
-
     let machine = options.format != OutputFormat.human
+    if has_main:
+        if not machine:
+            var main_error = string.String.create()
+            defer: main_error.release()
+            main_error.append("a test file must not define 'main': ")
+            main_error.append(file_path)
+            eprint_line(main_error.as_str())
+        return TestFileOutcome.test_failed
+
     if all_test_count == 0:
-        if not header and not machine:
+        if not directory and not machine:
             stdio.print_format(c"no @[test] functions found in %.*s\n", int<-(file_path.len), file_path.data)
-        return 0
+        return TestFileOutcome.ok
 
     if test_names.len() == 0 and death_names.len() == 0:
-        return 0
+        return TestFileOutcome.ok
 
     if invalid_name.len > 0:
-        var param_error = string.String.create()
-        defer: param_error.release()
-        param_error.append("@[test] function '")
-        param_error.append(invalid_name)
-        param_error.append("' must take no parameters")
-        eprint_line(param_error.as_str())
-        return 1
+        if not machine:
+            var param_error = string.String.create()
+            defer: param_error.release()
+            param_error.append("@[test] function '")
+            param_error.append(invalid_name)
+            param_error.append("' must take no parameters")
+            eprint_line(param_error.as_str())
+        return TestFileOutcome.test_failed
 
-    if header and not machine:
-        stdio.print_format(c"# %.*s\n", int<-(file_path.len), file_path.data)
-
-    var file_failed = 0
+    var file_failed = false
     if test_names.len() > 0:
-        if run_normal_test_runner(file_path, source, ref_of(test_names), options, results) != 0:
-            file_failed = 1
+        let outcome = run_normal_test_runner(file_path, source, ref_of(test_names), options, directory, results)
+        if outcome == TestFileOutcome.build_error:
+            return TestFileOutcome.build_error
+        if outcome == TestFileOutcome.test_failed:
+            file_failed = true
 
     var dj: ptr_uint = 0
     while dj < death_names.len():
         let dn_ptr = death_names.get(dj) else:
             break
-        if not run_death_test(file_path, source, unsafe: read(dn_ptr), options, results):
-            file_failed = 1
+        let outcome = run_death_test(file_path, source, unsafe: read(dn_ptr), options, directory, results)
+        if outcome == TestFileOutcome.build_error:
+            return TestFileOutcome.build_error
+        if outcome == TestFileOutcome.test_failed:
+            file_failed = true
         dj += 1
-    return file_failed
+    if file_failed:
+        return TestFileOutcome.test_failed
+    return TestFileOutcome.ok
 
 
 ## Release every parsed result row, then the vector.
@@ -6992,30 +7549,46 @@ function run_sandboxed(binary_path: str, timeout_seconds: ptr_uint, memory_mb: p
 
 
 ## Build a runner .mt source file in-process using the self-host compiler.
-## Walks up from the source path to find the project's `src/` directory so
-## imports like `mtc.linter.fix_engine` resolve.  `quiet` suppresses the
-## diagnostics (machine-readable output captures and discards them, as the host
-## buffers the whole human run before re-emitting the results).
-function build_runner_file(source_path: str, options: TestRunOptions, output_path: str, quiet: bool) -> Result[bool, string.String]:
+## Module roots mirror the host's `module_roots_for` for the test source: the
+## explicit `-I` roots, the discovered project root, the enclosing package's
+## source root and the compiler's own roots, plus the cwd's ambient roots.
+## A build failure returns the host's single diagnostic line.
+function build_runner_file(source_path: str, options: TestRunOptions, output_path: str) -> Result[bool, string.String]:
     var runner_roots = vec.Vec[str].create()
     defer: runner_roots.release()
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
     var ri: ptr_uint = 0
     while ri < options.roots.len:
         unsafe:
             runner_roots.push(read(options.roots.data + ri))
         ri += 1
 
-    var package_src_root = find_project_src_root(source_path)
-    if package_src_root.is_some():
-        runner_roots.push(package_src_root.unwrap())
+    add_module_roots(source_path, ref_of(runner_roots), ref_of(owned_roots))
+    match fs.current_directory():
+        Result.success as cwd_payload:
+            var cwd = cwd_payload.value
+            add_module_roots(cwd.as_str(), ref_of(runner_roots), ref_of(owned_roots))
+            cwd.release()
+        Result.failure as cwd_failure:
+            var cwd_error = cwd_failure.error
+            cwd_error.release()
+
+    # The host resolves the package graph per test file (`module_roots_for` +
+    # `package_graph_for` with the run's `locked` flag), so a lock failure is
+    # that file's build error rather than a command-level message.
+    if options.locked:
+        match apply_package_resolution_result(source_path, true, false, ref_of(runner_roots), ref_of(owned_roots)):
+            Result.failure as resolution_failure:
+                return Result[bool, string.String].failure(error = resolution_failure.error)
+            Result.success:
+                pass
 
     var program = loader.check_program(source_path, runner_roots.as_span(), options.platform)
     defer: program.release()
 
     if program.diagnostic_error_count() > 0:
-        if not quiet:
-            let _ = print_program_diagnostics(ref_of(program))
-        return Result[bool, string.String].failure(error = string.String.from_str(""))
+        return Result[bool, string.String].failure(error = first_error_line(ref_of(program)))
 
     let ir_program = lowering.lower(program)
 
@@ -7023,7 +7596,7 @@ function build_runner_file(source_path: str, options: TestRunOptions, output_pat
     # the debug profile.
     match build_driver.build(
         program, ir_program, output_path, options.cc, runner_roots.as_span(), options.sanitize, options.profile,
-        Option[bool].some(value = false), build_driver.BuildKind.executable, resolver.Platform.linux,
+        Option[bool].some(value = false), build_driver.BuildKind.executable, options.platform,
         Option[str].none, span[string.String](), Option[str].none
     ):
         Result.success:
@@ -7032,27 +7605,13 @@ function build_runner_file(source_path: str, options: TestRunOptions, output_pat
             return Result[bool, string.String].failure(error = failure.error)
 
 
-## Walk up from `source_path` looking for the project's `src/mtc/` directory,
-## returning the `src/` parent.  Returns none when not found.
-function find_project_src_root(source_path: str) -> Option[str]:
-    var current = path_ops.dirname(source_path)
-    while current != "":
-        var src_mtc = path_ops.join(current, "src/mtc")
-        let found = fs.is_directory(src_mtc.as_str())
-        src_mtc.release()
-        if found:
-            var src = path_ops.join(current, "src")
-            return Option[str].some(value = src.as_str())
-        let parent = path_ops.dirname(current)
-        if parent == current or parent == "":
-            break
-        current = parent
-    return Option[str].none
-
-
-## The host's runner path: `<source dir>/__mt_test_runner_<pid><suffix>`.  The
-## pid keeps a concurrent `mtc test` (and the discovery rule that ignores
+## The host's runner source path: `<source dir>/__mt_test_runner_<pid><suffix>`.
+## The pid keeps a concurrent `mtc test` (and the discovery rule that ignores
 ## `__mt_test_runner_` files) from colliding with another process's runner.
+## The host builds the binary in `Dir.tmpdir`; the self keeps it beside the
+## runner source so the self-host runtime's own `compiler_root_candidates`
+## (which walks up from the running executable to the enclosing `std/`) keeps
+## working inside a test process.
 function test_runner_path(dirname: str, suffix: str) -> string.String:
     var path = string.String.from_str(dirname)
     path.append("/__mt_test_runner_")
@@ -7078,11 +7637,38 @@ function first_nonblank_line(text: str) -> str:
     return ""
 
 
+## Render a runner build failure the way the host's guard/exception split does:
+## a directory run in machine mode records the file's `(build error)` row and
+## drops the message (the host buffers it); a directory human run prints the
+## FAILED header and the message on stderr; a file operand always prints the
+## message on stderr and never emits machine output.
+function report_runner_build_error(file_path: str, message: str, options: TestRunOptions, directory: bool, results: ref[vec.Vec[TestResult]]) -> void:
+    let machine = options.format != OutputFormat.human
+    if directory and machine:
+        var name = string.String.from_str(file_path)
+        name.append(" (build error)")
+        results.push(TestResult(
+            name = name,
+            status = TestStatus.fail,
+            detail = string.String.from_str("build error"),
+            has_detail = true,
+        ))
+        return
+    if directory:
+        var marker = string.String.create()
+        defer: marker.release()
+        marker.append("FAILED - ")
+        marker.append(file_path)
+        marker.append(" (build error)")
+        eprint_line(marker.as_str())
+    if message.len > 0:
+        eprint_message(message)
+
+
 ## Build one runner binary whose `main(args)` dispatches to a single @[test]
 ## function selected by `args[1]`, then run it once per test in its own process
-## so an aborting assertion is isolated to that test.  Returns 1 when the runner
-## fails to build or any test fails.
-function run_normal_test_runner(file_path: str, source_text: str, test_names: ref[vec.Vec[str]], options: TestRunOptions, results: ref[vec.Vec[TestResult]]) -> int:
+## so an aborting assertion is isolated to that test.
+function run_normal_test_runner(file_path: str, source_text: str, test_names: ref[vec.Vec[str]], options: TestRunOptions, directory: bool, results: ref[vec.Vec[TestResult]]) -> TestFileOutcome:
     var runner_source = string.String.create()
     defer: runner_source.release()
     runner_source.append(source_text)
@@ -7111,39 +7697,22 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
         Result.success:
             pass
         Result.failure:
-            return 1
+            return TestFileOutcome.build_error
 
     var runner_bin_str = test_runner_path(dirname, "")
     defer: runner_bin_str.release()
 
-    let machine = options.format != OutputFormat.human
-    var build_failed = false
-    match build_runner_file(runner_path_str.as_str(), options, runner_bin_str.as_str(), machine):
+    match build_runner_file(runner_path_str.as_str(), options, runner_bin_str.as_str()):
         Result.failure as build_err:
-            if not machine:
-                let be_text = build_err.error.as_str()
-                if be_text.len > 0:
-                    stdio.print_format(c"%.*s", int<-(be_text.len), be_text.data)
-            build_err.error.release()
-            build_failed = true
+            var message = build_err.error
+            report_runner_build_error(file_path, message.as_str(), options, directory, results)
+            message.release()
+            let _rb = fs.remove(runner_path_str.as_str())
+            return TestFileOutcome.build_error
         Result.success:
             pass
 
-    if build_failed:
-        if machine:
-            var be_name = string.String.from_str(file_path)
-            be_name.append(" (build error)")
-            results.push(TestResult(
-                name = be_name,
-                status = TestStatus.fail,
-                detail = string.String.from_str("build error"),
-                has_detail = true,
-            ))
-        else:
-            stdio.print_format(c"FAILED - %.*s (build error)\n", int<-(file_path.len), file_path.data)
-        let _rb = fs.remove(runner_path_str.as_str())
-        return 1
-
+    let machine = options.format != OutputFormat.human
     var any_failed = false
     var ti2: ptr_uint = 0
     while ti2 < test_names.len():
@@ -7200,24 +7769,21 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
     let _r1 = fs.remove(runner_path_str.as_str())
     let _r2 = fs.remove(runner_bin_str.as_str())
     if any_failed:
-        return 1
-    return 0
+        return TestFileOutcome.test_failed
+    return TestFileOutcome.ok
 
 
 ## Run a single @[expect_fatal] death test in its own binary.  The synthesized
-## main calls the test and returns 0 on either outcome; the test passes only if
-## the process aborts (fatal / failed safety check) instead of returning or
-## timing out.
-function run_death_test(file_path: str, source_text: str, test_name: str, options: TestRunOptions, results: ref[vec.Vec[TestResult]]) -> bool:
+## main calls the test and returns 0 on either outcome, exactly as the host's
+## `death_test_runner_main`; the test passes only if the process aborts (fatal /
+## failed safety check) instead of returning or timing out.
+function run_death_test(file_path: str, source_text: str, test_name: str, options: TestRunOptions, directory: bool, results: ref[vec.Vec[TestResult]]) -> TestFileOutcome:
     var runner_source = string.String.create()
     defer: runner_source.release()
     runner_source.append(source_text)
-    runner_source.append("\n\nfunction main() -> int:\n")
-    runner_source.append("    match ")
+    runner_source.append("\n\nfunction main() -> int:\n    ")
     runner_source.append(test_name)
-    runner_source.append("():\n")
-    runner_source.append("        Result.success:\n            return 0\n")
-    runner_source.append("        Result.failure:\n            return 0\n")
+    runner_source.append("()\n    return 0\n")
 
     let dirname = path_ops.dirname(file_path)
     var runner_path_str = test_runner_path(dirname, ".mt")
@@ -7227,42 +7793,41 @@ function run_death_test(file_path: str, source_text: str, test_name: str, option
         Result.success:
             pass
         Result.failure:
-            return false
+            return TestFileOutcome.build_error
 
     var runner_bin_str = test_runner_path(dirname, "")
     defer: runner_bin_str.release()
 
-    var build_ok = false
-    let machine = options.format != OutputFormat.human
-    match build_runner_file(runner_path_str.as_str(), options, runner_bin_str.as_str(), machine):
-        Result.success:
-            build_ok = true
+    match build_runner_file(runner_path_str.as_str(), options, runner_bin_str.as_str()):
         Result.failure as build_err:
-            build_err.error.release()
-            build_ok = false
+            var message = build_err.error
+            report_runner_build_error(file_path, message.as_str(), options, directory, results)
+            message.release()
+            let _rb = fs.remove(runner_path_str.as_str())
+            return TestFileOutcome.build_error
+        Result.success:
+            pass
 
     var passed = false
     var reason = "expected a fatal abort, but the test returned"
-    if not build_ok:
-        reason = "build error"
-    else:
-        match run_sandboxed(runner_bin_str.as_str(), options.timeout_seconds, options.memory_mb, options.sanitize, Option[str].none):
-            Result.success as run_result:
-                var capture_result = run_result.value
-                defer: capture_result.release()
-                let code = capture_result.status.normalized_code()
-                if code == 124:
-                    reason = "timed out"
-                else if code == 0:
-                    reason = "expected a fatal abort, but the test returned"
-                else:
-                    passed = true
-            Result.failure:
-                reason = "runner crashed"
+    match run_sandboxed(runner_bin_str.as_str(), options.timeout_seconds, options.memory_mb, options.sanitize, Option[str].none):
+        Result.success as run_result:
+            var capture_result = run_result.value
+            defer: capture_result.release()
+            let code = capture_result.status.normalized_code()
+            if code == 124:
+                reason = "timed out"
+            else if code == 0:
+                reason = "expected a fatal abort, but the test returned"
+            else:
+                passed = true
+        Result.failure:
+            reason = "runner crashed"
 
     let _r1 = fs.remove(runner_path_str.as_str())
     let _r2 = fs.remove(runner_bin_str.as_str())
 
+    let machine = options.format != OutputFormat.human
     if machine:
         var name = string.String.from_str(test_name)
         name.append(" (expect_fatal)")
@@ -7279,4 +7844,6 @@ function run_death_test(file_path: str, source_text: str, test_name: str, option
                 int<-(test_name.len), test_name.data,
                 int<-(reason.len), reason.data,
             )
-    return passed
+    if passed:
+        return TestFileOutcome.ok
+    return TestFileOutcome.test_failed

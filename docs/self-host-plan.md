@@ -15,9 +15,10 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-72-2026-11-13)
+- [Status at a glance](#status-at-a-glance-session-73-2026-11-13)
+- [Session 73 — the `mtc test` CLI matrix](#session-73--the-mtc-test-cli-matrix)
 - [Session 72 — the `check`/analyzer surface](#session-72--the-checkanalyzer-surface)
-- [Handoff](#handoff-session-72)
+- [Handoff](#handoff-session-73)
 - [How to start a work session](#how-to-start-a-work-session)
 - [The program — tracks and stopping rules (all closed)](#the-program--tracks-and-stopping-rules-all-closed)
 - [Deliberate differences (do not chase)](#deliberate-differences-do-not-chase)
@@ -26,7 +27,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 72, 2026-11-13)
+## Status at a glance (session 73, 2026-11-13)
 
 | Area | State |
 | --- | --- |
@@ -35,9 +36,9 @@ history.
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **735 match / 0 differ / 4 host-rejected of 739**; counts drift with the tree and `tmp` fixtures) |
 | `sexpr lower` | **684 match / 2 differ / 53 host-rejected / 0 self-rejected of 739 files** (session 72) — the two differ are the documented `memory_stress_test` (leaked auto-lifetime) and `main.mt` (`--sexpr` loop guard) artifacts.  Session 72 closed the third row (`woodeneye`, hidden in `hostfail`) by fixing `%g` double rendering (now Ruby's round-trip `Float#to_s`), module-qualified named types in IR dumps, and an index literal taking the assignment's element type |
-| `cli:parity` | **92 match / 0 differ / 0 pending** of 92 cases (`--timings` values and `debug`'s Ruby node ids are normalized) |
+| `cli:parity` | **224 match / 0 differ / 0 pending** of 224 cases (`--timings` values, `debug`'s Ruby node ids and the synthesized test-runner path normalized; 43 `test` cases plus the second-batch sweep: global extraction, resolution flags, per-command operand models, missing/empty operands, completions/std/snapshot/cache/lsp/dap/bindgen/deps) |
 | **`check` diagnostics (new)** | **501 agree / 0 verdict / 0 position / 3 message of 504** files (`tools/diag_parity.rb check`; the 3 message rows are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows).  Before this session: 44 verdict, 177 position diffs and a wholly different rendering. |
-| Linter corpus | **632 agree / 3 differ** of 635 (hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  The 3 residual rows are documented self-better/host-artifact rows. |
+| Linter corpus | **631 agree / 4 differ** of 635 (hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  The 4 rows are documented: two self-only `redundant-cast` in `std/cli.mt`, the self-only `prefer-let` cluster in `std/fs.windows.mt` (the host loses its facts on a platform-pinned root), the host-only `constant-condition` in `examples/reflection_advanced.mt`, and the host-only positionless `prefer-or-pattern` in `projects/mtc/src/mtc/main.mt`. |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **74–75 KB/cycle raw / ~28 LS at 200 cycles** (meter, one-time index level documented) |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the real lldb-dap bridge closes the VS Code F5 launch deadlock (configurationDone no longer waits for the launch response), proven by `tools/dap_async_probe.rb` |
 | Formatter | **739/739** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
@@ -46,12 +47,163 @@ history.
 | Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
 
 Rough completion against the per-track Definition of Done: **100%**.  The
-self-hosting foundation, `lower` dump parity, the CLI behavior matrix, wasm,
+self-hosting foundation, `lower` dump parity, the CLI behavior matrix (including
+the `mtc test` surface and the command-surface sweep added in session 73), wasm,
 docs, the linter corpus, the imported bindings and bindgen reproducibility are
 done, and session 72 added the analyzer/`check` surface that no gate had
-measured.  The only residuals are the documented `tracy` custom-generator
-entry and the optional desktop F5 smoke.  Track G (throughput) closed in session
-72: the self is now faster than the host.
+measured.  The only residuals are the documented `tracy` custom-generator entry
+and the optional desktop F5 smoke.  Track G (throughput) closed in session 72:
+the self is now faster than the host.
+
+## Session 73 — the `mtc test` CLI matrix
+
+`mtc test` was the last CLI command with almost no matrix coverage: 92 cases,
+one of them `test-missing-operand`.  The host and self both implement the whole
+surface (`--format human|tap|junit`, `--jobs`, `--mem`, `--sanitize`,
+`--timeout`, `-n/--name`, `--locked`, `--frozen`, file and directory operands,
+compile-fail fixtures, `@[expect_fatal]`), but nothing measured it.  Session 73
+added 42 cases and four fixture trees (`testtree`, `testjobs`, `testslow`,
+`badlex`) and fixed the divergences they exposed.  `mtc test` now matches the
+host byte for byte across the test cases: **134/134** (224/224 after the
+second batch below).
+
+Fixes in `projects/mtc/src/mtc/main.mt`:
+
+1. **Module roots.**  The synthesized runner was analyzed with only the
+   explicit `-I` roots plus a `src/mtc` walk-up, so a test importing `std.*`
+   failed unless `-I` named the checkout (`module not found: std.thread`).  The
+   runner build now mirrors the host's `module_roots_for`: `-I` roots, the
+   discovered project root, the enclosing package's source root, the compiler's
+   own roots and the cwd's ambient roots (`add_module_roots`).
+2. **Two-phase flag extraction.**  The host pulls the test-limit flags out
+   first, then parses build options, so `test --bogus --timeout 0 f.mt` reports
+   `--timeout`.  The self was strictly left-to-right and reported `--bogus`.
+   The command now extracts `-n/--timeout/--mem/--jobs/--sanitize/--format`
+   first (stopping at `--`) and parses the rest afterwards.
+3. **Machine-mode buffering.**  With `--format tap|junit` the host buffers the
+   whole human run and discards it (only TAP/JUnit is emitted), so a
+   `main`-defining file or a test taking parameters prints nothing to stderr;
+   the self leaked those messages.  They are now machine-suppressed, and the
+   exit code and empty `1..0` report still match.
+4. **Directory headers.**  The host prints `# <file>` before running each
+   discovered file, including one that then fails validation.  The header moved
+   from the file runner into the directory loop (human mode only).
+5. **The build-error split.**  The host guards a build failure only inside a
+   directory run (`FAILED - <file> (build error)` + one diagnostic line on
+   stderr, a `(build error)` row in machine mode) and lets it escape a file
+   operand (one diagnostic line on stderr, no machine report).  The self
+   reported every build error as a per-test/FAILED-on-stdout result.  A new
+   `TestFileOutcome` distinguishes `build_error` from `test_failed`, and
+   `report_runner_build_error` reproduces the host's channel matrix.  The
+   one-line form follows the host's `ErrorFormatter` after it has lost the
+   runner source: `error[code]: message -- path:line:col` for semantic errors,
+   the bare message for `module/error`, `<message>: <path>` for `load/error`
+   (new `first_error_line`); a C-compiler message prints verbatim with the
+   host's newline behavior (`eprint_message`).
+6. **`@[expect_fatal]` was broken.**  The synthesized death runner used
+   `match test():` on a `void` call; that exits 232 even when the test returns,
+   so a death test that does *not* abort was reported `ok`.  It now mirrors the
+   host's `death_test_runner_main` (call, then `return 0`), so `ok` requires a
+   real abort.  A death runner that fails to build is the file's build error
+   (as the host's escaping exception makes it), not a per-test `FAIL ...
+   (build error)`.
+7. **`--frozen` / `--locked` were no-ops.**  `--frozen` now runs the host's
+   up-front `ensure_current_lockfile!` (`package manifest not found ...` /
+   `package.lock is missing ...`), and `--locked` resolves the package graph
+   per test file inside the runner build (`apply_package_resolution_result`),
+   so a package without a lock is that file's build error — both match the
+   host, including `test --frozen <file>`.
+8. **Cleanup/order.**  The runner build uses `options.platform` instead of a
+   hardcoded linux; the test-command parser handles `--` like the host
+   (including keeping the flags after it positional).
+
+Harness: `normalize` collapses `<any dir>/__mt_test_runner_<pid>` to
+`<RUNNER>` — the pid is process-local and the host builds the runner binary in
+`Dir.tmpdir` while the self keeps it beside the source.  That directory is a
+path-only difference in a spawn-failure message; the self cannot move the
+binary to `/tmp` without losing `compiler_root_candidates`' std root (its
+runtime root discovery walks up from the executable), which
+`projects/mtc/test/module_roots_test.mt` verifies.  Recorded under *Deliberate
+differences*.
+
+Verification: `cli:parity` **134/134** (224/224 after the second batch below);
+dev self-tests **22 files / 0 failed**; `test/mt` **60/0**; bootstrap fixed
+point holds.
+
+### Second batch — the command-surface sweep
+
+A systematic host-vs-self sweep then covered the rest of the CLI: all 74 help
+variants (`help CMD`, `CMD --help`, `CMD -h`), global flag extraction, every
+command's operand/flag model, and the success paths of the less-covered
+commands.  It found and fixed:
+
+1. **Global extraction order.**  The host strips `-v/-q/--color` before the
+   include pass, so a global flag between `-I` and its value changes what the
+   include pass consumes; the self was a single left-to-right pass.  `--color`
+   with no value now prints the host's message without `(got )`, the
+   `--include-path` missing-value message uses the actual flag, and the
+   unsupported-command error names the *first* include flag.  Deliberate
+   difference: the self's include pass stops at `--`, so `run app -- -I x`
+   forwards the argument (the host swallows it).
+2. **Resolution flags on parse/lower/emit-c/check/lint/debug.**  The host's
+   `extract_resolution_flags!` handles `--locked`, `--frozen` and `-Werror` for
+   parse/lower/emit-c/check/debug; only check accepted them (and ignored them).
+   Added `ResolutionFlags` + `extract_resolution_flags_span`,
+   `validate_source_operands`, `ensure_current_lockfile_at` and
+   `apply_locked_resolution`, wired into all six commands with the host's
+   messages and exit codes (`package.lock is missing`, `package lock not found`;
+   check reports a locked failure as a diagnostic and a `1 error found`
+   summary).  lint's `--frozen` now checks every expanded path and `--locked`
+   resolves the graph per file.
+3. **Operand models.**  `lex` now mirrors the host (any argument is the path
+   when none is set, a second is `unknown option:` on stderr; the self-only
+   `--machine` flag was removed).  `lower` accepts the host's multiple operands
+   and expands directories (a header prints only after a successful check).
+   `debug` expands operands, debugs the first, ignores extra non-flag operands
+   and accepts `-Werror`.  The self-only `--root` alias was removed everywhere
+   (the host documents `-I`/`--include-path`); parse/emit-c/debug lost the
+   self-only `--platform` (build/run/test still take it, as the host does).
+4. **Empty and missing operands.**  check/lint/debug print the host's
+   `no .mt files found in <label>` (debug returns 1); parse/lower/emit-c return
+   an absolute `source file not found`, while check/lint/debug/format/lex use
+   the operand as given; format's missing-file error moved to stderr with the
+   host's text.
+5. **build/run/run-module.**  Missing option values use `missing value for
+   <flag>` + usage; invalid profiles print `unknown profile <v>; expected
+   debug|release` on stderr; invalid platforms use the host's format (the
+   self's list omits `darwin`, a documented difference).  `run-module` parses
+   the host's build options (unknown flags are errors), reports
+   `missing module name` + usage, writes its not-found error to stderr, and
+   handles `--` like the host.
+6. **completions/std/snapshot/cache.**  The completion scripts were a stale
+   19-command subset in the wrong order; they now use the host's 23-command
+   `COMMANDS` table (bash/zsh/fish byte-equal).  std's errors moved to stderr
+   (with the command help where the host prints it).  `snapshot` now builds its
+   semantic overlay from the LSP's own token pass
+   (`semantic_tokens.snapshot_entries_for`) instead of a separate scanner, so
+   the HTML is byte-identical; its errors use stderr and the expanded theme
+   path.  `cache` with no subcommand prints the host's message + help.
+7. **lsp/dap.**  Both validate their flags exactly like the host (`lsp` levels
+   with Ruby's `inspect` formatting, unknown options/unexpected arguments;
+   `dap`'s adapter-path existence check).  The LSP default level is the host's
+   `warn` (the CLI lifecycle lines are gone), and the DAP server no longer
+   aborts on a non-pollable stdin (`mtc dap < /dev/null` exits 0 like the host)
+   instead of `uv_poll_init failed` + SIGABRT.
+8. **bindgen/deps.**  bindgen consumes MODULE/HEADER before options, uses the
+   host's `missing module name or header path`, `unknown bindgen option` and
+   `missing value for <flag>` messages + help, and maps a spawn ENOENT to
+   `clang not found: <bin>`.  deps' `fetch` parses flags before the path (so
+   `fetch --bogus` is the host's unknown-option error), and add/remove/update
+   no longer append a help block to the raised `missing package path`.
+
+Matrix: 134 -> **224 cases**, all matching.  Remaining documented differences
+in this class: the platform list (`darwin`) and the self's `--`-forwarding of
+include flags.
+
+Verification: `cli:parity` **224/224**; dev self-tests 22/0; `test/mt` 60/0;
+bootstrap fixed point; bindgen 33/34 + 1 custom; DAP zero differing rows; LSP
+harness 4 documented entries + recovery 6/6; lint corpus 631/4 (the
+`std/fs.windows.mt` row is a pre-existing host-facts loss, reproduced at HEAD).
 
 ## Session 72 — the `check`/analyzer surface
 
@@ -149,64 +301,59 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
-## Handoff (session 72)
+## Handoff (session 73)
 
 **Read this first, then *Status at a glance* and the Ledger.**  The parity
-program is closed: every track is at its documented stopping point and the
-session-72 tree holds the fixed point.  This session (a) measured and closed the
-one surface no gate had ever compared (`check`, the semantic analyzer's
-verdict), (b) closed the last real `lower` residue, and (c) made the compiler
-faster than the host.
+program stays closed, and session 73 closed the last *measurement* gaps: the
+`mtc test` CLI surface, then a command-surface sweep over every remaining
+command.  The matrix is now **224/224**, and the fixes it forced are in the
+commands themselves (see the session-73 section).
 
-Three commits, all on `selfhost`:
+Changes in the working tree (uncommitted):
 
-| Commit | What |
+| Area | What |
 | --- | --- |
-| `5f8931d0` | **`check`/analyzer surface.** Constant-value coercion (the plan's last open analyzer item), `check`'s rendering/channels/severity counters/exit codes, the loader's platform-suffix guard, `prefer-try`'s anchor column. Added `tools/diag_parity.rb` and `tools/check_parity.rb`. |
-| `9ba8901c` | **Last real `lower` residue.** `%g` double rendering (now Ruby's round-trip `Float#to_s`), module-qualified named types in IR dumps, and an index literal inheriting the assignment's element type. |
-| `d9c09335` | **Track G closed.** The variant lookup was quadratic; `emit-c` went 260.6 s -> 17.1 s (15.2x). The self now beats the host. |
+| `tools/cli_parity.rb` | 43 `test` cases, four test fixture trees, and a second batch (global extraction, resolution flags, operand models, missing/empty operands, completions/std/snapshot/cache/lsp/dap/bindgen/deps) — 224 cases; `normalize` collapses the synthesized runner path. |
+| `projects/mtc/src/mtc/main.mt` | Test-command fixes (runner roots, machine buffering, build-error channels, `expect_fatal`, `--frozen`/`--locked`, requested platform) plus the second batch: host-shaped global extraction, resolution flags on parse/lower/emit-c/check/lint/debug, host operand models, empty/missing-file messages, build/run/run-module errors, completions, std, snapshot, cache, lsp/dap validation. |
+| `projects/mtc/src/mtc/lsp/server.mt`, `lsp/semantic_tokens.mt` | LSP default level `warn` and no CLI lifecycle logs; the snapshot semantic overlay now reuses the LSP token pass (`snapshot_entries_for`); the old standalone snapshot scanner was removed. |
+| `projects/mtc/src/mtc/dap/server.mt` | Non-pollable stdin exits 0 instead of aborting on `uv_poll_init failed`; the unsupported-backend fallback logs at debug. |
+| `projects/mtc/src/mtc/bindgen.mt`, `packages/manager_cli.mt` | bindgen maps a spawn ENOENT to `clang not found`; deps `fetch`/add/remove/update follow the host's flag/help semantics. |
+| `tools/gates.sh` | `cli_parity` label 92 -> 224. |
 
-### Verified numbers (session 72, frozen tree)
+### Verified numbers (session 73)
 
-`check` **501 agree / 0 verdict / 0 position / 3 message of 504**; `lower`
-**684 / 2 / 53 / 0 of 739**; `lex` 739/739; `parse` 735/0/4; `cli` **92/92**;
-lint **501/3 of 504** on `std`+`examples` (632/3 of 635 corpus-wide);
-formatter 739/739 in all three modes; examples 49/49; imported bindings 29/29;
-bindgen 33/34 + 1 custom; self-tests 22/0; `test/mt` 60/0; bootstrap fixed
-point holds.  Throughput: `emit-c` 17.1 s vs the host's 54.3 s, full `build`
-32.7 s vs 76.3 s, `bootstrap --fast` 157 s.
+`cli:parity` **224 match / 0 differ / 0 pending**; dev self-tests **22 files /
+0 failed**; `test/mt` **60/0**; bootstrap fixed point holds; bindgen
+**33 match / 0 differ / 0 error / 1 custom of 34**; DAP **zero differing rows**;
+LSP harness **30/30 + 4 documented entries**, recovery **6/6**; lint corpus
+**631 agree / 4 differ of 635** (the four documented rows, including the
+pre-existing `std/fs.windows.mt` host-facts loss).
 
 ### How to start
 
 Build the dev compiler
 (`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~35 s),
 run `tmp/mtc-dev test projects/mtc -I . --timeout 120`, and measure only the
-class the change can move with the matching harness.  Run the tier-2 proofs
-once on frozen sources: `tools/gates.sh` prints the set for the diff (`--run`
-executes it, logs under `tmp/gates/`); `tools/bootstrap.sh -j 16 --fast` is the
-fixed point.  **Do not replay the ledger's baselines unless the tree moved.**
+class the change can move with the matching harness.  For the test command that
+is `ruby tools/cli_parity.rb --self tmp/mtc-dev -f '^test-'`; the full matrix is
+`ruby tools/cli_parity.rb -q`.  Run the tier-2 proofs once on frozen sources:
+`tools/gates.sh --areas cli --run` (bootstrap, `test/mt`, `cli_parity`; logs
+under `tmp/gates/`).  **Do not replay the ledger's baselines unless the tree
+moved.**
 
 ### Open items, in priority order
 
-1. **`mtc test` is barely covered by the CLI matrix.**  The matrix has 92 cases
-   but exactly one `test` case (`test-missing-operand`), while the host and the
-   self both implement `--format`/`--jobs`/`--mem`/`--sanitize`/`--timeout`/`-n`.
-   This is the largest remaining *measurement* gap: the behavior may well match,
-   but nothing proves it.  Add cases to `tools/cli_parity.rb` (a fixture tree
-   with passing, failing and compile-fail files; each flag; the `-n` filter; a
-   directory vs a file operand) and fix whatever diverges.  Note `--jobs` is a
-   documented deliberate difference (the self runs sequentially — same results,
-   same order, throughput only), so pin its *output* rather than its timing.
-2. **Track G follow-ups are recorded, not pending.**  The post-fix profile is
+1. **Track G follow-ups are recorded, not pending.**  The post-fix profile is
    flat; `String.as_str()`'s per-call UTF-8 revalidation (~7%) is a documented
    invariant, and the ~2% scans are over small collections.  Reopen only with a
    fresh `perf record` showing a hotspot.
-3. **Optional/manual.**  A desktop VS Code F5 click-through (the protocol path
+2. **Optional/manual.**  A desktop VS Code F5 click-through (the protocol path
    is proven by `tools/dap_async_probe.rb` against the real `lldb-dap`), and the
    LSP ref-lifetime modelling decision (`docs/lsp-design.md` §8).
 
-**Do not chase** the documented differences — the 2 `lower` artifacts, the 3
-`check`/linter message rows, the LSP audit rows, the DAP frame0 row, or the
+**Do not chase** the documented differences — the 2 `lower` artifacts, the
+documented `check`/linter rows (3 `check` messages, 4 linter corpus files), the
+LSP audit rows, the DAP frame0 row, the test-runner binary directory, or the
 self-only/better behaviours.  They are listed in *Deliberate differences* with
 the reason each is a host artifact or a deliberate extension.
 
@@ -885,6 +1032,7 @@ Session-64 third batch (package builds, `--bundle`/`--archive`):
 | --- | --- | --- |
 | `lower` dump parity (**closed**, keep at 0 real differ) | *The program* Track A; `docs/language-design.md` | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` (~1 min warm, ~4 min cold) |
 | CLI behavior parity | Track B; `tools/cli_parity.rb --help` | `rake "cli:parity"` |
+| `mtc test` (matrix closed) | the session-73 section; `docs/testing.md` | `ruby tools/cli_parity.rb --self build/stage2/mtc -f '^test-'` (43 cases) |
 | Wasm build/preview | Track B item 1 (closed); `wasm_preview.mt` | `ruby tools/wasm_smoke.rb` |
 | Docs server | Track B item 2 (closed); `docs_app.mt` | `ruby tools/docs_smoke.rb` |
 | Linter corpus residue | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb -q` (`--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
@@ -962,13 +1110,16 @@ Iterate cheap, prove once:
    `examples/sdl3` 34/34, `test/mt` 60/0.
 1. **`lower` dump parity** — **CLOSED** (session 63): 665/2/51/0 of 718, the
    two residuals are documented host artifacts.  See Track A.
-2. **CLI behavior parity — CLOSED (session 68; 92/92 after the session-71
-   bare-operand cases)**.  Sessions 64–68 landed `debug`, the `test` argument
+2. **CLI behavior parity — CLOSED (session 68; 224/224 after session 73 added
+   the `mtc test` matrix and the command-surface sweep)**.  Sessions 64–68 landed `debug`, the `test` argument
    forms, `toolchain bootstrap|tools|doctor`, `build --kind static|shared`, the
    bindgen nullable flags, `--bundle`/`--archive`, wasm build/preview, `docs`,
-   `deps` and `--locked`/`--frozen`.
-3. **Linter corpus residue — CLOSED (session 69)**: 632 agree / 3 differ of
-   635 (the three documented rows), **43/43 rules and 13/13 fixers**.
+   `deps` and `--locked`/`--frozen`; session 73 closed the test command's own
+   surface (module roots, machine-format buffering, build-error channels,
+   `expect_fatal`, `--frozen`/`--locked`).
+3. **Linter corpus residue — CLOSED (session 69; re-measured session 73)**:
+   631 agree / 4 differ of 635 (the four documented rows), **43/43 rules and
+   13/13 fixers**.
 4. **Imported bindings / bindgen** — **CLOSED**: imported bindings 29/29 and
    bindgen reproducibility 33/34 with the one documented custom generator
    (`tracy`).
@@ -1013,8 +1164,9 @@ click-through) remain.
 Continue the Milk Tea self-host work in /home/teefan/Projects/Ruby/mt-lang
 (branch `selfhost`). The parity program is closed (Track H passed; session 72
 closed the analyzer/`check` surface, the last real `lower` residue, and Track G
-throughput): start from this file's Handoff, then the top open item — the
-`mtc test` CLI-matrix coverage gap. Work in tiers:
+throughput; session 73 closed the `mtc test` CLI matrix and the command-surface
+sweep — 224/224): start from
+this file's Handoff, then the remaining optional items. Work in tiers:
 iterate on the dev compiler
 (ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev, ~35 s;
 tmp/mtc-dev test projects/mtc -I . --timeout 120), measure only the class you
@@ -1044,10 +1196,10 @@ host on observable behavior everywhere — `--sexpr` dumps, CLI messages/command
 LSP, DAP, linter, formatter, imported bindings, bindgen — while keeping the
 self-host's documented improvements (malformed-frame recovery, synchronous
 facts, speed, determinism).  **Every track is closed at its documented
-residue (session 72); Track H's final matrix passed, and session 72 measured the
-one surface no gate had covered (`check`) and cleared it.  There is no ranked
-open parity work left; the track sections below are the stopping rules to
-preserve.**
+residue (session 73); Track H's final matrix passed, session 72 measured the
+one surface no gate had covered (`check`) and cleared it, and session 73
+measured and cleared the `mtc test` surface.  There is no ranked open parity
+work left; the track sections below are the stopping rules to preserve.**
 
 Confirmed scope decision: **all** unported CLI subsystems are in scope (`deps`,
 `docs`, wasm/emcc + preview, `--bundle`/`--archive`, `--jobs`, toolchain
@@ -1079,7 +1231,7 @@ element type.  See the session-72 section.
 Track A reached its stopping rule: **0 real differing files**.  Keep lex/parse
 at 0-diff and re-measure both after any lowering-adjacent change.
 
-### Track B — CLI parity (92 cases; 92 match, 0 pending; **closed**)
+### Track B — CLI parity (224 cases; 224 match, 0 pending; **closed**)
 
 The **original 65-case behavior matrix is byte-equal** (session 64; `--timings`
 values and `debug`'s Ruby node ids normalized).  `debug`/`test`'s argument forms
@@ -1090,11 +1242,17 @@ bare `print`, so its build/run cases only compared a semantic-error path).
 Session 65 replaced the regex allowlist with case-backed pending metadata;
 session 67 closed `toolchain doctor`, `run --bundle`, `run --archive`,
 `build --platform wasm` and the wasm preview; session 68 closed `deps` and the
-locked/frozen build, so the matrix is **92 cases / 92 match / 0 differ /
-0 pending** — the whole CLI surface is byte-equal.  Session 71 added the bare
-`build`/`run` package-root forms (the dispatcher no longer blocks
-`parse_source_operand`'s discovery) and their three cases.  A future gap adds a
-`pending:` case, and a pending case that starts matching must be promoted (the
+locked/frozen build, so the matrix was **92 cases / 92 match / 0 differ /
+0 pending**.  Session 71 added the bare `build`/`run` package-root forms (the
+dispatcher no longer blocks `parse_source_operand`'s discovery) and their three
+cases.  Session 73 added the **43-case `mtc test` matrix** (file/directory
+operands, human/TAP/JUnit, filters, death tests, `--timeout`/`--mem`/`--jobs`/
+`--sanitize`, `--locked`/`--frozen`, validation errors, the build-error
+channels and a package-root run), then the second-batch sweep (global
+extraction, resolution flags, operand models, empty/missing operands, the
+remaining command surfaces), so the matrix is now **224 cases / 224 match /
+0 differ / 0 pending** — the whole CLI surface is byte-equal.  A future gap adds
+a `pending:` case, and a pending case that starts matching must be promoted (the
 harness fails otherwise).  The session-65
 second batch closed `parse`/`emit-c` multi+directory forms, `format`
 multi/directory and its batch summaries, `check`/`lint` unknown-flag
@@ -1135,10 +1293,11 @@ validation, and `lint --init`.  Remaining work:
    graph is `deps lock`'s (`Graph.load`), so a selective `update` pins the
    unselected registry versions exactly as the host does.  In-language tests:
    `projects/mtc/test/packages_test.mt`, `package_version_test.mt`.
-4. **Harness — closed.**  92/92 cases match with no pending entries; a future
+4. **Harness — closed.**  224/224 cases match with no pending entries; a future
    gap adds a `pending:` case (the harness fails when one starts matching).
    Timing values are normalized (wall-clock measurements never compare
-   byte-for-byte); the report structure is.
+   byte-for-byte), as are `debug`'s process-local node ids and the synthesized
+   `__mt_test_runner_<pid>` path; the report structure is.
 
 Session-64 `toolchain`/`build --kind`/bindgen-nullable flips are recorded in
 the session-64 second batch above.  Session 67 closed `toolchain doctor` to
@@ -1152,17 +1311,22 @@ package build/run entry points, `new`, `completions`, `std`, `test`, `cache`,
 `toolchain`, `snapshot`.  Session 64 closed `debug` (shared renderer) and
 `test`'s argument forms.
 
-### Track C — linter corpus residue (631/3 of 634; 41/43 rules)
+### Track C — linter corpus residue (631/4 of 635; 43/43 rules)
 
-State: **631 agree / 3 differ of 634, hostfail 0, selffail 0** (session 69).
-The residual three rows are documented under *Deliberate differences*: two
-`redundant-cast` rows in `std/cli.mt` (the self's flow-refined type exposes a
-genuinely redundant nullable-pointer cast the host's unrefined fact misses) and
-one in `projects/mtc/src/mtc/main.mt` (the host's character-indexed source scan
-misses a cast after multibyte text; the self uses byte columns), plus one
-host-only `constant-condition` in `examples/reflection_advanced.mt` (the host's
-inline-if non-chosen branch lacks a binding id, so its constant propagation
-keeps `count = 0`).  The corpus count drifts with the tree; quote the set.
+State: **631 agree / 4 differ of 635, hostfail 0, selffail 0** (session 73
+re-measure; the file count drifts with the tree).  The four rows are documented
+under *Deliberate differences*: two `redundant-cast` rows in `std/cli.mt` (the
+self's flow-refined type exposes a genuinely redundant nullable-pointer cast
+the host's unrefined fact misses), the self-only `prefer-let` cluster in
+`std/fs.windows.mt` (the host loses its semantic facts on a platform-pinned
+root, so it cannot evaluate the rule; the self analyses the root — verified
+pre-existing at HEAD), the host-only `constant-condition` in
+`examples/reflection_advanced.mt` (the host's inline-if non-chosen branch lacks
+a binding id, so its constant propagation keeps `count = 0`), and the host-only
+positionless `prefer-or-pattern` in `projects/mtc/src/mtc/main.mt` (the host
+matches adjacent arms on a node whose source identity the self does not share;
+its fix engine makes no change).  The session-73 test-command work removed the
+old self-only `redundant-cast` row on the deleted `--machine` lex line.
 
 Session-69 linter batch (571/63 -> 631/3): see the session-69 batch in *Status
 at a glance* for the per-rule mechanics.  Closing summary by rule (pairs are
@@ -1449,18 +1613,19 @@ ones:
   over `std`+`examples`; its 3 message rows are exactly the `std/cli.mt`
   `redundant-cast` pair and the `examples/reflection_advanced.mt` host-only
   `constant-condition` documented below, seen through `check`'s renderer.
-- **Linter corpus residue (3 rows, all deliberate):**
+- **Linter corpus residue (4 rows, all deliberate):**
   - `std/cli.mt:727,740` — `redundant-cast` on `ptr[X]<-value`.  The self's
     flow analysis narrows `value` to non-null after `if value == null: break`,
     so its recorded expression type is `ptr[X]` and the cast is genuinely
     redundant; the host's fact carries the declared `ptr[X]?`, so it misses the
     hint.  Removing the cast is type-correct under the self's refinement.
-  - `projects/mtc/src/mtc/main.mt` (`c"── Tokens …"` block; line 5794 in
-    session 71) — `redundant-cast` parentheses after
-    multibyte text (`c"── Tokens …"`).  The host's `check_redundant_cast_parens`
-    starts `line.index("<-", column - 1)` with a **character** index on a line
-    whose earlier bytes are multibyte, so it never finds the `<-`; the self uses
-    the compiler's byte columns and correctly reports the redundant parens.
+  - `std/fs.windows.mt` — self-only `prefer-let` (55 rows).  The host's
+    `lint_sema_facts_for` loses its facts on this platform-pinned file (an
+    import resolves through the platform guard and the loader error nils the
+    snapshot), so the rule cannot see mutations and is suppressed; the self
+    analyses the root and reports the immutable `var` bindings.  Reproduced at
+    HEAD, so it is a pre-existing host-facts artifact, not a session-73
+    regression.
   - `examples/reflection_advanced.mt:65` — host-only `constant-condition`
     (`inline if DEBUG_OFF:` branch assignment).  The host's analyzer does not
     bind expressions in the non-chosen inline branch, so its constant
@@ -1468,6 +1633,11 @@ ones:
     always false; the self's name-keyed facts see the assignment and (correctly)
     do not report.  Reproducing the host would need its per-declaration binding
     ids in the linter CFG and would reintroduce the false positive.
+  - `projects/mtc/src/mtc/main.mt` — host-only positionless `prefer-or-pattern`
+    (adjacent match arms with identical bodies).  The host anchors the match on
+    a node with no source position and its `--fix` makes no change; the self's
+    linter does not match that node.  (The former self-only multibyte
+    `redundant-cast` row disappeared with the deleted `--machine` lex output.)
 - **`platform-api-drift` in the CLI:** the host `lint` command analyzes each
   operand from a bare `Parser.parse` (empty module name) while sibling files
   load through `ModuleLoader` (inferred names), so its module-name guard skips
@@ -1486,6 +1656,19 @@ ones:
   child's stderr into its stdout (a buffering artifact).  The sequential run
   keeps the streams correct; this is a throughput-only difference, not a
   behavior gap.
+- **`mtc test` runner binary directory:** the host builds each synthesized
+  runner binary in `Dir.tmpdir`; the self keeps it beside the runner source
+  (the host's `.mt` path is the same).  The location is visible only in a spawn
+  failure (for example a `--mem` cap the loader cannot satisfy), and
+  `cli_parity` normalizes the whole `__mt_test_runner_<pid>` path.  Moving the
+  binary to `/tmp` would break the self-host runtime's
+  `compiler_root_candidates`, which walks up from the running executable to the
+  enclosing `std/`; `projects/mtc/test/module_roots_test.mt` pins that
+  property.
+- **`-I` after `--`:** the host's `extract_include_paths!` scans the whole argv,
+  so `run app -- -I x` swallows `-I x` from the program arguments; the self
+  stops its include pass at `--` and forwards them untouched (the intended
+  behavior).  `cli_parity` has no case for this by design.
 - **Bundle archive bytes:** `--archive`'s `.tar.gz` has the host's entry
   layout/order and extracts identically, but the bytes are not fixed (the
   host's TarWriter stamps entries with the current time).  The MTAP asset
@@ -1515,10 +1698,12 @@ ones:
   verification entry point (Track D) and stays; do not add it to the host
   command table.
 - **`build --kind static|shared`:** the host's own path raises
-  `NoMethodError: generate_header`, so there is no reference output.  The self
-  archives a clean `ar rcs` (or links `-shared -fPIC`) and gives `public`
-  top-level functions external linkage; no C header is generated (the host's
-  generator is missing).  Executable C output is unchanged.
+  `NoMethodError: generate_header`, and a valid executable source reaches
+  `NoMethodError: compile_to_object` on a package `--kind static` build, so
+  there is no reference output.  The self archives a clean `ar rcs` (or links
+  `-shared -fPIC`) and gives `public` top-level functions external linkage; no
+  C header is generated (the host's generator is missing).  Executable C output
+  is unchanged.
 
 ## Ledger
 
@@ -1527,27 +1712,28 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 72 (post-change `--fast` + 22/0) | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 60 files / 0 failed | session 72 (stage2) | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 73 (gate `--fast` + stage2 suite 22/0) | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 60 files / 0 failed | session 73 (stage2) | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 71 | `tools/gates.sh --only examples --run` |
 | `sexpr lex` / `parse` | lex 739/739; parse 735 match / 0 differ / 4 host-rejected of 739 (counts include `tmp` fixtures) | session 72 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
 | `sexpr lower` | **684 match / 2 differ / 53 host-rejected / 0 self-rejected** of 739 (the 2 are the documented `memory_stress_test` + `main.mt` artifacts; session 72 closed the third row by fixing double rendering, type qualification and index hinting) | session 72 (stage2) | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
-| `cli:parity` | **92 match / 0 differ / 0 pending** of 92 (case-backed; timings and `debug` node ids normalized) | session 72 (stage2) | `ruby tools/cli_parity.rb -q` |
+| `cli:parity` | **224 match / 0 differ / 0 pending** of 224 (case-backed; timings, `debug` node ids and the synthesized test-runner path normalized) | session 73 | `ruby tools/cli_parity.rb -q` |
+| `mtc test` matrix | **43 cases**, included in `cli:parity` 224/224: file/dir operands, human/TAP/JUnit, filters, death tests, `--timeout/--mem/--jobs/--sanitize`, `--locked/--frozen`, validation errors, build-error channels | session 73 | `ruby tools/cli_parity.rb -f '^test-'` |
 | **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** (`std`+`examples`; the 3 are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows) | session 72 | `ruby tools/diag_parity.rb check -j 8 std examples`; byte-level: `ruby tools/check_parity.rb` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 71 | `ruby tools/wasm_smoke.rb` |
 | docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 71 | `ruby tools/docs_smoke.rb` |
-| lint corpus | 632 agree / 3 differ of 635, hostfail 0, selffail 0; **43/43 rules, 13/13 fixers** (the 3 are documented deliberate rows) | session 72 (re-verified) | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| lint corpus | 631 agree / 4 differ of 635, hostfail 0, selffail 0; **43/43 rules, 13/13 fixers** (the 4 documented rows, including `std/fs.windows.mt`) | session 73 | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 635/635 | session 71 | `ruby tools/unused_import_parity.rb` |
-| LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 71 (re-verified) | `tools/lsp_parity.rb record/compare --stress` |
+| LSP harness | 30/30 capabilities; 4 documented entries of 70 requests + 27 probes | session 73 (re-verified) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 71 (canonical) | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
-| LSP recovery | 6/6 byte-equal | session 71 (re-verified) | `tools/lsp_recovery_probe.rb --check` |
+| LSP recovery | 6/6 byte-equal | session 73 (re-verified) | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | 4.9 ms median per `didChange`; `didOpen` ~52 ms cold | session 29 | `ruby tmp/lsp_edit_perf.rb --bin <bin>` (transient probe) |
 | LSP valgrind | 0 errors over the harness drive; ~64 KB definitely-lost per 10-cycle soak (one-time index level) | session 71 (re-verified) | `tools/gates.sh --only valgrind_lsp --run` |
 | LSP soak | 74–75 KB/cycle raw / ~28 KB/cycle least-squares at 200 cycles (meter; one-time index level) | session 71 (two runs) | `ruby tools/lsp_soak.rb --quiet` |
 | formatter | 739/739 all three modes byte-identical | session 72 | `ruby tools/format_parity.rb all -j 16` |
-| DAP | zero differing rows except the documented self-better frame0 row; the async-order F5 probe (`tools/dap_async_probe.rb`) proves launch → breakpoint → frame/locals → evaluate against real `lldb-dap` | session 71 | `ruby tools/dap_smoke.rb` (`--allow-skip` to waive a missing adapter); `ruby tools/dap_async_probe.rb` |
+| DAP | zero differing rows except the documented self-better frame0 row; the async-order F5 probe (`tools/dap_async_probe.rb`) proves launch → breakpoint → frame/locals → evaluate against real `lldb-dap` | session 73 (re-verified) | `ruby tools/dap_smoke.rb` (`--allow-skip` to waive a missing adapter); `ruby tools/dap_async_probe.rb` |
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
-| bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 72 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
+| bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 73 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
 
 ## Porting notes

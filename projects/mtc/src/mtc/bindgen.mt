@@ -4198,8 +4198,14 @@ function generate_internal(opts: ref[BindgenOptions], want_report: bool) -> Resu
 
         Result.failure as fail:
             var err = fail.error
-            var m = string.String.from_str("clang: ")
-            m.append(err.message.as_str())
+            var m = string.String.create()
+            if err.code == -2:
+                # The host's `Errno::ENOENT` branch: `clang not found: <bin>`.
+                m.append("clang not found: ")
+                m.append(clang)
+            else:
+                m.append("clang: ")
+                m.append(err.message.as_str())
             err.message.release()
             return Result[BindgenOutput, string.String].failure(error = m)
 

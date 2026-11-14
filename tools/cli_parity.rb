@@ -96,6 +96,11 @@ FIXTURES = {
         stdio.print_line(f"#{add(2, 3)}")
         return 0
     MT
+  "pkg/src/unit.mt" => <<~'MT',
+    @[test]
+    function test_pkg_unit() -> void:
+        expect(true)
+    MT
   "pkg/assets/hello.txt" => "hello\n",
   "pkg/src/platform_info.linux.mt" => "public const PLATFORM: str = \"linux\"\n",
   "pkg/src/platform_info.windows.mt" => "public const PLATFORM: str = \"windows\"\n",
@@ -163,6 +168,104 @@ FIXTURES = {
   "multi/a.mt" => "public function a() -> int:\n    return 1\n",
   "multi/b.mt" => "public function b() -> int:\n    return 2\n",
   "multi/empty/.keep" => "",
+
+  # `mtc test` fixtures: passing/failing tests, a compile-fail fixture, death
+  # tests (one aborts, one returns and must fail), the validation-error shapes,
+  # a helper-only file and a file that does not parse (silently skipped).
+  "testtree/pass.mt" => <<~'MT',
+    @[test]
+    function test_add() -> void:
+        expect_eq(1 + 1, 2)
+
+    @[test]
+    function test_bool() -> void:
+        expect(true)
+    MT
+  "testtree/fail.mt" => <<~'MT',
+    @[test]
+    function test_alpha() -> void:
+        expect(false, "alpha <failed> & bad")
+
+    @[test]
+    function test_beta() -> void:
+        expect_eq(1, 2)
+    MT
+  "testtree/compile_fail.mt" => <<~'MT',
+    # expect-error: return type mismatch
+    function bad_return() -> int:
+        return "not an int"
+    MT
+  "testtree/death.mt" => <<~'MT',
+    @[test]
+    @[expect_fatal]
+    function test_aborts() -> void:
+        fatal("boom")
+
+    @[test]
+    @[expect_fatal]
+    function test_returns() -> void:
+        expect(true)
+    MT
+  "testtree/main_error.mt" => <<~'MT',
+    @[test]
+    function test_ok() -> void:
+        expect(true)
+
+    function main() -> int:
+        return 0
+    MT
+  "testtree/param_error.mt" => <<~'MT',
+    @[test]
+    function test_param(x: int) -> void:
+        expect(true)
+    MT
+  "testtree/sema_error.mt" => <<~'MT',
+    @[test]
+    function test_sema() -> void:
+        let x: int = "not an int"
+        expect(x == 0)
+    MT
+  "testtree/helper.mt" => "public function helper() -> int:\n    return 1\n",
+  "testtree/parse_error.mt" => "function broken() -> int:\n    let x = 1 +\n    return 0\n",
+  "testjobs/alpha.mt" => <<~'MT',
+    @[test]
+    function test_alpha() -> void:
+        expect(true)
+    MT
+  "testjobs/beta.mt" => <<~'MT',
+    @[test]
+    function test_beta() -> void:
+        expect(false, "beta")
+    MT
+  "testslow/slow.mt" => <<~'MT',
+    import std.thread as thread
+
+    @[test]
+    function test_slow() -> void:
+        thread.sleep_ms(1500)
+        expect(true)
+    MT
+
+  # A tree whose discovery pass hits a lex error (the host lets it escape).
+  "badlex/ok.mt" => <<~'MT',
+    @[test]
+    function test_ok() -> void:
+        expect(true)
+    MT
+  "badlex/broken.mt" => "function broken( -> int:\n    return 0\n",
+
+  # A C header for the bindgen CLI surface.
+  "bindgen/probe.h" => <<~'H',
+    #ifndef PROBE_H
+    #define PROBE_H
+    #define PROBE_VERSION 7
+    typedef struct ProbePoint { int x; int y; } ProbePoint;
+    typedef enum { PROBE_A = 0, PROBE_B = 1 } ProbeKind;
+    int probe_add(int a, int b);
+    unsigned long probe_count(const char *name);
+    void probe_reset(void);
+    #endif
+  H
 
   # Empty directory for `lint --init` (the host writes `.mt-lint.yml` here).
   "initdir/.keep" => "",
@@ -290,6 +393,50 @@ def build_cases
   add.call("new-existing-dir", ["new", "pkg"], cwd: FIXROOT)
   add.call("completions-bogus", ["completions", "powershell"])
   add.call("test-missing-operand", ["test"])
+  # `mtc test`: file/directory operands, machine formats, filters, death tests,
+  # validation errors and the build-error shapes.
+  add.call("test-file-pass", ["test", "testtree/pass.mt"])
+  add.call("test-file-fail", ["test", "testtree/fail.mt"])
+  add.call("test-file-fail-tap", ["test", "testtree/fail.mt", "--format", "tap"])
+  add.call("test-file-fail-junit", ["test", "testtree/fail.mt", "--format", "junit"])
+  add.call("test-compile-fail-file", ["test", "testtree/compile_fail.mt"])
+  add.call("test-compile-fail-tap", ["test", "testtree/compile_fail.mt", "--format", "tap"])
+  add.call("test-file-name-filter", ["test", "testtree/pass.mt", "-n", "test_add"])
+  add.call("test-file-name-filter-none", ["test", "testtree/pass.mt", "-n", "zzz"])
+  add.call("test-no-tests-file", ["test", "testtree/helper.mt"])
+  add.call("test-two-operands", ["test", "testtree/pass.mt", "testtree/helper.mt"])
+  add.call("test-dashdash", ["test", "--", "testtree/pass.mt"])
+  add.call("test-main-error-human", ["test", "testtree/main_error.mt"])
+  add.call("test-main-error-tap", ["test", "testtree/main_error.mt", "--format", "tap"])
+  add.call("test-param-error-tap", ["test", "testtree/param_error.mt", "--format", "tap"])
+  add.call("test-sema-error-human", ["test", "testtree/sema_error.mt"])
+  add.call("test-sema-error-tap", ["test", "testtree/sema_error.mt", "--format", "tap"])
+  add.call("test-death-human", ["test", "testtree/death.mt"])
+  add.call("test-death-tap", ["test", "testtree/death.mt", "--format", "tap"])
+  add.call("test-death-junit", ["test", "testtree/death.mt", "--format", "junit"])
+  add.call("test-dir-human", ["test", "testtree"])
+  add.call("test-dir-tap", ["test", "testtree", "--format", "tap"])
+  add.call("test-dir-junit", ["test", "testtree", "--format", "junit"])
+  add.call("test-dir-name-filter", ["test", "testtree", "-n", "test_add"])
+  add.call("test-dir-name-filter-none", ["test", "testtree", "-n", "zzz"])
+  add.call("test-dir-filter-compile-fail", ["test", "testtree", "-n", "compile_fail"])
+  add.call("test-lex-error-dir", ["test", "badlex"])
+  add.call("test-lex-error-dir-tap", ["test", "badlex", "--format", "tap"])
+  add.call("test-jobs-two", ["test", "testjobs", "--jobs", "2"])
+  add.call("test-jobs-two-tap", ["test", "testjobs", "--jobs", "2", "--format", "tap"])
+  add.call("test-timeout", ["test", "testslow", "--timeout", "1"])
+  add.call("test-mem-cap", ["test", "testtree/pass.mt", "-n", "test_add", "--mem", "1"])
+  add.call("test-sanitize", ["test", "testtree/pass.mt", "-n", "test_add", "--sanitize"])
+  add.call("test-timeout-zero", ["test", "testtree/pass.mt", "--timeout", "0"])
+  add.call("test-mem-zero", ["test", "testtree/pass.mt", "--mem", "0"])
+  add.call("test-jobs-zero", ["test", "testtree/pass.mt", "--jobs", "0"])
+  add.call("test-name-missing-value", ["test", "testtree/pass.mt", "-n"])
+  add.call("test-format-invalid", ["test", "testtree/pass.mt", "--format", "bogus"])
+  add.call("test-flag-precedence", ["test", "--bogus", "--timeout", "0", "testtree/pass.mt"])
+  add.call("test-frozen-non-package", ["test", "--frozen", "testtree/pass.mt"])
+  add.call("test-frozen-package", ["test", "--frozen"], cwd: pkg)
+  add.call("test-locked-package", ["test", "--locked"], cwd: pkg)
+  add.call("test-package-no-operand", ["test"], cwd: pkg)
   add.call("std-list", ["std", "list"])
   add.call("std-show-missing", ["std", "show", "no.such.module"])
   add.call("std-unknown-sub", ["std", "bogus"])
@@ -302,6 +449,115 @@ def build_cases
   add.call("deps-lock-check", ["deps", "lock", "--check"], cwd: pkg)
   add.call("deps-fetch", ["deps", "fetch"], cwd: pkg)
   add.call("snapshot-no-arg", ["snapshot"])
+
+  # Session-73 second batch: global extraction, resolution flags, per-command
+  # operand models, empty/missing operands, and the remaining command surfaces.
+  add.call("global-color-missing", ["--color"])
+  add.call("global-color-before-command", ["--color", "version"])
+  add.call("global-include-long-missing", ["--include-path"])
+  add.call("global-include-before-global", ["-I", "-q", "lex", "standalone/clean.mt"])
+  add.call("global-include-long-before-global", ["--include-path", "-q", "lex", "standalone/clean.mt"])
+
+  add.call("lex-sexpr", ["lex", "standalone/clean.mt", "--sexpr"])
+  add.call("lex-two-operands", ["lex", "standalone/clean.mt", "standalone/warns.mt"])
+  add.call("lex-option-as-path", ["lex", "--bogus"])
+  add.call("lex-dashdash", ["lex", "--", "standalone/clean.mt"])
+
+  add.call("parse-locked", ["parse", "standalone/clean.mt", "--locked"])
+  add.call("parse-frozen-file", ["parse", "standalone/clean.mt", "--frozen"])
+  add.call("parse-werror", ["parse", "-Werror", "standalone/clean.mt"])
+  add.call("parse-unexpected-flag", ["parse", "--bogus", "standalone/clean.mt"])
+  add.call("parse-missing-file", ["parse", "standalone/nope.mt"])
+  add.call("parse-root-flag", ["parse", "--root", ".", "standalone/clean.mt"])
+
+  add.call("lower-locked", ["lower", "standalone/clean.mt", "--locked"])
+  add.call("lower-frozen-file", ["lower", "standalone/clean.mt", "--frozen"])
+  add.call("lower-werror", ["lower", "-Werror", "standalone/clean.mt"])
+  add.call("lower-multiple", ["lower", "multi/a.mt", "multi/b.mt"])
+  add.call("lower-unexpected-flag", ["lower", "--bogus", "standalone/clean.mt"])
+  add.call("lower-missing-file", ["lower", "standalone/nope.mt"])
+  add.call("lower-empty-dir", ["lower", "multi/empty"])
+
+  add.call("emit-c-locked", ["emit-c", "standalone/clean.mt", "--locked"])
+  add.call("emit-c-frozen-file", ["emit-c", "standalone/clean.mt", "--frozen"])
+  add.call("emit-c-werror", ["emit-c", "-Werror", "standalone/clean.mt"])
+  add.call("emit-c-missing-file", ["emit-c", "standalone/nope.mt"])
+
+  add.call("check-frozen-file", ["check", "standalone/clean.mt", "--frozen"])
+  add.call("check-frozen-package", ["check", "--frozen"], cwd: pkg)
+  add.call("check-locked-package", ["check", "--locked"], cwd: pkg)
+  add.call("check-empty-dir", ["check", "multi/empty"])
+  add.call("check-missing-file", ["check", "standalone/nope.mt"])
+
+  add.call("lint-frozen-file", ["lint", "standalone/clean.mt", "--frozen"])
+  add.call("lint-frozen-package", ["lint", "--frozen"], cwd: pkg)
+  add.call("lint-locked-package", ["lint", "--locked"], cwd: pkg)
+  add.call("lint-empty-dir", ["lint", "multi/empty"])
+  add.call("lint-missing-file", ["lint", "standalone/nope.mt"])
+
+  add.call("debug-werror", ["debug", "-Werror", "standalone/clean.mt"])
+  add.call("debug-extra-operand", ["debug", "standalone/clean.mt", "standalone/warns.mt"])
+  add.call("debug-empty-dir", ["debug", "multi/empty"])
+  add.call("debug-dashdash", ["debug", "--", "standalone/clean.mt"])
+
+  add.call("build-profile-missing", ["build", "standalone/clean.mt", "--profile"])
+  add.call("build-output-missing", ["build", "standalone/clean.mt", "-o"])
+  add.call("build-keep-c-missing", ["build", "standalone/clean.mt", "--keep-c"])
+  add.call("build-platform-missing", ["build", "standalone/clean.mt", "--platform"])
+  add.call("build-profile-invalid", ["build", "standalone/clean.mt", "--profile", "bogus"])
+  add.call("build-clean-no-package", ["build", "--clean"])
+  add.call("run-profile-missing", ["run", "standalone/clean.mt", "--profile"])
+  add.call("run-profile-invalid", ["run", "standalone/clean.mt", "--profile", "bogus"])
+  add.call("run-missing-file", ["run", "standalone/nope.mt"])
+  add.call("run-module-no-name", ["run-module"])
+  add.call("run-module-not-found", ["run-module", "nope.module"])
+  add.call("run-module-unknown-option", ["run-module", "--bogus"])
+  add.call("run-module-dashdash", ["run-module", "--", "nope.module"])
+
+  add.call("completions-bash", ["completions", "bash"])
+  add.call("completions-zsh", ["completions", "zsh"])
+  add.call("completions-fish", ["completions", "fish"])
+
+  add.call("std-list-json", ["std", "list", "--json"])
+  add.call("std-show-arena", ["std", "show", "mem.arena"])
+  add.call("std-list-unknown-option", ["std", "list", "--bogus"])
+  add.call("std-no-sub", ["std"])
+
+  add.call("snapshot-theme-missing", ["snapshot", "standalone/clean.mt", "--theme", "nope.json"])
+  add.call("snapshot-missing-input", ["snapshot", "standalone/nope.mt"])
+  add.call("snapshot-theme-no-value", ["snapshot", "standalone/clean.mt", "--theme"])
+  add.call("snapshot-output-no-value", ["snapshot", "standalone/clean.mt", "-o"])
+
+  add.call("cache-no-sub", ["cache"])
+  add.call("cache-unknown-sub", ["cache", "bogus"])
+  add.call("cache-status-extra", ["cache", "status", "extra"])
+
+  add.call("lsp-invalid-log-level", ["lsp", "--log-level", "bogus"])
+  add.call("lsp-missing-log-level", ["lsp", "--log-level"])
+  add.call("lsp-unknown-option", ["lsp", "--bogus"])
+  add.call("lsp-unexpected-arg", ["lsp", "extra"])
+  add.call("lsp-equals-invalid", ["lsp", "--log-level=bogus"])
+
+  add.call("dap-adapter-not-found", ["dap", "--adapter-path", "nope.rb"])
+  add.call("dap-adapter-no-value", ["dap", "--adapter-path"])
+  add.call("dap-unknown-option", ["dap", "--bogus"])
+  add.call("dap-unexpected-arg", ["dap", "extra"])
+
+  add.call("bindgen-stdout", ["bindgen", "probe", "bindgen/probe.h"])
+  add.call("bindgen-link", ["bindgen", "probe", "bindgen/probe.h", "--link", "probe"])
+  add.call("bindgen-include", ["bindgen", "probe", "bindgen/probe.h", "--include", "stdio.h"])
+  add.call("bindgen-missing-args", ["bindgen"])
+  add.call("bindgen-missing-header", ["bindgen", "probe"])
+  add.call("bindgen-unknown-option", ["bindgen", "probe", "bindgen/probe.h", "--bogus"])
+  add.call("bindgen-output-missing-value", ["bindgen", "probe", "bindgen/probe.h", "-o"])
+  add.call("bindgen-clang-missing", ["bindgen", "probe", "bindgen/probe.h", "--clang", "/nonexistent/clang"])
+
+  add.call("deps-add-missing-path", ["deps", "add"], cwd: FIXROOT)
+  add.call("deps-add-missing-name", ["deps", "add"], cwd: pkg)
+  add.call("deps-remove-missing-name", ["deps", "remove"], cwd: pkg)
+  add.call("deps-remove-extra", ["deps", "remove", "foo", "extra"], cwd: pkg)
+  add.call("deps-fetch-unknown-option", ["deps", "fetch", "--bogus"])
+  add.call("deps-update-missing-path", ["deps", "update"], cwd: FIXROOT)
 
   cases
 end
@@ -318,6 +574,12 @@ def normalize(text, self_bin:)
   text = text.gsub(self_bin, "<SELF>")
   text = text.gsub(%r{/tmp/mtc_build_[A-Za-z0-9_.]+\.c}, "<TMPC>")
   text = text.gsub(%r{/tmp/[A-Za-z0-9_.-]*mtc[A-Za-z0-9_.-]*}, "<TMP>")
+  # `mtc test` synthesizes `<source dir>/__mt_test_runner_<pid>.mt` plus its
+  # binary.  The pid is process-local, and the binary's directory is not part
+  # of the contract (the host builds it in `Dir.tmpdir`, the self beside the
+  # source, which is visible only in a spawn-failure message); the failure
+  # text, streams and status still compare.
+  text = text.gsub(%r{\S*/__mt_test_runner_\d+}, "<RUNNER>")
   text = text.gsub(/^built .*\[cached\]$/, "built <TARGET> [cached]")
   # `--timings` values (and phase breakdowns) are wall-clock measurements and
   # differ between any two runs; compare the report's structure only.
