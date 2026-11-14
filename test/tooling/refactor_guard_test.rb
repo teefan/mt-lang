@@ -103,6 +103,33 @@ class MilkTeaRefactorGuardTest < Minitest::Test
     end
   end
 
+  def test_alias_consistency
+    with_tree(
+      "#{SOURCE}/parser/parser.mt" => "import mtc.semantic.types as types\n",
+      "#{SOURCE}/loader/loader.mt" => "import mtc.semantic.types as types_mod\n",
+      "#{SOURCE}/semantic/types.mt" => "function kind() -> void:\n    pass\n",
+    ) do |dir|
+      violations = guard(dir).alias_report[:violations]
+      assert violations.any? { |violation| violation.include?("semantic.types as types (canonical types_mod)") }
+    end
+  end
+
+  def test_duplicate_import_and_alias_collision
+    with_tree(
+      "#{SOURCE}/parser/parser.mt" => <<~MT,
+        import mtc.parser.ast as ast
+        import mtc.parser.ast as ast
+        import mtc.semantic.types as ast
+      MT
+      "#{SOURCE}/parser/ast.mt" => "function node() -> void:\n    pass\n",
+      "#{SOURCE}/semantic/types.mt" => "function kind() -> void:\n    pass\n",
+    ) do |dir|
+      violations = guard(dir).alias_report[:violations]
+      assert violations.any? { |violation| violation.include?("duplicate import of parser.ast") }
+      assert violations.any? { |violation| violation.include?("alias ast used for") }
+    end
+  end
+
   def test_dead_export_classification
     with_tree(
       "#{SOURCE}/parser/parser.mt" => <<~MT,

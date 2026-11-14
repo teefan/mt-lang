@@ -14,10 +14,10 @@ import std.vec as vec
 import mtc.cli_help as cli_help
 import mtc.packages.editor as editor
 import mtc.packages.graph as graph
-import mtc.packages.lock as lock
+import mtc.packages.lock as package_lock
 import mtc.packages.manifest as manifest
 import mtc.packages.registry as registry
-import mtc.packages.source as source
+import mtc.packages.source as pkg_source
 import mtc.packages.version as version
 
 
@@ -138,7 +138,7 @@ function deps_tree(args: span[str]) -> int:
     if index < args.len:
         return unknown_option("unknown deps option ", args[index])
 
-    var resolver = source.create_resolver(source.ResolutionMode.materialize)
+    var resolver = pkg_source.create_resolver(pkg_source.ResolutionMode.materialize)
     defer: resolver.release()
     match graph.load(path.as_str(), ref_of(resolver)):
         Result.failure as load_failure:
@@ -192,10 +192,10 @@ function deps_lock(args: span[str]) -> int:
                 path = path_payload.value
     defer: path.release()
 
-    var resolver = source.create_resolver(source.ResolutionMode.materialize)
+    var resolver = pkg_source.create_resolver(pkg_source.ResolutionMode.materialize)
     defer: resolver.release()
     if check_mode:
-        match lock.check(path.as_str(), ref_of(resolver)):
+        match package_lock.check(path.as_str(), ref_of(resolver)):
             Result.failure as check_failure:
                 var message = check_failure.error
                 let result = fail_message(message.as_str())
@@ -213,7 +213,7 @@ function deps_lock(args: span[str]) -> int:
                 stdio.print_line(f"out of date #{result.lock_path.as_str()}")
                 return 1
     else:
-        match lock.write(path.as_str(), ref_of(resolver)):
+        match package_lock.write(path.as_str(), ref_of(resolver)):
             Result.failure as write_failure:
                 var message = write_failure.error
                 let result = fail_message(message.as_str())
@@ -329,11 +329,11 @@ function deps_fetch_command(args: span[str]) -> int:
 ## Materialize every cache-backed locked source and print the host's
 ## `kept`/`materialized` rows (or the no-sources line).
 function fetch_locked(path: str) -> Result[bool, string.String]:
-    var resolver = source.create_resolver(source.ResolutionMode.materialize)
+    var resolver = pkg_source.create_resolver(pkg_source.ResolutionMode.materialize)
     defer: resolver.release()
 
-    var packages: vec.Vec[lock.LockedPackage]
-    match lock.locked_packages(path, ref_of(resolver)):
+    var packages: vec.Vec[package_lock.LockedPackage]
+    match package_lock.locked_packages(path, ref_of(resolver)):
         Result.failure as packages_failure:
             return Result[bool, string.String].failure(error = packages_failure.error)
         Result.success as packages_payload:
@@ -351,7 +351,7 @@ function fetch_locked(path: str) -> Result[bool, string.String]:
             continue
 
         var expected_manifest: string.String
-        match source.cache_manifest_path(resolver.cache_root.as_str(), package.identity):
+        match pkg_source.cache_manifest_path(resolver.cache_root.as_str(), package.identity):
             Result.failure as path_failure:
                 return Result[bool, string.String].failure(error = path_failure.error)
             Result.success as path_payload:
@@ -364,7 +364,7 @@ function fetch_locked(path: str) -> Result[bool, string.String]:
             message.append(expected_manifest.as_str())
             return Result[bool, string.String].failure(error = message)
 
-        match source.materialize_identity(resolver.cache_root.as_str(), package.package_name.as_str(), ref_of(package.identity)):
+        match pkg_source.materialize_identity(resolver.cache_root.as_str(), package.package_name.as_str(), ref_of(package.identity)):
             Result.failure as fetch_failure:
                 return Result[bool, string.String].failure(error = fetch_failure.error)
             Result.success as fetch_payload:
@@ -391,7 +391,7 @@ function fetch_locked(path: str) -> Result[bool, string.String]:
     return Result[bool, string.String].success(value = true)
 
 
-function release_locked_packages(packages: ref[vec.Vec[lock.LockedPackage]]) -> void:
+function release_locked_packages(packages: ref[vec.Vec[package_lock.LockedPackage]]) -> void:
     var i: ptr_uint = 0
     while i < packages.len():
         let package = packages.get(i) else:
@@ -514,9 +514,9 @@ function deps_add(args: span[str]) -> int:
             var updated = edit_payload.value
             updated.release()
 
-    var resolver = source.create_resolver(source.ResolutionMode.materialize)
+    var resolver = pkg_source.create_resolver(pkg_source.ResolutionMode.materialize)
     defer: resolver.release()
-    match lock.write(path.as_str(), ref_of(resolver)):
+    match package_lock.write(path.as_str(), ref_of(resolver)):
         Result.failure as write_failure:
             var message = write_failure.error
             rollback(manifest_path.as_str(), original_manifest.as_str(), lock_path.as_str(), ref_of(original_lock))
@@ -901,9 +901,9 @@ function deps_remove(args: span[str]) -> int:
             var updated = edit_payload.value
             updated.release()
 
-    var resolver = source.create_resolver(source.ResolutionMode.materialize)
+    var resolver = pkg_source.create_resolver(pkg_source.ResolutionMode.materialize)
     defer: resolver.release()
-    match lock.write(path.as_str(), ref_of(resolver)):
+    match package_lock.write(path.as_str(), ref_of(resolver)):
         Result.failure as write_failure:
             var message = write_failure.error
             rollback(manifest_path.as_str(), original_manifest.as_str(), lock_path.as_str(), ref_of(original_lock))
@@ -947,7 +947,7 @@ function deps_update(args: span[str]) -> int:
     defer: path.release()
 
     var names = vec.Vec[string.String].create()
-    defer: source.release_strings(ref_of(names))
+    defer: pkg_source.release_strings(ref_of(names))
     while index < args.len:
         let arg = args[index]
         if arg.starts_with("-"):
@@ -955,10 +955,10 @@ function deps_update(args: span[str]) -> int:
         names.push(string.String.from_str(arg))
         index += 1
 
-    var resolver = source.create_resolver(source.ResolutionMode.materialize)
+    var resolver = pkg_source.create_resolver(pkg_source.ResolutionMode.materialize)
     defer: resolver.release()
     if names.len() == 0:
-        match lock.write(path.as_str(), ref_of(resolver)):
+        match package_lock.write(path.as_str(), ref_of(resolver)):
             Result.failure as write_failure:
                 var message = write_failure.error
                 let result = fail_message(message.as_str())
@@ -982,9 +982,9 @@ function deps_update(args: span[str]) -> int:
 
 
 function selective_update(path: str, names: ref[vec.Vec[string.String]]) -> int:
-    var cache_resolver = source.create_resolver(source.ResolutionMode.cache)
+    var cache_resolver = pkg_source.create_resolver(pkg_source.ResolutionMode.cache)
     defer: cache_resolver.release()
-    match lock.check(path, ref_of(cache_resolver)):
+    match package_lock.check(path, ref_of(cache_resolver)):
         Result.failure as check_failure:
             var message = check_failure.error
             let result = fail_message(message.as_str())
@@ -1009,10 +1009,10 @@ function selective_update(path: str, names: ref[vec.Vec[string.String]]) -> int:
             loaded = manifest_payload.value
     defer: loaded.release()
 
-    var materialize_resolver = source.create_resolver(source.ResolutionMode.materialize)
+    var materialize_resolver = pkg_source.create_resolver(pkg_source.ResolutionMode.materialize)
     defer: materialize_resolver.release()
-    var packages: vec.Vec[lock.LockedPackage]
-    match lock.locked_packages(path, ref_of(materialize_resolver)):
+    var packages: vec.Vec[package_lock.LockedPackage]
+    match package_lock.locked_packages(path, ref_of(materialize_resolver)):
         Result.failure as packages_failure:
             var message = packages_failure.error
             let result = fail_message(message.as_str())
@@ -1024,7 +1024,7 @@ function selective_update(path: str, names: ref[vec.Vec[string.String]]) -> int:
 
     # Known names: manifest dependencies plus every locked package name.
     var known = vec.Vec[string.String].create()
-    defer: source.release_strings(ref_of(known))
+    defer: pkg_source.release_strings(ref_of(known))
     var i: ptr_uint = 0
     while i < loaded.dependencies.len():
         let dependency = loaded.dependencies.get(i) else:
@@ -1056,9 +1056,9 @@ function selective_update(path: str, names: ref[vec.Vec[string.String]]) -> int:
     # Selected instance ids: the requested packages plus their transitive
     # dependency closure.
     var selected = vec.Vec[string.String].create()
-    defer: source.release_strings(ref_of(selected))
+    defer: pkg_source.release_strings(ref_of(selected))
     var queue = vec.Vec[string.String].create()
-    defer: source.release_strings(ref_of(queue))
+    defer: pkg_source.release_strings(ref_of(queue))
     i = 0
     while i < packages.len():
         let package = packages.get(i) else:
@@ -1089,15 +1089,15 @@ function selective_update(path: str, names: ref[vec.Vec[string.String]]) -> int:
                 pass
 
     # Pin the registry versions of every dependency outside the selected set.
-    var pinned = vec.Vec[source.ResolvedVersion].create()
-    defer: source.release_resolved_versions(ref_of(pinned))
+    var pinned = vec.Vec[pkg_source.ResolvedVersion].create()
+    defer: pkg_source.release_resolved_versions(ref_of(pinned))
     i = 0
     while i < packages.len():
         let package_entry = packages.get(i) else:
             break
         let package = unsafe: read(package_entry)
         var parent_key: string.String
-        match source.source_key_for_identity(package.identity):
+        match pkg_source.source_key_for_identity(package.identity):
             Result.failure:
                 i += 1
                 continue
@@ -1114,9 +1114,9 @@ function selective_update(path: str, names: ref[vec.Vec[string.String]]) -> int:
                         let dependency_entry = packages.get(dependency_index.value) else:
                             break
                         let dependency = unsafe: read(dependency_entry)
-                        if dependency.identity.kind == source.SourceKind.registry_:
-                            var key = source.registry_dependency_key(parent_key.as_str(), dependency.package_name.as_str())
-                            pinned.push(source.ResolvedVersion(
+                        if dependency.identity.kind == pkg_source.SourceKind.registry_:
+                            var key = pkg_source.registry_dependency_key(parent_key.as_str(), dependency.package_name.as_str())
+                            pinned.push(pkg_source.ResolvedVersion(
                                 key = key,
                                 package_name = string.String.from_str(dependency.package_name.as_str()),
                                 version = string.String.from_str(dependency.identity.registry_version.as_str()),
@@ -1127,9 +1127,9 @@ function selective_update(path: str, names: ref[vec.Vec[string.String]]) -> int:
         parent_key.release()
         i += 1
 
-    var resolver = source.with_resolved_versions(ref_of(materialize_resolver), ref_of(pinned))
+    var resolver = pkg_source.with_resolved_versions(ref_of(materialize_resolver), ref_of(pinned))
     defer: resolver.release()
-    match lock.write(path, ref_of(resolver)):
+    match package_lock.write(path, ref_of(resolver)):
         Result.failure as write_failure:
             var message = write_failure.error
             let result = fail_message(message.as_str())
@@ -1150,7 +1150,7 @@ function selective_update(path: str, names: ref[vec.Vec[string.String]]) -> int:
     return 0
 
 
-function find_package(packages: ref[vec.Vec[lock.LockedPackage]], instance_id: str) -> Option[ptr_uint]:
+function find_package(packages: ref[vec.Vec[package_lock.LockedPackage]], instance_id: str) -> Option[ptr_uint]:
     var i: ptr_uint = 0
     while i < packages.len():
         let package = packages.get(i) else:

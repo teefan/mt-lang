@@ -9,21 +9,21 @@
 import std.string as string
 import std.vec as vec
 
-import mtc.lexer.lexer as lexer
-import mtc.lexer.token as tok
+import mtc.lexer.lexer as lexer_mod
+import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 import mtc.lexer.trivia as triv
 
 
 public struct CstSourceFile:
     source: str
-    tokens: vec.Vec[tok.Token]
+    tokens: vec.Vec[token_mod.Token]
     trivia: vec.Vec[triv.TriviaEntry]
 
 
 ## Build the CST, collecting lexer diagnostics into `diagnostics`.
-public function build_cst(source: str, diagnostics: ref[vec.Vec[tok.LexDiagnostic]]) -> CstSourceFile:
-    let lexed = lexer.lex_with_trivia(source, diagnostics)
+public function build_cst(source: str, diagnostics: ref[vec.Vec[token_mod.LexDiagnostic]]) -> CstSourceFile:
+    let lexed = lexer_mod.lex_with_trivia(source, diagnostics)
     return CstSourceFile(source = source, tokens = lexed.tokens, trivia = lexed.trivia)
 
 

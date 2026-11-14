@@ -89,7 +89,13 @@ module MilkTea
 
     ENTRY_POINTS = %w[main].freeze
 
-    IMPORT_RE = /^\s*import\s+mtc\.([A-Za-z0-9_.]+)/
+    # Canonical aliases forced away from the basename by local shadowing.
+    ALIAS_OVERRIDES = {
+      # `source` and `package_source` are both common locals/parameters.
+      "packages.source" => "pkg_source",
+    }.freeze
+
+    IMPORT_RE = /^\s*import\s+mtc\.([A-Za-z0-9_.]+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/
     FUNCTION_RE = /^([ \t]*)(?:public\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)/
     TYPE_RE = /^([ \t]*)(?:public\s+)?(struct|enum|variant|type|interface)\s+([A-Za-z_][A-Za-z0-9_]*)/
     EVENT_RE = /^([ \t]*)(?:public\s+)?event\s+([A-Za-z_][A-Za-z0-9_]*)/
@@ -112,11 +118,23 @@ module MilkTea
         @lines = lines
       end
 
-      def imports
-        @imports ||= lines.filter_map do |line|
+      def import_entries
+        @import_entries ||= lines.each_with_index.filter_map do |line, index|
           match = IMPORT_RE.match(line)
-          match && match[1]
-        end.uniq
+          next unless match
+
+          target = match[1]
+          {
+            target: target,
+            alias: match[2] || target.split(".").last,
+            path: relative,
+            line: index + 1,
+          }
+        end
+      end
+
+      def imports
+        @imports ||= import_entries.map { |entry| entry[:target] }.uniq
       end
 
       def declarations
@@ -272,6 +290,54 @@ module MilkTea
         match && match[1] == target
       end
       index.nil? ? 0 : index + 1
+    end
+
+    def alias_report
+      forms = Hash.new { |hash, key| hash[key] = Hash.new { |inner, inner_key| inner[inner_key] = [] } }
+      entries.each do |entry|
+        entry.import_entries.each do |import|
+          forms[import[:target]][import[:alias]] << import
+        end
+      end
+
+      canon = {}
+      violations = []
+      entries.each do |entry|
+        entry.import_entries.group_by { |import| import[:target] }.each do |target, uses|
+          next if uses.length < 2
+
+          violations << "#{entry.relative}:#{uses.last[:line]}: duplicate import of #{target}"
+        end
+        entry.import_entries.group_by { |import| import[:alias] }.each do |name, uses|
+          targets = uses.map { |use| use[:target] }.uniq
+          next if targets.length < 2
+
+          violations << "#{entry.relative}:#{uses.last[:line]}: alias #{name} used for #{targets.join(', ')}"
+        end
+      end
+
+      forms.each do |target, by_alias|
+        counts = by_alias.transform_values(&:length)
+        max = counts.values.max
+        winners = counts.select { |_name, count| count == max }.keys.sort
+        # A tie has no majority convention; prefer the longer, more descriptive
+        # alias (`linter_mod` over a bare `linter`), then lexical order.
+        canonical = ALIAS_OVERRIDES[target] || winners.max_by { |name| [name.length, name] }
+        canon[target] = canonical
+        if winners.length > 1 && !ALIAS_OVERRIDES.key?(target)
+          violations << "#{target}: ambiguous alias #{winners.join(' / ')}"
+        end
+
+        by_alias.each do |name, uses|
+          next if name == canonical
+
+          uses.each do |use|
+            violations << "#{use[:path]}:#{use[:line]}: #{target} as #{name} (canonical #{canonical})"
+          end
+        end
+      end
+
+      { canon: canon.sort.to_h, violations: violations.uniq.sort }
     end
 
     def naming_violations
@@ -495,6 +561,7 @@ module MilkTea
         source: { files: source_files.length, lines: entries.sum { |entry| entry.lines.length } },
         layers: layers,
         naming: { violations: naming_violations },
+        aliases: alias_report,
         dead_exports: dead_exports,
         duplication: duplication_report,
         sizes: size_report,
@@ -512,6 +579,7 @@ module MilkTea
           "exceptions" => report[:layers][:exceptions].sort,
         },
         "naming" => report[:naming][:violations].map { |violation| format_violation(violation) }.sort,
+        "aliases" => report[:aliases][:canon].sort.to_h,
         "dead_exports" => {
           "unused" => report[:dead_exports][:unused].map { |declaration| format_declaration(declaration) }.sort,
           "test_only" => report[:dead_exports][:test_only].map { |declaration| format_declaration(declaration) }.sort,
@@ -569,6 +637,7 @@ module MilkTea
       end
 
       failures.concat(report[:layers][:violations])
+      failures.concat(report[:aliases][:violations])
 
       baseline_naming = Array(baseline && baseline["naming"])
       current_naming = report[:naming][:violations].map { |violation| format_violation(violation) }
@@ -635,6 +704,9 @@ module MilkTea
       io.puts "refactor guard: #{SOURCE_ROOT} (#{report[:source][:files]} files, #{report[:source][:lines]} lines)"
       io.puts "layers: #{report[:layers][:edges].length} edges, #{report[:layers][:violations].length} violations"
       report[:layers][:violations].first(top).each { |violation| io.puts "  #{violation}" }
+
+      io.puts "aliases: #{report[:aliases][:canon].length} modules, #{report[:aliases][:violations].length} violations"
+      report[:aliases][:violations].first(top).each { |violation| io.puts "  #{violation}" }
 
       io.puts "naming: #{report[:naming][:violations].length} violations"
       report[:naming][:violations].first(top).each do |violation|

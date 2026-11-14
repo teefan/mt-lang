@@ -192,7 +192,7 @@ struct HoistSaved:
     array_exempt: ptr[ast.Expr]?
 
 
-struct LowerCtx:
+struct LoweringContext:
     module_name: str
     analysis: analyzer.Analysis
     # True while lowering the program's root module: the root async `main`'s
@@ -567,7 +567,7 @@ function event_stateful_listener_type(info: ref[EventRuntimeInfo]) -> types.Type
 ## Ensure a str_buffer[N] struct declaration is registered.  The struct has fields
 ## { data: array[char, N+1]; len: ptr_uint; dirty: bool }.  N is a literal integer
 ## encoded as ty_literal_int.  Only emits once per N.
-function ensure_str_buffer_struct(ctx: ref[LowerCtx], sb_ty: types.Type) -> void:
+function ensure_str_buffer_struct(ctx: ref[LoweringContext], sb_ty: types.Type) -> void:
     # Extract the string representation of the capacity arg from ty_generic("str_buffer", [N]).
     var n_str = "?"
     match sb_ty:
@@ -699,7 +699,7 @@ public function lower(program: loader.Program) -> ir.Program:
     # `mod.func(...)` call in one module can resolve the result type of a
     # function defined in another.
     var program_returns = map_mod.Map[str, types.Type].create()
-    # Shared prelude arm-payload field types (see LowerCtx.prelude_arm_field_types).
+    # Shared prelude arm-payload field types (see LoweringContext.prelude_arm_field_types).
     # Populated by `collect_program_returns` (which resolves every function's
     # return type, emitting the concrete Option/Result decls) so it is available
     # before any module body is lowered.
@@ -1029,7 +1029,7 @@ function find_func_in_source(sf: ast.SourceFile, name: str) -> Option[ast.Decl]:
 ## Find an imported module's analysis by its module name.  The `program_analyses`
 ## span is in dependency-first order; returns the first analysis whose
 ## `module_name` matches.
-function find_imported_analysis(ctx: ref[LowerCtx], module_name: str) -> Option[analyzer.Analysis]:
+function find_imported_analysis(ctx: ref[LoweringContext], module_name: str) -> Option[analyzer.Analysis]:
     var i: ptr_uint = 0
     while i < ctx.program_analyses.len:
         var a: analyzer.Analysis
@@ -1044,7 +1044,7 @@ function find_imported_analysis(ctx: ref[LowerCtx], module_name: str) -> Option[
 ## True when `name` is a struct declared in any loaded module — searches the
 ## current module first, then imported modules, so generics that reference
 ## structs from other modules resolve during monomorphisation.
-function struct_exists_in_imports(ctx: ref[LowerCtx], name: str) -> bool:
+function struct_exists_in_imports(ctx: ref[LoweringContext], name: str) -> bool:
     if ctx.analysis.structs.contains(name):
         return true
     # Check imported modules.
@@ -1069,7 +1069,7 @@ function struct_exists_in_imports(ctx: ref[LowerCtx], name: str) -> bool:
 ## Lower a function body with type-parameter substitution applied: every reference
 ## to a type param (e.g. `T`) in locals, expressions, and the return type is
 ## replaced by the corresponding concrete type from `sub`.
-function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, sub: ref[map_mod.Map[str, types.Type]], body_validated: bool) -> ir.Function:
+function lower_specialized_function(ctx: ref[LoweringContext], name: str, spec_key: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, sub: ref[map_mod.Map[str, types.Type]], body_validated: bool) -> ir.Function:
     # Reset function-level state
     ctx.locals.clear()
     ctx.temp_counter = 0
@@ -1151,7 +1151,7 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str
 
 ## Replace type-parameter references (`ty_var`) in a type with their concrete
 ## values from the substitution map.  Other type variants pass through unchanged.
-function substitute_type_params(ctx: ref[LowerCtx], ty: types.Type, sub: ref[map_mod.Map[str, types.Type]]) -> types.Type:
+function substitute_type_params(ctx: ref[LoweringContext], ty: types.Type, sub: ref[map_mod.Map[str, types.Type]]) -> types.Type:
     match ty:
         types.Type.ty_var as v:
             let concrete = sub.get(v.name)
@@ -1200,22 +1200,22 @@ function substitute_type_params(ctx: ref[LowerCtx], ty: types.Type, sub: ref[map
 
 ## Accessors for the shared program-wide generic-struct instance registry
 ## (`ctx.generic_struct_instances` is a raw pointer to the one shared map).
-function generic_instance_get(ctx: ref[LowerCtx], name: str) -> ptr[GenericReceiver]?:
+function generic_instance_get(ctx: ref[LoweringContext], name: str) -> ptr[GenericReceiver]?:
     return unsafe: read(ctx.generic_struct_instances).get(name)
 
 
-function generic_instance_set(ctx: ref[LowerCtx], name: str, value: GenericReceiver) -> void:
+function generic_instance_set(ctx: ref[LoweringContext], name: str, value: GenericReceiver) -> void:
     unsafe: read(ctx.generic_struct_instances).set(name, value)
 
 
-function generic_instance_contains(ctx: ref[LowerCtx], name: str) -> bool:
+function generic_instance_contains(ctx: ref[LoweringContext], name: str) -> bool:
     return unsafe: read(ctx.generic_struct_instances).contains(name)
 
 
-## Create a fully initialised LowerCtx for a single module.  Every field is
+## Create a fully initialised LoweringContext for a single module.  Every field is
 ## set explicitly so all code paths start from a known clean state.
-function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map_mod.Map[str, types.Type]], pl_field_types: ptr[map_mod.Map[str, types.Type]], prog_analyses: span[analyzer.Analysis], lod_modules: span[loader.LoadedModule], gen_instances: ptr[map_mod.Map[str, GenericReceiver]], spec_infos: ptr[map_mod.Map[str, SpecInfo]]) -> LowerCtx:
-    return LowerCtx(
+function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map_mod.Map[str, types.Type]], pl_field_types: ptr[map_mod.Map[str, types.Type]], prog_analyses: span[analyzer.Analysis], lod_modules: span[loader.LoadedModule], gen_instances: ptr[map_mod.Map[str, GenericReceiver]], spec_infos: ptr[map_mod.Map[str, SpecInfo]]) -> LoweringContext:
+    return LoweringContext(
         module_name = analysis.module_name,
         analysis = analysis,
         is_root_module = false,
@@ -1873,7 +1873,7 @@ function order_module_functions(analyses: span[analyzer.Analysis], fragments: sp
 
 
 ## Append the declarations of a module-level `when`'s selected branch to `out`.
-function append_selected_when_decls(ctx: ref[LowerCtx], discriminant: ptr[ast.Expr], branches: span[ast.WhenDeclBranch], dest: ref[vec.Vec[ast.Decl]]) -> void:
+function append_selected_when_decls(ctx: ref[LoweringContext], discriminant: ptr[ast.Expr], branches: span[ast.WhenDeclBranch], dest: ref[vec.Vec[ast.Decl]]) -> void:
     match try_evaluate_const_expr(ctx, discriminant):
         Option.some as dv:
             var bi: ptr_uint = 0
@@ -2753,7 +2753,7 @@ function extending_receiver_target(analyses: span[analyzer.Analysis], analysis: 
 ## Lower all methods in an extending block to IR functions.  Each method becomes
 ## a C function with the receiver as the first parameter (pointer for editable,
 ## by value for plain, omitted for static).
-function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Function]], type_ref_ptr: ptr[ast.TypeRef], methods: span[ast.Method]) -> void:
+function lower_extending_block(ctx: ref[LoweringContext], functions: ref[vec.Vec[ir.Function]], type_ref_ptr: ptr[ast.TypeRef], methods: span[ast.Method]) -> void:
     var type_name: str
     var bare_name: str
     unsafe:
@@ -2827,7 +2827,7 @@ function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Fun
 
 ## Lower a single method to an IR function.  The receiver (`this`) is bound as a
 ## local parameter (pointer for editable methods, value for plain).
-function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, m: ast.Method) -> ir.Function:
+function lower_method(ctx: ref[LoweringContext], c_name: str, receiver_ty: types.Type, m: ast.Method) -> ir.Function:
     ctx.locals.clear()
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
@@ -2968,7 +2968,7 @@ function prepend_param_setup(setup: ref[vec.Vec[ir.Stmt]], body_stmts: span[ir.S
 ## an `mt_str`.  When the enclosing function returns `cstr` and the return value
 ## is a plain (non-`c"..."`) string literal, re-emit it as a cstr literal so the
 ## C return type matches.  Mirrors Ruby's contextual string-literal coercion.
-function coerce_return_literal_to_cstr(ctx: ref[LowerCtx], value: ptr[ast.Expr], lowered: ptr[ir.Expr]) -> ptr[ir.Expr]:
+function coerce_return_literal_to_cstr(ctx: ref[LoweringContext], value: ptr[ast.Expr], lowered: ptr[ir.Expr]) -> ptr[ir.Expr]:
     var is_cstr_ret = false
     match ctx.current_fn_return_type:
         types.Type.ty_primitive as p:
@@ -2989,7 +2989,7 @@ function coerce_return_literal_to_cstr(ctx: ref[LowerCtx], value: ptr[ast.Expr],
 
 
 ## Multi-string join helpers (mirror c_backend j2, j6).
-function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, is_async: bool, public_export: bool) -> ir.Function:
+function lower_function(ctx: ref[LoweringContext], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, is_async: bool, public_export: bool) -> ir.Function:
     ctx.locals.clear()
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
@@ -3043,7 +3043,7 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
 ## `span[str]` parameter (`int main(int argc, char** argv)` with the argv →
 ## `span[str]` bridge), each returning `int` or `void`.  Mirrors Ruby's
 ## build_root_main_entrypoint (:none / :span_str signatures).
-function build_root_main_entrypoint(ctx: ref[LowerCtx], name: str, params: span[ast.Param]) -> Option[ir.Function]:
+function build_root_main_entrypoint(ctx: ref[LoweringContext], name: str, params: span[ast.Param]) -> Option[ir.Function]:
     let sig = lookup_fn_sig(ctx, name)
     let user_return = fn_sig_return_type(sig)
     if not (types.is_void(user_return) or is_int_type(user_return)):
@@ -3136,7 +3136,7 @@ function append_free_argv_items(body: ref[vec.Vec[ir.Stmt]], items_ref: ptr[ir.E
 
 
 ## True when the root main's single parameter is `span[str]`.
-function main_param_is_span_str(ctx: ref[LowerCtx], params: span[ast.Param]) -> bool:
+function main_param_is_span_str(ctx: ref[LoweringContext], params: span[ast.Param]) -> bool:
     if params.len != 1:
         return false
     var p: ast.Param
@@ -3157,18 +3157,18 @@ function main_param_is_span_str(ctx: ref[LowerCtx], params: span[ast.Param]) -> 
 # =============================================================================
 
 ## Push a fresh (empty) defer group for a newly-opened lexical block.
-function push_defer_scope(ctx: ref[LowerCtx]) -> void:
+function push_defer_scope(ctx: ref[LoweringContext]) -> void:
     ctx.defer_stack.push(DeferGroup(cleanups = vec.Vec[span[ir.Stmt]].create()))
 
 
 ## Pop the innermost defer group when its block closes.
-function pop_defer_scope(ctx: ref[LowerCtx]) -> void:
+function pop_defer_scope(ctx: ref[LoweringContext]) -> void:
     let _dropped = ctx.defer_stack.pop()
 
 
 ## Record one lowered `defer` cleanup (a statement sequence) in the innermost
 ## open block's group, in encounter order.
-function record_defer(ctx: ref[LowerCtx], cleanup: span[ir.Stmt]) -> void:
+function record_defer(ctx: ref[LoweringContext], cleanup: span[ir.Stmt]) -> void:
     let top = ctx.defer_stack.last() else:
         fatal(c"lowering: defer outside any block scope")
     unsafe:
@@ -3192,7 +3192,7 @@ function flush_defer_group(group_ptr: ptr[DeferGroup], output: ref[vec.Vec[ir.St
 
 ## Flush the innermost open block's pending defers (reverse order).  Used at the
 ## fall-through end of a non-terminating block.
-function flush_top_defers(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]) -> void:
+function flush_top_defers(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]]) -> void:
     let top = ctx.defer_stack.last() else:
         return
     flush_defer_group(top, output)
@@ -3202,7 +3202,7 @@ function flush_top_defers(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]) -> 
 ## encounter order.  Used before a `return` so all active defers run.  Mirrors
 ## Ruby's `cleanup_statements(local_defers, active_defers)` where active_defers
 ## is the outer-to-inner concatenation and the whole is reversed.
-function flush_all_defers(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]) -> void:
+function flush_all_defers(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]]) -> void:
     var count = ctx.defer_stack.len()
     while count > 0:
         count -= 1
@@ -3213,7 +3213,7 @@ function flush_all_defers(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]) -> 
 
 ## True when a defer group opened inside the current loop still has pending
 ## cleanups — the host's `local_defers`/`break_defers` check in `lower_loop_exit`.
-function has_loop_defers(ctx: ref[LowerCtx]) -> bool:
+function has_loop_defers(ctx: ref[LoweringContext]) -> bool:
     var i = ctx.loop_defer_depth
     while i < ctx.defer_stack.len():
         let group_ptr = ctx.defer_stack.get(i) else:
@@ -3229,7 +3229,7 @@ function has_loop_defers(ctx: ref[LowerCtx]) -> bool:
 ## without popping them (the block's fall-through path emits its own copy).
 ## The host's `lower_loop_exit`: with a cleanup the exit becomes
 ## `cleanup...; goto <label>`.
-function flush_loop_defers(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]) -> void:
+function flush_loop_defers(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]]) -> void:
     var count = ctx.defer_stack.len()
     while count > ctx.loop_defer_depth:
         count -= 1
@@ -3240,7 +3240,7 @@ function flush_loop_defers(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]) ->
 
 ## True when the innermost open block (or any enclosing block) has a pending
 ## defer, so a `return` needs a cleanup preamble.
-function has_pending_defers(ctx: ref[LowerCtx]) -> bool:
+function has_pending_defers(ctx: ref[LoweringContext]) -> bool:
     var i: ptr_uint = 0
     while i < ctx.defer_stack.len():
         let group_ptr = ctx.defer_stack.get(i) else:
@@ -3277,7 +3277,7 @@ function cleanup_safe_return_expr(ep: ptr[ast.Expr]) -> bool:
 ## collected instead of wrapped in an inline `StmtExpr`, mirroring the host's
 ## `prepare_expression_with_cleanups`.  Returns the enclosing state; close the
 ## window with `collect_stmt_setup`.
-function begin_stmt_setup(ctx: ref[LowerCtx], mode: HoistMode) -> HoistSaved:
+function begin_stmt_setup(ctx: ref[LoweringContext], mode: HoistMode) -> HoistSaved:
     let saved = HoistSaved(mode = ctx.hoist_mode, stmts = ctx.hoist_stmts, cleanups = ctx.hoist_cleanups, stmt_emitted = ctx.hoist_stmt_emitted, root_ep = ctx.hoist_root_ep, array_exempt = ctx.array_call_exempt)
     ctx.hoist_mode = mode
     ctx.hoist_stmts = vec.Vec[ir.Stmt].create()
@@ -3290,7 +3290,7 @@ function begin_stmt_setup(ctx: ref[LowerCtx], mode: HoistMode) -> HoistSaved:
 
 ## Close a hoisting window: restore the enclosing state and return what the
 ## window collected (`stmts` before the statement, `cleanups` after it).
-function collect_stmt_setup(ctx: ref[LowerCtx], saved: HoistSaved) -> HoistSaved:
+function collect_stmt_setup(ctx: ref[LoweringContext], saved: HoistSaved) -> HoistSaved:
     let collected = HoistSaved(mode = ctx.hoist_mode, stmts = ctx.hoist_stmts, cleanups = ctx.hoist_cleanups, stmt_emitted = ctx.hoist_stmt_emitted, root_ep = ctx.hoist_root_ep, array_exempt = ctx.array_call_exempt)
     ctx.hoist_mode = saved.mode
     ctx.hoist_stmts = saved.stmts
@@ -3359,7 +3359,7 @@ struct HoistedValue:
 ## hoisted setup (argument temps, a `__mt_foreign_result_N` temp and the cstr
 ## frees) is inserted before the statement and the lowered value returned with
 ## the window's post-statement cleanups.
-function lower_expr_hoisting(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ep: ptr[ast.Expr], array_exempt: bool) -> HoistedValue:
+function lower_expr_hoisting(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], ep: ptr[ast.Expr], array_exempt: bool) -> HoistedValue:
     let base = output.len()
     let saved = begin_stmt_setup(ctx, HoistMode.hm_return)
     # A return value is a statement root: the host passes
@@ -3390,7 +3390,7 @@ function append_cleanup_stmts(output: ref[vec.Vec[ir.Stmt]], cleanups: vec.Vec[i
 ## hoist a `__mt_array_call_<N>` that the real argument lowering then duplicates
 ## (`infer_type_param_from_args`).  The window is suspended, so the speculative
 ## pass takes the same inline forms a lazily-evaluated region uses.
-function speculative_expr_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
+function speculative_expr_type(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> types.Type:
     let saved = suspend_stmt_setup(ctx)
     let ty = ir_expr_type(lower_expr(ctx, ep))
     resume_stmt_setup(ctx, saved)
@@ -3411,7 +3411,7 @@ function single_stmt_span(stmt: ir.Stmt) -> span[ir.Stmt]:
 ## `cleanup_statements`, which the host emits immediately after the statement;
 ## keep that shape.  (The self's single cleanup channel carries both, so classify
 ## by the cleanup's callee.)
-function record_or_emit_local_cleanups(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], cleanups: vec.Vec[ir.Stmt]) -> void:
+function record_or_emit_local_cleanups(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], cleanups: vec.Vec[ir.Stmt]) -> void:
     var i: ptr_uint = 0
     while i < cleanups.len:
         let stmt = cleanups.get(i) else:
@@ -3427,7 +3427,7 @@ function record_or_emit_local_cleanups(ctx: ref[LowerCtx], output: ref[vec.Vec[i
 ## Drop a return value's format-string release when the return type owns the
 ## buffer (str/cstr or a struct containing one) — the host's `reject_format_
 ## releases_for_assignment` rule in `lower_return_stmt`.
-function filter_return_format_cleanups(ctx: ref[LowerCtx], return_ty: types.Type, cleanups: vec.Vec[ir.Stmt]) -> vec.Vec[ir.Stmt]:
+function filter_return_format_cleanups(ctx: ref[LoweringContext], return_ty: types.Type, cleanups: vec.Vec[ir.Stmt]) -> vec.Vec[ir.Stmt]:
     if not format_owning_target_type(ctx, return_ty, 0):
         return cleanups
     var kept = vec.Vec[ir.Stmt].create()
@@ -3444,14 +3444,14 @@ function filter_return_format_cleanups(ctx: ref[LowerCtx], return_ty: types.Type
 ## Suspend the window around a lazily-evaluated sub-expression (an if/match
 ## branch, a short-circuit right operand, a proc body): a region that may not
 ## run must not hoist its setup out, so it keeps the inline `StmtExpr` form.
-function suspend_stmt_setup(ctx: ref[LowerCtx]) -> HoistSaved:
+function suspend_stmt_setup(ctx: ref[LoweringContext]) -> HoistSaved:
     let saved = HoistSaved(mode = ctx.hoist_mode, stmts = ctx.hoist_stmts, cleanups = ctx.hoist_cleanups, stmt_emitted = ctx.hoist_stmt_emitted, root_ep = ctx.hoist_root_ep, array_exempt = ctx.array_call_exempt)
     ctx.hoist_mode = HoistMode.hm_off
     return saved
 
 
 ## Restore the state saved by `suspend_stmt_setup`.
-function resume_stmt_setup(ctx: ref[LowerCtx], saved: HoistSaved) -> void:
+function resume_stmt_setup(ctx: ref[LoweringContext], saved: HoistSaved) -> void:
     ctx.hoist_mode = saved.mode
     ctx.array_call_exempt = saved.array_exempt
     ctx.hoist_stmts = saved.stmts
@@ -3460,7 +3460,7 @@ function resume_stmt_setup(ctx: ref[LowerCtx], saved: HoistSaved) -> void:
     ctx.hoist_root_ep = saved.root_ep
 
 
-function lower_block(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.Stmt]:
+function lower_block(ctx: ref[LoweringContext], body_ptr: ptr[ast.Stmt]?) -> span[ir.Stmt]:
     var stmts = vec.Vec[ir.Stmt].create()
     push_defer_scope(ctx)
     # The host lowers a nested body that contains no `await` with
@@ -3558,7 +3558,7 @@ function async_body_always_terminates(body_ptr: ptr[ast.Stmt]?) -> bool:
 ## carries its defers in its own `local_env` rather than a shared context.  The
 ## outer stack is saved, replaced by a fresh empty one for the duration of the
 ## body, and restored afterwards.
-function lower_function_body(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.Stmt]:
+function lower_function_body(ctx: ref[LoweringContext], body_ptr: ptr[ast.Stmt]?) -> span[ir.Stmt]:
     let saved = ctx.defer_stack
     let saved_flow = ctx.flow_scopes
     ctx.defer_stack = vec.Vec[DeferGroup].create()
@@ -3569,7 +3569,7 @@ function lower_function_body(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> sp
     return result
 
 
-function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
     unsafe:
         match read(sp):
             ast.Stmt.stmt_ret as r:
@@ -4478,7 +4478,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
 ## host's `lower_emit_stmt` + `@artifacts.emitted_declarations`).  The emitted
 ## names use the host's prefix concatenation (no separator):
 ## `<module_prefix><decl_name>`.
-function lower_emitted_decl(ctx: ref[LowerCtx], decl: ast.Decl) -> void:
+function lower_emitted_decl(ctx: ref[LoweringContext], decl: ast.Decl) -> void:
     let prefix = naming.module_c_prefix(ctx.module_name)
     match decl:
         ast.Decl.decl_function as fun:
@@ -4551,19 +4551,19 @@ function lower_emitted_decl(ctx: ref[LowerCtx], decl: ast.Decl) -> void:
             pass
 
 
-function push_emitted_function(ctx: ref[LowerCtx], f: ir.Function) -> void:
+function push_emitted_function(ctx: ref[LoweringContext], f: ir.Function) -> void:
     let sink = ctx.pending_emitted_functions
     if sink != null:
         unsafe: read(sink).push(f)
 
 
-function push_emitted_struct(ctx: ref[LowerCtx], s: ir.StructDecl) -> void:
+function push_emitted_struct(ctx: ref[LoweringContext], s: ir.StructDecl) -> void:
     let sink = ctx.pending_emitted_structs
     if sink != null:
         unsafe: read(sink).push(s)
 
 
-function push_emitted_constant(ctx: ref[LowerCtx], c: ir.Constant) -> void:
+function push_emitted_constant(ctx: ref[LoweringContext], c: ir.Constant) -> void:
     let sink = ctx.pending_emitted_constants
     if sink != null:
         unsafe: read(sink).push(c)
@@ -4571,7 +4571,7 @@ function push_emitted_constant(ctx: ref[LowerCtx], c: ir.Constant) -> void:
 
 ## The declared type of a local (resolved from its annotation when present and
 ## scalar), else the inferred type of its initializer.
-function local_decl_type(ctx: ref[LowerCtx], declared: ptr[ast.TypeRef]?, value: ptr[ast.Expr]) -> types.Type:
+function local_decl_type(ctx: ref[LoweringContext], declared: ptr[ast.TypeRef]?, value: ptr[ast.Expr]) -> types.Type:
     let annotation = declared else:
         return qualify_type(ctx, expr_type(ctx, value))
     let resolved = resolve_type_ref(ctx, annotation)
@@ -4587,7 +4587,7 @@ function local_decl_type(ctx: ref[LowerCtx], declared: ptr[ast.TypeRef]?, value:
 ## let-else lowering (block.rb): store the value in the storage local, emit
 ## `if (failure) { <else_body> }`, then register `name` as a projection binding
 ## over that storage local (the host projects at each use site).
-function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, else_binding: Option[str], value: ptr[ast.Expr]?, else_body: ptr[ast.Stmt]?, line: ptr_uint) -> void:
+function lower_guard_local(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], name: str, else_binding: Option[str], value: ptr[ast.Expr]?, else_body: ptr[ast.Stmt]?, line: ptr_uint) -> void:
     let value_ptr = value else:
         fatal(c"lowering: guard local requires an initializer")
     # Hidden storage local holding the full Option/Result/nullable value.  The
@@ -4718,7 +4718,7 @@ function guard_binding_projection(kind: str, storage_ty: types.Type) -> BindingP
 ## mirrors the Ruby compiler's `prepare_result_propagation_for_inline_lowering`.
 ## Like lower_propagate_let, but for `return expr?`: propagate the ? into
 ## an if/failure-return pattern, then return the unwrapped success value.
-function lower_propagate_return(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], operand: ptr[ast.Expr], line: ptr_uint, source_path: str) -> void:
+function lower_propagate_return(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], operand: ptr[ast.Expr], line: ptr_uint, source_path: str) -> void:
     # The host's normalization hoists an embedded await out of a `?` operand
     # into a `__mt_async_tmp_<N>` local before the propagation lowers it
     # (`normalize_async_expression`'s AwaitExpr case).
@@ -4832,7 +4832,7 @@ struct PropagatedTemp:
 ## so its own temps take the lower counter values; `__mt_propagate_<N>` is named
 ## after it, and the failure branch returns (or completes the frame early in
 ## CPS).  Returns the temp so the caller can read its success projection.
-function lower_propagate_storage(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], operand: ptr[ast.Expr]) -> PropagatedTemp:
+function lower_propagate_storage(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], operand: ptr[ast.Expr]) -> PropagatedTemp:
     # The host's normalization hoists an embedded await out of a `?` operand
     # into a `__mt_async_tmp_<N>` local before the propagation lowers it
     # (`normalize_async_expression`'s AwaitExpr case).
@@ -4970,7 +4970,7 @@ function lower_propagate_storage(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt
     return PropagatedTemp(name = storage_c, storage_ty = storage_ty, kind = kind)
 
 
-function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, operand: ptr[ast.Expr], line: ptr_uint, emit_success_read: bool, discard_c: str) -> void:
+function lower_propagate_let(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], name: str, operand: ptr[ast.Expr], line: ptr_uint, emit_success_read: bool, discard_c: str) -> void:
     let temp = lower_propagate_storage(ctx, output, operand)
     let storage_ty = temp.storage_ty
     let kind = temp.kind
@@ -5018,7 +5018,7 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
 ## `lower_propagate_let` but assigns the unwrapped success value into an existing
 ## lvalue target rather than introducing a `let` binding.  The failure branch is
 ## identical (return the wrapped failure, or complete the frame early in CPS).
-function lower_propagate_assign(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], target_ast: ptr[ast.Expr], operand: ptr[ast.Expr]) -> void:
+function lower_propagate_assign(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], target_ast: ptr[ast.Expr], operand: ptr[ast.Expr]) -> void:
     # The host's normalization hoists an embedded await out of a `?` operand
     # into a `__mt_async_tmp_<N>` local before the propagation lowers it
     # (`normalize_async_expression`'s AwaitExpr case).
@@ -5124,7 +5124,7 @@ function lower_propagate_assign(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
 
 
 ## Classify a guard's storage type: "option", "result", or "nullable".
-function guard_storage_kind(ctx: ref[LowerCtx], storage_ty: types.Type) -> str:
+function guard_storage_kind(ctx: ref[LoweringContext], storage_ty: types.Type) -> str:
     if types.is_nullable_type(storage_ty):
         return "nullable"
     let gv = generic_variant_name(storage_ty)
@@ -5192,7 +5192,7 @@ function guard_variant_base(name: str) -> str:
 
 ## The failure/absent condition for a guard: `storage == null` for nullable,
 ## `storage.kind == <none/failure>` for Option/Result.
-function guard_failure_condition(ctx: ref[LowerCtx], kind: str, storage_ty: types.Type, storage_ref: ptr[ir.Expr]) -> ptr[ir.Expr]:
+function guard_failure_condition(ctx: ref[LoweringContext], kind: str, storage_ty: types.Type, storage_ref: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let bool_ty = ctx.bool_ty
     if kind == "nullable":
         # mt_subscription is a plain struct without nullable/null wrapper;
@@ -5213,7 +5213,7 @@ function guard_failure_condition(ctx: ref[LowerCtx], kind: str, storage_ty: type
 
 
 ## The unwrapped success type `T` of a guard's storage type.
-function guard_success_type(ctx: ref[LowerCtx], kind: str, storage_ty: types.Type) -> types.Type:
+function guard_success_type(ctx: ref[LoweringContext], kind: str, storage_ty: types.Type) -> types.Type:
     if kind == "nullable":
         let inner = types.unwrap_nullable(storage_ty)
         if is_nullable_pointer_like(storage_ty):
@@ -5259,7 +5259,7 @@ function guard_success_type(ctx: ref[LowerCtx], kind: str, storage_ty: types.Typ
 
 ## The success-value projection for a guard: the storage itself for nullable,
 ## `storage.data.<some/success>.value` for Option/Result.
-function guard_success_projection(ctx: ref[LowerCtx], kind: str, storage_ty: types.Type, storage_ref: ptr[ir.Expr], success_ty: types.Type) -> ptr[ir.Expr]:
+function guard_success_projection(ctx: ref[LoweringContext], kind: str, storage_ty: types.Type, storage_ref: ptr[ir.Expr], success_ty: types.Type) -> ptr[ir.Expr]:
     if kind == "nullable":
         if types.is_nullable_type(storage_ty) and not is_nullable_pointer_like(storage_ty):
             return alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "value", ty = success_ty))
@@ -5276,7 +5276,7 @@ function guard_success_projection(ctx: ref[LowerCtx], kind: str, storage_ty: typ
 ## The failure projection of a Result storage: `storage.data.failure.error`,
 ## typed with the storage's error type argument.  Used both for the `else as
 ## error:` binding and for a propagation binding's error read.
-function guard_failure_projection(ctx: ref[LowerCtx], storage_ty: types.Type, storage_ref: ptr[ir.Expr]) -> (ptr[ir.Expr], types.Type):
+function guard_failure_projection(ctx: ref[LoweringContext], storage_ty: types.Type, storage_ref: ptr[ir.Expr]) -> (ptr[ir.Expr], types.Type):
     let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
     let (decl_name, decl_module) = variant_declared_identity(storage_ty, ctx.module_name)
     let payload_ty = variant_arm_payload_binding(decl_name, decl_module, outer_c, "failure")
@@ -5302,7 +5302,7 @@ function guard_failure_projection(ctx: ref[LowerCtx], storage_ty: types.Type, st
 ## Register the `else as error:` binding for a Result guard so the else body
 ## resolves the name to the storage's failure projection (the host registers the
 ## same projection on the else env; no local is emitted).
-function register_result_failure_binding(ctx: ref[LowerCtx], storage_c: str, storage_ty: types.Type, error_name: str) -> void:
+function register_result_failure_binding(ctx: ref[LoweringContext], storage_c: str, storage_ty: types.Type, error_name: str) -> void:
     let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = Option[bool].some(value = false)))
     let (_, error_ty) = guard_failure_projection(ctx, storage_ty, storage_ref)
     ctx.locals.push(LocalBinding(name = error_name, c_name = storage_c, ty = error_ty, pointer = Option[bool].some(value = false), projection = BindingProjection.result_failure_error(storage_ty = storage_ty)))
@@ -5311,7 +5311,7 @@ function register_result_failure_binding(ctx: ref[LowerCtx], storage_c: str, sto
 ## Read a bound name.  A guard/propagation binding is projected out of its
 ## storage local (`x.data.some.value` for an Option, the storage itself for a
 ## pointer-like nullable), mirroring the host's `lower_bound_identifier`.
-function lower_binding_read(ctx: ref[LowerCtx], lb: LocalBinding) -> ptr[ir.Expr]:
+function lower_binding_read(ctx: ref[LoweringContext], lb: LocalBinding) -> ptr[ir.Expr]:
     match lb.projection:
         BindingProjection.plain:
             # The host's `lower_bound_identifier` reads `binding[:type]`, the
@@ -5351,7 +5351,7 @@ function lower_binding_read(ctx: ref[LowerCtx], lb: LocalBinding) -> ptr[ir.Expr
 ## rule (`utils.rb:1237`): the target's `IR::Name` carries the *visible*
 ## (flow-refined) type when that is the storage type itself or the storage
 ## nullable's base, and the storage type otherwise.
-function lower_assignment_target(ctx: ref[LowerCtx], target_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_assignment_target(ctx: ref[LoweringContext], target_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(target_ast):
             ast.Expr.expr_identifier as id:
@@ -5405,7 +5405,7 @@ function assignment_target_visible(storage_ty: types.Type, visible: types.Type) 
 
 ## Lower `let (a, b) = expr` (tuple) / `let Name(x, y) = expr` (struct) by
 ## evaluating the source into a temp and binding each component from it.
-function lower_destructure(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bindings: span[str], type_name: Option[str], value: ptr[ast.Expr]?) -> void:
+function lower_destructure(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], bindings: span[str], type_name: Option[str], value: ptr[ast.Expr]?) -> void:
     let val = value else:
         fatal(c"lowering: destructuring requires an initializer")
     let lowered_val = lower_expr(ctx, val)
@@ -5461,7 +5461,7 @@ function lower_destructure(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bi
 ## only structs the C backend cannot build an equality helper for, because raw
 ## modules never lower their declarations into `Program.structs`.  The analyzer
 ## still knows their fields, so the helper can be synthesized from those.
-function is_equality_struct_type(ctx: ref[LowerCtx], ty: types.Type) -> bool:
+function is_equality_struct_type(ctx: ref[LoweringContext], ty: types.Type) -> bool:
     match ty:
         types.Type.ty_imported as im:
             if not im.module_name.starts_with("std.c."):
@@ -5483,7 +5483,7 @@ function is_equality_struct_type(ctx: ref[LowerCtx], ty: types.Type) -> bool:
 ## from its type objects.  Returns false — leaving the comparison untouched —
 ## when the type's fields are unknown.  Nested external structs a field needs
 ## are registered too (C structs nest by value, so the recursion terminates).
-function register_external_struct_layout(ctx: ref[LowerCtx], ty: types.Type) -> bool:
+function register_external_struct_layout(ctx: ref[LoweringContext], ty: types.Type) -> bool:
     let key = naming.type_c_key(ty)
     if ctx.external_struct_keys.contains(key):
         return true
@@ -5512,7 +5512,7 @@ function register_external_struct_layout(ctx: ref[LowerCtx], ty: types.Type) -> 
 ## name may be import-qualified (`types.Transform` for `engine.types`), which a
 ## lookup by that written name in the current module would miss — the value's own
 ## type carries the authoritative module and name.
-function struct_fields_of(ctx: ref[LowerCtx], t: types.Type) -> Option[span[analyzer.FieldEntry]]:
+function struct_fields_of(ctx: ref[LoweringContext], t: types.Type) -> Option[span[analyzer.FieldEntry]]:
     var module_name: str
     var struct_name: str
     match t:
@@ -5560,7 +5560,7 @@ function struct_field_type_at(fields: span[analyzer.FieldEntry], index: ptr_uint
 ## replaced with `void` to avoid undeclared C type names.
 ## True when a resolved type is a declared opaque type (`opaque X = c"..."`),
 ## looked up by its C key in the program-wide opaque set.
-function is_opaque_base(ctx: ref[LowerCtx], t: types.Type) -> bool:
+function is_opaque_base(ctx: ref[LoweringContext], t: types.Type) -> bool:
     match t:
         types.Type.ty_imported:
             if ctx.opaque_keys.get(naming.type_c_key(t)) != null:
@@ -5589,7 +5589,7 @@ function opaque_module_name_and_name(t: types.Type) -> OpaqueName:
             return OpaqueName(module_name = "", name = "")
 
 
-function module_has_opaque(ctx: ref[LowerCtx], t: types.Type) -> bool:
+function module_has_opaque(ctx: ref[LoweringContext], t: types.Type) -> bool:
     match t:
         types.Type.ty_imported as im:
             return find_imported_opaque_decl(ctx, im.module_name, im.name)
@@ -5601,7 +5601,7 @@ function module_has_opaque(ctx: ref[LowerCtx], t: types.Type) -> bool:
             return false
 
 
-function find_imported_opaque_decl(ctx: ref[LowerCtx], module_name: str, name: str) -> bool:
+function find_imported_opaque_decl(ctx: ref[LoweringContext], module_name: str, name: str) -> bool:
     let analysis = find_imported_analysis(ctx, module_name) else:
         return false
     var di: ptr_uint = 0
@@ -5619,7 +5619,7 @@ function find_imported_opaque_decl(ctx: ref[LowerCtx], module_name: str, name: s
     return false
 
 
-function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
+function qualify_type(ctx: ref[LoweringContext], t: types.Type) -> types.Type:
     match t:
         types.Type.ty_named as n:
             if is_raw_type_param_name(n.name):
@@ -5791,7 +5791,7 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
 ## monomorphize it and return the concrete `ty_named`.  Returns `ty_error` for
 ## builtins (ptr/span/ref/...) and unknown names — the caller should fall back
 ## to `ty_generic`.
-function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[types.Type]) -> types.Type:
+function try_monomorphize_generic(ctx: ref[LoweringContext], name: str, args: span[types.Type]) -> types.Type:
     if is_builtin_pointer_generic(name):
         return types.Type.ty_error
     # Inside a generic body the arguments may still be type variables; such a
@@ -5867,7 +5867,7 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
 
 ## The module that declares a type named `name`, searching every program
 ## analysis (not just the current module's imports).
-function find_declaring_module(ctx: ref[LowerCtx], name: str) -> Option[str]:
+function find_declaring_module(ctx: ref[LoweringContext], name: str) -> Option[str]:
     # A locally-declared type takes precedence: the caller qualifies against
     # ctx.module_name.  (Same precedence as `imported_type_module`.)
     if ctx.analysis.type_names.contains(name) or ctx.analysis.structs.contains(name) or type_declared_in_source(ctx.analysis, name):
@@ -5898,7 +5898,7 @@ function find_declaring_module(ctx: ref[LowerCtx], name: str) -> Option[str]:
 ## `qualify_type` so an imported bare type name qualifies against its defining
 ## module instead of being mis-attributed to the current module.  Returns none
 ## when the name is defined locally or not found in any import.
-function imported_type_module(ctx: ref[LowerCtx], name: str) -> Option[str]:
+function imported_type_module(ctx: ref[LoweringContext], name: str) -> Option[str]:
     # A locally-declared type takes precedence — never redirect it to an import.
     if ctx.analysis.structs.contains(name) or type_declared_in_source(ctx.analysis, name):
         return Option[str].none
@@ -5975,7 +5975,7 @@ function struct_in_source(module_analysis: analyzer.Analysis, name: str) -> bool
 ## instance keeps its global, un-prefixed C name (`std_option_Option_int`), while
 ## a user-defined variant instance is named after its declaring module
 ## (`engine_types_Outcome_int_engine_types_EngineError`).
-function generic_variant_instance_type(ctx: ref[LowerCtx], variant_name: str, concrete_args: span[types.Type]) -> types.Type:
+function generic_variant_instance_type(ctx: ref[LoweringContext], variant_name: str, concrete_args: span[types.Type]) -> types.Type:
     if is_prelude_variant_name(variant_name):
         return types.Type.ty_generic(name = variant_name, args = concrete_args)
     match variant_declaring_module(ctx, variant_name):
@@ -5987,7 +5987,7 @@ function generic_variant_instance_type(ctx: ref[LowerCtx], variant_name: str, co
 
 ## The module declaring a variant named `name`, searching the current module then
 ## the imports.  `none` when no loaded module declares it.
-function variant_declaring_module(ctx: ref[LowerCtx], name: str) -> Option[str]:
+function variant_declaring_module(ctx: ref[LoweringContext], name: str) -> Option[str]:
     if variant_in_source(ctx.analysis, name):
         return Option[str].some(value = ctx.module_name)
     var import_values = ctx.analysis.imports.values()
@@ -6030,7 +6030,7 @@ function prelude_variant_instance_type(name: str, args: span[types.Type]) -> typ
 
 
 ## Ensure a concrete variant declaration exists for `Option[T]` or `Result[T,E]`.
-function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.Type]) -> types.Type:
+function ensure_generic_variant(ctx: ref[LoweringContext], name: str, args: span[types.Type]) -> types.Type:
     var base_name = name
     if name == "Option":
         base_name = strings.join_two("std_option_", name)
@@ -6075,7 +6075,7 @@ function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.
 ## struct (not a builtin constructor like ptr/own/span/str_buffer etc.).  Used
 ## to trigger struct monomorphization via `qualify_type` when a local variable
 ## declaration references a generic struct without any explicit method call.
-function is_user_generic_struct(ctx: ref[LowerCtx], ty: types.Type) -> bool:
+function is_user_generic_struct(ctx: ref[LoweringContext], ty: types.Type) -> bool:
     match ty:
         types.Type.ty_generic as g:
             if is_builtin_pointer_generic(g.name):
@@ -6110,12 +6110,12 @@ function generic_c_type_raw(name: str, args: span[types.Type]) -> str:
 ## follow the chain through the alias target to get the underlying type from the
 ## originating module (e.g. `ty_imported("std.c.raylib", "CameraMode")`).
 ## Returns none if `type_name` is not a type alias in the target module.
-function resolve_single_imported_type(ctx: ref[LowerCtx], target_module: str, type_name: str) -> Option[types.Type]:
+function resolve_single_imported_type(ctx: ref[LoweringContext], target_module: str, type_name: str) -> Option[types.Type]:
     return resolve_imported_alias_type(ctx.program_analyses, target_module, type_name)
 
 
 ## `resolve_single_imported_type` over an explicit analysis list, so callers
-## without a `LowerCtx` (the function-ordering pass) resolve identically.
+## without a `LoweringContext` (the function-ordering pass) resolve identically.
 function resolve_imported_alias_type(analyses: span[analyzer.Analysis], target_module: str, type_name: str) -> Option[types.Type]:
     var ai: ptr_uint = 0
     while ai < analyses.len:
@@ -6145,7 +6145,7 @@ function resolve_imported_alias_type(analyses: span[analyzer.Analysis], target_m
 ## When the member is a type alias re-exporting from std.c.* (e.g.
 ## `type CameraMode = c.CameraMode`), use the bare C name from the
 ## originating module.  Otherwise use the standard qualified name.
-function imported_member_c_name(ctx: ref[LowerCtx], imported: analyzer.Analysis, target_module: str, member: str) -> str:
+function imported_member_c_name(ctx: ref[LoweringContext], imported: analyzer.Analysis, target_module: str, member: str) -> str:
     if is_raw_module(imported.module_kind):
         return member
     let opt_alias = resolve_single_imported_type(ctx, target_module, member)
@@ -6174,7 +6174,7 @@ function imported_member_c_name(ctx: ref[LowerCtx], imported: analyzer.Analysis,
 ## lowering must read it from the analysis rather than rebuild a type from the
 ## reference's parts.  `None` for a name the analysis did not register as a
 ## nested (linked) named type.
-function local_nested_type(ctx: ref[LowerCtx], parts: span[str]) -> Option[types.Type]:
+function local_nested_type(ctx: ref[LoweringContext], parts: span[str]) -> Option[types.Type]:
     return nested_type_in_analysis(ctx.analysis, parts)
 
 
@@ -6204,7 +6204,7 @@ function nested_type_in_analysis(a: analyzer.Analysis, parts: span[str]) -> Opti
 
 
 ## Resolve the interface type arguments of a `dyn[Iface[args]]` annotation.
-function dyn_type_args(ctx: ref[LowerCtx], qn: ast.QualifiedName) -> span[types.Type]:
+function dyn_type_args(ctx: ref[LoweringContext], qn: ast.QualifiedName) -> span[types.Type]:
     var args = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
     while i < qn.type_arguments.len:
@@ -6218,7 +6218,7 @@ function dyn_type_args(ctx: ref[LowerCtx], qn: ast.QualifiedName) -> span[types.
 ## `span[T]` / `ptr[T]` / `const_ptr[T]` / `ref[T]` as generic instances.  Returns
 ## `ty_error` only for truly unresolvable forms, and `dyn`/`ty_error` for scalar
 ## type refs; callers should fall back to the analyzer's inferred type.
-function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Type:
+function resolve_type_ref(ctx: ref[LoweringContext], tp: ptr[ast.TypeRef]) -> types.Type:
     unsafe:
         let t = read(tp)
         if t.is_fn or t.is_proc:
@@ -6334,7 +6334,7 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
 ## proc-typed alias matches direct `proc(...)` syntax wherever it is used — as an
 ## array element, a field, a parameter, or a local annotation.  Any other alias
 ## target passes through.
-function proc_alias_struct_type(ctx: ref[LowerCtx], target: types.Type) -> types.Type:
+function proc_alias_struct_type(ctx: ref[LoweringContext], target: types.Type) -> types.Type:
     match target:
         types.Type.ty_function as fnt:
             if fnt.is_proc:
@@ -6344,7 +6344,7 @@ function proc_alias_struct_type(ctx: ref[LowerCtx], target: types.Type) -> types
     return target
 
 
-function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.Type:
+function resolve_generic_type_ref(ctx: ref[LoweringContext], t: ast.TypeRef) -> types.Type:
     if t.name.parts.len == 2:
         var alias: str
         var type_name: str
@@ -6420,7 +6420,7 @@ function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.T
 ## Resolve an `fn(...) -> T` or `proc(...) -> T` type ref to a `ty_function`
 ## type.  Both `fn` and `proc` share the same runtime C representation (function
 ## pointer), so they are lowered to the same `ty_function` variant.
-function resolve_function_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Type:
+function resolve_function_type_ref(ctx: ref[LoweringContext], tp: ptr[ast.TypeRef]) -> types.Type:
     let t = unsafe: read(tp)
     var param_types = vec.Vec[types.Type].create()
     var param_names = vec.Vec[str].create()
@@ -6464,7 +6464,7 @@ function resolve_array_length(tp: ptr[ast.TypeRef]) -> long:
 ## integer constant (`array[T, ENV_ITEM_COUNT]`) folds through
 ## `ctx.analysis.const_values`; otherwise it is left as a `ty_named` so a later
 ## `substitute_type_params` can fill it in.
-function resolve_array_length_type(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Type:
+function resolve_array_length_type(ctx: ref[LoweringContext], tp: ptr[ast.TypeRef]) -> types.Type:
     let t = unsafe: read(tp)
     if t.name.parts.len == 1:
         let text = unsafe: read(t.name.parts.data + 0)
@@ -6536,12 +6536,12 @@ function parse_decimal(text: str) -> long:
 ## branches, the body adds the condition's truthy refinements, and an else-less
 ## `if` whose branches all terminate narrows the enclosing block after the
 ## statement.
-function lower_if_chain(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], index: ptr_uint, else_body: ptr[ast.Stmt]?) -> void:
+function lower_if_chain(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], index: ptr_uint, else_body: ptr[ast.Stmt]?) -> void:
     var prior_false = map_mod.Map[str, types.Type].create()
     lower_if_chain_at(ctx, output, branches, index, else_body, ref_of(prior_false), true)
 
 
-function lower_if_chain_at(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], index: ptr_uint, else_body: ptr[ast.Stmt]?, prior_false: ref[map_mod.Map[str, types.Type]], top: bool) -> void:
+function lower_if_chain_at(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], index: ptr_uint, else_body: ptr[ast.Stmt]?, prior_false: ref[map_mod.Map[str, types.Type]], top: bool) -> void:
     var branch: ast.IfBranch
     unsafe:
         branch = read(branches.data + index)
@@ -6629,7 +6629,7 @@ function if_branches_all_terminate(branches: span[ast.IfBranch]) -> bool:
 ## stop temporary and a C `for` loop.  Mirrors lowering/loops.rb
 ## lower_range_for_stmt, including the always-allocated (here unused) continue /
 ## break label temporaries so the fresh-temp counter advances identically.
-function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+function lower_for_range(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
     if bindings.len != 1 or iterables.len != 1:
         lower_multi_for(ctx, output, bindings, iterables, body_ptr)
         return
@@ -6770,7 +6770,7 @@ function ast_is_integer_literal(ep: ptr[ast.Expr]) -> bool:
 ## True when `ep` folds to a numeric compile-time constant (the host's
 ## `compile_time_numeric_const_expression?`): a literal, a module constant
 ## (recursively), an enum member's value, or an arithmetic fold of those.
-function is_numeric_const_expression(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool:
+function is_numeric_const_expression(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> bool:
     match try_evaluate_const_expr(ctx, ep):
         Option.some as value:
             match value.value:
@@ -6786,7 +6786,7 @@ function is_numeric_const_expression(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> b
 ## copies the iterable into a temp and drives a C index loop.  Mirrors
 ## lowering/loops.rb lower_collection_for_stmt (including the always-allocated
 ## continue/break label temporaries so the fresh-temp counter matches).
-function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], binding_name: str, iterable: ptr[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+function lower_collection_for(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], binding_name: str, iterable: ptr[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
     let iterable_type = index_receiver_type(ctx, iterable)
     let element_type = generic_first_arg(iterable_type)
     let is_arr = is_array_type(iterable_type)
@@ -6909,7 +6909,7 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
 ##     if (x == null) break; body }`
 ##   * ready flag: `Iter it = xs.iter(); while (true) { bool ready = it.next();
 ##     if (!ready) break; T x = it.current(); body }`
-function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], binding_name: str, iterable: ptr[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+function lower_custom_iter_for(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], binding_name: str, iterable: ptr[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
     # The host's `iterator_loop_type` instantiates `iter`/`next`/`current` while
     # analyzing the loop but never validates their bodies, so those
     # specializations' nested calls are lowering-created.
@@ -7032,7 +7032,7 @@ function array_length_of(t: types.Type) -> long:
 
 ## Lower `array[T, N].as_span()` to a `span[T]` aggregate literal
 ## `{ data = &arr[0], len = N }`, mirroring Ruby's `lower_array_to_span_expression`.
-function lower_array_as_span(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], array_ty: types.Type) -> ptr[ir.Expr]:
+function lower_array_as_span(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], array_ty: types.Type) -> ptr[ir.Expr]:
     let elem_ty = generic_first_arg(array_ty)
     let ptr_uint_ty = types.primitive("ptr_uint")
     # Recover the length from the array type; if it lost its literal length
@@ -7062,7 +7062,7 @@ function lower_array_as_span(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], array_
 ## Lower `simd[E, N].with(lane, value)` to the host's `IR::SimdLaneWith` node:
 ## the index takes `int` as its expected type and the value the lane's element
 ## type (`lower_simd_lane_with`).
-function lower_simd_with_call(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], simd_ty: types.Type, args: span[ast.Argument]) -> ptr[ir.Expr]:
+function lower_simd_with_call(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], simd_ty: types.Type, args: span[ast.Argument]) -> ptr[ir.Expr]:
     let elem_ty = types.simd_element_type(simd_ty)
     let src = lower_expr(ctx, receiver)
     let index_ast = unsafe: read(args.data + 0).arg_value
@@ -7076,7 +7076,7 @@ function lower_simd_with_call(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], simd_
 
 ## Lower `.with(x = val, ...)` to an aggregate literal copy with specified
 ## fields replaced.  Mirrors Ruby's :struct_with lowering.
-function lower_with_call(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], recv_ty: types.Type, args: span[ast.Argument]) -> ptr[ir.Expr]:
+function lower_with_call(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], recv_ty: types.Type, args: span[ast.Argument]) -> ptr[ir.Expr]:
     let recv = lower_expr(ctx, receiver)
     let name = nominal_type_name(recv_ty)
     var field_names = vec.Vec[str].create()
@@ -7175,7 +7175,7 @@ function lower_with_call(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], recv_ty: t
 ## Recover the declared length of a const/var array referenced by `receiver` by
 ## resolving its declaration's type annotation.  Returns 0 when the receiver is
 ## not a module-level const/var array identifier.
-function const_array_length(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> long:
+function const_array_length(ctx: ref[LoweringContext], receiver: ptr[ast.Expr]) -> long:
     var name: str
     unsafe:
         match read(receiver):
@@ -7215,7 +7215,7 @@ function const_array_length(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> long
 var parallel_cnt: ptr_uint = 0
 
 
-function parallel_uid(ctx: ref[LowerCtx], kind: str) -> str:
+function parallel_uid(ctx: ref[LoweringContext], kind: str) -> str:
     var buf = string.String.create()
     buf.append(naming.module_c_prefix(ctx.module_name))
     buf.append("_")
@@ -7240,7 +7240,7 @@ function pfor_ptr_type(t: types.Type) -> types.Type:
 
 
 ## Find the LocalBinding for a name in ctx.locals, if it exists.
-function find_local(ctx: ref[LowerCtx], name: str) -> Option[LocalBinding]:
+function find_local(ctx: ref[LoweringContext], name: str) -> Option[LocalBinding]:
     var li: ptr_uint = ctx.locals.len()
     while li > 0:
         li -= 1
@@ -7688,7 +7688,7 @@ function validate_pfor_no_ref_captures(captures: span[ir.Expr]) -> void:
 ## Lower `parallel for i in 0..N: body` (the host's `lower_threaded_for_stmt`,
 ## `loops.rb:445`): a worker receives `(data, start, end)`, unpacks the capture
 ## struct, and runs the induction loop.
-function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body: ptr[ast.Stmt]?) -> void:
+function lower_parallel_for(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body: ptr[ast.Stmt]?) -> void:
     if bindings.len == 0 or iterables.len == 0:
         return
     var start_ptr: ptr[ast.Expr]
@@ -7885,7 +7885,7 @@ struct SpawnBlockInfo:
 ## Lower `parallel: stmt1; stmt2; ...` (the host's
 ## `lower_parallel_block_stmt`, `loops.rb:603`): one worker and one capture
 ## struct per body, dispatched through an `mt_spawn_item` array.
-function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bodies: span[ast.Stmt]) -> void:
+function lower_parallel_block(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], bodies: span[ast.Stmt]) -> void:
     if bodies.len < 2:
         return
     let void_ty = ctx.void_ty
@@ -8168,7 +8168,7 @@ function pw1_str(value: ptr_uint) -> str:
 
 ## Lower `gather h1, h2, ...`.  Each handle is joined via mt_detach_join; the
 ## host wraps the joins in one block.
-function lower_gather_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], handles: span[ast.Expr]) -> void:
+function lower_gather_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], handles: span[ast.Expr]) -> void:
     let void_ty = ctx.void_ty
     var joins = vec.Vec[ir.Stmt].create()
     var i: ptr_uint = 0
@@ -8187,7 +8187,7 @@ function lower_gather_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ha
 
 ## Lower `detach <call>` (the host's `lower_detach_expr`, `loops.rb:810`).
 ## The call runs in a worker function; the expression yields an opaque Handle.
-function lower_detach_expr(ctx: ref[LowerCtx], expression: ptr[ast.Expr], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_detach_expr(ctx: ref[LoweringContext], expression: ptr[ast.Expr], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     # The call runs in a worker, so its setup must not hoist into the enclosing
     # statement's window.
     let hoist_saved = suspend_stmt_setup(ctx)
@@ -8232,7 +8232,7 @@ function lower_detach_expr(ctx: ref[LowerCtx], expression: ptr[ast.Expr], ep: pt
 
 
 # =============================================================================
-function fresh_c_temp_name(ctx: ref[LowerCtx], prefix: str) -> str:
+function fresh_c_temp_name(ctx: ref[LoweringContext], prefix: str) -> str:
     ctx.temp_counter += 1
     var buf = string.String.create()
     buf.append("__mt_")
@@ -8248,7 +8248,7 @@ function fresh_c_temp_name(ctx: ref[LowerCtx], prefix: str) -> str:
 ## reads the temp.  The three statement roots whose own type is an array
 ## (return/assignment/local) exempt their root call — the host passes
 ## `materialize_array_calls: !array_type?(<the statement's type>)` there.
-function maybe_materialize_array_call(ctx: ref[LowerCtx], ep: ptr[ast.Expr], value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+function maybe_materialize_array_call(ctx: ref[LoweringContext], ep: ptr[ast.Expr], value: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let ty = ir_expr_type(value)
     if not is_array_type(ty):
         return value
@@ -8284,7 +8284,7 @@ function maybe_materialize_array_call(ctx: ref[LowerCtx], ep: ptr[ast.Expr], val
 ## `if result` (and) or `if not result` (or).  With no setup on either side the
 ## plain binary is kept.
 function lower_short_circuit_binary(
-    ctx: ref[LowerCtx],
+    ctx: ref[LoweringContext],
     operator: str,
     left_ep: ptr[ast.Expr],
     right_ep: ptr[ast.Expr],
@@ -8418,7 +8418,7 @@ function lower_short_circuit_binary(
     return alloc_expr(ir.Expr.expr_name(name = result_c, ty = result_ty, pointer = Option[bool].some(value = false)))
 
 
-function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
@@ -8890,7 +8890,7 @@ var proc_counter: ptr_uint = 0
 ## with invoke/release/retain function pointers and a capture env pointer.  No-
 ## capture procs use null env; capturing procs use a heap-allocated env struct
 ## with ref-counting.
-function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body_ptr: ptr[ast.Stmt], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_proc_expression(ctx: ref[LoweringContext], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body_ptr: ptr[ast.Stmt], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let proc_ty = expr_type(ctx, ep)
     var ret_ty = ctx.void_ty
     if return_type != null:
@@ -8903,7 +8903,7 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
 ## `materialize_prepared_expression` (`setup` before the statement, the value a
 ## temp Name).  Without a window (a lazy region, where the host has no prepared
 ## position either) the literal stays inline.
-function materialize_proc_literal(ctx: ref[LowerCtx], literal: ptr[ir.Expr], proc_ty: types.Type) -> ptr[ir.Expr]:
+function materialize_proc_literal(ctx: ref[LoweringContext], literal: ptr[ir.Expr], proc_ty: types.Type) -> ptr[ir.Expr]:
     if ctx.hoist_mode == HoistMode.hm_off:
         return literal
     let name = fresh_c_temp_name(ctx, "proc_expr")
@@ -8914,7 +8914,7 @@ function materialize_proc_literal(ctx: ref[LowerCtx], literal: ptr[ir.Expr], pro
 ## Lower a proc expression whose signature is already resolved: `ret_ty` is the
 ## invoke's C return type (the declared return type, or the proc type's own return
 ## type for synthesized procs) and `proc_ty` the proc's function type.
-function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast.Param], ret_ty: types.Type, body_ptr: ptr[ast.Stmt], proc_ty: types.Type) -> ptr[ir.Expr]:
+function lower_proc_expression_typed(ctx: ref[LoweringContext], method_params: span[ast.Param], ret_ty: types.Type, body_ptr: ptr[ast.Stmt], proc_ty: types.Type) -> ptr[ir.Expr]:
     return lower_proc_expression_typed_named(ctx, method_params, ret_ty, body_ptr, proc_ty, "")
 
 
@@ -8922,7 +8922,7 @@ function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast
 ## (`__mt_<hint>_env_<N>`) and the returned literal is not materialized into a
 ## `__mt_proc_expr_N` local (the caller stores it in its own named local).  The
 ## host's `lower_proc_expression_for_local(..., local_name:)`.
-function lower_proc_expression_typed_named(ctx: ref[LowerCtx], method_params: span[ast.Param], ret_ty: types.Type, body_ptr: ptr[ast.Stmt], proc_ty: types.Type, name_hint: str) -> ptr[ir.Expr]:
+function lower_proc_expression_typed_named(ctx: ref[LoweringContext], method_params: span[ast.Param], ret_ty: types.Type, body_ptr: ptr[ast.Stmt], proc_ty: types.Type, name_hint: str) -> ptr[ir.Expr]:
     # A proc body runs later, so its window is its own: suspend the enclosing
     # statement's hoisting while the synthetic invoke/release/retain functions
     # (and their bodies) are built.  The literal's own setup hoists into the
@@ -9084,7 +9084,7 @@ function pack_single(expr: ptr[ir.Expr]) -> span[ir.Expr]:
 ## shadow and are not captured, a name with no enclosing local (a module
 ## var/const/function) is not captured, and a nested proc's body is skipped
 ## (`AST::ProcExpr`).
-function collect_proc_captures(ctx: ref[LowerCtx], method_params: span[ast.Param], body: ptr[ast.Stmt]?) -> span[ProcCapture]:
+function collect_proc_captures(ctx: ref[LoweringContext], method_params: span[ast.Param], body: ptr[ast.Stmt]?) -> span[ProcCapture]:
     var captures = vec.Vec[ProcCapture].create()
     var seen = map_mod.Map[str, bool].create()
     var scopes = vec.Vec[map_mod.Map[str, bool]].create()
@@ -9123,7 +9123,7 @@ function proc_capture_scope_add(scopes: ref[vec.Vec[map_mod.Map[str, bool]]], na
 
 ## Visit a statement body in a fresh scope (the host's `local_scopes + [{}]` for
 ## if/loop/unsafe/defer bodies and match arms).
-function proc_capture_visit_scope(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?, scopes: ref[vec.Vec[map_mod.Map[str, bool]]], seen: ref[map_mod.Map[str, bool]], captures: ref[vec.Vec[ProcCapture]]) -> void:
+function proc_capture_visit_scope(ctx: ref[LoweringContext], body: ptr[ast.Stmt]?, scopes: ref[vec.Vec[map_mod.Map[str, bool]]], seen: ref[map_mod.Map[str, bool]], captures: ref[vec.Vec[ProcCapture]]) -> void:
     if body == null:
         return
     scopes.push(map_mod.Map[str, bool].create())
@@ -9132,7 +9132,7 @@ function proc_capture_visit_scope(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?, scop
 
 
 ## Visit a statement list in place (same scope).
-function proc_capture_visit_stmts(ctx: ref[LowerCtx], stmts: span[ast.Stmt], scopes: ref[vec.Vec[map_mod.Map[str, bool]]], seen: ref[map_mod.Map[str, bool]], captures: ref[vec.Vec[ProcCapture]]) -> void:
+function proc_capture_visit_stmts(ctx: ref[LoweringContext], stmts: span[ast.Stmt], scopes: ref[vec.Vec[map_mod.Map[str, bool]]], seen: ref[map_mod.Map[str, bool]], captures: ref[vec.Vec[ProcCapture]]) -> void:
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:
@@ -9143,7 +9143,7 @@ function proc_capture_visit_stmts(ctx: ref[LowerCtx], stmts: span[ast.Stmt], sco
 ## Walk `ep` for free identifiers; the first reference to an enclosing local
 ## records its capture with the enclosing binding's read expression (so a
 ## frame-bound async local still resolves).
-function proc_capture_visit_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]?, scopes: ref[vec.Vec[map_mod.Map[str, bool]]], seen: ref[map_mod.Map[str, bool]], captures: ref[vec.Vec[ProcCapture]]) -> void:
+function proc_capture_visit_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]?, scopes: ref[vec.Vec[map_mod.Map[str, bool]]], seen: ref[map_mod.Map[str, bool]], captures: ref[vec.Vec[ProcCapture]]) -> void:
     let xp = ep else:
         return
     unsafe:
@@ -9228,7 +9228,7 @@ function proc_capture_visit_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]?, scopes:
 ## The host's per-statement capture walk (`collect_proc_captures_from_statement`,
 ## proc.rb:150-192): declarations bind after their initializer, branch/loop/arm
 ## bodies get their own scope, and a nested `when` mirrors the if/match shape.
-function proc_capture_visit_stmt(ctx: ref[LowerCtx], sp: ptr[ast.Stmt]?, scopes: ref[vec.Vec[map_mod.Map[str, bool]]], seen: ref[map_mod.Map[str, bool]], captures: ref[vec.Vec[ProcCapture]]) -> void:
+function proc_capture_visit_stmt(ctx: ref[LoweringContext], sp: ptr[ast.Stmt]?, scopes: ref[vec.Vec[map_mod.Map[str, bool]]], seen: ref[map_mod.Map[str, bool]], captures: ref[vec.Vec[ProcCapture]]) -> void:
     let xp = sp else:
         return
     unsafe:
@@ -9345,7 +9345,7 @@ function proc_capture_visit_stmt(ctx: ref[LowerCtx], sp: ptr[ast.Stmt]?, scopes:
 
 ## Build a setup function that allocates + populates the capture-env struct.
 ## Takes captured values as parameters and returns a pointer to the initialized env.
-function build_env_setup_fn(ctx: ref[LowerCtx], c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
+function build_env_setup_fn(ctx: ref[LoweringContext], c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let env_ty_named = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = env_type_name)
     let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(env_ty_named))
@@ -9421,7 +9421,7 @@ function build_env_setup_fn(ctx: ref[LowerCtx], c_name: str, env_type_name: str,
 
 ## Build an invoke function for a capturing proc: unpacks env struct fields into
 ## locals, then runs the body.
-function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Param], ret_ty: types.Type, body: ptr[ast.Stmt], invoke_c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
+function build_capturing_invoke(ctx: ref[LoweringContext], method_params: span[ast.Param], ret_ty: types.Type, body: ptr[ast.Stmt], invoke_c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
     let saved_locals = ctx.locals
     let saved_counter = ctx.temp_counter
     let saved_cps_ci = ctx.async_cps_active
@@ -9503,7 +9503,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
 
 
 ## Build a release function for capturing procs with ref-counting.
-function build_capturing_release(ctx: ref[LowerCtx], c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
+function build_capturing_release(ctx: ref[LoweringContext], c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = env_type_name)))
     let uint_ty = types.primitive("ptr_uint")
@@ -9561,7 +9561,7 @@ function build_capturing_retain(c_name: str, env_type_name: str) -> ir.Function:
 
 ## Build a non-capturing proc invoke function: unpacks env (unused), lowers the
 ## body.  Returns the body expression directly (or void return for no-return).
-function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param], ret_ty: types.Type, body: ptr[ast.Stmt], invoke_c_name: str) -> ir.Function:
+function build_proc_invoke_fn(ctx: ref[LoweringContext], method_params: span[ast.Param], ret_ty: types.Type, body: ptr[ast.Stmt], invoke_c_name: str) -> ir.Function:
     let saved_locals = ctx.locals
     let saved_counter = ctx.temp_counter
     let saved_cps_pi = ctx.async_cps_active
@@ -9662,11 +9662,11 @@ function proc_lifecycle_fn_type() -> types.Type:
 ## one, or a struct with a proc-storing field (recursively).  Generic instances
 ## resolve their declared fields without substitution: a field typed by a type
 ## parameter never counts (a recorded residue).
-function contains_proc_storage_type(ctx: ref[LowerCtx], t: types.Type) -> bool:
+function contains_proc_storage_type(ctx: ref[LoweringContext], t: types.Type) -> bool:
     return contains_proc_storage_type_depth(ctx, t, 0)
 
 
-function contains_proc_storage_type_depth(ctx: ref[LowerCtx], t: types.Type, depth: int) -> bool:
+function contains_proc_storage_type_depth(ctx: ref[LoweringContext], t: types.Type, depth: int) -> bool:
     if depth > 12:
         return false
     match t:
@@ -9723,7 +9723,7 @@ function proc_retain_stmt(recv: ptr[ir.Expr]) -> ir.Stmt:
 ## The host's `lower_proc_contained_release_statements` (`proc.rb:276-278`): an
 ## unguarded release per stored proc; struct fields recurse; a nullable stores
 ## nothing.
-function proc_contained_release_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]]) -> void:
+function proc_contained_release_stmts(ctx: ref[LoweringContext], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]]) -> void:
     match t:
         types.Type.ty_function as fnt:
             if fnt.is_proc:
@@ -9739,7 +9739,7 @@ function proc_contained_release_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr], t:
 ## The host's `lower_proc_nullable_release_statements` (`proc.rb:280-284`): a
 ## release guarded by the proc's `invoke` field, for values that may be
 ## zero-initialized (locals, async frame fields).
-function proc_nullable_release_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]]) -> void:
+function proc_nullable_release_stmts(ctx: ref[LoweringContext], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]]) -> void:
     match t:
         types.Type.ty_function as fnt:
             if fnt.is_proc:
@@ -9759,7 +9759,7 @@ function proc_nullable_release_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr], t: 
 ## The fields a proc retain/release walk visits.  A generic instance uses its
 ## concrete declaration's substituted fields (`generic_struct_decls`); every
 ## other struct wraps the analyzer's declared fields.
-function proc_struct_fields(ctx: ref[LowerCtx], t: types.Type) -> Option[span[ir.Field]]:
+function proc_struct_fields(ctx: ref[LoweringContext], t: types.Type) -> Option[span[ir.Field]]:
     match t:
         types.Type.ty_imported as im:
             if im.args.len > 0:
@@ -9798,7 +9798,7 @@ function proc_struct_fields(ctx: ref[LowerCtx], t: types.Type) -> Option[span[ir
 
 ## Walk a struct type's proc-storing fields, emitting a release per field
 ## (`guarded` applies the nullable/zero-init guard).
-function proc_struct_field_release_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]], guarded: bool) -> void:
+function proc_struct_field_release_stmts(ctx: ref[LoweringContext], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]], guarded: bool) -> void:
     match proc_struct_fields(ctx, t):
         Option.some as fields:
             var i: ptr_uint = 0
@@ -9817,7 +9817,7 @@ function proc_struct_field_release_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr],
 
 ## The host's `lower_proc_contained_retain_statements` (`proc.rb:291-293`): an
 ## unguarded retain per stored proc; struct fields recurse.
-function proc_contained_retain_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]]) -> void:
+function proc_contained_retain_stmts(ctx: ref[LoweringContext], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]]) -> void:
     match t:
         types.Type.ty_function as fnt:
             if fnt.is_proc:
@@ -9833,7 +9833,7 @@ function proc_contained_retain_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr], t: 
 ## The host's `lower_proc_selective_retain_statements` (`proc.rb:329-362`): a
 ## value that is not a fresh proc literal is retained for the new owner.  Struct
 ## fields take their own AST source when the RHS is a struct literal.
-function proc_selective_retain_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr], value_ast: ptr[ast.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]]) -> void:
+function proc_selective_retain_stmts(ctx: ref[LoweringContext], recv: ptr[ir.Expr], value_ast: ptr[ast.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]]) -> void:
     match t:
         types.Type.ty_function as fnt:
             if fnt.is_proc:
@@ -9850,7 +9850,7 @@ function proc_selective_retain_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr], val
 ## Walk a struct type's proc-storing fields for a retain; `value_ast` is the
 ## assignment's RHS (a struct literal's named argument is the field's own
 ## source, per the host's `ast_field_source` rule).
-function proc_struct_field_retain_stmts(ctx: ref[LowerCtx], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]], value_ast: Option[ptr[ast.Expr]]) -> void:
+function proc_struct_field_retain_stmts(ctx: ref[LoweringContext], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]], value_ast: Option[ptr[ast.Expr]]) -> void:
     match proc_struct_fields(ctx, t):
         Option.some as fields:
             var i: ptr_uint = 0
@@ -9927,7 +9927,7 @@ function proc_expr_contains_proc_expr(ep: ptr[ast.Expr]) -> bool:
             _:
                 return false
 ## fields `_0`, `_1`, ... and a `ty_tuple` type.  (Named tuples arrive later.)
-function lower_tuple_literal_with_names(ctx: ref[LowerCtx], elements: span[ast.Expr]) -> ptr[ir.Expr]:
+function lower_tuple_literal_with_names(ctx: ref[LoweringContext], elements: span[ast.Expr]) -> ptr[ir.Expr]:
     var fields = vec.Vec[ir.AggregateField].create()
     var elem_types = vec.Vec[types.Type].create()
     var fnames = vec.Vec[str].create()
@@ -9973,7 +9973,7 @@ function lower_tuple_literal_with_names(ctx: ref[LowerCtx], elements: span[ast.E
 ## `ensure_tuple_struct`: one `IR::StructDecl` per tuple type (deduped by
 ## linkage name), fields named `_0..` or the tuple's own field names, appended
 ## to `Program.structs` after the module declarations.
-function ensure_tuple_struct_ir(ctx: ref[LowerCtx], ty: types.Type) -> void:
+function ensure_tuple_struct_ir(ctx: ref[LoweringContext], ty: types.Type) -> void:
     match ty:
         types.Type.ty_tuple as tup:
             let linkage = naming.tuple_type_c_name(ty)
@@ -10010,7 +10010,7 @@ function ensure_tuple_struct_ir(ctx: ref[LowerCtx], ty: types.Type) -> void:
 ## const/global storage type, mirroring the host's
 ## `ensure_registered_storage_type_types`: tuple elements, nullable bases,
 ## generic and instance arguments, and named struct fields.
-function ensure_storage_type_tuples(ctx: ref[LowerCtx], ty: types.Type, seen: ref[map_mod.Map[str, bool]]) -> void:
+function ensure_storage_type_tuples(ctx: ref[LoweringContext], ty: types.Type, seen: ref[map_mod.Map[str, bool]]) -> void:
     let key = naming.type_c_key(ty)
     if seen.contains(key):
         return
@@ -10042,7 +10042,7 @@ function ensure_storage_type_tuples(ctx: ref[LowerCtx], ty: types.Type, seen: re
             pass
 
 
-function ensure_struct_field_tuples(ctx: ref[LowerCtx], ty: types.Type, seen: ref[map_mod.Map[str, bool]]) -> void:
+function ensure_struct_field_tuples(ctx: ref[LoweringContext], ty: types.Type, seen: ref[map_mod.Map[str, bool]]) -> void:
     match struct_fields_of(ctx, ty):
         Option.some as fields:
             var i: ptr_uint = 0
@@ -10076,7 +10076,7 @@ function tuple_element_type(t: types.Type, index: ptr_uint) -> types.Type:
 ## failing path; its default form carries the analysis path and the statement's
 ## line (the host's `default_assert_message`), and the synthesized fatal call is
 ## the host's statement-position shape (nil line, the analysis path).
-function lower_assert_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], kind: str, args: span[ast.Argument], stmt_line: ptr_uint) -> void:
+function lower_assert_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], kind: str, args: span[ast.Argument], stmt_line: ptr_uint) -> void:
     # The intrinsic desugars to an `if` whose condition is a prepared position:
     # a statement-lowered call or a dynamic format temp in the condition hoists
     # before the `IfStmt`, and its cleanups run in both branches (the host's
@@ -10144,7 +10144,7 @@ function assert_default_message(kind: str, path: str, line: ptr_uint) -> str:
 
 ## Lower `receiver[index]`: array receivers use a bounds-checked index, span
 ## receivers a bounds-checked span index, and raw pointers a plain index.
-function lower_index_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: ptr[ast.Expr], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_index_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], index: ptr[ast.Expr], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(index):
             ast.Expr.expr_range as rng:
@@ -10201,7 +10201,7 @@ function lower_index_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: 
 
 ## Lower `receiver[start..stop]`: a `str` slice (`mt_str_slice`), or a span
 ## view over an array/span receiver (`mt_span_slice_<T>`).
-function lower_range_index_read(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], start_expr: ptr[ast.Expr], end_expr: ptr[ast.Expr], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_range_index_read(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], start_expr: ptr[ast.Expr], end_expr: ptr[ast.Expr], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let recv_ty = index_receiver_type(ctx, receiver)
     let recv = lower_expr(ctx, receiver)
     # A slice bound is lowered with `ptr_uint` as its expected type (the host's
@@ -10236,7 +10236,7 @@ function lower_range_index_read(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], sta
 
 
 ## Cast a range bound to `ptr_uint` so the slice helpers take a uniform type.
-function coerce_index_bound_to_ptr_uint(ctx: ref[LowerCtx], bound: ptr[ir.Expr]) -> ptr[ir.Expr]:
+function coerce_index_bound_to_ptr_uint(ctx: ref[LoweringContext], bound: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let ptr_uint_ty = types.primitive("ptr_uint")
     if types.type_to_string(ir_expr_type(bound)) == "ptr_uint":
         return bound
@@ -10246,7 +10246,7 @@ function coerce_index_bound_to_ptr_uint(ctx: ref[LowerCtx], bound: ptr[ir.Expr])
 ## Lower `arr[start..end] = (e1, e2, ...)` into individual checked-index
 ## assignments.  The range start must be a uint-typed integer literal, and the
 ## RHS expression list length must match the range width.
-function lower_range_index_assignment(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], receiver: ptr[ast.Expr], start_expr: ptr[ast.Expr], elements: span[ast.Expr]) -> void:
+function lower_range_index_assignment(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], receiver: ptr[ast.Expr], start_expr: ptr[ast.Expr], elements: span[ast.Expr]) -> void:
     let receiver_type = index_receiver_type(ctx, receiver)
     let recv = lower_expr(ctx, receiver)
     var start_val: long = 0
@@ -10273,7 +10273,7 @@ function lower_range_index_assignment(ctx: ref[LowerCtx], output: ref[vec.Vec[ir
 ## The type of an index receiver: for a local/parameter identifier take its
 ## recorded binding type (which carries the correct array length); otherwise fall
 ## back to the analyzer's inferred type.
-function index_receiver_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> types.Type:
+function index_receiver_type(ctx: ref[LoweringContext], receiver: ptr[ast.Expr]) -> types.Type:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -10316,7 +10316,7 @@ function is_soa_type(t: types.Type) -> bool:
 
 ## The synthetic member type of `soa_ty.member`: an `array[<field>, N]` over the
 ## element struct's field (the host's `Types::SoA#fields`).
-function soa_member_array_type(ctx: ref[LowerCtx], soa_ty: types.Type, field_name: str) -> Option[types.Type]:
+function soa_member_array_type(ctx: ref[LoweringContext], soa_ty: types.Type, field_name: str) -> Option[types.Type]:
     match soa_ty:
         types.Type.ty_generic as g:
             if g.name == "SoA" and g.args.len >= 2:
@@ -10347,7 +10347,7 @@ function soa_member_array_type(ctx: ref[LowerCtx], soa_ty: types.Type, field_nam
 ## The C field type for member `field_name` on the element type of an SoA.
 ## The SoA struct has one array per element field, so the array element type
 ## is the field type from the element struct.
-function soa_field_type(ctx: ref[LowerCtx], soa_ty: types.Type, field_name: str) -> types.Type:
+function soa_field_type(ctx: ref[LoweringContext], soa_ty: types.Type, field_name: str) -> types.Type:
     match soa_ty:
         types.Type.ty_generic as g:
             if g.args.len >= 1:
@@ -10463,7 +10463,7 @@ function is_null_ir_expr(ep: ptr[ir.Expr]) -> bool:
                 return false
 
 
-function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
@@ -11232,7 +11232,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
 ## The result type of a cross-module call, resolved from the shared program-wide
 ## return map (keyed by C linkage name), falling back to the analyzer's recorded
 ## type for the call expression.
-function cross_module_return_type(ctx: ref[LowerCtx], c_name: str, call_ep: ptr[ast.Expr]) -> types.Type:
+function cross_module_return_type(ctx: ref[LoweringContext], c_name: str, call_ep: ptr[ast.Expr]) -> types.Type:
     var ret_ty = types.Type.ty_error
     let fp = ctx.function_returns.get(c_name)
     if fp != null:
@@ -11262,7 +11262,7 @@ function cross_module_return_type(ctx: ref[LowerCtx], c_name: str, call_ep: ptr[
     return expr_type(ctx, call_ep)
 
 
-function is_cross_module_function_async(ctx: ref[LowerCtx], c_name: str) -> bool:
+function is_cross_module_function_async(ctx: ref[LoweringContext], c_name: str) -> bool:
     var ai: ptr_uint = 0
     while ai < ctx.program_analyses.len:
         var a: analyzer.Analysis
@@ -11288,7 +11288,7 @@ function is_cross_module_function_async(ctx: ref[LowerCtx], c_name: str) -> bool
 ## `span[T](data = ..., len = ...)` constructor, `adapt[I](value)`, and generic
 ## aggregate literals.  Generic function-call monomorphization is handled in
 ## `lower_monomorphized_call`.
-function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], call_args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_specialization_call(ctx: ref[LoweringContext], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], call_args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(spec_callee):
             ast.Expr.expr_identifier as id:
@@ -11535,7 +11535,7 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
     return lower_monomorphized_call(ctx, spec_callee, type_args, call_args, call_ep)
 
 
-function resolve_method_return_from_import(ctx: ref[LowerCtx], module_name: str, sig: analyzer.FnSig, receiver_ty: types.Type) -> types.Type:
+function resolve_method_return_from_import(ctx: ref[LoweringContext], module_name: str, sig: analyzer.FnSig, receiver_ty: types.Type) -> types.Type:
     var ret = sig.return_type
     if not sig.has_return_type:
         ret = ctx.void_ty
@@ -11584,7 +11584,7 @@ function all_call_args_named(args: span[ast.Argument]) -> bool:
 ## Build the concrete type for a specialized member access, e.g.
 ## `expr_member_access(receiver = "vec", member = "Vec")` with type args
 ## `[string.String]` produces `ty_generic("Vec", [ty_imported("String")])`.
-function expr_type_for_spec(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument]) -> types.Type:
+function expr_type_for_spec(ctx: ref[LoweringContext], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument]) -> types.Type:
     unsafe:
         match read(spec_callee):
             ast.Expr.expr_member_access as ma:
@@ -11603,7 +11603,7 @@ function expr_type_for_spec(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr], type
 ## The resolved field type of a generic struct instance (e.g. the `index` field
 ## of `Indexed[int]` is `ptr_uint`).  `concrete_args` are the instance's type
 ## arguments; returns none when the struct or field is unknown.
-function generic_struct_field_type(ctx: ref[LowerCtx], struct_name: str, concrete_args: span[types.Type], field_name: str, owner_module: str) -> Option[types.Type]:
+function generic_struct_field_type(ctx: ref[LoweringContext], struct_name: str, concrete_args: span[types.Type], field_name: str, owner_module: str) -> Option[types.Type]:
     let unqualified = generic_struct_c_name(struct_name, concrete_args)
     let decl_ptr = ctx.generic_struct_decls.get(unqualified)
     if decl_ptr != null:
@@ -11632,7 +11632,7 @@ function generic_struct_field_type(ctx: ref[LowerCtx], struct_name: str, concret
     return Option[types.Type].none
 
 
-function lower_generic_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, type_args: span[ast.TypeArgument], call_args: span[ast.Argument]) -> ptr[ir.Expr]:
+function lower_generic_aggregate_literal(ctx: ref[LoweringContext], struct_name: str, type_args: span[ast.TypeArgument], call_args: span[ast.Argument]) -> ptr[ir.Expr]:
     var concrete_args = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
     while i < type_args.len:
@@ -11680,13 +11680,13 @@ function lower_generic_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, t
 ## Ensure a concrete struct declaration exists for a generic struct specialized
 ## with concrete type arguments.  If not yet registered, build one by resolving
 ## the original struct's fields with type substitution.
-function ensure_generic_struct_decl(ctx: ref[LowerCtx], struct_name: str, type_args: span[ast.TypeArgument], concrete_args: span[types.Type]) -> void:
+function ensure_generic_struct_decl(ctx: ref[LoweringContext], struct_name: str, type_args: span[ast.TypeArgument], concrete_args: span[types.Type]) -> void:
     ensure_generic_struct_decl_named(ctx, struct_name, type_args, concrete_args, generic_struct_c_name(struct_name, concrete_args))
 
 
 ## Like `ensure_generic_struct_decl` but uses `decl_name` as the struct
 ## declaration name (for module-qualified naming of imported generic types).
-function ensure_generic_struct_decl_named(ctx: ref[LowerCtx], struct_name: str, type_args: span[ast.TypeArgument], concrete_args: span[types.Type], decl_name: str) -> void:
+function ensure_generic_struct_decl_named(ctx: ref[LoweringContext], struct_name: str, type_args: span[ast.TypeArgument], concrete_args: span[types.Type], decl_name: str) -> void:
     if ctx.generic_struct_decls.contains(decl_name):
         return
     # Guard against recursive monomorphization: when Node's `next` field
@@ -11749,7 +11749,7 @@ function ensure_generic_struct_decl_named(ctx: ref[LowerCtx], struct_name: str, 
 
 ## Extract and type-substitute the fields of a generic struct from a given
 ## module's AST.  Returns None if the struct declaration is not found.
-function extract_generic_struct_fields(ctx: ref[LowerCtx], module_analysis: analyzer.Analysis, struct_name: str, concrete_args: span[types.Type]) -> Option[span[ir.Field]]:
+function extract_generic_struct_fields(ctx: ref[LoweringContext], module_analysis: analyzer.Analysis, struct_name: str, concrete_args: span[types.Type]) -> Option[span[ir.Field]]:
     var found = false
     var ir_fields = vec.Vec[ir.Field].create()
     var di: ptr_uint = 0
@@ -11805,7 +11805,7 @@ function extract_generic_struct_fields(ctx: ref[LowerCtx], module_analysis: anal
 ## referenced by its mangled C name but never declared.
 ## Returns true when `variant_name` is a generic variant declared in
 ## `module_analysis`; `decl_name` is the instance's C name.
-function ensure_generic_variant_decl(ctx: ref[LowerCtx], module_analysis: analyzer.Analysis, variant_name: str, concrete_args: span[types.Type], decl_name: str) -> bool:
+function ensure_generic_variant_decl(ctx: ref[LoweringContext], module_analysis: analyzer.Analysis, variant_name: str, concrete_args: span[types.Type], decl_name: str) -> bool:
     var vi: ptr_uint = 0
     while vi < ctx.pending_generic_variants.len():
         let vp = ctx.pending_generic_variants.get(vi) else:
@@ -11987,7 +11987,7 @@ function generic_struct_c_name(name: str, args: span[types.Type]) -> str:
 ## function body is found in the module's declarations, type-substituted, and
 ## lowered.  The monomorphized copy is cached so subsequent calls to the same
 ## specialization reuse the already-lowered function.
-function lower_monomorphized_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], call_args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_monomorphized_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], call_args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     var callee_name: str
     # A module-qualified callee (`backend.wait[T](...)`) must resolve against the
     # aliased module, not a same-named generic in the caller's module.
@@ -12044,7 +12044,7 @@ struct GenericFunctionMatch:
 ## first (so same-module generics resolve to their own module), then all other
 ## analyses, then raw loaded modules as a fallback for functions whose analysis
 ## copy is incomplete.
-function find_generic_function(ctx: ref[LowerCtx], callee_name: str) -> Option[GenericFunctionMatch]:
+function find_generic_function(ctx: ref[LoweringContext], callee_name: str) -> Option[GenericFunctionMatch]:
     match find_func_in_source(ctx.analysis.source_file, callee_name):
         Option.some as d:
             return Option[GenericFunctionMatch].some(value = GenericFunctionMatch(module_name = ctx.module_name, decl = d.value))
@@ -12079,7 +12079,7 @@ function find_generic_function(ctx: ref[LowerCtx], callee_name: str) -> Option[G
 ## Find a generic function declaration in a specific module.  Module-qualified
 ## calls (`session.release(...)`) must only match declarations owned by that
 ## module; a same-named generic in another module must never satisfy the lookup.
-function find_generic_function_in_module(ctx: ref[LowerCtx], module_name: str, callee_name: str) -> Option[GenericFunctionMatch]:
+function find_generic_function_in_module(ctx: ref[LoweringContext], module_name: str, callee_name: str) -> Option[GenericFunctionMatch]:
     var ai: ptr_uint = 0
     while ai < ctx.program_analyses.len:
         var a: analyzer.Analysis
@@ -12113,7 +12113,7 @@ function find_generic_function_in_module(ctx: ref[LowerCtx], module_name: str, c
 ## when the target is not a generic function or inference fails.  Mirrors Ruby's
 ## per-instantiation monomorphization of inferred generic calls.  When
 ## `module_name` is some, only that module's declarations are considered.
-function try_inferred_generic_call(ctx: ref[LowerCtx], module_name: Option[str], callee_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> Option[ptr[ir.Expr]]:
+function try_inferred_generic_call(ctx: ref[LoweringContext], module_name: Option[str], callee_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> Option[ptr[ir.Expr]]:
     var found: Option[GenericFunctionMatch] = Option[GenericFunctionMatch].none
     match module_name:
         Option.some as restricted:
@@ -12192,7 +12192,7 @@ function try_inferred_generic_call(ctx: ref[LowerCtx], module_name: Option[str],
 ## back into its generic form (`Vec[int]`) so structural type-parameter
 ## inference can match it against a declared `Vec[T]` parameter.  Recurses
 ## through pointer/span/nullable wrappers and nested type arguments.
-function expand_generic_arg_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
+function expand_generic_arg_type(ctx: ref[LoweringContext], t: types.Type) -> types.Type:
     match t:
         types.Type.ty_named as n:
             if n.module_name.len == 0:
@@ -12229,7 +12229,7 @@ function expand_generic_arg_type(ctx: ref[LowerCtx], t: types.Type) -> types.Typ
             return t
 
 
-function infer_type_param_from_args(ctx: ref[LowerCtx], param_name: str, params: span[ast.Param], args: span[ast.Argument]) -> Option[types.Type]:
+function infer_type_param_from_args(ctx: ref[LoweringContext], param_name: str, params: span[ast.Param], args: span[ast.Argument]) -> Option[types.Type]:
     var i: ptr_uint = 0
     while i < params.len and i < args.len:
         var p: ast.Param
@@ -12264,7 +12264,7 @@ function infer_type_param_from_args(ctx: ref[LowerCtx], param_name: str, params:
 ## arguments — the host's `binding.type_substitutions` at a foreign call.  A
 ## `T as const_ptr[void]` boundary then resolves to the argument's specialized
 ## type instead of leaving the type parameter unbound.
-function foreign_call_substitution(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument]) -> map_mod.Map[str, types.Type]:
+function foreign_call_substitution(ctx: ref[LoweringContext], info: ForeignInfo, args: span[ast.Argument]) -> map_mod.Map[str, types.Type]:
     var sub = map_mod.Map[str, types.Type].create()
     var tpi: ptr_uint = 0
     while tpi < info.type_params.len:
@@ -12281,7 +12281,7 @@ function foreign_call_substitution(ctx: ref[LowerCtx], info: ForeignInfo, args: 
     return sub
 
 
-function infer_foreign_type_param_from_args(ctx: ref[LowerCtx], param_name: str, params: span[ast.ForeignParam], args: span[ast.Argument]) -> Option[types.Type]:
+function infer_foreign_type_param_from_args(ctx: ref[LoweringContext], param_name: str, params: span[ast.ForeignParam], args: span[ast.Argument]) -> Option[types.Type]:
     var i: ptr_uint = 0
     while i < params.len and i < args.len:
         var p: ast.ForeignParam
@@ -12489,7 +12489,7 @@ function recognize_type_name(name: str) -> types.Type:
 ## map, then lower the body in the OWNER module's context (so its imports,
 ## foreign functions, variants, and recorded expression types resolve against the
 ## defining module rather than the caller) and cache it under `spec_key`.
-function lower_and_cache_specialization(ctx: ref[LowerCtx], gm: GenericFunctionMatch, type_args: span[ast.TypeArgument], spec_key: str, pre_instantiated: bool) -> void:
+function lower_and_cache_specialization(ctx: ref[LoweringContext], gm: GenericFunctionMatch, type_args: span[ast.TypeArgument], spec_key: str, pre_instantiated: bool) -> void:
     match gm.decl:
         ast.Decl.decl_function as fun:
             # Build type substitution from the function's type params, resolving
@@ -12517,7 +12517,7 @@ function lower_and_cache_specialization(ctx: ref[LowerCtx], gm: GenericFunctionM
 ## substitution map (`sub`: type-param name -> concrete, caller-qualified type).
 ## The body is lowered in the OWNER module's context and cached under `spec_key`.
 ## Shared by explicit-type-arg specialization and inferred-type-arg calls.
-function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: GenericFunctionMatch, sub: ref[map_mod.Map[str, types.Type]], spec_key: str, pre_instantiated: bool) -> void:
+function lower_and_cache_specialization_with_sub(ctx: ref[LoweringContext], gm: GenericFunctionMatch, sub: ref[map_mod.Map[str, types.Type]], spec_key: str, pre_instantiated: bool) -> void:
     let creator = ctx.current_function_linkage
     let setup_module = if creator.len == 0: ctx.module_name else: ""
     # Consume the one-shot creation-path override (see `ensure_monomorphized_method`).
@@ -12661,7 +12661,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
 
 ## Lower a payload variant arm constructor `Variant.arm(field = value, ...)` to an
 ## IR variant literal.  No-payload arms are handled in `lower_member_access`.
-function lower_variant_literal(ctx: ref[LowerCtx], variant_name: str, arm_name: str, args: span[ast.Argument]) -> ptr[ir.Expr]:
+function lower_variant_literal(ctx: ref[LoweringContext], variant_name: str, arm_name: str, args: span[ast.Argument]) -> ptr[ir.Expr]:
     let ty = types.Type.ty_imported(module_name = ctx.module_name, name = variant_name, args = span[types.Type]())
     return alloc_expr(ir.Expr.expr_variant_literal(
         ty = ty,
@@ -12673,7 +12673,7 @@ function lower_variant_literal(ctx: ref[LowerCtx], variant_name: str, arm_name: 
 ## Lower a generic variant arm constructor `Option[int].some(value = 42)`.  The
 ## type arguments resolve to concrete types; the call arguments map to field
 ## values.  The resulting type is `ty_generic("Option", [ty_int])`.
-function lower_generic_variant_literal(ctx: ref[LowerCtx], variant_name: str, type_args: span[ast.TypeArgument], arm_name: str, call_args: span[ast.Argument]) -> ptr[ir.Expr]:
+function lower_generic_variant_literal(ctx: ref[LoweringContext], variant_name: str, type_args: span[ast.TypeArgument], arm_name: str, call_args: span[ast.Argument]) -> ptr[ir.Expr]:
     var concrete_args = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
     while i < type_args.len:
@@ -12715,7 +12715,7 @@ function find_imported_variant_arm(module_analysis: analyzer.Analysis, arm_name:
     return Option[str].none
 
 
-function collect_variant_literal_fields(ctx: ref[LowerCtx], args: span[ast.Argument], variant_ty: types.Type, arm_name: str) -> span[ir.AggregateField]:
+function collect_variant_literal_fields(ctx: ref[LoweringContext], args: span[ast.Argument], variant_ty: types.Type, arm_name: str) -> span[ir.AggregateField]:
     var fields = vec.Vec[ir.AggregateField].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -12767,7 +12767,7 @@ function collect_variant_literal_fields(ctx: ref[LowerCtx], args: span[ast.Argum
 ## (ptr/own/span/…) use their bare `type_c_key`.  User-defined generic structs
 ## include the defining module's C prefix so that Node[int, bool] in std.map and
 ## Node[int, bool] in std.linked_map produce distinct keys.
-function spec_type_key(ctx: ref[LowerCtx], ty: types.Type) -> str:
+function spec_type_key(ctx: ref[LoweringContext], ty: types.Type) -> str:
     match ty:
         types.Type.ty_generic as g:
             if is_builtin_pointer_generic(g.name):
@@ -12789,7 +12789,7 @@ function spec_type_key(ctx: ref[LowerCtx], ty: types.Type) -> str:
         _:
             return naming.type_c_key(ty)
 
-function specialization_key(ctx: ref[LowerCtx], module_name: str, callee_name: str, type_args: span[ast.TypeArgument]) -> str:
+function specialization_key(ctx: ref[LoweringContext], module_name: str, callee_name: str, type_args: span[ast.TypeArgument]) -> str:
     var buf = string.String.create()
     buf.append(naming.module_c_prefix(module_name))
     buf.append("_")
@@ -12811,17 +12811,17 @@ function specialization_key(ctx: ref[LowerCtx], module_name: str, callee_name: s
 
 ## Lower a struct constructor `Name(field = value, ...)` to an IR aggregate
 ## literal, preserving the constructor's field order.
-function lower_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, args: span[ast.Argument]) -> ptr[ir.Expr]:
+function lower_aggregate_literal(ctx: ref[LoweringContext], struct_name: str, args: span[ast.Argument]) -> ptr[ir.Expr]:
     return lower_aggregate_literal_impl(ctx, struct_name, args, Option[str].none)
 
 
 
-function lower_aggregate_literal_in_module(ctx: ref[LowerCtx], struct_name: str, args: span[ast.Argument], target_module: str) -> ptr[ir.Expr]:
+function lower_aggregate_literal_in_module(ctx: ref[LoweringContext], struct_name: str, args: span[ast.Argument], target_module: str) -> ptr[ir.Expr]:
     return lower_aggregate_literal_impl(ctx, struct_name, args, Option[str].some(value = target_module))
 
 
 
-function lower_aggregate_literal_impl(ctx: ref[LowerCtx], struct_name: str, args: span[ast.Argument], target_module: Option[str]) -> ptr[ir.Expr]:
+function lower_aggregate_literal_impl(ctx: ref[LoweringContext], struct_name: str, args: span[ast.Argument], target_module: Option[str]) -> ptr[ir.Expr]:
     var source_module = ctx.module_name
     if is_builtin_type_name(struct_name):
         source_module = ""
@@ -12905,7 +12905,7 @@ function lower_aggregate_literal_impl(ctx: ref[LowerCtx], struct_name: str, args
 
 
 ## Find the type of a field in a struct by name.
-function find_struct_field_type(ctx: ref[LowerCtx], struct_name: str, source_module: str, field_name: str) -> Option[types.Type]:
+function find_struct_field_type(ctx: ref[LoweringContext], struct_name: str, source_module: str, field_name: str) -> Option[types.Type]:
     let fields_ptr = ctx.analysis.structs.get(struct_name)
     if fields_ptr != null:
         let entries = unsafe: read(fields_ptr)
@@ -12938,7 +12938,7 @@ function find_struct_field_type(ctx: ref[LowerCtx], struct_name: str, source_mod
 ## Lower `adapt[I](value)`: construct a dyn[I] fat pointer `{ data: void*, vtable: void* }`.
 ## The concrete type is extracted from the argument (unwrapping ref[T] to T).  A vtable
 ## struct type, wrapper functions, and a vtable global constant are generated on first use.
-function lower_adapt_call(ctx: ref[LowerCtx], iface_type_ref: ptr[ast.TypeRef], args: span[ast.Argument]) -> ptr[ir.Expr]:
+function lower_adapt_call(ctx: ref[LoweringContext], iface_type_ref: ptr[ast.TypeRef], args: span[ast.Argument]) -> ptr[ir.Expr]:
     if args.len != 1:
         fatal(c"dyn lowering: adapt requires exactly one argument")
     var arg = unsafe: read(args.data + 0)
@@ -12995,7 +12995,7 @@ struct InterfaceAnalysis:
 
 ## Find an interface's definition across all loaded modules.  Searches the current
 ## module first, then imported modules.
-function find_interface_analysis(ctx: ref[LowerCtx], iface_name: str) -> Option[InterfaceAnalysis]:
+function find_interface_analysis(ctx: ref[LoweringContext], iface_name: str) -> Option[InterfaceAnalysis]:
     # Short qualified name: `mod.Interface`.
     if iface_name.find_byte(46).is_some():  # '.'
         var parts_buf = string.String.create()
@@ -13082,7 +13082,7 @@ function interface_type_params(file: ast.SourceFile, iface_name: str) -> span[as
 ## Ensure a vtable for the given concrete type and interface exists.  Generates the
 ## vtable struct type declaration once per interface, and the wrapper functions +
 ## global vtable constant once per (type, interface) pair.  Returns the vtable global name.
-function ensure_dyn_vtable(ctx: ref[LowerCtx], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> str:
+function ensure_dyn_vtable(ctx: ref[LoweringContext], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> str:
     let vtable_c_name = strings.join_five("mt_vtable_", concrete_name, "_", iface_name, "")
     if ctx.dyn_generated_vtables.contains(vtable_c_name):
         return vtable_c_name
@@ -13130,7 +13130,7 @@ function substitute_type_arg_by_name(t: types.Type, name: str, type_args: span[t
 
 
 ## Ensure the dyn struct type `mt_dyn_{iface}` exists.
-function ensure_dyn_struct_type(ctx: ref[LowerCtx], iface_name: str) -> void:
+function ensure_dyn_struct_type(ctx: ref[LoweringContext], iface_name: str) -> void:
     let name = strings.join_three("mt_dyn_", iface_name, "")
     var iter = ctx.pending_dyn_structs.iter()
     while true:
@@ -13147,7 +13147,7 @@ function ensure_dyn_struct_type(ctx: ref[LowerCtx], iface_name: str) -> void:
 
 ## Ensure the vtable struct type `mt_vtable_{iface}` exists.  Fields are function
 ## pointer types so the C backend can render calls through them directly.
-function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], iface_name: str, methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> void:
+function ensure_dyn_vtable_struct(ctx: ref[LoweringContext], iface_name: str, methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> void:
     let vtable_type_c_name = strings.join_three("mt_vtable_", iface_name, "")
     var iter = ctx.pending_dyn_vtable_structs.iter()
     while true:
@@ -13188,7 +13188,7 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], iface_name: str, methods: 
 
 ## Generate wrapper functions for each interface method, calling through to the
 ## concrete type's method implementation.  Returns a map from method name to wrapper C name.
-function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> map_mod.Map[str, str]:
+function gen_dyn_vtable_wrappers(ctx: ref[LoweringContext], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> map_mod.Map[str, str]:
     var wrappers = map_mod.Map[str, str].create()
     var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let concrete_type_name = named_type_name(concrete_type) else:
@@ -13293,7 +13293,7 @@ struct DynMethodLookup:
     method_kind: ast.MethodKind
 
 
-function find_dyn_method(ctx: ref[LowerCtx], type_name: str, method_name: str, concrete_type: types.Type) -> Option[DynMethodLookup]:
+function find_dyn_method(ctx: ref[LoweringContext], type_name: str, method_name: str, concrete_type: types.Type) -> Option[DynMethodLookup]:
     let key = analyzer.method_key(type_name, method_name)
     if ctx.analysis.method_sigs.contains(key):
         let sig_ptr = ctx.analysis.method_sigs.get(key) else:
@@ -13317,7 +13317,7 @@ function find_dyn_method(ctx: ref[LowerCtx], type_name: str, method_name: str, c
 
 ## Generate a vtable global constant of type `mt_vtable_{iface}`, holding pointers
 ## to the wrapper functions.
-function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_type_name: str, vtable_c_name: str, wrappers: ref[map_mod.Map[str, str]], methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> void:
+function gen_dyn_vtable_constant(ctx: ref[LoweringContext], iface_name: str, vtable_type_name: str, vtable_c_name: str, wrappers: ref[map_mod.Map[str, str]], methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> void:
     # The vtable constant's type is the `DynVtable` type (`mt_vtable_<Iface>` in
     # C), matching the host.
     let const_ty = types.Type.ty_dyn_vtable(interface_name = iface_name, linkage_name = vtable_type_name)
@@ -13364,7 +13364,7 @@ function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_typ
 ## Lower a dyn method call `receiver.method(args)` where receiver has ty_dyn.
 ## Extracts data and vtable members, casts vtable to its struct type, and calls
 ## through the method function pointer.
-function lower_dyn_method_call(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_dyn_method_call(ctx: ref[LoweringContext], recv: ptr[ir.Expr], method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let data = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "data", ty = void_ptr))
     let vtable_raw = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "vtable", ty = void_ptr))
@@ -13394,7 +13394,7 @@ function lower_dyn_method_call(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_na
 ## The return type of an interface method by looking it up in the interface's
 ## analysis.  Replaces the analyzer's `expr_type` which can infer `void` for
 ## dyn dispatch where the call expression wasn't type-tracked.
-function iface_method_return_type(ctx: ref[LowerCtx], recv_ty: types.Type, method_name: str) -> types.Type:
+function iface_method_return_type(ctx: ref[LoweringContext], recv_ty: types.Type, method_name: str) -> types.Type:
     match recv_ty:
         types.Type.ty_dyn as d:
             match find_interface_analysis(ctx, d.iface):
@@ -13441,7 +13441,7 @@ function dyn_vtable_iface_name(t: types.Type) -> str:
 ## that struct, so the interface declaration itself is the fallback, exactly
 ## what the host's `dyn_vtable_struct_type` always builds the slot from
 ## (`data: ptr[void]` followed by the method's own parameters).
-function dyn_vtable_method_fn_type(ctx: ref[LowerCtx], iface_name: str, method_name: str) -> types.Type:
+function dyn_vtable_method_fn_type(ctx: ref[LoweringContext], iface_name: str, method_name: str) -> types.Type:
     let vtable_type_c_name = strings.join_three("mt_vtable_", iface_name, "")
     var iter = ctx.pending_dyn_vtable_structs.iter()
     while true:
@@ -13640,7 +13640,7 @@ function try_spec_type_name(receiver: ptr[ast.Expr]) -> Option[str]:
 ## type argument to the C name of the type's static hook function.  Searches the
 ## current module then all analyses for the module that declares `T.hook`, so
 ## primitive hooks (std.hash / std.str) and user struct hooks both resolve.
-function resolve_canonical_hook(ctx: ref[LowerCtx], t_ty: types.Type, hook: str) -> Option[str]:
+function resolve_canonical_hook(ctx: ref[LoweringContext], t_ty: types.Type, hook: str) -> Option[str]:
     let type_name = hook_type_name(t_ty) else:
         return Option[str].none
     let key = analyzer.method_key(type_name, hook)
@@ -13678,7 +13678,7 @@ function hook_type_name(t: types.Type) -> Option[str]:
 ## the current module then every analysis for the one that declares it, and
 ## build the bare `<type>_<method>` C name (with `_static` for static hooks so
 ## `str == left, right` does not collide with the instance `str.equal`).
-function resolve_primitive_method_info(ctx: ref[LowerCtx], type_name: str, method_name: str) -> Option[MethodInfo]:
+function resolve_primitive_method_info(ctx: ref[LoweringContext], type_name: str, method_name: str) -> Option[MethodInfo]:
     let key = analyzer.method_key(type_name, method_name)
     if ctx.analysis.method_sigs.contains(key):
         let sig_ptr = ctx.analysis.method_sigs.get(key) else:
@@ -13721,7 +13721,7 @@ function resolve_primitive_method_info(ctx: ref[LowerCtx], type_name: str, metho
     return Option[MethodInfo].none
 
 
-function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method_name: str) -> Option[MethodInfo]:
+function resolve_method_info(ctx: ref[LoweringContext], receiver_ty: types.Type, method_name: str) -> Option[MethodInfo]:
     # Auto-deref pointer / ref receivers so a method call on `this` inside an
     # editable method (where `this` is `ptr[T]`) resolves against `T`, not the
     # builtin "ptr" name (which would mis-name the call `<module>_ptr_<method>`).
@@ -13828,7 +13828,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
 
 ## Like resolve_method_info, but searches ONLY the named imported module
 ## (for module-qualified receiver types like `sess.Config.default(...)`).
-function resolve_method_info_imported(ctx: ref[LowerCtx], receiver_ty: types.Type, method_name: str, import_module: str) -> Option[MethodInfo]:
+function resolve_method_info_imported(ctx: ref[LoweringContext], receiver_ty: types.Type, method_name: str, import_module: str) -> Option[MethodInfo]:
     var effective_ty = receiver_ty
     if types.is_raw_pointer(effective_ty) or types.is_ref_type(effective_ty):
         effective_ty = types.pointer_element(effective_ty)
@@ -13875,7 +13875,7 @@ function resolve_method_info_imported(ctx: ref[LowerCtx], receiver_ty: types.Typ
 ## Lower a static method / hook call `Type.method(args)` where the receiver is a
 ## bare type name and there is no receiver value to pass: lower only the
 ## arguments and emit a direct call to the static C function.
-function lower_static_call_args(ctx: ref[LowerCtx], mi: MethodInfo, args: span[ast.Argument]) -> ptr[ir.Expr]:
+function lower_static_call_args(ctx: ref[LoweringContext], mi: MethodInfo, args: span[ast.Argument]) -> ptr[ir.Expr]:
     var ir_args = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -13902,7 +13902,7 @@ function lower_static_call_args(ctx: ref[LowerCtx], mi: MethodInfo, args: span[a
     return alloc_expr(ir.Expr.expr_call(callee = mi.c_name, arguments = ir_args.as_span(), ty = mi.return_type))
 
 
-function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_method_resolved(ctx: ref[LoweringContext], mi: MethodInfo, receiver: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let recv = lower_expr(ctx, receiver)
     var ir_args = vec.Vec[ir.Expr].create()
     match build_receiver_arg(ctx, recv, mi.method_kind, mi.is_async):
@@ -13949,7 +13949,7 @@ function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr
 ## its receiver (async included); a plain *sync* method borrows it when the
 ## receiver type contains array storage (`type_contains_array_storage?` — a
 ## struct holding an `array[T, N]` directly or through nested structs/nullables).
-function receiver_by_pointer(ctx: ref[LowerCtx], receiver_ty: types.Type, method_kind: ast.MethodKind, is_async: bool) -> bool:
+function receiver_by_pointer(ctx: ref[LoweringContext], receiver_ty: types.Type, method_kind: ast.MethodKind, is_async: bool) -> bool:
     # The host's `pointer_lowered_method_receiver?`: an editable receiver always
     # borrows (async included); the array-storage rule only applies to sync
     # methods (`resolve.rb:1048-1052`).
@@ -13965,11 +13965,11 @@ function receiver_by_pointer(ctx: ref[LowerCtx], receiver_ty: types.Type, method
 ## `array` are not descended into (a `ptr[array[T, N]]` does not count), and the
 ## struct field lookup uses the *declared* fields (which is the same answer for
 ## the instantiated forms this rule sees).
-function type_contains_array_storage(ctx: ref[LowerCtx], ty: types.Type) -> bool:
+function type_contains_array_storage(ctx: ref[LoweringContext], ty: types.Type) -> bool:
     return type_contains_array_storage_at(ctx, ty, 0)
 
 
-function type_contains_array_storage_at(ctx: ref[LowerCtx], ty: types.Type, depth: ptr_uint) -> bool:
+function type_contains_array_storage_at(ctx: ref[LoweringContext], ty: types.Type, depth: ptr_uint) -> bool:
     if depth > 8:
         return false
     match ty:
@@ -14004,7 +14004,7 @@ function type_contains_array_storage_at(ctx: ref[LowerCtx], ty: types.Type, dept
 ## This mirrors the Ruby lowerer's implicit receiver borrow/deref and, in
 ## particular, makes `this.method()` calls inside editable methods (where `this`
 ## is already a pointer) pass `this` directly instead of `&this`.
-function build_receiver_arg(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_kind: ast.MethodKind, is_async: bool) -> Option[ptr[ir.Expr]]:
+function build_receiver_arg(ctx: ref[LoweringContext], recv: ptr[ir.Expr], method_kind: ast.MethodKind, is_async: bool) -> Option[ptr[ir.Expr]]:
     if method_kind == ast.MethodKind.mk_static:
         return Option[ptr[ir.Expr]].none
     let recv_ty = ir_expr_type(recv)
@@ -14216,7 +14216,7 @@ function type_is_unresolved_param(t: types.Type) -> bool:
 ## (`Option`/`Result`) receivers, which are handled by other lowering paths.
 ## Type-parameter arguments are resolved through the active substitution; if any
 ## remain abstract the receiver is not a concrete instance and none is returned.
-function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Option[GenericReceiver]:
+function generic_receiver_info(ctx: ref[LoweringContext], recv_ty: types.Type) -> Option[GenericReceiver]:
     # Auto-deref: when the receiver is a pointer or ref, unwrap to the pointee
     # type because method calls auto-dereference the receiver.
     var effective = recv_ty
@@ -14281,7 +14281,7 @@ function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Optio
 ## receiver is a raw `ptr[T]` / `const_ptr[T]`.  The general method-call path
 ## auto-dereferences raw pointers and so excludes them, but their extending-block
 ## methods with their own type parameters must still monomorphize.
-function ptr_specialization_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Option[GenericReceiver]:
+function ptr_specialization_receiver_info(ctx: ref[LoweringContext], recv_ty: types.Type) -> Option[GenericReceiver]:
     var effective = recv_ty
     if types.is_nullable_type(effective):
         effective = types.unwrap_nullable(effective)
@@ -14308,7 +14308,7 @@ function ptr_specialization_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Typ
 ## The declaration's arm field types carry the concrete args (Option.some.value,
 ## Result.success.value + Result.failure.error), so they can be recovered without
 ## re-parsing the mangled name.
-function prelude_instance_args(ctx: ref[LowerCtx], c_name: str) -> Option[GenericReceiver]:
+function prelude_instance_args(ctx: ref[LoweringContext], c_name: str) -> Option[GenericReceiver]:
     let base = prelude_variant_base(c_name) else:
         return Option[GenericReceiver].none
     var si: ptr_uint = 0
@@ -14345,7 +14345,7 @@ function prelude_instance_args(ctx: ref[LowerCtx], c_name: str) -> Option[Generi
 ## may appear in any module that imports it, not just the defining module (e.g.
 ## `std.serialize` declares `extending bin.Reader: function unpack[T]()` even
 ## though `Reader` is defined in `std.binary`).
-function find_generic_method(ctx: ref[LowerCtx], owner_name: str, method_name: str) -> Option[GenericMethodMatch]:
+function find_generic_method(ctx: ref[LoweringContext], owner_name: str, method_name: str) -> Option[GenericMethodMatch]:
     var ai: ptr_uint = 0
     while ai < ctx.program_analyses.len:
         var a: analyzer.Analysis
@@ -14392,7 +14392,7 @@ function find_generic_method_in_analysis(a: analyzer.Analysis, owner_name: str, 
 ## pick whichever module is loaded first.  Falls back to the program-wide scan
 ## when the defining module does not declare the method (an extending block may
 ## live in another module, e.g. std.serialize extends std.binary Writer).
-function find_generic_method_in_module(ctx: ref[LowerCtx], owner_name: str, method_name: str, module_name: str) -> Option[GenericMethodMatch]:
+function find_generic_method_in_module(ctx: ref[LoweringContext], owner_name: str, method_name: str, module_name: str) -> Option[GenericMethodMatch]:
     if module_name.len > 0:
         var ai: ptr_uint = 0
         while ai < ctx.program_analyses.len:
@@ -14414,7 +14414,7 @@ function find_generic_method_in_module(ctx: ref[LowerCtx], owner_name: str, meth
 ## expression (`Vec[int]` in `Vec[int].create()`), reading the real type
 ## arguments from the AST.  This is needed because `expr_type` records a
 ## placeholder (`ty_error`) argument for specialization expressions.
-function spec_receiver_info(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> Option[GenericReceiver]:
+function spec_receiver_info(ctx: ref[LoweringContext], receiver: ptr[ast.Expr]) -> Option[GenericReceiver]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_specialization as spec:
@@ -14455,7 +14455,7 @@ function spec_callee_name(callee: ptr[ast.Expr]) -> Option[str]:
 ## none when the receiver is not a concrete instance of a user generic struct, or
 ## when the method declares its own type parameters (deferred — those need
 ## call-site type-argument inference and fall through to ordinary resolution).
-function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method_name: str, receiver: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> Option[ptr[ir.Expr]]:
+function try_generic_method_call(ctx: ref[LoweringContext], recv_ty: types.Type, method_name: str, receiver: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> Option[ptr[ir.Expr]]:
     var info_opt = spec_receiver_info(ctx, receiver)
     if info_opt.is_none():
         # Raw pointer receivers (`ptr[T].load()`, `p.store(v)`) auto-dereference
@@ -14605,7 +14605,7 @@ function monomorphized_method_c_name(owner_module: str, info: GenericReceiver, g
 ## then emit a direct C call to it with the receiver argument.  The specialized
 ## C name groups by the concrete struct (`std_vec_Vec_int_push`), matching the
 ## monomorphized struct type produced by `qualify_type`.
-function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, gm: GenericMethodMatch, method_name: str, receiver: ptr[ast.Expr], args: span[ast.Argument]) -> ptr[ir.Expr]:
+function lower_monomorphized_method(ctx: ref[LoweringContext], info: GenericReceiver, gm: GenericMethodMatch, method_name: str, receiver: ptr[ast.Expr], args: span[ast.Argument]) -> ptr[ir.Expr]:
 
     # For the struct prefix in the C name, use the struct's defining module
     # (which may differ from the extending-block module, e.g. `Writer` is
@@ -14686,7 +14686,7 @@ function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, g
 ## type — the monomorphized path's `coerce_literal_to_param_type` (the params
 ## live on the IR function, not an `FnSig`), so `a.m(2, 3)` against
 ## `ptr_uint` parameters emits `ptr_uint` literals.
-function coerce_literal_to_mono_param(ctx: ref[LowerCtx], cached: ptr[ir.Function]?, param_index: ptr_uint, arg_ast: ptr[ast.Expr], arg: ptr[ir.Expr]) -> ptr[ir.Expr]:
+function coerce_literal_to_mono_param(ctx: ref[LoweringContext], cached: ptr[ir.Function]?, param_index: ptr_uint, arg_ast: ptr[ast.Expr], arg: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let fn_ptr = cached else:
         return arg
     let spec_fn = unsafe: read(fn_ptr)
@@ -14751,7 +14751,7 @@ function array_value_to_span(arr: ptr[ir.Expr], arr_ty: types.Type, span_ty: typ
 ## Coerce a bare function argument to a proc struct when the monomorphized
 ## parameter expects a proc type.  Mirrors coerce_fn_arg_to_proc but uses the
 ## lowered function's parameter types.
-function coerce_monomorphized_arg_to_proc(ctx: ref[LowerCtx], cached: ptr[ir.Function]?, param_index: ptr_uint, lowered: ptr[ir.Expr], arg_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function coerce_monomorphized_arg_to_proc(ctx: ref[LoweringContext], cached: ptr[ir.Function]?, param_index: ptr_uint, lowered: ptr[ir.Expr], arg_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let fn_ptr = cached else:
         return lowered
     let spec_fn = unsafe: read(fn_ptr)
@@ -14784,7 +14784,7 @@ function coerce_monomorphized_arg_to_proc(ctx: ref[LowerCtx], cached: ptr[ir.Fun
 ## the reached specialization's body (and instantiated everything inside it),
 ## even when lowering had already created the instance from another path (the
 ## `for`-iterator lookup).  Record that sticky fact for the placement pass.
-function note_validated_spec_reach(ctx: ref[LowerCtx], spec_key: str) -> void:
+function note_validated_spec_reach(ctx: ref[LoweringContext], spec_key: str) -> void:
     if ctx.next_spec_body_validated.is_some():
         return
     let info_ptr = unsafe: read(ctx.spec_infos).get(spec_key)
@@ -14803,7 +14803,7 @@ function note_validated_spec_reach(ctx: ref[LowerCtx], spec_key: str) -> void:
 ## context.  The context switch (module name, analysis, foreign map, variants)
 ## makes the body's recorded expression types and import-qualified references
 ## resolve against the defining module rather than the caller.
-function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: GenericReceiver, gm: GenericMethodMatch, pre_instantiated: bool) -> void:
+function ensure_monomorphized_method(ctx: ref[LoweringContext], method_c: str, info: GenericReceiver, gm: GenericMethodMatch, pre_instantiated: bool) -> void:
     let creator = ctx.current_function_linkage
     let setup_module = if creator.len == 0: ctx.module_name else: ""
     # Consume the one-shot creation-path override.  The iterator protocol's
@@ -14953,7 +14953,7 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
 
 ## Find the module that defines a struct named `name` by searching loaded analyses.
 ## Returns the struct's defining module name, or the default module name if not found.
-function struct_defining_module_for_type(ctx: ref[LowerCtx], name: str) -> str:
+function struct_defining_module_for_type(ctx: ref[LoweringContext], name: str) -> str:
     var sai: ptr_uint = 0
     while sai < ctx.program_analyses.len:
         var sa: analyzer.Analysis
@@ -14968,7 +14968,7 @@ function struct_defining_module_for_type(ctx: ref[LowerCtx], name: str) -> str:
 ## Lower a single generic method to an IR function with the struct's type
 ## parameters substituted.  Mirrors `lower_method`, but resolves the receiver and
 ## parameter/return types through `substitute_type_params` with `sub`.
-function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: GenericReceiver, gm: GenericMethodMatch, sub: ref[map_mod.Map[str, types.Type]], body_validated: bool) -> ir.Function:
+function lower_specialized_method(ctx: ref[LoweringContext], method_c: str, info: GenericReceiver, gm: GenericMethodMatch, sub: ref[map_mod.Map[str, types.Type]], body_validated: bool) -> ir.Function:
     let m = gm.method
     ctx.locals.clear()
     ctx.temp_counter = 0
@@ -15061,7 +15061,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
 
 ## Wrap a function reference in a proc struct with a synthetic invoke function
 ## that calls the original function, plus no-op release/retain.
-function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type, source_path: str) -> ptr[ir.Expr]:
+function lower_fn_to_proc(ctx: ref[LoweringContext], fn_c_name: str, fn_ty: types.Type, source_path: str) -> ptr[ir.Expr]:
     proc_counter += 1
     var prefix = string.String.create()
     prefix.append(naming.module_c_prefix(ctx.module_name))
@@ -15186,7 +15186,7 @@ function atomic_element_type(t: types.Type) -> types.Type:
 ## sequential-consistency memory order (5).  `load` reads through the address,
 ## `store` writes, and `add`/`sub`/`exchange` are read-modify-write.  Mirrors
 ## Ruby's lower_atomic_method_call.
-function lower_atomic_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: types.Type, method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_atomic_method(ctx: ref[LoweringContext], recv: ptr[ir.Expr], recv_ty: types.Type, method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let elem_ty = atomic_element_type(recv_ty)
     let void_ty = ctx.void_ty
     let int_ty = types.primitive("int")
@@ -15212,7 +15212,7 @@ function lower_atomic_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: ty
 # =============================================================================
 
 ## True when `t` is the type of a declared event.
-function is_event_type(ctx: ref[LowerCtx], t: types.Type) -> bool:
+function is_event_type(ctx: ref[LoweringContext], t: types.Type) -> bool:
     match t:
         types.Type.ty_event:
             # A struct event field's member read is typed as the event itself.
@@ -15267,7 +15267,7 @@ function strip_event_cap_suffix(name: str) -> str:
     return name
 
 
-function is_any_event_suffix(ctx: ref[LowerCtx], name: str) -> bool:
+function is_any_event_suffix(ctx: ref[LoweringContext], name: str) -> bool:
     let base = strip_event_cap_suffix(name)
     var iter = ctx.analysis.events.entries()
     while true:
@@ -15290,7 +15290,7 @@ function is_any_event_suffix(ctx: ref[LowerCtx], name: str) -> bool:
 ## host's struct-scoped `Types::Struct#event` lookup.  A struct's own map is the
 ## only one consulted — a module-level event of the same name must not claim a
 ## plain field.
-function event_info_for_owner(ctx: ref[LowerCtx], owner: str, name: str) -> Option[analyzer.EventInfo]:
+function event_info_for_owner(ctx: ref[LoweringContext], owner: str, name: str) -> Option[analyzer.EventInfo]:
     let key = analyzer.event_registry_key(owner, name)
     let keyed = ctx.analysis.events.get(key)
     if keyed != null:
@@ -15303,7 +15303,7 @@ function event_info_for_owner(ctx: ref[LowerCtx], owner: str, name: str) -> Opti
 ## struct, `Container_Inner` for a nested one (its type links as
 ## `<module>_Container_Inner`), and the unwrapped element for `ptr`/`const_ptr`/
 ## `ref`/`own`/nullable wrappers.
-function event_owner_for_receiver(ctx: ref[LowerCtx], t: types.Type) -> str:
+function event_owner_for_receiver(ctx: ref[LoweringContext], t: types.Type) -> str:
     var base = t
     while true:
         match base:
@@ -15334,14 +15334,14 @@ function event_owner_for_receiver(ctx: ref[LowerCtx], t: types.Type) -> str:
 
 
 ## The event a member access names on a receiver of type `recv_ty`, if any.
-function event_info_for_receiver(ctx: ref[LowerCtx], recv_ty: types.Type, member: str) -> Option[analyzer.EventInfo]:
+function event_info_for_receiver(ctx: ref[LoweringContext], recv_ty: types.Type, member: str) -> Option[analyzer.EventInfo]:
     return event_info_for_owner(ctx, event_owner_for_receiver(ctx, recv_ty), member)
 
 
 ## The runtime of an event-typed receiver (`window.closed.emit()`): a
 ## `ty_event` carries the runtime linkage the member access already resolved, so
 ## look the runtime up by it; a bare module-level event name resolves directly.
-function event_runtime_for_type(ctx: ref[LowerCtx], t: types.Type) -> EventRuntimeInfo:
+function event_runtime_for_type(ctx: ref[LoweringContext], t: types.Type) -> EventRuntimeInfo:
     match t:
         types.Type.ty_event as e:
             var iter = ctx.event_runtimes.entries()
@@ -15367,7 +15367,7 @@ function event_name_from_c_linkage(name: str) -> str:
 ## Create the EventError enum (backing: int) — the host's
 ## `ensure_event_error_enum` pushes the builtin enum into
 ## `@artifacts.synthetic_enums` once.  Returns the named type.
-function ensure_event_error_enum(ctx: ref[LowerCtx]) -> types.Type:
+function ensure_event_error_enum(ctx: ref[LoweringContext]) -> types.Type:
     if not ctx.event_error_emitted:
         let int_ty = types.primitive("int")
         var members = vec.Vec[ir.EnumMember].create()
@@ -15389,7 +15389,7 @@ function ensure_event_error_enum(ctx: ref[LowerCtx]) -> types.Type:
 
 ## Ensure event runtime structs are declared (slot type, event type, subscript type).
 ## Called lazily on first event method call.
-function ensure_event_runtime(ctx: ref[LowerCtx], owner: str, event_name: str) -> EventRuntimeInfo:
+function ensure_event_runtime(ctx: ref[LoweringContext], owner: str, event_name: str) -> EventRuntimeInfo:
     let runtime_key = analyzer.event_registry_key(owner, event_name)
     let existing_ptr = ctx.event_runtimes.get(runtime_key)
     if existing_ptr != null:
@@ -15526,7 +15526,7 @@ function ensure_event_runtime(ctx: ref[LowerCtx], owner: str, event_name: str) -
 
 
 ## Generates calls to per-event typed functions (mt_event_NAME__emit etc.).
-function lower_event_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: types.Type, method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_event_method(ctx: ref[LoweringContext], recv: ptr[ir.Expr], recv_ty: types.Type, method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     var info = event_runtime_for_type(ctx, recv_ty)
     let void_ty = ctx.void_ty
     let bool_ty = ctx.bool_ty
@@ -15865,7 +15865,7 @@ function event_immediate_failure_task_literal(info: ref[EventRuntimeInfo]) -> pt
 
 
 ## Build a per-event subscribe (or subscribe_once) synthetic function.
-function build_event_subscribe_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str, once: bool) -> ir.Function:
+function build_event_subscribe_fn(ctx: ref[LoweringContext], info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str, once: bool) -> ir.Function:
     let void_ty = ctx.void_ty
     let bool_ty = ctx.bool_ty
     let ptr_uint_ty = types.primitive("ptr_uint")
@@ -15914,7 +15914,7 @@ function build_event_subscribe_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo
 ## Build a per-event stateful subscribe (or subscribe_once) synthetic function.
 ## Same as build_event_subscribe_fn but also accepts a `state: ptr[void]`
 ## parameter and writes it into the slot's `state` field.
-function build_event_subscribe_stateful_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str, once: bool) -> ir.Function:
+function build_event_subscribe_stateful_fn(ctx: ref[LoweringContext], info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str, once: bool) -> ir.Function:
     let void_ty = ctx.void_ty
     let bool_ty = ctx.bool_ty
     let ptr_uint_ty = types.primitive("ptr_uint")
@@ -16278,7 +16278,7 @@ function build_event_wait_release_fn(info: ref[EventRuntimeInfo], slot_cn: str, 
 
 
 ## Build a per-event wait take_result vtable function.
-function build_event_wait_take_result_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str) -> ir.Function:
+function build_event_wait_take_result_fn(ctx: ref[LoweringContext], info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str) -> ir.Function:
     let void_ty = types.primitive("void")
     let bool_ty = types.primitive("bool")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
@@ -16302,7 +16302,7 @@ function build_event_wait_take_result_fn(ctx: ref[LowerCtx], info: ref[EventRunt
 ## Build the per-event wait function.
 ## Loops through inactive slots, activates one as subscribe_once with a wait_frame,
 ## and returns a Task[Result[void_or_payload, EventError]].
-function build_event_wait_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str) -> ir.Function:
+function build_event_wait_fn(ctx: ref[LoweringContext], info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str) -> ir.Function:
     let void_ty = ctx.void_ty
     let bool_ty = ctx.bool_ty
     let ptr_uint_ty = types.primitive("ptr_uint")
@@ -16409,7 +16409,7 @@ function sp_field7(f1: ir.Field, f2: ir.Field, f3: ir.Field, f4: ir.Field, f5: i
 
 
 ## Lower a str_buffer[N] method call to a C helper call or inline operation.
-function lower_str_buffer_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty: types.Type, method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_str_buffer_method(ctx: ref[LoweringContext], recv: ptr[ir.Expr], recv_ty: types.Type, method_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let char_ty = types.primitive("char")
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ty = ctx.void_ty
@@ -16494,7 +16494,7 @@ function sp_expr2(e1: ptr[ir.Expr], e2: ptr[ir.Expr]) -> span[ir.Expr]:
     return buf.as_span()
 
 
-function lower_expression_match(ctx: ref[LowerCtx], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_expression_match(ctx: ref[LoweringContext], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     # A statement-prepared position (an if/while condition, a call argument, a
     # binary operand, an initializer) hoists the host's inline match lowering
     # (`prepare_match_expression_for_inline_lowering`): a zero-initialized
@@ -16703,7 +16703,7 @@ function place_default_arg_slot(slots: ref[vec.Vec[ast.Argument]], filled: ref[v
             read(fdest) = true
 
 
-function lower_plain_call(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?) -> ptr[ir.Expr]:
+function lower_plain_call(ctx: ref[LoweringContext], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?) -> ptr[ir.Expr]:
     return lower_plain_call_sig(ctx, c_name, args, call_ep, override_ty, Option[analyzer.FnSig].none)
 
 
@@ -16711,7 +16711,7 @@ function lower_plain_call(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argume
 ## argument passed to a `ref[T]` parameter is implicitly borrowed (`&arg`) —
 ## mirroring the call-site borrow rule the analyzer accepts.  The signature is
 ## optional; when absent, arguments are lowered verbatim.
-function lower_plain_call_sig(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, sig: Option[analyzer.FnSig]) -> ptr[ir.Expr]:
+function lower_plain_call_sig(ctx: ref[LoweringContext], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, sig: Option[analyzer.FnSig]) -> ptr[ir.Expr]:
     return lower_call_with_callee(ctx, c_name, Option[ptr[ir.Expr]].none, args, call_ep, override_ty, sig)
 
 
@@ -16719,7 +16719,7 @@ function lower_plain_call_sig(ctx: ref[LowerCtx], c_name: str, args: span[ast.Ar
 ## available, so a bare literal argument takes its parameter's type — the host's
 ## `lower_contextual_expression` on every call argument.  Mirrors the
 ## monomorphized-method path's `coerce_literal_to_mono_param`.
-function lower_plain_call_spec(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, spec_fn: ptr[ir.Function]?) -> ptr[ir.Expr]:
+function lower_plain_call_spec(ctx: ref[LoweringContext], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, spec_fn: ptr[ir.Function]?) -> ptr[ir.Expr]:
     var ir_args = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -16752,11 +16752,11 @@ function lower_plain_call_spec(ctx: ref[LowerCtx], c_name: str, args: span[ast.A
 ## Lower a call whose callee is an expression rather than a bare C name: a
 ## guard-projected binding that holds a proc or a function pointer, whose callee
 ## is a member chain.
-function lower_call_with_callee_expr(ctx: ref[LowerCtx], callee: ptr[ir.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, sig: Option[analyzer.FnSig]) -> ptr[ir.Expr]:
+function lower_call_with_callee_expr(ctx: ref[LoweringContext], callee: ptr[ir.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, sig: Option[analyzer.FnSig]) -> ptr[ir.Expr]:
     return lower_call_with_callee(ctx, "", Option[ptr[ir.Expr]].some(value = callee), args, call_ep, override_ty, sig)
 
 
-function lower_call_with_callee(ctx: ref[LowerCtx], c_name: str, callee_expr: Option[ptr[ir.Expr]], args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, sig: Option[analyzer.FnSig]) -> ptr[ir.Expr]:
+function lower_call_with_callee(ctx: ref[LoweringContext], c_name: str, callee_expr: Option[ptr[ir.Expr]], args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, sig: Option[analyzer.FnSig]) -> ptr[ir.Expr]:
 
     var ir_args = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
@@ -16846,7 +16846,7 @@ function null_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.
 ## a `ptr_uint` context.  The compile-time numeric compatibility cast is applied
 ## here too (a folded constant that fits the context), with int→float and the
 ## external-numeric arm left to the declared-type sites.
-function literal_value_to_context_type(ctx: ref[LowerCtx], value_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+function literal_value_to_context_type(ctx: ref[LoweringContext], value_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
     var result = value
     unsafe:
         match read(value_ast):
@@ -16874,7 +16874,7 @@ function literal_value_to_context_type(ctx: ref[LowerCtx], value_ast: ptr[ast.Ex
 ## `lower_contextual_expression` expected type on both branches, so
 ## `int_cell(if b: 1 else: 0)` emits `long` literals for a `long` parameter.
 ## Only numeric contexts recurse; other conditionals keep their inferred type.
-function conditional_value_to_context_type(ctx: ref[LowerCtx], value_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+function conditional_value_to_context_type(ctx: ref[LoweringContext], value_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
     if not types.is_integer_type(context_ty) and not types.is_float_type(context_ty):
         return value
     unsafe:
@@ -16897,7 +16897,7 @@ function conditional_value_to_context_type(ctx: ref[LowerCtx], value_ast: ptr[as
 ## `contextual_int_to_float`, i.e. a declared float local/assignment/return) and
 ## the external-numeric arm (an assignment through a raw-module field).
 function contextual_value_to_type(
-    ctx: ref[LowerCtx],
+    ctx: ref[LoweringContext],
     value_ast: ptr[ast.Expr],
     context_ty: types.Type,
     value: ptr[ir.Expr],
@@ -16918,7 +16918,7 @@ function contextual_value_to_type(
 ## An enum/flags *actual* type is excluded from the constant arm (the host's
 ## `return false if actual_type.is_a?(Types::EnumBase)`).
 function contextual_numeric_cast(
-    ctx: ref[LowerCtx],
+    ctx: ref[LoweringContext],
     value_ast: ptr[ast.Expr],
     value: ptr[ir.Expr],
     context_ty: types.Type,
@@ -16968,7 +16968,7 @@ function contextual_numeric_cast(
 
 ## True for an integer primitive or an enum/flags value (whose backing is an
 ## integer) — the host's `integer_like_char_source_type?`.
-function is_integer_like_value_type(ctx: ref[LowerCtx], t: types.Type) -> bool:
+function is_integer_like_value_type(ctx: ref[LoweringContext], t: types.Type) -> bool:
     if types.is_integer_type(t):
         return true
     let backing = enum_backing_or_self(ctx, t)
@@ -16976,7 +16976,7 @@ function is_integer_like_value_type(ctx: ref[LowerCtx], t: types.Type) -> bool:
 
 
 ## True when the value type is an enum/flags nominal (the host's `EnumBase`).
-function is_enum_value_type(ctx: ref[LowerCtx], t: types.Type) -> bool:
+function is_enum_value_type(ctx: ref[LoweringContext], t: types.Type) -> bool:
     let backing = enum_backing_or_self(ctx, t)
     return not types.type_equals(backing, t)
 
@@ -17033,7 +17033,7 @@ function float_width_name(name: str) -> int:
 
 ## True when an assignment target is a member of a raw-module (`std.c.*`) type —
 ## the host's `external_numeric_assignment_target?`.
-function external_numeric_assignment_target(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool:
+function external_numeric_assignment_target(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(ep):
             ast.Expr.expr_member_access as ma:
@@ -17056,7 +17056,7 @@ function is_external_module_type(t: types.Type) -> bool:
 ## and assignment foreign-call branches emit the call's value directly, so the
 ## return-site/local-site `contextual_int_to_float` arm does not run for them
 ## (`float size = GetScreenHeight()` keeps the int call).
-function is_foreign_call_initializer(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool:
+function is_foreign_call_initializer(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(ep):
             ast.Expr.expr_call as call:
@@ -17070,7 +17070,7 @@ function is_foreign_call_initializer(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> b
 ## (`prepare_expression_with_cleanups`), so `create_aligned(x, 1)` with a
 ## `ptr_uint` parameter emits a `ptr_uint` literal, not an `int` one.  A
 ## variadic argument beyond the fixed parameters has no expected type.
-function coerce_literal_to_param_type(ctx: ref[LowerCtx], params: span[analyzer.ParamEntry], index: ptr_uint, arg_ast: ptr[ast.Expr], value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+function coerce_literal_to_param_type(ctx: ref[LoweringContext], params: span[analyzer.ParamEntry], index: ptr_uint, arg_ast: ptr[ast.Expr], value: ptr[ir.Expr]) -> ptr[ir.Expr]:
     if index < params.len:
         unsafe:
             return literal_value_to_context_type(ctx, arg_ast, read(params.data + index).ty, value)
@@ -17094,7 +17094,7 @@ function is_contextual_binary_expr(ep: ptr[ast.Expr]) -> bool:
 ## conditional's branch typing (the host's `lower_expression(... expected_type:)`
 ## calls inside its BinaryOp arm) — it does not apply the
 ## `lower_contextual_expression` numeric-compatibility cast.
-function operand_value_to_context_type(ctx: ref[LowerCtx], value_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+function operand_value_to_context_type(ctx: ref[LoweringContext], value_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
     var result = value
     unsafe:
         match read(value_ast):
@@ -17115,7 +17115,7 @@ function operand_value_to_context_type(ctx: ref[LowerCtx], value_ast: ptr[ast.Ex
 ## Lower one operand of a contextual binary with the host's expected type: a
 ## nested arithmetic binary recurses, any other expression takes the literal /
 ## conditional retyping above.
-function lower_contextual_operand(ctx: ref[LowerCtx], ep: ptr[ast.Expr], expected: Option[types.Type]) -> ptr[ir.Expr]:
+function lower_contextual_operand(ctx: ref[LoweringContext], ep: ptr[ast.Expr], expected: Option[types.Type]) -> ptr[ir.Expr]:
     let exp = expected else:
         return lower_expr(ctx, ep)
     if is_contextual_binary_expr(ep):
@@ -17130,7 +17130,7 @@ function lower_contextual_operand(ctx: ref[LowerCtx], ep: ptr[ast.Expr], expecte
 ## int), the promoted operand type casts each side, and the result carries the
 ## common numeric type.  Used for call arguments, where the host passes the
 ## parameter's type as the argument's expected type.
-function lower_contextual_binary(ctx: ref[LowerCtx], ep: ptr[ast.Expr], expected: types.Type) -> ptr[ir.Expr]:
+function lower_contextual_binary(ctx: ref[LoweringContext], ep: ptr[ast.Expr], expected: types.Type) -> ptr[ir.Expr]:
     unsafe:
         match read(ep):
             ast.Expr.expr_unsafe as u:
@@ -17396,7 +17396,7 @@ function coerce_arg_to_ref_bridge(param_ty: types.Type, arg: ptr[ir.Expr]) -> pt
 ## Coerce a bare function name argument to a proc struct when the
 ## corresponding parameter expects a proc type.  Mirrors the implicit
 ## fn→proc wrapping the analyzer accepts at call sites.
-function coerce_fn_arg_to_proc(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], index: ptr_uint, lowered: ptr[ir.Expr], arg_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function coerce_fn_arg_to_proc(ctx: ref[LoweringContext], sig: Option[analyzer.FnSig], index: ptr_uint, lowered: ptr[ir.Expr], arg_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
     match sig:
         Option.some as s:
             if index >= s.value.params.len:
@@ -17449,7 +17449,7 @@ function task_root_proc_task_type(param_ty: types.Type) -> Option[types.Type]:
 ## task is created when `wait`/`run` drives it rather than at the call site.
 ## Returns the parameter's proc type when the bridge applies.  Mirrors the host's
 ## `direct_task_to_proc_argument_compatible?` + `wrap_task_expression_in_root_proc`.
-function task_root_proc_bridge_proc_type(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], index: ptr_uint, arg_ast: ptr[ast.Expr]) -> Option[types.Type]:
+function task_root_proc_bridge_proc_type(ctx: ref[LoweringContext], sig: Option[analyzer.FnSig], index: ptr_uint, arg_ast: ptr[ast.Expr]) -> Option[types.Type]:
     match sig:
         Option.some as s:
             if index >= s.value.params.len:
@@ -17468,7 +17468,7 @@ function task_root_proc_bridge_proc_type(ctx: ref[LowerCtx], sig: Option[analyze
 
 ## Wrap a `Task[X]` expression in the zero-parameter root proc `proc() -> Task[X]`
 ## that the async runtime drives.
-function lower_task_expression_as_root_proc(ctx: ref[LowerCtx], expr_ast: ptr[ast.Expr], proc_ty: types.Type) -> ptr[ir.Expr]:
+function lower_task_expression_as_root_proc(ctx: ref[LoweringContext], expr_ast: ptr[ast.Expr], proc_ty: types.Type) -> ptr[ir.Expr]:
     let ret_stmt = alloc_ast_stmt(ast.Stmt.stmt_ret(value = expr_ast, line = 0, column = 0, length = 0))
     var stmts = vec.Vec[ast.Stmt].create()
     unsafe:
@@ -17488,7 +17488,7 @@ function lower_task_expression_as_root_proc(ctx: ref[LowerCtx], expr_ast: ptr[as
 ## references more than once (its name plus its `as` boundary's public alias)
 ## whose argument expression is not duplicable, so the value must be evaluated
 ## into a temporary before the mapping substitutes it.
-function foreign_call_needs_materialized_value(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument]) -> bool:
+function foreign_call_needs_materialized_value(ctx: ref[LoweringContext], info: ForeignInfo, args: span[ast.Argument]) -> bool:
     let mapping = info.mapping else:
         return false
     var i: ptr_uint = 0
@@ -17511,7 +17511,7 @@ function foreign_call_needs_materialized_value(ctx: ref[LowerCtx], info: Foreign
 ## statement-lowered foreign call in an expression position stores its result in
 ## a `__mt_foreign_expr_N` local before the enclosing statement.  A value that
 ## already is a temp's Name (the `foreign_result` shape) passes through.
-function materialize_foreign_expr(ctx: ref[LowerCtx], result: ptr[ir.Expr], ret_ty: types.Type) -> ptr[ir.Expr]:
+function materialize_foreign_expr(ctx: ref[LoweringContext], result: ptr[ir.Expr], ret_ty: types.Type) -> ptr[ir.Expr]:
     match unsafe: read(result):
         ir.Expr.expr_name:
             return result
@@ -17535,7 +17535,7 @@ function materialize_foreign_expr(ctx: ref[LowerCtx], result: ptr[ir.Expr], ret_
 ## string-literal arguments at an `as cstr` boundary (emitted as a C string
 ## literal); str-variable projection (runtime str->cstr) and in/out/inout/
 ## consuming modes arrive later.
-function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_foreign_call(ctx: ref[LoweringContext], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     # The host lowers a generic wrapper under its call-site specialization
     # (`binding.type_substitutions`), so `T as const_ptr[void]` boundary
     # projections see the concrete type.
@@ -17558,7 +17558,7 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
     return result
 
 
-function lower_foreign_call_direct(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_foreign_call_direct(ctx: ref[LoweringContext], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     var ir_args = vec.Vec[ir.Expr].create()
     var setup = vec.Vec[ir.Stmt].create()
     # Names of hoisted `str as cstr` temporaries (malloc'd by
@@ -17637,7 +17637,7 @@ function lower_foreign_call_direct(ctx: ref[LowerCtx], info: ForeignInfo, args: 
 ## The host's consuming-argument rule (`consuming_foreign_release_assignments`):
 ## after a statement-position foreign call, each bare nullable local passed to a
 ## `consuming` parameter is nulled and refined to null for later statements.
-function append_foreign_consuming_releases(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ep: ptr[ast.Expr]) -> void:
+function append_foreign_consuming_releases(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], ep: ptr[ast.Expr]) -> void:
     var info_opt = Option[ForeignInfo].none
     var call_args = span[ast.Argument]()
     unsafe:
@@ -17743,7 +17743,7 @@ function cstr_temp_name(names: ref[vec.Vec[str]], index: ptr_uint) -> str:
 ## statement emits after itself (the host's `lower_foreign_call_components` and
 ## `discard_result` shapes); `hm_discard` additionally emits a root call as the
 ## statement itself, without the statement's line/path.
-function wrap_foreign_cstr_frees(ctx: ref[LowerCtx], setup: ref[vec.Vec[ir.Stmt]], result: ptr[ir.Expr], ret_ty: types.Type, cstr_temps: ref[vec.Vec[str]], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function wrap_foreign_cstr_frees(ctx: ref[LoweringContext], setup: ref[vec.Vec[ir.Stmt]], result: ptr[ir.Expr], ret_ty: types.Type, cstr_temps: ref[vec.Vec[str]], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     if ctx.hoist_mode != HoistMode.hm_off:
         var hs: ptr_uint = 0
         while hs < setup.len:
@@ -17831,7 +17831,7 @@ function free_cstr_temp_stmt(name: str) -> ir.Stmt:
 ## temp's address instead, appending the temp declaration to `setup` (the call
 ## is then wrapped in a statement-expression).  Mirrors Ruby's
 ## prepare_foreign_in_argument temp binding.
-function materialize_foreign_address_arg(ctx: ref[LowerCtx], lowered: ptr[ir.Expr], setup: ref[vec.Vec[ir.Stmt]]) -> ptr[ir.Expr]:
+function materialize_foreign_address_arg(ctx: ref[LoweringContext], lowered: ptr[ir.Expr], setup: ref[vec.Vec[ir.Stmt]]) -> ptr[ir.Expr]:
     unsafe:
         match read(lowered):
             ir.Expr.expr_address_of as addr:
@@ -17912,7 +17912,7 @@ function str_buffer_capacity_of(ty: types.Type) -> long:
 ## temporaries decided by the reference-count/inlineability rule.  The mapping
 ## expression is re-lowered with those bindings in scope; the whole thing renders
 ## as a GCC/Clang statement-expression `({ tmp = ...; MappedCall(...); })`.
-function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_inline_foreign_mapping(ctx: ref[LoweringContext], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let mapping = info.mapping else:
         fatal(c"lowering: inline foreign mapping missing expression")
 
@@ -18099,7 +18099,7 @@ function foreign_argument_operand(ep: ptr[ast.Expr]) -> ptr[ast.Expr]:
 ## The host's `prepare_foreign_in_argument`: an `in` argument whose operand is
 ## not addressable storage is materialized into a `foreign_in` temp before the
 ## value is lowered, so the boundary's address-of has an lvalue to take.
-function prepare_foreign_in_argument_mt(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.ForeignParam, arg: ast.Argument, setup: ref[vec.Vec[ir.Stmt]]) -> ast.Argument:
+function prepare_foreign_in_argument_mt(ctx: ref[LoweringContext], info: ForeignInfo, param: ast.ForeignParam, arg: ast.Argument, setup: ref[vec.Vec[ir.Stmt]]) -> ast.Argument:
     if param.param_mode != ast.ForeignParamMode.fmode_in:
         return arg
     let operand = foreign_argument_operand(arg.arg_value)
@@ -18118,7 +18118,7 @@ function prepare_foreign_in_argument_mt(ctx: ref[LowerCtx], info: ForeignInfo, p
 ## writes into the buffer through a `char*`, so the mapping takes
 ## `mt_str_buffer_prepare_write(&buffer.data[0], N, &buffer.dirty)` — the host's
 ## `lower_foreign_char_pointer_buffer_argument_value` str-buffer branch.
-function lower_str_buffer_char_ptr_argument(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ast.Argument, setup: ref[vec.Vec[ir.Stmt]]) -> ptr[ir.Expr]:
+function lower_str_buffer_char_ptr_argument(ctx: ref[LoweringContext], param: ast.ForeignParam, arg: ast.Argument, setup: ref[vec.Vec[ir.Stmt]]) -> ptr[ir.Expr]:
     let buffer = lower_expr(ctx, arg.arg_value)
     let sb_ty = ir_expr_type(buffer)
     let n_val = str_buffer_capacity_of(sb_ty)
@@ -18150,7 +18150,7 @@ function lower_str_buffer_char_ptr_argument(ctx: ref[LowerCtx], param: ast.Forei
 ## not the mapping's own return type — the host's `owner_analysis` typed it that
 ## way (`c.Vector3ToFloatV(x).v` has a `Float3Array` call and an `array[float, 3]`
 ## member).
-function walk_mapping_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr], top_ret_ty: types.Type, owner_module: str) -> ptr[ir.Expr]:
+function walk_mapping_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr], top_ret_ty: types.Type, owner_module: str) -> ptr[ir.Expr]:
     if not mapping_contains_external_call(ctx, ep):
         return lower_expr(ctx, ep)
     unsafe:
@@ -18229,7 +18229,7 @@ function walk_mapping_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr], top_ret_ty: ty
 ## `span[uint](data = c.GuiGetIcons(), len = 2048)`, walking each named field
 ## value so any embedded external call is expanded.  The aggregate type is the
 ## foreign function's declared return type.
-function walk_mapping_construction(ctx: ref[LowerCtx], args: span[ast.Argument], result_ty: types.Type, owner_module: str) -> ptr[ir.Expr]:
+function walk_mapping_construction(ctx: ref[LoweringContext], args: span[ast.Argument], result_ty: types.Type, owner_module: str) -> ptr[ir.Expr]:
     var fields = vec.Vec[ir.AggregateField].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -18247,7 +18247,7 @@ function walk_mapping_construction(ctx: ref[LowerCtx], args: span[ast.Argument],
 ## alias, i.e. `alias.CFunc(...)` where `alias` is not a bound local — the shape
 ## a foreign mapping uses to name its underlying C function.  Method calls on a
 ## bound parameter temporary (`text_public.capacity()`) do not count.
-function mapping_contains_external_call(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool:
+function mapping_contains_external_call(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(ep):
             ast.Expr.expr_call as call:
@@ -18287,7 +18287,7 @@ function mapping_contains_external_call(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -
 
 ## True when `ep` is an identifier bound as a local (a projected parameter
 ## temporary during inline foreign mapping lowering).
-function member_receiver_is_local(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool:
+function member_receiver_is_local(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(ep):
             ast.Expr.expr_identifier as id:
@@ -18518,7 +18518,7 @@ function inlineable_foreign_value(ep: ptr[ir.Expr]) -> bool:
 ## the host's `lower_inline_foreign_mapping_expression` typed the call through
 ## its `owner_analysis`.  None when the alias or the declaration is unknown (the
 ## caller falls back to the mapping's own return type).
-function mapping_call_return_type(ctx: ref[LowerCtx], owner_module: str, receiver: ptr[ast.Expr], name: str) -> Option[types.Type]:
+function mapping_call_return_type(ctx: ref[LoweringContext], owner_module: str, receiver: ptr[ast.Expr], name: str) -> Option[types.Type]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -18545,7 +18545,7 @@ function mapping_call_return_type(ctx: ref[LowerCtx], owner_module: str, receive
 ## The raw C declaration behind a foreign mapping's external call
 ## (`c.SDL_RunApp`), resolved in the mapping owner's module — the parameter
 ## types its arguments are contextually lowered against.
-function mapping_call_foreign_info(ctx: ref[LowerCtx], owner_module: str, receiver: ptr[ast.Expr], name: str) -> Option[ForeignInfo]:
+function mapping_call_foreign_info(ctx: ref[LoweringContext], owner_module: str, receiver: ptr[ast.Expr], name: str) -> Option[ForeignInfo]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -18587,7 +18587,7 @@ function is_plain_foreign_call_value(ep: ptr[ir.Expr]) -> bool:
 ## deepened/opaqueified: the context type the host's
 ## `lower_contextual_expression` gives every foreign argument (session 44,
 ## items 3ag/5b).
-function foreign_param_context_type(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.ForeignParam) -> types.Type:
+function foreign_param_context_type(ctx: ref[LoweringContext], info: ForeignInfo, param: ast.ForeignParam) -> types.Type:
     var saved_module = ctx.module_name
     var saved_analysis = ctx.analysis
     if info.owner_module.len > 0 and not info.owner_module.equal(ctx.module_name):
@@ -18609,7 +18609,7 @@ function foreign_param_context_type(ctx: ref[LowerCtx], info: ForeignInfo, param
 ## mapping's lowered call carries the raw declaration's return type instead
 ## (`ptr[char]` for a `cstr?` wrapper, the 3j rule), so a local declaration
 ## inferred from the call needs this.  None when the callee is not a wrapper.
-function foreign_wrapper_call_return_type(ctx: ref[LowerCtx], callee: ptr[ast.Expr]) -> Option[types.Type]:
+function foreign_wrapper_call_return_type(ctx: ref[LoweringContext], callee: ptr[ast.Expr]) -> Option[types.Type]:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
@@ -18636,7 +18636,7 @@ function foreign_wrapper_call_return_type(ctx: ref[LowerCtx], callee: ptr[ast.Ex
 ## The resolved `as` boundary type of a foreign wrapper parameter, in the
 ## module that declares the wrapper — the host's `parameter.boundary_type`
 ## (`resolve_type_ref` in the owner).
-function foreign_boundary_type(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.ForeignParam) -> types.Type:
+function foreign_boundary_type(ctx: ref[LoweringContext], info: ForeignInfo, param: ast.ForeignParam) -> types.Type:
     match param.boundary_type:
         Option.some as boundary:
             var saved_module = ctx.module_name
@@ -18730,7 +18730,7 @@ function is_void_pointer_type(t: types.Type) -> bool:
 ## boundary keeps its type when equal to the boundary, is `IR::Cast` when the
 ## types are projection-compatible, and is otherwise left unchanged (the self's
 ## type resolution is coarser than the host's in a few nominal corners).
-function project_foreign_boundary(ctx: ref[LowerCtx], value: ptr[ir.Expr], boundary: types.Type) -> ptr[ir.Expr]:
+function project_foreign_boundary(ctx: ref[LoweringContext], value: ptr[ir.Expr], boundary: types.Type) -> ptr[ir.Expr]:
     let value_ty = ir_expr_type(value)
     if types.type_equals(value_ty, boundary):
         return value
@@ -18745,7 +18745,7 @@ function project_foreign_boundary(ctx: ref[LowerCtx], value: ptr[ir.Expr], bound
 ## dynamic format temp, or a syntactically cstr-backed `if`/`unsafe`) passes its
 ## `data` pointer in an `IR::Cast(cstr)`; anything else takes the malloc-backed
 ## `mt_foreign_str_to_cstr_temp` copy (hoisted/freed by the caller).
-function lower_cstr_argument(ctx: ref[LowerCtx], arg: ptr[ast.Expr], lowered_str: ptr[ir.Expr]) -> ptr[ir.Expr]:
+function lower_cstr_argument(ctx: ref[LoweringContext], arg: ptr[ast.Expr], lowered_str: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let cstr_ty = types.primitive("cstr")
     unsafe:
         match read(arg):
@@ -18770,7 +18770,7 @@ function lower_cstr_argument(ctx: ref[LowerCtx], arg: ptr[ast.Expr], lowered_str
     ))
 
 
-function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.ForeignParam, arg: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_foreign_arg(ctx: ref[LoweringContext], info: ForeignInfo, param: ast.ForeignParam, arg: ptr[ast.Expr]) -> ptr[ir.Expr]:
     match param.boundary_type:
         Option.some as boundary:
             if boundary_is_cstr(boundary.value):
@@ -18905,7 +18905,7 @@ function boundary_is_cstr(boundary: ast.TypeRef) -> bool:
 ## to the raw `b2WorldDef`; `qualify_type` deliberately keeps std.c-targeting
 ## aliases by name for C-signature purposes, which is why this exists
 ## (session 43, item 3q).
-function deep_alias_target(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
+function deep_alias_target(ctx: ref[LoweringContext], t: types.Type) -> types.Type:
     var current = t
     var guard: ptr_uint = 0
     while guard < 8:
@@ -19012,7 +19012,7 @@ function param_type_is_span(type_ref: ast.TypeRef) -> bool:
 ## Pre-scan declarations to map each external function to its C name and each
 ## foreign function to its mapped C function and boundary parameters, so calls
 ## can be lowered to direct C calls.
-function collect_foreign_functions(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> void:
+function collect_foreign_functions(ctx: ref[LoweringContext], decls: span[ast.Decl]) -> void:
     var i: ptr_uint = 0
     while i < decls.len:
         var d: ast.Decl
@@ -19058,7 +19058,7 @@ function collect_foreign_functions(ctx: ref[LowerCtx], decls: span[ast.Decl]) ->
 ## named `name` in the target module and build its ForeignInfo (mapped C name +
 ## return type + params) resolved in the owner module's context.  Returns none
 ## when the target has no such foreign function.
-function imported_foreign_call(ctx: ref[LowerCtx], target_module: str, name: str) -> Option[ForeignInfo]:
+function imported_foreign_call(ctx: ref[LoweringContext], target_module: str, name: str) -> Option[ForeignInfo]:
     let owner_a = find_imported_analysis(ctx, target_module) else:
         return Option[ForeignInfo].none
     var saved_module = ctx.module_name
@@ -19100,7 +19100,7 @@ function imported_foreign_call(ctx: ref[LowerCtx], target_module: str, name: str
 ## (or `= target` mapping) plus resolved return type.  External functions carry
 ## no module prefix, so a cross-module call must use this bare name instead of
 ## `<module>_<name>`.  Returns none when the target has no such external function.
-function imported_extern_call(ctx: ref[LowerCtx], target_module: str, name: str) -> Option[ForeignInfo]:
+function imported_extern_call(ctx: ref[LoweringContext], target_module: str, name: str) -> Option[ForeignInfo]:
     let owner_a = find_imported_analysis(ctx, target_module) else:
         return Option[ForeignInfo].none
     var saved_module = ctx.module_name
@@ -19140,7 +19140,7 @@ function imported_extern_call(ctx: ref[LowerCtx], target_module: str, name: str)
 ## honoring a `= c"..."` rename mapping (`external function foo = c"__real"`
 ## resolves to `__real`).  Returns none when `name` is not an external function
 ## of that module, so callers can fall back to the bare member name.
-function imported_extern_c_name(ctx: ref[LowerCtx], target_module: str, name: str) -> Option[str]:
+function imported_extern_c_name(ctx: ref[LoweringContext], target_module: str, name: str) -> Option[str]:
     let owner_a = find_imported_analysis(ctx, target_module) else:
         return Option[str].none
     var di: ptr_uint = 0
@@ -19162,7 +19162,7 @@ function imported_extern_c_name(ctx: ref[LowerCtx], target_module: str, name: st
 ## bare C name; `out`/`inout` parameters are passed by address (`&arg`) so the C
 ## function can write back through the pointer, mirroring Ruby's
 ## lower_foreign_pointer_argument_value.
-function lower_extern_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_extern_call(ctx: ref[LoweringContext], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     var ir_args = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -19203,7 +19203,7 @@ function lower_extern_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast
 ## Pre-scan function declarations to record each one's resolved return type in
 ## ctx.function_returns, so call lowering can use the correct type even when the
 ## analyzer left it unresolved (tuple returns, array returns, etc.).
-function collect_function_returns(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> void:
+function collect_function_returns(ctx: ref[LoweringContext], decls: span[ast.Decl]) -> void:
     var i: ptr_uint = 0
     while i < decls.len:
         var d: ast.Decl
@@ -19265,7 +19265,7 @@ function empty_fn_sig() -> Option[analyzer.FnSig]:
 ## Ensure a proc struct declaration exists for the given signature.  Returns the
 ## proc's own value type (its closure function type) — the struct is a backend
 ## artifact (`Program.monomorphized_structs`), not the value's IR type.
-function proc_ensure_struct_decl(ctx: ref[LowerCtx], struct_name: str, proc_ty: types.Type) -> types.Type:
+function proc_ensure_struct_decl(ctx: ref[LoweringContext], struct_name: str, proc_ty: types.Type) -> types.Type:
     # Skip when the proc type contains unresolved type variables (happens
     # inside generic function bodies where T is not yet substituted).
     if proc_type_has_type_var(proc_ty):
@@ -19276,7 +19276,7 @@ function proc_ensure_struct_decl(ctx: ref[LowerCtx], struct_name: str, proc_ty: 
 
 ## Build the concrete proc value struct declaration for a signature: the
 ## `{ env, invoke, release, retain }` field shape shared by every `mt_proc_*`.
-## Kept `LowerCtx`-free so the program-level type-alias pass — which has no
+## Kept `LoweringContext`-free so the program-level type-alias pass — which has no
 ## context of its own — can emit the declaration for proc-typed aliases that
 ## are never used through `resolve_type_ref`.
 function proc_struct_decl(struct_name: str, proc_ty: types.Type) -> ir.StructDecl:
@@ -19344,7 +19344,7 @@ function type_contains_type_var(t: types.Type) -> bool:
 ## IR's `expr_call` uses a string callee for direct calls, we generate a direct
 ## call to the invoke function (which is `<struct_name>__invoke`) and pass the
 ## env member as the first argument.
-function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_proc_call(ctx: ref[LoweringContext], lb: LocalBinding, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let recv = lower_binding_read(ctx, lb)
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let env_member = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "env", ty = void_ptr))
@@ -19380,7 +19380,7 @@ function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Ar
 ## Lower a call through a proc-typed struct field: `s.field(args)` compiles to
 ## `s.field.invoke(s.field.env, args)`, analogously to lower_proc_call but for
 ## struct field receivers instead of local bindings.
-function lower_proc_field_call(ctx: ref[LowerCtx], field_expr: ptr[ir.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_proc_field_call(ctx: ref[LoweringContext], field_expr: ptr[ir.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let field_proc_ty = ir_expr_type(field_expr)
     let env_member = alloc_expr(ir.Expr.expr_member(receiver = field_expr, member = "env", ty = void_ptr))
@@ -19409,7 +19409,7 @@ function lower_proc_field_call(ctx: ref[LowerCtx], field_expr: ptr[ir.Expr], arg
 
 ## Lower a call through an fn-typed struct field: `s.field(args)` compiles to
 ## a direct call through the function pointer `s.field(args)`.
-function lower_fn_field_call(ctx: ref[LowerCtx], field_expr: ptr[ir.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_fn_field_call(ctx: ref[LoweringContext], field_expr: ptr[ir.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     var call_args = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -19432,7 +19432,7 @@ function lower_fn_field_call(ctx: ref[LowerCtx], field_expr: ptr[ir.Expr], args:
 ## The resolved return type of a module function: recorded during pre-scan
 ## (handles tuple/array returns the analyzer can't resolve), else the
 ## analyzer's best guess.
-function function_return_type(ctx: ref[LowerCtx], name: str) -> types.Type:
+function function_return_type(ctx: ref[LoweringContext], name: str) -> types.Type:
     let ret_ptr = ctx.function_returns.get(name)
     if ret_ptr != null:
         unsafe:
@@ -19466,7 +19466,7 @@ function extern_c_name(name: str, mapping: ptr[ast.Expr]?) -> str:
 ## Complex inline mapping expressions are handled by
 ## lower_inline_foreign_mapping instead; this resolver only needs the
 ## bare-name forms and returns "" for anything else.
-function resolve_foreign_c_name(ctx: ref[LowerCtx], mapping: ptr[ast.Expr]) -> str:
+function resolve_foreign_c_name(ctx: ref[LoweringContext], mapping: ptr[ast.Expr]) -> str:
     unsafe:
         match read(mapping):
             ast.Expr.expr_identifier as id:
@@ -19529,7 +19529,7 @@ function foreign_mapping_is_simple(mapping: ptr[ast.Expr]) -> bool:
 ## (`p.x`).  Method calls are resolved through `lower_method_resolved` and
 ## `lower_dyn_method_call`; other member forms (atomic, str_buffer, event) are
 ## dispatched by their type.
-function imported_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: str) -> Option[types.Type]:
+function imported_field_type(ctx: ref[LoweringContext], recv_ty: types.Type, member: str) -> Option[types.Type]:
     var base = recv_ty
     if types.is_nullable_type(base):
         base = types.unwrap_nullable(base)
@@ -19602,7 +19602,7 @@ function find_struct_field_tref(sf: ast.SourceFile, struct_name: str, member: st
 ## receiver is a member access or identifier (both side-effect-free to lower), the
 ## lowered IR type resolves fields in their owner module's context
 ## (`imported_field_type`), so prefer it; fall back to `expr_type` otherwise.
-function method_receiver_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> types.Type:
+function method_receiver_type(ctx: ref[LoweringContext], receiver: ptr[ast.Expr]) -> types.Type:
     var side_effect_free = false
     unsafe:
         match read(receiver):
@@ -19651,7 +19651,7 @@ function method_receiver_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr]) -> ty
     return expr_type(ctx, receiver)
 
 
-function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member: str, ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], member: str, ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     match inline_for_member_subst(ctx, receiver, member):
         Option.some as subst:
             return subst.value
@@ -19989,7 +19989,7 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
 ## emitted declaration (keyed by concrete C name), auto-dereferencing a pointer
 ## or ref receiver.  Returns none for non-generic structs (handled by the
 ## analyzer's recorded member type) or unknown fields.
-function concrete_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: str) -> Option[types.Type]:
+function concrete_field_type(ctx: ref[LoweringContext], recv_ty: types.Type, member: str) -> Option[types.Type]:
     var base = recv_ty
     if types.is_nullable_type(base):
         base = types.unwrap_nullable(base)
@@ -20121,7 +20121,7 @@ function is_tuple_type(t: types.Type) -> bool:
 ## Map raw-module opaque named types (declared `opaque X`) to `Types::Opaque`
 ## so the IR matches the host, recursing through generic arguments and nullable
 ## bases.  The analyzer resolves such names as ordinary imported types.
-function opaqueify_type(ctx: ref[LowerCtx], ty: types.Type) -> types.Type:
+function opaqueify_type(ctx: ref[LoweringContext], ty: types.Type) -> types.Type:
     match ty:
         types.Type.ty_imported as im:
             if im.args.len == 0:
@@ -20155,7 +20155,7 @@ function opaqueify_type(ctx: ref[LowerCtx], ty: types.Type) -> types.Type:
             return ty
 
 
-function lower_struct_decl(ctx: ref[LowerCtx], name: str, packed: bool, alignment: int, qualified: Option[str], linkage_base: str) -> Option[ir.StructDecl]:
+function lower_struct_decl(ctx: ref[LoweringContext], name: str, packed: bool, alignment: int, qualified: Option[str], linkage_base: str) -> Option[ir.StructDecl]:
     var fields_ptr: ptr[span[analyzer.FieldEntry]]? = null
     # The owner segment of the struct's events: the declared path sanitized the
     # way the host's `Types::Event#linkage_name` sanitizes `owner_type_name`
@@ -20221,7 +20221,7 @@ function lower_struct_decl(ctx: ref[LowerCtx], name: str, packed: bool, alignmen
         source_module = Option[str].some(value = ctx.module_name),
     ))
 
-function lower_nested_struct_decls(ctx: ref[LowerCtx], nested: span[ast.Decl], parent_name: str, parent_linkage: str, structs: ref[vec.Vec[ir.StructDecl]]) -> void:
+function lower_nested_struct_decls(ctx: ref[LoweringContext], nested: span[ast.Decl], parent_name: str, parent_linkage: str, structs: ref[vec.Vec[ir.StructDecl]]) -> void:
     var i: ptr_uint = 0
     while i < nested.len:
         var d: ast.Decl
@@ -20249,7 +20249,7 @@ function lower_nested_struct_decls(ctx: ref[LowerCtx], nested: span[ast.Decl], p
 
 ## Lower a union declaration to an IR UnionDecl, resolving field types from the
 ## declaration (unions are not tracked in the analyzer's struct table).
-function lower_union_decl(ctx: ref[LowerCtx], name: str, fields: span[ast.Field]) -> ir.UnionDecl:
+function lower_union_decl(ctx: ref[LoweringContext], name: str, fields: span[ast.Field]) -> ir.UnionDecl:
     var ir_fields = vec.Vec[ir.Field].create()
     var i: ptr_uint = 0
     while i < fields.len:
@@ -20274,7 +20274,7 @@ function lower_union_decl(ctx: ref[LowerCtx], name: str, fields: span[ast.Field]
 ## arm constructors `Option.some(value = ...)` and match on Option/Result
 ## scrutinees can resolve arm names and payload fields.  User-declared variants
 ## of the same name take priority (matching the analyzer's policy).
-function install_prelude_variants(ctx: ref[LowerCtx]) -> void:
+function install_prelude_variants(ctx: ref[LoweringContext]) -> void:
     if not ctx.variants.contains("Option"):
         ctx.variants.set("Option", prelude_option_info())
     if not ctx.variants.contains("Result"):
@@ -20328,7 +20328,7 @@ function sp_str_type(name: str) -> span[types.Type]:
 ## registered too — a `match` needs their arm names — while their CONCRETE
 ## instances register substituted payload fields when the instance is emitted
 ## (`ensure_generic_variant_decl`).
-function collect_variants(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> void:
+function collect_variants(ctx: ref[LoweringContext], decls: span[ast.Decl]) -> void:
     var i: ptr_uint = 0
     while i < decls.len:
         var d: ast.Decl
@@ -20355,7 +20355,7 @@ function collect_variants(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> void:
     install_imported_variants(ctx)
 
 
-function build_variant_info(ctx: ref[LowerCtx], arms: span[ast.VariantArm]) -> VariantInfo:
+function build_variant_info(ctx: ref[LoweringContext], arms: span[ast.VariantArm]) -> VariantInfo:
     var arm_infos = vec.Vec[VariantArmInfo].create()
     var i: ptr_uint = 0
     while i < arms.len:
@@ -20381,7 +20381,7 @@ function build_variant_info(ctx: ref[LowerCtx], arms: span[ast.VariantArm]) -> V
 ## variant registry so cross-module variant match goes through the switch path
 ## (which handles `kind` field access and `as name` bindings) instead of
 ## falling through to the enum fallback (which uses the wrong module prefix).
-function install_imported_variants(ctx: ref[LowerCtx]) -> void:
+function install_imported_variants(ctx: ref[LoweringContext]) -> void:
     var import_values = ctx.analysis.imports.values()
     while true:
         let target_ptr = import_values.next() else:
@@ -20430,7 +20430,7 @@ function install_imported_variants(ctx: ref[LowerCtx]) -> void:
 ## (`<owner>_<Variant>_<arm>`).  Populated for every imported variant regardless
 ## of bare-name registry collisions, so member access on an arm binding resolves
 ## the field type structurally.  Field types are resolved in the owner context.
-function register_imported_variant_arm_fields(ctx: ref[LowerCtx], owner_module: str, owner_analysis: analyzer.Analysis, variant_name: str, arms: span[ast.VariantArm]) -> void:
+function register_imported_variant_arm_fields(ctx: ref[LoweringContext], owner_module: str, owner_analysis: analyzer.Analysis, variant_name: str, arms: span[ast.VariantArm]) -> void:
     let outer_c = naming.qualified_c_name(owner_module, variant_name)
     var saved_module = ctx.module_name
     var saved_analysis = ctx.analysis
@@ -20469,7 +20469,7 @@ function register_imported_variant_arm_fields(ctx: ref[LowerCtx], owner_module: 
 ## `module_name` so variant arm constructors produce correctly-qualified names.
 ## Arm field types are resolved in the OWNER module's context so they qualify
 ## against the defining module (needed for member access on a match-arm binding).
-function build_imported_variant_info(ctx: ref[LowerCtx], owner_module: str, owner_analysis: analyzer.Analysis, arms: span[ast.VariantArm]) -> VariantInfo:
+function build_imported_variant_info(ctx: ref[LoweringContext], owner_module: str, owner_analysis: analyzer.Analysis, arms: span[ast.VariantArm]) -> VariantInfo:
     var saved_module = ctx.module_name
     var saved_analysis = ctx.analysis
     ctx.module_name = owner_module
@@ -20500,7 +20500,7 @@ function build_imported_variant_info(ctx: ref[LowerCtx], owner_module: str, owne
 ## Lower a variant declaration to an `ir.VariantDecl`, mirroring Ruby's
 ## `lower_variants`: the outer C name is `<module>_<name>` and each arm's payload
 ## struct C name is `<outer_c>_<arm>`.
-function lower_variant_decl(ctx: ref[LowerCtx], name: str, arms: span[ast.VariantArm]) -> ir.VariantDecl:
+function lower_variant_decl(ctx: ref[LoweringContext], name: str, arms: span[ast.VariantArm]) -> ir.VariantDecl:
     let outer_c = naming.qualified_c_name(ctx.module_name, name)
     var ir_arms = vec.Vec[ir.VariantArm].create()
     var i: ptr_uint = 0
@@ -20590,7 +20590,7 @@ function variant_arm_info(info: VariantInfo, arm_name: str) -> Option[VariantArm
 ## `resolve_scalar_type_ref`, and single-name local types (structs/unions/enums)
 ## to a module-qualified `ty_imported`.  Compound types (arrays/spans/generics)
 ## resolve later.
-function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.Type:
+function resolve_field_type_ref(ctx: ref[LoweringContext], tref: ast.TypeRef) -> types.Type:
     var local_tref = tref
     let scalar = resolve_scalar_type_ref(ptr_of(local_tref))
     if not types.is_error(scalar):
@@ -20672,7 +20672,7 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
 
 ## Look up the resolved type of a module-level variable declared in the source
 ## file.  Used when `expr_type(ctx, callee)` fails for proc variables.
-function module_var_type(ctx: ref[LowerCtx], name: str) -> types.Type:
+function module_var_type(ctx: ref[LoweringContext], name: str) -> types.Type:
     var di: ptr_uint = 0
     while di < ctx.analysis.source_file.declarations.len:
         var d: ast.Decl
@@ -20697,7 +20697,7 @@ function module_var_type(ctx: ref[LowerCtx], name: str) -> types.Type:
 #  Enum / flags declarations
 # =============================================================================
 
-function lower_enum_decl(ctx: ref[LowerCtx], name: str, backing_type: ptr[ast.TypeRef]?, members: span[ast.EnumMember], is_flags: bool) -> ir.EnumDecl:
+function lower_enum_decl(ctx: ref[LoweringContext], name: str, backing_type: ptr[ast.TypeRef]?, members: span[ast.EnumMember], is_flags: bool) -> ir.EnumDecl:
     var backing = types.primitive("int")
     let annotation = backing_type
     if annotation != null:
@@ -20749,7 +20749,7 @@ function lower_enum_decl(ctx: ref[LowerCtx], name: str, backing_type: ptr[ast.Ty
 ## arithmetic/bitwise/shift operators).  A bare `expr_identifier` resolves
 ## through `ctx.analysis.const_values`, so a length like `WIDTH * HEIGHT` (each a
 ## module-level `const int`) folds to its product instead of 0.
-function const_eval_int(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> long:
+function const_eval_int(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> long:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
@@ -20822,7 +20822,7 @@ function const_eval_int(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> long:
 ## Unlike `const_eval_int`, an unfoldable expression (a runtime name) yields
 ## none instead of 0, so the caller can keep it as a C-evaluable expression
 ## rather than mis-folding it.
-function try_const_eval_int(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[long]:
+function try_const_eval_int(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[long]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
@@ -20916,7 +20916,7 @@ function try_const_eval_int(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[lon
 ## literals, `not`, `and`/`or`, and integer comparisons over foldable operands.
 ## Yields none when any operand cannot be folded, in which case the condition
 ## is emitted as a C constant expression for the C compiler to evaluate.
-function try_const_eval_bool(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[bool]:
+function try_const_eval_bool(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[bool]:
     unsafe:
         match read(ep):
             ast.Expr.expr_bool_literal as b:
@@ -20967,7 +20967,7 @@ function try_const_eval_bool(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[bo
 ## `size_of` / `align_of` / `offset_of` and comparisons over them — lowers
 ## normally, producing a C integer constant expression that `_Static_assert`
 ## evaluates itself.
-function lower_static_assert_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_static_assert_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     match try_const_eval_int(ctx, ep):
         Option.some as folded:
             return alloc_expr(ir.Expr.expr_integer_literal(value = folded.value, ty = types.primitive("long")))
@@ -20997,7 +20997,7 @@ function lower_static_assert_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[
 ## foldable condition emits its folded `true` / `false` (matching Ruby, which
 ## folds and lets the C compiler report `static assertion failed`); otherwise
 ## the partially-folded condition is emitted for C to evaluate.
-function lower_static_assert(ctx: ref[LowerCtx], condition: ptr[ast.Expr], message: ptr[ast.Expr]?) -> ir.StaticAssert:
+function lower_static_assert(ctx: ref[LoweringContext], condition: ptr[ast.Expr], message: ptr[ast.Expr]?) -> ir.StaticAssert:
     var cond_ir: ptr[ir.Expr]
     match try_const_eval_bool(ctx, condition):
         Option.some as folded:
@@ -21030,7 +21030,7 @@ function lower_static_assert(ctx: ref[LowerCtx], condition: ptr[ast.Expr], messa
 ## backend adds `__builtin_unreachable` only when there is no default).
 ## Integer, string, variant, and tuple scrutinees are handled by the
 ## type-dispatch branches within `lower_match`.
-function enum_source_module(ctx: ref[LowerCtx], ty: types.Type, default_module: str) -> str:
+function enum_source_module(ctx: ref[LoweringContext], ty: types.Type, default_module: str) -> str:
     match ty:
         types.Type.ty_imported as im:
             return im.module_name
@@ -21043,14 +21043,14 @@ function enum_source_module(ctx: ref[LowerCtx], ty: types.Type, default_module: 
 ## mt-declared enums use the module-scoped constant
 ## (`<module>_<Enum>_<member>`), mirroring Ruby's `imported_value_c_name`
 ## raw-module rule.
-function enum_member_reference_c_name(ctx: ref[LowerCtx], enum_module: str, enum_name: str, member: str) -> str:
+function enum_member_reference_c_name(ctx: ref[LoweringContext], enum_module: str, enum_name: str, member: str) -> str:
     if enum_module.len > 0 and module_is_raw(ctx, enum_module):
         return member
     return naming.qualified_member_c_name(enum_module, enum_name, member)
 
 
 ## True when `module_name`'s analysis is a raw (external) module.
-function module_is_raw(ctx: ref[LowerCtx], module_name: str) -> bool:
+function module_is_raw(ctx: ref[LoweringContext], module_name: str) -> bool:
     if module_name == ctx.module_name:
         return is_raw_module(ctx.analysis.module_kind)
     match find_imported_analysis(ctx, module_name):
@@ -21065,7 +21065,7 @@ function module_is_raw(ctx: ref[LowerCtx], module_name: str) -> bool:
 ## `continue` to the loop-label form inside a switch (a C `break` would exit the
 ## switch, and the host never relies on `continue` passing through one), so both
 ## native flags are cleared here.
-function lower_switch_arm_body(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?) -> span[ir.Stmt]:
+function lower_switch_arm_body(ctx: ref[LoweringContext], body: ptr[ast.Stmt]?) -> span[ir.Stmt]:
     let saved_break_native = ctx.loop_break_native
     let saved_continue_native = ctx.loop_continue_native
     ctx.loop_break_native = false
@@ -21076,7 +21076,7 @@ function lower_switch_arm_body(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?) -> span
     return result
 
 
-function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
+function lower_match(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
     # Save/restore locals so match-arm bindings (as name) and arm-body
     # locals don't leak into subsequent code or proc captures.
     let saved_locals = ctx.locals
@@ -21196,7 +21196,7 @@ function is_integer_scrutinee(ty: types.Type) -> bool:
 ## and everything else route to `mt_fatal_str`.  A `c"..."` literal is detected
 ## structurally (its recorded type is not always reliable); other expressions
 ## fall back to their resolved type.
-function fatal_arg_is_cstr(ctx: ref[LowerCtx], arg: ptr[ast.Expr]) -> bool:
+function fatal_arg_is_cstr(ctx: ref[LoweringContext], arg: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(arg):
             ast.Expr.expr_string_literal as lit:
@@ -21222,7 +21222,7 @@ function is_str_scrutinee(ty: types.Type) -> bool:
 ## pattern as the case value.  A `_` arm becomes `default` (marked exhaustive,
 ## matching the host; the backend only emits `__builtin_unreachable` when the
 ## switch has no default).
-function lower_scalar_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchArm]) -> void:
+function lower_scalar_match(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchArm]) -> void:
     # A range pattern cannot be a `switch` case, so a match containing one is
     # lowered to an if / else-if chain (mirrors Ruby's lower_range_match_stmt).
     var has_range = false
@@ -21275,7 +21275,7 @@ function lower_scalar_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
 ## Lower an integer match containing range patterns to an if / else-if chain.
 ## A range arm becomes `scrutinee >= start and scrutinee <= stop`; other arms
 ## compare with `==`.  A `_` arm becomes the final else block.
-function lower_scalar_range_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchArm]) -> void:
+function lower_scalar_range_match(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchArm]) -> void:
     let scrutinee_ty = ir_expr_type(scrutinee_expr)
     # The host's match-to-if chains always carry an else body; the innermost
     # `if` falls back to an empty one when there is no wildcard arm.
@@ -21331,7 +21331,7 @@ function lower_scalar_range_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
 ## each arm's string-literal pattern via `equal` (rendered as `mt_str_equal`).
 ## The host compares the prepared scrutinee IR node directly (no `match_str`
 ## temp).  A `_` arm becomes the final else block.
-function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchArm]) -> void:
+function lower_string_match(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchArm]) -> void:
     # Collect literal arms and the optional default (wildcard) body.
     var default_body = span[ir.Stmt]()
     var lit_bodies = vec.Vec[span[ir.Stmt]].create()
@@ -21391,7 +21391,7 @@ function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
 ## The result type of a `return match ...` expression: the analyzer's recorded
 ## type for the match, or — when that is unknown — the lowered type of the first
 ## arm whose value type is known.  Used to type the hoisted result temp.
-function current_return_type(ctx: ref[LowerCtx], match_expr: ptr[ast.Expr]) -> types.Type:
+function current_return_type(ctx: ref[LoweringContext], match_expr: ptr[ast.Expr]) -> types.Type:
     var ty = qualify_type(ctx, expr_type(ctx, match_expr))
     if not types.is_error(ty) and not types.type_to_string(ty) == "void":
         return ty
@@ -21413,7 +21413,7 @@ function current_return_type(ctx: ref[LowerCtx], match_expr: ptr[ast.Expr]) -> t
 
 ## Infer the result type of a match expression from its first non-wildcard arm's
 ## value, so `let x = match e: { a: "s", _: "t" }` types x as `str` instead of `int`.
-function infer_match_arm_type(ctx: ref[LowerCtx], arms: span[ast.MatchExprArm]) -> types.Type:
+function infer_match_arm_type(ctx: ref[LoweringContext], arms: span[ast.MatchExprArm]) -> types.Type:
     var i: ptr_uint = 0
     while i < arms.len:
         var arm: ast.MatchExprArm
@@ -21426,7 +21426,7 @@ function infer_match_arm_type(ctx: ref[LowerCtx], arms: span[ast.MatchExprArm]) 
     return types.Type.ty_error
 
 
-function lower_match_expression_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, declared_type: ptr[ast.TypeRef]?, scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], line: ptr_uint) -> void:
+function lower_match_expression_local(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], name: str, declared_type: ptr[ast.TypeRef]?, scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], line: ptr_uint) -> void:
     let c_name = utils.c_local_name(name)
     var ty = types.Type.ty_error
     let dt = declared_type
@@ -21458,7 +21458,7 @@ function lower_match_expression_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir
 ## enum switch / tuple if-chain).  The scrutinee is hoisted into a temp when it is
 ## not already a name so it is evaluated once.  Shared by `let x = match ...`
 ## (lower_match_expression_local) and the `return match ...` hoist.
-function lower_match_expr_to_ref(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+function lower_match_expr_to_ref(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
     var scrutinee_ty = expr_type(ctx, scrutinee)
     var scrutinee_expr = lower_expr(ctx, scrutinee)
     # Prefer the lowered scrutinee's type (more accurate for prelude/field types).
@@ -21508,7 +21508,7 @@ function lower_match_expr_to_ref(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt
 ## comparing the scrutinee with each arm's string-literal pattern, assigning the
 ## arm's value to `result_ref` on match.  Mirrors `lower_string_match` for the
 ## expression form.
-function lower_str_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+function lower_str_match_expr(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
     var has_default = false
     var default_val: ptr[ir.Expr]? = null
     var pattern_lits = vec.Vec[ptr[ir.Expr]].create()
@@ -21567,7 +21567,7 @@ function lower_str_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
 ## tuple element-wise (`scrut._0 == e0 && scrut._1 == e1 && ...`) and assign the
 ## arm value on match.  The host nests the chain into else bodies (the wildcard
 ## arm is the innermost else), so exactly one arm's assignment executes.
-function lower_tuple_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], scrutinee_ty: types.Type, arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+function lower_tuple_match_expr(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], scrutinee_ty: types.Type, arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
     # The wildcard arm (built first, as the host does) is the chain's else body.
     var else_body = vec.Vec[ir.Stmt].create()
     var ai: ptr_uint = 0
@@ -21602,7 +21602,7 @@ function lower_tuple_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
 
 ## Lower a tuple-literal match statement to an if / else-if chain of
 ## per-element equality conditions, with the `_` arm as the final else.
-function lower_tuple_match_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
+function lower_tuple_match_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
     # The host's match-to-if chains always carry an else body; the innermost
     # `if` falls back to an empty one when there is no wildcard arm.
     var else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())
@@ -21641,7 +21641,7 @@ function lower_tuple_match_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
 ## per-element equality tests `scrut._i == elem_i`.  `_` elements are skipped
 ## (they match anything).  Returns a literal `true` when the pattern has no
 ## constraining elements.
-function tuple_pattern_condition(ctx: ref[LowerCtx], scrutinee_expr: ptr[ir.Expr], scrutinee_ty: types.Type, pattern: ast.Expr) -> ptr[ir.Expr]:
+function tuple_pattern_condition(ctx: ref[LoweringContext], scrutinee_expr: ptr[ir.Expr], scrutinee_ty: types.Type, pattern: ast.Expr) -> ptr[ir.Expr]:
     var cond: ptr[ir.Expr]? = null
     match pattern:
         ast.Expr.expr_expression_list as lst:
@@ -21690,7 +21690,7 @@ function expr_is_wildcard(e: ast.Expr) -> bool:
 
 ## Lower a match expression over an enum scrutinee: emit a switch whose cases
 ## assign the result and break, plus a default case for the wildcard arm.
-function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], type_name: Option[str], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+function lower_enum_match_expr(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], type_name: Option[str], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
     var cases = vec.Vec[ir.SwitchCase].create()
     var enum_module = enum_source_module(ctx, ir_expr_type(scrutinee_expr), ctx.module_name)
     var i: ptr_uint = 0
@@ -21731,7 +21731,7 @@ function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
 
 ## Lower a match expression over a variant scrutinee: emit a switch on the variant
 ## kind, with each arm assigning its value to the result reference.
-function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+function lower_variant_match_expr(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
     let info_ptr = ctx.variants.get(variant_registry_key(ctx, variant_name, scrutinee_ty)) else:
         fatal(c"lowering: variant match expr on unknown variant")
     let info = unsafe: read(info_ptr)
@@ -21790,7 +21790,7 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
 ## Dispatch a variant match to the switch strategy (member / `as name` /
 ## no-payload / wildcard arms) or the if/goto strategy (any struct-pattern arm,
 ## i.e. `Variant.arm(field, ...)`), mirroring Ruby's block.rb decision.
-function lower_variant_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
+function lower_variant_match(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
     if arms_have_call_pattern(arms):
         lower_variant_match_goto(ctx, output, scrutinee_expr, variant_name, scrutinee_ty, arms)
     else:
@@ -21817,7 +21817,7 @@ function arms_have_call_pattern(arms: span[ast.MatchArm]) -> bool:
     return false
 
 
-function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
+function lower_variant_match_switch(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
     # If variant_name includes type args (e.g. "Option_span_Field"), strip to
     # the base name (e.g. "Option") to find the variant info.
     var info_ptr = ctx.variants.get(variant_registry_key(ctx, variant_name, scrutinee_ty))
@@ -21926,7 +21926,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
 ## tests `scrut.kind`, jumps to the next arm's label on mismatch, otherwise binds
 ## the payload into a temp, destructures its fields, and falls through to the arm
 ## body then `goto <end>`.  Mirrors Ruby's block.rb struct-pattern match path.
-function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
+function lower_variant_match_goto(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
     let info_ptr = ctx.variants.get(variant_registry_key(ctx, variant_name, scrutinee_ty)) else:
         fatal(c"lowering: variant match on unknown variant")
     let info = unsafe: read(info_ptr)
@@ -22031,7 +22031,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
 ## identifier in a struct pattern's argument list, skipping `_` discards.
 ## Guards (`field > expr`) and equality patterns (`field = expr`) are emitted
 ## as conditional `goto next_arm_label` checks on failure.
-function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.Stmt]], pattern: ptr[ast.Expr], arm_info: VariantArmInfo, payload_c: str, payload_ty: types.Type, next_arm_label: str) -> void:
+function lower_variant_field_bindings(ctx: ref[LoweringContext], blk: ref[vec.Vec[ir.Stmt]], pattern: ptr[ast.Expr], arm_info: VariantArmInfo, payload_c: str, payload_ty: types.Type, next_arm_label: str) -> void:
     let bool_ty = ctx.bool_ty
     unsafe:
         match read(pattern):
@@ -22282,7 +22282,7 @@ function variant_declared_identity(ty: types.Type, fallback_module: str) -> (str
 ## same variant name (`mtc.ir.Expr` and `mtc.parser.ast.Expr`); the scrutinee
 ## type's own module selects the right entry, and the bare name stays the
 ## fallback (prelude variants and single-module programs).
-function variant_registry_key(ctx: ref[LowerCtx], variant_name: str, ty: types.Type) -> str:
+function variant_registry_key(ctx: ref[LoweringContext], variant_name: str, ty: types.Type) -> str:
     var base = variant_name
     let bn = variant_base_name(variant_name)
     if bn.is_some():
@@ -22301,7 +22301,7 @@ function variant_registry_key(ctx: ref[LowerCtx], variant_name: str, ty: types.T
 ## `_phantom` placeholder payload type (their VariantInfo is generic); it is
 ## specialized here against the scrutinee's concrete type args so `s.value` /
 ## `f.error` resolve to the real type instead of an undeclared `_phantom` C type.
-function register_arm_payload_fields(ctx: ref[LowerCtx], payload_c_name: str, info: VariantInfo, arm_name: str, scrutinee_ty: types.Type) -> void:
+function register_arm_payload_fields(ctx: ref[LoweringContext], payload_c_name: str, info: VariantInfo, arm_name: str, scrutinee_ty: types.Type) -> void:
     # An entry may already be registered by `install_imported_variants`, keyed by
     # the module-qualified payload C name with field types resolved in the OWNER
     # module's context.  That entry is authoritative and must not be overwritten
@@ -22332,7 +22332,7 @@ function register_arm_payload_fields(ctx: ref[LowerCtx], payload_c_name: str, in
 ## (works even when the scrutinee type has already collapsed to a concrete
 ## `ty_named` with no args), then fall back to the scrutinee's own type args, then
 ## to the placeholder (no worse than before).
-function specialize_prelude_arm_info(ctx: ref[LowerCtx], arm_info: VariantArmInfo, arm_name: str, payload_c_name: str, scrutinee_ty: types.Type) -> VariantArmInfo:
+function specialize_prelude_arm_info(ctx: ref[LoweringContext], arm_info: VariantArmInfo, arm_name: str, payload_c_name: str, scrutinee_ty: types.Type) -> VariantArmInfo:
     var changed = false
     var new_types = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
@@ -22361,7 +22361,7 @@ function specialize_prelude_arm_info(ctx: ref[LowerCtx], arm_info: VariantArmInf
 ## concrete payload struct C name (`Option_std_string_String_some`); its concrete
 ## variant decl in `pending_generic_variants` carries the real field type.  Falls
 ## back to the scrutinee's own type args when the decl is not (yet) recorded.
-function concrete_prelude_field_type(ctx: ref[LowerCtx], payload_c_name: str, arm_name: str, scrutinee_ty: types.Type) -> Option[types.Type]:
+function concrete_prelude_field_type(ctx: ref[LoweringContext], payload_c_name: str, arm_name: str, scrutinee_ty: types.Type) -> Option[types.Type]:
     # Program-wide registry first: the concrete Option/Result decl may have been
     # emitted in a different module's context (e.g. `Result[String, Error]` from
     # `fs.read_text`), so its arm field type is not in this ctx's
@@ -22389,7 +22389,7 @@ function concrete_prelude_field_type(ctx: ref[LowerCtx], payload_c_name: str, ar
 ## decl recorded in `pending_generic_variants`.  `payload_c_name` is the arm's
 ## concrete payload struct C name (`<outer_c>_<arm>`), which matches an arm's
 ## `linkage_name` in the outer decl.
-function prelude_field_type_from_variants(ctx: ref[LowerCtx], payload_c_name: str, arm_name: str) -> Option[types.Type]:
+function prelude_field_type_from_variants(ctx: ref[LoweringContext], payload_c_name: str, arm_name: str) -> Option[types.Type]:
     var vi: ptr_uint = 0
     while vi < ctx.pending_generic_variants.len():
         let vp = ctx.pending_generic_variants.get(vi) else:
@@ -22495,7 +22495,7 @@ function variant_c_type_name(ty: types.Type) -> str:
 
 
 ## Look up the type of a field in a variant arm by name.
-function variant_field_type_from_arm(ctx: ref[LowerCtx], variant_ty: types.Type, arm_name: str, field_name: str) -> Option[types.Type]:
+function variant_field_type_from_arm(ctx: ref[LoweringContext], variant_ty: types.Type, arm_name: str, field_name: str) -> Option[types.Type]:
     var variant_c: str
     match variant_ty:
         types.Type.ty_imported:
@@ -22537,7 +22537,7 @@ function variant_field_type_from_arm(ctx: ref[LowerCtx], variant_ty: types.Type,
 ## The installed `VariantInfo` a concrete variant C name specializes from: a
 ## prelude instance (`std_option_Option_ptr_uint`) maps back to its generic
 ## declaration (`Option`/`Result`); any other name has no registry entry.
-function variant_info_for_c_name(ctx: ref[LowerCtx], variant_c: str) -> Option[VariantInfo]:
+function variant_info_for_c_name(ctx: ref[LoweringContext], variant_c: str) -> Option[VariantInfo]:
     if not is_prelude_variant_name(variant_c):
         return Option[VariantInfo].none
     var base_name = ""
@@ -22553,7 +22553,7 @@ function variant_info_for_c_name(ctx: ref[LowerCtx], variant_c: str) -> Option[V
 
 
 ## Return the arm payload type from a struct name and source module.
-function payload_ty(ctx: ref[LowerCtx], struct_name: str, source_module: str) -> types.Type:
+function payload_ty(ctx: ref[LoweringContext], struct_name: str, source_module: str) -> types.Type:
     if source_module.len == 0:
         return types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = struct_name)
     return types.Type.ty_imported(module_name = source_module, name = struct_name, args = span[types.Type]())
@@ -22561,7 +22561,7 @@ function payload_ty(ctx: ref[LowerCtx], struct_name: str, source_module: str) ->
 
 ## The type of 'member' on a variant arm payload binding, looked up from the
 ## registered arm field info.  Returns none for non-arm-payload receivers.
-function arm_payload_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: str) -> Option[types.Type]:
+function arm_payload_field_type(ctx: ref[LoweringContext], recv_ty: types.Type, member: str) -> Option[types.Type]:
     var name: str
     match recv_ty:
         types.Type.ty_named as n:
@@ -22650,7 +22650,7 @@ function generic_variant_name(t: types.Type) -> Option[str]:
         _:
             return Option[str].none
 
-function variant_match_allowed(ctx: ref[LowerCtx], name: str) -> bool:
+function variant_match_allowed(ctx: ref[LoweringContext], name: str) -> bool:
     if ctx.variants.contains(name):
         return true
     match prelude_variant_base(name):
@@ -22716,7 +22716,7 @@ function variant_base_name(name: str) -> Option[str]:
 #  Type resolution helpers
 # =============================================================================
 
-function lookup_fn_sig(ctx: ref[LowerCtx], name: str) -> Option[analyzer.FnSig]:
+function lookup_fn_sig(ctx: ref[LoweringContext], name: str) -> Option[analyzer.FnSig]:
     let sig_ptr = ctx.analysis.functions.get(name)
     if sig_ptr == null:
         return Option[analyzer.FnSig].none
@@ -22725,7 +22725,7 @@ function lookup_fn_sig(ctx: ref[LowerCtx], name: str) -> Option[analyzer.FnSig]:
 
 
 ## Look up a function's FnSig in an imported module's analysis.
-function lookup_imported_fn_sig(ctx: ref[LowerCtx], module_name: str, name: str) -> Option[analyzer.FnSig]:
+function lookup_imported_fn_sig(ctx: ref[LoweringContext], module_name: str, name: str) -> Option[analyzer.FnSig]:
     match find_imported_analysis(ctx, module_name):
         Option.some as imported:
             let sig_ptr = imported.value.functions.get(name)
@@ -22759,7 +22759,7 @@ function fn_sig_return_type(sig: Option[analyzer.FnSig]) -> types.Type:
 
 ## A parameter's lowered type: resolved from the AST type ref (so tuple/array/
 ## span params carry full structure), falling back to the analyzer's signature.
-function resolve_param_type(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], index: ptr_uint, param_type: ast.TypeRef) -> types.Type:
+function resolve_param_type(ctx: ref[LoweringContext], sig: Option[analyzer.FnSig], index: ptr_uint, param_type: ast.TypeRef) -> types.Type:
     var local_tref = param_type
     let resolved = resolve_type_ref(ctx, ptr_of(local_tref))
     if not types.is_error(resolved):
@@ -22769,7 +22769,7 @@ function resolve_param_type(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], ind
 
 ## A function's lowered return type: resolved from the AST return type ref (so
 ## tuple/array/span returns carry full structure), falling back to the signature.
-function resolve_return_type(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], return_type: ptr[ast.TypeRef]?) -> types.Type:
+function resolve_return_type(ctx: ref[LoweringContext], sig: Option[analyzer.FnSig], return_type: ptr[ast.TypeRef]?) -> types.Type:
     let annotation = return_type else:
         return qualify_type(ctx, fn_sig_return_type(sig))
     let resolved = resolve_type_ref(ctx, annotation)
@@ -22785,7 +22785,7 @@ function resolve_return_type(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], re
 ## the host's `infer_expression_type` skips its sema-type cache for identifiers
 ## (`resolve.rb:706`) and reads `lookup_value`, so the analyzer's CFG refinement
 ## must not leak in where the host's lowering scope has none.
-function expr_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
+function expr_type(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> types.Type:
     unsafe:
         match read(ep):
             ast.Expr.expr_identifier as id:
@@ -22811,7 +22811,7 @@ function expr_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
 
 ## Resolve `import_alias.TypeName` to `ty_imported` when the member names a
 ## struct, enum, variant, or type alias in the imported module.
-function import_qualified_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[types.Type]:
+function import_qualified_type(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[types.Type]:
     unsafe:
         match read(ep):
             ast.Expr.expr_member_access as ma:
@@ -22848,7 +22848,7 @@ function import_qualified_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[
 ## module-qualified C name; `std.c.*` external functions are keyed by their bare
 ## C name (matching `collect_program_returns`).  Returns `ty_error` when the
 ## receiver is not an import alias or the function is unknown.
-function imported_call_return_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], func_name: str) -> types.Type:
+function imported_call_return_type(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], func_name: str) -> types.Type:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -22873,11 +22873,11 @@ function imported_call_return_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], 
 ## Like `fallback_type_raw`, but applies the active generic substitution so a
 ## recovered field/local type (`ptr[T]`) becomes concrete inside a
 ## specialization.
-function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
+function fallback_type(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> types.Type:
     return substitute_type_params(ctx, fallback_type_raw(ctx, ep), ref_of(ctx.type_substitution))
 
 
-function fallback_type_raw(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
+function fallback_type_raw(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> types.Type:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal:
@@ -23072,7 +23072,7 @@ function is_vec_math_name(name: str) -> bool:
     )
 
 
-function lower_vec_unary_neg(ctx: ref[LowerCtx], operand: ptr[ir.Expr], name: str) -> ptr[ir.Expr]:
+function lower_vec_unary_neg(ctx: ref[LoweringContext], operand: ptr[ir.Expr], name: str) -> ptr[ir.Expr]:
     var field_names = vec.Vec[str].create()
     var field_types = vec.Vec[types.Type].create()
     vec_math_fields(name, ref_of(field_names), ref_of(field_types))
@@ -23137,7 +23137,7 @@ function vec_math_fields(name: str, names: ref[vec.Vec[str]], ftypes: ref[vec.Ve
 ## Lower a binary arithmetic operator on vector/matrix/quaternion types to a
 ## component-wise aggregate literal.  Mirrors Ruby's lower_vector_binary_op /
 ## lower_aggregate_binary_op.
-function lower_vec_binary_op(ctx: ref[LowerCtx], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr], result_ty: types.Type, name: str) -> ptr[ir.Expr]:
+function lower_vec_binary_op(ctx: ref[LoweringContext], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr], result_ty: types.Type, name: str) -> ptr[ir.Expr]:
     let left_ty = ir_expr_type(left)
     let right_ty = ir_expr_type(right)
     var field_names = vec.Vec[str].create()
@@ -23295,7 +23295,7 @@ function cast_to_type(ep: ptr[ir.Expr], target: types.Type) -> ptr[ir.Expr]:
 ## The backing primitive of an enum or flags type, or `t` unchanged for any
 ## other type.  Mirrors Ruby unwrapping Types::EnumBase to its backing_type so
 ## enum/flags operands balance (and cast) to their integer backing.
-function enum_backing_or_self(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
+function enum_backing_or_self(ctx: ref[LoweringContext], t: types.Type) -> types.Type:
     match t:
         types.Type.ty_named as n:
             # The builtin event enum has no AST declaration to scan; its backing
@@ -23324,7 +23324,7 @@ function enum_backing_or_self(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
 ## The backing primitive type of the enum or flags named `enum_name` in
 ## `module_name`, or none when no such declaration exists.  Scans the owning
 ## module's AST declarations (the analyzer keeps no separate backing table).
-function lookup_enum_backing(ctx: ref[LowerCtx], module_name: str, enum_name: str) -> Option[types.Type]:
+function lookup_enum_backing(ctx: ref[LoweringContext], module_name: str, enum_name: str) -> Option[types.Type]:
     if module_name == ctx.module_name:
         return scan_enum_backing(ctx.analysis.source_file.declarations, enum_name)
     match find_imported_analysis(ctx, module_name):
@@ -23374,7 +23374,7 @@ function is_int_type(t: types.Type) -> bool:
             return false
 
 
-function lookup_local(ctx: ref[LowerCtx], name: str) -> Option[LocalBinding]:
+function lookup_local(ctx: ref[LoweringContext], name: str) -> Option[LocalBinding]:
     if ctx.locals.len() == 0:
         return Option[LocalBinding].none
     var i = ctx.locals.len()
@@ -23391,7 +23391,7 @@ function lookup_local(ctx: ref[LowerCtx], name: str) -> Option[LocalBinding]:
 ## The visible (flow-refined) type of `name` in the innermost refinement scope
 ## that mentions it.  The host's `lookup_value(...)[:type]`; nil when no scope
 ## narrows the name.
-function flow_scope_binding(ctx: ref[LowerCtx], name: str) -> Option[types.Type]:
+function flow_scope_binding(ctx: ref[LoweringContext], name: str) -> Option[types.Type]:
     var i = ctx.flow_scopes.len()
     while i > 0:
         i -= 1
@@ -23407,7 +23407,7 @@ function flow_scope_binding(ctx: ref[LowerCtx], name: str) -> Option[types.Type]
 ## The type inference sees for a name — the host's `infer_expression_type`
 ## identifier arm: the refinement scope's narrowed type, else the local
 ## binding's storage type, else a module-level value's declared type.
-function visible_local_type(ctx: ref[LowerCtx], name: str) -> Option[types.Type]:
+function visible_local_type(ctx: ref[LoweringContext], name: str) -> Option[types.Type]:
     match flow_scope_binding(ctx, name):
         Option.some as narrowed:
             return Option[types.Type].some(value = narrowed.value)
@@ -23447,7 +23447,7 @@ function merge_flow_refinements(existing: ref[map_mod.Map[str, types.Type]], inc
 ## the stack length `restore_flow_refinements` restores.  The host's
 ## `env_with_refinements` makes a fresh `FlowScope` layer, so the pushed map is
 ## a copy rather than the caller's.
-function push_flow_refinements(ctx: ref[LowerCtx], refinements: ref[map_mod.Map[str, types.Type]]) -> ptr_uint:
+function push_flow_refinements(ctx: ref[LoweringContext], refinements: ref[map_mod.Map[str, types.Type]]) -> ptr_uint:
     let saved = ctx.flow_scopes.len()
     if refinements.len() == 0:
         return saved
@@ -23457,7 +23457,7 @@ function push_flow_refinements(ctx: ref[LowerCtx], refinements: ref[map_mod.Map[
     return saved
 
 
-function restore_flow_refinements(ctx: ref[LowerCtx], saved: ptr_uint) -> void:
+function restore_flow_refinements(ctx: ref[LoweringContext], saved: ptr_uint) -> void:
     while ctx.flow_scopes.len() > saved:
         let _dropped = ctx.flow_scopes.pop()
 
@@ -23466,7 +23466,7 @@ function restore_flow_refinements(ctx: ref[LowerCtx], saved: ptr_uint) -> void:
 ## condition narrows when it is true (`truthy`) or false.  Only null tests
 ## narrow; `not` flips, and `and`/`or` recurse with the host's short-circuit
 ## scopes (the right operand sees the left's refinement).
-function lowering_flow_refinements(ctx: ref[LowerCtx], cond: ptr[ast.Expr], truthy: bool) -> map_mod.Map[str, types.Type]:
+function lowering_flow_refinements(ctx: ref[LoweringContext], cond: ptr[ast.Expr], truthy: bool) -> map_mod.Map[str, types.Type]:
     var result = map_mod.Map[str, types.Type].create()
     unsafe:
         match read(cond):
@@ -23507,7 +23507,7 @@ function lowering_flow_refinements(ctx: ref[LowerCtx], cond: ptr[ast.Expr], trut
 ## narrows to the bare null; the other direction narrows to the nullable's base.
 ## A local's storage type is its binding; a module-level value's is its declared
 ## type (the host seeds module bindings into its env).
-function lowering_null_test_refinements(ctx: ref[LowerCtx], condp: ptr[ast.Expr], truthy: bool) -> map_mod.Map[str, types.Type]:
+function lowering_null_test_refinements(ctx: ref[LoweringContext], condp: ptr[ast.Expr], truthy: bool) -> map_mod.Map[str, types.Type]:
     var result = map_mod.Map[str, types.Type].create()
     unsafe:
         match read(condp):
@@ -23640,7 +23640,7 @@ function ast_expression_always_aborts(ep: ptr[ast.Expr]) -> bool:
     return false
 
 
-function lookup_qualified_constant(ctx: ref[LowerCtx], name: str) -> Option[str]:
+function lookup_qualified_constant(ctx: ref[LoweringContext], name: str) -> Option[str]:
     if ctx.analysis.type_names.contains(name) or ctx.analysis.value_types.contains(name):
         return Option[str].some(value = naming.qualified_c_name(ctx.module_name, name))
     var import_values = ctx.analysis.imports.values()
@@ -23762,7 +23762,7 @@ function fmt_is_signed_int_name(name: str) -> bool:
     return name == "byte" or name == "short" or name == "int" or name == "long" or name == "ptr_int"
 
 
-function fmt_plan(ctx: ref[LowerCtx], val_ty: types.Type, spec_ptr: ptr[ast.FormatSpec]?) -> FormatPlan:
+function fmt_plan(ctx: ref[LoweringContext], val_ty: types.Type, spec_ptr: ptr[ast.FormatSpec]?) -> FormatPlan:
     let long_ty = types.primitive("long")
     let ulong_ty = types.primitive("ulong")
     let double_ty = types.primitive("double")
@@ -23837,7 +23837,7 @@ function fmt_plan(ctx: ref[LowerCtx], val_ty: types.Type, spec_ptr: ptr[ast.Form
 ## suffix for a destination's repeats, via the per-function counter) when the
 ## most recent local declaration in scope names one, else
 ## `fresh_c_temp_name(ctx, "fmt_str")` (`__mt_fmt_str_N`).
-function format_string_result_base(ctx: ref[LowerCtx]) -> str:
+function format_string_result_base(ctx: ref[LoweringContext]) -> str:
     if ctx.fmt_dest_name.len > 0:
         # The env creates its counter slot at the first use (the host's
         # `env[:fmt_counter] ||= {}`).
@@ -23904,7 +23904,7 @@ function drop_format_release_cleanups(collected: HoistSaved) -> HoistSaved:
 ## True for a type that owns a dynamic format string's buffer when assigned to —
 ## the host's `cstr_trackable_type?`/`struct_contains_string_field?`: `str`,
 ## `cstr`, or a struct whose fields (recursively) contain one.
-function format_owning_target_type(ctx: ref[LowerCtx], ty: types.Type, depth: ptr_uint) -> bool:
+function format_owning_target_type(ctx: ref[LoweringContext], ty: types.Type, depth: ptr_uint) -> bool:
     if depth > 8:
         return false
     match ty:
@@ -23932,7 +23932,7 @@ function format_owning_target_type(ctx: ref[LowerCtx], ty: types.Type, depth: pt
 ## enclosing statement — the host's `cstr_backed_storage_value?`: a `cstr`
 ## local, or a `str` local whose value is a cstr-typed expression, a string
 ## literal, a dynamic format string, or another cstr-backed local.
-function cstr_backed_binding(ctx: ref[LowerCtx], ty: types.Type, init: ptr[ast.Expr]?, value_expr: ptr[ir.Expr]) -> bool:
+function cstr_backed_binding(ctx: ref[LoweringContext], ty: types.Type, init: ptr[ast.Expr]?, value_expr: ptr[ir.Expr]) -> bool:
     match ty:
         types.Type.ty_primitive as p:
             if p.name == "cstr":
@@ -23962,7 +23962,7 @@ function cstr_backed_binding(ctx: ref[LowerCtx], ty: types.Type, init: ptr[ast.E
 ## literal, a `cstr`-typed or cstr-backed local's read, or an `if`/`unsafe`
 ## whose parts are all cstr-backed (`let t = if flag: "a" else: "b"` is
 ## cstr-backed, so `draw_text(t, …)` passes `t.data` directly).
-function ast_expr_cstr_backed(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool:
+function ast_expr_cstr_backed(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(ep):
             ast.Expr.expr_string_literal:
@@ -24001,7 +24001,7 @@ function ast_expr_cstr_backed(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool:
 ## True when a lowered value is a cstr-backed local's read (or a format-string
 ## temp), so a `str as cstr` foreign boundary can pass its `data` pointer
 ## directly — the host's `cstr_backed_expression?` on the prepared identifier.
-function is_cstr_backed_lowered(ctx: ref[LowerCtx], ep: ptr[ir.Expr]) -> bool:
+function is_cstr_backed_lowered(ctx: ref[LoweringContext], ep: ptr[ir.Expr]) -> bool:
     unsafe:
         match read(ep):
             ir.Expr.expr_name as n:
@@ -24015,7 +24015,7 @@ function is_cstr_backed_lowered(ctx: ref[LowerCtx], ep: ptr[ir.Expr]) -> bool:
 ## value>` keeps it; every other assignment and every compound assignment
 ## clears it (`skybox_file_name = dropped_path` turns a literal-backed local
 ## into a plain `str`, so a later `str as cstr` boundary must copy it).
-function update_cstr_metadata_for_assignment_mt(ctx: ref[LowerCtx], target: ptr[ast.Expr], value_ast: ptr[ast.Expr], value_ir: ptr[ir.Expr], operator: str) -> void:
+function update_cstr_metadata_for_assignment_mt(ctx: ref[LoweringContext], target: ptr[ast.Expr], value_ast: ptr[ast.Expr], value_ir: ptr[ir.Expr], operator: str) -> void:
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
@@ -24048,7 +24048,7 @@ function update_cstr_metadata_for_assignment_mt(ctx: ref[LowerCtx], target: ptr[
 ## (`cap = cap + len(...)`), the result local (`mt_format_str_make`) and the
 ## write offset, then the append statements.  Returns the result temp's
 ## identifier; the caller hoists `output` and owns the release.
-function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatStringPart], output: ref[vec.Vec[ir.Stmt]]) -> ptr[ir.Expr]:
+function build_format_string_dynamic(ctx: ref[LoweringContext], parts: span[ast.FormatStringPart], output: ref[vec.Vec[ir.Stmt]]) -> ptr[ir.Expr]:
     let str_ty = types.Type.ty_str
     let ptr_uint_ty = types.primitive("ptr_uint")
     let base = format_string_result_base(ctx)
@@ -24243,7 +24243,7 @@ function is_std_string_type(t: types.Type) -> bool:
 ## name the analyzer did not qualify, so also accept the resolved method's
 ## `std_string_String_*` linkage (a user struct named `String` resolves to its
 ## own module prefix and is not treated as a sink).
-function is_std_string_sink_method(ctx: ref[LowerCtx], receiver_ty: types.Type, method_name: str) -> bool:
+function is_std_string_sink_method(ctx: ref[LoweringContext], receiver_ty: types.Type, method_name: str) -> bool:
     if is_std_string_type(receiver_ty):
         return true
     match resolve_method_info(ctx, receiver_ty, method_name):
@@ -24289,7 +24289,7 @@ struct FormatSinkPart:
 
 ## Recognise a statement-form explicit format sink (host
 ## `explicit_format_sink_call_info`).
-function explicit_format_sink_info(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[FormatSinkInfo]:
+function explicit_format_sink_info(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[FormatSinkInfo]:
     unsafe:
         match read(ep):
             ast.Expr.expr_call as call:
@@ -24350,7 +24350,7 @@ function explicit_format_sink_info(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Opt
 
 
 ## Lower the sink destination (host `explicit_format_sink_target`).
-function lower_format_sink_target(ctx: ref[LowerCtx], info: FormatSinkInfo) -> FormatSinkTarget:
+function lower_format_sink_target(ctx: ref[LoweringContext], info: FormatSinkInfo) -> FormatSinkTarget:
     let char_ty = types.primitive("char")
     let ptr_uint_ty = types.primitive("ptr_uint")
     let bool_ty = ctx.bool_ty
@@ -24402,7 +24402,7 @@ function lower_format_sink_target(ctx: ref[LowerCtx], info: FormatSinkInfo) -> F
 ## interpolation gets a `__mt_fmt_part_N` temp and a `FormatPlan`.  A custom
 ## hook also gets the host's `__mt_fmt_part_len_N` expected-length local.
 function build_format_sink_parts(
-    ctx: ref[LowerCtx],
+    ctx: ref[LoweringContext],
     parts: span[ast.FormatStringPart],
     setup: ref[vec.Vec[ir.Stmt]],
 ) -> vec.Vec[FormatSinkPart]:
@@ -24465,7 +24465,7 @@ function build_format_sink_parts(
 ## sink, a `cstr` argument for a `str_buffer` sink (the host's
 ## `copy_explicit_format_sink_str_parts`).  Returns the rewritten parts.
 function copy_format_sink_parts(
-    ctx: ref[LowerCtx],
+    ctx: ref[LoweringContext],
     parts: vec.Vec[FormatSinkPart],
     is_buffer: bool,
     setup: ref[vec.Vec[ir.Stmt]],
@@ -24566,7 +24566,7 @@ function format_sink_string_append_call(part: FormatSinkPart, sink_value: ptr[ir
 ## Append one part into a str_buffer sink through the `str` view `{data, len=cap}`,
 ## advancing `offset_name` (host `format_string_part_append_statements`).
 function format_sink_buffer_part_stmts(
-    ctx: ref[LowerCtx],
+    ctx: ref[LoweringContext],
     stmts: ref[vec.Vec[ir.Stmt]],
     part: FormatSinkPart,
     view: ptr[ir.Expr],
@@ -24678,7 +24678,7 @@ function format_sink_buffer_part_stmts(
 
 ## The static-format sink call (host `explicit_format_sink_runtime_call`).
 function explicit_format_sink_runtime_call(
-    ctx: ref[LowerCtx],
+    ctx: ref[LoweringContext],
     is_assign: bool,
     target: FormatSinkTarget,
     text_value: ptr[ir.Expr],
@@ -24703,7 +24703,7 @@ function explicit_format_sink_runtime_call(
 ## Emit the dynamic sink stream (host `lower_explicit_format_sink_expression_
 ## statement`'s non-static branch).
 function emit_format_sink_dynamic(
-    ctx: ref[LowerCtx],
+    ctx: ref[LoweringContext],
     stmts: ref[vec.Vec[ir.Stmt]],
     info: FormatSinkInfo,
     target: FormatSinkTarget,
@@ -24785,7 +24785,7 @@ function emit_format_sink_dynamic(
 ## Lower a statement-form explicit format sink.  Returns false when the
 ## expression is not a sink, so the ordinary expression-statement path runs.
 function lower_explicit_format_sink_stmt(
-    ctx: ref[LowerCtx],
+    ctx: ref[LoweringContext],
     output: ref[vec.Vec[ir.Stmt]],
     ep: ptr[ast.Expr],
     line: ptr_uint,
@@ -24877,7 +24877,7 @@ variant ConstValue:
 
 ## Lower a `when` statement: evaluate the discriminant at compile time,
 ## find the matching branch, and only emit that branch's body.
-function lower_when_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?) -> void:
+function lower_when_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?) -> void:
     match try_evaluate_const_expr(ctx, discriminant):
         Option.some as val:
             var i: ptr_uint = 0
@@ -24902,7 +24902,7 @@ function lower_when_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], disc
 
 ## Lower an `inline if` statement.  Evaluate the condition; if true, emit
 ## the then-branch; otherwise emit the else branch (if present).
-function lower_inline_if_statement(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> void:
+function lower_inline_if_statement(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> void:
     if branches.len == 0:
         return
     # Each `else if` is its own branch with its own condition; evaluate them in
@@ -24935,7 +24935,7 @@ function lower_inline_if_statement(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.St
 
 ## Lower an `inline match` statement.  Evaluate the scrutinee and only emit
 ## the matching arm's body.  If no arm matches, emit the wildcard or nothing.
-function lower_inline_match_statement(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
+function lower_inline_match_statement(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
     match try_evaluate_const_expr(ctx, scrutinee):
         Option.some as val:
             var i: ptr_uint = 0
@@ -24969,7 +24969,7 @@ function lower_inline_match_statement(ctx: ref[LowerCtx], output: ref[vec.Vec[ir
 ## Mirrors Ruby's lower_inline_while_stmt.
 const MAX_INLINE_WHILE_ITERS: ptr_uint = 10000
 
-function lower_inline_while(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], condition: ptr[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+function lower_inline_while(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], condition: ptr[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
     let body = body_ptr else:
         return
     var iter: ptr_uint = 0
@@ -24991,7 +24991,7 @@ function lower_inline_while(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], c
 ## Lower an `inline for` statement: evaluate the iterable at compile time and
 ## unroll the loop body once per element, binding the loop variable to each
 ## element in turn.  Mirrors Ruby's lower_inline_for_stmt.
-function lower_inline_for_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+function lower_inline_for_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
     if bindings.len != 1 or iterables.len != 1:
         return
     var binding_name: str
@@ -25027,7 +25027,7 @@ variant ComptimeElement:
     ce_attribute
 
 
-function comptime_iterable_elements(ctx: ref[LowerCtx], iterable: ptr[ast.Expr]) -> Option[span[ComptimeElement]]:
+function comptime_iterable_elements(ctx: ref[LoweringContext], iterable: ptr[ast.Expr]) -> Option[span[ComptimeElement]]:
     unsafe:
         match read(iterable):
             ast.Expr.expr_call as call:
@@ -25046,7 +25046,7 @@ function comptime_iterable_elements(ctx: ref[LowerCtx], iterable: ptr[ast.Expr])
     return Option[span[ComptimeElement]].none
 
 
-function comptime_fields_of(ctx: ref[LowerCtx], args_data: ptr[ast.Argument]) -> Option[span[ComptimeElement]]:
+function comptime_fields_of(ctx: ref[LoweringContext], args_data: ptr[ast.Argument]) -> Option[span[ComptimeElement]]:
     let type_name: str = comptime_resolve_type_arg_name(ctx, args_data)
     if type_name.len == 0:
         return Option[span[ComptimeElement]].none
@@ -25067,7 +25067,7 @@ function comptime_fields_of(ctx: ref[LowerCtx], args_data: ptr[ast.Argument]) ->
 ## then every program analysis.  Cross-module search lets a generic reflective
 ## helper defined in one module (e.g. `std.fmt.format_value[T]`) reflect over a
 ## struct type defined in another module.
-function comptime_lookup_struct_fields(ctx: ref[LowerCtx], type_name: str) -> Option[span[analyzer.FieldEntry]]:
+function comptime_lookup_struct_fields(ctx: ref[LoweringContext], type_name: str) -> Option[span[analyzer.FieldEntry]]:
     let local = ctx.analysis.structs.get(type_name)
     if local != null:
         return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(local))
@@ -25083,7 +25083,7 @@ function comptime_lookup_struct_fields(ctx: ref[LowerCtx], type_name: str) -> Op
     return Option[span[analyzer.FieldEntry]].none
 
 
-function comptime_members_of(ctx: ref[LowerCtx], args_data: ptr[ast.Argument]) -> Option[span[ComptimeElement]]:
+function comptime_members_of(ctx: ref[LoweringContext], args_data: ptr[ast.Argument]) -> Option[span[ComptimeElement]]:
     let type_name: str = comptime_resolve_type_arg_name(ctx, args_data)
     if type_name.len == 0:
         return Option[span[ComptimeElement]].none
@@ -25104,7 +25104,7 @@ function comptime_members_of(ctx: ref[LowerCtx], args_data: ptr[ast.Argument]) -
 ## Look up an enum/variant's member names by type name, searching the current
 ## module first and then every program analysis, so `members_of(alias.Enum)`
 ## reflects an enum declared in another module.
-function comptime_lookup_member_names(ctx: ref[LowerCtx], type_name: str) -> Option[span[str]]:
+function comptime_lookup_member_names(ctx: ref[LoweringContext], type_name: str) -> Option[span[str]]:
     let local = ctx.analysis.match_case_names.get(type_name)
     if local != null:
         return Option[span[str]].some(value = unsafe: read(local))
@@ -25122,7 +25122,7 @@ function comptime_lookup_member_names(ctx: ref[LowerCtx], type_name: str) -> Opt
 
 ## Look up the integer value of an enum member by scanning the source file of the
 ## analysis that declares the enum (searched program-wide).
-function comptime_enum_member_value(ctx: ref[LowerCtx], type_name: str, member_name: str) -> long:
+function comptime_enum_member_value(ctx: ref[LoweringContext], type_name: str, member_name: str) -> long:
     var fi: ptr_uint = 0
     while fi <= ctx.program_analyses.len:
         var file: ast.SourceFile
@@ -25143,7 +25143,7 @@ function comptime_enum_member_value(ctx: ref[LowerCtx], type_name: str, member_n
 
 ## The value of `type_name.member_name` in the module that declares the enum —
 ## the host's constant evaluation of an enum member (`int<-Kind.A` → 0).
-function enum_member_value_in_module(ctx: ref[LowerCtx], module_name: str, type_name: str, member_name: str) -> Option[long]:
+function enum_member_value_in_module(ctx: ref[LoweringContext], module_name: str, type_name: str, member_name: str) -> Option[long]:
     let a = find_imported_analysis(ctx, module_name) else:
         return Option[long].none
     return enum_member_value_in_file(ctx, a.source_file, type_name, member_name)
@@ -25152,7 +25152,7 @@ function enum_member_value_in_module(ctx: ref[LowerCtx], module_name: str, type_
 ## The value of an enum/flags member *expression* (`Kind.A`, or an imported
 ## `Keyb.KEY_ESCAPE`): the member's own type names the declaring module, with the
 ## name-based lookup as a fallback.
-function enum_member_value_of_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[long]:
+function enum_member_value_of_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[long]:
     unsafe:
         match read(ep):
             ast.Expr.expr_member_access as ma:
@@ -25187,7 +25187,7 @@ function enum_member_value_of_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Opt
                 return Option[long].none
 
 
-function enum_member_value_in_file(ctx: ref[LowerCtx], file: ast.SourceFile, type_name: str, member_name: str) -> Option[long]:
+function enum_member_value_in_file(ctx: ref[LoweringContext], file: ast.SourceFile, type_name: str, member_name: str) -> Option[long]:
     var di: ptr_uint = 0
     while di < file.declarations.len:
         var d: ast.Decl
@@ -25225,7 +25225,7 @@ function enum_member_value_in_file(ctx: ref[LowerCtx], file: ast.SourceFile, typ
     return Option[long].none
 
 
-function comptime_attributes_of(ctx: ref[LowerCtx], args: span[ast.Argument]) -> Option[span[ComptimeElement]]:
+function comptime_attributes_of(ctx: ref[LoweringContext], args: span[ast.Argument]) -> Option[span[ComptimeElement]]:
     if args.len == 0:
         return Option[span[ComptimeElement]].none
     # `attributes_of(field_of(Type, field)[, name])` reflects the field's
@@ -25283,7 +25283,7 @@ function attribute_application_name_is(app: ast.AttributeApplication, name: str)
 
 ## The attribute applications recorded for the declaration `type_name`,
 ## searching the current module first and then every program analysis.
-function comptime_attr_apps(ctx: ref[LowerCtx], type_name: str) -> span[ast.AttributeApplication]:
+function comptime_attr_apps(ctx: ref[LoweringContext], type_name: str) -> span[ast.AttributeApplication]:
     if type_name.len == 0:
         return span[ast.AttributeApplication]()
     let local = ctx.analysis.attribute_applications.get(type_name)
@@ -25303,7 +25303,7 @@ function comptime_attr_apps(ctx: ref[LowerCtx], type_name: str) -> span[ast.Attr
 
 ## The attribute applications recorded for `Type.field`, searching the current
 ## module first and then every program analysis.
-function comptime_field_attr_apps(ctx: ref[LowerCtx], type_name: str, field_name: str) -> span[ast.AttributeApplication]:
+function comptime_field_attr_apps(ctx: ref[LoweringContext], type_name: str, field_name: str) -> span[ast.AttributeApplication]:
     if type_name.len == 0 or field_name.len == 0:
         return span[ast.AttributeApplication]()
     var key_buf = string.String.create()
@@ -25329,7 +25329,7 @@ function comptime_field_attr_apps(ctx: ref[LowerCtx], type_name: str, field_name
 ## Lower one iteration of an inline for loop.  For struct fields, detect and
 ## handle `size_of(field.type)` and `field.type != X` patterns at comptime.
 ## For enum members and attributes, emit the body with a dummy binding.
-function lower_inline_for_iteration(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], binding_name: str, elem: ComptimeElement, body_ptr: ptr[ast.Stmt]) -> void:
+function lower_inline_for_iteration(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], binding_name: str, elem: ComptimeElement, body_ptr: ptr[ast.Stmt]) -> void:
     match elem:
         ComptimeElement.ce_struct_field as f:
             lower_inline_for_field_iter(ctx, output, binding_name, f.name, f.field_type, body_ptr)
@@ -25349,7 +25349,7 @@ function lower_inline_for_iteration(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
 
 
 ## Lower one inline for iteration over a struct field, handling size_of(field.type).
-function lower_inline_for_field_iter(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], binding_name: str, field_name: str, field_ty: types.Type, body_ptr: ptr[ast.Stmt]) -> void:
+function lower_inline_for_field_iter(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], binding_name: str, field_name: str, field_ty: types.Type, body_ptr: ptr[ast.Stmt]) -> void:
     ctx.inline_for_element = Option[ComptimeElement].some(value = ComptimeElement.ce_struct_field(name = field_name, field_type = field_ty))
     var iter_stmts = vec.Vec[ir.Stmt].create()
     let binding_c = utils.c_local_name(binding_name)
@@ -25364,7 +25364,7 @@ function lower_inline_for_field_iter(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.
         output.push(ir.Stmt.stmt_block(body = iter_stmts.as_span()))
 
 
-function lower_inline_for_field_body(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], body: ptr[ast.Stmt], field_ty: types.Type) -> void:
+function lower_inline_for_field_body(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], body: ptr[ast.Stmt], field_ty: types.Type) -> void:
     var processed = false
     unsafe:
         match read(body):
@@ -25378,7 +25378,7 @@ function lower_inline_for_field_body(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.
             lower_stmt(ctx, output, body)
 
 
-function lower_inline_for_field_stmts(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], stmts: span[ast.Stmt], field_ty: types.Type) -> void:
+function lower_inline_for_field_stmts(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], stmts: span[ast.Stmt], field_ty: types.Type) -> void:
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:
@@ -25387,7 +25387,7 @@ function lower_inline_for_field_stmts(ctx: ref[LowerCtx], output: ref[vec.Vec[ir
 
 
 ## Try to lower `if field.type != X: return false` at comptime.
-function lower_inline_field_type_guard(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt], field_ty: types.Type) -> bool:
+function lower_inline_field_type_guard(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt], field_ty: types.Type) -> bool:
     var br: ast.IfBranch
     var body: ptr[ast.Stmt]?
     unsafe:
@@ -25407,7 +25407,7 @@ function lower_inline_field_type_guard(ctx: ref[LowerCtx], output: ref[vec.Vec[i
             return false
 
 
-function extract_field_type_compare(ctx: ref[LowerCtx], cond: ptr[ast.Expr], field_ty: types.Type) -> Option[bool]:
+function extract_field_type_compare(ctx: ref[LoweringContext], cond: ptr[ast.Expr], field_ty: types.Type) -> Option[bool]:
     unsafe:
         match read(cond):
             ast.Expr.expr_binary_op as bin:
@@ -25426,7 +25426,7 @@ function extract_field_type_compare(ctx: ref[LowerCtx], cond: ptr[ast.Expr], fie
 ## Resolve a bare identifier to a compile-time type value: an in-scope generic
 ## type parameter (via the active substitution) or a primitive/`str` type name.
 ## Returns none for ordinary value identifiers.
-function comptime_identifier_type(ctx: ref[LowerCtx], name: str) -> Option[types.Type]:
+function comptime_identifier_type(ctx: ref[LoweringContext], name: str) -> Option[types.Type]:
     let subst = ctx.type_substitution.get(name)
     if subst != null:
         return Option[types.Type].some(value = unsafe: read(subst))
@@ -25437,7 +25437,7 @@ function comptime_identifier_type(ctx: ref[LowerCtx], name: str) -> Option[types
     return Option[types.Type].none
 
 
-function comptime_expr_to_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
+function comptime_expr_to_type(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> types.Type:
     unsafe:
         match read(ep):
             ast.Expr.expr_identifier as id:
@@ -25448,7 +25448,7 @@ function comptime_expr_to_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.T
     return types.Type.ty_error
 
 
-function comptime_element_type(ctx: ref[LowerCtx], elem: ComptimeElement) -> types.Type:
+function comptime_element_type(ctx: ref[LoweringContext], elem: ComptimeElement) -> types.Type:
     match elem:
         ComptimeElement.ce_struct_field:
             return types.Type.ty_error  # field_handle — opaque
@@ -25478,7 +25478,7 @@ function comptime_type_arg_name(arg_ptr: ptr[ast.Argument]) -> str:
 ## parameter (e.g. `fields_of(T)` inside `count_fields[T]()`) through the active
 ## substitution to the concrete struct/enum name.  Without this, `T` would be
 ## looked up literally and reflection over a type parameter would find nothing.
-function comptime_resolve_type_arg_name(ctx: ref[LowerCtx], arg_ptr: ptr[ast.Argument]) -> str:
+function comptime_resolve_type_arg_name(ctx: ref[LoweringContext], arg_ptr: ptr[ast.Argument]) -> str:
     let raw = comptime_type_arg_name(arg_ptr)
     if raw.len == 0:
         return raw
@@ -25518,7 +25518,7 @@ function comptime_arg_name(arg_ptr: ptr[ast.Argument]) -> str:
 ## While lowering an inline for body, detect member access on the loop variable
 ## (`.value` for enum members, `.type` for struct fields) and substitute the
 ## comptime-known value.
-function inline_for_member_subst(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member: str) -> Option[ptr[ir.Expr]]:
+function inline_for_member_subst(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], member: str) -> Option[ptr[ir.Expr]]:
     match ctx.inline_for_element:
         Option.some as elem_val:
             match elem_val.value:
@@ -25552,7 +25552,7 @@ function inline_for_member_subst(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], me
 ## Resolve `field.type` in type position inside an inline for body: when the
 ## current comptime element is a struct field and the binding name matches,
 ## return the field's concrete type.
-function inline_for_type_subst(ctx: ref[LowerCtx], binding_name: str) -> types.Type:
+function inline_for_type_subst(ctx: ref[LoweringContext], binding_name: str) -> types.Type:
     match ctx.inline_for_element:
         Option.some as elem_val:
             match elem_val.value:
@@ -25610,7 +25610,7 @@ function types_are_equal(a: types.Type, b: types.Type) -> bool:
 ## type identifier, and the active comptime element's members (`field.name`,
 ## `field.type`, `member.name`, `member.value`).  The host evaluates the same
 ## way through the loop variable's `const_value` substitution.
-function inline_for_eval_const(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[ConstValue]:
+function inline_for_eval_const(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[ConstValue]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
@@ -25663,7 +25663,7 @@ function inline_for_eval_const(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[
 ## Compile-time truth value of an inline-for body condition.  The host lowers a
 ## bypass-sema body's `if` through `compile_time_const_value`, dropping the
 ## branches whose condition folds (`block.rb:606-652`).
-function inline_for_eval_bool(ctx: ref[LowerCtx], cond: ptr[ast.Expr]) -> Option[bool]:
+function inline_for_eval_bool(ctx: ref[LoweringContext], cond: ptr[ast.Expr]) -> Option[bool]:
     unsafe:
         match read(cond):
             ast.Expr.expr_bool_literal as b:
@@ -25723,7 +25723,7 @@ function inline_for_eval_bool(ctx: ref[LowerCtx], cond: ptr[ast.Expr]) -> Option
 ## Fold an `if` chain inside an inline-for body: a constant-true branch lowers
 ## alone, constant-false branches are dropped, and a runtime condition (none of
 ## the above) falls back to the ordinary chain from that branch.
-function lower_inline_for_if_fold(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> void:
+function lower_inline_for_if_fold(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> void:
     var bi: ptr_uint = 0
     while bi < branches.len:
         var br: ast.IfBranch
@@ -25746,7 +25746,7 @@ function lower_inline_for_if_fold(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
 ## expression.  Supports literals, module constants, `const function` calls, and
 ## struct/variant/array literals.  Returns none when the expression is not
 ## compile-time known, in which case the initializer is lowered normally.
-function try_const_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_value_ir(ctx: ref[LoweringContext], ep: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
@@ -26037,7 +26037,7 @@ function retype_const_literal(v: ir.Expr, target_ty: types.Type) -> ir.Expr:
 ## the AST initializer) when an integer stands for a non-integer primitive such
 ## as `char`, or a value's shape does not fit.  Unknown shapes are accepted so
 ## the folding path is only abandoned where the host would abandon it.
-function const_value_ir_representable(ctx: ref[LowerCtx], v: ir.Expr, ty: types.Type) -> bool:
+function const_value_ir_representable(ctx: ref[LoweringContext], v: ir.Expr, ty: types.Type) -> bool:
     match ty:
         types.Type.ty_primitive as p:
             match v:
@@ -26099,7 +26099,7 @@ function const_value_ir_representable(ctx: ref[LowerCtx], v: ir.Expr, ty: types.
 ## The host's `rewrite_static_storage_initializer` fallback: lower the
 ## referenced imported constant's declaration initializer in its own module
 ## context (used when the folded value cannot be represented literally).
-function lower_imported_const_initializer(ctx: ref[LowerCtx], ep: ptr[ast.Expr], expected_ty: types.Type) -> Option[ptr[ir.Expr]]:
+function lower_imported_const_initializer(ctx: ref[LoweringContext], ep: ptr[ast.Expr], expected_ty: types.Type) -> Option[ptr[ir.Expr]]:
     var target_module = ""
     var const_name = ""
     unsafe:
@@ -26174,7 +26174,7 @@ function lower_imported_const_initializer(ctx: ref[LowerCtx], ep: ptr[ast.Expr],
 ## Apply the host's declared-type coercion to a folded constant value
 ## (`lower_const_value_literal`): mask integers to the type's width,
 ## sign-extend signed types, and recurse into array elements.
-function coerce_const_value(ctx: ref[LowerCtx], v: ir.Expr, target_ty: types.Type) -> ir.Expr:
+function coerce_const_value(ctx: ref[LoweringContext], v: ir.Expr, target_ty: types.Type) -> ir.Expr:
     match target_ty:
         types.Type.ty_primitive as tp:
             let width = types.integer_width(tp.name)
@@ -26303,7 +26303,7 @@ function layout_pointer_like(base: types.Type) -> bool:
             return false
 
 
-function layout_info(ctx: ref[LowerCtx], ty: types.Type) -> Option[LayoutInfo]:
+function layout_info(ctx: ref[LoweringContext], ty: types.Type) -> Option[LayoutInfo]:
     match ty:
         types.Type.ty_primitive as tp:
             if tp.name == "bool" or tp.name == "byte" or tp.name == "ubyte" or tp.name == "char":
@@ -26391,7 +26391,7 @@ function layout_info(ctx: ref[LowerCtx], ty: types.Type) -> Option[LayoutInfo]:
 
 ## Field entries for a named struct: the current module first, then the
 ## declaring module of an imported type.
-function layout_struct_fields(ctx: ref[LowerCtx], module_name: str, name: str) -> Option[span[analyzer.FieldEntry]]:
+function layout_struct_fields(ctx: ref[LoweringContext], module_name: str, name: str) -> Option[span[analyzer.FieldEntry]]:
     if module_name.len == 0 or module_name == ctx.module_name:
         let local = ctx.analysis.structs.get(name)
         if local != null:
@@ -26408,7 +26408,7 @@ function layout_struct_fields(ctx: ref[LowerCtx], module_name: str, name: str) -
 
 ## `packed` / `alignment` of a named struct's declaration (defaults when the
 ## declaration is not found in the module's source file).
-function layout_struct_meta(ctx: ref[LowerCtx], module_name: str, name: str) -> StructMeta:
+function layout_struct_meta(ctx: ref[LoweringContext], module_name: str, name: str) -> StructMeta:
     if module_name.len == 0 or module_name == ctx.module_name:
         return layout_struct_meta_of(ctx.analysis.source_file, name)
     match find_imported_analysis(ctx, module_name):
@@ -26435,7 +26435,7 @@ function layout_struct_meta_of(sf: ast.SourceFile, name: str) -> StructMeta:
 
 
 ## C struct layout for an ordered field list (host `struct_layout_from_infos`).
-function layout_aggregate_info(ctx: ref[LowerCtx], fields: span[analyzer.FieldEntry], packed: bool, explicit_alignment: long) -> Option[LayoutInfo]:
+function layout_aggregate_info(ctx: ref[LoweringContext], fields: span[analyzer.FieldEntry], packed: bool, explicit_alignment: long) -> Option[LayoutInfo]:
     var offset: long = 0
     var natural_alignment: long = 1
     var i: ptr_uint = 0
@@ -26459,7 +26459,7 @@ function layout_aggregate_info(ctx: ref[LowerCtx], fields: span[analyzer.FieldEn
     ))
 
 
-function layout_size(ctx: ref[LowerCtx], ty: types.Type) -> Option[long]:
+function layout_size(ctx: ref[LoweringContext], ty: types.Type) -> Option[long]:
     match layout_info(ctx, ty):
         Option.some as info:
             return Option[long].some(value = info.value.size)
@@ -26467,7 +26467,7 @@ function layout_size(ctx: ref[LowerCtx], ty: types.Type) -> Option[long]:
             return Option[long].none
 
 
-function layout_alignment(ctx: ref[LowerCtx], ty: types.Type) -> Option[long]:
+function layout_alignment(ctx: ref[LoweringContext], ty: types.Type) -> Option[long]:
     match layout_info(ctx, ty):
         Option.some as info:
             return Option[long].some(value = info.value.alignment)
@@ -26477,7 +26477,7 @@ function layout_alignment(ctx: ref[LowerCtx], ty: types.Type) -> Option[long]:
 
 ## Byte offset of a field (host `Layout.offset_of`) for structs, spans, and
 ## str_buffers; unions and other shapes are not modelled.
-function layout_offset_of(ctx: ref[LowerCtx], ty: types.Type, field: str) -> Option[long]:
+function layout_offset_of(ctx: ref[LoweringContext], ty: types.Type, field: str) -> Option[long]:
     match ty:
         types.Type.ty_generic as g:
             if g.name == "span" and g.args.len == 1:
@@ -26522,7 +26522,7 @@ function layout_offset_of(ctx: ref[LowerCtx], ty: types.Type, field: str) -> Opt
             return Option[long].none
 
 
-function layout_struct_field_offset(ctx: ref[LowerCtx], fields: span[analyzer.FieldEntry], packed: bool, field: str) -> Option[long]:
+function layout_struct_field_offset(ctx: ref[LoweringContext], fields: span[analyzer.FieldEntry], packed: bool, field: str) -> Option[long]:
     var offset: long = 0
     var i: ptr_uint = 0
     while i < fields.len:
@@ -26543,7 +26543,7 @@ function layout_struct_field_offset(ctx: ref[LowerCtx], fields: span[analyzer.Fi
 
 ## Constant-fold an expression whose declared type is known: an expression list
 ## `(a, b, c)` becomes an array literal when the target is `array[T, N]`.
-function try_const_typed_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]], target_ty: types.Type) -> Option[ptr[ir.Expr]]:
+function try_const_typed_value_ir(ctx: ref[LoweringContext], ep: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]], target_ty: types.Type) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(ep):
             ast.Expr.expr_null_literal as nl:
@@ -26598,7 +26598,7 @@ function try_const_typed_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: re
 
 ## The declared type of a module-level constant, used to give expression-list
 ## initializers their declared array type when folding a reference to it.
-function const_decl_type(ctx: ref[LowerCtx], name: str) -> Option[types.Type]:
+function const_decl_type(ctx: ref[LoweringContext], name: str) -> Option[types.Type]:
     let decls = ctx.analysis.source_file.declarations
     var i: ptr_uint = 0
     while i < decls.len:
@@ -26613,7 +26613,7 @@ function const_decl_type(ctx: ref[LowerCtx], name: str) -> Option[types.Type]:
     return Option[types.Type].none
 
 
-function try_const_tuple_ir(ctx: ref[LowerCtx], elements: span[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_tuple_ir(ctx: ref[LoweringContext], elements: span[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     var values = vec.Vec[ir.Expr].create()
     var tys = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
@@ -26637,7 +26637,7 @@ function try_const_tuple_ir(ctx: ref[LowerCtx], elements: span[ast.Expr], env: r
 
 
 ## Constant-fold `arr[i]`, `arr[a..b]`, `str[i]`, and `str[a..b]`.
-function try_const_index_ir(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_index_ir(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], index: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     match try_const_value_ir(ctx, receiver, env):
         Option.some as rv:
             unsafe:
@@ -26693,7 +26693,7 @@ function try_const_index_ir(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: 
 ## declared in the imported module (e.g. `c.EOF` in `std/stdio.mt`).  The
 ## initializer is evaluated in the imported module's own context, mirroring the
 ## host's cross-module constant resolution.
-function imported_const_value_ir(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member: str, env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function imported_const_value_ir(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], member: str, env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     var alias: str
     unsafe:
         match read(receiver):
@@ -26725,7 +26725,7 @@ function imported_const_value_ir(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], me
     return result
 
 
-function try_const_member_ir(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member: str, env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_member_ir(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], member: str, env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     match imported_const_value_ir(ctx, receiver, member, env):
         Option.some as imported:
             return Option[ptr[ir.Expr]].some(value = imported.value)
@@ -26761,7 +26761,7 @@ function try_const_member_ir(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
     return Option[ptr[ir.Expr]].none
 
 
-function const_fold_binary_ir(ctx: ref[LowerCtx], op: str, l: ptr[ir.Expr], r: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
+function const_fold_binary_ir(ctx: ref[LoweringContext], op: str, l: ptr[ir.Expr], r: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
     let int_ty = types.primitive("int")
     let float_ty = types.primitive("float")
     unsafe:
@@ -26817,7 +26817,7 @@ function const_fold_binary_ir(ctx: ref[LowerCtx], op: str, l: ptr[ir.Expr], r: p
     return Option[ptr[ir.Expr]].none
 
 
-function const_fold_float_ir(ctx: ref[LowerCtx], op: str, l: double, r: double) -> Option[ptr[ir.Expr]]:
+function const_fold_float_ir(ctx: ref[LoweringContext], op: str, l: double, r: double) -> Option[ptr[ir.Expr]]:
     var result: double = 0.0
     if op == "+":
         result = l + r
@@ -26844,7 +26844,7 @@ function const_fold_float_ir(ctx: ref[LowerCtx], op: str, l: double, r: double) 
     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_float_literal(value = result, ty = types.primitive("float"))))
 
 
-function const_fold_unary_ir(ctx: ref[LowerCtx], op: str, operand: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
+function const_fold_unary_ir(ctx: ref[LoweringContext], op: str, operand: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(operand):
             ir.Expr.expr_integer_literal as li:
@@ -26868,7 +26868,7 @@ function const_fold_unary_ir(ctx: ref[LowerCtx], op: str, operand: ptr[ir.Expr])
 
 ## Evaluate a call in constant position: struct literals, variant-arm literals,
 ## `const function` calls, and `const` methods (static and instance).
-function try_const_call_ir(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_call_ir(ctx: ref[LoweringContext], callee: ptr[ast.Expr], args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
@@ -26965,7 +26965,7 @@ function const_receiver_struct_name(value: ptr[ir.Expr]) -> Option[str]:
 
 ## Evaluate a `const` method call by binding `this` (for instance methods) and
 ## the parameters, then interpreting the method body.
-function try_const_method_value(ctx: ref[LowerCtx], caller_env: ref[map_mod.Map[str, ptr[ir.Expr]]], struct_name: str, method_name: str, receiver: Option[ptr[ir.Expr]], args: span[ast.Argument]) -> Option[ptr[ir.Expr]]:
+function try_const_method_value(ctx: ref[LoweringContext], caller_env: ref[map_mod.Map[str, ptr[ir.Expr]]], struct_name: str, method_name: str, receiver: Option[ptr[ir.Expr]], args: span[ast.Argument]) -> Option[ptr[ir.Expr]]:
     let decls = ctx.analysis.source_file.declarations
     var i: ptr_uint = 0
     while i < decls.len:
@@ -27002,7 +27002,7 @@ function try_const_method_value(ctx: ref[LowerCtx], caller_env: ref[map_mod.Map[
 
 
 ## Evaluate an `array[T, N](a, b, ...)` constructor to an array literal.
-function try_const_array_literal_ir(ctx: ref[LowerCtx], type_args: span[ast.TypeArgument], args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_array_literal_ir(ctx: ref[LoweringContext], type_args: span[ast.TypeArgument], args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     if type_args.len != 2:
         return Option[ptr[ir.Expr]].none
     let element_ty = resolve_type_ref(ctx, unsafe: read(type_args.data + 0).value)
@@ -27042,7 +27042,7 @@ function try_const_array_literal_ir(ctx: ref[LowerCtx], type_args: span[ast.Type
 ## attribute application is read from the field's AST and its argument named
 ## `name` is returned.  (The self-host reflection is limited to this pattern,
 ## matching the corpus usage.)
-function try_const_attribute_arg_ir(ctx: ref[LowerCtx], type_args: span[ast.TypeArgument], args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_attribute_arg_ir(ctx: ref[LoweringContext], type_args: span[ast.TypeArgument], args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     if type_args.len != 1 or args.len != 2:
         return Option[ptr[ir.Expr]].none
     let type_ty = resolve_type_ref(ctx, unsafe: read(type_args.data + 0).value)
@@ -27107,7 +27107,7 @@ function comptime_inner_arg_expr(ep: ptr[ast.Expr], callee_name: str, index: ptr
 
 ## The IR literal for attribute argument `arg_name` of `@[attr(...)]` applied to
 ## `Type.field`, if present.
-function lookup_attribute_arg_literal(ctx: ref[LowerCtx], type_name: str, field_name: str, attr_name: str, arg_name: str, ty: types.Type) -> Option[ptr[ir.Expr]]:
+function lookup_attribute_arg_literal(ctx: ref[LoweringContext], type_name: str, field_name: str, attr_name: str, arg_name: str, ty: types.Type) -> Option[ptr[ir.Expr]]:
     var di: ptr_uint = 0
     while di < ctx.analysis.source_file.declarations.len:
         var d: ast.Decl
@@ -27134,7 +27134,7 @@ function lookup_attribute_arg_literal(ctx: ref[LowerCtx], type_name: str, field_
 
 ## Search a field's attribute applications for `@[attr_name(...)]` and return the
 ## IR literal for its argument `arg_name`.
-function attribute_apps_arg_literal(ctx: ref[LowerCtx], apps: span[ast.AttributeApplication], attr_name: str, arg_name: str, ty: types.Type) -> Option[ptr[ir.Expr]]:
+function attribute_apps_arg_literal(ctx: ref[LoweringContext], apps: span[ast.AttributeApplication], attr_name: str, arg_name: str, ty: types.Type) -> Option[ptr[ir.Expr]]:
     var ai: ptr_uint = 0
     while ai < apps.len:
         var app: ast.AttributeApplication
@@ -27171,7 +27171,7 @@ function attribute_apps_arg_literal(ctx: ref[LowerCtx], apps: span[ast.Attribute
 
 ## The positional index of parameter `param_name` in the attribute declaration
 ## `attribute[...] <attr_name>(<params>)`, or none.
-function attribute_param_index(ctx: ref[LowerCtx], attr_name: str, param_name: str) -> Option[ptr_uint]:
+function attribute_param_index(ctx: ref[LoweringContext], attr_name: str, param_name: str) -> Option[ptr_uint]:
     var di: ptr_uint = 0
     while di < ctx.analysis.source_file.declarations.len:
         var d: ast.Decl
@@ -27194,7 +27194,7 @@ function attribute_param_index(ctx: ref[LowerCtx], attr_name: str, param_name: s
     return Option[ptr_uint].none
 
 
-function attribute_arg_value_to_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], ty: types.Type) -> Option[ptr[ir.Expr]]:
+function attribute_arg_value_to_ir(ctx: ref[LoweringContext], ep: ptr[ast.Expr], ty: types.Type) -> Option[ptr[ir.Expr]]:
     let result_ty = if types.is_error(ty): types.Type.ty_str else: ty
     unsafe:
         match read(ep):
@@ -27214,7 +27214,7 @@ function attribute_arg_value_to_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], ty: ty
 ## (`lower_aggregate_literal_impl`): `rl.Color(r = 1)` with
 ## `type Color = c.Color` in std.raylib constructs std.c.raylib's struct Color,
 ## so the folded literal carries that type and its field types come from it.
-function const_aggregate_target_type(ctx: ref[LowerCtx], owner_module: str, name: str) -> Option[types.Type]:
+function const_aggregate_target_type(ctx: ref[LoweringContext], owner_module: str, name: str) -> Option[types.Type]:
     match find_imported_analysis(ctx, owner_module):
         Option.some as owner:
             if owner.value.structs.contains(name):
@@ -27239,7 +27239,7 @@ function const_aggregate_target_type(ctx: ref[LowerCtx], owner_module: str, name
 ## The struct a type alias re-exports (`type Color = c.Color` names std.c.raylib's
 ## struct Color).  Only a struct target is an aggregate constructor; an alias of
 ## an enum/flags/opaque is not folded.
-function const_struct_alias_target(ctx: ref[LowerCtx], t: types.Type) -> Option[types.Type]:
+function const_struct_alias_target(ctx: ref[LoweringContext], t: types.Type) -> Option[types.Type]:
     match t:
         types.Type.ty_named as nm:
             if nm.module_name.len == 0 or nm.module_name == ctx.module_name:
@@ -27332,7 +27332,7 @@ function const_value_to_field_type(value: ptr[ir.Expr], field_ty: types.Type) ->
 ## Fold a struct construction into an aggregate literal of `target`'s type.  The
 ## target is the struct the constructor names, resolved through its alias chain
 ## by `const_aggregate_target_type`, so the fields come from the declaring module.
-function try_const_struct_literal_ir(ctx: ref[LowerCtx], target: types.Type, args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_struct_literal_ir(ctx: ref[LoweringContext], target: types.Type, args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     var struct_name = ""
     var field_module = ctx.module_name
     match target:
@@ -27372,7 +27372,7 @@ function try_const_struct_literal_ir(ctx: ref[LowerCtx], target: types.Type, arg
     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = target, fields = fields.as_span())))
 
 
-function try_const_variant_literal_ir(ctx: ref[LowerCtx], variant_name: str, arm_name: str, args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_variant_literal_ir(ctx: ref[LoweringContext], variant_name: str, arm_name: str, args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     var fields = vec.Vec[ir.AggregateField].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -27393,7 +27393,7 @@ function try_const_variant_literal_ir(ctx: ref[LowerCtx], variant_name: str, arm
 
 ## Evaluate a `const function` call by binding arguments into a fresh
 ## environment and interpreting the body's `let` / `return` statements.
-function try_const_function_value(ctx: ref[LowerCtx], func_name: str, args: span[ast.Argument], caller_env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_function_value(ctx: ref[LoweringContext], func_name: str, args: span[ast.Argument], caller_env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     let decls = ctx.analysis.source_file.declarations
     var i: ptr_uint = 0
     var func_body: ptr[ast.Stmt]? = null
@@ -27436,7 +27436,7 @@ variant ConstFlow:
 
 ## Evaluate a const block body to its `return` value.  Returns none when the
 ## body cannot be folded or completes without returning.
-function try_const_value_body(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?, env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_value_body(ctx: ref[LoweringContext], body: ptr[ast.Stmt]?, env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     match const_flow_body(ctx, env, body):
         ConstFlow.cf_value as v:
             return Option[ptr[ir.Expr]].some(value = v.value)
@@ -27451,13 +27451,13 @@ function try_const_value_body(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?, env: ref
     return Option[ptr[ir.Expr]].none
 
 
-function const_flow_body(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], body: ptr[ast.Stmt]?) -> ConstFlow:
+function const_flow_body(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], body: ptr[ast.Stmt]?) -> ConstFlow:
     let b = body else:
         return ConstFlow.cf_fallthrough
     return const_flow_stmt(ctx, env, b)
 
 
-function const_flow_stmts(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], stmts: span[ast.Stmt]) -> ConstFlow:
+function const_flow_stmts(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], stmts: span[ast.Stmt]) -> ConstFlow:
     var i: ptr_uint = 0
     while i < stmts.len:
         match const_flow_stmt(ctx, env, unsafe: ptr[ast.Stmt]<-(stmts.data + i)):
@@ -27475,7 +27475,7 @@ function const_flow_stmts(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.E
     return ConstFlow.cf_fallthrough
 
 
-function const_flow_stmt(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], sp: ptr[ast.Stmt]) -> ConstFlow:
+function const_flow_stmt(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], sp: ptr[ast.Stmt]) -> ConstFlow:
     unsafe:
         match read(sp):
             ast.Stmt.stmt_block as blk:
@@ -27533,7 +27533,7 @@ function const_flow_stmt(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Ex
     return ConstFlow.cf_stuck
 
 
-function const_bind_local(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], name: str, destructure_bindings: Option[span[str]], else_binding: Option[str], else_body: ptr[ast.Stmt]?, value: ptr[ir.Expr]) -> ConstFlow:
+function const_bind_local(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], name: str, destructure_bindings: Option[span[str]], else_binding: Option[str], else_body: ptr[ast.Stmt]?, value: ptr[ir.Expr]) -> ConstFlow:
     match destructure_bindings:
         Option.some as names:
             match const_bind_destructure(env, names.value, value):
@@ -27621,7 +27621,7 @@ function const_field_value(fields: span[ir.AggregateField], name: str) -> Option
     return Option[ptr[ir.Expr]].none
 
 
-function const_assign_target(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], target: ptr[ast.Expr], operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
+function const_assign_target(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], target: ptr[ast.Expr], operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
@@ -27646,7 +27646,7 @@ function const_assign_target(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[i
 
 
 ## Apply a compound assignment (`+=`) or plain `=` to a compile-time value.
-function const_apply_binop(ctx: ref[LowerCtx], operator: str, old: ptr[ir.Expr], new_value: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
+function const_apply_binop(ctx: ref[LoweringContext], operator: str, old: ptr[ir.Expr], new_value: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
     if operator == "=":
         return Option[ptr[ir.Expr]].some(value = new_value)
     if operator.len < 2:
@@ -27655,7 +27655,7 @@ function const_apply_binop(ctx: ref[LowerCtx], operator: str, old: ptr[ir.Expr],
     return const_fold_binary_ir(ctx, op, old, new_value)
 
 
-function const_assign_member(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], receiver: ptr[ast.Expr], member: str, operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
+function const_assign_member(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], receiver: ptr[ast.Expr], member: str, operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as rid:
@@ -27690,7 +27690,7 @@ function const_assign_member(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[i
     return Option[bool].none
 
 
-function const_assign_index(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], receiver: ptr[ast.Expr], index: ptr[ast.Expr], operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
+function const_assign_index(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], receiver: ptr[ast.Expr], index: ptr[ast.Expr], operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as rid:
@@ -27723,7 +27723,7 @@ function const_assign_index(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir
     return Option[bool].none
 
 
-function const_flow_if(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> ConstFlow:
+function const_flow_if(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> ConstFlow:
     var bi: ptr_uint = 0
     while bi < branches.len:
         var br: ast.IfBranch
@@ -27741,7 +27741,7 @@ function const_flow_if(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr
     return ConstFlow.cf_fallthrough
 
 
-function const_flow_while(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], condition: ptr[ast.Expr], body: ptr[ast.Stmt]?) -> ConstFlow:
+function const_flow_while(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], condition: ptr[ast.Expr], body: ptr[ast.Stmt]?) -> ConstFlow:
     var iteration: ptr_uint = 0
     while iteration < 100000:
         match const_env_eval_bool(ctx, env, condition):
@@ -27765,7 +27765,7 @@ function const_flow_while(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.E
     return ConstFlow.cf_stuck
 
 
-function const_flow_for(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body: ptr[ast.Stmt]?) -> ConstFlow:
+function const_flow_for(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body: ptr[ast.Stmt]?) -> ConstFlow:
     if bindings.len != 1 or iterables.len != 1:
         return ConstFlow.cf_stuck
     var binding: ast.ForBinding
@@ -27799,7 +27799,7 @@ function const_flow_for(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Exp
 
 ## The element values of a compile-time iterable: an integer range, an array or
 ## string value, or a slice `arr[a..b]` / `str[a..b]`.
-function const_iterable_values(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[span[ptr[ir.Expr]]]:
+function const_iterable_values(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[span[ptr[ir.Expr]]]:
     unsafe:
         match read(ep):
             ast.Expr.expr_range as r:
@@ -27844,7 +27844,7 @@ function const_iterable_values(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr
     return Option[span[ptr[ir.Expr]]].none
 
 
-function const_flow_match_stmt(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> ConstFlow:
+function const_flow_match_stmt(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> ConstFlow:
     match try_const_value_ir(ctx, scrutinee, env):
         Option.some as sv:
             var ai: ptr_uint = 0
@@ -27867,7 +27867,7 @@ function const_flow_match_stmt(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr
 
 ## True when a match pattern matches the scrutinee value: literals compare by
 ## value and `_` (or a missing pattern) is the wildcard.
-function const_match_pattern(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], pattern: ptr[ast.Expr]?, value: ptr[ir.Expr]) -> Option[bool]:
+function const_match_pattern(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], pattern: ptr[ast.Expr]?, value: ptr[ir.Expr]) -> Option[bool]:
     let pp = pattern else:
         return Option[bool].some(value = true)
     unsafe:
@@ -27911,7 +27911,7 @@ function const_value_eq_ir(a: ptr[ir.Expr], b: ptr[ir.Expr]) -> Option[bool]:
     return Option[bool].none
 
 
-function const_env_eval_int(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[long]:
+function const_env_eval_int(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[long]:
     match try_const_value_ir(ctx, ep, env):
         Option.some as v:
             unsafe:
@@ -27929,7 +27929,7 @@ function const_env_eval_int(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir
     return Option[long].none
 
 
-function const_env_eval_bool(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[bool]:
+function const_env_eval_bool(ctx: ref[LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[bool]:
     match try_const_value_ir(ctx, ep, env):
         Option.some as v:
             unsafe:
@@ -27950,7 +27950,7 @@ function const_env_eval_bool(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[i
 ## identifiers through module constants and compares literals, struct/variant
 ## literals, and array literals structurally.  Returns none when either side is
 ## not compile-time known, in which case the comparison is lowered normally.
-function try_const_equality(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[bool]:
+function try_const_equality(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[bool]:
     unsafe:
         match read(ep):
             ast.Expr.expr_binary_op as bin:
@@ -27970,7 +27970,7 @@ function try_const_equality(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[boo
 ## Resolve an operand expression to its constant form: identifiers naming module
 ## constants resolve to the constant's value expression (recursively); every
 ## other expression is returned as-is.
-function resolve_const_operand(ctx: ref[LowerCtx], ep: ptr[ast.Expr], depth: int) -> Option[ptr[ast.Expr]]:
+function resolve_const_operand(ctx: ref[LoweringContext], ep: ptr[ast.Expr], depth: int) -> Option[ptr[ast.Expr]]:
     if depth > 32:
         return Option[ptr[ast.Expr]].none
     unsafe:
@@ -27992,7 +27992,7 @@ function resolve_const_operand(ctx: ref[LowerCtx], ep: ptr[ast.Expr], depth: int
 
 ## The value expression of a module-level constant declaration, or null when
 ## the name is not a constant of the module currently being lowered.
-function find_const_value_ast(ctx: ref[LowerCtx], name: str) -> ptr[ast.Expr]?:
+function find_const_value_ast(ctx: ref[LoweringContext], name: str) -> ptr[ast.Expr]?:
     let decls = ctx.analysis.source_file.declarations
     var i: ptr_uint = 0
     while i < decls.len:
@@ -28008,7 +28008,7 @@ function find_const_value_ast(ctx: ref[LowerCtx], name: str) -> ptr[ast.Expr]?:
 
 
 ## Structural equality of two constant operand expressions.
-function const_operand_eq(ctx: ref[LowerCtx], left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[bool]:
+function const_operand_eq(ctx: ref[LoweringContext], left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[bool]:
     let lp = resolve_const_operand(ctx, left, 0) else:
         return Option[bool].none
     let rp = resolve_const_operand(ctx, right, 0) else:
@@ -28065,7 +28065,7 @@ function const_operand_eq(ctx: ref[LowerCtx], left: ptr[ast.Expr], right: ptr[as
 ## Compare two aggregate/literal constructor calls.  Struct and variant
 ## literals compare named fields (order-independent); array constructors
 ## compare positional elements.
-function const_call_eq(ctx: ref[LowerCtx], lcallee: ptr[ast.Expr], largs: span[ast.Argument], rcallee: ptr[ast.Expr], rargs: span[ast.Argument]) -> Option[bool]:
+function const_call_eq(ctx: ref[LoweringContext], lcallee: ptr[ast.Expr], largs: span[ast.Argument], rcallee: ptr[ast.Expr], rargs: span[ast.Argument]) -> Option[bool]:
     unsafe:
         match read(lcallee):
             ast.Expr.expr_identifier as lid:
@@ -28112,7 +28112,7 @@ function const_expr_names_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
                 return false
 
 
-function const_fields_eq(ctx: ref[LowerCtx], largs: span[ast.Argument], rargs: span[ast.Argument]) -> Option[bool]:
+function const_fields_eq(ctx: ref[LoweringContext], largs: span[ast.Argument], rargs: span[ast.Argument]) -> Option[bool]:
     if largs.len != rargs.len:
         return Option[bool].none
     var right_by_name = map_mod.Map[str, ptr[ast.Expr]].create()
@@ -28146,7 +28146,7 @@ function const_fields_eq(ctx: ref[LowerCtx], largs: span[ast.Argument], rargs: s
     return Option[bool].some(value = true)
 
 
-function const_positional_eq(ctx: ref[LowerCtx], largs: span[ast.Argument], rargs: span[ast.Argument]) -> Option[bool]:
+function const_positional_eq(ctx: ref[LoweringContext], largs: span[ast.Argument], rargs: span[ast.Argument]) -> Option[bool]:
     if largs.len != rargs.len:
         return Option[bool].none
     var i: ptr_uint = 0
@@ -28167,7 +28167,7 @@ function const_positional_eq(ctx: ref[LowerCtx], largs: span[ast.Argument], rarg
 
 
 ## Lower a span of statements (from a when branch) into the output vec.
-function lower_span_stmts(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], stmts: span[ast.Stmt]) -> void:
+function lower_span_stmts(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], stmts: span[ast.Stmt]) -> void:
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:
@@ -28176,7 +28176,7 @@ function lower_span_stmts(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], stm
 
 
 ## Lower a block body (ptr to statement) into the output vec.
-function lower_block_stmts(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], body: ptr[ast.Stmt]) -> void:
+function lower_block_stmts(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], body: ptr[ast.Stmt]) -> void:
     var blk: ast.Stmt
     unsafe:
         blk = read(body)
@@ -28194,7 +28194,7 @@ function lower_block_stmts(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bo
 ## Try to evaluate an AST expression at compile time, returning the constant
 ## value when the expression can be resolved.
 ## Look up an enum member's integer value.  Returns >= 0 on success, -1 if not found.
-function try_lookup_enum_value(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member_name: str) -> long:
+function try_lookup_enum_value(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], member_name: str) -> long:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -28294,7 +28294,7 @@ function find_enum_member_value(members: span[ast.EnumMember], name: str) -> lon
     return -1
 
 
-function try_evaluate_const_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[ConstValue]:
+function try_evaluate_const_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[ConstValue]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
@@ -28393,7 +28393,7 @@ function try_evaluate_const_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Optio
 ## cast's target primitive, wrapping integers to the target width/signedness
 ## (`uint<-MoverBit` → 2, `ubyte<-300` → 44).  A non-primitive target or a
 ## non-numeric operand stays unfolded.
-function evaluate_const_prefix_cast(ctx: ref[LowerCtx], target_type: ptr[ast.TypeRef], expression: ptr[ast.Expr]) -> Option[ConstValue]:
+function evaluate_const_prefix_cast(ctx: ref[LoweringContext], target_type: ptr[ast.TypeRef], expression: ptr[ast.Expr]) -> Option[ConstValue]:
     match try_evaluate_const_expr(ctx, expression):
         Option.some as inner:
             match inner.value:
@@ -28442,7 +28442,7 @@ function wrap_const_integer(value: long, width: int, signed: bool) -> long:
     return wrapped
 
 
-function evaluate_const_unary(ctx: ref[LowerCtx], op: str, operand: ptr[ast.Expr]) -> Option[ConstValue]:
+function evaluate_const_unary(ctx: ref[LoweringContext], op: str, operand: ptr[ast.Expr]) -> Option[ConstValue]:
     match try_evaluate_const_expr(ctx, operand):
         Option.some as val:
             match val.value:
@@ -28462,7 +28462,7 @@ function evaluate_const_unary(ctx: ref[LowerCtx], op: str, operand: ptr[ast.Expr
             return Option[ConstValue].none
 
 
-function evaluate_const_binary(ctx: ref[LowerCtx], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[ConstValue]:
+function evaluate_const_binary(ctx: ref[LoweringContext], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[ConstValue]:
     match try_evaluate_const_expr(ctx, left):
         Option.some as lv:
             match try_evaluate_const_expr(ctx, right):
@@ -28570,7 +28570,7 @@ function apply_int_op(op: str, l: long, r: long) -> long:
 ## statements, if/else control flow, while loops, and for loops over arrays.
 ## Falls back to returning `None` for unrecognised constructs so the regular
 ## call lowering path can take over.
-function try_evaluate_const_function_call(ctx: ref[LowerCtx], func_name: str, args: span[ast.Argument], caller_vars: ref[map_mod.Map[str, long]]) -> Option[ptr[ir.Expr]]:
+function try_evaluate_const_function_call(ctx: ref[LoweringContext], func_name: str, args: span[ast.Argument], caller_vars: ref[map_mod.Map[str, long]]) -> Option[ptr[ir.Expr]]:
     let decls = ctx.analysis.source_file.declarations
     var i: ptr_uint = 0
     var func_body: ptr[ast.Stmt]? = null
@@ -28612,7 +28612,7 @@ function try_evaluate_const_function_call(ctx: ref[LowerCtx], func_name: str, ar
 
 ## Evaluate a block body returning an IR expression when the body terminates
 ## with a return statement that evaluates to a constant.
-function try_evaluate_const_body(ctx: ref[LowerCtx], variables: ref[map_mod.Map[str, long]], body: ptr[ast.Stmt]?) -> Option[ptr[ir.Expr]]:
+function try_evaluate_const_body(ctx: ref[LoweringContext], variables: ref[map_mod.Map[str, long]], body: ptr[ast.Stmt]?) -> Option[ptr[ir.Expr]]:
     let b = body else:
         return Option[ptr[ir.Expr]].none
     unsafe:
@@ -28631,7 +28631,7 @@ function try_evaluate_const_body(ctx: ref[LowerCtx], variables: ref[map_mod.Map[
                 return evaluate_const_stmt(ctx, variables, b)
 
 
-function evaluate_const_stmt(ctx: ref[LowerCtx], variables: ref[map_mod.Map[str, long]], sp: ptr[ast.Stmt]) -> Option[ptr[ir.Expr]]:
+function evaluate_const_stmt(ctx: ref[LoweringContext], variables: ref[map_mod.Map[str, long]], sp: ptr[ast.Stmt]) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(sp):
             ast.Stmt.stmt_ret as r:
@@ -28717,7 +28717,7 @@ function evaluate_const_stmt(ctx: ref[LowerCtx], variables: ref[map_mod.Map[str,
                 return Option[ptr[ir.Expr]].none
 
 
-function evaluate_const_iterable(ctx: ref[LowerCtx], ep: ast.Expr) -> Option[span[long]]:
+function evaluate_const_iterable(ctx: ref[LoweringContext], ep: ast.Expr) -> Option[span[long]]:
     unsafe:
         match ep:
             ast.Expr.expr_identifier as id:
@@ -28746,7 +28746,7 @@ function evaluate_const_iterable(ctx: ref[LowerCtx], ep: ast.Expr) -> Option[spa
                 return Option[span[long]].none
 
 
-function evaluate_const_expr_to_long(ctx: ref[LowerCtx], variables: ref[map_mod.Map[str, long]], ep: ptr[ast.Expr]) -> Option[long]:
+function evaluate_const_expr_to_long(ctx: ref[LoweringContext], variables: ref[map_mod.Map[str, long]], ep: ptr[ast.Expr]) -> Option[long]:
     match evaluate_const_expr_to_ir(ctx, variables, ep):
         Option.some as irv:
             unsafe:
@@ -28776,7 +28776,7 @@ function evaluate_const_expr_to_long(ctx: ref[LowerCtx], variables: ref[map_mod.
 
 ## Like evaluate_const_expr_to_long but does not use local variable map;
 ## evaluates standalone compile-time expressions (e.g. argument values).
-function evaluate_const_expr_to_long_standalone(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[long]:
+function evaluate_const_expr_to_long_standalone(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Option[long]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
@@ -28817,7 +28817,7 @@ function evaluate_const_expr_to_long_standalone(ctx: ref[LowerCtx], ep: ptr[ast.
                 return Option[long].none
 
 
-function evaluate_const_expr_to_long_standalone_bin(ctx: ref[LowerCtx], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[long]:
+function evaluate_const_expr_to_long_standalone_bin(ctx: ref[LoweringContext], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[long]:
     match evaluate_const_expr_to_long_standalone(ctx, left):
         Option.some as lv:
             match evaluate_const_expr_to_long_standalone(ctx, right):
@@ -28830,7 +28830,7 @@ function evaluate_const_expr_to_long_standalone_bin(ctx: ref[LowerCtx], op: str,
     return Option[long].none
 
 
-function evaluate_const_expr_to_ir(ctx: ref[LowerCtx], variables: ref[map_mod.Map[str, long]], ep: ptr[ast.Expr]) -> Option[ptr[ir.Expr]]:
+function evaluate_const_expr_to_ir(ctx: ref[LoweringContext], variables: ref[map_mod.Map[str, long]], ep: ptr[ast.Expr]) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
@@ -29001,7 +29001,7 @@ function unwrap_task_value(task_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
     return alloc_expr(ir.Expr.expr_member(receiver = task_expr, member = "value", ty = inner_ty))
 
 
-function lower_task_constructor(ctx: ref[LowerCtx], type_args: span[ast.TypeArgument], call_args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_task_constructor(ctx: ref[LoweringContext], type_args: span[ast.TypeArgument], call_args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     var task_inner = ctx.void_ty
     if type_args.len >= 1:
         task_inner = resolve_type_ref(ctx, unsafe: read(type_args.data + 0).value)
@@ -29019,7 +29019,7 @@ function lower_task_constructor(ctx: ref[LowerCtx], type_args: span[ast.TypeArgu
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = task_ty, fields = fields.as_span()))
 
 
-function lower_multi_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+function lower_multi_for(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
     let len = bindings.len
     if len == 0 or iterables.len == 0:
         return
@@ -29205,7 +29205,7 @@ function has_non_lifetime_type_params(params: span[ast.TypeParam]) -> bool:
 ## arm with an `as` binding whose body awaits takes the next
 ## `local_match_binding_<N>` frame-field name, and the lowering advances the
 ## counter per payload-binding arm (the two `async_match_binding_field_key` call
-## sites).  Program-scoped, not per LowerCtx: `lower_module` builds a fresh ctx
+## sites).  Program-scoped, not per LoweringContext: `lower_module` builds a fresh ctx
 ## per module while the host's count continues across the whole closure.
 var async_binding_cnt: ptr_uint = 0
 
@@ -29217,7 +29217,7 @@ var async_binding_cnt: ptr_uint = 0
 ## into each arm body first.  The host's registration also advances the counter
 ## for arms whose payload never resolves — the name map simply stays empty for
 ## them (the lowering pass decides the registration).
-function async_prepass_match_bindings(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?) -> void:
+function async_prepass_match_bindings(ctx: ref[LoweringContext], body: ptr[ast.Stmt]?) -> void:
     let bp = body else:
         return
     unsafe:
@@ -29231,7 +29231,7 @@ function async_prepass_match_bindings(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?) 
                 pass
 
 
-function async_prepass_stmt_match_bindings(ctx: ref[LowerCtx], sp: ptr[ast.Stmt]) -> void:
+function async_prepass_stmt_match_bindings(ctx: ref[LoweringContext], sp: ptr[ast.Stmt]) -> void:
     unsafe:
         match read(sp):
             ast.Stmt.stmt_local as loc:
@@ -29309,14 +29309,14 @@ function async_param_field_type(receiver_ty_opt: Option[types.Type], receiver_ed
 
 ## The host's `async_info[:wake_type]` / the Task struct's `wake_fn`:
 ## `fn(frame: ptr[void]) -> void` (`types.rb:596-600`).
-function async_wake_fn_type(ctx: ref[LowerCtx]) -> types.Type:
+function async_wake_fn_type(ctx: ref[LoweringContext]) -> types.Type:
     return types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
 
 
 ## The type of a `Types::Task` field (`types.rb:601-632`): `frame`, `ready`,
 ## `set_waiter`, `release`, `take_result` or `cancel`.  Anything else falls back
 ## to the frame pointer (the unknown field's C shape).
-function task_field_type(ctx: ref[LowerCtx], result_ty: types.Type, field: str) -> types.Type:
+function task_field_type(ctx: ref[LoweringContext], result_ty: types.Type, field: str) -> types.Type:
     let void_ptr = ctx.ptr_void_ty
     if field == "ready":
         return types.Type.ty_function(name = "", params = single_ty_span(void_ptr), return_type = types.alloc_type(ctx.bool_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
@@ -29339,7 +29339,7 @@ function task_field_type(ctx: ref[LowerCtx], result_ty: types.Type, field: str) 
 
 ## The `frame->result` store target (the host's
 ## `async_frame_field_expression(frame_expr, "result", …)`).
-function async_result_target(ctx: ref[LowerCtx], res_ty: types.Type) -> ptr[ir.Expr]:
+function async_result_target(ctx: ref[LoweringContext], res_ty: types.Type) -> ptr[ir.Expr]:
     let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false)))
     return alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty))
 
@@ -29348,7 +29348,7 @@ function async_result_target(ctx: ref[LowerCtx], res_ty: types.Type) -> ptr[ir.E
 ## result (when one is given), mark the frame ready, wake a registered waiter and
 ## return.  Emitted inline at every `return` and `?`-failure inside an async
 ## resume body (the self's replacement for the old completion label).
-function async_complete_statements(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], res_ty: types.Type, result_value: Option[ptr[ir.Expr]]) -> void:
+function async_complete_statements(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], res_ty: types.Type, result_value: Option[ptr[ir.Expr]]) -> void:
     let bool_ty = ctx.bool_ty
     let void_ptr = ctx.ptr_void_ty
     let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false)))
@@ -29424,7 +29424,7 @@ function async_stmt_terminates(sp: ptr[ir.Stmt]) -> bool:
 ## Lower an async function: generate frame struct, resume fn, constructor fn,
 ## and vtable helpers.  Push into the output structs/functions collections.
 ## Supports both no-await (single-state) and full CPS (state-machine) paths.
-function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_ty_opt: Option[types.Type], receiver_editable: bool, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, functions: ref[vec.Vec[ir.Function]], synthetic_ctor: bool) -> void:
+function lower_async_fn(ctx: ref[LoweringContext], name: str, link_base: str, receiver_ty_opt: Option[types.Type], receiver_editable: bool, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, functions: ref[vec.Vec[ir.Function]], synthetic_ctor: bool) -> void:
     # Function-level state starts fresh (the host's per-function env): the
     # fresh-temp counter, format destination and cstr metadata.
     ctx.locals.clear()
@@ -30040,7 +30040,7 @@ function direct_await_inner(ep: ptr[ast.Expr]) -> ptr[ast.Expr]:
 
 ## Register a spilled async local: add its frame field once and bind its name to
 ## `__mt_frame->local_<name>` so all references and writes go through the frame.
-function async_register_local_field(ctx: ref[LowerCtx], loc_name: str, field_name: str, frame_cname: str, ty: types.Type) -> void:
+function async_register_local_field(ctx: ref[LoweringContext], loc_name: str, field_name: str, frame_cname: str, ty: types.Type) -> void:
     async_register_unused_field(ctx, field_name, ty)
     ctx.locals.push(LocalBinding(name = loc_name, c_name = frame_cname, ty = ty, pointer = Option[bool].some(value = false)))
 
@@ -30048,7 +30048,7 @@ function async_register_local_field(ctx: ref[LowerCtx], loc_name: str, field_nam
 ## Register a frame field the host's async analysis recorded but its lowering
 ## never references (the `local_match_binding_<N>` shape): the field joins
 ## `async_local_fields` after the arm body's locals, with no local binding.
-function async_register_unused_field(ctx: ref[LowerCtx], field_name: str, ty: types.Type) -> void:
+function async_register_unused_field(ctx: ref[LoweringContext], field_name: str, ty: types.Type) -> void:
     if ctx.async_local_seen.contains(field_name):
         return
     ctx.async_local_seen.set(field_name, true)
@@ -30083,7 +30083,7 @@ function alloc_ast_stmt(s: ast.Stmt) -> ptr[ast.Stmt]:
 ## temp.  After this, the returned expression contains no awaits, so it can be
 ## lowered by the normal expression machinery.  A top-level `?` is preserved (its
 ## operand is hoisted) so the caller can route it to `lower_propagate_let`.
-function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ep: ptr[ast.Expr]) -> ptr[ast.Expr]:
+function async_hoist_awaits(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], ep: ptr[ast.Expr]) -> ptr[ast.Expr]:
     unsafe:
         match read(ep):
             ast.Expr.expr_await as aw:
@@ -30193,7 +30193,7 @@ function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], e
 
 
 ## The frame's current local-field count (the vec the registration helpers use).
-function async_local_field_count(ctx: ref[LowerCtx]) -> ptr_uint:
+function async_local_field_count(ctx: ref[LoweringContext]) -> ptr_uint:
     let lfp = ctx.async_local_fields_ptr
     if lfp != null:
         return unsafe: read(lfp).len()
@@ -30203,7 +30203,7 @@ function async_local_field_count(ctx: ref[LowerCtx]) -> ptr_uint:
 ## Move the most recently appended frame field to `index` — the host's
 ## normalized statement order registers an if-expression's result temp before
 ## the branch temps that were numbered first.
-function async_move_last_local_field_to(ctx: ref[LowerCtx], index: ptr_uint) -> void:
+function async_move_last_local_field_to(ctx: ref[LoweringContext], index: ptr_uint) -> void:
     let lfp = ctx.async_local_fields_ptr
     var fields: ptr[vec.Vec[ir.Field]]
     if lfp != null:
@@ -30224,7 +30224,7 @@ function async_move_last_local_field_to(ctx: ref[LowerCtx], index: ptr_uint) -> 
 
 ## `__mt_frame-><field> = value` — the host's `async_frame_field_expression`
 ## assignment target.
-function async_frame_field_assignment(ctx: ref[LowerCtx], field_name: str, field_ty: types.Type, value: ptr[ir.Expr]) -> ir.Stmt:
+function async_frame_field_assignment(ctx: ref[LoweringContext], field_name: str, field_ty: types.Type, value: ptr[ir.Expr]) -> ir.Stmt:
     let frame = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false)))
     let target = alloc_expr(ir.Expr.expr_member(receiver = frame, member = field_name, ty = field_ty))
     return ir.Stmt.stmt_assignment(target = target, operator = "=", value = value)
@@ -30243,7 +30243,7 @@ struct AsyncFieldEntry:
 ## branch bodies it encloses.  The lowering later creates the same temps in the
 ## same counter order, so its registrations dedup against these and the frame
 ## order matches the host's analysis walk.
-function async_register_normalized_body_fields(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?) -> void:
+function async_register_normalized_body_fields(ctx: ref[LoweringContext], body: ptr[ast.Stmt]?) -> void:
     let b = body else:
         return
     var entries = vec.Vec[AsyncFieldEntry].create()
@@ -30265,7 +30265,7 @@ function async_register_normalized_body_fields(ctx: ref[LowerCtx], body: ptr[ast
 ## `async_register_normalized_body_fields`).  Assignment targets are skipped:
 ## the plain lowering lowers them before its statement window opens, so a
 ## target `and`/`or` stays inline there.
-function async_collect_stmt_fields(ctx: ref[LowerCtx], stmt: ast.Stmt, sink: ref[vec.Vec[AsyncFieldEntry]], counter: ref[ptr_uint]) -> void:
+function async_collect_stmt_fields(ctx: ref[LoweringContext], stmt: ast.Stmt, sink: ref[vec.Vec[AsyncFieldEntry]], counter: ref[ptr_uint]) -> void:
     match stmt:
         ast.Stmt.stmt_block as blk:
             var i: ptr_uint = 0
@@ -30342,7 +30342,7 @@ function async_collect_stmt_fields(ctx: ref[LowerCtx], stmt: ast.Stmt, sink: ref
             pass
 
 
-function async_collect_body_fields(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?, sink: ref[vec.Vec[AsyncFieldEntry]], counter: ref[ptr_uint]) -> void:
+function async_collect_body_fields(ctx: ref[LoweringContext], body: ptr[ast.Stmt]?, sink: ref[vec.Vec[AsyncFieldEntry]], counter: ref[ptr_uint]) -> void:
     let b = body else:
         return
     async_collect_stmt_fields(ctx, unsafe: read(b), sink, counter)
@@ -30353,7 +30353,7 @@ function async_collect_body_fields(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?, sin
 ## normalizer allocates its temp name after both operand setups but emits the
 ## temp declaration first, so the entry is emitted before its children's.
 ## Proc bodies are synchronous and contribute nothing.
-function async_collect_expr_fields(ctx: ref[LowerCtx], ep: ptr[ast.Expr], sink: ref[vec.Vec[AsyncFieldEntry]], counter: ref[ptr_uint]) -> void:
+function async_collect_expr_fields(ctx: ref[LoweringContext], ep: ptr[ast.Expr], sink: ref[vec.Vec[AsyncFieldEntry]], counter: ref[ptr_uint]) -> void:
     unsafe:
         match read(ep):
             ast.Expr.expr_call as c:
@@ -30424,7 +30424,7 @@ function async_collect_expr_fields(ctx: ref[LowerCtx], ep: ptr[ast.Expr], sink: 
 ## on the call node (`fn(ptr[void]) -> bool`); the call's value type is that
 ## function's return type, as the lowering's own call path computes it.  A
 ## function-returning method call keeps its recorded type.
-function async_local_value_type(ctx: ref[LowerCtx], val: ptr[ast.Expr]) -> types.Type:
+function async_local_value_type(ctx: ref[LoweringContext], val: ptr[ast.Expr]) -> types.Type:
     unsafe:
         match read(val):
             ast.Expr.expr_call as cl:
@@ -30447,7 +30447,7 @@ function async_local_value_type(ctx: ref[LowerCtx], val: ptr[ast.Expr]) -> types
 ## the destination's own type is an array (the sync statement roots exempt
 ## their root call instead).  `maybe_materialize_array_call` handles the windowed
 ## paths; this is the forced form for an already-lowered expression.
-function materialize_array_call_value(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+function materialize_array_call_value(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], value: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let ty = ir_expr_type(value)
     if not is_array_type(ty):
         return value
@@ -30467,7 +30467,7 @@ function materialize_array_call_value(ctx: ref[LowerCtx], output: ref[vec.Vec[ir
 ## temp release is dropped and the frame's release/cancel functions free the
 ## field instead (the host's `async_info[:format_str_fields]`).  First-encounter
 ## order, deduplicated by field name.
-function async_record_format_str_field(ctx: ref[LowerCtx], field_name: str) -> void:
+function async_record_format_str_field(ctx: ref[LoweringContext], field_name: str) -> void:
     let ffp = ctx.async_format_str_fields_ptr
     if ffp != null:
         let fields = unsafe: read(ffp)
@@ -30490,7 +30490,7 @@ function async_record_format_str_field(ctx: ref[LowerCtx], field_name: str) -> v
     ctx.async_format_str_fields.push(field_name)
 
 
-function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], loc_name: str, loc_value: ptr[ast.Expr]?, loc_stmt_type: ptr[ast.TypeRef]?, line: ptr_uint) -> void:
+function lower_async_local(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], loc_name: str, loc_value: ptr[ast.Expr]?, loc_stmt_type: ptr[ast.TypeRef]?, line: ptr_uint) -> void:
     # `let _ = ...`: the host's analysis registers `local_discard_<line>` for the
     # discard and its lowering stores the (awaited) value there — a dead field,
     # but part of the frame (`async_local_decl_field_name`,
@@ -30618,7 +30618,7 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
 
 ## Lower an `await` at statement position: lower the task expr, then emit the
 ## suspend/resume boundary, assigning the result to `target` (or discarding).
-function lower_async_await_into(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], task_ep: ptr[ast.Expr], target: Option[ptr[ir.Expr]]) -> void:
+function lower_async_await_into(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], task_ep: ptr[ast.Expr], target: Option[ptr[ir.Expr]]) -> void:
     let task_ir = lower_expr(ctx, task_ep)
     let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
     let result_ty = extract_task_element_type(ctx, task_ty)
@@ -30644,7 +30644,7 @@ function normalize_awaited_task_type(t: types.Type) -> types.Type:
 ## `reusable_async_await_task_field_name`: `await waited` on a spilled local or a
 ## parameter reuses that binding's field and skips the `await_<N>` allocation
 ## (and its store; the value is already there).
-function async_reusable_await_field(ctx: ref[LowerCtx], task_ep: ptr[ast.Expr]?) -> str:
+function async_reusable_await_field(ctx: ref[LoweringContext], task_ep: ptr[ast.Expr]?) -> str:
     let ep = task_ep else:
         return ""
     unsafe:
@@ -30669,7 +30669,7 @@ function async_reusable_await_field(ctx: ref[LowerCtx], task_ep: ptr[ast.Expr]?)
 ## Core await lowering: store the task in `frame->await_N`, guard on `ready`,
 ## suspend (register waiter + return) if not ready, then resume at `state_<N+1>`,
 ## take the result into `target`, and release the child task.
-function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], task_ir: ptr[ir.Expr], task_ty: types.Type, result_ty: types.Type, target: Option[ptr[ir.Expr]], task_ep: ptr[ast.Expr]?) -> void:
+function async_emit_await(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], task_ir: ptr[ir.Expr], task_ty: types.Type, result_ty: types.Type, target: Option[ptr[ir.Expr]], task_ep: ptr[ast.Expr]?) -> void:
     let ptr_void = async_mod.ptr_void_type()
     let bool_ty = ctx.bool_ty
     let int_ty = types.primitive("int")
@@ -30742,7 +30742,7 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
 ## The async main is already CPS-lowered as a constructor returning Task[T] with
 ## linkage `<module>_main`.  Here we build a root proc from the constructor,
 ## drive it via `std.async.wait[int]` / `run` for void, and release the proc.
-function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir.Function]:
+function build_async_main_entrypoint(ctx: ref[LoweringContext], name: str) -> Option[ir.Function]:
     let sig = lookup_fn_sig(ctx, name)
     let task_ret = fn_sig_return_type(sig)
     let inner_ty = extract_task_element_type(ctx, task_ret)
@@ -30899,7 +30899,7 @@ function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir
 ## entry, not the deepest backend implementation.  Lowering that instance's body
 ## then instantiates the rest of the chain (`std.async.runtime.wait`, then
 ## `std.async.libuv_runtime.wait`/`wait_on`), exactly as the host's walk does.
-function ensure_async_wait_specialization(ctx: ref[LowerCtx], inner_ty: types.Type) -> Option[str]:
+function ensure_async_wait_specialization(ctx: ref[LoweringContext], inner_ty: types.Type) -> Option[str]:
     let gm = find_generic_function_in_module(ctx, "std.async", "wait") else:
         return Option[str].none
     if not gm.module_name.starts_with("std.async"):
@@ -30977,7 +30977,7 @@ function is_task_fn_field(name: str) -> bool:
 
 ## Extract the element type from a Task type (`ty_generic("Task", [T])`
 ## or `ty_named("mt_task_...")`).  Returns `ty_primitive("void")` on failure.
-function extract_task_element_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
+function extract_task_element_type(ctx: ref[LoweringContext], t: types.Type) -> types.Type:
     match t:
         types.Type.ty_generic as tg:
             if tg.name == "Task" and tg.args.len >= 1:

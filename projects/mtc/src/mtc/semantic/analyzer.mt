@@ -19,10 +19,10 @@ import std.vec as vec
 import mtc.parser.ast as ast
 import mtc.semantic.types as types
 import mtc.semantic.type_compatibility as compat
-import mtc.semantic.expressions as exprs
+import mtc.semantic.expressions as sem_exprs
 import mtc.semantic.control_flow.builder as flow_builder
 import mtc.semantic.control_flow.definite_assignment as da
-import mtc.semantic.control_flow.graph as flow_graph_mod
+import mtc.semantic.control_flow.graph as flow_graph
 import mtc.semantic.diagnostics as diag
 import mtc.semantic.emit_expansion as emit_ex
 import mtc.semantic.scope as sscope
@@ -379,8 +379,8 @@ struct Context:
     ## The current function body's CFG, its solved non-null flow (the host's
     ## `@nullability_flow_result`), and the refinement record the LSP reads.
     flow_cfg: flow_builder.Cfg
-    flow_graph: flow_graph_mod.CfgGraph
-    flow: flow_graph_mod.NullabilityFlow
+    flow_graph: flow_graph.CfgGraph
+    flow: flow_graph.NullabilityFlow
     flow_active: bool
     flow_types: vec.Vec[FlowTypeEntry]
     flow_recorded: map_mod.Map[str, types.Type]
@@ -638,8 +638,8 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         callable_site_suppression = 0,
         variant_param_names = map_mod.Map[str, span[str]].create(),
         flow_cfg = flow_builder.empty_cfg(),
-        flow_graph = flow_graph_mod.empty_graph(),
-        flow = flow_graph_mod.NullabilityFlow(state = null, row_size = 0, node_count = 0),
+        flow_graph = flow_graph.empty_graph(),
+        flow = flow_graph.NullabilityFlow(state = null, row_size = 0, node_count = 0),
         flow_active = false,
         flow_types = vec.Vec[FlowTypeEntry].create(),
         flow_recorded = map_mod.Map[str, types.Type].create(),
@@ -3208,8 +3208,8 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
     # refinement record the LSP and the lowering read is populated for methods).
     flow_builder.cfg_clear(ref_of(ctx.flow_cfg))
     flow_builder.build_graph_into(ref_of(ctx.flow_cfg), ref_of(ctx.flow_graph), m.method_params, m.body)
-    flow_graph_mod.flow_init_into(ref_of(ctx.flow), ctx.flow_cfg.next_id, ctx.flow_graph.next_id)
-    flow_graph_mod.solve_nullability(ref_of(ctx.flow_graph), ref_of(ctx.flow))
+    flow_graph.flow_init_into(ref_of(ctx.flow), ctx.flow_cfg.next_id, ctx.flow_graph.next_id)
+    flow_graph.solve_nullability(ref_of(ctx.flow_graph), ref_of(ctx.flow))
     ctx.flow_active = true
     ctx.flow_recorded.clear()
     ctx.flow_scratch.clear()
@@ -3287,8 +3287,8 @@ function check_function_body(ctx: ref[Context], node: ptr_uint, name: str, line:
     # statement's check sees the narrowing that all incoming paths prove.
     flow_builder.cfg_clear(ref_of(ctx.flow_cfg))
     flow_builder.build_graph_into(ref_of(ctx.flow_cfg), ref_of(ctx.flow_graph), params, b)
-    flow_graph_mod.flow_init_into(ref_of(ctx.flow), ctx.flow_cfg.next_id, ctx.flow_graph.next_id)
-    flow_graph_mod.solve_nullability(ref_of(ctx.flow_graph), ref_of(ctx.flow))
+    flow_graph.flow_init_into(ref_of(ctx.flow), ctx.flow_cfg.next_id, ctx.flow_graph.next_id)
+    flow_graph.solve_nullability(ref_of(ctx.flow_graph), ref_of(ctx.flow))
     ctx.flow_active = true
     ctx.flow_recorded.clear()
     ctx.flow_scratch.clear()
@@ -3830,12 +3830,12 @@ function apply_flow_continuation(ctx: ref[Context], scope: ref[sscope.Scope], sp
     if not ctx.flow_active:
         return
     let stmt_key = unsafe: reinterpret[ptr_uint](sp)
-    let node = flow_graph_mod.graph_node_for_statement(ref_of(ctx.flow_graph), stmt_key)
+    let node = flow_graph.graph_node_for_statement(ref_of(ctx.flow_graph), stmt_key)
     if node == 0:
         return
     var key: ptr_uint = 1
     while key < ctx.flow_cfg.next_id:
-        if flow_graph_mod.nonnull_before(ref_of(ctx.flow), node, key):
+        if flow_graph.nonnull_before(ref_of(ctx.flow), node, key):
             let name = flow_builder.cfg_binding_name(ref_of(ctx.flow_cfg), key)
             if name.len > 0:
                 let type_ptr = refinement_type_ptr(ctx, scope, name)
@@ -4269,7 +4269,7 @@ function statement_position(sp: ptr[ast.Stmt]) -> ptr_uint:
 function body_always_terminates(ctx: ref[Context], body: ptr[ast.Stmt]?) -> bool:
     if not ctx.flow_active:
         return false
-    return flow_graph_mod.graph_body_terminates(ref_of(ctx.flow_graph), body)
+    return flow_graph.graph_body_terminates(ref_of(ctx.flow_graph), body)
 
 
 function flow_scratch_set(scratch: ref[vec.Vec[FlowName]], name: str, ty: types.Type) -> void:
@@ -5479,7 +5479,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 if not types.is_error(hint_ty):
                     if compat.types_compatible(hint_ty, then_ty, ife.then_expr) and compat.types_compatible(hint_ty, else_ty, ife.else_expr):
                         return hint_ty
-                return exprs.conditional_common_type(then_ty, else_ty, ife.then_expr, ife.else_expr)
+                return sem_exprs.conditional_common_type(then_ty, else_ty, ife.then_expr, ife.else_expr)
             ast.Expr.expr_match as me:
                 # An `as name` arm binds the arm's payload type from the
                 # scrutinee's type, so it is inferred once, before the arms.
@@ -5504,7 +5504,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 # it (the host's `match_expression_common_type` short-circuit).
                 if all_fit_hint:
                     return match_hint
-                return exprs.match_expression_common_type(arm_types.as_span(), arm_exprs.as_span())
+                return sem_exprs.match_expression_common_type(arm_types.as_span(), arm_exprs.as_span())
             ast.Expr.expr_detach as det:
                 match read(det.expression):
                     ast.Expr.expr_call as call:
@@ -5913,7 +5913,7 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
             if is_bare_float_literal_expr(right):
                 rt_eff = expected_hint
             if not types.type_equals(lt_eff, lt) or not types.type_equals(rt_eff, rt):
-                match exprs.common_numeric_type(lt_eff, rt_eff):
+                match sem_exprs.common_numeric_type(lt_eff, rt_eff):
                     Option.some as common:
                         return common.value
                     Option.none:
@@ -5939,7 +5939,7 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
             return lt
         # Otherwise the promoted common type (an int operand with a float
         # sibling is float), exactly like Ruby's `common_numeric_type`.
-        match exprs.common_numeric_type(lt, rt):
+        match sem_exprs.common_numeric_type(lt, rt):
             Option.some as promoted:
                 return promoted.value
             Option.none:

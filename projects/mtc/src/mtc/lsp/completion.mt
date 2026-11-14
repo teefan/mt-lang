@@ -29,7 +29,7 @@ import mtc.lsp.type_render as type_render
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
-import mtc.lsp.workspace_index as workspace_index
+import mtc.lsp.workspace_index as idx
 
 
 ## LSP CompletionItemKind values, matching the host's numbering.
@@ -231,7 +231,7 @@ public function handle_completion_resolve(
 
     # Look up the label in the workspace symbol index.
     ws.build_index_if_needed()
-    var match_indices = workspace_index.query_index(ref_of(ws.index), label, 1)
+    var match_indices = idx.query_index(ref_of(ws.index), label, 1)
     defer: match_indices.release()
     if match_indices.len() == 0:
         proto.write_response(id, params)
@@ -240,7 +240,7 @@ public function handle_completion_resolve(
     let ei = match_indices.get(0) else:
         proto.write_response(id, params)
         return
-    let entry = unsafe: workspace_index.read_entry(ref_of(ws.index), read(ei))
+    let entry = unsafe: idx.read_entry(ref_of(ws.index), read(ei))
     let path = unsafe: read(entry).path.as_str()
     log.info(f"resolve: resolving label=#{label} in path=#{path}")
 

@@ -23,13 +23,13 @@ import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.lsp.cursor as cursor
-import mtc.lsp.navigation as nav_mod
+import mtc.lsp.navigation as navigation
 import mtc.lsp.protocol as proto
 import mtc.lsp.reference_index as refidx
 import mtc.lsp.scope as scope_mod
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
-import mtc.lsp.workspace_index as ws_idx
+import mtc.lsp.workspace_index as idx
 
 
 ## Handle textDocument/references.  `include_declaration` is the request's
@@ -115,7 +115,7 @@ public function handle_references(
     collect_global_entries(ws, target.text, ref_of(entries))
     var skip = SkipLocation(active = false, path = string_mod.String.create(), line = 0, column = 0)
     if not include_declaration:
-        match nav_mod.find_definition_global(ws, target.text, uri, line + 1, character + 1):
+        match navigation.find_definition_global(ws, target.text, uri, line + 1, character + 1):
             Option.some as payload:
                 var found = payload.value
                 skip.active = true
@@ -797,7 +797,7 @@ function dependent_documents(
 
     refidx.documents_importing(ref_of(ws.reference_index), module_name, ref_of(candidates))
 
-    var dependents = ws_idx.dependents_of(ref_of(ws.index), target_path)
+    var dependents = idx.dependents_of(ref_of(ws.index), target_path)
     defer: dependents.release()
     var di: ptr_uint = 0
     while di < dependents.len():
@@ -931,7 +931,7 @@ struct StaticMethodTarget:
 
 
 ## A method found in an `extending` block.
-struct MethodDeclaration:
+struct MethodDecl:
     line: ptr_uint
     column: ptr_uint
     kind: ast.MethodKind
@@ -1018,7 +1018,7 @@ function resolve_static_receiver_method(
     # The method is declared in the owner module's own file.
     if not owner_module_known or owner.len == 0:
         return Option[StaticMethodTarget].none
-    var owner_path = nav_mod.resolve_module_source_path(ws, owner) else:
+    var owner_path = navigation.resolve_module_source_path(ws, owner) else:
         return Option[StaticMethodTarget].none
     defer: owner_path.release()
     let owner_doc = workspace.document_analysis_for(ws, owner_path.as_str()) else:
@@ -1053,7 +1053,7 @@ function static_target_location_path(
 ) -> Option[string_mod.String]:
     if not owner_module_known or owner.len == 0 or owner.equal(unsafe: read(analysis).module_name):
         return Option[string_mod.String].some(value = string_mod.String.from_str(file_path))
-    return nav_mod.resolve_module_source_path(ws, owner)
+    return navigation.resolve_module_source_path(ws, owner)
 
 
 ## The method `method_name` declared in one of `file`'s `extending` blocks for
@@ -1063,7 +1063,7 @@ function extending_method_declaration(
     analysis: ref[analyzer.Analysis],
     type_name: str,
     method_name: str,
-) -> Option[MethodDeclaration]:
+) -> Option[MethodDecl]:
     var di: ptr_uint = 0
     while di < file.declarations.len:
         var decl: ast.Decl
@@ -1074,13 +1074,13 @@ function extending_method_declaration(
                 if extending_target_matches(analysis, qualified_name_text(unsafe: read(ext.type_name).name), type_name):
                     match method_in_block(ext.methods, method_name):
                         Option.some as method:
-                            return Option[MethodDeclaration].some(value = method.value)
+                            return Option[MethodDecl].some(value = method.value)
                         Option.none:
                             pass
             _:
                 pass
         di += 1
-    return Option[MethodDeclaration].none
+    return Option[MethodDecl].none
 
 
 ## The method named `method_name` whose declaration name sits on
@@ -1090,7 +1090,7 @@ function extending_method_at_position(
     method_name: str,
     line: ptr_uint,
     column: ptr_uint,
-) -> Option[MethodDeclaration]:
+) -> Option[MethodDecl]:
     var di: ptr_uint = 0
     while di < file.declarations.len:
         var decl: ast.Decl
@@ -1104,7 +1104,7 @@ function extending_method_at_position(
                     unsafe:
                         method = read(ext.methods.data + mi)
                     if method.name.equal(method_name) and method.line == line and method.column == column:
-                        return Option[MethodDeclaration].some(value = MethodDeclaration(
+                        return Option[MethodDecl].some(value = MethodDecl(
                             line = method.line,
                             column = method.column,
                             kind = method.method_kind,
@@ -1113,23 +1113,23 @@ function extending_method_at_position(
             _:
                 pass
         di += 1
-    return Option[MethodDeclaration].none
+    return Option[MethodDecl].none
 
 
-function method_in_block(methods: span[ast.Method], method_name: str) -> Option[MethodDeclaration]:
+function method_in_block(methods: span[ast.Method], method_name: str) -> Option[MethodDecl]:
     var mi: ptr_uint = 0
     while mi < methods.len:
         var method: ast.Method
         unsafe:
             method = read(methods.data + mi)
         if method.name.equal(method_name):
-            return Option[MethodDeclaration].some(value = MethodDeclaration(
+            return Option[MethodDecl].some(value = MethodDecl(
                 line = method.line,
                 column = method.column,
                 kind = method.method_kind,
             ))
         mi += 1
-    return Option[MethodDeclaration].none
+    return Option[MethodDecl].none
 
 
 ## A `Type.Sub` qualified name as its dotted text.

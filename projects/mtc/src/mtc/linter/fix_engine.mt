@@ -31,7 +31,7 @@ import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.linter.config as lint_config
-import mtc.linter.linter as linter
+import mtc.linter.linter as linter_mod
 import mtc.semantic.analyzer as analyzer
 
 
@@ -80,7 +80,7 @@ public function is_fixable(code: str) -> bool:
 public function fix_source(
     source: str,
     path: str,
-    options: linter.LintOptions,
+    options: linter_mod.LintOptions,
 ) -> string.String:
     # The host's `fix_source_single_pass`: refuse every fix when an import did
     # not resolve, so a rewrite never runs against incomplete facts.
@@ -122,7 +122,7 @@ public function fix_source(
 
 ## A fixable rule is applied when the effective select/ignore lists allow it:
 ## explicit option lists win over the config's (the host's `select ||= cfg`).
-function rule_enabled(code: str, options: linter.LintOptions, config: ref[lint_config.LintConfig]) -> bool:
+function rule_enabled(code: str, options: linter_mod.LintOptions, config: ref[lint_config.LintConfig]) -> bool:
     var lint_cfg = unsafe: read(config)
     if options.select.len > 0:
         if not code_in(code, options.select):
@@ -163,7 +163,7 @@ function fix_rule_single_pass(
     source: str,
     code: str,
     path: str,
-    options: linter.LintOptions,
+    options: linter_mod.LintOptions,
 ) -> string.String:
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
@@ -176,8 +176,8 @@ function fix_rule_single_pass(
     # a pass of its own over the linter's collected fixes (the host's
     # `fix_source_single_pass` reserved-name phase).
     if code.equal("reserved-primitive-name"):
-        var reserved_fixes = linter.collect_reserved_primitive_name_fixes(source, path, options)
-        defer: linter.release_reserved_name_fixes(ref_of(reserved_fixes))
+        var reserved_fixes = linter_mod.collect_reserved_primitive_name_fixes(source, path, options)
+        defer: linter_mod.release_reserved_name_fixes(ref_of(reserved_fixes))
         if reserved_fixes.len() == 0:
             return string.String.from_str(source)
         return apply_reserved_name_fixes(source, ref_of(reserved_fixes))
@@ -189,10 +189,10 @@ function fix_rule_single_pass(
     var analysis = analyze_with_imports(file, path, options)
     var local_options = options
     local_options.analysis = ptr_of(analysis)
-    var warnings = linter.lint_source_with(file, source, path, local_options)
+    var warnings = linter_mod.lint_source_with(file, source, path, local_options)
     defer: warnings.release()
 
-    var rule_warnings = vec.Vec[linter.Warning].create()
+    var rule_warnings = vec.Vec[linter_mod.Warning].create()
     defer: rule_warnings.release()
     var wi: ptr_uint = 0
     while wi < warnings.len():
@@ -244,7 +244,7 @@ function fix_rule_single_pass(
 ## Re-analyze an edited source against the same loader-backed imports as the
 ## lint command's analysis.  Without them, an imported editable method's kind is
 ## unknown and `prefer-let` would rewrite a `var` the host keeps.
-function analyze_with_imports(file: ast.SourceFile, path: str, options: linter.LintOptions) -> analyzer.Analysis:
+function analyze_with_imports(file: ast.SourceFile, path: str, options: linter_mod.LintOptions) -> analyzer.Analysis:
     let analysis_ptr = options.analysis else:
         return analyzer.check_source_file(file)
     unsafe:
@@ -290,7 +290,7 @@ function count_error_signature(analysis: ref[analyzer.Analysis], line: ptr_uint,
 
 ## Sort warnings by (line, column) descending so edits below never shift the
 ## positions of edits above.
-function sort_warnings_descending(warnings: ref[vec.Vec[linter.Warning]]) -> void:
+function sort_warnings_descending(warnings: ref[vec.Vec[linter_mod.Warning]]) -> void:
     let count = warnings.len()
     var i: ptr_uint = 1
     while i < count:
@@ -1244,7 +1244,7 @@ function prefer_let_else_edit(
 ## Apply every collected reserved-name fix: each site's name becomes its
 ## binding's replacement, applied right-to-left so earlier columns keep their
 ## positions (the host's `apply_reserved_primitive_name_fixes`).
-function apply_reserved_name_fixes(source: str, fixes: ref[vec.Vec[linter.ReservedNameFix]]) -> string.String:
+function apply_reserved_name_fixes(source: str, fixes: ref[vec.Vec[linter_mod.ReservedNameFix]]) -> string.String:
     var lines = split_lines(source)
     defer: release_lines(ref_of(lines))
 

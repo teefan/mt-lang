@@ -15,7 +15,7 @@ import std.vec as vec
 import mtc.packages.graph as graph
 import mtc.packages.manifest as manifest
 import mtc.packages.paths as paths
-import mtc.packages.source as source
+import mtc.packages.source as pkg_source
 
 
 public enum LockStatus: ubyte
@@ -32,7 +32,7 @@ public struct LockCheck:
 public struct LockedPackage:
     package_name: string.String
     instance_id: string.String
-    identity: source.SourceIdentity
+    identity: pkg_source.SourceIdentity
     manifest_path: string.String
     dependency_names: vec.Vec[string.String]
     dependency_ids: vec.Vec[string.String]
@@ -41,7 +41,7 @@ public struct LockedPackage:
 struct LockRecord:
     instance_id: string.String
     package_name: string.String
-    identity: source.SourceIdentity
+    identity: pkg_source.SourceIdentity
     manifest_path: string.String
     dependency_ids: vec.Vec[string.String]
 
@@ -91,8 +91,8 @@ extending LockedPackage:
         this.instance_id.release()
         this.identity.release()
         this.manifest_path.release()
-        source.release_strings(ref_of(this.dependency_names))
-        source.release_strings(ref_of(this.dependency_ids))
+        pkg_source.release_strings(ref_of(this.dependency_names))
+        pkg_source.release_strings(ref_of(this.dependency_ids))
 
 
 extending LockRecord:
@@ -101,7 +101,7 @@ extending LockRecord:
         this.package_name.release()
         this.identity.release()
         this.manifest_path.release()
-        source.release_strings(ref_of(this.dependency_ids))
+        pkg_source.release_strings(ref_of(this.dependency_ids))
 
 
 extending LockContext:
@@ -146,7 +146,7 @@ function index_error(message: string.String) -> Result[ptr_uint, string.String]:
 #  Rendering and the public check/write API
 # =============================================================================
 
-public function render(path: str, resolver: ref[source.SourceResolver]) -> Result[string.String, string.String]:
+public function render(path: str, resolver: ref[pkg_source.SourceResolver]) -> Result[string.String, string.String]:
     var loaded: graph.PackageGraph
     match graph.load(path, resolver):
         Result.failure as load_failure:
@@ -175,7 +175,7 @@ public function render(path: str, resolver: ref[source.SourceResolver]) -> Resul
     var indices = vec.Vec[ptr_uint].create()
     defer: indices.release()
     var visited = vec.Vec[string.String].create()
-    defer: source.release_strings(ref_of(visited))
+    defer: pkg_source.release_strings(ref_of(visited))
     collect_packages(ref_of(loaded), loaded.root_index, ref_of(indices), ref_of(visited))
     sort_package_indices(ref_of(loaded), ref_of(indices))
 
@@ -210,8 +210,8 @@ public function render(path: str, resolver: ref[source.SourceResolver]) -> Resul
         append_toml_string(ref_of(content), node.source.identity.kind_name())
         content.append("\n")
 
-        var attributes = source.identity_lock_attributes(node.source.identity)
-        source.sort_lock_attributes(ref_of(attributes))
+        var attributes = pkg_source.identity_lock_attributes(node.source.identity)
+        pkg_source.sort_lock_attributes(ref_of(attributes))
         var ai: ptr_uint = 0
         while ai < attributes.len():
             let entry = attributes.get(ai) else:
@@ -222,7 +222,7 @@ public function render(path: str, resolver: ref[source.SourceResolver]) -> Resul
                 append_toml_string(ref_of(content), read(entry).value.as_str())
                 content.append("\n")
             ai += 1
-        source.release_lock_attributes(ref_of(attributes))
+        pkg_source.release_lock_attributes(ref_of(attributes))
 
         content.append("manifest_path = ")
         append_toml_string(ref_of(content), node_manifest.manifest_path.as_str())
@@ -240,7 +240,7 @@ public function render(path: str, resolver: ref[source.SourceResolver]) -> Resul
     return Result[string.String, string.String].success(value = content)
 
 
-public function check(path: str, resolver: ref[source.SourceResolver]) -> Result[LockCheck, string.String]:
+public function check(path: str, resolver: ref[pkg_source.SourceResolver]) -> Result[LockCheck, string.String]:
     var expected: string.String
     match render(path, resolver):
         Result.failure as render_failure:
@@ -287,7 +287,7 @@ public function check(path: str, resolver: ref[source.SourceResolver]) -> Result
     )
 
 
-public function write(path: str, resolver: ref[source.SourceResolver]) -> Result[string.String, string.String]:
+public function write(path: str, resolver: ref[pkg_source.SourceResolver]) -> Result[string.String, string.String]:
     var content: string.String
     match render(path, resolver):
         Result.failure as render_failure:
@@ -323,10 +323,10 @@ public function write(path: str, resolver: ref[source.SourceResolver]) -> Result
 
 ## The CLI's `--frozen` check: a missing or stale lock is a hard error.
 public function ensure_current(path: str, cache_only: bool) -> Result[bool, string.String]:
-    var mode = source.ResolutionMode.materialize
+    var mode = pkg_source.ResolutionMode.materialize
     if cache_only:
-        mode = source.ResolutionMode.cache
-    var resolver = source.create_resolver(mode)
+        mode = pkg_source.ResolutionMode.cache
+    var resolver = pkg_source.create_resolver(mode)
     defer: resolver.release()
     match check(path, ref_of(resolver)):
         Result.failure as check_failure:
@@ -410,8 +410,8 @@ function package_instance_id(loaded: ref[graph.PackageGraph], index: ptr_uint) -
     joined.append(value.manifest.package_name.as_str())
     joined.push_byte(0)
     joined.append(value.source.identity.kind_name())
-    var attributes = source.identity_lock_attributes(value.source.identity)
-    source.sort_lock_attributes(ref_of(attributes))
+    var attributes = pkg_source.identity_lock_attributes(value.source.identity)
+    pkg_source.sort_lock_attributes(ref_of(attributes))
     var i: ptr_uint = 0
     while i < attributes.len():
         let entry = attributes.get(i) else:
@@ -422,18 +422,18 @@ function package_instance_id(loaded: ref[graph.PackageGraph], index: ptr_uint) -
             joined.push_byte(0)
             joined.append(read(entry).value.as_str())
         i += 1
-    source.release_lock_attributes(ref_of(attributes))
+    pkg_source.release_lock_attributes(ref_of(attributes))
     return crypto.sha256_to_str(text_ops.as_byte_span(joined.as_str()))
 
 
-function identity_instance_id(package_name: str, identity: source.SourceIdentity) -> string.String:
+function identity_instance_id(package_name: str, identity: pkg_source.SourceIdentity) -> string.String:
     var joined = string.String.create()
     defer: joined.release()
     joined.append(package_name)
     joined.push_byte(0)
     joined.append(identity.kind_name())
-    var attributes = source.identity_lock_attributes(identity)
-    source.sort_lock_attributes(ref_of(attributes))
+    var attributes = pkg_source.identity_lock_attributes(identity)
+    pkg_source.sort_lock_attributes(ref_of(attributes))
     var i: ptr_uint = 0
     while i < attributes.len():
         let entry = attributes.get(i) else:
@@ -444,7 +444,7 @@ function identity_instance_id(package_name: str, identity: source.SourceIdentity
             joined.push_byte(0)
             joined.append(read(entry).value.as_str())
         i += 1
-    source.release_lock_attributes(ref_of(attributes))
+    pkg_source.release_lock_attributes(ref_of(attributes))
     return crypto.sha256_to_str(text_ops.as_byte_span(joined.as_str()))
 
 
@@ -631,7 +631,7 @@ function append_toml_string(output: ref[string.String], value: str) -> void:
 #  Locked package records
 # =============================================================================
 
-public function locked_packages(path: str, resolver: ref[source.SourceResolver]) -> Result[LockedPackageList, string.String]:
+public function locked_packages(path: str, resolver: ref[pkg_source.SourceResolver]) -> Result[LockedPackageList, string.String]:
     var context: LockContext
     match load_context(path):
         Result.failure as context_failure:
@@ -667,14 +667,14 @@ public function locked_packages(path: str, resolver: ref[source.SourceResolver])
                     break
             di += 1
         if missing_id.is_some():
-            source.release_strings(ref_of(names))
+            pkg_source.release_strings(ref_of(names))
             packages.release()
             return packages_error(missing_id.unwrap())
 
         packages.push(LockedPackage(
             package_name = string.String.from_str(record.package_name.as_str()),
             instance_id = string.String.from_str(record.instance_id.as_str()),
-            identity = source.clone_identity(record.identity),
+            identity = pkg_source.clone_identity(record.identity),
             manifest_path = string.String.from_str(record.manifest_path.as_str()),
             dependency_names = names,
             dependency_ids = clone_strings(ref_of(record.dependency_ids)),
@@ -695,7 +695,7 @@ function clone_strings(values: ref[StringList]) -> StringList:
 
 
 ## Load the graph described by an existing package.lock (the `--locked` path).
-public function load_graph(path: str, resolver: ref[source.SourceResolver]) -> Result[graph.PackageGraph, string.String]:
+public function load_graph(path: str, resolver: ref[pkg_source.SourceResolver]) -> Result[graph.PackageGraph, string.String]:
     var context: LockContext
     match load_context(path):
         Result.failure as context_failure:
@@ -708,7 +708,7 @@ public function load_graph(path: str, resolver: ref[source.SourceResolver]) -> R
     var nodes_by_id = vec.Vec[LockedNodeRef].create()
     defer: release_locked_node_refs(ref_of(nodes_by_id))
     var stack = vec.Vec[string.String].create()
-    defer: source.release_strings(ref_of(stack))
+    defer: pkg_source.release_strings(ref_of(stack))
 
     match build_locked_node(ref_of(context), resolver, context.root_package_id.as_str(), ref_of(loaded), ref_of(nodes_by_id), ref_of(stack)):
         Result.failure as build_failure:
@@ -731,7 +731,7 @@ function release_locked_node_refs(refs: ref[vec.Vec[LockedNodeRef]]) -> void:
 
 function build_locked_node(
     context: ref[LockContext],
-    resolver: ref[source.SourceResolver],
+    resolver: ref[pkg_source.SourceResolver],
     instance_id: str,
     loaded: ref[graph.PackageGraph],
     nodes_by_id: ref[vec.Vec[LockedNodeRef]],
@@ -783,8 +783,8 @@ function build_locked_node(
         return index_error(message)
 
     var record = unsafe: read(record_entry)
-    var package_source: source.Source
-    match source.source_from_identity(resolver, ref_of(record.identity), context.lock_path.as_str()):
+    var package_source: pkg_source.Source
+    match pkg_source.source_from_identity(resolver, ref_of(record.identity), context.lock_path.as_str()):
         Result.failure as source_failure:
             return index_error(source_failure.error)
         Result.success as source_payload:
@@ -809,7 +809,7 @@ function build_locked_node(
         package_source.release()
         return index_error(message)
 
-    if record.identity.kind == source.SourceKind.registry_:
+    if record.identity.kind == pkg_source.SourceKind.registry_:
         var version_matches = false
         match package.package_version:
             Option.some as declared:
@@ -1067,7 +1067,7 @@ function load_context(path: str) -> Result[LockContext, string.String]:
             root_manifest.release()
             return context_error(message)
 
-        var identity: source.SourceIdentity
+        var identity: pkg_source.SourceIdentity
         match identity_from_lock(ref_of(package_object), lock_path.as_str()):
             Result.failure as identity_failure:
                 instance_id.release()
@@ -1165,7 +1165,7 @@ function find_record_index(context: ref[LockContext], instance_id: str) -> Optio
     return Option[ptr_uint].none
 
 
-function identity_from_lock(package_object: ref[toml.Object], lock_path: str) -> Result[source.SourceIdentity, string.String]:
+function identity_from_lock(package_object: ref[toml.Object], lock_path: str) -> Result[pkg_source.SourceIdentity, string.String]:
     var source_kind = string.String.create()
     defer: source_kind.release()
     match object_string(package_object, "source_kind"):
@@ -1180,12 +1180,12 @@ function identity_from_lock(package_object: ref[toml.Object], lock_path: str) ->
             Option.some as path_payload:
                 defer: path_payload.value.release()
                 if path_payload.value.len() > 0:
-                    return source.identity_path(path_payload.value.as_str())
+                    return pkg_source.identity_path(path_payload.value.as_str())
             Option.none:
                 pass
         var message = string.String.from_str("package.lock missing source_path in ")
         message.append(lock_path)
-        return Result[source.SourceIdentity, string.String].failure(error = message)
+        return Result[pkg_source.SourceIdentity, string.String].failure(error = message)
 
     if source_kind.as_str().equal("registry"):
         var name = string.String.create()
@@ -1204,7 +1204,7 @@ function identity_from_lock(package_object: ref[toml.Object], lock_path: str) ->
                 version_payload.value.release()
             Option.none:
                 pass
-        return source.identity_registry(name.as_str(), version_text.as_str())
+        return pkg_source.identity_registry(name.as_str(), version_text.as_str())
 
     if source_kind.as_str().equal("git"):
         var url = string.String.create()
@@ -1234,14 +1234,14 @@ function identity_from_lock(package_object: ref[toml.Object], lock_path: str) ->
                 subdir_payload.value.release()
             Option.none:
                 pass
-        return source.identity_git(url.as_str(), revision.as_str(), subdir)
+        return pkg_source.identity_git(url.as_str(), revision.as_str(), subdir)
 
     var message = string.String.from_str("unsupported package source_kind \"")
     message.append(source_kind.as_str())
     message.append("\" in ")
     message.append(lock_path)
     message.append("; supported kinds are path, registry, and git")
-    return Result[source.SourceIdentity, string.String].failure(error = message)
+    return Result[pkg_source.SourceIdentity, string.String].failure(error = message)
 
 
 function object_string(package_object: ref[toml.Object], key: str) -> Option[string.String]:
@@ -1330,13 +1330,13 @@ function normalize_dependency_ids(
         match values.get_string(i):
             Option.some as payload:
                 if payload.value.len == 0:
-                    source.release_strings(ref_of(ids))
+                    pkg_source.release_strings(ref_of(ids))
                     var message = string.String.from_str("package.lock dependency ids must be strings in ")
                     message.append(lock_path)
                     return Result[StringList, string.String].failure(error = message)
                 ids.push(string.String.from_str(payload.value))
             Option.none:
-                source.release_strings(ref_of(ids))
+                pkg_source.release_strings(ref_of(ids))
                 var message = string.String.from_str("package.lock dependency ids must be strings in ")
                 message.append(lock_path)
                 return Result[StringList, string.String].failure(error = message)

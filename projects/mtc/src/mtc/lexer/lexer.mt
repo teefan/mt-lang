@@ -16,7 +16,7 @@
 import std.vec as vec
 
 import mtc.lexer.token_kinds as tk
-import mtc.lexer.token as tok
+import mtc.lexer.token as token_mod
 import mtc.lexer.keywords as keywords
 import mtc.lexer.trivia as triv
 
@@ -72,9 +72,9 @@ const LINE_CONTINUATION_KINDS: array[tk.TokenKind, 19] = array[tk.TokenKind, 19]
 
 ## Mutable lexer session.  Internal functions mutate this state directly.
 struct LexSession:
-    tokens: vec.Vec[tok.Token]
+    tokens: vec.Vec[token_mod.Token]
     indent_stack: vec.Vec[ptr_uint]
-    diags: ptr[vec.Vec[tok.LexDiagnostic]]?
+    diags: ptr[vec.Vec[token_mod.LexDiagnostic]]?
     continuation_pending: bool
     grouping_depth: int
     source: str
@@ -87,9 +87,9 @@ struct LexSession:
 #  Public API
 # =============================================================================
 
-public function lex(source: str) -> vec.Vec[tok.Token]:
+public function lex(source: str) -> vec.Vec[token_mod.Token]:
     var session = LexSession(
-        tokens = vec.Vec[tok.Token].create(),
+        tokens = vec.Vec[token_mod.Token].create(),
         indent_stack = vec.Vec[ptr_uint].create(),
         diags = null,
         continuation_pending = false,
@@ -107,9 +107,9 @@ public function lex(source: str) -> vec.Vec[tok.Token]:
     return tokens
 
 
-public function lex_reporting(source: str, diagnostics: ref[vec.Vec[tok.LexDiagnostic]]) -> vec.Vec[tok.Token]:
+public function lex_reporting(source: str, diagnostics: ref[vec.Vec[token_mod.LexDiagnostic]]) -> vec.Vec[token_mod.Token]:
     var session = LexSession(
-        tokens = vec.Vec[tok.Token].create(),
+        tokens = vec.Vec[token_mod.Token].create(),
         indent_stack = vec.Vec[ptr_uint].create(),
         diags = ptr_of(diagnostics),
         continuation_pending = false,
@@ -130,9 +130,9 @@ public function lex_reporting(source: str, diagnostics: ref[vec.Vec[tok.LexDiagn
 ## Lex in with-trivia mode: the token stream plus every comment, blank line,
 ## whitespace run and swallowed grouping newline in source order.  Mirrors the
 ## Ruby lexer's `Lexer.lex_with_trivia`.
-public function lex_with_trivia(source: str, diagnostics: ref[vec.Vec[tok.LexDiagnostic]]) -> triv.CstLexResult:
+public function lex_with_trivia(source: str, diagnostics: ref[vec.Vec[token_mod.LexDiagnostic]]) -> triv.CstLexResult:
     var session = LexSession(
-        tokens = vec.Vec[tok.Token].create(),
+        tokens = vec.Vec[token_mod.Token].create(),
         indent_stack = vec.Vec[ptr_uint].create(),
         diags = ptr_of(diagnostics),
         continuation_pending = false,
@@ -182,7 +182,7 @@ function session_fatal(session: ref[LexSession], msg: cstr, line: ptr_uint, col:
         if diag_ptr == null:
             return
         var diags = read(diag_ptr)
-        let diag = tok.LexDiagnostic(message = msg, line = line, column = col)
+        let diag = token_mod.LexDiagnostic(message = msg, line = line, column = col)
         diags.push(diag)
         read(diag_ptr) = diags
 
@@ -453,7 +453,7 @@ function lex_lines(session: ref[LexSession]) -> void:
             if is_line_continuation(session):
                 session.continuation_pending = true
             else:
-                let nl = tok.Token(
+                let nl = token_mod.Token(
                     kind = tk.TokenKind.newline,
                     start_offset = newline_offset,
                     end_offset = newline_end_offset,
@@ -476,7 +476,7 @@ function lex_lines(session: ref[LexSession]) -> void:
         line_number += consumed_lines
 
 
-function emit_eof(session: ref[LexSession]) -> vec.Vec[tok.Token]:
+function emit_eof(session: ref[LexSession]) -> vec.Vec[token_mod.Token]:
     # Ruby uses @line_count (`source.lines.count`) for dedent, +1 for eof.
     var total_lines: ptr_uint = 1
     if session.src_len > 0:
@@ -498,7 +498,7 @@ function emit_eof(session: ref[LexSession]) -> vec.Vec[tok.Token]:
 
     while session.indent_stack.len > 1:
         session.indent_stack.pop()
-        let tok = tok.Token(
+        let tok = token_mod.Token(
             kind = tk.TokenKind.dedent,
             start_offset = session.src_len,
             end_offset = session.src_len,
@@ -507,7 +507,7 @@ function emit_eof(session: ref[LexSession]) -> vec.Vec[tok.Token]:
         )
         session.tokens.push(tok)
 
-    let eof_tok = tok.Token(
+    let eof_tok = token_mod.Token(
         kind = tk.TokenKind.eof,
         start_offset = session.src_len,
         end_offset = session.src_len,
@@ -543,7 +543,7 @@ function emit_indentation(session: ref[LexSession], indent: ptr_uint, line_numbe
             return
 
         session.indent_stack.push(indent)
-        let tok = tok.Token(
+        let tok = token_mod.Token(
             kind = tk.TokenKind.indent,
             start_offset = line_offset,
             end_offset = line_offset,
@@ -562,7 +562,7 @@ function emit_indentation(session: ref[LexSession], indent: ptr_uint, line_numbe
             break
 
         session.indent_stack.pop()
-        let tok = tok.Token(
+        let tok = token_mod.Token(
             kind = tk.TokenKind.dedent,
             start_offset = line_offset,
             end_offset = line_offset,
@@ -622,7 +622,7 @@ function scan_identifier(
     let lexeme = source_slice(source, start, pos - start)
     let kind = keywords.keyword_kind(lexeme)
 
-    let tok = tok.Token(
+    let tok = token_mod.Token(
         kind = kind,
         start_offset = start,
         end_offset = pos,
@@ -713,7 +713,7 @@ function scan_number(
 
     let kind = if is_float: tk.TokenKind.float_literal else: tk.TokenKind.integer
 
-    let tok = tok.Token(
+    let tok = token_mod.Token(
         kind = kind,
         start_offset = start,
         end_offset = pos,
@@ -852,7 +852,7 @@ function scan_string_adjacent(
             next_line_number += 1
 
     let kind = if is_cstring: tk.TokenKind.cstring else: tk.TokenKind.string
-    let tok = tok.Token(
+    let tok = token_mod.Token(
         kind = kind,
         start_offset = start,
         end_offset = segment_end,
@@ -949,7 +949,7 @@ function scan_char_literal(
 
     pos += 1
 
-    let tok = tok.Token(
+    let tok = token_mod.Token(
         kind = tk.TokenKind.char_literal,
         start_offset = start,
         end_offset = pos,
@@ -1015,7 +1015,7 @@ function emit_symbol(
         if session.grouping_depth > 0:
             session.grouping_depth -= 1
 
-    let tok = tok.Token(
+    let tok = token_mod.Token(
         kind = kind,
         start_offset = start,
         end_offset = end_offset,
@@ -1113,7 +1113,7 @@ function scan_heredoc(
     let kind = (if is_format: tk.TokenKind.fstring else: (if is_cstring: tk.TokenKind.cstring else: tk.TokenKind.string))
     let lsc = line_start_cached(source, start)
     let col = start - lsc + 1
-    let tok = tok.Token(
+    let tok = token_mod.Token(
         kind = kind,
         start_offset = start,
         end_offset = terminator_after,
@@ -1194,7 +1194,7 @@ function scan_format_string(
 
         if b == DOUBLE_QUOTE and depth == 0:
             pos += 1
-            let tok = tok.Token(
+            let tok = token_mod.Token(
                 kind = tk.TokenKind.fstring,
                 start_offset = start,
                 end_offset = pos,

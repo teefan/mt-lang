@@ -13,19 +13,19 @@ import std.string as string
 import std.vec as vec
 import std.log as log
 
-import mtc.lexer.token as tok
+import mtc.lexer.token as token_mod
 import mtc.loader.module_loader as loader
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.loader.package_manifest as package_manifest
-import mtc.loader.path_resolver as resolver_mod
+import mtc.loader.path_resolver as resolver
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.lsp.definition_index as defidx
 import mtc.lsp.reference_index as refidx
 import mtc.lsp.uri as uri_ops
-import mtc.lsp.utils as lsp_utils
+import mtc.lsp.utils as utils
 import mtc.lsp.workspace_index as idx
 
 
@@ -321,7 +321,7 @@ extending Workspace:
         var source = this.document_source(path.as_str()) else:
             return character
         defer: source.release()
-        return lsp_utils.position_to_byte(source.as_str(), line, character)
+        return utils.position_to_byte(source.as_str(), line, character)
 
 
     ## The roots the workspace *symbol* index walks: the host's `index_workspace`
@@ -971,7 +971,7 @@ public function analysis_entry_for(ws: ref[Workspace], path: str) -> Option[ptr[
 
     var roots = ws.effective_module_roots_for(path)
     defer: roots.release()
-    var program = loader.check_program_with_source(path, roots.as_span(), resolver_mod.Platform.linux, content.as_str(), true, ptr_of(ws.module_cache), ptr_of(ws.open_docs))
+    var program = loader.check_program_with_source(path, roots.as_span(), resolver.Platform.linux, content.as_str(), true, ptr_of(ws.module_cache), ptr_of(ws.open_docs))
 
     if program.analyses.len() == 0:
         program.release()
@@ -1046,7 +1046,7 @@ public function append_compiler_module_roots(path: str, roots: ref[vec.Vec[strin
         Option.none:
             pass
 
-    var compiler_roots = resolver_mod.compiler_root_candidates()
+    var compiler_roots = resolver.compiler_root_candidates()
     defer: compiler_roots.release()
     var ci: ptr_uint = 0
     while ci < compiler_roots.len():

@@ -128,7 +128,7 @@ function comparison_op(op: str) -> bool:
 #  Analysis lookups
 # =============================================================================
 
-function resolve_expr_type(ctx: ref[Ctx], ep: ptr[ast.Expr]) -> ptr[types.Type]?:
+function resolve_expr_type(ctx: ref[Context], ep: ptr[ast.Expr]) -> ptr[types.Type]?:
     # Inside a generic body the host's analyzer records no expression types, so
     # its rules fall back to the literal-only paths; the self's analyzer does
     # record them, so the generic-body flag suppresses them here to match.
@@ -142,7 +142,7 @@ function resolve_expr_type(ctx: ref[Ctx], ep: ptr[ast.Expr]) -> ptr[types.Type]?
 
 ## The resolved primitive name of an expression, or "" when it is not a
 ## primitive (mirrors the host's `resolve_expr_type` + `Primitive` checks).
-function primitive_name_of(ctx: ref[Ctx], ep: ptr[ast.Expr]) -> str:
+function primitive_name_of(ctx: ref[Context], ep: ptr[ast.Expr]) -> str:
     let tp = resolve_expr_type(ctx, ep) else:
         return ""
     match unsafe: read(tp):
@@ -290,7 +290,7 @@ function own_to_pointer_redundant(inner: types.Type, cast: types.Type) -> bool:
 ## a lint pass and calls the hooks below from its walk, so the diagnostics
 ## interleave with the other rules in the host's order; `diags` holds what the
 ## hooks produced (the caller drains it in order).
-public struct Ctx:
+public struct Context:
     diags: vec.Vec[Diag]
     lines: vec.Vec[str]
     analysis: ptr[analyzer.Analysis]?
@@ -302,23 +302,23 @@ public struct Ctx:
     generic_body: bool
 
 
-public function ctx_create(source: str, analysis: ptr[analyzer.Analysis]?) -> Ctx:
-    return Ctx(diags = vec.Vec[Diag].create(), lines = split_lines(source), analysis = analysis, generic_body = false)
+public function ctx_create(source: str, analysis: ptr[analyzer.Analysis]?) -> Context:
+    return Context(diags = vec.Vec[Diag].create(), lines = split_lines(source), analysis = analysis, generic_body = false)
 
 
 ## The linter's walk marks the generic-body state before draining a hook's
 ## diagnostics (its `lint_generic_depth`).
-public function set_generic_body(ctx: ref[Ctx], generic: bool) -> void:
+public function set_generic_body(ctx: ref[Context], generic: bool) -> void:
     read(ctx).generic_body = generic
 
 
-public function ctx_release(ctx: ref[Ctx]) -> void:
+public function ctx_release(ctx: ref[Context]) -> void:
     read(ctx).diags.release()
     read(ctx).lines.release()
 
 
 ## A typed local's initializer (the host's `LocalDecl` arm).
-public function check_local(ctx: ref[Ctx], stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?) -> void:
+public function check_local(ctx: ref[Context], stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?) -> void:
     if stmt_type == null:
         return
     flag_widening(ctx, value)
@@ -326,20 +326,20 @@ public function check_local(ctx: ref[Ctx], stmt_type: ptr[ast.TypeRef]?, value: 
 
 
 ## A plain `=` assignment's value (the host's `Assignment` arm).
-public function check_assignment(ctx: ref[Ctx], value: ptr[ast.Expr]) -> void:
+public function check_assignment(ctx: ref[Context], value: ptr[ast.Expr]) -> void:
     flag_widening(ctx, value)
     flag_literal(ctx, value)
 
 
 ## A `return`'s value (the host's `ReturnStmt` arm).
-public function check_return(ctx: ref[Ctx], value: ptr[ast.Expr]?) -> void:
+public function check_return(ctx: ref[Context], value: ptr[ast.Expr]?) -> void:
     flag_widening(ctx, value)
     flag_literal(ctx, value)
 
 
 ## A prefix cast expression: the cast's own redundancy and the parenthesis
 ## check (the host's `PrefixCast` arm).
-public function check_prefix_cast(ctx: ref[Ctx], ep: ptr[ast.Expr]) -> void:
+public function check_prefix_cast(ctx: ref[Context], ep: ptr[ast.Expr]) -> void:
     unsafe:
         match read(ep):
             ast.Expr.expr_prefix_cast as c:
@@ -350,7 +350,7 @@ public function check_prefix_cast(ctx: ref[Ctx], ep: ptr[ast.Expr]) -> void:
 
 
 ## A binary expression's operands (the host's `BinaryOp` arm).
-public function check_binary_operands(ctx: ref[Ctx], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> void:
+public function check_binary_operands(ctx: ref[Context], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> void:
     check_binary_operand(ctx, op, left, right)
     check_binary_operand(ctx, op, right, left)
     check_literal_operand(ctx, op, left, right)
@@ -369,7 +369,7 @@ function split_lines(source: str) -> vec.Vec[str]:
     return lines
 
 
-function emit_diag(ctx: ref[Ctx], line: ptr_uint, column: ptr_uint, reason: str, target_name: str) -> void:
+function emit_diag(ctx: ref[Context], line: ptr_uint, column: ptr_uint, reason: str, target_name: str) -> void:
     var message = string.String.create()
     message.append(reason)
     message.append(": ")
@@ -394,7 +394,7 @@ function emit_diag(ctx: ref[Ctx], line: ptr_uint, column: ptr_uint, reason: str,
 #  Checks
 # =============================================================================
 
-function check_cast(ctx: ref[Ctx], cast_ptr: ptr[ast.Expr], target_type: ptr[ast.TypeRef], inner: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> void:
+function check_cast(ctx: ref[Context], cast_ptr: ptr[ast.Expr], target_type: ptr[ast.TypeRef], inner: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> void:
     let target_name = type_last_name(target_type)
     if target_name.len == 0:
         return
@@ -436,7 +436,7 @@ function expression_literal_type_name(ep: ptr[ast.Expr]) -> str:
 ## `T<-(x)` when `T<-x` needs no precedence protection: the parens are
 ## redundant unless the inner text has a top-level operator (host
 ## `check_redundant_cast_parens`).
-function check_parens(ctx: ref[Ctx], line: ptr_uint, column: ptr_uint, target_name: str) -> void:
+function check_parens(ctx: ref[Context], line: ptr_uint, column: ptr_uint, target_name: str) -> void:
     if line == 0:
         return
     let line_index = line - 1
@@ -465,7 +465,7 @@ function check_parens(ctx: ref[Ctx], line: ptr_uint, column: ptr_uint, target_na
 
 ## A widening cast directly at a coercion slot (typed local, `return`, plain
 ## `=`), where the slot type pins the result.
-function flag_widening(ctx: ref[Ctx], ep: ptr[ast.Expr]?) -> void:
+function flag_widening(ctx: ref[Context], ep: ptr[ast.Expr]?) -> void:
     if ctx.analysis == null:
         return
     let p = ep else:
@@ -486,7 +486,7 @@ function flag_widening(ctx: ref[Ctx], ep: ptr[ast.Expr]?) -> void:
 
 
 ## An integer-literal cast at a coercion slot whose literal fits the target.
-function flag_literal(ctx: ref[Ctx], ep: ptr[ast.Expr]?) -> void:
+function flag_literal(ctx: ref[Context], ep: ptr[ast.Expr]?) -> void:
     if ctx.analysis == null:
         return
     let p = ep else:
@@ -515,7 +515,7 @@ function flag_literal(ctx: ref[Ctx], ep: ptr[ast.Expr]?) -> void:
 
 ## `float_y + double<-i` style redundancy: an int->float cast as an operand of
 ## an arithmetic/comparison op whose sibling is already float.
-function check_binary_operand(ctx: ref[Ctx], op: str, operand: ptr[ast.Expr], sibling: ptr[ast.Expr]) -> void:
+function check_binary_operand(ctx: ref[Context], op: str, operand: ptr[ast.Expr], sibling: ptr[ast.Expr]) -> void:
     if ctx.analysis == null:
         return
     if not arithmetic_or_comparison_op(op):
@@ -543,7 +543,7 @@ function check_binary_operand(ctx: ref[Ctx], op: str, operand: ptr[ast.Expr], si
 
 ## `State.idle == ubyte<-0`: a fitting integer literal cast as a comparison
 ## operand against an enum / float / wider integer sibling.
-function check_literal_operand(ctx: ref[Ctx], op: str, operand: ptr[ast.Expr], sibling: ptr[ast.Expr]) -> void:
+function check_literal_operand(ctx: ref[Context], op: str, operand: ptr[ast.Expr], sibling: ptr[ast.Expr]) -> void:
     if ctx.analysis == null:
         return
     if not comparison_op(op):

@@ -7,7 +7,7 @@
 
 import std.vec as vec
 
-import mtc.lexer.token as tok
+import mtc.lexer.token as token_mod
 
 
 ## Trivia kinds.  `space` is the only kind the normalized reconstruct
@@ -32,5 +32,5 @@ public struct TriviaEntry:
 ## entry in source order.  `tokens` and `trivia` are owned; the caller
 ## releases both (see `formatter.cst.release_cst`).
 public struct CstLexResult:
-    tokens: vec.Vec[tok.Token]
+    tokens: vec.Vec[token_mod.Token]
     trivia: vec.Vec[TriviaEntry]

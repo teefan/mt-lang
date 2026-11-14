@@ -9,13 +9,13 @@ import std.vec as vec
 
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
-import mtc.lsp.scope as scope
+import mtc.lsp.scope as scope_mod
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
 
 ## Handle textDocument/linkedEditingRange.  Finds the binding at the
-## cursor position and returns all occurrences that share the same scope.
+## cursor position and returns all occurrences that share the same scope_mod.
 public function handle_linked_editing_range(
     ws: ref[workspace.Workspace],
     uri: str,
@@ -46,7 +46,7 @@ public function handle_linked_editing_range(
             return
         Option.some as token_payload:
             let name = token_payload.value.text
-            var bindings = scope.collect_bindings(source, ast_file)
+            var bindings = scope_mod.collect_bindings(source, ast_file)
             defer: bindings.release()
 
             # Find the target line (1-based from AST/cursor)
@@ -55,7 +55,7 @@ public function handle_linked_editing_range(
             # The host gates linked editing on a *local* binding: a token that
             # does not resolve to a parameter, local, `for` binding or match-arm
             # binding answers null, and so does an empty range set.
-            match scope.local_binding_line(bindings, name, target_line):
+            match scope_mod.local_binding_line(bindings, name, target_line):
                 Option.none:
                     proto.write_response(id, json.null_value())
                     return
@@ -65,7 +65,7 @@ public function handle_linked_editing_range(
             var occurrences = cursor.identifier_occurrences(source, name)
             defer: occurrences.release()
 
-            # Build the ranges array, filtering by scope.
+            # Build the ranges array, filtering by scope_mod.
             var ranges_json = string.String.create()
             defer: ranges_json.release()
             ranges_json.append("[")
@@ -75,7 +75,7 @@ public function handle_linked_editing_range(
                 let oc = occurrences.get(oi) else:
                     break
                 let occ = unsafe: read(oc)
-                if scope.is_in_same_scope(bindings, name, target_line, occ.line):
+                if scope_mod.is_in_same_scope(bindings, name, target_line, occ.line):
                     if not first:
                         ranges_json.append(",")
                     first = false

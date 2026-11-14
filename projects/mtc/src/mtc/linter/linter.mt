@@ -43,7 +43,7 @@ import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.semantic.control_flow.builder as flow_builder
 import mtc.semantic.control_flow.graph as flow_graph
-import mtc.lexer.lexer as lexer
+import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 import mtc.lexer.trivia as triv
@@ -228,7 +228,7 @@ public function lint_source_with(
     # One lex for the token-based rules and the suppression comments.
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: lex_diags.release()
-    var lexed = lexer.lex_with_trivia(source, ref_of(lex_diags))
+    var lexed = lexer_mod.lex_with_trivia(source, ref_of(lex_diags))
     var source_lines = vec.Vec[str].create()
     defer: source_lines.release()
     split_source_lines(source, ref_of(source_lines))
@@ -249,7 +249,7 @@ public function lint_source_with(
     # warnings where the host's visitor does — `shadow` at each declaration,
     # `unused-local`/`unused-param`/`prefer-let`/`prefer-own-ptr` at each pop.
     var scope_entries: array[scope_tracking.ScopeEntry, scope_tracking.SCOPE_WINDOW_TOTAL]
-    var scope: scope_tracking.ScopeCtx
+    var scope: scope_tracking.ScopeContext
     scope_tracking.ctx_init(ref_of(scope), ptr_of(scope_entries[0]))
     unsafe:
         read(ref_of(scope)).editable_sites = options.editable_sites
@@ -959,7 +959,7 @@ var lint_analysis: ptr[analyzer.Analysis]? = null
 ## The scope state the declaration walk drives (the host's `@scopes` and
 ## `@module_bindings`): `null` outside a lint pass, and `null` for callers
 ## that only run a sub-rule.
-var lint_scope_ctx: ptr[scope_tracking.ScopeCtx]? = null
+var lint_scope_ctx: ptr[scope_tracking.ScopeContext]? = null
 
 
 ## prefer-own-ptr's walk state (the host's `@ptr_candidates` and
@@ -975,7 +975,7 @@ var lint_unsafe_depth: ptr_uint = 0
 
 ## redundant-cast's check context for the walk (the host checks each site
 ## inline, so the module's whole-file walk is gone).
-var lint_cast_ctx: ptr[redundant_cast.Ctx]? = null
+var lint_cast_ctx: ptr[redundant_cast.Context]? = null
 
 
 ## How many of `lint_cast_ctx.diags` have already been emitted.

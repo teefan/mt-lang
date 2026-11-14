@@ -14,7 +14,7 @@ import mtc.dap.lldb_backend as lldb
 import mtc.dap.lldb_policy as lldb_policy
 import mtc.dap.process_backend as backend
 import mtc.dap.protocol as proto
-import mtc.dap.session as ses_mod
+import mtc.dap.session as session
 import mtc.dap.utilities as util
 import mtc.dap.wire as wire
 
@@ -26,7 +26,7 @@ public const SIGNAL_TERM:   int = 15
 
 ## Dispatch a DAP request to the appropriate handler based on the command.
 public function dispatch(
-    ses: ref[ses_mod.Session],
+    ses: ref[session.Session],
     lldb_backend_ref: ref[lldb.Backend],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
@@ -103,7 +103,7 @@ public function dispatch(
 ## termination and pause have their own paths, everything else forwards
 ## (the host's `process_message` fallback).
 function dispatch_lldb(
-    ses: ref[ses_mod.Session],
+    ses: ref[session.Session],
     lldb_backend_ref: ref[lldb.Backend],
     seq: ptr_uint,
     command: str,
@@ -131,8 +131,8 @@ function dispatch_lldb(
 
 
 ## Initialize — returns capabilities + initialized event.
-function handle_initialize(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.Message) -> void:
-    wire.write_response(seq, msg.seq, ses_mod.ADAPTER_CAPABILITIES)
+function handle_initialize(ses: ref[session.Session], seq: ptr_uint, msg: proto.Message) -> void:
+    wire.write_response(seq, msg.seq, session.ADAPTER_CAPABILITIES)
 
     let init_seq = ses.reserve_seq()
     wire.write_event(init_seq, "initialized", "{}")
@@ -142,7 +142,7 @@ function handle_initialize(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.
 ## (`noDebug` or the launch's `backend` argument over the CLI default) and
 ## either starts the process backend or forwards to lldb-dap.
 function handle_launch(
-    ses: ref[ses_mod.Session],
+    ses: ref[session.Session],
     lldb_backend_ref: ref[lldb.Backend],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
@@ -234,7 +234,7 @@ function handle_launch(
 ## Attach — requires the lldb-dap backend (the host's rule); an optional
 ## program is resolved like a launch (a `.mt` source is built for symbols).
 function handle_attach(
-    ses: ref[ses_mod.Session],
+    ses: ref[session.Session],
     lldb_backend_ref: ref[lldb.Backend],
     seq: ptr_uint,
     msg: proto.Message,
@@ -286,7 +286,7 @@ function path_basename(path: str) -> str:
 
 
 ## setBreakpoints — registers line breakpoints (unverified for process backend).
-function handle_set_breakpoints(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.Message) -> void:
+function handle_set_breakpoints(ses: ref[session.Session], seq: ptr_uint, msg: proto.Message) -> void:
     var requested = extract_line_breakpoints(msg.arguments)
     defer: requested.release()
 
@@ -326,7 +326,7 @@ function handle_set_exception_breakpoints(seq: ptr_uint, req_seq: ptr_uint) -> v
 ## configurationDone — marks configuration complete, then starts the program
 ## (or stops at entry), mirroring the host's `maybe_start_or_stop_on_entry`.
 function handle_configuration_done(
-    ses: ref[ses_mod.Session],
+    ses: ref[session.Session],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
     seq: ptr_uint,
@@ -343,7 +343,7 @@ function handle_threads(seq: ptr_uint, req_seq: ptr_uint) -> void:
 
 
 ## StackTrace — single entry frame.
-function handle_stack_trace(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.Message) -> void:
+function handle_stack_trace(ses: ref[session.Session], seq: ptr_uint, msg: proto.Message) -> void:
     let source_path = ses.program_path.as_str()
     let base = path_ops.basename(source_path)
     var r = string.String.create()
@@ -368,7 +368,7 @@ function handle_variables(seq: ptr_uint, req_seq: ptr_uint) -> void:
 
 ## Continue — starts the program if needed (after an entry stop), resumes a
 ## paused one, and emits the continued event.
-function handle_continue(ses: ref[ses_mod.Session], child: ref[process.ChildProcess], has_child: ref[bool], seq: ptr_uint, req_seq: ptr_uint) -> void:
+function handle_continue(ses: ref[session.Session], child: ref[process.ChildProcess], has_child: ref[bool], seq: ptr_uint, req_seq: ptr_uint) -> void:
     start_runtime(ses, child, has_child)
     continue_runtime_if_paused(ses, child, has_child)
     wire.write_response(seq, req_seq, "{\"allThreadsContinued\":true}")
@@ -377,7 +377,7 @@ function handle_continue(ses: ref[ses_mod.Session], child: ref[process.ChildProc
 
 
 ## Pause — SIGSTOPs the running program and emits the stopped event.
-function handle_pause(ses: ref[ses_mod.Session], child: ref[process.ChildProcess], has_child: ref[bool], seq: ptr_uint, req_seq: ptr_uint) -> void:
+function handle_pause(ses: ref[session.Session], child: ref[process.ChildProcess], has_child: ref[bool], seq: ptr_uint, req_seq: ptr_uint) -> void:
     if not pause_runtime_if_running(ses, child, has_child):
         wire.write_error(seq, req_seq, "pause failed: process is not running")
         return
@@ -389,7 +389,7 @@ function handle_pause(ses: ref[ses_mod.Session], child: ref[process.ChildProcess
 ## Terminate — SIGTERMs a running program (its exit emits the events); when no
 ## program was started, closes the session with terminated + exited.
 function handle_terminate(
-    ses: ref[ses_mod.Session],
+    ses: ref[session.Session],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
     seq: ptr_uint,
@@ -410,7 +410,7 @@ function handle_terminate(
 
 ## Disconnect — terminates the program (if running) and exits the server.
 function handle_disconnect(
-    ses: ref[ses_mod.Session],
+    ses: ref[session.Session],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
     seq: ptr_uint,
@@ -452,7 +452,7 @@ function handle_source(seq: ptr_uint, msg: proto.Message) -> void:
 ## requested.  The host starts it in `maybe_start_or_stop_on_entry`; the self
 ## defers to `configurationDone` the same way.
 function maybe_start_or_stop_on_entry(
-    ses: ref[ses_mod.Session],
+    ses: ref[session.Session],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
 ) -> void:
@@ -471,7 +471,7 @@ function maybe_start_or_stop_on_entry(
 ## Spawn the debuggee: the runnable path plus the launch `args`, with the
 ## program's directory as cwd (the host's `start_runtime_if_needed`).
 function start_runtime(
-    ses: ref[ses_mod.Session],
+    ses: ref[session.Session],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
 ) -> void:
@@ -516,7 +516,7 @@ function start_runtime(
 
 ## The program's directory first, the runnable's otherwise (host
 ## `start_runtime_if_needed`'s chdir rule).
-function runtime_working_directory(ses: ref[ses_mod.Session]) -> str:
+function runtime_working_directory(ses: ref[session.Session]) -> str:
     if ses.program_path.len() > 0:
         return path_ops.dirname(ses.program_path.as_str())
     return path_ops.dirname(ses.runnable_path.as_str())
@@ -524,7 +524,7 @@ function runtime_working_directory(ses: ref[ses_mod.Session]) -> str:
 
 ## SIGCONT when the program is paused.
 function continue_runtime_if_paused(
-    ses: ref[ses_mod.Session],
+    ses: ref[session.Session],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
 ) -> void:
@@ -538,7 +538,7 @@ function continue_runtime_if_paused(
 
 ## SIGSTOP a running program; false when none is running.
 function pause_runtime_if_running(
-    ses: ref[ses_mod.Session],
+    ses: ref[session.Session],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
 ) -> bool:
@@ -554,7 +554,7 @@ function pause_runtime_if_running(
 
 ## SIGTERM a running program (the exit is observed by the event loop).
 function terminate_runtime_if_running(
-    ses: ref[ses_mod.Session],
+    ses: ref[session.Session],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
 ) -> void:
@@ -567,7 +567,7 @@ function terminate_runtime_if_running(
 
 
 ## Replace the stored program arguments from a launch request's `args` array.
-function load_program_args(ses: ref[ses_mod.Session], args: json.Value) -> void:
+function load_program_args(ses: ref[session.Session], args: json.Value) -> void:
     var ai: ptr_uint = 0
     while ai < ses.program_args.len():
         let existing = ses.program_args.get(ai)

@@ -10,7 +10,7 @@
 ## IMPORTANT: all scope entries are stored in a raw byte buffer owned by the
 ## linter's `lint_source_with`, accessed exclusively through unsafe pointer
 ## arithmetic.  This avoids the self-host C-backend bug where
-## `array[T,N]` inside a struct passed through a `ref[ScopeCtx]` is
+## `array[T,N]` inside a struct passed through a `ref[ScopeContext]` is
 ## lowered as a zero-length array.
 
 import std.vec as vec
@@ -60,7 +60,7 @@ public struct ScopeEntry:
 
 ## Minimal struct.  All scope data lives in the external byte buffer;
 ## the ctx only stores counters and a pointer to that buffer.
-public struct ScopeCtx:
+public struct ScopeContext:
     buf: ptr[ScopeEntry]
     scope_starts: array[ptr_uint, MAX_SCOPES]
     scope_counts: array[ptr_uint, MAX_SCOPES]
@@ -100,7 +100,7 @@ function warn_unused_import(warnings: ref[vec.Vec[ScopeWarning]], path: str, nam
 #  Scope helpers — all access through ctx.buf + pointer arithmetic
 # =============================================================================
 
-public function ctx_init(ctx: ref[ScopeCtx], buf: ptr[ScopeEntry]) -> void:
+public function ctx_init(ctx: ref[ScopeContext], buf: ptr[ScopeEntry]) -> void:
     read(ctx).buf = buf
     read(ctx).scope_count = 0
     read(ctx).generic_function_depth = 0
@@ -109,15 +109,15 @@ public function ctx_init(ctx: ref[ScopeCtx], buf: ptr[ScopeEntry]) -> void:
     read(ctx).mutable_lvalue_sites = span[analyzer.EditableSite]()
 
 
-public function ctx_set_generic_depth(ctx: ref[ScopeCtx], depth: ptr_uint) -> void:
+public function ctx_set_generic_depth(ctx: ref[ScopeContext], depth: ptr_uint) -> void:
     read(ctx).generic_function_depth = depth
 
 
-public function ctx_set_match_arm_depth(ctx: ref[ScopeCtx], depth: ptr_uint) -> void:
+public function ctx_set_match_arm_depth(ctx: ref[ScopeContext], depth: ptr_uint) -> void:
     read(ctx).match_arm_depth = depth
 
 
-public function ctx_push_scope(ctx: ref[ScopeCtx]) -> void:
+public function ctx_push_scope(ctx: ref[ScopeContext]) -> void:
     let c = unsafe: read(ctx)
     if c.scope_count >= MAX_SCOPES:
         fatal(c"scope tracking overflow in lint pass")
@@ -134,7 +134,7 @@ public function ctx_push_scope(ctx: ref[ScopeCtx]) -> void:
 ## warnings), or `SCOPE_NONE` when no scope is open.
 public const SCOPE_NONE: ptr_uint = 4294967295
 
-public function ctx_pop_scope(ctx: ref[ScopeCtx]) -> ptr_uint:
+public function ctx_pop_scope(ctx: ref[ScopeContext]) -> ptr_uint:
     let c = unsafe: read(ctx)
     if c.scope_count == 0:
         return SCOPE_NONE
@@ -148,7 +148,7 @@ public function ctx_pop_scope(ctx: ref[ScopeCtx]) -> ptr_uint:
 ## like any other, so an arm binding or a local in an arm body reports shadow
 ## the same way.
 ## True means the caller emits `shadow` for the declaration.
-public function ctx_shadows_outer(ctx: ref[ScopeCtx], name: str) -> bool:
+public function ctx_shadows_outer(ctx: ref[ScopeContext], name: str) -> bool:
     let c = unsafe: read(ctx)
     if c.scope_count <= 1:
         return false
@@ -163,15 +163,15 @@ public function ctx_shadows_outer(ctx: ref[ScopeCtx], name: str) -> bool:
 
 ## The scope's entries, for the caller's warning emission (the host's
 ## `emit_scope_warnings` loop over `scope.each_value`).
-public function ctx_scope_start(ctx: ref[ScopeCtx], idx: ptr_uint) -> ptr_uint:
+public function ctx_scope_start(ctx: ref[ScopeContext], idx: ptr_uint) -> ptr_uint:
     return unsafe: read(ctx).scope_starts[idx]
 
 
-public function ctx_scope_count(ctx: ref[ScopeCtx], idx: ptr_uint) -> ptr_uint:
+public function ctx_scope_count(ctx: ref[ScopeContext], idx: ptr_uint) -> ptr_uint:
     return unsafe: read(ctx).scope_counts[idx]
 
 
-public function ctx_entry(ctx: ref[ScopeCtx], start: ptr_uint, offset: ptr_uint) -> Binding:
+public function ctx_entry(ctx: ref[ScopeContext], start: ptr_uint, offset: ptr_uint) -> Binding:
     return unsafe: read(read(ctx).buf + start + offset).binding
 
 
@@ -179,7 +179,7 @@ public function ctx_entry(ctx: ref[ScopeCtx], start: ptr_uint, offset: ptr_uint)
 ## binding for `name` was marked mutated.  A binding declared in an already
 ## popped nested scope is not found, so its `var ... else` is not reported — the
 ## host looks only at `@scopes.last` too.
-public function ctx_binding_mutated(ctx: ref[ScopeCtx], name: str) -> bool:
+public function ctx_binding_mutated(ctx: ref[ScopeContext], name: str) -> bool:
     let c = unsafe: read(ctx)
     if c.scope_count == 0:
         return false
@@ -198,7 +198,7 @@ public function ctx_binding_mutated(ctx: ref[ScopeCtx], name: str) -> bool:
 
 ## The host's `declare_local`: ignored names (`_`-prefixed) never enter a
 ## scope, so they draw no shadow/unused-local/prefer-let.
-public function ctx_declare_local(ctx: ref[ScopeCtx], name: str, line: ptr_uint, col: ptr_uint, is_var: bool, reserved_fix: ptr_uint) -> void:
+public function ctx_declare_local(ctx: ref[ScopeContext], name: str, line: ptr_uint, col: ptr_uint, is_var: bool, reserved_fix: ptr_uint) -> void:
     let c = unsafe: read(ctx)
     if c.scope_count == 0 or name.len == 0:
         return
@@ -211,7 +211,7 @@ public function ctx_declare_local(ctx: ref[ScopeCtx], name: str, line: ptr_uint,
     read(ctx).scope_counts[c.scope_count - 1] = c.scope_counts[c.scope_count - 1] + 1
 
 
-public function ctx_declare_param(ctx: ref[ScopeCtx], name: str, line: ptr_uint, col: ptr_uint, reserved_fix: ptr_uint) -> void:
+public function ctx_declare_param(ctx: ref[ScopeContext], name: str, line: ptr_uint, col: ptr_uint, reserved_fix: ptr_uint) -> void:
     if name.len == 0 or name.starts_with("_"):
         return
     let c = unsafe: read(ctx)
@@ -224,7 +224,7 @@ public function ctx_declare_param(ctx: ref[ScopeCtx], name: str, line: ptr_uint,
 ## Mark the innermost binding named `name` used and return 0 when no local
 ## matches, 1 when it matches without a reserved-name fix, or 2 + the fix's
 ## index when it has one.
-public function ctx_mark_used(ctx: ref[ScopeCtx], name: str) -> ptr_uint:
+public function ctx_mark_used(ctx: ref[ScopeContext], name: str) -> ptr_uint:
     let c = unsafe: read(ctx)
     var si = c.scope_count
     while si > 0:
@@ -242,7 +242,7 @@ public function ctx_mark_used(ctx: ref[ScopeCtx], name: str) -> ptr_uint:
     return 0
 
 
-public function visit_typeref(tr: ptr[ast.TypeRef], ctx: ref[ScopeCtx]) -> void:
+public function visit_typeref(tr: ptr[ast.TypeRef], ctx: ref[ScopeContext]) -> void:
     unsafe:
         let r = read(tr)
         var pi: ptr_uint = 0
@@ -255,12 +255,12 @@ public function visit_typeref(tr: ptr[ast.TypeRef], ctx: ref[ScopeCtx]) -> void:
             ai += 1
 
 
-function visit_typeref_opt(tr: ptr[ast.TypeRef]?, ctx: ref[ScopeCtx]) -> void:
+function visit_typeref_opt(tr: ptr[ast.TypeRef]?, ctx: ref[ScopeContext]) -> void:
     if tr != null:
         visit_typeref(tr, ctx)
 
 
-public function ctx_mark_mutated(ctx: ref[ScopeCtx], target: ptr[ast.Expr]) -> void:
+public function ctx_mark_mutated(ctx: ref[ScopeContext], target: ptr[ast.Expr]) -> void:
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
@@ -286,7 +286,7 @@ public function ctx_mark_mutated(ctx: ref[ScopeCtx], target: ptr[ast.Expr]) -> v
 ## `var s = Stack[int].create()` plus `s.push(x)` needs `var`, so prefer-let must
 ## not fire.  The analyzer records those receivers while resolving method kinds,
 ## matching them by the receiver identifier's name and line.
-public function ctx_mark_editable_receiver(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
+public function ctx_mark_editable_receiver(call: ptr[ast.Expr], ctx: ref[ScopeContext]) -> void:
     unsafe:
         match read(call):
             ast.Expr.expr_call as cl:
@@ -305,7 +305,7 @@ public function ctx_mark_editable_receiver(call: ptr[ast.Expr], ctx: ref[ScopeCt
 ## recorded an editable site at the same name/line.  The analyzer records the
 ## receiver's *root* identifier (its lvalue walk reaches the binding through
 ## members/indexes), so the same walk runs here.
-function ctx_mark_editable_member(member_expr: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
+function ctx_mark_editable_member(member_expr: ptr[ast.Expr], ctx: ref[ScopeContext]) -> void:
     unsafe:
         match read(member_expr):
             ast.Expr.expr_member_access as ma:
@@ -349,7 +349,7 @@ function receiver_root_identifier(receiver: ptr[ast.Expr]) -> Option[RootIdentif
 ## recorded as passed to an `out`/`inout` foreign parameter, or an explicit
 ## `out x` / `inout x` argument (the host's `mutating_argument_identifier?` and
 ## its `out`/`inout` write-target rule).
-public function ctx_mark_mutating_args(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
+public function ctx_mark_mutating_args(call: ptr[ast.Expr], ctx: ref[ScopeContext]) -> void:
     unsafe:
         match read(call):
             ast.Expr.expr_call as cl:
@@ -387,7 +387,7 @@ function ctx_mutating_site_contains(sites: span[analyzer.EditableSite], name: st
 ## `mark_alias_source_mutated`): exactly one argument, and `mark_mutated`
 ## recurses through index/member receivers to the root binding, so
 ## `ptr_of(arr[0])` marks `arr`.
-public function ctx_mark_alias_source(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
+public function ctx_mark_alias_source(call: ptr[ast.Expr], ctx: ref[ScopeContext]) -> void:
     unsafe:
         match read(call):
             ast.Expr.expr_call as cl:

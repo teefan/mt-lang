@@ -19,7 +19,7 @@ import std.str
 import std.vec as vec
 
 import mtc.parser.ast as ast
-import mtc.semantic.control_flow.graph as graph_mod
+import mtc.semantic.control_flow.graph as flow_graph
 
 
 ## A basic-block node in the CFG.  The graph itself lives in
@@ -106,12 +106,12 @@ public function build_cfg_into(cfg: ref[Cfg], params: span[ast.Param], body: ptr
 ## names — and `graph` with the host's `ControlFlow::Builder` graph.
 ## `build_cfg_into` keeps its narrower pre-scan for the linter's callers; this
 ## entry point is the analyzer's.
-public function build_graph_into(cfg: ref[Cfg], graph: ref[graph_mod.CfgGraph], params: span[ast.Param], body: ptr[ast.Stmt]) -> void:
+public function build_graph_into(cfg: ref[Cfg], graph: ref[flow_graph.CfgGraph], params: span[ast.Param], body: ptr[ast.Stmt]) -> void:
     assign_param_ids(cfg, params)
     collect_binding_ids(body, cfg)
     collect_binding_ids_extra(body, cfg)
-    graph_mod.graph_clear(graph)
-    let exit_id = graph_mod.graph_add_node(graph, "exit", 0, 0, 0)
+    flow_graph.graph_clear(graph)
+    let exit_id = flow_graph.graph_add_node(graph, "exit", 0, 0, 0)
     graph.exit_id = exit_id
     let entry_id = build_graph_body(cfg, graph, body, exit_id, 0, 0)
     graph.entry_id = entry_id
@@ -122,11 +122,11 @@ public function build_graph_into(cfg: ref[Cfg], graph: ref[graph_mod.CfgGraph], 
 ## "always terminates on its first iteration" exactly when `exit_id` is not
 ## reachable from the entry — `continue` flows to `exit_id`, `break` to
 ## `break_exit`, so a body whose only exits are `return`/`break` qualifies.
-public function build_graph_loop_body_into(cfg: ref[Cfg], graph: ref[graph_mod.CfgGraph], body: ptr[ast.Stmt]?) -> void:
-    graph_mod.graph_clear(graph)
-    let exit_id = graph_mod.graph_add_node(graph, "exit", 0, 0, 0)
+public function build_graph_loop_body_into(cfg: ref[Cfg], graph: ref[flow_graph.CfgGraph], body: ptr[ast.Stmt]?) -> void:
+    flow_graph.graph_clear(graph)
+    let exit_id = flow_graph.graph_add_node(graph, "exit", 0, 0, 0)
     graph.exit_id = exit_id
-    let break_exit_id = graph_mod.graph_add_node(graph, "break_exit", 0, 0, 0)
+    let break_exit_id = flow_graph.graph_add_node(graph, "break_exit", 0, 0, 0)
     let entry_id = build_graph_body(cfg, graph, body, exit_id, break_exit_id, exit_id)
     graph.entry_id = entry_id
 
@@ -134,9 +134,9 @@ public function build_graph_loop_body_into(cfg: ref[Cfg], graph: ref[graph_mod.C
 ## The host's `Builder#build` over a branch body (`Termination`'s fresh graph).
 ## `break`/`continue` fall through to the continuation, exactly as the host's
 ## nil targets do.
-public function build_graph_termination_into(cfg: ref[Cfg], graph: ref[graph_mod.CfgGraph], body: ptr[ast.Stmt]?) -> void:
-    graph_mod.graph_clear(graph)
-    let exit_id = graph_mod.graph_add_node(graph, "exit", 0, 0, 0)
+public function build_graph_termination_into(cfg: ref[Cfg], graph: ref[flow_graph.CfgGraph], body: ptr[ast.Stmt]?) -> void:
+    flow_graph.graph_clear(graph)
+    let exit_id = flow_graph.graph_add_node(graph, "exit", 0, 0, 0)
     graph.exit_id = exit_id
     let entry_id = build_graph_body(cfg, graph, body, exit_id, 0, 0)
     graph.entry_id = entry_id
@@ -329,7 +329,7 @@ function binding_id_of(cfg: ref[Cfg], name: str) -> ptr_uint:
 ## Build a statement body's nodes, threading the continuation `next_id` the way
 ## the host does (statements are walked backwards, so each one knows the node
 ## control flows into).
-function build_graph_block(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmts: span[ast.Stmt], next_id: ptr_uint, break_target: ptr_uint, continue_target: ptr_uint) -> ptr_uint:
+function build_graph_block(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], stmts: span[ast.Stmt], next_id: ptr_uint, break_target: ptr_uint, continue_target: ptr_uint) -> ptr_uint:
     var current_next = next_id
     var i = stmts.len
     unsafe:
@@ -341,7 +341,7 @@ function build_graph_block(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmts: spa
 
 ## A body pointer: a block is its statement list, anything else is one
 ## statement.  Transparent wrappers (`unsafe:`) have no node of their own.
-function build_graph_body(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], body: ptr[ast.Stmt]?, next_id: ptr_uint, break_target: ptr_uint, continue_target: ptr_uint) -> ptr_uint:
+function build_graph_body(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], body: ptr[ast.Stmt]?, next_id: ptr_uint, break_target: ptr_uint, continue_target: ptr_uint) -> ptr_uint:
     let b = body else:
         return next_id
     unsafe:
@@ -352,32 +352,32 @@ function build_graph_body(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], body: ptr[a
                 return build_graph_statement(cfg, g, b, next_id, break_target, continue_target)
 
 
-function build_graph_statement(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmt: ptr[ast.Stmt], next_id: ptr_uint, break_target: ptr_uint, continue_target: ptr_uint) -> ptr_uint:
+function build_graph_statement(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], stmt: ptr[ast.Stmt], next_id: ptr_uint, break_target: ptr_uint, continue_target: ptr_uint) -> ptr_uint:
     let stmt_key = unsafe: reinterpret[ptr_uint](stmt)
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_local as l:
                 if l.else_body != null:
-                    let cond_id = graph_mod.graph_add_node(g, "local_decl_condition", stmt_key, l.line, l.column)
-                    let cond = graph_mod.graph_node(g, cond_id) else:
+                    let cond_id = flow_graph.graph_add_node(g, "local_decl_condition", stmt_key, l.line, l.column)
+                    let cond = flow_graph.graph_node(g, cond_id) else:
                         return next_id
                     collect_read_sites(cfg, cond, l.value)
-                    let success_id = graph_mod.graph_add_node(g, "local_decl", stmt_key, l.line, l.column)
-                    let success = graph_mod.graph_node(g, success_id) else:
+                    let success_id = flow_graph.graph_add_node(g, "local_decl", stmt_key, l.line, l.column)
+                    let success = flow_graph.graph_node(g, success_id) else:
                         return next_id
                     collect_local_decl_writes(cfg, success, l.name, l.line, l.column)
                     collect_write_sites_from_expression(cfg, success, l.value, l.line)
-                    graph_mod.graph_add_edge(g, cond_id, success_id)
-                    graph_mod.graph_set_edge_label(g, cond_id, success_id, "non_null")
+                    flow_graph.graph_add_edge(g, cond_id, success_id)
+                    flow_graph.graph_set_edge_label(g, cond_id, success_id, "non_null")
                     # The success arm continues into the next statement (the
                     # host's `add_linear_node(..., next_id, ...)`).
-                    graph_mod.graph_add_edge(g, success_id, next_id)
+                    flow_graph.graph_add_edge(g, success_id, next_id)
                     let null_entry = build_graph_body(cfg, g, l.else_body, next_id, break_target, continue_target)
-                    graph_mod.graph_add_edge(g, cond_id, null_entry)
-                    graph_mod.graph_set_edge_label(g, cond_id, null_entry, "null")
+                    flow_graph.graph_add_edge(g, cond_id, null_entry)
+                    flow_graph.graph_set_edge_label(g, cond_id, null_entry, "null")
                     return cond_id
-                let node_id = graph_mod.graph_add_node(g, "local_decl", stmt_key, l.line, l.column)
-                let node = graph_mod.graph_node(g, node_id) else:
+                let node_id = flow_graph.graph_add_node(g, "local_decl", stmt_key, l.line, l.column)
+                let node = flow_graph.graph_node(g, node_id) else:
                     return next_id
                 collect_read_sites(cfg, node, l.value)
                 collect_local_decl_writes(cfg, node, l.name, l.line, l.column)
@@ -395,11 +395,11 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmt: 
                         push_write_site(cfg, node, else_name.value, l.else_binding_line, l.else_binding_column, "declaration")
                     Option.none:
                         pass
-                graph_mod.graph_add_edge(g, node_id, next_id)
+                flow_graph.graph_add_edge(g, node_id, next_id)
                 return node_id
             ast.Stmt.stmt_assignment as a:
-                let node_id = graph_mod.graph_add_node(g, "assignment", stmt_key, a.line, a.column)
-                let node = graph_mod.graph_node(g, node_id) else:
+                let node_id = flow_graph.graph_add_node(g, "assignment", stmt_key, a.line, a.column)
+                let node = flow_graph.graph_node(g, node_id) else:
                     return next_id
                 collect_read_sites(cfg, node, a.value)
                 if not a.operator.equal("="):
@@ -411,7 +411,7 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmt: 
                     _:
                         pass
                 collect_write_sites_from_expression(cfg, node, a.value, a.line)
-                graph_mod.graph_add_edge(g, node_id, next_id)
+                flow_graph.graph_add_edge(g, node_id, next_id)
                 return node_id
             ast.Stmt.stmt_if as sif:
                 var fallback_entry = next_id
@@ -423,26 +423,26 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmt: 
                     let branch = read(sif.branches.data + bi)
                     let branch_key = reinterpret[ptr_uint](sif.branches.data + bi)
                     let then_entry = build_graph_body(cfg, g, branch.body, next_id, break_target, continue_target)
-                    graph_mod.graph_set_body_target(g, branch.body, next_id)
+                    flow_graph.graph_set_body_target(g, branch.body, next_id)
                     let line = if branch.line > 0: branch.line else: sif.line
-                    let cond_id = graph_mod.graph_add_node(g, "if_condition", branch_key, line, branch.column)
-                    let cond = graph_mod.graph_node(g, cond_id) else:
+                    let cond_id = flow_graph.graph_add_node(g, "if_condition", branch_key, line, branch.column)
+                    let cond = flow_graph.graph_node(g, cond_id) else:
                         return next_id
                     collect_read_sites(cfg, cond, branch.condition)
-                    graph_mod.graph_add_edge(g, cond_id, then_entry)
-                    graph_mod.graph_set_edge_label(g, cond_id, then_entry, "true_branch")
-                    graph_mod.graph_add_edge(g, cond_id, fallback_entry)
-                    graph_mod.graph_set_edge_label(g, cond_id, fallback_entry, "false_branch")
+                    flow_graph.graph_add_edge(g, cond_id, then_entry)
+                    flow_graph.graph_set_edge_label(g, cond_id, then_entry, "true_branch")
+                    flow_graph.graph_add_edge(g, cond_id, fallback_entry)
+                    flow_graph.graph_set_edge_label(g, cond_id, fallback_entry, "false_branch")
                     add_null_test_refinements(cfg, g, cond_id, then_entry, fallback_entry, branch.condition)
                     fallback_entry = cond_id
                 return fallback_entry
             ast.Stmt.stmt_match as m:
-                let match_id = graph_mod.graph_add_node(g, "match_condition", stmt_key, m.line, m.column)
-                let match_node = graph_mod.graph_node(g, match_id) else:
+                let match_id = flow_graph.graph_add_node(g, "match_condition", stmt_key, m.line, m.column)
+                let match_node = flow_graph.graph_node(g, match_id) else:
                     return next_id
                 collect_read_sites(cfg, match_node, m.scrutinee)
                 if m.arms.len == 0:
-                    graph_mod.graph_add_edge(g, match_id, next_id)
+                    flow_graph.graph_add_edge(g, match_id, next_id)
                 else:
                     var ai: ptr_uint = 0
                     while ai < m.arms.len:
@@ -452,33 +452,33 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmt: 
                         match arm.binding_name:
                             Option.some as bound:
                                 let bind_line = if arm.binding_line > 0: arm.binding_line else: m.line
-                                let bind_id = graph_mod.graph_add_node(g, "match_binding", arm_key, bind_line, arm.binding_column)
-                                let bind_node = graph_mod.graph_node(g, bind_id) else:
+                                let bind_id = flow_graph.graph_add_node(g, "match_binding", arm_key, bind_line, arm.binding_column)
+                                let bind_node = flow_graph.graph_node(g, bind_id) else:
                                     return next_id
                                 push_write_site(cfg, bind_node, bound.value, bind_line, arm.binding_column, "match_binding")
-                                graph_mod.graph_add_edge(g, bind_id, arm_entry)
+                                flow_graph.graph_add_edge(g, bind_id, arm_entry)
                                 arm_entry = bind_id
                             Option.none:
                                 pass
-                        graph_mod.graph_add_edge(g, match_id, arm_entry)
+                        flow_graph.graph_add_edge(g, match_id, arm_entry)
                         ai += 1
                 return match_id
             ast.Stmt.stmt_while as w:
-                let cond_id = graph_mod.graph_add_node(g, "while_condition", stmt_key, w.line, w.column)
-                let cond = graph_mod.graph_node(g, cond_id) else:
+                let cond_id = flow_graph.graph_add_node(g, "while_condition", stmt_key, w.line, w.column)
+                let cond = flow_graph.graph_node(g, cond_id) else:
                     return next_id
                 collect_read_sites(cfg, cond, w.condition)
                 let body_entry = build_graph_body(cfg, g, w.body, cond_id, next_id, cond_id)
-                graph_mod.graph_set_body_target(g, w.body, next_id)
-                graph_mod.graph_add_edge(g, cond_id, body_entry)
-                graph_mod.graph_set_edge_label(g, cond_id, body_entry, "true_branch")
-                graph_mod.graph_add_edge(g, cond_id, next_id)
-                graph_mod.graph_set_edge_label(g, cond_id, next_id, "false_branch")
+                flow_graph.graph_set_body_target(g, w.body, next_id)
+                flow_graph.graph_add_edge(g, cond_id, body_entry)
+                flow_graph.graph_set_edge_label(g, cond_id, body_entry, "true_branch")
+                flow_graph.graph_add_edge(g, cond_id, next_id)
+                flow_graph.graph_set_edge_label(g, cond_id, next_id, "false_branch")
                 add_null_test_refinements(cfg, g, cond_id, body_entry, next_id, w.condition)
                 return cond_id
             ast.Stmt.stmt_for as fr:
-                let header_id = graph_mod.graph_add_node(g, "for_header", stmt_key, fr.line, fr.column)
-                let header = graph_mod.graph_node(g, header_id) else:
+                let header_id = flow_graph.graph_add_node(g, "for_header", stmt_key, fr.line, fr.column)
+                let header = flow_graph.graph_node(g, header_id) else:
                     return next_id
                 var fi: ptr_uint = 0
                 while fi < fr.iterables.len:
@@ -490,9 +490,9 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmt: 
                     push_write_site(cfg, header, binding.name, fr.line, fr.column, "for_binding")
                     bi += 1
                 let body_entry = build_graph_body(cfg, g, fr.body, header_id, next_id, header_id)
-                graph_mod.graph_set_body_target(g, fr.body, next_id)
-                graph_mod.graph_add_edge(g, header_id, body_entry)
-                graph_mod.graph_add_edge(g, header_id, next_id)
+                flow_graph.graph_set_body_target(g, fr.body, next_id)
+                flow_graph.graph_add_edge(g, header_id, body_entry)
+                flow_graph.graph_add_edge(g, header_id, next_id)
                 return header_id
             ast.Stmt.stmt_unsafe as u:
                 return build_graph_body(cfg, g, u.body, next_id, break_target, continue_target)
@@ -500,32 +500,32 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmt: 
                 return build_graph_body(cfg, g, eb.body, next_id, break_target, continue_target)
             ast.Stmt.stmt_defer as d:
                 let body_entry = build_graph_body(cfg, g, d.body, next_id, break_target, continue_target)
-                let defer_id = graph_mod.graph_add_node(g, "defer", stmt_key, d.line, d.column)
-                graph_mod.graph_add_edge(g, defer_id, body_entry)
+                let defer_id = flow_graph.graph_add_node(g, "defer", stmt_key, d.line, d.column)
+                flow_graph.graph_add_edge(g, defer_id, body_entry)
                 return defer_id
             ast.Stmt.stmt_ret as r:
-                let node_id = graph_mod.graph_add_node(g, "return", stmt_key, r.line, r.column)
-                let node = graph_mod.graph_node(g, node_id) else:
+                let node_id = flow_graph.graph_add_node(g, "return", stmt_key, r.line, r.column)
+                let node = flow_graph.graph_node(g, node_id) else:
                     return next_id
                 collect_read_sites(cfg, node, r.value)
                 return node_id
             ast.Stmt.stmt_expression as e:
                 let fatal = is_fatal_expression(e.expression)
                 let kind = if fatal: "fatal" else: "expression"
-                let node_id = graph_mod.graph_add_node(g, kind, stmt_key, e.line, 0)
-                let node = graph_mod.graph_node(g, node_id) else:
+                let node_id = flow_graph.graph_add_node(g, kind, stmt_key, e.line, 0)
+                let node = flow_graph.graph_node(g, node_id) else:
                     return next_id
                 collect_read_sites(cfg, node, e.expression)
                 collect_write_sites_from_expression(cfg, node, e.expression, e.line)
                 if not fatal:
-                    graph_mod.graph_add_edge(g, node_id, next_id)
+                    flow_graph.graph_add_edge(g, node_id, next_id)
                 return node_id
             ast.Stmt.stmt_static_assert as sa:
-                let node_id = graph_mod.graph_add_node(g, "static_assert", stmt_key, sa.line, 0)
-                let node = graph_mod.graph_node(g, node_id) else:
+                let node_id = flow_graph.graph_add_node(g, "static_assert", stmt_key, sa.line, 0)
+                let node = flow_graph.graph_node(g, node_id) else:
                     return next_id
                 collect_read_sites(cfg, node, sa.condition)
-                graph_mod.graph_add_edge(g, node_id, next_id)
+                flow_graph.graph_add_edge(g, node_id, next_id)
                 return node_id
             ast.Stmt.stmt_pass as p:
                 return add_plain_node(g, "pass", stmt_key, p.line, p.column, next_id)
@@ -540,9 +540,9 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmt: 
 
 
 ## A node with no reads or writes, flowing into `next_id`.
-function add_plain_node(g: ref[graph_mod.CfgGraph], kind: str, stmt_key: ptr_uint, line: ptr_uint, column: ptr_uint, next_id: ptr_uint) -> ptr_uint:
-    let node_id = graph_mod.graph_add_node(g, kind, stmt_key, line, column)
-    graph_mod.graph_add_edge(g, node_id, next_id)
+function add_plain_node(g: ref[flow_graph.CfgGraph], kind: str, stmt_key: ptr_uint, line: ptr_uint, column: ptr_uint, next_id: ptr_uint) -> ptr_uint:
+    let node_id = flow_graph.graph_add_node(g, kind, stmt_key, line, column)
+    flow_graph.graph_add_edge(g, node_id, next_id)
     return node_id
 
 
@@ -550,20 +550,20 @@ function add_plain_node(g: ref[graph_mod.CfgGraph], kind: str, stmt_key: ptr_uin
 #  Read and write collection
 # =============================================================================
 
-function push_read_site(cfg: ref[Cfg], node: ptr[graph_mod.CfgNode], name: str, line: ptr_uint, column: ptr_uint, length: ptr_uint) -> void:
+function push_read_site(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], name: str, line: ptr_uint, column: ptr_uint, length: ptr_uint) -> void:
     let key = binding_id_of(cfg, name)
     if key == 0:
         return
     unsafe:
-        read(node).read_sites.push(graph_mod.ReadSite(key = key, line = line, column = column, length = length))
+        read(node).read_sites.push(flow_graph.ReadSite(key = key, line = line, column = column, length = length))
 
 
-function push_write_site(cfg: ref[Cfg], node: ptr[graph_mod.CfgNode], name: str, line: ptr_uint, column: ptr_uint, origin: str) -> void:
+function push_write_site(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], name: str, line: ptr_uint, column: ptr_uint, origin: str) -> void:
     let key = binding_id_of(cfg, name)
     if key == 0:
         return
     unsafe:
-        read(node).write_sites.push(graph_mod.WriteSite(key = key, name = name, line = line, column = column, origin = origin))
+        read(node).write_sites.push(flow_graph.WriteSite(key = key, name = name, line = line, column = column, origin = origin))
 
 
 ## Is this identifier argument one the analyzer recorded as a mutating
@@ -583,7 +583,7 @@ function is_mutating_site(cfg: ref[Cfg], name: str, line: ptr_uint, column: ptr_
 
 ## The host's `read_identifiers`: every identifier an expression reads, in
 ## source order, keyed to its binding.
-function collect_read_sites(cfg: ref[Cfg], node: ptr[graph_mod.CfgNode], expr: ptr[ast.Expr]?) -> void:
+function collect_read_sites(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], expr: ptr[ast.Expr]?) -> void:
     let e = expr else:
         return
     unsafe:
@@ -654,12 +654,12 @@ function collect_read_sites(cfg: ref[Cfg], node: ptr[graph_mod.CfgNode], expr: p
 ## A `let`/`var` declaration's own write (the host's `local_decl_write_targets`):
 ## the declared name when the declaration has an initializer, plus whatever the
 ## initializer itself writes through.
-function collect_local_decl_writes(cfg: ref[Cfg], node: ptr[graph_mod.CfgNode], name: str, line: ptr_uint, column: ptr_uint) -> void:
+function collect_local_decl_writes(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], name: str, line: ptr_uint, column: ptr_uint) -> void:
     push_write_site(cfg, node, name, line, column, "declaration")
 
 
 ## The host's `assignment_target_reads`: a compound assignment reads its target.
-function collect_assignment_target_reads(cfg: ref[Cfg], node: ptr[graph_mod.CfgNode], target: ptr[ast.Expr]) -> void:
+function collect_assignment_target_reads(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], target: ptr[ast.Expr]) -> void:
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
@@ -670,7 +670,7 @@ function collect_assignment_target_reads(cfg: ref[Cfg], node: ptr[graph_mod.CfgN
 
 ## The host's `assignment_target_side_effect_reads`: the receiver/index reads a
 ## member or index target performs before it is written.
-function collect_target_side_effect_reads(cfg: ref[Cfg], node: ptr[graph_mod.CfgNode], target: ptr[ast.Expr]) -> void:
+function collect_target_side_effect_reads(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], target: ptr[ast.Expr]) -> void:
     unsafe:
         match read(target):
             ast.Expr.expr_member_access as ma:
@@ -684,7 +684,7 @@ function collect_target_side_effect_reads(cfg: ref[Cfg], node: ptr[graph_mod.Cfg
 
 ## The host's `write_targets_from_expression`: the bindings an expression
 ## writes through (`out`/`inout` arguments and the `ref_of`/`ptr_of` family).
-function collect_write_sites_from_expression(cfg: ref[Cfg], node: ptr[graph_mod.CfgNode], expr: ptr[ast.Expr]?, line: ptr_uint) -> void:
+function collect_write_sites_from_expression(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], expr: ptr[ast.Expr]?, line: ptr_uint) -> void:
     let e = expr else:
         return
     unsafe:
@@ -842,7 +842,7 @@ struct NullPair:
 ## Record the host's `add_null_test_refinements`: for every null test in the
 ## condition, label the true and false edges so the dataflow knows which
 ## binding is known non-null on which path.
-function add_null_test_refinements(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], cond_id: ptr_uint, true_succ: ptr_uint, false_succ: ptr_uint, condition: ptr[ast.Expr]) -> void:
+function add_null_test_refinements(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], cond_id: ptr_uint, true_succ: ptr_uint, false_succ: ptr_uint, condition: ptr[ast.Expr]) -> void:
     var pairs = vec.Vec[NullPair].create()
     defer: pairs.release()
     null_check_pairs(cfg, condition, true, ref_of(pairs))
@@ -852,11 +852,11 @@ function add_null_test_refinements(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], co
             break
         unsafe:
             if read(pair).null_on_true:
-                graph_mod.graph_set_edge_refinement(g, cond_id, true_succ, read(pair).key, false)
-                graph_mod.graph_set_edge_refinement(g, cond_id, false_succ, read(pair).key, true)
+                flow_graph.graph_set_edge_refinement(g, cond_id, true_succ, read(pair).key, false)
+                flow_graph.graph_set_edge_refinement(g, cond_id, false_succ, read(pair).key, true)
             else:
-                graph_mod.graph_set_edge_refinement(g, cond_id, true_succ, read(pair).key, true)
-                graph_mod.graph_set_edge_refinement(g, cond_id, false_succ, read(pair).key, false)
+                flow_graph.graph_set_edge_refinement(g, cond_id, true_succ, read(pair).key, true)
+                flow_graph.graph_set_edge_refinement(g, cond_id, false_succ, read(pair).key, false)
         pi += 1
 
 

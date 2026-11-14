@@ -3308,7 +3308,7 @@ function test_proc_captures_and_counters_are_program_scoped() -> void:
     ## host's `proc_capture_entries` walk, `proc.rb:137-250`) — not every visible
     ## local — and both the synthetic proc symbols and the async match-binding
     ## counter number per *compile* (the host's per-`Lowering` counters), not per
-    ## module (`lower_module` builds a fresh LowerCtx).  `beta`'s proc is symbol
+    ## module (`lower_module` builds a fresh LoweringContext).  `beta`'s proc is symbol
     ## 2 and its awaited arm takes `local_match_binding_4` (session 44 batch 12;
     ## `std/json.mt`'s stray `current`, `std/net/clock.mt`'s 5/6).
     var root = fs.create_temporary_directory_in_system_temp("mtc_progscope_") else:

@@ -13,8 +13,8 @@ import std.string as string
 import std.vec as vec
 
 import mtc.formatter.cst as cst
-import mtc.lexer.lexer as lexer
-import mtc.lexer.token as tok
+import mtc.lexer.lexer as lexer_mod
+import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 import mtc.linter.config as lint_config
 import mtc.parser.parser as parser
@@ -106,7 +106,7 @@ public function resolve_max_line_length(path: str, explicit: ptr_uint) -> ptr_ui
 
 ## `:preserve` — CST reconstruct, verbatim.
 public function format_preserve(source: str, profile: ptr[profile_mod.Profile]?) -> Option[string.String]:
-    var diags = vec.Vec[tok.LexDiagnostic].create()
+    var diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: diags.release()
     let cst_started = profile_mod.now_ms()
     var cst_file = cst.build_cst(source, ref_of(diags))
@@ -130,10 +130,10 @@ public function format_canonical(source: str, profile: ptr[profile_mod.Profile]?
     profile_mod.record(profile, "format.parse", profile_mod.now_ms() - parse_started)
     if diags.len() > 0:
         return Option[string.String].none
-    var lex_diags = vec.Vec[tok.LexDiagnostic].create()
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: lex_diags.release()
     let lex_started = profile_mod.now_ms()
-    var lexed = lexer.lex_with_trivia(source, ref_of(lex_diags))
+    var lexed = lexer_mod.lex_with_trivia(source, ref_of(lex_diags))
     profile_mod.record(profile, "format.lex", profile_mod.now_ms() - lex_started)
     let ast_started = profile_mod.now_ms()
     var result = ast_formatter.format_source_file_with_trivia(file, source, lexed.trivia.as_span())
@@ -145,7 +145,7 @@ public function format_canonical(source: str, profile: ptr[profile_mod.Profile]?
 
 ## `:tidy` — CST normalize → wrap → blank lines.
 public function format_tidy(source: str, path: str, max_line_length: ptr_uint, profile: ptr[profile_mod.Profile]?) -> Option[string.String]:
-    var diags = vec.Vec[tok.LexDiagnostic].create()
+    var diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: diags.release()
     let cst_started = profile_mod.now_ms()
     var cst_file = cst.build_cst(source, ref_of(diags))
@@ -923,8 +923,8 @@ function is_trivia_token_kind(kind: tk.TokenKind) -> bool:
     return kind == tk.TokenKind.newline or kind == tk.TokenKind.indent or kind == tk.TokenKind.dedent or kind == tk.TokenKind.eof
 
 
-function non_trivia_tokens_on_line(tokens: vec.Vec[tok.Token], line_number: ptr_uint) -> vec.Vec[tok.Token]:
-    var collected = vec.Vec[tok.Token].create()
+function non_trivia_tokens_on_line(tokens: vec.Vec[token_mod.Token], line_number: ptr_uint) -> vec.Vec[token_mod.Token]:
+    var collected = vec.Vec[token_mod.Token].create()
     var i: ptr_uint = 0
     while i < tokens.len():
         let entry = tokens.get(i) else:
@@ -958,7 +958,7 @@ public function build_long_line_wrap_fix(
     path: str,
     validate: bool,
 ) -> Option[WrapFix]:
-    var tokens = lexer.lex(source)
+    var tokens = lexer_mod.lex(source)
     defer: tokens.release()
     return build_line_wrap_fix_with_tokens(source, tokens, line_index, max_line_length, path, validate)
 
@@ -966,7 +966,7 @@ public function build_long_line_wrap_fix(
 ## `build_long_line_wrap_fix` with the caller's already-lexed tokens.
 public function build_line_wrap_fix_with_tokens(
     source: str,
-    tokens: vec.Vec[tok.Token],
+    tokens: vec.Vec[token_mod.Token],
     line_index: ptr_uint,
     max_line_length: ptr_uint,
     path: str,
@@ -1029,7 +1029,7 @@ public function wrap_long_argument_lists(source: str, max_line_length: ptr_uint,
 
 
 function find_wrap_fix(text: str, lines: vec.Vec[str], max_line_length: ptr_uint, path: str) -> Option[WrapFix]:
-    var tokens = lexer.lex(text)
+    var tokens = lexer_mod.lex(text)
     defer: tokens.release()
 
     var line_index: ptr_uint = 0
@@ -1052,7 +1052,7 @@ function build_wrap_fix_from_parts(
     line: str,
     original_line: str,
     max_line_length: ptr_uint,
-    tokens: vec.Vec[tok.Token],
+    tokens: vec.Vec[token_mod.Token],
     validate: bool,
 ) -> Option[WrapFix]:
     if max_line_length == 0:
@@ -1174,7 +1174,7 @@ function matching_delimiter_pair(opening_kind: tk.TokenKind, closing_kind: tk.To
     return opening_kind == tk.TokenKind.lbracket and closing_kind == tk.TokenKind.rbracket
 
 
-function long_line_wrap_candidates(line: str, line_tokens: vec.Vec[tok.Token]) -> vec.Vec[WrapCandidate]:
+function long_line_wrap_candidates(line: str, line_tokens: vec.Vec[token_mod.Token]) -> vec.Vec[WrapCandidate]:
     var stack = vec.Vec[DelimiterEntry].create()
     defer: stack.release()
     var candidates = vec.Vec[WrapCandidate].create()
@@ -1202,7 +1202,7 @@ function long_line_wrap_candidates(line: str, line_tokens: vec.Vec[tok.Token]) -
 
 function build_long_line_wrap_candidate(
     line: str,
-    line_tokens: vec.Vec[tok.Token],
+    line_tokens: vec.Vec[token_mod.Token],
     open_index: ptr_uint,
     close_index: ptr_uint,
     depth: ptr_uint,
@@ -1309,7 +1309,7 @@ function build_wrapped_logical_chain_fix(
     lines: vec.Vec[str],
     line_index: ptr_uint,
     line: str,
-    line_tokens: vec.Vec[tok.Token],
+    line_tokens: vec.Vec[token_mod.Token],
     line_terminator: str,
     validate: bool,
 ) -> Option[WrapFix]:
@@ -1382,7 +1382,7 @@ function build_wrapped_logical_chain_text(
     return output
 
 
-function logical_chain_wrap_candidate(line: str, line_tokens: vec.Vec[tok.Token]) -> Option[ChainCandidate]:
+function logical_chain_wrap_candidate(line: str, line_tokens: vec.Vec[token_mod.Token]) -> Option[ChainCandidate]:
     if line_tokens.len() < 4:
         return Option[ChainCandidate].none
 

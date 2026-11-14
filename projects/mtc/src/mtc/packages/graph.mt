@@ -11,7 +11,7 @@ import std.vec as vec
 import mtc.packages.manifest as manifest
 import mtc.packages.paths as paths
 import mtc.packages.solver as solver
-import mtc.packages.source as source
+import mtc.packages.source as pkg_source
 
 
 public struct GraphEdge:
@@ -23,7 +23,7 @@ public struct GraphEdge:
 
 public struct GraphNode:
     manifest: manifest.PackageManifest
-    source: source.Source
+    source: pkg_source.Source
     edges: vec.Vec[GraphEdge]
 
 
@@ -76,7 +76,7 @@ function index_error(message: string.String) -> Result[ptr_uint, string.String]:
 
 ## Load the graph rooted at `path`.  A resolver that supports dependency
 ## solving first runs the registry solver and pins the resolved versions.
-public function load(path: str, resolver: ref[source.SourceResolver]) -> Result[PackageGraph, string.String]:
+public function load(path: str, resolver: ref[pkg_source.SourceResolver]) -> Result[PackageGraph, string.String]:
     var root_manifest: manifest.PackageManifest
     match manifest.load(path):
         Result.failure as manifest_failure:
@@ -84,7 +84,7 @@ public function load(path: str, resolver: ref[source.SourceResolver]) -> Result[
         Result.success as manifest_payload:
             root_manifest = manifest_payload.value
 
-    var active: source.SourceResolver
+    var active: pkg_source.SourceResolver
     if resolver.supports_dependency_solving():
         match solver.solve(root_manifest, resolver):
             Result.failure as solve_failure:
@@ -92,13 +92,13 @@ public function load(path: str, resolver: ref[source.SourceResolver]) -> Result[
                 return graph_error(solve_failure.error)
             Result.success as solution_payload:
                 var solution = solution_payload.value
-                active = source.with_resolved_versions(resolver, ref_of(solution.registry_versions))
+                active = pkg_source.with_resolved_versions(resolver, ref_of(solution.registry_versions))
                 solution.release()
     else:
-        active = source.SourceResolver(
+        active = pkg_source.SourceResolver(
             cache_root = string.String.from_str(resolver.cache_root.as_str()),
             mode = resolver.mode,
-            resolved_versions = vec.Vec[source.ResolvedVersion].create(),
+            resolved_versions = vec.Vec[pkg_source.ResolvedVersion].create(),
         )
     defer: active.release()
 
@@ -106,9 +106,9 @@ public function load(path: str, resolver: ref[source.SourceResolver]) -> Result[
     var seen = vec.Vec[NodeRef].create()
     defer: release_node_refs(ref_of(seen))
     var stack = vec.Vec[string.String].create()
-    defer: source.release_strings(ref_of(stack))
+    defer: pkg_source.release_strings(ref_of(stack))
 
-    let root_source = source.source_for_manifest(ref_of(active), root_manifest)
+    let root_source = pkg_source.source_for_manifest(ref_of(active), root_manifest)
     match build_node(ref_of(graph), ref_of(active), root_manifest, root_source, ref_of(seen), ref_of(stack)):
         Result.failure as build_failure:
             graph.release()
@@ -153,9 +153,9 @@ function stack_index(stack: ref[vec.Vec[string.String]], path: str) -> Option[pt
 
 function build_node(
     graph: ref[PackageGraph],
-    resolver: ref[source.SourceResolver],
+    resolver: ref[pkg_source.SourceResolver],
     package: manifest.PackageManifest,
-    package_source: source.Source,
+    package_source: pkg_source.Source,
     seen: ref[vec.Vec[NodeRef]],
     stack: ref[vec.Vec[string.String]],
 ) -> Result[ptr_uint, string.String]:
@@ -201,7 +201,7 @@ function build_node(
     while i < package.dependencies.len():
         let dependency = package.dependencies.get(i) else:
             break
-        match source.resolve(resolver, unsafe: read(dependency), ref_of(package_view), ref_of(owned_source)):
+        match pkg_source.resolve(resolver, unsafe: read(dependency), ref_of(package_view), ref_of(owned_source)):
             Result.failure as resolve_failure:
                 failed = Option[string.String].some(value = resolve_failure.error)
                 break
@@ -302,7 +302,7 @@ public function source_roots(graph: ref[PackageGraph]) -> vec.Vec[string.String]
     var indices = vec.Vec[ptr_uint].create()
     defer: indices.release()
     var visited = vec.Vec[string.String].create()
-    defer: source.release_strings(ref_of(visited))
+    defer: pkg_source.release_strings(ref_of(visited))
     collect_node_indices(graph, graph.root_index, ref_of(indices), ref_of(visited))
 
     var i: ptr_uint = 0

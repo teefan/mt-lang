@@ -12,7 +12,7 @@ import std.string as string
 import std.vec as vec
 
 import mtc.semantic.analyzer as analyzer
-import mtc.semantic.types as types_mod
+import mtc.semantic.types as types
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
@@ -107,11 +107,11 @@ function build_signature_help_json(sig: ref[analyzer.FnSig], func_name: str) -> 
             first = false
             result.append(param.name)
             result.append(": ")
-            var type_name = types_mod.type_to_string(param.ty)
+            var type_name = types.type_to_string(param.ty)
             result.append(type_name)
             pi += 1
     result.append(") -> ")
-    var return_name = types_mod.type_to_string(unsafe: read(sig).return_type)
+    var return_name = types.type_to_string(unsafe: read(sig).return_type)
     result.append(return_name)
     result.append("\",\"parameters\":[")
     pi = 0
@@ -125,7 +125,7 @@ function build_signature_help_json(sig: ref[analyzer.FnSig], func_name: str) -> 
             result.append("{\"label\":\"")
             result.append(param.name)
             result.append(": ")
-            var type_name = types_mod.type_to_string(param.ty)
+            var type_name = types.type_to_string(param.ty)
             result.append(type_name)
             result.append("\"}")
             pi += 1

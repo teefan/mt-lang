@@ -27,7 +27,7 @@ import mtc.lsp.highlight as highlight
 import mtc.lsp.inlay_hints as inlay
 import mtc.lsp.lifecycle as lifecycle
 import mtc.lsp.linked_editing_range as linked_range
-import mtc.lsp.navigation as nav
+import mtc.lsp.navigation as navigation
 import mtc.lsp.on_type_formatting as on_type
 import mtc.lsp.protocol as proto
 import mtc.lsp.references as refs
@@ -199,19 +199,19 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
     # Navigation (Tier 2)
     else if method == "textDocument/definition" or method == "textDocument/declaration":
         var pos = position_params(ws, msg.params)
-        nav.handle_definition(ws, pos.uri, pos.line, pos.character, msg.id)
+        navigation.handle_definition(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/typeDefinition":
         var pos = position_params(ws, msg.params)
-        nav.handle_type_definition(ws, pos.uri, pos.line, pos.character, msg.id)
+        navigation.handle_type_definition(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/implementation":
         var pos = position_params(ws, msg.params)
-        nav.handle_implementation(ws, pos.uri, pos.line, pos.character, msg.id)
+        navigation.handle_implementation(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/hover":
         var pos = position_params(ws, msg.params)
         if not pos.valid:
             proto.write_response(msg.id, json.null_value())
         else:
-            nav.handle_hover(ws, pos.uri, pos.line, pos.character, msg.id)
+            navigation.handle_hover(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/references":
         var pos = position_params(ws, msg.params)
         refs.handle_references(ws, pos.uri, pos.line, pos.character, refs.include_declaration_param(msg.params), msg.id)

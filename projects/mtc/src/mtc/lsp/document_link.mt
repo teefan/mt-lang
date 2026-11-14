@@ -11,8 +11,8 @@ import std.str
 import std.string as string
 import std.vec as vec
 
-import mtc.lexer.lexer as lexer
-import mtc.lexer.token as tok
+import mtc.lexer.lexer as lexer_mod
+import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
@@ -45,9 +45,9 @@ public function handle_document_link(
     let source = content.as_str()
     let dir = path_ops.dirname(file_path.as_str())
 
-    var lex_diags = vec.Vec[tok.LexDiagnostic].create()
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: lex_diags.release()
-    var tokens = lexer.lex_reporting(source, ref_of(lex_diags))
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer: tokens.release()
 
     var result = string.String.create()
@@ -146,8 +146,8 @@ function read_first_line(path: str) -> Option[string.String]:
 
 
 ## Extract the text content of a token from the source, using lexer offsets.
-function token_text(source: str, t: tok.Token) -> str:
-    return tok.token_lexeme(t, source)
+function token_text(source: str, t: token_mod.Token) -> str:
+    return token_mod.token_lexeme(t, source)
 
 
 ## Strip surrounding quotes from a string token.

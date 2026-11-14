@@ -14,7 +14,7 @@ import std.mem.heap as heap_mod
 
 import mtc.lexer.token_kinds as tk
 import mtc.lexer.token as token_mod
-import mtc.lexer.lexer as lexer
+import mtc.lexer.lexer as lexer_mod
 import mtc.parser.token_stream as ts
 import mtc.parser.ast as ast
 import mtc.parser.state as pstate
@@ -751,7 +751,7 @@ function parse_embedded_expr(s: ref[pstate.ParserState], source: str, line: ptr_
     # `padded` is deliberately retained: the parsed expression's string views
     # (identifiers, literal lexemes) point into `padded_source`.
     let padded_source = padded.as_str()
-    var raw_tokens = lexer.lex(padded_source)
+    var raw_tokens = lexer_mod.lex(padded_source)
     var tokens = vec.Vec[token_mod.Token].create()
     var skipping = true
     var ti: ptr_uint = 0
@@ -832,7 +832,7 @@ function release_parser_scratch(s: ref[pstate.ParserState]) -> void:
 
 public function parse(source: str) -> bool:
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
-    var lexed = lexer.lex_reporting(source, ref_of(lex_diags))
+    var lexed = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     var state = pstate.ParserState(
         stream = ts.create(lexed),
         source = source,
@@ -863,7 +863,7 @@ public function parse(source: str) -> bool:
 
 public function parse_reporting(source: str, errors: ref[vec.Vec[pstate.ParseDiagnostic]]) -> (bool, ptr_uint):
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
-    var lexed = lexer.lex_reporting(source, ref_of(lex_diags))
+    var lexed = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     var state = pstate.ParserState(
         stream = ts.create(lexed),
         source = source,
@@ -911,7 +911,7 @@ public function parse_source_reporting(
     errors: ref[vec.Vec[pstate.ParseDiagnostic]],
     lex_errors: ref[vec.Vec[token_mod.LexDiagnostic]],
 ) -> ast.SourceFile:
-    var lexed = lexer.lex_reporting(source, lex_errors)
+    var lexed = lexer_mod.lex_reporting(source, lex_errors)
     var state = pstate.ParserState(
         stream = ts.create(lexed),
         source = source,

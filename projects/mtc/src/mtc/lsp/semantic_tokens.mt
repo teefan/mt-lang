@@ -14,16 +14,16 @@ import std.vec as vec
 
 import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
-import mtc.lexer.token_kinds as tk_mod
-import mtc.loader.module_loader as loader_mod
-import mtc.loader.path_resolver as resolver_mod
+import mtc.lexer.token_kinds as tk
+import mtc.loader.module_loader as loader
+import mtc.loader.path_resolver as resolver
 import mtc.parser.parser as parser
 import mtc.parser.ast as ast
 import mtc.semantic.analyzer as analyzer
-import mtc.semantic.types as types_mod
+import mtc.semantic.types as types
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
-import mtc.lsp.scope as scope
+import mtc.lsp.scope as scope_mod
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
@@ -329,10 +329,10 @@ struct ScanFacts:
     ## scope-aware.  Every binding is kept — a file that reuses `c` for another
     ## type later must not hide the earlier receiver.
     receiver_structs: map_mod.Map[str, bool]
-    ## The file's implicit value bindings (`scope.collect_bindings`): a
+    ## The file's implicit value bindings (`scope_mod.collect_bindings`): a
     ## reference resolves the innermost binding in scope — the host's
     ## `local_semantic_value_binding` — instead of a flat name set.
-    bindings: vec.Vec[scope.Binding]
+    bindings: vec.Vec[scope_mod.Binding]
     ## The file's module-level `const` names: their value bindings are immutable.
     readonly_values: map_mod.Map[str, bool]
     ## `<Type>.<member>` keys of every *static* method the file declares or its
@@ -342,7 +342,7 @@ struct ScanFacts:
     static_members: map_mod.Map[str, bool]
     ## The file's declarations' type-parameter scopes (`[T, U]` clauses), so a
     ## reference to `T` in a type position renders `typeParameter`.
-    type_param_scopes: vec.Vec[scope.TypeParamScope]
+    type_param_scopes: vec.Vec[scope_mod.TypeParamScope]
     ## Declared attribute names' positions (`attribute[field] rename(...)`), so
     ## the name renders `decorator` + declaration (the host's attribute override
     ## table, built from the AST).
@@ -388,7 +388,7 @@ function release_scan_facts(facts: ref[ScanFacts]) -> void:
     facts.key_storage.release()
 
 
-function release_type_param_scopes(scopes: ref[vec.Vec[scope.TypeParamScope]]) -> void:
+function release_type_param_scopes(scopes: ref[vec.Vec[scope_mod.TypeParamScope]]) -> void:
     var si: ptr_uint = 0
     while si < scopes.len():
         let scope_ptr = scopes.get(si) else:
@@ -429,12 +429,12 @@ function is_default_library_function_name(name: str) -> bool:
         name.equal("members_of") or name.equal("attributes_of")
 
 
-function scan_is_trivia(kind: tk_mod.TokenKind) -> bool:
-    return kind == tk_mod.TokenKind.newline or kind == tk_mod.TokenKind.indent or
-        kind == tk_mod.TokenKind.dedent or kind == tk_mod.TokenKind.eof
+function scan_is_trivia(kind: tk.TokenKind) -> bool:
+    return kind == tk.TokenKind.newline or kind == tk.TokenKind.indent or
+        kind == tk.TokenKind.dedent or kind == tk.TokenKind.eof
 
 
-function scan_kind_at(tokens: span[token_mod.Token], index: ptr_uint) -> tk_mod.TokenKind:
+function scan_kind_at(tokens: span[token_mod.Token], index: ptr_uint) -> tk.TokenKind:
     return unsafe: read(tokens.data + index).kind
 
 
@@ -484,9 +484,9 @@ function scan_parameter_list_opener(tokens: span[token_mod.Token], index: ptr_ui
     while i > 0:
         i -= 1
         let kind = scan_kind_at(tokens, i)
-        if kind == tk_mod.TokenKind.rparen:
+        if kind == tk.TokenKind.rparen:
             depth += 1
-        else if kind == tk_mod.TokenKind.lparen:
+        else if kind == tk.TokenKind.lparen:
             if depth == 0:
                 return Option[ptr_uint].some(value = i)
             depth -= 1
@@ -498,14 +498,14 @@ function scan_parameter_list_opener(tokens: span[token_mod.Token], index: ptr_ui
 function scan_is_parameter_declaration(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
     let next_idx = scan_next_index(tokens, index) else:
         return false
-    if scan_kind_at(tokens, next_idx) != tk_mod.TokenKind.colon:
+    if scan_kind_at(tokens, next_idx) != tk.TokenKind.colon:
         return false
     let prev_idx = scan_prev_index(tokens, index) else:
         return false
     let prev_kind = scan_kind_at(tokens, prev_idx)
-    return prev_kind == tk_mod.TokenKind.lparen or prev_kind == tk_mod.TokenKind.comma or
-        prev_kind == tk_mod.TokenKind.tk_out or prev_kind == tk_mod.TokenKind.tk_in or
-        prev_kind == tk_mod.TokenKind.tk_inout or prev_kind == tk_mod.TokenKind.tk_consuming
+    return prev_kind == tk.TokenKind.lparen or prev_kind == tk.TokenKind.comma or
+        prev_kind == tk.TokenKind.tk_out or prev_kind == tk.TokenKind.tk_in or
+        prev_kind == tk.TokenKind.tk_inout or prev_kind == tk.TokenKind.tk_consuming
 
 
 ## True when the parameter list containing `index` belongs to a callable
@@ -519,20 +519,20 @@ function scan_is_callable_parameter_declaration(tokens: span[token_mod.Token], i
     var head_idx = scan_prev_index(tokens, opener) else:
         return false
     var head_kind = scan_kind_at(tokens, head_idx)
-    if head_kind == tk_mod.TokenKind.tk_fn or head_kind == tk_mod.TokenKind.tk_proc:
+    if head_kind == tk.TokenKind.tk_fn or head_kind == tk.TokenKind.tk_proc:
         return true
-    if head_kind == tk_mod.TokenKind.rbracket:
+    if head_kind == tk.TokenKind.rbracket:
         let lbracket = scan_matching_opener(tokens, head_idx) else:
             return false
         let head_opt = scan_prev_index(tokens, lbracket) else:
             return false
         head_idx = head_opt
         head_kind = scan_kind_at(tokens, head_idx)
-    if head_kind != tk_mod.TokenKind.identifier:
+    if head_kind != tk.TokenKind.identifier:
         return false
     let before = scan_prev_index(tokens, head_idx) else:
         return false
-    return scan_kind_at(tokens, before) == tk_mod.TokenKind.tk_function
+    return scan_kind_at(tokens, before) == tk.TokenKind.tk_function
 
 
 ## The `(`/`[` matching the closer at `index`.
@@ -545,8 +545,8 @@ function scan_matching_opener(tokens: span[token_mod.Token], index: ptr_uint) ->
         let kind = scan_kind_at(tokens, i)
         if kind == closer:
             depth += 1
-        else if (closer == tk_mod.TokenKind.rparen and kind == tk_mod.TokenKind.lparen) or
-                (closer == tk_mod.TokenKind.rbracket and kind == tk_mod.TokenKind.lbracket):
+        else if (closer == tk.TokenKind.rparen and kind == tk.TokenKind.lparen) or
+                (closer == tk.TokenKind.rbracket and kind == tk.TokenKind.lbracket):
             if depth == 0:
                 return Option[ptr_uint].some(value = i)
             depth -= 1
@@ -579,8 +579,8 @@ function scan_line_has_enum_header(tokens: span[token_mod.Token], line: ptr_uint
         let t = unsafe: read(tokens.data + i)
         if t.line > line:
             return false
-        if t.line == line and (t.kind == tk_mod.TokenKind.tk_variant or t.kind == tk_mod.TokenKind.tk_enum or
-                               t.kind == tk_mod.TokenKind.tk_flags):
+        if t.line == line and (t.kind == tk.TokenKind.tk_variant or t.kind == tk.TokenKind.tk_enum or
+                               t.kind == tk.TokenKind.tk_flags):
             return true
         i += 1
     return false
@@ -598,18 +598,18 @@ function scan_is_field_declaration(tokens: span[token_mod.Token], index: ptr_uin
         return false
     let next_idx = scan_next_index(tokens, index) else:
         return false
-    return scan_kind_at(tokens, next_idx) == tk_mod.TokenKind.colon
+    return scan_kind_at(tokens, next_idx) == tk.TokenKind.colon
 
 
 ## `as name:` — a match arm binding (the host's `match_arm_binding_token?`).
 function scan_is_match_arm_binding(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
     let prev_idx = scan_prev_index(tokens, index) else:
         return false
-    if scan_kind_at(tokens, prev_idx) != tk_mod.TokenKind.tk_as:
+    if scan_kind_at(tokens, prev_idx) != tk.TokenKind.tk_as:
         return false
     let next_idx = scan_next_index(tokens, index) else:
         return false
-    return scan_kind_at(tokens, next_idx) == tk_mod.TokenKind.colon
+    return scan_kind_at(tokens, next_idx) == tk.TokenKind.colon
 
 
 ## True when the token is a field of a variant arm's payload: a parameter-list
@@ -629,11 +629,11 @@ function scan_is_variant_payload_field(tokens: span[token_mod.Token], index: ptr
 ## (the host's `destructure_let_binding?`).
 function scan_is_destructure_let(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
     let tok = unsafe: read(tokens.data + index)
-    var first_kind: tk_mod.TokenKind = tk_mod.TokenKind.eof
+    var first_kind: tk.TokenKind = tk.TokenKind.eof
     var first_found = false
-    var second_kind: tk_mod.TokenKind = tk_mod.TokenKind.eof
+    var second_kind: tk.TokenKind = tk.TokenKind.eof
     var second_found = false
-    var third_kind: tk_mod.TokenKind = tk_mod.TokenKind.eof
+    var third_kind: tk.TokenKind = tk.TokenKind.eof
     var third_found = false
     var lparen_seen = false
     var equal_seen = false
@@ -662,18 +662,18 @@ function scan_is_destructure_let(tokens: span[token_mod.Token], index: ptr_uint)
             else if not third_found:
                 third_kind = t.kind
                 third_found = true
-            if t.kind == tk_mod.TokenKind.lparen and not equal_seen:
+            if t.kind == tk.TokenKind.lparen and not equal_seen:
                 lparen_seen = true
-            if t.kind == tk_mod.TokenKind.equal:
+            if t.kind == tk.TokenKind.equal:
                 equal_seen = true
         i += 1
-    if not first_found or first_kind != tk_mod.TokenKind.tk_let:
+    if not first_found or first_kind != tk.TokenKind.tk_let:
         return false
     if not lparen_seen:
         return false
-    if second_found and second_kind == tk_mod.TokenKind.lparen:
+    if second_found and second_kind == tk.TokenKind.lparen:
         return true
-    return second_found and second_kind == tk_mod.TokenKind.identifier and third_found and third_kind == tk_mod.TokenKind.lparen
+    return second_found and second_kind == tk.TokenKind.identifier and third_found and third_kind == tk.TokenKind.lparen
 
 
 ## A named-argument label (`name =` after `(`/`,`): `property` inside a type
@@ -682,12 +682,12 @@ function scan_is_destructure_let(tokens: span[token_mod.Token], index: ptr_uint)
 function scan_is_named_argument_label(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
     let next_idx = scan_next_index(tokens, index) else:
         return false
-    if scan_kind_at(tokens, next_idx) != tk_mod.TokenKind.equal:
+    if scan_kind_at(tokens, next_idx) != tk.TokenKind.equal:
         return false
     let prev_idx = scan_prev_index(tokens, index) else:
         return false
     let prev_kind = scan_kind_at(tokens, prev_idx)
-    return prev_kind == tk_mod.TokenKind.lparen or prev_kind == tk_mod.TokenKind.comma
+    return prev_kind == tk.TokenKind.lparen or prev_kind == tk.TokenKind.comma
 
 
 ## True when the named-argument label belongs to a *type constructor*: a call
@@ -702,30 +702,30 @@ function scan_named_argument_in_type_constructor(facts: ref[ScanFacts], tokens: 
         return false
     var callee_idx = scan_prev_index(tokens, opener) else:
         return false
-    if scan_kind_at(tokens, callee_idx) == tk_mod.TokenKind.rbracket:
+    if scan_kind_at(tokens, callee_idx) == tk.TokenKind.rbracket:
         let lbracket = scan_matching_opener(tokens, callee_idx) else:
             return false
         let callee_base = scan_prev_index(tokens, lbracket) else:
             return false
         callee_idx = callee_base
-    if scan_kind_at(tokens, callee_idx) != tk_mod.TokenKind.identifier:
+    if scan_kind_at(tokens, callee_idx) != tk.TokenKind.identifier:
         return false
     let callee_name = scan_lexeme_at(tokens, callee_idx, source)
     if scan_is_declared_type(facts, callee_name):
         return true
     let dot_idx = scan_prev_index(tokens, callee_idx) else:
         return false
-    if scan_kind_at(tokens, dot_idx) != tk_mod.TokenKind.dot:
+    if scan_kind_at(tokens, dot_idx) != tk.TokenKind.dot:
         return false
     var receiver_idx = scan_prev_index(tokens, dot_idx) else:
         return false
-    if scan_kind_at(tokens, receiver_idx) == tk_mod.TokenKind.rbracket:
+    if scan_kind_at(tokens, receiver_idx) == tk.TokenKind.rbracket:
         let lbracket = scan_matching_opener(tokens, receiver_idx) else:
             return false
         let receiver_base = scan_prev_index(tokens, lbracket) else:
             return false
         receiver_idx = receiver_base
-    if scan_kind_at(tokens, receiver_idx) != tk_mod.TokenKind.identifier:
+    if scan_kind_at(tokens, receiver_idx) != tk.TokenKind.identifier:
         return false
     return scan_is_declared_type(facts, scan_lexeme_at(tokens, receiver_idx, source))
 
@@ -772,7 +772,7 @@ function scan_import_module_path(tokens: span[token_mod.Token], index: ptr_uint,
         if prev_line != tok_line:
             break
         line_start -= 1
-    if scan_kind_at(tokens, line_start) != tk_mod.TokenKind.tk_import:
+    if scan_kind_at(tokens, line_start) != tk.TokenKind.tk_import:
         return false
     let tok_line = unsafe: read(tokens.data + index).line
     var seen_as = false
@@ -783,7 +783,7 @@ function scan_import_module_path(tokens: span[token_mod.Token], index: ptr_uint,
         if t.line != tok_line:
             break
         if not scan_is_trivia(t.kind):
-            if t.kind == tk_mod.TokenKind.tk_as:
+            if t.kind == tk.TokenKind.tk_as:
                 seen_as = true
             else if i == index and not seen_as and i != line_start:
                 is_module_path = true
@@ -800,11 +800,11 @@ function scan_is_import_alias(tokens: span[token_mod.Token], index: ptr_uint) ->
         if prev_line != tok_line:
             break
         line_start -= 1
-    if scan_kind_at(tokens, line_start) != tk_mod.TokenKind.tk_import:
+    if scan_kind_at(tokens, line_start) != tk.TokenKind.tk_import:
         return false
     let prev_idx = scan_prev_index(tokens, index) else:
         return false
-    return scan_kind_at(tokens, prev_idx) == tk_mod.TokenKind.tk_as
+    return scan_kind_at(tokens, prev_idx) == tk.TokenKind.tk_as
 
 
 
@@ -845,7 +845,7 @@ function scan_attribute_override(facts: ref[ScanFacts], tokens: span[token_mod.T
 function scan_is_attribute_reflection_name(tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
     let comma = scan_prev_index(tokens, index) else:
         return false
-    if scan_kind_at(tokens, comma) != tk_mod.TokenKind.comma:
+    if scan_kind_at(tokens, comma) != tk.TokenKind.comma:
         return false
     # The comma must be a top-level one: the nearest unmatched opener before it
     # is the call's `(`.
@@ -856,15 +856,15 @@ function scan_is_attribute_reflection_name(tokens: span[token_mod.Token], index:
     while i > 0:
         i -= 1
         let kind = scan_kind_at(tokens, i)
-        if kind == tk_mod.TokenKind.rparen or kind == tk_mod.TokenKind.rbracket:
+        if kind == tk.TokenKind.rparen or kind == tk.TokenKind.rbracket:
             depth += 1
-        else if kind == tk_mod.TokenKind.lparen:
+        else if kind == tk.TokenKind.lparen:
             if depth == 0:
                 opener = i
                 found = true
                 break
             depth -= 1
-        else if kind == tk_mod.TokenKind.lbracket:
+        else if kind == tk.TokenKind.lbracket:
             if depth > 0:
                 depth -= 1
     if not found:
@@ -882,13 +882,13 @@ function scan_is_attribute_reflection_name(tokens: span[token_mod.Token], index:
 function scan_specialized_call(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
     let lbracket = scan_next_index(tokens, index) else:
         return false
-    if scan_kind_at(tokens, lbracket) != tk_mod.TokenKind.lbracket:
+    if scan_kind_at(tokens, lbracket) != tk.TokenKind.lbracket:
         return false
-    let rbracket = scan_matching_closer_index(tokens, lbracket, tk_mod.TokenKind.lbracket, tk_mod.TokenKind.rbracket) else:
+    let rbracket = scan_matching_closer_index(tokens, lbracket, tk.TokenKind.lbracket, tk.TokenKind.rbracket) else:
         return false
     let after = scan_next_index(tokens, rbracket) else:
         return false
-    return scan_kind_at(tokens, after) == tk_mod.TokenKind.lparen
+    return scan_kind_at(tokens, after) == tk.TokenKind.lparen
 
 
 ## True for a *bare* builtin specialization (`zero[int]`, `default[T]`): a
@@ -897,21 +897,21 @@ function scan_specialized_call(tokens: span[token_mod.Token], index: ptr_uint) -
 function scan_bare_specialization(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
     let lbracket = scan_next_index(tokens, index) else:
         return false
-    if scan_kind_at(tokens, lbracket) != tk_mod.TokenKind.lbracket:
+    if scan_kind_at(tokens, lbracket) != tk.TokenKind.lbracket:
         return false
-    let rbracket = scan_matching_closer_index(tokens, lbracket, tk_mod.TokenKind.lbracket, tk_mod.TokenKind.rbracket) else:
+    let rbracket = scan_matching_closer_index(tokens, lbracket, tk.TokenKind.lbracket, tk.TokenKind.rbracket) else:
         return false
     let after = scan_next_index(tokens, rbracket) else:
         return true
-    return scan_kind_at(tokens, after) != tk_mod.TokenKind.lparen
+    return scan_kind_at(tokens, after) != tk.TokenKind.lparen
 
 
 ## The index of the closer matching the opener at `opener_index`, or none.
 function scan_matching_closer_index(
     tokens: span[token_mod.Token],
     opener_index: ptr_uint,
-    open_kind: tk_mod.TokenKind,
-    close_kind: tk_mod.TokenKind,
+    open_kind: tk.TokenKind,
+    close_kind: tk.TokenKind,
 ) -> Option[ptr_uint]:
     var depth: ptr_uint = 0
     var i = opener_index
@@ -936,16 +936,16 @@ function scan_identifier_in_type_argument_position(tokens: span[token_mod.Token]
     var opener = scan_prev_index(tokens, index) else:
         return false
 
-    if scan_kind_at(tokens, opener) == tk_mod.TokenKind.comma:
+    if scan_kind_at(tokens, opener) == tk.TokenKind.comma:
         var depth: ptr_uint = 0
         var found = false
         var i = opener
         while i > 0:
             i -= 1
             let kind = scan_kind_at(tokens, i)
-            if kind == tk_mod.TokenKind.rbracket:
+            if kind == tk.TokenKind.rbracket:
                 depth += 1
-            else if kind == tk_mod.TokenKind.lbracket:
+            else if kind == tk.TokenKind.lbracket:
                 if depth == 0:
                     opener = i
                     found = true
@@ -954,10 +954,10 @@ function scan_identifier_in_type_argument_position(tokens: span[token_mod.Token]
         if not found:
             return false
 
-    if scan_kind_at(tokens, opener) != tk_mod.TokenKind.lbracket:
+    if scan_kind_at(tokens, opener) != tk.TokenKind.lbracket:
         return false
     let closer = scan_matching_closer_index(
-        tokens, opener, tk_mod.TokenKind.lbracket, tk_mod.TokenKind.rbracket) else:
+        tokens, opener, tk.TokenKind.lbracket, tk.TokenKind.rbracket) else:
         return false
     let next_idx = scan_next_index(tokens, index) else:
         return false
@@ -996,7 +996,7 @@ function scan_type_parameter_declaration_token(tokens: span[token_mod.Token], in
     var found_name = false
     var ni = header + 1
     while ni <= index:
-        if scan_kind_at(tokens, ni) == tk_mod.TokenKind.identifier:
+        if scan_kind_at(tokens, ni) == tk.TokenKind.identifier:
             name_idx = ni
             found_name = true
             break
@@ -1005,7 +1005,7 @@ function scan_type_parameter_declaration_token(tokens: span[token_mod.Token], in
         return false
 
     let lbracket = name_idx + 1
-    if lbracket > index or scan_kind_at(tokens, lbracket) != tk_mod.TokenKind.lbracket:
+    if lbracket > index or scan_kind_at(tokens, lbracket) != tk.TokenKind.lbracket:
         return false
 
     var depth: ptr_uint = 0
@@ -1013,22 +1013,22 @@ function scan_type_parameter_declaration_token(tokens: span[token_mod.Token], in
     var k = lbracket
     while k <= index:
         let kind = scan_kind_at(tokens, k)
-        if kind == tk_mod.TokenKind.lbracket:
+        if kind == tk.TokenKind.lbracket:
             depth += 1
             if depth == 1:
                 expect_name = true
-        else if kind == tk_mod.TokenKind.rbracket:
+        else if kind == tk.TokenKind.rbracket:
             if depth > 0:
                 depth -= 1
             if depth == 0:
                 return false
-        else if kind == tk_mod.TokenKind.comma:
+        else if kind == tk.TokenKind.comma:
             if depth == 1:
                 expect_name = true
-        else if kind == tk_mod.TokenKind.at or kind == tk_mod.TokenKind.tk_implements:
+        else if kind == tk.TokenKind.at or kind == tk.TokenKind.tk_implements:
             if depth == 1:
                 expect_name = false
-        else if depth == 1 and expect_name and kind == tk_mod.TokenKind.identifier:
+        else if depth == 1 and expect_name and kind == tk.TokenKind.identifier:
             if k == index:
                 return true
             expect_name = false
@@ -1038,11 +1038,11 @@ function scan_type_parameter_declaration_token(tokens: span[token_mod.Token], in
 
 ## The declaration keywords whose header can carry a type-parameter clause
 ## (the host's `generic_type_parameter_header_token?`).
-function scan_is_type_parameter_header(kind: tk_mod.TokenKind) -> bool:
-    return kind == tk_mod.TokenKind.tk_function or kind == tk_mod.TokenKind.tk_struct or
-        kind == tk_mod.TokenKind.tk_union or kind == tk_mod.TokenKind.tk_enum or
-        kind == tk_mod.TokenKind.tk_flags or kind == tk_mod.TokenKind.tk_variant or
-        kind == tk_mod.TokenKind.tk_type or kind == tk_mod.TokenKind.tk_extending
+function scan_is_type_parameter_header(kind: tk.TokenKind) -> bool:
+    return kind == tk.TokenKind.tk_function or kind == tk.TokenKind.tk_struct or
+        kind == tk.TokenKind.tk_union or kind == tk.TokenKind.tk_enum or
+        kind == tk.TokenKind.tk_flags or kind == tk.TokenKind.tk_variant or
+        kind == tk.TokenKind.tk_type or kind == tk.TokenKind.tk_extending
 
 
 ## True when the token references a type parameter of the enclosing declaration
@@ -1058,7 +1058,7 @@ function scan_type_parameter_reference(facts: ref[ScanFacts], tokens: span[token
     let prev = scan_prev_index(tokens, index) else:
         return false
     let kind = scan_kind_at(tokens, prev)
-    return kind == tk_mod.TokenKind.colon or kind == tk_mod.TokenKind.arrow
+    return kind == tk.TokenKind.colon or kind == tk.TokenKind.arrow
 
 
 ## True when `name` is a type parameter in scope at `line`.
@@ -1093,8 +1093,8 @@ function scan_keyword_namespace_token(tokens: span[token_mod.Token], index: ptr_
 
 ## True for a character literal: the host's classifier has no arm for one, so it
 ## emits no entry.
-function scan_is_char_literal(kind: tk_mod.TokenKind) -> bool:
-    return kind == tk_mod.TokenKind.char_literal
+function scan_is_char_literal(kind: tk.TokenKind) -> bool:
+    return kind == tk.TokenKind.char_literal
 
 
 ## True when a keyword is a declaration name followed by a colon and is not a
@@ -1103,8 +1103,8 @@ function scan_is_char_literal(kind: tk_mod.TokenKind) -> bool:
 ## declaration).
 function scan_is_keyword_field_declaration(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
     let kind = scan_kind_at(tokens, index)
-    if kind == tk_mod.TokenKind.tk_unsafe or kind == tk_mod.TokenKind.tk_else or
-       kind == tk_mod.TokenKind.tk_defer or kind == tk_mod.TokenKind.tk_parallel:
+    if kind == tk.TokenKind.tk_unsafe or kind == tk.TokenKind.tk_else or
+       kind == tk.TokenKind.tk_defer or kind == tk.TokenKind.tk_parallel:
         return false
     if scan_is_match_arm_binding(tokens, index):
         return false
@@ -1112,14 +1112,14 @@ function scan_is_keyword_field_declaration(tokens: span[token_mod.Token], index:
         return false
     let next_idx = scan_next_index(tokens, index) else:
         return false
-    return scan_kind_at(tokens, next_idx) == tk_mod.TokenKind.colon
+    return scan_kind_at(tokens, next_idx) == tk.TokenKind.colon
 
 
 ## True when the previous significant token is a dot.
 function scan_prev_is_dot(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
     let prev_idx = scan_prev_index(tokens, index) else:
         return false
-    return scan_kind_at(tokens, prev_idx) == tk_mod.TokenKind.dot
+    return scan_kind_at(tokens, prev_idx) == tk.TokenKind.dot
 
 
 ## Classify one identifier token (the host's `classify_name_semantic`).
@@ -1151,37 +1151,37 @@ function classify_scan_identifier(
     if prev_opt.is_some():
         let prev_idx = prev_opt.unwrap()
         let prev_kind = scan_kind_at(tokens, prev_idx)
-        if prev_kind == tk_mod.TokenKind.tk_function or prev_kind == tk_mod.TokenKind.tk_fn or
-           prev_kind == tk_mod.TokenKind.tk_proc:
+        if prev_kind == tk.TokenKind.tk_function or prev_kind == tk.TokenKind.tk_fn or
+           prev_kind == tk.TokenKind.tk_proc:
             return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 1)
-        if prev_kind == tk_mod.TokenKind.tk_struct or prev_kind == tk_mod.TokenKind.tk_union or
-           prev_kind == tk_mod.TokenKind.tk_enum or prev_kind == tk_mod.TokenKind.tk_flags or
-           prev_kind == tk_mod.TokenKind.tk_variant or prev_kind == tk_mod.TokenKind.tk_type or
-           prev_kind == tk_mod.TokenKind.tk_opaque or prev_kind == tk_mod.TokenKind.tk_interface:
+        if prev_kind == tk.TokenKind.tk_struct or prev_kind == tk.TokenKind.tk_union or
+           prev_kind == tk.TokenKind.tk_enum or prev_kind == tk.TokenKind.tk_flags or
+           prev_kind == tk.TokenKind.tk_variant or prev_kind == tk.TokenKind.tk_type or
+           prev_kind == tk.TokenKind.tk_opaque or prev_kind == tk.TokenKind.tk_interface:
             return TokenClass(token_type = TOKEN_TYPE, token_mod = 1)
     if lexeme.equal("_"):
         return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0)
     if prev_opt.is_some():
         let prev_kind = scan_kind_at(tokens, prev_opt.unwrap())
-        if prev_kind == tk_mod.TokenKind.tk_event:
+        if prev_kind == tk.TokenKind.tk_event:
             return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 1)
-        if prev_kind == tk_mod.TokenKind.tk_const:
+        if prev_kind == tk.TokenKind.tk_const:
             return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5)
-        if prev_kind == tk_mod.TokenKind.tk_let:
+        if prev_kind == tk.TokenKind.tk_let:
             let next_idx = scan_next_index(tokens, index)
             var next_is_lparen = false
             if next_idx.is_some():
-                next_is_lparen = scan_kind_at(tokens, next_idx.unwrap()) == tk_mod.TokenKind.lparen
+                next_is_lparen = scan_kind_at(tokens, next_idx.unwrap()) == tk.TokenKind.lparen
             if not next_is_lparen:
                 return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5)
-        if prev_kind == tk_mod.TokenKind.tk_var:
+        if prev_kind == tk.TokenKind.tk_var:
             let next_idx = scan_next_index(tokens, index)
             var next_is_lparen = false
             if next_idx.is_some():
-                next_is_lparen = scan_kind_at(tokens, next_idx.unwrap()) == tk_mod.TokenKind.lparen
+                next_is_lparen = scan_kind_at(tokens, next_idx.unwrap()) == tk.TokenKind.lparen
             if not next_is_lparen:
                 return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 1)
-        if prev_kind == tk_mod.TokenKind.tk_for:
+        if prev_kind == tk.TokenKind.tk_for:
             return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5)
     if scan_is_match_arm_binding(tokens, index):
         return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5)
@@ -1219,7 +1219,7 @@ function classify_scan_identifier(
             return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
 
     # Dotted member access.
-    if prev_opt.is_some() and scan_kind_at(tokens, prev_opt.unwrap()) == tk_mod.TokenKind.dot:
+    if prev_opt.is_some() and scan_kind_at(tokens, prev_opt.unwrap()) == tk.TokenKind.dot:
         let receiver_idx = scan_prev_index(tokens, prev_opt.unwrap())
         if receiver_idx.is_some():
             let receiver = scan_lexeme_at(tokens, receiver_idx.unwrap(), source)
@@ -1232,7 +1232,7 @@ function classify_scan_identifier(
                     var call_shaped = false
                     if next_idx.is_some():
                         let nk = scan_kind_at(tokens, next_idx.unwrap())
-                        call_shaped = nk == tk_mod.TokenKind.lparen or nk == tk_mod.TokenKind.lbracket
+                        call_shaped = nk == tk.TokenKind.lparen or nk == tk.TokenKind.lbracket
                     if call_shaped:
                         return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0)
                     return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0)
@@ -1257,7 +1257,7 @@ function classify_scan_identifier(
                     return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
                 return TokenClass(token_type = TOKEN_ENUM_MEMBER, token_mod = 0)
         let next_idx = scan_next_index(tokens, index)
-        if next_idx.is_some() and scan_kind_at(tokens, next_idx.unwrap()) == tk_mod.TokenKind.lparen:
+        if next_idx.is_some() and scan_kind_at(tokens, next_idx.unwrap()) == tk.TokenKind.lparen:
             # A call through a struct field of function/proc type is a
             # `property` (the host's `callable_field_member_access?`), not a
             # method of the receiver's type.
@@ -1276,7 +1276,7 @@ function classify_scan_identifier(
     let next_call = scan_next_index(tokens, index)
     if next_call.is_some():
         let next_kind = scan_kind_at(tokens, next_call.unwrap())
-        if next_kind == tk_mod.TokenKind.lparen or scan_specialized_call(tokens, index):
+        if next_kind == tk.TokenKind.lparen or scan_specialized_call(tokens, index):
             # A bound value shadows the function name (the host's
             # `resolved_call_callee_semantic` resolves the local binding and the
             # module values before the builtin/function tables).
@@ -1314,7 +1314,7 @@ function classify_scan_identifier(
     # host's dedicated arm first: a declared type name renders `type` without
     # the defaultLibrary modifier (`Option.some`), an import alias `namespace`.
     let next_dot = scan_next_index(tokens, index)
-    if next_dot.is_some() and scan_kind_at(tokens, next_dot.unwrap()) == tk_mod.TokenKind.dot:
+    if next_dot.is_some() and scan_kind_at(tokens, next_dot.unwrap()) == tk.TokenKind.dot:
         unsafe:
             if read(facts).types.contains(lexeme) or read(facts).interfaces.contains(lexeme):
                 return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
@@ -1339,7 +1339,7 @@ function classify_scan_identifier(
             # (the host passes `parameter_declaration_token?` into
             # `semantic_value_binding_entry`; the `in` of a `for … in name:`
             # line answers that predicate there too).
-            if kind.value == scope.BINDING_PARAM and scan_is_parameter_declaration(tokens, index):
+            if kind.value == scope_mod.BINDING_PARAM and scan_is_parameter_declaration(tokens, index):
                 return TokenClass(token_type = TOKEN_PARAMETER, token_mod = 1)
             return scan_binding_class(kind.value)
         Option.none:
@@ -1378,16 +1378,16 @@ function scan_after_type_position(tokens: span[token_mod.Token], index: ptr_uint
     let prev = scan_prev_index(tokens, index) else:
         return false
     let kind = scan_kind_at(tokens, prev)
-    if kind == tk_mod.TokenKind.colon or kind == tk_mod.TokenKind.arrow or kind == tk_mod.TokenKind.tk_as:
+    if kind == tk.TokenKind.colon or kind == tk.TokenKind.arrow or kind == tk.TokenKind.tk_as:
         return true
-    if kind != tk_mod.TokenKind.equal:
+    if kind != tk.TokenKind.equal:
         return false
     let line = unsafe: read(tokens.data + index).line
     var i: ptr_uint = 0
     while i < index:
         let t = unsafe: read(tokens.data + i)
         if t.line == line and not scan_is_trivia(t.kind):
-            return t.kind == tk_mod.TokenKind.tk_type
+            return t.kind == tk.TokenKind.tk_type
         i += 1
     return false
 
@@ -1399,28 +1399,28 @@ function scan_is_keyword_type_parameter(tokens: span[token_mod.Token], index: pt
     let prev = scan_prev_index(tokens, index) else:
         return false
     let kind = scan_kind_at(tokens, prev)
-    if kind == tk_mod.TokenKind.at or kind == tk_mod.TokenKind.lbracket:
+    if kind == tk.TokenKind.at or kind == tk.TokenKind.lbracket:
         return true
-    if kind != tk_mod.TokenKind.comma:
+    if kind != tk.TokenKind.comma:
         return false
     var i = prev
     while i > 0:
         i -= 1
         let k = scan_kind_at(tokens, i)
-        if k == tk_mod.TokenKind.lbracket:
+        if k == tk.TokenKind.lbracket:
             break
-        if k == tk_mod.TokenKind.newline or k == tk_mod.TokenKind.rbracket or k == tk_mod.TokenKind.lparen:
+        if k == tk.TokenKind.newline or k == tk.TokenKind.rbracket or k == tk.TokenKind.lparen:
             return false
     if i == 0:
         return false
     let before = scan_prev_index(tokens, i) else:
         return false
     let bk = scan_kind_at(tokens, before)
-    if bk == tk_mod.TokenKind.tk_struct or bk == tk_mod.TokenKind.tk_variant or bk == tk_mod.TokenKind.tk_enum or
-       bk == tk_mod.TokenKind.tk_flags or bk == tk_mod.TokenKind.tk_function or bk == tk_mod.TokenKind.tk_fn or
-       bk == tk_mod.TokenKind.tk_proc:
+    if bk == tk.TokenKind.tk_struct or bk == tk.TokenKind.tk_variant or bk == tk.TokenKind.tk_enum or
+       bk == tk.TokenKind.tk_flags or bk == tk.TokenKind.tk_function or bk == tk.TokenKind.tk_fn or
+       bk == tk.TokenKind.tk_proc:
         return true
-    return bk == tk_mod.TokenKind.rbracket
+    return bk == tk.TokenKind.rbracket
 
 
 ## A keyword type name in an annotation position: the previous significant token
@@ -1430,7 +1430,7 @@ function scan_is_keyword_type_annotation(tokens: span[token_mod.Token], index: p
     let prev = scan_prev_index(tokens, index) else:
         return false
     let kind = scan_kind_at(tokens, prev)
-    if kind != tk_mod.TokenKind.colon and kind != tk_mod.TokenKind.arrow:
+    if kind != tk.TokenKind.colon and kind != tk.TokenKind.arrow:
         return false
     return unsafe: read(tokens.data + prev).line == read(tokens.data + index).line
 
@@ -1439,15 +1439,15 @@ function scan_is_keyword_type_annotation(tokens: span[token_mod.Token], index: p
 ## the kind of the innermost function-level binding of the token's name.
 function scan_binding_at(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> Option[ptr_uint]:
     let tok = unsafe: read(tokens.data + index)
-    return scope.binding_kind_at(unsafe: read(facts).bindings, scan_lexeme_at(tokens, index, source), tok.line)
+    return scope_mod.binding_kind_at(unsafe: read(facts).bindings, scan_lexeme_at(tokens, index, source), tok.line)
 
 
 ## The token class a value binding renders: `parameter`, `variable` +
 ## `readonly` for an immutable binding, bare `variable` for a mutable one.
 function scan_binding_class(kind: ptr_uint) -> TokenClass:
-    if kind == scope.BINDING_PARAM:
+    if kind == scope_mod.BINDING_PARAM:
         return TokenClass(token_type = TOKEN_PARAMETER, token_mod = 0)
-    if kind == scope.BINDING_MUTABLE:
+    if kind == scope_mod.BINDING_MUTABLE:
         return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0)
     return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 4)
 
@@ -1475,7 +1475,7 @@ function is_static_member_of(facts: ref[ScanFacts], tokens: span[token_mod.Token
 ## through (`vec.Vec[int].create` -> `vec`).
 function receiver_module_prefix(tokens: span[token_mod.Token], receiver_index: ptr_uint, source: str) -> str:
     var base_index = receiver_index
-    if scan_kind_at(tokens, base_index) == tk_mod.TokenKind.rbracket:
+    if scan_kind_at(tokens, base_index) == tk.TokenKind.rbracket:
         let lbracket = scan_matching_opener(tokens, base_index) else:
             return ""
         let base = scan_prev_index(tokens, lbracket) else:
@@ -1483,11 +1483,11 @@ function receiver_module_prefix(tokens: span[token_mod.Token], receiver_index: p
         base_index = base
     let dot = scan_prev_index(tokens, base_index) else:
         return ""
-    if scan_kind_at(tokens, dot) != tk_mod.TokenKind.dot:
+    if scan_kind_at(tokens, dot) != tk.TokenKind.dot:
         return ""
     let module_idx = scan_prev_index(tokens, dot) else:
         return ""
-    if scan_kind_at(tokens, module_idx) != tk_mod.TokenKind.identifier:
+    if scan_kind_at(tokens, module_idx) != tk.TokenKind.identifier:
         return ""
     return scan_lexeme_at(tokens, module_idx, source)
 
@@ -1495,7 +1495,7 @@ function receiver_module_prefix(tokens: span[token_mod.Token], receiver_index: p
 ## The receiver's base identifier, seeing through a type-argument list
 ## (`Option[int].some` -> `Option`).
 function receiver_base_name(tokens: span[token_mod.Token], receiver_index: ptr_uint, source: str) -> str:
-    if scan_kind_at(tokens, receiver_index) != tk_mod.TokenKind.rbracket:
+    if scan_kind_at(tokens, receiver_index) != tk.TokenKind.rbracket:
         return scan_lexeme_at(tokens, receiver_index, source)
     let lbracket = scan_matching_opener(tokens, receiver_index) else:
         return ""
@@ -1540,7 +1540,7 @@ function qualified_member_key(receiver: str, member: str) -> string.String:
 
 
 ## Merge the keys of a typed map into a bool set.
-function merge_type_keys(source: ref[map_mod.Map[str, types_mod.Type]], target: ref[map_mod.Map[str, bool]]) -> void:
+function merge_type_keys(source: ref[map_mod.Map[str, types.Type]], target: ref[map_mod.Map[str, bool]]) -> void:
     var iter = source.keys()
     while true:
         let kp = iter.next() else:
@@ -1613,8 +1613,8 @@ function collect_static_members(methods: ref[map_mod.Map[str, analyzer.FnSig]], 
 function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[analyzer.Analysis], file: ast.SourceFile) -> void:
     var functions = vec.Vec[str].create()
     defer: functions.release()
-    var types = vec.Vec[str].create()
-    defer: types.release()
+    var type_names = vec.Vec[str].create()
+    defer: type_names.release()
     var interfaces = vec.Vec[str].create()
     defer: interfaces.release()
     var values = vec.Vec[str].create()
@@ -1643,12 +1643,12 @@ function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[
         while true:
             let kp = tkeys.next() else:
                 break
-            types.push(read(kp))
+            type_names.push(read(kp))
         var skeys = read(analysis).structs.keys()
         while true:
             let kp = skeys.next() else:
                 break
-            types.push(read(kp))
+            type_names.push(read(kp))
         var ikeys = read(analysis).interfaces.keys()
         while true:
             let kp = ikeys.next() else:
@@ -1674,8 +1674,8 @@ function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[
         facts.key_storage.push(key)
         i += 1
     i = 0
-    while i < types.len():
-        let tp = types.get(i) else:
+    while i < type_names.len():
+        let tp = type_names.get(i) else:
             break
         var key = qualified_member_key(alias, unsafe: read(tp))
         facts.alias_types.set(key.as_str(), true)
@@ -1723,11 +1723,11 @@ function register_resolved_import(
     var module_name = dotted_qname(path)
     defer: module_name.release()
     let alias = scan_import_alias_name(path, alias_name)
-    match resolver_mod.resolve_module_path(module_name.as_str(), roots, resolver_mod.Platform.linux):
+    match resolver.resolve_module_path(module_name.as_str(), roots, resolver.Platform.linux):
         Result.success as resolved_ok:
             var resolved = resolved_ok.value
             defer: resolved.release()
-            match loader_mod.cached_module_surface(ptr_of(ws.module_cache), resolved.as_str()):
+            match loader.cached_module_surface(ptr_of(ws.module_cache), resolved.as_str()):
                 Option.some as surface:
                     facts.imports.set(alias, true)
                     collect_alias_exports(facts, alias, ref_of(surface.value.analysis), surface.value.source_file)
@@ -1793,14 +1793,14 @@ function build_scan_facts(ws: ref[workspace.Workspace], file: ast.SourceFile, an
         alias_interfaces = map_mod.Map[str, bool].create(),
         alias_values = map_mod.Map[str, bool].create(),
         alias_readonly_values = map_mod.Map[str, bool].create(),
-        bindings = scope.collect_bindings(source, file),
+        bindings = scope_mod.collect_bindings(source, file),
         readonly_values = map_mod.Map[str, bool].create(),
         static_members = map_mod.Map[str, bool].create(),
         callable_value_sites = span[analyzer.CallableValueSite](),
         nested_type_keys = map_mod.Map[str, bool].create(),
         callable_fields = map_mod.Map[str, bool].create(),
         receiver_structs = map_mod.Map[str, bool].create(),
-        type_param_scopes = scope.collect_type_param_scopes(source, file),
+        type_param_scopes = scope_mod.collect_type_param_scopes(source, file),
         attribute_decls = map_mod.Map[ptr_uint, bool].create(),
         key_storage = vec.Vec[string.String].create(),
     )
@@ -1907,7 +1907,7 @@ function compute_token_data(
         let col_num: uint = if tok.column > 0: uint<-(tok.column - 1) else: 0
         var token_type = token_kind_to_type(kind)
         var token_mod: uint = 0
-        if kind == tk_mod.TokenKind.identifier:
+        if kind == tk.TokenKind.identifier:
             let lexeme = unsafe: token_mod.token_lexeme(tok, source)
             if in_decorator and decorator_depth == 1:
                 token_type = TOKEN_DECORATOR
@@ -1940,18 +1940,18 @@ function compute_token_data(
                     token_mod = 1
                 else if scan_prev_is_dot(tokens, ti):
                     token_type = TOKEN_PROPERTY
-            if kind == tk_mod.TokenKind.at:
+            if kind == tk.TokenKind.at:
                 # Only `@[` opens an attribute application; a lifetime `@a` is
                 # not one, so its following tokens keep their own classes.
                 let after_at = scan_next_index(tokens, ti)
                 var opens_attribute = false
                 if after_at.is_some():
-                    opens_attribute = scan_kind_at(tokens, after_at.unwrap()) == tk_mod.TokenKind.lbracket
+                    opens_attribute = scan_kind_at(tokens, after_at.unwrap()) == tk.TokenKind.lbracket
                 in_decorator = opens_attribute
                 decorator_depth = 0
-            else if kind == tk_mod.TokenKind.lbracket and in_decorator:
+            else if kind == tk.TokenKind.lbracket and in_decorator:
                 decorator_depth += 1
-            else if kind == tk_mod.TokenKind.rbracket and in_decorator:
+            else if kind == tk.TokenKind.rbracket and in_decorator:
                 if decorator_depth > 0:
                     decorator_depth -= 1
                 if decorator_depth == 0:
@@ -1964,7 +1964,7 @@ function compute_token_data(
         # (`fstring_interpolation_entries`).
         if token_type == TOKEN_STRING:
             let lexeme = unsafe: token_mod.token_lexeme(tok, source)
-            if kind == tk_mod.TokenKind.fstring and not scan_is_heredoc(lexeme):
+            if kind == tk.TokenKind.fstring and not scan_is_heredoc(lexeme):
                 emit_fstring_entries(ref_of(data), lexeme, line_num, ptr_uint<-col_num, ref_of(prev_line), ref_of(prev_char), ref_of(facts), source)
                 ti += 1
                 continue
@@ -2289,11 +2289,11 @@ function emit_shifted_sub_tokens(
 ## re-lexed sub-tokens with the same `classify_semantic_token`).
 function scan_sub_token_class(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> TokenClass:
     let kind = scan_kind_at(tokens, index)
-    if kind == tk_mod.TokenKind.identifier:
+    if kind == tk.TokenKind.identifier:
         return classify_scan_identifier(facts, tokens, index, scan_lexeme_at(tokens, index, source), source)
-    if kind == tk_mod.TokenKind.string or kind == tk_mod.TokenKind.cstring or kind == tk_mod.TokenKind.fstring:
+    if kind == tk.TokenKind.string or kind == tk.TokenKind.cstring or kind == tk.TokenKind.fstring:
         return TokenClass(token_type = TOKEN_STRING, token_mod = 0)
-    if kind == tk_mod.TokenKind.integer or kind == tk_mod.TokenKind.float_literal:
+    if kind == tk.TokenKind.integer or kind == tk.TokenKind.float_literal:
         return TokenClass(token_type = TOKEN_NUMBER, token_mod = 0)
     if token_kind_to_type(kind) == TOKEN_KEYWORD:
         if scan_is_keyword_type_annotation(tokens, index):
@@ -2439,7 +2439,7 @@ public function semantic_class_entries(
 
         var token_type = token_kind_to_type(kind)
         var token_mod: uint = 0
-        if kind == tk_mod.TokenKind.identifier:
+        if kind == tk.TokenKind.identifier:
             let lexeme = unsafe: token_mod.token_lexeme(tok, source)
             if in_decorator and decorator_depth == 1:
                 token_type = TOKEN_DECORATOR
@@ -2448,18 +2448,18 @@ public function semantic_class_entries(
                 token_type = cls.token_type
                 token_mod = cls.token_mod
         else:
-            if kind == tk_mod.TokenKind.at:
+            if kind == tk.TokenKind.at:
                 # Only `@[` opens an attribute application; a lifetime `@a` is
                 # not one, so its following tokens keep their own classes.
                 let after_at = scan_next_index(tokens, ti)
                 var opens_attribute = false
                 if after_at.is_some():
-                    opens_attribute = scan_kind_at(tokens, after_at.unwrap()) == tk_mod.TokenKind.lbracket
+                    opens_attribute = scan_kind_at(tokens, after_at.unwrap()) == tk.TokenKind.lbracket
                 in_decorator = opens_attribute
                 decorator_depth = 0
-            else if kind == tk_mod.TokenKind.lbracket and in_decorator:
+            else if kind == tk.TokenKind.lbracket and in_decorator:
                 decorator_depth += 1
-            else if kind == tk_mod.TokenKind.rbracket and in_decorator:
+            else if kind == tk.TokenKind.rbracket and in_decorator:
                 if decorator_depth > 0:
                     decorator_depth -= 1
 
@@ -2630,35 +2630,35 @@ public function is_builtin_type_name(lexeme: str) -> bool:
 
 
 ## Map a non-identifier TokenKind to an LSP semantic token type index.
-public function token_kind_to_type(kind: tk_mod.TokenKind) -> uint:
-    if kind == tk_mod.TokenKind.identifier:
+public function token_kind_to_type(kind: tk.TokenKind) -> uint:
+    if kind == tk.TokenKind.identifier:
         return TOKEN_VARIABLE
-    if kind == tk_mod.TokenKind.integer or kind == tk_mod.TokenKind.float_literal:
+    if kind == tk.TokenKind.integer or kind == tk.TokenKind.float_literal:
         return TOKEN_NUMBER
-    if kind == tk_mod.TokenKind.string or kind == tk_mod.TokenKind.cstring or
-       kind == tk_mod.TokenKind.fstring or kind == tk_mod.TokenKind.char_literal:
+    if kind == tk.TokenKind.string or kind == tk.TokenKind.cstring or
+       kind == tk.TokenKind.fstring or kind == tk.TokenKind.char_literal:
         return TOKEN_STRING
     # Operators and punctuation
-    if kind == tk_mod.TokenKind.dot or kind == tk_mod.TokenKind.plus or
-       kind == tk_mod.TokenKind.minus or kind == tk_mod.TokenKind.star or
-       kind == tk_mod.TokenKind.slash or kind == tk_mod.TokenKind.percent or
-       kind == tk_mod.TokenKind.amp or kind == tk_mod.TokenKind.pipe or
-       kind == tk_mod.TokenKind.caret or kind == tk_mod.TokenKind.less or
-       kind == tk_mod.TokenKind.greater or kind == tk_mod.TokenKind.equal or
-       kind == tk_mod.TokenKind.arrow or kind == tk_mod.TokenKind.dot_dot or
-       kind == tk_mod.TokenKind.equal_equal or kind == tk_mod.TokenKind.bang_equal or
-       kind == tk_mod.TokenKind.less_equal or kind == tk_mod.TokenKind.greater_equal or
-       kind == tk_mod.TokenKind.shift_left or kind == tk_mod.TokenKind.shift_right or
-       kind == tk_mod.TokenKind.plus_equal or kind == tk_mod.TokenKind.minus_equal or
-       kind == tk_mod.TokenKind.star_equal or kind == tk_mod.TokenKind.slash_equal or
-       kind == tk_mod.TokenKind.percent_equal or kind == tk_mod.TokenKind.amp_equal or
-       kind == tk_mod.TokenKind.pipe_equal or kind == tk_mod.TokenKind.caret_equal or
-       kind == tk_mod.TokenKind.shift_left_equal or kind == tk_mod.TokenKind.shift_right_equal or
-        kind == tk_mod.TokenKind.ellipsis or kind == tk_mod.TokenKind.tilde or
-        kind == tk_mod.TokenKind.lparen or kind == tk_mod.TokenKind.rparen or
-        kind == tk_mod.TokenKind.lbracket or kind == tk_mod.TokenKind.rbracket or
-        kind == tk_mod.TokenKind.colon or kind == tk_mod.TokenKind.comma or
-        kind == tk_mod.TokenKind.question or kind == tk_mod.TokenKind.at:
+    if kind == tk.TokenKind.dot or kind == tk.TokenKind.plus or
+       kind == tk.TokenKind.minus or kind == tk.TokenKind.star or
+       kind == tk.TokenKind.slash or kind == tk.TokenKind.percent or
+       kind == tk.TokenKind.amp or kind == tk.TokenKind.pipe or
+       kind == tk.TokenKind.caret or kind == tk.TokenKind.less or
+       kind == tk.TokenKind.greater or kind == tk.TokenKind.equal or
+       kind == tk.TokenKind.arrow or kind == tk.TokenKind.dot_dot or
+       kind == tk.TokenKind.equal_equal or kind == tk.TokenKind.bang_equal or
+       kind == tk.TokenKind.less_equal or kind == tk.TokenKind.greater_equal or
+       kind == tk.TokenKind.shift_left or kind == tk.TokenKind.shift_right or
+       kind == tk.TokenKind.plus_equal or kind == tk.TokenKind.minus_equal or
+       kind == tk.TokenKind.star_equal or kind == tk.TokenKind.slash_equal or
+       kind == tk.TokenKind.percent_equal or kind == tk.TokenKind.amp_equal or
+       kind == tk.TokenKind.pipe_equal or kind == tk.TokenKind.caret_equal or
+       kind == tk.TokenKind.shift_left_equal or kind == tk.TokenKind.shift_right_equal or
+        kind == tk.TokenKind.ellipsis or kind == tk.TokenKind.tilde or
+        kind == tk.TokenKind.lparen or kind == tk.TokenKind.rparen or
+        kind == tk.TokenKind.lbracket or kind == tk.TokenKind.rbracket or
+        kind == tk.TokenKind.colon or kind == tk.TokenKind.comma or
+        kind == tk.TokenKind.question or kind == tk.TokenKind.at:
         return TOKEN_OPERATOR
     return TOKEN_KEYWORD
 
@@ -2776,11 +2776,11 @@ function collect_const_names(file: ast.SourceFile, names: ref[map_mod.Map[str, b
 function scan_nested_type_member(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
     let dot = scan_prev_index(tokens, index) else:
         return false
-    if scan_kind_at(tokens, dot) != tk_mod.TokenKind.dot:
+    if scan_kind_at(tokens, dot) != tk.TokenKind.dot:
         return false
     let recv = scan_prev_index(tokens, dot) else:
         return false
-    if scan_kind_at(tokens, recv) != tk_mod.TokenKind.identifier:
+    if scan_kind_at(tokens, recv) != tk.TokenKind.identifier:
         return false
     var key = string.String.create()
     defer: key.release()
@@ -2795,11 +2795,11 @@ function scan_nested_type_member(facts: ref[ScanFacts], tokens: span[token_mod.T
 function scan_callable_field_call(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
     let dot = scan_prev_index(tokens, index) else:
         return false
-    if scan_kind_at(tokens, dot) != tk_mod.TokenKind.dot:
+    if scan_kind_at(tokens, dot) != tk.TokenKind.dot:
         return false
     let recv = scan_prev_index(tokens, dot) else:
         return false
-    if scan_kind_at(tokens, recv) != tk_mod.TokenKind.identifier:
+    if scan_kind_at(tokens, recv) != tk.TokenKind.identifier:
         return false
     let receiver_name = scan_lexeme_at(tokens, recv, source)
     let member_name = scan_lexeme_at(tokens, index, source)

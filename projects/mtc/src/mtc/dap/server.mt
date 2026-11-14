@@ -1,5 +1,5 @@
 ## DAP server — a libuv event loop that multiplexes the client stdio and the
-## debuggee child process (the lldb-dap adapter joins it in lldb_backend.mt).
+## debuggee child process (the lldb-dap adapter joins it in lldb.mt).
 ## Poll callbacks only append bytes to framers; request dispatch, child draining
 ## and event emission happen between loop turns.
 
@@ -12,7 +12,7 @@ import std.string as string
 import std.vec as vec
 
 import mtc.dap.handlers as handlers
-import mtc.dap.lldb_backend as lldb_backend
+import mtc.dap.lldb_backend as lldb
 import mtc.dap.lldb_policy as lldb_policy
 import mtc.dap.process_backend as backend
 import mtc.dap.protocol as proto
@@ -35,7 +35,7 @@ struct PollContext:
 ## State shared with the poll callbacks.
 struct LoopState:
     stdin_framer: ptr[proto.Framer]
-    backend: ptr[lldb_backend.Backend]
+    backend: ptr[lldb.Backend]
 
 
 ## Entry point.  Parses the CLI flags, then runs the event loop until the
@@ -46,9 +46,9 @@ public function run(args: span[str]) -> int:
     configure_backend(ref_of(ses), args)
 
     let state = unsafe: ptr[LoopState]<-heap.must_alloc[LoopState](1)
-    let backend_ptr = heap.must_alloc[lldb_backend.Backend](1)
+    let backend_ptr = heap.must_alloc[lldb.Backend](1)
     unsafe:
-        read(backend_ptr) = lldb_backend.create()
+        read(backend_ptr) = lldb.create()
         read(state) = LoopState(
             stdin_framer = alloc_framer(0),
             backend = backend_ptr,
@@ -143,8 +143,8 @@ function release_loop_state(state: ptr[LoopState]) -> void:
     heap.release(state)
 
 
-function release_backend(backend_ptr: ptr[lldb_backend.Backend]) -> void:
-    lldb_backend.release(unsafe: ref_of(read(backend_ptr)))
+function release_backend(backend_ptr: ptr[lldb.Backend]) -> void:
+    lldb.release(unsafe: ref_of(read(backend_ptr)))
     heap.release(backend_ptr)
 
 
@@ -216,7 +216,7 @@ function timer_callback(handle: ptr[libuv.uv_timer_t]) -> void:
 function drain_client_messages(
     ses: ref[session.Session],
     state: ptr[LoopState],
-    lldb_backend_ref: ref[lldb_backend.Backend],
+    lldb_backend_ref: ref[lldb.Backend],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
 ) -> void:
@@ -296,7 +296,7 @@ function drain_child(
 ## handles.
 function shutdown(
     ses: ref[session.Session],
-    backend_ptr: ptr[lldb_backend.Backend],
+    backend_ptr: ptr[lldb.Backend],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
     stdin_watch: ptr[libuv.uv_poll_t],

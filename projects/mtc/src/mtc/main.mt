@@ -24,7 +24,7 @@ import std.terminal as terminal
 
 import mtc.lexer.token_kinds as tk
 import mtc.lexer.token as token_mod
-import mtc.lexer.lexer as lexer
+import mtc.lexer.lexer as lexer_mod
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.parser.ast as ast
@@ -43,8 +43,7 @@ import mtc.c_backend.c_backend as c_backend
 import mtc.ir as ir
 import mtc.build as build_driver
 import mtc.build_cache as build_cache
-import mtc.pretty_printer.ast_formatter as fmt
-import mtc.linter.linter as linter
+import mtc.linter.linter as linter_mod
 import mtc.linter.config as lint_config
 import mtc.linter.scope_tracking as scope_tracking
 import mtc.linter.fix_engine as fix_engine
@@ -52,7 +51,7 @@ import mtc.lsp.server as lsp
 import mtc.lsp.debug_info as debug_info
 import mtc.lsp.debug_text as debug_text
 import mtc.lsp.workspace as workspace
-import mtc.lsp.semantic_tokens as sem_tokens
+import mtc.lsp.semantic_tokens as semtok
 import mtc.dap.server as dap
 import mtc.bindgen as bindgen
 import mtc.imported_bindings.registry as ib_registry
@@ -62,10 +61,10 @@ import mtc.std_catalog as std_catalog
 import mtc.docs_app as docs_app
 import mtc.toolchain_cli as toolchain_cli
 import mtc.packages.manager_cli as package_manager_cli
-import mtc.packages.graph as package_graph
+import mtc.packages.graph as graph
 import mtc.packages.lock as package_lock
-import mtc.packages.manifest as dep_manifest
-import mtc.packages.source as package_source
+import mtc.packages.manifest as manifest
+import mtc.packages.source as pkg_source
 import mtc.wasm_preview as wasm_preview
 import mtc.version_info as ver
 import mtc.cli_help as cli_help
@@ -917,7 +916,7 @@ function parse_one_path(file_path: str, sexpr: bool) -> int:
             # parsing (`Lexer.lex` raises, the CLI renders `error[lex/error]`).
             var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
             defer: lex_diags.release()
-            let _lexed = lexer.lex_reporting(source, ref_of(lex_diags))
+            let _lexed = lexer_mod.lex_reporting(source, ref_of(lex_diags))
             if lex_diags.len() > 0:
                 print_lex_diagnostics(resolved.as_str(), source, lex_diags.as_span())
                 return 1
@@ -1140,7 +1139,7 @@ function check_command(args: span[str]) -> int:
                     # lint): owning types, unresolved imports and the analysis'
                     # editable receivers, with `.mt-lint.yml` applied by the
                     # linter itself.
-                    var options = linter.default_lint_options()
+                    var options = linter_mod.default_lint_options()
                     options.owning_type_names = program.owning_type_span()
                     var unresolved = vec.Vec[str].create()
                     defer: unresolved.release()
@@ -1167,7 +1166,7 @@ function check_command(args: span[str]) -> int:
                     var providers = scope_tracking.build_import_method_providers(lfile, program.analyses.as_span())
                     defer: providers.release()
                     options.method_providers = providers.as_span()
-                    var lwarns = linter.lint_source_with(lfile, src.as_str(), lint_path, options)
+                    var lwarns = linter_mod.lint_source_with(lfile, src.as_str(), lint_path, options)
                     defer: lwarns.release()
                     if lwarns.len() > 0:
                         # The host's `check` sorts a file's diagnostics by
@@ -1480,7 +1479,7 @@ function print_diagnostic_block(path: str, source: str, line: ptr_uint, column: 
 ## Stable sort of lint warnings by `[line, column]`, the host's
 ## `sort_by_location` for `check` output.  Insertion sort keeps the ties in
 ## emission order, as Ruby's stable `sort_by` does.
-function sort_lint_warnings_by_location(warnings: ref[vec.Vec[linter.Warning]]) -> void:
+function sort_lint_warnings_by_location(warnings: ref[vec.Vec[linter_mod.Warning]]) -> void:
     var i: ptr_uint = 1
     while i < warnings.len():
         let cur_ptr = warnings.get(i) else:
@@ -1654,7 +1653,7 @@ function init_lint_config() -> int:
             content.append("# Remove entries from `select` to disable rules globally.\n")
             content.append("max_line_length: 120\n")
             content.append("select:\n")
-            var codes = linter.known_rule_codes()
+            var codes = linter_mod.known_rule_codes()
             defer: codes.release()
             var ci: ptr_uint = 0
             while ci < codes.len():
@@ -1909,7 +1908,7 @@ function lint_command(args: span[str]) -> int:
                 var owning_names = lint_program.owning_type_span()
                 var unresolved_paths = vec.Vec[str].create()
                 defer: unresolved_paths.release()
-                var options = linter.default_lint_options()
+                var options = linter_mod.default_lint_options()
                 options.owning_type_names = owning_names
                 options.select = select_set.as_span()
                 options.ignore = ignore_set.as_span()
@@ -1969,7 +1968,7 @@ function lint_command(args: span[str]) -> int:
                 defer: providers.release()
                 options.method_providers = providers.as_span()
                 let lint_scan_started_ms = monotonic_ms()
-                var warns = linter.lint_source_with(file, src.as_str(), fp, options)
+                var warns = linter_mod.lint_source_with(file, src.as_str(), fp, options)
                 let lint_scan_total_ms = monotonic_ms() - lint_scan_started_ms
                 defer: warns.release()
                 if timings:
@@ -2823,15 +2822,15 @@ function apply_package_resolution_result(
             Result.success:
                 pass
 
-    if not dep_manifest.manifest_exists_for(path):
+    if not manifest.manifest_exists_for(path):
         return Result[bool, string.String].success(value = true)
 
-    var package_resolver = package_source.create_resolver(
-        if locked: package_source.ResolutionMode.reject else: package_source.ResolutionMode.materialize
+    var package_resolver = pkg_source.create_resolver(
+        if locked: pkg_source.ResolutionMode.reject else: pkg_source.ResolutionMode.materialize
     )
     defer: package_resolver.release()
 
-    var loaded = package_graph.PackageGraph(nodes = vec.Vec[package_graph.GraphNode].create(), root_index = 0)
+    var loaded = graph.PackageGraph(nodes = vec.Vec[graph.GraphNode].create(), root_index = 0)
     var loaded_ok = false
     if locked:
         match package_lock.load_graph(path, ref_of(package_resolver)):
@@ -2841,7 +2840,7 @@ function apply_package_resolution_result(
                 loaded = graph_payload.value
                 loaded_ok = true
     else:
-        match package_graph.load(path, ref_of(package_resolver)):
+        match graph.load(path, ref_of(package_resolver)):
             Result.failure as load_failure:
                 return Result[bool, string.String].failure(error = load_failure.error)
             Result.success as graph_payload:
@@ -2851,8 +2850,8 @@ function apply_package_resolution_result(
         return Result[bool, string.String].success(value = true)
     defer: loaded.release()
 
-    var graph_roots = package_graph.source_roots(ref_of(loaded))
-    defer: package_source.release_strings(ref_of(graph_roots))
+    var graph_roots = graph.source_roots(ref_of(loaded))
+    defer: pkg_source.release_strings(ref_of(graph_roots))
     var i: ptr_uint = 0
     while i < graph_roots.len():
         let root_entry = graph_roots.get(i) else:
@@ -4275,15 +4274,15 @@ function new_command(args: span[str]) -> int:
     var package_name = snake_case_identifier(path_ops.basename(abs_path))
     defer: package_name.release()
 
-    var manifest = string.String.create()
-    defer: manifest.release()
-    manifest.append("[package]\nname = \"")
-    manifest.append(package_name.as_str())
-    manifest.append("\"\nversion = \"0.1.0\"\nsource_root = \"src\"\n\n[build]\nentry = \"src/main.mt\"\n")
+    var manifest_text = string.String.create()
+    defer: manifest_text.release()
+    manifest_text.append("[package]\nname = \"")
+    manifest_text.append(package_name.as_str())
+    manifest_text.append("\"\nversion = \"0.1.0\"\nsource_root = \"src\"\n\n[build]\nentry = \"src/main.mt\"\n")
 
     var manifest_path = path_ops.join(abs_path, "package.toml")
     defer: manifest_path.release()
-    match fs.write_text(manifest_path.as_str(), manifest.as_str()):
+    match fs.write_text(manifest_path.as_str(), manifest_text.as_str()):
         Result.failure as write_failure:
             var write_error = write_failure.error
             write_error.release()
@@ -5592,7 +5591,7 @@ function snapshot_command(args: span[str]) -> int:
             Result.success as src_payload:
                 var source = src_payload.value
                 defer: source.release()
-                var entries_json = sem_tokens.snapshot_entries_for(ref_of(ws), input_path, source.as_str())
+                var entries_json = semtok.snapshot_entries_for(ref_of(ws), input_path, source.as_str())
                 if entries_json.len() > 2:
                     match fs.create_temporary_file_in_system_temp("mt_semantic_", ".json"):
                         Result.success as tmp_payload:
@@ -6429,7 +6428,7 @@ function lex_command(file_path: str, sexpr: bool) -> int:
 
             let source = content.as_str()
             var diags = vec.Vec[token_mod.LexDiagnostic].create()
-            var tokens = lexer.lex_reporting(source, ref_of(diags))
+            var tokens = lexer_mod.lex_reporting(source, ref_of(diags))
 
             if diags.len() > 0:
                 print_lex_diagnostics(file_path, source, diags.as_span())
@@ -7142,7 +7141,7 @@ function run_test_file_path(path: str, options: TestRunOptions) -> int:
 
             var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
             defer: lex_diags.release()
-            let _tokens = lexer.lex_reporting(source_text, ref_of(lex_diags))
+            let _tokens = lexer_mod.lex_reporting(source_text, ref_of(lex_diags))
             if lex_diags.len() > 0:
                 print_lex_diagnostics(path, source_text, lex_diags.as_span())
                 return 1
@@ -7295,7 +7294,7 @@ function classify_test_file(path: str, source: str, name_filter: Option[str]) ->
 
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: lex_diags.release()
-    let _tokens = lexer.lex_reporting(source, ref_of(lex_diags))
+    let _tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     if lex_diags.len() > 0:
         print_lex_diagnostics(path, source, lex_diags.as_span())
         return TestFileKind.lex_error

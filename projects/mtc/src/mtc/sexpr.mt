@@ -314,7 +314,7 @@ public function dump_tokens(tokens: span[token_mod.Token], source: str) -> strin
 ## *module-qualified* declared name (`raw.Color`) to its class, which the
 ## per-module analyses supply — an imported type whose declaration is not in the
 ## IR (a raw module's enum/flags/union/variant/opaque) still classifies right.
-public struct SexprCtx:
+public struct SexprContext:
     module_name: str
     struct_names: map_mod.Map[str, bool]
     union_names: map_mod.Map[str, bool]
@@ -324,8 +324,8 @@ public struct SexprCtx:
     type_kinds: map_mod.Map[str, str]
 
 
-public function new_sexpr_ctx(module_name: str) -> SexprCtx:
-    return SexprCtx(
+public function new_sexpr_ctx(module_name: str) -> SexprContext:
+    return SexprContext(
         module_name = module_name,
         struct_names = map_mod.Map[str, bool].create(),
         union_names = map_mod.Map[str, bool].create(),
@@ -401,7 +401,7 @@ function field_opt_str(name: str, value: Option[str]) -> SexprField:
 
 
 ## Optional expression: host nil when absent.
-function field_opt_expr(ctx: ref[SexprCtx], name: str, value: ptr[ir.Expr]?) -> SexprField:
+function field_opt_expr(ctx: ref[SexprContext], name: str, value: ptr[ir.Expr]?) -> SexprField:
     if value == null:
         return field_nil(name)
     return field_value(name, ir_expr_value(ctx, ptr[ir.Expr]<-value))
@@ -433,7 +433,7 @@ function field_path(path: str) -> SexprField:
 
 ## Host Types class for a named/imported type, classified by the IR program's
 ## declarations (Struct/Union/Enum/Variant), defaulting to Struct.
-function named_type_class(ctx: ref[SexprCtx], name: str) -> str:
+function named_type_class(ctx: ref[SexprContext], name: str) -> str:
     if ctx.variant_names.contains(name):
         return "Variant"
     if ctx.flags_names.contains(name):
@@ -450,7 +450,7 @@ function named_type_class(ctx: ref[SexprCtx], name: str) -> str:
 ## declared-name sets, else `Struct`.  The qualified lookup is what makes a raw
 ## (`external`) module's enum/flags/opaque render their own class — the IR holds
 ## no declaration for them (session 43, item 3g).
-function imported_type_class(ctx: ref[SexprCtx], module_name: str, name: str) -> str:
+function imported_type_class(ctx: ref[SexprContext], module_name: str, name: str) -> str:
     let kind = ctx.type_kinds.get(strings.join_two(module_name, strings.join_two(".", name)))
     if kind != null:
         return unsafe: read(kind)
@@ -459,7 +459,7 @@ function imported_type_class(ctx: ref[SexprCtx], module_name: str, name: str) ->
 
 ## Render a function/proc parameter list as the host's `Types::Parameter` nodes
 ## (`:name`, `:type`); `names` may be shorter than `params` for synthetic types.
-function param_list_value(ctx: ref[SexprCtx], params: span[types.Type], names: span[str]) -> SexprValue:
+function param_list_value(ctx: ref[SexprContext], params: span[types.Type], names: span[str]) -> SexprValue:
     var items = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < params.len:
@@ -477,7 +477,7 @@ function param_list_value(ctx: ref[SexprCtx], params: span[types.Type], names: s
     return list_value(items.as_span())
 
 
-function types_list_value(ctx: ref[SexprCtx], items: span[types.Type]) -> SexprValue:
+function types_list_value(ctx: ref[SexprContext], items: span[types.Type]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -489,7 +489,7 @@ function types_list_value(ctx: ref[SexprCtx], items: span[types.Type]) -> SexprV
 ## The host stores an SoA count / simd lane count as a plain Integer, not a
 ## `Types::LiteralTypeArg`; the dump emits a bare number, falling back to the
 ## regular type rendering for a non-literal (a bound parameter mid-analysis).
-function int_arg_field(ctx: ref[SexprCtx], name: str, t: types.Type) -> SexprField:
+function int_arg_field(ctx: ref[SexprContext], name: str, t: types.Type) -> SexprField:
     match t:
         types.Type.ty_literal_int as lit:
             return field_int(name, lit.value)
@@ -497,7 +497,7 @@ function int_arg_field(ctx: ref[SexprCtx], name: str, t: types.Type) -> SexprFie
             return field_value(name, types_value(ctx, t))
 
 
-function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
+function types_value(ctx: ref[SexprContext], t: types.Type) -> SexprValue:
     match t:
         types.Type.ty_primitive as p:
             # The host installs the builtin vector/matrix/quaternion names as
@@ -697,7 +697,7 @@ function is_builtin_generic_name(name: str) -> bool:
 #  IR expressions
 # =============================================================================
 
-function ir_exprs_value(ctx: ref[SexprCtx], items: span[ir.Expr]) -> SexprValue:
+function ir_exprs_value(ctx: ref[SexprContext], items: span[ir.Expr]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -706,7 +706,7 @@ function ir_exprs_value(ctx: ref[SexprCtx], items: span[ir.Expr]) -> SexprValue:
     return list_value(items_out.as_span())
 
 
-function ir_aggregate_fields_value(ctx: ref[SexprCtx], items: span[ir.AggregateField]) -> SexprValue:
+function ir_aggregate_fields_value(ctx: ref[SexprContext], items: span[ir.AggregateField]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -721,7 +721,7 @@ function ir_aggregate_fields_value(ctx: ref[SexprCtx], items: span[ir.AggregateF
     return list_value(items_out.as_span())
 
 
-function ir_expr_value(ctx: ref[SexprCtx], ep: ptr[ir.Expr]) -> SexprValue:
+function ir_expr_value(ctx: ref[SexprContext], ep: ptr[ir.Expr]) -> SexprValue:
     unsafe:
         match read(ep):
             ir.Expr.expr_name as x:
@@ -915,7 +915,7 @@ function ir_expr_value(ctx: ref[SexprCtx], ep: ptr[ir.Expr]) -> SexprValue:
 #  IR statements
 # =============================================================================
 
-function ir_stmts_value(ctx: ref[SexprCtx], body: span[ir.Stmt]) -> SexprValue:
+function ir_stmts_value(ctx: ref[SexprContext], body: span[ir.Stmt]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < body.len:
@@ -924,7 +924,7 @@ function ir_stmts_value(ctx: ref[SexprCtx], body: span[ir.Stmt]) -> SexprValue:
     return list_value(items_out.as_span())
 
 
-function ir_stmt_value(ctx: ref[SexprCtx], sp: ptr[ir.Stmt]) -> SexprValue:
+function ir_stmt_value(ctx: ref[SexprContext], sp: ptr[ir.Stmt]) -> SexprValue:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as x:
@@ -1017,7 +1017,7 @@ function ir_stmt_value(ctx: ref[SexprCtx], sp: ptr[ir.Stmt]) -> SexprValue:
 #  IR declarations + program
 # =============================================================================
 
-function ir_fields_value(ctx: ref[SexprCtx], fields: span[ir.Field]) -> SexprValue:
+function ir_fields_value(ctx: ref[SexprContext], fields: span[ir.Field]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < fields.len:
@@ -1032,7 +1032,7 @@ function ir_fields_value(ctx: ref[SexprCtx], fields: span[ir.Field]) -> SexprVal
     return list_value(items_out.as_span())
 
 
-function ir_params_value(ctx: ref[SexprCtx], params: span[ir.Param]) -> SexprValue:
+function ir_params_value(ctx: ref[SexprContext], params: span[ir.Param]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < params.len:
@@ -1053,7 +1053,7 @@ function ir_params_value(ctx: ref[SexprCtx], params: span[ir.Param]) -> SexprVal
 ## `<module>.<name>` → the host's class.  A raw (`external`) module carries no
 ## IR declarations, so this is the only source that can classify its enums,
 ## flags, unions, variants and opaques (session 43, item 3g).
-function register_decl_kinds(ctx: ref[SexprCtx], a: analyzer.Analysis) -> void:
+function register_decl_kinds(ctx: ref[SexprContext], a: analyzer.Analysis) -> void:
     var di: ptr_uint = 0
     while di < a.source_file.declarations.len:
         var d: ast.Decl
@@ -1489,7 +1489,7 @@ function len_field(name: str, length: ptr_uint) -> SexprField:
     return field_uint(name, length)
 
 
-function opt_type_ref_field(ctx: ref[SexprCtx], name: str, value: ptr[ast.TypeRef]?) -> SexprField:
+function opt_type_ref_field(ctx: ref[SexprContext], name: str, value: ptr[ast.TypeRef]?) -> SexprField:
     if value == null:
         return field_nil(name)
     return field_value(name, type_ref_value(ctx, unsafe: read(ptr[ast.TypeRef]<-value)))
@@ -1549,7 +1549,7 @@ function qname_bare_value(parts: span[str]) -> SexprValue:
 
 
 ## QualifiedName as built by `parse_qualified_name_with_type_arguments`.
-function qname_full_value(ctx: ref[SexprCtx], qn: ast.QualifiedName) -> SexprValue:
+function qname_full_value(ctx: ref[SexprContext], qn: ast.QualifiedName) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < qn.parts.len:
@@ -1629,7 +1629,7 @@ function parse_float_lexeme(text: str) -> double:
 
 ## A type argument's value: numeric literals are synthetic single-part
 ## TypeRefs in the self-hosted AST; the host stores them as literal nodes.
-function type_argument_value_of(ctx: ref[SexprCtx], tr: ast.TypeRef) -> SexprValue:
+function type_argument_value_of(ctx: ref[SexprContext], tr: ast.TypeRef) -> SexprValue:
     if tr.line == 0 and tr.column == 0 and tr.name.parts.len == 1 and tr.arguments.len == 0 and not tr.nullable and not tr.is_fn and not tr.is_proc and not tr.is_dyn and not tr.is_tuple:
         let lexeme = unsafe: read(tr.name.parts.data + 0)
         if lexeme_is_integer(lexeme):
@@ -1649,7 +1649,7 @@ function type_argument_value_of(ctx: ref[SexprCtx], tr: ast.TypeRef) -> SexprVal
     return type_ref_value(ctx, tr)
 
 
-function type_argument_value(ctx: ref[SexprCtx], ta: ast.TypeArgument) -> SexprValue:
+function type_argument_value(ctx: ref[SexprContext], ta: ast.TypeArgument) -> SexprValue:
     let tr = unsafe: read(ta.value)
     return node("AST::TypeArgument", fields3(
         field_value("value", type_argument_value_of(ctx, tr)),
@@ -1658,7 +1658,7 @@ function type_argument_value(ctx: ref[SexprCtx], ta: ast.TypeArgument) -> SexprV
     ))
 
 
-function type_ref_value(ctx: ref[SexprCtx], tr: ast.TypeRef) -> SexprValue:
+function type_ref_value(ctx: ref[SexprContext], tr: ast.TypeRef) -> SexprValue:
     if tr.is_fn or tr.is_proc:
         let class_name = if tr.is_proc: "AST::ProcType" else: "AST::FunctionType"
         return node(class_name, fields4(
@@ -1751,7 +1751,7 @@ function type_ref_value(ctx: ref[SexprCtx], tr: ast.TypeRef) -> SexprValue:
 
 
 ## TypeRef arguments as the host stores them: each wrapped in `AST::TypeArgument`.
-function type_refs_as_arguments_value(ctx: ref[SexprCtx], items: span[ast.TypeRef]) -> SexprValue:
+function type_refs_as_arguments_value(ctx: ref[SexprContext], items: span[ast.TypeRef]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -1764,7 +1764,7 @@ function type_refs_as_arguments_value(ctx: ref[SexprCtx], items: span[ast.TypeRe
     return list_value(items_out.as_span())
 
 
-function type_refs_value(ctx: ref[SexprCtx], items: span[ast.TypeRef]) -> SexprValue:
+function type_refs_value(ctx: ref[SexprContext], items: span[ast.TypeRef]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -1773,7 +1773,7 @@ function type_refs_value(ctx: ref[SexprCtx], items: span[ast.TypeRef]) -> SexprV
     return list_value(items_out.as_span())
 
 
-function params_value(ctx: ref[SexprCtx], params: span[ast.Param]) -> SexprValue:
+function params_value(ctx: ref[SexprContext], params: span[ast.Param]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < params.len:
@@ -1782,13 +1782,13 @@ function params_value(ctx: ref[SexprCtx], params: span[ast.Param]) -> SexprValue
     return list_value(items_out.as_span())
 
 
-function param_default_field(ctx: ref[SexprCtx], p: ast.Param) -> SexprField:
+function param_default_field(ctx: ref[SexprContext], p: ast.Param) -> SexprField:
     if p.default_value == null:
         return field_nil("default_value")
     return field_value("default_value", expr_value(ctx, unsafe: ptr[ast.Expr]<-p.default_value))
 
 
-function param_value(ctx: ref[SexprCtx], p: ast.Param) -> SexprValue:
+function param_value(ctx: ref[SexprContext], p: ast.Param) -> SexprValue:
     return node("AST::Param", fields5(
         field_str("name", p.name),
         field_value("type", type_ref_value(ctx, p.param_type)),
@@ -1798,7 +1798,7 @@ function param_value(ctx: ref[SexprCtx], p: ast.Param) -> SexprValue:
     ))
 
 
-function attributes_value(ctx: ref[SexprCtx], attrs: span[ast.AttributeApplication]) -> SexprValue:
+function attributes_value(ctx: ref[SexprContext], attrs: span[ast.AttributeApplication]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < attrs.len:
@@ -1813,7 +1813,7 @@ function attributes_value(ctx: ref[SexprCtx], attrs: span[ast.AttributeApplicati
     return list_value(items_out.as_span())
 
 
-function arguments_value(ctx: ref[SexprCtx], args: span[ast.Argument]) -> SexprValue:
+function arguments_value(ctx: ref[SexprContext], args: span[ast.Argument]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -1828,7 +1828,7 @@ function arguments_value(ctx: ref[SexprCtx], args: span[ast.Argument]) -> SexprV
     return list_value(items_out.as_span())
 
 
-function fields_value(ctx: ref[SexprCtx], items: span[ast.Field]) -> SexprValue:
+function fields_value(ctx: ref[SexprContext], items: span[ast.Field]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -1844,7 +1844,7 @@ function fields_value(ctx: ref[SexprCtx], items: span[ast.Field]) -> SexprValue:
     return list_value(items_out.as_span())
 
 
-function enum_members_value(ctx: ref[SexprCtx], items: span[ast.EnumMember]) -> SexprValue:
+function enum_members_value(ctx: ref[SexprContext], items: span[ast.EnumMember]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -1862,7 +1862,7 @@ function enum_members_value(ctx: ref[SexprCtx], items: span[ast.EnumMember]) -> 
     return list_value(items_out.as_span())
 
 
-function variant_fields_value(ctx: ref[SexprCtx], items: span[ast.Field]) -> SexprValue:
+function variant_fields_value(ctx: ref[SexprContext], items: span[ast.Field]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -1878,7 +1878,7 @@ function variant_fields_value(ctx: ref[SexprCtx], items: span[ast.Field]) -> Sex
     return list_value(items_out.as_span())
 
 
-function union_fields_value(ctx: ref[SexprCtx], items: span[ast.Field]) -> SexprValue:
+function union_fields_value(ctx: ref[SexprContext], items: span[ast.Field]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -1903,7 +1903,7 @@ function sym_list_value(items: span[str]) -> SexprValue:
     return list_value(items_out.as_span())
 
 
-function variant_arms_value(ctx: ref[SexprCtx], items: span[ast.VariantArm]) -> SexprValue:
+function variant_arms_value(ctx: ref[SexprContext], items: span[ast.VariantArm]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -1918,7 +1918,7 @@ function variant_arms_value(ctx: ref[SexprCtx], items: span[ast.VariantArm]) -> 
     return list_value(items_out.as_span())
 
 
-function foreign_params_value(ctx: ref[SexprCtx], items: span[ast.ForeignParam]) -> SexprValue:
+function foreign_params_value(ctx: ref[SexprContext], items: span[ast.ForeignParam]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -1941,7 +1941,7 @@ function foreign_params_value(ctx: ref[SexprCtx], items: span[ast.ForeignParam])
     return list_value(items_out.as_span())
 
 
-function for_bindings_value(ctx: ref[SexprCtx], items: span[ast.ForBinding]) -> SexprValue:
+function for_bindings_value(ctx: ref[SexprContext], items: span[ast.ForBinding]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -1955,7 +1955,7 @@ function for_bindings_value(ctx: ref[SexprCtx], items: span[ast.ForBinding]) -> 
     return list_value(items_out.as_span())
 
 
-function constraints_value(ctx: ref[SexprCtx], items: span[ast.TypeParamConstraint]) -> SexprValue:
+function constraints_value(ctx: ref[SexprContext], items: span[ast.TypeParamConstraint]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -1970,7 +1970,7 @@ function constraints_value(ctx: ref[SexprCtx], items: span[ast.TypeParamConstrai
     return list_value(items_out.as_span())
 
 
-function type_params_value(ctx: ref[SexprCtx], items: span[ast.TypeParam]) -> SexprValue:
+function type_params_value(ctx: ref[SexprContext], items: span[ast.TypeParam]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -1995,7 +1995,7 @@ function type_params_value(ctx: ref[SexprCtx], items: span[ast.TypeParam]) -> Se
     return list_value(items_out.as_span())
 
 
-function interface_methods_value(ctx: ref[SexprCtx], items: span[ast.InterfaceMethod]) -> SexprValue:
+function interface_methods_value(ctx: ref[SexprContext], items: span[ast.InterfaceMethod]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -2014,7 +2014,7 @@ function interface_methods_value(ctx: ref[SexprCtx], items: span[ast.InterfaceMe
     return list_value(items_out.as_span())
 
 
-function method_value(ctx: ref[SexprCtx], m: ast.Method) -> SexprValue:
+function method_value(ctx: ref[SexprContext], m: ast.Method) -> SexprValue:
     let body_field = field_value("body", stmts_of_ptr(ctx, m.body))
     return node("AST::MethodDef", fields12(
         field_str("name", m.name),
@@ -2032,7 +2032,7 @@ function method_value(ctx: ref[SexprCtx], m: ast.Method) -> SexprValue:
     ))
 
 
-function methods_value(ctx: ref[SexprCtx], items: span[ast.Method]) -> SexprValue:
+function methods_value(ctx: ref[SexprContext], items: span[ast.Method]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -2041,7 +2041,7 @@ function methods_value(ctx: ref[SexprCtx], items: span[ast.Method]) -> SexprValu
     return list_value(items_out.as_span())
 
 
-function match_expr_arms_value(ctx: ref[SexprCtx], items: span[ast.MatchExprArm]) -> SexprValue:
+function match_expr_arms_value(ctx: ref[SexprContext], items: span[ast.MatchExprArm]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -2079,7 +2079,7 @@ function match_expr_arms_value(ctx: ref[SexprCtx], items: span[ast.MatchExprArm]
     return list_value(items_out.as_span())
 
 
-function match_arms_value(ctx: ref[SexprCtx], items: span[ast.MatchArm]) -> SexprValue:
+function match_arms_value(ctx: ref[SexprContext], items: span[ast.MatchArm]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -2120,7 +2120,7 @@ function match_arms_value(ctx: ref[SexprCtx], items: span[ast.MatchArm]) -> Sexp
     return list_value(items_out.as_span())
 
 
-function when_branches_value(ctx: ref[SexprCtx], items: span[ast.WhenBranch]) -> SexprValue:
+function when_branches_value(ctx: ref[SexprContext], items: span[ast.WhenBranch]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -2140,7 +2140,7 @@ function when_branches_value(ctx: ref[SexprCtx], items: span[ast.WhenBranch]) ->
     return list_value(items_out.as_span())
 
 
-function when_decl_branches_value(ctx: ref[SexprCtx], items: span[ast.WhenDeclBranch]) -> SexprValue:
+function when_decl_branches_value(ctx: ref[SexprContext], items: span[ast.WhenDeclBranch]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -2160,7 +2160,7 @@ function when_decl_branches_value(ctx: ref[SexprCtx], items: span[ast.WhenDeclBr
     return list_value(items_out.as_span())
 
 
-function if_branches_value(ctx: ref[SexprCtx], items: span[ast.IfBranch]) -> SexprValue:
+function if_branches_value(ctx: ref[SexprContext], items: span[ast.IfBranch]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -2211,7 +2211,7 @@ function expr_position(ep: ptr[ast.Expr]) -> AstPos:
     return AstPos(line = 0, column = 0)
 
 
-function format_parts_value(ctx: ref[SexprCtx], parts: span[ast.FormatStringPart]) -> SexprValue:
+function format_parts_value(ctx: ref[SexprContext], parts: span[ast.FormatStringPart]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < parts.len:
@@ -2243,7 +2243,7 @@ function format_parts_value(ctx: ref[SexprCtx], parts: span[ast.FormatStringPart
     return list_value(items_out.as_span())
 
 
-function expr_value(ctx: ref[SexprCtx], ep: ptr[ast.Expr]) -> SexprValue:
+function expr_value(ctx: ref[SexprContext], ep: ptr[ast.Expr]) -> SexprValue:
     unsafe:
         match read(ep):
             ast.Expr.expr_identifier as x:
@@ -2449,7 +2449,7 @@ function expr_value(ctx: ref[SexprCtx], ep: ptr[ast.Expr]) -> SexprValue:
     return node("AST::ErrorExpr", fields4(field_nil("line"), field_nil("column"), field_nil("length"), field_str("message", "")))
 
 
-function type_arguments_value(ctx: ref[SexprCtx], items: span[ast.TypeArgument]) -> SexprValue:
+function type_arguments_value(ctx: ref[SexprContext], items: span[ast.TypeArgument]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -2458,7 +2458,7 @@ function type_arguments_value(ctx: ref[SexprCtx], items: span[ast.TypeArgument])
     return list_value(items_out.as_span())
 
 
-function expr_list_value(ctx: ref[SexprCtx], items: span[ast.Expr]) -> SexprValue:
+function expr_list_value(ctx: ref[SexprContext], items: span[ast.Expr]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -2467,7 +2467,7 @@ function expr_list_value(ctx: ref[SexprCtx], items: span[ast.Expr]) -> SexprValu
     return list_value(items_out.as_span())
 
 
-function ast_stmts_list(ctx: ref[SexprCtx], body: span[ast.Stmt]) -> SexprValue:
+function ast_stmts_list(ctx: ref[SexprContext], body: span[ast.Stmt]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < body.len:
@@ -2486,7 +2486,7 @@ function ast_stmts_list(ctx: ref[SexprCtx], body: span[ast.Stmt]) -> SexprValue:
     return list_value(items_out.as_span())
 
 
-function stmts_of_ptr(ctx: ref[SexprCtx], body: ptr[ast.Stmt]?) -> SexprValue:
+function stmts_of_ptr(ctx: ref[SexprContext], body: ptr[ast.Stmt]?) -> SexprValue:
     if body == null:
         return list_value(span[SexprValue]())
     var items_out = vec.Vec[SexprValue].create()
@@ -2503,14 +2503,14 @@ function stmts_of_ptr(ctx: ref[SexprCtx], body: ptr[ast.Stmt]?) -> SexprValue:
     return list_value(items_out.as_span())
 
 
-function body_field_or_nil(ctx: ref[SexprCtx], name: str, body: ptr[ast.Stmt]?) -> SexprField:
+function body_field_or_nil(ctx: ref[SexprContext], name: str, body: ptr[ast.Stmt]?) -> SexprField:
     if body == null:
         return field_nil(name)
     return field_value(name, stmts_of_ptr(ctx, body))
 
 
 ## `else as x` binding: the host stores an `AST::Identifier` node.
-function else_binding_field(ctx: ref[SexprCtx], value: Option[str], line: ptr_uint, column: ptr_uint) -> SexprField:
+function else_binding_field(ctx: ref[SexprContext], value: Option[str], line: ptr_uint, column: ptr_uint) -> SexprField:
     match value:
         Option.some as v:
             return field_value("else_binding", node("AST::Identifier", fields3(
@@ -2562,7 +2562,7 @@ function destructure_type_name_field(value: Option[str]) -> SexprField:
     return field_nil("destructure_type_name")
 
 
-function stmt_value(ctx: ref[SexprCtx], sp: ptr[ast.Stmt]) -> SexprValue:
+function stmt_value(ctx: ref[SexprContext], sp: ptr[ast.Stmt]) -> SexprValue:
     unsafe:
         match read(sp):
             ast.Stmt.stmt_local as x:
@@ -2761,13 +2761,13 @@ function stmt_value(ctx: ref[SexprCtx], sp: ptr[ast.Stmt]) -> SexprValue:
     return node("AST::ErrorStmt", fields4(field_nil("line"), field_nil("column"), field_nil("length"), field_str("message", "")))
 
 
-function opt_expr_field(ctx: ref[SexprCtx], name: str, value: ptr[ast.Expr]?) -> SexprField:
+function opt_expr_field(ctx: ref[SexprContext], name: str, value: ptr[ast.Expr]?) -> SexprField:
     if value == null:
         return field_nil(name)
     return field_value(name, expr_value(ctx, unsafe: ptr[ast.Expr]<-value))
 
 
-function qname_list_value(ctx: ref[SexprCtx], items: span[ast.QualifiedName]) -> SexprValue:
+function qname_list_value(ctx: ref[SexprContext], items: span[ast.QualifiedName]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -2785,7 +2785,7 @@ function str_list_value(items: span[str]) -> SexprValue:
     return list_value(items_out.as_span())
 
 
-function decls_value(ctx: ref[SexprCtx], items: span[ast.Decl], raw: bool) -> SexprValue:
+function decls_value(ctx: ref[SexprContext], items: span[ast.Decl], raw: bool) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
@@ -2803,7 +2803,7 @@ function visibility_field(raw: bool, visibility: bool) -> SexprField:
     return field_sym("visibility", visibility_symbol(visibility))
 
 
-function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl], raw: bool) -> SexprValue:
+function decl_value(ctx: ref[SexprContext], dp: ptr[ast.Decl], raw: bool) -> SexprValue:
     unsafe:
         match read(dp):
             ast.Decl.decl_const as x:

@@ -24,7 +24,7 @@ import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.lexer.token as token_mod
-import mtc.loader.path_resolver as path_resolver
+import mtc.loader.path_resolver as resolver
 
 
 public struct DriftWarning:
@@ -121,9 +121,9 @@ public function check_platform_api_drift(file: ast.SourceFile, path: str, source
 function platform_variant_sibling_paths(path: str) -> vec.Vec[string.String]:
     var result = vec.Vec[string.String].create()
     var shared_owner: string.String
-    match path_resolver.platform_suffix_for_path(path):
+    match resolver.platform_suffix_for_path(path):
         Option.some as p:
-            let suffix = path_resolver.platform_suffix(p.value)
+            let suffix = resolver.platform_suffix(p.value)
             var stem = string.String.create()
             stem.append(path.slice(0, path.len - (suffix.len + 4)))
             stem.append(".mt")

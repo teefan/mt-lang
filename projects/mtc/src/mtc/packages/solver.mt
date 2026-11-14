@@ -16,12 +16,12 @@ import std.vec as vec
 
 import mtc.packages.manifest as manifest
 import mtc.packages.registry as registry
-import mtc.packages.source as source
+import mtc.packages.source as pkg_source
 import mtc.packages.version as version
 
 
 public struct Solution:
-    registry_versions: vec.Vec[source.ResolvedVersion]
+    registry_versions: vec.Vec[pkg_source.ResolvedVersion]
 
 
 struct SeenManifest:
@@ -52,7 +52,7 @@ struct PackageVersionEntry:
 
 extending Solution:
     public editable function release() -> void:
-        source.release_resolved_versions(ref_of(this.registry_versions))
+        pkg_source.release_resolved_versions(ref_of(this.registry_versions))
 
 
 function solver_error(message: string.String) -> Result[SolverState, string.String]:
@@ -153,9 +153,9 @@ function stack_contains(state: ref[SolverState], path: str) -> bool:
     return false
 
 
-public function solve(package: manifest.PackageManifest, resolver: ref[source.SourceResolver]) -> Result[Solution, string.String]:
+public function solve(package: manifest.PackageManifest, resolver: ref[pkg_source.SourceResolver]) -> Result[Solution, string.String]:
     var state = empty_state()
-    var parent_source = source.source_for_manifest(resolver, package)
+    var parent_source = pkg_source.source_for_manifest(resolver, package)
     defer: parent_source.release()
 
     match visit_manifest(resolver, package, state, ref_of(parent_source)):
@@ -164,14 +164,14 @@ public function solve(package: manifest.PackageManifest, resolver: ref[source.So
         Result.success as state_payload:
             var resolved = state_payload.value
             defer: release_state(ref_of(resolved))
-            var versions = vec.Vec[source.ResolvedVersion].create()
+            var versions = vec.Vec[pkg_source.ResolvedVersion].create()
             var i: ptr_uint = 0
             while i < resolved.selected.len():
                 let entry = resolved.selected.get(i) else:
                     break
                 unsafe:
                     let value = read(entry)
-                    versions.push(source.ResolvedVersion(
+                    versions.push(pkg_source.ResolvedVersion(
                         key = string.String.from_str(value.key.as_str()),
                         package_name = string.String.from_str(value.package_name.as_str()),
                         version = string.String.from_str(value.version.as_str()),
@@ -184,10 +184,10 @@ public function solve(package: manifest.PackageManifest, resolver: ref[source.So
 
 
 function visit_manifest(
-    resolver: ref[source.SourceResolver],
+    resolver: ref[pkg_source.SourceResolver],
     package: manifest.PackageManifest,
     state: SolverState,
-    package_source: ref[source.Source],
+    package_source: ref[pkg_source.Source],
 ) -> Result[SolverState, string.String]:
     var state_view = state
     let path = package.manifest_path.as_str()
@@ -236,10 +236,10 @@ function visit_manifest(
 
 
 function process_dependency_list(
-    resolver: ref[source.SourceResolver],
+    resolver: ref[pkg_source.SourceResolver],
     package: manifest.PackageManifest,
     index: ptr_uint,
-    parent_source: ref[source.Source],
+    parent_source: ref[pkg_source.Source],
     state: SolverState,
 ) -> Result[SolverState, string.String]:
     if index >= package.dependencies.len():
@@ -285,10 +285,10 @@ function process_dependency_list(
 
 
 function visit_dependency(
-    resolver: ref[source.SourceResolver],
+    resolver: ref[pkg_source.SourceResolver],
     dependency: ptr[manifest.PackageDependency]?,
     package: ref[manifest.PackageManifest],
-    parent_source: ref[source.Source],
+    parent_source: ref[pkg_source.Source],
     state: SolverState,
 ) -> Result[StateList, string.String]:
     if dependency == null:
@@ -298,7 +298,7 @@ function visit_dependency(
 
     if dep.path.is_some() or dep.git_dependency() or dep.exact_registry_version():
         var branch = clone_state(state)
-        match source.resolve(resolver, dep, package, parent_source):
+        match pkg_source.resolve(resolver, dep, package, parent_source):
             Result.failure as resolve_failure:
                 return list_error(resolve_failure.error)
             Result.success as resolved_payload:
@@ -325,21 +325,21 @@ function visit_dependency(
 
 
 function choose_registry_version(
-    resolver: ref[source.SourceResolver],
+    resolver: ref[pkg_source.SourceResolver],
     dependency: manifest.PackageDependency,
     package: ref[manifest.PackageManifest],
-    parent_source: ref[source.Source],
+    parent_source: ref[pkg_source.Source],
     state: SolverState,
 ) -> Result[StateList, string.String]:
     let package_name = dependency.name.as_str()
 
     var dependency_key: string.String
-    match source.source_key_for_identity(parent_source.identity):
+    match pkg_source.source_key_for_identity(parent_source.identity):
         Result.failure as key_failure:
             return list_error(key_failure.error)
         Result.success as key_payload:
             var parent_key = key_payload.value
-            dependency_key = source.registry_dependency_key(parent_key.as_str(), package_name)
+            dependency_key = pkg_source.registry_dependency_key(parent_key.as_str(), package_name)
             parent_key.release()
 
     var entries = vec.Vec[PackageVersionEntry].create()
@@ -362,7 +362,7 @@ function choose_registry_version(
                     Result.failure as parse_failure:
                         label.release()
                         release_entries(ref_of(entries))
-                        source.release_strings(ref_of(versions))
+                        pkg_source.release_strings(ref_of(versions))
                         dependency_key.release()
                         return list_error(parse_failure.error)
                     Result.success as parsed_payload:
@@ -372,7 +372,7 @@ function choose_registry_version(
                             parsed = parsed_payload.value,
                         ))
                 i += 1
-            source.release_strings(ref_of(versions))
+            pkg_source.release_strings(ref_of(versions))
 
     var matching = vec.Vec[PackageVersionEntry].create()
     var i: ptr_uint = 0
@@ -473,7 +473,7 @@ function choose_registry_version(
                 continue
             Result.success as metadata_payload:
                 var resolved_manifest = metadata_payload.value
-                match source.identity_registry(package_name, candidate_text):
+                match pkg_source.identity_registry(package_name, candidate_text):
                     Result.failure as identity_failure:
                         resolved_manifest.release()
                         if last_error.is_some():
@@ -483,7 +483,7 @@ function choose_registry_version(
                         mi += 1
                         continue
                     Result.success as identity_payload:
-                        var resolved_source = source.Source(
+                        var resolved_source = pkg_source.Source(
                             identity = identity_payload.value,
                             local_root = string.String.from_str(resolved_manifest.root_dir.as_str()),
                         )
@@ -534,7 +534,7 @@ function choose_registry_version(
 
 
 function locked_registry_version(
-    resolver: ref[source.SourceResolver],
+    resolver: ref[pkg_source.SourceResolver],
     dependency_key: str,
     package_name: str,
 ) -> Option[string.String]:

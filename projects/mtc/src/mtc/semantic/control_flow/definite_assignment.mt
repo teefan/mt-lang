@@ -10,7 +10,7 @@ import std.str
 import std.vec as vec
 
 import mtc.parser.ast as ast
-import mtc.semantic.control_flow.builder as cfgb
+import mtc.semantic.control_flow.builder as flow_builder
 
 
 ## A diagnostic for a read-before-assignment error.
@@ -25,8 +25,8 @@ public struct Diag:
 public function check(params: span[ast.Param], body: ptr[ast.Stmt]) -> vec.Vec[Diag]:
     var diags = vec.Vec[Diag].create()
 
-    var cfg = cfgb.empty_cfg()
-    cfgb.build_cfg_into(ref_of(cfg), params, body)
+    var cfg = flow_builder.empty_cfg()
+    flow_builder.build_cfg_into(ref_of(cfg), params, body)
 
     var assigned = map_mod.Map[ptr_uint, bool].create()
     # Lexical scope stack of in-scope local names.  An identifier read is only a
