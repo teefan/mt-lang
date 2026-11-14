@@ -1936,6 +1936,51 @@ public function lower_function_body(ctx: ref[LoweringContext], body_ptr: ptr[ast
 public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
     unsafe:
         match read(sp):
+            ast.Stmt.stmt_ret:
+                lower_return_stmt(ctx, output, sp)
+            ast.Stmt.stmt_local:
+                lower_local_stmt(ctx, output, sp)
+            ast.Stmt.stmt_assignment:
+                lower_assignment_stmt(ctx, output, sp)
+            ast.Stmt.stmt_while:
+                lower_while_stmt(ctx, output, sp)
+            ast.Stmt.stmt_for:
+                lower_for_stmt(ctx, output, sp)
+            ast.Stmt.stmt_expression:
+                lower_expression_stmt(ctx, output, sp)
+            ast.Stmt.stmt_when:
+                lower_when_stmt(ctx, output, sp)
+            ast.Stmt.stmt_parallel_block:
+                lower_parallel_block_stmt(ctx, output, sp)
+            ast.Stmt.stmt_gather:
+                lower_gather_stmt(ctx, output, sp)
+            ast.Stmt.stmt_pass:
+                lower_pass_stmt(ctx, output, sp)
+            ast.Stmt.stmt_if:
+                lower_if_stmt(ctx, output, sp)
+            ast.Stmt.stmt_match:
+                lower_match_stmt(ctx, output, sp)
+            ast.Stmt.stmt_break:
+                lower_break_stmt(ctx, output, sp)
+            ast.Stmt.stmt_continue:
+                lower_continue_stmt(ctx, output, sp)
+            ast.Stmt.stmt_static_assert:
+                lower_static_assert_stmt(ctx, output, sp)
+            ast.Stmt.stmt_unsafe:
+                lower_unsafe_stmt(ctx, output, sp)
+            ast.Stmt.stmt_block:
+                lower_block_stmt(ctx, output, sp)
+            ast.Stmt.stmt_defer:
+                lower_defer_stmt(ctx, output, sp)
+            ast.Stmt.stmt_emit:
+                lower_emit_stmt(ctx, output, sp)
+            _:
+                fatal(c"lowering: unsupported statement")
+
+
+function lower_return_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_ret as r:
                 # An async resume body completes the frame inline (the host's
                 # `async_complete_statements`): the return value stores into
@@ -2076,6 +2121,13 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                 append_cleanup_stmts(output, ret_cleanups)
                 flush_all_defers(ctx, output)
                 output.push(ir.Stmt.stmt_return(value = wrapped, line = r.line, source_path = ctx.analysis.source_path))
+            _:
+                pass
+
+
+function lower_local_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_local as loc:
                 # Async CPS: spill every `let`/`var` to a frame field and, when the
                 # initializer is a direct `await`, split into suspend/resume.
@@ -2150,6 +2202,15 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                                 return
                             _:
                                 pass
+                lower_plain_local_stmt(ctx, output, sp, c_name)
+            _:
+                pass
+
+
+function lower_plain_local_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt], c_name: str) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_local as loc:
                 var ty: types.Type
                 var value_expr: ptr[ir.Expr]
                 let init = loc.value
@@ -2323,6 +2384,13 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                     record_defer(ctx, proc_release_body.as_span())
                     if init != null and not proc_expr_contains_proc_expr(ptr[ast.Expr]<-init):
                         proc_contained_retain_stmts(ctx, proc_local_ref, ty, output)
+            _:
+                pass
+
+
+function lower_assignment_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_assignment as asg:
                 # Async CPS: an assignment whose value contains an await.  For a
                 # plain `x = await Y` (operator `=`), assign the awaited result
@@ -2473,6 +2541,13 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                 else:
                     hoist_collected
                 record_or_emit_local_cleanups(ctx, output, assign_cleanups.cleanups)
+            _:
+                pass
+
+
+function lower_while_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_while as w:
                 if w.is_inline:
                     inline_mod.lower_inline_while(ctx, output, w.condition, w.body)
@@ -2617,6 +2692,13 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                 ctx.loop_continue_native = saved_continue_native
                 ctx.loop_break_native = saved_break_native
                 ctx.loop_defer_depth = saved_loop_depth
+            _:
+                pass
+
+
+function lower_for_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_for as f:
                 if f.is_inline:
                     inline_mod.lower_inline_for_stmt(ctx, output, f.bindings, f.iterables, f.body)
@@ -2630,6 +2712,13 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                 ctx.loop_continue_native = false
                 control_flow.lower_for_range(ctx, output, f.bindings, f.iterables, f.body)
                 ctx.loop_continue_native = saved_continue_native
+            _:
+                pass
+
+
+function lower_expression_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_expression as ex:
                 # Async CPS: bare `await Y` splits into suspend/resume, discarding
                 # the awaited result.
@@ -2690,14 +2779,49 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                     append_cstr_temp_cleanups(output, stmt_collected)
                 else:
                     append_hoist_cleanups(output, stmt_collected)
+            _:
+                pass
+
+
+function lower_when_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_when as wn:
                 inline_mod.lower_when_stmt(ctx, output, wn.discriminant, wn.branches, wn.else_body)
+            _:
+                pass
+
+
+function lower_parallel_block_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_parallel_block as pb:
                 parallel_mod.lower_parallel_block(ctx, output, pb.bodies)
+            _:
+                pass
+
+
+function lower_gather_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_gather as gth:
                 parallel_mod.lower_gather_stmt(ctx, output, gth.handles)
+            _:
+                pass
+
+
+function lower_pass_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_pass:
                 pass
+            _:
+                pass
+
+
+function lower_if_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_if as iff:
                 if iff.is_inline:
                     inline_mod.lower_inline_if_statement(ctx, output, iff.branches, iff.else_body)
@@ -2725,6 +2849,13 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                     return
                 if iff.branches.len > 0:
                     control_flow.lower_if_chain(ctx, output, iff.branches, 0, iff.else_body)
+            _:
+                pass
+
+
+function lower_match_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_match as m:
                 if m.is_inline:
                     inline_mod.lower_inline_match_statement(ctx, output, m.scrutinee, m.arms)
@@ -2737,6 +2868,13 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                 if ctx.async_cps_active and async_mod.expr_has_await(m.scrutinee):
                     match_scrutinee = async_cps.async_hoist_awaits(ctx, output, m.scrutinee)
                 match_mod.lower_match(ctx, output, match_scrutinee, m.arms)
+            _:
+                pass
+
+
+function lower_break_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_break:
                 # A loop-scoped cleanup forces the label/goto form: the defers
                 # run before the jump (the host's `lower_loop_exit`).
@@ -2749,6 +2887,13 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                     output.push(ir.Stmt.stmt_goto(label = ctx.loop_break_label))
                 else:
                     output.push(ir.Stmt.stmt_break())
+            _:
+                pass
+
+
+function lower_continue_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_continue:
                 if has_loop_defers(ctx) and ctx.loop_continue_label != "":
                     flush_loop_defers(ctx, output)
@@ -2759,9 +2904,23 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                     output.push(ir.Stmt.stmt_goto(label = ctx.loop_continue_label))
                 else:
                     output.push(ir.Stmt.stmt_continue())
+            _:
+                pass
+
+
+function lower_static_assert_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_static_assert as sa:
                 let assertion = lower_static_assert(ctx, sa.condition, sa.message)
                 output.push(ir.Stmt.stmt_static_assert(condition = assertion.condition, message = assertion.message))
+            _:
+                pass
+
+
+function lower_unsafe_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_unsafe as u:
                 if u.body != null:
                     # Lower the unsafe body into its own statement list and wrap it
@@ -2796,6 +2955,13 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                     else:
                         output.push(ir.Stmt.stmt_block(body = body_stmts.as_span()))
                 return
+            _:
+                pass
+
+
+function lower_block_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_block as blk:
                 var block_stmts = vec.Vec[ir.Stmt].create()
                 push_defer_scope(ctx)
@@ -2808,6 +2974,13 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                     flush_top_defers(ctx, ref_of(block_stmts))
                 pop_defer_scope(ctx)
                 output.push(ir.Stmt.stmt_block(body = block_stmts.as_span()))
+            _:
+                pass
+
+
+function lower_defer_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_defer as d:
                 # A `defer` does not emit at its declaration site.  Lower its
                 # cleanup into its own statement span and record it in the
@@ -2830,6 +3003,13 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                     let defer_body = lower_block(ctx, ptr[ast.Stmt]<-d.body)
                     append_span_stmts(ref_of(cleanup), defer_body)
                 record_defer(ctx, cleanup.as_span())
+            _:
+                pass
+
+
+function lower_emit_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
             ast.Stmt.stmt_emit as em:
                 # The host lowers the emitted declaration a second time here
                 # (`lower_emit_stmt`) and appends it to
@@ -2841,7 +3021,7 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
                 lower_emitted_decl(ctx, unsafe: read(emitted_decl))
                 return
             _:
-                fatal(c"lowering: unsupported statement")
+                pass
 
 
 ## Lower an `emit` declaration into the program's emitted-declaration tail (the

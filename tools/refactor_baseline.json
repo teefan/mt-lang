@@ -1143,8 +1143,8 @@
     ]
   },
   "sizes": {
-    "total_code": 123195,
-    "functions_over_limit": 35,
+    "total_code": 123335,
+    "functions_over_limit": 34,
     "files_over_limit": 12,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
@@ -1502,10 +1502,10 @@
         "max_function": 84
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 18175,
-        "code": 13384,
+        "lines": 18355,
+        "code": 13524,
         "max_line": 483,
-        "max_function": 909
+        "max_function": 764
       },
       "projects/mtc/src/mtc/lowering/match.mt": {
         "lines": 1569,
@@ -1514,7 +1514,7 @@
         "max_function": 104
       },
       "projects/mtc/src/mtc/lowering/monomorphized.mt": {
-        "lines": 1344,
+        "lines": 1342,
         "code": 1072,
         "max_line": 842,
         "max_function": 376
