@@ -210,6 +210,7 @@
     "lowering.layout": "layout_mod",
     "lowering.lowering": "lowering",
     "lowering.proc_renumber": "proc_renumber",
+    "lowering.tasks": "tasks",
     "lowering.utils": "utils",
     "lsp.call_hierarchy": "call_hier",
     "lsp.code_actions": "code_actions",
@@ -304,7 +305,7 @@
       "projects/mtc/src/mtc/lowering/async.mt:322:function:bool_type",
       "projects/mtc/src/mtc/lowering/async.mt:326:function:int_type",
       "projects/mtc/src/mtc/lowering/async.mt:330:function:void_type",
-      "projects/mtc/src/mtc/lowering/lowering.mt:47:struct:LoweringError",
+      "projects/mtc/src/mtc/lowering/lowering.mt:48:struct:LoweringError",
       "projects/mtc/src/mtc/lsp/navigation.mt:750:function:analysis_for_document",
       "projects/mtc/src/mtc/lsp/navigation.mt:761:function:ast_for_document",
       "projects/mtc/src/mtc/lsp/protocol.mt:108:function:read_message",
@@ -1134,7 +1135,7 @@
     ]
   },
   "sizes": {
-    "total_code": 123054,
+    "total_code": 123062,
     "functions_over_limit": 35,
     "files_over_limit": 12,
     "files": {
@@ -1469,8 +1470,8 @@
         "max_function": 84
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 27004,
-        "code": 20293,
+        "lines": 26782,
+        "code": 20107,
         "max_line": 817,
         "max_function": 909
       },
@@ -1479,6 +1480,12 @@
         "code": 735,
         "max_line": 159,
         "max_function": 136
+      },
+      "projects/mtc/src/mtc/lowering/tasks.mt": {
+        "lines": 236,
+        "code": 194,
+        "max_line": 228,
+        "max_function": 134
       },
       "projects/mtc/src/mtc/lowering/utils.mt": {
         "lines": 180,
