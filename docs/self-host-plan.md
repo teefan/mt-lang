@@ -15,7 +15,8 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-85-2026-11-14)
+- [Status at a glance](#status-at-a-glance-session-86-2026-11-14)
+- [Session 86 — match and variant introspection module](#session-86--match-and-variant-introspection-module)
 - [Session 85 — parallel/detach/gather module](#session-85--paralleldetachgather-module)
 - [Session 84 — type and expression helpers](#session-84--type-and-expression-helpers)
 - [Session 83 — async CPS module](#session-83--async-cps-module)
@@ -39,7 +40,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 85, 2026-11-14)
+## Status at a glance (session 86, 2026-11-14)
 
 | Area | State |
 | --- | --- |
@@ -47,7 +48,7 @@ history.
 | `test/mt` | **61 files / 0 failed** (session 77) |
 | Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **735 match / 0 differ / 4 host-rejected of 739**; counts drift with the tree and `tmp` fixtures) |
-| `sexpr lower` | **695 match / 2 differ / 53 host-rejected / 0 self-rejected of 750 files** (session 85) — the two remain the documented `memory_stress_test` (leaked auto-lifetime) and `main.mt` (`--sexpr` loop guard) artifacts; all extracted modules match (`comptime`, `comptime_types`, `const_eval`, `inline`, `layout`, `tasks`, `format`, `async_cps`, `type_helpers`, `parallel`).  Session 72 closed the `woodeneye` row; session 76 closed a `dap/server.mt` row that session 73's DAP change had introduced (a guard-narrowed `null` assignment took the refined type instead of the target's storage type) |
+| `sexpr lower` | **696 match / 2 differ / 53 host-rejected / 0 self-rejected of 751 files** (session 86) — the two remain the documented `memory_stress_test` (leaked auto-lifetime) and `main.mt` (`--sexpr` loop guard) artifacts; all extracted modules match (`comptime`, `comptime_types`, `const_eval`, `inline`, `layout`, `tasks`, `format`, `async_cps`, `type_helpers`, `parallel`, `match`).  Session 72 closed the `woodeneye` row; session 76 closed a `dap/server.mt` row that session 73's DAP change had introduced (a guard-narrowed `null` assignment took the refined type instead of the target's storage type) |
 | `cli:parity` | **224 match / 0 differ / 0 pending** of 224 cases (`--timings` values, `debug`'s Ruby node ids and the synthesized test-runner path normalized; 43 `test` cases plus the second-batch sweep: global extraction, resolution flags, per-command operand models, missing/empty operands, completions/std/snapshot/cache/lsp/dap/bindgen/deps) |
 | **`check` diagnostics (new)** | **501 agree / 0 verdict / 0 position / 3 message of 504** files (`tools/diag_parity.rb check`; the 3 message rows are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows).  Before this session: 44 verdict, 177 position diffs and a wholly different rendering. |
 | Linter corpus | **631 agree / 4 differ** of 635 (hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  The 4 rows are documented: two self-only `redundant-cast` in `std/cli.mt`, the self-only `prefer-let` cluster in `std/fs.windows.mt` (the host loses its facts on a platform-pinned root), the host-only `constant-condition` in `examples/reflection_advanced.mt`, and the host-only positionless `prefer-or-pattern` in `projects/mtc/src/mtc/main.mt`. |
@@ -57,7 +58,7 @@ history.
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
 | Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 72).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
 | Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
-| **Refactoring safety (new)** | structural guard: 142 files / 123,120 code lines; 108 edges / **0 layering violations**; **0 naming, 0 alias violations**; **35 unused + 6 test-only** public declarations; 5,256 duplicated lines; 35 functions ≥ 200 lines; 0 markers.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` |
+| **Refactoring safety (new)** | structural guard: 143 files / 123,139 code lines; 108 edges / **0 layering violations**; **0 naming, 0 alias violations**; **35 unused + 6 test-only** public declarations; 5,256 duplicated lines; 35 functions ≥ 200 lines; 0 markers.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` |
 
 Rough completion against the per-track Definition of Done: **100%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix (including
@@ -67,6 +68,38 @@ done, and session 72 added the analyzer/`check` surface that no gate had
 measured.  The only residuals are the documented `tracy` custom-generator entry
 and the optional desktop F5 smoke.  Track G (throughput) closed in session 72:
 the self is now faster than the host.
+
+## Session 86 — match and variant introspection module
+
+Tenth module of the lowering split.  Move the match lowering and the variant
+arm/payload introspection helpers out of `lowering/lowering.mt` into
+`lowering/match.mt`: scalar/string/tuple/enum/variant match lowering, variant
+arm naming/payload resolution, and the prelude-variant helpers — 54 functions /
+1,158 code lines.  The generic `stmts_terminate`, `contains_label_target`,
+`append_span_stmts`, `current_return_type`, `fatal_arg_is_cstr`,
+`is_integer_scrutinee` and `named_type_name` helpers stay in lowering.
+
+- `match.mt` is 1,569 lines / 1,158 code (max function 104); `lowering.mt` is
+  20,400 lines / 15,127 code (from 21,952 / 16,266).
+- The async match-binding counter is program-scoped and cannot be mutated
+  across modules; lowering now exposes `next_async_binding_index()` and the
+  moved match bindings advance it through that accessor.
+- Twenty moved functions become public for the remaining lowering; the
+  private lowering helpers the module calls (`duplicable_foreign_value`,
+  `is_raw_module`, `is_tuple_type`, `tuple_element_type`,
+  `is_integer_scrutinee`, `named_type_name`) become public too.
+- `lower` is 696 match / 2 differ / 53 host-rejected / 0 self-rejected of 751
+  (the two documented artifacts; `match.mt` matches).
+
+Verification: dev suite 21/0 with host-built and self-built compilers;
+`test/mt` 61/0; CLI 224/224; refactor gate 6/6; bootstrap fixed point holds (`stage2.c ==
+stage3.c`; stage2 self-test 21/0).  One gate run hit a flaky Ruby exit SIGSEGV after printing a
+224/224 CLI summary; the rerun was clean.
+
+Next: the monomorphized-function/module-driver section (it also contains
+`lower_module`, `create_lowering_context` and the include scanner, so it needs
+subdivision), then the remaining expression/statement core and the other large
+files (c_backend, main, analyzer, linter, parser, bindgen).
 
 ## Session 85 — parallel/detach/gather module
 
@@ -703,7 +736,7 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
-## Handoff (session 85)
+## Handoff (session 86)
 
 **Read this first, then *Status at a glance* and the Ledger.**  The parity
 program stays closed, and session 73 closed the last *measurement* gaps: the
@@ -711,12 +744,12 @@ program stays closed, and session 73 closed the last *measurement* gaps: the
 command.  The matrix is now **224/224**, and the fixes it forced are in the
 commands themselves (see the session-73 section).
 
-Sessions 75–85 added the refactoring safety suite (structural guard, gate
+Sessions 75–86 added the refactoring safety suite (structural guard, gate
 wiring, committed baseline), its first pass (naming violations, the shared
 `mtc.strings` leaf, alias and type canonicalization), import-cycle support in
 the loader, and the first lowering splits (`comptime.mt`, `const_eval.mt`,
 `inline.mt`, `layout.mt`, `tasks.mt`, `format.mt`, `async_cps.mt`,
-`type_helpers.mt`, `parallel.mt`).
+`type_helpers.mt`, `parallel.mt`, `match.mt`).
 Use `tools/gates.sh --areas refactor --run` and read `docs/refactoring.md`
 before changing the self-host's shape.
 
@@ -1478,11 +1511,11 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **21 files / 0 failed** | session 85 | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 61 files / 0 failed | session 85 | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **21 files / 0 failed** | session 86 | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 61 files / 0 failed | session 86 | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 71 | `tools/gates.sh --only examples --run` |
 | `sexpr lex` / `parse` | lex 739/739; parse 735 match / 0 differ / 4 host-rejected of 739 (counts include `tmp` fixtures) | session 72 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | **695 match / 2 differ / 53 host-rejected / 0 self-rejected** of 750 (the 2 are the documented `memory_stress_test` + `main.mt` artifacts; every extracted module matches) | session 85 | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | **696 match / 2 differ / 53 host-rejected / 0 self-rejected** of 751 (the 2 are the documented `memory_stress_test` + `main.mt` artifacts; every extracted module matches) | session 86 | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | **224 match / 0 differ / 0 pending** of 224 (case-backed; timings, `debug` node ids and the synthesized test-runner path normalized) | session 77 (re-verified) | `ruby tools/cli_parity.rb -q` |
 | `mtc test` matrix | **43 cases**, included in `cli:parity` 224/224: file/dir operands, human/TAP/JUnit, filters, death tests, `--timeout/--mem/--jobs/--sanitize`, `--locked/--frozen`, validation errors, build-error channels | session 73 | `ruby tools/cli_parity.rb -f '^test-'` |
 | **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** (`std`+`examples`; the 3 are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows) | session 72 | `ruby tools/diag_parity.rb check -j 8 std examples`; byte-level: `ruby tools/check_parity.rb` |
@@ -1501,7 +1534,7 @@ when the tree moved.  Target = the Definition of Done above.
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 | bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 73 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (108 edges, 141 alias modules); 35 unused / 6 test-only exports; 5,256 duplicated lines; 0 markers; **guard tests 14/14**; refactor gate **6/6 rc=0** | session 85 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (108 edges, 142 alias modules); 35 unused / 6 test-only exports; 5,256 duplicated lines; 0 markers; **guard tests 14/14**; refactor gate **6/6 rc=0** | session 86 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 
