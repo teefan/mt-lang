@@ -14,6 +14,7 @@ import mtc.semantic.types as types
 
 import mtc.lowering.comptime_types as comptime_types
 import mtc.lowering.const_eval as const_eval
+import mtc.lowering.control_flow as control_flow
 import mtc.lowering.layout as layout_mod
 import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.lowering as lowering
@@ -38,7 +39,7 @@ public function const_array_length(ctx: ref[lowering.LoweringContext], receiver:
         match d:
             ast.Decl.decl_const as c:
                 if c.name == name:
-                    return lowering.array_length_of(lowering.resolve_type_ref(ctx, c.const_type))
+                    return control_flow.array_length_of(lowering.resolve_type_ref(ctx, c.const_type))
             _:
                 pass
         di += 1

@@ -14,6 +14,7 @@ import mtc.parser.ast as ast
 import mtc.semantic.types as types
 import mtc.c_naming as naming
 
+import mtc.lowering.control_flow as control_flow
 import mtc.lowering.lowering as lowering
 import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.utils as utils
@@ -512,9 +513,9 @@ public function lower_parallel_for(ctx: ref[lowering.LoweringContext], output: r
     var loop_type = type_helpers.expr_type(ctx, start_ptr)
     var stop_ty = type_helpers.expr_type(ctx, end_ptr)
     if not types.type_equals(loop_type, stop_ty):
-        if lowering.ast_is_integer_literal(start_ptr) and types.is_integer_type(stop_ty):
+        if control_flow.ast_is_integer_literal(start_ptr) and types.is_integer_type(stop_ty):
             loop_type = stop_ty
-        else if lowering.ast_is_integer_literal(end_ptr) and types.is_integer_type(loop_type):
+        else if control_flow.ast_is_integer_literal(end_ptr) and types.is_integer_type(loop_type):
             stop_ty = loop_type
     if types.is_error(loop_type):
         loop_type = types.primitive("int")

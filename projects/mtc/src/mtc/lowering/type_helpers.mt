@@ -14,6 +14,7 @@ import mtc.semantic.types as types
 import mtc.c_naming as naming
 
 import mtc.lowering.lowering as lowering
+import mtc.lowering.monomorphized as monomorphized
 import mtc.lowering.utils as utils
 
 
@@ -110,7 +111,7 @@ public function expr_type(ctx: ref[lowering.LoweringContext], ep: ptr[ast.Expr])
             # still mention type parameters (e.g. `Vec[T].data` is `ptr[T]`);
             # apply the active substitution so locals and member accesses carry
             # the concrete type.
-            return lowering.substitute_type_params(ctx, recorded, ref_of(ctx.type_substitution))
+            return monomorphized.substitute_type_params(ctx, recorded, ref_of(ctx.type_substitution))
     return fallback_type(ctx, ep)
 
 
@@ -179,7 +180,7 @@ function imported_call_return_type(ctx: ref[lowering.LoweringContext], receiver:
 ## recovered field/local type (`ptr[T]`) becomes concrete inside a
 ## specialization.
 public function fallback_type(ctx: ref[lowering.LoweringContext], ep: ptr[ast.Expr]) -> types.Type:
-    return lowering.substitute_type_params(ctx, fallback_type_raw(ctx, ep), ref_of(ctx.type_substitution))
+    return monomorphized.substitute_type_params(ctx, fallback_type_raw(ctx, ep), ref_of(ctx.type_substitution))
 
 
 public function fallback_type_raw(ctx: ref[lowering.LoweringContext], ep: ptr[ast.Expr]) -> types.Type:

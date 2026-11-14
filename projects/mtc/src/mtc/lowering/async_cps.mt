@@ -19,6 +19,7 @@ import mtc.lowering.async as async_mod
 import mtc.lowering.format as format
 import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.lowering as lowering
+import mtc.lowering.monomorphized as monomorphized
 import mtc.lowering.tasks as tasks
 import mtc.strings
 
@@ -1739,7 +1740,7 @@ public function extract_task_element_type(ctx: ref[lowering.LoweringContext], t:
                 return unsafe: read(tg.args.data + 0)
         types.Type.ty_named as tn:
             if tn.name.starts_with("mt_task_"):
-                let gi_ptr = lowering.generic_instance_get(ctx, tn.name)
+                let gi_ptr = monomorphized.generic_instance_get(ctx, tn.name)
                 if gi_ptr != null:
                     let gi = unsafe: read(gi_ptr)
                     if gi.concrete_args.len >= 1:

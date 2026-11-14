@@ -12,6 +12,7 @@ import mtc.semantic.types as types
 import mtc.lowering.comptime as comptime
 import mtc.lowering.comptime_types as comptime_types
 import mtc.lowering.const_eval as const_eval
+import mtc.lowering.control_flow as control_flow
 import mtc.lowering.lowering as lowering
 import mtc.lowering.utils as utils
 
@@ -441,6 +442,6 @@ public function lower_inline_for_if_fold(ctx: ref[lowering.LoweringContext], out
                 bi += 1
             Option.none:
                 var prior_false = map_mod.Map[str, types.Type].create()
-                lowering.lower_if_chain_at(ctx, output, branches, bi, else_body, ref_of(prior_false), true)
+                control_flow.lower_if_chain_at(ctx, output, branches, bi, else_body, ref_of(prior_false), true)
                 return
     lowering.append_span_stmts(output, lowering.lower_block(ctx, else_body))

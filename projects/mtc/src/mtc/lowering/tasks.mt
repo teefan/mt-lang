@@ -8,6 +8,7 @@ import mtc.ir as ir
 import mtc.parser.ast as ast
 import mtc.semantic.types as types
 
+import mtc.lowering.control_flow as control_flow
 import mtc.lowering.lowering as lowering
 import mtc.lowering.utils as utils
 import mtc.strings
@@ -215,7 +216,7 @@ public function lower_multi_for(ctx: ref[lowering.LoweringContext], output: ref[
 function multi_for_stop(items_name: str, iterable_type: types.Type) -> ptr[ir.Expr]:
     let ptr_uint_ty = types.primitive("ptr_uint")
     if lowering.is_array_type(iterable_type):
-        return lowering.alloc_expr(ir.Expr.expr_integer_literal(value = lowering.array_length_of(iterable_type), ty = ptr_uint_ty))
+        return lowering.alloc_expr(ir.Expr.expr_integer_literal(value = control_flow.array_length_of(iterable_type), ty = ptr_uint_ty))
     let items_ref = lowering.alloc_expr(ir.Expr.expr_name(name = items_name, ty = iterable_type, pointer = Option[bool].some(value = false)))
     return lowering.alloc_expr(ir.Expr.expr_member(receiver = items_ref, member = "len", ty = ptr_uint_ty))
 
