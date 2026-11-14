@@ -41,7 +41,7 @@ history.
 | **`check` diagnostics (new)** | **501 agree / 0 verdict / 0 position / 3 message of 504** files (`tools/diag_parity.rb check`; the 3 message rows are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows).  Before this session: 44 verdict, 177 position diffs and a wholly different rendering. |
 | Linter corpus | **631 agree / 4 differ** of 635 (hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  The 4 rows are documented: two self-only `redundant-cast` in `std/cli.mt`, the self-only `prefer-let` cluster in `std/fs.windows.mt` (the host loses its facts on a platform-pinned root), the host-only `constant-condition` in `examples/reflection_advanced.mt`, and the host-only positionless `prefer-or-pattern` in `projects/mtc/src/mtc/main.mt`. |
 | LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **74–75 KB/cycle raw / ~28 LS at 200 cycles** (meter, one-time index level documented) |
-| DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the real lldb-dap bridge closes the VS Code F5 launch deadlock (configurationDone no longer waits for the launch response), proven by `tools/dap_async_probe.rb` |
+| DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the real lldb-dap bridge closes the VS Code F5 launch deadlock (configurationDone no longer waits for the launch response), proven by `tools/dap_async_probe.rb`; desktop F5 smoke passed session 74 |
 | Formatter | **739/739** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
 | Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 72).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
@@ -74,6 +74,16 @@ are closed rather than ported:
    `alias.Enum.member` the self resolves the member text and drops the location,
    matching the host's classifier miss.  Pointing at the imported declaration is
    legal but is a self-better extension with no measured user benefit; not done.
+3. **Desktop VS Code F5 smoke — passed.**  Scratch workspace `tmp/f5-smoke/`
+   (gitignored) with `milkTea.dap.serverPath` set to `build/stage2/mtc`: F5 built
+   the program through the DAP server's build-on-launch, attached the real
+   `lldb-dap`, printed `f5 smoke x = 3` and exited 0 in the Debug Console.
+   Extension-side finding: the extension declares only
+   `activationEvents: ["onDebug:milk-tea"]`, which VS Code 1.146 does not honor
+   for the adapter-descriptor lookup, so F5 in a fresh window fails with
+   "Couldn't find a debug adapter descriptor"; opening a `.mt` file
+   (`onLanguage:milk-tea`) activates it and F5 works.  That is packaging in the
+   extension repo, not a compiler or DAP defect.
 
 ## Session 73 — the `mtc test` CLI matrix
 
@@ -367,10 +377,12 @@ moved.**
    flat; `String.as_str()`'s per-call UTF-8 revalidation (~7%) is a documented
    invariant, and the ~2% scans are over small collections.  Reopen only with a
    fresh `perf record` showing a hotspot.
-2. **Optional/manual.**  A desktop VS Code F5 click-through (the protocol path
-   is proven by `tools/dap_async_probe.rb` against the real `lldb-dap`).  The
-   LSP ref-lifetime and imported-member-location decisions are closed (session
-   74, above).
+2. **No manual items remain.**  The desktop F5 click-through passed (session 74,
+   above); it also found an extension-packaging defect: `activationEvents:
+   ["onDebug:milk-tea"]` is ignored by VS Code 1.146, so the extension must be
+   activated by opening a `.mt` file first.  Fix that in the extension repo
+   (add `onLanguage:milk-tea`); it is not a compiler item.  The LSP
+   ref-lifetime and imported-member-location decisions are closed.
 
 **Do not chase** the documented differences — the 2 `lower` artifacts, the
 documented `check`/linter rows (3 `check` messages, 4 linter corpus files), the
@@ -378,672 +390,14 @@ LSP audit rows, the DAP frame0 row, the test-runner binary directory, or the
 self-only/better behaviours.  They are listed in *Deliberate differences* with
 the reason each is a host artifact or a deliberate extension.
 
-### Session records (historical — the handoff above supersedes them)
+### Session records (historical)
 
-These are the per-session batch logs kept for provenance.  They describe how
-earlier sessions reached the current state; none of them is pending work.
-
-Session-69 batch (Track C closed at its documented residue; lint 571/63 ->
-631/3): seven rule families plus two analyzer facts fields closed the whole
-per-rule residue.  The linter now mirrors the host's **CFG reachability** for
-`loop-single-iteration` (`Builder#build_loop_body`: the fall-through/`continue`
-target must be unreachable) and `unreachable-code` (nodes unreachable from the
-entry, anchored at their statement's own span, including `if`/`match` nodes),
-and its **`Termination.block_always_terminates?`** for `prefer-let-else`/`var-else`
-(a fresh branch graph).  `prefer-let-else` anchors at the `if` line with the
-host's source condition span, skips `_`-prefixed names, and `prefer-var-else`
-requires the innermost scope's binding to be mutated.  `prefer-or-pattern`
-skips identity-shared bodies (expanded `A | B` alternatives) and compares a full
-`node_fingerprint`-equivalent structural equality (locals, if/while/for/match,
-when, defer, casts, specializations, format strings, proc bodies, type refs).
-`constant-condition` gained the CFG's mutating-argument writes (analyzer
-`mutating_argument_sites` -> `Cfg.mutating_sites`; the span is owned by
-`lint_body_rules`), local-initializer write collection (`ptr_of`/`ref_of`), and
-the host's float-literal harmonization/re-recording in `infer_binary`
-(`double<-x * 1000.0` types `1000.0` as `double`).  `redundant-cast` treats
-`ptr_int`/`ptr_uint` as pointer-width fixed-width integers (host
-`Primitive#fixed_width_integer?`).  `prefer-let` now marks the host's
-`mutable_lvalue_argument_identifier_ids` (array/`str_buffer` -> `span`
-arguments; new `Analysis.mutable_lvalue_sites` threaded into the linter).
-`prefer-struct-with` equates `ty_named`/`ty_imported` by qualified name, and
-`prefer-conditional-expression`/`prefer-try`/`prefer-or-pattern` emit in the
-host's match order.  The two rules the corpus never triggered are ported in the
-same session: **`directional-ffi-arg`** (the analyzer records `in`/`out`/`inout`
-foreign/extern parameters per function and exports them through `ModuleBinding`;
-call checks record a site when an argument re-states the direction via
-`in/out/inout x`, `ptr_of(x)`/`ref_of(x)`, or a pointer-like cast of an lvalue,
-and the linter emits it at the call's visit with the host's message) and
-**`platform-api-drift`** (`linter/platform_drift.mt`: platform-variant sibling
-discovery, a full exported-surface renderer for every declaration kind, the
-host's anchor ladder and `missing`/`extra` summary text; verified
-message-for-message against the host linter on scratch `.linux`/`.windows`
-fixture pairs).  Gates: lint 632/3 of 635 (the 3 documented below), dev
-self-tests 22/0, `test/mt` 60/0, lower 683/2/53/0 unchanged, bootstrap fixed
-point holds.
-
-Session-70 bindgen batch (Track D item 3 closed): `tools/bindgen_parity.rb`
-drives every registry binding through the host library and the self CLI with the
-same raw-binding option table (the self-only `--options-json` flag); the result
-is **33 match / 0 differ / 0 error / 1 custom of 34** (from 11/36).  The port
-was restructured onto the host's two-phase architecture rather than patched:
-`extract_top_level_nodes` keeps the host's node indices (direct declarations
-plus typedef-owned tags, deduped by AST id), `index_referenceable_records`
-walks the whole AST for `struct`/`union` definitions (complete preferred),
-`build_alias_maps` records typedef→record/enum ids *and* the by-tag fallback,
-and the selection passes mirror `declaration.rb`: records (opaque upgraded by
-a later complete definition), typedef→record resolution through the
-referenceable index, enum kinds, type aliases (function-pointer typedefs map
-through `FunctionProtoType`), qualified-constant `VarDecl`s (the host's
-`constant_var_decl?`, `constant_qual_type`, aggregate/array init lists), and
-functions (first declaration wins, per-declaration error skip, variadic).
-Emission follows `emitter.rb`: synthetics first (in discovery order), then all
-declarations sorted by node index; opaque records carry the host's
-`record_c_name` linkage; anonymous/nested aggregates flatten their unnamed
-members and synthesize `Owner_field` records; field types go through
-`aggregate_field_type` with field overrides keyed by the owner name; enums
-choose `flags` from the power-of-two test.  Type mapping now ports
-`type_mapper.rb`: top-level nullability (`?`), array/function-pointer parsing
-(including `void (**)(...)` and function-pointer-returning-function-pointer),
-`cstr`/`va_list`/`__va_list_tag`, `size_t`/`__uint32_t`-style primitives,
-type/tag overrides, typedef-name preservation (`map_type_node`), and
-unknown-type rejection (a function/typedef that cannot map is skipped exactly
-where the host rescues `BindgenError`).  Supporting fixes: the TU prelude now
-matches the host's order (defines, header, then `bindgen_include_directives` —
-`SDL_main.h`-style headers changed the AST order), both clang invocations pass
-`-fno-builtin` (without it clang synthesizes unnamed builtin redeclarations),
-the macro scan uses the host's header-only provenance (the generated TU's own
-`#define`s are not constants), the clang AST JSON is viewed without
-`str.as_str()` UTF-8 validation (the host parses it unvalidated; the scan hit
-the C backend's debug loop guard on the multi-hundred-MB SDL3 AST), and
-`heap.copy_bytes` now calls `memcpy` instead of a byte loop.  Tracy is
-classified `custom`: its host registry generator returns the checked-in
-hand-written module verbatim, so there is no generic reference; the parity
-tool exits non-zero only on a real differ or error.  Gates on the frozen tree:
-bootstrap fixed point holds with 22/0, `test/mt` 60/0, examples 49/49, lex
-739/739, parse 735/0/4 of 739, lower 684/2/53/0 of 739 (the two documented
-artifacts), cli 89/89, lint 632/3 of 635, imported bindings 29/29, bindgen
-33/34 + 1 custom, and the changed files 4/4 in all formatter modes.  The
-`--nullable-policy` probe still renders byte-identical output and report (the
-policy merges into the same override maps the host CLI uses).
-
-Session-71 batch (Track H final matrix; CLI 89->92, DAP F5 launch fix):
-- **Bare `build`/`run` package-root discovery.**  The dispatcher's `args.len < 2`
-  guard blocked `parse_source_operand`'s existing discovery, so `mtc build` in a
-  package root printed "missing source file path" while the host built it.  The
-  guard is gone for `build`/`run` (a non-package root still errors identically)
-  and `cli_parity` gained `build-no-operand-package`,
-  `build-no-operand-no-package` and `run-no-operand-bare-package`: **92/92**.
-- **DAP launch ordering (VS Code F5).**  `configurationDone` was deferred
-  whenever the launch request was in flight, even after the adapter's
-  `initialized` event; lldb-dap answers `launch` only once the target starts, so
-  the session deadlocked until the 5 s adapter deadline and VS Code tore it down
-  with "backend request timed out: launch".  The gate now mirrors the host's
-  `backend_configuration_pending?` (`start_pending` and not `config_ready`), and
-  a deferred `configurationDone` is released when the adapter becomes ready
-  (and when the launch has been sent).  `tools/dap_async_probe.rb` (launch,
-  then configurationDone without waiting) proves against the real lldb-dap:
-  launch success -> entry stop -> breakpoint stop -> frame `main` -> locals
-  `x=3` -> evaluate `3`; `dap_smoke` stays at zero differing rows (the
-  documented frame0 row).
-- `bindgen --options-json`'s non-object error path now releases the parsed value
-  and root (a leak on the self-only options path).
-- **Full matrix on the frozen tree:** bootstrap fixed point + 22/0, `test/mt`
-  60/0, examples 49/49, lex 739/739, parse 735/0/4, lower 684/2/53/0, cli 92/92,
-  lint 632/3, unused-import 635/635, formatter 739/739 (and the changed files in
-  all three modes), imported bindings 29/29, bindgen 33/34 + 1 custom, LSP
-  harness 4 documented entries + recovery 6/6 + canonical audit 6 + valgrind 0
-  + Neovim, DAP zero differing rows, wasm/docs smoke, and SimpleGame built and
-  run identically by host and self.  Ledger re-stamped to session 71.
-
-Session-68 batch (Track B closed; CLI parity 89/89): the `deps` subsystem is
-ported into `projects/mtc/src/mtc/packages/` (`version`, `paths`, `manifest`,
-`editor`, `solver`, `graph`, `lock`, `source`, `registry`, `manager_cli`) and
-wired as `mtc deps add|remove|update|tree|lock|publish|fetch`; `--locked` and
-`--frozen` now load the locked (or live) package graph and join its source roots
-to module resolution in `build`, `run` and `debug`.  Verified on a shared
-fixture: `package.lock` renders byte-identically (schema 2, SHA-256 instance
-ids), and `tree`/`fetch`/`add`/`update`/`publish` output, the registry
-`.tar.gz`/`versions.txt` artifacts and the allocation of `__mt_fmt_*`/proc temp
-names match the host.  Three lowering gaps the port exposed are fixed: a
-dotted imported type reference now follows a re-exported type alias
-(`aio.Runtime` -> `std.async.libuv_runtime.Runtime`) in
-`resolve_generic_type_ref`/`resolve_field_type_ref`, and the async statement
-paths reproduce the host's two asymmetries (no format-sink streaming and no
-prepared-expression cleanups; cstr temp frees still emit).  New in-language
-tests: `projects/mtc/test/packages_test.mt`, `package_version_test.mt`
-(22 self-test files, 0 failed).  Gates: fixed point holds, `test/mt` 60/0,
-`cli:parity` 89/89, lower 683/2/53/0 of 738, lex 738/738, parse 734/0/4.
-
-Session-65 batches (measurement truth + CLI forms): `cli_parity`
-replaced the ten `KNOWN_GAPS` regexes with case-backed `pending:` metadata (nine
-of the ten patterns had no case); the matrix is now **89 cases / 78 match / 0
-differ / 11 pending**, and a pending case that starts matching is a failure.
-The second session-65 batch closed the multi-operand/directory forms:
-`parse`/`emit-c` PATH|DIR expansion with headers, `format` directories and
-multiple sources plus the `requires --check or --write` rule, and the host's
-`check`/`lint` unknown-flag validation, and `lint --init` (with the 43-code
-rule registry).  Remaining pending: `deps`, wasm, `toolchain doctor`,
-locked/frozen build, bundle/archive run.  Bootstrap at the end of the batch
-reached a fixed point (`stage2.c == stage3.c`), the dev suite was 19/0, and
-stage2's `test/mt` was 60/0.
-`lint_parity` gained `hostfail`/`selffail` buckets and a SHA-256 host-source
-cache key (mtime invalidation could reuse stale output after a checkout); the
-full corpus re-read is **618 files / 496 agree / 122 differ / hostfail 0 /
-selffail 0** (the earlier 495/121 figures were stale).
-`dap_smoke` now exits non-zero on an unlisted differing row, requires a real
-`lldb-dap` (versioned `lldb-dap-<N>` names are discovered; `--allow-skip` opts
-out), and reported `differing rows: none` over the full drive. `gates.sh` labels
-were corrected and areas added for `packages`, `docs_cli`, `wasm`, `toolchain`
-and `tools`. Baseline re-confirmed: `cli_parity` 65/65 on the original matrix,
-bindings 3/25 of 28.
-
-Session-66 batch (Track D closed): the imported-bindings emitter now matches the
-host generator byte-for-byte on all 29 bindings (`box3d` added; type aliases,
-overrides, bare-alias resolution, function-type handle projection, method
-wrappers built from generated entries, tidy formatting).  The self-only command
-gained `--stdout`/`--json`; `tools/imported_bindings_parity.rb` reports
-29 verified / 0 changed, and both bindings gates are hard.  The host's 37
-OpenGL naming vectors are pinned in
-`projects/mtc/test/imported_bindings_naming_test.mt` (self suite 20/0).
-Bindgen reproducibility (Track D item 3) remains open and is deferred behind
-the linter/analyzer track.
-
-The same session's analyzer batches closed the reserved-name diagnostics
-(module consts/vars/functions/events, params/locals, host message and
-positions), the qualified return-mismatch rendering with the host's statement
-fallback for position-less literal returns, null assignability, immutable
-parameters, the member-assignment immutability ladder, and specialized
-editable-call recording.  The fix engine now follows the host's rule order and
-pass structure, refuses fixes on unresolved imports, validates the candidate
-parse, re-analyzes against the loader-backed imports, and generates the
-`redundant-unsafe` fix (13/13 fixers).  Lint corpus: 495 agree / 123 differ of
-618, with `borrow-and-mutate` 29 and `loop-single-iteration` 8 (both improved);
-`prefer-own-ptr`'s candidate set now matches the host (20 self-only
-use-accounting rows remain), and the redundant-cast comparison sibling and
-editable-site matching were tightened.
-
-Session-67 batch (CLI Track B, doctor): `toolchain doctor` now reproduces the
-host's 60-row report byte-for-byte (`Checking system tools...` +
-`Checking vendored libraries...` + `Checking bindings...`, the 8 tool rows with
-`$CC/$AR/$CLANG/$CMAKE` overrides, the 18 vendored sentinels with the
-`config/upstream_versions.yml` overrides, and the 34 `std.c.*` raw-binding
-header rows sorted by name, including the `skipped (missing C compiler)` and
-header-not-found messages). The self-only 34-row header projection lives in
-`projects/mtc/src/mtc/toolchain_bindings.mt`; the option maps stay in the
-host bindgen table for Track D.  Fixed `is_executable` to use the stat-based
-`fs.is_file` (`fs.metadata` is lstat-based, so symlinked tools such as
-`/usr/bin/cc` and `/usr/bin/clang` were reported missing).  `cli:parity` is
-now **82 match / 0 differ / 7 pending** of 89; the pending set is `deps`
-(5 cases) and locked/frozen build (2).
-
-The same session-67 batch closed `run --bundle` and `run --archive`: `run` now
-parses both flags, loads the package manifest for the bundle root/assets/entry
-name (using the manifest's profile/platform defaults when the CLI does not
-override them), shares the host's `build/dist/<platform>/<profile>/<name>`
-layout through `resolve_bundle_paths`, and re-stages assets plus the
-`<bundle_root>.tar.gz` on a successful build or cache hit via
-`stage_run_bundle`.  The entry executable is run from the bundle; build output
-stays silent exactly as the host's `Run` path.  `cli:parity` is **82 match /
-0 differ / 7 pending**.
-
-The wasm build half of Track B item 1 closed in the same batch: the build driver
-now takes the target platform, embeds the host's 48-line shell template plus its
-canvas/output/bootstrap fragments (`projects/mtc/src/mtc/wasm_shell.mt`,
-generated from the host constants), resolves `$EMCC`/`emcc`, renders a custom
-`[build] html_template` with the host's exactly-once placeholder validation,
-passes `--shell-file -sINCOMING_MODULE_JS_API=canvas,print,printErr`, preloads
-each `build.assets` entry, normalizes `.html` output paths, cleans stale emcc
-sidecars, and emits the host's debug-map sidecar.  `--keep-c` now saves the
-host's non-debug/non-guard rendering (not the compiled debug source), and the C
-backend no longer emits a separator when every imported constant is pruned
-(which was one blank line in `emit-c`/saved-C output).  On the scratch package,
-host and self wasm builds produce byte-identical C, `.data`, and the same
-`.html/.js/.wasm/.mtdbg.json` set.
-
-The preview server half of item 1 closed in the same session:
-`projects/mtc/src/mtc/wasm_preview.mt` serves the output directory on an
-ephemeral 127.0.0.1 port with the host's MIME table and headers
-(`Cache-Control: no-cache`, COOP/COEP, `Connection: close`), GET/HEAD, 404/405,
-default-entry selection, a canonicalising traversal guard, the
-`serving <url> (press Ctrl-C to stop)` banner, and `xdg-open`/`cmd /c start`.
-SIGINT/SIGTERM are libuv signal handles that close the listener; the outer
-accept loop is a sync `wait_on`/`run_on_proc` driver (one coroutine per request)
-because a CPS `while` across repeated awaits could spin after the first
-connection.  `run --platform wasm` now builds to the package/source
-`build/bin/wasm/<profile>/<name>.html` (not a temp path) and starts the preview.
-The compiler fix behind this: `Task[void]` structs now carry the
-`take_result` function-pointer field the runtime calls, and `std.async` gained
-`run_on_proc`.  `tools/wasm_smoke.rb` drives host and self through a real
-preview session (entry/JS/WASM/HEAD/404/405/SIGTERM) and is the hard
-`wasm_smoke` gate.
-
-The `docs` command closed in the same session: `docs_app.mt` serves the
-reference index (`/`, `/reference/`, `/reference` 302), the stdlib catalog
-(`/stdlib`, `/stdlib/:name`), raw source and node-highlighted source
-(`/stdlib/:name/source/:file[/hl]`), JSON search (`/api/search?q=`), the copied
-CSS/JS assets, and a 404 page.  It reuses the shared `http_util` response/signal
-helpers, discovers modules/doc comments/declarations from `std/`, and runs the
-copy of the VS Code snapshot script with the 2026-dark theme.  `docs` parses
-`--port/-p`/`--open/-o`, prints `Serving Milk Tea docs at <url>` +
-`Press Ctrl+C to stop.`, and handles SIGINT.  `tools/docs_smoke.rb` compares
-host and self route statuses/content types and the byte-stable reference,
-source, highlight, CSS and JS bodies, and is the hard `docs_smoke` gate.
-
-The first Track C batch in the same session closed `borrow-and-mutate`
-(29 self-only rows): the collector now applies the host's
-`inside_call_argument` gate (a `ref_of`/`ptr_of` that is itself a call argument
-is ignored), records the first borrow site's line/column/length instead of
-anchoring every warning at line 1, and mirrors the host's expression set.
-`loop-single-iteration` now uses the host's message text on both loop kinds and
-recurses into `when`/`defer` bodies (the `while true` exemption stays until the
-CFG termination port).  The new docs/preview files were made lint-clean
-(`prefer-let-else` in `http_util`, `?` validation in `wasm_shell`), and the dead
-`is_package` local in `build_command` was removed (host-only `unused-local`).
-Lint corpus: **510 agree / 114 differ of 624**, hostfail 0, selffail 0.
-
-Session-51 batch: the event synthetic bodies (host slot/snapshot shapes), the
-reused await-field recording plus nested-await hoisting in a direct-await
-local, multi-digit `int_to_str`, the binary operands' conditional peer-type
-propagation, and `ir_expr_type`'s unsigned-literal arm.  Flipped
-`event_stress_test`, `build_cache`, `imported_bindings/{main,methods}`,
-`lsp/{debug_info,server}` and one example.
-
-Session-52 batch: await-free nested async bodies lower as plain locals (with
-the analysis' frame fields pre-registered and no line/path on the decl), the
-AST CFG decides the async fall-through cleanup, CPS whiles drop the sync
-scoping block, guard locals spill their storage as a member-expression target,
-`or` short-circuits swap their branch bodies, range bounds take the common
-integer type, async local literals take the declared type, the fresh-temp
-counter resets per async function, and raw-module forward-declarable opaques +
-builtin-generic receiver names (`ptr_receiver_arg0_…`) match the host.
-Flipped `std/net/{packet,punch}`, `std/tracy`, `std/raylib/tracy_gpu`,
-`std/simd`, `tracy_profiler` and three `projects/mtc` files.
-
-Session-53 batch: module-constant string arguments are cstr-backed (a direct
-`.data` cast at a `str as cstr` boundary), and a statement-position foreign
-call with a `consuming` parameter nulls the bare nullable binding afterwards
-(a guard-bound storage included) with a null flow refinement.  Flipped
-`raylib/{core/storage_values,core/text_file_loading,text/font_sdf,text/strings_management}`.
-
-Session-54 batch: a nested foreign call with cstr temps materializes
-`__mt_foreign_result_N` inside a discarded-statement window too, a raw-module
-receiver's monomorphized method links bare (`Image_draw_pixel`), a pointer
-offset literal takes the host's default `int` (a `0z` suffix is ignored) and a
-nullable pointer projects to a plain pointer foreign boundary as a cast.
-Flipped `raylib/{core/automation_events,audio/spectrum_visualizer,
-textures/image_processing}` and three more raylib/SDL examples.
-
-Session-55 batch: proc closure structs ride the non-dumped
-`Program.monomorphized_structs` (the host's C backend collects them), a
-same-module type alias resolves in union fields, a pure integer constant enum
-member value takes the backing type (`1 << 0` in a `flags` block), a bitwise
-binary with missing analyzer type falls back to its equal operands' type, and
-`get()` lowers to `IR::NullableIndex`/`IR::NullableSpanIndex` (NULL on
-out-of-bounds; the backend emits the host's nullable helper names). An async
-`if` expression with awaits in its branches hoists like the host's
-normalization: the result temp registers before the branch temps, numbered
-after them. Flipped `engine/{types,systems,guards}`.
-
-Session-56 batch: a `ty_named` enum resolves its backing against its own
-`module_name` (raw `std.c.*` enums cast to `int` in comparisons), a char
-literal is a compile-time numeric constant (a `uint` assignment casts it), a
-comparison's IR type is always `bool`, a float binary peer contextualizes an
-`if`-expression operand (`(if c: W else: H) / sqrtf(x)` casts each branch), the
-generated range/collection/iterator loops use the host's native
-`ContinueStmt`/`BreakStmt` (labels remain for defer flushes and switch arms),
-and a rebuilt foreign-mapping binary/unary keeps the analyzer's recorded type.
-Flipped `sdl3/{pen/drawing_lines,renderer/read_pixels,renderer/affine_textures,
-asyncio/load_bitmaps,demo/infinite_monkeys}` and `raylib/others/rlgl_standalone`.
-
-Session-57 batch: a plain expression constant takes the host's
-`lower_compile_time_literal` path (typed, not width-masked: `~268435455` stays
-`-268435456` in a `uint`), a `char` array-constructor element casts its integer
-literal (`array[char, 512](0, …)`), and an *inferred* generic function instance
-joins its type arguments with single underscores after one double underscore
-(`find_state_hooks__World_Context`, not `__World__Context`).  Flipped
-`test/mt/{fsm,goap,htn}_test`.
-
-Session-58 batch: function placement reproduces the host's `lower_modules`
-setup pass + `lower_functions` fixpoint — a specialization is emitted at its
-owner declaration's next visit, gated on the function that created it, with
-analyzer-pre-instantiated bindings available from the setup pass (the `wait`
-chain is lowering-created and waves correctly; the `completed`/`Result` keys
-render via the host's qualified `to_s`).  A `?` operand gets its own prepared
-window so a proc argument materializes before `__mt_propagate_N`; the async
-constructor always carries `take_result` (void included); async non-await
-`if`s emit `nil` for an empty else; async `unsafe` bodies splice; the release
-and cancel vtable functions free pointer-lowered params; a discarded void
-await still calls `take_result`; a literal return with defers completes after
-the cleanups; and the async-main root proc's invoke carries the source path.
-Flipped `examples/async_stress_test` and `std/net/{channel,clock,manager,mux,
-session,sync}`, plus `std/tls`.  Lower and the self-test suites were re-run
-(19/0, 60/0).
-
-Session-58 second batch: a match scrutinee is lowered exactly once (the
-recorded type is only a fallback) inside the statement's prepared window, so a
-proc argument materializes before `__mt_match_value_N` and the cleanups follow
-the match; a signed float literal (`-1.0`) takes a `float`/`double` context
-through its unary at binary, call-argument and return sites; and
-`expect_eq`/`expect_ne` type each operand against the other like a normal
-binary.  Flipped `test/mt/{vec,math}_test` and
-`projects/mtc/test/tidy_formatter_test` (19/0 and 60/0 re-run).
-
-Session-59 batch: async scalar/enum match cases append the CPS break
-(`std/http`, `std/oauth2`); a guard local in a no-await async body carries no
-line/path (`std/net/lobby`); async local/assignment initializers materialize
-array calls (`__mt_array_call_N`) and the `?`-operand prepared windows precede
-`__mt_propagate_N` (`std/net/{discovery,nat,stun,turn}`,
-`examples/async_network_lobby`).  Cross-module async calls are Task-wrapped for
-every return type (the analyzer's imported binding type).  Plain local reads and
-assignment targets carry the flow-refined visible type (sdl3 gamepad/joystick,
-the `raw_fields` family).  Inline-for binds its loop variable as a comptime
-constant (no local) and folds constant branch conditions; `emit` declarations
-lower a second time into the emitted tail; an ordinary const-function call stays
-a runtime call and a non-constant argument no longer folds to 0
-(`examples/{comptime,reflection_advanced}`, `test/mt/reflect_test`).  The
-analyzer types vec/mat/quat members and Simd arithmetic, SoA fields type as
-`array[T, N]`, and an unannotated local keeps the recorded simd/vec aggregate
-over its scalar binary node (`projects/stress/src/engine/math`,
-`examples/simd_features` advances to the `SimdLaneWith` IR node).  A no-await
-async body registers its frame fields in the host analysis' normalized order
-(an `and`/`or` temp before the branch locals), which flipped `std/net/rpc`.
-Flipped 15 files; ledger `sexpr lower` 630/36/51/0 of 717 (from 615/51); 19/0
-and 60/0 re-run.
-
-Session-60 verification at the committed tree: full bootstrap (fixed point plus
-19/0), `test/mt` 60/0, `sexpr lower` 630/36/51/0, lex 717/717 and parse
-713 match / 0 differ / 4 host-rejected.  No code changes; the plan header and
-Ledger were re-stamped, and the ranked Track A leaders stand as below.
-
-Session-61 batch: the async normalizer's two-phase `and`/`or` shape (both operands
-lowered into child windows, the result temp allocated after them but its frame
-field registered at the pre-recursion slot and its declaration emitted first), the
-CPS while restructure for await-free `and`/`or` conditions (with the extra
-`cond_name` bool temp and a native break guard), direct-await guard locals taking
-the awaited result straight into the guard's frame field (no temp field), and the
-if-expression branch assignments using the textual frame `Name` (await stores keep
-`Member`).  `std/http/server`, `projects/stress/src/main` and
-`engine/async_tasks` now match through their async frames; their first differences
-moved to the async-main proc env bridge / proc-helper placement and the tuple
-struct name.  `std/net/rpc` stays matching.  Gates: fixed point holds, `test/mt`
-60/0, lower 630/36/51/0 (unchanged count, deeper first diffs), examples 49/0.
-
-Session-61 second batch: named tuple struct names follow `Types::Tuple#to_s`
-(`(x: int, y: int)`); a static-assert message lowers as StringView while the C
-backend still emits a bare C string for a literal; proc calls through struct
-fields and array elements take the proc's return type (void/error/proc records
-fall back to the closure signature); a qualified imported enum member resolves
-in an inline-match scrutinee/pattern; a user generic variant instance classifies
-as `Types::VariantInstance`; and a capturing proc's release frees captured proc
-fields before the env.  Flipped `projects/stress/src/engine/{compile,closures}.mt`;
-lower **632 match / 34 differ / 51 host-rejected / 0 self-rejected of 717**
-(from 630/36; the set diff shows no newly differing files).  Gates: fixed point
-holds, `test/mt` 60/0, examples 49/0, dev self-tests 19/0.
-
-Session-61 third batch: a generic struct receiver in `concrete_field_type` is
-monomorphized before the field lookup, and the proc retain/release walks use the
-concrete instance's substituted fields (`proc_struct_fields`) instead of the
-declared `analyzer.structs` entry, so `PipelineStep[int].handler` carries
-`proc(input: int)`.  `stress/main` advances from that field type to event
-function ordering; count unchanged at 632/34/51/0, gates as above.
-
-Session-61 fourth batch: event runtime functions and dyn wrappers join the
-program-wide synthetic function tail in creation order (the host's single
-`@artifacts.synthetic_functions` list); a multi-iterable `for` mirrors the host's
-parallel collection-for (per-iterable `__mt_for_items_N`, the matching-length
-fatal check, and a block-wrapped `__mt_for_index_N` loop); proc-call arguments
-and `.with(...)` replacements take the target parameter/field literal type; and
-a proc literal in a CPS local initializer uses a prepared window, so no
-`__proc_N__setup_env` synthetic function is emitted.  Flipped
-`projects/stress/src/engine/async_tasks.mt` and `projects/stress/src/main.mt`;
-lower **634 match / 32 differ / 51 host-rejected / 0 self-rejected of 717**
-(from 632/34; the set diff shows no newly differing files).  Gates: fixed point
-holds, `test/mt` 60/0, examples 49/0, dev self-tests 19/0.
-
-Session-61 fifth batch: the root async `main` entrypoint now synthesizes the
-host's argc/argv bridge — `span[str]` (`__mt_args_items`/`__mt_args`), raw
-`ptr[cstr]`, or `ptr[ptr[char]]` — with the `__mt_async_main_arg_N` locals, a
-capturing root proc whose env is named from the root local
-(`__mt___mt_async_main_root_env_1`), and the argv cleanup; a call to the root
-async `main` targets its `__async_main` constructor.  `std/http/server` now
-matches through the entrypoint and advances to a dynamic format-string part
-(`__mt_fmt_part_N`) difference; count unchanged at 634/32/51/0 with no newly
-differing files.  Gates as above.
-
-Session-61 sixth batch: every CPS local initializer now uses a prepared window
-(the host's CF local path), so a dynamic format string's `__mt_fmt_part_N`
-locals, a proc literal's env setup, and array-call temps precede the frame
-store instead of nesting in a `StmtExpr`; the proc-literal special case folds
-into the same rule.  `std/http/server` advances from the format parts to a
-release-cleanup shape (`String_release(&frame->local_...)` vs
-`mt_format_str_release(...)`); count unchanged at 634/32/51/0 with no newly
-differing files.  Gates as above.
-
-Session-62 batch (18 files flipped, 634/32 → 648/18):
-- `std/http/server`: a CPS local initializer that stores a dynamic format
-  string registers the frame field for the frame's release/cancel cleanup
-  instead of deferring the temp release (the host's `format_str_fields`), and
-  the release/cancel vtable functions free those fields; the CPS while
-  restructure picks the host's body mode (plain locals when neither the
-  condition nor the body awaits; the original body stays CF when the condition
-  setup awaits).
-- Foreign calls: argument values are all lowered before the call's own cstr
-  temps allocate (host phase 3), `unsafe:` is transparent to the `in`
-  addressability check, a multi-reference non-duplicable argument materializes
-  the call into `__mt_foreign_expr_N` in expression positions (return values
-  are statement roots), and a float/double parameter threads its expected type
-  into an arithmetic binary argument (literal retyping + promoted operand
-  casts, no constant-fit cast).  Flipped `raylib/{basic_pbr,
-  spotlight_rendering}`, `raylib/shapes/{digital_clock,pie_chart}` and
-  `raylib/text/unicode_emojis`.
-- `sdl3/demo/woodeneye`: the analyzer's expected-type hint no longer leaks
-  through a prefix cast (the host infers a cast operand with no expected type),
-  so `ubyte<-(if c: 0 else: 255)` re-infers the conditional as `int`.
-- Generic-instance placement: the analyzer-vs-lowering split is modelled
-  explicitly.  A specialization records `body_validated` (the host's
-  `validate_specialized_function_body!`) separately from
-  `pre_instantiated`; the iterator protocol instantiates `iter`/`next`/
-  `current` without validating their bodies.  Normal-call reach edges are
-  recorded, upgrades are sticky across cache hits, and a placement fixpoint
-  recomputes the classification from the graph (the analyzer ran before
-  lowering, so lowering order must not decide it).  Recursive monomorphized
-  self-calls resolve their return type from the pre-registered
-  `function_returns` entry.  Flipped `test/mt/{queue,stack,priority_queue,
-  set,multiset,ordered_map,ordered_set}_test`.
-
-Session-62 second batch (657/9, from 648/18):
-- Extending blocks resolve a nested struct target (`extending Rectangle.Edge:`)
-  through the analysis' registered types in the declaration-visit pass too, so
-  the method emits at its source position (`examples/nested_struct_stress_test`).
-- A generic specialization created from a plain function *reference* is
-  analyzer-instantiated but not body-validated (the host validates only call
-  sites), so its nested concrete calls stay creator-gated
-  (`examples/data_structures`).
-- String matches compare the prepared scrutinee node directly (no
-  `__mt_match_str_N` temp), the host's `lower_string_match_stmt` shape
-  (`projects/mtc/src/mtc/lowering/lowering.mt`, `debug_map_test`,
-  `lowering_test`).
-- The `simd[E, N].with(lane, value)` builtin emits the host's
-  `IR::SimdLaneWith` node (new IR variant, dumper, formatter and C backend).
-- A concrete generic struct instance's field lookup uses the *defining*
-  module's qualified name, so a field literal takes its declared type
-  (`SyncValue[uint](value = 0)`, `test/mt/net_sync_test`).
-- The synthesized sync `main(span[str])` argc/argv bridge initializes its args
-  array with a null literal (not a `NULL` name).
-- A method receiver's speculative type query is now effect-free: it discards
-  its setup statements and restores the temp/format counters, so a chained
-  method call's receiver is built once with the host's name
-  (`std/mem/tracking`, `test/mt/mem_tracking_test`).
-
-Session-62 third batch (659/7, from 657/9):
-- The synthesized root `main` wrapper names its captured result `__mt_result`
-  (host `build_root_main_entrypoint`), and recursive variant payload fields
-  take the host's auto-address type (the value's own type, not `ptr[field]`).
-- Variant arm payload member accesses use the declared field name; C struct
-  members may be keywords (`sizeof`), so the arm-field sanitizer was wrong.
-
-Session-62 fourth batch (660/6, from 659/7):
-- An imported constant whose folded value cannot be represented literally
-  (an integer standing for a `char` field, per the host's
-  `lower_compile_time_literal` nil result) falls back to lowering the
-  referenced constant's declaration initializer in its own module context —
-  the host's `rewrite_static_storage_initializer` path.  Closes `std/flecs`.
-
-Session-63 batch (Track A closed, 662/4 → 665/2; the residual two are the
-documented `memory_stress_test` artifact and `main.mt`'s `--sexpr` loop guard):
-- Module setup order: `lower_module` now follows the host's per-module passes
-  (constants, globals, types, then function bodies); globals' proc symbols and
-  synthetic creation order match.
-- Module-level `when` expansion is shared with the placement pass, so an
-  expanded function keeps its source position instead of being appended.
-- Parallel IR: ported the host's `@parallel_for_counter` naming
-  (`_pfor_N`/`_spawn_N`/`_detach_N`, `mt_pfor_cap_/work_`, `mt_spawn_cap_/work_`,
-  `mt_detach_work_`), per-spawn capture structs with array-capture pointer
-  fields and rewrite, written-capture write-back, write-conflict validation,
-  and `mt_cap`/`mt_pfor_data` shapes; fixed the capture order to
-  first-occurrence (Map keys are hashed, not insertion-ordered).
-- Proc symbols: a final pass (`lowering/proc_renumber.mt`) renumbers
-  `__proc_<N>__` ids from the assembled program in host allocation order
-  (setup values, then module-function emission order) and reorders the
-  invoke/release/retain tail; it is gated off when any helper has no literal in
-  that prefix (async synthetic bodies), preserving their existing numbering.
-- Types: added the host's `Types::Handle` singleton for `detach`; `dyn[I]`
-  carries interface type arguments (`Types::Dyn :type_arguments`), including
-  `iface_method_return_type` substitution; tuple instance suffixes render like
-  `sanitize_identifier(to_s)` (`Option[(int, int)].unwrap` →
-  `Option_unwrap__int_int`) and prelude `Option`/`Result` compare equal across
-  their generic and imported forms.
-- Smaller fixes: flags implicit members honor `value_explicit` (parser-synthesized
-  literals no longer reset auto values), `str_index` passes its index through,
-  range-index assignment emits plain `Index`, `let x = match` materializes the
-  host's `__mt_match_expr_N` copy, `?` returns the propagate temp when the
-  return type matches, chained calls lower through the callable-value path,
-  tuple literals keep proc literals inline, a ref/pointer receiver decides
-  pointer lowering from its referent, and monomorphized calls apply the ref
-  argument bridge.
-- C backend: void-typed struct/variant fields materialize as `uint8_t`
-  (`c_field_declaration`) and initializers wrap a void value as `(expr, 0)`,
-  matching the host's `Result[void, E].success` / `WorkState[void]` shapes;
-  previously the self emitted an empty arm struct and invalid C.
-- Gates: fixed point holds, `test/mt` 60/0, self-tests 19/0, examples 49/49,
-  lex 718/718, parse 714/0/4; host-vs-self runtime output is identical for
-  `examples/language_baseline` (flags/dyn/proc/match/detach) and
-  `examples/multithreading_test` (parallel for/spawn/gather).
-
-Session-63 CLI batch (24/37 → 60/1 of 61; only the `debug` formatter remains):
-- Errors and usage blocks now go to stderr in the host's shape: `new`,
-  `format --check --write`, `completions`, `std`, `toolchain`, `snapshot`,
-  `test`, `build` (`--kind`, unknown options, missing values), `lex`/`debug`
-  missing-file and directory messages, package-entry errors
-  (`build.entry not found: … (resolved to …)`, directory-as-source), and
-  `std show`/`build`'s no-entrypoint line.
-- The analyzer reports the host's `unknown callable <name>` for an unresolved
-  bare call (value/builtin/handle/type allowlists, loader-backed analysis only),
-  and `check` prints only the first error per file (the host aborts there).
-- `lex`'s default output is Ruby's `PP.pp(tokens)` shape (field-per-line Data
-  objects, Ruby string inspection, integer/float `literal` values).
-- `lower`/`emit-c` directory operands expand to sorted `.mt` files with the
-  `# --- <path> ---` headers; a package root is discovered when neither
-  `build` nor `run` gets an operand.
-- The parser's missing-closing-delimiter diagnostics report the *previous*
-  token (the host's `consume` rule) and call arguments say `expected ')' after
-  call arguments`; `parse` renders lexer errors as `error[lex/error]` blocks
-  and the lexer's unclosed-grouping error carries the host's line/column.
-- `cache status` uses the host's `data_root/tmp/mtc-cache` (checkout root, XDG
-  fallback), counts program dirs/binaries and formats MiB; `cli_parity.rb`
-  normalizes `--timings` wall-clock values (the report structure still
-  compared).
-- Gates: fixed point holds, `test/mt` 60/0, self-tests 19/0, examples 49/49,
-  lex 718/718, parse 714/0/4, lower 665/2/51/0.
-
-Session-64 CLI batch (61/61; Track B's behavior matrix closed):
-- `debug` now drives the ported LSP renderer (`lsp/debug_info.mt`) instead of
-  the old ad-hoc summary: header with the expanded path and the token EOF line,
-  the full token table (empty semantic column, as the host CLI passes none),
-  parser AST (bare `SourceFile` — the CLI's tree carries no line, unlike the
-  LSP cached re-wrap), parse errors, facts, bindings and diagnostics.  The
-  facts/bindings/diagnostics sections print "(not available)" when the root
-  fails to parse, matching the host's nil snapshot.  The Methods block is
-  gated on the file's own extending blocks (prelude-only `method_sigs` must
-  not open an empty block).  The harness normalizes the Bindings section's
-  Ruby `object_id` keys (process-local identities; binding ids/order still
-  compare).
-- `test` argument forms: file operands (compile-fail fixture, lex/parse error
-  blocks, `main` rejection, filtered-empty silence, missing-file message
-  `mtc test: not a file or directory: …`), `--jobs N` validation (accepted;
-  files still run in order — see *Deliberate differences*), the build flags
-  `--cc/--profile/--platform/-o/--keep-c/--kind` with the host's errors and
-  exit codes, first-positional path selection, the host's empty-tree messages,
-  and a blank line before the summary.  Discovery is a separate pass (a lex
-  error aborts before any file runs), compile-fail fixtures honor the `-n`
-  basename filter, and the runner files are named with the process id (the
-  host's `__mt_test_runner_<pid>`), so parallel `mtc test` invocations no
-  longer collide.  The synthesized runner forces guards off and uses the
-  requested compiler/profile/platform; failure details take the first
-  non-blank stderr/stdout line.  `tools/gates.sh`'s per-file fan-out now uses
-  the file operand instead of the one-file symlink workaround.
-- Gates: dev build, self-tests 19/0, CLI matrix 61/61, LSP harness 30/30 + 4
-  documented entries (`milkTea/debugInfo` still byte-equal), test matrix
-  compared against the host across 25 directory/file/flag/error cases.
-
-Session-64 second batch (Track B's cheap flags/subcommands):
-- `toolchain bootstrap` is implemented from the host's `UpstreamSources` table
-  (18 pinned sources, sentinel checks, `git clone` + `checkout --detach`, the
-  two `config/upstream_versions.yml` override shapes, `-q/--quiet`, ANSI
-  progress lines and the host's summary/error text).  `toolchain tools` builds
-  the Tracy profiler (cmake configure/build, install to `<data>/bin`, the
-  host's messages).  `-q/--quiet` and `--` are extracted like the host, and
-  extra arguments/unknown subcommands print the host's errors.  The commands
-  live in `projects/mtc/src/mtc/toolchain_cli.mt` (mirroring the Ruby file).
-- `build --kind static|shared` now produces a static archive (`ar rcs`) or a
-  shared object (`cc -shared -fPIC`) instead of "not implemented".  IR
-  functions carry a `public_export` flag (never dumped, so `lower` parity is
-  unchanged); the C backend keeps public top-level functions `static` for
-  executables (byte-identical C) and exports them when building a library.
-  Archives are rebuilt from clean output, and the CLI skips the missing-entry
-  check and binary cache for library kinds.  The host's own static/shared path
-  raises `NoMethodError: generate_header`; this is the working equivalent.
-- Bindgen gained `--clang-arg` (threaded into both clang invocations),
-  `--nullable-policy` (the host's JSON validation messages, function/parameter
-  target validation, return/param type overrides in the emitted module) and
-  `--nullable-report` (the host's JSON shape: module/header, summary, sorted
-  manual entries with override/auto/c types; identical bytes on the probe).
-  Generated-module include/macro differences remain Track D work.
-- Gates: dev build, self-tests 19/0, CLI matrix 61/61, executable C
-  byte-identical to the previous stage2, static/shared libraries link from a C
-  consumer, bindgen nullable output/report byte-equal to the host on the probe,
-  `toolchain bootstrap` byte-equal and its error/flag cases equal.
-
-Session-64 third batch (package builds, `--bundle`/`--archive`):
-- `loader/package_manifest.mt` now parses the host's build-relevant
-  `PackageManifest` view (name, kind, source_root, entry, profile/platform
-  defaults, output, assets with the host's not-found/duplicate-basename
-  errors, html_template) and applies the host's
-  `use_package_build_for?` rule (a directory package needs a resolved entry;
-  a file operand must be that entry).  `build` uses the package output layout
-  (`build/bin/<platform>/<profile>/<name>`, or `[build] output`) instead of
-  the raw source stem; library packages and entry-less applications fall back
-  to the host's "expected a source file, got a directory" path.
-- `--bundle`/`--archive`: the bundle root is `-o`/`[build] output`/
-  `build/dist/<platform>/<profile>/<name>`; the executable's parent is
-  created, `build.assets` are staged beside a non-bundle binary or packed
-  into `assets.mtpack`, and `--archive` writes `<bundle_root>.tar.gz` with
-  `std/tar`.  The messages (`built <operand> -> <dir>`, `entry executable`,
-  `  [cached]`, `archive`) and clean targets match the host, and a cache hit
-  re-stages assets/archive like `build_cached`.
-- `std/asset_pack.mt` gained the host's MTAP writer (28-byte header, 32-byte
-  entries, sorted logical paths, raw data; packs are byte-identical on the
-  probe).  The reader's `close`/state handling was fixed so a host-produced
-  pack opens and reads in-language.
-- `std/toml.mt` duplicate-key/table messages match Tomlrb
-  (`Cannot overwrite value with key x`, `Key x is already used`); `run` now
-  prints `[cached]` on a cache hit.
-- Harness: 65/65 (bundle, archive, clean and non-package cases; the `pkg`
-  fixture now has an asset tree and a real `stdio.print_line` program).
-- Gates: dev build, self-tests 19/0, CLI matrix 65/65, MTAP byte-identical,
-  tar listing/extraction equal, host-vs-self bundle error/clean matrix equal,
-  focused lower 3/4 (only the documented `main.mt` artifact).
-
+The per-session batch logs (sessions 51–71) are not kept in this file; none is
+pending work.  The full text is recoverable from git history (`git log -p --
+docs/self-host-plan.md`), and the pre-compaction snapshot through session 50 is
+at `git show d8a199c7:docs/self-host-plan.md`.  Current state lives in *Status
+at a glance* and the Ledger; the causes that still matter are in the track
+sections and *Deliberate differences*.
 
 ## How to start a work session
 
@@ -1256,7 +610,7 @@ at 0-diff and re-measure both after any lowering-adjacent change.
 
 The **original 65-case behavior matrix is byte-equal** (session 64; `--timings`
 values and `debug`'s Ruby node ids normalized).  `debug`/`test`'s argument forms
-and the bundle/archive cases closed there — see the session-64 batches.  The
+and the bundle/archive cases closed there.  The
 fixed `pkg` fixture now builds and runs a real program (the old fixture used a
 bare `print`, so its build/run cases only compared a semantic-error path).
 
@@ -1320,8 +674,9 @@ validation, and `lint --init`.  Remaining work:
    byte-for-byte), as are `debug`'s process-local node ids and the synthesized
    `__mt_test_runner_<pid>` path; the report structure is.
 
-Session-64 `toolchain`/`build --kind`/bindgen-nullable flips are recorded in
-the session-64 second batch above.  Session 67 closed `toolchain doctor` to
+Session-64 landed `toolchain bootstrap|tools`, `build --kind static|shared` and
+the bindgen nullable flags (the library-build and self-only flag caveats are in
+*Deliberate differences*).  Session 67 closed `toolchain doctor` to
 byte parity (60 rows: 8 tools + 18 vendored sentinels + 34 raw-binding
 headers), `run --bundle`/`run --archive` and `build --platform wasm`; session 68
 closed `deps` (5 cases) and locked/frozen build (2), emptying the pending set.
@@ -1349,8 +704,7 @@ matches adjacent arms on a node whose source identity the self does not share;
 its fix engine makes no change).  The session-73 test-command work removed the
 old self-only `redundant-cast` row on the deleted `--machine` lex line.
 
-Session-69 linter batch (571/63 -> 631/3): see the session-69 batch in *Status
-at a glance* for the per-rule mechanics.  Closing summary by rule (pairs are
+Session-69 linter batch (571/63 -> 631/3).  Closing summary by rule (pairs are
 self-only / host-only before -> after): `constant-condition` 11/1 -> 0/1,
 `prefer-or-pattern` 10/10 -> 0/0, `loop-single-iteration` 9/0 -> 0/0,
 `unreachable-code` 5/0 -> 0/0, `redundant-cast` 2/8 -> 3/0,
@@ -1531,8 +885,10 @@ so VS Code's F5 session waited out the 5 s adapter deadline and tore down with
 when the adapter is initialized (or the start has answered).  A real-lldb-dap
 async-order probe (launch, then `configurationDone` without waiting) proves
 launch success → entry stop → breakpoint stop → frame `main` → locals `x=3` →
-evaluate `3`.  The protocol path is closed; a desktop VS Code click-through
-remains an optional manual smoke, not a known gap.
+evaluate `3`.  The protocol path is closed, and the desktop F5 click-through
+passed in session 74 (see that section).  The only residue is extension
+packaging: `activationEvents: ["onDebug:milk-tea"]` is ignored by VS Code
+1.146, so the extension only activates once a `.mt` file is open.
 
 ### Track G — compiler throughput (CLOSED: the self is now faster than the host)
 
@@ -1795,9 +1151,11 @@ Gotchas that cost rebuild cycles; apply them before writing code.
 - **Throughput is closed** (session 72): the self beats the host on `emit-c`
   and on a full build, so gates no longer pay a self-host penalty.  Re-profile
   before reopening Track G.
-- **History:** the full session records were removed from this file; they remain
-  at `d8a199c7` and earlier.  If a compact digest of sessions 44–50 is wanted,
-  add it in ≤30 lines rather than growing the file.
+- **History:** the per-session records are not kept in this file.  The snapshot
+  through session 50 (including §0a–§0k, §1–§7 and the Appendix) is at
+  `d8a199c7`; the session 51–71 batch logs live in this file's git history
+  (`git log -p -- docs/self-host-plan.md`).  Keep the file operational — add
+  causes to the track sections, not a growing session narrative.
 
 ## Provenance
 
@@ -1805,8 +1163,9 @@ This file is the single self-host planning document; it absorbed the former
 `docs/foundational-blockers-plan.md`, `docs/lsp-parity-plan.md`,
 `docs/self-host-stress-todo.md` and the machine-local session plans on
 2026-10-03 (session 25).  It was compacted to the current operational state in
-session 50 (2026-11-08); the pre-compaction version, including §0a–§0k, §1–§7
-and the Appendix, is at commit `d8a199c7`
+session 50 (2026-11-08) and re-compacted in session 74 (2026-11-14, session
+batch logs pruned); the pre-compaction version, including §0a–§0k, §1–§7 and
+the Appendix, is at commit `d8a199c7`
 (`git show d8a199c7:docs/self-host-plan.md`), and earlier originals are in git
 history.  `projects/stress` parity (build, output and exit status identical)
 was recorded done in the pre-compaction history.
