@@ -51,10 +51,11 @@ An unclassified module or import target is a violation, so a new file must be
 classified deliberately. The rank table lives in `LAYER_RANKS`; legitimate
 upward edges would go in `ALLOWED_UPWARD` with a reason.
 
-Current graph: **103 edges, 0 violations**. Notable same-rank peers:
+Current graph: **108 edges, 0 violations**. Notable same-rank peers:
 `semantic`/`c_naming` (type-name mangling), `linter`/`formatter` (fix candidates
 use tidy), `pretty_printer`/`ir` (the IR formatter), and
-`imported_bindings`/`formatter`.
+`imported_bindings`/`formatter`.  `strings` is the shared rank-0 text leaf; the
+C backend's former `lowering.utils` dependency is gone.
 
 ### Naming
 
@@ -63,10 +64,21 @@ use tidy), `pretty_printer`/`ir` (the IR formatter), and
 - `struct|enum|variant|type|interface`: `PascalCase`
 - top-level `const`: `UPPER_SNAKE`
 
-The current tree has **13 frozen deviations** (baselined, not new): one
-PascalCase function (`DeclarationTokenOf`) and twelve lowercase constants in
-`semantic/analyzer.mt` and `semantic/types.mt`. Renaming them is a valid
-refactor; the baseline must be refreshed in that commit.
+The current tree has **0 violations**.  The naming-foundation pass fixed the
+13 baselined deviations (12 lowercase constants, `DeclarationTokenOf`) and
+kept the rule strict afterwards.
+
+### Import aliases
+
+One effective alias per module: `semantic.types` is always `types`,
+`lexer.token` always `token_mod`, and so on.  The guard derives the canonical
+alias from the tree (majority; the longer alias breaks a tie), and `--check`
+fails on a deviation, a duplicate import of the same module, or two targets
+sharing one alias in a file.  `packages.source` is the single override
+(`pkg_source`) because both `source` and `package_source` are common
+locals/parameters in the files that use it.
+
+Current state: **131 modules, 0 alias violations**.
 
 ### Dead exports
 
@@ -92,7 +104,7 @@ to repeated emission/frame boilerplate, not as an absolute quality score.
 
 ### Size, markers, tests
 
-- **122,711 code lines**; **35 functions ≥ 200 lines**; **12 files ≥ 2,000 code
+- **122,608 code lines**; **35 functions ≥ 200 lines**; **12 files ≥ 2,000 code
   lines**. The ratchet counts these, so a refactor cannot trade one long
   function for another.
 - **0 marker comments** (`TODO`/`FIXME`/`XXX`/`HACK`); any new one fails.
@@ -169,11 +181,12 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 131 / 154,257 / 122,711 |
-| layering edges / violations | 103 / 0 |
-| naming violations (frozen) | 13 |
+| source files / lines / code lines | 132 / 154,129 / 122,608 |
+| layering edges / violations | 108 / 0 |
+| naming violations | 0 |
+| alias violations | 0 (131 modules) |
 | dead exports (unused / test-only) | 35 / 6 |
-| duplication (windows / duplicated lines) | 781 / 5,196 (window 12) |
+| duplication (windows / duplicated lines) | 786 / 5,206 (window 12) |
 | functions ≥ 200 lines | 35 |
 | files ≥ 2,000 code lines | 12 |
 | markers | 0 |

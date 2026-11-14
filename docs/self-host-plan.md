@@ -16,6 +16,7 @@ history.
 ## Contents
 
 - [Status at a glance](#status-at-a-glance-session-73-2026-11-13)
+- [Session 76 — naming foundation and shared text leaf](#session-76--naming-foundation-and-shared-text-leaf)
 - [Session 75 — refactoring safety suite](#session-75--refactoring-safety-suite)
 - [Session 74 — decisions closed](#session-74--decisions-closed)
 - [Session 73 — the `mtc test` CLI matrix](#session-73--the-mtc-test-cli-matrix)
@@ -47,7 +48,7 @@ history.
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
 | Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 72).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
 | Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
-| **Refactoring safety (new)** | structural guard: 103 edges / **0 layering violations**; 13 frozen naming deviations; **35 unused + 6 test-only** public declarations; 5,196 duplicated lines; 35 functions ≥ 200 lines; 0 markers.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` |
+| **Refactoring safety (new)** | structural guard: 132 files / 122,608 code lines; 108 edges / **0 layering violations**; **0 naming, 0 alias violations**; **35 unused + 6 test-only** public declarations; 5,206 duplicated lines; 35 functions ≥ 200 lines; 0 markers.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` |
 
 Rough completion against the per-track Definition of Done: **100%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix (including
@@ -57,6 +58,40 @@ done, and session 72 added the analyzer/`check` surface that no gate had
 measured.  The only residuals are the documented `tracy` custom-generator entry
 and the optional desktop F5 smoke.  Track G (throughput) closed in session 72:
 the self is now faster than the host.
+
+## Session 76 — naming foundation and shared text leaf
+
+First pass of the refactoring program (`docs/refactoring.md`).  Three batches:
+
+1. **Naming-rule violations — fixed** (`509676cb`).  Twelve lowercase constants
+   became UPPER_SNAKE (`CAT_*`, `KIND_*`, `INT_SUFFIX_*`) and
+   `DeclarationTokenOf` became `declaration_token_of`; 46 whole-word
+   replacements in three files.
+2. **Shared join helpers — extracted** (`f44204f5`).  `j2`..`j6` were defined 29
+   times across eight modules (real bodies plus wrappers).  `mtc.strings` now
+   provides `join_two`..`join_six`, 691 call sites were redirected, and the C
+   backend's only `lowering.utils` dependency — and therefore the
+   `c_backend -> lowering` edge — is gone.
+3. **Aliases and type suffixes — canonicalized** (`47ca1ae1`).  One effective
+   alias per module (44 imports plus their call-site prefixes); duplicate
+   imports and cross-target alias collisions are now guard errors.
+   `pkg_source` is the single override, for `packages.source` (both `source`
+   and `package_source` are common locals).  Five type renames: `Context`
+   (`redundant_cast`), `LoweringContext`, `ScopeContext`, `SexprContext`,
+   `MethodDecl` — 621 replacements in seven files.
+
+Current structure: **132 files / 154,129 lines / 122,608 code lines**; 108 import
+edges, **0 layering / 0 alias / 0 naming violations**; 35 unused + 6 test-only
+public declarations; 786 duplication clusters / 5,206 duplicated lines; 35
+functions >= 200 lines; 12 files >= 2,000 code lines.
+
+Verification after each batch: dev build, **22/0** self-host suite; guard tests
+**13/13**; `--check --strict --ratchet` green; baseline refreshed.
+
+Next in the program: the remaining naming vocabulary (retire `new_`/`lookup_`,
+standardize `_declaration`/`_expression`), test-tree hygiene, then the file
+splits largest-first (lowering, c_backend, main, analyzer, linter, parser,
+bindgen).
 
 ## Session 75 — refactoring safety suite
 
@@ -380,9 +415,11 @@ program stays closed, and session 73 closed the last *measurement* gaps: the
 command.  The matrix is now **224/224**, and the fixes it forced are in the
 commands themselves (see the session-73 section).
 
-Session 75 added the refactoring safety suite (structural guard, gate wiring,
-committed baseline); use `tools/gates.sh --areas refactor --run` and read
-`docs/refactoring.md` before changing the self-host's shape.
+Sessions 75–76 added the refactoring safety suite (structural guard, gate
+wiring, committed baseline) and its first pass (naming violations, the shared
+`mtc.strings` leaf, alias and type canonicalization); use
+`tools/gates.sh --areas refactor --run` and read `docs/refactoring.md` before
+changing the self-host's shape.
 
 Session 73's changes landed as `747050f6`:
 
@@ -1165,7 +1202,7 @@ when the tree moved.  Target = the Definition of Done above.
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 | bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 73 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
-| refactor guard | **0 layering violations** (103 edges); 13 frozen naming deviations; 35 unused / 6 test-only exports; 5,196 duplicated lines; 0 markers; **guard tests 11/11**; refactor gate **6/6 rc=0 (2m34s)** | session 75 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming violations** (108 edges, 131 alias modules); 35 unused / 6 test-only exports; 5,206 duplicated lines; 0 markers; **guard tests 13/13**; refactor gate **6/6 rc=0 (2m34s)** | session 76 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 
