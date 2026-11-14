@@ -91,9 +91,11 @@ the safety suite (protocol: `docs/refactoring.md`):
   The dead-export candidates and long-function list are the refactor's first
   triage targets, not defects introduced here.
 - **Verification**: guard tests **11/11**; `--check`, `--check --strict`,
-  `--check --strict --ratchet` all green on the frozen tree; `rake test:tooling`
-  picks the new test up; `bash -n tools/gates.sh`; the refactor area prints the
-  expected six gates.  29 stray `__mt_test_runner_*` sidecars were removed.
+  `--check --ratchet` all green on the frozen tree; `rake test:tooling`
+  picks the new test up; `bash -n tools/gates.sh`.  The first full
+  `tools/gates.sh --areas refactor --run` passed **6/6 rc=0 in 2m34s**
+  (dev build; dev suite 22/0; guard ok; `test/mt` 60/0; CLI 224/224;
+  scoreboard meter).  29 stray `__mt_test_runner_*` sidecars were removed.
 
 ## Session 74 — decisions closed
 
@@ -1163,7 +1165,7 @@ when the tree moved.  Target = the Definition of Done above.
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 | bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 73 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
-| refactor guard | **0 layering violations** (103 edges); 13 frozen naming deviations; 35 unused / 6 test-only exports; 5,196 duplicated lines; 0 markers; **guard tests 11/11** | session 75 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering violations** (103 edges); 13 frozen naming deviations; 35 unused / 6 test-only exports; 5,196 duplicated lines; 0 markers; **guard tests 11/11**; refactor gate **6/6 rc=0 (2m34s)** | session 75 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 
