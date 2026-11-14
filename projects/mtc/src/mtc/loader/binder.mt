@@ -200,6 +200,103 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
     )
 
 
+## A forward binding for a module on an import cycle: only type names are
+## registered (structs and unions with empty field lists, enum/flags/variant
+## names, opaque/union markers, generic parameters), mirroring the host's
+## `create_forward_binding`.  A cycle's first analysis pass resolves type names
+## through this skeleton; the second pass sees the full binding.
+public function bind_forward_module(file: ast.SourceFile) -> analyzer.ModuleBinding:
+    var structs = map_mod.Map[str, span[analyzer.FieldEntry]].create()
+    var private_structs = map_mod.Map[str, span[analyzer.FieldEntry]].create()
+    var unions = map_mod.Map[str, span[analyzer.FieldEntry]].create()
+    var private_unions = map_mod.Map[str, span[analyzer.FieldEntry]].create()
+    var static_member_types = map_mod.Map[str, bool].create()
+    var private_static_member_types = map_mod.Map[str, bool].create()
+    var opaque_types = map_mod.Map[str, bool].create()
+    var type_param_names = map_mod.Map[str, span[ast.TypeParam]].create()
+    let exports_all = file.module_kind == ast.ModuleKind.module_raw
+
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        var declaration: ast.Decl
+        unsafe:
+            declaration = read(file.declarations.data + i)
+        match declaration:
+            ast.Decl.decl_struct as s:
+                type_param_names.set(s.name, s.type_params)
+                if exports_all or s.visibility:
+                    structs.set(s.name, empty_field_span())
+                else:
+                    private_structs.set(s.name, empty_field_span())
+            ast.Decl.decl_enum as e:
+                if exports_all or e.visibility:
+                    static_member_types.set(e.name, true)
+                else:
+                    private_static_member_types.set(e.name, true)
+            ast.Decl.decl_flags as fl:
+                if exports_all or fl.visibility:
+                    static_member_types.set(fl.name, true)
+                else:
+                    private_static_member_types.set(fl.name, true)
+            ast.Decl.decl_variant as vr:
+                type_param_names.set(vr.name, vr.type_params)
+                if exports_all or vr.visibility:
+                    static_member_types.set(vr.name, true)
+                else:
+                    private_static_member_types.set(vr.name, true)
+            ast.Decl.decl_opaque as op:
+                if exports_all or op.visibility:
+                    opaque_types.set(op.name, true)
+            ast.Decl.decl_union as u:
+                if exports_all or u.visibility:
+                    opaque_types.set(u.name, true)
+                    unions.set(u.name, empty_field_span())
+                else:
+                    private_unions.set(u.name, empty_field_span())
+            _:
+                pass
+        i += 1
+
+    return analyzer.ModuleBinding(
+        functions = map_mod.Map[str, analyzer.FnSig].create(),
+        structs = structs,
+        unions = unions,
+        value_types = map_mod.Map[str, types.Type].create(),
+        const_values = map_mod.Map[str, ptr[ast.Expr]].create(),
+        type_aliases = map_mod.Map[str, bool].create(),
+        type_alias_types = map_mod.Map[str, types.Type].create(),
+        static_member_types = static_member_types,
+        member_keys = map_mod.Map[str, bool].create(),
+        method_sigs = map_mod.Map[str, analyzer.FnSig].create(),
+        method_order = vec.Vec[str].create(),
+        interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create(),
+        implemented = map_mod.Map[str, span[ast.QualifiedName]].create(),
+        match_case_names = map_mod.Map[str, span[str]].create(),
+        member_names = map_mod.Map[str, span[str]].create(),
+        types = opaque_types,
+        private_functions = map_mod.Map[str, analyzer.FnSig].create(),
+        private_structs = private_structs,
+        private_unions = private_unions,
+        private_value_types = map_mod.Map[str, types.Type].create(),
+        private_type_aliases = map_mod.Map[str, bool].create(),
+        private_static_member_types = private_static_member_types,
+        private_member_keys = map_mod.Map[str, bool].create(),
+        private_method_sigs = map_mod.Map[str, analyzer.FnSig].create(),
+        type_param_names = type_param_names,
+        variant_arm_fields = map_mod.Map[str, span[types.PayloadField]].create(),
+        method_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
+        function_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
+        mutating_param_indices = map_mod.Map[str, map_mod.Map[ptr_uint, bool]].create(),
+        directional_param_modes = map_mod.Map[str, map_mod.Map[ptr_uint, analyzer.DirectionalParamInfo]].create(),
+        private_interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create(),
+    )
+
+
+function empty_field_span() -> span[analyzer.FieldEntry]:
+    var fields = vec.Vec[analyzer.FieldEntry].create()
+    return fields.as_span()
+
+
 function export_member_keys(member_keys: ref[map_mod.Map[str, bool]], type_name: str, members: span[ast.EnumMember]) -> void:
     var i: ptr_uint = 0
     while i < members.len:

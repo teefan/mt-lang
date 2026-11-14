@@ -334,8 +334,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 786,
-    "duplicated_lines": 5206,
+    "windows": 787,
+    "duplicated_lines": 5230,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -812,6 +812,7 @@
       "9e6e178a0336fc57a45fff24c5874b2d77d31c68",
       "9e84bd16defe570bdac040aacd9f7e5f11a223a1",
       "9e9bfa17f3f0d2442eff2edb7c2328abaf6b8980",
+      "9eb4208dc3e48f41604487569ffdf67315fd4e6b",
       "9f0d5c83284cbb52ef4dc6d6d6b0eef774dc2fc7",
       "9f1db620b85531a5527ad3e76d780a5db91e60fe",
       "9f700a550ebdd7cfd045dd926a8d37f08c961aaf",
@@ -1126,7 +1127,7 @@
     ]
   },
   "sizes": {
-    "total_code": 122610,
+    "total_code": 122956,
     "functions_over_limit": 35,
     "files_over_limit": 12,
     "files": {
@@ -1395,8 +1396,8 @@
         "max_function": 92
       },
       "projects/mtc/src/mtc/loader/binder.mt": {
-        "lines": 279,
-        "code": 243,
+        "lines": 376,
+        "code": 329,
         "max_line": 430,
         "max_function": 182
       },
@@ -1407,10 +1408,10 @@
         "max_function": 5
       },
       "projects/mtc/src/mtc/loader/module_loader.mt": {
-        "lines": 1467,
-        "code": 1078,
+        "lines": 1785,
+        "code": 1338,
         "max_line": 256,
-        "max_function": 188
+        "max_function": 192
       },
       "projects/mtc/src/mtc/loader/package_manifest.mt": {
         "lines": 610,

@@ -668,6 +668,326 @@ function module_needs_rebuild(cache: ptr[ModuleCache]?, run: ref[LoadRun], modul
     return false
 
 
+## Cycle members from the resolved dependency paths recorded by the parse walk:
+## a module is on a cycle when it can reach itself through the import graph.
+## Mirrors the host's `check_program_parallel` cycle-member selection, using the
+## `run.dep_paths` graph instead of a separate parse-cache graph.
+function detect_cycle_members(run: ref[LoadRun], visited: ref[map_mod.Map[str, ptr_uint]], module_count: ptr_uint) -> map_mod.Map[ptr_uint, bool]:
+    var members = map_mod.Map[ptr_uint, bool].create()
+    var i: ptr_uint = 0
+    while i < module_count:
+        if module_reaches_itself(i, run, visited):
+            members.set(i, true)
+        i += 1
+    return members
+
+
+function module_reaches_itself(start: ptr_uint, run: ref[LoadRun], visited: ref[map_mod.Map[str, ptr_uint]]) -> bool:
+    let slot = run.dep_paths.get(start) else:
+        return false
+    var deps: vec.Vec[string.String]
+    unsafe:
+        deps = read(slot)
+    var i: ptr_uint = 0
+    while i < deps.len():
+        let dep_path_ptr = deps.get(i) else:
+            break
+        let dep_index_ptr = visited.get(unsafe: read(dep_path_ptr).as_str()) else:
+            i += 1
+            continue
+        let dep_index = unsafe: read(dep_index_ptr)
+        if dep_index == start:
+            return true
+        var seen = map_mod.Map[ptr_uint, bool].create()
+        if reachable_from(dep_index, start, run, visited, ref_of(seen)):
+            return true
+        i += 1
+    return false
+
+
+function reachable_from(current: ptr_uint, target: ptr_uint, run: ref[LoadRun], visited: ref[map_mod.Map[str, ptr_uint]], seen: ref[map_mod.Map[ptr_uint, bool]]) -> bool:
+    if current == target:
+        return true
+    if seen.contains(current):
+        return false
+    seen.set(current, true)
+    let slot = run.dep_paths.get(current) else:
+        return false
+    var deps: vec.Vec[string.String]
+    unsafe:
+        deps = read(slot)
+    var i: ptr_uint = 0
+    while i < deps.len():
+        let dep_path_ptr = deps.get(i) else:
+            break
+        let dep_index_ptr = visited.get(unsafe: read(dep_path_ptr).as_str()) else:
+            i += 1
+            continue
+        let dep_index = unsafe: read(dep_index_ptr)
+        if reachable_from(dep_index, target, run, visited, seen):
+            return true
+        i += 1
+    return false
+
+
+## The non-cycle modules a cycle's first pass needs: every transitive dependency
+## of a cycle member that is not itself on a cycle.  They are analysed before the
+## cycle passes (with the forward type bindings) so the cycle members see their
+## complete export surfaces, then re-analysed after the cycle bindings are final.
+function collect_cycle_dependencies(cycle_members: ref[map_mod.Map[ptr_uint, bool]], run: ref[LoadRun], visited: ref[map_mod.Map[str, ptr_uint]]) -> map_mod.Map[ptr_uint, bool]:
+    var needed = map_mod.Map[ptr_uint, bool].create()
+    var stack = vec.Vec[ptr_uint].create()
+    var i: ptr_uint = 0
+    while i < run.dep_paths.len():
+        if cycle_members.contains(i):
+            push_non_cycle_deps(i, cycle_members, run, visited, ref_of(needed), ref_of(stack))
+        i += 1
+    while true:
+        let current = stack.pop() else:
+            break
+        push_non_cycle_deps(current, cycle_members, run, visited, ref_of(needed), ref_of(stack))
+    return needed
+
+
+function push_non_cycle_deps(index: ptr_uint, cycle_members: ref[map_mod.Map[ptr_uint, bool]], run: ref[LoadRun], visited: ref[map_mod.Map[str, ptr_uint]], needed: ref[map_mod.Map[ptr_uint, bool]], stack: ref[vec.Vec[ptr_uint]]) -> void:
+    let slot = run.dep_paths.get(index) else:
+        return
+    var deps: vec.Vec[string.String]
+    unsafe:
+        deps = read(slot)
+    var i: ptr_uint = 0
+    while i < deps.len():
+        let dep_path_ptr = deps.get(i) else:
+            break
+        let dep_index_ptr = visited.get(unsafe: read(dep_path_ptr).as_str()) else:
+            i += 1
+            continue
+        let dep_index = unsafe: read(dep_index_ptr)
+        if not cycle_members.contains(dep_index) and not needed.contains(dep_index):
+            needed.set(dep_index, true)
+            stack.push(dep_index)
+        i += 1
+
+
+## Analyse a module and build its export binding inside `region_ptr` (or on the
+## ordinary heap when it is null), without emitting diagnostics or registering
+## the binding.  Cycle passes use this for their provisional and final analyses.
+function analyze_and_bind_in_region(module_ptr: ptr[LoadedModule], bindings_ptr: ptr[map_mod.Map[str, analyzer.ModuleBinding]], require_resolved_imports: bool, region_ptr: ptr[heap.Region]?) -> (analyzer.Analysis, analyzer.ModuleBinding):
+    var previous: ptr[heap.Region]? = null
+    if region_ptr != null:
+        previous = heap.begin_region(region_ptr)
+    let loaded = unsafe: read(module_ptr)
+    var analysis: analyzer.Analysis
+    if require_resolved_imports:
+        analysis = analyzer.check_module_requiring_resolved_imports(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
+    else:
+        analysis = analyzer.check_module(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
+    let binding = binder.bind_module(analysis)
+    if region_ptr != null:
+        heap.end_region(previous)
+    return (analysis, binding)
+
+
+## Check a program whose import graph has cycles: pre-register forward type
+## bindings, analyse the cycle members twice (the first pass with the forward
+## bindings, the second with the full bindings from the first), then analyse the
+## acyclic modules against the final cycle bindings.  Mirrors the host's
+## `check_program_parallel` phases 3-5.
+function check_cyclic_program(
+    modules: ref[vec.Vec[LoadedModule]],
+    visited: ref[map_mod.Map[str, ptr_uint]],
+    order: ref[vec.Vec[ptr_uint]],
+    run: ref[LoadRun],
+    cache: ptr[ModuleCache]?,
+    cycle_members: ref[map_mod.Map[ptr_uint, bool]],
+    bindings_ptr: ptr[map_mod.Map[str, analyzer.ModuleBinding]],
+    analyses: ref[vec.Vec[analyzer.Analysis]],
+    diagnostics: ref[vec.Vec[LoadDiagnostic]],
+    require_resolved_imports: bool,
+    order_positions: ref[vec.Vec[ptr_uint]],
+) -> void:
+    var cycle_rebuild = true
+    if cache != null:
+        cycle_rebuild = false
+        var ci: ptr_uint = 0
+        while ci < order.len():
+            let index_ptr = order.get(ci) else:
+                break
+            let index = unsafe: read(index_ptr)
+            if cycle_members.contains(index):
+                if module_needs_rebuild(cache, run, index, modules, visited, order_positions):
+                    cycle_rebuild = true
+            ci += 1
+
+    var final_analyses = map_mod.Map[ptr_uint, analyzer.Analysis].create()
+    var pass2_bindings = map_mod.Map[str, analyzer.ModuleBinding].create()
+
+    if cycle_rebuild:
+        # Provisional analyses and their bindings stay alive until the second
+        # pass has consumed them; with a cache they live in a scratch region.
+        var scratch_region = heap.create_region()
+        var scratch_ptr: ptr[heap.Region]? = null
+        if cache != null:
+            scratch_ptr = ptr_of(scratch_region)
+
+        # Pre-register forward type bindings for every cycle member.
+        var fi: ptr_uint = 0
+        while fi < order.len():
+            let index_ptr = order.get(fi) else:
+                break
+            let index = unsafe: read(index_ptr)
+            if cycle_members.contains(index):
+                let module_ptr = modules.get(index) else:
+                    fi += 1
+                    continue
+                let loaded = unsafe: read(module_ptr)
+                unsafe:
+                    read(bindings_ptr).set(loaded.module_name.as_str(), binder.bind_forward_module(loaded.source_file))
+            fi += 1
+
+        # First analyse the cycle members' acyclic dependencies, so the first
+        # cycle pass sees their export surfaces.
+        var needed = collect_cycle_dependencies(cycle_members, run, visited)
+        var pi: ptr_uint = 0
+        while pi < order.len():
+            let index_ptr = order.get(pi) else:
+                break
+            let index = unsafe: read(index_ptr)
+            if not cycle_members.contains(index) and needed.contains(index):
+                let module_ptr = modules.get(index) else:
+                    pi += 1
+                    continue
+                let loaded = unsafe: read(module_ptr)
+                var binding_found = false
+                if cache != null:
+                    if not module_needs_rebuild(cache, run, index, modules, visited, order_positions):
+                        let entry_ptr = module_cache_entry(cache, loaded.path.as_str())
+                        if entry_ptr != null:
+                            let binding_mem = unsafe: read(entry_ptr).binding_ptr
+                            if binding_mem != null:
+                                unsafe:
+                                    read(bindings_ptr).set(loaded.module_name.as_str(), read(binding_mem))
+                                binding_found = true
+                if not binding_found:
+                    let (_, binding) = analyze_and_bind_in_region(module_ptr, bindings_ptr, require_resolved_imports, scratch_ptr)
+                    unsafe:
+                        read(bindings_ptr).set(loaded.module_name.as_str(), binding)
+            pi += 1
+
+        # Pass 1: cycle members against the forward type bindings.
+        var p1: ptr_uint = 0
+        while p1 < order.len():
+            let index_ptr = order.get(p1) else:
+                break
+            let index = unsafe: read(index_ptr)
+            if cycle_members.contains(index):
+                let module_ptr = modules.get(index) else:
+                    p1 += 1
+                    continue
+                let loaded = unsafe: read(module_ptr)
+                let (_, binding) = analyze_and_bind_in_region(module_ptr, bindings_ptr, require_resolved_imports, scratch_ptr)
+                unsafe:
+                    read(bindings_ptr).set(loaded.module_name.as_str(), binding)
+            p1 += 1
+
+        # Pass 2: cycle members against the full bindings from pass 1.  The
+        # pass-2 bindings are installed only after every member has been
+        # analysed, so all members see the pass-1 surfaces.
+        var p2: ptr_uint = 0
+        while p2 < order.len():
+            let index_ptr = order.get(p2) else:
+                break
+            let index = unsafe: read(index_ptr)
+            if cycle_members.contains(index):
+                let module_ptr = modules.get(index) else:
+                    p2 += 1
+                    continue
+                let loaded = unsafe: read(module_ptr)
+                if cache != null:
+                    var analysis_region = heap.create_region()
+                    let (analysis, binding) = analyze_and_bind_in_region(module_ptr, bindings_ptr, require_resolved_imports, ptr_of(analysis_region))
+                    module_cache_store_analysis(cache, loaded.path.as_str(), index, run, analysis, binding, analysis_region)
+                    pass2_bindings.set(loaded.module_name.as_str(), binding)
+                    final_analyses.set(index, analysis)
+                else:
+                    let (analysis, binding) = analyze_and_bind_in_region(module_ptr, bindings_ptr, require_resolved_imports, null)
+                    pass2_bindings.set(loaded.module_name.as_str(), binding)
+                    final_analyses.set(index, analysis)
+            p2 += 1
+
+        var ib: ptr_uint = 0
+        while ib < order.len():
+            let index_ptr = order.get(ib) else:
+                break
+            let index = unsafe: read(index_ptr)
+            if cycle_members.contains(index):
+                let module_ptr = modules.get(index) else:
+                    ib += 1
+                    continue
+                let loaded = unsafe: read(module_ptr)
+                let binding_ptr = pass2_bindings.get(loaded.module_name.as_str()) else:
+                    ib += 1
+                    continue
+                unsafe:
+                    read(bindings_ptr).set(loaded.module_name.as_str(), read(binding_ptr))
+            ib += 1
+
+        if cache != null:
+            retire_region(cache, scratch_region)
+    else:
+        # Every cycle member's cached analysis is still current: reuse it and
+        # keep the dependents' cache entries valid.
+        var ci: ptr_uint = 0
+        while ci < order.len():
+            let index_ptr = order.get(ci) else:
+                break
+            let index = unsafe: read(index_ptr)
+            if cycle_members.contains(index):
+                let module_ptr = modules.get(index) else:
+                    ci += 1
+                    continue
+                let loaded = unsafe: read(module_ptr)
+                let entry_ptr = module_cache_entry(cache, loaded.path.as_str())
+                if entry_ptr != null:
+                    let binding_mem = unsafe: read(entry_ptr).binding_ptr
+                    if binding_mem != null:
+                        unsafe:
+                            read(bindings_ptr).set(loaded.module_name.as_str(), read(binding_mem))
+                    let analysis_mem = unsafe: read(entry_ptr).analysis_ptr
+                    if analysis_mem != null:
+                        final_analyses.set(index, unsafe: read(analysis_mem))
+            ci += 1
+
+    # Final pass in dependency-first order: emit the cycle members' pass-2
+    # analyses at their positions and let the acyclic modules see the final
+    # cycle bindings.
+    var oi: ptr_uint = 0
+    while oi < order.len():
+        let index_ptr = order.get(oi) else:
+            break
+        let index = unsafe: read(index_ptr)
+        let module_ptr = modules.get(index) else:
+            break
+        let loaded = unsafe: read(module_ptr)
+        if cycle_members.contains(index):
+            let analysis_ptr = final_analyses.get(index)
+            if analysis_ptr != null:
+                var analysis = unsafe: read(analysis_ptr)
+                emit_module_diagnostics(loaded, analysis.diagnostics.as_span(), diagnostics)
+                if cache == null:
+                    analysis.diagnostics.release()
+                analyses.push(analysis)
+        else:
+            var rebuilt = true
+            if cache != null:
+                rebuilt = module_needs_rebuild(cache, run, index, modules, visited, order_positions)
+            if rebuilt:
+                check_and_bind_module(module_ptr, index, bindings_ptr, analyses, diagnostics, require_resolved_imports, run)
+            else:
+                reuse_cached_module(module_ptr, cache, bindings_ptr, analyses, diagnostics)
+        oi += 1
+
+
 ## Load and check the program rooted at `root_path`, resolving imports against
 ## `roots` for the active `platform`.
 ## Absolute, normalized form of `path` (mirrors Ruby's File.expand_path):
@@ -883,21 +1203,25 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
     # leaked at program end like the transient bindings above.
     var analyses = vec.Vec[analyzer.Analysis].create()
 
-    var oi: ptr_uint = 0
-    while oi < order.len():
-        let index_ptr = order.get(oi) else:
-            break
-        let index = unsafe: read(index_ptr)
-        let module_ptr = modules.get(index) else:
-            break
-        var rebuilt = true
-        if cache != null:
-            rebuilt = module_needs_rebuild(cache, ref_of(run), index, ref_of(modules), ref_of(visited), ref_of(order_positions))
-        if rebuilt:
-            check_and_bind_module(module_ptr, index, bindings_ptr, ref_of(analyses), ref_of(diagnostics), require_resolved_imports, ref_of(run))
-        else:
-            reuse_cached_module(module_ptr, cache, bindings_ptr, ref_of(analyses), ref_of(diagnostics))
-        oi += 1
+    var cycle_members = detect_cycle_members(ref_of(run), ref_of(visited), modules.len())
+    if cycle_members.len() > 0:
+        check_cyclic_program(ref_of(modules), ref_of(visited), ref_of(order), ref_of(run), cache, ref_of(cycle_members), bindings_ptr, ref_of(analyses), ref_of(diagnostics), require_resolved_imports, ref_of(order_positions))
+    else:
+        var oi: ptr_uint = 0
+        while oi < order.len():
+            let index_ptr = order.get(oi) else:
+                break
+            let index = unsafe: read(index_ptr)
+            let module_ptr = modules.get(index) else:
+                break
+            var rebuilt = true
+            if cache != null:
+                rebuilt = module_needs_rebuild(cache, ref_of(run), index, ref_of(modules), ref_of(visited), ref_of(order_positions))
+            if rebuilt:
+                check_and_bind_module(module_ptr, index, bindings_ptr, ref_of(analyses), ref_of(diagnostics), require_resolved_imports, ref_of(run))
+            else:
+                reuse_cached_module(module_ptr, cache, bindings_ptr, ref_of(analyses), ref_of(diagnostics))
+            oi += 1
     visited.release()
     # `bindings` must outlive the analyses: each Analysis keeps a stable handle
     # to this map for later re-analysis (the fix engine).  Leaked at program end
@@ -1156,16 +1480,11 @@ function parse_all(
         return
 
     if on_stack.contains(key):
-        diagnostics.push(LoadDiagnostic(
-            path = string.String.from_str(key),
-            line = 0,
-            column = 0,
-            length = 0,
-            message = string.String.from_str("cyclic import detected"),
-            severity = "error",
-            code = "module/error",
-            symbol_name = string.String.from_str(""),
-        ))
+        # A back-edge closes an import cycle.  The host treats cycles as legal
+        # and analyses their members with pre-registered forward bindings; the
+        # check phase detects the cycle members from the recorded dependency
+        # paths and runs the two-pass analysis.  The edge itself was recorded by
+        # the importer before this recursive parse, so the graph stays complete.
         owned_path.release()
         return
 
@@ -1254,7 +1573,7 @@ function parse_all(
     let index = modules.len() - 1
     if run.cache != null:
         module_cache_store_module(run.cache, key, fnv1a_hash(source.as_str()), loaded, parse_region)
-        run.dep_paths.push(vec.Vec[string.String].create())
+    run.dep_paths.push(vec.Vec[string.String].create())
 
     recurse_imports(source_file, key, index, roots, platform, root_key, root_source, modules, visited, on_stack, order, diagnostics, unresolved_import_paths, run)
 
@@ -1291,11 +1610,10 @@ function recurse_imports(
                 var module_name = analyzer.qname_to_str(imported.path)
                 match resolver.resolve_module_path(module_name, roots, platform):
                     Result.success as resolved_ok:
-                        if run.cache != null:
-                            let slot = run.dep_paths.get(importer_index)
-                            if slot != null:
-                                unsafe:
-                                    read(slot).push(string.String.from_str(resolved_ok.value.as_str()))
+                        let slot = run.dep_paths.get(importer_index)
+                        if slot != null:
+                            unsafe:
+                                read(slot).push(string.String.from_str(resolved_ok.value.as_str()))
                         parse_all(
                             resolved_ok.value,
                             roots,

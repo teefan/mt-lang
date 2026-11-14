@@ -709,7 +709,7 @@ function test_diamond_dependency_loaded_once() -> void:
 
 
 @[test]
-function test_import_cycle_is_detected() -> void:
+function test_import_cycle_is_loaded() -> void:
     var root = fs.create_temporary_directory_in_system_temp("mtc_l2_") else:
         expect(false, "could not create temp dir")
     defer: cleanup_dir(ref_of(root))
@@ -725,7 +725,10 @@ function test_import_cycle_is_detected() -> void:
     var program = loader.check_program(root_path.as_str(), roots.as_span(), resolver.Platform.linux)
     defer: program.release()
 
-    expect(program.has_diagnostic_containing("cyclic"))
+    if program.diagnostic_count() != 0:
+        expect(false, "expected no diagnostics for a resolvable cycle")
+    expect_eq(int<-program.module_count(), 2)
+    expect_eq(int<-program.analyses.len(), 2)
 
 
 @[test]
@@ -1445,6 +1448,39 @@ public function ghost() -> int:
     return 0
 SRC
 
+const CYCLE_A: str = <<-SRC
+import b
+
+public struct AData:
+    value: int
+
+public function fa(d: AData) -> int:
+    return d.value + b.fb()
+SRC
+
+const CYCLE_B: str = <<-SRC
+import a
+
+public function fb() -> int:
+    let d = a.AData(value = 1)
+    return d.value
+SRC
+
+const CYCLE_B_BAD: str = <<-SRC
+import a
+
+public function fb() -> str:
+    let d = a.AData(value = 1)
+    return "x"
+SRC
+
+const CYCLE_MAIN: str = <<-SRC
+import a
+
+function main() -> int:
+    return a.fa(a.AData(value = 2))
+SRC
+
 
 ## Load main.mt through the module cache (and optional open-buffer overrides).
 function load_main_with_cache(root: ref[string.String], cache: ptr[loader.ModuleCache]?, open_docs: ptr[map_mod.Map[string.String, string.String]]?) -> loader.Program:
@@ -1525,6 +1561,41 @@ function test_module_cache_cascades_to_dependents() -> void:
     expect_eq(int<-cache.parse_count, 3)
     expect_eq(int<-cache.analysis_count, 4)
     second.release()
+
+
+@[test]
+function test_module_cache_reuses_a_cycle() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+    expect(write_file(root.as_str(), "a.mt", CYCLE_A), "could not write a.mt")
+    expect(write_file(root.as_str(), "b.mt", CYCLE_B), "could not write b.mt")
+    expect(write_file(root.as_str(), "main.mt", CYCLE_MAIN), "could not write main.mt")
+
+    var cache = loader.create_module_cache()
+    defer: loader.release_module_cache(ref_of(cache))
+
+    var first = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect_eq(int<-first.diagnostic_count(), 0)
+    expect_eq(int<-first.module_count(), 3)
+    expect_eq(int<-cache.parse_count, 3)
+    expect_eq(int<-cache.analysis_count, 3)
+    first.release()
+
+    # Nothing changed: the cycle's members reuse their analyses and the
+    # dependent keeps its cache entry.
+    var second = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect_eq(int<-second.diagnostic_count(), 0)
+    expect_eq(int<-cache.parse_count, 3)
+    expect_eq(int<-cache.analysis_count, 3)
+    second.release()
+
+    # A changed cycle member invalidates the whole cycle and its dependents.
+    expect(write_file(root.as_str(), "b.mt", CYCLE_B_BAD), "could not rewrite b.mt")
+    var third = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect_eq(int<-cache.parse_count, 4)
+    expect(cache.analysis_count > 3)
+    third.release()
 
 
 @[test]
