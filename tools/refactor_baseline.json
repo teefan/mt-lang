@@ -200,6 +200,7 @@
     "linter.platform_drift": "platform_drift",
     "linter.redundant_cast": "redundant_cast",
     "linter.rules_doc_tag": "rules_doc_tag",
+    "linter.rules_redundant_else": "rules_redundant_else",
     "linter.rules_trailing_comma": "rules_trailing_comma",
     "linter.scope_tracking": "scope_tracking",
     "loader.binder": "binder",
@@ -318,7 +319,7 @@
       "projects/mtc/src/mtc/dap/lldb_backend.mt:28:const:KIND_SYNC_FUNCTIONS",
       "projects/mtc/src/mtc/dap/lldb_backend.mt:29:const:KIND_SYNC_EXCEPTIONS",
       "projects/mtc/src/mtc/imported_bindings/naming.mt:361:function:apply_rename_rules",
-      "projects/mtc/src/mtc/linter/linter.mt:6562:function:reserved_name_fixes",
+      "projects/mtc/src/mtc/linter/linter.mt:6293:function:reserved_name_fixes",
       "projects/mtc/src/mtc/lowering/async.mt:162:function:count_async_states",
       "projects/mtc/src/mtc/lowering/async.mt:274:function:build_async_frame",
       "projects/mtc/src/mtc/lowering/async.mt:316:function:task_type",
@@ -351,7 +352,7 @@
     ],
     "test_only": [
       "projects/mtc/src/mtc/linter/fix_engine.mt:61:function:is_fixable",
-      "projects/mtc/src/mtc/linter/linter.mt:196:function:lint_source",
+      "projects/mtc/src/mtc/linter/linter.mt:197:function:lint_source",
       "projects/mtc/src/mtc/parser/parser.mt:864:function:parse_reporting",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:572:function:flow_create",
       "projects/mtc/src/mtc/semantic/types.mt:1084:function:nominal_key",
@@ -1155,7 +1156,7 @@
     ]
   },
   "sizes": {
-    "total_code": 123501,
+    "total_code": 123505,
     "functions_over_limit": 33,
     "files_over_limit": 12,
     "files": {
@@ -1394,8 +1395,8 @@
         "max_function": 91
       },
       "projects/mtc/src/mtc/linter/linter.mt": {
-        "lines": 7204,
-        "code": 5796,
+        "lines": 6935,
+        "code": 5567,
         "max_line": 276,
         "max_function": 247
       },
@@ -1428,6 +1429,12 @@
         "code": 264,
         "max_line": 241,
         "max_function": 78
+      },
+      "projects/mtc/src/mtc/linter/rules_redundant_else.mt": {
+        "lines": 273,
+        "code": 233,
+        "max_line": 178,
+        "max_function": 46
       },
       "projects/mtc/src/mtc/linter/rules_trailing_comma.mt": {
         "lines": 318,
