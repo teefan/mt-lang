@@ -5919,85 +5919,22 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
         return types.primitive("bool")
     let rt = infer_expr(ctx, scope, right)
     ctx.expected_type_hint = outer_hint
-    # The host's `harmonize_binary_float_literal_types` (and the expected-type
-    # propagation into both operands): an unsuffixed float-literal operand is
-    # *re-inferred* with the peer's float type, so `double<-x * 1000.0`
-    # records `1000.0` as `double` and the linter/lowering see that type.
-    let hint = ctx.expected_type_hint
-    if types.is_float_type(hint) and is_arithmetic_binary_op(op):
-        if is_bare_float_literal_expr_or_unary(left):
-            record_expr_type(ctx, left, hint)
-        if is_bare_float_literal_expr_or_unary(right):
-            record_expr_type(ctx, right, hint)
-    if is_bare_float_literal_expr_or_unary(left) and types.is_float_type(rt):
-        record_expr_type(ctx, left, rt)
-    if is_bare_float_literal_expr_or_unary(right) and types.is_float_type(lt):
-        record_expr_type(ctx, right, lt)
+    harmonize_float_binary_operands(ctx, op, left, right, lt, rt)
     if is_comparison_op(op):
         return types.primitive("bool")
     # SIMD arithmetic: vector ⊕ vector (same element and lane count) yields the
     # vector; vector * scalar and scalar * vector broadcast the scalar.
     if types.is_simd_type(lt) or types.is_simd_type(rt):
-        if types.is_simd_type(lt) and types.is_simd_type(rt):
-            if types.type_equals(lt, rt) and (op == "+" or op == "-" or op == "*" or op == "/"):
-                return lt
-        if types.is_simd_type(lt) and types.is_numeric(rt) and types.type_equals(types.simd_element_type(lt), rt):
-            if op == "*" or op == "/":
-                return lt
-        if types.is_simd_type(rt) and types.is_numeric(lt) and types.type_equals(types.simd_element_type(rt), lt):
-            if op == "*":
-                return rt
+        let simd_ty = infer_simd_binary_type(op, lt, rt)
+        if not types.is_error(simd_ty):
+            return simd_ty
     if (types.is_raw_pointer(lt) or types.is_raw_pointer(rt)) and not in_generic_body(ctx):
         if ctx.unsafe_depth == 0:
             report(ctx, 0, 0, "pointer arithmetic requires unsafe")
         else:
             mark_required_unsafe(ctx)
     if types.is_numeric(lt) and types.is_numeric(rt):
-        # The host's `propagating_expected_type`: an arithmetic binary's numeric
-        # expected type reaches both operands, so a bare float literal in a
-        # float context takes that type (`val / 4294967296.0` in a `next_double`
-        # body is a double binary) and the promoted result is the context's.
-        let expected_hint = ctx.expected_type_hint
-        if types.is_float_type(expected_hint) and is_arithmetic_binary_op(op):
-            var lt_eff = lt
-            var rt_eff = rt
-            if is_bare_float_literal_expr(left):
-                lt_eff = expected_hint
-            if is_bare_float_literal_expr(right):
-                rt_eff = expected_hint
-            if not types.type_equals(lt_eff, lt) or not types.type_equals(rt_eff, rt):
-                match sem_exprs.common_numeric_type(lt_eff, rt_eff):
-                    Option.some as common:
-                        return common.value
-                    Option.none:
-                        pass
-        # A literal operand adapts to the other operand's numeric type, so
-        # `48 + value` types as `value`'s type and `1 << uint<-x` as uint —
-        # mirrors Ruby's harmonize_binary_integer_literal_types /
-        # harmonize_binary_float_literal_types.  The adaptation is gated on the
-        # literal's *value* fitting the peer type (the host re-infers the literal
-        # with that expected type): `300 + 0` in a `ubyte` body keeps `300` an
-        # `int`, so the binary is `int` and the assignment check rejects it.
-        if is_bare_integer_literal(left) and types.is_integer_type(rt) and integer_literal_fits_type(left, rt):
-            return rt
-        if is_bare_integer_literal(right) and types.is_integer_type(lt) and integer_literal_fits_type(right, lt):
-            return lt
-        if is_float_literal_expr(left) and types.is_float_type(rt):
-            return rt
-        if is_float_literal_expr(right) and types.is_float_type(lt):
-            return lt
-        # A shift's result is its left operand's type (the host's `<<`/`>>`
-        # arm); the amount never promotes the result.
-        if op.equal("<<") or op.equal(">>"):
-            return lt
-        # Otherwise the promoted common type (an int operand with a float
-        # sibling is float), exactly like Ruby's `common_numeric_type`.
-        match sem_exprs.common_numeric_type(lt, rt):
-            Option.some as promoted:
-                return promoted.value
-            Option.none:
-                pass
-        return lt
+        return infer_numeric_binary_type(ctx, op, left, right, lt, rt)
     # `str + str` concatenates (the host's infer_binary `"+"` case).
     if op == "+" and types.is_str(lt) and types.is_str(rt):
         return lt
@@ -6021,6 +5958,84 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
     if lt_name != "" and lt_name == rt_name and ctx.static_member_types.contains(lt_name):
         return lt
     return types.Type.ty_error
+
+
+function infer_numeric_binary_type(ctx: ref[Context], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr], lt: types.Type, rt: types.Type) -> types.Type:
+    # The host's `propagating_expected_type`: an arithmetic binary's numeric
+    # expected type reaches both operands, so a bare float literal in a
+    # float context takes that type (`val / 4294967296.0` in a `next_double`
+    # body is a double binary) and the promoted result is the context's.
+    let expected_hint = ctx.expected_type_hint
+    if types.is_float_type(expected_hint) and is_arithmetic_binary_op(op):
+        var lt_eff = lt
+        var rt_eff = rt
+        if is_bare_float_literal_expr(left):
+            lt_eff = expected_hint
+        if is_bare_float_literal_expr(right):
+            rt_eff = expected_hint
+        if not types.type_equals(lt_eff, lt) or not types.type_equals(rt_eff, rt):
+            match sem_exprs.common_numeric_type(lt_eff, rt_eff):
+                Option.some as common:
+                    return common.value
+                Option.none:
+                    pass
+    # A literal operand adapts to the other operand's numeric type, so
+    # `48 + value` types as `value`'s type and `1 << uint<-x` as uint —
+    # mirrors Ruby's harmonize_binary_integer_literal_types /
+    # harmonize_binary_float_literal_types.  The adaptation is gated on the
+    # literal's *value* fitting the peer type (the host re-infers the literal
+    # with that expected type): `300 + 0` in a `ubyte` body keeps `300` an
+    # `int`, so the binary is `int` and the assignment check rejects it.
+    if is_bare_integer_literal(left) and types.is_integer_type(rt) and integer_literal_fits_type(left, rt):
+        return rt
+    if is_bare_integer_literal(right) and types.is_integer_type(lt) and integer_literal_fits_type(right, lt):
+        return lt
+    if is_float_literal_expr(left) and types.is_float_type(rt):
+        return rt
+    if is_float_literal_expr(right) and types.is_float_type(lt):
+        return lt
+    # A shift's result is its left operand's type (the host's `<<`/`>>`
+    # arm); the amount never promotes the result.
+    if op.equal("<<") or op.equal(">>"):
+        return lt
+    # Otherwise the promoted common type (an int operand with a float
+    # sibling is float), exactly like Ruby's `common_numeric_type`.
+    match sem_exprs.common_numeric_type(lt, rt):
+        Option.some as promoted:
+            return promoted.value
+        Option.none:
+            pass
+    return lt
+
+
+function infer_simd_binary_type(op: str, lt: types.Type, rt: types.Type) -> types.Type:
+    if types.is_simd_type(lt) and types.is_simd_type(rt):
+        if types.type_equals(lt, rt) and (op == "+" or op == "-" or op == "*" or op == "/"):
+            return lt
+    if types.is_simd_type(lt) and types.is_numeric(rt) and types.type_equals(types.simd_element_type(lt), rt):
+        if op == "*" or op == "/":
+            return lt
+    if types.is_simd_type(rt) and types.is_numeric(lt) and types.type_equals(types.simd_element_type(rt), lt):
+        if op == "*":
+            return rt
+    return types.Type.ty_error
+
+
+function harmonize_float_binary_operands(ctx: ref[Context], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr], lt: types.Type, rt: types.Type) -> void:
+    # The host's `harmonize_binary_float_literal_types` (and the expected-type
+    # propagation into both operands): an unsuffixed float-literal operand is
+    # *re-inferred* with the peer's float type, so `double<-x * 1000.0`
+    # records `1000.0` as `double` and the linter/lowering see that type.
+    let hint = ctx.expected_type_hint
+    if types.is_float_type(hint) and is_arithmetic_binary_op(op):
+        if is_bare_float_literal_expr_or_unary(left):
+            record_expr_type(ctx, left, hint)
+        if is_bare_float_literal_expr_or_unary(right):
+            record_expr_type(ctx, right, hint)
+    if is_bare_float_literal_expr_or_unary(left) and types.is_float_type(rt):
+        record_expr_type(ctx, left, rt)
+    if is_bare_float_literal_expr_or_unary(right) and types.is_float_type(lt):
+        record_expr_type(ctx, right, lt)
 
 
 function is_vec_math_name(name: str) -> bool:

@@ -1145,7 +1145,7 @@
     ]
   },
   "sizes": {
-    "total_code": 123595,
+    "total_code": 123604,
     "functions_over_limit": 32,
     "files_over_limit": 12,
     "files": {
@@ -2014,8 +2014,8 @@
         "max_function": 39
       },
       "projects/mtc/src/mtc/semantic/analyzer.mt": {
-        "lines": 9649,
-        "code": 7184,
+        "lines": 9664,
+        "code": 7193,
         "max_line": 342,
         "max_function": 190
       },
