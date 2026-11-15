@@ -60,6 +60,7 @@ import mtc.sexpr as sexpr_mod
 import mtc.std_catalog as std_catalog
 import mtc.main.std_cli as std_cli
 import mtc.main.bindings_cli as bindings_cli
+import mtc.main.format_cli as format_cli
 import mtc.docs_app as docs_app
 import mtc.toolchain_cli as toolchain_cli
 import mtc.packages.manager_cli as package_manager_cli
@@ -78,6 +79,11 @@ import mtc.cli_help as cli_help
 var cli_quiet: bool = false
 var cli_verbose: bool = false
 var cli_color: str = "auto"
+
+
+## Read-only access to the `--verbose` flag for the extracted command modules.
+public function cli_is_verbose() -> bool:
+    return cli_verbose
 
 
 ## Write one line to stderr — CLI errors and usage blocks go there, as in the host.
@@ -370,7 +376,7 @@ function dispatch_cli(raw_args: span[str]) -> int:
         return test_command(args)
 
     if cmd == "format":
-        return format_command(args)
+        return format_cli.format_command(args)
 
     if cmd == "lsp":
         if validate_lsp_args(args) != 0:
@@ -638,7 +644,7 @@ function parse_module_name(file_path: str) -> string.String:
 ## Expand PATH|DIR operands the way the host's `expand_source_paths` does:
 ## each directory contributes its sorted `*.mt` files, every path appears once,
 ## and `paths` holds borrowed views kept alive by `owner` (or by the argv span).
-function expand_source_operands(inputs: span[str], paths: ref[vec.Vec[str]], owner: ref[vec.Vec[string.String]]) -> void:
+public function expand_source_operands(inputs: span[str], paths: ref[vec.Vec[str]], owner: ref[vec.Vec[string.String]]) -> void:
     var ii: ptr_uint = 0
     while ii < inputs.len:
         let input = inputs[ii]
@@ -685,7 +691,7 @@ function push_unique_path(paths: ref[vec.Vec[str]], candidate: str) -> void:
 
 
 ## The host's `input_paths.length == 1 ? input_paths.first : join(", ")` label.
-function operand_label(inputs: span[str]) -> string.String:
+public function operand_label(inputs: span[str]) -> string.String:
     var label = string.String.create()
     if inputs.len == 1:
         label.append(inputs[0])
@@ -1403,7 +1409,7 @@ function eprint_message(text: str) -> void:
 
 ## The host's `read_source_file` missing-file error: `source file not found:
 ## <path>` on stderr, with the operand as given.  Returns 1 for `return`.
-function report_missing_source(path: str) -> int:
+public function report_missing_source(path: str) -> int:
     var missing = string.String.create()
     defer: missing.release()
     missing.append("source file not found: ")
@@ -1937,11 +1943,11 @@ function lint_command(args: span[str]) -> int:
                 options.profile = file_profile
 
                 if fix_mode:
-                    let fix_started_ms = monotonic_ms()
+                    let fix_started_ms = format_cli.monotonic_ms()
                     var fixed = fix_engine.fix_source(src.as_str(), fp, options)
                     defer: fixed.release()
                     if timings:
-                        push_lint_timing(ref_of(timing_entries), fp, file_profile, monotonic_ms() - fix_started_ms, true)
+                        push_lint_timing(ref_of(timing_entries), fp, file_profile, format_cli.monotonic_ms() - fix_started_ms, true)
                         file_profile = null
                     if not fixed.as_str().equal(src.as_str()):
                         match fs.write_text(fp, fixed.as_str()):
@@ -1969,9 +1975,9 @@ function lint_command(args: span[str]) -> int:
                 var providers = scope_tracking.build_import_method_providers(file, lint_program.analyses.as_span())
                 defer: providers.release()
                 options.method_providers = providers.as_span()
-                let lint_scan_started_ms = monotonic_ms()
+                let lint_scan_started_ms = format_cli.monotonic_ms()
                 var warns = linter_mod.lint_source_with(file, src.as_str(), fp, options)
-                let lint_scan_total_ms = monotonic_ms() - lint_scan_started_ms
+                let lint_scan_total_ms = format_cli.monotonic_ms() - lint_scan_started_ms
                 defer: warns.release()
                 if timings:
                     push_lint_timing(ref_of(timing_entries), fp, file_profile, lint_scan_total_ms, false)
@@ -3178,7 +3184,7 @@ function build_command(args: span[str]) -> int:
                     output_owner.append(explicit_output.value)
                     clean_target.append(explicit_output.value)
                 Option.none:
-                    var computed = default_output_path(effective)
+                    var computed = format_cli.default_output_path(effective)
                     defer: computed.release()
                     output_owner.append(computed.as_str())
                     clean_target.append(computed.as_str())
@@ -3887,7 +3893,7 @@ function run_command(args: span[str]) -> int:
                                 defer: with_name.release()
                                 output_path = string.String.from_str(with_name.as_str())
                     Option.none:
-                        var default_out = default_output_path(effective)
+                        var default_out = format_cli.default_output_path(effective)
                         defer: default_out.release()
                         output_path.release()
                         output_path = string.String.from_str(default_out.as_str())
@@ -3898,7 +3904,7 @@ function run_command(args: span[str]) -> int:
         # Ruby's `run` builds into a temporary directory; use a unique /tmp
         # path so running an example does not drop a binary next to its source
         # (and parallel runs stay independent).
-        var default_out = default_output_path(effective)
+        var default_out = format_cli.default_output_path(effective)
         defer: default_out.release()
         output_path.release()
         output_path = string.String.from_str("/tmp/mtc_run_")
@@ -4799,297 +4805,6 @@ function command_summary_at(index: ptr_uint) -> CommandSummary:
     return CommandSummary(name = "completions", summary = "Print a shell completion script")
 
 
-## Format one source file and apply the single-file output rules.
-function format_one_path(
-    path: str,
-    check_mode: bool,
-    write_mode: bool,
-    timings: bool,
-    mode: tidy.FormatMode,
-    explicit_max_line_length: ptr_uint,
-) -> int:
-    if cli_verbose:
-        if write_mode:
-            stdio.print_format(c"formatting %.*s\n", int<-(path.len), path.data)
-        else:
-            stdio.print_format(c"checking %.*s\n", int<-(path.len), path.data)
-
-    var format_profile = profile_mod.create()
-    defer: profile_mod.release(ref_of(format_profile))
-    var profile_ptr: ptr[profile_mod.Profile]? = null
-    if timings:
-        profile_ptr = ptr_of(format_profile)
-
-    match fs.read_text(path):
-        Result.success as content:
-            var source = content.value
-            defer: source.release()
-            let source_text = source.as_str()
-
-            let started_ms = monotonic_ms()
-            var formatted = tidy.format_source_profiled(source_text, path, mode, explicit_max_line_length, profile_ptr) else:
-                stdio.print_format(c"error: %.*s: parse error\n", int<-(path.len), path.data)
-                return 1
-            defer: formatted.release()
-            let fmt_text = formatted.as_str()
-
-            var exit_code = 0
-            if write_mode:
-                if source_text == fmt_text:
-                    stdio.print_format(c"already formatted %.*s\n", int<-(path.len), path.data)
-                else:
-                    match fs.write_text(path, fmt_text):
-                        Result.success:
-                            stdio.print_format(c"formatted %.*s\n", int<-(path.len), path.data)
-                        Result.failure as err:
-                            var msg = err.error
-                            defer: msg.release()
-                            stdio.print_format(c"error: cannot write %.*s\n", int<-(path.len), path.data)
-                            exit_code = 1
-            else if check_mode:
-                if source_text == fmt_text:
-                    stdio.print_format(c"already formatted %.*s\n", int<-(path.len), path.data)
-                else:
-                    stdio.print_format(c"needs formatting %.*s\n", int<-(path.len), path.data)
-                    exit_code = 1
-            else:
-                stdio.print_format(c"%.*s", int<-(fmt_text.len), fmt_text.data)
-            if timings:
-                print_format_profile(path, monotonic_ms() - started_ms, ref_of(format_profile))
-            return exit_code
-        Result.failure as err:
-            var msg = err.error
-            defer: msg.release()
-            return report_missing_source(path)
-
-
-## Format several sources (a directory operand or more than one path).  The
-## host requires --check or --write here and prints a batch summary.
-function format_paths_command(
-    paths: ref[vec.Vec[str]],
-    check_mode: bool,
-    write_mode: bool,
-    mode: tidy.FormatMode,
-    explicit_max_line_length: ptr_uint,
-) -> int:
-    if check_mode:
-        var needs = vec.Vec[string.String].create()
-        defer: needs.release()
-        var pi: ptr_uint = 0
-        while pi < paths.len():
-            let path_ptr = paths.get(pi) else:
-                break
-            let path = unsafe: read(path_ptr)
-            match fs.read_text(path):
-                Result.success as content:
-                    var source = content.value
-                    defer: source.release()
-                    var formatted = tidy.format_source(source.as_str(), path, mode, explicit_max_line_length) else:
-                        stdio.print_format(c"error: %.*s: parse error\n", int<-(path.len), path.data)
-                        return 1
-                    defer: formatted.release()
-                    if source.as_str() != formatted.as_str():
-                        stdio.print_format(c"needs formatting %.*s\n", int<-(path.len), path.data)
-                        needs.push(string.String.from_str(path))
-                Result.failure as err:
-                    var msg = err.error
-                    defer: msg.release()
-                    return report_missing_source(path)
-            pi += 1
-        if needs.len() == 0:
-            stdio.print_format(c"all %d file(s) already formatted\n", int<-(paths.len()))
-            return 0
-        stdio.print_format(c"%d file(s) need formatting\n", int<-(needs.len()))
-        return 1
-
-    var changed: ptr_uint = 0
-    var pi: ptr_uint = 0
-    while pi < paths.len():
-        let path_ptr = paths.get(pi) else:
-            break
-        let path = unsafe: read(path_ptr)
-        match fs.read_text(path):
-            Result.success as content:
-                var source = content.value
-                defer: source.release()
-                var formatted = tidy.format_source(source.as_str(), path, mode, explicit_max_line_length) else:
-                    stdio.print_format(c"error: %.*s: parse error\n", int<-(path.len), path.data)
-                    return 1
-                defer: formatted.release()
-                if source.as_str() != formatted.as_str():
-                    match fs.write_text(path, formatted.as_str()):
-                        Result.success:
-                            stdio.print_format(c"formatted %.*s\n", int<-(path.len), path.data)
-                            changed += 1
-                        Result.failure as err:
-                            var msg = err.error
-                            defer: msg.release()
-                            stdio.print_format(c"error: cannot write %.*s\n", int<-(path.len), path.data)
-                            return 1
-            Result.failure as err:
-                var msg = err.error
-                defer: msg.release()
-                return report_missing_source(path)
-        pi += 1
-    stdio.print_format(c"formatted %d of %d file(s)\n", int<-(changed), int<-(paths.len()))
-    return 0
-
-
-## `mtc format PATH|DIR [PATH|DIR ...] [--check|--write] [--safe|--canonical|
-## --preserve|--tidy] [--max-line-length N] [--timings]`.
-function format_command(args: span[str]) -> int:
-    var inputs = vec.Vec[str].create()
-    defer: inputs.release()
-    var check_mode = false
-    var write_mode = false
-    var timings = false
-    var mode = tidy.FormatMode.safe
-    var explicit_max_line_length: ptr_uint = 0
-    var ai: ptr_uint = 1
-    while ai < args.len:
-        let arg = args[ai]
-        if arg == "--check":
-            check_mode = true
-            ai += 1
-            continue
-        if arg == "--timings":
-            timings = true
-            ai += 1
-            continue
-        if arg == "--write" or arg == "-w":
-            write_mode = true
-            ai += 1
-            continue
-        if arg == "--preserve":
-            mode = tidy.FormatMode.preserve
-            ai += 1
-            continue
-        if arg == "--canonical":
-            mode = tidy.FormatMode.canonical
-            ai += 1
-            continue
-        if arg == "--safe":
-            mode = tidy.FormatMode.safe
-            ai += 1
-            continue
-        if arg == "--tidy":
-            mode = tidy.FormatMode.tidy
-            ai += 1
-            continue
-        if arg == "--max-line-length":
-            if ai + 1 >= args.len:
-                eprint_line("missing value for --max-line-length")
-                cli_help.print_usage(true)
-                return 1
-            let parsed = parse_positive_int(args[ai + 1]) else:
-                eprint_line("--max-line-length must be a positive integer")
-                cli_help.print_usage(true)
-                return 1
-            explicit_max_line_length = parsed
-            ai += 2
-            continue
-        if arg == "--":
-            ai += 1
-            while ai < args.len:
-                inputs.push(args[ai])
-                ai += 1
-            continue
-        if arg.starts_with("-"):
-            var unknown = string.String.create()
-            defer: unknown.release()
-            unknown.append("unknown format option ")
-            unknown.append(arg)
-            eprint_line(unknown.as_str())
-            cli_help.print_usage(true)
-            return 1
-        inputs.push(arg)
-        ai += 1
-
-    if check_mode and write_mode:
-        eprint_line("format options --check and --write cannot be combined")
-        cli_help.print_usage(true)
-        return 1
-
-    if inputs.len() == 0:
-        eprint_line("missing source file path")
-        cli_help.print_usage(true)
-        return 1
-
-    var has_directory = false
-    var di: ptr_uint = 0
-    while di < inputs.len():
-        let input_ptr = inputs.get(di) else:
-            break
-        if fs.is_directory(unsafe: read(input_ptr)):
-            has_directory = true
-        di += 1
-
-    var paths = vec.Vec[str].create()
-    defer: paths.release()
-    var expanded_owner = vec.Vec[string.String].create()
-    defer: expanded_owner.release()
-    expand_source_operands(inputs.as_span(), ref_of(paths), ref_of(expanded_owner))
-    if paths.len() == 0:
-        var label = operand_label(inputs.as_span())
-        defer: label.release()
-        var msg = string.String.create()
-        defer: msg.release()
-        msg.append("no .mt files found in ")
-        msg.append(label.as_str())
-        stdio.print_line(msg.as_str())
-        return 0
-
-    let multiple_sources = inputs.len() > 1 or has_directory
-    if multiple_sources:
-        if not check_mode and not write_mode:
-            eprint_line("format on multiple sources requires --check or --write")
-            cli_help.print_usage(true)
-            return 1
-        return format_paths_command(ref_of(paths), check_mode, write_mode, mode, explicit_max_line_length)
-
-    let path_ptr = paths.get(0) else:
-        return 0
-    let path = unsafe: read(path_ptr)
-    return format_one_path(path, check_mode, write_mode, timings, mode, explicit_max_line_length)
-
-
-## The default output path for a source build: the source path with its `.mt`
-## extension removed (matching the Ruby CLI's direct-source-build behaviour).
-function default_output_path(path: str) -> string.String:
-    if path.ends_with(".mt"):
-        return string.String.from_str(path.slice(0, path.len - 3))
-    return j2_path(path, ".out")
-
-
-## Milliseconds from the monotonic clock, used by `--timings` reports.
-function monotonic_ms() -> double:
-    var ts = zero[time.TimeSpec]
-    let rc = time.monotonic(ref_of(ts))
-    if rc != 0:
-        return 0.0
-    return double<-ts.tv_sec * 1000.0 + double<-ts.tv_nsec / 1000000.0
-
-
-## The host's single-file format profile: a leading blank line, then
-## `format profile <path>: <%.1f>ms (<phases >= 0.1ms, by descending total>)`.
-function print_format_profile(path: str, total_ms: double, profile: ref[profile_mod.Profile]) -> void:
-    var line = string.String.create()
-    defer: line.release()
-    line.push_byte(10)
-    line.append("format profile ")
-    line.append(path)
-    line.append(": ")
-    fmt_mod.append_double_precision(ref_of(line), total_ms, 1)
-    line.append("ms")
-    var phases = profile_mod.phases_desc_text(profile, 0.1, true)
-    defer: phases.release()
-    if phases.len() > 0:
-        line.append(" (")
-        line.append(phases.as_str())
-        line.append(")")
-    stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
-
-
 ## One linted file's `--timings` profile (the host's `lint_profiles` entry):
 ## its path, the per-rule phase profile (heap-allocated; the entry owns it),
 ## the scan's total milliseconds, and which scan produced it.
@@ -5283,7 +4998,7 @@ function print_lint_file_profiles(entries: ref[vec.Vec[LintTimingEntry]]) -> voi
     stdio.print_format(c"%.*s\n", int<-(total_line.as_str().len), total_line.as_str().data)
 
 
-function j2_path(a: str, b: str) -> string.String:
+public function j2_path(a: str, b: str) -> string.String:
     var buf = string.String.create()
     buf.append(a)
     buf.append(b)
@@ -5292,7 +5007,7 @@ function j2_path(a: str, b: str) -> string.String:
 
 ## Parse a decimal string into a positive `ptr_uint`.  Returns none when the
 ## text is empty, contains a non-digit, or evaluates to zero.
-function parse_positive_int(text: str) -> Option[ptr_uint]:
+public function parse_positive_int(text: str) -> Option[ptr_uint]:
     if text.len == 0:
         return Option[ptr_uint].none
     var value: ptr_uint = 0
