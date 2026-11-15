@@ -266,6 +266,7 @@
     "lsp.workspace_notifications": "ws_notif",
     "lsp.workspace_symbols": "wsym",
     "main": "main",
+    "main.bindings_cli": "bindings_cli",
     "main.std_cli": "std_cli",
     "packages.editor": "editor",
     "packages.graph": "graph",
@@ -1148,7 +1149,7 @@
     ]
   },
   "sizes": {
-    "total_code": 123395,
+    "total_code": 123411,
     "functions_over_limit": 33,
     "files_over_limit": 12,
     "files": {
@@ -1813,10 +1814,16 @@
         "max_function": 22
       },
       "projects/mtc/src/mtc/main.mt": {
-        "lines": 7403,
-        "code": 6309,
+        "lines": 6850,
+        "code": 5808,
         "max_line": 277,
         "max_function": 526
+      },
+      "projects/mtc/src/mtc/main/bindings_cli.mt": {
+        "lines": 575,
+        "code": 517,
+        "max_line": 126,
+        "max_function": 216
       },
       "projects/mtc/src/mtc/main/std_cli.mt": {
         "lines": 461,
