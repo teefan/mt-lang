@@ -1,6 +1,6 @@
 # Refactoring the Self-Host Compiler
 
-`projects/mtc` is ~151 files / ~155k lines. The parity harnesses prove observable
+`projects/mtc` is ~152 files / ~155k lines. The parity harnesses prove observable
 behavior; they say nothing about shape. This document is the refactoring safety
 suite: what is locked, what is ratcheted, and the protocol for changing the
 self-host without changing what it does.
@@ -78,7 +78,7 @@ sharing one alias in a file.  `packages.source` is the single override
 (`pkg_source`) because both `source` and `package_source` are common
 locals/parameters in the files that use it.
 
-Current state: **151 modules, 0 alias violations**.
+Current state: **152 modules, 0 alias violations**.
 
 ### Operation vocabulary
 
@@ -109,12 +109,12 @@ helpers, `lsp/navigation.mt analysis_for_document`/`ast_for_document`,
 Normalized 12-line windows (comments/blanks stripped, literals replaced with
 `S`/`N`) hashed across all functions. Overlapping windows make the cluster count
 large; `duplicated_lines` is the ratcheted metric. Current baseline:
-**5,242 duplicated lines in 789 window clusters**. Use the clusters as pointers
+**5,252 duplicated lines in 790 window clusters**. Use the clusters as pointers
 to repeated emission/frame boilerplate, not as an absolute quality score.
 
 ### Size, markers, tests
 
-- **123,447 code lines**; **33 functions ≥ 200 lines**; **12 files ≥ 2,000 code
+- **123,462 code lines**; **33 functions ≥ 200 lines**; **12 files ≥ 2,000 code
   lines**. The ratchet counts these, so a refactor cannot trade one long
   function for another.
 - **0 marker comments** (`TODO`/`FIXME`/`XXX`/`HACK`); any new one fails.
@@ -187,17 +187,17 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 96, 2026-11-14)
+## 6. Current baseline (session 97, 2026-11-14)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 151 / 155,205 / 123,447 |
+| source files / lines / code lines | 152 / 155,224 / 123,462 |
 | layering edges / violations | 110 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
-| alias violations | 0 (151 modules) |
+| alias violations | 0 (152 modules) |
 | dead exports (unused / test-only) | 35 / 6 |
-| duplication (windows / duplicated lines) | 789 / 5,242 (window 12) |
+| duplication (windows / duplicated lines) | 790 / 5,252 (window 12) |
 | functions ≥ 200 lines | 33 |
 | files ≥ 2,000 code lines | 12 |
 | markers | 0 |

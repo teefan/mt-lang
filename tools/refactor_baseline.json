@@ -268,6 +268,7 @@
     "main": "main",
     "main.bindings_cli": "bindings_cli",
     "main.format_cli": "format_cli",
+    "main.snapshot_debug_cli": "snapshot_debug_cli",
     "main.std_cli": "std_cli",
     "main.test_cli": "test_cli",
     "packages.editor": "editor",
@@ -356,8 +357,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 789,
-    "duplicated_lines": 5242,
+    "windows": 790,
+    "duplicated_lines": 5252,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -585,6 +586,7 @@
       "4a6f338af758cb18bfce792264a6f7af3436545b",
       "4a8975066ba029313a3c302edb0541d475406974",
       "4ac6f40c3f4b84307be2249d7d3277e9868a31c2",
+      "4ad7a84ff739650cc0e27b9ac012c60512fc3da9",
       "4add26d0f3ae11223530394e2a29e8f1a28d36de",
       "4b58e63e368ae4e6b5e0a4408c03c561fbe8ef8b",
       "4c8a13b819e3695ebee125aca5b9adad120e6cb8",
@@ -1151,7 +1153,7 @@
     ]
   },
   "sizes": {
-    "total_code": 123447,
+    "total_code": 123462,
     "functions_over_limit": 33,
     "files_over_limit": 12,
     "files": {
@@ -1816,8 +1818,8 @@
         "max_function": 22
       },
       "projects/mtc/src/mtc/main.mt": {
-        "lines": 5229,
-        "code": 4443,
+        "lines": 4965,
+        "code": 4206,
         "max_line": 277,
         "max_function": 526
       },
@@ -1832,6 +1834,12 @@
         "code": 269,
         "max_line": 125,
         "max_function": 114
+      },
+      "projects/mtc/src/mtc/main/snapshot_debug_cli.mt": {
+        "lines": 283,
+        "code": 252,
+        "max_line": 126,
+        "max_function": 191
       },
       "projects/mtc/src/mtc/main/std_cli.mt": {
         "lines": 461,
