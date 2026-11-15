@@ -157,6 +157,7 @@
   "vocabulary": [],
   "aliases": {
     "bindgen": "bindgen",
+    "bindgen.emitter": "emitter",
     "bindgen.nullable_policy": "nullable_policy",
     "browser": "browser",
     "build": "build_driver",
@@ -1158,15 +1159,21 @@
     ]
   },
   "sizes": {
-    "total_code": 123513,
+    "total_code": 123525,
     "functions_over_limit": 33,
     "files_over_limit": 12,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
-        "lines": 4457,
-        "code": 3851,
+        "lines": 4137,
+        "code": 3557,
         "max_line": 1984,
         "max_function": 221
+      },
+      "projects/mtc/src/mtc/bindgen/emitter.mt": {
+        "lines": 337,
+        "code": 306,
+        "max_line": 131,
+        "max_function": 100
       },
       "projects/mtc/src/mtc/bindgen/nullable_policy.mt": {
         "lines": 325,

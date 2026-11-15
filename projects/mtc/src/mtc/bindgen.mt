@@ -8,12 +8,12 @@ import std.vec as vec
 import std.map as map_mod
 import std.json as json
 import std.process as process
-import std.path as path_ops
 import std.fs as fs
 import std.mem.heap as heap
 
 import mtc.formatter.tidy as tidy
 import mtc.bindgen.nullable_policy as nullable_policy
+import mtc.bindgen.emitter as emitter
 
 # =============================================================================
 #  Utilities
@@ -234,7 +234,7 @@ function jstr(vp: ptr[json.Value]?) -> str:
 ## Walk through an Object node to get a named string field: obj.key → value.
 ## `node` is the Object containing the field; `key` is the field name.
 
-function jget_str(node: ptr[json.Object]?, key: str) -> str:
+public function jget_str(node: ptr[json.Object]?, key: str) -> str:
     if node == null:
         return ""
     unsafe:
@@ -243,7 +243,7 @@ function jget_str(node: ptr[json.Object]?, key: str) -> str:
 
 ## Get the qualType field from a clang Type node: {"qualType":"int"} → "int".
 
-function jget_inner(node: ptr[json.Object]?) -> ptr[json.Array]?:
+public function jget_inner(node: ptr[json.Object]?) -> ptr[json.Array]?:
     if node == null:
         return null
     unsafe:
@@ -784,7 +784,7 @@ function map_long_type(unqualified: str) -> string.String:
 
 ## The host's `map_c_type`: string-based C type mapping.
 
-function map_type(qual_type: str, opts: ref[BindgenOptions]) -> string.String:
+public function map_type(qual_type: str, opts: ref[BindgenOptions]) -> string.String:
     var normalized_owner = normalize_c_type(qual_type)
     defer: normalized_owner.release()
     let normalized = normalized_owner.as_str()
@@ -1100,7 +1100,7 @@ struct CMember:
 ## A discovered declaration emitted before the selected ones (the host's
 ## `@synthetic_declarations`).
 
-struct SyntheticDecl:
+public struct SyntheticDecl:
     kind: string.String
     name: string.String
     linkage: string.String
@@ -1108,7 +1108,7 @@ struct SyntheticDecl:
 
 ## The per-generation state (the host's Generator instance variables).
 
-struct GenState:
+public struct GenState:
     record_aliases: map_mod.Map[str, str]
     record_aliases_by_tag: map_mod.Map[str, str]
     enum_aliases: map_mod.Map[str, str]
@@ -1123,6 +1123,15 @@ struct GenState:
 
 var bindgen_state: ptr[GenState]? = null
 var bindgen_map_failed: bool = false
+
+public function bindgen_state_ptr() -> ptr[GenState]?:
+    return bindgen_state
+
+public function bindgen_map_failed_flag() -> bool:
+    return bindgen_map_failed
+
+public function set_bindgen_map_failed(value: bool) -> void:
+    bindgen_map_failed = value
 
 # =============================================================================
 #  AST traversal — extracts declarations from clang JSON
@@ -1408,7 +1417,7 @@ function visible_type_name(name: str, opts: ref[BindgenOptions]) -> str:
 
 ## The host's `emitted_name`: optionally strip a leading-underscore prefix.
 
-function emitted_name(name: str, opts: ref[BindgenOptions]) -> str:
+public function emitted_name(name: str, opts: ref[BindgenOptions]) -> str:
     if not read(opts).strip_leading_underscores:
         return name
     var i: ptr_uint = 0
@@ -1456,7 +1465,7 @@ function synthesize_typedef_dependency(name: str) -> void:
 
 ## The host's `record_c_name`: the typedef alias for a record, else its tag.
 
-function record_c_name(node: ptr[json.Object]) -> str:
+public function record_c_name(node: ptr[json.Object]) -> str:
     let state = bindgen_state else:
         return ""
     let node_id = jget_str(node, "id")
@@ -2430,12 +2439,12 @@ function function_return_type_text(node: ptr[json.Object]) -> str:
 #  Synthetic aggregate dependencies (anonymous nested structs/unions)
 # =============================================================================
 
-function field_unnamed(field: ptr[json.Object]) -> bool:
+public function field_unnamed(field: ptr[json.Object]) -> bool:
     return jget_str(field, "name") == ""
 
 ## Asserts a nullable AST node after an explicit null check.
 
-function node_non_null(value: ptr[json.Object]?) -> ptr[json.Object]:
+public function node_non_null(value: ptr[json.Object]?) -> ptr[json.Object]:
     unsafe:
         return ptr[json.Object]<-value
 
@@ -2462,7 +2471,7 @@ function location_key_matches(left: ptr[json.Object], right: ptr[json.Object]) -
         return jget_str(left, "file").equal(jget_str(right, "file"))
 
 
-function anonymous_record_decl_for_field(
+public function anonymous_record_decl_for_field(
     field: ptr[json.Object],
     aggregate_node: ptr[json.Object]
 ) -> ptr[json.Object]?:
@@ -2499,7 +2508,7 @@ function anonymous_record_decl_for_field(
     return null
 
 
-function aggregate_field_name(field: ptr[json.Object], aggregate_node: ptr[json.Object]) -> str:
+public function aggregate_field_name(field: ptr[json.Object], aggregate_node: ptr[json.Object]) -> str:
     let name = jget_str(field, "name")
     if name != "":
         return name
@@ -2539,7 +2548,7 @@ function synthetic_aggregate_name(
     return rendered
 
 
-function aggregate_field_type(
+public function aggregate_field_type(
     field: ptr[json.Object],
     owner_name: str,
     aggregate_node: ptr[json.Object],
@@ -2764,335 +2773,6 @@ function find_enum_value(ec_node: ptr[json.Object], name: str) -> str:
             i += 1
     return ""
 
-# =============================================================================
-#  Emitter — generates the .mt external module source
-# =============================================================================
-
-function aggregate_explicit_c_name(name: str, node: ptr[json.Object]) -> str:
-    let linkage = record_c_name(node)
-    if linkage == "" or linkage.equal(name):
-        return ""
-    return linkage
-
-
-function emit_aggregate_fields(
-    buf: ref[string.String],
-    node: ptr[json.Object],
-    owner_name: str,
-    opts: ref[BindgenOptions]
-) -> void:
-    let state = bindgen_state else:
-        return
-    unsafe:
-        let children = jget_inner(node)
-        if children == null:
-            return
-        var i: ptr_uint = 0
-        while true:
-            let entry = read(children).get(i) else:
-                break
-            let field = read(entry).as_object()
-            if field != null and jget_str(field, "kind").equal("FieldDecl"):
-                let anonymous_record = anonymous_record_decl_for_field(field, node)
-                if anonymous_record != null and field_unnamed(field):
-                    emit_flattened_anonymous(buf, node_non_null(anonymous_record), owner_name, opts)
-                else:
-                    bindgen_map_failed = false
-                    var field_type = aggregate_field_type(field, owner_name, node, opts)
-                    defer: field_type.release()
-                    if not bindgen_map_failed:
-                        let field_name = emitted_name(aggregate_field_name(field, node), opts)
-                        buf.append("    ")
-                        buf.append(field_name)
-                        buf.append(": ")
-                        buf.append(field_type.as_str())
-                        buf.append("\n")
-            i += 1
-
-
-function emit_flattened_anonymous(
-    buf: ref[string.String],
-    record: ptr[json.Object],
-    owner_name: str,
-    opts: ref[BindgenOptions]
-) -> void:
-    unsafe:
-        let children = jget_inner(record)
-        if children == null:
-            return
-        var i: ptr_uint = 0
-        while true:
-            let entry = read(children).get(i) else:
-                break
-            let field = read(entry).as_object()
-            if field != null and jget_str(field, "kind").equal("FieldDecl"):
-                let anonymous_record = anonymous_record_decl_for_field(field, record)
-                if anonymous_record != null and field_unnamed(field):
-                    emit_flattened_anonymous(buf, node_non_null(anonymous_record), owner_name, opts)
-                else:
-                    bindgen_map_failed = false
-                    var field_type = aggregate_field_type(field, owner_name, record, opts)
-                    defer: field_type.release()
-                    if not bindgen_map_failed:
-                        let field_name = emitted_name(jget_str(field, "name"), opts)
-                        buf.append("    ")
-                        buf.append(field_name)
-                        buf.append(": ")
-                        buf.append(field_type.as_str())
-                        buf.append("\n")
-            i += 1
-
-
-function emit_aggregate_decl(
-    buf: ref[string.String],
-    kind_text: str,
-    name: str,
-    node: ptr[json.Object],
-    opts: ref[BindgenOptions]
-) -> void:
-    let state = bindgen_state else:
-        return
-    buf.append(kind_text)
-    buf.append(" ")
-    buf.append(emitted_name(name, opts))
-    let explicit_c_name = aggregate_explicit_c_name(name, node)
-    if explicit_c_name != "":
-        buf.append(" = c\"")
-        buf.append(explicit_c_name)
-        buf.append("\"")
-    buf.append(":\n")
-    emit_aggregate_fields(buf, node, name, opts)
-
-
-function emit_synthetic(buf: ref[string.String], synthetic_decl: SyntheticDecl, opts: ref[BindgenOptions]) -> void:
-    let kind_text = synthetic_decl.kind.as_str()
-    if kind_text.equal("opaque"):
-        buf.append("opaque ")
-        buf.append(emitted_name(synthetic_decl.name.as_str(), opts))
-        if synthetic_decl.linkage.as_str().len > 0:
-            buf.append(" = c\"")
-            buf.append(synthetic_decl.linkage.as_str())
-            buf.append("\"")
-        buf.append("\n")
-        return
-    emit_aggregate_decl(buf, kind_text, synthetic_decl.name.as_str(), node_non_null(synthetic_decl.node), opts)
-
-
-function emit_decl(buf: ref[string.String], d: CDecl, opts: ref[BindgenOptions]) -> void:
-    let k = d.kind.as_str()
-    let name = d.mt_name.as_str()
-
-    if k == "opaque":
-        buf.append("opaque ")
-        buf.append(emitted_name(name, opts))
-        if d.linkage.as_str().len > 0:
-            buf.append(" = c\"")
-            buf.append(d.linkage.as_str())
-            buf.append("\"")
-        buf.append("\n")
-        return
-
-    if k == "struct" or k == "union":
-        if d.node == null:
-            return
-        emit_aggregate_decl(buf, k, name, node_non_null(d.node), opts)
-        return
-
-    if k == "enum" or k == "flags":
-        buf.append(k)
-        buf.append(" ")
-        buf.append(emitted_name(name, opts))
-        buf.append(": ")
-        var backing: string.String
-        if d.qual_type.as_str().len == 0:
-            backing = string.String.from_str("int")
-        else:
-            bindgen_map_failed = false
-            backing = map_type(d.qual_type.as_str(), opts)
-            if bindgen_map_failed:
-                backing.release()
-                backing = string.String.from_str("int")
-        defer: backing.release()
-        buf.append(backing.as_str())
-        buf.append("\n")
-        var mi: ptr_uint = 0
-        while mi < d.members.len():
-            let mp = d.members.get(mi) else:
-                break
-            unsafe:
-                buf.append("    ")
-                buf.append(read(mp).ename)
-                buf.append(" = ")
-                buf.append(read(mp).evalue.as_str())
-                buf.append("\n")
-            mi += 1
-        return
-
-    if k == "type_alias":
-        buf.append("type ")
-        buf.append(emitted_name(name, opts))
-        buf.append(" = ")
-        buf.append(d.qual_type.as_str())
-        buf.append("\n")
-        return
-
-    if k == "const":
-        buf.append("const ")
-        buf.append(emitted_name(name, opts))
-        buf.append(": ")
-        buf.append(d.qual_type.as_str())
-        if d.value_text.as_str().len > 0:
-            buf.append(" = ")
-            buf.append(d.value_text.as_str())
-        buf.append("\n")
-        return
-
-    if k == "function":
-        let original_name = d.c_name.as_str()
-        let stripped_name = emitted_name(original_name, opts)
-        buf.append("external function ")
-        buf.append(stripped_name)
-        buf.append("(")
-        var an: ptr_uint = 0
-        while an < d.param_names.len():
-            if an > 0:
-                buf.append(", ")
-            let pn = d.param_names.get(an) else:
-                break
-            let pt = d.param_types.get(an) else:
-                break
-            unsafe:
-                buf.append(read(pn).as_str())
-                buf.append(": ")
-                buf.append(read(pt).as_str())
-            an += 1
-        if d.is_variadic:
-            if d.param_names.len() > 0:
-                buf.append(", ")
-            buf.append("...")
-        buf.append(") -> ")
-        buf.append(d.return_type.as_str())
-        if not stripped_name.equal(original_name):
-            buf.append(" = c\"")
-            buf.append(original_name)
-            buf.append("\"")
-        buf.append("\n")
-        return
-
-## A stable index sort for declarations (the host's `sort_by { index }`).
-
-function sort_declaration_order(decls: vec.Vec[CDecl]) -> vec.Vec[ptr_uint]:
-    var order = vec.Vec[ptr_uint].create()
-    var i: ptr_uint = 0
-    while i < decls.len():
-        order.push(i)
-        i += 1
-    var current: ptr_uint = 1
-    while current < order.len():
-        let value_ptr = order.get(current) else:
-            break
-        let value = unsafe: read(value_ptr)
-        let value_decl_ptr = decls.get(value) else:
-            break
-        let index = unsafe: read(value_decl_ptr).index
-        var position = current
-        while position > 0:
-            let previous_ptr = order.get(position - 1) else:
-                break
-            let previous = unsafe: read(previous_ptr)
-            let previous_decl_ptr = decls.get(previous) else:
-                break
-            if unsafe: read(previous_decl_ptr).index <= index:
-                break
-            let slot = order.get(position) else:
-                break
-            unsafe: read(slot) = previous
-            position -= 1
-        let final_slot = order.get(position) else:
-            break
-        unsafe: read(final_slot) = value
-        current += 1
-    return order
-
-
-function emit_module(
-    decls: vec.Vec[CDecl],
-    header_path: str,
-    link_libs: vec.Vec[str],
-    incs: vec.Vec[str],
-    opts: ref[BindgenOptions]
-) -> string.String:
-    var buf = string.String.create()
-    buf.append("# generated by mtc bindgen from ")
-    buf.append(header_path)
-    buf.append("\nexternal\n\n")
-
-    var mi: ptr_uint = 0
-    while mi < opts.module_imports.len():
-        let imp = opts.module_imports.get(mi) else:
-            break
-        unsafe:
-            let m = read(imp)
-            buf.append("import ")
-            buf.append(m.module_name)
-            buf.append(" as ")
-            buf.append(m.alias)
-            buf.append("\n")
-        mi += 1
-
-    var i: ptr_uint = 0
-    while i < link_libs.len():
-        let l = link_libs.get(i) else:
-            break
-        buf.append("link \"")
-        unsafe: buf.append(read(l))
-        buf.append("\"\n")
-        i += 1
-    if incs.len() == 0:
-        buf.append("include \"")
-        buf.append(path_ops.basename(header_path))
-        buf.append("\"\n")
-    i = 0
-    while i < incs.len():
-        let inc = incs.get(i) else:
-            break
-        buf.append("include \"")
-        unsafe: buf.append(read(inc))
-        buf.append("\"\n")
-        i += 1
-
-    let state = bindgen_state else:
-        return buf
-    var si: ptr_uint = 0
-    while si < unsafe: read(state).synthetics.len():
-        let entry = unsafe: read(state).synthetics.get(si) else:
-            break
-        si += 1
-        let synthetic_decl = unsafe: read(entry)
-        var already = false
-        var di: ptr_uint = 0
-        while di < decls.len():
-            let dp = decls.get(di) else:
-                break
-            if unsafe: read(dp).mt_name.as_str().equal(synthetic_decl.name.as_str()):
-                already = true
-                break
-            di += 1
-        if already:
-            continue
-        emit_synthetic(ref_of(buf), synthetic_decl, opts)
-
-    var order = sort_declaration_order(decls)
-    defer: order.release()
-    var oi: ptr_uint = 0
-    while oi < order.len():
-        let position = order.get(oi) else:
-            break
-        let dp = decls.get(unsafe: read(position)) else:
-            break
-        emit_decl(ref_of(buf), unsafe: read(dp), opts)
-        oi += 1
-    return buf
 
 ## Extract `#define` macro constants from the header in source order (the
 ## host's `each_macro_definition` + `macro_constant_candidate?`: uppercase
@@ -4169,7 +3849,7 @@ function generate_internal(opts: ref[BindgenOptions], want_report: bool) -> Resu
                         Option.none:
                             pass
 
-                    var src = emit_module(decls, header, opts.link_libs, opts.include_headers, opts)
+                    var src = emitter.emit_module(decls, header, opts.link_libs, opts.include_headers, opts)
                     var module_path = generated_module_path(opts.module_name.as_str())
                     defer: module_path.release()
                     let max_line_length = tidy.resolve_max_line_length(module_path.as_str(), 0)
