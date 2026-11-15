@@ -8706,63 +8706,9 @@ function has_field(fields: span[FieldEntry], name: str) -> bool:
 function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
     match receiver:
         types.Type.ty_named as n:
-            # A struct declared in another module reaches the analyzer as a
-            # `ty_named` with that module's name (an exported field's type);
-            # resolve its members through the module binding, as `ty_imported`
-            # does, instead of looking the name up locally.  Anything the
-            # binding does not declare as a struct/union (an enum, an opaque
-            # type) keeps the permissive error path below.
-            if n.module_name.len > 0 and not n.module_name.equal(ctx.module_name) and binding_has_struct_type(ctx, n.module_name, n.name):
-                return check_imported_member(ctx, n.module_name, n.name, member, is_method_call, line, column)
-            let fieldsp = ctx.structs.get(n.name)
-            if fieldsp == null:
-                # A union member is read like a struct field.
-                let unionp = ctx.unions.get(n.name)
-                if unionp != null:
-                    unsafe:
-                        let ufields = read(unionp)
-                        var ui: ptr_uint = 0
-                        while ui < ufields.len:
-                            let ufe = read(ufields.data + ui)
-                            if ufe.name == member:
-                                return ufe.ty
-                            ui += 1
-                # Not a locally-declared struct (enum/variant/opaque/imported).
-                return types.Type.ty_error
-            unsafe:
-                let fields = read(fieldsp)
-                var i: ptr_uint = 0
-                while i < fields.len:
-                    let fe = read(fields.data + i)
-                    if fe.name == member:
-                        return fe.ty
-                    i += 1
-            if member == "with" or has_method(ctx, n.name, member):
-                return types.Type.ty_error
-            if is_method_call:
-                report(ctx, line, column, unknown_member_message("method", n.name, member))
-            else:
-                report(ctx, line, column, unknown_member_message("field", n.name, member))
-            return types.Type.ty_error
+            return check_named_member(ctx, n.module_name, n.name, member, is_method_call, line, column)
         types.Type.ty_imported as im:
-            # An instantiated *local* generic struct (`Pair[int, float](…)`)
-            # carries the current module's name; its fields read from the local
-            # struct table with the instance's arguments substituted, exactly as
-            # a bare `Pair` receiver would (`check_member`'s ty_named arm).
-            if im.module_name.equal(ctx.module_name) or im.module_name.len == 0:
-                let local_fields_ptr = ctx.structs.get(im.name)
-                if local_fields_ptr != null:
-                    var subs = local_type_substitution(ctx, im.name, im.args)
-                    defer: subs.release()
-                    let fields = unsafe: read(local_fields_ptr)
-                    var i: ptr_uint = 0
-                    while i < fields.len:
-                        let fe = unsafe: read(fields.data + i)
-                        if fe.name == member:
-                            return substitute_type(fe.ty, ref_of(subs))
-                        i += 1
-                    return types.Type.ty_error
-            return check_imported_member_args(ctx, im.module_name, im.name, member, im.args, is_method_call, line, column)
+            return check_imported_receiver_member(ctx, im.module_name, im.name, im.args, member, is_method_call, line, column)
         types.Type.ty_variant_arm_payload as ap:
             # A bound match arm (`Option.some as p`) is the arm's payload struct
             # — the host's `Types::VariantArmPayload` — so `p.value` reads the
@@ -8786,76 +8732,9 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
                 return types.primitive("ptr_uint")
             return types.Type.ty_error
         types.Type.ty_primitive as p:
-            # The host's `Types::Vector`/`Matrix`/`Quaternion` field maps:
-            # vectors and quaternions expose `x`/`y`/`z`/`w` (the vector's
-            # width is its name suffix), and a matrix exposes `col0..colN-1` as
-            # the matching `vecN`.  `ivec*` lanes are `int`; everything else is
-            # `float`.
-            if is_vec_math_name(p.name):
-                let is_int = p.name.starts_with("ivec")
-                let lane_ty = if is_int: types.primitive("int") else: types.primitive("float")
-                if p.name == "mat3":
-                    if member == "col0" or member == "col1" or member == "col2":
-                        return types.primitive("vec3")
-                    return types.Type.ty_error
-                if p.name == "mat4":
-                    if member == "col0" or member == "col1" or member == "col2" or member == "col3":
-                        return types.primitive("vec4")
-                    return types.Type.ty_error
-                var width = 4
-                if p.name == "vec2" or p.name == "ivec2":
-                    width = 2
-                else if p.name == "vec3" or p.name == "ivec3":
-                    width = 3
-                if member == "x":
-                    return lane_ty
-                if width >= 2 and member == "y":
-                    return lane_ty
-                if width >= 3 and member == "z":
-                    return lane_ty
-                if width >= 4 and member == "w":
-                    return lane_ty
-                return types.Type.ty_error
-            # A non-vector primitive member keeps the permissive path.
-            return types.Type.ty_error
+            return check_primitive_member(p.name, member)
         types.Type.ty_generic as g:
-            if g.name == "Task" and g.args.len >= 1:
-                # The host's `Types::Task#fields` (`types.rb:590-632`): `frame`
-                # is `ptr[void]`, `ready`/`release`/`take_result`/`cancel` are
-                # `fn(frame) -> …`, and `set_waiter` takes the waiter callback.
-                if member.equal("frame"):
-                    return task_frame_field_type()
-                if member.equal("ready"):
-                    return task_ready_field_type()
-                if member.equal("set_waiter"):
-                    return task_set_waiter_field_type()
-                if member.equal("release") or member.equal("cancel"):
-                    return task_void_field_type()
-                if member.equal("take_result"):
-                    return task_take_result_field_type(unsafe: read(g.args.data + 0))
-                return types.Type.ty_error
-            if g.name == "span":
-                # The host's `Span#fields`: the element pointer and the length.
-                if member == "data" and g.args.len >= 1:
-                    return types.Type.ty_generic(name = "ptr", args = alloc_one_type_arg(unsafe: read(g.args.data + 0)))
-                if member == "len":
-                    return types.primitive("ptr_uint")
-            if g.name == "ptr":
-                if has_method(ctx, g.name, member):
-                    return types.Type.ty_error
-                return types.Type.ty_error
-            if g.name == "array":
-                if member == "as_span":
-                    return types.Type.ty_error
-            if g.name == "span" or g.name == "array" or g.name == "ptr":
-                return types.Type.ty_error
-            if has_method(ctx, g.name, member):
-                return types.Type.ty_error
-            if is_method_call:
-                report(ctx, line, column, unknown_member_message("method", g.name, member))
-            else:
-                report(ctx, line, column, unknown_member_message("field", g.name, member))
-            return types.Type.ty_error
+            return check_generic_member(ctx, g.name, g.args, member, is_method_call, line, column)
         types.Type.ty_tuple as tp:
             # A positional tuple reads `._0`/`._1`; a named tuple's elements read
             # by name (the host's `Tuple#field`, whose positional names are `_N`).
@@ -8874,6 +8753,143 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
             return types.Type.ty_error
         _:
             return types.Type.ty_error
+
+
+function check_named_member(ctx: ref[Context], module_name: str, name: str, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+    # A struct declared in another module reaches the analyzer as a
+    # `ty_named` with that module's name (an exported field's type);
+    # resolve its members through the module binding, as `ty_imported`
+    # does, instead of looking the name up locally.  Anything the
+    # binding does not declare as a struct/union (an enum, an opaque
+    # type) keeps the permissive error path below.
+    if module_name.len > 0 and not module_name.equal(ctx.module_name) and binding_has_struct_type(ctx, module_name, name):
+        return check_imported_member(ctx, module_name, name, member, is_method_call, line, column)
+    let fieldsp = ctx.structs.get(name)
+    if fieldsp == null:
+        # A union member is read like a struct field.
+        let unionp = ctx.unions.get(name)
+        if unionp != null:
+            unsafe:
+                let ufields = read(unionp)
+                var ui: ptr_uint = 0
+                while ui < ufields.len:
+                    let ufe = read(ufields.data + ui)
+                    if ufe.name == member:
+                        return ufe.ty
+                    ui += 1
+        # Not a locally-declared struct (enum/variant/opaque/imported).
+        return types.Type.ty_error
+    unsafe:
+        let fields = read(fieldsp)
+        var i: ptr_uint = 0
+        while i < fields.len:
+            let fe = read(fields.data + i)
+            if fe.name == member:
+                return fe.ty
+            i += 1
+    if member == "with" or has_method(ctx, name, member):
+        return types.Type.ty_error
+    if is_method_call:
+        report(ctx, line, column, unknown_member_message("method", name, member))
+    else:
+        report(ctx, line, column, unknown_member_message("field", name, member))
+    return types.Type.ty_error
+
+
+function check_imported_receiver_member(ctx: ref[Context], module_name: str, name: str, args: span[types.Type], member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+    # An instantiated *local* generic struct (`Pair[int, float](…)`)
+    # carries the current module's name; its fields read from the local
+    # struct table with the instance's arguments substituted, exactly as
+    # a bare `Pair` receiver would (`check_member`'s ty_named arm).
+    if module_name.equal(ctx.module_name) or module_name.len == 0:
+        let local_fields_ptr = ctx.structs.get(name)
+        if local_fields_ptr != null:
+            var subs = local_type_substitution(ctx, name, args)
+            defer: subs.release()
+            let fields = unsafe: read(local_fields_ptr)
+            var i: ptr_uint = 0
+            while i < fields.len:
+                let fe = unsafe: read(fields.data + i)
+                if fe.name == member:
+                    return substitute_type(fe.ty, ref_of(subs))
+                i += 1
+            return types.Type.ty_error
+    return check_imported_member_args(ctx, module_name, name, member, args, is_method_call, line, column)
+
+
+function check_primitive_member(name: str, member: str) -> types.Type:
+    # The host's `Types::Vector`/`Matrix`/`Quaternion` field maps:
+    # vectors and quaternions expose `x`/`y`/`z`/`w` (the vector's
+    # width is its name suffix), and a matrix exposes `col0..colN-1` as
+    # the matching `vecN`.  `ivec*` lanes are `int`; everything else is
+    # `float`.
+    if is_vec_math_name(name):
+        let is_int = name.starts_with("ivec")
+        let lane_ty = if is_int: types.primitive("int") else: types.primitive("float")
+        if name == "mat3":
+            if member == "col0" or member == "col1" or member == "col2":
+                return types.primitive("vec3")
+            return types.Type.ty_error
+        if name == "mat4":
+            if member == "col0" or member == "col1" or member == "col2" or member == "col3":
+                return types.primitive("vec4")
+            return types.Type.ty_error
+        var width = 4
+        if name == "vec2" or name == "ivec2":
+            width = 2
+        else if name == "vec3" or name == "ivec3":
+            width = 3
+        if member == "x":
+            return lane_ty
+        if width >= 2 and member == "y":
+            return lane_ty
+        if width >= 3 and member == "z":
+            return lane_ty
+        if width >= 4 and member == "w":
+            return lane_ty
+        return types.Type.ty_error
+    # A non-vector primitive member keeps the permissive path.
+    return types.Type.ty_error
+
+
+function check_generic_member(ctx: ref[Context], name: str, args: span[types.Type], member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+    if name == "Task" and args.len >= 1:
+        # The host's `Types::Task#fields` (`types.rb:590-632`): `frame`
+        # is `ptr[void]`, `ready`/`release`/`take_result`/`cancel` are
+        # `fn(frame) -> …`, and `set_waiter` takes the waiter callback.
+        if member.equal("frame"):
+            return task_frame_field_type()
+        if member.equal("ready"):
+            return task_ready_field_type()
+        if member.equal("set_waiter"):
+            return task_set_waiter_field_type()
+        if member.equal("release") or member.equal("cancel"):
+            return task_void_field_type()
+        if member.equal("take_result"):
+            return task_take_result_field_type(unsafe: read(args.data + 0))
+        return types.Type.ty_error
+    if name == "span":
+        # The host's `Span#fields`: the element pointer and the length.
+        if member == "data" and args.len >= 1:
+            return types.Type.ty_generic(name = "ptr", args = alloc_one_type_arg(unsafe: read(args.data + 0)))
+        if member == "len":
+            return types.primitive("ptr_uint")
+    if name == "ptr":
+        if has_method(ctx, name, member):
+            return types.Type.ty_error
+        return types.Type.ty_error
+    if name == "array":
+        if member == "as_span":
+            return types.Type.ty_error
+    if name == "span" or name == "array" or name == "ptr":
+        return types.Type.ty_error
+    if has_method(ctx, name, member):
+        return types.Type.ty_error
+    if is_method_call:
+        report(ctx, line, column, unknown_member_message("method", name, member))
+    else:
+        report(ctx, line, column, unknown_member_message("field", name, member))
+    return types.Type.ty_error
 
 
 ## `_0`/`_1`/… -> the tuple element index, -1 for any other name.
