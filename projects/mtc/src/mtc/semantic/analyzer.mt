@@ -2708,57 +2708,9 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
     if name == "type":
         return types.Type.ty_type_meta
     if is_generic_constructor_name(name):
-        var args = vec.Vec[types.Type].create()
-        # The host keeps an explicit lifetime as the first `ref` argument
-        # (`ref[@a, T]`); the AST stores the name without its sigil, so add it
-        # back here.  Extraction takes the last argument as the referent.
-        if name == "ref":
-            match lifetime:
-                Option.some as lt:
-                    var lt_buf = string.String.create()
-                    lt_buf.append("@")
-                    lt_buf.append(lt.value)
-                    args.push(types.Type.ty_lifetime(name = lt_buf.as_str()))
-                Option.none:
-                    pass
-        var i: ptr_uint = 0
-        while i < arguments.len:
-            var a: ast.TypeRef
-            unsafe:
-                a = read(arguments.data + i)
-            args.push(resolve_type_at(ctx, a, depth + 1))
-            i += 1
-        return types.Type.ty_generic(name = name, args = args.as_span())
+        return resolve_generic_type(ctx, name, arguments, lifetime, depth)
     if ctx.type_names.contains(name):
-        # Built-in registered types (e.g. `EventError`, `Subscription`) carry no
-        # owning module and must stay unqualified.
-        # The registry entry is authoritative: a builtin stays unqualified, a
-        # module-level type names its own module, and a nested struct's entry
-        # carries its parent-qualified `linkage_name` (its `name` is the short
-        # one, so rebuilding the type from `name` would lose the link).
-        let registered_ptr = ctx.types.get(name)
-        if registered_ptr != null:
-            let registered = unsafe: read(registered_ptr)
-            match registered:
-                types.Type.ty_named as rn:
-                    if arguments.len == 0:
-                        return registered
-                _:
-                    pass
-        # A local generic struct/variant with explicit arguments keeps them:
-        # dropping the arguments would leave an unspecialized name in inferred
-        # expression types (`Node[Context]` -> bare `Node`).
-        if arguments.len > 0:
-            var args = vec.Vec[types.Type].create()
-            var ai: ptr_uint = 0
-            while ai < arguments.len:
-                var a: ast.TypeRef
-                unsafe:
-                    a = read(arguments.data + ai)
-                args.push(resolve_type_at(ctx, a, depth + 1))
-                ai += 1
-            return types.Type.ty_imported(module_name = ctx.module_name, name = name, args = args.as_span())
-        return types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = name)
+        return resolve_registered_type(ctx, name, arguments, depth)
     # An integer literal in type-argument position (`array[ubyte, 256]`) is
     # resolved directly to a `ty_literal_int` so that the lowering and C
     # backend can recover the correct array size without relying on a
@@ -2780,6 +2732,74 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
     # A module-qualified constant in type-argument position
     # (`array[b3.BodyId, human.BONE_COUNT]`) folds through the import alias the
     # same way a local constant does.
+    let qual_const = fold_qualified_const_type(ctx, name)
+    if not types.is_error(qual_const):
+        return qual_const
+    if name.find_byte('.').is_some():
+        return types.Type.ty_error
+    if ctx.suppressed_type_names.contains(name):
+        return types.Type.ty_error
+    report(ctx, line, column, unknown_type_message(name))
+    return types.Type.ty_error
+
+
+function resolve_generic_type(ctx: ref[Context], name: str, arguments: span[ast.TypeRef], lifetime: Option[str], depth: int) -> types.Type:
+    var args = vec.Vec[types.Type].create()
+    # The host keeps an explicit lifetime as the first `ref` argument
+    # (`ref[@a, T]`); the AST stores the name without its sigil, so add it
+    # back here.  Extraction takes the last argument as the referent.
+    if name == "ref":
+        match lifetime:
+            Option.some as lt:
+                var lt_buf = string.String.create()
+                lt_buf.append("@")
+                lt_buf.append(lt.value)
+                args.push(types.Type.ty_lifetime(name = lt_buf.as_str()))
+            Option.none:
+                pass
+    var i: ptr_uint = 0
+    while i < arguments.len:
+        var a: ast.TypeRef
+        unsafe:
+            a = read(arguments.data + i)
+        args.push(resolve_type_at(ctx, a, depth + 1))
+        i += 1
+    return types.Type.ty_generic(name = name, args = args.as_span())
+
+
+function resolve_registered_type(ctx: ref[Context], name: str, arguments: span[ast.TypeRef], depth: int) -> types.Type:
+    # Built-in registered types (e.g. `EventError`, `Subscription`) carry no
+    # owning module and must stay unqualified.
+    # The registry entry is authoritative: a builtin stays unqualified, a
+    # module-level type names its own module, and a nested struct's entry
+    # carries its parent-qualified `linkage_name` (its `name` is the short
+    # one, so rebuilding the type from `name` would lose the link).
+    let registered_ptr = ctx.types.get(name)
+    if registered_ptr != null:
+        let registered = unsafe: read(registered_ptr)
+        match registered:
+            types.Type.ty_named as rn:
+                if arguments.len == 0:
+                    return registered
+            _:
+                pass
+    # A local generic struct/variant with explicit arguments keeps them:
+    # dropping the arguments would leave an unspecialized name in inferred
+    # expression types (`Node[Context]` -> bare `Node`).
+    if arguments.len > 0:
+        var args = vec.Vec[types.Type].create()
+        var ai: ptr_uint = 0
+        while ai < arguments.len:
+            var a: ast.TypeRef
+            unsafe:
+                a = read(arguments.data + ai)
+            args.push(resolve_type_at(ctx, a, depth + 1))
+            ai += 1
+        return types.Type.ty_imported(module_name = ctx.module_name, name = name, args = args.as_span())
+    return types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = name)
+
+
+function fold_qualified_const_type(ctx: ref[Context], name: str) -> types.Type:
     match name.find_byte('.'):
         Option.some as dot:
             let alias_name = name.slice(0, dot.value)
@@ -2798,11 +2818,6 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
                                 pass
         Option.none:
             pass
-    if name.find_byte('.').is_some():
-        return types.Type.ty_error
-    if ctx.suppressed_type_names.contains(name):
-        return types.Type.ty_error
-    report(ctx, line, column, unknown_type_message(name))
     return types.Type.ty_error
 
 
