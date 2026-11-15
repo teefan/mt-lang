@@ -115,6 +115,7 @@
       "main -> loader",
       "main -> lowering",
       "main -> lsp",
+      "main -> main",
       "main -> packages",
       "main -> parser",
       "main -> pretty_printer",
@@ -264,6 +265,8 @@
     "lsp.workspace_index": "idx",
     "lsp.workspace_notifications": "ws_notif",
     "lsp.workspace_symbols": "wsym",
+    "main": "main",
+    "main.std_cli": "std_cli",
     "packages.editor": "editor",
     "packages.graph": "graph",
     "packages.lock": "package_lock",
@@ -1145,7 +1148,7 @@
     ]
   },
   "sizes": {
-    "total_code": 123384,
+    "total_code": 123395,
     "functions_over_limit": 33,
     "files_over_limit": 12,
     "files": {
@@ -1810,10 +1813,16 @@
         "max_function": 22
       },
       "projects/mtc/src/mtc/main.mt": {
-        "lines": 7848,
-        "code": 6700,
+        "lines": 7403,
+        "code": 6309,
         "max_line": 277,
         "max_function": 526
+      },
+      "projects/mtc/src/mtc/main/std_cli.mt": {
+        "lines": 461,
+        "code": 402,
+        "max_line": 120,
+        "max_function": 50
       },
       "projects/mtc/src/mtc/packages/editor.mt": {
         "lines": 482,
