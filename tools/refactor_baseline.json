@@ -39,6 +39,7 @@
       "wasm_shell": 0
     },
     "edges": [
+      "bindgen -> bindgen",
       "bindgen -> formatter",
       "build -> c_backend",
       "build -> debug_map",
@@ -156,6 +157,7 @@
   "vocabulary": [],
   "aliases": {
     "bindgen": "bindgen",
+    "bindgen.nullable_policy": "nullable_policy",
     "browser": "browser",
     "build": "build_driver",
     "build_cache": "build_cache",
@@ -1156,15 +1158,21 @@
     ]
   },
   "sizes": {
-    "total_code": 123505,
+    "total_code": 123513,
     "functions_over_limit": 33,
     "files_over_limit": 12,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
-        "lines": 4772,
-        "code": 4116,
+        "lines": 4457,
+        "code": 3851,
         "max_line": 1984,
         "max_function": 221
+      },
+      "projects/mtc/src/mtc/bindgen/nullable_policy.mt": {
+        "lines": 325,
+        "code": 272,
+        "max_line": 138,
+        "max_function": 116
       },
       "projects/mtc/src/mtc/browser.mt": {
         "lines": 26,
@@ -1845,8 +1853,8 @@
         "max_function": 366
       },
       "projects/mtc/src/mtc/main/bindings_cli.mt": {
-        "lines": 575,
-        "code": 517,
+        "lines": 576,
+        "code": 518,
         "max_line": 126,
         "max_function": 216
       },

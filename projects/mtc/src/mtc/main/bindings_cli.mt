@@ -12,6 +12,7 @@ import std.vec as vec
 
 import mtc.loader.module_loader as loader
 import mtc.bindgen as bindgen
+import mtc.bindgen.nullable_policy as nullable_policy
 import mtc.imported_bindings.registry as ib_registry
 import mtc.imported_bindings.main as ib_main
 import mtc.cli_help as cli_help
@@ -24,7 +25,7 @@ import mtc.main.std_cli as std_cli
 public function bindgen_command(args: span[str]) -> int:
     var output: Option[str] = Option[str].none
     var nullable_report: Option[str] = Option[str].none
-    var nullable_policy: Option[str] = Option[str].none
+    var nullable_policy_path: Option[str] = Option[str].none
     var options_json: Option[str] = Option[str].none
     var link_libs = vec.Vec[str].create()
     var includes = vec.Vec[str].create()
@@ -91,7 +92,7 @@ public function bindgen_command(args: span[str]) -> int:
                 main.eprint_line("missing value for --nullable-policy")
                 let _ = cli_help.print_command_help("bindgen", true)
                 return 1
-            nullable_policy = Option[str].some(value = args[ai])
+            nullable_policy_path = Option[str].some(value = args[ai])
         else if arg == "--options-json":
             ai += 1
             if ai >= args.len:
@@ -108,10 +109,10 @@ public function bindgen_command(args: span[str]) -> int:
             return 1
         ai += 1
 
-    var policy: bindgen.NullablePolicy
-    match nullable_policy:
+    var policy: nullable_policy.NullablePolicy
+    match nullable_policy_path:
         Option.some as policy_path:
-            match bindgen.load_nullable_policy(policy_path.value):
+            match nullable_policy.load_nullable_policy(policy_path.value):
                 Result.success as loaded:
                     policy = loaded.value
                 Result.failure as load_failure:
@@ -123,7 +124,7 @@ public function bindgen_command(args: span[str]) -> int:
                     clang_args.release()
                     return 1
         Option.none:
-            policy = bindgen.NullablePolicy(
+            policy = nullable_policy.NullablePolicy(
                 return_overrides = vec.Vec[bindgen.TypeOverride].create(),
                 param_overrides = vec.Vec[bindgen.ParamOverride].create(),
             )
