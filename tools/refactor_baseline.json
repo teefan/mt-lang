@@ -1145,8 +1145,8 @@
     ]
   },
   "sizes": {
-    "total_code": 123554,
-    "functions_over_limit": 33,
+    "total_code": 123575,
+    "functions_over_limit": 32,
     "files_over_limit": 12,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
@@ -2014,10 +2014,10 @@
         "max_function": 39
       },
       "projects/mtc/src/mtc/semantic/analyzer.mt": {
-        "lines": 9580,
-        "code": 7143,
+        "lines": 9611,
+        "code": 7164,
         "max_line": 342,
-        "max_function": 243
+        "max_function": 190
       },
       "projects/mtc/src/mtc/semantic/control_flow/builder.mt": {
         "lines": 959,

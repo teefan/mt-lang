@@ -5293,39 +5293,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
-                match integer_suffix_type_name(lit.lexeme):
-                    Option.some as st:
-                        return types.primitive(st.value)
-                    Option.none:
-                        pass
-                # The host's `infer_integer_literal`: a bare literal takes the
-                # expected integer type when its value fits (`return 200 + 56`
-                # in a `-> ubyte` body types both operands as ubyte).  An
-                # out-of-range value falls through to the narrowing ladder and
-                # is rejected by the assignment check.
-                let hint = ctx.expected_type_hint
-                match hint:
-                    types.Type.ty_primitive as hp:
-                        # `char` is deliberately excluded: the host types the
-                        # literal as `int` and lowers it through an explicit
-                        # `char<-N` cast (`let nl: char = 10`), even though
-                        # `integer_constant_fits` accepts the value for
-                        # assignability.
-                        if hp.name != "char" and types.is_fixed_width_integer_name(hp.name) and types.integer_constant_fits(hp.name, long<-lit.value):
-                            return hint
-                    _:
-                        pass
-                # A bare literal picks the narrowest fixed-width type that
-                # holds its value: int -> long -> ulong (the host's
-                # `infer_integer_literal`; an overflowing `int` emitted
-                # overflowing C, e.g. `int32_t x = 2147483648;`).  A value
-                # that does not fit a signed `long` — stored negative by the
-                # parser, e.g. 0xFFFFFFFFFFFFFFFF — only fits `ulong`.
-                if lit.value < 0:
-                    return types.primitive("ulong")
-                if lit.value <= 2147483647:
-                    return types.primitive("int")
-                return types.primitive("long")
+                return infer_integer_literal_type(ctx, lit.lexeme, lit.value)
             ast.Expr.expr_float_literal as flit:
                 if float_literal_is_double(flit.lexeme):
                     return types.primitive("double")
@@ -5360,51 +5328,9 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
             ast.Expr.expr_member_access as ma:
                 return resolve_member_access(ctx, scope, ma.receiver, ma.member_name, false, ma.line, ma.column)
             ast.Expr.expr_index_access as ix:
-                let rt = infer_expr(ctx, scope, ix.receiver)
-                # An index is an integer position: the host's `infer_index_access`
-                # infers it with no expected type, so the enclosing assignment's
-                # element type must not leak into it (`players[i].color[0] =
-                # ubyte<-…` keeps the `0` an `int`, not a `ubyte`).
-                let index_saved_hint = ctx.expected_type_hint
-                ctx.expected_type_hint = types.Type.ty_error
-                let _ix = infer_expr(ctx, scope, ix.index)
-                ctx.expected_type_hint = index_saved_hint
-                if types.is_raw_pointer(rt) and not in_generic_body(ctx):
-                    if ctx.unsafe_depth == 0:
-                        report(ctx, 0, 0, "pointer indexing requires unsafe")
-                    else:
-                        mark_required_unsafe(ctx)
-                # Range slicing: `str[start..stop]` yields `str`;
-                # `array[T,N][a..b]` / `span[T][a..b]` yield `span[T]`.
-                unsafe:
-                    match read(ix.index):
-                        ast.Expr.expr_range:
-                            if types.type_to_string(rt) == "str":
-                                return types.Type.ty_str
-                            match rt:
-                                types.Type.ty_generic as g:
-                                    if g.name == "array" or g.name == "span":
-                                        var span_args = vec.Vec[types.Type].create()
-                                        span_args.push(types.pointer_element(rt))
-                                        return types.Type.ty_generic(name = "span", args = span_args.as_span())
-                                _:
-                                    pass
-                        _:
-                            pass
-                var elem = types.pointer_element(rt)
-                if types.is_error(elem) and types.type_to_string(rt) == "str":
-                    # `str[i]` reads a byte (host `infer_index_access`).
-                    elem = types.primitive("ubyte")
-                if not types.is_error(elem):
-                    return elem
-                return types.Type.ty_error
+                return infer_index_access_type(ctx, scope, ix.receiver, ix.index)
             ast.Expr.expr_unsafe as u:
-                ctx.unsafe_depth += 1
-                ctx.unsafe_statement_lines.push(u.line)
-                let result = infer_expr(ctx, scope, u.expression)
-                ctx.unsafe_depth -= 1
-                let _popped_expr = ctx.unsafe_statement_lines.pop()
-                return result
+                return infer_unsafe_type(ctx, scope, u.expression, u.line)
             ast.Expr.expr_call as call:
                 let ty = infer_and_check_call(ctx, scope, call.callee, call.args)
                 record_call_kind(ctx, ep, call_expr_kind(ctx, call.callee))
@@ -5414,108 +5340,20 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 record_call_kind(ctx, ep, specialization_kind(ctx, spec.callee, spec.arguments))
                 return ty
             ast.Expr.expr_await as aw:
-                if not ctx.inside_async:
-                    report(ctx, 0, 0, "await is only allowed inside async functions")
-                # `await` unwraps the lifted Task type: Task[T] -> T (mirrors
-                # Ruby's infer_await returning task_type.result_type).
-                let awaited = infer_expr(ctx, scope, aw.expression)
-                match awaited:
-                    types.Type.ty_generic as task_g:
-                        if task_g.name == "Task" and task_g.args.len == 1:
-                            return unsafe: read(task_g.args.data + 0)
-                    _:
-                        pass
-                return awaited
+                return infer_await_type(ctx, scope, aw.expression)
             ast.Expr.expr_null_literal as nl:
-                let target = nl.target_type
-                if target != null:
-                    let t = resolve_type(ctx, target)
-                    return types.Type.ty_nullable(base = types.alloc_type(t))
-                # The host's `infer_null_literal_type` answers its `Types::Null`
-                # when no target type is in scope — not an error — so a
-                # conditional branch can unify with the other branch's nullable
-                # (`conditional_null_common_type`).
-                return types.Type.ty_null(target = null)
+                return infer_null_literal_type(ctx, nl.target_type)
             ast.Expr.expr_format_string as fs:
                 check_format_string_parts(ctx, scope, fs.parts)
                 return types.Type.ty_str
             ast.Expr.expr_proc as pr:
-                var param_types = vec.Vec[types.Type].create()
-                var pi: ptr_uint = 0
-                var param_names = vec.Vec[str].create()
-                while pi < pr.method_params.len:
-                    var p: ast.Param = read(pr.method_params.data + pi)
-                    param_types.push(resolve_type_value(ctx, p.param_type))
-                    param_names.push(p.name)
-                    pi += 1
-                var ret = types.primitive("void")
-                let rt = pr.return_type
-                if rt != null:
-                    ret = resolve_type(ctx, rt)
-                check_proc_body(ctx, scope, param_types.as_span(), param_names.as_span(), ret, pr.body)
-                return types.Type.ty_function(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true, param_names = param_names.as_span())
+                return infer_proc_type(ctx, scope, pr.method_params, pr.return_type, pr.body)
             ast.Expr.expr_if as ife:
-                # Each branch is checked with the condition's refinements in
-                # scope (`let x = if p != null: read(p) else: …`), the host's
-                # `infer_if_expression`.
-                let _cond_ty = infer_expr(ctx, scope, ife.condition)
-                scope_enter(scope)
-                var then_refs = flow_refinements(ctx, ife.condition, true, scope)
-                apply_refinements_to_frame(ctx, scope, ref_of(then_refs))
-                let then_ty = infer_expr(ctx, scope, ife.then_expr)
-                then_refs.release()
-                scope_leave(scope)
-                scope_enter(scope)
-                var else_refs = flow_refinements(ctx, ife.condition, false, scope)
-                apply_refinements_to_frame(ctx, scope, ref_of(else_refs))
-                let else_ty = infer_expr(ctx, scope, ife.else_expr)
-                else_refs.release()
-                scope_leave(scope)
-                # A declared position's expected type wins when both branches fit
-                # it (the host's `infer_if_expression` short-circuit): `let n:
-                # uint = if p: uint<-x else: 0` is uint, though the branches'
-                # numeric common type would be long.
-                let hint_ty = ctx.expected_type_hint
-                if not types.is_error(hint_ty):
-                    if compat.types_compatible(hint_ty, then_ty, ife.then_expr) and compat.types_compatible(hint_ty, else_ty, ife.else_expr):
-                        return hint_ty
-                return sem_exprs.conditional_common_type(then_ty, else_ty, ife.then_expr, ife.else_expr)
+                return infer_if_expr_type(ctx, scope, ife.condition, ife.then_expr, ife.else_expr)
             ast.Expr.expr_match as me:
-                # An `as name` arm binds the arm's payload type from the
-                # scrutinee's type, so it is inferred once, before the arms.
-                let expr_scrutinee_ty = infer_expr_inner(ctx, scope, me.scrutinee)
-                var arm_types = vec.Vec[types.Type].create()
-                var arm_exprs = vec.Vec[ptr[ast.Expr]].create()
-                let match_hint = ctx.expected_type_hint
-                var all_fit_hint = not types.is_error(match_hint)
-                var ai: ptr_uint = 0
-                while ai < me.arms.len:
-                    var arm: ast.MatchExprArm = read(me.arms.data + ai)
-                    scope_enter(scope)
-                    bind_match_arm_names(ctx, scope, expr_scrutinee_ty, arm.binding_name, arm.pattern, arm.binding_line, arm.binding_column)
-                    let arm_ty = infer_expr(ctx, scope, arm.value)
-                    if all_fit_hint and not compat.types_compatible(match_hint, arm_ty, arm.value):
-                        all_fit_hint = false
-                    arm_types.push(arm_ty)
-                    arm_exprs.push(arm.value)
-                    scope_leave(scope)
-                    ai += 1
-                # A declared position's expected type wins when every arm fits
-                # it (the host's `match_expression_common_type` short-circuit).
-                if all_fit_hint:
-                    return match_hint
-                return sem_exprs.match_expression_common_type(arm_types.as_span(), arm_exprs.as_span())
+                return infer_match_expr_type(ctx, scope, me.scrutinee, me.arms)
             ast.Expr.expr_detach as det:
-                match read(det.expression):
-                    ast.Expr.expr_call as call:
-                        match read(call.callee):
-                            ast.Expr.expr_identifier:
-                                pass
-                            _:
-                                report(ctx, det.line, det.column, "detach target must be a global function call")
-                    _:
-                        report(ctx, det.line, det.column, "detach target must be a function call")
-                return types.Type.ty_handle
+                return infer_detach_type(ctx, det.expression, det.line, det.column)
             ast.Expr.expr_sizeof:
                 return types.primitive("ptr_uint")
             ast.Expr.expr_alignof:
@@ -5532,6 +5370,199 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 return types.Type.ty_error
             _:
                 return types.Type.ty_error
+
+
+function infer_integer_literal_type(ctx: ref[Context], lexeme: str, value: long) -> types.Type:
+    match integer_suffix_type_name(lexeme):
+        Option.some as st:
+            return types.primitive(st.value)
+        Option.none:
+            pass
+    # The host's `infer_integer_literal`: a bare literal takes the
+    # expected integer type when its value fits (`return 200 + 56`
+    # in a `-> ubyte` body types both operands as ubyte).  An
+    # out-of-range value falls through to the narrowing ladder and
+    # is rejected by the assignment check.
+    let hint = ctx.expected_type_hint
+    match hint:
+        types.Type.ty_primitive as hp:
+            # `char` is deliberately excluded: the host types the
+            # literal as `int` and lowers it through an explicit
+            # `char<-N` cast (`let nl: char = 10`), even though
+            # `integer_constant_fits` accepts the value for
+            # assignability.
+            if hp.name != "char" and types.is_fixed_width_integer_name(hp.name) and types.integer_constant_fits(hp.name, long<-value):
+                return hint
+        _:
+            pass
+    # A bare literal picks the narrowest fixed-width type that
+    # holds its value: int -> long -> ulong (the host's
+    # `infer_integer_literal`; an overflowing `int` emitted
+    # overflowing C, e.g. `int32_t x = 2147483648;`).  A value
+    # that does not fit a signed `long` — stored negative by the
+    # parser, e.g. 0xFFFFFFFFFFFFFFFF — only fits `ulong`.
+    if value < 0:
+        return types.primitive("ulong")
+    if value <= 2147483647:
+        return types.primitive("int")
+    return types.primitive("long")
+
+function infer_index_access_type(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], index: ptr[ast.Expr]) -> types.Type:
+    let rt = infer_expr(ctx, scope, receiver)
+    # An index is an integer position: the host's `infer_index_access`
+    # infers it with no expected type, so the enclosing assignment's
+    # element type must not leak into it (`players[i].color[0] =
+    # ubyte<-…` keeps the `0` an `int`, not a `ubyte`).
+    let index_saved_hint = ctx.expected_type_hint
+    ctx.expected_type_hint = types.Type.ty_error
+    let _ix = infer_expr(ctx, scope, index)
+    ctx.expected_type_hint = index_saved_hint
+    if types.is_raw_pointer(rt) and not in_generic_body(ctx):
+        if ctx.unsafe_depth == 0:
+            report(ctx, 0, 0, "pointer indexing requires unsafe")
+        else:
+            mark_required_unsafe(ctx)
+    # Range slicing: `str[start..stop]` yields `str`;
+    # `array[T,N][a..b]` / `span[T][a..b]` yield `span[T]`.
+    unsafe:
+        match read(index):
+            ast.Expr.expr_range:
+                if types.type_to_string(rt) == "str":
+                    return types.Type.ty_str
+                match rt:
+                    types.Type.ty_generic as g:
+                        if g.name == "array" or g.name == "span":
+                            var span_args = vec.Vec[types.Type].create()
+                            span_args.push(types.pointer_element(rt))
+                            return types.Type.ty_generic(name = "span", args = span_args.as_span())
+                    _:
+                        pass
+            _:
+                pass
+    var elem = types.pointer_element(rt)
+    if types.is_error(elem) and types.type_to_string(rt) == "str":
+        # `str[i]` reads a byte (host `infer_index_access`).
+        elem = types.primitive("ubyte")
+    if not types.is_error(elem):
+        return elem
+    return types.Type.ty_error
+
+function infer_unsafe_type(ctx: ref[Context], scope: ref[sscope.Scope], expression: ptr[ast.Expr], line: ptr_uint) -> types.Type:
+    ctx.unsafe_depth += 1
+    ctx.unsafe_statement_lines.push(line)
+    let result = infer_expr(ctx, scope, expression)
+    ctx.unsafe_depth -= 1
+    let _popped_expr = ctx.unsafe_statement_lines.pop()
+    return result
+
+function infer_await_type(ctx: ref[Context], scope: ref[sscope.Scope], expression: ptr[ast.Expr]) -> types.Type:
+    if not ctx.inside_async:
+        report(ctx, 0, 0, "await is only allowed inside async functions")
+    # `await` unwraps the lifted Task type: Task[T] -> T (mirrors
+    # Ruby's infer_await returning task_type.result_type).
+    let awaited = infer_expr(ctx, scope, expression)
+    match awaited:
+        types.Type.ty_generic as task_g:
+            if task_g.name == "Task" and task_g.args.len == 1:
+                return unsafe: read(task_g.args.data + 0)
+        _:
+            pass
+    return awaited
+
+function infer_null_literal_type(ctx: ref[Context], target_type: ptr[ast.TypeRef]?) -> types.Type:
+    let target = target_type
+    if target != null:
+        let t = resolve_type(ctx, target)
+        return types.Type.ty_nullable(base = types.alloc_type(t))
+    # The host's `infer_null_literal_type` answers its `Types::Null`
+    # when no target type is in scope — not an error — so a
+    # conditional branch can unify with the other branch's nullable
+    # (`conditional_null_common_type`).
+    return types.Type.ty_null(target = null)
+
+function infer_proc_type(ctx: ref[Context], scope: ref[sscope.Scope], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]) -> types.Type:
+    unsafe:
+        var param_types = vec.Vec[types.Type].create()
+        var pi: ptr_uint = 0
+        var param_names = vec.Vec[str].create()
+        while pi < method_params.len:
+            var p: ast.Param = read(method_params.data + pi)
+            param_types.push(resolve_type_value(ctx, p.param_type))
+            param_names.push(p.name)
+            pi += 1
+        var ret = types.primitive("void")
+        let rt = return_type
+        if rt != null:
+            ret = resolve_type(ctx, rt)
+        check_proc_body(ctx, scope, param_types.as_span(), param_names.as_span(), ret, body)
+        return types.Type.ty_function(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true, param_names = param_names.as_span())
+
+function infer_if_expr_type(ctx: ref[Context], scope: ref[sscope.Scope], condition: ptr[ast.Expr], then_expr: ptr[ast.Expr], else_expr: ptr[ast.Expr]) -> types.Type:
+    # Each branch is checked with the condition's refinements in
+    # scope (`let x = if p != null: read(p) else: …`), the host's
+    # `infer_if_expression`.
+    let _cond_ty = infer_expr(ctx, scope, condition)
+    scope_enter(scope)
+    var then_refs = flow_refinements(ctx, condition, true, scope)
+    apply_refinements_to_frame(ctx, scope, ref_of(then_refs))
+    let then_ty = infer_expr(ctx, scope, then_expr)
+    then_refs.release()
+    scope_leave(scope)
+    scope_enter(scope)
+    var else_refs = flow_refinements(ctx, condition, false, scope)
+    apply_refinements_to_frame(ctx, scope, ref_of(else_refs))
+    let else_ty = infer_expr(ctx, scope, else_expr)
+    else_refs.release()
+    scope_leave(scope)
+    # A declared position's expected type wins when both branches fit
+    # it (the host's `infer_if_expression` short-circuit): `let n:
+    # uint = if p: uint<-x else: 0` is uint, though the branches'
+    # numeric common type would be long.
+    let hint_ty = ctx.expected_type_hint
+    if not types.is_error(hint_ty):
+        if compat.types_compatible(hint_ty, then_ty, then_expr) and compat.types_compatible(hint_ty, else_ty, else_expr):
+            return hint_ty
+    return sem_exprs.conditional_common_type(then_ty, else_ty, then_expr, else_expr)
+
+function infer_match_expr_type(ctx: ref[Context], scope: ref[sscope.Scope], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm]) -> types.Type:
+    unsafe:
+        # An `as name` arm binds the arm's payload type from the
+        # scrutinee's type, so it is inferred once, before the arms.
+        let expr_scrutinee_ty = infer_expr_inner(ctx, scope, scrutinee)
+        var arm_types = vec.Vec[types.Type].create()
+        var arm_exprs = vec.Vec[ptr[ast.Expr]].create()
+        let match_hint = ctx.expected_type_hint
+        var all_fit_hint = not types.is_error(match_hint)
+        var ai: ptr_uint = 0
+        while ai < arms.len:
+            var arm: ast.MatchExprArm = read(arms.data + ai)
+            scope_enter(scope)
+            bind_match_arm_names(ctx, scope, expr_scrutinee_ty, arm.binding_name, arm.pattern, arm.binding_line, arm.binding_column)
+            let arm_ty = infer_expr(ctx, scope, arm.value)
+            if all_fit_hint and not compat.types_compatible(match_hint, arm_ty, arm.value):
+                all_fit_hint = false
+            arm_types.push(arm_ty)
+            arm_exprs.push(arm.value)
+            scope_leave(scope)
+            ai += 1
+        # A declared position's expected type wins when every arm fits
+        # it (the host's `match_expression_common_type` short-circuit).
+        if all_fit_hint:
+            return match_hint
+        return sem_exprs.match_expression_common_type(arm_types.as_span(), arm_exprs.as_span())
+
+function infer_detach_type(ctx: ref[Context], expression: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> types.Type:
+    unsafe:
+        match read(expression):
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_identifier:
+                        pass
+                    _:
+                        report(ctx, line, column, "detach target must be a global function call")
+            _:
+                report(ctx, line, column, "detach target must be a function call")
+        return types.Type.ty_handle
 
 
 ## A bare identifier that names something referenceable even when its type is
