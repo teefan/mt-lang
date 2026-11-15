@@ -160,6 +160,7 @@
     "bindgen.emitter": "emitter",
     "bindgen.macro_probes": "macro_probes",
     "bindgen.nullable_policy": "nullable_policy",
+    "bindgen.options_json": "options_json",
     "browser": "browser",
     "build": "build_driver",
     "build_cache": "build_cache",
@@ -1160,13 +1161,13 @@
     ]
   },
   "sizes": {
-    "total_code": 123532,
+    "total_code": 123540,
     "functions_over_limit": 33,
     "files_over_limit": 12,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
-        "lines": 3609,
-        "code": 3075,
+        "lines": 3424,
+        "code": 2917,
         "max_line": 1984,
         "max_function": 221
       },
@@ -1187,6 +1188,12 @@
         "code": 272,
         "max_line": 138,
         "max_function": 116
+      },
+      "projects/mtc/src/mtc/bindgen/options_json.mt": {
+        "lines": 194,
+        "code": 165,
+        "max_line": 122,
+        "max_function": 50
       },
       "projects/mtc/src/mtc/browser.mt": {
         "lines": 26,
@@ -1867,8 +1874,8 @@
         "max_function": 366
       },
       "projects/mtc/src/mtc/main/bindings_cli.mt": {
-        "lines": 576,
-        "code": 518,
+        "lines": 577,
+        "code": 519,
         "max_line": 126,
         "max_function": 216
       },
