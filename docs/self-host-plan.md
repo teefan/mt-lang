@@ -15,7 +15,8 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-105-2026-11-14)
+- [Status at a glance](#status-at-a-glance-session-106-2026-11-14)
+- [Session 106 — bindgen nullable-report module](#session-106--bindgen-nullable-report-module)
 - [Session 105 — bindgen options-JSON module](#session-105--bindgen-options-json-module)
 - [Session 104 — bindgen macro-probe module](#session-104--bindgen-macro-probe-module)
 - [Session 103 — bindgen emitter module](#session-103--bindgen-emitter-module)
@@ -59,7 +60,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 105, 2026-11-14)
+## Status at a glance (session 106, 2026-11-14)
 
 | Area | State |
 | --- | --- |
@@ -77,7 +78,7 @@ history.
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
 | Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 72).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
 | Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
-| **Refactoring safety (new)** | structural guard: 160 files / 123,540 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **35 unused + 6 test-only** public declarations; 5,228 duplicated lines; 33 functions ≥ 200 lines; 0 markers.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` |
+| **Refactoring safety (new)** | structural guard: 161 files / 123,546 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **35 unused + 6 test-only** public declarations; 5,228 duplicated lines; 33 functions ≥ 200 lines; 0 markers.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` |
 
 Rough completion against the per-track Definition of Done: **100%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix (including
@@ -87,6 +88,36 @@ done, and session 72 added the analyzer/`check` surface that no gate had
 measured.  The only residuals are the documented `tracy` custom-generator entry
 and the optional desktop F5 smoke.  Track G (throughput) closed in session 72:
 the self is now faster than the host.
+
+## Session 106 — bindgen nullable-report module
+
+Fifth bindgen split: move the nullable-policy report out of `bindgen.mt` into
+`bindgen/nullable_report.mt` — the parameter/return override comparison and
+release helpers, `build_nullable_report`, and its JSON text writer (9 functions
++ 2 report structs / 210 code lines).
+
+- `nullable_report.mt` is 243 lines / 210 code (max function 25); `bindgen.mt`
+  is 3,187 lines / 2,713 code (from 3,424 / 2,917).
+- `build_nullable_report` is public for the generation pipeline;
+  `uint_to_str`, `map_type`, `CDecl` and `BindgenOptions` are referenced through
+  the `bindgen` alias, and the policy lookups through `nullable_policy`.  The
+  bindgen area keeps its same-rank edge (111 edges, 0 violations); the alias
+  table adds `bindgen.nullable_report` (161 modules).
+- The moved bodies are verbatim (232 lines before the new header); the new
+  module imports `std.str` for `str.compare`.
+- Bindgen parity: **33 match / 0 differ / 0 error / 1 custom of 34**.
+- Structural baseline refreshed: 161 files / 123,546 code lines; 161 alias
+  modules; 111 edges; 5,228 duplicated lines; 33 functions >= 200 lines; 12
+  files >= 2,000 code lines.
+
+Verification: dev suite 21/0; `test/mt` 61/0; CLI 224/224; bindgen parity
+33/34 (1 custom); refactor gate 6/6; bootstrap fixed point holds
+(`stage2.c == stage3.c`; stage2 self-test 21/0).
+
+Next: parser and analyzer; the largest functions remain `lower_async_fn` 587,
+`generate_c` 537, `build_command` 526, `lower_expr` 459 and `run_command` 401.
+`bindgen.mt` is now 3,187 lines, down from 4,772 at the start of the bindgen
+splits.
 
 ## Session 105 — bindgen options-JSON module
 
@@ -1341,7 +1372,7 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
-## Handoff (session 105)
+## Handoff (session 106)
 
 **Read this first, then *Status at a glance* and the Ledger.**  The parity
 program stays closed, and session 73 closed the last *measurement* gaps: the
@@ -1349,7 +1380,7 @@ program stays closed, and session 73 closed the last *measurement* gaps: the
 command.  The matrix is now **224/224**, and the fixes it forced are in the
 commands themselves (see the session-73 section).
 
-Sessions 75–105 added the refactoring safety suite (structural guard, gate
+Sessions 75–106 added the refactoring safety suite (structural guard, gate
 wiring, committed baseline), its first pass (naming violations, the shared
 `mtc.strings` leaf, alias and type canonicalization), import-cycle support in
 the loader, the lowering splits (`comptime.mt`, `const_eval.mt`,
@@ -1364,7 +1395,8 @@ lowering function at 459 lines), the c_backend/main splits
 (`linter/rules_doc_tag.mt`, `linter/rules_trailing_comma.mt`,
 `linter/rules_redundant_else.mt`), and the bindgen modules
 (`bindgen/nullable_policy.mt`, `bindgen/emitter.mt`,
-`bindgen/macro_probes.mt`, `bindgen/options_json.mt`).
+`bindgen/macro_probes.mt`, `bindgen/options_json.mt`,
+`bindgen/nullable_report.mt`).
 The lowering submodules now form one import SCC; keep `import std.str` in
 cyclic modules that use `Map[str, …]` keys, and expose a constructor from
 lowering instead of referencing a variant arm across the cycle.
@@ -2129,12 +2161,12 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **21 files / 0 failed** | session 105 | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 61 files / 0 failed | session 105 | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **21 files / 0 failed** | session 106 | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 61 files / 0 failed | session 106 | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | 49/49 same under the gate (15 top-level + 34 sdl3) | session 98 | `tools/gates.sh --areas examples --run` |
 | `sexpr lex` / `parse` | lex 739/739; parse 735 match / 0 differ / 4 host-rejected of 739 (counts include `tmp` fixtures) | session 72 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
 | `sexpr lower` | **699 match / 2 differ / 53 host-rejected / 0 self-rejected** of 754 (the 2 are the documented `memory_stress_test` + `main.mt` artifacts; every extracted module matches) | session 91 | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
-| `cli:parity` | **224 match / 0 differ / 0 pending** of 224 (case-backed; timings, `debug` node ids and the synthesized test-runner path normalized) | session 105 (re-verified) | `ruby tools/cli_parity.rb -q` |
+| `cli:parity` | **224 match / 0 differ / 0 pending** of 224 (case-backed; timings, `debug` node ids and the synthesized test-runner path normalized) | session 106 (re-verified) | `ruby tools/cli_parity.rb -q` |
 | `mtc test` matrix | **43 cases**, included in `cli:parity` 224/224: file/dir operands, human/TAP/JUnit, filters, death tests, `--timeout/--mem/--jobs/--sanitize`, `--locked/--frozen`, validation errors, build-error channels | session 73 | `ruby tools/cli_parity.rb -f '^test-'` |
 | **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** (`std`+`examples`; the 3 are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows) | session 72 | `ruby tools/diag_parity.rb check -j 8 std examples`; byte-level: `ruby tools/check_parity.rb` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 71 | `ruby tools/wasm_smoke.rb` |
@@ -2150,9 +2182,9 @@ when the tree moved.  Target = the Definition of Done above.
 | formatter | 739/739 all three modes byte-identical | session 72 | `ruby tools/format_parity.rb all -j 16` |
 | DAP | zero differing rows except the documented self-better frame0 row; the async-order F5 probe (`tools/dap_async_probe.rb`) proves launch → breakpoint → frame/locals → evaluate against real `lldb-dap` | session 73 (re-verified) | `ruby tools/dap_smoke.rb` (`--allow-skip` to waive a missing adapter); `ruby tools/dap_async_probe.rb` |
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
-| bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 105 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
+| bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 106 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 160 alias modules); 35 unused / 6 test-only exports; **5,228 duplicated lines**; **33 functions ≥ 200 lines**; 0 markers; **guard tests 14/14**; refactor gate **6/6 rc=0** | session 105 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 161 alias modules); 35 unused / 6 test-only exports; **5,228 duplicated lines**; **33 functions ≥ 200 lines**; 0 markers; **guard tests 14/14**; refactor gate **6/6 rc=0** | session 106 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 

@@ -160,6 +160,7 @@
     "bindgen.emitter": "emitter",
     "bindgen.macro_probes": "macro_probes",
     "bindgen.nullable_policy": "nullable_policy",
+    "bindgen.nullable_report": "nullable_report",
     "bindgen.options_json": "options_json",
     "browser": "browser",
     "build": "build_driver",
@@ -1161,13 +1162,13 @@
     ]
   },
   "sizes": {
-    "total_code": 123540,
+    "total_code": 123546,
     "functions_over_limit": 33,
     "files_over_limit": 12,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
-        "lines": 3424,
-        "code": 2917,
+        "lines": 3187,
+        "code": 2713,
         "max_line": 1984,
         "max_function": 221
       },
@@ -1188,6 +1189,12 @@
         "code": 272,
         "max_line": 138,
         "max_function": 116
+      },
+      "projects/mtc/src/mtc/bindgen/nullable_report.mt": {
+        "lines": 243,
+        "code": 210,
+        "max_line": 123,
+        "max_function": 25
       },
       "projects/mtc/src/mtc/bindgen/options_json.mt": {
         "lines": 194,
