@@ -3542,82 +3542,13 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
             ast.Stmt.stmt_block as blk:
                 check_stmt_span(ctx, scope, chk, blk.statements)
             ast.Stmt.stmt_ret as r:
-                if chk.inside_defer:
-                    report(ctx, r.line, r.column, "return is not allowed inside a defer block")
-                else if chk.inside_parallel:
-                    report(ctx, r.line, r.column, "return is not allowed inside a parallel block")
-                let rv = r.value
-                if rv != null:
-                    if types.is_void(chk.ret):
-                        report(ctx, r.line, r.column, "void function may not return a value")
-                    # The return type is the value's expected type (the host's
-                    # `lower_return_stmt` contextual lowering).
-                    let ret_saved_hint = ctx.expected_type_hint
-                    ctx.expected_type_hint = chk.ret
-                    let vt = infer_expr(ctx, scope, rv)
-                    ctx.expected_type_hint = ret_saved_hint
-                    if incompatible_value_with_consts(chk.ret, vt, rv, ref_of(ctx.const_values)):
-                        let rl = expr_source_line(rv)
-                        if rl == 0:
-                            report(ctx, r.line, r.column, return_mismatch_message(chk.ret, vt))
-                        else:
-                            report(ctx, rl, expr_source_column(rv), return_mismatch_message(chk.ret, vt))
+                check_return_stmt(ctx, scope, chk, r.line, r.column, r.value)
             ast.Stmt.stmt_local as l:
                 check_local(ctx, scope, chk, l.is_let, l.name, l.stmt_type, l.value, l.else_binding, l.else_body, l.destructure_bindings, l.line, l.column, l.else_binding_line, l.else_binding_column)
             ast.Stmt.stmt_if as i:
-                # The host's IfStmt arm: each branch is checked with the previous
-                # branches' falsy refinements in scope, and an if whose every
-                # branch body terminates continues with the *falsy* refinements —
-                # the only way control can get past it.
-                var false_refinements = map_mod.Map[str, types.Type].create()
-                var all_terminate = true
-                var bi2: ptr_uint = 0
-                while bi2 < i.branches.len:
-                    var br: ast.IfBranch = read(i.branches.data + bi2)
-                    scope_enter(scope)
-                    apply_refinements_to_frame(ctx, scope, ref_of(false_refinements))
-                    check_condition(ctx, scope, br.condition, "if", br.line, br.column)
-                    var true_refs = flow_refinements(ctx, br.condition, true, scope)
-                    merge_refinements_into(ref_of(true_refs), ref_of(false_refinements))
-                    scope_enter(scope)
-                    apply_refinements_to_frame(ctx, scope, ref_of(true_refs))
-                    check_body(ctx, scope, chk, br.body)
-                    scope_leave(scope)
-                    true_refs.release()
-                    if not body_always_terminates(ctx, br.body):
-                        all_terminate = false
-                    var false_refs = flow_refinements(ctx, br.condition, false, scope)
-                    merge_refinements_into(ref_of(false_refinements), ref_of(false_refs))
-                    false_refs.release()
-                    scope_leave(scope)
-                    bi2 += 1
-                if i.else_body != null:
-                    scope_enter(scope)
-                    apply_refinements_to_frame(ctx, scope, ref_of(false_refinements))
-                    check_body(ctx, scope, chk, i.else_body)
-                    scope_leave(scope)
-                else:
-                    if all_terminate and i.branches.len > 0:
-                        apply_refinements_to_scope_frame(ctx, scope, ref_of(false_refinements))
-                false_refinements.release()
+                check_if_stmt(ctx, scope, chk, i.branches, i.else_body)
             ast.Stmt.stmt_while as w:
-                if w.is_inline:
-                    match evaluate_const_expr(ctx, w.condition):
-                        Option.none:
-                            report(ctx, w.line, w.column, "inline while condition must be a compile-time constant")
-                            return
-                        Option.some:
-                            pass
-                check_condition(ctx, scope, w.condition, "while", w.line, w.column)
-                # The body runs only while the condition holds, so its truthy
-                # refinements are in scope there (`while p != null: read(p)…`),
-                # the host's `body_scopes = scopes_with_refinements(…)`.
-                scope_enter(scope)
-                var loop_refs = flow_refinements(ctx, w.condition, true, scope)
-                apply_refinements_to_frame(ctx, scope, ref_of(loop_refs))
-                check_body(ctx, scope, check_flags(chk.ret, true, chk.inside_defer, chk.inside_parallel), w.body)
-                loop_refs.release()
-                scope_leave(scope)
+                check_while_stmt(ctx, scope, chk, w.is_inline, w.condition, w.body, w.line, w.column)
             ast.Stmt.stmt_for as fr:
                 scope_enter(scope)
                 bind_for_binding_types(ctx, scope, fr.bindings, fr.iterables, fr.threaded)
@@ -3628,21 +3559,7 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                     check_body(ctx, scope, check_flags(chk.ret, true, chk.inside_defer, chk.inside_parallel), fr.body)
                 scope_leave(scope)
             ast.Stmt.stmt_match as m:
-                # The scrutinee's type is computed once, before the arms: an
-                # `as name` arm binds the arm's payload type from it, and the
-                # exhaustiveness pass reuses it (inferring twice would report
-                # every unknown name in the scrutinee twice).
-                let scrutinee_ty = infer_expr_inner(ctx, scope, m.scrutinee)
-                var ai: ptr_uint = 0
-                while ai < m.arms.len:
-                    var arm: ast.MatchArm
-                    arm = read(m.arms.data + ai)
-                    scope_enter(scope)
-                    bind_match_arm_names(ctx, scope, scrutinee_ty, arm.binding_name, arm.pattern, arm.binding_line, arm.binding_column)
-                    check_body(ctx, scope, chk, arm.body)
-                    scope_leave(scope)
-                    ai += 1
-                check_match(ctx, scope, scrutinee_ty, m.arms, m.line, m.column)
+                check_match_stmt(ctx, scope, chk, m.scrutinee, m.arms, m.line, m.column)
             ast.Stmt.stmt_unsafe as u:
                 ctx.unsafe_depth += 1
                 ctx.unsafe_statement_lines.push(u.line)
@@ -3676,20 +3593,125 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
             ast.Stmt.stmt_expression as e:
                 let _ignored = infer_expr(ctx, scope, e.expression)
             ast.Stmt.stmt_assignment as a:
-                let tt = infer_expr(ctx, scope, a.target)
-                let target_ty = assign_target_type(scope, a.target, tt)
-                # The target's type is the value's expected type (the host's
-                # `lower_assignment_stmt` passes it to the value's inference).
-                let assign_saved_hint = ctx.expected_type_hint
-                if a.operator == "=":
-                    ctx.expected_type_hint = target_ty
-                let vt = infer_expr(ctx, scope, a.value)
-                ctx.expected_type_hint = assign_saved_hint
-                if a.operator == "=" and incompatible_value_with_consts(target_ty, vt, a.value, ref_of(ctx.const_values)):
-                    report(ctx, a.line, a.column, assign_message(target_ty, vt))
-                check_assign_target_immutable(ctx, scope, a.target, a.line, a.column)
+                check_assignment_stmt(ctx, scope, a.target, a.value, a.operator, a.line, a.column)
             _:
                 pass
+
+
+function check_return_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, line: ptr_uint, column: ptr_uint, value: ptr[ast.Expr]?) -> void:
+    if chk.inside_defer:
+        report(ctx, line, column, "return is not allowed inside a defer block")
+    else if chk.inside_parallel:
+        report(ctx, line, column, "return is not allowed inside a parallel block")
+    let rv = value
+    if rv != null:
+        if types.is_void(chk.ret):
+            report(ctx, line, column, "void function may not return a value")
+        # The return type is the value's expected type (the host's
+        # `lower_return_stmt` contextual lowering).
+        let ret_saved_hint = ctx.expected_type_hint
+        ctx.expected_type_hint = chk.ret
+        let vt = infer_expr(ctx, scope, rv)
+        ctx.expected_type_hint = ret_saved_hint
+        if incompatible_value_with_consts(chk.ret, vt, rv, ref_of(ctx.const_values)):
+            let rl = expr_source_line(rv)
+            if rl == 0:
+                report(ctx, line, column, return_mismatch_message(chk.ret, vt))
+            else:
+                report(ctx, rl, expr_source_column(rv), return_mismatch_message(chk.ret, vt))
+
+
+function check_if_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> void:
+    unsafe:
+        # The host's IfStmt arm: each branch is checked with the previous
+        # branches' falsy refinements in scope, and an if whose every
+        # branch body terminates continues with the *falsy* refinements —
+        # the only way control can get past it.
+        var false_refinements = map_mod.Map[str, types.Type].create()
+        var all_terminate = true
+        var bi2: ptr_uint = 0
+        while bi2 < branches.len:
+            var br: ast.IfBranch = read(branches.data + bi2)
+            scope_enter(scope)
+            apply_refinements_to_frame(ctx, scope, ref_of(false_refinements))
+            check_condition(ctx, scope, br.condition, "if", br.line, br.column)
+            var true_refs = flow_refinements(ctx, br.condition, true, scope)
+            merge_refinements_into(ref_of(true_refs), ref_of(false_refinements))
+            scope_enter(scope)
+            apply_refinements_to_frame(ctx, scope, ref_of(true_refs))
+            check_body(ctx, scope, chk, br.body)
+            scope_leave(scope)
+            true_refs.release()
+            if not body_always_terminates(ctx, br.body):
+                all_terminate = false
+            var false_refs = flow_refinements(ctx, br.condition, false, scope)
+            merge_refinements_into(ref_of(false_refinements), ref_of(false_refs))
+            false_refs.release()
+            scope_leave(scope)
+            bi2 += 1
+        if else_body != null:
+            scope_enter(scope)
+            apply_refinements_to_frame(ctx, scope, ref_of(false_refinements))
+            check_body(ctx, scope, chk, else_body)
+            scope_leave(scope)
+        else:
+            if all_terminate and branches.len > 0:
+                apply_refinements_to_scope_frame(ctx, scope, ref_of(false_refinements))
+        false_refinements.release()
+
+
+function check_while_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, is_inline: bool, condition: ptr[ast.Expr], body: ptr[ast.Stmt]?, line: ptr_uint, column: ptr_uint) -> void:
+    if is_inline:
+        match evaluate_const_expr(ctx, condition):
+            Option.none:
+                report(ctx, line, column, "inline while condition must be a compile-time constant")
+                return
+            Option.some:
+                pass
+    check_condition(ctx, scope, condition, "while", line, column)
+    # The body runs only while the condition holds, so its truthy
+    # refinements are in scope there (`while p != null: read(p)…`),
+    # the host's `body_scopes = scopes_with_refinements(…)`.
+    scope_enter(scope)
+    var loop_refs = flow_refinements(ctx, condition, true, scope)
+    apply_refinements_to_frame(ctx, scope, ref_of(loop_refs))
+    check_body(ctx, scope, check_flags(chk.ret, true, chk.inside_defer, chk.inside_parallel), body)
+    loop_refs.release()
+    scope_leave(scope)
+
+
+function check_match_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
+    unsafe:
+        # The scrutinee's type is computed once, before the arms: an
+        # `as name` arm binds the arm's payload type from it, and the
+        # exhaustiveness pass reuses it (inferring twice would report
+        # every unknown name in the scrutinee twice).
+        let scrutinee_ty = infer_expr_inner(ctx, scope, scrutinee)
+        var ai: ptr_uint = 0
+        while ai < arms.len:
+            var arm: ast.MatchArm
+            arm = read(arms.data + ai)
+            scope_enter(scope)
+            bind_match_arm_names(ctx, scope, scrutinee_ty, arm.binding_name, arm.pattern, arm.binding_line, arm.binding_column)
+            check_body(ctx, scope, chk, arm.body)
+            scope_leave(scope)
+            ai += 1
+        check_match(ctx, scope, scrutinee_ty, arms, line, column)
+
+
+function check_assignment_stmt(ctx: ref[Context], scope: ref[sscope.Scope], target: ptr[ast.Expr], value: ptr[ast.Expr], operator: str, line: ptr_uint, column: ptr_uint) -> void:
+    let tt = infer_expr(ctx, scope, target)
+    let target_ty = assign_target_type(scope, target, tt)
+    # The target's type is the value's expected type (the host's
+    # `lower_assignment_stmt` passes it to the value's inference).
+    let assign_saved_hint = ctx.expected_type_hint
+    if operator == "=":
+        ctx.expected_type_hint = target_ty
+    let vt = infer_expr(ctx, scope, value)
+    ctx.expected_type_hint = assign_saved_hint
+    if operator == "=" and incompatible_value_with_consts(target_ty, vt, value, ref_of(ctx.const_values)):
+        report(ctx, line, column, assign_message(target_ty, vt))
+    check_assign_target_immutable(ctx, scope, target, line, column)
 
 
 ## The type an assignment target is checked against.  A plain identifier uses
