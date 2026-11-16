@@ -12,6 +12,7 @@ import mtc.parser.state as pstate
 import mtc.parser.parser as parser
 import mtc.parser.expressions as expressions
 import mtc.parser.declarations as declarations
+import mtc.parser.expression_forms as expression_forms
 
 
 public function parse_statement(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
@@ -413,7 +414,7 @@ function parse_match_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
         var arms = vec.Vec[ast.MatchExprArm].create()
         while true:
             pstate.step(s)
-            parser.parse_match_expr_arm_into(s, ref_of(arms))
+            expression_forms.parse_match_expr_arm_into(s, ref_of(arms))
             if not pstate.match_kind(s, tk.TokenKind.comma) and not pstate.check(s, tk.TokenKind.newline):
                 break
         var arms_span = arms.as_span()

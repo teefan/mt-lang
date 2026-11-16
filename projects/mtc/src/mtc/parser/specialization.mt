@@ -12,6 +12,7 @@ import mtc.parser.state as pstate
 import mtc.parser.parser as parser
 import mtc.parser.declarations as declarations
 import mtc.parser.expressions as expressions
+import mtc.parser.expression_forms as expression_forms
 
 
 function is_identifier_named(callee: ptr[ast.Expr], name: str) -> bool:
@@ -352,11 +353,11 @@ public function parse_primary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
         pstate.consume(s, tk.TokenKind.rparen, c"expected ')' after expression")
         return first_expr
     else if pstate.match_kind(s, tk.TokenKind.tk_if):
-        return parser.parse_if_expr(s)
+        return expression_forms.parse_if_expr(s)
     else if pstate.match_kind(s, tk.TokenKind.tk_match):
-        return parser.parse_match_expr(s)
+        return expression_forms.parse_match_expr(s)
     else if pstate.match_kind(s, tk.TokenKind.tk_proc):
-        return parser.parse_proc_expr_after_proc(s)
+        return expression_forms.parse_proc_expr_after_proc(s)
     else if pstate.match_kind(s, tk.TokenKind.tk_size_of):
         pstate.consume(s, tk.TokenKind.lparen, c"expected '(' after size_of")
         var type_ref = declarations.parse_type_ref(s)

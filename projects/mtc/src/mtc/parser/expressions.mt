@@ -10,15 +10,16 @@ import mtc.parser.state as pstate
 import mtc.parser.parser as parser
 import mtc.parser.declarations as declarations
 import mtc.parser.specialization as specialization
+import mtc.parser.expression_forms as expression_forms
 
 
 public function parse_expr(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     if pstate.match_kind(s, tk.TokenKind.tk_if):
-        return parser.parse_if_expr(s)
+        return expression_forms.parse_if_expr(s)
     if pstate.match_kind(s, tk.TokenKind.tk_match):
-        return parser.parse_match_expr(s)
+        return expression_forms.parse_match_expr(s)
     if pstate.match_kind(s, tk.TokenKind.tk_unsafe):
-        return parser.parse_unsafe_expr(s)
+        return expression_forms.parse_unsafe_expr(s)
     return parse_range(s)
 
 
@@ -116,7 +117,7 @@ function parse_is(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
         var pattern_len: ptr_uint = 0
         unsafe:
             pattern_len = token_mod.token_lexeme(read(pstate.previous_token(s)), s.source).len
-        left = parser.is_desugar(s, left, pattern, is_ln, is_cn, pattern_len)
+        left = expression_forms.is_desugar(s, left, pattern, is_ln, is_cn, pattern_len)
     return left
 
 
@@ -218,7 +219,7 @@ function parse_multiplicative(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
 
 public function parse_unary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     if pstate.match_kind(s, tk.TokenKind.tk_unsafe):
-        return parser.parse_unsafe_expr(s)
+        return expression_forms.parse_unsafe_expr(s)
     if pstate.match_kind(s, tk.TokenKind.tk_await):
         var operand = parse_unary(s)
         var node = parser.alloc_expr(s)
@@ -249,7 +250,7 @@ public function parse_unary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
         var node = parser.alloc_expr(s)
         read(node) = ast.Expr.expr_unary_op(operator = op, operand = operand)
         return node
-    var cast_result = parser.try_parse_prefix_cast_expr(s)
+    var cast_result = expression_forms.try_parse_prefix_cast_expr(s)
     match cast_result:
         Option.some as cast_payload:
             return cast_payload.value

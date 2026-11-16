@@ -294,6 +294,7 @@
     "parser.ast": "ast",
     "parser.decl_forms": "decl_forms",
     "parser.declarations": "declarations",
+    "parser.expression_forms": "expression_forms",
     "parser.expressions": "expressions",
     "parser.literal_parsing": "lparse",
     "parser.parser": "parser",
@@ -1144,7 +1145,7 @@
     ]
   },
   "sizes": {
-    "total_code": 123690,
+    "total_code": 123702,
     "functions_over_limit": 32,
     "files_over_limit": 11,
     "files": {
@@ -1976,9 +1977,15 @@
         "max_line": 135,
         "max_function": 72
       },
+      "projects/mtc/src/mtc/parser/expression_forms.mt": {
+        "lines": 257,
+        "code": 210,
+        "max_line": 174,
+        "max_function": 44
+      },
       "projects/mtc/src/mtc/parser/expressions.mt": {
-        "lines": 371,
-        "code": 319,
+        "lines": 372,
+        "code": 320,
         "max_line": 125,
         "max_function": 51
       },
@@ -1989,14 +1996,14 @@
         "max_function": 103
       },
       "projects/mtc/src/mtc/parser/parser.mt": {
-        "lines": 1574,
-        "code": 1252,
-        "max_line": 174,
+        "lines": 1324,
+        "code": 1051,
+        "max_line": 133,
         "max_function": 72
       },
       "projects/mtc/src/mtc/parser/specialization.mt": {
-        "lines": 421,
-        "code": 382,
+        "lines": 422,
+        "code": 383,
         "max_line": 187,
         "max_function": 263
       },
@@ -2007,8 +2014,8 @@
         "max_function": 24
       },
       "projects/mtc/src/mtc/parser/statements.mt": {
-        "lines": 907,
-        "code": 831,
+        "lines": 908,
+        "code": 832,
         "max_line": 159,
         "max_function": 105
       },
