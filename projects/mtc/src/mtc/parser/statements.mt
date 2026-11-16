@@ -10,6 +10,7 @@ import mtc.lexer.token as token_mod
 import mtc.parser.ast as ast
 import mtc.parser.state as pstate
 import mtc.parser.parser as parser
+import mtc.parser.expressions as expressions
 
 
 public function parse_statement(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
@@ -144,7 +145,7 @@ function parse_local_decl(s: ref[pstate.ParserState], is_let: bool) -> ptr[ast.S
 
     if destructure_bindings.is_some():
         pstate.consume(s, tk.TokenKind.equal, c"expected '=' after destructure pattern")
-        value = parser.parse_expr(s)
+        value = expressions.parse_expr(s)
         parser.consume_end_of_statement(s)
         var node = parser.alloc_stmt(s)
         unsafe:
@@ -158,7 +159,7 @@ function parse_local_decl(s: ref[pstate.ParserState], is_let: bool) -> ptr[ast.S
     if pstate.match_kind(s, tk.TokenKind.colon):
         stmt_type = parser.parse_type_ref(s)
     if pstate.match_kind(s, tk.TokenKind.equal):
-        value = parser.parse_expr(s)
+        value = expressions.parse_expr(s)
     if pstate.match_kind(s, tk.TokenKind.tk_else):
         if pstate.match_kind(s, tk.TokenKind.tk_as):
             parser.consume_name(s, c"expected error binding name")
@@ -239,7 +240,7 @@ function parse_if_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     unsafe:
         start_ln = read(start_tok).line
         start_cn = read(start_tok).column
-    var condition = parser.parse_expr(s)
+    var condition = expressions.parse_expr(s)
     var then_body = parse_if_branch_body(s)
     var branches = vec.Vec[ast.IfBranch].create()
     var branch = ast.IfBranch(condition = condition, body = then_body, line = start_ln, column = start_cn, length = 2)
@@ -256,7 +257,7 @@ function parse_if_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
         unsafe:
             elif_ln = read(elif_tok).line
             elif_cn = read(elif_tok).column
-        condition = parser.parse_expr(s)
+        condition = expressions.parse_expr(s)
         var elif_body = parse_if_branch_body(s)
         var elif_branch = ast.IfBranch(condition = condition, body = elif_body, line = elif_ln, column = elif_cn, length = 2)
         branches.push(elif_branch)
@@ -331,7 +332,7 @@ function parse_while_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     unsafe:
         ln = read(start_tok).line
         cn = read(start_tok).column
-    var condition = parser.parse_expr(s)
+    var condition = expressions.parse_expr(s)
     parser.consume_or_sync(s, tk.TokenKind.colon, c"expected ':' after while condition")
     var is_inline = false
     var body: ptr[ast.Stmt] = parser.alloc_stmt(s)
@@ -373,11 +374,11 @@ function parse_for_stmt(s: ref[pstate.ParserState], threaded: bool) -> ptr[ast.S
         bindings.push(b)
     pstate.consume(s, tk.TokenKind.tk_in, c"expected 'in' after for bindings")
     var iterables = vec.Vec[ast.Expr].create()
-    var iter = parser.parse_expr(s)
+    var iter = expressions.parse_expr(s)
     unsafe:
         iterables.push(read(iter))
     while pstate.match_kind(s, tk.TokenKind.comma):
-        var next_iter = parser.parse_expr(s)
+        var next_iter = expressions.parse_expr(s)
         unsafe:
             iterables.push(read(next_iter))
     parser.consume_or_sync(s, tk.TokenKind.colon, c"expected ':' after for iterable")
@@ -404,7 +405,7 @@ function parse_match_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     unsafe:
         m_ln = read(pstate.previous_token(s)).line
         m_cn = read(pstate.previous_token(s)).column
-    var scrutinee = parser.parse_expr(s)
+    var scrutinee = expressions.parse_expr(s)
     pstate.consume(s, tk.TokenKind.colon, c"expected ':' after match expression")
     var is_expr_form = not pstate.check(s, tk.TokenKind.newline)
     if is_expr_form:
@@ -517,7 +518,7 @@ function parse_return_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
         cn = read(start_tok).column
     var value: ptr[ast.Expr]? = null
     if not (pstate.check(s, tk.TokenKind.newline) or pstate.check(s, tk.TokenKind.dedent)):
-        value = parser.parse_expr(s)
+        value = expressions.parse_expr(s)
     if value != null and not parser.block_expr(value):
         parser.consume_end_of_statement(s)
     var node = parser.alloc_stmt(s)
@@ -546,7 +547,7 @@ function parse_defer_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
         else:
             body = parse_statement(s)
     else:
-        expression = parser.parse_expr(s)
+        expression = expressions.parse_expr(s)
         parser.consume_end_of_statement(s)
     var node = parser.alloc_stmt(s)
     read(node) = ast.Stmt.stmt_defer(expression = expression, body = body, line = ln, column = cn)
@@ -572,7 +573,7 @@ function parse_unsafe_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
         else:
             body = parse_statement(s)
     else:
-        var expr_val = parser.parse_expr(s)
+        var expr_val = expressions.parse_expr(s)
         parser.consume_end_of_statement(s)
         body = parser.alloc_stmt(s)
         unsafe:
@@ -587,9 +588,9 @@ function parse_static_assert_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     unsafe:
         sa_ln = read(pstate.previous_token(s)).line
     pstate.consume(s, tk.TokenKind.lparen, c"expected '(' after static_assert")
-    var condition = parser.parse_expr(s)
+    var condition = expressions.parse_expr(s)
     pstate.consume(s, tk.TokenKind.comma, c"expected ',' after condition")
-    var message_expr = parser.parse_expr(s)
+    var message_expr = expressions.parse_expr(s)
     pstate.consume(s, tk.TokenKind.rparen, c"expected ')'")
     parser.consume_end_of_statement(s)
     var node = parser.alloc_stmt(s)
@@ -603,7 +604,7 @@ function parse_expression_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     if start_tok != null:
         unsafe:
             start_ln = read(start_tok).line
-    var left = parser.parse_expr(s)
+    var left = expressions.parse_expr(s)
     if (
         pstate.check(s, tk.TokenKind.equal) or pstate.check(s, tk.TokenKind.plus_equal)
         or pstate.check(s, tk.TokenKind.minus_equal) or pstate.check(s, tk.TokenKind.star_equal)
@@ -617,7 +618,7 @@ function parse_expression_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
         var op_cn: ptr_uint = 0
         unsafe:
             op_cn = read(pstate.previous_token(s)).column
-        var right = parser.parse_expr(s)
+        var right = expressions.parse_expr(s)
         if not parser.block_expr(right):
             parser.consume_end_of_statement(s)
         var node = parser.alloc_stmt(s)
@@ -661,11 +662,11 @@ function parse_gather_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
         g_ln = read(pstate.previous_token(s)).line
         g_cn = read(pstate.previous_token(s)).column
     var handles = vec.Vec[ast.Expr].create()
-    var first = parser.parse_expr(s)
+    var first = expressions.parse_expr(s)
     unsafe:
         handles.push(read(first))
     while pstate.match_kind(s, tk.TokenKind.comma):
-        var next_handle = parser.parse_expr(s)
+        var next_handle = expressions.parse_expr(s)
         unsafe:
             handles.push(read(next_handle))
     parser.consume_end_of_statement(s)
@@ -682,7 +683,7 @@ public function parse_pattern(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
         return node
     # Parse below bitwise-or precedence so a top-level `|` is treated as a
     # pattern alternative separator, not a bitwise-or operator.
-    var pattern = parser.parse_bitwise_xor(s)
+    var pattern = expressions.parse_bitwise_xor(s)
     # Integer/char range pattern: `start..stop`.
     var is_int_or_char = false
     unsafe:
@@ -694,7 +695,7 @@ public function parse_pattern(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
             _:
                 pass
     if is_int_or_char and pstate.match_kind(s, tk.TokenKind.dot_dot):
-        let end_expr = parser.parse_bitwise_xor(s)
+        let end_expr = expressions.parse_bitwise_xor(s)
         let end_tok = pstate.previous_token(s)
         var dd_ln: ptr_uint = 0
         var dd_cn: ptr_uint = 0
@@ -714,7 +715,7 @@ function parse_when_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     unsafe:
         ln = read(start_tok).line
         cn = read(start_tok).column
-    var discriminant = parser.parse_expr(s)
+    var discriminant = expressions.parse_expr(s)
     pstate.consume(s, tk.TokenKind.colon, c"expected ':' after when discriminant")
     pstate.consume(s, tk.TokenKind.newline, c"expected newline after when header")
     pstate.consume(s, tk.TokenKind.indent, c"expected indented when body")
@@ -729,7 +730,7 @@ function parse_when_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
             else_body = parse_block_or_inline_stmt(s)
             parser.skip_newlines(s)
             break
-        var pat = parser.parse_expr(s)
+        var pat = expressions.parse_expr(s)
         var binding: Option[str] = Option[str].none
         if pstate.match_kind(s, tk.TokenKind.tk_as):
             parser.consume_name(s, c"expected binding name after as")
@@ -796,11 +797,11 @@ function parse_inline_for_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
         bindings.push(b)
     pstate.consume(s, tk.TokenKind.tk_in, c"expected 'in' in for loop")
     var iterables = vec.Vec[ast.Expr].create()
-    var iter = parser.parse_expr(s)
+    var iter = expressions.parse_expr(s)
     unsafe:
         iterables.push(read(iter))
     while pstate.match_kind(s, tk.TokenKind.comma):
-        var next_iter = parser.parse_expr(s)
+        var next_iter = expressions.parse_expr(s)
         unsafe:
             iterables.push(read(next_iter))
     pstate.consume(s, tk.TokenKind.colon, c"expected ':' after for iterable")
@@ -826,7 +827,7 @@ function parse_inline_while_stmt(s: ref[pstate.ParserState], inline_tok: ptr[tok
     unsafe:
         ln = read(inline_tok).line
         cn = read(inline_tok).column
-    var condition = parser.parse_expr(s)
+    var condition = expressions.parse_expr(s)
     pstate.consume(s, tk.TokenKind.colon, c"expected ':' after while condition")
     pstate.consume(s, tk.TokenKind.newline, c"expected newline")
     pstate.consume(s, tk.TokenKind.indent, c"expected indented body")
@@ -847,7 +848,7 @@ function parse_inline_match_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     unsafe:
         ln = read(start_tok).line
         cn = read(start_tok).column
-    var scrutinee = parser.parse_expr(s)
+    var scrutinee = expressions.parse_expr(s)
     pstate.consume(s, tk.TokenKind.colon, c"expected ':' after match expression")
     pstate.consume(s, tk.TokenKind.newline, c"expected newline")
     pstate.consume(s, tk.TokenKind.indent, c"expected indented match body")
@@ -873,7 +874,7 @@ function parse_inline_if_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     unsafe:
         start_ln = read(start_tok).line
         start_cn = read(start_tok).column
-    var condition = parser.parse_expr(s)
+    var condition = expressions.parse_expr(s)
     pstate.consume(s, tk.TokenKind.colon, c"expected ':' after if condition")
     var then_body = parse_block_or_inline_stmt(s)
     var branches = vec.Vec[ast.IfBranch].create()
@@ -888,7 +889,7 @@ function parse_inline_if_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
             unsafe:
                 elif_ln = read(elif_tok).line
                 elif_cn = read(elif_tok).column
-            condition = parser.parse_expr(s)
+            condition = expressions.parse_expr(s)
             pstate.consume(s, tk.TokenKind.colon, c"expected ':' after elif condition")
             var elif_body = parse_block_or_inline_stmt(s)
             var elif_branch = ast.IfBranch(condition = condition, body = elif_body, line = elif_ln, column = elif_cn, length = 2)

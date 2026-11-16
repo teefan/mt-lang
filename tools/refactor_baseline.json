@@ -292,6 +292,7 @@
     "packages.source": "pkg_source",
     "packages.version": "version",
     "parser.ast": "ast",
+    "parser.expressions": "expressions",
     "parser.literal_parsing": "lparse",
     "parser.parser": "parser",
     "parser.state": "pstate",
@@ -360,7 +361,7 @@
     "test_only": [
       "projects/mtc/src/mtc/linter/fix_engine.mt:61:function:is_fixable",
       "projects/mtc/src/mtc/linter/linter.mt:197:function:lint_source",
-      "projects/mtc/src/mtc/parser/parser.mt:865:function:parse_reporting",
+      "projects/mtc/src/mtc/parser/parser.mt:866:function:parse_reporting",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:572:function:flow_create",
       "projects/mtc/src/mtc/semantic/types.mt:1084:function:nominal_key",
       "projects/mtc/src/mtc/sexpr.mt:1090:function:dump_ir"
@@ -405,6 +406,7 @@
       "09d2919d1b02d282f3d00859ff4011e0fe8553d9",
       "09e1c3a6e9a2a8cacf98d80c6f9f24265c638aec",
       "0a20979f43a21d0a5c3cbdf337b6ecc03e81ca1c",
+      "0a36d282cb14851371738955af4e43323b6c4889",
       "0a4903fee95086c1c44cef3522b2b01228c883fa",
       "0a664b3de3d341908b79a33dd27c9bc0f28c9668",
       "0acebcafce1dc3e65f7cb9129a75cbabe8fa07c8",
@@ -502,7 +504,6 @@
       "2da9efba38537e0285b49850b40e08c78f90e6fe",
       "2e23ef248a29893600f5e6280642e8cd2567b914",
       "2e38931333adfe21c54c1fc77cb8e620e791a622",
-      "2e5af687afa7610cdb00e7022680815201934ebe",
       "2e912fe57fedc7e258e0013ac34b5b69d89c4ed0",
       "2eecfaaf24d1db3ebdeebdd9d26364345ee167b5",
       "2f27f5fdacd6043b35043465b05800309d4ab986",
@@ -620,6 +621,7 @@
       "522792fa6220c8d1e8b02aebc8cbfffb94727afd",
       "524e681b97745420d8c2de0787e2a8ded6ec9d12",
       "52de41ebfc1dcc8abdce8cbb75f7098c55484cb4",
+      "52e6fadca22da6281111e849592d5e9aeecef868",
       "5343a9ffd81a8c5e4870fe7b3cb7647b7a05a888",
       "535e62090becd9a8b21a1bdc1eb96c0925d8874e",
       "539f394d45c85ae1ecb4d04dee79e64484cbad0a",
@@ -658,6 +660,7 @@
       "5fdaf5e19e5b560301977db989f1628ab7f93861",
       "5fe87180ef6dd44d59d58b202f72e623bae1672a",
       "6010c777619693adc4c616d2dbe6c5c889ebf4bd",
+      "60b04d91bf7915f25ae7a71e4cb5ec95f9a3f575",
       "60e3cb069dbdf572b7dd864b3fded6c2b9d5c8a0",
       "60f5da501fb4d745ba88b75e99ae7cb472cef6a4",
       "610e6fb8fed765035912e58f6aa6da6e156e219e",
@@ -686,6 +689,7 @@
       "66156a221b7b6a16528302346106af3ce1db76d2",
       "66a7ea8a6cd85e0b8c8cf3053a2f7b230060543e",
       "66c47536d27b20a6c46b55622b12d37878be4507",
+      "675d26d9f35eee1fa061c5d2522f098563b9a362",
       "67adf33eba53a0bdc27d1559d18c6b582c918009",
       "67bddcf0b143f2095a4d7c5057c83070a9d9e673",
       "684293aa74805bf351c91d22ef84c443f1c76382",
@@ -712,6 +716,7 @@
       "6e3f40ae3cedffde4c4930c4a68412a6aedfa5b8",
       "6e4edf46e18df9a4a8ea339c45aa6648b6a2883a",
       "6f332b2dd59a934854a09c686f8ba716e12caecc",
+      "6f5c31d932a2ffd993c60adadb0730a5729042ea",
       "6fc072742f5b0796876d5f7175618d2a34f63bf8",
       "6fee9aee881f49b06350a43a78b80bfe9039c483",
       "7033923d2f79654c1d59f83176a95885469e62d6",
@@ -726,7 +731,6 @@
       "72bc51db8ed9c64ba847772c883f16d0b8642341",
       "733e9be14843635faa3e305c4522d28df34bd49c",
       "73d569ae4c9977444d841c09d4e9ee536ee85644",
-      "73e7c1379944eb95e2ac8824354858562b1f5f72",
       "73ee82e70a3f3d1fdcd6557127f8f4436f1dd79a",
       "742c08cceeebf6f6e10c747e9c609ab3b0a8b4e7",
       "743e1380d482cc8b3c7bcd8766180fdcd00b14b2",
@@ -745,7 +749,6 @@
       "783b00eeef0e4d33310c8600f4dc7082f9cf8215",
       "783d929f711008884dd1db8599d7baccefc4b3a2",
       "7870c6231c3ab6040d26c2904815f0a79533b077",
-      "789c2795d7eded8ff3713175dec4bec11a19c826",
       "78bcb584d3d090d37e9d4e55f22eb7168a916732",
       "78f22084a53bbce3529ffad083205931553568bf",
       "7906120197393dc1c993794cca17556c26945584",
@@ -803,7 +806,6 @@
       "896e37b6f1649074eaa34fca2e4ada354da3a1c6",
       "89bf9fbc1b0ddfff745fa65dae4006341543037c",
       "89cd29b3ca798e7cb57bfbae66c17abb35fddd17",
-      "8ac0ac4ab66cc43529a99c7064d90a664755056e",
       "8b8831f40818e71e956cc7af7c57113ca9acebde",
       "8c0d6e06527d52dcb3c1a38db017f71ba1c6b01f",
       "8cb6cb5279257c20be98945e37dd6c25b6816bf5",
@@ -812,6 +814,7 @@
       "8dd9d4149f2b47aa6b65d27c5df2531a4715db70",
       "8de4fdf04df5280173be3a03a34cb7bb987e22d9",
       "8fcb983201f9f48eb5d94eed7c41fef07c64382e",
+      "910861e56e5353cae21828e383b1c370c2c3c8e5",
       "911c7953c646fa2df43f281b290fed2cf5f0686d",
       "91953ee666e2b21191535da9c3a19f3ddac43c1e",
       "91adacf60e80c7a74c4c45024d49f94c39014b85",
@@ -824,7 +827,6 @@
       "969bf6559a78f62bc5c20b847f8c09e1273a30c2",
       "972d19ec9ef8425019f01c59643133e3491655b3",
       "97852e584afa8c6f88cc5cb2f568573cbf2e2146",
-      "97c7ac1699ccfcc8898c8592182bb539f55bd0a6",
       "986498d1ee817403e810b35c9f0d5b97963f2842",
       "9872ebfe87b06bf216d94381dfcbbc78e292848d",
       "988622d96ea287cfbcfdc80e3abe171d2d1786aa",
@@ -929,7 +931,6 @@
       "bbbb590aa6072ceeb117a5cf066bc26a0eef7051",
       "bbfddbcb1153a6ad71621d5701940a5e2d2ce802",
       "bc1846c8ea3db82524cf11f24f84cf37a9d74108",
-      "bc4fd3ae4ae1db5eb6192815891bb6fa20d8abf2",
       "bcad09aa66f88039ba905f6091c5b9fb7f09b7b1",
       "bcad5d1dea9b25a465b7413e9a168dc1932c79e8",
       "bd23464ac6db1633960f0da879b341f80b8d56c5",
@@ -1007,7 +1008,6 @@
       "d10a0a38727841857642ac83b50b5faa474acd39",
       "d13d8f029f1a7d9d206fca03c2fe01b260394311",
       "d19ef5439bce375fce91a8cf2fb00055c649578b",
-      "d219da2cfa8a7daad874e52ce37d72f6ceec6836",
       "d2730cecf293223ccf20c65563d7a6f7c856f9b8",
       "d27c09169a7b6912a886d7fe2b833ca522cb79fc",
       "d2a6560d23d2bbd5ec90c41e60aac70d824a516c",
@@ -1098,6 +1098,7 @@
       "ef122e5c2e26ba45b720bb6e99f07d072f3741b3",
       "efa9da64d119728a702ca8f4d52e405d7f1f8b49",
       "f0156955eb93369b53755d6f7feb319da5041ae6",
+      "f0671437e25319c62b886117779ef3d6ad02dc3f",
       "f097442c1302b087f16ccb53a5bbe79670de6905",
       "f0d0b0b150d496439f2dde5101ba29237b20ce23",
       "f1130dd67aaa0496da7028b6e1938ee45c9a2c8b",
@@ -1145,7 +1146,7 @@
     ]
   },
   "sizes": {
-    "total_code": 123615,
+    "total_code": 123623,
     "functions_over_limit": 32,
     "files_over_limit": 12,
     "files": {
@@ -1965,6 +1966,12 @@
         "max_line": 95,
         "max_function": 0
       },
+      "projects/mtc/src/mtc/parser/expressions.mt": {
+        "lines": 369,
+        "code": 317,
+        "max_line": 125,
+        "max_function": 51
+      },
       "projects/mtc/src/mtc/parser/literal_parsing.mt": {
         "lines": 433,
         "code": 350,
@@ -1972,8 +1979,8 @@
         "max_function": 103
       },
       "projects/mtc/src/mtc/parser/parser.mt": {
-        "lines": 3763,
-        "code": 3203,
+        "lines": 3401,
+        "code": 2893,
         "max_line": 187,
         "max_function": 263
       },
@@ -1984,8 +1991,8 @@
         "max_function": 24
       },
       "projects/mtc/src/mtc/parser/statements.mt": {
-        "lines": 905,
-        "code": 829,
+        "lines": 906,
+        "code": 830,
         "max_line": 159,
         "max_function": 105
       },
