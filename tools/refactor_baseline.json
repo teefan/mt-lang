@@ -1143,7 +1143,7 @@
     ]
   },
   "sizes": {
-    "total_code": 123655,
+    "total_code": 123680,
     "functions_over_limit": 32,
     "files_over_limit": 11,
     "files": {
@@ -1502,10 +1502,10 @@
         "max_function": 63
       },
       "projects/mtc/src/mtc/lowering/async_cps.mt": {
-        "lines": 1751,
-        "code": 1310,
-        "max_line": 314,
-        "max_function": 587
+        "lines": 1782,
+        "code": 1335,
+        "max_line": 377,
+        "max_function": 260
       },
       "projects/mtc/src/mtc/lowering/comptime.mt": {
         "lines": 1557,

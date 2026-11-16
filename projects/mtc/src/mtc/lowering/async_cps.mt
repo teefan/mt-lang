@@ -436,6 +436,16 @@ public function lower_async_fn(ctx: ref[lowering.LoweringContext], name: str, li
     let _inserted = ctx.pending_synthetic_structs.insert(frame_index, ir.StructDecl(name = frame_c, linkage_name = frame_c, fields = ff.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
 
     # Shared bool exprs for vtable/constructor
+    emit_async_vtable(ctx, link_base, frame_ptr_ty, frame_exp, raw_expr, vparam_s, res_ty, has_await, ctor_param_names, ctor_field_tys, receiver_ty_opt, receiver_editable)
+
+    emit_async_constructor(ctx, name, link_base, frame_ptr_ty, res_ty, ctor_param_names, ctor_param_tys, ctor_field_tys, receiver_ty_opt, receiver_editable, synthetic_ctor, functions)
+    ctx.current_function_linkage = saved_current_fn
+
+
+function emit_async_vtable(ctx: ref[lowering.LoweringContext], link_base: str, frame_ptr_ty: types.Type, frame_exp: ptr[ir.Expr], raw_expr: ptr[ir.Expr], vparam_s: span[ir.Param], res_ty: types.Type, has_await: bool, ctor_param_names: vec.Vec[str], ctor_field_tys: vec.Vec[types.Type], receiver_ty_opt: Option[types.Type], receiver_editable: bool) -> void:
+    let bool_ty = ctx.bool_ty
+    let void_t = ctx.void_ty
+    let is_void_ret = tasks.is_void_type_lowered(res_ty)
     let bool_true = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))
 
 
@@ -569,6 +579,15 @@ public function lower_async_fn(ctx: ref[lowering.LoweringContext], name: str, li
         vtr.push(ir.Stmt.stmt_return(value = lowering.alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), line = 0, source_path = ""))
     ctx.pending_synthetic_functions.push(ir.Function(name = strings.join_two(take_lk, "_fn"), linkage_name = take_lk, params = vparam_s, return_type = res_ty, body = vtr.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
 
+    emit_async_cancel_fn(ctx, link_base, frame_ptr_ty, frame_exp, raw_expr, vparam_s, res_ty, has_await, ctor_param_names, ctor_field_tys, receiver_ty_opt, receiver_editable)
+
+
+function emit_async_cancel_fn(ctx: ref[lowering.LoweringContext], link_base: str, frame_ptr_ty: types.Type, frame_exp: ptr[ir.Expr], raw_expr: ptr[ir.Expr], vparam_s: span[ir.Param], res_ty: types.Type, has_await: bool, ctor_param_names: vec.Vec[str], ctor_field_tys: vec.Vec[types.Type], receiver_ty_opt: Option[types.Type], receiver_editable: bool) -> void:
+    let bool_ty = ctx.bool_ty
+    let void_t = ctx.void_ty
+    let bool_true = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))
+    let wake_fn_ty = async_wake_fn_type(ctx)
+    let cancel_lk = strings.join_two(link_base, "__cancel")
     # -- vtable: cancel (fresh vec) --
     var vcn = vec.Vec[ir.Stmt].create()
     vcn.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = lowering.alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
@@ -665,6 +684,19 @@ public function lower_async_fn(ctx: ref[lowering.LoweringContext], name: str, li
     vcn.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     ctx.pending_synthetic_functions.push(ir.Function(name = strings.join_two(cancel_lk, "_fn"), linkage_name = cancel_lk, params = vparam_s, return_type = void_t, body = vcn.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
 
+
+function emit_async_constructor(ctx: ref[lowering.LoweringContext], name: str, link_base: str, frame_ptr_ty: types.Type, res_ty: types.Type, ctor_param_names: vec.Vec[str], ctor_param_tys: vec.Vec[types.Type], ctor_field_tys: vec.Vec[types.Type], receiver_ty_opt: Option[types.Type], receiver_editable: bool, synthetic_ctor: bool, functions: ref[vec.Vec[ir.Function]]) -> void:
+    let frame_c = strings.join_two(link_base, "__frame")
+    let frame_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = frame_c)
+    let resume_c = strings.join_two(link_base, "__resume")
+    let task_ty = tasks.make_task_type(res_ty)
+    let ptr_ty = ptr_uint_type()
+    let void_t = ctx.void_ty
+    let ready_lk = strings.join_two(link_base, "__ready")
+    let waiter_lk = strings.join_two(link_base, "__set_waiter")
+    let release_lk = strings.join_two(link_base, "__release")
+    let take_lk = strings.join_two(link_base, "__take_result")
+    let cancel_lk = strings.join_two(link_base, "__cancel")
     # -- constructor function --
     let size_expr = lowering.alloc_expr(ir.Expr.expr_sizeof(target_type = frame_ty, ty = ptr_ty))
     # The frame comes from the host's refcounted `mt_async_alloc`
@@ -766,7 +798,6 @@ public function lower_async_fn(ctx: ref[lowering.LoweringContext], name: str, li
         ctx.pending_synthetic_functions.push(ctor_fn)
     else:
         functions.push(ctor_fn)
-    ctx.current_function_linkage = saved_current_fn
 
 
 ## The C label for async resume state `n` (goto target in the dispatch switch).
