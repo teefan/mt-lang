@@ -10,6 +10,7 @@ import mtc.lexer.token_kinds as tk
 import mtc.parser.ast as ast
 import mtc.parser.state as pstate
 import mtc.parser.parser as parser
+import mtc.parser.decl_forms as decl_forms
 import mtc.parser.statements as statements
 import mtc.parser.expressions as expressions
 
@@ -174,7 +175,7 @@ public function parse_declaration_type_params(s: ref[pstate.ParserState]) -> spa
 
 function parse_type_param_constraints(s: ref[pstate.ParserState], constraints: ref[vec.Vec[ast.TypeParamConstraint]]) -> void:
     while true:
-        let iface = parser.parse_qualified_name_with_type_args(s)
+        let iface = decl_forms.parse_qualified_name_with_type_args(s)
         constraints.push(ast.TypeParamConstraint(kind = ast.TypeParamConstraintKind.implement, interface_ref = iface))
         if not pstate.match_kind(s, tk.TokenKind.tk_and):
             break
