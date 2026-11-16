@@ -9,6 +9,7 @@ import mtc.parser.ast as ast
 import mtc.parser.state as pstate
 import mtc.parser.parser as parser
 import mtc.parser.declarations as declarations
+import mtc.parser.specialization as specialization
 
 
 public function parse_expr(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
@@ -258,7 +259,7 @@ public function parse_unary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
 
 
 function parse_postfix(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
-    var left = parser.parse_primary(s)
+    var left = specialization.parse_primary(s)
     while true:
         pstate.step(s)
         if pstate.match_kind(s, tk.TokenKind.dot):
@@ -352,7 +353,7 @@ function try_parse_specialization(s: ref[pstate.ParserState], left: ptr[ast.Expr
     if pstate.match_kind(s, tk.TokenKind.lparen):
         var call_args = parser.parse_call_args(s)
         pstate.consume(s, tk.TokenKind.rparen, c"expected ')' after call arguments")
-        if not parser.specialization_call_target(s, left, args_span, call_args):
+        if not specialization.specialization_call_target(s, left, args_span, call_args):
             s.stream.current = saved
             return Option[ptr[ast.Expr]].none
         var spec = parser.alloc_expr(s)
@@ -362,7 +363,7 @@ function try_parse_specialization(s: ref[pstate.ParserState], left: ptr[ast.Expr
         unsafe:
             read(call) = ast.Expr.expr_call(callee = spec, args = call_args)
         return Option[ptr[ast.Expr]].some(value = call)
-    if not parser.specialization_value_target(s, left, args_span):
+    if not specialization.specialization_value_target(s, left, args_span):
         s.stream.current = saved
         return Option[ptr[ast.Expr]].none
     var node = parser.alloc_expr(s)

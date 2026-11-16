@@ -331,7 +331,7 @@ function is_builtin_type_name(name: str) -> bool:
     return false
 
 
-function known_type_like_name(s: ref[pstate.ParserState], name: str) -> bool:
+public function known_type_like_name(s: ref[pstate.ParserState], name: str) -> bool:
     if s.known_type_names.contains(name):
         return true
     if s.known_import_aliases.contains(name):
@@ -357,7 +357,7 @@ function type_name_token_check(tok_ptr: ptr[token_mod.Token]?) -> bool:
         return read(tok_ptr).kind == tk.TokenKind.identifier
 
 
-function keyword_token_check(tok_ptr: ptr[token_mod.Token]?) -> bool:
+public function keyword_token_check(tok_ptr: ptr[token_mod.Token]?) -> bool:
     if tok_ptr == null:
         return false
     unsafe:
@@ -522,7 +522,7 @@ public function parse_int_literal(lexeme: str) -> long:
     return lparse.parse_int_literal(lexeme)
 
 
-function parse_float_literal(lexeme: str) -> double:
+public function parse_float_literal(lexeme: str) -> double:
     return lparse.parse_float_literal(lexeme)
 
 
@@ -530,7 +530,7 @@ public function parse_string_content(lexeme: str, is_cstring: bool) -> str:
     return lparse.parse_string_content(lexeme, is_cstring)
 
 
-function parse_char_value(lexeme: str) -> ubyte:
+public function parse_char_value(lexeme: str) -> ubyte:
     return lparse.parse_char_value(lexeme)
 
 
@@ -550,7 +550,7 @@ function normalize_format_heredoc(lexeme: str) -> str:
 ## `expr_format_string` with alternating text and interpolation parts.  Mirrors
 ## the Ruby lexer's part-splitting (which the self-host token model cannot carry)
 ## plus the parser's re-parse of each `#{expr}` and format spec.
-function parse_format_string_expr(s: ref[pstate.ParserState], lexeme: str, line: ptr_uint, column: ptr_uint) -> own[ast.Expr]:
+public function parse_format_string_expr(s: ref[pstate.ParserState], lexeme: str, line: ptr_uint, column: ptr_uint) -> own[ast.Expr]:
     var content: str = ""
     var decode_escapes = true
     if is_format_heredoc(lexeme):
@@ -1155,7 +1155,7 @@ public function parse_attribute_applications(s: ref[pstate.ParserState]) -> span
     return attrs.as_span()
 
 
-function skip_attribute_content(s: ref[pstate.ParserState]) -> void:
+public function skip_attribute_content(s: ref[pstate.ParserState]) -> void:
     var depth: int = 1
     while not eof(s) and depth > 0:
         step(s)
@@ -1290,419 +1290,6 @@ function parse_union_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeA
 
 
 
-# =============================================================================
-#  Specialization target disambiguation (mirrors Ruby parser/expressions.rb).
-#  Without these checks a value index like `xs[0]` would be mis-parsed as a type
-#  specialization; requiring definite/explicit type arguments reverts it to an
-#  index access.
-# =============================================================================
-
-function is_identifier_named(callee: ptr[ast.Expr], name: str) -> bool:
-    unsafe:
-        match read(callee):
-            ast.Expr.expr_identifier as id:
-                return id.name == name
-            _:
-                return false
-
-
-function builtin_specialization_target(callee: ptr[ast.Expr]) -> bool:
-    unsafe:
-        match read(callee):
-            ast.Expr.expr_identifier as id:
-                return (
-                    id.name == "array" or id.name == "reinterpret" or id.name == "span"
-                    or id.name == "zero" or id.name == "ptr" or id.name == "const_ptr"
-                    or id.name == "own" or id.name == "ref" or id.name == "adapt"
-                    or id.name == "equal" or id.name == "hash" or id.name == "order"
-                    or id.name == "simd" or id.name == "SoA"
-                )
-            _:
-                return false
-
-
-function generic_callable_specialization_target(s: ref[pstate.ParserState], callee: ptr[ast.Expr]) -> bool:
-    unsafe:
-        match read(callee):
-            ast.Expr.expr_identifier as id:
-                return s.known_generic_callable_names.contains(id.name)
-            _:
-                return false
-
-
-function imported_member_specialization_target(s: ref[pstate.ParserState], callee: ptr[ast.Expr]) -> bool:
-    unsafe:
-        match read(callee):
-            ast.Expr.expr_member_access as ma:
-                match read(ma.receiver):
-                    ast.Expr.expr_identifier as rid:
-                        return s.known_import_aliases.contains(rid.name)
-                    _:
-                        return false
-            _:
-                return false
-
-
-function callee_known_type_like(s: ref[pstate.ParserState], callee: ptr[ast.Expr]) -> bool:
-    unsafe:
-        match read(callee):
-            ast.Expr.expr_identifier as id:
-                return known_type_like_name(s, id.name)
-            _:
-                return false
-
-
-## A definite type argument: a callable type, or a single name that is a known
-## type-like name (builtin type, declared type, alias, import alias, or type
-## parameter).  A bare integer such as the `0` in `xs[0]` is not definite.
-function definite_type_argument(s: ref[pstate.ParserState], arg: ptr[ast.TypeRef]) -> bool:
-    unsafe:
-        let t = read(arg)
-        if t.is_fn or t.is_proc or t.is_tuple:
-            return true
-        if t.name.parts.len >= 1:
-            return known_type_like_name(s, read(t.name.parts.data + 0))
-        return false
-
-
-function potential_named_literal_type_argument(arg: ptr[ast.TypeRef]) -> bool:
-    unsafe:
-        let t = read(arg)
-        return t.arguments.len == 0 and not t.nullable
-
-
-function explicit_specialization_argument(s: ref[pstate.ParserState], arg: ptr[ast.TypeRef]) -> bool:
-    if definite_type_argument(s, arg):
-        return true
-    return potential_named_literal_type_argument(arg)
-
-
-function all_definite_type_args(s: ref[pstate.ParserState], args: span[ast.TypeArgument]) -> bool:
-    var i: ptr_uint = 0
-    while i < args.len:
-        unsafe:
-            if not definite_type_argument(s, read(args.data + i).value):
-                return false
-        i += 1
-    return true
-
-
-function all_explicit_specialization_args(s: ref[pstate.ParserState], args: span[ast.TypeArgument]) -> bool:
-    var i: ptr_uint = 0
-    while i < args.len:
-        unsafe:
-            if not explicit_specialization_argument(s, read(args.data + i).value):
-                return false
-        i += 1
-    return true
-
-
-function all_call_args_named(call_args: span[ast.Argument]) -> bool:
-    var i: ptr_uint = 0
-    while i < call_args.len:
-        unsafe:
-            match read(call_args.data + i).arg_name:
-                Option.some:
-                    pass
-                Option.none:
-                    return false
-        i += 1
-    return true
-
-
-## True when the `name[args]` form (no call) is a genuine type specialization
-## rather than an index access.
-public function specialization_value_target(s: ref[pstate.ParserState], callee: ptr[ast.Expr], args: span[ast.TypeArgument]) -> bool:
-    if is_identifier_named(callee, "zero") and all_explicit_specialization_args(s, args):
-        return true
-    if expressions.specialization_target(callee) and all_definite_type_args(s, args):
-        return true
-    if generic_callable_specialization_target(s, callee) and all_explicit_specialization_args(s, args):
-        return true
-    if imported_member_specialization_target(s, callee) and all_explicit_specialization_args(s, args):
-        return true
-    return false
-
-
-## True when the `name[args](call_args)` form is a genuine specialized call.
-public function specialization_call_target(s: ref[pstate.ParserState], callee: ptr[ast.Expr], args: span[ast.TypeArgument], call_args: span[ast.Argument]) -> bool:
-    if (is_identifier_named(callee, "default") or is_identifier_named(callee, "zero")) and not callee_known_type_like(s, callee) and not generic_callable_specialization_target(s, callee):
-        return false
-    if builtin_specialization_target(callee):
-        return true
-    if expressions.specialization_target(callee) and all_call_args_named(call_args):
-        return true
-    if generic_callable_specialization_target(s, callee) and all_explicit_specialization_args(s, args):
-        return true
-    if imported_member_specialization_target(s, callee) and all_explicit_specialization_args(s, args):
-        return true
-    return expressions.specialization_target(callee) and all_definite_type_args(s, args)
-
-
-public function parse_primary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
-    if match_kind(s, tk.TokenKind.integer):
-        let lex = previous_lexeme(s)
-        let val = parse_int_literal(lex)
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_integer_literal(lexeme = lex, value = val)
-        return node
-    else if match_kind(s, tk.TokenKind.float_literal):
-        let lex = previous_lexeme(s)
-        let val = parse_float_literal(lex)
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_float_literal(lexeme = lex, value = val)
-        return node
-    else if match_kind(s, tk.TokenKind.string):
-        let first_tok = previous_token(s)
-        var all_lexeme: str
-        unsafe:
-            all_lexeme = token_mod.token_lexeme(read(first_tok), s.source)
-        while check(s, tk.TokenKind.string) or check(s, tk.TokenKind.cstring):
-            advance(s)
-        let val = parse_string_content(all_lexeme, false)
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_string_literal(lexeme = all_lexeme, value = val, is_cstring = false)
-        return node
-    else if match_kind(s, tk.TokenKind.cstring):
-        let first_tok = previous_token(s)
-        var all_lexeme: str
-        unsafe:
-            all_lexeme = token_mod.token_lexeme(read(first_tok), s.source)
-        while check(s, tk.TokenKind.string) or check(s, tk.TokenKind.cstring):
-            advance(s)
-        let val = parse_string_content(all_lexeme, true)
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_string_literal(lexeme = all_lexeme, value = val, is_cstring = true)
-        return node
-    else if match_kind(s, tk.TokenKind.char_literal):
-        let lex = previous_lexeme(s)
-        let val = parse_char_value(lex)
-        let tok = previous_token(s)
-        var ln: ptr_uint
-        var cn: ptr_uint
-        unsafe:
-            ln = tok.line
-            cn = tok.column
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_char_literal(lexeme = lex, value = val, line = ln, column = cn)
-        return node
-    else if match_kind(s, tk.TokenKind.tk_true):
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_bool_literal(value = true)
-        return node
-    else if match_kind(s, tk.TokenKind.tk_false):
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_bool_literal(value = false)
-        return node
-    else if match_kind(s, tk.TokenKind.tk_null):
-        let tok = previous_token(s)
-        var ln: ptr_uint
-        var cn: ptr_uint
-        unsafe:
-            ln = tok.line
-            cn = tok.column
-        var target: ptr[ast.TypeRef]? = null
-        if match_kind(s, tk.TokenKind.lbracket):
-            target = declarations.parse_type_ref(s)
-            consume(s, tk.TokenKind.rbracket, c"expected ']' after null type")
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_null_literal(target_type = target, line = ln, column = cn)
-        return node
-    else if match_name(s):
-        let name_str = previous_lexeme(s)
-        let tok = previous_token(s)
-        var ln: ptr_uint
-        var cn: ptr_uint
-        unsafe:
-            ln = tok.line
-            cn = tok.column
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_identifier(name = name_str, line = ln, column = cn)
-        return node
-    else if match_kind(s, tk.TokenKind.tk_fields_of):
-        let tok = previous_token(s)
-        var node = alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if match_kind(s, tk.TokenKind.tk_members_of):
-        let tok = previous_token(s)
-        var node = alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if match_kind(s, tk.TokenKind.tk_attributes_of):
-        let tok = previous_token(s)
-        var node = alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if match_kind(s, tk.TokenKind.tk_field_of):
-        let tok = previous_token(s)
-        var node = alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if match_kind(s, tk.TokenKind.tk_callable_of):
-        let tok = previous_token(s)
-        var node = alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if match_kind(s, tk.TokenKind.tk_attribute_of):
-        let tok = previous_token(s)
-        var node = alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if match_kind(s, tk.TokenKind.tk_has_attribute):
-        let tok = previous_token(s)
-        var node = alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if match_kind(s, tk.TokenKind.tk_attribute_arg):
-        let tok = previous_token(s)
-        var node = alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if match_kind(s, tk.TokenKind.lparen):
-        let start_tok = previous_token(s)
-        var ln: ptr_uint
-        var cn: ptr_uint
-        unsafe:
-            ln = start_tok.line
-            cn = start_tok.column
-        var first_expr: ptr[ast.Expr]
-        if (check_name(s) or keyword_token_check(peek(s))) and check_next(s, tk.TokenKind.equal):
-            var name_str: str
-            let nt = peek(s) else:
-                fatal(c"unexpected eof in named tuple field")
-            unsafe:
-                name_str = token_mod.token_lexeme(read(nt), s.source)
-            advance(s)
-            advance(s)
-            var val = expressions.parse_expr(s)
-            first_expr = alloc_expr(s)
-            unsafe:
-                read(first_expr) = ast.Expr.expr_named(name = name_str, value = val)
-        else:
-            first_expr = expressions.parse_expr(s)
-        if match_kind(s, tk.TokenKind.comma):
-            var elems = vec.Vec[ast.Expr].create()
-            unsafe:
-                elems.push(read(first_expr))
-            while true:
-                step(s)
-                if check(s, tk.TokenKind.rparen):
-                    break
-                if (check_name(s) or keyword_token_check(peek(s))) and check_next(s, tk.TokenKind.equal):
-                    var name_str: str
-                    let nt2 = peek(s) else:
-                        break
-                    unsafe:
-                        name_str = token_mod.token_lexeme(read(nt2), s.source)
-                    advance(s)
-                    advance(s)
-                    var val2 = expressions.parse_expr(s)
-                    var ne = alloc_expr(s)
-                    unsafe:
-                        read(ne) = ast.Expr.expr_named(name = name_str, value = val2)
-                    unsafe:
-                        elems.push(read(ne))
-                else:
-                    var next = expressions.parse_expr(s)
-                    unsafe:
-                        elems.push(read(next))
-                if not match_kind(s, tk.TokenKind.comma):
-                    break
-                if check(s, tk.TokenKind.rparen):
-                    break
-            consume(s, tk.TokenKind.rparen, c"expected ')' after tuple elements")
-            let elems_span = elems.as_span()
-            var node = alloc_expr(s)
-            read(node) = ast.Expr.expr_expression_list(elements = elems_span, line = ln, column = cn)
-            return node
-        consume(s, tk.TokenKind.rparen, c"expected ')' after expression")
-        return first_expr
-    else if match_kind(s, tk.TokenKind.tk_if):
-        return parse_if_expr(s)
-    else if match_kind(s, tk.TokenKind.tk_match):
-        return parse_match_expr(s)
-    else if match_kind(s, tk.TokenKind.tk_proc):
-        return parse_proc_expr_after_proc(s)
-    else if match_kind(s, tk.TokenKind.tk_size_of):
-        consume(s, tk.TokenKind.lparen, c"expected '(' after size_of")
-        var type_ref = declarations.parse_type_ref(s)
-        consume(s, tk.TokenKind.rparen, c"expected ')'")
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_sizeof(target_type = type_ref)
-        return node
-    else if match_kind(s, tk.TokenKind.tk_align_of):
-        consume(s, tk.TokenKind.lparen, c"expected '(' after align_of")
-        var type_ref = declarations.parse_type_ref(s)
-        consume(s, tk.TokenKind.rparen, c"expected ')'")
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_alignof(target_type = type_ref)
-        return node
-    else if match_kind(s, tk.TokenKind.tk_offset_of):
-        consume(s, tk.TokenKind.lparen, c"expected '(' after offset_of")
-        var type_ref = declarations.parse_type_ref(s)
-        consume(s, tk.TokenKind.comma, c"expected ','")
-        consume_name_allowing_keywords(s, c"expected field name")
-        let field_name = previous_lexeme(s)
-        consume(s, tk.TokenKind.rparen, c"expected ')'")
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_offsetof(target_type = type_ref, field = field_name)
-        return node
-    else if match_kind(s, tk.TokenKind.fstring):
-        let lex = previous_lexeme(s)
-        let ftok = pstate.previous_token(s)
-        var fline: ptr_uint = 0
-        var fcol: ptr_uint = 0
-        unsafe:
-            fline = read(ftok).line
-            fcol = read(ftok).column
-        return parse_format_string_expr(s, lex, fline, fcol)
-    else if match_kind(s, tk.TokenKind.at):
-        consume(s, tk.TokenKind.lbracket, c"expected '[' after @")
-        skip_attribute_content(s)
-        consume(s, tk.TokenKind.rbracket, c"expected ']' after attribute")
-        parser_error_naked(s, c"expected expression")
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_error(line = 0, column = 0, message = "unexpected @[attr] in expression")
-        return node
-    else:
-        let tok_ptr = peek(s) else:
-            parser_error_naked(s, c"expected expression")
-            var node = alloc_expr(s)
-            read(node) = ast.Expr.expr_error(line = 0, column = 0, message = "expected expression")
-            return node
-        var tok: token_mod.Token
-        unsafe:
-            tok = read(tok_ptr)
-        if is_keyword_token(tok):
-            advance(s)
-            var ln: ptr_uint = tok.line
-            var cn: ptr_uint = tok.column
-            var node = alloc_expr(s)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(tok, s.source), line = ln, column = cn)
-            return node
-        parser_error_naked(s, c"expected expression")
-        advance(s)
-        var node = alloc_expr(s)
-        read(node) = ast.Expr.expr_error(line = 0, column = 0, message = "expected expression")
-        return node
-
 
 # =============================================================================
 #  If expression
@@ -1818,7 +1405,7 @@ public function parse_match_expr_arm_into(s: ref[pstate.ParserState], arms: ref[
 #  Proc / fn expression
 # =============================================================================
 
-function parse_proc_expr_after_proc(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
+public function parse_proc_expr_after_proc(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var params = declarations.parse_params(s)
     var return_type: ptr[ast.TypeRef]? = null
     if match_kind(s, tk.TokenKind.arrow):

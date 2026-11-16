@@ -1,6 +1,6 @@
 # Refactoring the Self-Host Compiler
 
-`projects/mtc` is ~165 files / ~155k lines. The parity harnesses prove observable
+`projects/mtc` is ~166 files / ~155k lines. The parity harnesses prove observable
 behavior; they say nothing about shape. This document is the refactoring safety
 suite: what is locked, what is ratcheted, and the protocol for changing the
 self-host without changing what it does.
@@ -78,7 +78,7 @@ sharing one alias in a file.  `packages.source` is the single override
 (`pkg_source`) because both `source` and `package_source` are common
 locals/parameters in the files that use it.
 
-Current state: **165 modules, 0 alias violations**.
+Current state: **166 modules, 0 alias violations**.
 
 ### Operation vocabulary
 
@@ -114,7 +114,7 @@ to repeated emission/frame boilerplate, not as an absolute quality score.
 
 ### Size, markers, tests
 
-- **123,680 code lines**; **32 functions ≥ 200 lines**; **11 files ≥ 2,000 code
+- **123,690 code lines**; **32 functions ≥ 200 lines**; **11 files ≥ 2,000 code
   lines**. The ratchet counts these, so a refactor cannot trade one long
   function for another.
 - **0 marker comments** (`TODO`/`FIXME`/`XXX`/`HACK`); any new one fails.
@@ -187,15 +187,15 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 118, 2026-11-14)
+## 6. Current baseline (session 119, 2026-11-14)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 165 / 155,525 / 123,680 |
+| source files / lines / code lines | 166 / 155,534 / 123,690 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
-| alias violations | 0 (165 modules) |
+| alias violations | 0 (166 modules) |
 | dead exports (unused / test-only) | 35 / 6 |
 | duplication (windows / duplicated lines) | 766 / 5,154 (window 12) |
 | functions ≥ 200 lines | 32 |

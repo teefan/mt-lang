@@ -297,6 +297,7 @@
     "parser.expressions": "expressions",
     "parser.literal_parsing": "lparse",
     "parser.parser": "parser",
+    "parser.specialization": "specialization",
     "parser.state": "pstate",
     "parser.statements": "statements",
     "parser.token_stream": "ts",
@@ -1143,7 +1144,7 @@
     ]
   },
   "sizes": {
-    "total_code": 123680,
+    "total_code": 123690,
     "functions_over_limit": 32,
     "files_over_limit": 11,
     "files": {
@@ -1976,8 +1977,8 @@
         "max_function": 72
       },
       "projects/mtc/src/mtc/parser/expressions.mt": {
-        "lines": 370,
-        "code": 318,
+        "lines": 371,
+        "code": 319,
         "max_line": 125,
         "max_function": 51
       },
@@ -1988,8 +1989,14 @@
         "max_function": 103
       },
       "projects/mtc/src/mtc/parser/parser.mt": {
-        "lines": 1987,
-        "code": 1625,
+        "lines": 1574,
+        "code": 1252,
+        "max_line": 174,
+        "max_function": 72
+      },
+      "projects/mtc/src/mtc/parser/specialization.mt": {
+        "lines": 421,
+        "code": 382,
         "max_line": 187,
         "max_function": 263
       },
