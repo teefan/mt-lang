@@ -109,14 +109,19 @@ helpers, `lsp/navigation.mt analysis_for_document`/`ast_for_document`,
 Normalized 12-line windows (comments/blanks stripped, literals replaced with
 `S`/`N`) hashed across all functions. Overlapping windows make the cluster count
 large; `duplicated_lines` is the ratcheted metric. Current baseline:
-**5,083 duplicated lines in 702 window clusters**. Use the clusters as pointers
-to repeated emission/frame boilerplate, not as an absolute quality score.
+**6,351 duplicated lines in 898 window clusters**.  Session 125 fixed the
+function-end scan for multi-line signatures, so this baseline includes bodies
+the earlier metric skipped; it is a measurement correction, not growth.  Use
+the clusters as pointers to repeated emission/frame boilerplate, not as an
+absolute quality score.
 
 ### Size, markers, tests
 
-- **123,783 code lines**; **24 functions ≥ 200 lines**; **11 files ≥ 2,000 code
+- **123,783 code lines**; **30 functions ≥ 200 lines**; **11 files ≥ 2,000 code
   lines**. The ratchet counts these, so a refactor cannot trade one long
-  function for another.
+  function for another.  Session 125 fixed the multi-line-signature scan, which
+  surfaced `build` (327) and `classify_scan_identifier` (245); the count is a
+  corrected measurement, not a code regression.
 - **0 marker comments** (`TODO`/`FIXME`/`XXX`/`HACK`); any new one fails.
 - Test trees: **21** files in `projects/mtc/test`, **61** in `test/mt`. The
   ratchet fails if either count drops (silent-skip protection).
@@ -197,8 +202,8 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 | vocabulary violations | 0 |
 | alias violations | 0 (168 modules) |
 | dead exports (unused / test-only) | 35 / 6 |
-| duplication (windows / duplicated lines) | 702 / 5,083 (window 12) |
-| functions ≥ 200 lines | 24 |
+| duplication (windows / duplicated lines) | 898 / 6,351 (window 12) |
+| functions ≥ 200 lines | 30 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 21 / 61 |

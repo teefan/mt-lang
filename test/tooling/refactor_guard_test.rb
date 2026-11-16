@@ -276,6 +276,26 @@ class MilkTeaRefactorGuardTest < Minitest::Test
     end
   end
 
+  def test_multiline_signature_measures_the_whole_function
+    body = (1..20).map { |index| "    step_#{index}()\n" }.join
+    with_tree(
+      "#{SOURCE}/parser/parser.mt" => <<~MT,
+        function parse(
+            first: int,
+            second: int,
+        ) -> void:
+        #{body}
+        function next_one() -> void:
+            pass
+      MT
+    ) do |dir|
+      sizes = guard(dir).size_report
+      parse = sizes[:longest_functions].find { |function| function[:name] == "parse" }
+      refute_nil parse
+      assert_equal 24, parse[:length]
+    end
+  end
+
   def test_repository_invariants_pass
     root = File.expand_path("../..", __dir__)
     ok, failures = MilkTea::RefactorGuard.new(root: root).check

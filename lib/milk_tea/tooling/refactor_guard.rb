@@ -190,6 +190,27 @@ module MilkTea
       def function_end(start_index, indent)
         last = start_index
         index = start_index + 1
+
+        # A signature may span lines.  Advance to its closing `:` so the body
+        # scan starts at the body, not at a parameter line indented past the
+        # declaration (which would otherwise end the function at the `)`).
+        unless lines[start_index].rstrip.end_with?(":")
+          while index < lines.length
+            stripped = lines[index].strip
+            if stripped.end_with?(":")
+              last = index
+              break
+            end
+            current_indent = lines[index][/\A[ \t]*/].length
+            if !stripped.empty? && !stripped.start_with?("#") && current_indent <= indent && !stripped.start_with?(")")
+              return start_index + 1
+            end
+            index += 1
+          end
+          return start_index + 1 if last == start_index
+        end
+
+        index = last + 1
         while index < lines.length
           text = lines[index]
           stripped = text.strip

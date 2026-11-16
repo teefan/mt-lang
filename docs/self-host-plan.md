@@ -96,7 +96,7 @@ history.
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
 | Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 72).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
 | Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
-| **Refactoring safety (new)** | structural guard: 168 files / 123,783 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **35 unused + 6 test-only** public declarations; 5,083 duplicated lines; **24 functions ≥ 200 lines**; **11 files ≥ 2,000 code lines**; 0 markers.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` |
+| **Refactoring safety (new)** | structural guard: 168 files / 123,783 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **35 unused + 6 test-only** public declarations; 6,351 duplicated lines; **30 functions ≥ 200 lines**; **11 files ≥ 2,000 code lines**; 0 markers.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` |
 
 Rough completion against the per-track Definition of Done: **100%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix (including
@@ -136,11 +136,19 @@ Completed the session-124 target list.
    parser cycle).  It calls the `pstate` helpers directly and the public
    `parser.check_name`/`check_next`/`keyword_token_check` through the alias.
    parser.mt is 1,290 lines (from 1,326).
+5. **Guard measurement fix** (`lib/milk_tea/tooling/refactor_guard.rb`).  The
+   function-end scan stopped at a multi-line signature's closing `)`, excluding
+   those bodies from the size and duplication metrics.  It now advances to the
+   signature's `:`.  This surfaced `build` (327) and
+   `classify_scan_identifier` (245) and corrected the duplication baseline to
+   6,351 lines / 898 windows.  Guard tests are 15/15 (one new fixture); the
+   baseline refresh is a measurement correction, not growth.
 
 Structural: **168 files / 155,727 lines / 123,783 code**; 111 edges; 0
 layering/naming/alias/vocabulary violations; 35 unused + 6 test-only exports;
-**5,083 duplicated lines / 702 windows** (from 5,154 / 766); **24 functions
->= 200 lines** (from 28); 11 files >= 2,000; 0 markers; tests 21/61.
+**6,351 duplicated lines / 898 windows** (corrected; the old scan skipped
+multi-line function bodies); **30 functions >= 200 lines** (24 before the
+correction); 11 files >= 2,000; 0 markers; tests 21/61.
 
 Verification: dev suite 21/0; full CLI **224/224**; `sexpr parse`
 **772 match / 0 differ / 4 host-rejected of 776**; `sexpr lower`
@@ -1970,7 +1978,7 @@ the loader, the lowering splits (`comptime.mt`, `const_eval.mt`,
 `type_helpers.mt`, `parallel.mt`, `match.mt`, `include_scan.mt`,
 `monomorphized.mt`, `control_flow.mt`), the `lower_stmt` / `lower_call` /
 `lower_expr` / parallel-worker / `lower_module` declaration-arm /
-`lower_identifier_member` decompositions (the long-function count is now 24),
+`lower_identifier_member` decompositions (the long-function count is now 30),
 the c_backend/main splits
 (`c_backend/reachability.mt`, the `generate_c` type/body phases,
 `main/std_cli.mt`, `main/bindings_cli.mt`, `main/format_cli.mt`,
@@ -2005,12 +2013,14 @@ deliberately opened.
 
 Session 125 completed the previous target list (`build_command`, `run_command`,
 `lint_command`, `print_command_help`, and the parser call-args section).
-Current decomposition targets, in size order: `dispatch_cli` (301),
-`generate_c` (277), `check_command` (264), `parse_primary` (263),
-`lower_async_fn` (260), `lower` (259), and `test_command` (253).  `binding_at`
-(385) stays excluded — the attempted split raised duplication from 5,154 to
-5,498 and was reverted; do not reintroduce per-command constant tables there or
-in the generated help.  List all 24 long functions with
+Current decomposition targets, in size order: `build` (327), `dispatch_cli`
+(301), `generate_c` (277), `check_command` (264), `parse_primary` (263),
+`lower_async_fn` (260), `lower` (259), and `test_command` (253); the corrected
+scan also surfaced `classify_scan_identifier` (245) and
+`named_argument_label_hover` (227).  `binding_at` (385) stays excluded — the
+attempted split raised duplication from 5,154 to 5,498 and was reverted; do not
+reintroduce per-command constant tables there or in the generated help.  List
+all 30 long functions with
 `ruby tools/refactor_guard.rb --json tmp/refactor.json`.
 
 Use `tools/gates.sh --areas refactor --run` and read `docs/refactoring.md`
@@ -2802,7 +2812,7 @@ when the tree moved.  Target = the Definition of Done above.
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 | bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 106 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 168 alias modules); 35 unused / 6 test-only exports; **5,083 duplicated lines**; **24 functions ≥ 200 lines**; **11 files ≥ 2,000 code lines**; 0 markers; **guard tests 14/14**; refactor gate **6/6 rc=0** | session 125 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 168 alias modules); 35 unused / 6 test-only exports; **6,351 duplicated lines**; **30 functions ≥ 200 lines**; **11 files ≥ 2,000 code lines**; 0 markers; **guard tests 15/15**; refactor gate **6/6 rc=0** | session 125 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 
