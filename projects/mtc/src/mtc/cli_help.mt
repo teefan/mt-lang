@@ -141,9 +141,8 @@ public function print_usage(to_err: bool) -> void:
         let _ = terminal.flush_stderr()
 
 
-## The host's per-command help (`mtc help <command>`, `mtc <command> --help`).
-## Returns false when the command has no help block, like the host's fallback.
-public function print_command_help(command: str, to_err: bool) -> bool:
+## Per-command help for the cli command family.
+function print_cli_command_help(command: str, to_err: bool) -> bool:
     if command == "check":
         emit_line(to_err, "Usage: mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [-I PATH]")
         emit_line(to_err, "")
@@ -225,6 +224,11 @@ public function print_command_help(command: str, to_err: bool) -> bool:
         if to_err:
             let _ = terminal.flush_stderr()
         return true
+    return false
+
+
+## Per-command help for the project command family.
+function print_project_command_help(command: str, to_err: bool) -> bool:
     if command == "test":
         emit_line(to_err, "Usage: mtc test PATH|DIR [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--timeout SECONDS] [--mem MB] [--jobs N] [--sanitize] [-n SUBSTRING] [--format human|tap|junit] [--locked] [--frozen] [-I PATH]")
         emit_line(to_err, "")
@@ -286,6 +290,11 @@ public function print_command_help(command: str, to_err: bool) -> bool:
         if to_err:
             let _ = terminal.flush_stderr()
         return true
+    return false
+
+
+## Per-command help for the source command family.
+function print_source_command_help(command: str, to_err: bool) -> bool:
     if command == "lint":
         emit_line(to_err, "Usage: mtc lint PATH|DIR [OPTIONS]")
         emit_line(to_err, "       mtc lint --init")
@@ -348,6 +357,11 @@ public function print_command_help(command: str, to_err: bool) -> bool:
         if to_err:
             let _ = terminal.flush_stderr()
         return true
+    return false
+
+
+## Per-command help for the tooling command family.
+function print_tooling_command_help(command: str, to_err: bool) -> bool:
     if command == "deps":
         emit_line(to_err, "Usage: mtc deps SUBCOMMAND")
         emit_line(to_err, "")
@@ -403,6 +417,11 @@ public function print_command_help(command: str, to_err: bool) -> bool:
         if to_err:
             let _ = terminal.flush_stderr()
         return true
+    return false
+
+
+## Per-command help for the server command family.
+function print_server_command_help(command: str, to_err: bool) -> bool:
     if command == "docs":
         emit_line(to_err, "Usage: mtc docs [OPTIONS]")
         emit_line(to_err, "")
@@ -485,5 +504,21 @@ public function print_command_help(command: str, to_err: bool) -> bool:
         emit_line(to_err, "    mtc completions fish > ~/.config/fish/completions/mtc.fish")
         if to_err:
             let _ = terminal.flush_stderr()
+        return true
+    return false
+
+
+## The host's per-command help (`mtc help <command>`, `mtc <command> --help`).
+## Returns false when the command has no help block, like the host's fallback.
+public function print_command_help(command: str, to_err: bool) -> bool:
+    if print_cli_command_help(command, to_err):
+        return true
+    if print_project_command_help(command, to_err):
+        return true
+    if print_source_command_help(command, to_err):
+        return true
+    if print_tooling_command_help(command, to_err):
+        return true
+    if print_server_command_help(command, to_err):
         return true
     return false

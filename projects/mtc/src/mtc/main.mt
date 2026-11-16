@@ -1701,85 +1701,94 @@ function init_lint_config() -> int:
                     return 1
 
 
-function lint_command(args: span[str]) -> int:
-    var input_paths = vec.Vec[str].create()
-    defer: input_paths.release()
-    var select_set = vec.Vec[str].create()
-    defer: select_set.release()
-    var ignore_set = vec.Vec[str].create()
-    defer: ignore_set.release()
-    var fix_mode = false
-    var ignore_generated = false
-    var timings = false
-    var init_mode = false
-    var locked_flag = false
-    var frozen_flag = false
-    var roots = vec.Vec[str].create()
-    defer: roots.release()
-    var owned_roots = vec.Vec[string.String].create()
-    defer: owned_roots.release()
-    var platform = resolver.Platform.linux
-    var stripped = vec.Vec[str].create()
-    defer: stripped.release()
-    split_include_pairs(unsafe: span[str](data = args.data + 1, len = args.len - 1), ref_of(roots), ref_of(stripped))
+## Parsed `lint` flags; the path/list vectors stay with the caller.
+struct LintFlags:
+    fix_mode: bool
+    ignore_generated: bool
+    timings: bool
+    init_mode: bool
+    locked_flag: bool
+    frozen_flag: bool
+
+
+## Parse `lint` arguments, splitting `-I` pairs first and appending paths,
+## select/ignore codes, roots, and the stripped argv to the caller's vectors.
+## Returns none after printing a usage/diagnostic error.
+function parse_lint_options(
+    args: span[str],
+    input_paths: ref[vec.Vec[str]],
+    select_set: ref[vec.Vec[str]],
+    ignore_set: ref[vec.Vec[str]],
+    roots: ref[vec.Vec[str]],
+    stripped: ref[vec.Vec[str]],
+) -> Option[LintFlags]:
+    var lint_flags = LintFlags(
+        fix_mode = false,
+        ignore_generated = false,
+        timings = false,
+        init_mode = false,
+        locked_flag = false,
+        frozen_flag = false,
+    )
+    split_include_pairs(unsafe: span[str](data = args.data + 1, len = args.len - 1), roots, stripped)
     var i: ptr_uint = 0
-    while i < stripped.len():
-        let arg_ptr = stripped.get(i) else:
+    while i < read(stripped).len():
+        let arg_ptr = read(stripped).get(i) else:
             break
         let arg = unsafe: read(arg_ptr)
         if arg == "--fix":
-            fix_mode = true
+            lint_flags.fix_mode = true
             i += 1
             continue
         if arg == "--ignore-generated":
-            ignore_generated = true
+            lint_flags.ignore_generated = true
             i += 1
             continue
         if arg == "--timings":
-            timings = true
+            lint_flags.timings = true
             i += 1
             continue
         if arg == "--locked":
-            locked_flag = true
+            lint_flags.locked_flag = true
             i += 1
             continue
         if arg == "--frozen":
-            locked_flag = true
-            frozen_flag = true
+            lint_flags.locked_flag = true
+            lint_flags.frozen_flag = true
             i += 1
             continue
         if arg == "--init":
-            init_mode = true
+            lint_flags.init_mode = true
             i += 1
             continue
         if arg == "--select":
             i += 1
-            if i >= stripped.len():
+            if i >= read(stripped).len():
                 eprint_line("--select requires a comma-separated list of rule codes")
-                return 1
-            let value_ptr = stripped.get(i) else:
+                return Option[LintFlags].none
+            let value_ptr = read(stripped).get(i) else:
                 eprint_line("--select requires a comma-separated list of rule codes")
-                return 1
-            collect_filter_codes(unsafe: read(value_ptr), ref_of(select_set))
+                return Option[LintFlags].none
+            collect_filter_codes(unsafe: read(value_ptr), select_set)
             i += 1
             continue
         if arg == "--ignore":
             i += 1
-            if i >= stripped.len():
+            if i >= read(stripped).len():
                 eprint_line("--ignore requires a comma-separated list of rule codes")
-                return 1
-            let value_ptr = stripped.get(i) else:
+                return Option[LintFlags].none
+            let value_ptr = read(stripped).get(i) else:
                 eprint_line("--ignore requires a comma-separated list of rule codes")
-                return 1
-            collect_filter_codes(unsafe: read(value_ptr), ref_of(ignore_set))
+                return Option[LintFlags].none
+            collect_filter_codes(unsafe: read(value_ptr), ignore_set)
             i += 1
             continue
         if arg == "--":
             i += 1
-            while i < stripped.len():
-                let rest_ptr = stripped.get(i) else:
+            while i < read(stripped).len():
+                let rest_ptr = read(stripped).get(i) else:
                     break
-                input_paths.push(unsafe: read(rest_ptr))
+                read(input_paths).push(unsafe: read(rest_ptr))
                 i += 1
             break
         if arg.starts_with("-"):
@@ -1788,12 +1797,246 @@ function lint_command(args: span[str]) -> int:
             unknown.append("unknown lint flag: ")
             unknown.append(arg)
             eprint_line(unknown.as_str())
-            return 1
-        input_paths.push(arg)
+            return Option[LintFlags].none
+        read(input_paths).push(arg)
         i += 1
+    return Option[LintFlags].some(value = lint_flags)
 
-    if init_mode:
-        if input_paths.len() > 0 or select_set.len() > 0 or ignore_set.len() > 0 or fix_mode or locked_flag:
+
+## Expand directory operands into their `.mt` files (sorted, skipping
+## synthesized runner sidecars) and copy file operands into owned strings.
+## Returns false after printing a listing error.
+function collect_lint_source_files(input_paths: span[str], source_files: ref[vec.Vec[string.String]]) -> bool:
+    var si: ptr_uint = 0
+    while si < input_paths.len:
+        let path = input_paths[si]
+        if fs.is_directory(path):
+            match fs.list_files_recursive(path):
+                Result.success as entries_payload:
+                    var entries = entries_payload.value
+                    defer: entries.release()
+                    var ei: ptr_uint = 0
+                    while ei < entries.len():
+                        match entries.get(ei):
+                            Option.some as name_payload:
+                                let entry_name = name_payload.value
+                                if entry_name.ends_with(".mt") and not entry_name.starts_with("__mt_test_runner_"):
+                                    read(source_files).push(string.String.from_str(entry_name))
+                            Option.none:
+                                pass
+                        ei += 1
+                Result.failure as err_payload:
+                    var err_msg = err_payload.error
+                    defer: err_msg.release()
+                    stdio.print_format(c"error: cannot list %.*s\n", int<-(path.len), path.data)
+                    return false
+        else:
+            read(source_files).push(string.String.from_str(path))
+        si += 1
+    return true
+
+
+## One file's lint outcome: its warning count (zero in fix mode) and whether it
+## printed warnings.
+struct LintFileResult:
+    warnings: ptr_uint
+    had_warnings: bool
+
+
+## Lint (or fix) one source file.  Returns none after printing a read/resolution
+## error; `--ignore-generated` and `--fix` return a zero-warning result.
+function lint_one_file(
+    fp: str,
+    lint_flags: LintFlags,
+    platform: resolver.Platform,
+    roots: span[str],
+    owned_roots: ref[vec.Vec[string.String]],
+    select_set: span[str],
+    ignore_set: span[str],
+    timing_entries: ref[vec.Vec[LintTimingEntry]],
+) -> Option[LintFileResult]:
+    if cli_verbose:
+        if lint_flags.fix_mode:
+            stdio.print_format(c"fixing %.*s\n", int<-(fp.len), fp.data)
+        else:
+            stdio.print_format(c"linting %.*s\n", int<-(fp.len), fp.data)
+    match fs.read_text(fp):
+        Result.success as content:
+            var src = content.value
+            defer: src.release()
+
+            # `--ignore-generated` skips files emitted by the compiler
+            # (first line starts with the generated-file header).
+            if lint_flags.ignore_generated and src.as_str().starts_with("# generated by mtc"):
+                return Option[LintFileResult].some(value = LintFileResult(warnings = 0, had_warnings = false))
+
+            # Load the module so the lint sees what the analyzer knows: which
+            # methods are `editable` (prefer-let on `var v` + `v.push(1)`),
+            # which types own resources, and which imports failed.  The host's
+            # linter runs on analyzed files too.
+            var lint_roots = vec.Vec[str].create()
+            defer: lint_roots.release()
+            var rj: ptr_uint = 0
+            while rj < roots.len:
+                lint_roots.push(roots[rj])
+                rj += 1
+            var entry_path_owner = string.String.create()
+            defer: entry_path_owner.release()
+            var source_root_owner = string.String.create()
+            defer: source_root_owner.release()
+            var lint_target = fp
+            match effective_source_path(fp, ref_of(lint_roots), ref_of(entry_path_owner), ref_of(source_root_owner)):
+                Option.some as eff:
+                    lint_target = eff.value
+                Option.none:
+                    pass
+            var lint_owned = vec.Vec[string.String].create()
+            defer: lint_owned.release()
+            if lint_flags.locked_flag:
+                match apply_package_resolution_result(lint_target, true, false, ref_of(lint_roots), ref_of(lint_owned)):
+                    Result.failure as resolution_failure:
+                        var message = resolution_failure.error
+                        eprint_line(message.as_str())
+                        message.release()
+                        return Option[LintFileResult].none
+                    Result.success:
+                        pass
+            add_module_roots(lint_target, ref_of(lint_roots), owned_roots)
+            if lint_roots.is_empty():
+                lint_roots.push(path_ops.dirname(lint_target))
+            var lint_program = loader.check_program(lint_target, lint_roots.as_span(), platform)
+            defer: lint_program.release()
+            var owning_names = lint_program.owning_type_span()
+            var unresolved_paths = vec.Vec[str].create()
+            defer: unresolved_paths.release()
+            var options = linter_mod.default_lint_options()
+            options.owning_type_names = owning_names
+            options.select = select_set
+            options.ignore = ignore_set
+            if lint_program.analyses.len() > 0:
+                var up: ptr_uint = 0
+                while up < lint_program.unresolved_import_paths.len():
+                    let upp = lint_program.unresolved_import_paths.get(up) else:
+                        break
+                    unresolved_paths.push(unsafe: read(upp).as_str())
+                    up += 1
+                options.unresolved_import_paths = unresolved_paths.as_span()
+                let root_analysis_ptr = lint_program.analyses.get(lint_program.root_index)
+                if root_analysis_ptr != null:
+                    unsafe:
+                        options.editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
+                        options.mutating_sites = read(root_analysis_ptr).mutating_argument_sites.as_span()
+                        options.mutable_lvalue_sites = read(root_analysis_ptr).mutable_lvalue_sites.as_span()
+                        options.directional_ffi_sites = read(root_analysis_ptr).directional_ffi_sites.as_span()
+                        options.analysis = root_analysis_ptr
+
+            var file_profile: ptr[profile_mod.Profile]? = null
+            if lint_flags.timings:
+                file_profile = create_heap_profile()
+            options.profile = file_profile
+
+            if lint_flags.fix_mode:
+                let fix_started_ms = format_cli.monotonic_ms()
+                var fixed = fix_engine.fix_source(src.as_str(), fp, options)
+                defer: fixed.release()
+                if lint_flags.timings:
+                    push_lint_timing(
+                        timing_entries, fp, file_profile, format_cli.monotonic_ms() - fix_started_ms, true
+                    )
+                    file_profile = null
+                if not fixed.as_str().equal(src.as_str()):
+                    match fs.write_text(fp, fixed.as_str()):
+                        Result.success:
+                            if not cli_quiet:
+                                stdio.print_format(c"fixed %.*s\n", int<-(fp.len), fp.data)
+                        Result.failure as write_err:
+                            var wem = write_err.error
+                            defer: wem.release()
+                            stdio.print_format(c"error: cannot write %.*s\n", int<-(fp.len), fp.data)
+                return Option[LintFileResult].some(value = LintFileResult(warnings = 0, had_warnings = false))
+
+            var diags = vec.Vec[pstate.ParseDiagnostic].create()
+            defer: diags.release()
+            var file = parser.parse_source(src.as_str(), ref_of(diags))
+            # The analysis' expression-type maps are keyed by expression
+            # pointer, so lint the AST the analysis was built from (the host
+            # lints `facts.ast` too); the fresh parse is the fallback.
+            let maybe_analysis = options.analysis
+            if maybe_analysis != null:
+                unsafe:
+                    file = read(maybe_analysis).source_file
+
+            var providers = scope_tracking.build_import_method_providers(file, lint_program.analyses.as_span())
+            defer: providers.release()
+            options.method_providers = providers.as_span()
+            let lint_scan_started_ms = format_cli.monotonic_ms()
+            var warns = linter_mod.lint_source_with(file, src.as_str(), fp, options)
+            let lint_scan_total_ms = format_cli.monotonic_ms() - lint_scan_started_ms
+            defer: warns.release()
+            if lint_flags.timings:
+                push_lint_timing(timing_entries, fp, file_profile, lint_scan_total_ms, false)
+                file_profile = null
+            let warning_count = warns.len()
+            var wi: ptr_uint = 0
+            while wi < warns.len():
+                let wp = warns.get(wi) else:
+                    break
+                unsafe:
+                    let w = read(wp)
+                    if w.line == 0:
+                        stdio.print_format(
+                            c"%.*s:: %.*s: %.*s\n",
+                            int<-(w.path.len), w.path.data,
+                            int<-(w.code.len), w.code.data,
+                            int<-(w.message.len), w.message.data,
+                        )
+                    else:
+                        stdio.print_format(
+                            c"%.*s:%d: %.*s: %.*s\n",
+                            int<-(w.path.len), w.path.data,
+                            int<-(w.line),
+                            int<-(w.code.len), w.code.data,
+                            int<-(w.message.len), w.message.data,
+                        )
+                wi += 1
+            return Option[LintFileResult].some(value = LintFileResult(
+                warnings = warning_count,
+                had_warnings = warning_count > 0,
+            ))
+        Result.failure as read_err:
+            var em = read_err.error
+            em.release()
+            # The host's `read_source_file` raises `source file not found`
+            # with the operand as given, rendered by the top-level handler.
+            var missing = string.String.create()
+            defer: missing.release()
+            missing.append("source file not found: ")
+            missing.append(fp)
+            eprint_line(missing.as_str())
+            return Option[LintFileResult].none
+
+
+function lint_command(args: span[str]) -> int:
+    var input_paths = vec.Vec[str].create()
+    defer: input_paths.release()
+    var select_set = vec.Vec[str].create()
+    defer: select_set.release()
+    var ignore_set = vec.Vec[str].create()
+    defer: ignore_set.release()
+    var roots = vec.Vec[str].create()
+    defer: roots.release()
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
+    var stripped = vec.Vec[str].create()
+    defer: stripped.release()
+    let platform = resolver.Platform.linux
+    let lint_flags = parse_lint_options(
+        args, ref_of(input_paths), ref_of(select_set), ref_of(ignore_set), ref_of(roots), ref_of(stripped)
+    ) else:
+        return 1
+
+    if lint_flags.init_mode:
+        if input_paths.len() > 0 or select_set.len() > 0 or ignore_set.len() > 0 or lint_flags.fix_mode or lint_flags.locked_flag:
             eprint_line("--init does not accept source paths or lint options")
             return 1
         return init_lint_config()
@@ -1807,34 +2050,8 @@ function lint_command(args: span[str]) -> int:
     # dangle when a directory listing's Entries buffer is released.
     var source_files = vec.Vec[string.String].create()
     defer: source_files.release()
-    var si: ptr_uint = 0
-    while si < input_paths.len():
-        let raw = input_paths.get(si) else:
-            break
-        let path = unsafe: read(raw)
-        if fs.is_directory(path):
-            match fs.list_files_recursive(path):
-                Result.success as entries_payload:
-                    var entries = entries_payload.value
-                    defer: entries.release()
-                    var ei: ptr_uint = 0
-                    while ei < entries.len():
-                        match entries.get(ei):
-                            Option.some as name_payload:
-                                let entry_name = name_payload.value
-                                if entry_name.ends_with(".mt") and not entry_name.starts_with("__mt_test_runner_"):
-                                    source_files.push(string.String.from_str(entry_name))
-                            Option.none:
-                                pass
-                        ei += 1
-                Result.failure as err_payload:
-                    var err_msg = err_payload.error
-                    defer: err_msg.release()
-                    stdio.print_format(c"error: cannot list %.*s\n", int<-(path.len), path.data)
-                    return 1
-        else:
-            source_files.push(string.String.from_str(path))
-        si += 1
+    if not collect_lint_source_files(input_paths.as_span(), ref_of(source_files)):
+        return 1
 
     if source_files.is_empty():
         var label = operand_label(input_paths.as_span())
@@ -1846,7 +2063,7 @@ function lint_command(args: span[str]) -> int:
         stdio.print_line(msg.as_str())
         return 0
 
-    if frozen_flag:
+    if lint_flags.frozen_flag:
         var ffi: ptr_uint = 0
         while ffi < source_files.len():
             let fp = source_files.get(ffi) else:
@@ -1867,169 +2084,18 @@ function lint_command(args: span[str]) -> int:
         let fp_ptr = source_files.get(fi) else:
             break
         let fp = unsafe: read(fp_ptr).as_str()
-        if cli_verbose:
-            if fix_mode:
-                stdio.print_format(c"fixing %.*s\n", int<-(fp.len), fp.data)
-            else:
-                stdio.print_format(c"linting %.*s\n", int<-(fp.len), fp.data)
-        match fs.read_text(fp):
-            Result.success as content:
-                var src = content.value
-                defer: src.release()
-
-                # `--ignore-generated` skips files emitted by the compiler
-                # (first line starts with the generated-file header).
-                if ignore_generated and src.as_str().starts_with("# generated by mtc"):
-                    fi += 1
-                    continue
-
-                # Load the module so the lint sees what the analyzer knows: which
-                # methods are `editable` (prefer-let on `var v` + `v.push(1)`),
-                # which types own resources, and which imports failed.  The host's
-                # linter runs on analyzed files too.
-                var lint_roots = vec.Vec[str].create()
-                defer: lint_roots.release()
-                var rj: ptr_uint = 0
-                while rj < roots.len():
-                    let rp = roots.get(rj) else:
-                        break
-                    lint_roots.push(unsafe: read(rp))
-                    rj += 1
-                var entry_path_owner = string.String.create()
-                defer: entry_path_owner.release()
-                var source_root_owner = string.String.create()
-                defer: source_root_owner.release()
-                var lint_target = fp
-                match effective_source_path(fp, ref_of(lint_roots), ref_of(entry_path_owner), ref_of(source_root_owner)):
-                    Option.some as eff:
-                        lint_target = eff.value
-                    Option.none:
-                        pass
-                var lint_owned = vec.Vec[string.String].create()
-                defer: lint_owned.release()
-                if locked_flag:
-                    match apply_package_resolution_result(lint_target, true, false, ref_of(lint_roots), ref_of(lint_owned)):
-                        Result.failure as resolution_failure:
-                            var message = resolution_failure.error
-                            eprint_line(message.as_str())
-                            message.release()
-                            return 1
-                        Result.success:
-                            pass
-                add_module_roots(lint_target, ref_of(lint_roots), ref_of(owned_roots))
-                if lint_roots.is_empty():
-                    lint_roots.push(path_ops.dirname(lint_target))
-                var lint_program = loader.check_program(lint_target, lint_roots.as_span(), platform)
-                defer: lint_program.release()
-                var owning_names = lint_program.owning_type_span()
-                var unresolved_paths = vec.Vec[str].create()
-                defer: unresolved_paths.release()
-                var options = linter_mod.default_lint_options()
-                options.owning_type_names = owning_names
-                options.select = select_set.as_span()
-                options.ignore = ignore_set.as_span()
-                if lint_program.analyses.len() > 0:
-                    var up: ptr_uint = 0
-                    while up < lint_program.unresolved_import_paths.len():
-                        let upp = lint_program.unresolved_import_paths.get(up) else:
-                            break
-                        unresolved_paths.push(unsafe: read(upp).as_str())
-                        up += 1
-                    options.unresolved_import_paths = unresolved_paths.as_span()
-                    let root_analysis_ptr = lint_program.analyses.get(lint_program.root_index)
-                    if root_analysis_ptr != null:
-                        unsafe:
-                            options.editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
-                            options.mutating_sites = read(root_analysis_ptr).mutating_argument_sites.as_span()
-                            options.mutable_lvalue_sites = read(root_analysis_ptr).mutable_lvalue_sites.as_span()
-                            options.directional_ffi_sites = read(root_analysis_ptr).directional_ffi_sites.as_span()
-                            options.analysis = root_analysis_ptr
-
-                var file_profile: ptr[profile_mod.Profile]? = null
-                if timings:
-                    file_profile = create_heap_profile()
-                options.profile = file_profile
-
-                if fix_mode:
-                    let fix_started_ms = format_cli.monotonic_ms()
-                    var fixed = fix_engine.fix_source(src.as_str(), fp, options)
-                    defer: fixed.release()
-                    if timings:
-                        push_lint_timing(ref_of(timing_entries), fp, file_profile, format_cli.monotonic_ms() - fix_started_ms, true)
-                        file_profile = null
-                    if not fixed.as_str().equal(src.as_str()):
-                        match fs.write_text(fp, fixed.as_str()):
-                            Result.success:
-                                if not cli_quiet:
-                                    stdio.print_format(c"fixed %.*s\n", int<-(fp.len), fp.data)
-                            Result.failure as write_err:
-                                var wem = write_err.error
-                                defer: wem.release()
-                                stdio.print_format(c"error: cannot write %.*s\n", int<-(fp.len), fp.data)
-                    fi += 1
-                    continue
-
-                var diags = vec.Vec[pstate.ParseDiagnostic].create()
-                defer: diags.release()
-                var file = parser.parse_source(src.as_str(), ref_of(diags))
-                # The analysis' expression-type maps are keyed by expression
-                # pointer, so lint the AST the analysis was built from (the host
-                # lints `facts.ast` too); the fresh parse is the fallback.
-                let maybe_analysis = options.analysis
-                if maybe_analysis != null:
-                    unsafe:
-                        file = read(maybe_analysis).source_file
-
-                var providers = scope_tracking.build_import_method_providers(file, lint_program.analyses.as_span())
-                defer: providers.release()
-                options.method_providers = providers.as_span()
-                let lint_scan_started_ms = format_cli.monotonic_ms()
-                var warns = linter_mod.lint_source_with(file, src.as_str(), fp, options)
-                let lint_scan_total_ms = format_cli.monotonic_ms() - lint_scan_started_ms
-                defer: warns.release()
-                if timings:
-                    push_lint_timing(ref_of(timing_entries), fp, file_profile, lint_scan_total_ms, false)
-                    file_profile = null
-                if warns.len() > 0:
-                    files_with_warnings += 1
-                total_warnings += warns.len()
-                var wi: ptr_uint = 0
-                while wi < warns.len():
-                    let wp = warns.get(wi) else:
-                        break
-                    unsafe:
-                        let w = read(wp)
-                        if w.line == 0:
-                            stdio.print_format(
-                                c"%.*s:: %.*s: %.*s\n",
-                                int<-(w.path.len), w.path.data,
-                                int<-(w.code.len), w.code.data,
-                                int<-(w.message.len), w.message.data,
-                            )
-                        else:
-                            stdio.print_format(
-                                c"%.*s:%d: %.*s: %.*s\n",
-                                int<-(w.path.len), w.path.data,
-                                int<-(w.line),
-                                int<-(w.code.len), w.code.data,
-                                int<-(w.message.len), w.message.data,
-                            )
-                    wi += 1
-            Result.failure as read_err:
-                var em = read_err.error
-                em.release()
-                # The host's `read_source_file` raises `source file not found`
-                # with the operand as given, rendered by the top-level handler.
-                var missing = string.String.create()
-                defer: missing.release()
-                missing.append("source file not found: ")
-                missing.append(fp)
-                eprint_line(missing.as_str())
-                return 1
+        let result = lint_one_file(
+            fp, lint_flags, platform, roots.as_span(), ref_of(owned_roots), select_set.as_span(), ignore_set.as_span(),
+            ref_of(timing_entries)
+        ) else:
+            return 1
+        if result.had_warnings:
+            files_with_warnings += 1
+        total_warnings += result.warnings
         fi += 1
 
-    if fix_mode:
-        if timings:
+    if lint_flags.fix_mode:
+        if lint_flags.timings:
             print_lint_rule_profiles(ref_of(timing_entries))
             print_lint_file_profiles(ref_of(timing_entries))
         return 0
@@ -2043,11 +2109,11 @@ function lint_command(args: span[str]) -> int:
         else:
             stdio.print_format(c"clean %d file(s)\n", int<-(source_files.len()))
         # The host prints only the file-profile block for a clean run.
-        if timings:
+        if lint_flags.timings:
             print_lint_file_profiles(ref_of(timing_entries))
         return 0
 
-    if timings:
+    if lint_flags.timings:
         print_lint_rule_profiles(ref_of(timing_entries))
         print_lint_file_profiles(ref_of(timing_entries))
 

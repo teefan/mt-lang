@@ -17,6 +17,7 @@ import mtc.lexer.token as token_mod
 import mtc.lexer.lexer as lexer_mod
 import mtc.parser.token_stream as ts
 import mtc.parser.ast as ast
+import mtc.parser.call_args as call_args
 import mtc.parser.state as pstate
 import mtc.parser.literal_parsing as lparse
 import mtc.parser.statements as statements
@@ -1133,7 +1134,7 @@ function parse_attribute_application(s: ref[pstate.ParserState]) -> ast.Attribut
     let name = parse_qualified_name(s)
     var arguments = span[ast.Argument]()
     if match_kind(s, tk.TokenKind.lparen):
-        arguments = parse_call_args(s)
+        arguments = call_args.parse_call_args(s)
         consume(s, tk.TokenKind.rparen, c"expected ')' after attribute arguments")
     return ast.AttributeApplication(name = name, arguments = arguments, line = ln, column = cn)
 
@@ -1287,38 +1288,3 @@ function parse_union_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeA
         read(node) = ast.Decl.decl_union(name = name, c_name = c_name, union_fields = fields.as_span(),
             visibility = visibility, union_attrs = attrs, line = ln, column = cn)
     return node
-
-
-# =============================================================================
-#  Call arguments (producing)
-# =============================================================================
-
-public function parse_call_args(s: ref[pstate.ParserState]) -> span[ast.Argument]:
-    var args = vec.Vec[ast.Argument].create()
-    if check(s, tk.TokenKind.rparen):
-        return span[ast.Argument]()
-    while true:
-        step(s)
-        if check(s, tk.TokenKind.rparen):
-            break
-        if (check_name(s) or keyword_token_check(peek(s))) and check_next(s, tk.TokenKind.equal):
-            let name_tok = peek(s) else:
-                break
-            var arg_name: str
-            unsafe:
-                arg_name = token_mod.token_lexeme(read(name_tok), s.source)
-            advance(s)
-            advance(s)
-            var val = expressions.parse_expr(s)
-            var arg = ast.Argument(arg_name = Option[str].some(value = arg_name), arg_value = val)
-            args.push(arg)
-        else:
-            var val = expressions.parse_expr(s)
-            var arg = ast.Argument(arg_name = Option[str].none, arg_value = val)
-            args.push(arg)
-        if not match_kind(s, tk.TokenKind.comma):
-            break
-        if check(s, tk.TokenKind.rparen):
-            break
-    let result = args.as_span()
-    return result

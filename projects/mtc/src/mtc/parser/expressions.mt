@@ -6,6 +6,7 @@ import std.vec as vec
 import mtc.lexer.token_kinds as tk
 import mtc.lexer.token as token_mod
 import mtc.parser.ast as ast
+import mtc.parser.call_args as call_args
 import mtc.parser.state as pstate
 import mtc.parser.parser as parser
 import mtc.parser.declarations as declarations
@@ -298,7 +299,7 @@ function parse_postfix(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
                 read(node) = ast.Expr.expr_index_access(receiver = left, index = idx)
                 left = node
         else if pstate.match_kind(s, tk.TokenKind.lparen):
-            var args = parser.parse_call_args(s)
+            var args = call_args.parse_call_args(s)
             pstate.consume(s, tk.TokenKind.rparen, c"expected ')' after call arguments")
             var node = parser.alloc_expr(s)
             read(node) = ast.Expr.expr_call(callee = left, args = args)
@@ -352,9 +353,9 @@ function try_parse_specialization(s: ref[pstate.ParserState], left: ptr[ast.Expr
         return Option[ptr[ast.Expr]].none
     let args_span = args_vec.as_span()
     if pstate.match_kind(s, tk.TokenKind.lparen):
-        var call_args = parser.parse_call_args(s)
+        var parsed_args = call_args.parse_call_args(s)
         pstate.consume(s, tk.TokenKind.rparen, c"expected ')' after call arguments")
-        if not specialization.specialization_call_target(s, left, args_span, call_args):
+        if not specialization.specialization_call_target(s, left, args_span, parsed_args):
             s.stream.current = saved
             return Option[ptr[ast.Expr]].none
         var spec = parser.alloc_expr(s)
@@ -362,7 +363,7 @@ function try_parse_specialization(s: ref[pstate.ParserState], left: ptr[ast.Expr
             read(spec) = ast.Expr.expr_specialization(callee = left, arguments = args_span)
         var call = parser.alloc_expr(s)
         unsafe:
-            read(call) = ast.Expr.expr_call(callee = spec, args = call_args)
+            read(call) = ast.Expr.expr_call(callee = spec, args = parsed_args)
         return Option[ptr[ast.Expr]].some(value = call)
     if not specialization.specialization_value_target(s, left, args_span):
         s.stream.current = saved

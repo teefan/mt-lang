@@ -28,71 +28,108 @@ import mtc.main.test_cli as test_cli
 import mtc.main as main
 
 
-## Build a program (`mtc build`).  Supports both single `.mt` files and package
-## directory targets (reads package.toml for the entry point).
-public function build_command(args: span[str]) -> int:
-    var roots = vec.Vec[str].create()
-    defer: roots.release()
-    var owned_roots = vec.Vec[string.String].create()
-    defer: owned_roots.release()
-    var output_override: Option[str] = Option[str].none
-    var keep_c_path: Option[str] = Option[str].none
-    var c_compiler = "cc"
-    var profile_name = "debug"
-    var has_cli_profile = false
-    var platform = resolver.Platform.linux
-    var has_cli_platform = false
-    var clean_mode = false
-    var use_cache = true
-    var sanitize = false
-    var debug_guards: Option[bool] = Option[bool].none
-    var kind = build_driver.BuildKind.executable
-    var bundle_mode = false
-    var archive_mode = false
-    var locked_flag = false
-    var frozen_flag = false
-    var filtered = vec.Vec[str].create()
-    defer: filtered.release()
-    filtered.push("build")
+## Which command's flag set is being parsed.  `build` also accepts `--clean`
+## and `--kind`; `run` forwards everything after `--` to the program.
+enum BuildCommandMode: ubyte
+    build = 0
+    run = 1
+
+
+## Parsed `build`/`run` flags, shared by both commands.
+struct BuildOptions:
+    output_override: Option[str]
+    keep_c_path: Option[str]
+    c_compiler: str
+    profile_name: str
+    has_cli_profile: bool
+    platform: resolver.Platform
+    has_cli_platform: bool
+    clean_mode: bool
+    use_cache: bool
+    sanitize: bool
+    debug_guards: Option[bool]
+    kind: build_driver.BuildKind
+    bundle_mode: bool
+    archive_mode: bool
+    locked_flag: bool
+    frozen_flag: bool
+
+
+## Parse the shared `build`/`run` flag set into [[BuildOptions]], appending
+## positionals to `filtered` (seeded with the command name) and, in run mode,
+## everything after `--` to `program_args`.  Prints the same errors as the two
+## former inline parsers and returns none on failure.
+function parse_command_options(
+    args: span[str],
+    mode: BuildCommandMode,
+    command_name: str,
+    filtered: ref[vec.Vec[str]],
+    program_args: ref[vec.Vec[str]],
+) -> Option[BuildOptions]:
+    var options = BuildOptions(
+        output_override = Option[str].none,
+        keep_c_path = Option[str].none,
+        c_compiler = "cc",
+        profile_name = "debug",
+        has_cli_profile = false,
+        platform = resolver.Platform.linux,
+        has_cli_platform = false,
+        clean_mode = false,
+        use_cache = true,
+        sanitize = false,
+        debug_guards = Option[bool].none,
+        kind = build_driver.BuildKind.executable,
+        bundle_mode = false,
+        archive_mode = false,
+        locked_flag = false,
+        frozen_flag = false,
+    )
+    read(filtered).push(command_name)
     var ai: ptr_uint = 1
     while ai < args.len:
         let arg = args[ai]
+        if mode == BuildCommandMode.run and arg == "--":
+            var rest = ai + 1
+            while rest < args.len:
+                read(program_args).push(args[rest])
+                rest += 1
+            break
         if arg == "-o" or arg == "--output":
             if ai + 1 >= args.len:
                 test_cli.eprint_missing_option_value(arg)
-                return 1
-            output_override = Option[str].some(value= args[ai + 1])
+                return Option[BuildOptions].none
+            options.output_override = Option[str].some(value= args[ai + 1])
             ai += 2
             continue
-        if arg == "--clean":
-            clean_mode = true
+        if mode == BuildCommandMode.build and arg == "--clean":
+            options.clean_mode = true
             ai += 1
             continue
         if arg == "--bundle":
-            bundle_mode = true
+            options.bundle_mode = true
             ai += 1
             continue
         if arg == "--archive":
-            bundle_mode = true
-            archive_mode = true
+            options.bundle_mode = true
+            options.archive_mode = true
             ai += 1
             continue
-        if arg == "--kind":
+        if mode == BuildCommandMode.build and arg == "--kind":
             if ai + 1 >= args.len:
                 main.eprint_line("missing value for --kind")
                 cli_help.print_usage(true)
-                return 1
+                return Option[BuildOptions].none
             let kind_name = args[ai + 1]
             if kind_name == "executable" or kind_name == "exe" or kind_name == "bin":
-                kind = build_driver.BuildKind.executable
+                options.kind = build_driver.BuildKind.executable
                 ai += 2
                 continue
             if kind_name == "static" or kind_name == "staticlib":
-                kind = build_driver.BuildKind.kind_static
+                options.kind = build_driver.BuildKind.kind_static
                 ai += 2
                 continue
             if kind_name == "shared" or kind_name == "dylib" or kind_name == "dll" or kind_name == "so":
-                kind = build_driver.BuildKind.kind_shared
+                options.kind = build_driver.BuildKind.kind_shared
                 ai += 2
                 continue
             var bad_kind = string.String.create()
@@ -102,43 +139,43 @@ public function build_command(args: span[str]) -> int:
             bad_kind.append("; expected executable|static|shared")
             main.eprint_line(bad_kind.as_str())
             cli_help.print_usage(true)
-            return 1
+            return Option[BuildOptions].none
         if arg == "--keep-c":
             if ai + 1 >= args.len:
                 test_cli.eprint_missing_option_value(arg)
-                return 1
-            keep_c_path = Option[str].some(value= args[ai + 1])
+                return Option[BuildOptions].none
+            options.keep_c_path = Option[str].some(value= args[ai + 1])
             ai += 2
             continue
         if arg == "--cc":
             if ai + 1 >= args.len:
                 main.eprint_line("missing value for --cc")
                 cli_help.print_usage(true)
-                return 1
-            c_compiler = args[ai + 1]
+                return Option[BuildOptions].none
+            options.c_compiler = args[ai + 1]
             ai += 2
             continue
         if arg == "--no-cache":
-            use_cache = false
+            options.use_cache = false
             ai += 1
             continue
         if arg == "-I" or arg == "--include-path":
-            filtered.push(arg)
+            read(filtered).push(arg)
             if ai + 1 < args.len:
-                filtered.push(args[ai + 1])
+                read(filtered).push(args[ai + 1])
             ai += 2
             continue
         if arg == "--sanitize":
-            sanitize = true
-            use_cache = false
+            options.sanitize = true
+            options.use_cache = false
             ai += 1
             continue
         if arg == "--debug-guards":
-            debug_guards = Option[bool].some(value = true)
+            options.debug_guards = Option[bool].some(value = true)
             ai += 1
             continue
         if arg == "--no-debug-guards":
-            debug_guards = Option[bool].some(value = false)
+            options.debug_guards = Option[bool].some(value = false)
             ai += 1
             continue
         # Accepted for CLI compatibility; the Ruby build also ignores it.
@@ -146,40 +183,40 @@ public function build_command(args: span[str]) -> int:
             ai += 1
             continue
         if arg == "--locked":
-            locked_flag = true
+            options.locked_flag = true
             ai += 1
             continue
         if arg == "--frozen":
-            locked_flag = true
-            frozen_flag = true
+            options.locked_flag = true
+            options.frozen_flag = true
             ai += 1
             continue
         if arg == "--profile":
             if ai + 1 >= args.len:
                 test_cli.eprint_missing_option_value(arg)
-                return 1
-            profile_name = args[ai + 1]
-            if not profile_name == "debug" and not profile_name == "release":
+                return Option[BuildOptions].none
+            options.profile_name = args[ai + 1]
+            if not options.profile_name == "debug" and not options.profile_name == "release":
                 var bad_profile = string.String.create()
                 defer: bad_profile.release()
                 bad_profile.append("unknown profile ")
-                bad_profile.append(profile_name)
+                bad_profile.append(options.profile_name)
                 bad_profile.append("; expected debug|release")
                 main.eprint_line(bad_profile.as_str())
-                return 1
-            has_cli_profile = true
+                return Option[BuildOptions].none
+            options.has_cli_profile = true
             ai += 2
             continue
         if arg == "--platform":
             if ai + 1 >= args.len:
                 test_cli.eprint_missing_option_value(arg)
-                return 1
+                return Option[BuildOptions].none
             match main.parse_platform_name(args[ai + 1]):
                 Option.some as plat:
-                    platform = plat.value
+                    options.platform = plat.value
                 Option.none:
-                    return 1
-            has_cli_platform = true
+                    return Option[BuildOptions].none
+            options.has_cli_platform = true
             ai += 2
             continue
         if arg.starts_with("-"):
@@ -189,13 +226,31 @@ public function build_command(args: span[str]) -> int:
             unknown_opt.append(arg)
             main.eprint_line(unknown_opt.as_str())
             cli_help.print_usage(true)
-            return 1
-        filtered.push(arg)
+            return Option[BuildOptions].none
+        read(filtered).push(arg)
         ai += 1
-    let path = main.parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
+    return Option[BuildOptions].some(value = options)
+
+
+## Build a program (`mtc build`).  Supports both single `.mt` files and package
+## directory targets (reads package.toml for the entry point).
+public function build_command(args: span[str]) -> int:
+    var roots = vec.Vec[str].create()
+    defer: roots.release()
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
+    var filtered = vec.Vec[str].create()
+    defer: filtered.release()
+    var program_args = vec.Vec[str].create()
+    defer: program_args.release()
+    var options = parse_command_options(
+        args, BuildCommandMode.build, "build", ref_of(filtered), ref_of(program_args)
+    ) else:
+        return 1
+    let path = main.parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(options.platform)) else:
         return 1
 
-    if main.apply_package_resolution(path, locked_flag, frozen_flag, ref_of(roots), ref_of(owned_roots)) != 0:
+    if main.apply_package_resolution(path, options.locked_flag, options.frozen_flag, ref_of(roots), ref_of(owned_roots)) != 0:
         return 1
 
     var entry_path_owner = string.String.create()
@@ -239,143 +294,20 @@ public function build_command(args: span[str]) -> int:
     defer: bundle_root.release()
     var clean_target = string.String.create()
     defer: clean_target.release()
-    var clean_target_is_tree = false
-    var effective: str = ""
     let display_path = path
 
-    match package_opt:
-        Option.some as package_ref:
-            let pkg = package_ref.value
-            if pkg.kind == package_manifest.PackageKind.library and kind == build_driver.BuildKind.executable:
-                var message = string.String.create()
-                defer: message.release()
-                message.append("cannot build library package ")
-                message.append(pkg.name.as_str())
-                message.append(" as an executable")
-                main.eprint_line(message.as_str())
-                return 1
-            match pkg.source_path:
-                Option.some as declared_source:
-                    effective = declared_source.value.as_str()
-                Option.none:
-                    var message = string.String.create()
-                    defer: message.release()
-                    message.append("application package ")
-                    message.append(pkg.name.as_str())
-                    message.append(" has no build entry; set build.entry or create src/main.mt")
-                    main.eprint_line(message.as_str())
-                    return 1
-            roots.push(pkg.source_root.as_str())
-            if not has_cli_profile:
-                profile_name = pkg.profile
-            if not has_cli_platform:
-                platform = platform_from_manifest(pkg.platform)
-            let extension = artifact_extension(platform)
-            if bundle_mode:
-                if platform == resolver.Platform.wasm:
-                    main.eprint_line("bundle mode is supported only for native package builds")
-                    return 1
-                resolve_bundle_paths(
-                    pkg, output_override, platform, profile_name, ref_of(bundle_root), ref_of(output_owner)
-                )
-                match output_override:
-                    Option.some:
-                        clean_target.append(bundle_root.as_str())
-                        clean_target_is_tree = true
-                    Option.none:
-                        match pkg.output_path:
-                            Option.some:
-                                clean_target.append(bundle_root.as_str())
-                                clean_target_is_tree = true
-                            Option.none:
-                                clean_target.append(pkg.root_dir.as_str())
-                                clean_target.append("/build/dist")
-                                clean_target_is_tree = true
-            else:
-                match output_override:
-                    Option.some as explicit_output:
-                        output_owner.append(explicit_output.value)
-                        clean_target.append(explicit_output.value)
-                    Option.none:
-                        match pkg.output_path:
-                            Option.some as manifest_output:
-                                output_owner.append(manifest_output.value.as_str())
-                                clean_target.append(manifest_output.value.as_str())
-                            Option.none:
-                                var computed = path_ops.join(pkg.root_dir.as_str(), "build/bin")
-                                defer: computed.release()
-                                var with_platform = path_ops.join(computed.as_str(), main.platform_label(platform))
-                                defer: with_platform.release()
-                                var with_profile = path_ops.join(with_platform.as_str(), profile_name)
-                                defer: with_profile.release()
-                                var with_name = path_ops.join(with_profile.as_str(), pkg.name.as_str())
-                                defer: with_name.release()
-                                output_owner.append(with_name.as_str())
-                                output_owner.append(extension)
-                                clean_target.append(pkg.root_dir.as_str())
-                                clean_target.append("/build")
-                                clean_target_is_tree = true
-        Option.none:
-            if bundle_mode:
-                main.eprint_line("bundle mode requires a package build")
-                return 1
-            let fallback = main.effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
-                return 1
-            effective = fallback
-            match output_override:
-                Option.some as explicit_output:
-                    output_owner.append(explicit_output.value)
-                    clean_target.append(explicit_output.value)
-                Option.none:
-                    var computed = format_cli.default_output_path(effective)
-                    defer: computed.release()
-                    output_owner.append(computed.as_str())
-                    clean_target.append(computed.as_str())
-
-    if platform == resolver.Platform.wasm:
-        match normalize_wasm_output_path(ref_of(output_owner)):
-            Result.failure as wasm_failure:
-                let message = wasm_failure.error.as_str()
-                main.eprint_line(message)
-                wasm_failure.error.release()
-                return 1
-            Result.success:
-                pass
-
-    if not fs.exists(effective):
-        var missing = string.String.create()
-        defer: missing.release()
-        missing.append("source file not found: ")
-        missing.append(display_path)
-        main.eprint_line(missing.as_str())
+    let build_output = resolve_build_output(
+        path, ref_of(options), package_opt, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner),
+        ref_of(output_owner), ref_of(bundle_root), ref_of(clean_target)
+    ) else:
         return 1
+    let effective = build_output.effective
 
     # --clean removes the generated output artifact without compiling.
-    if clean_mode:
-        if clean_target_is_tree:
-            if fs.exists(clean_target.as_str()):
-                match fs.remove_tree(clean_target.as_str()):
-                    Result.failure as failure:
-                        var message = failure.error
-                        defer: message.release()
-                        stdio.print_format(c"error: cannot remove %.*s\n", int<-(clean_target.as_str().len), clean_target.as_str().data)
-                        return 1
-                    Result.success:
-                        pass
-        else if fs.exists(clean_target.as_str()):
-            match fs.remove(clean_target.as_str()):
-                Result.failure as failure:
-                    var message = failure.error
-                    defer: message.release()
-                    stdio.print_format(c"error: cannot remove %.*s\n", int<-(clean_target.as_str().len), clean_target.as_str().data)
-                    return 1
-                Result.success:
-                    pass
-        if not main.cli_is_quiet():
-            stdio.print_format(c"cleaned %.*s\n", int<-(clean_target.as_str().len), clean_target.as_str().data)
-        return 0
+    if options.clean_mode:
+        return run_build_clean(clean_target.as_str(), build_output.clean_target_is_tree)
 
-    var program = loader.check_program(effective, roots.as_span(), platform)
+    var program = loader.check_program(effective, roots.as_span(), options.platform)
     defer: program.release()
 
     if program.diagnostic_error_count() > 0:
@@ -387,7 +319,7 @@ public function build_command(args: span[str]) -> int:
 
     let ir_program = lowering.lower(program)
 
-    if kind == build_driver.BuildKind.executable and main.reject_missing_entrypoint(program, ir_program):
+    if options.kind == build_driver.BuildKind.executable and main.reject_missing_entrypoint(program, ir_program):
         return 1
 
     let output_dir = path_ops.dirname(output_owner.as_str())
@@ -414,89 +346,32 @@ public function build_command(args: span[str]) -> int:
     # are re-run on a hit, as the host's `build_cached` does.
     # The cache stores a single executable; emcc's `.js`/`.wasm`/`.data`
     # sidecars are not cached, so wasm builds always recompile.
-    let cache_enabled = use_cache and keep_c_path.is_none() and kind == build_driver.BuildKind.executable and platform != resolver.Platform.wasm
+    let cache_enabled = options.use_cache and options.keep_c_path.is_none() and options.kind == build_driver.BuildKind.executable and options.platform != resolver.Platform.wasm
     var cache_key = string.String.create()
     defer: cache_key.release()
     if cache_enabled:
-        var build_guards = profile_name == "debug"
-        match debug_guards:
-            Option.some as override:
-                build_guards = override.value
-            Option.none:
-                pass
-        var computed_key = build_cache.compute_key(ref_of(program), c_compiler, main.platform_label(platform), profile_name, sanitize, build_guards)
+        var computed_key = compute_build_cache_key(ref_of(program), options)
+        defer: computed_key.release()
         cache_key.append(computed_key.as_str())
-        computed_key.release()
-        match build_cache.lookup(cache_key.as_str()):
-            Option.some as hit:
-                var cached = hit.value
-                let copied = build_cache.materialize(cached.as_str(), output_owner.as_str())
-                cached.release()
-                if copied:
-                    match stage_package_assets(package_opt, output_owner.as_str(), bundle_mode, platform):
-                        Result.success:
-                            pass
-                        Result.failure as asset_failure:
-                            var asset_error = asset_failure.error
-                            var message = string.String.create()
-                            defer: message.release()
-                            message.append("error: ")
-                            message.append(asset_error.as_str())
-                            asset_error.release()
-                            main.eprint_line(message.as_str())
-                            return 1
-                    var cached_archive = string.String.create()
-                    defer: cached_archive.release()
-                    if archive_mode:
-                        match write_bundle_archive(bundle_root.as_str(), ref_of(cached_archive)):
-                            Result.success:
-                                pass
-                            Result.failure as archive_failure:
-                                var archive_error = archive_failure.error
-                                var message = string.String.create()
-                                defer: message.release()
-                                message.append("error: ")
-                                message.append(archive_error.as_str())
-                                archive_error.release()
-                                main.eprint_line(message.as_str())
-                                return 1
-                    if not main.cli_is_quiet():
-                        if bundle_mode:
-                            stdio.print_format(
-                                c"built %.*s -> %.*s\n",
-                                int<-(display_path.len), display_path.data,
-                                int<-(output_dir.len), output_dir.data,
-                            )
-                            stdio.print_format(
-                                c"entry executable %.*s\n",
-                                int<-(output_owner.as_str().len), output_owner.as_str().data,
-                            )
-                            stdio.print_line("  [cached]")
-                            if archive_mode:
-                                stdio.print_format(
-                                    c"archive %.*s\n",
-                                    int<-(cached_archive.as_str().len), cached_archive.as_str().data,
-                                )
-                        else:
-                            stdio.print_format(
-                                c"built %.*s -> %.*s  [cached]\n",
-                                int<-(display_path.len), display_path.data,
-                                int<-(output_owner.as_str().len), output_owner.as_str().data,
-                            )
-                    return 0
+        match try_cached_build(
+            options, package_opt, output_owner.as_str(), display_path, bundle_root.as_str(), cache_key.as_str()
+        ):
+            Option.some as status:
+                return status.value
             Option.none:
                 pass
 
     match build_driver.build(
-        program, ir_program, output_owner.as_str(), c_compiler, roots.as_span(), sanitize, profile_name, debug_guards, kind,
-        platform, build_template, build_assets, keep_c_path
+        program, ir_program, output_owner.as_str(), options.c_compiler, roots.as_span(), options.sanitize,
+        options.profile_name, options.debug_guards, options.kind, options.platform, build_template, build_assets,
+        options.keep_c_path
     ):
         Result.success as built:
             var output = built.value
             defer: output.release()
             if cache_enabled:
                 build_cache.store(cache_key.as_str(), output.as_str())
-            match stage_package_assets(package_opt, output_owner.as_str(), bundle_mode, platform):
+            match stage_package_assets(package_opt, output_owner.as_str(), options.bundle_mode, options.platform):
                 Result.success:
                     pass
                 Result.failure as asset_failure:
@@ -510,7 +385,7 @@ public function build_command(args: span[str]) -> int:
                     return 1
             var archive_owner = string.String.create()
             defer: archive_owner.release()
-            if archive_mode:
+            if options.archive_mode:
                 match write_bundle_archive(bundle_root.as_str(), ref_of(archive_owner)):
                     Result.success:
                         pass
@@ -524,7 +399,7 @@ public function build_command(args: span[str]) -> int:
                         main.eprint_line(message.as_str())
                         return 1
             if not main.cli_is_quiet():
-                if bundle_mode:
+                if options.bundle_mode:
                     stdio.print_format(
                         c"built %.*s -> %.*s\n",
                         int<-(display_path.len), display_path.data,
@@ -534,7 +409,7 @@ public function build_command(args: span[str]) -> int:
                         c"entry executable %.*s\n",
                         int<-(output_owner.as_str().len), output_owner.as_str().data,
                     )
-                    if archive_mode:
+                    if options.archive_mode:
                         stdio.print_format(
                             c"archive %.*s\n",
                             int<-(archive_owner.as_str().len), archive_owner.as_str().data,
@@ -545,8 +420,8 @@ public function build_command(args: span[str]) -> int:
                         int<-(display_path.len), display_path.data,
                         int<-(output_owner.as_str().len), output_owner.as_str().data,
                     )
-                if keep_c_path.is_some():
-                    var saved_path = loader.absolute_path(keep_c_path.unwrap())
+                if options.keep_c_path.is_some():
+                    var saved_path = loader.absolute_path(options.keep_c_path.unwrap())
                     stdio.print_format(c"saved C to %.*s\n", int<-(saved_path.len), saved_path.data)
                     saved_path.release()
             return 0
@@ -766,154 +641,399 @@ function write_bundle_archive(bundle_root: str, archive_owner: ref[string.String
             return Result[bool, string.String].failure(error = message)
 
 
+## The resolved build destination: the effective source and what `--clean`
+## removes.  The string owners stay in the caller.
+struct BuildOutput:
+    effective: str
+    clean_target_is_tree: bool
+
+
+## Resolve the effective source and the build/bundle/clean destinations.  A
+## package manifest may override the CLI profile/platform and contribute the
+## source root, so `options` is mutated through its ref.  Prints the same
+## diagnostics as the former inline block and returns none on failure.
+function resolve_build_output(
+    path: str,
+    options: ref[BuildOptions],
+    package_opt: Option[package_manifest.PackageBuild],
+    roots: ref[vec.Vec[str]],
+    entry_path_owner: ref[string.String],
+    source_root_owner: ref[string.String],
+    output_owner: ref[string.String],
+    bundle_root: ref[string.String],
+    clean_target: ref[string.String],
+) -> Option[BuildOutput]:
+    var effective: str = ""
+    var clean_target_is_tree = false
+
+    match package_opt:
+        Option.some as package_ref:
+            let pkg = package_ref.value
+            if pkg.kind == package_manifest.PackageKind.library and read(options).kind == build_driver.BuildKind.executable:
+                var message = string.String.create()
+                defer: message.release()
+                message.append("cannot build library package ")
+                message.append(pkg.name.as_str())
+                message.append(" as an executable")
+                main.eprint_line(message.as_str())
+                return Option[BuildOutput].none
+            match pkg.source_path:
+                Option.some as declared_source:
+                    effective = declared_source.value.as_str()
+                Option.none:
+                    var message = string.String.create()
+                    defer: message.release()
+                    message.append("application package ")
+                    message.append(pkg.name.as_str())
+                    message.append(" has no build entry; set build.entry or create src/main.mt")
+                    main.eprint_line(message.as_str())
+                    return Option[BuildOutput].none
+            read(roots).push(pkg.source_root.as_str())
+            if not read(options).has_cli_profile:
+                read(options).profile_name = pkg.profile
+            if not read(options).has_cli_platform:
+                read(options).platform = platform_from_manifest(pkg.platform)
+            let extension = artifact_extension(read(options).platform)
+            if read(options).bundle_mode:
+                if read(options).platform == resolver.Platform.wasm:
+                    main.eprint_line("bundle mode is supported only for native package builds")
+                    return Option[BuildOutput].none
+                resolve_bundle_paths(
+                    pkg, read(options).output_override, read(options).platform, read(options).profile_name, bundle_root,
+                    output_owner
+                )
+                match read(options).output_override:
+                    Option.some:
+                        read(clean_target).append(read(bundle_root).as_str())
+                        clean_target_is_tree = true
+                    Option.none:
+                        match pkg.output_path:
+                            Option.some:
+                                read(clean_target).append(read(bundle_root).as_str())
+                                clean_target_is_tree = true
+                            Option.none:
+                                read(clean_target).append(pkg.root_dir.as_str())
+                                read(clean_target).append("/build/dist")
+                                clean_target_is_tree = true
+            else:
+                match read(options).output_override:
+                    Option.some as explicit_output:
+                        read(output_owner).append(explicit_output.value)
+                        read(clean_target).append(explicit_output.value)
+                    Option.none:
+                        match pkg.output_path:
+                            Option.some as manifest_output:
+                                read(output_owner).append(manifest_output.value.as_str())
+                                read(clean_target).append(manifest_output.value.as_str())
+                            Option.none:
+                                var computed = path_ops.join(pkg.root_dir.as_str(), "build/bin")
+                                defer: computed.release()
+                                var with_platform = path_ops.join(computed.as_str(), main.platform_label(read(options).platform))
+                                defer: with_platform.release()
+                                var with_profile = path_ops.join(with_platform.as_str(), read(options).profile_name)
+                                defer: with_profile.release()
+                                var with_name = path_ops.join(with_profile.as_str(), pkg.name.as_str())
+                                defer: with_name.release()
+                                read(output_owner).append(with_name.as_str())
+                                read(output_owner).append(extension)
+                                read(clean_target).append(pkg.root_dir.as_str())
+                                read(clean_target).append("/build")
+                                clean_target_is_tree = true
+        Option.none:
+            if read(options).bundle_mode:
+                main.eprint_line("bundle mode requires a package build")
+                return Option[BuildOutput].none
+            let fallback = main.effective_source_path(path, roots, entry_path_owner, source_root_owner) else:
+                return Option[BuildOutput].none
+            effective = fallback
+            match read(options).output_override:
+                Option.some as explicit_output:
+                    read(output_owner).append(explicit_output.value)
+                    read(clean_target).append(explicit_output.value)
+                Option.none:
+                    var computed = format_cli.default_output_path(effective)
+                    defer: computed.release()
+                    read(output_owner).append(computed.as_str())
+                    read(clean_target).append(computed.as_str())
+
+    if read(options).platform == resolver.Platform.wasm:
+        match normalize_wasm_output_path(output_owner):
+            Result.failure as wasm_failure:
+                let message = wasm_failure.error.as_str()
+                main.eprint_line(message)
+                wasm_failure.error.release()
+                return Option[BuildOutput].none
+            Result.success:
+                pass
+
+    if not fs.exists(effective):
+        var missing = string.String.create()
+        defer: missing.release()
+        missing.append("source file not found: ")
+        missing.append(path)
+        main.eprint_line(missing.as_str())
+        return Option[BuildOutput].none
+
+    return Option[BuildOutput].some(value = BuildOutput(
+        effective = effective,
+        clean_target_is_tree = clean_target_is_tree,
+    ))
+
+
+## Remove the `--clean` target and report it unless quiet.
+function run_build_clean(clean_target: str, is_tree: bool) -> int:
+    if is_tree:
+        if fs.exists(clean_target):
+            match fs.remove_tree(clean_target):
+                Result.failure as failure:
+                    var message = failure.error
+                    defer: message.release()
+                    stdio.print_format(c"error: cannot remove %.*s\n", int<-(clean_target.len), clean_target.data)
+                    return 1
+                Result.success:
+                    pass
+    else if fs.exists(clean_target):
+        match fs.remove(clean_target):
+            Result.failure as failure:
+                var message = failure.error
+                defer: message.release()
+                stdio.print_format(c"error: cannot remove %.*s\n", int<-(clean_target.len), clean_target.data)
+                return 1
+            Result.success:
+                pass
+    if not main.cli_is_quiet():
+        stdio.print_format(c"cleaned %.*s\n", int<-(clean_target.len), clean_target.data)
+    return 0
+
+
+## Compute the binary-cache key, applying the manifest/CLI guard default.
+function compute_build_cache_key(program: ref[loader.Program], options: BuildOptions) -> string.String:
+    var build_guards = options.profile_name == "debug"
+    match options.debug_guards:
+        Option.some as override:
+            build_guards = override.value
+        Option.none:
+            pass
+    return build_cache.compute_key(
+        program, options.c_compiler, main.platform_label(options.platform), options.profile_name, options.sanitize,
+        build_guards
+    )
+
+
+## On a cache hit, materialize the binary, stage assets/archive, report, and
+## return the command status.  None means the caller must build.
+function try_cached_build(
+    options: BuildOptions,
+    package_opt: Option[package_manifest.PackageBuild],
+    output_path: str,
+    display_path: str,
+    bundle_root: str,
+    cache_key: str,
+) -> Option[int]:
+    match build_cache.lookup(cache_key):
+        Option.some as hit:
+            var cached = hit.value
+            let copied = build_cache.materialize(cached.as_str(), output_path)
+            cached.release()
+            if copied:
+                let output_dir = path_ops.dirname(output_path)
+                match stage_package_assets(package_opt, output_path, options.bundle_mode, options.platform):
+                    Result.success:
+                        pass
+                    Result.failure as asset_failure:
+                        var asset_error = asset_failure.error
+                        var message = string.String.create()
+                        defer: message.release()
+                        message.append("error: ")
+                        message.append(asset_error.as_str())
+                        asset_error.release()
+                        main.eprint_line(message.as_str())
+                        return Option[int].some(value = 1)
+                var cached_archive = string.String.create()
+                defer: cached_archive.release()
+                if options.archive_mode:
+                    match write_bundle_archive(bundle_root, ref_of(cached_archive)):
+                        Result.success:
+                            pass
+                        Result.failure as archive_failure:
+                            var archive_error = archive_failure.error
+                            var message = string.String.create()
+                            defer: message.release()
+                            message.append("error: ")
+                            message.append(archive_error.as_str())
+                            archive_error.release()
+                            main.eprint_line(message.as_str())
+                            return Option[int].some(value = 1)
+                if not main.cli_is_quiet():
+                    if options.bundle_mode:
+                        stdio.print_format(
+                            c"built %.*s -> %.*s\n",
+                            int<-(display_path.len), display_path.data,
+                            int<-(output_dir.len), output_dir.data,
+                        )
+                        stdio.print_format(
+                            c"entry executable %.*s\n",
+                            int<-(output_path.len), output_path.data,
+                        )
+                        stdio.print_line("  [cached]")
+                        if options.archive_mode:
+                            stdio.print_format(
+                                c"archive %.*s\n",
+                                int<-(cached_archive.as_str().len), cached_archive.as_str().data,
+                            )
+                    else:
+                        stdio.print_format(
+                            c"built %.*s -> %.*s  [cached]\n",
+                            int<-(display_path.len), display_path.data,
+                            int<-(output_path.len), output_path.data,
+                        )
+                return Option[int].some(value = 0)
+        Option.none:
+            pass
+    return Option[int].none
+
+
+## Resolve the `run` output destination: the bundle entry, a wasm build beside
+## the source/package, the explicit `-o`, or a unique temp path.  A wasm output
+## is normalized to `.html`.  Returns false after printing a diagnostic.
+function resolve_run_output(
+    options: BuildOptions,
+    package_opt: Option[package_manifest.PackageBuild],
+    effective: str,
+    bundle_root: ref[string.String],
+    output_path: ref[string.String],
+) -> bool:
+    if options.bundle_mode:
+        match package_opt:
+            Option.some as package_ref:
+                let pkg = package_ref.value
+                if options.platform == resolver.Platform.wasm:
+                    main.eprint_line("bundle mode is supported only for native package builds")
+                    return false
+                resolve_bundle_paths(
+                    pkg, options.output_override, options.platform, options.profile_name, bundle_root, output_path
+                )
+            Option.none:
+                main.eprint_line("bundle mode requires a package build")
+                return false
+    else if options.platform == resolver.Platform.wasm:
+        # The host's wasm run builds beside the source/package (a temp binary
+        # makes no sense for a previewable `.html` + sidecars).
+        match options.output_override:
+            Option.some as explicit:
+                read(output_path).release()
+                read(output_path) = string.String.from_str(explicit.value)
+            Option.none:
+                match package_opt:
+                    Option.some as package_ref:
+                        let pkg = package_ref.value
+                        match pkg.output_path:
+                            Option.some as manifest_output:
+                                read(output_path).release()
+                                read(output_path) = string.String.from_str(manifest_output.value.as_str())
+                            Option.none:
+                                read(output_path).release()
+                                var computed = path_ops.join(pkg.root_dir.as_str(), "build/bin")
+                                defer: computed.release()
+                                var with_platform = path_ops.join(computed.as_str(), main.platform_label(options.platform))
+                                defer: with_platform.release()
+                                var with_profile = path_ops.join(with_platform.as_str(), options.profile_name)
+                                defer: with_profile.release()
+                                var with_name = path_ops.join(with_profile.as_str(), pkg.name.as_str())
+                                defer: with_name.release()
+                                read(output_path) = string.String.from_str(with_name.as_str())
+                    Option.none:
+                        var default_out = format_cli.default_output_path(effective)
+                        defer: default_out.release()
+                        read(output_path).release()
+                        read(output_path) = string.String.from_str(default_out.as_str())
+    else if options.output_override.is_some():
+        read(output_path).release()
+        read(output_path) = string.String.from_str(options.output_override.unwrap())
+    else:
+        # Ruby's `run` builds into a temporary directory; use a unique /tmp
+        # path so running an example does not drop a binary next to its source
+        # (and parallel runs stay independent).
+        var default_out = format_cli.default_output_path(effective)
+        defer: default_out.release()
+        read(output_path).release()
+        read(output_path) = string.String.from_str("/tmp/mtc_run_")
+        read(output_path).append(path_ops.basename(default_out.as_str()))
+        read(output_path).push_byte('_')
+        fmt_mod.append_long(output_path, long<-time.now())
+
+    if options.platform == resolver.Platform.wasm:
+        match normalize_wasm_output_path(output_path):
+            Result.failure as wasm_failure:
+                let message = wasm_failure.error.as_str()
+                main.eprint_line(message)
+                wasm_failure.error.release()
+                return false
+            Result.success:
+                pass
+    return true
+
+
+## On a run-cache hit, stage the bundle, execute the binary, and report the
+## cached marker.  None means the caller must build.
+function try_cached_run(
+    options: BuildOptions,
+    package_opt: Option[package_manifest.PackageBuild],
+    output_path: str,
+    bundle_root: str,
+    cache_key: str,
+    program_args: ref[vec.Vec[str]],
+) -> Option[int]:
+    match build_cache.lookup(cache_key):
+        Option.some as hit:
+            var cached = hit.value
+            let copied = build_cache.materialize(cached.as_str(), output_path)
+            cached.release()
+            if copied:
+                var cached_output = string.String.from_str(output_path)
+                defer: cached_output.release()
+                match stage_run_bundle(
+                    package_opt, output_path, bundle_root, options.bundle_mode, options.archive_mode, options.platform
+                ):
+                    Result.success:
+                        pass
+                    Result.failure as bundle_failure:
+                        var bundle_error = bundle_failure.error
+                        let bundle_text = bundle_error.as_str()
+                        stdio.print_format(c"error: %.*s\n", int<-(bundle_text.len), bundle_text.data)
+                        bundle_error.release()
+                        return Option[int].some(value = 1)
+                let run_status = execute_binary(cached_output.as_str(), program_args)
+                if not main.cli_is_quiet():
+                    stdio.print_line("[cached]")
+                return Option[int].some(value = run_status)
+        Option.none:
+            pass
+    return Option[int].none
+
+
 ## Run a program (`mtc run`).  Builds and then executes the binary.
 public function run_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer: roots.release()
     var owned_roots = vec.Vec[string.String].create()
     defer: owned_roots.release()
-    var output_override: Option[str] = Option[str].none
-    var keep_c_path: Option[str] = Option[str].none
-    var c_compiler = "cc"
-    var profile_name = "debug"
-    var has_cli_profile = false
-    var platform = resolver.Platform.linux
-    var has_cli_platform = false
-    var use_cache = true
-    var sanitize = false
-    var debug_guards: Option[bool] = Option[bool].none
-    var bundle_mode = false
-    var archive_mode = false
-    var locked_flag = false
-    var frozen_flag = false
     var program_args = vec.Vec[str].create()
     defer: program_args.release()
     var filtered = vec.Vec[str].create()
     defer: filtered.release()
-    filtered.push("run")
-    var ai: ptr_uint = 1
-    var seen_dashdash = false
-    while ai < args.len:
-        let arg = args[ai]
-        if seen_dashdash:
-            program_args.push(args[ai])
-            ai += 1
-            continue
-        if arg == "--":
-            seen_dashdash = true
-            ai += 1
-            continue
-        if arg == "-o" or arg == "--output":
-            if ai + 1 >= args.len:
-                test_cli.eprint_missing_option_value(arg)
-                return 1
-            output_override = Option[str].some(value = args[ai + 1])
-            ai += 2
-            continue
-        if arg == "--keep-c":
-            if ai + 1 >= args.len:
-                test_cli.eprint_missing_option_value(arg)
-                return 1
-            keep_c_path = Option[str].some(value = args[ai + 1])
-            ai += 2
-            continue
-        if arg == "--sanitize":
-            sanitize = true
-            use_cache = false
-            ai += 1
-            continue
-        if arg == "--debug-guards":
-            debug_guards = Option[bool].some(value = true)
-            ai += 1
-            continue
-        if arg == "--no-debug-guards":
-            debug_guards = Option[bool].some(value = false)
-            ai += 1
-            continue
-        # Accepted for CLI compatibility; the Ruby build also ignores it.
-        if arg == "--timings":
-            ai += 1
-            continue
-        if arg == "--locked":
-            locked_flag = true
-            ai += 1
-            continue
-        if arg == "--frozen":
-            locked_flag = true
-            frozen_flag = true
-            ai += 1
-            continue
-        if arg == "--cc":
-            if ai + 1 >= args.len:
-                main.eprint_line("missing value for --cc")
-                cli_help.print_usage(true)
-                return 1
-            c_compiler = args[ai + 1]
-            ai += 2
-            continue
-        if arg == "--no-cache":
-            use_cache = false
-            ai += 1
-            continue
-        if arg == "--bundle":
-            bundle_mode = true
-            ai += 1
-            continue
-        if arg == "--archive":
-            bundle_mode = true
-            archive_mode = true
-            ai += 1
-            continue
-        if arg == "-I" or arg == "--include-path":
-            filtered.push(arg)
-            if ai + 1 < args.len:
-                filtered.push(args[ai + 1])
-            ai += 2
-            continue
-        if arg == "--profile":
-            if ai + 1 >= args.len:
-                test_cli.eprint_missing_option_value(arg)
-                return 1
-            profile_name = args[ai + 1]
-            if not profile_name == "debug" and not profile_name == "release":
-                var bad_profile = string.String.create()
-                defer: bad_profile.release()
-                bad_profile.append("unknown profile ")
-                bad_profile.append(profile_name)
-                bad_profile.append("; expected debug|release")
-                main.eprint_line(bad_profile.as_str())
-                return 1
-            has_cli_profile = true
-            ai += 2
-            continue
-        if arg == "--platform":
-            if ai + 1 >= args.len:
-                test_cli.eprint_missing_option_value(arg)
-                return 1
-            match main.parse_platform_name(args[ai + 1]):
-                Option.some as plat:
-                    platform = plat.value
-                Option.none:
-                    return 1
-            has_cli_platform = true
-            ai += 2
-            continue
-        if arg.starts_with("-"):
-            var unknown_opt = string.String.create()
-            defer: unknown_opt.release()
-            unknown_opt.append("unknown build option ")
-            unknown_opt.append(arg)
-            main.eprint_line(unknown_opt.as_str())
-            cli_help.print_usage(true)
-            return 1
-        filtered.push(arg)
-        ai += 1
-    let path = main.parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
+    var options = parse_command_options(
+        args, BuildCommandMode.run, "run", ref_of(filtered), ref_of(program_args)
+    ) else:
         return 1
-    if main.apply_package_resolution(path, locked_flag, frozen_flag, ref_of(roots), ref_of(owned_roots)) != 0:
+    let path = main.parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(options.platform)) else:
+        return 1
+    if main.apply_package_resolution(path, options.locked_flag, options.frozen_flag, ref_of(roots), ref_of(owned_roots)) != 0:
         return 1
     var entry_path_owner = string.String.create()
+    defer: entry_path_owner.release()
     var source_root_owner = string.String.create()
+    defer: source_root_owner.release()
     let effective = main.effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
         return 1
     if not fs.exists(effective):
@@ -939,18 +1059,16 @@ public function run_command(args: span[str]) -> int:
             match package_opt:
                 Option.some as loaded_package:
                     let pkg = loaded_package.value
-                    if not has_cli_profile:
-                        profile_name = pkg.profile
-                    if not has_cli_platform:
-                        platform = platform_from_manifest(pkg.platform)
+                    if not options.has_cli_profile:
+                        options.profile_name = pkg.profile
+                    if not options.has_cli_platform:
+                        options.platform = platform_from_manifest(pkg.platform)
                 Option.none:
                     pass
         Result.failure as manifest_failure:
             let message = manifest_failure.error.as_str()
             main.eprint_line(message)
             manifest_failure.error.release()
-            entry_path_owner.release()
-            source_root_owner.release()
             return 1
 
     var run_template: Option[str] = Option[str].none
@@ -967,105 +1085,27 @@ public function run_command(args: span[str]) -> int:
         Option.none:
             pass
 
-    var program = loader.check_program(effective, roots.as_span(), platform)
+    var program = loader.check_program(effective, roots.as_span(), options.platform)
     defer: program.release()
 
     if program.diagnostic_error_count() > 0:
         let _ = main.print_program_diagnostics(ref_of(program))
-        entry_path_owner.release()
-        source_root_owner.release()
         return 1
 
     if main.reject_external_root(program):
-        entry_path_owner.release()
-        source_root_owner.release()
         return 1
 
     let ir_program = lowering.lower(program)
 
     if main.reject_missing_entrypoint(program, ir_program):
-        entry_path_owner.release()
-        source_root_owner.release()
         return 1
 
     var bundle_root = string.String.create()
     defer: bundle_root.release()
     var output_path = string.String.create()
     defer: output_path.release()
-    if bundle_mode:
-        match package_opt:
-            Option.some as package_ref:
-                let pkg = package_ref.value
-                if platform == resolver.Platform.wasm:
-                    main.eprint_line("bundle mode is supported only for native package builds")
-                    entry_path_owner.release()
-                    source_root_owner.release()
-                    return 1
-                resolve_bundle_paths(
-                    pkg, output_override, platform, profile_name, ref_of(bundle_root), ref_of(output_path)
-                )
-            Option.none:
-                main.eprint_line("bundle mode requires a package build")
-                entry_path_owner.release()
-                source_root_owner.release()
-                return 1
-    else if platform == resolver.Platform.wasm:
-        # The host's wasm run builds beside the source/package (a temp binary
-        # makes no sense for a previewable `.html` + sidecars).
-        match output_override:
-            Option.some as explicit:
-                output_path.release()
-                output_path = string.String.from_str(explicit.value)
-            Option.none:
-                match package_opt:
-                    Option.some as package_ref:
-                        let pkg = package_ref.value
-                        match pkg.output_path:
-                            Option.some as manifest_output:
-                                output_path.release()
-                                output_path = string.String.from_str(manifest_output.value.as_str())
-                            Option.none:
-                                output_path.release()
-                                var computed = path_ops.join(pkg.root_dir.as_str(), "build/bin")
-                                defer: computed.release()
-                                var with_platform = path_ops.join(computed.as_str(), main.platform_label(platform))
-                                defer: with_platform.release()
-                                var with_profile = path_ops.join(with_platform.as_str(), profile_name)
-                                defer: with_profile.release()
-                                var with_name = path_ops.join(with_profile.as_str(), pkg.name.as_str())
-                                defer: with_name.release()
-                                output_path = string.String.from_str(with_name.as_str())
-                    Option.none:
-                        var default_out = format_cli.default_output_path(effective)
-                        defer: default_out.release()
-                        output_path.release()
-                        output_path = string.String.from_str(default_out.as_str())
-    else if output_override.is_some():
-        output_path.release()
-        output_path = string.String.from_str(output_override.unwrap())
-    else:
-        # Ruby's `run` builds into a temporary directory; use a unique /tmp
-        # path so running an example does not drop a binary next to its source
-        # (and parallel runs stay independent).
-        var default_out = format_cli.default_output_path(effective)
-        defer: default_out.release()
-        output_path.release()
-        output_path = string.String.from_str("/tmp/mtc_run_")
-        output_path.append(path_ops.basename(default_out.as_str()))
-        output_path.push_byte('_')
-        fmt_mod.append_long(ref_of(output_path), long<-time.now())
-
-    if platform == resolver.Platform.wasm:
-        match normalize_wasm_output_path(ref_of(output_path)):
-            Result.failure as wasm_failure:
-                let message = wasm_failure.error.as_str()
-                main.eprint_line(message)
-                wasm_failure.error.release()
-                entry_path_owner.release()
-                source_root_owner.release()
-                return 1
-            Result.success:
-                pass
+    if not resolve_run_output(options, package_opt, effective, ref_of(bundle_root), ref_of(output_path)):
+        return 1
 
     let output_dir = path_ops.dirname(output_path.as_str())
     match fs.create_directories(output_dir):
@@ -1079,60 +1119,31 @@ public function run_command(args: span[str]) -> int:
             message.append(dir_error.message.as_str())
             dir_error.release()
             main.eprint_line(message.as_str())
-            entry_path_owner.release()
-            source_root_owner.release()
             return 1
         Result.success:
             pass
 
     # Binary cache: reuse the previously built binary when nothing changed.
     # --keep-c always rebuilds so the saved C matches the produced binary.
-    let run_cache_enabled = use_cache and keep_c_path.is_none() and platform != resolver.Platform.wasm
+    let run_cache_enabled = options.use_cache and options.keep_c_path.is_none() and options.platform != resolver.Platform.wasm
     var cache_key = string.String.create()
     defer: cache_key.release()
     if run_cache_enabled:
-        var run_guards = profile_name == "debug"
-        match debug_guards:
-            Option.some as override:
-                run_guards = override.value
-            Option.none:
-                pass
-        var computed_key = build_cache.compute_key(ref_of(program), c_compiler, main.platform_label(platform), profile_name, sanitize, run_guards)
+        var computed_key = compute_build_cache_key(ref_of(program), options)
+        defer: computed_key.release()
         cache_key.append(computed_key.as_str())
-        computed_key.release()
-        match build_cache.lookup(cache_key.as_str()):
-            Option.some as hit:
-                var cached = hit.value
-                let copied = build_cache.materialize(cached.as_str(), output_path.as_str())
-                cached.release()
-                if copied:
-                    var cached_output = string.String.from_str(output_path.as_str())
-                    defer: cached_output.release()
-                    match stage_run_bundle(
-                        package_opt, output_path.as_str(), bundle_root.as_str(), bundle_mode, archive_mode, platform
-                    ):
-                        Result.success:
-                            pass
-                        Result.failure as bundle_failure:
-                            var bundle_error = bundle_failure.error
-                            let bundle_text = bundle_error.as_str()
-                            stdio.print_format(c"error: %.*s\n", int<-(bundle_text.len), bundle_text.data)
-                            bundle_error.release()
-                            entry_path_owner.release()
-                            source_root_owner.release()
-                            return 1
-                    entry_path_owner.release()
-                    source_root_owner.release()
-                    let run_status = execute_binary(cached_output.as_str(), ref_of(program_args))
-                    if not main.cli_is_quiet():
-                        stdio.print_line("[cached]")
-                    return run_status
+        match try_cached_run(
+            options, package_opt, output_path.as_str(), bundle_root.as_str(), cache_key.as_str(), ref_of(program_args)
+        ):
+            Option.some as status:
+                return status.value
             Option.none:
                 pass
 
     match build_driver.build(
-        program, ir_program, output_path.as_str(), c_compiler, roots.as_span(), sanitize, profile_name, debug_guards,
-        build_driver.BuildKind.executable, platform, run_template, run_assets, keep_c_path
+        program, ir_program, output_path.as_str(), options.c_compiler, roots.as_span(), options.sanitize,
+        options.profile_name, options.debug_guards, build_driver.BuildKind.executable, options.platform,
+        run_template, run_assets, options.keep_c_path
     ):
         Result.success as built:
             var built_path = built.value
@@ -1140,7 +1151,8 @@ public function run_command(args: span[str]) -> int:
             var owned_output = string.String.from_str(output_path.as_str())
             defer: owned_output.release()
             match stage_run_bundle(
-                package_opt, owned_output.as_str(), bundle_root.as_str(), bundle_mode, archive_mode, platform
+                package_opt, owned_output.as_str(), bundle_root.as_str(), options.bundle_mode, options.archive_mode,
+                options.platform
             ):
                 Result.success:
                     pass
@@ -1149,14 +1161,10 @@ public function run_command(args: span[str]) -> int:
                     let bundle_text = bundle_error.as_str()
                     stdio.print_format(c"error: %.*s\n", int<-(bundle_text.len), bundle_text.data)
                     bundle_error.release()
-                    entry_path_owner.release()
-                    source_root_owner.release()
                     return 1
-            entry_path_owner.release()
-            source_root_owner.release()
             if run_cache_enabled:
                 build_cache.store(cache_key.as_str(), owned_output.as_str())
-            if platform == resolver.Platform.wasm:
+            if options.platform == resolver.Platform.wasm:
                 var preview_dir = path_ops.dirname(owned_output.as_str())
                 return wasm_preview.serve_preview(preview_dir, 0)
             return execute_binary(owned_output.as_str(), ref_of(program_args))
@@ -1165,8 +1173,6 @@ public function run_command(args: span[str]) -> int:
             defer: message.release()
             let text = message.as_str()
             stdio.print_format(c"error: %.*s\n", int<-(text.len), text.data)
-            entry_path_owner.release()
-            source_root_owner.release()
             return 1
 
 
