@@ -109,7 +109,7 @@ helpers, `lsp/navigation.mt analysis_for_document`/`ast_for_document`,
 Normalized 12-line windows (comments/blanks stripped, literals replaced with
 `S`/`N`) hashed across all functions. Overlapping windows make the cluster count
 large; `duplicated_lines` is the ratcheted metric. Current baseline:
-**5,228 duplicated lines in 789 window clusters**. Use the clusters as pointers
+**5,154 duplicated lines in 766 window clusters**. Use the clusters as pointers
 to repeated emission/frame boilerplate, not as an absolute quality score.
 
 ### Size, markers, tests

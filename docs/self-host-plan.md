@@ -1950,6 +1950,15 @@ if/match/proc/unsafe/prefix-cast through `expression_forms`; rename any local
 named `declarations` when adding to the parser cycle.  Analyzer sections all
 take the private `Context`, so prefer in-file decomposition until that state is
 deliberately opened.
+
+Current decomposition targets, in rank order: `build_command` (529),
+`lint_command` (368), and `print_command_help` (344).  Do not split
+`print_command_help` into per-command constant tables — the attempted
+`binding_at` split raised duplication from 5,154 to 5,498 and was reverted.
+After those, the parser call-args section is the last unsplit parser section.
+List the remaining 28 long functions with
+`ruby tools/refactor_guard.rb --json tmp/refactor.json`.
+
 Use `tools/gates.sh --areas refactor --run` and read `docs/refactoring.md`
 before changing the self-host's shape.
 
