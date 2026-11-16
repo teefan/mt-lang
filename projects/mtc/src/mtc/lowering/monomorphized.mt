@@ -941,28 +941,7 @@ public function lower_module(analysis: analyzer.Analysis, program_returns: ref[m
                 continue
             match d:
                 ast.Decl.decl_function as fun:
-                    if fun.is_async:
-                        # All async functions use full CPS lowering (frame struct,
-                        # resume state machine, vtable, constructor).  A 0-await
-                        # function is the single-state case.  An async `main`
-                        # constructor carries the host's `__async_main` linkage
-                        # (`function_binding_c_name`, utils.rb:1089-1092).
-                        let link_base = if is_root and fun.name == "main": naming.qualified_c_name(ctx.module_name, "__async_main") else: naming.qualified_c_name(ctx.module_name, fun.name)
-                        async_cps.lower_async_fn(ref_of(ctx), fun.name, link_base, Option[types.Type].none, false, fun.method_params, fun.return_type, fun.body, ref_of(functions), is_root and fun.name == "main")
-                        if is_root and fun.name == "main":
-                            match async_cps.build_async_main_entrypoint(ref_of(ctx), fun.name):
-                                Option.some as entry:
-                                    functions.push(entry.value)
-                                Option.none:
-                                    pass
-                    else if lowerable_function(fun.type_params, fun.body):
-                        functions.push(lowering.lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, false, fun.visibility))
-                        if is_root and fun.name == "main":
-                            match lowering.build_root_main_entrypoint(ref_of(ctx), fun.name, fun.method_params):
-                                Option.some as entry:
-                                    functions.push(entry.value)
-                                Option.none:
-                                    pass
+                    lower_module_function_decl(ref_of(ctx), d, is_root, ref_of(functions))
                 ast.Decl.decl_enum as en:
                     enums.push(lowering.lower_enum_decl(ref_of(ctx), en.name, en.backing_type, en.enum_members, false))
                 ast.Decl.decl_flags as fl:
@@ -970,18 +949,7 @@ public function lower_module(analysis: analyzer.Analysis, program_returns: ref[m
                 ast.Decl.decl_static_assert as sa:
                     module_static_asserts.push(lowering.lower_static_assert(ref_of(ctx), sa.condition, sa.message))
                 ast.Decl.decl_struct as s:
-                    # Skip generic structs — only their concrete specializations
-                    # (emitted by `ensure_generic_struct_decl`) carry resolved
-                    # field types.  Structs with only lifetime parameters (`@a`)
-                    # are not generic in the monomorphization sense and should
-                    # be emitted directly.
-                    if not tasks.has_non_lifetime_type_params(s.type_params):
-                        match lowering.lower_struct_decl(ref_of(ctx), s.name, s.packed, s.alignment, Option[str].none, s.name):
-                            Option.some as sd:
-                                structs.push(sd.value)
-                            Option.none:
-                                pass
-                        lowering.lower_nested_struct_decls(ref_of(ctx), s.nested_types, s.name, s.name, ref_of(structs))
+                    lower_module_struct_decl(ref_of(ctx), d, ref_of(structs))
                 ast.Decl.decl_union as u:
                     unions.push(lowering.lower_union_decl(ref_of(ctx), u.name, u.union_fields))
                 ast.Decl.decl_variant as vr:
@@ -990,164 +958,11 @@ public function lower_module(analysis: analyzer.Analysis, program_returns: ref[m
                 ast.Decl.decl_extending_block as ex:
                     lowering.lower_extending_block(ctx, ref_of(functions), ex.type_name, ex.methods)
                 ast.Decl.decl_var as v:
-                    var g_ty = types.primitive("void")
-                    if v.var_type != null:
-                        var vt: ptr[ast.TypeRef] = unsafe: ptr[ast.TypeRef]<-v.var_type
-                        # `qualify_type` (not just `resolve_type_ref`) registers the
-                        # generic instance and produces the monomorphized C name, so a
-                        # module-level `var m: Map[str, str]` declares
-                        # `std_map_Map_str_str m` rather than the unspecialized
-                        # `std_map_Map` (which is never defined).
-                        g_ty = lowering.qualify_type(ctx, lowering.resolve_type_ref(ctx, vt))
-                    # A tuple in the global's declared type registers its value
-                    # struct even when no literal mentions it (the host's
-                    # `ensure_registered_storage_type_types`).
-                    var g_seen = map_mod.Map[str, bool].create()
-                    lowering.ensure_storage_type_tuples(ctx, g_ty, ref_of(g_seen))
-                    # A top-level `var` initializer must be static-storage-safe (the
-                    # analyzer enforces this), so it lowers to a C static initializer.
-                    # A no-capture `proc` initializer, for example, becomes a static
-                    # aggregate of function pointers — without it the proc's invoke
-                    # pointer stays null and calling it segfaults.
-                    var g_val = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = g_ty))
-                    if v.value != null:
-                        # A top-level initializer is evaluated in an empty local
-                        # scope: clear any locals left over from a previously-lowered
-                        # function so a no-capture `proc` initializer is not treated
-                        # as capturing stale bindings.
-                        ctx.locals.clear()
-                        # A compile-time-known initializer folds to its constant value
-                        # — a literal, a constant reference (an imported module's
-                        # constant included) or a `const` function/method call — as the
-                        # host's `lower_static_storage_initializer` folds
-                        # `compile_time_const_value` through `lower_compile_time_literal`.
-                        # Anything else lowers as an ordinary expression.
-                        var init_env = map_mod.Map[str, ptr[ir.Expr]].create()
-                        match const_eval.try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-v.value, ref_of(init_env), g_ty):
-                            Option.some as g_cv:
-                                g_val = lowering.alloc_expr(const_eval.coerce_const_value(ctx, unsafe: read(g_cv.value), g_ty))
-                            Option.none:
-                                g_val = lowering.lower_expr(ctx, unsafe: ptr[ast.Expr]<-v.value)
-                                # A literal initializer takes the global's declared type, as
-                                # the host's contextual literal inference gives it one
-                                # (`var shorts: short = 0` is a `short` literal, not `int`).
-                                g_val = lowering.int_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
-                                g_val = lowering.float_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
-                                g_val = lowering.string_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
-                                g_val = lowering.null_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
-                    globals.push(ir.Global(name = v.name, linkage_name = naming.qualified_c_name(ctx.module_name, v.name), ty = g_ty, value = g_val))
+                    lower_module_var_decl(ref_of(ctx), d, ref_of(globals))
                 ast.Decl.decl_const as c:
-                    var c_ty = lowering.resolve_type_ref(ctx, c.const_type)
-                    # A tuple in the constant's declared type registers its value
-                    # struct, as the host's `ensure_registered_storage_type_types`
-                    # does before the value is lowered.
-                    var c_seen = map_mod.Map[str, bool].create()
-                    lowering.ensure_storage_type_tuples(ctx, c_ty, ref_of(c_seen))
-                    let val_ptr = c.value
-                    # The host's `lower_constants` routes an expression-list or
-                    # call/specialization constant value through
-                    # `lower_const_value_literal` rather than the storage-initializer
-                    # path.
-                    var const_value_literal_path = false
-                    if val_ptr != null:
-                        match unsafe: read(ptr[ast.Expr]<-val_ptr):
-                            ast.Expr.expr_expression_list:
-                                const_value_literal_path = true
-                            ast.Expr.expr_call:
-                                const_value_literal_path = true
-                            ast.Expr.expr_specialization:
-                                const_value_literal_path = true
-                            _:
-                                pass
-                    # Type constants (->type) are compile-time only; they don't
-                    # have a C representation (mirrors Ruby).
-                    var is_type_meta = false
-                    match c_ty:
-                        types.Type.ty_type_meta:
-                            is_type_meta = true
-                        _:
-                            pass
-                    if is_type_meta:
-                        pass
-                    else if val_ptr == null:
-                        var bv = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = c_ty))
-                        if c.block_body != null:
-                            var empty_env = map_mod.Map[str, ptr[ir.Expr]].create()
-                            match const_eval.try_const_value_body(ctx, c.block_body, ref_of(empty_env)):
-                                Option.some as body_val:
-                                    bv = lowering.alloc_expr(const_eval.coerce_const_value(ctx, unsafe: read(body_val.value), c_ty))
-                                Option.none:
-                                    pass
-                        constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = bv, line = c.line, path = ctx.analysis.source_path))
-                    else:
-                        # `const EQ: bool = A == B` over constant aggregates folds
-                        # at compile time; a C function call is not a constant
-                        # initializer.
-                        var folded: Option[bool] = Option[bool].none
-                        match c_ty:
-                            types.Type.ty_primitive as cp:
-                                if cp.name == "bool":
-                                    folded = const_eval.try_const_equality(ctx, unsafe: ptr[ast.Expr]<-val_ptr)
-                            _:
-                                pass
-                        match folded:
-                            Option.some as fb:
-                                constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = fb.value, ty = c_ty)), line = c.line, path = ctx.analysis.source_path))
-                            Option.none:
-                                var const_env = map_mod.Map[str, ptr[ir.Expr]].create()
-                                match const_eval.try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-val_ptr, ref_of(const_env), c_ty):
-                                    Option.some as cv2:
-                                        var c_val = unsafe: read(cv2.value)
-                                        # The host's `lower_const_value_literal` path
-                                        # (an expression-list or call constant) emits a
-                                        # tuple constant as an `IR::ArrayLiteral`.
-                                        if const_value_literal_path:
-                                            match comptime.const_tuple_array_literal(c_val, c_ty):
-                                                Option.some as al:
-                                                    c_val = al.value
-                                                Option.none:
-                                                    pass
-                                        # A plain expression constant takes the host's
-                                        # `lower_compile_time_literal` path: the folded
-                                        # value is typed but *not* width-masked
-                                        # (`~268435455` stays `-268435456` in a `uint`),
-                                        # unlike the `lower_const_value_literal` paths.
-                                        var coerced: ptr[ir.Expr]
-                                        if const_value_literal_path:
-                                            coerced = lowering.alloc_expr(const_eval.coerce_const_value(ctx, c_val, c_ty))
-                                        else:
-                                            # `lower_compile_time_literal` returns nil when a
-                                            # leaf value cannot be represented (an integer for
-                                            # a `char` field, for instance); the host then
-                                            # falls back to rewriting the imported constant
-                                            # reference to its declaration initializer and
-                                            # lowering that AST with the expected type.
-                                            if not comptime.const_value_ir_representable(ctx, c_val, c_ty):
-                                                match const_eval.lower_imported_const_initializer(ctx, unsafe: ptr[ast.Expr]<-val_ptr, c_ty):
-                                                    Option.some as iv:
-                                                        c_val = unsafe: read(iv.value)
-                                                    Option.none:
-                                                        pass
-                                            coerced = lowering.alloc_expr(const_eval.retype_const_literal(c_val, c_ty))
-                                        constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = coerced, line = c.line, path = ctx.analysis.source_path))
-                                    Option.none:
-                                        constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lowering.lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr), line = c.line, path = ctx.analysis.source_path))
+                    lower_module_const_decl(ref_of(ctx), d, ref_of(constants))
                 ast.Decl.decl_event as ev:
-                    var info = lowering.ensure_event_runtime(ctx, "", ev.name)
-                    # The global's declared type is the event itself (`Types::Event`),
-                    # whose C name is the runtime struct; the linkage name is the
-                    # module-qualified event name.
-                    var ev_payload: ptr[types.Type]? = null
-                    if info.has_payload:
-                        ev_payload = types.alloc_type(info.payload_type)
-                    let ev_ty = types.Type.ty_event(
-                        name = ev.name,
-                        capacity = info.capacity,
-                        payload_type = ev_payload,
-                        linkage_name = info.event_c_name,
-                    )
-                    let ev_zero = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = ev_ty))
-                    globals.push(ir.Global(name = ev.name, linkage_name = naming.qualified_c_name(ctx.module_name, ev.name), ty = ev_ty, value = ev_zero))
+                    lower_module_event_decl(ref_of(ctx), d, ref_of(globals))
                 ast.Decl.decl_when as w:
                     # Expanded by the pre-pass above; unreachable here.
                     pass
@@ -1258,6 +1073,231 @@ public function lower_module(analysis: analyzer.Analysis, program_returns: ref[m
 ## Returns true for functions that can be lowered directly (non-generic and
 ## not an external/foreign/async declaration — async functions take the CPS
 ## path in `lower_async_fn`).
+function lower_module_function_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl, is_root: bool, functions: ref[vec.Vec[ir.Function]]) -> void:
+    match d:
+        ast.Decl.decl_function as fun:
+            if fun.is_async:
+                # All async functions use full CPS lowering (frame struct,
+                # resume state machine, vtable, constructor).  A 0-await
+                # function is the single-state case.  An async `main`
+                # constructor carries the host's `__async_main` linkage
+                # (`function_binding_c_name`, utils.rb:1089-1092).
+                let link_base = if is_root and fun.name == "main": naming.qualified_c_name(ctx.module_name, "__async_main") else: naming.qualified_c_name(ctx.module_name, fun.name)
+                async_cps.lower_async_fn(ctx, fun.name, link_base, Option[types.Type].none, false, fun.method_params, fun.return_type, fun.body, functions, is_root and fun.name == "main")
+                if is_root and fun.name == "main":
+                    match async_cps.build_async_main_entrypoint(ctx, fun.name):
+                        Option.some as entry:
+                            functions.push(entry.value)
+                        Option.none:
+                            pass
+            else if lowerable_function(fun.type_params, fun.body):
+                functions.push(lowering.lower_function(ctx, fun.name, fun.method_params, fun.return_type, fun.body, false, fun.visibility))
+                if is_root and fun.name == "main":
+                    match lowering.build_root_main_entrypoint(ctx, fun.name, fun.method_params):
+                        Option.some as entry:
+                            functions.push(entry.value)
+                        Option.none:
+                            pass
+        _:
+            pass
+
+
+function lower_module_struct_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl, structs: ref[vec.Vec[ir.StructDecl]]) -> void:
+    match d:
+        ast.Decl.decl_struct as s:
+            # Skip generic structs — only their concrete specializations
+            # (emitted by `ensure_generic_struct_decl`) carry resolved
+            # field types.  Structs with only lifetime parameters (`@a`)
+            # are not generic in the monomorphization sense and should
+            # be emitted directly.
+            if not tasks.has_non_lifetime_type_params(s.type_params):
+                match lowering.lower_struct_decl(ctx, s.name, s.packed, s.alignment, Option[str].none, s.name):
+                    Option.some as sd:
+                        structs.push(sd.value)
+                    Option.none:
+                        pass
+                lowering.lower_nested_struct_decls(ctx, s.nested_types, s.name, s.name, structs)
+        _:
+            pass
+
+
+function lower_module_var_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl, globals: ref[vec.Vec[ir.Global]]) -> void:
+    match d:
+        ast.Decl.decl_var as v:
+            var g_ty = types.primitive("void")
+            if v.var_type != null:
+                var vt: ptr[ast.TypeRef] = unsafe: ptr[ast.TypeRef]<-v.var_type
+                # `qualify_type` (not just `resolve_type_ref`) registers the
+                # generic instance and produces the monomorphized C name, so a
+                # module-level `var m: Map[str, str]` declares
+                # `std_map_Map_str_str m` rather than the unspecialized
+                # `std_map_Map` (which is never defined).
+                g_ty = lowering.qualify_type(ctx, lowering.resolve_type_ref(ctx, vt))
+            # A tuple in the global's declared type registers its value
+            # struct even when no literal mentions it (the host's
+            # `ensure_registered_storage_type_types`).
+            var g_seen = map_mod.Map[str, bool].create()
+            lowering.ensure_storage_type_tuples(ctx, g_ty, ref_of(g_seen))
+            # A top-level `var` initializer must be static-storage-safe (the
+            # analyzer enforces this), so it lowers to a C static initializer.
+            # A no-capture `proc` initializer, for example, becomes a static
+            # aggregate of function pointers — without it the proc's invoke
+            # pointer stays null and calling it segfaults.
+            var g_val = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = g_ty))
+            if v.value != null:
+                # A top-level initializer is evaluated in an empty local
+                # scope: clear any locals left over from a previously-lowered
+                # function so a no-capture `proc` initializer is not treated
+                # as capturing stale bindings.
+                ctx.locals.clear()
+                # A compile-time-known initializer folds to its constant value
+                # — a literal, a constant reference (an imported module's
+                # constant included) or a `const` function/method call — as the
+                # host's `lower_static_storage_initializer` folds
+                # `compile_time_const_value` through `lower_compile_time_literal`.
+                # Anything else lowers as an ordinary expression.
+                var init_env = map_mod.Map[str, ptr[ir.Expr]].create()
+                match const_eval.try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-v.value, ref_of(init_env), g_ty):
+                    Option.some as g_cv:
+                        g_val = lowering.alloc_expr(const_eval.coerce_const_value(ctx, unsafe: read(g_cv.value), g_ty))
+                    Option.none:
+                        g_val = lowering.lower_expr(ctx, unsafe: ptr[ast.Expr]<-v.value)
+                        # A literal initializer takes the global's declared type, as
+                        # the host's contextual literal inference gives it one
+                        # (`var shorts: short = 0` is a `short` literal, not `int`).
+                        g_val = lowering.int_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
+                        g_val = lowering.float_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
+                        g_val = lowering.string_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
+                        g_val = lowering.null_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
+            globals.push(ir.Global(name = v.name, linkage_name = naming.qualified_c_name(ctx.module_name, v.name), ty = g_ty, value = g_val))
+        _:
+            pass
+
+
+function lower_module_const_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl, constants: ref[vec.Vec[ir.Constant]]) -> void:
+    match d:
+        ast.Decl.decl_const as c:
+            var c_ty = lowering.resolve_type_ref(ctx, c.const_type)
+            # A tuple in the constant's declared type registers its value
+            # struct, as the host's `ensure_registered_storage_type_types`
+            # does before the value is lowered.
+            var c_seen = map_mod.Map[str, bool].create()
+            lowering.ensure_storage_type_tuples(ctx, c_ty, ref_of(c_seen))
+            let val_ptr = c.value
+            # The host's `lower_constants` routes an expression-list or
+            # call/specialization constant value through
+            # `lower_const_value_literal` rather than the storage-initializer
+            # path.
+            var const_value_literal_path = false
+            if val_ptr != null:
+                match unsafe: read(ptr[ast.Expr]<-val_ptr):
+                    ast.Expr.expr_expression_list:
+                        const_value_literal_path = true
+                    ast.Expr.expr_call:
+                        const_value_literal_path = true
+                    ast.Expr.expr_specialization:
+                        const_value_literal_path = true
+                    _:
+                        pass
+            # Type constants (->type) are compile-time only; they don't
+            # have a C representation (mirrors Ruby).
+            var is_type_meta = false
+            match c_ty:
+                types.Type.ty_type_meta:
+                    is_type_meta = true
+                _:
+                    pass
+            if is_type_meta:
+                pass
+            else if val_ptr == null:
+                var bv = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = c_ty))
+                if c.block_body != null:
+                    var empty_env = map_mod.Map[str, ptr[ir.Expr]].create()
+                    match const_eval.try_const_value_body(ctx, c.block_body, ref_of(empty_env)):
+                        Option.some as body_val:
+                            bv = lowering.alloc_expr(const_eval.coerce_const_value(ctx, unsafe: read(body_val.value), c_ty))
+                        Option.none:
+                            pass
+                constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = bv, line = c.line, path = ctx.analysis.source_path))
+            else:
+                # `const EQ: bool = A == B` over constant aggregates folds
+                # at compile time; a C function call is not a constant
+                # initializer.
+                var folded: Option[bool] = Option[bool].none
+                match c_ty:
+                    types.Type.ty_primitive as cp:
+                        if cp.name == "bool":
+                            folded = const_eval.try_const_equality(ctx, unsafe: ptr[ast.Expr]<-val_ptr)
+                    _:
+                        pass
+                match folded:
+                    Option.some as fb:
+                        constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = fb.value, ty = c_ty)), line = c.line, path = ctx.analysis.source_path))
+                    Option.none:
+                        var const_env = map_mod.Map[str, ptr[ir.Expr]].create()
+                        match const_eval.try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-val_ptr, ref_of(const_env), c_ty):
+                            Option.some as cv2:
+                                var c_val = unsafe: read(cv2.value)
+                                # The host's `lower_const_value_literal` path
+                                # (an expression-list or call constant) emits a
+                                # tuple constant as an `IR::ArrayLiteral`.
+                                if const_value_literal_path:
+                                    match comptime.const_tuple_array_literal(c_val, c_ty):
+                                        Option.some as al:
+                                            c_val = al.value
+                                        Option.none:
+                                            pass
+                                # A plain expression constant takes the host's
+                                # `lower_compile_time_literal` path: the folded
+                                # value is typed but *not* width-masked
+                                # (`~268435455` stays `-268435456` in a `uint`),
+                                # unlike the `lower_const_value_literal` paths.
+                                var coerced: ptr[ir.Expr]
+                                if const_value_literal_path:
+                                    coerced = lowering.alloc_expr(const_eval.coerce_const_value(ctx, c_val, c_ty))
+                                else:
+                                    # `lower_compile_time_literal` returns nil when a
+                                    # leaf value cannot be represented (an integer for
+                                    # a `char` field, for instance); the host then
+                                    # falls back to rewriting the imported constant
+                                    # reference to its declaration initializer and
+                                    # lowering that AST with the expected type.
+                                    if not comptime.const_value_ir_representable(ctx, c_val, c_ty):
+                                        match const_eval.lower_imported_const_initializer(ctx, unsafe: ptr[ast.Expr]<-val_ptr, c_ty):
+                                            Option.some as iv:
+                                                c_val = unsafe: read(iv.value)
+                                            Option.none:
+                                                pass
+                                    coerced = lowering.alloc_expr(const_eval.retype_const_literal(c_val, c_ty))
+                                constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = coerced, line = c.line, path = ctx.analysis.source_path))
+                            Option.none:
+                                constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lowering.lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr), line = c.line, path = ctx.analysis.source_path))
+        _:
+            pass
+
+
+function lower_module_event_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl, globals: ref[vec.Vec[ir.Global]]) -> void:
+    match d:
+        ast.Decl.decl_event as ev:
+            var info = lowering.ensure_event_runtime(ctx, "", ev.name)
+            # The global's declared type is the event itself (`Types::Event`),
+            # whose C name is the runtime struct; the linkage name is the
+            # module-qualified event name.
+            var ev_payload: ptr[types.Type]? = null
+            if info.has_payload:
+                ev_payload = types.alloc_type(info.payload_type)
+            let ev_ty = types.Type.ty_event(
+                name = ev.name,
+                capacity = info.capacity,
+                payload_type = ev_payload,
+                linkage_name = info.event_c_name,
+            )
+            let ev_zero = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = ev_ty))
+            globals.push(ir.Global(name = ev.name, linkage_name = naming.qualified_c_name(ctx.module_name, ev.name), ty = ev_ty, value = ev_zero))
+        _:
+            pass
+
+
 function lowerable_function(type_params: span[ast.TypeParam], body: ptr[ast.Stmt]?) -> bool:
     if type_params.len > 0:
         return false

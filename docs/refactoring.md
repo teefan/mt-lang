@@ -114,7 +114,7 @@ to repeated emission/frame boilerplate, not as an absolute quality score.
 
 ### Size, markers, tests
 
-- **123,709 code lines**; **30 functions ≥ 200 lines**; **11 files ≥ 2,000 code
+- **123,739 code lines**; **29 functions ≥ 200 lines**; **11 files ≥ 2,000 code
   lines**. The ratchet counts these, so a refactor cannot trade one long
   function for another.
 - **0 marker comments** (`TODO`/`FIXME`/`XXX`/`HACK`); any new one fails.
@@ -187,18 +187,18 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 122, 2026-11-14)
+## 6. Current baseline (session 123, 2026-11-14)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 167 / 155,559 / 123,709 |
+| source files / lines / code lines | 167 / 155,599 / 123,739 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (167 modules) |
 | dead exports (unused / test-only) | 35 / 6 |
 | duplication (windows / duplicated lines) | 766 / 5,154 (window 12) |
-| functions ≥ 200 lines | 30 |
+| functions ≥ 200 lines | 29 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 21 / 61 |
