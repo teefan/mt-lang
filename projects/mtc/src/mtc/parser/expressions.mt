@@ -8,6 +8,7 @@ import mtc.lexer.token as token_mod
 import mtc.parser.ast as ast
 import mtc.parser.state as pstate
 import mtc.parser.parser as parser
+import mtc.parser.declarations as declarations
 
 
 public function parse_expr(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
@@ -333,7 +334,7 @@ function try_parse_specialization(s: ref[pstate.ParserState], left: ptr[ast.Expr
     if not pstate.check(s, tk.TokenKind.rbracket):
         while true:
             pstate.step(s)
-            var arg = parser.parse_type_argument(s)
+            var arg = declarations.parse_type_argument(s)
             var ta = ast.TypeArgument(value = arg)
             args_vec.push(ta)
             if not pstate.match_kind(s, tk.TokenKind.comma):

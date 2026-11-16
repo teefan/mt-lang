@@ -11,6 +11,7 @@ import mtc.parser.ast as ast
 import mtc.parser.state as pstate
 import mtc.parser.parser as parser
 import mtc.parser.expressions as expressions
+import mtc.parser.declarations as declarations
 
 
 public function parse_statement(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
@@ -157,7 +158,7 @@ function parse_local_decl(s: ref[pstate.ParserState], is_let: bool) -> ptr[ast.S
         return node
 
     if pstate.match_kind(s, tk.TokenKind.colon):
-        stmt_type = parser.parse_type_ref(s)
+        stmt_type = declarations.parse_type_ref(s)
     if pstate.match_kind(s, tk.TokenKind.equal):
         value = expressions.parse_expr(s)
     if pstate.match_kind(s, tk.TokenKind.tk_else):
@@ -171,7 +172,7 @@ function parse_local_decl(s: ref[pstate.ParserState], is_let: bool) -> ptr[ast.S
         pstate.consume(s, tk.TokenKind.colon, c"expected ':' after else")
         pstate.consume(s, tk.TokenKind.newline, c"expected newline after else:")
         pstate.consume(s, tk.TokenKind.indent, c"expected indented else body")
-        var body_span = parser.parse_block_body(s)
+        var body_span = declarations.parse_block_body(s)
         pstate.consume(s, tk.TokenKind.dedent, c"expected end of else body")
         var body_stmt = parser.alloc_stmt(s)
         unsafe:
@@ -281,7 +282,7 @@ function parse_if_branch_body(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     parser.consume_or_sync(s, tk.TokenKind.colon, c"expected ':' after if condition")
     if pstate.match_kind(s, tk.TokenKind.newline):
         pstate.consume(s, tk.TokenKind.indent, c"expected indented body")
-        var body_span = parser.parse_block_body(s)
+        var body_span = declarations.parse_block_body(s)
         pstate.consume(s, tk.TokenKind.dedent, c"expected end of body")
         var node = parser.alloc_stmt(s)
         read(node) = ast.Stmt.stmt_block(statements = body_span)
@@ -297,7 +298,7 @@ function parse_else_branch_body(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     pstate.consume(s, tk.TokenKind.colon, c"expected ':' after else")
     if pstate.match_kind(s, tk.TokenKind.newline):
         pstate.consume(s, tk.TokenKind.indent, c"expected indented else body")
-        var body_span = parser.parse_block_body(s)
+        var body_span = declarations.parse_block_body(s)
         pstate.consume(s, tk.TokenKind.dedent, c"expected end of else body")
         var node = parser.alloc_stmt(s)
         read(node) = ast.Stmt.stmt_block(statements = body_span)
@@ -312,7 +313,7 @@ function parse_else_branch_body(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
 function parse_block_or_inline_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     if pstate.match_kind(s, tk.TokenKind.newline):
         pstate.consume(s, tk.TokenKind.indent, c"expected indented body")
-        var body_span = parser.parse_block_body(s)
+        var body_span = declarations.parse_block_body(s)
         pstate.consume(s, tk.TokenKind.dedent, c"expected end of body")
         var node = parser.alloc_stmt(s)
         read(node) = ast.Stmt.stmt_block(statements = body_span)
@@ -338,7 +339,7 @@ function parse_while_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     var body: ptr[ast.Stmt] = parser.alloc_stmt(s)
     if pstate.match_kind(s, tk.TokenKind.newline):
         pstate.consume(s, tk.TokenKind.indent, c"expected indented while body")
-        var body_span = parser.parse_block_body(s)
+        var body_span = declarations.parse_block_body(s)
         pstate.consume(s, tk.TokenKind.dedent, c"expected end of while body")
         unsafe:
             read(body) = ast.Stmt.stmt_block(statements = body_span)
@@ -385,7 +386,7 @@ function parse_for_stmt(s: ref[pstate.ParserState], threaded: bool) -> ptr[ast.S
     var body = parser.alloc_stmt(s)
     if pstate.match_kind(s, tk.TokenKind.newline):
         pstate.consume(s, tk.TokenKind.indent, c"expected indented for body")
-        var body_span = parser.parse_block_body(s)
+        var body_span = declarations.parse_block_body(s)
         pstate.consume(s, tk.TokenKind.dedent, c"expected end of for body")
         body = parser.alloc_stmt(s)
         unsafe:
@@ -486,7 +487,7 @@ public function parse_match_arm_into(s: ref[pstate.ParserState], arms: ref[vec.V
     var body = parser.alloc_stmt(s)
     if pstate.match_kind(s, tk.TokenKind.newline):
         pstate.consume(s, tk.TokenKind.indent, c"expected indented match arm body")
-        var body_span = parser.parse_block_body(s)
+        var body_span = declarations.parse_block_body(s)
         pstate.consume(s, tk.TokenKind.dedent, c"expected end of match arm body")
         body = parser.alloc_stmt(s)
         unsafe:
@@ -538,7 +539,7 @@ function parse_defer_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     if pstate.match_kind(s, tk.TokenKind.colon):
         if pstate.match_kind(s, tk.TokenKind.newline):
             pstate.consume(s, tk.TokenKind.indent, c"expected indented defer body")
-            var body_span = parser.parse_block_body(s)
+            var body_span = declarations.parse_block_body(s)
             pstate.consume(s, tk.TokenKind.dedent, c"expected end of defer body")
             var block_node = parser.alloc_stmt(s)
             unsafe:
@@ -565,7 +566,7 @@ function parse_unsafe_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     if pstate.match_kind(s, tk.TokenKind.colon):
         if pstate.match_kind(s, tk.TokenKind.newline):
             pstate.consume(s, tk.TokenKind.indent, c"expected indented unsafe body")
-            var body_span = parser.parse_block_body(s)
+            var body_span = declarations.parse_block_body(s)
             pstate.consume(s, tk.TokenKind.dedent, c"expected end of unsafe body")
             body = parser.alloc_stmt(s)
             unsafe:
@@ -807,7 +808,7 @@ function parse_inline_for_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     pstate.consume(s, tk.TokenKind.colon, c"expected ':' after for iterable")
     pstate.consume(s, tk.TokenKind.newline, c"expected newline")
     pstate.consume(s, tk.TokenKind.indent, c"expected indented block")
-    var body_span = parser.parse_block_body(s)
+    var body_span = declarations.parse_block_body(s)
     pstate.consume(s, tk.TokenKind.dedent, c"expected end of block")
     var bindings_span = bindings.as_span()
     var iterables_span = iterables.as_span()
@@ -831,7 +832,7 @@ function parse_inline_while_stmt(s: ref[pstate.ParserState], inline_tok: ptr[tok
     pstate.consume(s, tk.TokenKind.colon, c"expected ':' after while condition")
     pstate.consume(s, tk.TokenKind.newline, c"expected newline")
     pstate.consume(s, tk.TokenKind.indent, c"expected indented body")
-    var body_span = parser.parse_block_body(s)
+    var body_span = declarations.parse_block_body(s)
     pstate.consume(s, tk.TokenKind.dedent, c"expected end of body")
     var body = parser.alloc_stmt(s)
     unsafe:
