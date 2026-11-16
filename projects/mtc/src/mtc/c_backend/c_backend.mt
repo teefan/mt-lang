@@ -15,7 +15,6 @@
 import std.string as string
 import std.str
 import std.fmt as fmt
-import std.libc as libc
 import std.map as map_mod
 import std.vec as vec
 import std.mem.heap as heap
@@ -376,269 +375,9 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
         emit_free_foreign_cstr_helper(ref_of(e))
         emit_line(ref_of(e), "")
 
-    if program.structs.len > 0 or program.unions.len > 0 or tuple_types.len() > 0 or program.variants.len > 0 or gen_variants.len() > 0 or opt_structs.len() > 0:
-        var sorted_structs = topo_sort_structs(program.structs)
-        let sorted = sorted_structs.as_span()
+    emit_program_types(ref_of(e), program, span_types, tuple_types, gen_variants, opt_structs, funcs)
 
-        # Emit span type forward declarations first (so struct types can reference them).
-        var si: ptr_uint = 0
-        while si < span_types.len():
-            let ty_ptr = span_types.get(si) else:
-                break
-            unsafe:
-                emit_line(ref_of(e), strings.join_three("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";"))
-            si += 1
-        if span_types.len() > 0:
-            emit_line(ref_of(e), "")
-
-        i = 0
-        while i < sorted.len:
-            unsafe:
-                let s = read(sorted.data + i)
-                emit_line(ref_of(e), strings.join_three("typedef struct ", s.linkage_name, strings.join_two(" ", strings.join_two(s.linkage_name, ";"))))
-            i += 1
-        i = 0
-        while i < program.unions.len:
-            unsafe:
-                let u = read(program.unions.data + i)
-                emit_line(ref_of(e), strings.join_three("typedef union ", u.linkage_name, strings.join_two(" ", strings.join_two(u.linkage_name, ";"))))
-            i += 1
-        i = 0
-        while i < tuple_types.len():
-            let ty_ptr = tuple_types.get(i) else:
-                break
-            unsafe:
-                emit_tuple_type_forward(ref_of(e), read(ty_ptr))
-            i += 1
-        i = 0
-        while i < program.variants.len:
-            unsafe:
-                emit_variant_forward(ref_of(e), read(program.variants.data + i))
-            i += 1
-        i = 0
-        while i < gen_variants.len():
-            let v_ptr = gen_variants.get(i) else:
-                break
-            unsafe:
-                emit_variant_forward(ref_of(e), read(v_ptr))
-            i += 1
-        i = 0
-        while i < opt_structs.len():
-            let os_ptr = opt_structs.get(i) else:
-                break
-            unsafe:
-                let os = read(os_ptr)
-                emit_line(ref_of(e), strings.join_three("typedef struct ", os.decl.linkage_name, strings.join_two(" ", strings.join_two(os.decl.linkage_name, ";"))))
-            i += 1
-        emit_line(ref_of(e), "")
-
-        emit_enums_block(ref_of(e), program)
-
-        # Collect Task types once; used by both forward declarations (before
-        # type aliases) and topological sort (alongside structs/variants).
-        var task_seen = map_mod.Map[str, bool].create()
-        var task_elements = map_mod.Map[str, types.Type].create()
-        collect_task_type_set(program, ref_of(task_seen), ref_of(task_elements))
-
-        # Task forward declarations must come before type aliases because
-        # aliases like `typedef mt_task_X ChanMessageTask` reference them.
-        emit_task_forward_decls(ref_of(e), ref_of(task_seen))
-
-        emit_type_aliases(ref_of(e), program)
-
-        # Emit span type full definitions after forward declarations
-        # so they can reference struct types.
-        si = 0
-        while si < span_types.len():
-            let ty_ptr = span_types.get(si) else:
-                break
-            unsafe:
-                emit_span_type(ref_of(e), read(ty_ptr))
-            emit_line(ref_of(e), "")
-            si += 1
-
-        # Emit struct and variant full definitions in a single dependency order,
-        # since structs and variants can embed each other by value.  Task structs
-        # are included in the sort so that Option[Task[X]] (with value: Task[X])
-        # is ordered after the Task struct definition.
-        var type_order = topo_sort_types(program.structs, ref_of(gen_variants), program.variants, ref_of(opt_structs), ref_of(task_seen), ref_of(task_elements), tuple_types)
-        var toi: ptr_uint = 0
-        while toi < type_order.len():
-            let node_ptr = type_order.get(toi) else:
-                break
-            unsafe:
-                let node = read(node_ptr)
-                if node.kind == 0:
-                    emit_struct(ref_of(e), read(program.structs.data + node.index))
-                else if node.kind == 1:
-                    let gv_ptr = gen_variants.get(node.index) else:
-                        toi += 1
-                        continue
-                    emit_variant(ref_of(e), read(gv_ptr))
-                else if node.kind == 2:
-                    emit_variant(ref_of(e), read(program.variants.data + node.index))
-                else if node.kind == 3:
-                    let os_ptr = opt_structs.get(node.index) else:
-                        toi += 1
-                        continue
-                    emit_struct(ref_of(e), read(os_ptr).decl)
-                else if node.kind == 4:
-                    # kind 4: Task struct
-                    var elem = types.primitive("void")
-                    let te_ptr = task_elements.get(node.key)
-                    if te_ptr != null:
-                        elem = unsafe: read(te_ptr)
-                    emit_task_struct_type(ref_of(e), node.key, elem)
-                else:
-                    # kind 5: tuple struct
-                    let tuple_ptr = tuple_types.get(node.index) else:
-                        toi += 1
-                        continue
-                    emit_tuple_type_def(ref_of(e), unsafe: read(tuple_ptr))
-            emit_line(ref_of(e), "")
-            toi += 1
-        i = 0
-        while i < program.unions.len:
-            unsafe:
-                emit_union(ref_of(e), read(program.unions.data + i))
-            emit_line(ref_of(e), "")
-            i += 1
-
-        # Emit SoA struct definitions after regular structs (they reference
-        # element struct fields by C name).
-        emit_soa_types(ref_of(e), funcs, program)
-
-    else:
-        # No structs/unions/variants — but span types may still be needed.
-        var span_si: ptr_uint = 0
-        while span_si < span_types.len():
-            let ty_ptr = span_types.get(span_si) else:
-                break
-            unsafe:
-                emit_line(ref_of(e), strings.join_three("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";"))
-            span_si += 1
-        span_si = 0
-        while span_si < span_types.len():
-            let ty_ptr = span_types.get(span_si) else:
-                break
-            unsafe:
-                emit_span_type(ref_of(e), read(ty_ptr))
-                emit_line(ref_of(e), "")
-            span_si += 1
-        emit_enums_block(ref_of(e), program)
-
-    if funcs.len > 0:
-        i = 0
-        while i < funcs.len:
-            unsafe:
-                emit_line(ref_of(e), strings.join_two(function_signature(read(funcs.data + i), export_public), ";"))
-            i += 1
-        emit_line(ref_of(e), "")
-
-    i = 0
-    var emitted_helpers = map_mod.Map[str, bool].create()
-    while i < checked_index_types.len():
-        let ty_ptr = checked_index_types.get(i) else:
-            break
-        unsafe:
-            let name = checked_array_index_helper_name(read(ty_ptr))
-            if not emitted_helpers.contains(name):
-                emitted_helpers.set(name, true)
-                emit_checked_index_helper(ref_of(e), read(ty_ptr), false)
-                emit_line(ref_of(e), "")
-            let nullable_name = nullable_array_index_helper_name(read(ty_ptr))
-            if not emitted_helpers.contains(nullable_name):
-                emitted_helpers.set(nullable_name, true)
-                emit_checked_index_helper(ref_of(e), read(ty_ptr), true)
-                emit_line(ref_of(e), "")
-        i += 1
-
-    i = 0
-    var emitted_span_helpers = map_mod.Map[str, bool].create()
-    while i < checked_span_index_types.len():
-        let ty_ptr = checked_span_index_types.get(i) else:
-            break
-        unsafe:
-            let name = checked_span_index_helper_name(read(ty_ptr))
-            if not emitted_span_helpers.contains(name):
-                emitted_span_helpers.set(name, true)
-                emit_checked_span_index_helper(ref_of(e), read(ty_ptr), false)
-                emit_line(ref_of(e), "")
-            let nullable_name = nullable_span_index_helper_name(read(ty_ptr))
-            if not emitted_span_helpers.contains(nullable_name):
-                emitted_span_helpers.set(nullable_name, true)
-                emit_checked_span_index_helper(ref_of(e), read(ty_ptr), true)
-                emit_line(ref_of(e), "")
-        i += 1
-
-    if has_str_literals:
-        i = 0
-        while i < str_lits.len():
-            let value_ptr = str_lits.get(i) else:
-                break
-            unsafe:
-                emit_line(ref_of(e), render_str_literal_constant(read(value_ptr), i))
-            i += 1
-        emit_line(ref_of(e), "")
-
-    if e.variant_eq_set.len() > 0 or e.struct_eq_set.len() > 0:
-        emit_equality_forward_decls(ref_of(e), program)
-        emit_variant_equality_helpers(ref_of(e))
-        emit_struct_equality_helpers(ref_of(e), program)
-
-    if slice_has_str or slice_has_str_index or slice_has_str_concat or slice_span_types.len() > 0:
-        emit_slice_helpers(ref_of(e), slice_has_str, slice_has_str_index, slice_has_str_concat, slice_span_types)
-
-    if program.constants.len > 0:
-        var emitted_consts = reachability.emitted_constants(program, funcs)
-        var ci: ptr_uint = 0
-        while ci < emitted_consts.len():
-            let c_ptr = emitted_consts.get(ci) else:
-                break
-            unsafe:
-                emit_line(ref_of(e), render_constant(ref_of(e), read(c_ptr)))
-            ci += 1
-        # A module import can contribute constants that are all pruned; the
-        # host emits no separator when nothing was written.
-        if emitted_consts.len() > 0:
-            emit_line(ref_of(e), "")
-
-    if program.globals.len > 0:
-        var gi: ptr_uint = 0
-        while gi < program.globals.len:
-            unsafe:
-                let g = read(program.globals.data + gi)
-                emit_line(ref_of(e), render_global(ref_of(e), g))
-            gi += 1
-        emit_line(ref_of(e), "")
-
-    # Top-level static asserts, evaluated by the C compiler.  Emitted after all
-    # type definitions so `sizeof` over user structs sees complete types.
-    if program.static_asserts.len > 0:
-        var sai: ptr_uint = 0
-        while sai < program.static_asserts.len:
-            unsafe:
-                let assertion = read(program.static_asserts.data + sai)
-                emit_line(ref_of(e), render_static_assert(ref_of(e), assertion.condition, assertion.message))
-            sai += 1
-        emit_line(ref_of(e), "")
-
-    # Emit str_buffer runtime helpers if any str_buffer struct is present.
-    if has_str_buffer_structs(program):
-        emit_str_buffer_helpers(ref_of(e))
-
-
-    # Emit the argv → span[str] entry bridge helpers when the entry point uses them.
-    if use_entry_argv:
-        emit_entry_argv_helpers(ref_of(e))
-
-    i = 0
-    while i < funcs.len:
-        unsafe:
-            emit_function(ref_of(e), read(funcs.data + i), export_public)
-        if i < funcs.len - 1:
-            emit_line(ref_of(e), "")
-        i += 1
+    emit_program_bodies(ref_of(e), program, funcs, export_public, checked_index_types, checked_span_index_types, has_str_literals, str_lits, slice_has_str, slice_has_str_index, slice_has_str_concat, slice_span_types, use_entry_argv)
 
     # Ruby joins the lines and rstrips, then appends a single newline.
     let text = e.buffer.as_str()
@@ -655,6 +394,278 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     e.buffer.release()
     return trimmed
 
+
+
+function emit_program_types(e: ref[Emitter], program: ir.Program, span_types: vec.Vec[types.Type], tuple_types: vec.Vec[types.Type], gen_variants: vec.Vec[ir.VariantDecl], opt_structs: vec.Vec[OptionStructEntry], funcs: span[ir.Function]) -> void:
+    var i: ptr_uint = 0
+    var gen_variants_mut = gen_variants
+    var opt_structs_mut = opt_structs
+    if program.structs.len > 0 or program.unions.len > 0 or tuple_types.len() > 0 or program.variants.len > 0 or gen_variants.len() > 0 or opt_structs.len() > 0:
+        var sorted_structs = topo_sort_structs(program.structs)
+        let sorted = sorted_structs.as_span()
+
+        # Emit span type forward declarations first (so struct types can reference them).
+        var si: ptr_uint = 0
+        while si < span_types.len():
+            let ty_ptr = span_types.get(si) else:
+                break
+            unsafe:
+                emit_line(e, strings.join_three("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";"))
+            si += 1
+        if span_types.len() > 0:
+            emit_line(e, "")
+
+        i = 0
+        while i < sorted.len:
+            unsafe:
+                let s = read(sorted.data + i)
+                emit_line(e, strings.join_three("typedef struct ", s.linkage_name, strings.join_two(" ", strings.join_two(s.linkage_name, ";"))))
+            i += 1
+        i = 0
+        while i < program.unions.len:
+            unsafe:
+                let u = read(program.unions.data + i)
+                emit_line(e, strings.join_three("typedef union ", u.linkage_name, strings.join_two(" ", strings.join_two(u.linkage_name, ";"))))
+            i += 1
+        i = 0
+        while i < tuple_types.len():
+            let ty_ptr = tuple_types.get(i) else:
+                break
+            unsafe:
+                emit_tuple_type_forward(e, read(ty_ptr))
+            i += 1
+        i = 0
+        while i < program.variants.len:
+            unsafe:
+                emit_variant_forward(e, read(program.variants.data + i))
+            i += 1
+        i = 0
+        while i < gen_variants.len():
+            let v_ptr = gen_variants.get(i) else:
+                break
+            unsafe:
+                emit_variant_forward(e, read(v_ptr))
+            i += 1
+        i = 0
+        while i < opt_structs.len():
+            let os_ptr = opt_structs.get(i) else:
+                break
+            unsafe:
+                let os = read(os_ptr)
+                emit_line(e, strings.join_three("typedef struct ", os.decl.linkage_name, strings.join_two(" ", strings.join_two(os.decl.linkage_name, ";"))))
+            i += 1
+        emit_line(e, "")
+
+        emit_enums_block(e, program)
+
+        # Collect Task types once; used by both forward declarations (before
+        # type aliases) and topological sort (alongside structs/variants).
+        var task_seen = map_mod.Map[str, bool].create()
+        var task_elements = map_mod.Map[str, types.Type].create()
+        collect_task_type_set(program, ref_of(task_seen), ref_of(task_elements))
+
+        # Task forward declarations must come before type aliases because
+        # aliases like `typedef mt_task_X ChanMessageTask` reference them.
+        emit_task_forward_decls(e, ref_of(task_seen))
+
+        emit_type_aliases(e, program)
+
+        # Emit span type full definitions after forward declarations
+        # so they can reference struct types.
+        si = 0
+        while si < span_types.len():
+            let ty_ptr = span_types.get(si) else:
+                break
+            unsafe:
+                emit_span_type(e, read(ty_ptr))
+            emit_line(e, "")
+            si += 1
+
+        # Emit struct and variant full definitions in a single dependency order,
+        # since structs and variants can embed each other by value.  Task structs
+        # are included in the sort so that Option[Task[X]] (with value: Task[X])
+        # is ordered after the Task struct definition.
+        var type_order = topo_sort_types(program.structs, ref_of(gen_variants_mut), program.variants, ref_of(opt_structs_mut), ref_of(task_seen), ref_of(task_elements), tuple_types)
+        var toi: ptr_uint = 0
+        while toi < type_order.len():
+            let node_ptr = type_order.get(toi) else:
+                break
+            unsafe:
+                let node = read(node_ptr)
+                if node.kind == 0:
+                    emit_struct(e, read(program.structs.data + node.index))
+                else if node.kind == 1:
+                    let gv_ptr = gen_variants.get(node.index) else:
+                        toi += 1
+                        continue
+                    emit_variant(e, read(gv_ptr))
+                else if node.kind == 2:
+                    emit_variant(e, read(program.variants.data + node.index))
+                else if node.kind == 3:
+                    let os_ptr = opt_structs.get(node.index) else:
+                        toi += 1
+                        continue
+                    emit_struct(e, read(os_ptr).decl)
+                else if node.kind == 4:
+                    # kind 4: Task struct
+                    var elem = types.primitive("void")
+                    let te_ptr = task_elements.get(node.key)
+                    if te_ptr != null:
+                        elem = unsafe: read(te_ptr)
+                    emit_task_struct_type(e, node.key, elem)
+                else:
+                    # kind 5: tuple struct
+                    let tuple_ptr = tuple_types.get(node.index) else:
+                        toi += 1
+                        continue
+                    emit_tuple_type_def(e, unsafe: read(tuple_ptr))
+            emit_line(e, "")
+            toi += 1
+        i = 0
+        while i < program.unions.len:
+            unsafe:
+                emit_union(e, read(program.unions.data + i))
+            emit_line(e, "")
+            i += 1
+
+        # Emit SoA struct definitions after regular structs (they reference
+        # element struct fields by C name).
+        emit_soa_types(e, funcs, program)
+
+    else:
+        # No structs/unions/variants — but span types may still be needed.
+        var span_si: ptr_uint = 0
+        while span_si < span_types.len():
+            let ty_ptr = span_types.get(span_si) else:
+                break
+            unsafe:
+                emit_line(e, strings.join_three("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";"))
+            span_si += 1
+        span_si = 0
+        while span_si < span_types.len():
+            let ty_ptr = span_types.get(span_si) else:
+                break
+            unsafe:
+                emit_span_type(e, read(ty_ptr))
+                emit_line(e, "")
+            span_si += 1
+        emit_enums_block(e, program)
+
+
+function emit_program_bodies(e: ref[Emitter], program: ir.Program, funcs: span[ir.Function], export_public: bool, checked_index_types: vec.Vec[types.Type], checked_span_index_types: vec.Vec[types.Type], has_str_literals: bool, str_lits: vec.Vec[str], slice_has_str: bool, slice_has_str_index: bool, slice_has_str_concat: bool, slice_span_types: vec.Vec[types.Type], use_entry_argv: bool) -> void:
+    var i: ptr_uint = 0
+    if funcs.len > 0:
+        i = 0
+        while i < funcs.len:
+            unsafe:
+                emit_line(e, strings.join_two(function_signature(read(funcs.data + i), export_public), ";"))
+            i += 1
+        emit_line(e, "")
+
+    i = 0
+    var emitted_helpers = map_mod.Map[str, bool].create()
+    while i < checked_index_types.len():
+        let ty_ptr = checked_index_types.get(i) else:
+            break
+        unsafe:
+            let name = checked_array_index_helper_name(read(ty_ptr))
+            if not emitted_helpers.contains(name):
+                emitted_helpers.set(name, true)
+                emit_checked_index_helper(e, read(ty_ptr), false)
+                emit_line(e, "")
+            let nullable_name = nullable_array_index_helper_name(read(ty_ptr))
+            if not emitted_helpers.contains(nullable_name):
+                emitted_helpers.set(nullable_name, true)
+                emit_checked_index_helper(e, read(ty_ptr), true)
+                emit_line(e, "")
+        i += 1
+
+    i = 0
+    var emitted_span_helpers = map_mod.Map[str, bool].create()
+    while i < checked_span_index_types.len():
+        let ty_ptr = checked_span_index_types.get(i) else:
+            break
+        unsafe:
+            let name = checked_span_index_helper_name(read(ty_ptr))
+            if not emitted_span_helpers.contains(name):
+                emitted_span_helpers.set(name, true)
+                emit_checked_span_index_helper(e, read(ty_ptr), false)
+                emit_line(e, "")
+            let nullable_name = nullable_span_index_helper_name(read(ty_ptr))
+            if not emitted_span_helpers.contains(nullable_name):
+                emitted_span_helpers.set(nullable_name, true)
+                emit_checked_span_index_helper(e, read(ty_ptr), true)
+                emit_line(e, "")
+        i += 1
+
+    if has_str_literals:
+        i = 0
+        while i < str_lits.len():
+            let value_ptr = str_lits.get(i) else:
+                break
+            unsafe:
+                emit_line(e, render_str_literal_constant(read(value_ptr), i))
+            i += 1
+        emit_line(e, "")
+
+    if e.variant_eq_set.len() > 0 or e.struct_eq_set.len() > 0:
+        emit_equality_forward_decls(e, program)
+        emit_variant_equality_helpers(e)
+        emit_struct_equality_helpers(e, program)
+
+    if slice_has_str or slice_has_str_index or slice_has_str_concat or slice_span_types.len() > 0:
+        emit_slice_helpers(e, slice_has_str, slice_has_str_index, slice_has_str_concat, slice_span_types)
+
+    if program.constants.len > 0:
+        var emitted_consts = reachability.emitted_constants(program, funcs)
+        var ci: ptr_uint = 0
+        while ci < emitted_consts.len():
+            let c_ptr = emitted_consts.get(ci) else:
+                break
+            unsafe:
+                emit_line(e, render_constant(e, read(c_ptr)))
+            ci += 1
+        # A module import can contribute constants that are all pruned; the
+        # host emits no separator when nothing was written.
+        if emitted_consts.len() > 0:
+            emit_line(e, "")
+
+    if program.globals.len > 0:
+        var gi: ptr_uint = 0
+        while gi < program.globals.len:
+            unsafe:
+                let g = read(program.globals.data + gi)
+                emit_line(e, render_global(e, g))
+            gi += 1
+        emit_line(e, "")
+
+    # Top-level static asserts, evaluated by the C compiler.  Emitted after all
+    # type definitions so `sizeof` over user structs sees complete types.
+    if program.static_asserts.len > 0:
+        var sai: ptr_uint = 0
+        while sai < program.static_asserts.len:
+            unsafe:
+                let assertion = read(program.static_asserts.data + sai)
+                emit_line(e, render_static_assert(e, assertion.condition, assertion.message))
+            sai += 1
+        emit_line(e, "")
+
+    # Emit str_buffer runtime helpers if any str_buffer struct is present.
+    if has_str_buffer_structs(program):
+        emit_str_buffer_helpers(e)
+
+
+    # Emit the argv → span[str] entry bridge helpers when the entry point uses them.
+    if use_entry_argv:
+        emit_entry_argv_helpers(e)
+
+    i = 0
+    while i < funcs.len:
+        unsafe:
+            emit_function(e, read(funcs.data + i), export_public)
+        if i < funcs.len - 1:
+            emit_line(e, "")
+        i += 1
 
 
 # =============================================================================

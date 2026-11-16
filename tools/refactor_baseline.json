@@ -324,7 +324,7 @@
   },
   "dead_exports": {
     "unused": [
-      "projects/mtc/src/mtc/c_backend/c_backend.mt:32:struct:CBackendError",
+      "projects/mtc/src/mtc/c_backend/c_backend.mt:31:struct:CBackendError",
       "projects/mtc/src/mtc/dap/lldb_backend.mt:19:const:KIND_INTERNAL",
       "projects/mtc/src/mtc/dap/lldb_backend.mt:28:const:KIND_SYNC_FUNCTIONS",
       "projects/mtc/src/mtc/dap/lldb_backend.mt:29:const:KIND_SYNC_EXCEPTIONS",
@@ -1143,7 +1143,7 @@
     ]
   },
   "sizes": {
-    "total_code": 123648,
+    "total_code": 123655,
     "functions_over_limit": 32,
     "files_over_limit": 11,
     "files": {
@@ -1202,10 +1202,10 @@
         "max_function": 49
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 8031,
-        "code": 6121,
+        "lines": 8042,
+        "code": 6128,
         "max_line": 436,
-        "max_function": 537
+        "max_function": 277
       },
       "projects/mtc/src/mtc/c_backend/reachability.mt": {
         "lines": 393,
