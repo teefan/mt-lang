@@ -16702,30 +16702,28 @@ public function method_receiver_type(ctx: ref[LoweringContext], receiver: ptr[as
     return type_helpers.expr_type(ctx, receiver)
 
 
-function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], member: str, ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
-    match inline_mod.inline_for_member_subst(ctx, receiver, member):
-        Option.some as subst:
-            return subst.value
-        Option.none:
-            pass
+## Resolve a member access on a bare identifier: variant constructors,
+## synthetic type constants, static members, import aliases, and
+## module-qualified specialization constructors.
+function lower_identifier_member(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], member: str, ep: ptr[ast.Expr]) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
                 # A no-payload variant arm constructor, e.g. `Token.eof`.
                 if ctx.variants.contains(id.name):
-                    return alloc_expr(ir.Expr.expr_variant_literal(
+                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_variant_literal(
                         ty = types.Type.ty_imported(module_name = ctx.module_name, name = id.name, args = span[types.Type]()),
                         arm_name = member,
                         fields = span[ir.AggregateField](),
-                    ))
+                    )))
                 # Synthetic type names (e.g. `EventError.full`) — map to C
                 # constant `<Type>_<member>`.
                 if id.name == "EventError" and member == "full":
-                    return alloc_expr(ir.Expr.expr_name(
+                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_name(
                         name = "EventError_full",
                         ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "EventError"),
                         pointer = Option[bool].some(value = false),
-                    ))
+                    )))
                 if ctx.analysis.static_member_types.contains(id.name):
                     var member_ty = type_helpers.expr_type(ctx, ep)
                     match member_ty:
@@ -16735,11 +16733,11 @@ function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
                             member_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = id.name)
                         _:
                             pass
-                    return alloc_expr(ir.Expr.expr_name(
+                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_name(
                         name = naming.qualified_member_c_name(ctx.module_name, id.name, member),
                         ty = member_ty,
                         pointer = Option[bool].some(value = false),
-                    ))
+                    )))
                 # Resolve `import_alias.member` through the imported module.
                 let mod_ptr = ctx.analysis.imports.get(id.name)
                 if mod_ptr != null:
@@ -16758,18 +16756,18 @@ function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
                                         member_ty = resolved.value
                                     Option.none:
                                         pass
-                                return alloc_expr(ir.Expr.expr_name(
+                                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_name(
                                     name = c_name,
                                     ty = member_ty,
                                     pointer = Option[bool].some(value = false),
-                                ))
+                                )))
                             if imported.value.value_types.contains(member):
                                 let c_name = imported_member_c_name(ctx, imported.value, target_module, member)
-                                return alloc_expr(ir.Expr.expr_name(
+                                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_name(
                                     name = c_name,
                                     ty = type_helpers.expr_type(ctx, ep),
                                     pointer = Option[bool].some(value = false),
-                                ))
+                                )))
                         Option.none:
                             pass
             ast.Expr.expr_specialization as spec:
@@ -16810,11 +16808,11 @@ function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
                                 concrete_args.push(qualify_type(ctx, resolve_type_ref(ctx, read(spec.arguments.data + ai).value)))
                                 ai += 1
                             let variant_ty = generic_variant_instance_type(ctx, svn.value, concrete_args.as_span())
-                            return alloc_expr(ir.Expr.expr_variant_literal(
+                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_variant_literal(
                                 ty = variant_ty,
                                 arm_name = member,
                                 fields = span[ir.AggregateField](),
-                            ))
+                            )))
                         Option.none:
                             pass
             ast.Expr.expr_member_access as inner_ma:
@@ -16829,11 +16827,11 @@ function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
                                         match find_imported_variant_arm(imported.value, member):
                                             Option.some as var_name:
                                                 let var_ty = types.Type.ty_imported(module_name = target_module, name = var_name.value, args = span[types.Type]())
-                                                return alloc_expr(ir.Expr.expr_variant_literal(
+                                                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_variant_literal(
                                                     ty = var_ty,
                                                     arm_name = member,
                                                     fields = span[ir.AggregateField](),
-                                                ))
+                                                )))
                                             Option.none:
                                                 var use_bare = target_module.starts_with("std.c.")
                                                 if not use_bare and imported.value.type_alias_types.contains(inner_ma.member_name):
@@ -16845,17 +16843,31 @@ function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
                                                 var member_c_name = member
                                                 if not use_bare:
                                                     member_c_name = naming.qualified_member_c_name(target_module, inner_ma.member_name, member)
-                                                return alloc_expr(ir.Expr.expr_name(
+                                                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_name(
                                                     name = member_c_name,
                                                     ty = type_helpers.expr_type(ctx, ep),
                                                     pointer = Option[bool].some(value = false),
-                                                ))
+                                                )))
                                 Option.none:
                                     pass
                     _:
                         pass
             _:
                 pass
+    return Option[ptr[ir.Expr]].none
+
+
+function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], member: str, ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    match inline_mod.inline_for_member_subst(ctx, receiver, member):
+        Option.some as subst:
+            return subst.value
+        Option.none:
+            pass
+    match lower_identifier_member(ctx, receiver, member, ep):
+        Option.some as early:
+            return early.value
+        Option.none:
+            pass
     # SoA index+member swap: `particles[0].x` → `particles.x[0]` (mirrors
     # Ruby's lower_soa_indexed_field_access).  Detect when the member access
     # receiver is an index into an SoA type, and lower the field access first.
