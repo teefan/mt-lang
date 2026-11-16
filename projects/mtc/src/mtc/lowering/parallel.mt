@@ -696,6 +696,113 @@ public function lower_parallel_block(ctx: ref[lowering.LoweringContext], output:
     let uid_base = parallel_uid(ctx, "spawn")
 
     var infos = vec.Vec[SpawnBlockInfo].create()
+    build_parallel_workers(ctx, bodies, ref_of(infos), uid_base, void_ty, void_ptr)
+
+    # Write-conflict validation: a name written by one body and captured by
+    # another is a data race.
+    var idx: ptr_uint = 0
+    while idx < infos.len():
+        let ip = infos.get(idx) else:
+            break
+        let info = unsafe: read(ip)
+        var wi: ptr_uint = 0
+        while wi < info.written_names.len():
+            let wp = info.written_names.get(wi) else:
+                break
+            let name = unsafe: read(wp)
+            var oi: ptr_uint = 0
+            while oi < infos.len():
+                if oi != idx:
+                    let op = infos.get(oi) else:
+                        break
+                    let other = unsafe: read(op)
+                    var ci2: ptr_uint = 0
+                    while ci2 < other.capture_names.len():
+                        let cp = other.capture_names.get(ci2) else:
+                            break
+                        if unsafe: read(cp) == name:
+                            var msg = string.String.create()
+                            msg.append("write conflict in parallel block: '")
+                            msg.append(name)
+                            msg.append("' is written in spawn block ")
+                            fmt.append_ptr_uint(ref_of(msg), idx + 1)
+                            msg.append(" and accessed in spawn block ")
+                            fmt.append_ptr_uint(ref_of(msg), oi + 1)
+                            fatal(msg.as_str())
+                        ci2 += 1
+                oi += 1
+            wi += 1
+        idx += 1
+
+    let fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = span[str](), name = "")
+    let spawn_item_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "mt_spawn_item")
+    var call_site = vec.Vec[ir.Stmt].create()
+    idx = 0
+    while idx < infos.len():
+        let ip = infos.get(idx) else:
+            break
+        let info = unsafe: read(ip)
+        if not info.captureless:
+            call_site.push(ir.Stmt.stmt_local(name = info.cap_local_name, linkage_name = info.cap_local_name, ty = info.cap_ty, value = info.cap_init, line = 0, source_path = ""))
+        idx += 1
+    let tasks_arr_ty = types.Type.ty_generic(name = "array", args = lowering.sp_type2(spawn_item_ty, types.literal_int(long<-bodies.len)))
+    var elements = vec.Vec[ir.Expr].create()
+    idx = 0
+    while idx < infos.len():
+        let ip = infos.get(idx) else:
+            break
+        let info = unsafe: read(ip)
+        var data_expr = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr))
+        if not info.captureless:
+            data_expr = lowering.alloc_expr(ir.Expr.expr_address_of(
+                expression = lowering.alloc_expr(ir.Expr.expr_name(name = info.cap_local_name, ty = info.cap_ty, pointer = Option[bool].some(value = false))),
+                ty = void_ptr,
+            ))
+        var fields = vec.Vec[ir.AggregateField].create()
+        fields.push(ir.AggregateField(name = "work", value = lowering.alloc_expr(ir.Expr.expr_name(name = info.worker_name, ty = fn_ty, pointer = Option[bool].some(value = false)))))
+        fields.push(ir.AggregateField(name = "data", value = data_expr))
+        unsafe: elements.push(read(lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = spawn_item_ty, fields = fields.as_span()))))
+        idx += 1
+    call_site.push(ir.Stmt.stmt_local(
+        name = "mt_spawn_tasks", linkage_name = "mt_spawn_tasks", ty = tasks_arr_ty,
+        value = lowering.alloc_expr(ir.Expr.expr_array_literal(ty = tasks_arr_ty, elements = elements.as_span())),
+        line = 0, source_path = "",
+    ))
+    var spawn_args = vec.Vec[ir.Expr].create()
+    unsafe: spawn_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(name = "mt_spawn_tasks", ty = tasks_arr_ty, pointer = Option[bool].some(value = false)))))
+    unsafe: spawn_args.push(read(lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-bodies.len, ty = types.primitive("int")))))
+    call_site.push(ir.Stmt.stmt_expression(
+        expression = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_spawn_all", arguments = spawn_args.as_span(), ty = void_ty)),
+        line = 0, source_path = "",
+    ))
+    # Written scalar captures flow back after the join.
+    idx = 0
+    while idx < infos.len():
+        let ip = infos.get(idx) else:
+            break
+        let info = unsafe: read(ip)
+        var wi: ptr_uint = 0
+        while wi < info.written_scalars.len():
+            let wp = info.written_scalars.get(wi) else:
+                break
+            match unsafe: read(wp):
+                ir.Expr.expr_name as nm:
+                    call_site.push(ir.Stmt.stmt_assignment(
+                        target = lowering.alloc_expr(ir.Expr.expr_name(name = nm.name, ty = nm.ty, pointer = Option[bool].some(value = false))),
+                        operator = "=",
+                        value = lowering.alloc_expr(ir.Expr.expr_member(
+                            receiver = lowering.alloc_expr(ir.Expr.expr_name(name = info.cap_local_name, ty = info.cap_ty, pointer = Option[bool].some(value = false))),
+                            member = nm.name, ty = nm.ty,
+                        )),
+                    ))
+                _:
+                    pass
+            wi += 1
+        idx += 1
+    output.push(ir.Stmt.stmt_block(body = call_site.as_span()))
+
+
+function build_parallel_workers(ctx: ref[lowering.LoweringContext], bodies: span[ast.Stmt], infos: ref[vec.Vec[SpawnBlockInfo]], uid_base: str, void_ty: types.Type, void_ptr: types.Type) -> void:
     var bi: ptr_uint = 0
     while bi < bodies.len:
         let body_ir = lowering.lower_block(ctx, unsafe: ptr[ast.Stmt]<-(bodies.data + bi))
@@ -853,109 +960,6 @@ public function lower_parallel_block(ctx: ref[lowering.LoweringContext], output:
             captureless = captureless,
         ))
         bi += 1
-
-    # Write-conflict validation: a name written by one body and captured by
-    # another is a data race.
-    var idx: ptr_uint = 0
-    while idx < infos.len():
-        let ip = infos.get(idx) else:
-            break
-        let info = unsafe: read(ip)
-        var wi: ptr_uint = 0
-        while wi < info.written_names.len():
-            let wp = info.written_names.get(wi) else:
-                break
-            let name = unsafe: read(wp)
-            var oi: ptr_uint = 0
-            while oi < infos.len():
-                if oi != idx:
-                    let op = infos.get(oi) else:
-                        break
-                    let other = unsafe: read(op)
-                    var ci2: ptr_uint = 0
-                    while ci2 < other.capture_names.len():
-                        let cp = other.capture_names.get(ci2) else:
-                            break
-                        if unsafe: read(cp) == name:
-                            var msg = string.String.create()
-                            msg.append("write conflict in parallel block: '")
-                            msg.append(name)
-                            msg.append("' is written in spawn block ")
-                            fmt.append_ptr_uint(ref_of(msg), idx + 1)
-                            msg.append(" and accessed in spawn block ")
-                            fmt.append_ptr_uint(ref_of(msg), oi + 1)
-                            fatal(msg.as_str())
-                        ci2 += 1
-                oi += 1
-            wi += 1
-        idx += 1
-
-    let fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = span[str](), name = "")
-    let spawn_item_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "mt_spawn_item")
-    var call_site = vec.Vec[ir.Stmt].create()
-    idx = 0
-    while idx < infos.len():
-        let ip = infos.get(idx) else:
-            break
-        let info = unsafe: read(ip)
-        if not info.captureless:
-            call_site.push(ir.Stmt.stmt_local(name = info.cap_local_name, linkage_name = info.cap_local_name, ty = info.cap_ty, value = info.cap_init, line = 0, source_path = ""))
-        idx += 1
-    let tasks_arr_ty = types.Type.ty_generic(name = "array", args = lowering.sp_type2(spawn_item_ty, types.literal_int(long<-bodies.len)))
-    var elements = vec.Vec[ir.Expr].create()
-    idx = 0
-    while idx < infos.len():
-        let ip = infos.get(idx) else:
-            break
-        let info = unsafe: read(ip)
-        var data_expr = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr))
-        if not info.captureless:
-            data_expr = lowering.alloc_expr(ir.Expr.expr_address_of(
-                expression = lowering.alloc_expr(ir.Expr.expr_name(name = info.cap_local_name, ty = info.cap_ty, pointer = Option[bool].some(value = false))),
-                ty = void_ptr,
-            ))
-        var fields = vec.Vec[ir.AggregateField].create()
-        fields.push(ir.AggregateField(name = "work", value = lowering.alloc_expr(ir.Expr.expr_name(name = info.worker_name, ty = fn_ty, pointer = Option[bool].some(value = false)))))
-        fields.push(ir.AggregateField(name = "data", value = data_expr))
-        unsafe: elements.push(read(lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = spawn_item_ty, fields = fields.as_span()))))
-        idx += 1
-    call_site.push(ir.Stmt.stmt_local(
-        name = "mt_spawn_tasks", linkage_name = "mt_spawn_tasks", ty = tasks_arr_ty,
-        value = lowering.alloc_expr(ir.Expr.expr_array_literal(ty = tasks_arr_ty, elements = elements.as_span())),
-        line = 0, source_path = "",
-    ))
-    var spawn_args = vec.Vec[ir.Expr].create()
-    unsafe: spawn_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(name = "mt_spawn_tasks", ty = tasks_arr_ty, pointer = Option[bool].some(value = false)))))
-    unsafe: spawn_args.push(read(lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-bodies.len, ty = types.primitive("int")))))
-    call_site.push(ir.Stmt.stmt_expression(
-        expression = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_spawn_all", arguments = spawn_args.as_span(), ty = void_ty)),
-        line = 0, source_path = "",
-    ))
-    # Written scalar captures flow back after the join.
-    idx = 0
-    while idx < infos.len():
-        let ip = infos.get(idx) else:
-            break
-        let info = unsafe: read(ip)
-        var wi: ptr_uint = 0
-        while wi < info.written_scalars.len():
-            let wp = info.written_scalars.get(wi) else:
-                break
-            match unsafe: read(wp):
-                ir.Expr.expr_name as nm:
-                    call_site.push(ir.Stmt.stmt_assignment(
-                        target = lowering.alloc_expr(ir.Expr.expr_name(name = nm.name, ty = nm.ty, pointer = Option[bool].some(value = false))),
-                        operator = "=",
-                        value = lowering.alloc_expr(ir.Expr.expr_member(
-                            receiver = lowering.alloc_expr(ir.Expr.expr_name(name = info.cap_local_name, ty = info.cap_ty, pointer = Option[bool].some(value = false))),
-                            member = nm.name, ty = nm.ty,
-                        )),
-                    ))
-                _:
-                    pass
-            wi += 1
-        idx += 1
-    output.push(ir.Stmt.stmt_block(body = call_site.as_span()))
 
 
 function void_ptr_ty() -> types.Type:

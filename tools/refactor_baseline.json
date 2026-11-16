@@ -1145,8 +1145,8 @@
     ]
   },
   "sizes": {
-    "total_code": 123707,
-    "functions_over_limit": 31,
+    "total_code": 123709,
+    "functions_over_limit": 30,
     "files_over_limit": 11,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
@@ -1576,10 +1576,10 @@
         "max_function": 376
       },
       "projects/mtc/src/mtc/lowering/parallel.mt": {
-        "lines": 1027,
-        "code": 921,
+        "lines": 1031,
+        "code": 923,
         "max_line": 199,
-        "max_function": 269
+        "max_function": 181
       },
       "projects/mtc/src/mtc/lowering/proc_renumber.mt": {
         "lines": 831,
