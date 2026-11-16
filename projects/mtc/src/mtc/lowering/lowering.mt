@@ -16,14 +16,12 @@ import std.vec as vec
 import std.map as map_mod
 import std.str
 import std.string as string
-import std.stdio as stdio
 import std.fmt as fmt
 import std.mem.heap as heap_mod
 
 import mtc.ir as ir
 import mtc.loader.module_loader as loader
 import mtc.semantic.analyzer as analyzer
-import mtc.semantic.expressions as sem_exprs
 import mtc.semantic.control_flow.builder as flow_builder
 import mtc.semantic.control_flow.graph as flow_graph
 import mtc.semantic.types as types
@@ -5444,262 +5442,9 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
                 let ty = if lit.is_cstring: types.primitive("cstr") else: types.Type.ty_str
                 return alloc_expr(ir.Expr.expr_string_literal(value = lit.value, ty = ty, cstring = lit.is_cstring))
             ast.Expr.expr_identifier as id:
-                # An inline foreign-mapping parameter bound to the argument's
-                # value (the host's `replacements`) wins over the locals.
-                let replacement = ctx.mapping_replacements.get(id.name)
-                if replacement != null:
-                    return unsafe: read(replacement)
-                match type_helpers.find_local_binding(ctx, id.name):
-                    Option.some as lb:
-                        return lower_binding_read(ctx, lb.value)
-                    Option.none:
-                        if ctx.function_returns.contains(id.name) or ctx.analysis.functions.contains(id.name):
-                            let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
-                            var fn_ty = type_helpers.expr_type(ctx, ep)
-                            match fn_ty:
-                                types.Type.ty_function as fnt:
-                                    # Only wrap in proc struct when the expected type
-                                    # is a proc (is_proc == true).  For plain fn
-                                    # fields, pass the function pointer directly.
-                                    if fnt.is_proc:
-                                        return lower_fn_to_proc(ctx, fn_c_name, fn_ty, "")
-                                    # The analyzer records a bare function reference
-                                    # with an empty type name (the contextual
-                                    # field/signature form); the host's binding type
-                                    # carries the function's own name (`fn <name>`).
-                                    if fnt.name.len == 0:
-                                        fn_ty = types.Type.ty_function(name = id.name, params = fnt.params, return_type = fnt.return_type, variadic = fnt.variadic, is_proc = false, param_names = fnt.param_names)
-                                _:
-                                    pass
-                            return alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = fn_ty, pointer = Option[bool].some(value = false)))
-                        if ctx.analysis.events.contains(id.name):
-                            # The event's global is emitted under its
-                            # module-qualified linkage name, and its read type is
-                            # the event itself (`Types::Event`) — the host's
-                            # binding carries `Types::Event`, not a plain named
-                            # type.
-                            var ev_info = ensure_event_runtime(ctx, "", id.name)
-                            var ev_payload: ptr[types.Type]? = null
-                            if ev_info.has_payload:
-                                ev_payload = types.alloc_type(ev_info.payload_type)
-                            let ev_ty = types.Type.ty_event(
-                                name = id.name,
-                                capacity = ev_info.capacity,
-                                payload_type = ev_payload,
-                                linkage_name = ev_info.event_c_name,
-                            )
-                            return alloc_expr(ir.Expr.expr_name(name = naming.qualified_c_name(ctx.module_name, id.name), ty = ev_ty, pointer = Option[bool].some(value = false)))
-                        match type_helpers.find_qualified_constant(ctx, id.name):
-                            Option.some as qc:
-                                # A module-level value's read carries its *declared*
-                                # storage type (the host's binding type), not the
-                                # contextually-inferred type: stripping the
-                                # `Nullable` here would let a guarded global read
-                                # masquerade as non-null in the IR (the
-                                # `opaque_backing_names` global).
-                                var value_ty = type_helpers.expr_type(ctx, ep)
-                                let declared_ty_ptr = ctx.analysis.value_types.get(id.name)
-                                if declared_ty_ptr != null:
-                                    value_ty = unsafe: read(declared_ty_ptr)
-                                return alloc_expr(ir.Expr.expr_name(name = qc.value, ty = value_ty, pointer = Option[bool].some(value = false)))
-                            Option.none:
-                                pass
-                        return alloc_expr(ir.Expr.expr_name(name = id.name, ty = type_helpers.expr_type(ctx, ep), pointer = Option[bool].some(value = false)))
+                return lower_identifier_expr(ctx, ep, id.name)
             ast.Expr.expr_binary_op as bin:
-                if (bin.operator == "and" or bin.operator == "or") and ctx.hoist_mode != HoistMode.hm_off:
-                    return lower_short_circuit_binary(ctx, bin.operator, bin.left, bin.right, ep)
-                var left = lower_expr(ctx, bin.left)
-                var right: ptr[ir.Expr]
-                if bin.operator == "and" or bin.operator == "or":
-                    let hoist_saved = suspend_stmt_setup(ctx)
-                    var right_refs = type_helpers.lowering_flow_refinements(ctx, bin.left, bin.operator == "and")
-                    let right_flow_saved = type_helpers.push_flow_refinements(ctx, ref_of(right_refs))
-                    right = lower_expr(ctx, bin.right)
-                    type_helpers.restore_flow_refinements(ctx, right_flow_saved)
-                    resume_stmt_setup(ctx, hoist_saved)
-                else:
-                    right = lower_expr(ctx, bin.right)
-                # A bare `null` compared against a nullable value takes the other
-                # operand's type — the host propagates the left operand's type as
-                # the right operand's expected type — so `source == null` types
-                # the literal `Nullable(ptr[ubyte])` rather than `void`.
-                if bin.operator == "==" or bin.operator == "!=":
-                    right = null_literal_to_context_type(bin.right, ir_expr_type(left), right)
-                    left = null_literal_to_context_type(bin.left, ir_expr_type(right), left)
-                # Struct equality on a raw-binding struct (`s_drag_body !=
-                # b3.b3_nullBodyId`): the host keeps the `IR::Binary` and its C
-                # backend synthesizes the `mt_struct_eq_<T>` helper from the
-                # type's fields.  Raw modules lower no declarations, so register
-                # the type's layout for the backend's helper synthesis.
-                if bin.operator == "==" or bin.operator == "!=":
-                    let eq_ty = ir_expr_type(left)
-                    if is_equality_struct_type(ctx, eq_ty) and types.type_equals(eq_ty, ir_expr_type(right)) and register_external_struct_layout(ctx, eq_ty):
-                        return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = ctx.bool_ty))
-                # `str + str` concatenates into a thread-local scratch buffer.
-                if bin.operator == "+" and type_helpers.is_str_typed(ir_expr_type(left)) and type_helpers.is_str_typed(ir_expr_type(right)):
-                    var concat_args = vec.Vec[ir.Expr].create()
-                    unsafe:
-                        concat_args.push(read(left))
-                        concat_args.push(read(right))
-                    return alloc_expr(ir.Expr.expr_call(callee = "mt_str_concat", arguments = concat_args.as_span(), ty = types.Type.ty_str))
-                var result_ty = type_helpers.expr_type(ctx, ep)
-                # A comparison is always `bool` (the host's `infer_expression_type`
-                # BinaryOp arm); the analyzer can miss it inside a constant
-                # initializer (`not (glfwInit() != 0)`).
-                if bin.operator == "==" or bin.operator == "!=" or bin.operator == "<" or bin.operator == "<=" or bin.operator == ">" or bin.operator == ">=":
-                    result_ty = ctx.bool_ty
-                # A simd arithmetic expression falls back to its left operand's
-                # type (the host's BinaryOp inference chain has no Simd promotion
-                # rule: `3.0 * a` is `float`, `a * 3.0` keeps the simd type); the
-                # analyzer records the Simd operand's type instead.
-                if types.is_simd_type(result_ty):
-                    result_ty = ir_expr_type(left)
-                # A recorded vec/mat/quat result whose operands lower as scalars
-                # (field arithmetic such as `this.x - other.x`) is scalar in the
-                # host's lowering inference: no vector rule matches the operands,
-                # so `common_numeric_type` (else the left type) wins.
-                if type_helpers.is_vec_math_name(type_helpers.nominal_type_name(result_ty)) and not (
-                    type_helpers.is_vec_math_name(type_helpers.nominal_type_name(ir_expr_type(left))) or type_helpers.is_vec_math_name(type_helpers.nominal_type_name(ir_expr_type(right)))
-                ):
-                    match type_helpers.common_numeric_type(ir_expr_type(left), ir_expr_type(right)):
-                        Option.some as common_ty:
-                            result_ty = common_ty.value
-                        Option.none:
-                            result_ty = ir_expr_type(left)
-                # Bitwise operators on one nominal type (`Flags.a | Flags.b`):
-                # const initializers can miss the analyzer's type map, so the
-                # host re-infers from the operands; equal operands give that type.
-                if types.is_error(result_ty) and (bin.operator == "|" or bin.operator == "&" or bin.operator == "^"):
-                    let blt = ir_expr_type(left)
-                    let brt = ir_expr_type(right)
-                    if not types.is_error(blt) and types.type_equals(blt, brt):
-                        result_ty = blt
-                # Vector/matrix/quaternion binary arithmetic: lower to
-                # component-wise aggregate literal BEFORE type promotion, so
-                # scalar operands are not cast to the vector result type.
-                # Only apply when at least one operand is an actual vector type
-                # (the analyzer may mis-type float sub-expressions as vec3
-                # inside methods on vec types).
-                let lt = ir_expr_type(left)
-                let rt = ir_expr_type(right)
-                let rn = type_helpers.nominal_type_name(result_ty)
-                if type_helpers.is_vec_math_name(rn) and (
-                    type_helpers.is_vec_math_name(type_helpers.nominal_type_name(lt)) or type_helpers.is_vec_math_name(type_helpers.nominal_type_name(rt))
-                ) and (
-                    bin.operator == "+" or bin.operator == "-" or bin.operator == "*" or bin.operator == "/"
-                ):
-                    return type_helpers.lower_vec_binary_op(ctx, bin.operator, left, right, result_ty, rn)
-                # Pointer arithmetic (`p + i` / `p - i`) yields the pointer
-                # operand's concrete type; the analyzer's generically-recorded
-                # type may have dropped its arguments inside a monomorphized body.
-                # A nullable operand contributes its *unwrapped* pointer: the
-                # host's flow-refined operand type makes `blocks + i` on a
-                # guard-bound `ptr[T]?` a `ptr[T]` (its `pointer_arithmetic_result`
-                # returns the refined left type), and the C arithmetic runs on the
-                # pointer either way — carrying the `Nullable` here overrode the
-                # analyzer's refined result.
-                if bin.operator == "+" or bin.operator == "-":
-                    let left_ty = ir_expr_type(left)
-                    if types.is_raw_pointer(left_ty) and not types.is_raw_pointer(ir_expr_type(right)):
-                        result_ty = if types.is_nullable_type(left_ty): types.unwrap_nullable(left_ty) else: left_ty
-                # Integer arithmetic where the analyzer's recorded type is not an
-                # integer (e.g. `text.len - n`, where `.len` is typed `ptr_uint`
-                # by lowering but the analyzer recorded a wrong type): trust the
-                # lowered operand types when both are the same integer type.
-                if type_helpers.is_arithmetic_operator(bin.operator) and not is_integer_scrutinee(result_ty):
-                    let lt = ir_expr_type(left)
-                    let rt = ir_expr_type(right)
-                    if is_integer_scrutinee(lt) and types.type_to_string(lt) == types.type_to_string(rt):
-                        result_ty = lt
-                    # `<wider-int-expr> + <int literal>` (e.g. `ptr_uint + 2`): the
-                    # analyzer recorded a non-integer result, and one operand is a
-                    # plain `int` literal.  Adopt the other operand's wider integer
-                    # type so the result matches the dominant operand.
-                    else if is_integer_scrutinee(lt) and types.type_to_string(rt) == "int":
-                        result_ty = lt
-                    else if is_integer_scrutinee(rt) and types.type_to_string(lt) == "int":
-                        result_ty = rt
-                # Re-type an integer literal against the other operand's integer
-                # type (e.g. `b == 0` where `b: ubyte`, `p + 1` where `p: ptr_uint`),
-                # mirroring the host's `harmonize_binary_integer_literal_types`.
-                # The literal is recognized *syntactically* — not by its inferred
-                # type — because the inference itself follows the peer
-                # (`std/noise.mt`'s `state * 6364136223846793005` types the
-                # constant `ulong`, and a value > 2^31 is `long` on its own).
-                let harm_lt = ir_expr_type(left)
-                let harm_rt = ir_expr_type(right)
-                # Pointer arithmetic: the host lowers the integer offset with the
-                # pointer as its expected type, which falls back to the literal's
-                # default `int` — an explicit `0z` suffix is ignored
-                # (`paths + 0z` carries an `int` literal).
-                if bin.operator == "+" or bin.operator == "-":
-                    if (types.is_pointer_type(harm_lt) or types.is_ref_type(harm_lt)) and control_flow.ast_is_integer_literal(bin.right):
-                        right = int_literal_to_context_type(bin.right, types.primitive("int"), right)
-                    else if (types.is_pointer_type(harm_rt) or types.is_ref_type(harm_rt)) and control_flow.ast_is_integer_literal(bin.left):
-                        left = int_literal_to_context_type(bin.left, types.primitive("int"), left)
-                if types.is_integer_type(harm_rt):
-                    let hl = int_literal_to_context_type(bin.left, harm_rt, left)
-                    if hl != left:
-                        left = hl
-                    # The host lowers each binary operand with the peer's type
-                    # as its expected type (`lower_expression(... expected_type:)`),
-                    # so an `if` expression operand takes the peer's type on both
-                    # branches (`(if c: 1 else: 0) != ptr_uint_value`).
-                    left = conditional_value_to_context_type(ctx, bin.left, harm_rt, left)
-                if types.is_integer_type(harm_lt):
-                    let hr = int_literal_to_context_type(bin.right, harm_lt, right)
-                    if hr != right:
-                        right = hr
-                    right = conditional_value_to_context_type(ctx, bin.right, harm_lt, right)
-                # The same expected-type propagation for a float peer: an `if`
-                # expression operand takes the peer's type on both branches
-                # (`(if c: W else: H) / sqrtf(x)` casts each branch to float).
-                if types.is_float_type(harm_rt):
-                    left = conditional_value_to_context_type(ctx, bin.left, harm_rt, left)
-                if types.is_float_type(harm_lt):
-                    right = conditional_value_to_context_type(ctx, bin.right, harm_lt, right)
-                # The recorded result type carries the host's propagated expected
-                # type: a bare float literal in an arithmetic binary takes it,
-                # so `next_double`'s `val / 4294967296.0` promotes both operands
-                # to `double` (the analyzer's hint propagation records the
-                # contextual type).  An explicit `f`/`d` suffix keeps its own
-                # type.
-                if type_helpers.is_pure_arithmetic_operator(bin.operator) and types.is_float_type(result_ty):
-                    if is_bare_float_literal(bin.left) and not types.type_equals(ir_expr_type(left), result_ty):
-                        left = float_literal_to_context_type(bin.left, result_ty, left)
-                    if is_bare_float_literal(bin.right) and not types.type_equals(ir_expr_type(right), result_ty):
-                        right = float_literal_to_context_type(bin.right, result_ty, right)
-                # Re-type a *bare* float literal operand against a float peer
-                # (`payload.value == 2.718…` with a `double` peer stays a double
-                # literal — the host's contextual literal inference).  An explicit
-                # `f`/`d` suffix keeps its own type and is cast by the promotion
-                # below instead; without this the literal keeps its default
-                # `float` type and the cast truncates it.
-                let flt = ir_expr_type(left)
-                let frt = ir_expr_type(right)
-                if types.is_float_type(frt) and types.is_float_type(flt):
-                    if is_bare_float_literal(bin.left):
-                        left = float_literal_to_context_type(bin.left, frt, left)
-                    if is_bare_float_literal(bin.right):
-                        right = float_literal_to_context_type(bin.right, flt, right)
-                # Balance mixed-width integer and int/float operands: cast the
-                # narrower operand up to the common type, matching Ruby's
-                # usual-arithmetic-conversion casts (redundant casts are elided
-                # by the C backend).  For arithmetic operators the common type is
-                # also the result type, which the analyzer may have under-widened.
-                # Enum/flags operands unwrap to their integer backing first, so
-                # enum comparisons cast to the backing type like Ruby.
-                let bal_lt = type_helpers.enum_backing_or_self(ctx, ir_expr_type(left))
-                let bal_rt = type_helpers.enum_backing_or_self(ctx, ir_expr_type(right))
-                match type_helpers.promoted_binary_operand_type(bin.operator, bal_lt, bal_rt):
-                    Option.some as op_ty:
-                        left = type_helpers.cast_to_type(left, op_ty.value)
-                        right = type_helpers.cast_to_type(right, op_ty.value)
-                        if type_helpers.is_pure_arithmetic_operator(bin.operator):
-                            result_ty = op_ty.value
-                    Option.none:
-                        pass
-                return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = result_ty))
+                return lower_binary_expr(ctx, ep, bin.operator, bin.left, bin.right)
             ast.Expr.expr_unary_op as un:
                 let operand = lower_expr(ctx, un.operand)
                 let op_ty = ir_expr_type(operand)
@@ -5762,69 +5507,7 @@ public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[
             ast.Expr.expr_detach as dt:
                 return parallel_mod.lower_detach_expr(ctx, dt.expression, ep)
             ast.Expr.expr_specialization as spec:
-                match read(spec.callee):
-                    ast.Expr.expr_identifier as id:
-                        if id.name == "zero" and spec.arguments.len == 1:
-                            let z_ty = resolve_type_ref(ctx, read(spec.arguments.data + 0).value)
-                            return alloc_expr(ir.Expr.expr_zero_init(ty = z_ty))
-                        if id.name == "default" and spec.arguments.len == 1:
-                            let t_ty = qualify_type(ctx, resolve_type_ref(ctx, read(spec.arguments.data + 0).value))
-                            match resolve_method_info(ctx, t_ty, "default"):
-                                Option.some as smi:
-                                    if smi.value.method_kind == ast.MethodKind.mk_static:
-                                        var empty_args = span[ast.Argument]()
-                                        return lower_static_call_args(ctx, smi.value, empty_args)
-                                Option.none:
-                                    pass
-                        # A generic function reference used as a value:
-                        # `always_allow_transition[State, Event, Context]` passed
-                        # as an `fn(...)` argument.  Monomorphize it explicitly and
-                        # refer to the specialized C function.
-                        match find_generic_function(ctx, id.name):
-                            Option.some as vgm:
-                                match vgm.value.decl:
-                                    ast.Decl.decl_function as vfun:
-                                        if vfun.type_params.len > 0 and vfun.type_params.len == spec.arguments.len:
-                                            let vspec_key = specialization_key(ctx, vgm.value.module_name, id.name, spec.arguments)
-                                            if not ctx.specialization_cache.contains(vspec_key) and not ctx.spec_in_progress.contains(vspec_key):
-                                                # A function *reference* instantiates the
-                                                # binding but the host analyzer does not
-                                                # validate the referenced body (that is
-                                                # the `infer_call` path's job), so its
-                                                # nested calls are lowering-created.
-                                                ctx.next_spec_body_validated = Option[bool].some(value = false)
-                                                lower_and_cache_specialization(ctx, vgm.value, spec.arguments, vspec_key, ctx.pre_instantiated_context)
-                                                ctx.next_spec_body_validated = Option[bool].none
-                                            else:
-                                                # A reference is not a call; an actual
-                                                # call site elsewhere records the edge.
-                                                pass
-                                            var fn_ty = type_helpers.expr_type(ctx, ep)
-                                            let vcached = ctx.specialization_cache.get(vspec_key)
-                                            if vcached != null:
-                                                let sf = unsafe: read(vcached)
-                                                var ptypes = vec.Vec[types.Type].create()
-                                                var pnames = vec.Vec[str].create()
-                                                var vpi: ptr_uint = 0
-                                                while vpi < sf.params.len:
-                                                    unsafe:
-                                                        ptypes.push(read(sf.params.data + vpi).ty)
-                                                        pnames.push(read(sf.params.data + vpi).name)
-                                                    vpi += 1
-                                                fn_ty = types.Type.ty_function(name = id.name, params = ptypes.as_span(),
-                                                    return_type = types.alloc_type(sf.return_type),
-                                                    variadic = false,
-                                                    is_proc = false,
-                                                    param_names = pnames.as_span(),
-                                                )
-                                            return alloc_expr(ir.Expr.expr_name(name = vspec_key, ty = fn_ty, pointer = Option[bool].some(value = false)))
-                                    _:
-                                        pass
-                            Option.none:
-                                pass
-                    _:
-                        pass
-                return alloc_expr(ir.Expr.expr_name(name = "spec", ty = types.Type.ty_error, pointer = Option[bool].some(value = false)))
+                return lower_specialization_expr(ctx, ep, spec.callee, spec.arguments)
             ast.Expr.expr_match as me:
                 return lower_expression_match(ctx, me.scrutinee, me.arms, ep)
             ast.Expr.expr_range as rng:
@@ -5875,6 +5558,334 @@ var proc_counter: ptr_uint = 0
 ## with invoke/release/retain function pointers and a capture env pointer.  No-
 ## capture procs use null env; capturing procs use a heap-allocated env struct
 ## with ref-counting.
+function lower_identifier_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr], name: str) -> ptr[ir.Expr]:
+    # An inline foreign-mapping parameter bound to the argument's
+    # value (the host's `replacements`) wins over the locals.
+    let replacement = ctx.mapping_replacements.get(name)
+    if replacement != null:
+        return unsafe: read(replacement)
+    match type_helpers.find_local_binding(ctx, name):
+        Option.some as lb:
+            return lower_binding_read(ctx, lb.value)
+        Option.none:
+            if ctx.function_returns.contains(name) or ctx.analysis.functions.contains(name):
+                let fn_c_name = naming.qualified_c_name(ctx.module_name, name)
+                var fn_ty = type_helpers.expr_type(ctx, ep)
+                match fn_ty:
+                    types.Type.ty_function as fnt:
+                        # Only wrap in proc struct when the expected type
+                        # is a proc (is_proc == true).  For plain fn
+                        # fields, pass the function pointer directly.
+                        if fnt.is_proc:
+                            return lower_fn_to_proc(ctx, fn_c_name, fn_ty, "")
+                        # The analyzer records a bare function reference
+                        # with an empty type name (the contextual
+                        # field/signature form); the host's binding type
+                        # carries the function's own name (`fn <name>`).
+                        if fnt.name.len == 0:
+                            fn_ty = types.Type.ty_function(name = name, params = fnt.params, return_type = fnt.return_type, variadic = fnt.variadic, is_proc = false, param_names = fnt.param_names)
+                    _:
+                        pass
+                return alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = fn_ty, pointer = Option[bool].some(value = false)))
+            if ctx.analysis.events.contains(name):
+                # The event's global is emitted under its
+                # module-qualified linkage name, and its read type is
+                # the event itself (`Types::Event`) — the host's
+                # binding carries `Types::Event`, not a plain named
+                # type.
+                var ev_info = ensure_event_runtime(ctx, "", name)
+                var ev_payload: ptr[types.Type]? = null
+                if ev_info.has_payload:
+                    ev_payload = types.alloc_type(ev_info.payload_type)
+                let ev_ty = types.Type.ty_event(
+                    name = name,
+                    capacity = ev_info.capacity,
+                    payload_type = ev_payload,
+                    linkage_name = ev_info.event_c_name,
+                )
+                return alloc_expr(ir.Expr.expr_name(name = naming.qualified_c_name(ctx.module_name, name), ty = ev_ty, pointer = Option[bool].some(value = false)))
+            match type_helpers.find_qualified_constant(ctx, name):
+                Option.some as qc:
+                    # A module-level value's read carries its *declared*
+                    # storage type (the host's binding type), not the
+                    # contextually-inferred type: stripping the
+                    # `Nullable` here would let a guarded global read
+                    # masquerade as non-null in the IR (the
+                    # `opaque_backing_names` global).
+                    var value_ty = type_helpers.expr_type(ctx, ep)
+                    let declared_ty_ptr = ctx.analysis.value_types.get(name)
+                    if declared_ty_ptr != null:
+                        value_ty = unsafe: read(declared_ty_ptr)
+                    return alloc_expr(ir.Expr.expr_name(name = qc.value, ty = value_ty, pointer = Option[bool].some(value = false)))
+                Option.none:
+                    pass
+            return alloc_expr(ir.Expr.expr_name(name = name, ty = type_helpers.expr_type(ctx, ep), pointer = Option[bool].some(value = false)))
+
+
+function lower_binary_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr], operator: str, left_ast: ptr[ast.Expr], right_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    if (operator == "and" or operator == "or") and ctx.hoist_mode != HoistMode.hm_off:
+        return lower_short_circuit_binary(ctx, operator, left_ast, right_ast, ep)
+    var left = lower_expr(ctx, left_ast)
+    var right: ptr[ir.Expr]
+    if operator == "and" or operator == "or":
+        let hoist_saved = suspend_stmt_setup(ctx)
+        var right_refs = type_helpers.lowering_flow_refinements(ctx, left_ast, operator == "and")
+        let right_flow_saved = type_helpers.push_flow_refinements(ctx, ref_of(right_refs))
+        right = lower_expr(ctx, right_ast)
+        type_helpers.restore_flow_refinements(ctx, right_flow_saved)
+        resume_stmt_setup(ctx, hoist_saved)
+    else:
+        right = lower_expr(ctx, right_ast)
+    # A bare `null` compared against a nullable value takes the other
+    # operand's type — the host propagates the left operand's type as
+    # the right operand's expected type — so `source == null` types
+    # the literal `Nullable(ptr[ubyte])` rather than `void`.
+    if operator == "==" or operator == "!=":
+        right = null_literal_to_context_type(right_ast, ir_expr_type(left), right)
+        left = null_literal_to_context_type(left_ast, ir_expr_type(right), left)
+    # Struct equality on a raw-binding struct (`s_drag_body !=
+    # b3.b3_nullBodyId`): the host keeps the `IR::Binary` and its C
+    # backend synthesizes the `mt_struct_eq_<T>` helper from the
+    # type's fields.  Raw modules lower no declarations, so register
+    # the type's layout for the backend's helper synthesis.
+    if operator == "==" or operator == "!=":
+        let eq_ty = ir_expr_type(left)
+        if is_equality_struct_type(ctx, eq_ty) and types.type_equals(eq_ty, ir_expr_type(right)) and register_external_struct_layout(ctx, eq_ty):
+            return alloc_expr(ir.Expr.expr_binary(operator = operator, left = left, right = right, ty = ctx.bool_ty))
+    # `str + str` concatenates into a thread-local scratch buffer.
+    if operator == "+" and type_helpers.is_str_typed(ir_expr_type(left)) and type_helpers.is_str_typed(ir_expr_type(right)):
+        var concat_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            concat_args.push(read(left))
+            concat_args.push(read(right))
+        return alloc_expr(ir.Expr.expr_call(callee = "mt_str_concat", arguments = concat_args.as_span(), ty = types.Type.ty_str))
+    var result_ty = type_helpers.expr_type(ctx, ep)
+    # A comparison is always `bool` (the host's `infer_expression_type`
+    # BinaryOp arm); the analyzer can miss it inside a constant
+    # initializer (`not (glfwInit() != 0)`).
+    if operator == "==" or operator == "!=" or operator == "<" or operator == "<=" or operator == ">" or operator == ">=":
+        result_ty = ctx.bool_ty
+    # A simd arithmetic expression falls back to its left operand's
+    # type (the host's BinaryOp inference chain has no Simd promotion
+    # rule: `3.0 * a` is `float`, `a * 3.0` keeps the simd type); the
+    # analyzer records the Simd operand's type instead.
+    if types.is_simd_type(result_ty):
+        result_ty = ir_expr_type(left)
+    # A recorded vec/mat/quat result whose operands lower as scalars
+    # (field arithmetic such as `this.x - other.x`) is scalar in the
+    # host's lowering inference: no vector rule matches the operands,
+    # so `common_numeric_type` (else the left type) wins.
+    if type_helpers.is_vec_math_name(type_helpers.nominal_type_name(result_ty)) and not (
+        type_helpers.is_vec_math_name(type_helpers.nominal_type_name(ir_expr_type(left))) or type_helpers.is_vec_math_name(type_helpers.nominal_type_name(ir_expr_type(right)))
+    ):
+        match type_helpers.common_numeric_type(ir_expr_type(left), ir_expr_type(right)):
+            Option.some as common_ty:
+                result_ty = common_ty.value
+            Option.none:
+                result_ty = ir_expr_type(left)
+    # Bitwise operators on one nominal type (`Flags.a | Flags.b`):
+    # const initializers can miss the analyzer's type map, so the
+    # host re-infers from the operands; equal operands give that type.
+    if types.is_error(result_ty) and (operator == "|" or operator == "&" or operator == "^"):
+        let blt = ir_expr_type(left)
+        let brt = ir_expr_type(right)
+        if not types.is_error(blt) and types.type_equals(blt, brt):
+            result_ty = blt
+    # Vector/matrix/quaternion binary arithmetic: lower to
+    # component-wise aggregate literal BEFORE type promotion, so
+    # scalar operands are not cast to the vector result type.
+    # Only apply when at least one operand is an actual vector type
+    # (the analyzer may mis-type float sub-expressions as vec3
+    # inside methods on vec types).
+    let lt = ir_expr_type(left)
+    let rt = ir_expr_type(right)
+    let rn = type_helpers.nominal_type_name(result_ty)
+    if type_helpers.is_vec_math_name(rn) and (
+        type_helpers.is_vec_math_name(type_helpers.nominal_type_name(lt)) or type_helpers.is_vec_math_name(type_helpers.nominal_type_name(rt))
+    ) and (
+        operator == "+" or operator == "-" or operator == "*" or operator == "/"
+    ):
+        return type_helpers.lower_vec_binary_op(ctx, operator, left, right, result_ty, rn)
+    # Pointer arithmetic (`p + i` / `p - i`) yields the pointer
+    # operand's concrete type; the analyzer's generically-recorded
+    # type may have dropped its arguments inside a monomorphized body.
+    # A nullable operand contributes its *unwrapped* pointer: the
+    # host's flow-refined operand type makes `blocks + i` on a
+    # guard-bound `ptr[T]?` a `ptr[T]` (its `pointer_arithmetic_result`
+    # returns the refined left type), and the C arithmetic runs on the
+    # pointer either way — carrying the `Nullable` here overrode the
+    # analyzer's refined result.
+    if operator == "+" or operator == "-":
+        let left_ty = ir_expr_type(left)
+        if types.is_raw_pointer(left_ty) and not types.is_raw_pointer(ir_expr_type(right)):
+            result_ty = if types.is_nullable_type(left_ty): types.unwrap_nullable(left_ty) else: left_ty
+    # Integer arithmetic where the analyzer's recorded type is not an
+    # integer (e.g. `text.len - n`, where `.len` is typed `ptr_uint`
+    # by lowering but the analyzer recorded a wrong type): trust the
+    # lowered operand types when both are the same integer type.
+    if type_helpers.is_arithmetic_operator(operator) and not is_integer_scrutinee(result_ty):
+        let lt = ir_expr_type(left)
+        let rt = ir_expr_type(right)
+        if is_integer_scrutinee(lt) and types.type_to_string(lt) == types.type_to_string(rt):
+            result_ty = lt
+        # `<wider-int-expr> + <int literal>` (e.g. `ptr_uint + 2`): the
+        # analyzer recorded a non-integer result, and one operand is a
+        # plain `int` literal.  Adopt the other operand's wider integer
+        # type so the result matches the dominant operand.
+        else if is_integer_scrutinee(lt) and types.type_to_string(rt) == "int":
+            result_ty = lt
+        else if is_integer_scrutinee(rt) and types.type_to_string(lt) == "int":
+            result_ty = rt
+    # Re-type an integer literal against the other operand's integer
+    # type (e.g. `b == 0` where `b: ubyte`, `p + 1` where `p: ptr_uint`),
+    # mirroring the host's `harmonize_binary_integer_literal_types`.
+    # The literal is recognized *syntactically* — not by its inferred
+    # type — because the inference itself follows the peer
+    # (`std/noise.mt`'s `state * 6364136223846793005` types the
+    # constant `ulong`, and a value > 2^31 is `long` on its own).
+    let harm_lt = ir_expr_type(left)
+    let harm_rt = ir_expr_type(right)
+    # Pointer arithmetic: the host lowers the integer offset with the
+    # pointer as its expected type, which falls back to the literal's
+    # default `int` — an explicit `0z` suffix is ignored
+    # (`paths + 0z` carries an `int` literal).
+    if operator == "+" or operator == "-":
+        if (types.is_pointer_type(harm_lt) or types.is_ref_type(harm_lt)) and control_flow.ast_is_integer_literal(right_ast):
+            right = int_literal_to_context_type(right_ast, types.primitive("int"), right)
+        else if (types.is_pointer_type(harm_rt) or types.is_ref_type(harm_rt)) and control_flow.ast_is_integer_literal(left_ast):
+            left = int_literal_to_context_type(left_ast, types.primitive("int"), left)
+    if types.is_integer_type(harm_rt):
+        let hl = int_literal_to_context_type(left_ast, harm_rt, left)
+        if hl != left:
+            left = hl
+        # The host lowers each binary operand with the peer's type
+        # as its expected type (`lower_expression(... expected_type:)`),
+        # so an `if` expression operand takes the peer's type on both
+        # branches (`(if c: 1 else: 0) != ptr_uint_value`).
+        left = conditional_value_to_context_type(ctx, left_ast, harm_rt, left)
+    if types.is_integer_type(harm_lt):
+        let hr = int_literal_to_context_type(right_ast, harm_lt, right)
+        if hr != right:
+            right = hr
+        right = conditional_value_to_context_type(ctx, right_ast, harm_lt, right)
+    # The same expected-type propagation for a float peer: an `if`
+    # expression operand takes the peer's type on both branches
+    # (`(if c: W else: H) / sqrtf(x)` casts each branch to float).
+    if types.is_float_type(harm_rt):
+        left = conditional_value_to_context_type(ctx, left_ast, harm_rt, left)
+    if types.is_float_type(harm_lt):
+        right = conditional_value_to_context_type(ctx, right_ast, harm_lt, right)
+    # The recorded result type carries the host's propagated expected
+    # type: a bare float literal in an arithmetic binary takes it,
+    # so `next_double`'s `val / 4294967296.0` promotes both operands
+    # to `double` (the analyzer's hint propagation records the
+    # contextual type).  An explicit `f`/`d` suffix keeps its own
+    # type.
+    if type_helpers.is_pure_arithmetic_operator(operator) and types.is_float_type(result_ty):
+        if is_bare_float_literal(left_ast) and not types.type_equals(ir_expr_type(left), result_ty):
+            left = float_literal_to_context_type(left_ast, result_ty, left)
+        if is_bare_float_literal(right_ast) and not types.type_equals(ir_expr_type(right), result_ty):
+            right = float_literal_to_context_type(right_ast, result_ty, right)
+    # Re-type a *bare* float literal operand against a float peer
+    # (`payload.value == 2.718…` with a `double` peer stays a double
+    # literal — the host's contextual literal inference).  An explicit
+    # `f`/`d` suffix keeps its own type and is cast by the promotion
+    # below instead; without this the literal keeps its default
+    # `float` type and the cast truncates it.
+    let flt = ir_expr_type(left)
+    let frt = ir_expr_type(right)
+    if types.is_float_type(frt) and types.is_float_type(flt):
+        if is_bare_float_literal(left_ast):
+            left = float_literal_to_context_type(left_ast, frt, left)
+        if is_bare_float_literal(right_ast):
+            right = float_literal_to_context_type(right_ast, flt, right)
+    # Balance mixed-width integer and int/float operands: cast the
+    # narrower operand up to the common type, matching Ruby's
+    # usual-arithmetic-conversion casts (redundant casts are elided
+    # by the C backend).  For arithmetic operators the common type is
+    # also the result type, which the analyzer may have under-widened.
+    # Enum/flags operands unwrap to their integer backing first, so
+    # enum comparisons cast to the backing type like Ruby.
+    let bal_lt = type_helpers.enum_backing_or_self(ctx, ir_expr_type(left))
+    let bal_rt = type_helpers.enum_backing_or_self(ctx, ir_expr_type(right))
+    match type_helpers.promoted_binary_operand_type(operator, bal_lt, bal_rt):
+        Option.some as op_ty:
+            left = type_helpers.cast_to_type(left, op_ty.value)
+            right = type_helpers.cast_to_type(right, op_ty.value)
+            if type_helpers.is_pure_arithmetic_operator(operator):
+                result_ty = op_ty.value
+        Option.none:
+            pass
+    return alloc_expr(ir.Expr.expr_binary(operator = operator, left = left, right = right, ty = result_ty))
+
+
+function lower_specialization_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr], callee: ptr[ast.Expr], arguments: span[ast.TypeArgument]) -> ptr[ir.Expr]:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                if id.name == "zero" and arguments.len == 1:
+                    let z_ty = resolve_type_ref(ctx, read(arguments.data + 0).value)
+                    return alloc_expr(ir.Expr.expr_zero_init(ty = z_ty))
+                if id.name == "default" and arguments.len == 1:
+                    let t_ty = qualify_type(ctx, resolve_type_ref(ctx, read(arguments.data + 0).value))
+                    match resolve_method_info(ctx, t_ty, "default"):
+                        Option.some as smi:
+                            if smi.value.method_kind == ast.MethodKind.mk_static:
+                                var empty_args = span[ast.Argument]()
+                                return lower_static_call_args(ctx, smi.value, empty_args)
+                        Option.none:
+                            pass
+                # A generic function reference used as a value:
+                # `always_allow_transition[State, Event, Context]` passed
+                # as an `fn(...)` argument.  Monomorphize it explicitly and
+                # refer to the specialized C function.
+                match find_generic_function(ctx, id.name):
+                    Option.some as vgm:
+                        match vgm.value.decl:
+                            ast.Decl.decl_function as vfun:
+                                if vfun.type_params.len > 0 and vfun.type_params.len == arguments.len:
+                                    let vspec_key = specialization_key(ctx, vgm.value.module_name, id.name, arguments)
+                                    if not ctx.specialization_cache.contains(vspec_key) and not ctx.spec_in_progress.contains(vspec_key):
+                                        # A function *reference* instantiates the
+                                        # binding but the host analyzer does not
+                                        # validate the referenced body (that is
+                                        # the `infer_call` path's job), so its
+                                        # nested calls are lowering-created.
+                                        ctx.next_spec_body_validated = Option[bool].some(value = false)
+                                        lower_and_cache_specialization(ctx, vgm.value, arguments, vspec_key, ctx.pre_instantiated_context)
+                                        ctx.next_spec_body_validated = Option[bool].none
+                                    else:
+                                        # A reference is not a call; an actual
+                                        # call site elsewhere records the edge.
+                                        pass
+                                    var fn_ty = type_helpers.expr_type(ctx, ep)
+                                    let vcached = ctx.specialization_cache.get(vspec_key)
+                                    if vcached != null:
+                                        let sf = unsafe: read(vcached)
+                                        var ptypes = vec.Vec[types.Type].create()
+                                        var pnames = vec.Vec[str].create()
+                                        var vpi: ptr_uint = 0
+                                        while vpi < sf.params.len:
+                                            unsafe:
+                                                ptypes.push(read(sf.params.data + vpi).ty)
+                                                pnames.push(read(sf.params.data + vpi).name)
+                                            vpi += 1
+                                        fn_ty = types.Type.ty_function(name = id.name, params = ptypes.as_span(),
+                                            return_type = types.alloc_type(sf.return_type),
+                                            variadic = false,
+                                            is_proc = false,
+                                            param_names = pnames.as_span(),
+                                        )
+                                    return alloc_expr(ir.Expr.expr_name(name = vspec_key, ty = fn_ty, pointer = Option[bool].some(value = false)))
+                            _:
+                                pass
+                    Option.none:
+                        pass
+            _:
+                pass
+        return alloc_expr(ir.Expr.expr_name(name = "spec", ty = types.Type.ty_error, pointer = Option[bool].some(value = false)))
+
+
 function lower_proc_expr(ctx: ref[LoweringContext], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body_ptr: ptr[ast.Stmt], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let proc_ty = type_helpers.expr_type(ctx, ep)
     var ret_ty = ctx.void_ty

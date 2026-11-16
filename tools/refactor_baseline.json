@@ -338,7 +338,7 @@
       "projects/mtc/src/mtc/lowering/async.mt:322:function:bool_type",
       "projects/mtc/src/mtc/lowering/async.mt:326:function:int_type",
       "projects/mtc/src/mtc/lowering/async.mt:330:function:void_type",
-      "projects/mtc/src/mtc/lowering/lowering.mt:56:struct:LoweringError",
+      "projects/mtc/src/mtc/lowering/lowering.mt:54:struct:LoweringError",
       "projects/mtc/src/mtc/lsp/navigation.mt:750:function:analysis_for_document",
       "projects/mtc/src/mtc/lsp/navigation.mt:761:function:ast_for_document",
       "projects/mtc/src/mtc/lsp/protocol.mt:108:function:read_message",
@@ -1145,8 +1145,8 @@
     ]
   },
   "sizes": {
-    "total_code": 123702,
-    "functions_over_limit": 32,
+    "total_code": 123707,
+    "functions_over_limit": 31,
     "files_over_limit": 11,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
@@ -1558,10 +1558,10 @@
         "max_function": 84
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 18410,
-        "code": 13565,
+        "lines": 18421,
+        "code": 13570,
         "max_line": 483,
-        "max_function": 459
+        "max_function": 331
       },
       "projects/mtc/src/mtc/lowering/match.mt": {
         "lines": 1569,
