@@ -6097,6 +6097,12 @@ function uses_format_helpers(program: ir.Program) -> bool:
 
 
 function emit_format_string_helpers(e: ref[Emitter]) -> void:
+    emit_format_string_core(e)
+    emit_format_string_length_helpers(e)
+    emit_format_string_append_helpers(e)
+
+
+function emit_format_string_core(e: ref[Emitter]) -> void:
     emit_line(e, "static mt_str mt_format_str_make(uintptr_t len) {")
     emit_line(e, "  char* data = (char*)malloc((size_t)(len + 1));")
     emit_line(e, "  if (data == NULL) mt_fatal(\"format string allocation failed\");")
@@ -6195,6 +6201,9 @@ function emit_format_string_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  return mt_format_append_ptr_uint(target, offset, (uintptr_t)value);")
     emit_line(e, "}")
     emit_line(e, "")
+
+
+function emit_format_string_length_helpers(e: ref[Emitter]) -> void:
     # --- Additional length helpers ---
     emit_line(e, "static uintptr_t mt_format_cstr_len(const char* value) { return (uintptr_t)strlen(value); }")
     emit_line(e, "static uintptr_t mt_format_bool_len(bool value) { return value ? 4 : 5; }")
@@ -6223,6 +6232,9 @@ function emit_format_string_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  if (written < 0) mt_fatal(\"format string could not measure double precision\");")
     emit_line(e, "  return (uintptr_t)written;")
     emit_line(e, "}")
+
+
+function emit_format_string_append_helpers(e: ref[Emitter]) -> void:
     # --- Additional append helpers ---
     emit_line(e, "static uintptr_t mt_format_append_cstr(mt_str target, uintptr_t offset, const char* value) {")
     emit_line(e, "  uintptr_t len = mt_format_cstr_len(value);")

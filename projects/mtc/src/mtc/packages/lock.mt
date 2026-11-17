@@ -959,54 +959,23 @@ function load_context(path: str) -> Result[LockContext, string.String]:
             document = parse_payload.value
     defer: document.release()
 
-    var schema_version: int = 0
-    match document.get_integer("schema_version"):
-        Option.some as schema_payload:
-            schema_version = int<-schema_payload.value
-        Option.none:
-            var message = string.String.from_str("unsupported package.lock schema version nil; expected 1 or 2")
+    var schema_version: int
+    match parse_lock_schema_version(ref_of(document)):
+        Result.failure as schema_failure:
             lock_path.release()
             root_manifest.release()
-            return context_error(message)
-    if schema_version != 1 and schema_version != 2:
-        var message = string.String.from_str("unsupported package.lock schema version ")
-        fmt.append_int(ref_of(message), schema_version)
-        message.append("; expected 1 or 2")
-        lock_path.release()
-        root_manifest.release()
-        return context_error(message)
+            return context_error(schema_failure.error)
+        Result.success as schema_payload:
+            schema_version = schema_payload.value
 
-    var root_package = string.String.create()
-    match document.get_string("root_package"):
-        Option.some as root_payload:
-            root_package.append(root_payload.value)
-        Option.none:
-            pass
-    if root_package.len() == 0:
-        var message = string.String.from_str("package.lock missing root_package: ")
-        message.append(lock_path.as_str())
-        root_package.release()
-        lock_path.release()
-        root_manifest.release()
-        return context_error(message)
-    if not root_package.as_str().equal(root_manifest.package_name.as_str()):
-        var message = string.String.from_str("package.lock root package ")
-        message.append(root_package.as_str())
-        message.append(" does not match package manifest ")
-        message.append(root_manifest.package_name.as_str())
-        root_package.release()
-        lock_path.release()
-        root_manifest.release()
-        return context_error(message)
-
-    let packages = document.get_array_table("package")
-    if packages == null or unsafe: read(packages).len() == 0:
-        var message = string.String.from_str("package.lock missing [[package]] entries: ")
-        message.append(lock_path.as_str())
-        root_package.release()
-        lock_path.release()
-        root_manifest.release()
-        return context_error(message)
+    var root_package: string.String
+    match validate_lock_root_package(ref_of(document), lock_path.as_str(), ref_of(root_manifest)):
+        Result.failure as root_failure:
+            lock_path.release()
+            root_manifest.release()
+            return context_error(root_failure.error)
+        Result.success as root_payload:
+            root_package = root_payload.value
 
     var root_package_id: string.String
     if schema_version == 1:
@@ -1022,20 +991,100 @@ function load_context(path: str) -> Result[LockContext, string.String]:
                 root_package_id = id_payload.value
     root_package.release()
 
+    let packages = document.get_array_table("package")
+    var records: vec.Vec[LockRecord]
+    match parse_lock_records(packages, schema_version, lock_path.as_str()):
+        Result.failure as records_failure:
+            root_package_id.release()
+            lock_path.release()
+            root_manifest.release()
+            return context_error(records_failure.error)
+        Result.success as records_payload:
+            records = records_payload.value
+
+    return Result[LockContext, string.String].success(
+        value = LockContext(
+            root_manifest = root_manifest,
+            lock_path = lock_path,
+            root_package_id = root_package_id,
+            schema_version = schema_version,
+            records = records,
+        )
+    )
+
+
+function parse_lock_schema_version(document: ref[toml.Document]) -> Result[int, string.String]:
+    var schema_version: int = 0
+    match document.get_integer("schema_version"):
+        Option.some as schema_payload:
+            schema_version = int<-schema_payload.value
+        Option.none:
+            return Result[int, string.String].failure(
+                error = string.String.from_str("unsupported package.lock schema version nil; expected 1 or 2")
+            )
+    if schema_version != 1 and schema_version != 2:
+        var message = string.String.from_str("unsupported package.lock schema version ")
+        fmt.append_int(ref_of(message), schema_version)
+        message.append("; expected 1 or 2")
+        return Result[int, string.String].failure(error = message)
+    return Result[int, string.String].success(value = schema_version)
+
+
+## Validate the lock's root package and its `[[package]]` table; returns the
+## root package name for the schema-version-dependent id resolution.
+function validate_lock_root_package(
+    document: ref[toml.Document],
+    lock_path: str,
+    root_manifest: ref[manifest.PackageManifest],
+) -> Result[string.String, string.String]:
+    var root_package = string.String.create()
+    match document.get_string("root_package"):
+        Option.some as root_payload:
+            root_package.append(root_payload.value)
+        Option.none:
+            pass
+    if root_package.len() == 0:
+        var message = string.String.from_str("package.lock missing root_package: ")
+        message.append(lock_path)
+        root_package.release()
+        return Result[string.String, string.String].failure(error = message)
+    if not root_package.as_str().equal(root_manifest.package_name.as_str()):
+        var message = string.String.from_str("package.lock root package ")
+        message.append(root_package.as_str())
+        message.append(" does not match package manifest ")
+        message.append(root_manifest.package_name.as_str())
+        root_package.release()
+        return Result[string.String, string.String].failure(error = message)
+
+    let packages = document.get_array_table("package")
+    if packages == null or unsafe: read(packages).len() == 0:
+        var message = string.String.from_str("package.lock missing [[package]] entries: ")
+        message.append(lock_path)
+        root_package.release()
+        return Result[string.String, string.String].failure(error = message)
+    return Result[string.String, string.String].success(value = root_package)
+
+
+function parse_lock_records(
+    packages: ptr[toml.ArrayTable]?,
+    schema_version: int,
+    lock_path: str,
+) -> Result[vec.Vec[LockRecord], string.String]:
+    let table = packages else:
+        var missing = string.String.from_str("package.lock missing [[package]] entries: ")
+        missing.append(lock_path)
+        return Result[vec.Vec[LockRecord], string.String].failure(error = missing)
     var records = vec.Vec[LockRecord].create()
     var entry_index: ptr_uint = 0
-    while entry_index < unsafe: read(packages).len():
-        let package_entry = unsafe: read(packages).get(entry_index) else:
+    while entry_index < unsafe: read(table).len():
+        let package_entry = unsafe: read(table).get(entry_index) else:
             break
         var package_object = unsafe: read(package_entry)
         var package_name: string.String
-        match required_string(ref_of(package_object), "name", lock_path.as_str()):
+        match required_string(ref_of(package_object), "name", lock_path):
             Result.failure as name_failure:
                 context_release_records(ref_of(records))
-                root_package_id.release()
-                lock_path.release()
-                root_manifest.release()
-                return context_error(name_failure.error)
+                return Result[vec.Vec[LockRecord], string.String].failure(error = name_failure.error)
             Result.success as name_payload:
                 package_name = name_payload.value
 
@@ -1043,14 +1092,11 @@ function load_context(path: str) -> Result[LockContext, string.String]:
         if schema_version == 1:
             instance_id = string.String.from_str(package_name.as_str())
         else:
-            match required_string(ref_of(package_object), "instance_id", lock_path.as_str()):
+            match required_string(ref_of(package_object), "instance_id", lock_path):
                 Result.failure as instance_failure:
                     package_name.release()
                     context_release_records(ref_of(records))
-                    root_package_id.release()
-                    lock_path.release()
-                    root_manifest.release()
-                    return context_error(instance_failure.error)
+                    return Result[vec.Vec[LockRecord], string.String].failure(error = instance_failure.error)
                 Result.success as instance_payload:
                     instance_id = instance_payload.value
 
@@ -1058,56 +1104,44 @@ function load_context(path: str) -> Result[LockContext, string.String]:
             var message = string.String.from_str("duplicate package instance ")
             message.append(instance_id.as_str())
             message.append(" in ")
-            message.append(lock_path.as_str())
+            message.append(lock_path)
             instance_id.release()
             package_name.release()
             context_release_records(ref_of(records))
-            root_package_id.release()
-            lock_path.release()
-            root_manifest.release()
-            return context_error(message)
+            return Result[vec.Vec[LockRecord], string.String].failure(error = message)
 
         var identity: pkg_source.SourceIdentity
-        match identity_from_lock(ref_of(package_object), lock_path.as_str()):
+        match identity_from_lock(ref_of(package_object), lock_path):
             Result.failure as identity_failure:
                 instance_id.release()
                 package_name.release()
                 context_release_records(ref_of(records))
-                root_package_id.release()
-                lock_path.release()
-                root_manifest.release()
-                return context_error(identity_failure.error)
+                return Result[vec.Vec[LockRecord], string.String].failure(error = identity_failure.error)
             Result.success as identity_payload:
                 identity = identity_payload.value
 
         var manifest_path: string.String
-        match required_string(ref_of(package_object), "manifest_path", lock_path.as_str()):
+        match required_string(ref_of(package_object), "manifest_path", lock_path):
             Result.failure as manifest_failure:
                 identity.release()
                 instance_id.release()
                 package_name.release()
                 context_release_records(ref_of(records))
-                root_package_id.release()
-                lock_path.release()
-                root_manifest.release()
-                return context_error(manifest_failure.error)
+                return Result[vec.Vec[LockRecord], string.String].failure(error = manifest_failure.error)
             Result.success as manifest_payload:
                 manifest_path = paths.absolute_path(manifest_payload.value.as_str())
                 manifest_payload.value.release()
 
         var dependency_ids: StringList
         let dependency_key = if schema_version == 1: "dependencies" else: "dependency_ids"
-        match normalize_dependency_ids(ref_of(package_object), dependency_key, lock_path.as_str()):
+        match normalize_dependency_ids(ref_of(package_object), dependency_key, lock_path):
             Result.failure as ids_failure:
                 manifest_path.release()
                 identity.release()
                 instance_id.release()
                 package_name.release()
                 context_release_records(ref_of(records))
-                root_package_id.release()
-                lock_path.release()
-                root_manifest.release()
-                return context_error(ids_failure.error)
+                return Result[vec.Vec[LockRecord], string.String].failure(error = ids_failure.error)
             Result.success as ids_payload:
                 dependency_ids = ids_payload.value
 
@@ -1120,15 +1154,7 @@ function load_context(path: str) -> Result[LockContext, string.String]:
         ))
         entry_index += 1
 
-    return Result[LockContext, string.String].success(
-        value = LockContext(
-            root_manifest = root_manifest,
-            lock_path = lock_path,
-            root_package_id = root_package_id,
-            schema_version = schema_version,
-            records = records,
-        )
-    )
+    return Result[vec.Vec[LockRecord], string.String].success(value = records)
 
 
 function context_release_records(records: ref[vec.Vec[LockRecord]]) -> void:

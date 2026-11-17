@@ -342,12 +342,60 @@ function choose_registry_version(
             dependency_key = pkg_source.registry_dependency_key(parent_key.as_str(), package_name)
             parent_key.release()
 
+    var entries: vec.Vec[PackageVersionEntry]
+    match load_registry_versions(package_name):
+        Result.failure as versions_failure:
+            dependency_key.release()
+            return list_error(versions_failure.error)
+        Result.success as versions_payload:
+            entries = versions_payload.value
+
+    var matching = select_matching_versions(entries, dependency.version_req)
+    matching.sort_by(proc(left: ptr[PackageVersionEntry], right: ptr[PackageVersionEntry]) -> int:
+        -unsafe: read(left).parsed.compare_to(unsafe: read(right).parsed)
+    )
+
+    match locked_registry_version(resolver, dependency_key.as_str(), package_name):
+        Option.some as locked_payload:
+            var locked = locked_payload.value
+            matching = filter_locked_registry_versions(matching, locked.as_str())
+            if matching.len() == 0:
+                var message = locked_version_error(locked.as_str(), package_name, package, dependency.version_req)
+                locked.release()
+                dependency_key.release()
+                return list_error(message)
+            locked.release()
+        Option.none:
+            pass
+
+    if matching.len() == 0:
+        var message = no_matching_version_error(package_name, package, dependency.version_req)
+        dependency_key.release()
+        release_entries(ref_of(matching))
+        return list_error(message)
+
+    var result = visit_registry_candidates(
+        resolver,
+        ref_of(matching),
+        dependency_key.as_str(),
+        package_name,
+        package,
+        dependency,
+        state,
+    )
+    release_entries(ref_of(matching))
+    dependency_key.release()
+    return result
+
+
+function load_registry_versions(
+    package_name: str,
+) -> Result[vec.Vec[PackageVersionEntry], string.String]:
     var entries = vec.Vec[PackageVersionEntry].create()
     match registry.available_versions_default(package_name):
         Result.failure as versions_failure:
-            dependency_key.release()
             entries.release()
-            return list_error(versions_failure.error)
+            return Result[vec.Vec[PackageVersionEntry], string.String].failure(error = versions_failure.error)
         Result.success as versions_payload:
             var versions = versions_payload.value
             var i: ptr_uint = 0
@@ -363,8 +411,7 @@ function choose_registry_version(
                         label.release()
                         release_entries(ref_of(entries))
                         pkg_source.release_strings(ref_of(versions))
-                        dependency_key.release()
-                        return list_error(parse_failure.error)
+                        return Result[vec.Vec[PackageVersionEntry], string.String].failure(error = parse_failure.error)
                     Result.success as parsed_payload:
                         label.release()
                         entries.push(PackageVersionEntry(
@@ -373,13 +420,19 @@ function choose_registry_version(
                         ))
                 i += 1
             pkg_source.release_strings(ref_of(versions))
+    return Result[vec.Vec[PackageVersionEntry], string.String].success(value = entries)
 
+
+function select_matching_versions(
+    entries: vec.Vec[PackageVersionEntry],
+    version_req: Option[version.PackageVersionReq],
+) -> vec.Vec[PackageVersionEntry]:
     var matching = vec.Vec[PackageVersionEntry].create()
     var i: ptr_uint = 0
     while i < entries.len():
         let entry = entries.get(i) else:
             break
-        match dependency.version_req:
+        match version_req:
             Option.some as req:
                 if req.value.matches(unsafe: read(entry).parsed):
                     matching.push(unsafe: read(entry))
@@ -388,66 +441,83 @@ function choose_registry_version(
             Option.none:
                 matching.push(unsafe: read(entry))
         i += 1
-    entries.release()
+    var owned = entries
+    owned.release()
+    return matching
 
-    matching.sort_by(proc(left: ptr[PackageVersionEntry], right: ptr[PackageVersionEntry]) -> int:
-        -unsafe: read(left).parsed.compare_to(unsafe: read(right).parsed)
-    )
 
-    match locked_registry_version(resolver, dependency_key.as_str(), package_name):
-        Option.some as locked_payload:
-            var locked = locked_payload.value
-            var filtered = vec.Vec[PackageVersionEntry].create()
-            var fi: ptr_uint = 0
-            while fi < matching.len():
-                let entry = matching.get(fi) else:
-                    break
-                if unsafe: read(entry).text.as_str().equal(locked.as_str()):
-                    filtered.push(unsafe: read(entry))
-                else:
-                    release_entry(entry)
-                fi += 1
-            matching.release()
-            matching = filtered
-            if matching.len() == 0:
-                var message = string.String.from_str("locked registry version ")
-                message.append(locked.as_str())
-                message.append(" for ")
-                message.append(package_name)
-                message.append(" in ")
-                message.append(package.manifest_path.as_str())
-                message.append(" does not satisfy ")
-                match dependency.version_req:
-                    Option.some as req:
-                        var req_text = req.value.to_string()
-                        message.append(req_text.as_str())
-                        req_text.release()
-                    Option.none:
-                        message.append("?")
-                locked.release()
-                dependency_key.release()
-                return list_error(message)
-            locked.release()
+function filter_locked_registry_versions(
+    matching: vec.Vec[PackageVersionEntry],
+    locked: str,
+) -> vec.Vec[PackageVersionEntry]:
+    var filtered = vec.Vec[PackageVersionEntry].create()
+    var fi: ptr_uint = 0
+    while fi < matching.len():
+        let entry = matching.get(fi) else:
+            break
+        if unsafe: read(entry).text.as_str().equal(locked):
+            filtered.push(unsafe: read(entry))
+        else:
+            release_entry(entry)
+        fi += 1
+    var owned = matching
+    owned.release()
+    return filtered
+
+
+function locked_version_error(
+    locked: str,
+    package_name: str,
+    package: ref[manifest.PackageManifest],
+    version_req: Option[version.PackageVersionReq],
+) -> string.String:
+    var message = string.String.from_str("locked registry version ")
+    message.append(locked)
+    message.append(" for ")
+    message.append(package_name)
+    message.append(" in ")
+    message.append(package.manifest_path.as_str())
+    message.append(" does not satisfy ")
+    append_version_requirement(ref_of(message), version_req)
+    return message
+
+
+function no_matching_version_error(
+    package_name: str,
+    package: ref[manifest.PackageManifest],
+    version_req: Option[version.PackageVersionReq],
+) -> string.String:
+    var message = string.String.from_str("no registry version for ")
+    message.append(package_name)
+    message.append(" in ")
+    message.append(package.manifest_path.as_str())
+    message.append(" satisfies ")
+    append_version_requirement(ref_of(message), version_req)
+    return message
+
+
+function append_version_requirement(
+    message: ref[string.String],
+    version_req: Option[version.PackageVersionReq],
+) -> void:
+    match version_req:
+        Option.some as req:
+            var req_text = req.value.to_string()
+            message.append(req_text.as_str())
+            req_text.release()
         Option.none:
-            pass
+            message.append("?")
 
-    if matching.len() == 0:
-        var message = string.String.from_str("no registry version for ")
-        message.append(package_name)
-        message.append(" in ")
-        message.append(package.manifest_path.as_str())
-        message.append(" satisfies ")
-        match dependency.version_req:
-            Option.some as req:
-                var req_text = req.value.to_string()
-                message.append(req_text.as_str())
-                req_text.release()
-            Option.none:
-                message.append("?")
-        dependency_key.release()
-        release_entries(ref_of(matching))
-        return list_error(message)
 
+function visit_registry_candidates(
+    resolver: ref[pkg_source.SourceResolver],
+    matching: ref[vec.Vec[PackageVersionEntry]],
+    dependency_key: str,
+    package_name: str,
+    package: ref[manifest.PackageManifest],
+    dependency: manifest.PackageDependency,
+    state: SolverState,
+) -> Result[StateList, string.String]:
     var states = vec.Vec[SolverState].create()
     var last_error: Option[string.String] = Option[string.String].none
     var mi: ptr_uint = 0
@@ -458,7 +528,7 @@ function choose_registry_version(
         var branch = clone_state(state)
         unsafe:
             branch.selected.push(SelectedVersion(
-                key = string.String.from_str(dependency_key.as_str()),
+                key = string.String.from_str(dependency_key),
                 package_name = string.String.from_str(package_name),
                 version = string.String.from_str(candidate_text),
             ))
@@ -501,28 +571,13 @@ function choose_registry_version(
                                 states.push(visited_payload.value)
         mi += 1
 
-    release_entries(ref_of(matching))
-    dependency_key.release()
-
     if states.len() == 0:
         match last_error:
             Option.some as error_payload:
                 return list_error(error_payload.value)
             Option.none:
                 pass
-        var message = string.String.from_str("no registry version for ")
-        message.append(package_name)
-        message.append(" in ")
-        message.append(package.manifest_path.as_str())
-        message.append(" satisfies ")
-        match dependency.version_req:
-            Option.some as req:
-                var req_text = req.value.to_string()
-                message.append(req_text.as_str())
-                req_text.release()
-            Option.none:
-                message.append("?")
-        return list_error(message)
+        return list_error(no_matching_version_error(package_name, package, dependency.version_req))
 
     match last_error:
         Option.some as error_payload:

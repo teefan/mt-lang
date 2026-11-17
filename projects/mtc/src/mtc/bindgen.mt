@@ -2966,9 +2966,48 @@ function generate_internal(opts: ref[BindgenOptions], want_report: bool) -> Resu
     if cb != "":
         clang = cb
 
-    # A translation unit that includes the header, like the host's Tempfile:
-    # clang prints `includedFrom` for declarations whose own loc omits a file,
-    # which is how the provenance filter keeps header declarations.
+    var tu_path: string.String
+    match create_translation_unit(opts, header, clang):
+        Result.failure as tu_failure:
+            return Result[BindgenOutput, string.String].failure(error = tu_failure.error)
+        Result.success as tu_payload:
+            tu_path = tu_payload.value
+    defer: tu_path.release()
+    defer: remove_temporary_file(tu_path.as_str())
+
+    var args = clang_ast_arguments(clang, opts, tu_path.as_str())
+    defer: args.release()
+
+    match process.capture(args.as_span()):
+        Result.success as captured:
+            var result = captured.value
+            defer: result.stdout.release()
+            defer: result.stderr.release()
+            return generate_from_clang_result(
+                ref_of(result.stdout),
+                ref_of(result.stderr),
+                result.status.exit_code,
+                opts,
+                header,
+                tu_path.as_str(),
+                want_report,
+            )
+        Result.failure as fail:
+            return Result[BindgenOutput, string.String].failure(
+                error = clang_failure_message(fail.error.code, fail.error.message, clang)
+            )
+
+
+# A translation unit that includes the header, like the host's Tempfile:
+# clang prints `includedFrom` for declarations whose own loc omits a file,
+# which is how the provenance filter keeps header declarations.  The macro
+# probes land at the end of the TU, so the AST also gives the host's
+# constant order.
+function create_translation_unit(
+    opts: ref[BindgenOptions],
+    header: str,
+    clang: str,
+) -> Result[string.String, string.String]:
     var tu_content = string.String.create()
     defer: tu_content.release()
     var di: ptr_uint = 0
@@ -3010,23 +3049,18 @@ function generate_internal(opts: ref[BindgenOptions], want_report: bool) -> Resu
             tu_path = created.value
         Result.failure:
             return Result[
-                BindgenOutput,
+                string.String,
                 string.String
             ].failure(error = string.String.from_str("bindgen: cannot create a translation unit"))
-    defer: tu_path.release()
     match fs.write_text(tu_path.as_str(), tu_content.as_str()):
         Result.success:
             pass
         Result.failure as write_err:
-            var message = string.String.from_str("bindgen: cannot write the translation unit: ")
-            message.append(write_err.error.message.as_str())
+            var message = translation_unit_write_error(write_err.error.message.as_str())
             write_err.error.release()
-            return Result[BindgenOutput, string.String].failure(error = message)
-    defer: remove_temporary_file(tu_path.as_str())
+            tu_path.release()
+            return Result[string.String, string.String].failure(error = message)
 
-    # Probe the header's value-shaped macros so clang types them (`__typeof__`)
-    # and folds their initializers; the probes land at the end of the TU, so
-    # the AST also gives the host's constant order.
     var candidates = macro_probes.macro_candidates(tu_path.as_str(), clang, opts.clang_args.as_span(), opts)
     defer: release_macro_names(ref_of(candidates))
     if candidates.len() > 0:
@@ -3048,13 +3082,22 @@ function generate_internal(opts: ref[BindgenOptions], want_report: bool) -> Resu
             Result.success:
                 pass
             Result.failure as probe_err:
-                var message = string.String.from_str("bindgen: cannot write the translation unit: ")
-                message.append(probe_err.error.message.as_str())
+                var message = translation_unit_write_error(probe_err.error.message.as_str())
                 probe_err.error.release()
-                return Result[BindgenOutput, string.String].failure(error = message)
+                tu_path.release()
+                return Result[string.String, string.String].failure(error = message)
 
+    return Result[string.String, string.String].success(value = tu_path)
+
+
+function translation_unit_write_error(detail: str) -> string.String:
+    var message = string.String.from_str("bindgen: cannot write the translation unit: ")
+    message.append(detail)
+    return message
+
+
+function clang_ast_arguments(clang: str, opts: ref[BindgenOptions], tu_path: str) -> vec.Vec[str]:
     var args = vec.Vec[str].create()
-    defer: args.release()
     args.push(clang)
     args.push("-x")
     args.push("c")
@@ -3068,114 +3111,120 @@ function generate_internal(opts: ref[BindgenOptions], want_report: bool) -> Resu
     args.push("-Xclang")
     args.push("-ast-dump=json")
     args.push("-fsyntax-only")
-    args.push(tu_path.as_str())
+    args.push(tu_path)
+    return args
 
-    match process.capture(args.as_span()):
-        Result.success as captured:
-            var result = captured.value
-            defer: result.stdout.release()
-            defer: result.stderr.release()
 
-            # The host parses stdout first: clang can report a diagnostic and
-            # still emit a usable AST (the macro probes trigger warnings).
-            # `as_str` would validate every UTF-8 byte of a multi-hundred-MB
-            # AST (the host does not validate either, and the C backend's debug
-            # loop guard counts the scan); view the captured text directly.
-            if result.stdout.len == 0:
+function clang_failure_message(code: int, message: string.String, clang: str) -> string.String:
+    var m = string.String.create()
+    if code == -2:
+        # The host's `Errno::ENOENT` branch: `clang not found: <bin>`.
+        m.append("clang not found: ")
+        m.append(clang)
+    else:
+        m.append("clang: ")
+        m.append(message.as_str())
+    var owned = message
+    owned.release()
+    return m
+
+
+# The host parses stdout first: clang can report a diagnostic and
+# still emit a usable AST (the macro probes trigger warnings).
+# `as_str` would validate every UTF-8 byte of a multi-hundred-MB
+# AST (the host does not validate either, and the C backend's debug
+# loop guard counts the scan); view the captured text directly.
+function generate_from_clang_result(
+    stdout: ref[string.String],
+    stderr: ref[string.String],
+    exit_code: long,
+    opts: ref[BindgenOptions],
+    header: str,
+    tu_path: str,
+    want_report: bool,
+) -> Result[BindgenOutput, string.String]:
+    if read(stdout).len == 0:
+        return Result[
+            BindgenOutput,
+            string.String
+        ].failure(error = string.String.from_str("clang produced no output"))
+    let js = raw_string_view(stdout)
+
+    match json.parse(js):
+        Result.success as parsed_val:
+            var parsed = parsed_val.value
+            defer: json.release_value(parsed)
+
+            var decls = vec.Vec[CDecl].create()
+            defer: decls.release()
+            var state = GenState(
+                record_aliases = map_mod.Map[str, str].create(),
+                record_aliases_by_tag = map_mod.Map[str, str].create(),
+                enum_aliases = map_mod.Map[str, str].create(),
+                record_visible_names = map_mod.Map[str, str].create(),
+                enum_visible_names = map_mod.Map[str, str].create(),
+                visible_typedef_names = vec.Vec[string.String].create(),
+                function_type_typedef_names = vec.Vec[string.String].create(),
+                referenceable = map_mod.Map[str, ptr[json.Object]].create(),
+                referenceable_by_id = map_mod.Map[str, ptr[json.Object]].create(),
+                aggregate_declarations = map_mod.Map[str, ptr[json.Object]].create(),
+                synthetics = vec.Vec[SyntheticDecl].create(),
+            )
+            bindgen_state = ptr_of(state)
+            defer: release_gen_state()
+            let root_obj = parsed.as_object() else:
                 return Result[
                     BindgenOutput,
                     string.String
-                ].failure(error = string.String.from_str("clang produced no output"))
-            let js = raw_string_view(ref_of(result.stdout))
+                ].failure(error = string.String.from_str("clang AST is not an object"))
+            var nodes = vec.Vec[ptr[json.Object]].create()
+            defer: nodes.release()
+            var seen_ids = vec.Vec[string.String].create()
+            defer: release_macro_names(ref_of(seen_ids))
+            extract_top_level_nodes(root_obj, opts, tu_path, ref_of(nodes), ref_of(seen_ids))
+            collect_visible_typedef_names(nodes, opts, ref_of(state))
+            build_alias_maps(nodes, ref_of(state))
+            index_referenceable_records(root_obj, ref_of(state))
+            select_record_declarations(nodes, opts, ref_of(state), ref_of(decls))
+            discover_synthetic_aggregate_dependencies(decls, opts, ref_of(state))
+            discover_synthetic_field_type_dependencies(decls, opts, ref_of(state))
+            select_enum_declarations(nodes, opts, ref_of(state), ref_of(decls))
+            select_type_alias_declarations(nodes, opts, ref_of(decls))
+            select_constant_declarations(nodes, opts, ref_of(decls))
+            select_function_declarations(nodes, opts, ref_of(decls))
 
-            match json.parse(js):
-                Result.success as parsed_val:
-                    var parsed = parsed_val.value
-                    defer: json.release_value(parsed)
+            match nullable_policy.validate_override_targets(ref_of(decls), opts):
+                Option.some as error_message:
+                    return Result[BindgenOutput, string.String].failure(error = error_message.value)
+                Option.none:
+                    pass
 
-                    var decls = vec.Vec[CDecl].create()
-                    defer: decls.release()
-                    var state = GenState(
-                        record_aliases = map_mod.Map[str, str].create(),
-                        record_aliases_by_tag = map_mod.Map[str, str].create(),
-                        enum_aliases = map_mod.Map[str, str].create(),
-                        record_visible_names = map_mod.Map[str, str].create(),
-                        enum_visible_names = map_mod.Map[str, str].create(),
-                        visible_typedef_names = vec.Vec[string.String].create(),
-                        function_type_typedef_names = vec.Vec[string.String].create(),
-                        referenceable = map_mod.Map[str, ptr[json.Object]].create(),
-                        referenceable_by_id = map_mod.Map[str, ptr[json.Object]].create(),
-                        aggregate_declarations = map_mod.Map[str, ptr[json.Object]].create(),
-                        synthetics = vec.Vec[SyntheticDecl].create(),
-                    )
-                    bindgen_state = ptr_of(state)
-                    defer: release_gen_state()
-                    let root_obj = parsed.as_object() else:
-                        return Result[
-                            BindgenOutput,
-                            string.String
-                        ].failure(error = string.String.from_str("clang AST is not an object"))
-                    var nodes = vec.Vec[ptr[json.Object]].create()
-                    defer: nodes.release()
-                    var seen_ids = vec.Vec[string.String].create()
-                    defer: release_macro_names(ref_of(seen_ids))
-                    extract_top_level_nodes(root_obj, opts, tu_path.as_str(), ref_of(nodes), ref_of(seen_ids))
-                    collect_visible_typedef_names(nodes, opts, ref_of(state))
-                    build_alias_maps(nodes, ref_of(state))
-                    index_referenceable_records(root_obj, ref_of(state))
-                    select_record_declarations(nodes, opts, ref_of(state), ref_of(decls))
-                    discover_synthetic_aggregate_dependencies(decls, opts, ref_of(state))
-                    discover_synthetic_field_type_dependencies(decls, opts, ref_of(state))
-                    select_enum_declarations(nodes, opts, ref_of(state), ref_of(decls))
-                    select_type_alias_declarations(nodes, opts, ref_of(decls))
-                    select_constant_declarations(nodes, opts, ref_of(decls))
-                    select_function_declarations(nodes, opts, ref_of(decls))
-
-                    match nullable_policy.validate_override_targets(ref_of(decls), opts):
-                        Option.some as error_message:
-                            return Result[BindgenOutput, string.String].failure(error = error_message.value)
-                        Option.none:
-                            pass
-
-                    var src = emitter.emit_module(decls, header, opts.link_libs, opts.include_headers, opts)
-                    var module_path = generated_module_path(opts.module_name.as_str())
-                    defer: module_path.release()
-                    let max_line_length = tidy.resolve_max_line_length(module_path.as_str(), 0)
-                    match tidy.format_tidy(src.as_str(), module_path.as_str(), max_line_length, null):
-                        Option.some as formatted:
-                            src.release()
-                            src = formatted.value
-                        Option.none:
-                            pass
-                    var report = string.String.create()
-                    if want_report:
-                        nullable_report.build_nullable_report(ref_of(report), opts, ref_of(decls))
-                    return Result[BindgenOutput, string.String].success(value = BindgenOutput(
-                        source = src,
-                        report = report
-                    ))
-                Result.failure as parse_err:
-                    if result.status.exit_code != 0:
-                        var failed = string.String.from_str("clang failed: ")
-                        failed.append(result.stderr.as_str())
-                        parse_err.error.message.release()
-                        return Result[BindgenOutput, string.String].failure(error = failed)
-                    var m = string.String.from_str("json parse error: ")
-                    m.append(parse_err.error.message.as_str())
-                    parse_err.error.release()
-                    return Result[BindgenOutput, string.String].failure(error = m)
-
-        Result.failure as fail:
-            var err = fail.error
-            var m = string.String.create()
-            if err.code == -2:
-                # The host's `Errno::ENOENT` branch: `clang not found: <bin>`.
-                m.append("clang not found: ")
-                m.append(clang)
-            else:
-                m.append("clang: ")
-                m.append(err.message.as_str())
-            err.message.release()
+            var src = emitter.emit_module(decls, header, opts.link_libs, opts.include_headers, opts)
+            var module_path = generated_module_path(opts.module_name.as_str())
+            defer: module_path.release()
+            let max_line_length = tidy.resolve_max_line_length(module_path.as_str(), 0)
+            match tidy.format_tidy(src.as_str(), module_path.as_str(), max_line_length, null):
+                Option.some as formatted:
+                    src.release()
+                    src = formatted.value
+                Option.none:
+                    pass
+            var report = string.String.create()
+            if want_report:
+                nullable_report.build_nullable_report(ref_of(report), opts, ref_of(decls))
+            return Result[BindgenOutput, string.String].success(value = BindgenOutput(
+                source = src,
+                report = report
+            ))
+        Result.failure as parse_err:
+            if exit_code != 0:
+                var failed = string.String.from_str("clang failed: ")
+                failed.append(read(stderr).as_str())
+                parse_err.error.message.release()
+                return Result[BindgenOutput, string.String].failure(error = failed)
+            var m = string.String.from_str("json parse error: ")
+            m.append(parse_err.error.message.as_str())
+            parse_err.error.release()
             return Result[BindgenOutput, string.String].failure(error = m)
 
 

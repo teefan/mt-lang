@@ -2665,6 +2665,59 @@ function resolve_name_in_analysis(
     cursor_line: ptr_uint,
     cursor_column: ptr_uint,
 ) -> Option[CursorResult]:
+    match function_name_hover(file, analysis, name, source, current_module):
+        Option.some as found:
+            return Option[CursorResult].some(value = found.value)
+        Option.none:
+            pass
+    match method_name_hover(file, analysis, name, source, current_module, cursor_line, cursor_column):
+        Option.some as found:
+            return Option[CursorResult].some(value = found.value)
+        Option.none:
+            pass
+    match value_name_hover(file, analysis, name, source, current_module):
+        Option.some as found:
+            return Option[CursorResult].some(value = found.value)
+        Option.none:
+            pass
+    match interface_name_hover(file, analysis, name, source):
+        Option.some as found:
+            return Option[CursorResult].some(value = found.value)
+        Option.none:
+            pass
+    match type_name_hover(file, analysis, name, source, current_module):
+        Option.some as found:
+            return Option[CursorResult].some(value = found.value)
+        Option.none:
+            pass
+
+    unsafe:
+        # Event declaration.
+        let decl_line_ev = find_declaration_line(file, name, "event")
+        if decl_line_ev > 0:
+            var hover_ev = string.String.create()
+            hover_ev.append("event ")
+            hover_ev.append(name)
+            return Option[CursorResult].some(value = make_result(decl_line_ev, name, source, hover_ev))
+
+        # Opaque type.
+        let decl_line_o = find_declaration_line(file, name, "opaque")
+        if decl_line_o > 0:
+            var hover = string.String.create()
+            hover.append("opaque ")
+            hover.append(name)
+            return Option[CursorResult].some(value = make_result(decl_line_o, name, source, hover))
+
+    return Option[CursorResult].none
+
+
+function function_name_hover(
+    file: ast.SourceFile,
+    analysis: ref[analyzer.Analysis],
+    name: str,
+    source: str,
+    current_module: str,
+) -> Option[CursorResult]:
     unsafe:
         # Function: render the full signature.
         let sig_ptr = read(analysis).functions.get(name)
@@ -2675,7 +2728,19 @@ function resolve_name_in_analysis(
                 let fn_result = make_shortened_result(decl_line, name, source, fn_text.as_str())
                 fn_text.release()
                 return Option[CursorResult].some(value = fn_result)
+    return Option[CursorResult].none
 
+
+function method_name_hover(
+    file: ast.SourceFile,
+    analysis: ref[analyzer.Analysis],
+    name: str,
+    source: str,
+    current_module: str,
+    cursor_line: ptr_uint,
+    cursor_column: ptr_uint,
+) -> Option[CursorResult]:
+    unsafe:
         # Extending-block or interface method: search method_keys for "*.name".
         var method_entries = read(analysis).method_keys.entries()
         var m_next = method_entries.next()
@@ -2735,7 +2800,17 @@ function resolve_name_in_analysis(
                         full.release()
                         return Option[CursorResult].some(value = method_result)
             m_next = method_entries.next()
+    return Option[CursorResult].none
 
+
+function value_name_hover(
+    file: ast.SourceFile,
+    analysis: ref[analyzer.Analysis],
+    name: str,
+    source: str,
+    current_module: str,
+) -> Option[CursorResult]:
+    unsafe:
         # Module-level const or var: the host's `value_hover_signature`.
         let value_ptr = read(analysis).value_types.get(name)
         if value_ptr != null:
@@ -2755,7 +2830,16 @@ function resolve_name_in_analysis(
                 let value_result = make_shortened_result(decl_line, name, source, hover.as_str())
                 hover.release()
                 return Option[CursorResult].some(value = value_result)
+    return Option[CursorResult].none
 
+
+function interface_name_hover(
+    file: ast.SourceFile,
+    analysis: ref[analyzer.Analysis],
+    name: str,
+    source: str,
+) -> Option[CursorResult]:
+    unsafe:
         # Interface: the host's `interface_signature` — `interface <name>`, then
         # one `    [async ][editable ]function <name>(<params>) -> <ret>` line per
         # method (no colon, and the return type is always rendered).
@@ -2795,7 +2879,17 @@ function resolve_name_in_analysis(
                             hover.append("void")
                         mi += 1
                 return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
+    return Option[CursorResult].none
 
+
+function type_name_hover(
+    file: ast.SourceFile,
+    analysis: ref[analyzer.Analysis],
+    name: str,
+    source: str,
+    current_module: str,
+) -> Option[CursorResult]:
+    unsafe:
         # Every other type — struct, union, opaque, enum, flags, variant, or a
         # `type` alias — through the host's `type_hover_signature`: `type Name`,
         # or `type Name = <module-qualified target>` when the type carries an
@@ -2844,23 +2938,6 @@ function resolve_name_in_analysis(
                     return Option[CursorResult].some(value = quick_hover_doc(builtin_type_doc.value))
                 Option.none:
                     pass
-
-        # Event declaration.
-        let decl_line_ev = find_declaration_line(file, name, "event")
-        if decl_line_ev > 0:
-            var hover_ev = string.String.create()
-            hover_ev.append("event ")
-            hover_ev.append(name)
-            return Option[CursorResult].some(value = make_result(decl_line_ev, name, source, hover_ev))
-
-        # Opaque type.
-        let decl_line_o = find_declaration_line(file, name, "opaque")
-        if decl_line_o > 0:
-            var hover = string.String.create()
-            hover.append("opaque ")
-            hover.append(name)
-            return Option[CursorResult].some(value = make_result(decl_line_o, name, source, hover))
-
     return Option[CursorResult].none
 
 

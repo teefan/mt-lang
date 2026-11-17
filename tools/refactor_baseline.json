@@ -1281,15 +1281,15 @@
     ]
   },
   "sizes": {
-    "total_code": 124155,
-    "functions_over_limit": 10,
+    "total_code": 124328,
+    "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
-        "lines": 3187,
-        "code": 2713,
+        "lines": 3236,
+        "code": 2754,
         "max_line": 1984,
-        "max_function": 221
+        "max_function": 103
       },
       "projects/mtc/src/mtc/bindgen/emitter.mt": {
         "lines": 337,
@@ -1340,10 +1340,10 @@
         "max_function": 49
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 8056,
-        "code": 6146,
+        "lines": 8068,
+        "code": 6152,
         "max_line": 436,
-        "max_function": 219
+        "max_function": 180
       },
       "projects/mtc/src/mtc/c_backend/reachability.mt": {
         "lines": 393,
@@ -1862,10 +1862,10 @@
         "max_function": 79
       },
       "projects/mtc/src/mtc/lsp/navigation.mt": {
-        "lines": 5217,
-        "code": 4034,
+        "lines": 5294,
+        "code": 4105,
         "max_line": 206,
-        "max_function": 209
+        "max_function": 178
       },
       "projects/mtc/src/mtc/lsp/on_type_formatting.mt": {
         "lines": 119,
@@ -2000,10 +2000,10 @@
         "max_function": 179
       },
       "projects/mtc/src/mtc/main/bindings_cli.mt": {
-        "lines": 577,
-        "code": 519,
-        "max_line": 126,
-        "max_function": 216
+        "lines": 645,
+        "code": 569,
+        "max_line": 149,
+        "max_function": 144
       },
       "projects/mtc/src/mtc/main/build_cli.mt": {
         "lines": 1357,
@@ -2048,10 +2048,10 @@
         "max_function": 89
       },
       "projects/mtc/src/mtc/packages/lock.mt": {
-        "lines": 1345,
-        "code": 1158,
+        "lines": 1371,
+        "code": 1175,
         "max_line": 141,
-        "max_function": 218
+        "max_function": 176
       },
       "projects/mtc/src/mtc/packages/manager_cli.mt": {
         "lines": 1178,
@@ -2060,10 +2060,10 @@
         "max_function": 167
       },
       "projects/mtc/src/mtc/packages/manifest.mt": {
-        "lines": 1165,
-        "code": 987,
+        "lines": 1212,
+        "code": 1024,
         "max_line": 147,
-        "max_function": 213
+        "max_function": 150
       },
       "projects/mtc/src/mtc/packages/paths.mt": {
         "lines": 84,
@@ -2078,10 +2078,10 @@
         "max_function": 104
       },
       "projects/mtc/src/mtc/packages/solver.mt": {
-        "lines": 616,
-        "code": 534,
+        "lines": 671,
+        "code": 577,
         "max_line": 134,
-        "max_function": 207
+        "max_function": 77
       },
       "projects/mtc/src/mtc/packages/source.mt": {
         "lines": 1281,
@@ -2246,16 +2246,16 @@
         "max_function": 164
       },
       "projects/mtc/src/mtc/sexpr.mt": {
-        "lines": 3116,
-        "code": 2679,
+        "lines": 3154,
+        "code": 2705,
         "max_line": 248,
-        "max_function": 212
+        "max_function": 197
       },
       "projects/mtc/src/mtc/std_catalog.mt": {
-        "lines": 281,
-        "code": 269,
-        "max_line": 184,
-        "max_function": 238
+        "lines": 163,
+        "code": 151,
+        "max_line": 208,
+        "max_function": 120
       },
       "projects/mtc/src/mtc/strings.mt": {
         "lines": 57,

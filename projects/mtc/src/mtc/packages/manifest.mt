@@ -381,95 +381,43 @@ function build_manifest(
         Option.none:
             pass
 
-    var kind_text = string.String.from_str("application")
-    match table_text(package_table, "kind"):
-        Option.some as declared_kind:
-            kind_text.release()
-            kind_text = string.String.from_str(declared_kind.value.as_str())
-            declared_kind.value.release()
-        Option.none:
-            match table_text(build_table, "type"):
-                Option.some as declared_type:
-                    kind_text.release()
-                    kind_text = string.String.from_str(declared_type.value.as_str())
-                    declared_type.value.release()
-                Option.none:
-                    pass
     var package_kind: PackageKind
-    match normalize_kind(kind_text.as_str()):
+    match resolve_package_kind(package_table, build_table):
         Result.failure as kind_failure:
             package_name.release()
             release_option_string(ref_of(package_version))
-            kind_text.release()
             return failure(kind_failure.error)
         Result.success as kind_payload:
             package_kind = kind_payload.value
-    kind_text.release()
 
-    var source_root_value: Option[string.String] = table_text(package_table, "source_root")
-    if source_root_value.is_none():
-        source_root_value = default_source_root(root_dir)
+    var source_root: string.String
+    match resolve_manifest_source_root(package_table, root_dir):
+        Result.failure as source_failure:
+            package_name.release()
+            release_option_string(ref_of(package_version))
+            return failure(source_failure.error)
+        Result.success as source_payload:
+            source_root = source_payload.value
 
-    var source_root_raw = string.String.create()
-    match source_root_value:
-        Option.some as declared_root:
-            source_root_raw.append(declared_root.value.as_str())
-            declared_root.value.release()
-        Option.none:
-            pass
-    var source_root = paths.resolve_under(root_dir, source_root_raw.as_str())
-    if not fs.is_directory(source_root.as_str()):
-        var message = string.String.from_str("package.source_root not found: ")
-        message.append(source_root_raw.as_str())
-        message.append(" (resolved to ")
-        message.append(source_root.as_str())
-        message.append(")")
-        package_name.release()
-        release_option_string(ref_of(package_version))
-        source_root_raw.release()
-        source_root.release()
-        return failure(message)
-    source_root_raw.release()
+    var profile: str
+    match resolve_manifest_profile(build_table, profile_table):
+        Result.failure as profile_failure:
+            package_name.release()
+            release_option_string(ref_of(package_version))
+            source_root.release()
+            return failure(profile_failure.error)
+        Result.success as profile_payload:
+            profile = profile_payload.value
 
-    var profile: str = "debug"
-    var profile_value: Option[string.String] = table_text(build_table, "profile")
-    if profile_value.is_none():
-        profile_value = table_text(profile_table, "default")
-    match profile_value:
-        Option.some as declared_profile:
-            var text = declared_profile.value
-            let normalized = normalize_profile(text.as_str())
-            text.release()
-            match normalized:
-                Result.failure as profile_failure:
-                    package_name.release()
-                    release_option_string(ref_of(package_version))
-                    source_root.release()
-                    return failure(profile_failure.error)
-                Result.success as profile_payload:
-                    profile = profile_payload.value
-        Option.none:
-            pass
-
-    var platform: str = "linux"
-    var platform_value: Option[string.String] = table_text(build_table, "platform")
-    if platform_value.is_none():
-        platform_value = table_text(platform_table, "default")
-    match platform_value:
-        Option.some as declared_platform:
-            var text = declared_platform.value
-            let normalized = normalize_platform(text.as_str())
-            text.release()
-            match normalized:
-                Result.failure as platform_failure:
-                    package_name.release()
-                    release_option_string(ref_of(package_version))
-                    source_root.release()
-                    return failure(platform_failure.error)
-                Result.success as platform_payload:
-                    platform = platform_payload.value
-        Option.none:
-            pass
+    var platform: str
+    match resolve_manifest_platform(build_table, platform_table):
+        Result.failure as platform_failure:
+            package_name.release()
+            release_option_string(ref_of(package_version))
+            source_root.release()
+            return failure(platform_failure.error)
+        Result.success as platform_payload:
+            platform = platform_payload.value
 
     var source_path: Option[string.String] = Option[string.String].none
     if package_kind != PackageKind.library:
@@ -504,29 +452,18 @@ function build_manifest(
         Result.success as asset_payload:
             assets = asset_payload.value
 
-    var html_template: Option[string.String] = Option[string.String].none
-    match table_text(build_table, "html_template"):
-        Option.some as declared_template:
-            var resolved = paths.resolve_under(root_dir, declared_template.value.as_str())
-            if not fs.is_file(resolved.as_str()):
-                var message = string.String.from_str("build.html_template not found: ")
-                message.append(declared_template.value.as_str())
-                message.append(" (resolved to ")
-                message.append(resolved.as_str())
-                message.append(")")
-                resolved.release()
-                declared_template.value.release()
-                package_name.release()
-                release_option_string(ref_of(package_version))
-                source_root.release()
-                release_option_string(ref_of(source_path))
-                release_option_string(ref_of(output_path))
-                release_asset_paths(ref_of(assets))
-                return failure(message)
-            declared_template.value.release()
-            html_template = Option[string.String].some(value = resolved)
-        Option.none:
-            pass
+    var html_template: Option[string.String]
+    match resolve_manifest_html_template(build_table, root_dir):
+        Result.failure as template_failure:
+            package_name.release()
+            release_option_string(ref_of(package_version))
+            source_root.release()
+            release_option_string(ref_of(source_path))
+            release_option_string(ref_of(output_path))
+            release_asset_paths(ref_of(assets))
+            return failure(template_failure.error)
+        Result.success as template_payload:
+            html_template = template_payload.value
 
     var dependencies = vec.Vec[PackageDependency].create()
     match parse_dependencies(document, root_dir, manifest_path):
@@ -559,6 +496,116 @@ function build_manifest(
             dependencies = dependencies,
         )
     )
+
+
+function resolve_package_kind(
+    package_table: ptr[toml.Table]?,
+    build_table: ptr[toml.Table]?,
+) -> Result[PackageKind, string.String]:
+    var kind_text = string.String.from_str("application")
+    match table_text(package_table, "kind"):
+        Option.some as declared_kind:
+            kind_text.release()
+            kind_text = string.String.from_str(declared_kind.value.as_str())
+            declared_kind.value.release()
+        Option.none:
+            match table_text(build_table, "type"):
+                Option.some as declared_type:
+                    kind_text.release()
+                    kind_text = string.String.from_str(declared_type.value.as_str())
+                    declared_type.value.release()
+                Option.none:
+                    pass
+    let normalized = normalize_kind(kind_text.as_str())
+    kind_text.release()
+    return normalized
+
+
+function resolve_manifest_source_root(
+    package_table: ptr[toml.Table]?,
+    root_dir: str,
+) -> Result[string.String, string.String]:
+    var source_root_value: Option[string.String] = table_text(package_table, "source_root")
+    if source_root_value.is_none():
+        source_root_value = default_source_root(root_dir)
+
+    var source_root_raw = string.String.create()
+    match source_root_value:
+        Option.some as declared_root:
+            source_root_raw.append(declared_root.value.as_str())
+            declared_root.value.release()
+        Option.none:
+            pass
+    var source_root = paths.resolve_under(root_dir, source_root_raw.as_str())
+    if not fs.is_directory(source_root.as_str()):
+        var message = string.String.from_str("package.source_root not found: ")
+        message.append(source_root_raw.as_str())
+        message.append(" (resolved to ")
+        message.append(source_root.as_str())
+        message.append(")")
+        source_root_raw.release()
+        source_root.release()
+        return Result[string.String, string.String].failure(error = message)
+    source_root_raw.release()
+    return Result[string.String, string.String].success(value = source_root)
+
+
+function resolve_manifest_profile(
+    build_table: ptr[toml.Table]?,
+    profile_table: ptr[toml.Table]?,
+) -> Result[str, string.String]:
+    var profile_value: Option[string.String] = table_text(build_table, "profile")
+    if profile_value.is_none():
+        profile_value = table_text(profile_table, "default")
+    match profile_value:
+        Option.some as declared_profile:
+            var text = declared_profile.value
+            let normalized = normalize_profile(text.as_str())
+            text.release()
+            return normalized
+        Option.none:
+            return Result[str, string.String].success(value = "debug")
+
+
+function resolve_manifest_platform(
+    build_table: ptr[toml.Table]?,
+    platform_table: ptr[toml.Table]?,
+) -> Result[str, string.String]:
+    var platform_value: Option[string.String] = table_text(build_table, "platform")
+    if platform_value.is_none():
+        platform_value = table_text(platform_table, "default")
+    match platform_value:
+        Option.some as declared_platform:
+            var text = declared_platform.value
+            let normalized = normalize_platform(text.as_str())
+            text.release()
+            return normalized
+        Option.none:
+            return Result[str, string.String].success(value = "linux")
+
+
+function resolve_manifest_html_template(
+    build_table: ptr[toml.Table]?,
+    root_dir: str,
+) -> Result[OptionalPath, string.String]:
+    match table_text(build_table, "html_template"):
+        Option.some as declared_template:
+            var resolved = paths.resolve_under(root_dir, declared_template.value.as_str())
+            if not fs.is_file(resolved.as_str()):
+                var message = string.String.from_str("build.html_template not found: ")
+                message.append(declared_template.value.as_str())
+                message.append(" (resolved to ")
+                message.append(resolved.as_str())
+                message.append(")")
+                resolved.release()
+                declared_template.value.release()
+                return Result[OptionalPath, string.String].failure(error = message)
+            declared_template.value.release()
+            return Result[OptionalPath, string.String].success(
+                value = Option[string.String].some(value = resolved)
+            )
+        Option.none:
+            return Result[OptionalPath, string.String].success(value = Option[string.String].none)
 
 
 function default_source_root(root_dir: str) -> Option[string.String]:

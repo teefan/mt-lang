@@ -21,18 +21,25 @@ import mtc.main as main
 import mtc.main.std_cli as std_cli
 
 
+struct BindgenCliArgs:
+    output: Option[str]
+    nullable_report: Option[str]
+    nullable_policy_path: Option[str]
+    options_json_path: Option[str]
+    link_libs: vec.Vec[str]
+    includes: vec.Vec[str]
+    clang_args: vec.Vec[str]
+    clang_str: str
+
+
+struct BindgenCliError:
+    message: string.String
+    show_help: bool
+
+
 ## Generate a binding module from a C header.
 ## Usage: mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]
 public function bindgen_command(args: span[str]) -> int:
-    var output: Option[str] = Option[str].none
-    var nullable_report: Option[str] = Option[str].none
-    var nullable_policy_path: Option[str] = Option[str].none
-    var options_json_path: Option[str] = Option[str].none
-    var link_libs = vec.Vec[str].create()
-    var includes = vec.Vec[str].create()
-    var clang_args = vec.Vec[str].create()
-    var clang_str: str = ""
-
     # The host consumes the first two operands as MODULE and HEADER before it
     # parses any option (`BindgenCLI#start`), so options must follow them.
     if args.len < 3:
@@ -42,93 +49,29 @@ public function bindgen_command(args: span[str]) -> int:
     let mod_name = args[1]
     let header_path = args[2]
 
-    var ai: ptr_uint = 3
-    while ai < args.len:
-        let arg = args[ai]
-        if arg == "-o" or arg == "--output":
-            ai += 1
-            if ai >= args.len:
-                main.eprint_line("missing value for -o")
+    var parsed: BindgenCliArgs
+    match parse_bindgen_args(args):
+        Result.failure as parse_failure:
+            var parse_error = parse_failure.error
+            main.eprint_line(parse_error.message.as_str())
+            parse_error.message.release()
+            if parse_error.show_help:
                 let _ = cli_help.print_command_help("bindgen", true)
-                return 1
-            output = Option[str].some(value = args[ai])
-        else if arg == "--link":
-            ai += 1
-            if ai >= args.len:
-                main.eprint_line("missing value for --link")
-                let _ = cli_help.print_command_help("bindgen", true)
-                return 1
-            link_libs.push(args[ai])
-        else if arg == "--include":
-            ai += 1
-            if ai >= args.len:
-                main.eprint_line("missing value for --include")
-                let _ = cli_help.print_command_help("bindgen", true)
-                return 1
-            includes.push(args[ai])
-        else if arg == "--clang":
-            ai += 1
-            if ai >= args.len:
-                main.eprint_line("missing value for --clang")
-                let _ = cli_help.print_command_help("bindgen", true)
-                return 1
-            clang_str = args[ai]
-        else if arg == "--clang-arg":
-            ai += 1
-            if ai >= args.len:
-                main.eprint_line("missing value for --clang-arg")
-                let _ = cli_help.print_command_help("bindgen", true)
-                return 1
-            clang_args.push(args[ai])
-        else if arg == "--nullable-report":
-            ai += 1
-            if ai >= args.len:
-                main.eprint_line("missing value for --nullable-report")
-                let _ = cli_help.print_command_help("bindgen", true)
-                return 1
-            nullable_report = Option[str].some(value = args[ai])
-        else if arg == "--nullable-policy":
-            ai += 1
-            if ai >= args.len:
-                main.eprint_line("missing value for --nullable-policy")
-                let _ = cli_help.print_command_help("bindgen", true)
-                return 1
-            nullable_policy_path = Option[str].some(value = args[ai])
-        else if arg == "--options-json":
-            ai += 1
-            if ai >= args.len:
-                main.eprint_line("bindgen: --options-json requires a path")
-                return 1
-            options_json_path = Option[str].some(value = args[ai])
-        else:
-            var unknown_opt = string.String.create()
-            defer: unknown_opt.release()
-            unknown_opt.append("unknown bindgen option ")
-            unknown_opt.append(arg)
-            main.eprint_line(unknown_opt.as_str())
-            let _ = cli_help.print_command_help("bindgen", true)
             return 1
-        ai += 1
+        Result.success as parse_payload:
+            parsed = parse_payload.value
 
     var policy: nullable_policy.NullablePolicy
-    match nullable_policy_path:
-        Option.some as policy_path:
-            match nullable_policy.load_nullable_policy(policy_path.value):
-                Result.success as loaded:
-                    policy = loaded.value
-                Result.failure as load_failure:
-                    let message = load_failure.error.as_str()
-                    main.eprint_line(message)
-                    load_failure.error.release()
-                    link_libs.release()
-                    includes.release()
-                    clang_args.release()
-                    return 1
-        Option.none:
-            policy = nullable_policy.NullablePolicy(
-                return_overrides = vec.Vec[bindgen.TypeOverride].create(),
-                param_overrides = vec.Vec[bindgen.ParamOverride].create(),
-            )
+    match load_bindgen_policy(parsed.nullable_policy_path):
+        Result.failure as load_failure:
+            main.eprint_line(load_failure.error.as_str())
+            load_failure.error.release()
+            parsed.link_libs.release()
+            parsed.includes.release()
+            parsed.clang_args.release()
+            return 1
+        Result.success as policy_payload:
+            policy = policy_payload.value
     defer: policy.release()
 
     var header_abs = loader.absolute_path(header_path)
@@ -137,11 +80,11 @@ public function bindgen_command(args: span[str]) -> int:
     var opts = bindgen.BindgenOptions(
         module_name = string.String.from_str(mod_name),
         header_path = string.String.from_str(header_abs.as_str()),
-        output_path = output,
-        link_libs = link_libs,
-        include_headers = includes,
-        clang_bin = clang_str,
-        clang_args = clang_args,
+        output_path = parsed.output,
+        link_libs = parsed.link_libs,
+        include_headers = parsed.includes,
+        clang_bin = parsed.clang_str,
+        clang_args = parsed.clang_args,
         return_overrides = policy.return_overrides,
         param_overrides = policy.param_overrides,
         report_header_path = header_abs.as_str(),
@@ -164,7 +107,7 @@ public function bindgen_command(args: span[str]) -> int:
     defer: opts.header_path.release()
     var options_root: ptr[json_mod.Value]? = null
     defer: release_options_root(options_root)
-    match options_json_path:
+    match parsed.options_json_path:
         Option.some as options_path:
             match options_json.load_options_json(options_path.value, ref_of(opts)):
                 Result.success as loaded_root:
@@ -177,59 +120,169 @@ public function bindgen_command(args: span[str]) -> int:
         Option.none:
             pass
 
-    if nullable_report.is_some():
-        let report_arg = nullable_report.unwrap()
+    if parsed.nullable_report.is_some():
+        let report_arg = parsed.nullable_report.unwrap()
         var report_path = loader.absolute_path(report_arg)
         defer: report_path.release()
-        match bindgen.generate_with_report(ref_of(opts)):
-            Result.success as generated:
-                var generated_output = generated.value
-                defer: generated_output.source.release()
-                defer: generated_output.report.release()
-                if not write_nullable_report(report_path.as_str(), generated_output.report.as_str()):
-                    return 1
-                match output:
-                    Option.some as out_file:
-                        match fs.write_text(out_file.value, generated_output.source.as_str()):
-                            Result.success:
-                                stdio.print_format(c"generated %.*s -> %.*s\n",
-                                    int<-(header_path.len), header_path.data,
-                                    int<-(out_file.value.len), out_file.value.data)
-                                stdio.print_format(c"nullable report %.*s -> %.*s\n",
-                                    int<-(header_path.len), header_path.data,
-                                    int<-(report_path.as_str().len), report_path.as_str().data)
-                            Result.failure:
-                                stdio.print_line("bindgen: could not write output file")
-                                return 1
-                    Option.none:
-                        let st = generated_output.source.as_str()
-                        stdio.print_format(c"%.*s", int<-(st.len), st.data)
-                        var wrote = string.String.create()
-                        defer: wrote.release()
-                        wrote.append("wrote nullable report ")
-                        wrote.append(report_path.as_str())
-                        main.eprint_line(wrote.as_str())
-                return 0
-            Result.failure as failure:
-                let mt = failure.error.as_str()
-                main.eprint_line(mt)
-                failure.error.release()
-                return 1
+        return run_bindgen_with_report(ref_of(opts), header_path, parsed.output, report_path.as_str())
+    return run_bindgen_with_output(ref_of(opts), header_path, parsed.output)
 
-    match bindgen.generate(ref_of(opts)):
+
+function parse_bindgen_args(args: span[str]) -> Result[BindgenCliArgs, BindgenCliError]:
+    var output: Option[str] = Option[str].none
+    var nullable_report: Option[str] = Option[str].none
+    var nullable_policy_path: Option[str] = Option[str].none
+    var options_json_path: Option[str] = Option[str].none
+    var link_libs = vec.Vec[str].create()
+    var includes = vec.Vec[str].create()
+    var clang_args = vec.Vec[str].create()
+    var clang_str: str = ""
+
+    var ai: ptr_uint = 3
+    while ai < args.len:
+        let arg = args[ai]
+        if arg == "-o" or arg == "--output":
+            ai += 1
+            if ai >= args.len:
+                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "missing value for -o", true)
+            output = Option[str].some(value = args[ai])
+        else if arg == "--link":
+            ai += 1
+            if ai >= args.len:
+                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "missing value for --link", true)
+            link_libs.push(args[ai])
+        else if arg == "--include":
+            ai += 1
+            if ai >= args.len:
+                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "missing value for --include", true)
+            includes.push(args[ai])
+        else if arg == "--clang":
+            ai += 1
+            if ai >= args.len:
+                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "missing value for --clang", true)
+            clang_str = args[ai]
+        else if arg == "--clang-arg":
+            ai += 1
+            if ai >= args.len:
+                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "missing value for --clang-arg", true)
+            clang_args.push(args[ai])
+        else if arg == "--nullable-report":
+            ai += 1
+            if ai >= args.len:
+                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "missing value for --nullable-report", true)
+            nullable_report = Option[str].some(value = args[ai])
+        else if arg == "--nullable-policy":
+            ai += 1
+            if ai >= args.len:
+                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "missing value for --nullable-policy", true)
+            nullable_policy_path = Option[str].some(value = args[ai])
+        else if arg == "--options-json":
+            ai += 1
+            if ai >= args.len:
+                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "bindgen: --options-json requires a path", false)
+            options_json_path = Option[str].some(value = args[ai])
+        else:
+            var unknown_opt = string.String.create()
+            defer: unknown_opt.release()
+            unknown_opt.append("unknown bindgen option ")
+            unknown_opt.append(arg)
+            return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), unknown_opt.as_str(), true)
+        ai += 1
+
+    return Result[BindgenCliArgs, BindgenCliError].success(
+        value = BindgenCliArgs(
+            output = output,
+            nullable_report = nullable_report,
+            nullable_policy_path = nullable_policy_path,
+            options_json_path = options_json_path,
+            link_libs = link_libs,
+            includes = includes,
+            clang_args = clang_args,
+            clang_str = clang_str,
+        )
+    )
+
+
+function bindgen_cli_failure(
+    link_libs: ref[vec.Vec[str]],
+    includes: ref[vec.Vec[str]],
+    clang_args: ref[vec.Vec[str]],
+    message: str,
+    show_help: bool,
+) -> Result[BindgenCliArgs, BindgenCliError]:
+    var owned = string.String.from_str(message)
+    link_libs.release()
+    includes.release()
+    clang_args.release()
+    return Result[BindgenCliArgs, BindgenCliError].failure(
+        error = BindgenCliError(message = owned, show_help = show_help)
+    )
+
+
+function load_bindgen_policy(policy_path: Option[str]) -> Result[nullable_policy.NullablePolicy, string.String]:
+    match policy_path:
+        Option.some as path_payload:
+            return nullable_policy.load_nullable_policy(path_payload.value)
+        Option.none:
+            return Result[nullable_policy.NullablePolicy, string.String].success(
+                value = nullable_policy.NullablePolicy(
+                    return_overrides = vec.Vec[bindgen.TypeOverride].create(),
+                    param_overrides = vec.Vec[bindgen.ParamOverride].create(),
+                )
+            )
+
+
+function run_bindgen_with_report(
+    opts: ref[bindgen.BindgenOptions],
+    header_path: str,
+    output: Option[str],
+    report_path: str,
+) -> int:
+    match bindgen.generate_with_report(opts):
+        Result.success as generated:
+            var generated_output = generated.value
+            defer: generated_output.source.release()
+            defer: generated_output.report.release()
+            if not write_nullable_report(report_path, generated_output.report.as_str()):
+                return 1
+            match output:
+                Option.some as out_file:
+                    if not write_generated_source(out_file.value, generated_output.source.as_str()):
+                        return 1
+                    print_generated(header_path, out_file.value)
+                    stdio.print_format(c"nullable report %.*s -> %.*s\n",
+                        int<-(header_path.len), header_path.data,
+                        int<-(report_path.len), report_path.data)
+                Option.none:
+                    let st = generated_output.source.as_str()
+                    stdio.print_format(c"%.*s", int<-(st.len), st.data)
+                    var wrote = string.String.create()
+                    defer: wrote.release()
+                    wrote.append("wrote nullable report ")
+                    wrote.append(report_path)
+                    main.eprint_line(wrote.as_str())
+            return 0
+        Result.failure as failure:
+            let mt = failure.error.as_str()
+            main.eprint_line(mt)
+            failure.error.release()
+            return 1
+
+
+function run_bindgen_with_output(
+    opts: ref[bindgen.BindgenOptions],
+    header_path: str,
+    output: Option[str],
+) -> int:
+    match bindgen.generate(opts):
         Result.success as generated:
             var source = generated.value
             defer: source.release()
             match output:
                 Option.some as out_file:
-                    match fs.write_text(out_file.value, source.as_str()):
-                        Result.success:
-                            stdio.print_format(c"generated %.*s -> %.*s\n",
-                                int<-(header_path.len), header_path.data,
-                                int<-(out_file.value.len), out_file.value.data)
-                        Result.failure:
-                            stdio.print_line("bindgen: could not write output file")
-                            return 1
+                    if not write_generated_source(out_file.value, source.as_str()):
+                        return 1
+                    print_generated(header_path, out_file.value)
                 Option.none:
                     let st = source.as_str()
                     stdio.print_format(c"%.*s", int<-(st.len), st.data)
@@ -239,6 +292,21 @@ public function bindgen_command(args: span[str]) -> int:
             main.eprint_line(mt)
             failure.error.release()
             return 1
+
+
+function write_generated_source(path: str, source: str) -> bool:
+    match fs.write_text(path, source):
+        Result.success:
+            return true
+        Result.failure:
+            stdio.print_line("bindgen: could not write output file")
+            return false
+
+
+function print_generated(header_path: str, out_path: str) -> void:
+    stdio.print_format(c"generated %.*s -> %.*s\n",
+        int<-(header_path.len), header_path.data,
+        int<-(out_path.len), out_path.data)
 
 
 function release_options_root(root: ptr[json_mod.Value]?) -> void:

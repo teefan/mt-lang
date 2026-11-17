@@ -78,7 +78,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 129, 2026-11-17)
+## Status at a glance (session 130, 2026-11-17)
 
 | Area | State |
 | --- | --- |
@@ -94,9 +94,9 @@ history.
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the real lldb-dap bridge closes the VS Code F5 launch deadlock (configurationDone no longer waits for the launch response), proven by `tools/dap_async_probe.rb`; desktop F5 smoke passed session 74 |
 | Formatter | **776/776** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
-| Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 72).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
+| Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 130).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
 | Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
-| **Refactoring safety (new)** | structural guard: 168 files / 124,155 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **35 unused + 6 test-only** public declarations; 6,379 duplicated lines; **10 functions ≥ 200 lines**; **11 files ≥ 2,000 code lines**; 0 markers.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` |
+| **Refactoring safety (new)** | structural guard: 168 files / 124,328 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **35 unused + 6 test-only** public declarations; 6,379 duplicated lines; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` |
 
 Rough completion against the per-track Definition of Done: **100%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix (including
@@ -106,6 +106,68 @@ done, and session 72 added the analyzer/`check` surface that no gate had
 measured.  The only residuals are the documented `tracy` custom-generator entry
 and the optional desktop F5 smoke.  Track G (throughput) closed in session 72:
 the self is now faster than the host.
+
+## Session 130 — long-function closeout
+
+Decomposed the remaining nine functions ≥ 200 lines, closing the target list
+(`binding_at` stays excluded):
+
+1. **`std_registry_lookup`** (`std_catalog.mt`) 238 -> 120 by collapsing each
+   registry entry to the established inline `if name == "...": return ...`
+   form.  The table stays in one function: splitting a homogeneous table would
+   create cross-function duplicate windows (the session-122 `binding_at`
+   lesson).
+2. **`generate_internal`** (`bindgen.mt`) 221 -> 40 via
+   `create_translation_unit` (85), `clang_ast_arguments`,
+   `generate_from_clang_result` (92), `clang_failure_message`, and the shared
+   `translation_unit_write_error`.
+3. **`emit_format_string_helpers`** (`c_backend.mt`) 219 -> 4 via
+   `emit_format_string_core` (99), `emit_format_string_length_helpers` (29),
+   and `emit_format_string_append_helpers` (93), in the original emission
+   order; C output is byte-identical.
+4. **`load_context`** (`packages/lock.mt`) 218 -> 100 via
+   `parse_lock_schema_version` (15), `validate_lock_root_package` (31), and
+   `parse_lock_records` (90).
+5. **`bindgen_command`** (`main/bindings_cli.mt`) 216 -> 87 via
+   `parse_bindgen_args` (73) with `BindgenCliArgs`/`BindgenCliError`,
+   `load_bindgen_policy` (11), `run_bindgen_with_report` (35),
+   `run_bindgen_with_output` (23), and the shared
+   `write_generated_source`/`print_generated`.
+6. **`build_manifest`** (`packages/manifest.mt`) 213 -> 150 via
+   `resolve_package_kind` (21), `resolve_manifest_source_root` (27),
+   `resolve_manifest_profile` (15), `resolve_manifest_platform` (15), and
+   `resolve_manifest_html_template` (22).
+7. **`dump_ir_with_analyses`** (`sexpr.mt`) 212 -> 21 via
+   `register_program_decl_kinds` (34) and the ten `ir_*_value` collection
+   builders.
+8. **`resolve_name_in_analysis`** (`lsp/navigation.mt`) 209 -> 56 via
+   `function_name_hover` (18), `method_name_hover` (70),
+   `value_name_hover` (28), `interface_name_hover` (48), and
+   `type_name_hover` (57).
+9. **`choose_registry_version`** (`packages/solver.mt`) 207 -> 62 via
+   `load_registry_versions` (33), `select_matching_versions` (21),
+   `filter_locked_registry_versions` (17), `locked_version_error` (15),
+   `no_matching_version_error` (12), `append_version_requirement` (11), and
+   `visit_registry_candidates` (77).
+
+Structural: **168 files / 156,522 lines / 124,328 code**; 111 edges; 0
+layering/naming/alias/vocabulary violations; 35 unused + 6 test-only exports;
+**6,379 duplicated lines / 901 windows** (unchanged); **1 function >= 200
+lines** (from 10; only the excluded `binding_at`, 385); 11 files >= 2,000; 0
+markers; tests 21/61.  The +173 code lines are helper signatures and call
+sites; the baseline refresh records the deliberate structure change.
+
+Verification: dev suite 21/0; `test/mt` 61/0; full CLI **224/224**; `sexpr
+lower` **715 match / 8 differ / 53 host-rejected / 0 self-failed of 776** (the
+same eight documented artifacts); LSP **30/30 capabilities + the documented
+`typeDefinition/imported` row**, recovery 6/6; bindgen **33 match / 0 differ /
+0 error / 1 custom of 34**; `std list` byte-identical to the host and the
+`emit-c` output for `examples/language_baseline.mt` byte-identical to the
+stage2 compiler; bootstrap fixed point holds (`stage2.c == stage3.c`); guard
+`--check --strict --ratchet`; guard tests 15/15; refactor gate 6/6.
+
+Next: no long-function targets remain.  `binding_at` (385) stays excluded — a
+constant table whose split raised duplication when attempted in session 122.
 
 ## Session 129 — dispatch/format/lint/AST splits and bounded test builds
 
@@ -2112,12 +2174,13 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
-## Handoff (session 129)
+## Handoff (session 130)
 
-**Next session:** start with `std_registry_lookup` (238) or `generate_internal`
-(221); `binding_at` stays excluded.  Keep heavy parity sweeps memory-capped
-(`--mem-mb`, `-j 2`–`4`) — `mtc test` no longer accumulates memory, but each
-independent compiler still peaks at 2.5–3.4 GB on compiler-sized closures.
+**Next session:** the long-function target list is closed — no function other
+than the excluded `binding_at` (385) is ≥ 200 lines.  Keep heavy parity sweeps
+memory-capped (`--mem-mb`, `-j 2`–`4`) — `mtc test` no longer accumulates
+memory, but each independent compiler still peaks at 2.5–3.4 GB on
+compiler-sized closures.
 
 **Read this first, then *Status at a glance* and the Ledger.**  The parity
 program stays closed, and session 73 closed the last *measurement* gaps: the
@@ -2125,7 +2188,7 @@ program stays closed, and session 73 closed the last *measurement* gaps: the
 command.  The matrix is now **224/224**, and the fixes it forced are in the
 commands themselves (see the session-73 section).
 
-Sessions 75–129 added the refactoring safety suite (structural guard, gate
+Sessions 75–130 added the refactoring safety suite (structural guard, gate
 wiring, committed baseline), its first pass (naming violations, the shared
 `mtc.strings` leaf, alias and type canonicalization), import-cycle support in
 the loader, the lowering splits (`comptime.mt`, `const_eval.mt`,
@@ -2133,7 +2196,8 @@ the loader, the lowering splits (`comptime.mt`, `const_eval.mt`,
 `type_helpers.mt`, `parallel.mt`, `match.mt`, `include_scan.mt`,
 `monomorphized.mt`, `control_flow.mt`), the `lower_stmt` / `lower_call` /
 `lower_expr` / parallel-worker / `lower_module` declaration-arm /
-`lower_identifier_member` decompositions (the long-function count is now 10),
+`lower_identifier_member` decompositions (the long-function count is now 1, the
+excluded `binding_at`),
 the c_backend/main splits
 (`c_backend/reachability.mt`, the `generate_c` type/body phases,
 `main/std_cli.mt`, `main/bindings_cli.mt`, `main/format_cli.mt`,
@@ -2152,10 +2216,11 @@ bindgen modules (`bindgen/nullable_policy.mt`, `bindgen/emitter.mt`,
 `lower_async_fn` vtable/cancel/constructor phases.  Session 125 added the
 shared `build`/`run` options parser and phase helpers, the lint
 option/scan split, the generated help-family helpers, and `parser/call_args.mt`.
-Sessions 126–129 decomposed the next 20 long functions and region-scoped
+Sessions 126–130 decomposed the next 29 long functions and region-scoped
 `mtc test` runner builds (the old cross-file AST/analysis/IR accumulation is
 gone; `test/mt` peaks at 135 MB).  The analyzer's largest
-function is 109 lines; `lower_async_fn` is 141 and `generate_c` is 180.
+function is 109 lines; `lower_async_fn` is 141 and `generate_c` is 180;
+session 130 closed the remaining nine, so every other function is below 200.
 The lowering submodules now form one import SCC; keep `import std.str` in
 cyclic modules that use `Map[str, …]` keys, and expose a constructor from
 lowering instead of referencing a variant arm across the cycle.  Parser
@@ -2168,16 +2233,15 @@ named `declarations` when adding to the parser cycle.  Analyzer sections all
 take the private `Context`, so prefer in-file decomposition until that state is
 deliberately opened.
 
-Session 129 decomposed the next four targets (`dispatch_method`, `emit_decl`,
-`stmts_structural_equal`, `expr_value`) and region-scoped `mtc test` runner
-builds, all now below 200 lines.  Current decomposition targets, in size order:
-`std_registry_lookup` (238), `generate_internal` (221),
-`emit_format_string_helpers` (219), `load_context` (218), `bindgen_command`
-(216), `build_manifest` (213), `dump_ir_with_analyses` (212),
-`resolve_name_in_analysis` (209), and `choose_registry_version` (207).
+Session 129 decomposed `dispatch_method`, `emit_decl`,
+`stmts_structural_equal`, and `expr_value`; session 130 decomposed the
+remaining nine (`std_registry_lookup`, `generate_internal`,
+`emit_format_string_helpers`, `load_context`, `bindgen_command`,
+`build_manifest`, `dump_ir_with_analyses`, `resolve_name_in_analysis`, and
+`choose_registry_version`).  No decomposition targets remain.
 `binding_at` (385) stays excluded — the attempted split raised duplication and
 was reverted; do not reintroduce per-command constant tables there or in the
-generated help.  List all 10 long functions with
+generated help.  Verify the current shape with
 `ruby tools/refactor_guard.rb --json tmp/refactor.json`.
 
 Use `tools/gates.sh --areas refactor --run` and read `docs/refactoring.md`
@@ -2946,30 +3010,30 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **21 files / 0 failed** | session 129 | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 61 files / 0 failed (peak RSS 135 MB under the new compiler) | session 129 | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **21 files / 0 failed** | session 130 | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 61 files / 0 failed (peak RSS 135 MB under the new compiler) | session 130 | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | **49/49 same** under the gate (15 top-level + 34 sdl3) | session 128 (re-verified) | `tools/gates.sh --areas examples --run` |
-| `sexpr lex` / `parse` | lex 739/739 (session 120); **parse 772 match / 0 differ / 4 host-rejected of 776** (session 129; counts include `tmp` fixtures) | session 129 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | **715 match / 53 host-rejected** of 776; the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (empty-output differ or self-fail depending on how the loop limit lands); every extracted module matches | session 128 | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
-| `cli:parity` | **224 match / 0 differ / 0 pending** of 224 (case-backed; timings, `debug` node ids and the synthesized test-runner path normalized) | session 129 (re-verified) | `ruby tools/cli_parity.rb -q` |
+| `sexpr lex` / `parse` | lex 739/739 (session 120); **parse 772 match / 0 differ / 4 host-rejected of 776** (session 130; counts include `tmp` fixtures) | session 130 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | **715 match / 53 host-rejected** of 776; the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (empty-output differ or self-fail depending on how the loop limit lands); every extracted module matches | session 130 | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `cli:parity` | **224 match / 0 differ / 0 pending** of 224 (case-backed; timings, `debug` node ids and the synthesized test-runner path normalized) | session 130 (re-verified) | `ruby tools/cli_parity.rb -q` |
 | `mtc test` matrix | **43 cases**, included in `cli:parity` 224/224: file/dir operands, human/TAP/JUnit, filters, death tests, `--timeout/--mem/--jobs/--sanitize`, `--locked/--frozen`, validation errors, build-error channels | session 73 | `ruby tools/cli_parity.rb -f '^test-'` |
 | **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** (`std`+`examples`; the 3 are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows) | session 115 (re-verified 127) | `ruby tools/diag_parity.rb check -j 8 std examples`; byte-level: `ruby tools/check_parity.rb` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 71 | `ruby tools/wasm_smoke.rb` |
 | docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 71 | `ruby tools/docs_smoke.rb` |
 | lint corpus | full: **624 agree / 34 differ of 658**; focused `std`+`examples`: **501 agree / 3 differ of 504** (the documented residue); hostfail 0, selffail 0; **43/43 rules, 13/13 fixers** | session 101 (focused re-verified 129) | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 635/635 | session 71 | `ruby tools/unused_import_parity.rb` |
-| LSP harness | 30/30 capabilities; 70 requests with the documented `typeDefinition/imported` row only | session 129 (re-verified) | `tools/lsp_parity.rb record/compare --stress` |
+| LSP harness | 30/30 capabilities; 70 requests with the documented `typeDefinition/imported` row only | session 130 (re-verified) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 71 (canonical) | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
-| LSP recovery | 6/6 byte-equal | session 73 (re-verified) | `tools/lsp_recovery_probe.rb --check` |
+| LSP recovery | 6/6 byte-equal | session 130 (re-verified) | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | 4.9 ms median per `didChange`; `didOpen` ~52 ms cold | session 29 | `ruby tmp/lsp_edit_perf.rb --bin <bin>` (transient probe) |
 | LSP valgrind | 0 errors over the harness drive; ~64 KB definitely-lost per 10-cycle soak (one-time index level) | session 71 (re-verified) | `tools/gates.sh --only valgrind_lsp --run` |
 | LSP soak | 74–75 KB/cycle raw / ~28 KB/cycle least-squares at 200 cycles (meter; one-time index level) | session 71 (two runs) | `ruby tools/lsp_soak.rb --quiet` |
 | formatter | 776/776 all three modes byte-identical with the current compiler | session 129 | `ruby tools/format_parity.rb all --self tmp/mtc-dev -j 16` |
 | DAP | zero differing rows except the documented self-better frame0 row; the async-order F5 probe (`tools/dap_async_probe.rb`) proves launch → breakpoint → frame/locals → evaluate against real `lldb-dap` | session 73 (re-verified) | `ruby tools/dap_smoke.rb` (`--allow-skip` to waive a missing adapter); `ruby tools/dap_async_probe.rb` |
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
-| bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 106 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
+| bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 130 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 168 alias modules); 35 unused / 6 test-only exports; **6,379 duplicated lines**; **10 functions ≥ 200 lines**; **11 files ≥ 2,000 code lines**; 0 markers; **guard tests 15/15**; refactor gate **6/6 rc=0** | session 129 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 168 alias modules); 35 unused / 6 test-only exports; **6,379 duplicated lines**; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; **guard tests 15/15**; refactor gate **6/6 rc=0** | session 130 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 

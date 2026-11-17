@@ -1098,6 +1098,32 @@ public function dump_ir(program: ir.Program) -> string.String:
 ## `Types::Enum`/`Types::Flags`/`Types::Opaque` (session 43, item 3g).
 public function dump_ir_with_analyses(program: ir.Program, analyses: span[analyzer.Analysis]) -> string.String:
     var ctx = create_sexpr_context(program.module_name)
+    register_program_decl_kinds(ref_of(ctx), program, analyses)
+
+    var fields = vec.Vec[SexprField].create()
+    fields.push(field_str("module_name", program.module_name))
+    fields.push(field_value("includes", ir_includes_value(program)))
+    fields.push(field_value("constants", ir_constants_value(ref_of(ctx), program)))
+    fields.push(field_value("globals", ir_globals_value(ref_of(ctx), program)))
+    fields.push(field_value("opaques", ir_opaques_value(program)))
+    fields.push(field_value("structs", ir_structs_value(ref_of(ctx), program)))
+    fields.push(field_value("unions", ir_unions_value(ref_of(ctx), program)))
+    fields.push(field_value("enums", ir_enums_value(ref_of(ctx), program)))
+    fields.push(field_value("variants", ir_variants_value(ref_of(ctx), program)))
+    fields.push(field_value("static_asserts", ir_static_asserts_value(ref_of(ctx), program)))
+    fields.push(field_value("functions", ir_functions_value(ref_of(ctx), program)))
+    fields.push(field_str("path", program.source_path))
+
+    var buf = string.String.create()
+    render_value(ref_of(buf), node("IR::Program", fields.as_span()))
+    return buf
+
+
+function register_program_decl_kinds(
+    ctx: ref[SexprContext],
+    program: ir.Program,
+    analyses: span[analyzer.Analysis],
+) -> void:
     var si: ptr_uint = 0
     while si < program.structs.len:
         ctx.struct_names.set(unsafe: read(program.structs.data + si).name, true)
@@ -1125,19 +1151,20 @@ public function dump_ir_with_analyses(program: ir.Program, analyses: span[analyz
         var a: analyzer.Analysis
         unsafe:
             a = read(analyses.data + ai)
-        register_decl_kinds(ref_of(ctx), a)
+        register_decl_kinds(ctx, a)
         ai += 1
 
-    var fields = vec.Vec[SexprField].create()
-    fields.push(field_str("module_name", program.module_name))
 
+function ir_includes_value(program: ir.Program) -> SexprValue:
     var includes = vec.Vec[SexprValue].create()
     var ii: ptr_uint = 0
     while ii < program.includes.len:
         includes.push(node("IR::Include", fields1(field_str("header", unsafe: read(program.includes.data + ii).header))))
         ii += 1
-    fields.push(field_value("includes", list_value(includes.as_span())))
+    return list_value(includes.as_span())
 
+
+function ir_constants_value(ctx: ref[SexprContext], program: ir.Program) -> SexprValue:
     var constants = vec.Vec[SexprValue].create()
     var ci: ptr_uint = 0
     while ci < program.constants.len:
@@ -1147,14 +1174,16 @@ public function dump_ir_with_analyses(program: ir.Program, analyses: span[analyz
         var cf = vec.Vec[SexprField].create()
         cf.push(field_str("name", c.name))
         cf.push(field_str("linkage_name", c.linkage_name))
-        cf.push(field_value("type", types_value(ref_of(ctx), c.ty)))
-        cf.push(field_value("value", ir_expr_value(ref_of(ctx), c.value)))
+        cf.push(field_value("type", types_value(ctx, c.ty)))
+        cf.push(field_value("value", ir_expr_value(ctx, c.value)))
         cf.push(field_line(c.line))
         cf.push(field_path(c.path))
         constants.push(node("IR::Constant", cf.as_span()))
         ci += 1
-    fields.push(field_value("constants", list_value(constants.as_span())))
+    return list_value(constants.as_span())
 
+
+function ir_globals_value(ctx: ref[SexprContext], program: ir.Program) -> SexprValue:
     var globals = vec.Vec[SexprValue].create()
     var gi: ptr_uint = 0
     while gi < program.globals.len:
@@ -1164,12 +1193,14 @@ public function dump_ir_with_analyses(program: ir.Program, analyses: span[analyz
         var gf = vec.Vec[SexprField].create()
         gf.push(field_str("name", g.name))
         gf.push(field_str("linkage_name", g.linkage_name))
-        gf.push(field_value("type", types_value(ref_of(ctx), g.ty)))
-        gf.push(field_value("value", ir_expr_value(ref_of(ctx), g.value)))
+        gf.push(field_value("type", types_value(ctx, g.ty)))
+        gf.push(field_value("value", ir_expr_value(ctx, g.value)))
         globals.push(node("IR::Global", gf.as_span()))
         gi += 1
-    fields.push(field_value("globals", list_value(globals.as_span())))
+    return list_value(globals.as_span())
 
+
+function ir_opaques_value(program: ir.Program) -> SexprValue:
     var opaques = vec.Vec[SexprValue].create()
     var oi: ptr_uint = 0
     while oi < program.opaques.len:
@@ -1183,8 +1214,10 @@ public function dump_ir_with_analyses(program: ir.Program, analyses: span[analyz
         of.push(field_opt_str("source_module", o.source_module))
         opaques.push(node("IR::OpaqueDecl", of.as_span()))
         oi += 1
-    fields.push(field_value("opaques", list_value(opaques.as_span())))
+    return list_value(opaques.as_span())
 
+
+function ir_structs_value(ctx: ref[SexprContext], program: ir.Program) -> SexprValue:
     var structs = vec.Vec[SexprValue].create()
     var sti: ptr_uint = 0
     while sti < program.structs.len:
@@ -1194,14 +1227,16 @@ public function dump_ir_with_analyses(program: ir.Program, analyses: span[analyz
         var sf = vec.Vec[SexprField].create()
         sf.push(field_str("name", s.name))
         sf.push(field_str("linkage_name", s.linkage_name))
-        sf.push(field_value("fields", ir_fields_value(ref_of(ctx), s.fields)))
+        sf.push(field_value("fields", ir_fields_value(ctx, s.fields)))
         sf.push(field_bool("packed", s.packed))
         sf.push(field_zero_nil_int("alignment", s.alignment))
         sf.push(field_opt_str("source_module", s.source_module))
         structs.push(node("IR::StructDecl", sf.as_span()))
         sti += 1
-    fields.push(field_value("structs", list_value(structs.as_span())))
+    return list_value(structs.as_span())
 
+
+function ir_unions_value(ctx: ref[SexprContext], program: ir.Program) -> SexprValue:
     var unions = vec.Vec[SexprValue].create()
     var uni: ptr_uint = 0
     while uni < program.unions.len:
@@ -1211,12 +1246,14 @@ public function dump_ir_with_analyses(program: ir.Program, analyses: span[analyz
         var uf = vec.Vec[SexprField].create()
         uf.push(field_str("name", u.name))
         uf.push(field_str("linkage_name", u.linkage_name))
-        uf.push(field_value("fields", ir_fields_value(ref_of(ctx), u.fields)))
+        uf.push(field_value("fields", ir_fields_value(ctx, u.fields)))
         uf.push(field_opt_str("source_module", u.source_module))
         unions.push(node("IR::UnionDecl", uf.as_span()))
         uni += 1
-    fields.push(field_value("unions", list_value(unions.as_span())))
+    return list_value(unions.as_span())
 
+
+function ir_enums_value(ctx: ref[SexprContext], program: ir.Program) -> SexprValue:
     var enums = vec.Vec[SexprValue].create()
     var eni: ptr_uint = 0
     while eni < program.enums.len:
@@ -1232,19 +1269,21 @@ public function dump_ir_with_analyses(program: ir.Program, analyses: span[analyz
             var mf = vec.Vec[SexprField].create()
             mf.push(field_str("name", m.name))
             mf.push(field_str("linkage_name", m.linkage_name))
-            mf.push(field_value("value", ir_expr_value(ref_of(ctx), m.value)))
+            mf.push(field_value("value", ir_expr_value(ctx, m.value)))
             members.push(node("IR::EnumMember", mf.as_span()))
             mi += 1
         var ef = vec.Vec[SexprField].create()
         ef.push(field_str("name", en.name))
         ef.push(field_str("linkage_name", en.linkage_name))
-        ef.push(field_value("backing_type", types_value(ref_of(ctx), en.backing_type)))
+        ef.push(field_value("backing_type", types_value(ctx, en.backing_type)))
         ef.push(field_value("members", list_value(members.as_span())))
         ef.push(field_bool("flags", en.is_flags))
         enums.push(node("IR::EnumDecl", ef.as_span()))
         eni += 1
-    fields.push(field_value("enums", list_value(enums.as_span())))
+    return list_value(enums.as_span())
 
+
+function ir_variants_value(ctx: ref[SexprContext], program: ir.Program) -> SexprValue:
     var variants = vec.Vec[SexprValue].create()
     var vai: ptr_uint = 0
     while vai < program.variants.len:
@@ -1260,7 +1299,7 @@ public function dump_ir_with_analyses(program: ir.Program, analyses: span[analyz
             var af = vec.Vec[SexprField].create()
             af.push(field_str("name", a.name))
             af.push(field_str("linkage_name", a.linkage_name))
-            af.push(field_value("fields", ir_fields_value(ref_of(ctx), a.fields)))
+            af.push(field_value("fields", ir_fields_value(ctx, a.fields)))
             arms.push(node("IR::VariantArm", af.as_span()))
             ai += 1
         var vf = vec.Vec[SexprField].create()
@@ -1270,8 +1309,10 @@ public function dump_ir_with_analyses(program: ir.Program, analyses: span[analyz
         vf.push(field_opt_str("source_module", vd.source_module))
         variants.push(node("IR::VariantDecl", vf.as_span()))
         vai += 1
-    fields.push(field_value("variants", list_value(variants.as_span())))
+    return list_value(variants.as_span())
 
+
+function ir_static_asserts_value(ctx: ref[SexprContext], program: ir.Program) -> SexprValue:
     var asserts = vec.Vec[SexprValue].create()
     var sai: ptr_uint = 0
     while sai < program.static_asserts.len:
@@ -1279,12 +1320,14 @@ public function dump_ir_with_analyses(program: ir.Program, analyses: span[analyz
         unsafe:
             sa = read(program.static_asserts.data + sai)
         var saf = vec.Vec[SexprField].create()
-        saf.push(field_value("condition", ir_expr_value(ref_of(ctx), sa.condition)))
-        saf.push(field_value("message", ir_expr_value(ref_of(ctx), sa.message)))
+        saf.push(field_value("condition", ir_expr_value(ctx, sa.condition)))
+        saf.push(field_value("message", ir_expr_value(ctx, sa.message)))
         asserts.push(node("IR::StaticAssert", saf.as_span()))
         sai += 1
-    fields.push(field_value("static_asserts", list_value(asserts.as_span())))
+    return list_value(asserts.as_span())
 
+
+function ir_functions_value(ctx: ref[SexprContext], program: ir.Program) -> SexprValue:
     var functions = vec.Vec[SexprValue].create()
     var fi: ptr_uint = 0
     while fi < program.functions.len:
@@ -1294,25 +1337,20 @@ public function dump_ir_with_analyses(program: ir.Program, analyses: span[analyz
         var fnf = vec.Vec[SexprField].create()
         fnf.push(field_str("name", func.name))
         fnf.push(field_str("linkage_name", func.linkage_name))
-        fnf.push(field_value("params", ir_params_value(ref_of(ctx), func.params)))
-        fnf.push(field_value("return_type", types_value(ref_of(ctx), func.return_type)))
-        fnf.push(field_value("body", ir_stmts_value(ref_of(ctx), func.body)))
+        fnf.push(field_value("params", ir_params_value(ctx, func.params)))
+        fnf.push(field_value("return_type", types_value(ctx, func.return_type)))
+        fnf.push(field_value("body", ir_stmts_value(ctx, func.body)))
         fnf.push(field_bool("entry_point", func.entry_point))
         fnf.push(field_bool("method_receiver_param", func.method_receiver_param))
         functions.push(node("IR::Function", fnf.as_span()))
         fi += 1
-    fields.push(field_value("functions", list_value(functions.as_span())))
-
-    fields.push(field_str("path", program.source_path))
-
-    var buf = string.String.create()
-    render_value(ref_of(buf), node("IR::Program", fields.as_span()))
-    return buf
+    return list_value(functions.as_span())
 
 
 # =============================================================================
 #  AST serialisation (host AST::* classes)
 # =============================================================================
+
 
 function fields2(a: SexprField, b: SexprField) -> span[SexprField]:
     var f = vec.Vec[SexprField].create()

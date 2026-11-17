@@ -118,10 +118,10 @@ score.
 
 ### Size, markers, tests
 
-- **124,155 code lines**; **10 functions ≥ 200 lines**; **11 files ≥ 2,000 code
+- **124,328 code lines**; **1 function ≥ 200 lines**; **11 files ≥ 2,000 code
   lines**. The ratchet counts these, so a refactor cannot trade one long
-  function for another.  Sessions 125–129 removed the top targets; only
-  `binding_at` (385, excluded) and nine others remain.
+  function for another.  Session 130 closed the rest: only `binding_at` (385,
+  excluded) remains.
 - **0 marker comments** (`TODO`/`FIXME`/`XXX`/`HACK`); any new one fails.
 - Test trees: **21** files in `projects/mtc/test`, **61** in `test/mt`. The
   ratchet fails if either count drops (silent-skip protection).
@@ -192,18 +192,22 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 129, 2026-11-17)
+## 6. Current baseline (session 130, 2026-11-17)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 168 / 156,268 / 124,155 |
+| source files / lines / code lines | 168 / 156,522 / 124,328 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (168 modules) |
 | dead exports (unused / test-only) | 35 / 6 |
 | duplication (windows / duplicated lines) | 901 / 6,379 (window 12) |
-| functions ≥ 200 lines | 10 |
+| functions ≥ 200 lines | 1 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 21 / 61 |
+
+Session 130's nine decompositions added 173 code lines (helper signatures and
+call sites); duplication, file counts, and the test trees did not move.  The
+remaining function over the limit is the excluded `binding_at` (385).
