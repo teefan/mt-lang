@@ -125,6 +125,8 @@ public function collect_diagnostics(ws: ref[workspace.Workspace], uri: str, root
 ## Publish diagnostics for a file via an LSP notification.
 ## Uses the textDocument/publishDiagnostics notification.
 public function publish_for_uri(ws: ref[workspace.Workspace], uri: str, root_path: str, source: str) -> void:
+    if ws.pull_diagnostics_active:
+        return
     var diagnostics = collect_diagnostics(ws, uri, root_path, source)
 
     var params = json.create_object_value()
@@ -141,7 +143,9 @@ public function publish_for_uri(ws: ref[workspace.Workspace], uri: str, root_pat
 
 
 ## Publish an empty diagnostics array for `uri` (clear diagnostics on close).
-public function publish_empty_for_uri(uri: str) -> void:
+public function publish_empty_for_uri(ws: ref[workspace.Workspace], uri: str) -> void:
+    if ws.pull_diagnostics_active:
+        return
     var params = json.create_object_value()
     defer: json.release_value(params)
 

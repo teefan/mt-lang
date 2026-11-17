@@ -20,6 +20,7 @@ const TOKEN_MODIFIERS_JSON: str = "\"tokenModifiers\":[\"declaration\",\"definit
 ## fallback for clients that pass none.
 public function handle_initialize(id: json.Value, params: json.Value, ws: ref[workspace.Workspace]) -> void:
     apply_client_root(params, ws)
+    ws.pull_diagnostics_active = client_supports_pull_diagnostics(params)
 
     var r = string.String.create()
     defer: r.release()
@@ -100,3 +101,28 @@ function apply_client_root(params: json.Value, ws: ref[workspace.Workspace]) -> 
 ## Handle the `initialized` notification (no-op).
 public function handle_initialized() -> void:
     pass
+
+
+## True when the client advertised pull-diagnostics support
+## (`textDocument.diagnostic`).  The host suppresses `publishDiagnostics` when it
+## does; otherwise VS Code shows each diagnostic twice, once from the pull
+## report and once from the push notification.
+function client_supports_pull_diagnostics(params: json.Value) -> bool:
+    let obj_ptr = params.as_object()
+    if obj_ptr == null:
+        return false
+    unsafe:
+        let caps_ptr = read(obj_ptr).get("capabilities")
+        if caps_ptr == null:
+            return false
+        let caps_obj = read(caps_ptr).as_object() else:
+            return false
+        let td_ptr = read(caps_obj).get("textDocument")
+        if td_ptr == null:
+            return false
+        let td_obj = read(td_ptr).as_object() else:
+            return false
+        let diagnostic_ptr = read(td_obj).get("diagnostic")
+        if diagnostic_ptr == null:
+            return false
+        return not read(diagnostic_ptr).is_null()

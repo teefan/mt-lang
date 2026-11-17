@@ -789,7 +789,7 @@ function find_from(text: str, needle: str, from: ptr_uint) -> Option[ptr_uint]:
         return Option[ptr_uint].none
     var i = from
     while i + needle.len <= text.len:
-        if text.slice(i, needle.len).equal(needle):
+        if text.starts_with_at(i, needle):
             return Option[ptr_uint].some(value = i)
         i += 1
     return Option[ptr_uint].none

@@ -845,11 +845,12 @@ function check_cyclic_program(
 
     if cycle_rebuild:
         # Provisional analyses and their bindings stay alive until the second
-        # pass has consumed them; with a cache they live in a scratch region.
-        var scratch_region = heap.create_region()
-        var scratch_ptr: ptr[heap.Region]? = null
-        if cache != null:
-            scratch_ptr = ptr_of(scratch_region)
+        # pass has consumed them.  With a cache they live in the region that
+        # later owns the member's final analysis: pass-2 type values can point
+        # into pass-1 data, so tying the provisional region to the request
+        # boundary dangled them once the program was cached past that request.
+        var cyclic_regions = map_mod.Map[ptr_uint, heap.Region].create()
+        defer: cyclic_regions.release()
 
         # Pre-register forward type bindings for every cycle member.
         var fi: ptr_uint = 0
@@ -890,12 +891,15 @@ function check_cyclic_program(
                                     read(bindings_ptr).set(loaded.module_name.as_str(), read(binding_mem))
                                 binding_found = true
                 if not binding_found:
-                    let (_, binding) = analyze_and_bind_in_region(module_ptr, bindings_ptr, require_resolved_imports, scratch_ptr)
+                    let (_, binding) = analyze_and_bind_in_region(module_ptr, bindings_ptr, require_resolved_imports, null)
                     unsafe:
                         read(bindings_ptr).set(loaded.module_name.as_str(), binding)
             pi += 1
 
-        # Pass 1: cycle members against the forward type bindings.
+        # Pass 1: cycle members against the forward type bindings.  Each
+        # member's provisional analysis is allocated in the region that will
+        # own its final analysis, so pass-2 types borrowing from it stay valid
+        # for the cache entry's lifetime.
         var p1: ptr_uint = 0
         while p1 < order.len():
             let index_ptr = order.get(p1) else:
@@ -906,7 +910,8 @@ function check_cyclic_program(
                     p1 += 1
                     continue
                 let loaded = unsafe: read(module_ptr)
-                let (_, binding) = analyze_and_bind_in_region(module_ptr, bindings_ptr, require_resolved_imports, scratch_ptr)
+                let region_ptr = cycle_pass1_region(cache, ref_of(cyclic_regions), index)
+                let (_, binding) = analyze_and_bind_in_region(module_ptr, bindings_ptr, require_resolved_imports, region_ptr)
                 unsafe:
                     read(bindings_ptr).set(loaded.module_name.as_str(), binding)
             p1 += 1
@@ -925,8 +930,11 @@ function check_cyclic_program(
                     continue
                 let loaded = unsafe: read(module_ptr)
                 if cache != null:
-                    var analysis_region = heap.create_region()
-                    let (analysis, binding) = analyze_and_bind_in_region(module_ptr, bindings_ptr, require_resolved_imports, ptr_of(analysis_region))
+                    let region_ptr = cyclic_regions.get(index) else:
+                        p2 += 1
+                        continue
+                    let (analysis, binding) = analyze_and_bind_in_region(module_ptr, bindings_ptr, require_resolved_imports, region_ptr)
+                    let analysis_region = unsafe: read(region_ptr)
                     module_cache_store_analysis(cache, loaded.path.as_str(), index, run, analysis, binding, analysis_region)
                     pass2_bindings.set(loaded.module_name.as_str(), binding)
                     final_analyses.set(index, analysis)
@@ -952,9 +960,6 @@ function check_cyclic_program(
                 unsafe:
                     read(bindings_ptr).set(loaded.module_name.as_str(), read(binding_ptr))
             ib += 1
-
-        if cache != null:
-            retire_region(cache, scratch_region)
     else:
         # Every cycle member's cached analysis is still current: reuse it and
         # keep the dependents' cache entries valid.
@@ -1007,6 +1012,18 @@ function check_cyclic_program(
             else:
                 reuse_cached_module(module_ptr, cache, bindings_ptr, analyses, diagnostics)
         oi += 1
+
+
+## Pass 1's analysis region for a cycle member: created once per member when a
+## cache will carry it past the request boundary, so pass-2 type values that
+## borrow pass-1 data stay valid for the cache entry's lifetime.  The map's copy
+## is returned so the entry later receives the same region.
+function cycle_pass1_region(cache: ptr[ModuleCache]?, regions: ref[map_mod.Map[ptr_uint, heap.Region]], index: ptr_uint) -> ptr[heap.Region]?:
+    if cache == null:
+        return null
+    var region = heap.create_region()
+    regions.set(index, region)
+    return regions.get(index)
 
 
 ## Load and check the program rooted at `root_path`, resolving imports against

@@ -788,13 +788,28 @@ function parse_error_count_for(ws: ref[workspace.Workspace], file_path: str, sou
 ## comes from the scope walk, so the innermost enclosing declaration answers — a
 ## same-named local in another function cannot (the host resolves a member
 ## receiver from its scope snapshot the same way).  The inlay hints use this for
-## a `receiver.method(...)` callee.
+## a `receiver.method(...)` callee; callers that resolve several names from the
+## same source collect the bindings once and pass them to the `_with_bindings`
+## variant.
 public function type_of_value(
     analysis: ref[analyzer.Analysis],
     ast_file: ast.SourceFile,
     name: str,
     target_line: ptr_uint,
     source_text: str,
+) -> Option[types.Type]:
+    var bindings = scope_mod.collect_bindings(source_text, ast_file)
+    defer: bindings.release()
+    return type_of_value_with_bindings(analysis, ast_file, name, target_line, ref_of(bindings))
+
+
+## The type of `name` at `target_line` using an already-collected binding list.
+public function type_of_value_with_bindings(
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    name: str,
+    target_line: ptr_uint,
+    bindings: ref[vec.Vec[scope_mod.Binding]],
 ) -> Option[types.Type]:
     # The implicit receiver of an instance method is bound like a parameter, so
     # `this.x` resolves the receiver's type exactly as `this`'s own hover does.
@@ -806,9 +821,7 @@ public function type_of_value(
         if global_ptr != null:
             return Option[types.Type].some(value = read(global_ptr))
 
-    var bindings = scope_mod.collect_bindings(source_text, ast_file)
-    defer: bindings.release()
-    let decl_line = scope_mod.local_binding_line(ref_of(bindings), name, target_line) else:
+    let decl_line = scope_mod.local_binding_line(bindings, name, target_line) else:
         return Option[types.Type].none
 
     var di: ptr_uint = 0
@@ -1582,9 +1595,6 @@ function resolve_cursor(
             return resolve_module_reference(ws, import_name.value.as_str())
         Option.none:
             pass
-
-    if parse_error_count_for(ws, file_path.as_str(), source) > 0:
-        return Option[CursorResult].none
 
     # The facts come from the loader-backed analysis, as the host's do: a
     # standalone check carries no import bindings, so every `alias.Type` and
@@ -3009,7 +3019,9 @@ function format_fn_signature(sig: analyzer.FnSig, name: str, current_module: str
         pi += 1
     sig_text.append(")")
     sig_text.append(" -> ")
-    sig_text.append(types.type_to_string(sig.return_type))
+    var return_text = type_render.qualified_name(sig.return_type, current_module)
+    sig_text.append(return_text.as_str())
+    return_text.release()
     return sig_text
 
 
@@ -4684,7 +4696,7 @@ function for_binding_hover(source: str, line: ptr_uint, character: ptr_uint, nam
     let after_for = fo + 4
     if after_for + name.len > cursor_line_text.len:
         return Option[CursorResult].none
-    if not cursor_line_text.slice(after_for, name.len).equal(name):
+    if not cursor_line_text.starts_with_at(after_for, name):
         return Option[CursorResult].none
     var hover = string.String.create()
     hover.append("for binding ")
@@ -4738,7 +4750,7 @@ function lexical_local_hover(source: str, target_line: ptr_uint, character: ptr_
             current_line -= 1
             continue
         let after_prefix = prefix.len
-        if after_prefix + name.len <= trimmed.len and trimmed.slice(after_prefix, name.len).equal(name):
+        if trimmed.starts_with_at(after_prefix, name):
             var hover = string.String.create()
             hover.append(prefix)
             hover.append(name)

@@ -38,9 +38,10 @@ public function handle_signature_help(
     defer: content.release()
 
     let source = content.as_str()
-    let func_name = cursor.call_name_at(source, line, character) else:
+    let call = cursor.call_context_at(source, line, character) else:
         proto.write_response(id, json.null_value())
         return
+    let func_name = call.name
 
     let doc = workspace.document_analysis_for(ws, file_path.as_str()) else:
         proto.write_response(id, json.null_value())
@@ -84,7 +85,7 @@ public function handle_signature_help(
     match sig_opt:
         Option.some as sig_payload:
             var sig = sig_payload.value
-            var json_text = build_signature_help_json(ref_of(sig), func_name)
+            var json_text = build_signature_help_json(ref_of(sig), func_name, call.active_parameter)
             proto.write_response_raw(id, json_text.as_str())
             json_text.release()
         Option.none:
@@ -92,7 +93,7 @@ public function handle_signature_help(
 
 
 ## Build a SignatureHelp JSON string.
-function build_signature_help_json(sig: ref[analyzer.FnSig], func_name: str) -> string.String:
+function build_signature_help_json(sig: ref[analyzer.FnSig], func_name: str, active_parameter: ptr_uint) -> string.String:
     var result = string.String.create()
     result.append("{\"signatures\":[{\"label\":\"")
     result.append(func_name)
@@ -129,5 +130,7 @@ function build_signature_help_json(sig: ref[analyzer.FnSig], func_name: str) -> 
             result.append(type_name)
             result.append("\"}")
             pi += 1
-    result.append("]}],\"activeSignature\":0,\"activeParameter\":0}")
+    result.append("]}],\"activeSignature\":0,\"activeParameter\":")
+    result.append_format(f"#{active_parameter}")
+    result.append("}")
     return result

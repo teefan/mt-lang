@@ -22,6 +22,7 @@ import mtc.semantic.types as types
 import mtc.lsp.cursor as cursor
 import mtc.lsp.navigation as navigation
 import mtc.lsp.protocol as proto
+import mtc.lsp.scope as scope_mod
 import mtc.lsp.type_render as type_render
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
@@ -91,6 +92,11 @@ public function handle_inlay_hint(
         ast_file = parser.parse_source(source, ref_of(parse_diags))
         analysis = analyzer.check_source_file(ast_file)
 
+    # The receiver hints below resolve values through the scope walk; collect
+    # the bindings once for the request instead of once per call site.
+    var bindings = scope_mod.collect_bindings(source, ast_file)
+    defer: bindings.release()
+
     var json_text = string.String.create()
     defer: json_text.release()
     json_text.append("[")
@@ -135,7 +141,7 @@ public function handle_inlay_hint(
                     # the receiver's type and looks the method up in the merged
                     # receiver table.
                     let fn_name = cursor.token_text(source, callee)
-                    match receiver_method_sig_for(analysis, ast_file, receiver_name, fn_name, receiver_tok.line, source):
+                    match receiver_method_sig_for(analysis, ast_file, receiver_name, fn_name, receiver_tok.line, ref_of(bindings)):
                         Option.some as sig:
                             emit_call_hints(ref_of(json_text), ref_of(emitted), source, ref_of(tokens), ti + 1, sig.value, range)
                         Option.none:
@@ -579,10 +585,10 @@ function receiver_method_sig_for(
     receiver_name: str,
     member: str,
     receiver_line: ptr_uint,
-    source: str,
+    bindings: ref[vec.Vec[scope_mod.Binding]],
 ) -> Option[analyzer.FnSig]:
     var type_name: str = ""
-    match navigation.type_of_value(analysis, ast_file, receiver_name, receiver_line, source):
+    match navigation.type_of_value_with_bindings(analysis, ast_file, receiver_name, receiver_line, bindings):
         Option.some as ty:
             type_name = receiver_key_name(ty.value)
         Option.none:

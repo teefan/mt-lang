@@ -15,7 +15,14 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-124-2026-11-14)
+- [Status at a glance](#status-at-a-glance-session-131-2026-11-17)
+- [Session 131 — VS Code LSP sweep and completion/diagnostic fixes](#session-131--vs-code-lsp-sweep-and-completiondiagnostic-fixes)
+- [Session 130 — long-function closeout](#session-130--long-function-closeout)
+- [Session 129 — dispatch/format/lint/AST splits and bounded test builds](#session-129--dispatchformatlintast-splits-and-bounded-test-builds)
+- [Session 128 — ordering, hover, type equality, and AST dump splits](#session-128--ordering-hover-type-equality-and-ast-dump-splits)
+- [Session 127 — lowering, manifest, linter, and semantic-token splits](#session-127--lowering-manifest-linter-and-semantic-token-splits)
+- [Session 126 — build, dispatch, C preamble, check, parser, and test splits](#session-126--build-dispatch-c-preamble-check-parser-and-test-splits)
+- [Session 125 — command and parser-section decomposition](#session-125--command-and-parser-section-decomposition)
 - [Session 124 — identifier member resolution](#session-124--identifier-member-resolution)
 - [Session 123 — lower_module declaration arms](#session-123--lower_module-declaration-arms)
 - [Session 122 — parallel worker extraction](#session-122--parallel-worker-extraction)
@@ -78,11 +85,11 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 130, 2026-11-17)
+## Status at a glance (session 131, 2026-11-17)
 
 | Area | State |
 | --- | --- |
-| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **21 files / 0 failed** |
+| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** |
 | `test/mt` | **61 files / 0 failed**; peak RSS **135 MB** under the region-scoped test compiler (session 129) |
 | Examples | **49/49 same** under the gate (15 top-level examples + `examples/sdl3` 34/34); the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **772 match / 0 differ / 4 host-rejected of 776**; counts drift with the tree and `tmp` fixtures) |
@@ -90,13 +97,13 @@ history.
 | `cli:parity` | **224 match / 0 differ / 0 pending** of 224 cases (`--timings` values, `debug`'s Ruby node ids and the synthesized test-runner path normalized; 43 `test` cases plus the second-batch sweep: global extraction, resolution flags, per-command operand models, missing/empty operands, completions/std/snapshot/cache/lsp/dap/bindgen/deps) |
 | **`check` diagnostics (new)** | **501 agree / 0 verdict / 0 position / 3 message of 504** files (`tools/diag_parity.rb check`; the 3 message files are `std/cli.mt`, `examples/reflection_advanced.mt`, and `examples/memory_stress_test.mt`) |
 | Linter corpus | **624 agree / 34 differ of 658** (hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  The `std`+`examples` residue is still the 4 documented rows (two self-only `redundant-cast` in `std/cli.mt`, the self-only `prefer-let` cluster in `std/fs.windows.mt`, the host-only `constant-condition` in `examples/reflection_advanced.mt`); the 30 additional rows are `projects/mtc/src` files where the host linter times out (`<timeout after 180s>`) or reports pre-existing source-only warnings. |
-| LSP | harness **30/30 capability keys + the documented `typeDefinition/imported` row** (70 requests); project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **74–75 KB/cycle raw / ~28 LS at 200 cycles** (meter, one-time index level documented) |
+| LSP | harness **30/30 capability keys + the documented `typeDefinition/imported` row** (70 requests, re-recorded session 131); project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **74–75 KB/cycle raw / ~28 LS at 200 cycles** (meter, one-time index level documented).  Session 131 fixed the completion-resolve abort, ported the host's attribute / named-argument / specialization completion contexts, made pushes pull-gated (no duplicate diagnostics), and restored hover/definition on parse-error buffers. |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the real lldb-dap bridge closes the VS Code F5 launch deadlock (configurationDone no longer waits for the launch response), proven by `tools/dap_async_probe.rb`; desktop F5 smoke passed session 74 |
 | Formatter | **776/776** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
 | Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 130).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
 | Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
-| **Refactoring safety (new)** | structural guard: 168 files / 124,328 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **35 unused + 6 test-only** public declarations; 6,379 duplicated lines; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` |
+| **Refactoring safety (new)** | structural guard: 168 files / 124,624 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **33 unused + 6 test-only** public declarations; 6,405 duplicated lines / 903 windows; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json` (refreshed session 131 for the completion/diagnostic feature growth); one command: `tools/gates.sh --areas refactor --run` |
 
 Rough completion against the per-track Definition of Done: **100%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix (including
@@ -106,6 +113,65 @@ done, and session 72 added the analyzer/`check` surface that no gate had
 measured.  The only residuals are the documented `tracy` custom-generator entry
 and the optional desktop F5 smoke.  Track G (throughput) closed in session 72:
 the self is now faster than the host.
+
+## Session 131 — VS Code LSP sweep and completion/diagnostic fixes
+
+The session opened on the session-130 tree with an uncommitted LSP/loader batch
+(found in the editor): cyclic-module pass-1 analyses are now owned by the cache
+entry's region (pass-2 types borrow them; the old request-scoped scratch region
+dangled them once a program was cached past the request), `effective_module_roots_for`
+adds the file's enclosing `package.toml` source root and project root (a nested
+package resolves by bare name from a monorepo root), the workspace index resolves
+each file's imports through that source root, `collect_toplevel_names` hoists
+`last_line` out of its declaration loop (quadratic on large files), inlay hints
+collect scope bindings once per request, and signature help reports the real
+active parameter via `cursor.call_context_at`.  Regression tests:
+`module_loader_test` (`test_cycle_regions_survive_the_request_boundary`),
+`module_roots_test` (7), `cursor_test` (4, new file).
+
+The VS Code X11 sweep (xdotool + spectacle; direct LSP probes for host parity)
+then fixed four defects:
+
+1. **Crash on `completionItem/resolve`** — the completion doc-comment scan
+   compared line prefixes by slicing `name.len` bytes; a multi-byte code point
+   crossing that window aborted the server (`str slice end must be a UTF-8
+   boundary`; core-dumped and gdb-confirmed).  New `str.starts_with_at` compares
+   bytes at an offset without slicing; used by the completion scan, the two
+   `navigation` prefix scans, and the linter scans (`reserved_name_column`,
+   `is_struct_decl`, `matches_word_at`, `platform_drift.find_from`).  Regression
+   test in `completion_test`.
+2. **Missing completion contexts vs the host** — `@[...` attributes (built-ins
+   then declared), named arguments for struct constructors plus the
+   already-provided filter (function parameters and type fields), and `name[...`
+   specialization type lists.  Parameter items now carry the host's
+   `parameter name: type` detail.  Unit tests cover all four.
+3. **Duplicate diagnostics** — the server pushed `publishDiagnostics` on
+   open/change while also serving pull diagnostics; VS Code showed each item
+   twice in hovers and tab badges.  `handle_initialize` records
+   `Workspace.pull_diagnostics_active` from the client capability, and
+   `publish_for_uri` / `publish_empty_for_uri` skip pushes exactly as the host's
+   `@pull_diagnostics_active` gate does.
+4. **Hover on buffers with parse errors** — `resolve_cursor` bailed on any parse
+   error; the host hovers the partial AST.  The bail is gone: definition and
+   hover answer on broken buffers like the host.
+
+Also removed the now-dead `cursor.call_name_at` / `callee_before` (the
+text-based named-argument path and `call_context_at` supersede them).
+
+Verification: self suite **22/0**; `test/mt` **61/0**; LSP harness **30/30**
+capabilities with only the documented `typeDefinition/imported` row (70 requests
+re-recorded); `refactor_guard --check` ok; bootstrap fixed point **holds**
+(`stage2.c == stage3.c`).  Not re-measured: the corpus-wide lint / `lower` / CLI
+sweeps (no output path changed).  The editor checks covered highlight across token
+types, hover, completion (member, named-argument, attribute, specialization,
+import, global), signature help, inlay hints, definition, references, rename,
+document/workspace symbols and code lenses.
+
+Known LSP residues left: format-string (`f"... #{`) completion still falls back to
+the global bucket (the host narrows to values/functions/locals);
+`field_declaration_hover` still bails on parse errors; imported attributes are
+not listed in `@[...` completion (the analysis exposes only local
+`declared_attributes`).
 
 ## Session 130 — long-function closeout
 
@@ -2174,13 +2240,21 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
-## Handoff (session 130)
+## Handoff (session 131)
 
-**Next session:** the long-function target list is closed — no function other
-than the excluded `binding_at` (385) is ≥ 200 lines.  Keep heavy parity sweeps
+**Next session:** the LSP editor sweep closed the defects it found (completion
+resolve abort, missing attribute / named-argument / specialization contexts,
+duplicate diagnostics, parse-error hover).  Keep heavy parity sweeps
 memory-capped (`--mem-mb`, `-j 2`–`4`) — `mtc test` no longer accumulates
 memory, but each independent compiler still peaks at 2.5–3.4 GB on
 compiler-sized closures.
+
+The remaining LSP residues are listed at the end of the session-131 section:
+format-string completion, the `field_declaration_hover` parse-error bail, and
+imported attributes in `@[...`.  Before changing the LSP shape, re-record the
+harness (`tools/lsp_parity.rb record --server host|self` + `compare`) and
+exercise the context in VS Code; completion regressions are invisible to the
+70-request fixture unless the fixture covers the context.
 
 **Read this first, then *Status at a glance* and the Ledger.**  The parity
 program stays closed, and session 73 closed the last *measurement* gaps: the
@@ -2281,11 +2355,18 @@ moved.**
 
 ### Open items, in priority order
 
-1. **Track G follow-ups are recorded, not pending.**  The post-fix profile is
+1. **LSP completion residue (session 131).**  Format-string (`f"... #{`)
+   completion still answers from the global bucket instead of the host's
+   values/functions/locals branch; `field_declaration_hover` still bails on a
+   parse error; imported attributes are absent from `@[...` completion because
+   the analysis carries only local `declared_attributes`.  Each is a small,
+   context-local fix; cover it with a direct host-vs-self probe before editing,
+   then add a unit test and re-record the harness.
+2. **Track G follow-ups are recorded, not pending.**  The post-fix profile is
    flat; `String.as_str()`'s per-call UTF-8 revalidation (~7%) is a documented
    invariant, and the ~2% scans are over small collections.  Reopen only with a
    fresh `perf record` showing a hotspot.
-2. **No manual items remain.**  The desktop F5 click-through passed (session 74,
+3. **No manual items remain.**  The desktop F5 click-through passed (session 74,
    above); it also found an extension-packaging defect: `activationEvents:
    ["onDebug:milk-tea"]` is ignored by VS Code 1.146, so the extension must be
    activated by opening a `.mt` file first.  Fix that in the extension repo
@@ -3010,8 +3091,8 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **21 files / 0 failed** | session 130 | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 61 files / 0 failed (peak RSS 135 MB under the new compiler) | session 130 | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 131 | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 61 files / 0 failed (peak RSS 135 MB under the new compiler) | session 131 | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | **49/49 same** under the gate (15 top-level + 34 sdl3) | session 128 (re-verified) | `tools/gates.sh --areas examples --run` |
 | `sexpr lex` / `parse` | lex 739/739 (session 120); **parse 772 match / 0 differ / 4 host-rejected of 776** (session 130; counts include `tmp` fixtures) | session 130 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
 | `sexpr lower` | **715 match / 53 host-rejected** of 776; the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (empty-output differ or self-fail depending on how the loop limit lands); every extracted module matches | session 130 | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
@@ -3022,7 +3103,7 @@ when the tree moved.  Target = the Definition of Done above.
 | docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 71 | `ruby tools/docs_smoke.rb` |
 | lint corpus | full: **624 agree / 34 differ of 658**; focused `std`+`examples`: **501 agree / 3 differ of 504** (the documented residue); hostfail 0, selffail 0; **43/43 rules, 13/13 fixers** | session 101 (focused re-verified 129) | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 635/635 | session 71 | `ruby tools/unused_import_parity.rb` |
-| LSP harness | 30/30 capabilities; 70 requests with the documented `typeDefinition/imported` row only | session 130 (re-verified) | `tools/lsp_parity.rb record/compare --stress` |
+| LSP harness | 30/30 capabilities; 70 requests with the documented `typeDefinition/imported` row only | session 131 (re-recorded) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 71 (canonical) | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
 | LSP recovery | 6/6 byte-equal | session 130 (re-verified) | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | 4.9 ms median per `didChange`; `didOpen` ~52 ms cold | session 29 | `ruby tmp/lsp_edit_perf.rb --bin <bin>` (transient probe) |
@@ -3033,7 +3114,7 @@ when the tree moved.  Target = the Definition of Done above.
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 | bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 130 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 168 alias modules); 35 unused / 6 test-only exports; **6,379 duplicated lines**; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; **guard tests 15/15**; refactor gate **6/6 rc=0** | session 130 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 168 files); 33 unused / 6 test-only exports; **6,405 duplicated lines / 903 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61; `--check --strict --ratchet` ok (baseline refreshed for the session-131 feature growth) | session 131 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 

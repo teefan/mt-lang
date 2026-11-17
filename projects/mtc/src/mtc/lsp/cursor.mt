@@ -30,6 +30,12 @@ public struct CursorToken:
     length: ptr_uint
 
 
+## The innermost call at the cursor: its callee name and 0-based parameter.
+public struct CallContext:
+    name: str
+    active_parameter: ptr_uint
+
+
 ## The identifier token at the LSP position (0-based line/character).
 ## A cursor immediately after the last character of an identifier still
 ## resolves to that identifier, matching editor conventions.
@@ -114,87 +120,64 @@ function hoverable_token_kind(kind: tk.TokenKind) -> bool:
     return true
 
 
-## The callee name of the innermost call expression enclosing the LSP
-## position: `foo(a, |)` resolves to "foo", `mod.method(|)` to "method",
-## and `name[T](|)` to "name" (specialization brackets are skipped).
-public function call_name_at(source: str, line: ptr_uint, character: ptr_uint) -> Option[str]:
-    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
-    defer: lex_diags.release()
-    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
-    defer: tokens.release()
+## The host's `find_call_context`: the callee before the innermost open `(` and
+## the 0-based active parameter, counted as the top-level commas before the
+## cursor.  `character` is the byte column `position_params` passes.
+public function call_context_at(source: str, line: ptr_uint, character: ptr_uint) -> Option[CallContext]:
+    var current: ptr_uint = 0
+    var line_start: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < source.len:
+        if source.byte_at(i) == '\n':
+            if current == line:
+                break
+            current += 1
+            line_start = i + 1
+        i += 1
 
-    let target_line = line + 1
-    let target_col = character + 1
+    var pos = line_start + character
+    if pos > source.len:
+        pos = source.len
 
-    # Stack of enclosing-call callee names ("" when the callee is not a
-    # plain identifier, e.g. `(f())(x)`).
-    var callee_stack = vec.Vec[str].create()
-    defer: callee_stack.release()
+    var depth: ptr_uint = 0
+    var active_parameter: ptr_uint = 0
+    var paren_pos: ptr_uint = 0
+    var found_paren = false
+    while pos > 0:
+        pos -= 1
+        let b = source.byte_at(pos)
+        if b == ')' or b == ']':
+            depth += 1
+        else if b == '[':
+            if depth == 0:
+                return Option[CallContext].none
+            depth -= 1
+        else if b == '(':
+            if depth == 0:
+                paren_pos = pos
+                found_paren = true
+                break
+            depth -= 1
+        else if b == ',':
+            if depth == 0:
+                active_parameter += 1
 
-    var ti: ptr_uint = 0
-    while ti < tokens.len():
-        let tp = tokens.get(ti) else:
-            break
-        let tok = unsafe: read(tp)
-        if tok.kind == tk.TokenKind.eof:
-            break
-        # Stop once the token starts at or beyond the cursor.
-        if tok.line > target_line or (tok.line == target_line and tok.column >= target_col):
-            break
+    if not found_paren:
+        return Option[CallContext].none
 
-        if tok.kind == tk.TokenKind.lparen:
-            callee_stack.push(callee_before(source, ref_of(tokens), ti))
-        else if tok.kind == tk.TokenKind.rparen:
-            if callee_stack.len() > 0:
-                let popped = callee_stack.pop()
-                let _p = popped
-        ti += 1
-
-    let top = callee_stack.last() else:
-        return Option[str].none
-    let name = unsafe: read(top)
-    if name.len == 0:
-        return Option[str].none
-    return Option[str].some(value = name)
-
-
-## The callee identifier immediately before the lparen at `lparen_index`,
-## skipping a specialization bracket group (`name[...](`) when present.
-function callee_before(source: str, tokens: ref[vec.Vec[token_mod.Token]], lparen_index: ptr_uint) -> str:
-    if lparen_index == 0:
-        return ""
-
-    var prev_index = lparen_index - 1
-    var prev: token_mod.Token
-    unsafe:
-        let pp = tokens.get(prev_index) else:
-            return ""
-        prev = read(pp)
-
-    # Skip `[...]` between the callee name and the call parens.
-    if prev.kind == tk.TokenKind.rbracket:
-        var depth: int = 1
-        while prev_index > 0 and depth > 0:
-            prev_index -= 1
-            unsafe:
-                let bp = tokens.get(prev_index) else:
-                    return ""
-                prev = read(bp)
-            if prev.kind == tk.TokenKind.rbracket:
-                depth += 1
-            else if prev.kind == tk.TokenKind.lbracket:
-                depth -= 1
-        if depth != 0 or prev_index == 0:
-            return ""
-        prev_index -= 1
-        unsafe:
-            let np = tokens.get(prev_index) else:
-                return ""
-            prev = read(np)
-
-    if prev.kind == tk.TokenKind.identifier:
-        return token_text(source, prev)
-    return ""
+    # The identifier immediately before the `(`, skipping spaces and tabs.
+    var end = paren_pos
+    while end > 0 and (source.byte_at(end - 1) == ' ' or source.byte_at(end - 1) == '\t'):
+        end -= 1
+    if end == 0 or not utils.is_word_byte(source.byte_at(end - 1)):
+        return Option[CallContext].none
+    var start = end - 1
+    while start > 0 and utils.is_word_byte(source.byte_at(start - 1)):
+        start -= 1
+    return Option[CallContext].some(value = CallContext(
+        name = source.slice(start, end - start),
+        active_parameter = active_parameter,
+    ))
 
 
 function cursor_token(source: str, tok: token_mod.Token) -> CursorToken:

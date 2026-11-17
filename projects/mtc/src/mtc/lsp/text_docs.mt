@@ -18,7 +18,7 @@ public function handle_did_open(ws: ref[workspace.Workspace], params: json.Value
         return
     let text = text_doc_text(params)
     ws.open(uri, text)
-    diag.publish_empty_for_uri(uri)
+    diag.publish_empty_for_uri(ws, uri)
     var file_path = uri_ops.file_uri_to_path(uri) else:
         return
     defer: file_path.release()
@@ -208,7 +208,7 @@ public function handle_did_close(ws: ref[workspace.Workspace], params: json.Valu
     if uri.len == 0:
         return
     ws.close(uri)
-    diag.publish_empty_for_uri(uri)
+    diag.publish_empty_for_uri(ws, uri)
 
 
 ## Handle textDocument/didSave: re-check and publish diagnostics.

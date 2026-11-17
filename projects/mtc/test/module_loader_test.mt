@@ -1599,6 +1599,31 @@ function test_module_cache_reuses_a_cycle() -> void:
 
 
 @[test]
+function test_cycle_regions_survive_the_request_boundary() -> void:
+    ## A cycle's pass-1 analyses are referenced by pass-2 types, so their
+    ## region is owned by the cache entry, not retired at the request
+    ## boundary.  A fresh cyclic program must therefore retire nothing.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+    expect(write_file(root.as_str(), "a.mt", CYCLE_A), "could not write a.mt")
+    expect(write_file(root.as_str(), "b.mt", CYCLE_B), "could not write b.mt")
+    expect(write_file(root.as_str(), "main.mt", CYCLE_MAIN), "could not write main.mt")
+
+    var cache = loader.create_module_cache()
+    defer: loader.release_module_cache(ref_of(cache))
+
+    var program = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect_eq(int<-program.diagnostic_count(), 0)
+    expect(program.cycle_module_names.len() > 0, "expected a detected import cycle")
+
+    expect_eq(int<-cache.retired_regions.len(), 0)
+    loader.drain_retired_regions(ref_of(cache))
+    expect_eq(int<-cache.retired_regions.len(), 0)
+    program.release()
+
+
+@[test]
 function test_module_cache_retires_and_drains_superseded_regions() -> void:
     var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
         expect(false, "could not create temp dir")

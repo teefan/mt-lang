@@ -6182,7 +6182,7 @@ function reserved_name_column(line: ptr_uint, name: str) -> ptr_uint:
         return 0
     var i: ptr_uint = 0
     while i + name.len <= text.len:
-        if text.slice(i, name.len).equal(name):
+        if text.starts_with_at(i, name):
             let before_ok = i == 0 or not is_word_byte(text.byte_at(i - 1))
             let after = i + name.len
             let after_ok = after >= text.len or not is_word_byte(text.byte_at(after))

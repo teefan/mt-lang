@@ -163,12 +163,17 @@ function decl_body_end(dp: ptr[ast.Decl]) -> ptr_uint:
 
 
 function collect_toplevel_names(bindings: ref[vec.Vec[Binding]], decls: span[ast.Decl], source_text: str) -> void:
+    # Every top-level binding ends at the file's last line, so scan the source
+    # once for the whole declaration list.  Rescanning per declaration was
+    # quadratic in declarations × file bytes and made one `inlayHint` on a
+    # large file (589 top-level decls × ~1 MB) run for minutes.
+    let file_last_line = last_line(source_text)
     var di: ptr_uint = 0
     while di < decls.len:
         unsafe:
             let nl = decl_name_and_line(decls.data + di)
             if nl.name.len > 0:
-                bindings.push(Binding(name = nl.name, line = nl.line, scope_end = last_line(source_text), is_toplevel = true, kind = BINDING_TOPLEVEL, function_level = true))
+                bindings.push(Binding(name = nl.name, line = nl.line, scope_end = file_last_line, is_toplevel = true, kind = BINDING_TOPLEVEL, function_level = true))
         di += 1
 
 

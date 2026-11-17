@@ -11,6 +11,7 @@ import std.string as string_mod
 import std.vec as vec
 import std.log as log
 
+import mtc.loader.package_manifest as package_manifest
 import mtc.loader.path_resolver as resolver
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
@@ -36,18 +37,6 @@ public struct FileImports:
 public struct Index:
     entries: vec.Vec[Entry]
     files: vec.Vec[FileImports]
-
-
-## True when `path` already has an entry in the index.
-public function has_file(index: ref[Index], path: str) -> bool:
-    var fi: ptr_uint = 0
-    while fi < index.files.len():
-        let fp = index.files.get(fi) else:
-            break
-        if unsafe: read(fp).path.as_str().equal(path):
-            return true
-        fi += 1
-    return false
 
 
 ## Scan all .mt files under `walk_roots` and build a fresh index.  `module_roots`
@@ -247,10 +236,21 @@ public function collect_file_symbols_from_ast(
     roots: ref[vec.Vec[string_mod.String]],
     ast_file: ast.SourceFile,
 ) -> void:
-    index.files.push(FileImports(
-        path = string_mod.String.from_str(canonical_path),
-        imports = collect_resolved_imports(ast_file, roots),
-    ))
+    # A file inside a nested package must resolve its own modules by bare name
+    # even when the workspace root is a monorepo root (the host resolves each
+    # file's imports through `ModuleRoots.roots_for_path(path)`).
+    match package_manifest.package_source_root_for_path(canonical_path):
+        Option.some as source_root:
+            index.files.push(FileImports(
+                path = string_mod.String.from_str(canonical_path),
+                imports = collect_resolved_imports(ast_file, roots, source_root.value.as_str()),
+            ))
+            source_root.value.release()
+        Option.none:
+            index.files.push(FileImports(
+                path = string_mod.String.from_str(canonical_path),
+                imports = collect_resolved_imports(ast_file, roots, ""),
+            ))
 
     var di: ptr_uint = 0
     while di < ast_file.declarations.len:
@@ -291,7 +291,8 @@ public function collect_file_symbols_from_ast(
 
 ## Resolve each import of `ast_file` to the file it names, so the reference
 ## walk can find a declaration's dependents without re-parsing every file.
-function collect_resolved_imports(ast_file: ast.SourceFile, roots: ref[vec.Vec[string_mod.String]]) -> vec.Vec[string_mod.String]:
+## `extra_root` is the file's enclosing package source root, when it has one.
+function collect_resolved_imports(ast_file: ast.SourceFile, roots: ref[vec.Vec[string_mod.String]], extra_root: str) -> vec.Vec[string_mod.String]:
     var resolved_paths = vec.Vec[string_mod.String].create()
     var root_views = vec.Vec[str].create()
     defer: root_views.release()
@@ -301,6 +302,8 @@ function collect_resolved_imports(ast_file: ast.SourceFile, roots: ref[vec.Vec[s
             break
         root_views.push(unsafe: read(root_ptr).as_str())
         ri += 1
+    if extra_root.len > 0:
+        root_views.push(extra_root)
     let roots_span = root_views.as_span()
     var i: ptr_uint = 0
     while i < ast_file.imports.len:

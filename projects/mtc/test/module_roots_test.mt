@@ -14,6 +14,8 @@ import std.vec as vec
 
 import mtc.loader.package_manifest as package_manifest
 import mtc.loader.path_resolver as resolver
+import mtc.lsp.workspace as workspace
+import mtc.lsp.workspace_index as idx
 
 
 ## Write `content` to `dir/relative`, creating parent directories as needed.
@@ -168,3 +170,98 @@ function test_package_source_root_absent_without_manifest() -> void:
     defer: entry.release()
 
     expect(package_manifest.package_source_root_for_path(entry.as_str()).is_none(), "unexpected package root")
+
+
+# =============================================================================
+#  Per-file effective roots (the LSP workspace)
+# =============================================================================
+
+@[test]
+function test_effective_roots_include_enclosing_package_for_file() -> void:
+    ## A workspace opened at a monorepo root must still add the *file's*
+    ## enclosing package source root, as the host's
+    ## `ModuleRoots.roots_for_path(path)` does.  Without it, every
+    ## `import pkg.module` in a nested package is reported as missing.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_roots_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+
+    if not write_file(root.as_str(), "workspace/pkg/package.toml", "[package]\nname = \"pkg\"\nsource_root = \"src\"\n"):
+        expect(false, "could not write package.toml")
+    if not write_file(root.as_str(), "workspace/pkg/src/mod.mt", "public function f() -> int:\n    return 1\n"):
+        expect(false, "could not write mod.mt")
+
+    var ws = workspace.Workspace.create(root.as_str())
+    defer: ws.release()
+
+    var entry = path_ops.join(root.as_str(), "workspace/pkg/src/mod.mt")
+    defer: entry.release()
+
+    var roots = ws.effective_module_roots_for(entry.as_str())
+    defer: roots.release()
+
+    var expected = path_ops.join(root.as_str(), "workspace/pkg/src")
+    defer: expected.release()
+
+    var found = false
+    var i: ptr_uint = 0
+    while i < roots.len():
+        let root_ptr = roots.get(i) else:
+            break
+        if unsafe: read(root_ptr).equal(expected.as_str()):
+            found = true
+        i += 1
+
+    expect(found, "effective module roots omit the file's package source root")
+
+
+# =============================================================================
+#  Per-file roots in the workspace symbol index
+# =============================================================================
+
+function release_owned_paths(paths: ref[vec.Vec[string.String]]) -> void:
+    var i: ptr_uint = 0
+    while i < paths.len():
+        let p = paths.get(i) else:
+            break
+        unsafe: read(p).release()
+        i += 1
+    paths.release()
+
+
+@[test]
+function test_workspace_index_resolves_nested_package_imports() -> void:
+    ## The index's import graph must use each file's package source root, or a
+    ## declaration inside a nested package has no dependents and cross-file
+    ## references (and the reference-count code lens) stay empty.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_roots_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+
+    if not write_file(root.as_str(), "demo/package.toml", "[package]\nname = \"demo\"\nsource_root = \"src\"\n"):
+        expect(false, "could not write package.toml")
+    if not write_file(root.as_str(), "demo/src/demo/util.mt", "public function helper() -> int:\n    return 1\n"):
+        expect(false, "could not write util.mt")
+    if not write_file(root.as_str(), "demo/src/demo/main.mt", "import demo.util\n\npublic function run() -> int:\n    return util.helper()\n"):
+        expect(false, "could not write main.mt")
+
+    var walk_roots = vec.Vec[string.String].create()
+    defer: release_owned_paths(ref_of(walk_roots))
+    walk_roots.push(string.String.from_str(root.as_str()))
+    var module_roots = vec.Vec[string.String].create()
+    defer: release_owned_paths(ref_of(module_roots))
+    module_roots.push(string.String.from_str(root.as_str()))
+
+    var index = idx.build_index(ref_of(walk_roots), ref_of(module_roots))
+    defer: idx.release_index(ref_of(index))
+
+    var util_path = path_ops.join(root.as_str(), "demo/src/demo/util.mt")
+    defer: util_path.release()
+    var deps = idx.dependents_of(ref_of(index), util_path.as_str())
+    defer: release_owned_paths(ref_of(deps))
+
+    expect_eq(int<-deps.len(), 1)
+    let only = deps.get(0) else:
+        expect(false, "missing dependent")
+        return
+    expect(unsafe: read(only).as_str().ends_with("/demo/src/demo/main.mt"), unsafe: read(only).as_str())

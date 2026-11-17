@@ -101,6 +101,33 @@ public function handle_completion(
     var ast_file = doc.ast_file
     var analysis = doc.analysis
 
+    let text_before = line_prefix(source, line, character)
+
+    # Attribute context: complete inside `@[...`.
+    var attribute_items = attribute_completion_items(ref_of(analysis), text_before, uri)
+    if attribute_items != null:
+        proto.write_response_raw(id, unsafe: read(attribute_items).as_str())
+        unsafe: read(attribute_items).release()
+        heap.release(attribute_items)
+        return
+
+    # Named argument completions: inside a function/struct call, e.g.
+    # `Point(x = 1, |)`.
+    var named_items = named_argument_completion_items(ref_of(analysis), text_before, prefix, uri)
+    if named_items != null:
+        proto.write_response_raw(id, unsafe: read(named_items).as_str())
+        unsafe: read(named_items).release()
+        heap.release(named_items)
+        return
+
+    # Specialization context: complete inside `name[...`.
+    var specialization_items = specialization_completion_items(ref_of(analysis), text_before, uri)
+    if specialization_items != null:
+        proto.write_response_raw(id, unsafe: read(specialization_items).as_str())
+        unsafe: read(specialization_items).release()
+        heap.release(specialization_items)
+        return
+
     # Dot-receiver context.  The host answers every dot receiver from the
     # receiver chain — and, failing that, from the file's method list — so the
     # keyword list is never a dot-receiver answer.
@@ -128,18 +155,6 @@ public function handle_completion(
             proto.write_response_raw(id, dot_items.as_str())
             dot_items.release()
             return
-        Option.none:
-            pass
-
-    # Call context: suggest parameter names for the innermost call.
-    match cursor.call_name_at(source, line, character):
-        Option.some as callee:
-            var named = named_argument_completions(ref_of(analysis), callee.value, prefix, uri)
-            if named != null:
-                proto.write_response_raw(id, unsafe: read(named).as_str())
-                unsafe: read(named).release()
-                heap.release(named)
-                return
         Option.none:
             pass
 
@@ -278,7 +293,7 @@ function extract_string_field(value: json.Value, field: str) -> str:
 
 
 ## Collect ## documentation comment lines above a named declaration.
-function collect_doc_text(path: str, name: str) -> string.String:
+public function collect_doc_text(path: str, name: str) -> string.String:
     var result = string.String.create()
 
     log.info(f"collect_doc_text: path=#{path} name=#{name}")
@@ -299,26 +314,22 @@ function collect_doc_text(path: str, name: str) -> string.String:
                 match remaining.find_byte(10):
                     Option.some as nl_pos:
                         let nl_end = nl_pos.value + li
-                        if nl_end - li >= name.len:
-                            let line_start_text = source.as_str().slice(li, name.len)
-                            if line_start_text.equal(name):
-                                let after = li + name.len
-                                var is_decl = false
-                                if after >= source.as_str().len:
-                                    is_decl = true
-                                else:
-                                    let c = source.as_str().byte_at(after)
-                                    is_decl = c == '(' or c == ':' or c == '<' or
-                                        c == ' ' or c == '\n' or c == '{'
-                                if is_decl:
-                                    target_line = current_line
+                        if nl_end - li >= name.len and source.as_str().starts_with_at(li, name):
+                            let after = li + name.len
+                            var is_decl = false
+                            if after >= source.as_str().len:
+                                is_decl = true
+                            else:
+                                let c = source.as_str().byte_at(after)
+                                is_decl = c == '(' or c == ':' or c == '<' or
+                                    c == ' ' or c == '\n' or c == '{'
+                            if is_decl:
+                                target_line = current_line
                         li = nl_end + 1
                         current_line += 1
                     Option.none:
-                        if source.as_str().len - li >= name.len:
-                            let last_line = source.as_str().slice(li, name.len)
-                            if last_line.equal(name):
-                                target_line = current_line
+                        if source.as_str().len - li >= name.len and source.as_str().starts_with_at(li, name):
+                            target_line = current_line
                         li = source.as_str().len
 
             if target_line == 0:
@@ -2717,7 +2728,7 @@ function emit_local_binding_items(
     while pi < params.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
         let p = unsafe: read(params.data + pi)
         if p.name.len > 0 and p.name != "_" and prefix_matches(p.name, prefix):
-            emit_local_item(items_json, p.name, ast_formatter.render_type(p.param_type), uri, first, count)
+            emit_local_item(items_json, p.name, ast_formatter.render_type(p.param_type), "parameter ", uri, first, count)
         pi += 1
 
     if body != null:
@@ -2731,6 +2742,7 @@ function emit_local_item(
     items_json: ref[string.String],
     name: str,
     type_text: str,
+    detail_prefix: str,
     uri: str,
     first: ref[bool],
     count: ref[ptr_uint],
@@ -2739,6 +2751,7 @@ function emit_local_item(
         return
     var detail = string.String.create()
     defer: detail.release()
+    detail.append(detail_prefix)
     detail.append(name)
     detail.append(": ")
     detail.append(type_text)
@@ -2780,13 +2793,13 @@ function emit_stmt_locals(
                     var type_text = string.String.create()
                     defer: type_text.release()
                     append_ast_type(ref_of(type_text), loc.stmt_type, "")
-                    emit_local_item(items_json, loc.name, type_text.as_str(), uri, first, count)
+                    emit_local_item(items_json, loc.name, type_text.as_str(), "", uri, first, count)
                 else:
                     match type_render.initializer_type(analysis, loc.value):
                         Option.some as ty:
                             var type_text = type_render.qualified_name(ty.value, current_module)
                             defer: type_text.release()
-                            emit_local_item(items_json, loc.name, type_text.as_str(), uri, first, count)
+                            emit_local_item(items_json, loc.name, type_text.as_str(), "", uri, first, count)
                         Option.none:
                             pass
         ast.Stmt.stmt_if as iff:
@@ -2824,56 +2837,296 @@ function emit_stmt_locals(
             pass
 
 
-## Completions for `func(|)` inside a call's argument list — the host's
-## named-argument shape (`name = `, kind 14, `0_`).
-function named_argument_completions(
+## The cursor line's text before byte column `character` (the host's
+## `line_text[0...char]`).
+function line_prefix(source: str, line: ptr_uint, character: ptr_uint) -> str:
+    let line_text = cursor.source_line(source, line + 1)
+    var pos = character
+    if pos > line_text.len:
+        pos = line_text.len
+    return line_text.slice(0, pos)
+
+
+## The built-in attributes the host lists before the file's declared ones.
+const BUILTIN_ATTRIBUTES: array[str, 3] = array[str, 3]("packed", "align", "deprecated")
+
+
+## Completions inside `@[...` — the host's `attribute_completions`: the three
+## built-ins (sort `0_`), then every declared attribute (sort `1_`).
+public function attribute_completion_items(
     analysis: ref[analyzer.Analysis],
-    callee_name: str,
-    prefix: str,
+    text: str,
     uri: str,
 ) -> ptr[string.String]?:
-    let sig_ptr = unsafe: read(analysis).functions.get(callee_name)
-    if sig_ptr == null:
+    var end = text.len
+    var start = end
+    while start > 0 and utils.is_word_byte(text.byte_at(start - 1)):
+        start -= 1
+    if start < 2:
         return null
-
-    let sig = unsafe: read(sig_ptr)
-    if sig.params.len == 0:
+    if text.byte_at(start - 2) != '@' or text.byte_at(start - 1) != '[':
         return null
+    let prefix = text.slice(start, end - start)
 
     var items_json = string.String.create()
     items_json.append("[")
     var first = true
     var count: ptr_uint = 0
 
-    var pi: ptr_uint = 0
-    while pi < sig.params.len and count < MAX_COMPLETION_ITEMS:
-        let param = unsafe: read(sig.params.data + pi)
-        if param.name != "_" and prefix_matches(param.name, prefix):
-            var label = string.String.create()
-            defer: label.release()
-            label.append(param.name)
-            label.append(" = ")
+    var bi: ptr_uint = 0
+    while bi < 3 and count < MAX_COMPLETION_ITEMS:
+        let name = BUILTIN_ATTRIBUTES[bi]
+        if prefix_matches(name, prefix):
             var detail = string.String.create()
             defer: detail.release()
-            detail.append(param.name)
-            detail.append(": ")
-            detail.append(types.type_to_string(param.ty))
+            detail.append("built-in attribute ")
+            detail.append(name)
             var sort_text = string.String.create()
             defer: sort_text.release()
             sort_text.append("0_")
-            sort_text.append(param.name)
+            sort_text.append(name)
             append_item_ext(
-                ref_of(items_json), label.as_str(), KIND_KEYWORD, detail.as_str(), label.as_str(),
-                sort_text.as_str(), param.name, uri, 0, "", "", ref_of(first))
+                ref_of(items_json), name, KIND_KEYWORD, detail.as_str(), name,
+                sort_text.as_str(), name, uri, 0, "", "", ref_of(first))
             count += 1
-        pi += 1
+        bi += 1
+
+    var entries = unsafe: read(analysis).declared_attributes.entries()
+    while entries.next() and count < MAX_COMPLETION_ITEMS:
+        let entry = entries.current()
+        let name = unsafe: read(entry.key)
+        if prefix_matches(name, prefix):
+            var detail = string.String.create()
+            defer: detail.release()
+            detail.append("attribute ")
+            detail.append(name)
+            var sort_text = string.String.create()
+            defer: sort_text.release()
+            sort_text.append("1_")
+            sort_text.append(name)
+            append_item_ext(
+                ref_of(items_json), name, KIND_KEYWORD, detail.as_str(), name,
+                sort_text.as_str(), name, uri, 0, "", "", ref_of(first))
+            count += 1
 
     items_json.append("]")
-
     if count == 0:
         items_json.release()
         return null
+    let alloc = heap.must_alloc[string.String](1)
+    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
+    return alloc
 
+
+## True when `name` appears before an `=` or `:` in `text` — the host's
+## `already_provided` scan in `named_argument_completions`.
+function name_already_provided(text: str, name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < text.len:
+        if utils.is_word_byte(text.byte_at(i)):
+            let start = i
+            while i < text.len and utils.is_word_byte(text.byte_at(i)):
+                i += 1
+            let end = i
+            var after = end
+            while after < text.len and (text.byte_at(after) == ' ' or text.byte_at(after) == '\t'):
+                after += 1
+            if after < text.len and (text.byte_at(after) == '=' or text.byte_at(after) == ':'):
+                if text.slice(start, end - start).equal(name):
+                    return true
+        else:
+            i += 1
+    return false
+
+
+## Emit one named-argument item: label and insert `name = `, `0_` sort.
+function emit_named_argument_item(
+    items_json: ref[string.String],
+    name: str,
+    kind: int,
+    type_text: str,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var label = string.String.create()
+    defer: label.release()
+    label.append(name)
+    label.append(" = ")
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append(name)
+    detail.append(": ")
+    detail.append(type_text)
+    var sort_text = string.String.create()
+    defer: sort_text.release()
+    sort_text.append("0_")
+    sort_text.append(name)
+    append_item_ext(
+        items_json, label.as_str(), kind, detail.as_str(), label.as_str(),
+        sort_text.as_str(), name, uri, 0, "", "", first)
+    unsafe:
+        read(count) = read(count) + 1
+
+
+## Completions for a call's argument list — the host's
+## `named_argument_completions`: `name = ` labels for the callee's parameters
+## (kind 14) or, for a type constructor, its fields (kind 8), skipping names
+## already provided.  The callee is the innermost unclosed call's name.
+public function named_argument_completion_items(
+    analysis: ref[analyzer.Analysis],
+    text: str,
+    prefix: str,
+    uri: str,
+) -> ptr[string.String]?:
+    var paren: ptr_uint = 0
+    var found = false
+    var i: ptr_uint = 0
+    while i < text.len:
+        if text.byte_at(i) == '(':
+            var j = i + 1
+            var closed = false
+            while j < text.len:
+                if text.byte_at(j) == ')':
+                    closed = true
+                    break
+                j += 1
+            if not closed:
+                paren = i
+                found = true
+        i += 1
+    if not found:
+        return null
+
+    # The host answers only a fresh call or one ending in a comma.
+    var tail = text.len
+    while tail > paren + 1 and (text.byte_at(tail - 1) == ' ' or text.byte_at(tail - 1) == '\t'):
+        tail -= 1
+    if tail > paren + 1 and text.byte_at(tail - 1) != ',':
+        return null
+
+    var end = paren
+    while end > 0 and (text.byte_at(end - 1) == ' ' or text.byte_at(end - 1) == '\t'):
+        end -= 1
+    var start = end
+    while start > 0 and (utils.is_word_byte(text.byte_at(start - 1)) or text.byte_at(start - 1) == '.'):
+        start -= 1
+    if start == end:
+        return null
+    let callee = text.slice(start, end - start)
+
+    var items_json = string.String.create()
+    items_json.append("[")
+    var first = true
+    var count: ptr_uint = 0
+
+    let sig_ptr = unsafe: read(analysis).functions.get(callee)
+    if sig_ptr != null:
+        let sig = unsafe: read(sig_ptr)
+        var pi: ptr_uint = 0
+        while pi < sig.params.len and count < MAX_COMPLETION_ITEMS:
+            let param = unsafe: read(sig.params.data + pi)
+            if prefix_matches(param.name, prefix) and not name_already_provided(text, param.name):
+                emit_named_argument_item(
+                    ref_of(items_json), param.name, KIND_KEYWORD,
+                    types.type_to_string(param.ty), uri, ref_of(first), ref_of(count))
+            pi += 1
+
+    var fields: span[analyzer.FieldEntry] = span[analyzer.FieldEntry]()
+    let ty_ptr = unsafe: read(analysis).types.get(callee)
+    if ty_ptr != null:
+        let type_name = type_to_key_name(unsafe: read(ty_ptr))
+        let struct_fields = unsafe: read(analysis).structs.get(type_name)
+        if struct_fields != null:
+            fields = unsafe: read(struct_fields)
+        else:
+            let union_fields = unsafe: read(analysis).unions.get(type_name)
+            if union_fields != null:
+                fields = unsafe: read(union_fields)
+    else:
+        # A module-qualified type constructor (`node.Node(`).
+        let dot = callee.find_byte('.')
+        match dot:
+            Option.some as dot_pos:
+                let alias = callee.slice(0, dot_pos.value)
+                let type_name = callee.slice(dot_pos.value + 1, callee.len - dot_pos.value - 1)
+                let module_ptr = unsafe: read(analysis).imports.get(alias)
+                if module_ptr != null:
+                    var key = string.String.create()
+                    defer: key.release()
+                    key.append(unsafe: read(module_ptr))
+                    key.append(".")
+                    key.append(type_name)
+                    let members_ptr = unsafe: read(analysis).imported_type_members.get(key.as_str())
+                    if members_ptr != null:
+                        fields = unsafe: read(members_ptr).fields
+            Option.none:
+                pass
+
+    var fi: ptr_uint = 0
+    while fi < fields.len and count < MAX_COMPLETION_ITEMS:
+        let field = unsafe: read(fields.data + fi)
+        if prefix_matches(field.name, prefix) and not name_already_provided(text, field.name):
+            emit_named_argument_item(
+                ref_of(items_json), field.name, KIND_FIELD,
+                types.type_to_string(field.ty), uri, ref_of(first), ref_of(count))
+        fi += 1
+
+    items_json.append("]")
+    if count == 0:
+        items_json.release()
+        return null
+    let alloc = heap.must_alloc[string.String](1)
+    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
+    return alloc
+
+
+## Completions inside `name[...` — the host's `specialization_completions`:
+## every visible type as a `0_` type item.
+public function specialization_completion_items(
+    analysis: ref[analyzer.Analysis],
+    text: str,
+    uri: str,
+) -> ptr[string.String]?:
+    var bracket: ptr_uint = 0
+    var found = false
+    var i: ptr_uint = 0
+    while i < text.len:
+        if text.byte_at(i) == '[':
+            if i > 0 and (utils.is_word_byte(text.byte_at(i - 1)) or text.byte_at(i - 1) == '.'):
+                bracket = i
+                found = true
+        i += 1
+    if not found:
+        return null
+    let prefix = text.slice(bracket + 1, text.len - bracket - 1)
+
+    var items_json = string.String.create()
+    items_json.append("[")
+    var first = true
+    var count: ptr_uint = 0
+    var entries = unsafe: read(analysis).types.entries()
+    while entries.next() and count < MAX_COMPLETION_ITEMS:
+        let entry = entries.current()
+        let name = unsafe: read(entry.key)
+        if prefix_matches(name, prefix):
+            var detail = string.String.create()
+            defer: detail.release()
+            detail.append("type ")
+            detail.append(name)
+            var sort_text = string.String.create()
+            defer: sort_text.release()
+            sort_text.append("0_")
+            sort_text.append(name)
+            append_item_ext(
+                ref_of(items_json), name, KIND_MODULE_TYPE, detail.as_str(), name,
+                sort_text.as_str(), name, uri, 0, "", "", ref_of(first))
+            count += 1
+
+    items_json.append("]")
+    if count == 0:
+        items_json.release()
+        return null
     let alloc = heap.must_alloc[string.String](1)
     unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
     return alloc

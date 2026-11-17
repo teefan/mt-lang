@@ -1468,7 +1468,7 @@ function is_struct_decl(text: str, name: str) -> bool:
         i += 1
     if i + name.len > text.len:
         return false
-    if not text.slice(i, name.len).equal(name):
+    if not text.starts_with_at(i, name):
         return false
     let after = i + name.len
     return after == text.len or not is_word_byte(text.byte_at(after))
@@ -1478,7 +1478,7 @@ function is_struct_decl(text: str, name: str) -> bool:
 function matches_word_at(text: str, index: ptr_uint, word: str) -> bool:
     if index + word.len > text.len:
         return false
-    if not text.slice(index, word.len).equal(word):
+    if not text.starts_with_at(index, word):
         return false
     let after = index + word.len
     return after == text.len or not is_word_byte(text.byte_at(after))

@@ -120,9 +120,46 @@ public struct Workspace:
     dependency_resolution_mode: string.String
     platform_override: string.String
     strict_current_root_diagnostics: bool
+    ## True when the client advertised pull diagnostics (`textDocument.diagnostic`);
+    ## the server then suppresses `publishDiagnostics`, as the host does, so the
+    ## client does not show every diagnostic twice.
+    pull_diagnostics_active: bool
     ## Regions of replaced parse-cache entries, kept alive until the request
     ## boundary (see `drain_retired_regions`).
     retired_regions: vec.Vec[heap.Region]
+
+
+## The effective module roots for one source file: borrowed workspace roots in
+## `views` plus the per-file roots computed from the path, whose owning strings
+## live in `owned` until `release`.
+public struct EffectiveModuleRoots:
+    owned: vec.Vec[string.String]
+    views: vec.Vec[str]
+
+
+extending EffectiveModuleRoots:
+    public function as_span() -> span[str]:
+        return this.views.as_span()
+
+
+    public function len() -> ptr_uint:
+        return this.views.len()
+
+
+    public function get(index: ptr_uint) -> ptr[str]?:
+        return this.views.get(index)
+
+
+    public editable function release() -> void:
+        var i: ptr_uint = 0
+        while i < this.owned.len():
+            let entry = this.owned.get(i) else:
+                break
+            unsafe:
+                read(entry).release()
+            i += 1
+        this.owned.release()
+        this.views.release()
 
 
 extending Workspace:
@@ -153,6 +190,7 @@ extending Workspace:
             dependency_resolution_mode = string.String.create(),
             platform_override = string.String.create(),
             strict_current_root_diagnostics = false,
+            pull_diagnostics_active = false,
             retired_regions = vec.Vec[heap.Region].create(),
         )
 
@@ -355,17 +393,43 @@ extending Workspace:
 
 
     ## Resolve a source file path to the effective module roots for dependency
-    ## loading.  Returns a span of root directory paths.
-    public function effective_module_roots_for(path: str) -> vec.Vec[str]:
-        var result = vec.Vec[str].create()
+    ## loading: the workspace roots plus the roots the host's
+    ## `ModuleRoots.roots_for_path(path)` adds for the file itself — the nearest
+    ## ancestor `package.toml` source root and the nearest project root (an
+    ## ancestor containing `std/`).  A workspace opened at a monorepo root must
+    ## still resolve a nested package's modules by their bare names.
+    public function effective_module_roots_for(path: str) -> EffectiveModuleRoots:
+        var owned = vec.Vec[string.String].create()
+        var views = vec.Vec[str].create()
+
         var i: ptr_uint = 0
         while i < this.module_roots.len():
             let root_ptr = this.module_roots.get(i) else:
                 break
             unsafe:
-                result.push(read(root_ptr).as_str())
+                views.push(read(root_ptr).as_str())
             i += 1
-        return result
+
+        if path.len > 0:
+            match package_manifest.package_source_root_for_path(path):
+                Option.some as source_root:
+                    owned.push(source_root.value)
+                Option.none:
+                    pass
+
+            discover_project_root(path, ref_of(owned))
+
+            var oi: ptr_uint = 0
+            while oi < owned.len():
+                let root_ptr = owned.get(oi) else:
+                    break
+                unsafe:
+                    let root = read(root_ptr).as_str()
+                    if not module_root_view_contains(ref_of(views), root):
+                        views.push(root)
+                oi += 1
+
+        return EffectiveModuleRoots(owned = owned, views = views)
 
 
     ## Index the document's identifier tokens from the text the caller already
@@ -728,6 +792,18 @@ extending Workspace:
             idx.release_index(ref_of(this.index))
 
 
+## True when the module-root view list already contains `candidate`.
+function module_root_view_contains(views: ref[vec.Vec[str]], candidate: str) -> bool:
+    var i: ptr_uint = 0
+    while i < views.len():
+        let entry = views.get(i) else:
+            break
+        if unsafe: read(entry).equal(candidate):
+            return true
+        i += 1
+    return false
+
+
 ## A content fingerprint for the analysis cache.
 function fnv1a_hash(text: str) -> uint:
     var hash: uint = 2166136261
@@ -768,17 +844,6 @@ function release_analysis_cache(cache: ref[map_mod.Map[string.String, AnalysisCa
             entry_value.path.release()
             entry_value.program.release()
     cache.release()
-
-
-## A loader-backed analysis of the document at `path`, or none when the file is
-## unreadable.  Imported modules and the prelude are bound, so types and members
-## that live in other modules resolve — the host's facts do the same through
-## `ModuleLoader`, while `analyzer.check_source_file` cannot.  Cached per content
-## fingerprint because the loader runs the whole import closure.
-public function analysis_for(ws: ref[Workspace], path: str) -> Option[analyzer.Analysis]:
-    let entry_ptr = analysis_entry_for(ws, path) else:
-        return Option[analyzer.Analysis].none
-    return Option[analyzer.Analysis].some(value = unsafe: read(entry_ptr).analysis)
 
 
 ## The parse and single-file analysis of `source` (which must be the document's
