@@ -109,17 +109,18 @@ helpers, `lsp/navigation.mt analysis_for_document`/`ast_for_document`,
 Normalized 12-line windows (comments/blanks stripped, literals replaced with
 `S`/`N`) hashed across all functions. Overlapping windows make the cluster count
 large; `duplicated_lines` is the ratcheted metric. Current baseline:
-**6,405 duplicated lines in 903 window clusters**.  Session 125 fixed the
+**6,429 duplicated lines in 904 window clusters**.  Session 125 fixed the
 function-end scan for multi-line signatures, so this baseline includes bodies
 the earlier metric skipped; session 126's splits also shifted a few window
-boundaries, and session 131's completion/diagnostic feature growth added two
-windows.  Neither is a duplication regression.  Use the clusters as
+boundaries, session 131's completion/diagnostic feature growth added two
+windows, and session 132's format-string context added one shared
+parameter-loop window.  None is a duplication regression.  Use the clusters as
 pointers to repeated emission/frame boilerplate, not as an absolute quality
 score.
 
 ### Size, markers, tests
 
-- **124,624 code lines**; **1 function ≥ 200 lines**; **11 files ≥ 2,000 code
+- **124,809 code lines**; **1 function ≥ 200 lines**; **11 files ≥ 2,000 code
   lines**. The ratchet counts these, so a refactor cannot trade one long
   function for another.  Session 130 closed the rest: only `binding_at` (385,
   excluded) remains.
@@ -193,17 +194,17 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 131, 2026-11-17)
+## 6. Current baseline (session 132, 2026-11-17)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 168 / 156,899 / 124,624 |
+| source files / lines / code lines | 168 / 157,118 / 124,809 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (168 modules) |
 | dead exports (unused / test-only) | 33 / 6 |
-| duplication (windows / duplicated lines) | 903 / 6,405 (window 12) |
+| duplication (windows / duplicated lines) | 904 / 6,429 (window 12) |
 | functions ≥ 200 lines | 1 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
@@ -211,5 +212,8 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 Session 131 added the completion/diagnostic feature set (+296 code lines, +2
 duplication windows, +1 test file); dead exports dropped from 35 to 33 as the
-superseded cursor helpers were removed.  The remaining function over the limit
-is the excluded `binding_at` (385).
+superseded cursor helpers were removed.  Session 132 added the format-string
+completion context (+185 code lines, +1 shared parameter-loop window); the
+`enclosing_function_for` scan is shared by the global bucket and the new
+context, and the last parse-error hover bail was removed.  The remaining
+function over the limit is the excluded `binding_at` (385).

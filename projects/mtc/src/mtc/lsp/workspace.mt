@@ -936,29 +936,6 @@ public function document_analysis_for(ws: ref[Workspace], path: str) -> Option[D
     ))
 
 
-## The parse errors the loader recorded for `path`'s root module, or none when
-## the document has no loader entry (the caller then parses for itself).  Lets a
-## handler keep its parse-error bail without an eager parse.
-public function document_parse_error_count(ws: ref[Workspace], path: str) -> Option[ptr_uint]:
-    let entry_opt = analysis_entry_for(ws, path)
-    match entry_opt:
-        Option.some as ep:
-            let entry = unsafe: read(ep.value)
-            var count: ptr_uint = 0
-            var mi: ptr_uint = 0
-            while mi < entry.program.modules.len():
-                let mp = entry.program.modules.get(mi) else:
-                    break
-                let m = unsafe: read(mp)
-                if m.module_name.as_str().equal(entry.analysis.module_name):
-                    count = m.parse_diagnostics.len()
-                    break
-                mi += 1
-            return Option[ptr_uint].some(value = count)
-        Option.none:
-            return Option[ptr_uint].none
-
-
 ## The raw parse's declaration count for the root module: the Program's
 ## `modules` are dependency-first while `analyses` (and `root_index`) are
 ## canonical, so the root is found by module name.  Falls back to the analysis'

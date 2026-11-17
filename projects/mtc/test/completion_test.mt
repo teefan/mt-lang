@@ -140,6 +140,67 @@ function test_specialization_completion_lists_types() -> void:
 
 
 @[test]
+function test_format_string_completion_narrows_to_values_functions_locals() -> void:
+    ## Inside `f"... #{` the host answers only values (`0_`), functions (`1_`)
+    ## and the enclosing function's snapshot locals (`2_`); the global bucket
+    ## (types, constructors, keywords) never applies there.
+    var source = <<-SRC
+        const LIMIT: int = 3
+        var counter: int = 0
+
+        function helper(x: int) -> int:
+            return x + 1
+
+        function demo(a: int) -> int:
+            let local_value = a + 1
+            if local_value > 0:
+                let nested_value = 2
+                let _nested = nested_value
+            let before_cursor = 1
+            let here = f"v #{}
+            return local_value + before_cursor
+    SRC
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: parse_diags.release()
+    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    var analysis = analyzer.check_source_file(ast_file)
+
+    # Cursor on the `here` line (0-based 12) after the unterminated `#{`.
+    let cursor_line: ptr_uint = 12
+    var items = comp.format_string_completion_items(
+        ref_of(analysis), ast_file, "    let here = f\"v #{", cursor_line, "file:///probe.mt")
+    if items == null:
+        expect(false, "no format-string completions")
+        return
+    var text = unsafe: read(items)
+    let rendered = text.as_str()
+    # Values, functions and snapshot locals, each in its host sort bucket.
+    expect(rendered.contains_substring("\"sortText\":\"0_LIMIT\""), rendered)
+    expect(rendered.contains_substring("\"sortText\":\"0_counter\""), rendered)
+    expect(rendered.contains_substring("\"detail\":\"function helper\""), rendered)
+    expect(rendered.contains_substring("\"sortText\":\"1_helper\""), rendered)
+    expect(rendered.contains_substring("\"sortText\":\"2_a\""), rendered)
+    expect(rendered.contains_substring("\"sortText\":\"2_local_value\""), rendered)
+    expect(rendered.contains_substring("\"sortText\":\"2_before_cursor\""), rendered)
+    # Neither the global bucket nor out-of-snapshot bindings.
+    expect(not rendered.contains_substring("keyword"), rendered)
+    expect(not rendered.contains_substring("type constructor"), rendered)
+    expect(not rendered.contains_substring("\"nested_value\""), rendered)
+    expect(not rendered.contains_substring("\"_nested\""), rendered)
+    expect(not rendered.contains_substring("\"here\""), rendered)
+    text.release()
+    heap.release(items)
+
+    # A closed interpolation and a non-format line both decline the context.
+    var closed = comp.format_string_completion_items(
+        ref_of(analysis), ast_file, "    let v = f\"x #{LIMIT}\"", 11, "file:///probe.mt")
+    expect(closed == null, "closed interpolation must fall through")
+    var plain = comp.format_string_completion_items(
+        ref_of(analysis), ast_file, "    let v = some_call(", 11, "file:///probe.mt")
+    expect(plain == null, "plain call must fall through")
+
+
+@[test]
 function test_receiver_type_resolution() -> void:
     var source = <<-SRC
         struct Vec:

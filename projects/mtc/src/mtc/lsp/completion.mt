@@ -111,6 +111,17 @@ public function handle_completion(
         heap.release(attribute_items)
         return
 
+    # Format-string interpolation: complete inside `f"...#{|}`.  The host
+    # answers only values, functions and the visible locals here, never the
+    # global bucket, and falls through when the interpolation is closed.
+    var format_items = format_string_completion_items(
+        ref_of(analysis), ast_file, text_before, line, uri)
+    if format_items != null:
+        proto.write_response_raw(id, unsafe: read(format_items).as_str())
+        unsafe: read(format_items).release()
+        heap.release(format_items)
+        return
+
     # Named argument completions: inside a function/struct call, e.g.
     # `Point(x = 1, |)`.
     var named_items = named_argument_completion_items(ref_of(analysis), text_before, prefix, uri)
@@ -2032,7 +2043,18 @@ function find_local_type(
 ) -> Option[types.Type]:
     match stmt:
         ast.Stmt.stmt_local as loc:
-            if loc.name.equal(name) and loc.line <= cursor_line:
+            var binds_name = loc.name.equal(name)
+            if not binds_name:
+                match loc.destructure_bindings:
+                    Option.some as names:
+                        var ni: ptr_uint = 0
+                        while ni < names.value.len:
+                            if unsafe: read(names.value.data + ni).equal(name):
+                                binds_name = true
+                            ni += 1
+                    Option.none:
+                        pass
+            if binds_name and loc.line <= cursor_line:
                 # A destructuring binding carries its own per-name type.
                 var di2: ptr_uint = 0
                 let destructures = unsafe: read(analysis).destructure_types
@@ -2231,9 +2253,9 @@ function build_completions_json(
     # Module-level values.  The host registers consts first, then vars — two
     # passes, each in source order.
     emit_module_value_items(
-        ref_of(items_json), analysis, declarations.as_span(), true, module_text, uri, prefix, ref_of(first), ref_of(count))
+        ref_of(items_json), analysis, declarations.as_span(), true, "3_", module_text, uri, prefix, ref_of(first), ref_of(count))
     emit_module_value_items(
-        ref_of(items_json), analysis, declarations.as_span(), false, module_text, uri, prefix, ref_of(first), ref_of(count))
+        ref_of(items_json), analysis, declarations.as_span(), false, "3_", module_text, uri, prefix, ref_of(first), ref_of(count))
 
     # Locals visible at the cursor.
     emit_local_binding_items(
@@ -2358,6 +2380,7 @@ function emit_module_value_items(
     analysis: ref[analyzer.Analysis],
     declarations: span[ast.Decl],
     consts: bool,
+    sort_prefix: str,
     current_module: str,
     uri: str,
     prefix: str,
@@ -2373,12 +2396,12 @@ function emit_module_value_items(
             ast.Decl.decl_const as c:
                 if consts and prefix_matches(c.name, prefix):
                     emit_value_item(
-                        items_json, analysis, c.name, c.const_type,
+                        items_json, analysis, c.name, c.const_type, sort_prefix,
                         current_module, uri, first, count)
             ast.Decl.decl_var as v:
                 if not consts and prefix_matches(v.name, prefix):
                     emit_value_item(
-                        items_json, analysis, v.name, v.var_type,
+                        items_json, analysis, v.name, v.var_type, sort_prefix,
                         current_module, uri, first, count)
             _:
                 pass
@@ -2664,6 +2687,7 @@ function emit_value_item(
     analysis: ref[analyzer.Analysis],
     name: str,
     declared: ptr[ast.TypeRef]?,
+    sort_prefix: str,
     current_module: str,
     uri: str,
     first: ref[bool],
@@ -2682,13 +2706,42 @@ function emit_value_item(
         append_ast_type(ref_of(detail), declared, "void")
     var sort_text = string.String.create()
     defer: sort_text.release()
-    sort_text.append("3_")
+    sort_text.append(sort_prefix)
     sort_text.append(name)
     append_item_ext(
         items_json, name, KIND_VARIABLE, detail.as_str(), name, sort_text.as_str(), name, uri,
         0, "", "", first)
     unsafe:
         read(count) = read(count) + 1
+
+
+## The function declaration enclosing a cursor line: the last one declared at
+## or before it, with its body and AST parameters.
+struct EnclosingFunction:
+    line: ptr_uint
+    name: str
+    body: ptr[ast.Stmt]?
+    params: span[ast.Param]
+
+
+function enclosing_function_for(declarations: span[ast.Decl], cursor_line: ptr_uint) -> EnclosingFunction:
+    var found = EnclosingFunction(
+        line = 0, name = "", body = null, params = span[ast.Param]())
+    var di: ptr_uint = 0
+    while di < declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(declarations.data + di)
+        match decl:
+            ast.Decl.decl_function as fun:
+                if fun.line <= cursor_line and fun.line >= found.line:
+                    found = EnclosingFunction(
+                        line = fun.line, name = fun.name, body = fun.body,
+                        params = fun.method_params)
+            _:
+                pass
+        di += 1
+    return found
 
 
 ## Emit the locals visible at `cursor_line`: the enclosing function's
@@ -2705,35 +2758,18 @@ function emit_local_binding_items(
     first: ref[bool],
     count: ref[ptr_uint],
 ) -> void:
-    # The enclosing function is the last one declared at or before the cursor.
-    var best_line: ptr_uint = 0
-    var body: ptr[ast.Stmt]? = null
-    var params: span[ast.Param] = span[ast.Param]()
-    var di: ptr_uint = 0
-    while di < declarations.len:
-        var decl: ast.Decl
-        unsafe:
-            decl = read(declarations.data + di)
-        match decl:
-            ast.Decl.decl_function as fun:
-                if fun.line <= cursor_line and fun.line >= best_line:
-                    best_line = fun.line
-                    body = fun.body
-                    params = fun.method_params
-            _:
-                pass
-        di += 1
-
+    let enclosing = enclosing_function_for(declarations, cursor_line)
+    var params = enclosing.params
     var pi: ptr_uint = 0
     while pi < params.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
         let p = unsafe: read(params.data + pi)
         if p.name.len > 0 and p.name != "_" and prefix_matches(p.name, prefix):
-            emit_local_item(items_json, p.name, ast_formatter.render_type(p.param_type), "parameter ", uri, first, count)
+            emit_local_item(items_json, p.name, ast_formatter.render_type(p.param_type), "parameter ", "3_", uri, first, count)
         pi += 1
 
-    if body != null:
+    if enclosing.body != null:
         emit_stmt_locals(
-            analysis, unsafe: read(ptr[ast.Stmt]<-body), cursor_line, prefix, uri,
+            analysis, unsafe: read(ptr[ast.Stmt]<-enclosing.body), cursor_line, prefix, uri,
             current_module, items_json, first, count)
 
 
@@ -2743,6 +2779,7 @@ function emit_local_item(
     name: str,
     type_text: str,
     detail_prefix: str,
+    sort_prefix: str,
     uri: str,
     first: ref[bool],
     count: ref[ptr_uint],
@@ -2757,7 +2794,7 @@ function emit_local_item(
     detail.append(type_text)
     var sort_text = string.String.create()
     defer: sort_text.release()
-    sort_text.append("3_")
+    sort_text.append(sort_prefix)
     sort_text.append(name)
     append_item_ext(
         items_json, name, KIND_VARIABLE, detail.as_str(), name, sort_text.as_str(), name, uri,
@@ -2793,13 +2830,13 @@ function emit_stmt_locals(
                     var type_text = string.String.create()
                     defer: type_text.release()
                     append_ast_type(ref_of(type_text), loc.stmt_type, "")
-                    emit_local_item(items_json, loc.name, type_text.as_str(), "", uri, first, count)
+                    emit_local_item(items_json, loc.name, type_text.as_str(), "", "3_", uri, first, count)
                 else:
                     match type_render.initializer_type(analysis, loc.value):
                         Option.some as ty:
                             var type_text = type_render.qualified_name(ty.value, current_module)
                             defer: type_text.release()
-                            emit_local_item(items_json, loc.name, type_text.as_str(), "", uri, first, count)
+                            emit_local_item(items_json, loc.name, type_text.as_str(), "", "3_", uri, first, count)
                         Option.none:
                             pass
         ast.Stmt.stmt_if as iff:
@@ -2916,6 +2953,230 @@ public function attribute_completion_items(
     let alloc = heap.must_alloc[string.String](1)
     unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
     return alloc
+
+
+## The host's `format_string_completions`: inside a format-string interpolation
+## (`f"...#{|}`) the host answers only the module values (sort `0_`), the module
+## functions (sort `1_`) and the locals visible at the cursor (sort `2_`) — never
+## the global bucket.  A `}` after the opener means the cursor is past the
+## interpolation, so the branch declines.  `text` is the line prefix before the
+## cursor.
+public function format_string_completion_items(
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    text: str,
+    line: ptr_uint,
+    uri: str,
+) -> ptr[string.String]?:
+    var open_pos: ptr_uint = 0
+    var opened = false
+    var i: ptr_uint = 0
+    while i + 1 < text.len:
+        if text.byte_at(i) == '#' and text.byte_at(i + 1) == '{':
+            open_pos = i
+            opened = true
+        i += 1
+    if not opened:
+        return null
+    var close = open_pos + 2
+    while close < text.len:
+        if text.byte_at(close) == '}':
+            return null
+        close += 1
+    let prefix = text.slice(open_pos + 2, text.len - open_pos - 2)
+    let current_module = unsafe: read(analysis).module_name
+
+    var declarations = merged_declarations(ast_file, analysis)
+    defer: declarations.release()
+
+    var items_json = string.String.create()
+    items_json.append("[")
+    var first = true
+    var count: ptr_uint = 0
+
+    # The host's `facts.values` registration order: consts, then vars.
+    emit_module_value_items(
+        ref_of(items_json), analysis, declarations.as_span(), true, "0_",
+        current_module, uri, prefix, ref_of(first), ref_of(count))
+    emit_module_value_items(
+        ref_of(items_json), analysis, declarations.as_span(), false, "0_",
+        current_module, uri, prefix, ref_of(first), ref_of(count))
+
+    # Functions, in declaration order.
+    var di: ptr_uint = 0
+    while di < declarations.len():
+        let dp = declarations.get(di) else:
+            break
+        var decl: ast.Decl
+        unsafe:
+            decl = read(dp)
+        match decl:
+            ast.Decl.decl_function as fun:
+                emit_format_function_item(
+                    ref_of(items_json), fun.name, prefix, uri, ref_of(first), ref_of(count))
+            ast.Decl.decl_extern_function as ef:
+                emit_format_function_item(
+                    ref_of(items_json), ef.name, prefix, uri, ref_of(first), ref_of(count))
+            ast.Decl.decl_foreign_function as ff:
+                emit_format_function_item(
+                    ref_of(items_json), ff.name, prefix, uri, ref_of(first), ref_of(count))
+            _:
+                pass
+        di += 1
+
+    # The host's completion snapshot carries the enclosing function's
+    # parameters and its function-level locals declared before the cursor; a
+    # nested block's binding is not in it.
+    emit_format_local_items(
+        analysis, declarations.as_span(), line + 1, prefix, uri, current_module,
+        ref_of(items_json), ref_of(first), ref_of(count))
+
+    items_json.append("]")
+    if count == 0:
+        items_json.release()
+        return null
+    let alloc = heap.must_alloc[string.String](1)
+    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
+    return alloc
+
+
+## Emit one format-string function item: the host's `function <name>` detail
+## with a plain name insert and the `1_` sort group (no signature or snippet).
+function emit_format_function_item(
+    items_json: ref[string.String],
+    name: str,
+    prefix: str,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    if not prefix_matches(name, prefix):
+        return
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append("function ")
+    detail.append(name)
+    var sort_text = string.String.create()
+    defer: sort_text.release()
+    sort_text.append("1_")
+    sort_text.append(name)
+    append_item_ext(
+        items_json, name, KIND_FUNCTION, detail.as_str(), name, sort_text.as_str(), name, uri,
+        0, "", "", first)
+    unsafe:
+        read(count) = read(count) + 1
+
+
+## Emit the format-string locals in the host's snapshot order: the enclosing
+## function's parameters, then its function-level `let`/`var` statements
+## declared before the cursor (destructured names included).
+function emit_format_local_items(
+    analysis: ref[analyzer.Analysis],
+    declarations: span[ast.Decl],
+    cursor_line: ptr_uint,
+    prefix: str,
+    uri: str,
+    current_module: str,
+    items_json: ref[string.String],
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    let enclosing = enclosing_function_for(declarations, cursor_line)
+    var params = enclosing.params
+    let fn_name = enclosing.name
+
+    # Parameters carry the analyzer's semantic types (the host snapshot's
+    # binding type), so an imported or local struct type renders qualified.
+    let sig_ptr = unsafe: read(analysis).functions.get(fn_name)
+    if sig_ptr != null:
+        let sig = unsafe: read(sig_ptr)
+        var pi: ptr_uint = 0
+        while pi < sig.params.len:
+            let param = unsafe: read(sig.params.data + pi)
+            if param.name.len > 0 and param.name != "_" and prefix_matches(param.name, prefix):
+                var type_text = type_render.qualified_name(param.ty, current_module)
+                emit_local_item(
+                    items_json, param.name, type_text.as_str(), "", "2_", uri, first, count)
+                type_text.release()
+            pi += 1
+    else:
+        var pi: ptr_uint = 0
+        while pi < params.len:
+            let param = unsafe: read(params.data + pi)
+            if param.name.len > 0 and param.name != "_" and prefix_matches(param.name, prefix):
+                emit_local_item(
+                    items_json, param.name, ast_formatter.render_type(param.param_type), "",
+                    "2_", uri, first, count)
+            pi += 1
+
+    if enclosing.body == null:
+        return
+    match unsafe: read(ptr[ast.Stmt]<-enclosing.body):
+        ast.Stmt.stmt_block as blk:
+            var si: ptr_uint = 0
+            while si < blk.statements.len:
+                let stmt = unsafe: read(blk.statements.data + si)
+                match stmt:
+                    ast.Stmt.stmt_local as loc:
+                        if loc.line < cursor_line:
+                            match loc.destructure_bindings:
+                                Option.some as names:
+                                    var ni: ptr_uint = 0
+                                    while ni < names.value.len:
+                                        emit_format_local_binding(
+                                            analysis, stmt, unsafe: read(names.value.data + ni),
+                                            loc.stmt_type, loc.value, cursor_line, prefix, uri,
+                                            current_module, items_json, first, count)
+                                        ni += 1
+                                Option.none:
+                                    emit_format_local_binding(
+                                        analysis, stmt, loc.name, loc.stmt_type, loc.value,
+                                        cursor_line, prefix, uri, current_module,
+                                        items_json, first, count)
+                    _:
+                        pass
+                si += 1
+        _:
+            pass
+
+
+## Emit one function-level local with the semantic type at the cursor; a
+## destructured name resolves through the analysis' destructure record.
+function emit_format_local_binding(
+    analysis: ref[analyzer.Analysis],
+    stmt: ast.Stmt,
+    name: str,
+    stmt_type: ptr[ast.TypeRef]?,
+    value: ptr[ast.Expr]?,
+    cursor_line: ptr_uint,
+    prefix: str,
+    uri: str,
+    current_module: str,
+    items_json: ref[string.String],
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    if name.len == 0 or name == "_" or not prefix_matches(name, prefix):
+        return
+    var type_text = string.String.create()
+    defer: type_text.release()
+    match find_local_type(analysis, stmt, name, cursor_line):
+        Option.some as ty:
+            var rendered = type_render.qualified_name(ty.value, current_module)
+            type_text.append(rendered.as_str())
+            rendered.release()
+        Option.none:
+            if stmt_type != null:
+                append_ast_type(ref_of(type_text), stmt_type, "")
+            else:
+                match type_render.initializer_type(analysis, value):
+                    Option.some as inited:
+                        var inferred = type_render.qualified_name(inited.value, current_module)
+                        type_text.append(inferred.as_str())
+                        inferred.release()
+                    Option.none:
+                        return
+    emit_local_item(items_json, name, type_text.as_str(), "", "2_", uri, first, count)
 
 
 ## True when `name` appears before an `=` or `:` in `text` — the host's

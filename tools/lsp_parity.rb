@@ -219,6 +219,15 @@ RESERVED_SOURCE = <<~MT
       return x
 MT
 
+# Format-string interpolation: a cursor inside `#{loc}` must complete the
+# enclosing function's locals (sort `2_`) rather than the global bucket.
+FORMAT_SOURCE = <<~'MT'
+  function format_demo(seed: int) -> int:
+      let local_value = seed + 1
+      let msg = f"value #{local_value}"
+      return local_value
+MT
+
 def path_to_uri(path)
   "file://#{path.split("/").map { |seg| CGI.escape(seg).gsub("+", "%20") }.join("/")}"
 end
@@ -238,6 +247,7 @@ def build_workspace(dir)
     user: File.join(dir, "user.mt"),
     inlay: File.join(dir, "inlay.mt"),
     reserved: File.join(dir, "reserved.mt"),
+    format: File.join(dir, "format.mt"),
   }
   File.write(paths[:alpha], ALPHA_SOURCE)
   File.write(paths[:beta], BETA_SOURCE)
@@ -249,6 +259,7 @@ def build_workspace(dir)
   File.write(paths[:user], USER_SOURCE)
   File.write(paths[:inlay], INLAY_SOURCE)
   File.write(paths[:reserved], RESERVED_SOURCE)
+  File.write(paths[:format], FORMAT_SOURCE)
   File.write(File.join(dir, "assets", "file.txt"), "hello\n")
   paths
 end
@@ -540,6 +551,16 @@ def corpus(dir, paths)
   requests["completion/import-member"] = ["textDocument/completion", at.call("alpha.fn_alpha", off: 6)]
   requests["completion/top-level"] = ["textDocument/completion", at.call("return total")]
   requests["completion/struct-field"] = ["textDocument/completion", at.call("Sample(x = 1", off: 8)]
+  # Inside `f"value #{loc}`: the local `local_value` completes from the host's
+  # snapshot bucket (`2_`), not the global bucket.
+  format_line = 2
+  format_open = FORMAT_SOURCE.split("\n", -1)[format_line].index('#{') + 2
+  requests["completion/format-string"] = ["textDocument/completion", {
+    "textDocument" => { "uri" => path_to_uri(paths[:format]) },
+    "position" => { "line" => format_line, "character" => format_open + 3 },
+  }]
+  # A field name in its own declaration (the `field <name>: <type>` arm).
+  requests["hover/field-declaration"] = ["textDocument/hover", at.call("x: int")]
   requests["signatureHelp"] = ["textDocument/signatureHelp", at.call("compute(3, 4)", off: 8)]
   requests["prepareRename"] = ["textDocument/prepareRename", at.call("s.sum()", off: 2)]
   requests["rename"] = ["textDocument/rename", at.call("s.sum()", off: 2).merge("newName" => "renamed_sum")]

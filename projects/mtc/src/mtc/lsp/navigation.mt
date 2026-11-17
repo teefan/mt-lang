@@ -18,8 +18,6 @@ import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 import mtc.parser.ast as ast
-import mtc.parser.parser as parser
-import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.loader.path_resolver as resolver
@@ -766,21 +764,6 @@ public function ast_for_document(
     let entry = workspace.analysis_entry_for(ws, file_path) else:
         return parsed_file
     return unsafe: read(entry).analysis.source_file
-
-
-## The document's parse-error count: the loader's recorded count when the
-## document loads (no parse), else a fresh parse's — so a handler can keep its
-## parse-error bail without parsing on every request.
-function parse_error_count_for(ws: ref[workspace.Workspace], file_path: str, source: str) -> ptr_uint:
-    let recorded = workspace.document_parse_error_count(ws, file_path)
-    match recorded:
-        Option.some as count:
-            return count.value
-        Option.none:
-            var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-            defer: parse_diags.release()
-            var _parsed = parser.parse_source(source, ref_of(parse_diags))
-            return parse_diags.len()
 
 
 ## The type of the value named `name` at `target_line`: its inferred type for a
@@ -3656,8 +3639,6 @@ function field_declaration_hover(
     line: ptr_uint,
     character: ptr_uint,
 ) -> Option[CursorResult]:
-    if parse_error_count_for(ws, file_path, source) > 0:
-        return Option[CursorResult].none
     let doc = workspace.document_analysis_for(ws, file_path) else:
         return Option[CursorResult].none
     var ast_file = doc.ast_file
