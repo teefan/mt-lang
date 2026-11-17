@@ -332,7 +332,7 @@
       "projects/mtc/src/mtc/dap/lldb_backend.mt:28:const:KIND_SYNC_FUNCTIONS",
       "projects/mtc/src/mtc/dap/lldb_backend.mt:29:const:KIND_SYNC_EXCEPTIONS",
       "projects/mtc/src/mtc/imported_bindings/naming.mt:361:function:apply_rename_rules",
-      "projects/mtc/src/mtc/linter/linter.mt:6293:function:reserved_name_fixes",
+      "projects/mtc/src/mtc/linter/linter.mt:6329:function:reserved_name_fixes",
       "projects/mtc/src/mtc/lowering/async.mt:162:function:count_async_states",
       "projects/mtc/src/mtc/lowering/async.mt:274:function:build_async_frame",
       "projects/mtc/src/mtc/lowering/async.mt:316:function:task_type",
@@ -346,8 +346,8 @@
       "projects/mtc/src/mtc/lsp/protocol.mt:324:function:write_progress_begin",
       "projects/mtc/src/mtc/lsp/protocol.mt:332:function:write_progress_report",
       "projects/mtc/src/mtc/lsp/protocol.mt:348:function:write_progress_end",
-      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2559:function:classify_identifier",
-      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2585:function:collect_param_names",
+      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2641:function:classify_identifier",
+      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2667:function:collect_param_names",
       "projects/mtc/src/mtc/lsp/workspace.mt:778:function:analysis_for",
       "projects/mtc/src/mtc/lsp/workspace_index.mt:42:function:has_file",
       "projects/mtc/src/mtc/packages/graph.mt:263:function:node_at",
@@ -1281,8 +1281,8 @@
     ]
   },
   "sizes": {
-    "total_code": 123892,
-    "functions_over_limit": 24,
+    "total_code": 124036,
+    "functions_over_limit": 18,
     "files_over_limit": 11,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
@@ -1550,10 +1550,10 @@
         "max_function": 91
       },
       "projects/mtc/src/mtc/linter/linter.mt": {
-        "lines": 6935,
-        "code": 5567,
+        "lines": 6971,
+        "code": 5591,
         "max_line": 276,
-        "max_function": 247
+        "max_function": 204
       },
       "projects/mtc/src/mtc/linter/nullcheck.mt": {
         "lines": 697,
@@ -1622,10 +1622,10 @@
         "max_function": 193
       },
       "projects/mtc/src/mtc/loader/package_manifest.mt": {
-        "lines": 610,
-        "code": 518,
+        "lines": 624,
+        "code": 527,
         "max_line": 134,
-        "max_function": 252
+        "max_function": 193
       },
       "projects/mtc/src/mtc/loader/path_resolver.mt": {
         "lines": 252,
@@ -1640,10 +1640,10 @@
         "max_function": 63
       },
       "projects/mtc/src/mtc/lowering/async_cps.mt": {
-        "lines": 1782,
-        "code": 1335,
+        "lines": 1807,
+        "code": 1356,
         "max_line": 377,
-        "max_function": 260
+        "max_function": 149
       },
       "projects/mtc/src/mtc/lowering/comptime.mt": {
         "lines": 1557,
@@ -1694,10 +1694,10 @@
         "max_function": 84
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 18433,
-        "code": 13577,
+        "lines": 18471,
+        "code": 13596,
         "max_line": 483,
-        "max_function": 259
+        "max_function": 195
       },
       "projects/mtc/src/mtc/lowering/match.mt": {
         "lines": 1569,
@@ -1916,10 +1916,10 @@
         "max_function": 50
       },
       "projects/mtc/src/mtc/lsp/semantic_tokens.mt": {
-        "lines": 2986,
-        "code": 2296,
+        "lines": 3068,
+        "code": 2367,
         "max_line": 303,
-        "max_function": 245
+        "max_function": 153
       },
       "projects/mtc/src/mtc/lsp/server.mt": {
         "lines": 665,

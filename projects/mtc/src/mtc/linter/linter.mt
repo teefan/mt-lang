@@ -2718,48 +2718,13 @@ function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
             ast.Expr.expr_format_string as fa:
                 match read(b):
                     ast.Expr.expr_format_string as fb:
-                        if fa.parts.len != fb.parts.len:
-                            return false
-                        var i: ptr_uint = 0
-                        while i < fa.parts.len:
-                            match read(fa.parts.data + i):
-                                ast.FormatStringPart.fmt_text as ta:
-                                    match read(fb.parts.data + i):
-                                        ast.FormatStringPart.fmt_text as tb:
-                                            if not ta.value.equal(tb.value):
-                                                return false
-                                        _:
-                                            return false
-                                ast.FormatStringPart.fmt_expr as ea:
-                                    match read(fb.parts.data + i):
-                                        ast.FormatStringPart.fmt_expr as eb:
-                                            if not exprs_structural_equal(ea.expression, eb.expression):
-                                                return false
-                                            if not format_specs_equal(ea.format_spec, eb.format_spec):
-                                                return false
-                                        _:
-                                            return false
-                            i += 1
-                        return true
+                        return format_parts_equal(fa.parts, fb.parts)
                     _:
                         return false
             ast.Expr.expr_call as ca:
                 match read(b):
                     ast.Expr.expr_call as cb:
-                        if not exprs_structural_equal(ca.callee, cb.callee):
-                            return false
-                        if ca.args.len != cb.args.len:
-                            return false
-                        var i: ptr_uint = 0
-                        while i < ca.args.len:
-                            let aa = read(ca.args.data + i)
-                            let ab = read(cb.args.data + i)
-                            if not option_str_equal(aa.arg_name, ab.arg_name):
-                                return false
-                            if not exprs_structural_equal(aa.arg_value, ab.arg_value):
-                                return false
-                            i += 1
-                        return true
+                        return call_exprs_equal(ca.callee, ca.args, cb.callee, cb.args)
                     _:
                         return false
             ast.Expr.expr_index_access as xa:
@@ -2792,43 +2757,16 @@ function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
             ast.Expr.expr_match as mma:
                 match read(b):
                     ast.Expr.expr_match as mmb:
-                        if mma.arms.len != mmb.arms.len or mma.desugared_from_is != mmb.desugared_from_is:
-                            return false
-                        if not exprs_structural_equal(mma.scrutinee, mmb.scrutinee):
-                            return false
-                        var i: ptr_uint = 0
-                        while i < mma.arms.len:
-                            let aa = read(mma.arms.data + i)
-                            let ab = read(mmb.arms.data + i)
-                            if not option_expr_equal(aa.pattern, ab.pattern):
-                                return false
-                            if not option_str_equal(aa.binding_name, ab.binding_name):
-                                return false
-                            if not exprs_structural_equal(aa.value, ab.value):
-                                return false
-                            i += 1
-                        return true
+                        return match_exprs_equal(
+                            mma.scrutinee, mma.arms, mma.desugared_from_is,
+                            mmb.scrutinee, mmb.arms, mmb.desugared_from_is
+                        )
                     _:
                         return false
             ast.Expr.expr_proc as pa:
                 match read(b):
                     ast.Expr.expr_proc as pb:
-                        if pa.method_params.len != pb.method_params.len:
-                            return false
-                        var i: ptr_uint = 0
-                        while i < pa.method_params.len:
-                            var ra = read(pa.method_params.data + i)
-                            var rb = read(pb.method_params.data + i)
-                            if not ra.name.equal(rb.name):
-                                return false
-                            if not type_refs_structural_equal(ptr_of(ra.param_type), ptr_of(rb.param_type)):
-                                return false
-                            if not option_expr_equal(ra.default_value, rb.default_value):
-                                return false
-                            i += 1
-                        if not option_type_ref_equal(pa.return_type, pb.return_type):
-                            return false
-                        return stmts_structural_equal(pa.body, pb.body)
+                        return proc_exprs_equal(pa.method_params, pa.return_type, pa.body, pb.method_params, pb.return_type, pb.body)
                     _:
                         return false
             ast.Expr.expr_await as awa:
@@ -2911,6 +2849,104 @@ function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
                         return false
             _:
                 return false
+
+
+## Structural equality of format-string parts.
+function format_parts_equal(a: span[ast.FormatStringPart], b: span[ast.FormatStringPart]) -> bool:
+    if a.len != b.len:
+        return false
+    unsafe:
+        var i: ptr_uint = 0
+        while i < a.len:
+            match read(a.data + i):
+                ast.FormatStringPart.fmt_text as ta:
+                    match read(b.data + i):
+                        ast.FormatStringPart.fmt_text as tb:
+                            if not ta.value.equal(tb.value):
+                                return false
+                        _:
+                            return false
+                ast.FormatStringPart.fmt_expr as ea:
+                    match read(b.data + i):
+                        ast.FormatStringPart.fmt_expr as eb:
+                            if not exprs_structural_equal(ea.expression, eb.expression):
+                                return false
+                            if not format_specs_equal(ea.format_spec, eb.format_spec):
+                                return false
+                        _:
+                            return false
+            i += 1
+    return true
+
+
+## Structural equality of call callees and arguments.
+function call_exprs_equal(
+    callee_a: ptr[ast.Expr], args_a: span[ast.Argument],
+    callee_b: ptr[ast.Expr], args_b: span[ast.Argument],
+) -> bool:
+    if not exprs_structural_equal(callee_a, callee_b):
+        return false
+    if args_a.len != args_b.len:
+        return false
+    unsafe:
+        var i: ptr_uint = 0
+        while i < args_a.len:
+            let aa = read(args_a.data + i)
+            let ab = read(args_b.data + i)
+            if not option_str_equal(aa.arg_name, ab.arg_name):
+                return false
+            if not exprs_structural_equal(aa.arg_value, ab.arg_value):
+                return false
+            i += 1
+    return true
+
+
+## Structural equality of match expressions (arms, bindings, desugaring flag).
+function match_exprs_equal(
+    scrutinee_a: ptr[ast.Expr], arms_a: span[ast.MatchExprArm], desugared_a: bool,
+    scrutinee_b: ptr[ast.Expr], arms_b: span[ast.MatchExprArm], desugared_b: bool,
+) -> bool:
+    if arms_a.len != arms_b.len or desugared_a != desugared_b:
+        return false
+    if not exprs_structural_equal(scrutinee_a, scrutinee_b):
+        return false
+    unsafe:
+        var i: ptr_uint = 0
+        while i < arms_a.len:
+            let aa = read(arms_a.data + i)
+            let ab = read(arms_b.data + i)
+            if not option_expr_equal(aa.pattern, ab.pattern):
+                return false
+            if not option_str_equal(aa.binding_name, ab.binding_name):
+                return false
+            if not exprs_structural_equal(aa.value, ab.value):
+                return false
+            i += 1
+    return true
+
+
+## Structural equality of proc expressions (params, return type, body).
+function proc_exprs_equal(
+    params_a: span[ast.Param], return_a: ptr[ast.TypeRef]?, body_a: ptr[ast.Stmt],
+    params_b: span[ast.Param], return_b: ptr[ast.TypeRef]?, body_b: ptr[ast.Stmt],
+) -> bool:
+    if params_a.len != params_b.len:
+        return false
+    unsafe:
+        var i: ptr_uint = 0
+        while i < params_a.len:
+            var ra = read(params_a.data + i)
+            var rb = read(params_b.data + i)
+            if not ra.name.equal(rb.name):
+                return false
+            if not type_refs_structural_equal(ptr_of(ra.param_type), ptr_of(rb.param_type)):
+                return false
+            if not option_expr_equal(ra.default_value, rb.default_value):
+                return false
+            i += 1
+    if not option_type_ref_equal(return_a, return_b):
+        return false
+    return stmts_structural_equal(body_a, body_b)
 
 
 function format_specs_equal(a: ptr[ast.FormatSpec]?, b: ptr[ast.FormatSpec]?) -> bool:

@@ -1148,17 +1148,11 @@ function classify_scan_identifier(
 
     # Declaration names, judged by the preceding keyword.
     let prev_opt = scan_prev_index(tokens, index)
-    if prev_opt.is_some():
-        let prev_idx = prev_opt.unwrap()
-        let prev_kind = scan_kind_at(tokens, prev_idx)
-        if prev_kind == tk.TokenKind.tk_function or prev_kind == tk.TokenKind.tk_fn or
-           prev_kind == tk.TokenKind.tk_proc:
-            return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 1)
-        if prev_kind == tk.TokenKind.tk_struct or prev_kind == tk.TokenKind.tk_union or
-           prev_kind == tk.TokenKind.tk_enum or prev_kind == tk.TokenKind.tk_flags or
-           prev_kind == tk.TokenKind.tk_variant or prev_kind == tk.TokenKind.tk_type or
-           prev_kind == tk.TokenKind.tk_opaque or prev_kind == tk.TokenKind.tk_interface:
-            return TokenClass(token_type = TOKEN_TYPE, token_mod = 1)
+    match classify_declaration_name(tokens, index, lexeme, prev_opt):
+        Option.some as declared:
+            return declared.value
+        Option.none:
+            pass
     if lexeme.equal("_"):
         return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0)
     if prev_opt.is_some():
@@ -1219,6 +1213,79 @@ function classify_scan_identifier(
             return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
 
     # Dotted member access.
+    match classify_dot_member(facts, tokens, index, lexeme, source, prev_opt):
+        Option.some as member_class:
+            return member_class.value
+        Option.none:
+            pass
+
+    # Call sites: builtins, functions, then type constructors.  A *specialized*
+    # call carries a type-argument list between the callee and the call
+    # (`span[int](...)`, `hash[int](...)`), which the host's
+    # `specialized_call_with_type_args?` treats as a call shape too.
+    match classify_call_site(facts, tokens, index, lexeme, source):
+        Option.some as call_class:
+            return call_class.value
+        Option.none:
+            pass
+
+    return classify_name_reference(facts, tokens, index, lexeme, source)
+
+
+## Declaration names, judged by the preceding keyword.
+function classify_declaration_name(
+    tokens: span[token_mod.Token],
+    index: ptr_uint,
+    lexeme: str,
+    prev_opt: Option[ptr_uint],
+) -> Option[TokenClass]:
+    if prev_opt.is_some():
+        let prev_idx = prev_opt.unwrap()
+        let prev_kind = scan_kind_at(tokens, prev_idx)
+        if prev_kind == tk.TokenKind.tk_function or prev_kind == tk.TokenKind.tk_fn or
+           prev_kind == tk.TokenKind.tk_proc:
+            return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_FUNCTION, token_mod = 1))
+        if prev_kind == tk.TokenKind.tk_struct or prev_kind == tk.TokenKind.tk_union or
+           prev_kind == tk.TokenKind.tk_enum or prev_kind == tk.TokenKind.tk_flags or
+           prev_kind == tk.TokenKind.tk_variant or prev_kind == tk.TokenKind.tk_type or
+           prev_kind == tk.TokenKind.tk_opaque or prev_kind == tk.TokenKind.tk_interface:
+            return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_TYPE, token_mod = 1))
+    if lexeme.equal("_"):
+        return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0))
+    if prev_opt.is_some():
+        let prev_kind = scan_kind_at(tokens, prev_opt.unwrap())
+        if prev_kind == tk.TokenKind.tk_event:
+            return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_VARIABLE, token_mod = 1))
+        if prev_kind == tk.TokenKind.tk_const:
+            return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5))
+        if prev_kind == tk.TokenKind.tk_let:
+            let next_idx = scan_next_index(tokens, index)
+            var next_is_lparen = false
+            if next_idx.is_some():
+                next_is_lparen = scan_kind_at(tokens, next_idx.unwrap()) == tk.TokenKind.lparen
+            if not next_is_lparen:
+                return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5))
+        if prev_kind == tk.TokenKind.tk_var:
+            let next_idx = scan_next_index(tokens, index)
+            var next_is_lparen = false
+            if next_idx.is_some():
+                next_is_lparen = scan_kind_at(tokens, next_idx.unwrap()) == tk.TokenKind.lparen
+            if not next_is_lparen:
+                return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_VARIABLE, token_mod = 1))
+        if prev_kind == tk.TokenKind.tk_for:
+            return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5))
+    return Option[TokenClass].none
+
+
+## Dotted member access: import aliases, type-name members, and callable fields.
+function classify_dot_member(
+    facts: ref[ScanFacts],
+    tokens: span[token_mod.Token],
+    index: ptr_uint,
+    lexeme: str,
+    source: str,
+    prev_opt: Option[ptr_uint],
+) -> Option[TokenClass]:
     if prev_opt.is_some() and scan_kind_at(tokens, prev_opt.unwrap()) == tk.TokenKind.dot:
         let receiver_idx = scan_prev_index(tokens, prev_opt.unwrap())
         if receiver_idx.is_some():
@@ -1234,45 +1301,51 @@ function classify_scan_identifier(
                         let nk = scan_kind_at(tokens, next_idx.unwrap())
                         call_shaped = nk == tk.TokenKind.lparen or nk == tk.TokenKind.lbracket
                     if call_shaped:
-                        return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0)
-                    return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0)
+                        return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0))
+                    return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0))
                 if unsafe: read(facts).alias_types.contains(key):
-                    return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
+                    return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_TYPE, token_mod = 0))
                 if unsafe: read(facts).alias_interfaces.contains(key):
-                    return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
+                    return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_TYPE, token_mod = 0))
                 if unsafe: read(facts).alias_values.contains(key):
                     if unsafe: read(facts).alias_readonly_values.contains(key):
-                        return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 4)
-                    return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0)
+                        return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_VARIABLE, token_mod = 4))
+                    return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0))
             if receiver_is_type_name(facts, tokens, receiver_idx.unwrap(), source):
                 # A static method of the receiver's type is a `method`; every
                 # other member of a type-name receiver is a variant/enum member
                 # (`Option.some(value = 42)`), as the host's
                 # `static_type_member_access?` before `type_name_member_access?`.
                 if is_static_member_of(facts, tokens, receiver_idx.unwrap(), lexeme, source):
-                    return TokenClass(token_type = TOKEN_METHOD, token_mod = 0)
+                    return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_METHOD, token_mod = 0))
                 # A nested type name of the receiver's struct renders `type`
                 # (`Rectangle.Edge`), the host's `dot_nested_type_member?`.
                 if scan_nested_type_member(facts, tokens, index, source):
-                    return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
-                return TokenClass(token_type = TOKEN_ENUM_MEMBER, token_mod = 0)
+                    return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_TYPE, token_mod = 0))
+                return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_ENUM_MEMBER, token_mod = 0))
         let next_idx = scan_next_index(tokens, index)
         if next_idx.is_some() and scan_kind_at(tokens, next_idx.unwrap()) == tk.TokenKind.lparen:
             # A call through a struct field of function/proc type is a
             # `property` (the host's `callable_field_member_access?`), not a
             # method of the receiver's type.
             if scan_callable_field_call(facts, tokens, index, source):
-                return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0)
-            return TokenClass(token_type = TOKEN_METHOD, token_mod = 0)
+                return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0))
+            return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_METHOD, token_mod = 0))
         if scan_specialized_call(tokens, index):
-            return TokenClass(token_type = TOKEN_METHOD, token_mod = 0)
-        return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0)
+            return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_METHOD, token_mod = 0))
+        return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0))
+    return Option[TokenClass].none
 
 
-    # Call sites: builtins, functions, then type constructors.  A *specialized*
-    # call carries a type-argument list between the callee and the call
-    # (`span[int](...)`, `hash[int](...)`), which the host's
-    # `specialized_call_with_type_args?` treats as a call shape too.
+## Call sites: bindings shadow callees, then builtins, functions, and
+## constructible type names.
+function classify_call_site(
+    facts: ref[ScanFacts],
+    tokens: span[token_mod.Token],
+    index: ptr_uint,
+    lexeme: str,
+    source: str,
+) -> Option[TokenClass]:
     let next_call = scan_next_index(tokens, index)
     if next_call.is_some():
         let next_kind = scan_kind_at(tokens, next_call.unwrap())
@@ -1282,37 +1355,46 @@ function classify_scan_identifier(
             # module values before the builtin/function tables).
             match scan_binding_at(facts, tokens, index, source):
                 Option.some as kind:
-                    return scan_binding_class(kind.value)
+                    return Option[TokenClass].some(value = scan_binding_class(kind.value))
                 Option.none:
                     pass
             if unsafe: read(facts).values.contains(lexeme):
                 if unsafe: read(facts).readonly_values.contains(lexeme):
-                    return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 4)
-                return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0)
+                    return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_VARIABLE, token_mod = 4))
+                return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0))
             if is_default_library_function_name(lexeme):
-                return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 512)
+                return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_FUNCTION, token_mod = 512))
             if unsafe: read(facts).functions.contains(lexeme):
-                return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0)
+                return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0))
             if is_constructible_type_name(facts, lexeme):
-                return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
+                return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_TYPE, token_mod = 0))
             # The hash/order/equal hooks are defaultLibrary only in their
             # specialized form (the host's `BUILTIN_ASSOCIATED_HOOK_NAMES`).
             if scan_specialized_call(tokens, index) and
                (lexeme.equal("hash") or lexeme.equal("equal") or lexeme.equal("order")):
-                return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 512)
-            return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0)
+                return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_FUNCTION, token_mod = 512))
+            return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0))
     # A bare builtin specialization (`zero[int]`, `default[T]`, no call) is a
     # builtin function value (the host's `bare_builtin_specialization?`).
     if (lexeme.equal("zero") or lexeme.equal("default")) and scan_bare_specialization(tokens, index):
-        return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 512)
+        return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_FUNCTION, token_mod = 512))
+    return Option[TokenClass].none
 
-    # Value / type / namespace references.  A name bound in scope resolves to
-    # that binding (the host's `local_semantic_value_binding`, whose snapshot
-    # carries the innermost binding at the token), so a parameter renders
-    # `parameter`, a `let`/`for`/match binding `variable` + `readonly` and a
-    # `var` bare `variable`.  A *receiver before a dot* resolves through the
-    # host's dedicated arm first: a declared type name renders `type` without
-    # the defaultLibrary modifier (`Option.some`), an import alias `namespace`.
+
+## Value / type / namespace references (the host's fallback arms).
+function classify_name_reference(
+    facts: ref[ScanFacts],
+    tokens: span[token_mod.Token],
+    index: ptr_uint,
+    lexeme: str,
+    source: str,
+) -> TokenClass:
+    # A name bound in scope resolves to that binding (the host's
+    # `local_semantic_value_binding`), so a parameter renders `parameter`, a
+    # `let`/`for`/match binding `variable` + `readonly` and a `var` bare
+    # `variable`.  A *receiver before a dot* resolves through the host's
+    # dedicated arm first: a declared type name renders `type` without the
+    # defaultLibrary modifier (`Option.some`), an import alias `namespace`.
     let next_dot = scan_next_index(tokens, index)
     if next_dot.is_some() and scan_kind_at(tokens, next_dot.unwrap()) == tk.TokenKind.dot:
         unsafe:

@@ -262,6 +262,84 @@ public function lower_async_fn(ctx: ref[lowering.LoweringContext], name: str, li
         pi += 1
 
     # --- resume function body ---
+    let resume_body = build_async_resume_body(
+        ctx, body, frame_ptr_ty, raw_expr, ctor_param_names, ctor_param_tys, receiver_ty_opt, receiver_editable,
+        res_ty, is_void_ret, has_await, resume_c
+    )
+    let frame_exp = lowering.alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = frame_ptr_ty, pointer = Option[bool].some(value = false)))
+    # The host's `lower_async_function_decl` appends the resume and the vtable
+    # helpers to the program-wide `@artifacts.synthetic_functions` tail (after
+    # every module's functions), while the constructor stays in the declaring
+    # module's list (`functions.rb:199-215`).
+    ctx.pending_synthetic_functions.push(ir.Function(name = strings.join_two(name, "__resume"), linkage_name = resume_c, params = vparam_s, return_type = void_t, body = resume_body.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
+
+    # -- frame struct (base + state + result + params + spilled locals + awaits) --
+    var ff = vec.Vec[ir.Field].create()
+    ff.push(ir.Field(name = "ready",        ty = bool_ty))
+    ff.push(ir.Field(name = "cancelled",    ty = bool_ty))
+    ff.push(ir.Field(name = "waiter_frame", ty = ctx.ptr_void_ty))
+    ff.push(ir.Field(name = "waiter",       ty = waiter_fn_ty))
+    if has_await:
+        ff.push(ir.Field(name = "state",    ty = int_ty))
+    if not is_void_ret:
+        ff.push(ir.Field(name = "result",   ty = res_ty))
+    var pif: ptr_uint = 0
+    while pif < ctor_param_names.len:
+        var pfname: str
+        var pfty: types.Type
+        unsafe:
+            pfname = read(ptr[str]<-ctor_param_names.data + pif)
+            pfty = read(ptr[types.Type]<-ctor_field_tys.data + pif)
+        ff.push(ir.Field(name = strings.join_two("param_", pfname), ty = pfty))
+        pif += 1
+    var lfi: ptr_uint = 0
+    while lfi < ctx.async_local_fields.len():
+        let lfp = ctx.async_local_fields.get(lfi) else:
+            break
+        ff.push(unsafe: read(lfp))
+        lfi += 1
+    var afi: ptr_uint = 0
+    while afi < ctx.async_await_fields.len():
+        let afp = ctx.async_await_fields.get(afi) else:
+            break
+        let af = unsafe: read(afp)
+        var already_present = false
+        var ffi: ptr_uint = 0
+        while ffi < ff.len():
+            let existing = ff.get(ffi) else:
+                break
+            if unsafe: read(existing).name == af.name:
+                already_present = true
+            ffi += 1
+        if not already_present:
+            ff.push(af)
+        afi += 1
+    let _inserted = ctx.pending_synthetic_structs.insert(frame_index, ir.StructDecl(name = frame_c, linkage_name = frame_c, fields = ff.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+
+    # Shared bool exprs for vtable/constructor
+    emit_async_vtable(ctx, link_base, frame_ptr_ty, frame_exp, raw_expr, vparam_s, res_ty, has_await, ctor_param_names, ctor_field_tys, receiver_ty_opt, receiver_editable)
+
+    emit_async_constructor(ctx, name, link_base, frame_ptr_ty, res_ty, ctor_param_names, ctor_param_tys, ctor_field_tys, receiver_ty_opt, receiver_editable, synthetic_ctor, functions)
+    ctx.current_function_linkage = saved_current_fn
+
+
+## Build the resume function's body: frame cast, parameter bindings, and either
+## the full CPS state machine or the no-await single-state path.
+function build_async_resume_body(
+    ctx: ref[lowering.LoweringContext],
+    body: ptr[ast.Stmt]?,
+    frame_ptr_ty: types.Type,
+    raw_expr: ptr[ir.Expr],
+    ctor_param_names: vec.Vec[str],
+    ctor_param_tys: vec.Vec[types.Type],
+    receiver_ty_opt: Option[types.Type],
+    receiver_editable: bool,
+    res_ty: types.Type,
+    is_void_ret: bool,
+    has_await: bool,
+    resume_c: str,
+) -> vec.Vec[ir.Stmt]:
+    let int_ty = types.primitive("int")
     ctx.locals.clear()
     var resume_body = vec.Vec[ir.Stmt].create()
     resume_body.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = lowering.alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
@@ -386,60 +464,7 @@ public function lower_async_fn(ctx: ref[lowering.LoweringContext], name: str, li
             async_complete_statements(ctx, ref_of(resume_body), res_ty, Option[ptr[ir.Expr]].none)
         ctx.current_fn_return_type = saved_rt
         ctx.inside_async = saved_inside
-    # The host's `lower_async_function_decl` appends the resume and the vtable
-    # helpers to the program-wide `@artifacts.synthetic_functions` tail (after
-    # every module's functions), while the constructor stays in the declaring
-    # module's list (`functions.rb:199-215`).
-    ctx.pending_synthetic_functions.push(ir.Function(name = strings.join_two(name, "__resume"), linkage_name = resume_c, params = vparam_s, return_type = void_t, body = resume_body.as_span(), entry_point = false, public_export = false, method_receiver_param = false))
-
-    # -- frame struct (base + state + result + params + spilled locals + awaits) --
-    var ff = vec.Vec[ir.Field].create()
-    ff.push(ir.Field(name = "ready",        ty = bool_ty))
-    ff.push(ir.Field(name = "cancelled",    ty = bool_ty))
-    ff.push(ir.Field(name = "waiter_frame", ty = ctx.ptr_void_ty))
-    ff.push(ir.Field(name = "waiter",       ty = waiter_fn_ty))
-    if has_await:
-        ff.push(ir.Field(name = "state",    ty = int_ty))
-    if not is_void_ret:
-        ff.push(ir.Field(name = "result",   ty = res_ty))
-    var pif: ptr_uint = 0
-    while pif < ctor_param_names.len:
-        var pfname: str
-        var pfty: types.Type
-        unsafe:
-            pfname = read(ptr[str]<-ctor_param_names.data + pif)
-            pfty = read(ptr[types.Type]<-ctor_field_tys.data + pif)
-        ff.push(ir.Field(name = strings.join_two("param_", pfname), ty = pfty))
-        pif += 1
-    var lfi: ptr_uint = 0
-    while lfi < ctx.async_local_fields.len():
-        let lfp = ctx.async_local_fields.get(lfi) else:
-            break
-        ff.push(unsafe: read(lfp))
-        lfi += 1
-    var afi: ptr_uint = 0
-    while afi < ctx.async_await_fields.len():
-        let afp = ctx.async_await_fields.get(afi) else:
-            break
-        let af = unsafe: read(afp)
-        var already_present = false
-        var ffi: ptr_uint = 0
-        while ffi < ff.len():
-            let existing = ff.get(ffi) else:
-                break
-            if unsafe: read(existing).name == af.name:
-                already_present = true
-            ffi += 1
-        if not already_present:
-            ff.push(af)
-        afi += 1
-    let _inserted = ctx.pending_synthetic_structs.insert(frame_index, ir.StructDecl(name = frame_c, linkage_name = frame_c, fields = ff.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
-
-    # Shared bool exprs for vtable/constructor
-    emit_async_vtable(ctx, link_base, frame_ptr_ty, frame_exp, raw_expr, vparam_s, res_ty, has_await, ctor_param_names, ctor_field_tys, receiver_ty_opt, receiver_editable)
-
-    emit_async_constructor(ctx, name, link_base, frame_ptr_ty, res_ty, ctor_param_names, ctor_param_tys, ctor_field_tys, receiver_ty_opt, receiver_editable, synthetic_ctor, functions)
-    ctx.current_function_linkage = saved_current_fn
+    return resume_body
 
 
 function emit_async_vtable(ctx: ref[lowering.LoweringContext], link_base: str, frame_ptr_ty: types.Type, frame_exp: ptr[ir.Expr], raw_expr: ptr[ir.Expr], vparam_s: span[ir.Param], res_ty: types.Type, has_await: bool, ctor_param_names: vec.Vec[str], ctor_field_tys: vec.Vec[types.Type], receiver_ty_opt: Option[types.Type], receiver_editable: bool) -> void:

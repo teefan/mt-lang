@@ -386,6 +386,37 @@ function parse_package_manifest(operand: str, root: str, manifest: str) -> Resul
                 pass
         return Result[Option[PackageBuild], string.String].success(value = Option[PackageBuild].none)
 
+    source_root_value.release()
+    match finish_package_build(
+        root, manifest, build_table, name, kind, source_root_abs, source_path, profile, platform
+    ):
+        Result.success as built:
+            return Result[Option[PackageBuild], string.String].success(value = built.value)
+        Result.failure as failure:
+            name.release()
+            source_root_abs.release()
+            match source_path:
+                Option.some as owned_source:
+                    owned_source.value.release()
+                Option.none:
+                    pass
+            return Result[Option[PackageBuild], string.String].failure(error = failure.error)
+
+
+## Resolve the optional output/assets/template and build the PackageBuild.  The
+## name/source-root/source-path values transfer to the result on success; the
+## caller releases them on failure.
+function finish_package_build(
+    root: str,
+    manifest: str,
+    build_table: ptr[toml.Table]?,
+    name: string.String,
+    kind: PackageKind,
+    source_root_abs: string.String,
+    source_path: Option[string.String],
+    profile: str,
+    platform: str,
+) -> Result[Option[PackageBuild], string.String]:
     var output_path: Option[string.String] = Option[string.String].none
     match table_string(build_table, "output"):
         Option.some as declared_output:
@@ -398,14 +429,6 @@ function parse_package_manifest(operand: str, root: str, manifest: str) -> Resul
     match assets_ok:
         Result.failure as asset_failure:
             var asset_error = asset_failure.error
-            source_root_value.release()
-            source_root_abs.release()
-            name.release()
-            match source_path:
-                Option.some as owned_source:
-                    owned_source.value.release()
-                Option.none:
-                    pass
             match output_path:
                 Option.some as owned_output:
                     owned_output.value.release()
@@ -427,14 +450,6 @@ function parse_package_manifest(operand: str, root: str, manifest: str) -> Resul
                 message.append(template_abs.as_str())
                 message.append(")")
                 template_abs.release()
-                source_root_value.release()
-                source_root_abs.release()
-                name.release()
-                match source_path:
-                    Option.some as owned_source:
-                        owned_source.value.release()
-                    Option.none:
-                        pass
                 match output_path:
                     Option.some as owned_output:
                         owned_output.value.release()
@@ -446,7 +461,6 @@ function parse_package_manifest(operand: str, root: str, manifest: str) -> Resul
         Option.none:
             pass
 
-    source_root_value.release()
     return Result[Option[PackageBuild], string.String].success(value = Option[PackageBuild].some(value = PackageBuild(
         root_dir = string.String.from_str(root),
         manifest_path = string.String.from_str(manifest),

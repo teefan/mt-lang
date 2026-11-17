@@ -788,45 +788,12 @@ public function lower(program: loader.Program) -> ir.Program:
         # Functions are appended after the loop, reordered per module.
         i += 1
 
-    # Synthetic enums (the builtin `EventError`) follow every module's enums —
-    # the host's `all_enums.concat(@artifacts.synthetic_enums.uniq {
-    # |e| e.linkage_name })`.
-    var seen_enums = map_mod.Map[str, bool].create()
-    var se_i: ptr_uint = 0
-    while se_i < synthetic_enums.len():
-        let en_decl_ptr = synthetic_enums.get(se_i) else:
-            break
-        var en_decl = unsafe: read(en_decl_ptr)
-        if not seen_enums.contains(en_decl.linkage_name):
-            seen_enums.set(en_decl.linkage_name, true)
-            enums.push(en_decl)
-        se_i += 1
-
-    # Synthetic value structs registered while lowering (the host's
-    # `synthetic_structs` synthetics) follow the module declarations.  The
-    # `str_buffer[N]` structs are the exception: the host synthesizes them in
-    # the *C backend* from the type universe, so they ride
-    # `Program.str_buffer_structs` and the dumper never sees them (session 44,
-    # item 8b).
-    var plain_synthetic = vec.Vec[ir.StructDecl].create()
-    var str_buffer_synthetic = vec.Vec[ir.StructDecl].create()
-    let all_synthetic = pending_synthetic_structs.as_span()
-    var syn_i: ptr_uint = 0
-    while syn_i < all_synthetic.len:
-        unsafe:
-            let sd = read(all_synthetic.data + syn_i)
-            if sd.linkage_name.starts_with("mt_str_buffer_"):
-                str_buffer_synthetic.push(sd)
-            else:
-                plain_synthetic.push(sd)
-        syn_i += 1
-    dedup_append_structs(ref_of(structs), plain_synthetic.as_span(), ref_of(seen_structs))
-    var ems_i: ptr_uint = 0
-    while ems_i < emitted_structs.len():
-        let ems_ptr = emitted_structs.get(ems_i) else:
-            break
-        structs.push(unsafe: read(ems_ptr))
-        ems_i += 1
+    # Synthetic enums and value structs follow the module declarations; the
+    # `str_buffer[N]` structs ride the Program's separate field.
+    let str_buffer_synthetic = append_synthetic_decls(
+        ref_of(synthetic_enums), pending_synthetic_structs.as_span(), ref_of(emitted_structs),
+        ref_of(enums), ref_of(structs), ref_of(seen_structs)
+    )
 
     # Place every module's functions in the host's order (`lower_functions` and
     # its fixpoint): a declaration pass over all modules, then further passes
@@ -865,12 +832,95 @@ public function lower(program: loader.Program) -> ir.Program:
         constants.push(unsafe: read(emc_ptr))
         emc_i += 1
 
-    # Collect type aliases from all non-raw modules. Raw (external) modules
-    # define C-level types that already exist — we never emit typedefs for
-    # them.  Non-raw-module aliases whose target is a std.c.* type still need a
-    # C typedef when the target can be resolved to a valid C name, so the
-    # module-qualified name (e.g. `std_net_NativeSocketStorage`) maps to the raw
-    # C type (e.g. `struct sockaddr_storage`).
+    # Collect type aliases from all non-raw modules; raw modules define C-level
+    # types that already exist, and `std.c.*` targets get a typedef only when
+    # they resolve to a known C name.
+    collect_type_aliases(program, ref_of(monomorphized_structs), ref_of(type_aliases))
+
+    let assembled = ir.Program(
+        module_name = root_name,
+        includes = include_scan.collect_includes(program),
+        constants = constants.as_span(),
+        globals = globals.as_span(),
+        opaques = monomorphized.collect_opaque_decls(program),
+        structs = structs.as_span(),
+        unions = unions.as_span(),
+        enums = enums.as_span(),
+        variants = variants.as_span(),
+        static_asserts = static_asserts.as_span(),
+        functions = functions.as_span(),
+        type_aliases = type_aliases.as_span(),
+        source_path = root.source_path,
+        monomorphized_structs = monomorphized_structs.as_span(),
+        monomorphized_variants = monomorphized_variants.as_span(),
+        external_structs = external_structs.as_span(),
+        str_buffer_structs = str_buffer_synthetic.as_span(),
+    )
+    return proc_renumber.renumber_program_procs(assembled, module_fn_count)
+
+
+## Append synthetic enums and value structs after the module declarations.
+## `str_buffer` structs are returned separately: the host synthesizes them in
+## the C backend, so they ride `Program.str_buffer_structs` and never reach the
+## dumper.
+function append_synthetic_decls(
+    synthetic_enums: ref[vec.Vec[ir.EnumDecl]],
+    pending_synthetic_structs: span[ir.StructDecl],
+    emitted_structs: ref[vec.Vec[ir.StructDecl]],
+    enums: ref[vec.Vec[ir.EnumDecl]],
+    structs: ref[vec.Vec[ir.StructDecl]],
+    seen_structs: ref[map_mod.Map[str, bool]],
+) -> vec.Vec[ir.StructDecl]:
+    # Synthetic enums (the builtin `EventError`) follow every module's enums —
+    # the host's `all_enums.concat(@artifacts.synthetic_enums.uniq { |e|
+    # e.linkage_name })`.
+    var seen_enums = map_mod.Map[str, bool].create()
+    var se_i: ptr_uint = 0
+    while se_i < read(synthetic_enums).len():
+        let en_decl_ptr = read(synthetic_enums).get(se_i) else:
+            break
+        var en_decl = unsafe: read(en_decl_ptr)
+        if not seen_enums.contains(en_decl.linkage_name):
+            seen_enums.set(en_decl.linkage_name, true)
+            read(enums).push(en_decl)
+        se_i += 1
+
+    # Synthetic value structs registered while lowering (the host's
+    # `synthetic_structs` synthetics) follow the module declarations.  The
+    # `str_buffer[N]` structs are the exception: the host synthesizes them in
+    # the *C backend* from the type universe, so they ride
+    # `Program.str_buffer_structs` and the dumper never sees them (session 44,
+    # item 8b).
+    var plain_synthetic = vec.Vec[ir.StructDecl].create()
+    var str_buffer_synthetic = vec.Vec[ir.StructDecl].create()
+    var syn_i: ptr_uint = 0
+    while syn_i < pending_synthetic_structs.len:
+        unsafe:
+            let sd = read(pending_synthetic_structs.data + syn_i)
+            if sd.linkage_name.starts_with("mt_str_buffer_"):
+                str_buffer_synthetic.push(sd)
+            else:
+                plain_synthetic.push(sd)
+        syn_i += 1
+    dedup_append_structs(structs, plain_synthetic.as_span(), seen_structs)
+    var ems_i: ptr_uint = 0
+    while ems_i < read(emitted_structs).len():
+        let ems_ptr = read(emitted_structs).get(ems_i) else:
+            break
+        read(structs).push(unsafe: read(ems_ptr))
+        ems_i += 1
+    return str_buffer_synthetic
+
+
+## Collect type aliases from all non-raw modules.  Raw (external) modules
+## define C-level types that already exist, so no typedef is emitted; a
+## non-raw alias whose target is a `std.c.*` type still gets one when the
+## target resolves to a C name.
+function collect_type_aliases(
+    program: loader.Program,
+    monomorphized_structs: ref[vec.Vec[ir.StructDecl]],
+    type_aliases: ref[vec.Vec[ir.TypeAlias]],
+) -> void:
     var tai: ptr_uint = 0
     while tai < program.analyses.len():
         let ta_ptr = program.analyses.get(tai) else:
@@ -916,44 +966,23 @@ public function lower(program: loader.Program) -> ir.Program:
                         if not proc_type_has_type_var(tv):
                             var already_registered = false
                             var mpi: ptr_uint = 0
-                            while mpi < monomorphized_structs.len():
-                                let existing = monomorphized_structs.get(mpi) else:
+                            while mpi < read(monomorphized_structs).len():
+                                let existing = read(monomorphized_structs).get(mpi) else:
                                     break
                                 if unsafe: read(existing).linkage_name == proc_name:
                                     already_registered = true
                                 mpi += 1
                             if not already_registered:
-                                monomorphized_structs.push(proc_struct_decl(proc_name, tv))
+                                read(monomorphized_structs).push(proc_struct_decl(proc_name, tv))
                 _:
                     pass
-            type_aliases.push(ir.TypeAlias(
+            read(type_aliases).push(ir.TypeAlias(
                 name = kn,
                 qualified_name = naming.qualified_c_name(ta_analysis.module_name, kn),
                 target_type = qualified_tv,
                 backing_c_name = find_decl_c_name_cross(ta_analysis, tv, kn, program.analyses.as_span()),
             ))
         tai += 1
-
-    let assembled = ir.Program(
-        module_name = root_name,
-        includes = include_scan.collect_includes(program),
-        constants = constants.as_span(),
-        globals = globals.as_span(),
-        opaques = monomorphized.collect_opaque_decls(program),
-        structs = structs.as_span(),
-        unions = unions.as_span(),
-        enums = enums.as_span(),
-        variants = variants.as_span(),
-        static_asserts = static_asserts.as_span(),
-        functions = functions.as_span(),
-        type_aliases = type_aliases.as_span(),
-        source_path = root.source_path,
-        monomorphized_structs = monomorphized_structs.as_span(),
-        monomorphized_variants = monomorphized_variants.as_span(),
-        external_structs = external_structs.as_span(),
-        str_buffer_structs = str_buffer_synthetic.as_span(),
-    )
-    return proc_renumber.renumber_program_procs(assembled, module_fn_count)
 
 
 ## True when a module is an external (`raw`) file, which has no lowerable body.
@@ -8364,56 +8393,7 @@ function lower_specialization_call(ctx: ref[LoweringContext], spec_callee: ptr[a
                 if id.name == "adapt" and type_args.len == 1:
                     return lower_adapt_call(ctx, read(type_args.data + 0).value, call_args)
                 if id.name == "array" and type_args.len == 2:
-                    let element_ty = resolve_type_ref(ctx, read(type_args.data + 0).value)
-                    var array_args = vec.Vec[types.Type].create()
-                    array_args.push(element_ty)
-                    array_args.push(resolve_array_length_type(ctx, read(type_args.data + 1).value))
-                    let array_ty = types.Type.ty_generic(name = "array", args = array_args.as_span())
-                    var elements = vec.Vec[ir.Expr].create()
-                    var elem_fold_env = map_mod.Map[str, ptr[ir.Expr]].create()
-                    var ai: ptr_uint = 0
-                    while ai < call_args.len:
-                        let arg = read(call_args.data + ai)
-                        # Elements take the element type contextually, as the
-                        # host's `lower_contextual_expression` gives it to them:
-                        # `array[ubyte, 4](0, 0, 0, 0)` keeps ubyte elements.
-                        var element_value = lower_expr(ctx, arg.arg_value)
-                        element_value = int_literal_to_context_type(arg.arg_value, element_ty, element_value)
-                        element_value = float_literal_to_context_type(arg.arg_value, element_ty, element_value)
-                        element_value = null_literal_to_context_type(arg.arg_value, element_ty, element_value)
-                        # The host folds a *scalar-shaped* compile-time constant
-                        # element (`int<-Kind.A` → 0, `-1` → -1, `1 + 2` → 3,
-                        # an imported constant → its aggregate); an aggregate
-                        # element (a struct literal and its fields) is lowered
-                        # normally, and a bare literal keeps the contextual
-                        # retyping above (`array[ubyte, 4](0, …)`).
-                        var element_foldable = false
-                        unsafe:
-                            match read(element_value):
-                                ir.Expr.expr_name:
-                                    element_foldable = true
-                                ir.Expr.expr_cast:
-                                    element_foldable = true
-                                ir.Expr.expr_unary:
-                                    element_foldable = true
-                                ir.Expr.expr_binary:
-                                    element_foldable = true
-                                _:
-                                    pass
-                        if element_foldable:
-                            match const_eval.try_const_value_ir(ctx, arg.arg_value, ref_of(elem_fold_env)):
-                                Option.some as folded:
-                                    element_value = folded.value
-                                Option.none:
-                                    pass
-                        # A `char` element casts its integer literal (`array[char,
-                        # 512](0, …)` — the host's `contextual_numeric_cast` char
-                        # arm), applied after the fold so it is not folded away.
-                        if type_helpers.prim_name(element_ty) == "char" and is_integer_like_value_type(ctx, ir_expr_type(element_value)):
-                            element_value = type_helpers.cast_to_type(element_value, element_ty)
-                        elements.push(read(element_value))
-                        ai += 1
-                    return alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span()))
+                    return lower_array_literal_call(ctx, type_args, call_args)
                 if id.name == "simd" and type_args.len == 2:
                     let simd_element_ty = resolve_type_ref(ctx, read(type_args.data + 0).value)
                     var simd_args = vec.Vec[types.Type].create()
@@ -8438,61 +8418,7 @@ function lower_specialization_call(ctx: ref[LoweringContext], spec_callee: ptr[a
                 # Builtin generic callables: order[T], equal[T], hash[T] — lower
                 # to direct C calls with a fixed suffix derived from the type.
                 if id.name == "order" or id.name == "equal" or id.name == "hash":
-                    var hook_ty = ctx.void_ty
-                    if type_args.len >= 1:
-                        hook_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
-                    let ptr_target = types.Type.ty_generic(name = "const_ptr", args = sp_type(hook_ty))
-                    var ir_args = vec.Vec[ir.Expr].create()
-                    var si: ptr_uint = 0
-                    while si < call_args.len:
-                        var arg: ast.Argument
-                        unsafe:
-                            arg = read(call_args.data + si)
-                        let lowered = lower_expr(ctx, arg.arg_value)
-                        let arg_ty = ir_expr_type(lowered)
-                        # The hooks take `const_ptr[T]` (the host's
-                        # `lower_hash_operation_argument`): a pointer/ref value
-                        # is cast to that target, a `*p` operand is cast, and an
-                        # addressable value is borrowed.
-                        var hook_arg = lowered
-                        if types.is_raw_pointer(arg_ty) or types.is_ref_type(arg_ty):
-                            if not types.type_equals(arg_ty, ptr_target):
-                                hook_arg = alloc_expr(ir.Expr.expr_cast(target_type = ptr_target, expression = lowered, ty = ptr_target))
-                        else:
-                            var addressed = true
-                            unsafe:
-                                match read(lowered):
-                                    ir.Expr.expr_unary as un:
-                                        if un.operator == "*":
-                                            addressed = false
-                                            let op_ty = ir_expr_type(un.operand)
-                                            if types.type_equals(op_ty, ptr_target):
-                                                hook_arg = un.operand
-                                            else:
-                                                hook_arg = alloc_expr(ir.Expr.expr_cast(target_type = ptr_target, expression = un.operand, ty = ptr_target))
-                                    _:
-                                        pass
-                            if addressed:
-                                hook_arg = alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = ptr_target))
-                        unsafe:
-                            ir_args.push(read(hook_arg))
-                        si += 1
-                    var ret_ty = types.primitive("int")
-                    if id.name == "equal":
-                        ret_ty = ctx.bool_ty
-                    else if id.name == "hash":
-                        ret_ty = types.primitive("uint")
-                    # Resolve the canonical hook (`T.hash` / `T.equal` / `T.order`)
-                    # for the type argument to its concrete C function name.
-                    if type_args.len >= 1:
-                        let t_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
-                        match resolve_canonical_hook(ctx, t_ty, id.name):
-                            Option.some as hook_name:
-                                return alloc_expr(ir.Expr.expr_call(callee = hook_name.value, arguments = ir_args.as_span(), ty = ret_ty))
-                            Option.none:
-                                pass
-                    let fn_name = strings.join_two("mt_", strings.join_two(id.name, "_func"))
-                    return alloc_expr(ir.Expr.expr_call(callee = fn_name, arguments = ir_args.as_span(), ty = ret_ty))
+                    return lower_builtin_hook_call(ctx, id.name, type_args, call_args)
                 # Builtin `reinterpret[T](value)` → `IR::ReinterpretExpr` (the
                 # host always emits the bit reinterpret; the C backend copies
                 # the bits instead of a numeric cast, so `reinterpret[uint](f)`
@@ -8584,6 +8510,118 @@ function lower_specialization_call(ctx: ref[LoweringContext], spec_callee: ptr[a
     # Generic function call, e.g. `first[int](p)`.  Lower a monomorphized copy of
     # the generic function body with concrete type arguments and emit a call to it.
     return lower_monomorphized_call(ctx, spec_callee, type_args, call_args, call_ep)
+
+
+## Lower `array[T, N](elements...)`, applying the element type contextually and
+## folding scalar-shaped compile-time constant elements.
+function lower_array_literal_call(ctx: ref[LoweringContext], type_args: span[ast.TypeArgument], call_args: span[ast.Argument]) -> ptr[ir.Expr]:
+    unsafe:
+        let element_ty = resolve_type_ref(ctx, read(type_args.data + 0).value)
+        var array_args = vec.Vec[types.Type].create()
+        array_args.push(element_ty)
+        array_args.push(resolve_array_length_type(ctx, read(type_args.data + 1).value))
+        let array_ty = types.Type.ty_generic(name = "array", args = array_args.as_span())
+        var elements = vec.Vec[ir.Expr].create()
+        var elem_fold_env = map_mod.Map[str, ptr[ir.Expr]].create()
+        var ai: ptr_uint = 0
+        while ai < call_args.len:
+            let arg = read(call_args.data + ai)
+            # Elements take the element type contextually, as the host's
+            # `lower_contextual_expression` gives it to them:
+            # `array[ubyte, 4](0, 0, 0, 0)` keeps ubyte elements.
+            var element_value = lower_expr(ctx, arg.arg_value)
+            element_value = int_literal_to_context_type(arg.arg_value, element_ty, element_value)
+            element_value = float_literal_to_context_type(arg.arg_value, element_ty, element_value)
+            element_value = null_literal_to_context_type(arg.arg_value, element_ty, element_value)
+            # The host folds a *scalar-shaped* compile-time constant element
+            # (`int<-Kind.A` → 0, `-1` → -1, `1 + 2` → 3, an imported constant →
+            # its aggregate); an aggregate element (a struct literal and its
+            # fields) is lowered normally, and a bare literal keeps the
+            # contextual retyping above (`array[ubyte, 4](0, …)`).
+            var element_foldable = false
+            match read(element_value):
+                ir.Expr.expr_name:
+                    element_foldable = true
+                ir.Expr.expr_cast:
+                    element_foldable = true
+                ir.Expr.expr_unary:
+                    element_foldable = true
+                ir.Expr.expr_binary:
+                    element_foldable = true
+                _:
+                    pass
+            if element_foldable:
+                match const_eval.try_const_value_ir(ctx, arg.arg_value, ref_of(elem_fold_env)):
+                    Option.some as folded:
+                        element_value = folded.value
+                    Option.none:
+                        pass
+            # A `char` element casts its integer literal (`array[char, 512](0,
+            # …)` — the host's `contextual_numeric_cast` char arm), applied after
+            # the fold so it is not folded away.
+            if type_helpers.prim_name(element_ty) == "char" and is_integer_like_value_type(ctx, ir_expr_type(element_value)):
+                element_value = type_helpers.cast_to_type(element_value, element_ty)
+            elements.push(read(element_value))
+            ai += 1
+        return alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span()))
+
+
+## Lower the builtin generic hooks `order[T]`, `equal[T]`, `hash[T]`: cast or
+## borrow each argument to `const_ptr[T]` and call the canonical hook (or the
+## `mt_<name>_func` fallback).
+function lower_builtin_hook_call(ctx: ref[LoweringContext], id_name: str, type_args: span[ast.TypeArgument], call_args: span[ast.Argument]) -> ptr[ir.Expr]:
+    unsafe:
+        var hook_ty = ctx.void_ty
+        if type_args.len >= 1:
+            hook_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
+        let ptr_target = types.Type.ty_generic(name = "const_ptr", args = sp_type(hook_ty))
+        var ir_args = vec.Vec[ir.Expr].create()
+        var si: ptr_uint = 0
+        while si < call_args.len:
+            let arg = read(call_args.data + si)
+            let lowered = lower_expr(ctx, arg.arg_value)
+            let arg_ty = ir_expr_type(lowered)
+            # The hooks take `const_ptr[T]` (the host's
+            # `lower_hash_operation_argument`): a pointer/ref value is cast to
+            # that target, a `*p` operand is cast, and an addressable value is
+            # borrowed.
+            var hook_arg = lowered
+            if types.is_raw_pointer(arg_ty) or types.is_ref_type(arg_ty):
+                if not types.type_equals(arg_ty, ptr_target):
+                    hook_arg = alloc_expr(ir.Expr.expr_cast(target_type = ptr_target, expression = lowered, ty = ptr_target))
+            else:
+                var addressed = true
+                match read(lowered):
+                    ir.Expr.expr_unary as un:
+                        if un.operator == "*":
+                            addressed = false
+                            let op_ty = ir_expr_type(un.operand)
+                            if types.type_equals(op_ty, ptr_target):
+                                hook_arg = un.operand
+                            else:
+                                hook_arg = alloc_expr(ir.Expr.expr_cast(target_type = ptr_target, expression = un.operand, ty = ptr_target))
+                    _:
+                        pass
+                if addressed:
+                    hook_arg = alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = ptr_target))
+            ir_args.push(read(hook_arg))
+            si += 1
+        var ret_ty = types.primitive("int")
+        if id_name == "equal":
+            ret_ty = ctx.bool_ty
+        else if id_name == "hash":
+            ret_ty = types.primitive("uint")
+        # Resolve the canonical hook (`T.hash` / `T.equal` / `T.order`) for the
+        # type argument to its concrete C function name.
+        if type_args.len >= 1:
+            let t_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
+            match resolve_canonical_hook(ctx, t_ty, id_name):
+                Option.some as hook_name:
+                    return alloc_expr(ir.Expr.expr_call(callee = hook_name.value, arguments = ir_args.as_span(), ty = ret_ty))
+                Option.none:
+                    pass
+        let fn_name = strings.join_two("mt_", strings.join_two(id_name, "_func"))
+        return alloc_expr(ir.Expr.expr_call(callee = fn_name, arguments = ir_args.as_span(), ty = ret_ty))
 
 
 function resolve_method_return_from_import(ctx: ref[LoweringContext], module_name: str, sig: analyzer.FnSig, receiver_ty: types.Type) -> types.Type:
