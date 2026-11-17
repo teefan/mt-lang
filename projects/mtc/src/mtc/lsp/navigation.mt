@@ -3907,42 +3907,12 @@ function named_argument_label_hover(
         return Option[CursorResult].none
 
     # The head of the enclosing call: the identifier before its `(`.
-    var opener: int = -1
-    var depth: int = 0
-    var k: int = int<-(ti - 1)
-    while k >= 0:
-        let kp = tokens.get(ptr_uint<-k) else:
-            break
-        let kind = unsafe: read(kp).kind
-        if kind == tk.TokenKind.rparen or kind == tk.TokenKind.rbracket:
-            depth += 1
-        else if kind == tk.TokenKind.lparen or kind == tk.TokenKind.lbracket:
-            if depth == 0:
-                opener = k
-                break
-            depth -= 1
-        k -= 1
-    if opener < 1:
+    let head_info = find_aggregate_head(source, tokens, ti) else:
         return Option[CursorResult].none
-    let head_ptr = tokens.get(ptr_uint<-(opener - 1)) else:
-        return Option[CursorResult].none
-    let head = unsafe: read(head_ptr)
-    if head.kind != tk.TokenKind.identifier:
-        return Option[CursorResult].none
-    var type_name = cursor.token_text(source, head)
+    let opener = head_info.opener
+    var type_name = head_info.type_name
     let field_name = cursor.token_text(source, label_tok)
-
-    # An `alias.Type(...)` literal names its type through a module alias.
-    var module_alias: str = ""
-    if opener >= 3:
-        let dot_ptr = tokens.get(ptr_uint<-(opener - 2)) else:
-            return Option[CursorResult].none
-        if unsafe: read(dot_ptr).kind == tk.TokenKind.dot:
-            let alias_ptr = tokens.get(ptr_uint<-(opener - 3)) else:
-                return Option[CursorResult].none
-            let alias_tok = unsafe: read(alias_ptr)
-            if alias_tok.kind == tk.TokenKind.identifier:
-                module_alias = cursor.token_text(source, alias_tok)
+    var module_alias = head_info.module_alias
 
     let doc = workspace.document_analysis_for(ws, file_path) else:
         return Option[CursorResult].none
@@ -3959,38 +3929,8 @@ function named_argument_label_hover(
     # arm's declared field (the host's `variant_arm_constructor_info`).  A
     # variant is a static-member type (`Primitive`, the prelude `Result`), while
     # an import alias (`vec.Vec(…)`) takes the aggregate path below.
-    var variant_of_label: str = module_alias
-    # Generic arm constructors (`Result[int, int].success(value = 7)`) put type
-    # arguments between the variant and the arm: walk back over the `[…]` group.
-    if variant_of_label.len == 0 and opener >= 4:
-        var close_kind = tk.TokenKind.eof
-        var dot_kind = tk.TokenKind.eof
-        let close_ptr = tokens.get(ptr_uint<-(opener - 3)) else:
-            return Option[CursorResult].none
-        close_kind = unsafe: read(close_ptr).kind
-        let dot_ptr2 = tokens.get(ptr_uint<-(opener - 2)) else:
-            return Option[CursorResult].none
-        dot_kind = unsafe: read(dot_ptr2).kind
-        if close_kind == tk.TokenKind.rbracket and dot_kind == tk.TokenKind.dot:
-            var lk: int = opener - 4
-            var bracket_depth: int = 1
-            while lk >= 0:
-                let inner_ptr = tokens.get(ptr_uint<-lk) else:
-                    break
-                let inner_kind = unsafe: read(inner_ptr).kind
-                if inner_kind == tk.TokenKind.rbracket:
-                    bracket_depth += 1
-                else if inner_kind == tk.TokenKind.lbracket:
-                    bracket_depth -= 1
-                    if bracket_depth == 0:
-                        if lk >= 1:
-                            let name_ptr = tokens.get(ptr_uint<-(lk - 1)) else:
-                                break
-                            let name_tok2 = unsafe: read(name_ptr)
-                            if name_tok2.kind == tk.TokenKind.identifier:
-                                variant_of_label = cursor.token_text(source, name_tok2)
-                        break
-                lk -= 1
+    let variant_of_label = find_variant_arm_name(source, tokens, opener, module_alias) else:
+        return Option[CursorResult].none
 
     if variant_of_label.len > 0 and analysis.static_member_types.contains(variant_of_label):
         return variant_arm_label_hover(ws, ast_file, variant_of_label, type_name, field_name)
@@ -4114,6 +4054,105 @@ function named_argument_label_hover(
         target_uri = target_uri,
         from_modules = shortened.modules
     ))
+
+
+## The head of an enclosing aggregate literal: the call's opener, the type name,
+## and an optional `alias.` module qualifier.
+struct AggregateHead:
+    opener: int
+    type_name: str
+    module_alias: str
+
+
+## Find the head identifier before the enclosing `(`/`[` of a named-argument
+## label.  None when the head is not an identifier.
+function find_aggregate_head(
+    source: str,
+    tokens: ref[vec.Vec[token_mod.Token]],
+    ti: ptr_uint,
+) -> Option[AggregateHead]:
+    var opener: int = -1
+    var depth: int = 0
+    var k: int = int<-(ti - 1)
+    while k >= 0:
+        let kp = read(tokens).get(ptr_uint<-k) else:
+            break
+        let kind = unsafe: read(kp).kind
+        if kind == tk.TokenKind.rparen or kind == tk.TokenKind.rbracket:
+            depth += 1
+        else if kind == tk.TokenKind.lparen or kind == tk.TokenKind.lbracket:
+            if depth == 0:
+                opener = k
+                break
+            depth -= 1
+        k -= 1
+    if opener < 1:
+        return Option[AggregateHead].none
+    let head_ptr = read(tokens).get(ptr_uint<-(opener - 1)) else:
+        return Option[AggregateHead].none
+    let head = unsafe: read(head_ptr)
+    if head.kind != tk.TokenKind.identifier:
+        return Option[AggregateHead].none
+    let type_name = cursor.token_text(source, head)
+
+    # An `alias.Type(...)` literal names its type through a module alias.
+    var module_alias: str = ""
+    if opener >= 3:
+        let dot_ptr = read(tokens).get(ptr_uint<-(opener - 2)) else:
+            return Option[AggregateHead].none
+        if unsafe: read(dot_ptr).kind == tk.TokenKind.dot:
+            let alias_ptr = read(tokens).get(ptr_uint<-(opener - 3)) else:
+                return Option[AggregateHead].none
+            let alias_tok = unsafe: read(alias_ptr)
+            if alias_tok.kind == tk.TokenKind.identifier:
+                module_alias = cursor.token_text(source, alias_tok)
+    return Option[AggregateHead].some(value = AggregateHead(
+        opener = opener,
+        type_name = type_name,
+        module_alias = module_alias,
+    ))
+
+
+## The variant name of `Variant[args].arm(...)`, or the module alias when the
+## head is already qualified.  Generic arm constructors put type arguments
+## between the variant and the arm, so walk back over the `[…]` group.
+function find_variant_arm_name(
+    source: str,
+    tokens: ref[vec.Vec[token_mod.Token]],
+    opener: int,
+    module_alias: str,
+) -> Option[str]:
+    var variant_of_label: str = module_alias
+    if variant_of_label.len == 0 and opener >= 4:
+        var close_kind = tk.TokenKind.eof
+        var dot_kind = tk.TokenKind.eof
+        let close_ptr = read(tokens).get(ptr_uint<-(opener - 3)) else:
+            return Option[str].none
+        close_kind = unsafe: read(close_ptr).kind
+        let dot_ptr2 = read(tokens).get(ptr_uint<-(opener - 2)) else:
+            return Option[str].none
+        dot_kind = unsafe: read(dot_ptr2).kind
+        if close_kind == tk.TokenKind.rbracket and dot_kind == tk.TokenKind.dot:
+            var lk: int = opener - 4
+            var bracket_depth: int = 1
+            while lk >= 0:
+                let inner_ptr = read(tokens).get(ptr_uint<-lk) else:
+                    break
+                let inner_kind = unsafe: read(inner_ptr).kind
+                if inner_kind == tk.TokenKind.rbracket:
+                    bracket_depth += 1
+                else if inner_kind == tk.TokenKind.lbracket:
+                    bracket_depth -= 1
+                    if bracket_depth == 0:
+                        if lk >= 1:
+                            let name_ptr = read(tokens).get(ptr_uint<-(lk - 1)) else:
+                                break
+                            let name_tok2 = unsafe: read(name_ptr)
+                            if name_tok2.kind == tk.TokenKind.identifier:
+                                variant_of_label = cursor.token_text(source, name_tok2)
+                        break
+                lk -= 1
+    return Option[str].some(value = variant_of_label)
 
 
 function resolve_local_hover(

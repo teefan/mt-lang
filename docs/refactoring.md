@@ -118,11 +118,11 @@ score.
 
 ### Size, markers, tests
 
-- **124,036 code lines**; **18 functions ≥ 200 lines**; **11 files ≥ 2,000 code
+- **124,093 code lines**; **14 functions ≥ 200 lines**; **11 files ≥ 2,000 code
   lines**. The ratchet counts these, so a refactor cannot trade one long
   function for another.  Session 125's corrected multi-line-signature scan
-  surfaced the top targets; sessions 126–127 decomposed them, leaving
-  `binding_at` (385, excluded) and 17 others.
+  surfaced the top targets; sessions 126–128 decomposed them, leaving
+  `binding_at` (385, excluded) and 13 others.
 - **0 marker comments** (`TODO`/`FIXME`/`XXX`/`HACK`); any new one fails.
 - Test trees: **21** files in `projects/mtc/test`, **61** in `test/mt`. The
   ratchet fails if either count drops (silent-skip protection).
@@ -193,18 +193,18 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 127, 2026-11-17)
+## 6. Current baseline (session 128, 2026-11-17)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 168 / 156,088 / 124,036 |
+| source files / lines / code lines | 168 / 156,177 / 124,093 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (168 modules) |
 | dead exports (unused / test-only) | 35 / 6 |
 | duplication (windows / duplicated lines) | 901 / 6,379 (window 12) |
-| functions ≥ 200 lines | 18 |
+| functions ≥ 200 lines | 14 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 21 / 61 |

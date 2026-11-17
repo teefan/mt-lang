@@ -614,79 +614,8 @@ public function order_module_functions(analyses: span[analyzer.Analysis], fragme
 
     # The analyzer ran before lowering, so its instantiation/validation of a
     # specialization does not depend on which call site lowering reached first.
-    # Recompute the classification from the creation graph: a normal call from
-    # an analyzed context means the analyzer validated the callee's body (its
-    # nested calls are analyzer-created), and an instance is analyzer-created
-    # whenever an analyzed context (directly or transitively) created it.
-    var spec_key_list = vec.Vec[str].create()
-    var spec_key_iter = spec_infos.keys()
-    while true:
-        let kp = spec_key_iter.next() else:
-            break
-        spec_key_list.push(unsafe: read(kp))
-    var bv_changed = true
-    while bv_changed:
-        bv_changed = false
-        var ski: ptr_uint = 0
-        while ski < spec_key_list.len():
-            let kp = spec_key_list.get(ski) else:
-                break
-            let key = unsafe: read(kp)
-            let info_ptr = spec_infos.get(key)
-            if info_ptr != null:
-                var info = unsafe: read(info_ptr)
-                if not info.body_validated:
-                    var analyzed = false
-                    var ri: ptr_uint = 0
-                    while ri < info.reachers.len():
-                        let rp = info.reachers.get(ri) else:
-                            break
-                        let reacher = unsafe: read(rp)
-                        if reacher.len == 0:
-                            analyzed = true
-                        else:
-                            let cp = spec_infos.get(reacher)
-                            if cp == null:
-                                analyzed = true
-                            else if unsafe: read(cp).body_validated:
-                                analyzed = true
-                        ri += 1
-                    if analyzed:
-                        info.body_validated = true
-                        spec_infos.set(key, info)
-                        bv_changed = true
-            ski += 1
-    var pre_changed = true
-    while pre_changed:
-        pre_changed = false
-        var pki: ptr_uint = 0
-        while pki < spec_key_list.len():
-            let kp = spec_key_list.get(pki) else:
-                break
-            let key = unsafe: read(kp)
-            let info_ptr = spec_infos.get(key)
-            if info_ptr != null:
-                var info = unsafe: read(info_ptr)
-                var pre = info.pre_instantiated
-                var ri2: ptr_uint = 0
-                while ri2 < info.reachers.len():
-                    let rp = info.reachers.get(ri2) else:
-                        break
-                    let reacher = unsafe: read(rp)
-                    if reacher.len == 0:
-                        pre = true
-                    else:
-                        let cp = spec_infos.get(reacher)
-                        if cp == null:
-                            pre = true
-                        else if unsafe: read(cp).body_validated:
-                            pre = true
-                    ri2 += 1
-                if pre != info.pre_instantiated:
-                    info.pre_instantiated = pre
-                    spec_infos.set(key, info)
-                    pre_changed = true
-            pki += 1
+    # Recompute the classification from the creation graph.
+    validate_spec_creation_graph(spec_infos)
 
     var spec_keys = spec_infos.keys()
     while true:
@@ -831,6 +760,80 @@ public function order_module_functions(analyses: span[analyzer.Analysis], fragme
             fi += 1
         mi += 1
     return result
+
+
+## Propagate the analyzer-created (`body_validated`) and pre-instantiated
+## classifications through the specialization creation graph.
+function validate_spec_creation_graph(spec_infos: ref[map_mod.Map[str, lowering.SpecInfo]]) -> void:
+    var spec_key_list = vec.Vec[str].create()
+    var spec_key_iter = read(spec_infos).keys()
+    while true:
+        let kp = spec_key_iter.next() else:
+            break
+        spec_key_list.push(unsafe: read(kp))
+    var bv_changed = true
+    while bv_changed:
+        bv_changed = false
+        var ski: ptr_uint = 0
+        while ski < spec_key_list.len():
+            let kp = spec_key_list.get(ski) else:
+                break
+            let key = unsafe: read(kp)
+            let info_ptr = read(spec_infos).get(key)
+            if info_ptr != null:
+                var info = unsafe: read(info_ptr)
+                if not info.body_validated:
+                    var analyzed = false
+                    var ri: ptr_uint = 0
+                    while ri < info.reachers.len():
+                        let rp = info.reachers.get(ri) else:
+                            break
+                        let reacher = unsafe: read(rp)
+                        if reacher.len == 0:
+                            analyzed = true
+                        else:
+                            let cp = read(spec_infos).get(reacher)
+                            if cp == null:
+                                analyzed = true
+                            else if unsafe: read(cp).body_validated:
+                                analyzed = true
+                        ri += 1
+                    if analyzed:
+                        info.body_validated = true
+                        read(spec_infos).set(key, info)
+                        bv_changed = true
+            ski += 1
+    var pre_changed = true
+    while pre_changed:
+        pre_changed = false
+        var pki: ptr_uint = 0
+        while pki < spec_key_list.len():
+            let kp = spec_key_list.get(pki) else:
+                break
+            let key = unsafe: read(kp)
+            let info_ptr = read(spec_infos).get(key)
+            if info_ptr != null:
+                var info = unsafe: read(info_ptr)
+                var pre = info.pre_instantiated
+                var ri2: ptr_uint = 0
+                while ri2 < info.reachers.len():
+                    let rp = info.reachers.get(ri2) else:
+                        break
+                    let reacher = unsafe: read(rp)
+                    if reacher.len == 0:
+                        pre = true
+                    else:
+                        let cp = read(spec_infos).get(reacher)
+                        if cp == null:
+                            pre = true
+                        else if unsafe: read(cp).body_validated:
+                            pre = true
+                    ri2 += 1
+                if pre != info.pre_instantiated:
+                    info.pre_instantiated = pre
+                    read(spec_infos).set(key, info)
+                    pre_changed = true
+            pki += 1
 
 
 ## Append the declarations of a module-level `when`'s selected branch to `out`.

@@ -359,7 +359,7 @@
       "projects/mtc/src/mtc/semantic/analyzer.mt:4218:function:flow_type_at_position",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:236:function:graph_edge_refinement_of",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:249:function:graph_edge_label",
-      "projects/mtc/src/mtc/semantic/types.mt:1340:function:is_definitely_non_str",
+      "projects/mtc/src/mtc/semantic/types.mt:1352:function:is_definitely_non_str",
       "projects/mtc/src/mtc/sexpr.mt:150:function:sexpr_list1",
       "projects/mtc/src/mtc/version_info.mt:2:const:GIT_REVISION"
     ],
@@ -368,7 +368,7 @@
       "projects/mtc/src/mtc/linter/linter.mt:197:function:lint_source",
       "projects/mtc/src/mtc/parser/parser.mt:869:function:parse_reporting",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:572:function:flow_create",
-      "projects/mtc/src/mtc/semantic/types.mt:1084:function:nominal_key",
+      "projects/mtc/src/mtc/semantic/types.mt:1096:function:nominal_key",
       "projects/mtc/src/mtc/sexpr.mt:1090:function:dump_ir"
     ]
   },
@@ -1281,8 +1281,8 @@
     ]
   },
   "sizes": {
-    "total_code": 124036,
-    "functions_over_limit": 18,
+    "total_code": 124093,
+    "functions_over_limit": 14,
     "files_over_limit": 11,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
@@ -1706,10 +1706,10 @@
         "max_function": 104
       },
       "projects/mtc/src/mtc/lowering/monomorphized.mt": {
-        "lines": 1382,
-        "code": 1102,
+        "lines": 1385,
+        "code": 1104,
         "max_line": 842,
-        "max_function": 240
+        "max_function": 191
       },
       "projects/mtc/src/mtc/lowering/parallel.mt": {
         "lines": 1031,
@@ -1862,10 +1862,10 @@
         "max_function": 79
       },
       "projects/mtc/src/mtc/lsp/navigation.mt": {
-        "lines": 5178,
-        "code": 4006,
+        "lines": 5217,
+        "code": 4034,
         "max_line": 206,
-        "max_function": 227
+        "max_function": 209
       },
       "projects/mtc/src/mtc/lsp/on_type_formatting.mt": {
         "lines": 119,
@@ -2240,16 +2240,16 @@
         "max_function": 161
       },
       "projects/mtc/src/mtc/semantic/types.mt": {
-        "lines": 1347,
-        "code": 999,
+        "lines": 1359,
+        "code": 1003,
         "max_line": 161,
-        "max_function": 223
+        "max_function": 164
       },
       "projects/mtc/src/mtc/sexpr.mt": {
-        "lines": 3066,
-        "code": 2647,
+        "lines": 3101,
+        "code": 2670,
         "max_line": 248,
-        "max_function": 224
+        "max_function": 212
       },
       "projects/mtc/src/mtc/std_catalog.mt": {
         "lines": 281,

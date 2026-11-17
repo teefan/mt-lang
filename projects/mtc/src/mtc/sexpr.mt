@@ -2806,20 +2806,8 @@ function visibility_field(raw: bool, visibility: bool) -> SexprField:
 function decl_value(ctx: ref[SexprContext], dp: ptr[ast.Decl], raw: bool) -> SexprValue:
     unsafe:
         match read(dp):
-            ast.Decl.decl_const as x:
-                var block_field = field_nil("block_body")
-                if x.block_body != null:
-                    block_field = field_value("block_body", stmts_of_ptr(ctx, x.block_body))
-                return node("AST::ConstDecl", fields8(
-                    field_str("name", x.name),
-                    field_value("type", type_ref_value(ctx, read(x.const_type))),
-                    opt_expr_field(ctx, "value", x.value),
-                    block_field,
-                    visibility_field(raw, x.visibility),
-                    field_value("attributes", attributes_value(ctx, x.attributes)),
-                    field_line(x.line),
-                    len_field("column", x.column),
-                ))
+            ast.Decl.decl_const:
+                return decl_value_const(ctx, dp, raw)
             ast.Decl.decl_var as x:
                 return node("AST::VarDecl", fields6(
                     field_str("name", x.name),
@@ -2829,40 +2817,10 @@ function decl_value(ctx: ref[SexprContext], dp: ptr[ast.Decl], raw: bool) -> Sex
                     field_line(x.line),
                     len_field("column", x.column),
                 ))
-            ast.Decl.decl_function as x:
-                var body_field = field_nil("body")
-                if x.body != null:
-                    body_field = field_value("body", stmts_of_ptr(ctx, x.body))
-                return node("AST::FunctionDef", fields11(
-                    field_str("name", x.name),
-                    field_value("type_params", type_params_value(ctx, x.type_params)),
-                    field_value("params", params_value(ctx, x.method_params)),
-                    opt_type_ref_field(ctx, "return_type", x.return_type),
-                    body_field,
-                    visibility_field(raw, x.visibility),
-                    field_bool("async", x.is_async),
-                    field_bool("const", x.is_const),
-                    field_value("attributes", attributes_value(ctx, x.attributes)),
-                    field_line(x.line),
-                    len_field("column", x.column),
-                ))
-            ast.Decl.decl_struct as x:
-                return node("AST::StructDecl", fields14(
-                    field_str("name", x.name),
-                    field_value("type_params", type_params_value(ctx, x.type_params)),
-                    field_value("implements", qname_list_value(ctx, x.impl_list)),
-                    field_opt_str("c_name", x.c_name),
-                    field_value("fields", fields_value(ctx, x.struct_fields)),
-                    field_value("events", decls_value(ctx, x.struct_events, false)),
-                    field_value("nested_types", decls_value(ctx, x.nested_types, false)),
-                    field_value("attributes", attributes_value(ctx, x.struct_attrs)),
-                    field_bool("packed", x.packed),
-                    field_zero_nil_int("alignment", x.alignment),
-                    visibility_field(raw, x.visibility),
-                    field_value("lifetime_params", str_list_value(x.lifetime_params)),
-                    field_line(x.line),
-                    len_field("column", x.column),
-                ))
+            ast.Decl.decl_function:
+                return decl_value_function(ctx, dp, raw)
+            ast.Decl.decl_struct:
+                return decl_value_struct(ctx, dp, raw)
             ast.Decl.decl_union as x:
                 return node("AST::UnionDecl", fields7(
                     field_str("name", x.name),
@@ -3027,6 +2985,83 @@ function decl_value(ctx: ref[SexprContext], dp: ptr[ast.Decl], raw: bool) -> Sex
                     len_field("column", x.column),
                 ))
     return node("AST::VarDecl", fields6(field_str("name", ""), field_nil("type"), field_nil("value"), field_sym("visibility", "private"), field_nil("line"), field_nil("column")))
+
+
+## Fallback node for an unexpected declaration kind.
+function decl_value_fallback() -> SexprValue:
+    return node("AST::VarDecl", fields6(field_str("name", ""), field_nil("type"), field_nil("value"), field_sym("visibility", "private"), field_nil("line"), field_nil("column")))
+
+
+## `const` declaration node.
+function decl_value_const(ctx: ref[SexprContext], dp: ptr[ast.Decl], raw: bool) -> SexprValue:
+    unsafe:
+        match read(dp):
+            ast.Decl.decl_const as x:
+                var block_field = field_nil("block_body")
+                if x.block_body != null:
+                    block_field = field_value("block_body", stmts_of_ptr(ctx, x.block_body))
+                return node("AST::ConstDecl", fields8(
+                    field_str("name", x.name),
+                    field_value("type", type_ref_value(ctx, read(x.const_type))),
+                    opt_expr_field(ctx, "value", x.value),
+                    block_field,
+                    visibility_field(raw, x.visibility),
+                    field_value("attributes", attributes_value(ctx, x.attributes)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            _:
+                return decl_value_fallback()
+
+
+## Function declaration node.
+function decl_value_function(ctx: ref[SexprContext], dp: ptr[ast.Decl], raw: bool) -> SexprValue:
+    unsafe:
+        match read(dp):
+            ast.Decl.decl_function as x:
+                var body_field = field_nil("body")
+                if x.body != null:
+                    body_field = field_value("body", stmts_of_ptr(ctx, x.body))
+                return node("AST::FunctionDef", fields11(
+                    field_str("name", x.name),
+                    field_value("type_params", type_params_value(ctx, x.type_params)),
+                    field_value("params", params_value(ctx, x.method_params)),
+                    opt_type_ref_field(ctx, "return_type", x.return_type),
+                    body_field,
+                    visibility_field(raw, x.visibility),
+                    field_bool("async", x.is_async),
+                    field_bool("const", x.is_const),
+                    field_value("attributes", attributes_value(ctx, x.attributes)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            _:
+                return decl_value_fallback()
+
+
+## Struct declaration node.
+function decl_value_struct(ctx: ref[SexprContext], dp: ptr[ast.Decl], raw: bool) -> SexprValue:
+    unsafe:
+        match read(dp):
+            ast.Decl.decl_struct as x:
+                return node("AST::StructDecl", fields14(
+                    field_str("name", x.name),
+                    field_value("type_params", type_params_value(ctx, x.type_params)),
+                    field_value("implements", qname_list_value(ctx, x.impl_list)),
+                    field_opt_str("c_name", x.c_name),
+                    field_value("fields", fields_value(ctx, x.struct_fields)),
+                    field_value("events", decls_value(ctx, x.struct_events, false)),
+                    field_value("nested_types", decls_value(ctx, x.nested_types, false)),
+                    field_value("attributes", attributes_value(ctx, x.struct_attrs)),
+                    field_bool("packed", x.packed),
+                    field_zero_nil_int("alignment", x.alignment),
+                    visibility_field(raw, x.visibility),
+                    field_value("lifetime_params", str_list_value(x.lifetime_params)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            _:
+                return decl_value_fallback()
 
 
 public function dump_ast(file: ast.SourceFile, module_name: str) -> string.String:

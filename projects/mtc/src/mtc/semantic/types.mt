@@ -691,36 +691,7 @@ public function type_equals(a: Type, b: Type) -> bool:
                 _:
                     return false
         Type.ty_imported as ia:
-            match b:
-                Type.ty_imported as ib:
-                    if not ia.module_name == ib.module_name or not ia.name == ib.name:
-                        return false
-                    if ia.args.len != ib.args.len:
-                        return false
-                    var i: ptr_uint = 0
-                    while i < ia.args.len:
-                        unsafe:
-                            if not type_equals(read(ia.args.data + i), read(ib.args.data + i)):
-                                return false
-                        i += 1
-                    return true
-                Type.ty_named as nb:
-                    return ia.name == nb.name and ia.args.len == 0
-                Type.ty_generic as gb:
-                    if not ia.name == gb.name or ia.args.len != gb.args.len:
-                        return false
-                    let prelude = (ia.name == "Option" and ia.module_name == "std.option") or (ia.name == "Result" and ia.module_name == "std.result")
-                    if not prelude:
-                        return false
-                    var i3: ptr_uint = 0
-                    while i3 < ia.args.len:
-                        unsafe:
-                            if not type_equals(read(ia.args.data + i3), read(gb.args.data + i3)):
-                                return false
-                        i3 += 1
-                    return true
-                _:
-                    return false
+            return imported_type_matches(ia.module_name, ia.name, ia.args, b)
         Type.ty_var as va:
             match b:
                 Type.ty_var as vb:
@@ -760,37 +731,7 @@ public function type_equals(a: Type, b: Type) -> bool:
                 _:
                     return false
         Type.ty_generic as ga:
-            match b:
-                Type.ty_generic as gb:
-                    if not ga.name == gb.name:
-                        return false
-                    if ga.args.len != gb.args.len:
-                        return false
-                    var i: ptr_uint = 0
-                    while i < ga.args.len:
-                        unsafe:
-                            if not type_equals(read(ga.args.data + i), read(gb.args.data + i)):
-                                return false
-                        i += 1
-                    return true
-                Type.ty_imported as ib:
-                    # The prelude variants appear both as the bare generic
-                    # (`Option[T]`/`Result[T, E]`) and as their imported
-                    # definition (`std.option.Option`/`std.result.Result`).
-                    if not ga.name == ib.name or ga.args.len != ib.args.len:
-                        return false
-                    let prelude = (ga.name == "Option" and ib.module_name == "std.option") or (ga.name == "Result" and ib.module_name == "std.result")
-                    if not prelude:
-                        return false
-                    var i2: ptr_uint = 0
-                    while i2 < ga.args.len:
-                        unsafe:
-                            if not type_equals(read(ga.args.data + i2), read(ib.args.data + i2)):
-                                return false
-                        i2 += 1
-                    return true
-                _:
-                    return false
+            return generic_type_matches(ga.name, ga.args, b)
         Type.ty_function as fa:
             match b:
                 Type.ty_function as fb:
@@ -829,6 +770,77 @@ public function type_equals(a: Type, b: Type) -> bool:
                     return true
                 _:
                     return false
+
+
+## Equality of an imported type against another type (imported, named, or the
+## prelude generic spelling).
+function imported_type_matches(module_name: str, name: str, args: span[Type], b: Type) -> bool:
+    match b:
+        Type.ty_imported as ib:
+            if not module_name == ib.module_name or not name == ib.name:
+                return false
+            if args.len != ib.args.len:
+                return false
+            var i: ptr_uint = 0
+            while i < args.len:
+                unsafe:
+                    if not type_equals(read(args.data + i), read(ib.args.data + i)):
+                        return false
+                i += 1
+            return true
+        Type.ty_named as nb:
+            return name == nb.name and args.len == 0
+        Type.ty_generic as gb:
+            if not name == gb.name or args.len != gb.args.len:
+                return false
+            let prelude = (name == "Option" and module_name == "std.option") or (name == "Result" and module_name == "std.result")
+            if not prelude:
+                return false
+            var i3: ptr_uint = 0
+            while i3 < args.len:
+                unsafe:
+                    if not type_equals(read(args.data + i3), read(gb.args.data + i3)):
+                        return false
+                i3 += 1
+            return true
+        _:
+            return false
+
+
+## Equality of a generic type against another generic or the imported prelude
+## spelling (`std.option.Option` / `std.result.Result`).
+function generic_type_matches(name: str, args: span[Type], b: Type) -> bool:
+    match b:
+        Type.ty_generic as gb:
+            if not name == gb.name:
+                return false
+            if args.len != gb.args.len:
+                return false
+            var i: ptr_uint = 0
+            while i < args.len:
+                unsafe:
+                    if not type_equals(read(args.data + i), read(gb.args.data + i)):
+                        return false
+                i += 1
+            return true
+        Type.ty_imported as ib:
+            # The prelude variants appear both as the bare generic
+            # (`Option[T]`/`Result[T, E]`) and as their imported definition
+            # (`std.option.Option`/`std.result.Result`).
+            if not name == ib.name or args.len != ib.args.len:
+                return false
+            let prelude = (name == "Option" and ib.module_name == "std.option") or (name == "Result" and ib.module_name == "std.result")
+            if not prelude:
+                return false
+            var i2: ptr_uint = 0
+            while i2 < args.len:
+                unsafe:
+                    if not type_equals(read(args.data + i2), read(ib.args.data + i2)):
+                        return false
+                i2 += 1
+            return true
+        _:
+            return false
 
 
 ## True when `t` is a raw pointer (ptr[T] or const_ptr[T]), excluding ref,
