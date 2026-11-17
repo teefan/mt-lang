@@ -125,29 +125,20 @@ function main(args: span[str]) -> int:
     return dispatch_cli(cli_args)
 
 
-function dispatch_cli(raw_args: span[str]) -> int:
-    if raw_args.len < 1:
-        cli_help.print_help(false)
-        return 0
-
-    # Global flags (`-v`/`--verbose`, `-q`/`--quiet`, `--color MODE`) are
-    # extracted first, exactly like the host's `extract_global_options!`: a
-    # global flag between `-I` and its value is gone before the include pass
-    # runs, so the include pass then consumes the following token.  Scanning
-    # stops at `--`.
-    var after_globals = vec.Vec[str].create()
-    defer: after_globals.release()
+## Extract global `-v`/`-q`/`--color` flags, leaving the rest in `after_globals`.
+## Scanning stops at `--`; returns false after an invalid `--color` diagnostic.
+function extract_global_options(raw_args: span[str], after_globals: ref[vec.Vec[str]]) -> bool:
     var gi: ptr_uint = 0
     var forwarding = false
     while gi < raw_args.len:
         let a = raw_args[gi]
         if forwarding:
-            after_globals.push(a)
+            read(after_globals).push(a)
             gi += 1
             continue
         if a == "--":
             forwarding = true
-            after_globals.push(a)
+            read(after_globals).push(a)
             gi += 1
             continue
         if a == "-v" or a == "--verbose":
@@ -179,45 +170,50 @@ function dispatch_cli(raw_args: span[str]) -> int:
                     invalid.append(value)
                     invalid.append(")")
                 eprint_line(invalid.as_str())
-                return 1
+                return false
             cli_color = value
             continue
-        after_globals.push(a)
+        read(after_globals).push(a)
         gi += 1
+    return true
 
-    # Module roots (`-I DIR` / `--include-path DIR`) are extracted next, like
-    # the host's `extract_include_paths!`, and put back after the command name
-    # (the host hands them to the module loader; the commands here parse them
-    # from their own arguments).  Unlike the host, scanning also stops at `--`,
-    # so `run app -- -I x` forwards the argument to the program instead of
-    # swallowing it.  The first flag is the one an unsupported-command error
-    # names (the host's `@include_path_flags.first`).
-    var filtered = vec.Vec[str].create()
-    defer: filtered.release()
-    var include_pairs = vec.Vec[str].create()
-    defer: include_pairs.release()
-    var fi: ptr_uint = 0
-    var saw_dashdash = false
+
+## Module roots retained from the include sweep, plus the first `-I` spelling
+## used for an unsupported-command diagnostic.
+struct IncludeExtraction:
+    saw_include: bool
+    include_flag: str
+
+
+## Extract `-I DIR`/`--include-path DIR` pairs into `include_pairs` and the rest
+## into `filtered`, stopping at `--`.  A missing value is printed and skipped.
+function extract_include_paths(
+    after_globals: ref[vec.Vec[str]],
+    filtered: ref[vec.Vec[str]],
+    include_pairs: ref[vec.Vec[str]],
+) -> IncludeExtraction:
     var saw_include = false
     var include_flag = ""
-    while fi < after_globals.len():
-        let a_ptr = after_globals.get(fi) else:
+    var fi: ptr_uint = 0
+    var saw_dashdash = false
+    while fi < read(after_globals).len():
+        let a_ptr = read(after_globals).get(fi) else:
             break
         let a = unsafe: read(a_ptr)
         if saw_dashdash:
-            filtered.push(a)
+            read(filtered).push(a)
             fi += 1
             continue
         if a == "--":
             saw_dashdash = true
-            filtered.push(a)
+            read(filtered).push(a)
             fi += 1
             continue
         if a == "-I" or a == "--include-path":
             var has_next = false
             var next_value = ""
-            if fi + 1 < after_globals.len():
-                let next_ptr = after_globals.get(fi + 1) else:
+            if fi + 1 < read(after_globals).len():
+                let next_ptr = read(after_globals).get(fi + 1) else:
                     break
                 next_value = unsafe: read(next_ptr)
                 has_next = true
@@ -225,8 +221,8 @@ function dispatch_cli(raw_args: span[str]) -> int:
                 if not saw_include:
                     include_flag = a
                     saw_include = true
-                include_pairs.push(a)
-                include_pairs.push(next_value)
+                read(include_pairs).push(a)
+                read(include_pairs).push(next_value)
                 fi += 2
             else:
                 var missing = string.String.create()
@@ -236,40 +232,14 @@ function dispatch_cli(raw_args: span[str]) -> int:
                 eprint_line(missing.as_str())
                 fi += 1
             continue
-        filtered.push(a)
+        read(filtered).push(a)
         fi += 1
+    return IncludeExtraction(saw_include = saw_include, include_flag = include_flag)
 
-    if filtered.len() < 1:
-        cli_help.print_help(false)
-        return 0
 
-    # Module roots are put back after the command name (the host keeps them out
-    # of argv and hands them to the module loader; the commands here parse them
-    # from their own arguments, so they must follow the command).
-    let first_arg = filtered.get(0) else:
-        cli_help.print_help(false)
-        return 0
-    if saw_include and command_supports_include_paths(unsafe: read(first_arg)):
-        var with_roots = vec.Vec[str].create()
-        with_roots.push(unsafe: read(first_arg))
-        var ri: ptr_uint = 0
-        while ri < include_pairs.len():
-            let pair_item = include_pairs.get(ri) else:
-                break
-            with_roots.push(unsafe: read(pair_item))
-            ri += 1
-        var rj: ptr_uint = 1
-        while rj < filtered.len():
-            let rest = filtered.get(rj) else:
-                break
-            with_roots.push(unsafe: read(rest))
-            rj += 1
-        var stale = filtered
-        filtered = with_roots
-        stale.release()
-
-    let args = filtered.as_span()
-
+## Dispatch one parsed command line.  `saw_include`/`include_flag` reproduce the
+## host's unsupported-command diagnostic when a root was supplied.
+function dispatch_command(args: span[str], saw_include: bool, include_flag: str) -> int:
     let cmd = args[0]
 
     if cmd == "version" or cmd == "--version" or cmd == "-V":
@@ -426,6 +396,66 @@ function dispatch_cli(raw_args: span[str]) -> int:
     # Unknown command: the host prints its usage block to stderr and exits 1.
     cli_help.print_usage(true)
     return 1
+
+
+function dispatch_cli(raw_args: span[str]) -> int:
+    if raw_args.len < 1:
+        cli_help.print_help(false)
+        return 0
+
+    # Global flags (`-v`/`--verbose`, `-q`/`--quiet`, `--color MODE`) are
+    # extracted first, exactly like the host's `extract_global_options!`: a
+    # global flag between `-I` and its value is gone before the include pass
+    # runs, so the include pass then consumes the following token.  Scanning
+    # stops at `--`.
+    var after_globals = vec.Vec[str].create()
+    defer: after_globals.release()
+    if not extract_global_options(raw_args, ref_of(after_globals)):
+        return 1
+
+    # Module roots (`-I DIR` / `--include-path DIR`) are extracted next, like
+    # the host's `extract_include_paths!`, and put back after the command name
+    # (the host hands them to the module loader; the commands here parse them
+    # from their own arguments).  Unlike the host, scanning also stops at `--`,
+    # so `run app -- -I x` forwards the argument to the program instead of
+    # swallowing it.  The first flag is the one an unsupported-command error
+    # names (the host's `@include_path_flags.first`).
+    var filtered = vec.Vec[str].create()
+    defer: filtered.release()
+    var include_pairs = vec.Vec[str].create()
+    defer: include_pairs.release()
+    let include_scan = extract_include_paths(ref_of(after_globals), ref_of(filtered), ref_of(include_pairs))
+
+    if filtered.len() < 1:
+        cli_help.print_help(false)
+        return 0
+
+    # Module roots are put back after the command name (the host keeps them out
+    # of argv and hands them to the module loader; the commands here parse them
+    # from their own arguments, so they must follow the command).
+    let first_arg = filtered.get(0) else:
+        cli_help.print_help(false)
+        return 0
+    if include_scan.saw_include and command_supports_include_paths(unsafe: read(first_arg)):
+        var with_roots = vec.Vec[str].create()
+        with_roots.push(unsafe: read(first_arg))
+        var ri: ptr_uint = 0
+        while ri < include_pairs.len():
+            let pair_item = include_pairs.get(ri) else:
+                break
+            with_roots.push(unsafe: read(pair_item))
+            ri += 1
+        var rj: ptr_uint = 1
+        while rj < filtered.len():
+            let rest = filtered.get(rj) else:
+                break
+            with_roots.push(unsafe: read(rest))
+            rj += 1
+        var stale = filtered
+        filtered = with_roots
+        stale.release()
+
+    return dispatch_command(filtered.as_span(), include_scan.saw_include, include_scan.include_flag)
 
 
 ## The host's `lsp_command` flag parser: `--log-level LEVEL|--log-level=LEVEL`
@@ -973,6 +1003,198 @@ function parse_one_path(file_path: str, sexpr: bool) -> int:
             return 0
 
 
+## One file's `check` outcome.  `fatal` means the command must abort (a missing
+## operand, the host's `read_source_file` raise).
+struct CheckFileResult:
+    errors: ptr_uint
+    warnings: ptr_uint
+    notes: ptr_uint
+    fatal: bool
+
+
+## Check one source file and print its diagnostics.  Returns none when the
+## operand resolves to no source file (the host skips it).
+function check_one_file(
+    source_path: str,
+    roots: ref[vec.Vec[str]],
+    owned_roots: ref[vec.Vec[string.String]],
+    platform: resolver.Platform,
+    resolution: ResolutionFlags,
+) -> Option[CheckFileResult]:
+    var file_roots = vec.Vec[str].create()
+    defer: file_roots.release()
+    copy_roots(roots, ref_of(file_roots))
+
+    var entry_path_owner = string.String.create()
+    defer: entry_path_owner.release()
+    var source_root_owner = string.String.create()
+    defer: source_root_owner.release()
+    let effective = effective_source_path(source_path, ref_of(file_roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+        return Option[CheckFileResult].none
+
+    # The host's diagnostics loop re-reads the file with `read_source_file`,
+    # which raises for a missing operand and aborts the command before any
+    # summary (the operand is rendered as given, not expanded).
+    if not fs.exists(effective):
+        var missing = string.String.create()
+        defer: missing.release()
+        missing.append("source file not found: ")
+        missing.append(source_path)
+        eprint_line(missing.as_str())
+        return Option[CheckFileResult].some(value = CheckFileResult(
+            errors = 0, warnings = 0, notes = 0, fatal = true
+        ))
+
+    var file_owned = vec.Vec[string.String].create()
+    defer: file_owned.release()
+    if resolution.locked:
+        match apply_package_resolution_result(effective, true, false, ref_of(file_roots), ref_of(file_owned)):
+            Result.failure as resolution_failure:
+                var message = resolution_failure.error
+                eprint_line(message.as_str())
+                message.release()
+                return Option[CheckFileResult].some(value = CheckFileResult(
+                    errors = 1, warnings = 0, notes = 0, fatal = false
+                ))
+            Result.success:
+                pass
+
+    # Ruby's `roots_for_path` always appends the discovered project root, so
+    # `mtc check examples/x.mt` resolves `std.*` without an explicit `-I`.
+    # The source's own directory stays the last-resort root for a lone file
+    # that lives outside any project (adding it up front would shadow the
+    # project root, since roots are matched longest-first).
+    add_module_roots(effective, ref_of(file_roots), owned_roots)
+    if file_roots.is_empty():
+        file_roots.push(path_ops.dirname(effective))
+
+    var program = loader.check_program(effective, file_roots.as_span(), platform)
+    defer: program.release()
+
+    # The host lints with `File.expand_path(path)`, so a relative operand
+    # still renders the diagnostic's absolute path.
+    var lint_path_owner = loader.absolute_path(effective)
+    defer: lint_path_owner.release()
+    let lint_path = lint_path_owner.as_str()
+
+    let errors = program.diagnostic_error_count()
+    let warnings = program.diagnostic_warning_count()
+
+    # The host's `check` prints a file's diagnostics (semantic then lint,
+    # sorted by location) and reports `checked <path> as <module>` only when
+    # the file produced none at all — the `elsif module_name` arm.
+    var printed_errors: ptr_uint = 0
+    var warning_count: ptr_uint = 0
+    var note_count: ptr_uint = 0
+    var file_diagnostic_count: ptr_uint = 0
+    if errors > 0 or warnings > 0:
+        printed_errors = print_program_diagnostics(ref_of(program))
+        warning_count += warnings
+        file_diagnostic_count += printed_errors
+        file_diagnostic_count += warnings
+
+    # Run linter on clean files to catch style hints.
+    if errors == 0:
+        match fs.read_text(effective):
+            Result.success as content:
+                var src = content.value
+                defer: src.release()
+                var diags = vec.Vec[pstate.ParseDiagnostic].create()
+                defer: diags.release()
+                var lfile = parser.parse_source(src.as_str(), ref_of(diags))
+                # Same options as `mtc lint` (the host's `check` runs the full
+                # lint): owning types, unresolved imports and the analysis'
+                # editable receivers, with `.mt-lint.yml` applied by the
+                # linter itself.
+                var options = linter_mod.default_lint_options()
+                options.owning_type_names = program.owning_type_span()
+                var unresolved = vec.Vec[str].create()
+                defer: unresolved.release()
+                if program.analyses.len() > 0:
+                    var up: ptr_uint = 0
+                    while up < program.unresolved_import_paths.len():
+                        let upp = program.unresolved_import_paths.get(up) else:
+                            break
+                        unresolved.push(unsafe: read(upp).as_str())
+                        up += 1
+                    options.unresolved_import_paths = unresolved.as_span()
+                    let root_analysis_ptr = program.analyses.get(program.root_index)
+                    if root_analysis_ptr != null:
+                        unsafe:
+                            options.editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
+                            options.mutating_sites = read(root_analysis_ptr).mutating_argument_sites.as_span()
+                            options.mutable_lvalue_sites = read(root_analysis_ptr).mutable_lvalue_sites.as_span()
+                            options.directional_ffi_sites = read(root_analysis_ptr).directional_ffi_sites.as_span()
+                            options.analysis = root_analysis_ptr
+                let maybe_analysis = options.analysis
+                if maybe_analysis != null:
+                    unsafe:
+                        lfile = read(maybe_analysis).source_file
+                var providers = scope_tracking.build_import_method_providers(lfile, program.analyses.as_span())
+                defer: providers.release()
+                options.method_providers = providers.as_span()
+                var lwarns = linter_mod.lint_source_with(lfile, src.as_str(), lint_path, options)
+                defer: lwarns.release()
+                if lwarns.len() > 0:
+                    # The host's `check` sorts a file's diagnostics by
+                    # `[line, column]` before printing (its `sort_by_location`);
+                    # `lint` keeps emission order.
+                    sort_lint_warnings_by_location(lwarns)
+                    file_diagnostic_count += lwarns.len()
+                    var lwi: ptr_uint = 0
+                    while lwi < lwarns.len():
+                        let lwp = lwarns.get(lwi) else:
+                            break
+                        unsafe:
+                            let lw = read(lwp)
+                            # The host's `check` renders every lint result
+                            # through `ErrorFormatter` (a full block on
+                            # stderr), not the one-line `lint` form, and
+                            # buckets it by severity: warnings and hints
+                            # carry their own counters ("39 warnings; 59
+                            # notes"), so an all-hint file prints no summary.
+                            match lw.severity:
+                                "warning":
+                                    warning_count += 1
+                                "hint":
+                                    note_count += 1
+                                "info":
+                                    note_count += 1
+                                _:
+                                    warning_count += 1
+                            print_severity_diagnostic_block(
+                                lw.path,
+                                src.as_str(),
+                                lw.line,
+                                lw.column,
+                                lw.length,
+                                lw.severity,
+                                lw.code,
+                                lw.message,
+                            )
+                        lwi += 1
+            Result.failure as read_err:
+                var em = read_err.error
+                em.release()
+
+    if file_diagnostic_count == 0:
+        # The host's `elsif module_name` arm: a file with no diagnostics at
+        # all reports its resolved module name.  Prints unless `--quiet`.
+        if not cli_quiet:
+            let module_name = program.root_module_name()
+            stdio.print_format(
+                c"checked %.*s as %.*s\n",
+                int<-(source_path.len), source_path.data,
+                int<-(module_name.len), module_name.data,
+            )
+    return Option[CheckFileResult].some(value = CheckFileResult(
+        errors = printed_errors,
+        warnings = warning_count,
+        notes = note_count,
+        fatal = false,
+    ))
+
+
 ## Type-check source files and their transitive imports.  Accepts `.mt` files,
 ## directories (recursively discovers `*.mt`), and package directory targets
 ## (reads package.toml).  Imports are resolved against `-I DIR` / `--root DIR`
@@ -1005,39 +1227,12 @@ function check_command(args: span[str]) -> int:
     if validate_source_operands("check", input_paths.as_span()) != 0:
         return 1
 
-    # Expand directories to their .mt files.
-    # Paths are copied into owned Strings so they do not dangle when a directory
-    # listing's Entries buffer is released.
+    # Expand directories to their .mt files.  Paths are copied into owned
+    # Strings so they do not dangle when a directory listing is released.
     var source_files = vec.Vec[string.String].create()
     defer: source_files.release()
-    var si: ptr_uint = 0
-    while si < input_paths.len():
-        let raw = input_paths.get(si) else:
-            break
-        let path = unsafe: read(raw)
-        if fs.is_directory(path):
-            match fs.list_files_recursive(path):
-                Result.success as entries_payload:
-                    var entries = entries_payload.value
-                    defer: entries.release()
-                    var ei: ptr_uint = 0
-                    while ei < entries.len():
-                        match entries.get(ei):
-                            Option.some as name_payload:
-                                let entry_name = name_payload.value
-                                if entry_name.ends_with(".mt") and not entry_name.starts_with("__mt_test_runner_"):
-                                    source_files.push(string.String.from_str(entry_name))
-                            Option.none:
-                                pass
-                        ei += 1
-                Result.failure as err_payload:
-                    var err_msg = err_payload.error
-                    defer: err_msg.release()
-                    stdio.print_format(c"error: cannot list %.*s\n", int<-(path.len), path.data)
-                    return 1
-        else:
-            source_files.push(string.String.from_str(path))
-        si += 1
+    if not collect_lint_source_files(input_paths.as_span(), ref_of(source_files)):
+        return 1
 
     if source_files.is_empty():
         var label = operand_label(input_paths.as_span())
@@ -1063,182 +1258,20 @@ function check_command(args: span[str]) -> int:
     var total_errors: ptr_uint = 0
     var total_warnings: ptr_uint = 0
     var total_notes: ptr_uint = 0
-    var file_count: ptr_uint = 0
 
     var fi: ptr_uint = 0
     while fi < source_files.len():
         let raw_path = source_files.get(fi) else:
             break
         let source_path = unsafe: read(raw_path).as_str()
-
-        var file_roots = vec.Vec[str].create()
-        defer: file_roots.release()
-        copy_roots(ref_of(roots), ref_of(file_roots))
-
-        var entry_path_owner = string.String.create()
-        var source_root_owner = string.String.create()
-        let effective = effective_source_path(source_path, ref_of(file_roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+        let result = check_one_file(source_path, ref_of(roots), ref_of(owned_roots), platform, resolution) else:
+            fi += 1
             continue
-
-        # The host's diagnostics loop re-reads the file with `read_source_file`,
-        # which raises for a missing operand and aborts the command before any
-        # summary (the operand is rendered as given, not expanded).
-        if not fs.exists(effective):
-            var missing = string.String.create()
-            defer: missing.release()
-            missing.append("source file not found: ")
-            missing.append(source_path)
-            eprint_line(missing.as_str())
-            entry_path_owner.release()
-            source_root_owner.release()
+        if result.fatal:
             return 1
-
-        var file_owned = vec.Vec[string.String].create()
-        defer: file_owned.release()
-        if resolution.locked:
-            match apply_package_resolution_result(effective, true, false, ref_of(file_roots), ref_of(file_owned)):
-                Result.failure as resolution_failure:
-                    var message = resolution_failure.error
-                    eprint_line(message.as_str())
-                    message.release()
-                    total_errors += 1
-                    entry_path_owner.release()
-                    source_root_owner.release()
-                    fi += 1
-                    continue
-                Result.success:
-                    pass
-
-        # Ruby's `roots_for_path` always appends the discovered project root, so
-        # `mtc check examples/x.mt` resolves `std.*` without an explicit `-I`.
-        # The source's own directory stays the last-resort root for a lone file
-        # that lives outside any project (adding it up front would shadow the
-        # project root, since roots are matched longest-first).
-        add_module_roots(effective, ref_of(file_roots), ref_of(owned_roots))
-        if file_roots.is_empty():
-            file_roots.push(path_ops.dirname(effective))
-
-        var program = loader.check_program(effective, file_roots.as_span(), platform)
-        defer: program.release()
-
-        # The host lints with `File.expand_path(path)`, so a relative operand
-        # still renders the diagnostic's absolute path.
-        var lint_path_owner = loader.absolute_path(effective)
-        defer: lint_path_owner.release()
-        let lint_path = lint_path_owner.as_str()
-
-        let errors = program.diagnostic_error_count()
-        let warnings = program.diagnostic_warning_count()
-
-        # The host's `check` prints a file's diagnostics (semantic then lint,
-        # sorted by location) and reports `checked <path> as <module>` only when
-        # the file produced none at all — the `elsif module_name` arm.
-        var file_diagnostic_count: ptr_uint = 0
-        if errors > 0 or warnings > 0:
-            let printed_errors = print_program_diagnostics(ref_of(program))
-            file_count += 1
-            total_errors += printed_errors
-            file_diagnostic_count += printed_errors
-            total_warnings += warnings
-            file_diagnostic_count += warnings
-
-        # Run linter on clean files to catch style hints.
-        if errors == 0:
-            match fs.read_text(effective):
-                Result.success as content:
-                    var src = content.value
-                    defer: src.release()
-                    var diags = vec.Vec[pstate.ParseDiagnostic].create()
-                    defer: diags.release()
-                    var lfile = parser.parse_source(src.as_str(), ref_of(diags))
-                    # Same options as `mtc lint` (the host's `check` runs the full
-                    # lint): owning types, unresolved imports and the analysis'
-                    # editable receivers, with `.mt-lint.yml` applied by the
-                    # linter itself.
-                    var options = linter_mod.default_lint_options()
-                    options.owning_type_names = program.owning_type_span()
-                    var unresolved = vec.Vec[str].create()
-                    defer: unresolved.release()
-                    if program.analyses.len() > 0:
-                        var up: ptr_uint = 0
-                        while up < program.unresolved_import_paths.len():
-                            let upp = program.unresolved_import_paths.get(up) else:
-                                break
-                            unresolved.push(unsafe: read(upp).as_str())
-                            up += 1
-                        options.unresolved_import_paths = unresolved.as_span()
-                        let root_analysis_ptr = program.analyses.get(program.root_index)
-                        if root_analysis_ptr != null:
-                            unsafe:
-                                options.editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
-                                options.mutating_sites = read(root_analysis_ptr).mutating_argument_sites.as_span()
-                                options.mutable_lvalue_sites = read(root_analysis_ptr).mutable_lvalue_sites.as_span()
-                                options.directional_ffi_sites = read(root_analysis_ptr).directional_ffi_sites.as_span()
-                                options.analysis = root_analysis_ptr
-                    let maybe_analysis = options.analysis
-                    if maybe_analysis != null:
-                        unsafe:
-                            lfile = read(maybe_analysis).source_file
-                    var providers = scope_tracking.build_import_method_providers(lfile, program.analyses.as_span())
-                    defer: providers.release()
-                    options.method_providers = providers.as_span()
-                    var lwarns = linter_mod.lint_source_with(lfile, src.as_str(), lint_path, options)
-                    defer: lwarns.release()
-                    if lwarns.len() > 0:
-                        # The host's `check` sorts a file's diagnostics by
-                        # `[line, column]` before printing (its `sort_by_location`);
-                        # `lint` keeps emission order.
-                        sort_lint_warnings_by_location(lwarns)
-                        file_diagnostic_count += lwarns.len()
-                        var lwi: ptr_uint = 0
-                        while lwi < lwarns.len():
-                            let lwp = lwarns.get(lwi) else:
-                                break
-                            unsafe:
-                                let lw = read(lwp)
-                                # The host's `check` renders every lint result
-                                # through `ErrorFormatter` (a full block on
-                                # stderr), not the one-line `lint` form, and
-                                # buckets it by severity: warnings and hints
-                                # carry their own counters ("39 warnings; 59
-                                # notes"), so an all-hint file prints no summary.
-                                match lw.severity:
-                                    "warning":
-                                        total_warnings += 1
-                                    "hint":
-                                        total_notes += 1
-                                    "info":
-                                        total_notes += 1
-                                    _:
-                                        total_warnings += 1
-                                print_severity_diagnostic_block(
-                                    lw.path,
-                                    src.as_str(),
-                                    lw.line,
-                                    lw.column,
-                                    lw.length,
-                                    lw.severity,
-                                    lw.code,
-                                    lw.message,
-                                )
-                            lwi += 1
-                Result.failure as read_err:
-                    var em = read_err.error
-                    em.release()
-
-        if file_diagnostic_count == 0:
-            # The host's `elsif module_name` arm: a file with no diagnostics at
-            # all reports its resolved module name.  Prints unless `--quiet`.
-            if not cli_quiet:
-                let module_name = program.root_module_name()
-                stdio.print_format(
-                    c"checked %.*s as %.*s\n",
-                    int<-(source_path.len), source_path.data,
-                    int<-(module_name.len), module_name.data,
-                )
-
-        entry_path_owner.release()
-        source_root_owner.release()
+        total_errors += result.errors
+        total_warnings += result.warnings
+        total_notes += result.notes
         fi += 1
 
     let _ = terminal.flush_stderr()

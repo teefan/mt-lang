@@ -374,8 +374,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 898,
-    "duplicated_lines": 6351,
+    "windows": 901,
+    "duplicated_lines": 6379,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -557,6 +557,7 @@
       "361bea96932428561eba8456064de0360c93891c",
       "362942adc922b7131365edd36e8b31900f0d213e",
       "368a11f775833fba1d37a1b1fd70ef55bbe8ca5b",
+      "36cf94dd6e150ed2b1fd0a6ee2518a17c949dfd6",
       "371804494056ff8e2c25e067eb1efed95e15dd96",
       "372881a0b7be9c3b8d22997ebd237578953bc2bb",
       "379e3edae0cfba061bd678cf125761fde5bccdc4",
@@ -590,6 +591,7 @@
       "3de044a3c16f864a002c75dfc49b5f30700a2d73",
       "3df0f54a008384e871d5d6db26b6cf7771edaf41",
       "3e97e7b24745c5e5614aac59479057e443f7d016",
+      "3ea4dc83626658d21994c433ac344fa87607401c",
       "3ed87fb9272cd78f15e39334c34fbf08d9a14651",
       "3f8903dcaed222afc0c2ae527b1101e7477ad1a6",
       "4003f5854f65fbc2b0b15a1ac76aa4d1730ef010",
@@ -694,6 +696,7 @@
       "5d412bb1e9b945308ac603256d4924d093f5d126",
       "5d531c5e8baa992e03ecbd83f39859508b371b15",
       "5d7029d0af255e88a059bc605681711d4430a0cc",
+      "5e6eeb377145f9234af316733b4457c1e9c25373",
       "5ea285d39cc465fe590c08e8c5d039d333b921b6",
       "5edcbe20434cca088aa8ca932de1b0013dc5a88a",
       "5f4bf9ec023f4c5744595467ca108c7507a4f7ee",
@@ -1278,8 +1281,8 @@
     ]
   },
   "sizes": {
-    "total_code": 123783,
-    "functions_over_limit": 30,
+    "total_code": 123892,
+    "functions_over_limit": 24,
     "files_over_limit": 11,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
@@ -1325,10 +1328,10 @@
         "max_function": 18
       },
       "projects/mtc/src/mtc/build.mt": {
-        "lines": 1925,
-        "code": 1561,
+        "lines": 2027,
+        "code": 1646,
         "max_line": 122,
-        "max_function": 327
+        "max_function": 180
       },
       "projects/mtc/src/mtc/build_cache.mt": {
         "lines": 431,
@@ -1337,10 +1340,10 @@
         "max_function": 49
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 8042,
-        "code": 6128,
+        "lines": 8056,
+        "code": 6146,
         "max_line": 436,
-        "max_function": 277
+        "max_function": 219
       },
       "projects/mtc/src/mtc/c_backend/reachability.mt": {
         "lines": 393,
@@ -1991,10 +1994,10 @@
         "max_function": 29
       },
       "projects/mtc/src/mtc/main.mt": {
-        "lines": 3714,
-        "code": 3055,
+        "lines": 3747,
+        "code": 3068,
         "max_line": 277,
-        "max_function": 301
+        "max_function": 179
       },
       "projects/mtc/src/mtc/main/bindings_cli.mt": {
         "lines": 577,
@@ -2027,10 +2030,10 @@
         "max_function": 50
       },
       "projects/mtc/src/mtc/main/test_cli.mt": {
-        "lines": 1362,
-        "code": 1132,
+        "lines": 1402,
+        "code": 1161,
         "max_line": 193,
-        "max_function": 253
+        "max_function": 115
       },
       "projects/mtc/src/mtc/packages/editor.mt": {
         "lines": 482,
@@ -2141,10 +2144,10 @@
         "max_function": 72
       },
       "projects/mtc/src/mtc/parser/specialization.mt": {
-        "lines": 422,
-        "code": 383,
+        "lines": 399,
+        "code": 347,
         "max_line": 187,
-        "max_function": 263
+        "max_function": 134
       },
       "projects/mtc/src/mtc/parser/state.mt": {
         "lines": 189,

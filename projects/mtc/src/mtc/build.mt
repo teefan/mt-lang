@@ -58,33 +58,13 @@ public function build(
     keep_c_path: Option[str],
 ) -> Result[string.String, string.String]:
     let is_wasm = platform == resolver.Platform.wasm
-    if is_wasm and not output_path.ends_with(".html"):
-        var message = string.String.from_str("wasm output path must end with .html or omit the extension: ")
-        message.append(output_path)
-        return Result[string.String, string.String].failure(error = message)
-    if is_wasm and kind != BuildKind.executable:
-        return Result[string.String, string.String].failure(
-            error = string.String.from_str("wasm target supports executable builds only")
-        )
-
-    let compiler = resolve_compiler(c_compiler, is_wasm)
-    if not compiler_available(compiler):
-        var message = string.String.from_str("C compiler not found: ")
-        message.append(compiler)
-        return Result[string.String, string.String].failure(error = message)
-    if is_wasm and not is_emscripten_compiler(compiler):
-        var message = string.String.from_str("unsupported C compiler backend for wasm target: ")
-        message.append(compiler)
-        message.append("; use Emscripten emcc")
-        return Result[string.String, string.String].failure(error = message)
-
-    # Vendored static libraries (GLFW, the Tracy client) must exist before the
-    # link step; build them on demand for raw bindings that require them.
-    match prepare_vendored_libraries(program, roots):
-        Result.failure as prep_failure:
-            return Result[string.String, string.String].failure(error = prep_failure.error)
-        Result.success:
-            pass
+    let toolchain = prepare_build_toolchain(program, roots, c_compiler, output_path, platform, kind)
+    var compiler: str = ""
+    match toolchain:
+        Result.success as prepared:
+            compiler = prepared.value
+        Result.failure as failure:
+            return Result[string.String, string.String].failure(error = failure.error)
 
     # Debug profile: `-g -O0`, `#line` directives, and per-loop iteration
     # guards; release: `-O3 -DNDEBUG`.  `--debug-guards`/`--no-debug-guards`
@@ -98,115 +78,35 @@ public function build(
         Option.none:
             pass
 
-    var c_source = c_backend.generate_c(ir_program, is_debug, guards, kind != BuildKind.executable)
+    var c_source = string.String.create()
     defer: c_source.release()
-
-    # `--keep-c` saves the host's inspectable rendering: no `#line` directives
-    # and no debug loop guards, while the compiled source is the profile's
-    # source (the host's `CBackend.emit(..., emit_line_directives: false,
-    # debug_guards: false)`).
-    if keep_c_path.is_some():
-        let keep_path = keep_c_path.unwrap()
-        var saved_source = c_backend.generate_c(ir_program, false, false, false)
-        defer: saved_source.release()
-        let keep_dir = path_ops.dirname(keep_path)
-        match fs.create_directories(keep_dir):
-            Result.failure as dir_failure:
-                var dir_error = dir_failure.error
-                var message = string.String.from_str("could not write C to ")
-                message.append(keep_path)
-                message.append(": ")
-                message.append(dir_error.message.as_str())
-                dir_error.release()
-                return Result[string.String, string.String].failure(error = message)
-            Result.success:
-                pass
-        match fs.write_text(keep_path, saved_source.as_str()):
-            Result.failure as write_failure:
-                var write_error = write_failure.error
-                var message = string.String.from_str("could not write C to ")
-                message.append(keep_path)
-                message.append(": ")
-                message.append(write_error.message.as_str())
-                write_error.release()
-                return Result[string.String, string.String].failure(error = message)
-            Result.success:
-                pass
-
-    # A unique temporary C path: concurrent builds (e.g. a parallel example
-    # sweep) must not clobber each other's generated source.  A fixed
-    # `/tmp/mtc_build.c` made one process compile another's C — spurious
-    # "invalid initializer" / missing-header errors under `xargs -P`.
-    var c_path = string.String.from_str("/tmp/mtc_build_")
-    c_path.append(path_ops.basename(output_path))
-    c_path.push_byte('_')
-    fmt.append_long(ref_of(c_path), long<-time.now())
-    c_path.append(".c")
-    defer: c_path.release()
-
-    match fs.write_text(c_path.as_str(), c_source.as_str()):
-        Result.success:
-            pass
+    match generate_build_c_source(ir_program, is_debug, guards, kind, keep_c_path):
+        Result.success as generated:
+            c_source.release()
+            c_source = generated.value
         Result.failure as failure:
-            var err = failure.error
-            err.release()
-            return Result[string.String, string.String].failure(
-                error = string.String.from_str("could not write generated C source")
-            )
+            return Result[string.String, string.String].failure(error = failure.error)
+
+    var c_path = string.String.create()
+    defer: c_path.release()
+    match write_temp_c_source(output_path, c_source.as_str()):
+        Result.success as written:
+            c_path.release()
+            c_path = written.value
+        Result.failure as failure:
+            return Result[string.String, string.String].failure(error = failure.error)
 
     var shell_path = string.String.create()
     defer: remove_shell_file(ref_of(shell_path))
-    if is_wasm:
-        var template_owner = string.String.create()
-        defer: template_owner.release()
-        var template_path: str = "<embedded wasm shell>"
-        match html_template:
-            Option.some as declared:
-                template_path = declared.value
-                match fs.read_text(declared.value):
-                    Result.success as payload:
-                        template_owner.release()
-                        template_owner = payload.value
-                    Result.failure as read_failure:
-                        var read_error = read_failure.error
-                        var message = string.String.from_str("could not read wasm HTML template: ")
-                        message.append(declared.value)
-                        read_error.release()
-                        return Result[string.String, string.String].failure(error = message)
-            Option.none:
-                template_owner.assign(wasm_shell.DEFAULT_TEMPLATE)
-
-        match wasm_shell.render(template_owner.as_str(), template_path):
-            Result.failure as render_failure:
-                return Result[string.String, string.String].failure(error = render_failure.error)
-            Result.success as rendered:
-                var shell_source = rendered.value
-                defer: shell_source.release()
-                match fs.create_temporary_file_in_system_temp("milk-tea-shell", ".html"):
-                    Result.success as created:
-                        shell_path.release()
-                        shell_path = created.value
-                    Result.failure as create_failure:
-                        var create_error = create_failure.error
-                        var message = string.String.from_str("could not create wasm shell file: ")
-                        message.append(create_error.message.as_str())
-                        create_error.release()
-                        return Result[string.String, string.String].failure(error = message)
-                match fs.write_text(shell_path.as_str(), shell_source.as_str()):
-                    Result.failure as write_failure:
-                        var write_error = write_failure.error
-                        var message = string.String.from_str("could not write wasm shell file: ")
-                        message.append(write_error.message.as_str())
-                        write_error.release()
-                        return Result[string.String, string.String].failure(error = message)
-                    Result.success:
-                        pass
-        clean_wasm_artifacts(output_path)
+    match prepare_wasm_shell(html_template, output_path, is_wasm):
+        Result.success as prepared_shell:
+            shell_path.release()
+            shell_path = prepared_shell.value
+        Result.failure as failure:
+            return Result[string.String, string.String].failure(error = failure.error)
 
     var command = vec.Vec[str].create()
     defer: command.release()
-    command.push(compiler)
-    command.push("-std=c11")
 
     # C ABI struct definitions (`fs_support.h`, etc.) live under `<root>/std/c`;
     # add the include path from whichever root contains that directory.
@@ -237,58 +137,11 @@ public function build(
     var object_path = string.String.create()
     defer: object_path.release()
 
-    if is_wasm:
-        if is_debug:
-            command.push("-g")
-            command.push("-O0")
-        else:
-            command.push("-O3")
-            command.push("-DNDEBUG")
-        if include_flag.len() > 0:
-            command.push(include_flag.as_str())
-        push_owned_flags(ref_of(command), ref_of(binding_flags))
-        command.push(c_path.as_str())
-        command.push("-o")
-        command.push(output_path)
-        command.push("--shell-file")
-        command.push(shell_path.as_str())
-        command.push("-sINCOMING_MODULE_JS_API=canvas,print,printErr")
-        push_wasm_preloads(ref_of(command), ref_of(owned_args), assets)
-        push_owned_flags(ref_of(command), ref_of(link_flags))
-        push_owned_flags(ref_of(command), ref_of(vendored_flags))
-    else:
-        command.push("-D_GNU_SOURCE")
-        if sanitize:
-            command.push("-fsanitize=address,undefined")
-            command.push("-fno-sanitize-recover=all")
-            command.push("-fno-omit-frame-pointer")
-        if is_debug:
-            command.push("-g")
-            command.push("-O0")
-        else:
-            command.push("-O3")
-            command.push("-DNDEBUG")
-
-        if include_flag.len() > 0:
-            command.push(include_flag.as_str())
-        push_owned_flags(ref_of(command), ref_of(binding_flags))
-
-        if is_static:
-            object_path.append(c_path.as_str().slice(0, c_path.len() - 2))
-            object_path.append(".o")
-            command.push("-c")
-            command.push("-o")
-            command.push(object_path.as_str())
-            command.push(c_path.as_str())
-        else:
-            if kind == BuildKind.kind_shared:
-                command.push("-fPIC")
-                command.push("-shared")
-            command.push("-o")
-            command.push(output_path)
-            command.push(c_path.as_str())
-            push_owned_flags(ref_of(command), ref_of(link_flags))
-            push_owned_flags(ref_of(command), ref_of(vendored_flags))
+    push_compile_arguments(
+        ref_of(command), compiler, is_wasm, is_debug, sanitize, is_static, kind, include_flag.as_str(),
+        ref_of(binding_flags), ref_of(link_flags), ref_of(vendored_flags), ref_of(owned_args), assets,
+        c_path.as_str(), output_path, shell_path.as_str(), ref_of(object_path)
+    )
 
     match process.capture(command.as_span()):
         Result.success as captured:
@@ -369,6 +222,255 @@ public function build(
             var message = string.String.from_str("C compiler not found: ")
             message.append(compiler)
             return Result[string.String, string.String].failure(error = message)
+
+
+## Validate the target, resolve the C compiler, and prepare the vendored
+## libraries.  Returns the compiler binary on success.
+function prepare_build_toolchain(
+    program: loader.Program,
+    roots: span[str],
+    c_compiler: str,
+    output_path: str,
+    platform: resolver.Platform,
+    kind: BuildKind,
+) -> Result[str, string.String]:
+    let is_wasm = platform == resolver.Platform.wasm
+    if is_wasm and not output_path.ends_with(".html"):
+        var message = string.String.from_str("wasm output path must end with .html or omit the extension: ")
+        message.append(output_path)
+        return Result[str, string.String].failure(error = message)
+    if is_wasm and kind != BuildKind.executable:
+        return Result[str, string.String].failure(
+            error = string.String.from_str("wasm target supports executable builds only")
+        )
+
+    let compiler = resolve_compiler(c_compiler, is_wasm)
+    if not compiler_available(compiler):
+        var message = string.String.from_str("C compiler not found: ")
+        message.append(compiler)
+        return Result[str, string.String].failure(error = message)
+    if is_wasm and not is_emscripten_compiler(compiler):
+        var message = string.String.from_str("unsupported C compiler backend for wasm target: ")
+        message.append(compiler)
+        message.append("; use Emscripten emcc")
+        return Result[str, string.String].failure(error = message)
+
+    # Vendored static libraries (GLFW, the Tracy client) must exist before the
+    # link step; build them on demand for raw bindings that require them.
+    match prepare_vendored_libraries(program, roots):
+        Result.failure as prep_failure:
+            return Result[str, string.String].failure(error = prep_failure.error)
+        Result.success:
+            pass
+    return Result[str, string.String].success(value = compiler)
+
+
+## Generate the compiled C source and, for `--keep-c`, the inspectable
+## rendering.  Returns the owned compiled source.
+function generate_build_c_source(
+    ir_program: ir.Program,
+    is_debug: bool,
+    guards: bool,
+    kind: BuildKind,
+    keep_c_path: Option[str],
+) -> Result[string.String, string.String]:
+    var c_source = c_backend.generate_c(ir_program, is_debug, guards, kind != BuildKind.executable)
+
+    # `--keep-c` saves the host's inspectable rendering: no `#line` directives
+    # and no debug loop guards, while the compiled source is the profile's
+    # source (the host's `CBackend.emit(..., emit_line_directives: false,
+    # debug_guards: false)`).
+    if keep_c_path.is_some():
+        let keep_path = keep_c_path.unwrap()
+        var saved_source = c_backend.generate_c(ir_program, false, false, false)
+        defer: saved_source.release()
+        let keep_dir = path_ops.dirname(keep_path)
+        match fs.create_directories(keep_dir):
+            Result.failure as dir_failure:
+                var dir_error = dir_failure.error
+                var message = string.String.from_str("could not write C to ")
+                message.append(keep_path)
+                message.append(": ")
+                message.append(dir_error.message.as_str())
+                dir_error.release()
+                c_source.release()
+                return Result[string.String, string.String].failure(error = message)
+            Result.success:
+                pass
+        match fs.write_text(keep_path, saved_source.as_str()):
+            Result.failure as write_failure:
+                var write_error = write_failure.error
+                var message = string.String.from_str("could not write C to ")
+                message.append(keep_path)
+                message.append(": ")
+                message.append(write_error.message.as_str())
+                write_error.release()
+                c_source.release()
+                return Result[string.String, string.String].failure(error = message)
+            Result.success:
+                pass
+    return Result[string.String, string.String].success(value = c_source)
+
+
+## Write the compiled source to a unique temporary path.  A unique path keeps
+## concurrent builds (e.g. a parallel example sweep) from clobbering each
+## other; a fixed `/tmp/mtc_build.c` made one process compile another's C.
+function write_temp_c_source(output_path: str, c_source: str) -> Result[string.String, string.String]:
+    var c_path = string.String.from_str("/tmp/mtc_build_")
+    c_path.append(path_ops.basename(output_path))
+    c_path.push_byte('_')
+    fmt.append_long(ref_of(c_path), long<-time.now())
+    c_path.append(".c")
+    match fs.write_text(c_path.as_str(), c_source):
+        Result.success:
+            return Result[string.String, string.String].success(value = c_path)
+        Result.failure as failure:
+            var err = failure.error
+            err.release()
+            c_path.release()
+            return Result[string.String, string.String].failure(
+                error = string.String.from_str("could not write generated C source")
+            )
+
+
+## Render and materialize the wasm shell (empty for native targets) and clear
+## stale wasm sidecars.
+function prepare_wasm_shell(
+    html_template: Option[str],
+    output_path: str,
+    is_wasm: bool,
+) -> Result[string.String, string.String]:
+    var shell_path = string.String.create()
+    if not is_wasm:
+        return Result[string.String, string.String].success(value = shell_path)
+
+    var template_owner = string.String.create()
+    defer: template_owner.release()
+    var template_path: str = "<embedded wasm shell>"
+    match html_template:
+        Option.some as declared:
+            template_path = declared.value
+            match fs.read_text(declared.value):
+                Result.success as payload:
+                    template_owner.release()
+                    template_owner = payload.value
+                Result.failure as read_failure:
+                    var read_error = read_failure.error
+                    var message = string.String.from_str("could not read wasm HTML template: ")
+                    message.append(declared.value)
+                    read_error.release()
+                    shell_path.release()
+                    return Result[string.String, string.String].failure(error = message)
+        Option.none:
+            template_owner.assign(wasm_shell.DEFAULT_TEMPLATE)
+
+    match wasm_shell.render(template_owner.as_str(), template_path):
+        Result.failure as render_failure:
+            shell_path.release()
+            return Result[string.String, string.String].failure(error = render_failure.error)
+        Result.success as rendered:
+            var shell_source = rendered.value
+            defer: shell_source.release()
+            match fs.create_temporary_file_in_system_temp("milk-tea-shell", ".html"):
+                Result.success as created:
+                    shell_path.release()
+                    shell_path = created.value
+                Result.failure as create_failure:
+                    var create_error = create_failure.error
+                    var message = string.String.from_str("could not create wasm shell file: ")
+                    message.append(create_error.message.as_str())
+                    create_error.release()
+                    shell_path.release()
+                    return Result[string.String, string.String].failure(error = message)
+            match fs.write_text(shell_path.as_str(), shell_source.as_str()):
+                Result.failure as write_failure:
+                    var write_error = write_failure.error
+                    var message = string.String.from_str("could not write wasm shell file: ")
+                    message.append(write_error.message.as_str())
+                    write_error.release()
+                    shell_path.release()
+                    return Result[string.String, string.String].failure(error = message)
+                Result.success:
+                    pass
+    clean_wasm_artifacts(output_path)
+    return Result[string.String, string.String].success(value = shell_path)
+
+
+## Build the compiler command line for the selected target and artifact kind.
+function push_compile_arguments(
+    command: ref[vec.Vec[str]],
+    compiler: str,
+    is_wasm: bool,
+    is_debug: bool,
+    sanitize: bool,
+    is_static: bool,
+    kind: BuildKind,
+    include_flag: str,
+    binding_flags: ref[vec.Vec[string.String]],
+    link_flags: ref[vec.Vec[string.String]],
+    vendored_flags: ref[vec.Vec[string.String]],
+    owned_args: ref[vec.Vec[string.String]],
+    assets: span[string.String],
+    c_path: str,
+    output_path: str,
+    shell_path: str,
+    object_path: ref[string.String],
+) -> void:
+    read(command).push(compiler)
+    read(command).push("-std=c11")
+
+    if is_wasm:
+        if is_debug:
+            read(command).push("-g")
+            read(command).push("-O0")
+        else:
+            read(command).push("-O3")
+            read(command).push("-DNDEBUG")
+        if include_flag.len > 0:
+            read(command).push(include_flag)
+        push_owned_flags(command, binding_flags)
+        read(command).push(c_path)
+        read(command).push("-o")
+        read(command).push(output_path)
+        read(command).push("--shell-file")
+        read(command).push(shell_path)
+        read(command).push("-sINCOMING_MODULE_JS_API=canvas,print,printErr")
+        push_wasm_preloads(command, owned_args, assets)
+        push_owned_flags(command, link_flags)
+        push_owned_flags(command, vendored_flags)
+    else:
+        read(command).push("-D_GNU_SOURCE")
+        if sanitize:
+            read(command).push("-fsanitize=address,undefined")
+            read(command).push("-fno-sanitize-recover=all")
+            read(command).push("-fno-omit-frame-pointer")
+        if is_debug:
+            read(command).push("-g")
+            read(command).push("-O0")
+        else:
+            read(command).push("-O3")
+            read(command).push("-DNDEBUG")
+
+        if include_flag.len > 0:
+            read(command).push(include_flag)
+        push_owned_flags(command, binding_flags)
+
+        if is_static:
+            read(object_path).append(c_path.slice(0, c_path.len - 2))
+            read(object_path).append(".o")
+            read(command).push("-c")
+            read(command).push("-o")
+            read(command).push(read(object_path).as_str())
+            read(command).push(c_path)
+        else:
+            if kind == BuildKind.kind_shared:
+                read(command).push("-fPIC")
+                read(command).push("-shared")
+            read(command).push("-o")
+            read(command).push(output_path)
+            read(command).push(c_path)
+            push_owned_flags(command, link_flags)
+            push_owned_flags(command, vendored_flags)
 
 
 function env_or_default(name: str, fallback: str) -> str:

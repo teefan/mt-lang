@@ -171,27 +171,9 @@ public function parse_primary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
         read(node) = ast.Expr.expr_float_literal(lexeme = lex, value = val)
         return node
     else if pstate.match_kind(s, tk.TokenKind.string):
-        let first_tok = pstate.previous_token(s)
-        var all_lexeme: str
-        unsafe:
-            all_lexeme = token_mod.token_lexeme(read(first_tok), s.source)
-        while pstate.check(s, tk.TokenKind.string) or pstate.check(s, tk.TokenKind.cstring):
-            pstate.advance(s)
-        let val = parser.parse_string_content(all_lexeme, false)
-        var node = parser.alloc_expr(s)
-        read(node) = ast.Expr.expr_string_literal(lexeme = all_lexeme, value = val, is_cstring = false)
-        return node
+        return parse_string_primary(s, false)
     else if pstate.match_kind(s, tk.TokenKind.cstring):
-        let first_tok = pstate.previous_token(s)
-        var all_lexeme: str
-        unsafe:
-            all_lexeme = token_mod.token_lexeme(read(first_tok), s.source)
-        while pstate.check(s, tk.TokenKind.string) or pstate.check(s, tk.TokenKind.cstring):
-            pstate.advance(s)
-        let val = parser.parse_string_content(all_lexeme, true)
-        var node = parser.alloc_expr(s)
-        read(node) = ast.Expr.expr_string_literal(lexeme = all_lexeme, value = val, is_cstring = true)
-        return node
+        return parse_string_primary(s, true)
     else if pstate.match_kind(s, tk.TokenKind.char_literal):
         let lex = parser.previous_lexeme(s)
         let val = parser.parse_char_value(lex)
@@ -237,121 +219,10 @@ public function parse_primary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
         var node = parser.alloc_expr(s)
         read(node) = ast.Expr.expr_identifier(name = name_str, line = ln, column = cn)
         return node
-    else if pstate.match_kind(s, tk.TokenKind.tk_fields_of):
-        let tok = pstate.previous_token(s)
-        var node = parser.alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if pstate.match_kind(s, tk.TokenKind.tk_members_of):
-        let tok = pstate.previous_token(s)
-        var node = parser.alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if pstate.match_kind(s, tk.TokenKind.tk_attributes_of):
-        let tok = pstate.previous_token(s)
-        var node = parser.alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if pstate.match_kind(s, tk.TokenKind.tk_field_of):
-        let tok = pstate.previous_token(s)
-        var node = parser.alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if pstate.match_kind(s, tk.TokenKind.tk_callable_of):
-        let tok = pstate.previous_token(s)
-        var node = parser.alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if pstate.match_kind(s, tk.TokenKind.tk_attribute_of):
-        let tok = pstate.previous_token(s)
-        var node = parser.alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if pstate.match_kind(s, tk.TokenKind.tk_has_attribute):
-        let tok = pstate.previous_token(s)
-        var node = parser.alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
-    else if pstate.match_kind(s, tk.TokenKind.tk_attribute_arg):
-        let tok = pstate.previous_token(s)
-        var node = parser.alloc_expr(s)
-        unsafe:
-            let t = read(tok)
-            read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
-        return node
+    else if keyword_identifier_matches(s):
+        return parse_keyword_identifier(s)
     else if pstate.match_kind(s, tk.TokenKind.lparen):
-        let start_tok = pstate.previous_token(s)
-        var ln: ptr_uint
-        var cn: ptr_uint
-        unsafe:
-            ln = start_tok.line
-            cn = start_tok.column
-        var first_expr: ptr[ast.Expr]
-        if (parser.check_name(s) or parser.keyword_token_check(pstate.peek(s))) and parser.check_next(s, tk.TokenKind.equal):
-            var name_str: str
-            let nt = pstate.peek(s) else:
-                fatal(c"unexpected eof in named tuple field")
-            unsafe:
-                name_str = token_mod.token_lexeme(read(nt), s.source)
-            pstate.advance(s)
-            pstate.advance(s)
-            var val = expressions.parse_expr(s)
-            first_expr = parser.alloc_expr(s)
-            unsafe:
-                read(first_expr) = ast.Expr.expr_named(name = name_str, value = val)
-        else:
-            first_expr = expressions.parse_expr(s)
-        if pstate.match_kind(s, tk.TokenKind.comma):
-            var elems = vec.Vec[ast.Expr].create()
-            unsafe:
-                elems.push(read(first_expr))
-            while true:
-                pstate.step(s)
-                if pstate.check(s, tk.TokenKind.rparen):
-                    break
-                if (parser.check_name(s) or parser.keyword_token_check(pstate.peek(s))) and parser.check_next(s, tk.TokenKind.equal):
-                    var name_str: str
-                    let nt2 = pstate.peek(s) else:
-                        break
-                    unsafe:
-                        name_str = token_mod.token_lexeme(read(nt2), s.source)
-                    pstate.advance(s)
-                    pstate.advance(s)
-                    var val2 = expressions.parse_expr(s)
-                    var ne = parser.alloc_expr(s)
-                    unsafe:
-                        read(ne) = ast.Expr.expr_named(name = name_str, value = val2)
-                    unsafe:
-                        elems.push(read(ne))
-                else:
-                    var next = expressions.parse_expr(s)
-                    unsafe:
-                        elems.push(read(next))
-                if not pstate.match_kind(s, tk.TokenKind.comma):
-                    break
-                if pstate.check(s, tk.TokenKind.rparen):
-                    break
-            pstate.consume(s, tk.TokenKind.rparen, c"expected ')' after tuple elements")
-            let elems_span = elems.as_span()
-            var node = parser.alloc_expr(s)
-            read(node) = ast.Expr.expr_expression_list(elements = elems_span, line = ln, column = cn)
-            return node
-        pstate.consume(s, tk.TokenKind.rparen, c"expected ')' after expression")
-        return first_expr
+        return parse_paren_primary(s)
     else if pstate.match_kind(s, tk.TokenKind.tk_if):
         return expression_forms.parse_if_expr(s)
     else if pstate.match_kind(s, tk.TokenKind.tk_match):
@@ -420,3 +291,109 @@ public function parse_primary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
         var node = parser.alloc_expr(s)
         read(node) = ast.Expr.expr_error(line = 0, column = 0, message = "expected expression")
         return node
+
+
+## Adjacent string/cstring tokens form one literal; `is_cstring` selects the
+## escape policy and the AST flag.
+function parse_string_primary(s: ref[pstate.ParserState], is_cstring: bool) -> ptr[ast.Expr]:
+    let first_tok = pstate.previous_token(s)
+    var all_lexeme: str
+    unsafe:
+        all_lexeme = token_mod.token_lexeme(read(first_tok), s.source)
+    while pstate.check(s, tk.TokenKind.string) or pstate.check(s, tk.TokenKind.cstring):
+        pstate.advance(s)
+    let val = parser.parse_string_content(all_lexeme, is_cstring)
+    var node = parser.alloc_expr(s)
+    read(node) = ast.Expr.expr_string_literal(lexeme = all_lexeme, value = val, is_cstring = is_cstring)
+    return node
+
+
+## Match one of the reflection keywords that parse as a bare identifier.
+function keyword_identifier_matches(s: ref[pstate.ParserState]) -> bool:
+    if pstate.match_kind(s, tk.TokenKind.tk_fields_of):
+        return true
+    if pstate.match_kind(s, tk.TokenKind.tk_members_of):
+        return true
+    if pstate.match_kind(s, tk.TokenKind.tk_attributes_of):
+        return true
+    if pstate.match_kind(s, tk.TokenKind.tk_field_of):
+        return true
+    if pstate.match_kind(s, tk.TokenKind.tk_callable_of):
+        return true
+    if pstate.match_kind(s, tk.TokenKind.tk_attribute_of):
+        return true
+    if pstate.match_kind(s, tk.TokenKind.tk_has_attribute):
+        return true
+    return pstate.match_kind(s, tk.TokenKind.tk_attribute_arg)
+
+
+## Build an identifier from the reflection keyword just consumed.
+function parse_keyword_identifier(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
+    let tok = pstate.previous_token(s)
+    var node = parser.alloc_expr(s)
+    unsafe:
+        let t = read(tok)
+        read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+    return node
+
+
+## Parenthesized expression, named tuple field, or tuple expression list.
+function parse_paren_primary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
+    let start_tok = pstate.previous_token(s)
+    var ln: ptr_uint
+    var cn: ptr_uint
+    unsafe:
+        ln = start_tok.line
+        cn = start_tok.column
+    var first_expr: ptr[ast.Expr]
+    if (parser.check_name(s) or parser.keyword_token_check(pstate.peek(s))) and parser.check_next(s, tk.TokenKind.equal):
+        var name_str: str
+        let nt = pstate.peek(s) else:
+            fatal(c"unexpected eof in named tuple field")
+        unsafe:
+            name_str = token_mod.token_lexeme(read(nt), s.source)
+        pstate.advance(s)
+        pstate.advance(s)
+        var val = expressions.parse_expr(s)
+        first_expr = parser.alloc_expr(s)
+        unsafe:
+            read(first_expr) = ast.Expr.expr_named(name = name_str, value = val)
+    else:
+        first_expr = expressions.parse_expr(s)
+    if pstate.match_kind(s, tk.TokenKind.comma):
+        var elems = vec.Vec[ast.Expr].create()
+        unsafe:
+            elems.push(read(first_expr))
+        while true:
+            pstate.step(s)
+            if pstate.check(s, tk.TokenKind.rparen):
+                break
+            if (parser.check_name(s) or parser.keyword_token_check(pstate.peek(s))) and parser.check_next(s, tk.TokenKind.equal):
+                var name_str: str
+                let nt2 = pstate.peek(s) else:
+                    break
+                unsafe:
+                    name_str = token_mod.token_lexeme(read(nt2), s.source)
+                pstate.advance(s)
+                pstate.advance(s)
+                var val2 = expressions.parse_expr(s)
+                var ne = parser.alloc_expr(s)
+                unsafe:
+                    read(ne) = ast.Expr.expr_named(name = name_str, value = val2)
+                unsafe:
+                    elems.push(read(ne))
+            else:
+                var next = expressions.parse_expr(s)
+                unsafe:
+                    elems.push(read(next))
+            if not pstate.match_kind(s, tk.TokenKind.comma):
+                break
+            if pstate.check(s, tk.TokenKind.rparen):
+                break
+        pstate.consume(s, tk.TokenKind.rparen, c"expected ')' after tuple elements")
+        let elems_span = elems.as_span()
+        var node = parser.alloc_expr(s)
+        read(node) = ast.Expr.expr_expression_list(elements = elems_span, line = ln, column = cn)
+        return node
+    pstate.consume(s, tk.TokenKind.rparen, c"expected ')' after expression")
+    return first_expr

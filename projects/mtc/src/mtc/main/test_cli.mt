@@ -367,138 +367,156 @@ enum TestFileKind: ubyte
     lex_error = 3
 
 
-## Discover and run @[test] functions from a file or directory.  Scans all .mt
-## files, synthesizes a runner per file, builds and runs it in-process under a
-## timeout/memory sandbox.  With --format tap|junit the per-test outcomes are
-## re-emitted in the machine-readable format instead of the human summary.
-## `--jobs` is validated and accepted; files still run in order — the host's
-## fork-per-file mode only changes wall time (and folds a child's stderr into
-## its stdout), so the sequential run is the equivalent without that wart.
-public function test_command(args: span[str]) -> int:
-    var roots = vec.Vec[str].create()
-    defer: roots.release()
-    var positional = vec.Vec[str].create()
-    defer: positional.release()
-    var name_filter: Option[str] = Option[str].none
-    var timeout_seconds: ptr_uint = 30
-    var memory_mb: ptr_uint = 1024
-    var jobs: ptr_uint = 1
-    var sanitize = false
-    var format = OutputFormat.human
-    var cc = "cc"
-    var profile = "debug"
-    var platform = resolver.Platform.linux
-    var locked = false
-    var frozen = false
+## Test-limit flags extracted before the build-option pass.
+struct TestLimitFlags:
+    name_filter: Option[str]
+    timeout_seconds: ptr_uint
+    memory_mb: ptr_uint
+    jobs: ptr_uint
+    format: OutputFormat
+    sanitize: bool
 
-    # The host extracts the test-limit flags first (`extract_test_limit_flags!`),
-    # so an invalid --timeout/--mem/--jobs/-n/--format is reported before an
-    # unknown build option even when it appears later on the command line.
-    var remaining = vec.Vec[str].create()
-    defer: remaining.release()
+
+## Build-pass flags consumed by the test runner.
+struct TestBuildFlags:
+    cc: str
+    profile: str
+    platform: resolver.Platform
+    locked: bool
+    frozen: bool
+
+
+## The host extracts the test-limit flags first (`extract_test_limit_flags!`),
+## so an invalid --timeout/--mem/--jobs/-n/--format is reported before an
+## unknown build option even when it appears later on the command line.
+function parse_test_limit_flags(args: span[str], remaining: ref[vec.Vec[str]]) -> Option[TestLimitFlags]:
+    var parsed = TestLimitFlags(
+        name_filter = Option[str].none,
+        timeout_seconds = 30,
+        memory_mb = 1024,
+        jobs = 1,
+        format = OutputFormat.human,
+        sanitize = false,
+    )
     var ai: ptr_uint = 1
     while ai < args.len:
         let arg = args[ai]
         if arg == "-n" or arg == "--name":
             if ai + 1 >= args.len:
                 main.eprint_line("-n requires a name substring")
-                return 1
-            name_filter = Option[str].some(value= args[ai + 1])
+                return Option[TestLimitFlags].none
+            parsed.name_filter = Option[str].some(value= args[ai + 1])
             ai += 2
             continue
         if arg == "--timeout":
             if ai + 1 >= args.len:
                 main.eprint_line("--timeout requires a positive integer (seconds)")
-                return 1
+                return Option[TestLimitFlags].none
             let seconds = main.parse_positive_int(args[ai + 1]) else:
                 main.eprint_line("--timeout requires a positive integer (seconds)")
-                return 1
-            timeout_seconds = seconds
+                return Option[TestLimitFlags].none
+            parsed.timeout_seconds = seconds
             ai += 2
             continue
         if arg == "--mem":
             if ai + 1 >= args.len:
                 main.eprint_line("--mem requires a positive integer (megabytes)")
-                return 1
+                return Option[TestLimitFlags].none
             let megabytes = main.parse_positive_int(args[ai + 1]) else:
                 main.eprint_line("--mem requires a positive integer (megabytes)")
-                return 1
-            memory_mb = megabytes
+                return Option[TestLimitFlags].none
+            parsed.memory_mb = megabytes
             ai += 2
             continue
         if arg == "--jobs":
             if ai + 1 >= args.len:
                 main.eprint_line("--jobs requires a positive integer")
-                return 1
+                return Option[TestLimitFlags].none
             let count = main.parse_positive_int(args[ai + 1]) else:
                 main.eprint_line("--jobs requires a positive integer")
-                return 1
-            jobs = count
+                return Option[TestLimitFlags].none
+            parsed.jobs = count
             ai += 2
             continue
         if arg == "--format":
             if ai + 1 >= args.len:
                 main.eprint_line("--format must be human, tap, or junit")
-                return 1
+                return Option[TestLimitFlags].none
             let fmt_name = args[ai + 1]
             if fmt_name == "human":
-                format = OutputFormat.human
+                parsed.format = OutputFormat.human
             else if fmt_name == "tap":
-                format = OutputFormat.tap
+                parsed.format = OutputFormat.tap
             else if fmt_name == "junit":
-                format = OutputFormat.junit
+                parsed.format = OutputFormat.junit
             else:
                 main.eprint_line("--format must be human, tap, or junit")
-                return 1
+                return Option[TestLimitFlags].none
             ai += 2
             continue
         if arg == "--sanitize":
-            sanitize = true
+            parsed.sanitize = true
             ai += 1
             continue
         if arg == "--":
             var rest = ai
             while rest < args.len:
-                remaining.push(args[rest])
+                read(remaining).push(args[rest])
                 rest += 1
             break
-        remaining.push(arg)
+        read(remaining).push(arg)
         ai += 1
+    return Option[TestLimitFlags].some(value = parsed)
 
+
+## Parse the remaining test arguments: module roots, positional operands, and
+## the build-pass flags the host accepts for a test build.
+function parse_test_build_flags(
+    remaining: ref[vec.Vec[str]],
+    roots: ref[vec.Vec[str]],
+    positional: ref[vec.Vec[str]],
+) -> Option[TestBuildFlags]:
+    var parsed = TestBuildFlags(
+        cc = "cc",
+        profile = "debug",
+        platform = resolver.Platform.linux,
+        locked = false,
+        frozen = false,
+    )
     var bi: ptr_uint = 0
-    while bi < remaining.len():
-        let arg_ptr = remaining.get(bi) else:
+    while bi < read(remaining).len():
+        let arg_ptr = read(remaining).get(bi) else:
             break
         let arg = unsafe: read(arg_ptr)
         if arg == "-I" or arg == "--include-path":
-            if bi + 1 >= remaining.len():
+            if bi + 1 >= read(remaining).len():
                 main.eprint_line("missing value for -I")
                 bi += 1
                 continue
-            let value_ptr = remaining.get(bi + 1) else:
+            let value_ptr = read(remaining).get(bi + 1) else:
                 main.eprint_line("missing value for -I")
                 break
-            roots.push(unsafe: read(value_ptr))
+            read(roots).push(unsafe: read(value_ptr))
             bi += 2
             continue
         if arg == "--":
             var rest = bi + 1
-            while rest < remaining.len():
-                let rest_ptr = remaining.get(rest) else:
+            while rest < read(remaining).len():
+                let rest_ptr = read(remaining).get(rest) else:
                     break
-                positional.push(unsafe: read(rest_ptr))
+                read(positional).push(unsafe: read(rest_ptr))
                 rest += 1
             break
         if arg == "-o" or arg == "--output" or arg == "--keep-c" or arg == "--cc" or arg == "--profile" or arg == "--platform":
-            if bi + 1 >= remaining.len():
+            if bi + 1 >= read(remaining).len():
                 eprint_missing_option_value(arg)
-                return 1
-            let value_ptr = remaining.get(bi + 1) else:
+                return Option[TestBuildFlags].none
+            let value_ptr = read(remaining).get(bi + 1) else:
                 eprint_missing_option_value(arg)
-                return 1
+                return Option[TestBuildFlags].none
             let value = unsafe: read(value_ptr)
             if arg == "--cc":
-                cc = value
+                parsed.cc = value
             else if arg == "--profile":
                 if not value == "debug" and not value == "release":
                     var bad_profile = string.String.create()
@@ -507,15 +525,15 @@ public function test_command(args: span[str]) -> int:
                     bad_profile.append(value)
                     bad_profile.append("; expected debug|release")
                     main.eprint_line(bad_profile.as_str())
-                    return 1
-                profile = value
+                    return Option[TestBuildFlags].none
+                parsed.profile = value
             else if arg == "--platform":
                 if value == "linux":
-                    platform = resolver.Platform.linux
+                    parsed.platform = resolver.Platform.linux
                 else if value == "windows":
-                    platform = resolver.Platform.windows
+                    parsed.platform = resolver.Platform.windows
                 else if value == "wasm":
-                    platform = resolver.Platform.wasm
+                    parsed.platform = resolver.Platform.wasm
                 else:
                     var bad_platform = string.String.create()
                     defer: bad_platform.release()
@@ -523,16 +541,16 @@ public function test_command(args: span[str]) -> int:
                     bad_platform.append(value)
                     bad_platform.append("; expected linux|windows|wasm")
                     main.eprint_line(bad_platform.as_str())
-                    return 1
+                    return Option[TestBuildFlags].none
             bi += 2
             continue
         if arg == "--kind":
-            if bi + 1 >= remaining.len():
+            if bi + 1 >= read(remaining).len():
                 eprint_missing_option_value(arg)
-                return 1
-            let kind_ptr = remaining.get(bi + 1) else:
+                return Option[TestBuildFlags].none
+            let kind_ptr = read(remaining).get(bi + 1) else:
                 eprint_missing_option_value(arg)
-                return 1
+                return Option[TestBuildFlags].none
             let kind_name = unsafe: read(kind_ptr)
             if not is_known_build_kind(kind_name):
                 var bad_kind = string.String.create()
@@ -542,16 +560,16 @@ public function test_command(args: span[str]) -> int:
                 bad_kind.append("; expected executable|static|shared")
                 main.eprint_line(bad_kind.as_str())
                 cli_help.print_usage(true)
-                return 1
+                return Option[TestBuildFlags].none
             bi += 2
             continue
         if arg == "--locked":
-            locked = true
+            parsed.locked = true
             bi += 1
             continue
         if arg == "--frozen":
-            locked = true
-            frozen = true
+            parsed.locked = true
+            parsed.frozen = true
             bi += 1
             continue
         if arg == "--bundle" or arg == "--archive" or arg == "--no-cache" or arg == "--timings" or arg == "--debug-guards" or arg == "--no-debug-guards":
@@ -564,9 +582,31 @@ public function test_command(args: span[str]) -> int:
             unknown_opt.append(arg)
             main.eprint_line(unknown_opt.as_str())
             cli_help.print_usage(true)
-            return 1
-        positional.push(arg)
+            return Option[TestBuildFlags].none
+        read(positional).push(arg)
         bi += 1
+    return Option[TestBuildFlags].some(value = parsed)
+
+
+## Discover and run @[test] functions from a file or directory.  Scans all .mt
+## files, synthesizes a runner per file, builds and runs it in-process under a
+## timeout/memory sandbox.  With --format tap|junit the per-test outcomes are
+## re-emitted in the machine-readable format instead of the human summary.
+## `--jobs` is validated and accepted; files still run in order — the host's
+## fork-per-file mode only changes wall time (and folds a child's stderr into
+## its stdout), so the sequential run is the equivalent without that wart.
+public function test_command(args: span[str]) -> int:
+    var roots = vec.Vec[str].create()
+    defer: roots.release()
+    var positional = vec.Vec[str].create()
+    defer: positional.release()
+    var remaining = vec.Vec[str].create()
+    defer: remaining.release()
+
+    let limit_flags = parse_test_limit_flags(args, ref_of(remaining)) else:
+        return 1
+    let build_flags = parse_test_build_flags(ref_of(remaining), ref_of(roots), ref_of(positional)) else:
+        return 1
 
     var cwd_owner = string.String.create()
     defer: cwd_owner.release()
@@ -592,7 +632,7 @@ public function test_command(args: span[str]) -> int:
             cli_help.print_usage(true)
             return 1
 
-    if frozen:
+    if build_flags.frozen:
         match package_lock.ensure_current(path, true):
             Result.failure as check_failure:
                 var message = check_failure.error
@@ -604,16 +644,16 @@ public function test_command(args: span[str]) -> int:
 
     let options = TestRunOptions(
         roots = roots.as_span(),
-        name_filter = name_filter,
-        timeout_seconds = timeout_seconds,
-        memory_mb = memory_mb,
-        jobs = jobs,
-        sanitize = sanitize,
-        format = format,
-        cc = cc,
-        profile = profile,
-        platform = platform,
-        locked = locked,
+        name_filter = limit_flags.name_filter,
+        timeout_seconds = limit_flags.timeout_seconds,
+        memory_mb = limit_flags.memory_mb,
+        jobs = limit_flags.jobs,
+        sanitize = limit_flags.sanitize,
+        format = limit_flags.format,
+        cc = build_flags.cc,
+        profile = build_flags.profile,
+        platform = build_flags.platform,
+        locked = build_flags.locked,
     )
 
     if fs.is_directory(path):

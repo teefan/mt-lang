@@ -260,82 +260,12 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     let use_str_equality = uses_str_equality(funcs) or equality_helpers_need_str(ref_of(e), program)
     var simd_types = collect_simd_types(funcs, program)
 
-    # Feature-test macros required by the fs/tls support headers and the
-    # parallel/detach runtime (mirrors Ruby's _GNU_SOURCE / _POSIX_C_SOURCE
-    # preamble block).
-    if includes_need_feature_macros(program) or uses_parallel_runtime(program):
-        emit_line(ref_of(e), "#ifndef _GNU_SOURCE")
-        emit_line(ref_of(e), "#define _GNU_SOURCE")
-        emit_line(ref_of(e), "#endif")
-        emit_line(ref_of(e), "#ifndef _POSIX_C_SOURCE")
-        emit_line(ref_of(e), "#define _POSIX_C_SOURCE 200809L")
-        emit_line(ref_of(e), "#endif")
-        emit_line(ref_of(e), "")
-
-    # Emit the include set deduplicated (mirrors Ruby's `headers.uniq`).
-    # `<stddef.h>` (offsetof) follows `<string.h>` to match Ruby's ordering.
-    let use_offsetof = functions_use_offsetof(funcs) or constants_use_offsetof(program.constants)
-    var seen_headers = map_mod.Map[str, bool].create()
-    var i: ptr_uint = 0
-    while i < program.includes.len:
-        unsafe:
-            let header = read(program.includes.data + i).header
-            if not seen_headers.contains(header):
-                seen_headers.set(header, true)
-                emit_line(ref_of(e), strings.join_two("#include ", header))
-                if use_offsetof and header == "<string.h>" and not seen_headers.contains("<stddef.h>"):
-                    seen_headers.set("<stddef.h>", true)
-                    emit_line(ref_of(e), "#include <stddef.h>")
-        i += 1
-    if use_offsetof and not seen_headers.contains("<stddef.h>"):
-        seen_headers.set("<stddef.h>", true)
-        emit_line(ref_of(e), "#include <stddef.h>")
-    if (use_fatal or use_fatal_str or use_entry_argv or uses_format_helpers(program) or uses_foreign_cstr_helper(funcs)) and not seen_headers.contains("<stdlib.h>"):
-        seen_headers.set("<stdlib.h>", true)
-        emit_line(ref_of(e), "#include <stdlib.h>")
-    if (use_fatal or use_fatal_str or uses_format_helpers(program)) and not seen_headers.contains("<stdio.h>"):
-        seen_headers.set("<stdio.h>", true)
-        emit_line(ref_of(e), "#include <stdio.h>")
-    if (use_entry_argv or slice_has_str_concat) and not seen_headers.contains("<string.h>"):
-        seen_headers.set("<string.h>", true)
-        emit_line(ref_of(e), "#include <string.h>")
-    if uses_parallel_runtime(program) and not seen_headers.contains("\"uv.h\""):
-        seen_headers.set("\"uv.h\"", true)
-        emit_line(ref_of(e), "#include \"uv.h\"")
-    emit_line(ref_of(e), "")
-
-    # Forward declarations for the program's opaques (`typedef struct SDL_Window
-    # SDL_Window;`) — the host's `emit_forward_declarations` opaque half.  An
-    # opaque's C type is its backing name, so a value renders `SDL_Window*`.
-    emit_opaque_forward_decls(ref_of(e), program)
-
-    if use_string_view:
-        emit_string_type(ref_of(e))
-        emit_line(ref_of(e), "")
-
-    # Native vector/matrix/quaternion typedefs are needed whenever those types
-    # are used, independently of the string view — emit only what the program
-    # references (the function is a no-op when none are used).
-    emit_builtin_type_defs(ref_of(e), program)
-
-    if simd_types.len() > 0:
-        emit_simd_typedefs(ref_of(e), simd_types)
-        emit_line(ref_of(e), "")
-
-    if use_fatal:
-        emit_fatal_helper(ref_of(e))
-        emit_line(ref_of(e), "")
-
-    if use_fatal:
-        emit_fatal_str_helper(ref_of(e))
-        emit_line(ref_of(e), "")
-    else if use_fatal_str:
-        emit_fatal_str_helper(ref_of(e))
-        emit_line(ref_of(e), "")
-
-    if use_str_equality:
-        emit_str_equality_helper(ref_of(e))
-        emit_line(ref_of(e), "")
+    # Feature-test macros, includes, forward declarations, and the fixed helper
+    # types/emitters that precede the program's own declarations.
+    emit_preamble(
+        ref_of(e), program, funcs, use_fatal, use_fatal_str, use_entry_argv, use_string_view,
+        use_str_equality, slice_has_str_concat, simd_types
+    )
 
     # Span types are collected over *all* lowered functions, matching the
     # generic-instance and struct collection: an instance (a pruned function's
@@ -346,34 +276,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     collect_variant_span_types(program, ref_of(span_types))
 
     # Emit runtime helpers before forward declarations (mirrors Ruby order).
-
-    # Emit format string runtime helpers when used.
-    if uses_format_helpers(program):
-        emit_format_string_helpers(ref_of(e))
-
-    # Emit event runtime helpers when any event method calls are present.
-    # Event runtime handled by per-event synthetic functions in the lowering.
-
-    # Emit parallel runtime helpers when any parallel/detach calls are present.
-    if uses_parallel_runtime(program):
-        emit_parallel_helpers(ref_of(e))
-
-    # Emit the refcounted async frame allocator when any frame/env/wait-frame
-    # allocation goes through it.
-    if uses_async_memory_helpers(program):
-        emit_async_memory_helpers(ref_of(e))
-
-    # Emit builtin helpers (order/equal/hash) when used.
-    if uses_builtin_helpers(program):
-        emit_builtin_helpers(ref_of(e))
-
-    if uses_foreign_cstr_helper(funcs):
-        emit_foreign_cstr_helper(ref_of(e))
-        emit_line(ref_of(e), "")
-
-    if uses_free_foreign_cstr_helper(funcs):
-        emit_free_foreign_cstr_helper(ref_of(e))
-        emit_line(ref_of(e), "")
+    emit_runtime_helpers(ref_of(e), program, funcs)
 
     emit_program_types(ref_of(e), program, span_types, tuple_types, gen_variants, opt_structs, funcs)
 
@@ -394,6 +297,117 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     e.buffer.release()
     return trimmed
 
+
+
+## Emit the feature-test macros, deduplicated include set, forward
+## declarations, and fixed helper types that precede the program declarations.
+function emit_preamble(
+    e: ref[Emitter],
+    program: ir.Program,
+    funcs: span[ir.Function],
+    use_fatal: bool,
+    use_fatal_str: bool,
+    use_entry_argv: bool,
+    use_string_view: bool,
+    use_str_equality: bool,
+    slice_has_str_concat: bool,
+    simd_types: vec.Vec[types.Type],
+) -> void:
+    # Feature-test macros required by the fs/tls support headers and the
+    # parallel/detach runtime (mirrors Ruby's _GNU_SOURCE / _POSIX_C_SOURCE
+    # preamble block).
+    if includes_need_feature_macros(program) or uses_parallel_runtime(program):
+        emit_line(e, "#ifndef _GNU_SOURCE")
+        emit_line(e, "#define _GNU_SOURCE")
+        emit_line(e, "#endif")
+        emit_line(e, "#ifndef _POSIX_C_SOURCE")
+        emit_line(e, "#define _POSIX_C_SOURCE 200809L")
+        emit_line(e, "#endif")
+        emit_line(e, "")
+
+    # Emit the include set deduplicated (mirrors Ruby's `headers.uniq`).
+    # `<stddef.h>` (offsetof) follows `<string.h>` to match Ruby's ordering.
+    let use_offsetof = functions_use_offsetof(funcs) or constants_use_offsetof(program.constants)
+    var seen_headers = map_mod.Map[str, bool].create()
+    var i: ptr_uint = 0
+    while i < program.includes.len:
+        unsafe:
+            let header = read(program.includes.data + i).header
+            if not seen_headers.contains(header):
+                seen_headers.set(header, true)
+                emit_line(e, strings.join_two("#include ", header))
+                if use_offsetof and header == "<string.h>" and not seen_headers.contains("<stddef.h>"):
+                    seen_headers.set("<stddef.h>", true)
+                    emit_line(e, "#include <stddef.h>")
+        i += 1
+    if use_offsetof and not seen_headers.contains("<stddef.h>"):
+        seen_headers.set("<stddef.h>", true)
+        emit_line(e, "#include <stddef.h>")
+    if (use_fatal or use_fatal_str or use_entry_argv or uses_format_helpers(program) or uses_foreign_cstr_helper(funcs)) and not seen_headers.contains("<stdlib.h>"):
+        seen_headers.set("<stdlib.h>", true)
+        emit_line(e, "#include <stdlib.h>")
+    if (use_fatal or use_fatal_str or uses_format_helpers(program)) and not seen_headers.contains("<stdio.h>"):
+        seen_headers.set("<stdio.h>", true)
+        emit_line(e, "#include <stdio.h>")
+    if (use_entry_argv or slice_has_str_concat) and not seen_headers.contains("<string.h>"):
+        seen_headers.set("<string.h>", true)
+        emit_line(e, "#include <string.h>")
+    if uses_parallel_runtime(program) and not seen_headers.contains("\"uv.h\""):
+        seen_headers.set("\"uv.h\"", true)
+        emit_line(e, "#include \"uv.h\"")
+    emit_line(e, "")
+
+    # Forward declarations for the program's opaques (`typedef struct SDL_Window
+    # SDL_Window;`) — the host's `emit_forward_declarations` opaque half.  An
+    # opaque's C type is its backing name, so a value renders `SDL_Window*`.
+    emit_opaque_forward_decls(e, program)
+
+    if use_string_view:
+        emit_string_type(e)
+        emit_line(e, "")
+
+    # Native vector/matrix/quaternion typedefs are needed whenever those types
+    # are used, independently of the string view — emit only what the program
+    # references (the function is a no-op when none are used).
+    emit_builtin_type_defs(e, program)
+
+    if simd_types.len() > 0:
+        emit_simd_typedefs(e, simd_types)
+        emit_line(e, "")
+
+    if use_fatal:
+        emit_fatal_helper(e)
+        emit_line(e, "")
+
+    if use_fatal:
+        emit_fatal_str_helper(e)
+        emit_line(e, "")
+    else if use_fatal_str:
+        emit_fatal_str_helper(e)
+        emit_line(e, "")
+
+    if use_str_equality:
+        emit_str_equality_helper(e)
+        emit_line(e, "")
+
+
+## Emit the runtime helper set (format, parallel, async memory, builtin, and
+## foreign-cstr helpers) required by the program.
+function emit_runtime_helpers(e: ref[Emitter], program: ir.Program, funcs: span[ir.Function]) -> void:
+    if uses_format_helpers(program):
+        emit_format_string_helpers(e)
+    if uses_parallel_runtime(program):
+        emit_parallel_helpers(e)
+    if uses_async_memory_helpers(program):
+        emit_async_memory_helpers(e)
+    if uses_builtin_helpers(program):
+        emit_builtin_helpers(e)
+    if uses_foreign_cstr_helper(funcs):
+        emit_foreign_cstr_helper(e)
+        emit_line(e, "")
+    if uses_free_foreign_cstr_helper(funcs):
+        emit_free_foreign_cstr_helper(e)
+        emit_line(e, "")
 
 
 function emit_program_types(e: ref[Emitter], program: ir.Program, span_types: vec.Vec[types.Type], tuple_types: vec.Vec[types.Type], gen_variants: vec.Vec[ir.VariantDecl], opt_structs: vec.Vec[OptionStructEntry], funcs: span[ir.Function]) -> void:

@@ -109,19 +109,20 @@ helpers, `lsp/navigation.mt analysis_for_document`/`ast_for_document`,
 Normalized 12-line windows (comments/blanks stripped, literals replaced with
 `S`/`N`) hashed across all functions. Overlapping windows make the cluster count
 large; `duplicated_lines` is the ratcheted metric. Current baseline:
-**6,351 duplicated lines in 898 window clusters**.  Session 125 fixed the
+**6,379 duplicated lines in 901 window clusters**.  Session 125 fixed the
 function-end scan for multi-line signatures, so this baseline includes bodies
-the earlier metric skipped; it is a measurement correction, not growth.  Use
-the clusters as pointers to repeated emission/frame boilerplate, not as an
-absolute quality score.
+the earlier metric skipped; session 126's splits also shifted a few window
+boundaries.  It is a measurement correction, not growth.  Use the clusters as
+pointers to repeated emission/frame boilerplate, not as an absolute quality
+score.
 
 ### Size, markers, tests
 
-- **123,783 code lines**; **30 functions ≥ 200 lines**; **11 files ≥ 2,000 code
+- **123,892 code lines**; **24 functions ≥ 200 lines**; **11 files ≥ 2,000 code
   lines**. The ratchet counts these, so a refactor cannot trade one long
-  function for another.  Session 125 fixed the multi-line-signature scan, which
-  surfaced `build` (327) and `classify_scan_identifier` (245); the count is a
-  corrected measurement, not a code regression.
+  function for another.  Session 125's corrected multi-line-signature scan
+  surfaced the functions session 126 then decomposed; `classify_scan_identifier`
+  (245) remains the largest newly measured one.
 - **0 marker comments** (`TODO`/`FIXME`/`XXX`/`HACK`); any new one fails.
 - Test trees: **21** files in `projects/mtc/test`, **61** in `test/mt`. The
   ratchet fails if either count drops (silent-skip protection).
@@ -192,18 +193,18 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 125, 2026-11-16)
+## 6. Current baseline (session 126, 2026-11-17)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 168 / 155,727 / 123,783 |
+| source files / lines / code lines | 168 / 155,893 / 123,892 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (168 modules) |
 | dead exports (unused / test-only) | 35 / 6 |
-| duplication (windows / duplicated lines) | 898 / 6,351 (window 12) |
-| functions ≥ 200 lines | 30 |
+| duplication (windows / duplicated lines) | 901 / 6,379 (window 12) |
+| functions ≥ 200 lines | 24 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 21 / 61 |
