@@ -21,7 +21,7 @@ The suite has two layers:
 tools/gates.sh --areas refactor --run
 ```
 
-Tier 1 (fast, per edit): dev build, the 21-file self-host suite, the structural
+Tier 1 (fast, per edit): dev build, the 22-file self-host suite, the structural
 guard. Tier 2 (once per commit, on frozen sources): `test/mt` under stage2, the
 224-case CLI matrix, and the parity scoreboard. Logs land in `tmp/gates/`.
 
@@ -99,7 +99,7 @@ textual counting cannot see aliasing or dynamic dispatch, and names are matched
 globally (two modules exporting the same name can mask each other). Existing
 candidates are frozen; a **new** one fails `--strict`.
 
-Current baseline: **35 unused, 6 test-only**. Examples worth triaging:
+Current baseline: **33 unused, 6 test-only**. Examples worth triaging:
 `c_backend.CBackendError`, `lowering.LoweringError`, `lowering/async.mt` type
 helpers, `lsp/navigation.mt analysis_for_document`/`ast_for_document`,
 `packages/*` helpers, and `version_info.GIT_REVISION`.
@@ -109,21 +109,22 @@ helpers, `lsp/navigation.mt analysis_for_document`/`ast_for_document`,
 Normalized 12-line windows (comments/blanks stripped, literals replaced with
 `S`/`N`) hashed across all functions. Overlapping windows make the cluster count
 large; `duplicated_lines` is the ratcheted metric. Current baseline:
-**6,379 duplicated lines in 901 window clusters**.  Session 125 fixed the
+**6,405 duplicated lines in 903 window clusters**.  Session 125 fixed the
 function-end scan for multi-line signatures, so this baseline includes bodies
 the earlier metric skipped; session 126's splits also shifted a few window
-boundaries.  It is a measurement correction, not growth.  Use the clusters as
+boundaries, and session 131's completion/diagnostic feature growth added two
+windows.  Neither is a duplication regression.  Use the clusters as
 pointers to repeated emission/frame boilerplate, not as an absolute quality
 score.
 
 ### Size, markers, tests
 
-- **124,328 code lines**; **1 function ≥ 200 lines**; **11 files ≥ 2,000 code
+- **124,624 code lines**; **1 function ≥ 200 lines**; **11 files ≥ 2,000 code
   lines**. The ratchet counts these, so a refactor cannot trade one long
   function for another.  Session 130 closed the rest: only `binding_at` (385,
   excluded) remains.
 - **0 marker comments** (`TODO`/`FIXME`/`XXX`/`HACK`); any new one fails.
-- Test trees: **21** files in `projects/mtc/test`, **61** in `test/mt`. The
+- Test trees: **22** files in `projects/mtc/test`, **61** in `test/mt`. The
   ratchet fails if either count drops (silent-skip protection).
 
 ## 3. The refactor protocol
@@ -138,7 +139,7 @@ score.
 2. **Iterate cheap.**
    ```sh
    ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev   # ~35 s
-   tmp/mtc-dev test projects/mtc -I . --timeout 120                        # 21 files
+   tmp/mtc-dev test projects/mtc -I . --timeout 120                        # 22 files
    ruby tools/refactor_guard.rb --check
    ```
    Then the focused parity harness for the class you touched (lint, sexpr,
@@ -192,22 +193,23 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 130, 2026-11-17)
+## 6. Current baseline (session 131, 2026-11-17)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 168 / 156,522 / 124,328 |
+| source files / lines / code lines | 168 / 156,899 / 124,624 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (168 modules) |
-| dead exports (unused / test-only) | 35 / 6 |
-| duplication (windows / duplicated lines) | 901 / 6,379 (window 12) |
+| dead exports (unused / test-only) | 33 / 6 |
+| duplication (windows / duplicated lines) | 903 / 6,405 (window 12) |
 | functions ≥ 200 lines | 1 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
-| test files (projects/mtc / test/mt) | 21 / 61 |
+| test files (projects/mtc / test/mt) | 22 / 61 |
 
-Session 130's nine decompositions added 173 code lines (helper signatures and
-call sites); duplication, file counts, and the test trees did not move.  The
-remaining function over the limit is the excluded `binding_at` (385).
+Session 131 added the completion/diagnostic feature set (+296 code lines, +2
+duplication windows, +1 test file); dead exports dropped from 35 to 33 as the
+superseded cursor helpers were removed.  The remaining function over the limit
+is the excluded `binding_at` (385).
