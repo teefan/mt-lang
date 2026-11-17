@@ -2386,49 +2386,16 @@ function stmts_structural_equal(a: ptr[ast.Stmt]?, b: ptr[ast.Stmt]?) -> bool:
                         return option_str_equal(la.destructure_type_name, lb.destructure_type_name)
                     _:
                         return false
-            ast.Stmt.stmt_if as ia:
-                match read(b):
-                    ast.Stmt.stmt_if as ib:
-                        if ia.is_inline != ib.is_inline or ia.branches.len != ib.branches.len:
-                            return false
-                        var i: ptr_uint = 0
-                        while i < ia.branches.len:
-                            let ba = read(ia.branches.data + i)
-                            let bb = read(ib.branches.data + i)
-                            if not exprs_structural_equal(ba.condition, bb.condition):
-                                return false
-                            if not stmts_structural_equal(ba.body, bb.body):
-                                return false
-                            i += 1
-                        return stmts_structural_equal(ia.else_body, ib.else_body)
-                    _:
-                        return false
+            ast.Stmt.stmt_if:
+                return stmt_if_equal(read(a), read(b))
             ast.Stmt.stmt_while as wa:
                 match read(b):
                     ast.Stmt.stmt_while as wb:
                         return wa.is_inline == wb.is_inline and exprs_structural_equal(wa.condition, wb.condition) and stmts_structural_equal(wa.body, wb.body)
                     _:
                         return false
-            ast.Stmt.stmt_for as fa:
-                match read(b):
-                    ast.Stmt.stmt_for as fb:
-                        if fa.is_inline != fb.is_inline or fa.threaded != fb.threaded:
-                            return false
-                        if fa.bindings.len != fb.bindings.len or fa.iterables.len != fb.iterables.len:
-                            return false
-                        var i: ptr_uint = 0
-                        while i < fa.bindings.len:
-                            if not read(fa.bindings.data + i).name.equal(read(fb.bindings.data + i).name):
-                                return false
-                            i += 1
-                        i = 0
-                        while i < fa.iterables.len:
-                            if not exprs_structural_equal(fa.iterables.data + i, fb.iterables.data + i):
-                                return false
-                            i += 1
-                        return stmts_structural_equal(fa.body, fb.body)
-                    _:
-                        return false
+            ast.Stmt.stmt_for:
+                return stmt_for_equal(read(a), read(b))
             ast.Stmt.stmt_match as ma:
                 match read(b):
                     ast.Stmt.stmt_match as mb:
@@ -2529,6 +2496,59 @@ function stmts_structural_equal(a: ptr[ast.Stmt]?, b: ptr[ast.Stmt]?) -> bool:
                         return false
             _:
                 return false
+
+
+## Structural equality of two `if` statements (branches and else).
+function stmt_if_equal(a: ast.Stmt, b: ast.Stmt) -> bool:
+    match a:
+        ast.Stmt.stmt_if as ia:
+            match b:
+                ast.Stmt.stmt_if as ib:
+                    if ia.is_inline != ib.is_inline or ia.branches.len != ib.branches.len:
+                        return false
+                    unsafe:
+                        var i: ptr_uint = 0
+                        while i < ia.branches.len:
+                            let ba = read(ia.branches.data + i)
+                            let bb = read(ib.branches.data + i)
+                            if not exprs_structural_equal(ba.condition, bb.condition):
+                                return false
+                            if not stmts_structural_equal(ba.body, bb.body):
+                                return false
+                            i += 1
+                    return stmts_structural_equal(ia.else_body, ib.else_body)
+                _:
+                    return false
+        _:
+            return false
+
+
+## Structural equality of two `for` statements (bindings, iterables, body).
+function stmt_for_equal(a: ast.Stmt, b: ast.Stmt) -> bool:
+    match a:
+        ast.Stmt.stmt_for as fa:
+            match b:
+                ast.Stmt.stmt_for as fb:
+                    if fa.is_inline != fb.is_inline or fa.threaded != fb.threaded:
+                        return false
+                    if fa.bindings.len != fb.bindings.len or fa.iterables.len != fb.iterables.len:
+                        return false
+                    unsafe:
+                        var i: ptr_uint = 0
+                        while i < fa.bindings.len:
+                            if not read(fa.bindings.data + i).name.equal(read(fb.bindings.data + i).name):
+                                return false
+                            i += 1
+                        i = 0
+                        while i < fa.iterables.len:
+                            if not exprs_structural_equal(fa.iterables.data + i, fb.iterables.data + i):
+                                return false
+                            i += 1
+                    return stmts_structural_equal(fa.body, fb.body)
+                _:
+                    return false
+        _:
+            return false
 
 
 function stmt_spans_equal(a: span[ast.Stmt], b: span[ast.Stmt]) -> bool:

@@ -3,6 +3,7 @@
 
 import std.fs as fs
 import std.libuv as libuv
+import std.mem.heap as heap_mod
 import std.path as path_ops
 import std.process as process
 import std.str as str
@@ -1137,11 +1138,21 @@ function build_runner_file(source_path: str, options: TestRunOptions, output_pat
             Result.success:
                 pass
 
+    # Compile the runner inside a heap region: the parser/AST, analyzer,
+    # lowering IR, and C backend allocations for this one runner are reclaimed
+    # in one step.  Without it, each in-process test build retained its AST,
+    # analysis, and IR until process exit (measured ~0.4-0.7 GB per file).
+    var build_region = heap_mod.create_region()
+    let previous_region = heap_mod.begin_region(ptr_of(build_region))
     var program = loader.check_program(source_path, runner_roots.as_span(), options.platform)
-    defer: program.release()
 
     if program.diagnostic_error_count() > 0:
-        return Result[bool, string.String].failure(error = main.first_error_line(ref_of(program)))
+        let first = main.first_error_line(ref_of(program))
+        # The diagnostic is region-owned; copy it out before freeing the region.
+        heap_mod.end_region(previous_region)
+        var message = string.String.from_str(first.as_str())
+        build_region.release_all()
+        return Result[bool, string.String].failure(error = message)
 
     let ir_program = lowering.lower(program)
 
@@ -1153,9 +1164,15 @@ function build_runner_file(source_path: str, options: TestRunOptions, output_pat
         Option[str].none, span[string.String](), Option[str].none
     ):
         Result.success:
+            heap_mod.end_region(previous_region)
+            build_region.release_all()
             return Result[bool, string.String].success(value = true)
         Result.failure as failure:
-            return Result[bool, string.String].failure(error = failure.error)
+            let error_text = failure.error.as_str()
+            heap_mod.end_region(previous_region)
+            var message = string.String.from_str(error_text)
+            build_region.release_all()
+            return Result[bool, string.String].failure(error = message)
 
 
 ## The host's runner source path: `<source dir>/__mt_test_runner_<pid><suffix>`.

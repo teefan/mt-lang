@@ -162,6 +162,24 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         log.info(perf.as_str())
         perf.release()
     # Lifecycle
+    let outcome = dispatch_known_method(ws, method, msg, req_id)
+    match outcome:
+        Option.some as should_continue:
+            return should_continue.value
+        Option.none:
+            var msg_text = string.String.create()
+            msg_text.append("lsp: unhandled method ")
+            msg_text.append(method)
+            log.warn(msg_text.as_str())
+            msg_text.release()
+            if not msg.id.is_null():
+                proto.write_error(msg.id, -32601, "Method not found")
+    return true
+
+
+## Dispatch a known method.  Some(true) continues, Some(false) exits, and None
+## means the method is unhandled.
+function dispatch_known_method(ws: ref[workspace.Workspace], method: str, msg: proto.Message, req_id: ptr_uint) -> Option[bool]:
     if method == "initialize":
         lifecycle.handle_initialize(msg.id, msg.params, ws)
     else if method == "initialized":
@@ -171,7 +189,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         var result = json.null_value()
         proto.write_response(msg.id, result)
     else if method == "exit":
-        return false
+        return Option[bool].some(value = false)
 
     # Text document sync
     else if method == "textDocument/didOpen":
@@ -271,7 +289,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         # The restart command tells us to exit.
         let command_name = extract_command_name(msg.params)
         if command_name.equal("mtc.restartServer"):
-            return false
+            return Option[bool].some(value = false)
 
     # Milk Tea custom extensions
     else if method == "milkTea/documentContext":
@@ -334,18 +352,11 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
 
     else if method == "$/setTrace":
         apply_trace_level(msg.params)
-        return true
+        return Option[bool].some(value = true)
 
     else:
-        var msg_text = string.String.create()
-        msg_text.append("lsp: unhandled method ")
-        msg_text.append(method)
-        log.warn(msg_text.as_str())
-        msg_text.release()
-        if not msg.id.is_null():
-            proto.write_error(msg.id, -32601, "Method not found")
-
-    return true
+        return Option[bool].none
+    return Option[bool].some(value = true)
 
 
 ## Extract the textDocument.uri from a generic params object.

@@ -854,37 +854,8 @@ function emit_decl(f: ref[Formatter], d: ast.Decl) -> void:
             f.indent += 1
             emit_stmt_body(f, fun.body)
             f.indent -= 1
-        ast.Decl.decl_struct as st:
-            emit_attribute_applications(f, st.struct_attrs)
-            header_idx = f.line_starts.len()
-            var header = strings.join_four(visibility_prefix(f, st.visibility), "struct ", st.name, render_struct_params(st.lifetime_params, st.type_params))
-            header = strings.join_two(header, render_implements_clause(st.impl_list))
-            match st.c_name:
-                Option.some as cn:
-                    header = strings.join_four(header, " = c\"", cn.value, "\"")
-                Option.none:
-                    pass
-            emit_line(f, strings.join_two(header, ":"))
-            f.indent += 1
-            var fi: ptr_uint = 0
-            while fi < st.struct_fields.len:
-                var field: ast.Field
-                unsafe:
-                    field = read(st.struct_fields.data + fi)
-                emit_attribute_applications(f, field.attributes)
-                emit_line(f, strings.join_three(field.name, ": ", render_type(field.field_type)))
-                fi += 1
-            var ni: ptr_uint = 0
-            while ni < st.nested_types.len:
-                unsafe:
-                    emit_decl(f, read(st.nested_types.data + ni))
-                ni += 1
-            var ei: ptr_uint = 0
-            while ei < st.struct_events.len:
-                unsafe:
-                    emit_decl(f, read(st.struct_events.data + ei))
-                ei += 1
-            f.indent -= 1
+        ast.Decl.decl_struct:
+            header_idx = emit_decl_struct(f, d)
         ast.Decl.decl_union as u:
             emit_attribute_applications(f, u.union_attrs)
             var header = strings.join_three(visibility_prefix(f, u.visibility), "union ", u.name)
@@ -909,30 +880,8 @@ function emit_decl(f: ref[Formatter], d: ast.Decl) -> void:
         ast.Decl.decl_flags as fl:
             emit_attribute_applications(f, fl.flags_attrs)
             emit_enum_like(f, "flags", fl.name, fl.backing_type, fl.flags_members, fl.visibility)
-        ast.Decl.decl_variant as vr:
-            emit_attribute_applications(f, vr.variant_attrs)
-            var header = strings.join_four(visibility_prefix(f, vr.visibility), "variant ", vr.name, render_type_params(vr.type_params))
-            emit_line(f, strings.join_two(header, ":"))
-            f.indent += 1
-            var vi: ptr_uint = 0
-            while vi < vr.variant_arms.len:
-                var arm: ast.VariantArm
-                unsafe:
-                    arm = read(vr.variant_arms.data + vi)
-                var text = arm.name
-                if arm.arm_fields.len > 0:
-                    var fields = vec.Vec[str].create()
-                    var afi: ptr_uint = 0
-                    while afi < arm.arm_fields.len:
-                        var field: ast.Field
-                        unsafe:
-                            field = read(arm.arm_fields.data + afi)
-                        fields.push(strings.join_three(field.name, ": ", render_type(field.field_type)))
-                        afi += 1
-                    text = strings.join_four(text, "(", join_strs(fields.as_span(), ", "), ")")
-                emit_line(f, text)
-                vi += 1
-            f.indent -= 1
+        ast.Decl.decl_variant:
+            emit_decl_variant(f, d)
         ast.Decl.decl_opaque as op:
             var text = strings.join_three(visibility_prefix(f, op.visibility), "opaque ", op.name)
             text = strings.join_two(text, render_implements_clause(op.opaque_implements))
@@ -1002,6 +951,92 @@ function emit_decl(f: ref[Formatter], d: ast.Decl) -> void:
             if at.attr_params.len > 0:
                 text = strings.join_four(text, "(", render_param_list(at.attr_params), ")")
             emit_line(f, text)
+        ast.Decl.decl_when:
+            emit_decl_when(f, d)
+        ast.Decl.decl_import:
+            emit_line(f, render_import_decl(d))
+        ast.Decl.decl_link as lk:
+            emit_line(f, strings.join_three("link \"", lk.value, "\""))
+        ast.Decl.decl_include as inc:
+            emit_line(f, strings.join_three("include \"", inc.value, "\""))
+        ast.Decl.decl_compiler_flag as cf:
+            emit_line(f, strings.join_three("compiler_flag \"", cf.value, "\""))
+    attach_inline_comment(f, d_line, header_idx)
+
+
+## Struct declaration; returns the header line index for inline comments.
+function emit_decl_struct(f: ref[Formatter], d: ast.Decl) -> ptr_uint:
+    match d:
+        ast.Decl.decl_struct as st:
+            emit_attribute_applications(f, st.struct_attrs)
+            let header_idx = f.line_starts.len()
+            var header = strings.join_four(visibility_prefix(f, st.visibility), "struct ", st.name, render_struct_params(st.lifetime_params, st.type_params))
+            header = strings.join_two(header, render_implements_clause(st.impl_list))
+            match st.c_name:
+                Option.some as cn:
+                    header = strings.join_four(header, " = c\"", cn.value, "\"")
+                Option.none:
+                    pass
+            emit_line(f, strings.join_two(header, ":"))
+            f.indent += 1
+            var fi: ptr_uint = 0
+            while fi < st.struct_fields.len:
+                var field: ast.Field
+                unsafe:
+                    field = read(st.struct_fields.data + fi)
+                emit_attribute_applications(f, field.attributes)
+                emit_line(f, strings.join_three(field.name, ": ", render_type(field.field_type)))
+                fi += 1
+            var ni: ptr_uint = 0
+            while ni < st.nested_types.len:
+                unsafe:
+                    emit_decl(f, read(st.nested_types.data + ni))
+                ni += 1
+            var ei: ptr_uint = 0
+            while ei < st.struct_events.len:
+                unsafe:
+                    emit_decl(f, read(st.struct_events.data + ei))
+                ei += 1
+            f.indent -= 1
+            return header_idx
+        _:
+            return f.line_starts.len()
+
+
+## Variant declaration with its arms.
+function emit_decl_variant(f: ref[Formatter], d: ast.Decl) -> void:
+    match d:
+        ast.Decl.decl_variant as vr:
+            emit_attribute_applications(f, vr.variant_attrs)
+            var header = strings.join_four(visibility_prefix(f, vr.visibility), "variant ", vr.name, render_type_params(vr.type_params))
+            emit_line(f, strings.join_two(header, ":"))
+            f.indent += 1
+            var vi: ptr_uint = 0
+            while vi < vr.variant_arms.len:
+                var arm: ast.VariantArm
+                unsafe:
+                    arm = read(vr.variant_arms.data + vi)
+                var text = arm.name
+                if arm.arm_fields.len > 0:
+                    var fields = vec.Vec[str].create()
+                    var afi: ptr_uint = 0
+                    while afi < arm.arm_fields.len:
+                        var field: ast.Field
+                        unsafe:
+                            field = read(arm.arm_fields.data + afi)
+                        fields.push(strings.join_three(field.name, ": ", render_type(field.field_type)))
+                        afi += 1
+                    text = strings.join_four(text, "(", join_strs(fields.as_span(), ", "), ")")
+                emit_line(f, text)
+                vi += 1
+            f.indent -= 1
+        _:
+            pass
+
+
+## Declaration-level `when` with its branch bodies and optional else.
+function emit_decl_when(f: ref[Formatter], d: ast.Decl) -> void:
+    match d:
         ast.Decl.decl_when as wh:
             emit_line(f, strings.join_three("when ", rx(f, wh.discriminant, 0), ":"))
             f.indent += 1
@@ -1027,15 +1062,8 @@ function emit_decl(f: ref[Formatter], d: ast.Decl) -> void:
                 emit_decl_span(f, wh.else_body)
                 f.indent -= 1
             f.indent -= 1
-        ast.Decl.decl_import:
-            emit_line(f, render_import_decl(d))
-        ast.Decl.decl_link as lk:
-            emit_line(f, strings.join_three("link \"", lk.value, "\""))
-        ast.Decl.decl_include as inc:
-            emit_line(f, strings.join_three("include \"", inc.value, "\""))
-        ast.Decl.decl_compiler_flag as cf:
-            emit_line(f, strings.join_three("compiler_flag \"", cf.value, "\""))
-    attach_inline_comment(f, d_line, header_idx)
+        _:
+            pass
 
 
 function emit_enum_like(f: ref[Formatter], kind: str, name: str, backing: ptr[ast.TypeRef]?, members: span[ast.EnumMember], visibility: bool) -> void:

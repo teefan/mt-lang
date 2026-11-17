@@ -332,7 +332,7 @@
       "projects/mtc/src/mtc/dap/lldb_backend.mt:28:const:KIND_SYNC_FUNCTIONS",
       "projects/mtc/src/mtc/dap/lldb_backend.mt:29:const:KIND_SYNC_EXCEPTIONS",
       "projects/mtc/src/mtc/imported_bindings/naming.mt:361:function:apply_rename_rules",
-      "projects/mtc/src/mtc/linter/linter.mt:6329:function:reserved_name_fixes",
+      "projects/mtc/src/mtc/linter/linter.mt:6349:function:reserved_name_fixes",
       "projects/mtc/src/mtc/lowering/async.mt:162:function:count_async_states",
       "projects/mtc/src/mtc/lowering/async.mt:274:function:build_async_frame",
       "projects/mtc/src/mtc/lowering/async.mt:316:function:task_type",
@@ -1281,8 +1281,8 @@
     ]
   },
   "sizes": {
-    "total_code": 124093,
-    "functions_over_limit": 14,
+    "total_code": 124155,
+    "functions_over_limit": 10,
     "files_over_limit": 11,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
@@ -1550,10 +1550,10 @@
         "max_function": 91
       },
       "projects/mtc/src/mtc/linter/linter.mt": {
-        "lines": 6971,
-        "code": 5591,
+        "lines": 6991,
+        "code": 5605,
         "max_line": 276,
-        "max_function": 204
+        "max_function": 185
       },
       "projects/mtc/src/mtc/linter/nullcheck.mt": {
         "lines": 697,
@@ -1922,10 +1922,10 @@
         "max_function": 153
       },
       "projects/mtc/src/mtc/lsp/server.mt": {
-        "lines": 665,
-        "code": 514,
+        "lines": 676,
+        "code": 522,
         "max_line": 250,
-        "max_function": 202
+        "max_function": 178
       },
       "projects/mtc/src/mtc/lsp/signature_help.mt": {
         "lines": 133,
@@ -2030,8 +2030,8 @@
         "max_function": 50
       },
       "projects/mtc/src/mtc/main/test_cli.mt": {
-        "lines": 1402,
-        "code": 1161,
+        "lines": 1419,
+        "code": 1173,
         "max_line": 193,
         "max_function": 115
       },
@@ -2168,10 +2168,10 @@
         "max_function": 10
       },
       "projects/mtc/src/mtc/pretty_printer/ast_formatter.mt": {
-        "lines": 1799,
-        "code": 1505,
+        "lines": 1827,
+        "code": 1524,
         "max_line": 157,
-        "max_function": 221
+        "max_function": 152
       },
       "projects/mtc/src/mtc/pretty_printer/ir_formatter.mt": {
         "lines": 750,
@@ -2246,8 +2246,8 @@
         "max_function": 164
       },
       "projects/mtc/src/mtc/sexpr.mt": {
-        "lines": 3101,
-        "code": 2670,
+        "lines": 3116,
+        "code": 2679,
         "max_line": 248,
         "max_function": 212
       },

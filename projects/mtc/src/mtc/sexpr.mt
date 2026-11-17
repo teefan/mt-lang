@@ -2343,22 +2343,9 @@ function expr_value(ctx: ref[SexprContext], ep: ptr[ast.Expr]) -> SexprValue:
                     field_nil("column"),
                 ))
             ast.Expr.expr_if as x:
-                return node("AST::IfExpr", fields5(
-                    field_value("condition", expr_value(ctx, x.condition)),
-                    field_value("then_expression", expr_value(ctx, x.then_expr)),
-                    field_value("else_expression", expr_value(ctx, x.else_expr)),
-                    field_nil("line"),
-                    field_nil("column"),
-                ))
+                return expr_if_value(ctx, x.condition, x.then_expr, x.else_expr)
             ast.Expr.expr_match as x:
-                return node("AST::MatchExpr", fields6(
-                    field_value("expression", expr_value(ctx, x.scrutinee)),
-                    field_value("arms", match_expr_arms_value(ctx, x.arms)),
-                    field_line(x.line),
-                    len_field("column", x.column),
-                    len_field("length", x.length),
-                    field_bool("desugared_from_is", x.desugared_from_is),
-                ))
+                return expr_match_value(ctx, x.scrutinee, x.arms, x.line, x.column, x.length, x.desugared_from_is)
             ast.Expr.expr_proc as x:
                 return node("AST::ProcExpr", fields5(
                     field_value("params", params_value(ctx, x.method_params)),
@@ -2447,6 +2434,34 @@ function expr_value(ctx: ref[SexprContext], ep: ptr[ast.Expr]) -> SexprValue:
                     field_str("message", x.message),
                 ))
     return node("AST::ErrorExpr", fields4(field_nil("line"), field_nil("column"), field_nil("length"), field_str("message", "")))
+
+
+## `if` expression node.
+function expr_if_value(
+    ctx: ref[SexprContext], condition: ptr[ast.Expr], then_expr: ptr[ast.Expr], else_expr: ptr[ast.Expr],
+) -> SexprValue:
+    return node("AST::IfExpr", fields5(
+        field_value("condition", expr_value(ctx, condition)),
+        field_value("then_expression", expr_value(ctx, then_expr)),
+        field_value("else_expression", expr_value(ctx, else_expr)),
+        field_nil("line"),
+        field_nil("column"),
+    ))
+
+
+## `match` expression node.
+function expr_match_value(
+    ctx: ref[SexprContext], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm],
+    line: ptr_uint, column: ptr_uint, length: ptr_uint, desugared: bool,
+) -> SexprValue:
+    return node("AST::MatchExpr", fields6(
+        field_value("expression", expr_value(ctx, scrutinee)),
+        field_value("arms", match_expr_arms_value(ctx, arms)),
+        field_line(line),
+        len_field("column", column),
+        len_field("length", length),
+        field_bool("desugared_from_is", desugared),
+    ))
 
 
 function type_arguments_value(ctx: ref[SexprContext], items: span[ast.TypeArgument]) -> SexprValue:
