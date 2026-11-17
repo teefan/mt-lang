@@ -3344,6 +3344,22 @@ public function named_argument_completion_items(
 
 ## Completions inside `name[...` — the host's `specialization_completions`:
 ## every visible type as a `0_` type item.
+## The host's `facts.types` registration order: the built-in primitives, the
+## vector and matrix families, the event types, the handle types, the type meta
+## type and the prelude variants, then the module's own declarations.
+const SPECIALIZATION_TYPE_ORDER: array[str, 36] = array[str, 36](
+    "bool", "byte", "ubyte", "char", "short", "ushort",
+    "int", "uint", "long", "ulong", "ptr_int", "ptr_uint",
+    "float", "double", "void", "str", "cstr",
+    "vec2", "vec3", "vec4", "ivec2", "ivec3", "ivec4",
+    "mat3", "mat4", "quat",
+    "Subscription", "EventError",
+    "struct_handle", "field_handle", "callable_handle", "attribute_handle",
+    "member_handle", "type",
+    "Option", "Result",
+)
+
+
 public function specialization_completion_items(
     analysis: ref[analyzer.Analysis],
     text: str,
@@ -3366,23 +3382,36 @@ public function specialization_completion_items(
     items_json.append("[")
     var first = true
     var count: ptr_uint = 0
+    var emitted = map_mod.Map[str, bool].create()
+    defer: emitted.release()
+
+    # The host's registration order: the built-ins and the prelude first, then
+    # the module's declared types in declaration order, then any remaining
+    # entry the analysis carries (map bucket order).
+    var bi: ptr_uint = 0
+    while bi < 36 and count < MAX_COMPLETION_ITEMS:
+        let name = SPECIALIZATION_TYPE_ORDER[bi]
+        if unsafe: read(analysis).types.contains(name) and not emitted.contains(name):
+            emit_specialization_type_item(ref_of(items_json), name, uri, prefix, ref_of(first), ref_of(count))
+            emitted.set(name, true)
+        bi += 1
+    let module_types = unsafe: read(analysis).module_type_order
+    var mi: ptr_uint = 0
+    while mi < module_types.len() and count < MAX_COMPLETION_ITEMS:
+        let entry = module_types.get(mi) else:
+            break
+        let name = unsafe: read(entry)
+        if not emitted.contains(name):
+            emit_specialization_type_item(ref_of(items_json), name, uri, prefix, ref_of(first), ref_of(count))
+            emitted.set(name, true)
+        mi += 1
     var entries = unsafe: read(analysis).types.entries()
     while entries.next() and count < MAX_COMPLETION_ITEMS:
         let entry = entries.current()
         let name = unsafe: read(entry.key)
-        if prefix_matches(name, prefix):
-            var detail = string.String.create()
-            defer: detail.release()
-            detail.append("type ")
-            detail.append(name)
-            var sort_text = string.String.create()
-            defer: sort_text.release()
-            sort_text.append("0_")
-            sort_text.append(name)
-            append_item_ext(
-                ref_of(items_json), name, KIND_MODULE_TYPE, detail.as_str(), name,
-                sort_text.as_str(), name, uri, 0, "", "", ref_of(first))
-            count += 1
+        if not emitted.contains(name):
+            emit_specialization_type_item(ref_of(items_json), name, uri, prefix, ref_of(first), ref_of(count))
+            emitted.set(name, true)
 
     items_json.append("]")
     if count == 0:
@@ -3391,6 +3420,32 @@ public function specialization_completion_items(
     let alloc = heap.must_alloc[string.String](1)
     unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
     return alloc
+
+
+## Emit one specialization type item (`type <name>`, sort `0_`).
+function emit_specialization_type_item(
+    items_json: ref[string.String],
+    name: str,
+    uri: str,
+    prefix: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    if not prefix_matches(name, prefix):
+        return
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append("type ")
+    detail.append(name)
+    var sort_text = string.String.create()
+    defer: sort_text.release()
+    sort_text.append("0_")
+    sort_text.append(name)
+    append_item_ext(
+        items_json, name, KIND_MODULE_TYPE, detail.as_str(), name,
+        sort_text.as_str(), name, uri, 0, "", "", first)
+    unsafe:
+        read(count) = read(count) + 1
 
 
 ## Whether a type receiver names a known type: a locally visible name, or a

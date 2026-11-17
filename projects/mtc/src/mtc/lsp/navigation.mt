@@ -2556,6 +2556,11 @@ function imported_enum_member_result(
                 var located = hit.value
                 located.line = 0
                 located.column = 0
+                # The host qualifies the member's type in the signature and
+                # shortens it into `*From <module>*`, so the owning module is
+                # reported even though the location itself is dropped.
+                located.from_modules.release()
+                located.from_modules = string.String.from_str(module_name)
                 return Option[CursorResult].some(value = located)
             Option.none:
                 pass
@@ -4394,13 +4399,9 @@ function resolve_local_hover(
         Option.none:
             pass
 
-    # 4. Lexical fallback: search source text for any "let/var/const name"
-    #    declaration (including module-level) appearing before the cursor.
-    match lexical_local_hover(source, target_line, character, name.as_str()):
-        Option.some as lh:
-            return Option[CursorResult].some(value = lh.value)
-        Option.none:
-            pass
+    # (The former lexical text scan is gone: it always returned none and
+    # walked every line from the cursor back to line 1, an O(file²) cost on
+    # every local-hover fallback.)
 
     return Option[CursorResult].none
 
@@ -4708,38 +4709,6 @@ function as_binding_hover(analysis: ref[analyzer.Analysis], current_module: str,
             # An `as name` binding: the analyzer's arm payload type answers
             # `local <name>: <payload> (mutable)`, the host's snapshot shape.
             return arm_binding_hover_result(analysis, name, line + 1, current_module)
-    return Option[CursorResult].none
-
-
-## Lexical fallback: search source text for any `let`/`var`/`const`
-## declaration matching `name` before the cursor line.
-function lexical_local_hover(source: str, target_line: ptr_uint, character: ptr_uint, name: str) -> Option[CursorResult]:
-    var current_line: ptr_uint = target_line
-    while current_line >= 1:
-        let lt = cursor.source_line(source, current_line)
-        let trimmed = lt.trim_ascii_whitespace()
-        var prefix: str = ""
-        if trimmed.starts_with("let "):
-            prefix = "let "
-        else if trimmed.starts_with("var "):
-            prefix = "var "
-        else if trimmed.starts_with("const "):
-            prefix = "const "
-        else:
-            if current_line == 1:
-                break
-            current_line -= 1
-            continue
-        let after_prefix = prefix.len
-        if trimmed.starts_with_at(after_prefix, name):
-            var hover = string.String.create()
-            hover.append(prefix)
-            hover.append(name)
-            hover.append(" (lexical)")
-            hover.release()
-        if current_line == 1:
-            break
-        current_line -= 1
     return Option[CursorResult].none
 
 

@@ -12,6 +12,7 @@ import std.vec as vec
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
+import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 import mtc.lsp.workspace_index as idx
 import mtc.semantic.types as types
@@ -63,20 +64,25 @@ public function handle_prepare_type_hierarchy(
         Option.some as token_payload:
             let name = token_payload.value.text
             var kind: int = KIND_CLASS
+            var kind_text = "type"
             var found = false
 
             if analysis.structs.contains(name):
                 found = true
                 kind = KIND_STRUCT
+                kind_text = "struct"
             else if analysis.static_member_types.contains(name):
                 found = true
                 kind = KIND_ENUM
+                kind_text = "enum"
             else if analysis.interfaces.contains(name):
                 found = true
                 kind = KIND_INTERFACE
+                kind_text = "interface"
             else if analysis.type_alias_types.contains(name):
                 found = true
                 kind = KIND_CLASS
+                kind_text = "type"
 
             if not found:
                 proto.write_response(id, json.null_value())
@@ -85,7 +91,7 @@ public function handle_prepare_type_hierarchy(
             var result = string.String.create()
             defer: result.release()
             result.append("[")
-            append_hierarchy_item(ref_of(result), name, kind, uri, token_payload.value.line, token_payload.value.column, token_payload.value.length)
+            append_hierarchy_item(ref_of(result), name, kind, kind_text, uri, token_payload.value.line, token_payload.value.column, token_payload.value.length)
             result.append("]")
             proto.write_response_raw(id, result.as_str())
 
@@ -97,8 +103,8 @@ public function handle_supertypes(
     params: json.Value,
     id: json.Value,
 ) -> void:
-    let item_uri = extract_item_field(params, "uri")
-    let name = extract_item_field(params, "name")
+    let item_uri = utils.extract_hierarchy_item_field(params, "uri")
+    let name = utils.extract_hierarchy_item_field(params, "name")
     if name.len == 0 or item_uri.len == 0:
         proto.write_response(id, json.null_value())
         return
@@ -136,7 +142,7 @@ public function handle_supertypes(
                     if not first:
                         result.append(",")
                     first = false
-                    append_hierarchy_item(ref_of(result), iface_name, KIND_INTERFACE, item_uri, 1, 0, iface_name.len)
+                    append_hierarchy_item(ref_of(result), iface_name, KIND_INTERFACE, "interface", item_uri, 1, 0, iface_name.len)
                 si += 1
 
     result.append("]")
@@ -150,7 +156,7 @@ public function handle_subtypes(
     params: json.Value,
     id: json.Value,
 ) -> void:
-    let name = extract_item_field(params, "name")
+    let name = utils.extract_hierarchy_item_field(params, "name")
     if name.len == 0:
         proto.write_response(id, json.null_value())
         return
@@ -202,7 +208,7 @@ public function handle_subtypes(
                                 result.append(",")
                             first = false
                             var target_uri = build_file_uri(path)
-                            append_hierarchy_item(ref_of(result), entry_name, entry.kind, target_uri.as_str(), entry.line, 0, entry_name.len)
+                            append_hierarchy_item(ref_of(result), entry_name, entry.kind, hierarchy_kind_text(entry.kind), target_uri.as_str(), entry.line, 0, entry_name.len)
                             target_uri.release()
                     content.release()
                 Result.failure:
@@ -212,35 +218,6 @@ public function handle_subtypes(
     result.append("]")
     proto.write_response_raw(id, result.as_str())
 
-
-## Extract a named field from a type hierarchy item JSON.
-function extract_item_field(value: json.Value, field: str) -> str:
-    let obj_ptr = value.as_object()
-    if obj_ptr == null:
-        # It might be an array — take the first element.
-        let arr_ptr = value.as_array()
-        if arr_ptr == null:
-            return ""
-        unsafe:
-            let first_ptr = read(arr_ptr).get(0)
-            if first_ptr == null:
-                return ""
-            let first_obj = read(first_ptr).as_object()
-            if first_obj == null:
-                return ""
-            let f_ptr = read(first_obj).get(field)
-            if f_ptr == null:
-                return ""
-            let f_str = read(f_ptr).as_string() else:
-                return ""
-            return f_str
-    unsafe:
-        let f_ptr = read(obj_ptr).get(field)
-        if f_ptr == null:
-            return ""
-        let f_str = read(f_ptr).as_string() else:
-            return ""
-        return f_str
 
 
 ## Build a file:// URI from an absolute path.  Returns an owned string.String.
@@ -260,11 +237,23 @@ function build_file_uri(path: str) -> string.String:
     return uri
 
 
+## The host's `data.kind` name for an item kind.
+function hierarchy_kind_text(kind: int) -> str:
+    if kind == KIND_STRUCT:
+        return "struct"
+    if kind == KIND_ENUM:
+        return "enum"
+    if kind == KIND_INTERFACE:
+        return "interface"
+    return "type"
+
+
 ## Append a TypeHierarchyItem object to the JSON output.
 function append_hierarchy_item(
     output: ref[string.String],
     name: str,
     kind: int,
+    kind_text: str,
     uri: str,
     line: ptr_uint,
     column: ptr_uint,

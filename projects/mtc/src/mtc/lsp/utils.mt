@@ -2,6 +2,7 @@
 ## LSP feature modules to avoid duplication.  Line-oriented helpers mirror
 ## the pattern already established in lsp.cursor.
 
+import std.json as json
 import std.str
 import std.vec as vec
 
@@ -137,3 +138,38 @@ public function split_lines(source: str) -> vec.Vec[str]:
         i += 1
     result.push(source.slice(start, source.len - start))
     return result
+
+
+## Read a string field from a hierarchy item: the spec wraps the item in
+## `item`, and its payload may sit at the item's top level or in its `data`
+## object.  Also accepts an item array (the first element) and an item object.
+public function extract_hierarchy_item_field(value: json.Value, field: str) -> str:
+    let obj_ptr = value.as_object()
+    if obj_ptr == null:
+        let arr_ptr = value.as_array()
+        if arr_ptr == null:
+            return ""
+        unsafe:
+            let first_ptr = read(arr_ptr).get(0)
+            if first_ptr == null:
+                return ""
+            return extract_hierarchy_item_field(read(first_ptr), field)
+    unsafe:
+        let item_ptr = read(obj_ptr).get("item")
+        if item_ptr != null:
+            let direct = extract_hierarchy_item_field(read(item_ptr), field)
+            if direct.len > 0:
+                return direct
+            let item_obj = read(item_ptr).as_object()
+            if item_obj != null:
+                let data_ptr = read(item_obj).get("data")
+                if data_ptr != null:
+                    let from_data = extract_hierarchy_item_field(read(data_ptr), field)
+                    if from_data.len > 0:
+                        return from_data
+        let f_ptr = read(obj_ptr).get(field)
+        if f_ptr == null:
+            return ""
+        let f_str = read(f_ptr).as_string() else:
+            return ""
+        return f_str

@@ -194,17 +194,17 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 132, 2026-11-17)
+## 6. Current baseline (session 133, 2026-11-18)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 168 / 157,118 / 124,809 |
+| source files / lines / code lines | 168 / 157,140 / 124,816 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (168 modules) |
 | dead exports (unused / test-only) | 33 / 6 |
-| duplication (windows / duplicated lines) | 904 / 6,429 (window 12) |
+| duplication (windows / duplicated lines) | 891 / 6,381 (window 12) |
 | functions ≥ 200 lines | 1 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
@@ -215,5 +215,9 @@ duplication windows, +1 test file); dead exports dropped from 35 to 33 as the
 superseded cursor helpers were removed.  Session 132 added the format-string
 completion context (+185 code lines, +1 shared parameter-loop window); the
 `enclosing_function_for` scan is shared by the global bucket and the new
-context, and the last parse-error hover bail was removed.  The remaining
-function over the limit is the excluded `binding_at` (385).
+context, and the last parse-error hover bail was removed.  Session 133's audit
+fixes removed the dead O(file²) hover scan (−30 lines), shared the hierarchy
+item-field reader across the two hierarchy modules (−48 duplicated lines,
+−13 windows), and added the imported enum member source line, the
+hierarchy follow-up unwrapping and the specialization registration order.
+The remaining function over the limit is the excluded `binding_at` (385).

@@ -13,6 +13,7 @@ import mtc.parser.ast as ast
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
+import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 import mtc.lsp.workspace_index as idx
 
@@ -126,8 +127,8 @@ public function handle_incoming_calls(
     params: json.Value,
     id: json.Value,
 ) -> void:
-    let item_uri = extract_item_field(params, "uri")
-    let name = extract_item_field(params, "name")
+    let item_uri = utils.extract_hierarchy_item_field(params, "uri")
+    let name = utils.extract_hierarchy_item_field(params, "name")
     if name.len == 0:
         proto.write_response(id, json.null_value())
         return
@@ -195,8 +196,8 @@ public function handle_outgoing_calls(
     params: json.Value,
     id: json.Value,
 ) -> void:
-    let item_uri = extract_item_field(params, "uri")
-    let name = extract_item_field(params, "name")
+    let item_uri = utils.extract_hierarchy_item_field(params, "uri")
+    let name = utils.extract_hierarchy_item_field(params, "name")
     if name.len == 0 or item_uri.len == 0:
         proto.write_response(id, json.null_value())
         return
@@ -427,34 +428,6 @@ function stmt_line(sp: ptr[ast.Stmt]) -> ptr_uint:
             _:
                 return 0
 
-
-## Extract a named field from a call-hierarchy item JSON.
-function extract_item_field(value: json.Value, field: str) -> str:
-    let obj_ptr = value.as_object()
-    if obj_ptr == null:
-        let arr_ptr = value.as_array()
-        if arr_ptr == null:
-            return ""
-        unsafe:
-            let first_ptr = read(arr_ptr).get(0)
-            if first_ptr == null:
-                return ""
-            let first_obj = read(first_ptr).as_object()
-            if first_obj == null:
-                return ""
-            let f_ptr = read(first_obj).get(field)
-            if f_ptr == null:
-                return ""
-            let f_str = read(f_ptr).as_string() else:
-                return ""
-            return f_str
-    unsafe:
-        let f_ptr = read(obj_ptr).get(field)
-        if f_ptr == null:
-            return ""
-        let f_str = read(f_ptr).as_string() else:
-            return ""
-        return f_str
 
 
 ## Build a file:// URI from an absolute path.

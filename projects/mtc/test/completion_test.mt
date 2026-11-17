@@ -135,6 +135,19 @@ function test_specialization_completion_lists_types() -> void:
     expect(text.as_str().contains_substring("\"Point\""), text.as_str())
     expect(text.as_str().contains_substring("\"int\""), text.as_str())
     expect(text.as_str().contains_substring("\"kind\":5"), text.as_str())
+    # The host's `facts.types` registration order: built-ins first, the
+    # module's declared types last (a map's bucket order would interleave them).
+    let bool_pos = text.as_str().find_substring("\"label\":\"bool\"") else:
+        expect(false, "bool missing")
+        text.release()
+        heap.release(items)
+        return
+    let point_pos = text.as_str().find_substring("\"label\":\"Point\"") else:
+        expect(false, "Point missing")
+        text.release()
+        heap.release(items)
+        return
+    expect(bool_pos < point_pos, "built-ins must precede module types")
     text.release()
     heap.release(items)
 
