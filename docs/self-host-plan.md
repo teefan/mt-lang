@@ -83,16 +83,16 @@ history.
 | Area | State |
 | --- | --- |
 | Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **21 files / 0 failed** |
-| `test/mt` | **61 files / 0 failed** (session 77) |
-| Examples | **13/13** synchronous top-level examples build with stdout+exit identical to the host; the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); `examples/sdl3` **34/34** builds; the raylib sample builds |
-| `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **735 match / 0 differ / 4 host-rejected of 739**; counts drift with the tree and `tmp` fixtures) |
-| `sexpr lower` | **697 match / 2 differ / 53 host-rejected / 0 self-rejected of 752 files** (session 87) — the two remain the documented `memory_stress_test` (leaked auto-lifetime) and `main.mt` (`--sexpr` loop guard) artifacts; all extracted modules match (`comptime`, `comptime_types`, `const_eval`, `inline`, `layout`, `tasks`, `format`, `async_cps`, `type_helpers`, `parallel`, `match`, `include_scan`).  Session 72 closed the `woodeneye` row; session 76 closed a `dap/server.mt` row that session 73's DAP change had introduced (a guard-narrowed `null` assignment took the refined type instead of the target's storage type) |
+| `test/mt` | **61 files / 0 failed**; peak RSS **135 MB** under the region-scoped test compiler (session 129) |
+| Examples | **49/49 same** under the gate (15 top-level examples + `examples/sdl3` 34/34); the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); the raylib sample builds |
+| `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **772 match / 0 differ / 4 host-rejected of 776**; counts drift with the tree and `tmp` fixtures) |
+| `sexpr lower` | **715 match / 53 host-rejected of 776**; the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (empty-output differ or self-fail depending on how the loop limit lands).  All extracted modules match |
 | `cli:parity` | **224 match / 0 differ / 0 pending** of 224 cases (`--timings` values, `debug`'s Ruby node ids and the synthesized test-runner path normalized; 43 `test` cases plus the second-batch sweep: global extraction, resolution flags, per-command operand models, missing/empty operands, completions/std/snapshot/cache/lsp/dap/bindgen/deps) |
-| **`check` diagnostics (new)** | **501 agree / 0 verdict / 0 position / 3 message of 504** files (`tools/diag_parity.rb check`; the 3 message rows are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows).  Before this session: 44 verdict, 177 position diffs and a wholly different rendering. |
+| **`check` diagnostics (new)** | **501 agree / 0 verdict / 0 position / 3 message of 504** files (`tools/diag_parity.rb check`; the 3 message files are `std/cli.mt`, `examples/reflection_advanced.mt`, and `examples/memory_stress_test.mt`) |
 | Linter corpus | **624 agree / 34 differ of 658** (hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  The `std`+`examples` residue is still the 4 documented rows (two self-only `redundant-cast` in `std/cli.mt`, the self-only `prefer-let` cluster in `std/fs.windows.mt`, the host-only `constant-condition` in `examples/reflection_advanced.mt`); the 30 additional rows are `projects/mtc/src` files where the host linter times out (`<timeout after 180s>`) or reports pre-existing source-only warnings. |
-| LSP | harness **30/30 capability keys + 4 documented entries**; project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **74–75 KB/cycle raw / ~28 LS at 200 cycles** (meter, one-time index level documented) |
+| LSP | harness **30/30 capability keys + the documented `typeDefinition/imported` row** (70 requests); project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **74–75 KB/cycle raw / ~28 LS at 200 cycles** (meter, one-time index level documented) |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the real lldb-dap bridge closes the VS Code F5 launch deadlock (configurationDone no longer waits for the launch response), proven by `tools/dap_async_probe.rb`; desktop F5 smoke passed session 74 |
-| Formatter | **739/739** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
+| Formatter | **776/776** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
 | Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 72).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
 | Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
@@ -141,7 +141,7 @@ layering/naming/alias/vocabulary violations; 35 unused + 6 test-only exports;
 
 Verification: dev suite 21/0; `mtc test projects/mtc` 21/0; `test/mt` 61/0
 (peak 135 MB); full CLI **224/224**; `sexpr parse` **772 / 0 / 4 of 776**;
-canonical formatter **776/776**; focused lint **501 / 3 of 504**; LSP **30/30
+formatter **776/776 in all three modes**; focused lint **501 / 3 of 504**; LSP **30/30
 + the documented `typeDefinition/imported`**; guard
 `--check --strict --ratchet`; bootstrap fixed point; refactor gate 6/6.
 
@@ -2114,6 +2114,11 @@ rows), formatter 739/739 in all three modes.
 
 ## Handoff (session 129)
 
+**Next session:** start with `std_registry_lookup` (238) or `generate_internal`
+(221); `binding_at` stays excluded.  Keep heavy parity sweeps memory-capped
+(`--mem-mb`, `-j 2`–`4`) — `mtc test` no longer accumulates memory, but each
+independent compiler still peaks at 2.5–3.4 GB on compiler-sized closures.
+
 **Read this first, then *Status at a glance* and the Ledger.**  The parity
 program stays closed, and session 73 closed the last *measurement* gaps: the
 `mtc test` CLI surface, then a command-surface sweep over every remaining
@@ -2147,8 +2152,10 @@ bindgen modules (`bindgen/nullable_policy.mt`, `bindgen/emitter.mt`,
 `lower_async_fn` vtable/cancel/constructor phases.  Session 125 added the
 shared `build`/`run` options parser and phase helpers, the lint
 option/scan split, the generated help-family helpers, and `parser/call_args.mt`.
-The analyzer's largest
-function is 109 lines; `lower_async_fn` is 260 and `generate_c` is 277.
+Sessions 126–129 decomposed the next 20 long functions and region-scoped
+`mtc test` runner builds (the old cross-file AST/analysis/IR accumulation is
+gone; `test/mt` peaks at 135 MB).  The analyzer's largest
+function is 109 lines; `lower_async_fn` is 141 and `generate_c` is 180.
 The lowering submodules now form one import SCC; keep `import std.str` in
 cyclic modules that use `Map[str, …]` keys, and expose a constructor from
 lowering instead of referencing a variant arm across the cycle.  Parser
