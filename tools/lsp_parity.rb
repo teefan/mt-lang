@@ -264,6 +264,43 @@ IMPORTED_SOURCE = <<~MT
       return 0
 MT
 
+# A package with its own `source_root`: a bare `import local_mod` resolves from
+# the requesting file's package root, and a match-arm payload binding's fields
+# hover from the arm's recorded payload type.
+PACKAGE_MANIFEST = <<~MT
+  [package]
+  name = "probe_pkg"
+  version = "0.1.0"
+  source_root = "src"
+MT
+
+PACKAGE_LOCAL_SOURCE = <<~MT
+  public variant Local:
+      one(value: int)
+      two
+
+  public struct Box:
+      value: int
+
+  extending Box:
+      public function get() -> int:
+          return this.value
+MT
+
+PACKAGE_USER_SOURCE = <<~MT
+  import local_mod as local
+
+  function pkg_demo(v: local.Local) -> int:
+      match v:
+          local.Local.one as o:
+              return o.value
+          local.Local.two:
+              return 0
+
+  function box_demo(b: local.Box) -> int:
+      return b.get()
+MT
+
 def path_to_uri(path)
   "file://#{path.split("/").map { |seg| CGI.escape(seg).gsub("+", "%20") }.join("/")}"
 end
@@ -272,6 +309,7 @@ def build_workspace(dir)
   FileUtils.mkdir_p(File.join(dir, "mod_alpha"))
   FileUtils.mkdir_p(File.join(dir, "mod_beta"))
   FileUtils.mkdir_p(File.join(dir, "mod_holding"))
+  FileUtils.mkdir_p(File.join(dir, "pkg", "src"))
   FileUtils.mkdir_p(File.join(dir, "assets"))
   paths = {
     alpha: File.join(dir, "mod_alpha", "lib.mt"),
@@ -288,6 +326,9 @@ def build_workspace(dir)
     reserved: File.join(dir, "reserved.mt"),
     format: File.join(dir, "format.mt"),
     imported: File.join(dir, "imported.mt"),
+    package_manifest: File.join(dir, "pkg", "package.toml"),
+    package_local: File.join(dir, "pkg", "src", "local_mod.mt"),
+    package_user: File.join(dir, "pkg", "src", "user.mt"),
   }
   File.write(paths[:alpha], ALPHA_SOURCE)
   File.write(paths[:beta], BETA_SOURCE)
@@ -303,6 +344,9 @@ def build_workspace(dir)
   File.write(paths[:reserved], RESERVED_SOURCE)
   File.write(paths[:format], FORMAT_SOURCE)
   File.write(paths[:imported], IMPORTED_SOURCE)
+  File.write(paths[:package_manifest], PACKAGE_MANIFEST)
+  File.write(paths[:package_local], PACKAGE_LOCAL_SOURCE)
+  File.write(paths[:package_user], PACKAGE_USER_SOURCE)
   File.write(File.join(dir, "assets", "file.txt"), "hello\n")
   paths
 end
@@ -628,6 +672,30 @@ def corpus(dir, paths)
   # Cross-file rename of an imported function: `flat_mod.mt` is open, so its
   # declaration is edited alongside the call site in `main.mt`.
   requests["rename/imported-function"] = ["textDocument/rename", at.call("flat_mod.flat_fn(5)", off: 11).merge("newName" => "renamed_flat_fn")]
+  # A package `source_root` module: the alias and the type it introduces resolve
+  # from the requesting file's package root, and the arm binding's field hovers
+  # from its payload type.
+  package_uri = path_to_uri(paths[:package_user])
+  pkg_line, pkg_col = find_pos(PACKAGE_USER_SOURCE, "local.Local) -> int")
+  requests["hover/package-module"] = ["textDocument/hover", {
+    "textDocument" => { "uri" => package_uri },
+    "position" => { "line" => pkg_line, "character" => pkg_col },
+  }]
+  requests["hover/package-type"] = ["textDocument/hover", {
+    "textDocument" => { "uri" => package_uri },
+    "position" => { "line" => pkg_line, "character" => pkg_col + 6 },
+  }]
+  payload_line, payload_col = find_pos(PACKAGE_USER_SOURCE, "o.value")
+  requests["hover/variant-payload-field"] = ["textDocument/hover", {
+    "textDocument" => { "uri" => package_uri },
+    "position" => { "line" => payload_line, "character" => payload_col + 2 },
+  }]
+  # An extending method declared in the package-local module.
+  method_line, method_col = find_pos(PACKAGE_USER_SOURCE, "b.get()")
+  requests["hover/package-method"] = ["textDocument/hover", {
+    "textDocument" => { "uri" => package_uri },
+    "position" => { "line" => method_line, "character" => method_col + 2 },
+  }]
   # A field name in its own declaration (the `field <name>: <type>` arm).
   requests["hover/field-declaration"] = ["textDocument/hover", at.call("x: int")]
   requests["signatureHelp"] = ["textDocument/signatureHelp", at.call("compute(3, 4)", off: 8)]

@@ -341,8 +341,8 @@
       "projects/mtc/src/mtc/lowering/async.mt:326:function:int_type",
       "projects/mtc/src/mtc/lowering/async.mt:330:function:void_type",
       "projects/mtc/src/mtc/lowering/lowering.mt:54:struct:LoweringError",
-      "projects/mtc/src/mtc/lsp/navigation.mt:768:function:analysis_for_document",
-      "projects/mtc/src/mtc/lsp/navigation.mt:779:function:ast_for_document",
+      "projects/mtc/src/mtc/lsp/navigation.mt:769:function:analysis_for_document",
+      "projects/mtc/src/mtc/lsp/navigation.mt:780:function:ast_for_document",
       "projects/mtc/src/mtc/lsp/protocol.mt:108:function:read_message",
       "projects/mtc/src/mtc/lsp/protocol.mt:324:function:write_progress_begin",
       "projects/mtc/src/mtc/lsp/protocol.mt:332:function:write_progress_report",
@@ -373,8 +373,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 888,
-    "duplicated_lines": 6353,
+    "windows": 881,
+    "duplicated_lines": 6317,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -510,11 +510,9 @@
       "28773dcc3bacfca8065d9ac8611573f9203f5953",
       "28b04ee7361685f5d821d03870974a2aae8d16d1",
       "28bcfd7dc0472f0b1befb7f2c6de3107f37fcba6",
-      "28e792730e9109cd83cc777f325d0d582cb88891",
       "291062bf59823245b38e071ee03c4311197c3fb8",
       "2998ed3d4b39fa56bc9730e9be61c80d641e490a",
       "29ff070432cc6e147edd60735542bb78aa60cbe7",
-      "2aa3b51d81317311b9d75cd13130bb9ef68c70d5",
       "2b067f20f1119785b54303117c42a19bc9264b2e",
       "2b46ee3eb1a1058c0a25f34c60afa6ade2129275",
       "2c4143bc753c28ea70178e5a7e293ed89fabee17",
@@ -542,10 +540,8 @@
       "33b3397788019bb6825ca0dea5f2fa412ca97dc4",
       "34122d1e8eea1ae54762f128e7492e1ff5efce35",
       "3439ea07dd1e4d4670ac39afc56bffa007130a1d",
-      "344d8a3eaeaaab9d5c1fffe45abfe67fe9a64aae",
       "3480f45f4844709315d95ec1b5e597c2ed7898d2",
       "34866c5446131cb43899b1eb3d79563c9219291f",
-      "34c175791da6fd5df2ed527c35e1e4879cd0c7d0",
       "34e3717d8db317c8775acba338e26637e678030b",
       "3570d501472eaadae8e741ccc22a59691ae48f13",
       "35c4431ffd19f18049111883cb7782417d902e49",
@@ -796,7 +792,6 @@
       "76b5f136415e0fa1af68c92cbf45ecfc64ae8fb3",
       "76b77054a69575382cb5aa7f7c6357e096e36035",
       "77186f8d354e4be443ad7626caecf0e71e407da6",
-      "773450e6fd9d6363bbc2119ae5f1607c9fbafd47",
       "7763ca34f583476b7fddde0eaefa2cfe455adac6",
       "779a2947bc81dfa72265dd8e39f3535f0355681a",
       "779cae848c3c131faab84f5614853d4b443fe282",
@@ -843,7 +838,6 @@
       "825fbec4f49d52b82c9e470406e9babdbf7212a4",
       "833a67381ad4b131e89f9561c5dfa537136ccc5d",
       "835b05d68bc4ac3631e4258ad0f559acca2b10df",
-      "8381bf1ba7d6790c7581be75db4b5333b4065109",
       "83a28867d1cab09e08793ebed1481f8d2aa07c4d",
       "83c97a3f58faa4534922fb85a0842507aefc9e32",
       "83d63db7db5ee7a18791bee7e33a4705c97e4b67",
@@ -933,7 +927,6 @@
       "9f5561aa7f7cce1adbd42409cbcc10d5f158d106",
       "9ff50d6bf670093c5079b1948a0a6e9c86d950fa",
       "a0378244b41036a5c6d606b1751372ac134916a4",
-      "a039dde5ac8692e19cd10b420ff5a1b7cdf49f2c",
       "a0e5594a5e3f0d66ea144aeb2ae85a8eb1b9ff39",
       "a106eeb09ed3aa6a8357409440db84bf98049e76",
       "a1497b29d3d4a52b37d1e7ce596dc68ed54c3186",
@@ -1267,7 +1260,7 @@
     ]
   },
   "sizes": {
-    "total_code": 125224,
+    "total_code": 125280,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1854,8 +1847,8 @@
         "max_function": 79
       },
       "projects/mtc/src/mtc/lsp/navigation.mt": {
-        "lines": 5400,
-        "code": 4169,
+        "lines": 5475,
+        "code": 4225,
         "max_line": 206,
         "max_function": 176
       },

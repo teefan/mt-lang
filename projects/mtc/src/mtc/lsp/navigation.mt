@@ -315,8 +315,9 @@ function import_alias_member_decl(
     ws: ref[workspace.Workspace],
     module_name: str,
     name: str,
+    from_path: str,
 ) -> Option[CursorResult]:
-    var module_path = resolve_module_source_path(ws, module_name) else:
+    var module_path = resolve_module_source_path_for(ws, module_name, from_path) else:
         return Option[CursorResult].none
     defer: module_path.release()
     var module_source = ws.document_source(module_path.as_str()) else:
@@ -745,7 +746,7 @@ public function handle_type_definition(
                     let module_name = read(module_ptr)
                     if respond_imported_type_location(ws, id, module_name, target.text):
                         return
-                    match resolve_module_source_path(ws, module_name):
+                    match resolve_module_source_path_for(ws, module_name, file_path.as_str()):
                         Option.some as module_path:
                             var module_uri = file_uri_for_path(module_path.value.as_str())
                             respond_module_location(id, module_uri.as_str())
@@ -849,6 +850,15 @@ public function type_of_value_with_bindings(
             _:
                 pass
         di += 1
+
+    # A match-arm `as name` binding has no `stmt_local`; its recorded payload
+    # type is the analyzer's arm-binding entry.  Checked after the ordinary
+    # local/parameter scan so a common receiver never pays for the arm table.
+    match arm_binding_type_at(analysis, name, decl_line):
+        Option.some as arm_ty:
+            return Option[types.Type].some(value = arm_ty.value)
+        Option.none:
+            pass
 
     return Option[types.Type].none
 
@@ -1285,7 +1295,7 @@ function alias_member_module_path(
             unsafe:
                 let module_ptr = analysis.imports.get(recv.value)
                 if module_ptr != null:
-                    return resolve_module_source_path(ws, read(module_ptr))
+                    return resolve_module_source_path_for(ws, read(module_ptr), file_path.as_str())
         Option.none:
             pass
     return Option[string.String].none
@@ -1609,7 +1619,7 @@ public function resolve_cursor(
     match import_module_name_at(document_tokens, source, line, character):
         Option.some as import_name:
             defer: import_name.value.release()
-            return resolve_module_reference(ws, import_name.value.as_str())
+            return resolve_module_reference(ws, import_name.value.as_str(), file_path.as_str())
         Option.none:
             pass
 
@@ -1631,13 +1641,13 @@ public function resolve_cursor(
             unsafe:
                 let module_ptr = analysis.imports.get(recv.value)
                 if module_ptr != null:
-                    return resolve_module_member(ws, read(module_ptr), target.text)
+                    return resolve_module_member(ws, read(module_ptr), target.text, file_path.as_str())
             # `EnumType.member`: render the enum or flags member (`running: State
             # = 1`) at its declaration — but a *variant*'s arms are not members
             # with values; they resolve through the arm-name arms below, which
             # render the constructor form (`Kind.ident(name: str)`).
             if not analysis.variant_types.contains(recv.value) and (analysis.static_member_types.contains(recv.value) or analysis.member_names.contains(recv.value)):
-                match resolve_enum_member(ws, ast_file, recv.value, target.text, ref_of(analysis)):
+                match resolve_enum_member(ws, ast_file, recv.value, target.text, ref_of(analysis), file_path.as_str()):
                     Option.some as member_hit:
                         return Option[CursorResult].some(value = member_hit.value)
                     Option.none:
@@ -1673,7 +1683,7 @@ public function resolve_cursor(
         Option.some as type_recv:
             match resolve_type_method_hover(
                 ws, ast_file, ref_of(analysis), source, type_recv.value, target.text,
-                current_module.as_str()):
+                current_module.as_str(), file_path.as_str()):
                 Option.some as type_result:
                     return Option[CursorResult].some(value = type_result.value)
                 Option.none:
@@ -1731,12 +1741,12 @@ public function resolve_cursor(
         if alias_module_ptr != null:
             let alias_module = read(alias_module_ptr)
             if not for_hover:
-                match import_alias_member_decl(ws, alias_module, target.text):
+                match import_alias_member_decl(ws, alias_module, target.text, file_path.as_str()):
                     Option.some as member_decl:
                         return Option[CursorResult].some(value = member_decl.value)
                     Option.none:
                         pass
-            return resolve_module_reference(ws, alias_module)
+            return resolve_module_reference(ws, alias_module, file_path.as_str())
 
     # A user-declared attribute (`attribute[callable] traced(tag: str)`): the
     # host's `facts.attributes` arm, which renders the target list and the
@@ -1760,6 +1770,7 @@ function resolve_type_method_hover(
     receiver: cursor.TypeReceiver,
     method_name: str,
     current_module: str,
+    from_path: str,
 ) -> Option[CursorResult]:
     var decl_file = ast_file
     var decl_source = source
@@ -1782,7 +1793,7 @@ function resolve_type_method_hover(
         return Option[CursorResult].none
 
     if decl_signature.is_none() and owner.len > 0 and not owner.equal(current_module):
-        var owner_path = resolve_module_source_path(ws, owner) else:
+        var owner_path = resolve_module_source_path_for(ws, owner, from_path) else:
             target_uri.release()
             return Option[CursorResult].none
         defer: owner_path.release()
@@ -1804,7 +1815,7 @@ function resolve_type_method_hover(
     # method resolves (`mat4.identity` through `std.linear_algebra`'s
     # `extending mat4:`) even though the type itself has no owning module.
     if decl_signature.is_none():
-        match imported_type_method_hover(ws, analysis, receiver.name, method_name, current_module):
+        match imported_type_method_hover(ws, analysis, receiver.name, method_name, current_module, from_path):
             Option.some as imported_method:
                 target_uri.release()
                 return Option[CursorResult].some(value = imported_method.value)
@@ -1828,7 +1839,7 @@ function resolve_type_method_hover(
     # reports `std/raylib.mt` with the line here — the same artifact the
     # references static arm reproduces.
     if target_uri.len() == 0 and owner.len > 0 and not owner.equal(current_module):
-        match resolve_module_source_path(ws, owner):
+        match resolve_module_source_path_for(ws, owner, from_path):
             Option.some as owner_path:
                 target_uri = file_uri_for_path(owner_path.value.as_str())
                 owner_path.value.release()
@@ -2025,6 +2036,40 @@ function find_field_token_in_type_in(tokens: span[token_mod.Token], source: str,
     return Option[token_mod.Token].none
 
 
+## Hover for a field of a match-arm payload binding (`a` in
+## `Kind.alpha as a`, then `a.value`): the arm's synthesized payload fields, with
+## no declaration to point at (the host prints no `Defined at` line).
+function variant_arm_field_hover(
+    fields: span[types.PayloadField],
+    field_name: str,
+    current_module: str,
+) -> Option[CursorResult]:
+    var i: ptr_uint = 0
+    while i < fields.len:
+        let field = unsafe: read(fields.data + i)
+        if field.name.equal(field_name):
+            var hover = string.String.create()
+            hover.append("field ")
+            hover.append(field_name)
+            hover.append(": ")
+            var rendered = type_render.qualified_name(field.ty, current_module)
+            hover.append(rendered.as_str())
+            rendered.release()
+            var shortened = type_render.shorten_signature(hover.as_str())
+            hover.release()
+            return Option[CursorResult].some(value = CursorResult(
+                line = 0,
+                column = 0,
+                name_len = field_name.len,
+                hover_text = shortened.text,
+                docs = string.String.create(),
+                target_uri = string.String.create(),
+                from_modules = shortened.modules
+            ))
+        i += 1
+    return Option[CursorResult].none
+
+
 ## The hover for a field of the receiver's type: `field <name>: <resolved type>`
 ## with the field's declaration in the module that declares the struct (this
 ## file when the type is declared here).  None when the type has no such field,
@@ -2040,7 +2085,7 @@ function field_hover_result(
     var decl_path = file_path
     var owner_path_owner: Option[string.String] = Option[string.String].none
     if owner.len > 0 and not owner.equal(current_module):
-        var resolved_path = resolve_module_source_path(ws, owner) else:
+        var resolved_path = resolve_module_source_path_for(ws, owner, file_path) else:
             return Option[CursorResult].none
         owner_path_owner = Option[string.String].some(value = resolved_path)
         decl_path = resolved_path.as_str()
@@ -2211,6 +2256,13 @@ function resolve_member_method_hover(
 ) -> Option[CursorResult]:
     let receiver_ty = receiver_path_type(ws, file_path, analysis, ast_file, receiver_path, target_line, source) else:
         return Option[CursorResult].none
+    # A match-arm payload binding (`a` in `Kind.alpha as a`): its fields are the
+    # arm's synthesized payload fields, with no declaring struct to scan.
+    match receiver_ty:
+        types.Type.ty_variant_arm_payload as payload:
+            return variant_arm_field_hover(payload.fields, method_name, current_module)
+        _:
+            pass
     # The host projects the receiver through a pointer-like first
     # (`project_field_receiver_type`), so `r.x` on a `ref[vec3]` resolves the
     # vector's own field.
@@ -2235,7 +2287,7 @@ function resolve_member_method_hover(
     var target_uri = string.String.create()
 
     if decl_signature.is_none() and owner.len > 0 and not owner.equal(current_module):
-        var owner_path = resolve_module_source_path(ws, owner) else:
+        var owner_path = resolve_module_source_path_for(ws, owner, file_path) else:
             target_uri.release()
             return Option[CursorResult].none
         defer: owner_path.release()
@@ -2257,7 +2309,7 @@ function resolve_member_method_hover(
     # method resolves (`vec3.cross` through `std.linear_algebra`'s
     # `extending vec3:`) even though the type itself has no owning module.
     if decl_signature.is_none():
-        match imported_type_method_hover(ws, analysis, type_name, method_name, current_module):
+        match imported_type_method_hover(ws, analysis, type_name, method_name, current_module, file_path):
             Option.some as imported_method:
                 target_uri.release()
                 return Option[CursorResult].some(value = imported_method.value)
@@ -2281,7 +2333,7 @@ function resolve_member_method_hover(
     # reports `std/raylib.mt` with the line here — the same artifact the
     # references static arm reproduces.
     if target_uri.len() == 0 and owner.len > 0 and not owner.equal(current_module):
-        match resolve_module_source_path(ws, owner):
+        match resolve_module_source_path_for(ws, owner, file_path):
             Option.some as owner_path:
                 target_uri = file_uri_for_path(owner_path.value.as_str())
                 owner_path.value.release()
@@ -2311,6 +2363,7 @@ function imported_type_method_hover(
     type_name: str,
     method_name: str,
     current_module: str,
+    from_path: str,
 ) -> Option[CursorResult]:
     var imports = unsafe: read(analysis).imports.entries()
     while imports.next():
@@ -2318,7 +2371,7 @@ function imported_type_method_hover(
         var module_name = unsafe: read(entry.value)
         if module_name.len == 0 or module_name.equal(current_module):
             continue
-        var module_path = resolve_module_source_path(ws, module_name) else:
+        var module_path = resolve_module_source_path_for(ws, module_name, from_path) else:
             continue
         defer: module_path.release()
         var module_source = ws.document_source(module_path.as_str()) else:
@@ -2348,8 +2401,8 @@ function imported_type_method_hover(
 ## Resolve `member` inside imported module `module_name`: check the module's
 ## file with its own imports bound, reuse the same-file resolver there, and
 ## stamp the result with the module file's URI.
-function resolve_module_member(ws: ref[workspace.Workspace], module_name: str, member: str) -> Option[CursorResult]:
-    var module_path = resolve_module_source_path(ws, module_name) else:
+function resolve_module_member(ws: ref[workspace.Workspace], module_name: str, member: str, from_path: str) -> Option[CursorResult]:
+    var module_path = resolve_module_source_path_for(ws, module_name, from_path) else:
         return Option[CursorResult].none
     defer: module_path.release()
 
@@ -2388,8 +2441,8 @@ function resolve_module_member(ws: ref[workspace.Workspace], module_name: str, m
 
 ## Resolve an import alias to its module file (top of file, hover shows the
 ## module name).
-function resolve_module_reference(ws: ref[workspace.Workspace], module_name: str) -> Option[CursorResult]:
-    var module_path = resolve_module_source_path(ws, module_name) else:
+function resolve_module_reference(ws: ref[workspace.Workspace], module_name: str, from_path: str) -> Option[CursorResult]:
+    var module_path = resolve_module_source_path_for(ws, module_name, from_path) else:
         return Option[CursorResult].none
     defer: module_path.release()
 
@@ -2409,9 +2462,29 @@ function resolve_module_reference(ws: ref[workspace.Workspace], module_name: str
 
 ## The resolved source path of `module_name` against the workspace roots.
 public function resolve_module_source_path(ws: ref[workspace.Workspace], module_name: str) -> Option[string.String]:
+    return resolve_module_source_path_for(ws, module_name, "")
+
+
+## The module file resolved with `from_path`'s effective roots (its own package
+## source root included): a project-local `import node` under `src/` must resolve
+## for hover/definition, not only for the loader.  `""` falls back to the
+## workspace roots.
+public function resolve_module_source_path_for(ws: ref[workspace.Workspace], module_name: str, from_path: str) -> Option[string.String]:
     var roots = ws.effective_module_roots_for("")
     defer: roots.release()
     match resolver.resolve_module_path(module_name, roots.as_span(), resolver.Platform.linux):
+        Result.success as path_payload:
+            return Option[string.String].some(value = path_payload.value)
+        Result.failure as failure_payload:
+            var err = failure_payload.error
+            err.release()
+    if from_path.len == 0:
+        return Option[string.String].none
+    # The workspace roots miss a module under the requesting file's package
+    # `source_root`; only that fallback pays the manifest walk.
+    var scoped = ws.effective_module_roots_for(from_path)
+    defer: scoped.release()
+    match resolver.resolve_module_path(module_name, scoped.as_span(), resolver.Platform.linux):
         Result.failure as failure_payload:
             var err = failure_payload.error
             err.release()
@@ -2492,7 +2565,7 @@ function resolve_import_cursor(ws: ref[workspace.Workspace], uri: str, line: ptr
     match import_module_name_at(import_tokens, content.as_str(), line, character):
         Option.some as module_name:
             defer: module_name.value.release()
-            return resolve_module_reference(ws, module_name.value.as_str())
+            return resolve_module_reference(ws, module_name.value.as_str(), file_path.as_str())
         Option.none:
             return Option[CursorResult].none
 
@@ -2528,13 +2601,14 @@ function resolve_enum_member(
     type_name: str,
     member_name: str,
     analysis: ref[analyzer.Analysis],
+    from_path: str,
 ) -> Option[CursorResult]:
     match enum_member_result_in_file(file, type_name, member_name):
         Option.some as hit:
             return Option[CursorResult].some(value = hit.value)
         Option.none:
             pass
-    return imported_enum_member_result(ws, analysis, type_name, member_name)
+    return imported_enum_member_result(ws, analysis, type_name, member_name, from_path)
 
 
 ## The enum or flags declaration `type_name` in `file` and its member
@@ -2611,13 +2685,14 @@ function imported_enum_member_result(
     analysis: ref[analyzer.Analysis],
     type_name: str,
     member_name: str,
+    from_path: str,
 ) -> Option[CursorResult]:
     var names = unsafe: read(ref_of(analysis.imports)).values()
     while true:
         let name_ptr = names.next() else:
             return Option[CursorResult].none
         let module_name = unsafe: read(name_ptr)
-        var module_path = resolve_module_source_path(ws, module_name) else:
+        var module_path = resolve_module_source_path_for(ws, module_name, from_path) else:
             continue
         defer: module_path.release()
         let entry = workspace.analysis_entry_for(ws, module_path.as_str()) else:
@@ -4185,7 +4260,7 @@ function named_argument_label_hover(
             return Option[CursorResult].none
         lookup_module = unsafe: read(module_name_ptr)
 
-    var lookup_path = resolve_module_source_path(ws, lookup_module) else:
+    var lookup_path = resolve_module_source_path_for(ws, lookup_module, file_path) else:
         return Option[CursorResult].none
     defer: lookup_path.release()
     let lookup_doc = workspace.document_analysis_for(ws, lookup_path.as_str()) else:
@@ -4209,7 +4284,7 @@ function named_argument_label_hover(
     var field_token: Option[token_mod.Token] = Option[token_mod.Token].none
     var target_uri = string.String.create()
     if not declaring_module.equal(current_module.as_str()):
-        var decl_path = resolve_module_source_path(ws, declaring_module) else:
+        var decl_path = resolve_module_source_path_for(ws, declaring_module, file_path) else:
             target_uri.release()
             return Option[CursorResult].none
         defer: decl_path.release()

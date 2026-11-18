@@ -194,17 +194,17 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 133, 2026-11-18)
+## 6. Current baseline (session 135, 2026-11-18)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 157,696 / 125,224 |
+| source files / lines / code lines | 169 / 157,771 / 125,280 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (169 modules) |
 | dead exports (unused / test-only) | 33 / 6 |
-| duplication (windows / duplicated lines) | 888 / 6,353 (window 12) |
+| duplication (windows / duplicated lines) | 881 / 6,317 (window 12) |
 | functions ≥ 200 lines | 1 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
@@ -227,4 +227,7 @@ Session 134 added the shared `lsp/fstring.mt` splitter (moved out of
 navigation), and the one-document token/binding caches (+413 code lines, −28
 duplicated lines, −3 windows).  The caches are deliberately one-document: the
 hover path only holds a span within the helper that fetched it, and the handoff
-notes the multi-entry change any cross-file span would require.
+notes the multi-entry change any cross-file span would require.  Session 135's
+chained-hover audit added file-scoped module resolution
+(`resolve_module_source_path_for`) and match-arm payload-field hover (+56 code
+lines, −36 duplicated lines, −7 windows).
