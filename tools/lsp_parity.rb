@@ -712,6 +712,14 @@ def corpus(dir, paths)
     "textDocument" => { "uri" => package_uri },
     "position" => { "line" => method_line, "character" => method_col + 2 },
   }]
+  # A module-qualified variant arm (`local.Local.one`): the self resolves the
+  # arm from the imported type's module; the host answers null here (a
+  # self-better extension, documented in the plan).
+  arm_line, arm_col = find_pos(PACKAGE_USER_SOURCE, "local.Local.one as o")
+  requests["hover/imported-variant-arm"] = ["textDocument/hover", {
+    "textDocument" => { "uri" => package_uri },
+    "position" => { "line" => arm_line, "character" => arm_col + 12 },
+  }]
   # A `str` receiver's extending method, directly and through a struct field.
   strings_uri = path_to_uri(paths[:strings])
   str_line, str_col = find_pos(STR_METHOD_SOURCE, "a.equal(b)")

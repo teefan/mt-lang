@@ -341,8 +341,8 @@
       "projects/mtc/src/mtc/lowering/async.mt:326:function:int_type",
       "projects/mtc/src/mtc/lowering/async.mt:330:function:void_type",
       "projects/mtc/src/mtc/lowering/lowering.mt:54:struct:LoweringError",
-      "projects/mtc/src/mtc/lsp/navigation.mt:769:function:analysis_for_document",
-      "projects/mtc/src/mtc/lsp/navigation.mt:780:function:ast_for_document",
+      "projects/mtc/src/mtc/lsp/navigation.mt:770:function:analysis_for_document",
+      "projects/mtc/src/mtc/lsp/navigation.mt:781:function:ast_for_document",
       "projects/mtc/src/mtc/lsp/protocol.mt:108:function:read_message",
       "projects/mtc/src/mtc/lsp/protocol.mt:324:function:write_progress_begin",
       "projects/mtc/src/mtc/lsp/protocol.mt:332:function:write_progress_report",
@@ -373,8 +373,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 881,
-    "duplicated_lines": 6317,
+    "windows": 882,
+    "duplicated_lines": 6341,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -779,6 +779,7 @@
       "73fc4541209a8b5fd89952c8dbdec7982e719f1c",
       "742c08cceeebf6f6e10c747e9c609ab3b0a8b4e7",
       "743e1380d482cc8b3c7bcd8766180fdcd00b14b2",
+      "74538f7edfe6479271dcc52019849955392aa7ff",
       "745af51a73da7d98607255ceee0563f16a090486",
       "74777d4bea5ade4b5d341fa69370a325c74a0422",
       "748019c628b763ab36335c24767c831f85582144",
@@ -1260,7 +1261,7 @@
     ]
   },
   "sizes": {
-    "total_code": 125301,
+    "total_code": 125384,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1847,10 +1848,10 @@
         "max_function": 79
       },
       "projects/mtc/src/mtc/lsp/navigation.mt": {
-        "lines": 5499,
-        "code": 4246,
+        "lines": 5603,
+        "code": 4326,
         "max_line": 206,
-        "max_function": 176
+        "max_function": 190
       },
       "projects/mtc/src/mtc/lsp/on_type_formatting.mt": {
         "lines": 119,
@@ -1955,8 +1956,8 @@
         "max_function": 30
       },
       "projects/mtc/src/mtc/lsp/workspace.mt": {
-        "lines": 1265,
-        "code": 897,
+        "lines": 1272,
+        "code": 900,
         "max_line": 169,
         "max_function": 53
       },

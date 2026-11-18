@@ -198,7 +198,7 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 157,795 / 125,301 |
+| source files / lines / code lines | 169 / 157,906 / 125,384 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
@@ -229,6 +229,6 @@ duplicated lines, −3 windows).  The caches are deliberately one-document: the
 hover path only holds a span within the helper that fetched it, and the handoff
 notes the multi-entry change any cross-file span would require.  Session 135's
 chained-hover audit added file-scoped module resolution
-(`resolve_module_source_path_for`), match-arm payload-field hover, and the
-`str` type key/builtin fields (+77 code lines, −36 duplicated lines, −7
-windows).
+(`resolve_module_source_path_for`), match-arm payload-field hover, the `str`
+type key/builtin fields, and the self-better imported-variant-arm hover (+160
+code lines, −12 duplicated lines, −6 windows).

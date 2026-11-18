@@ -1024,6 +1024,11 @@ public struct DocumentAnalysis:
     ## The raw parse's declaration count (before the analyzer appends the
     ## declarations `emit` statements produce), for the outline's cutoff.
     parsed_declaration_count: ptr_uint
+    ## The loader-backed program when the document loaded (the import closure's
+    ## analyses), so a request can answer an imported-module question without
+    ## re-fetching and re-hashing this document's cache entry.  None for the
+    ## single-file fallback.
+    program: Option[loader.Program]
 
 
 public function document_analysis_for(ws: ref[Workspace], path: str) -> Option[DocumentAnalysis]:
@@ -1035,6 +1040,7 @@ public function document_analysis_for(ws: ref[Workspace], path: str) -> Option[D
                 ast_file = entry.analysis.source_file,
                 analysis = entry.analysis,
                 parsed_declaration_count = root_module_declaration_count(entry.program, entry.analysis.module_name),
+                program = Option[loader.Program].some(value = entry.program),
             ))
         Option.none:
             pass
@@ -1047,6 +1053,7 @@ public function document_analysis_for(ws: ref[Workspace], path: str) -> Option[D
         ast_file = parsed.ast_file,
         analysis = parsed.analysis,
         parsed_declaration_count = parsed.ast_file.declarations.len,
+        program = Option[loader.Program].none,
     ))
 
 

@@ -149,7 +149,7 @@ gate_label() {
         unused_import)  echo "unused-import parity (635/635, ~30 min)" ;;
         refactor_guard) echo "structural guard: layering/naming/markers (fast)" ;;
         guard_tests)    echo "refactor guard unit tests" ;;
-        harness)        echo "LSP harness 30/30 + 4 documented entries (~3 min)" ;;
+        harness)        echo "LSP harness 30/30 + 5 documented entries (~3 min)" ;;
         recovery)       echo "LSP recovery probe (byte-compared)" ;;
         fixtures)       echo "LSP fixture sweep vs baselines (when tmp/ has it)" ;;
         audit)          echo "full LSP project audit (meter, ~5-15 min)" ;;

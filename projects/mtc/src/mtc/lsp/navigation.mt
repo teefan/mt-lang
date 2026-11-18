@@ -20,6 +20,7 @@ import mtc.lexer.token_kinds as tk
 import mtc.parser.ast as ast
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
+import mtc.loader.module_loader as loader
 import mtc.loader.path_resolver as resolver
 import mtc.lsp.cursor as cursor
 import mtc.lsp.definition_index as defidx
@@ -1652,6 +1653,20 @@ public function resolve_cursor(
                         return Option[CursorResult].some(value = member_hit.value)
                     Option.none:
                         pass
+        Option.none:
+            pass
+
+    # `alias.Type.arm` / an imported `Type.arm`: a variant arm declared in the
+    # type's module (a self-better extension — the host answers only a local
+    # `Type.arm`).  The module analysis comes from the current document's loaded
+    # program, so this costs no extra parse.
+    match cursor.type_receiver_at(source, line, character):
+        Option.some as arm_recv:
+            match resolve_imported_variant_arm(ws, ref_of(analysis), arm_recv.value, target.text, file_path.as_str(), doc.program):
+                Option.some as arm_hit:
+                    return Option[CursorResult].some(value = arm_hit.value)
+                Option.none:
+                    pass
         Option.none:
             pass
 
@@ -4044,6 +4059,95 @@ function variant_arm_name_in_file(file: ast.SourceFile, name: str) -> Option[Cur
             _:
                 pass
         di -= 1
+    return Option[CursorResult].none
+
+
+## The arm `arm_name` of `type_name` in an imported variant module — a
+## self-better extension: the host resolves only a local `Type.arm`, while this
+## reuses the current document's loaded program (no extra parse) to answer
+## `ast.Decl.decl_const`.
+function resolve_imported_variant_arm(
+    ws: ref[workspace.Workspace],
+    analysis: ref[analyzer.Analysis],
+    receiver: cursor.TypeReceiver,
+    arm_name: str,
+    from_path: str,
+    program: Option[loader.Program],
+) -> Option[CursorResult]:
+    var module_name: str = ""
+    if receiver.module_alias.len > 0:
+        let module_ptr = unsafe: read(analysis).imports.get(receiver.module_alias) else:
+            return Option[CursorResult].none
+        module_name = unsafe: read(module_ptr)
+    else:
+        let ty_ptr = unsafe: read(analysis).types.get(receiver.name) else:
+            return Option[CursorResult].none
+        match unsafe: read(ptr[types.Type]<-ty_ptr):
+            types.Type.ty_named as n:
+                module_name = n.module_name
+            types.Type.ty_imported as im:
+                module_name = im.module_name
+            _:
+                # A generic/primitive receiver (`Vec[T].create`, `mat4.identity`)
+                # is a static method, not an imported variant arm.
+                return Option[CursorResult].none
+        if module_name.len == 0 or module_name.equal(unsafe: read(analysis).module_name):
+            return Option[CursorResult].none
+    match module_ast_from_program(program, module_name):
+        Option.some as imported_file:
+            return variant_arm_in_type_in_file(imported_file.value, receiver.name, arm_name)
+        Option.none:
+            pass
+    # No loaded program for the requesting document (a single-file fallback):
+    # pay one module load rather than dropping the answer.
+    var module_path = resolve_module_source_path_for(ws, module_name, from_path) else:
+        return Option[CursorResult].none
+    defer: module_path.release()
+    let module_doc = workspace.document_analysis_for(ws, module_path.as_str()) else:
+        return Option[CursorResult].none
+    return variant_arm_in_type_in_file(module_doc.ast_file, receiver.name, arm_name)
+
+
+## An imported module's AST from the requesting document's loaded program (the
+## dependency closure the loader already built), or none when the document has
+## no program entry.  The AST is a small value; the module's full analysis is
+## not copied per hover.
+function module_ast_from_program(
+    program: Option[loader.Program],
+    module_name: str,
+) -> Option[ast.SourceFile]:
+    let loaded = program else:
+        return Option[ast.SourceFile].none
+    let analyses = loaded.analyses
+    var i: ptr_uint = 0
+    while i < analyses.len():
+        let ap = analyses.get(i) else:
+            break
+        if unsafe: read(ap).module_name.equal(module_name):
+            return Option[ast.SourceFile].some(value = unsafe: read(ap).source_file)
+        i += 1
+    return Option[ast.SourceFile].none
+
+
+## `Type.arm(field: T, …)` for `type_name`'s arm `arm_name` in `file`.
+function variant_arm_in_type_in_file(file: ast.SourceFile, type_name: str, arm_name: str) -> Option[CursorResult]:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_variant as v:
+                if v.name.equal(type_name):
+                    var ai: ptr_uint = 0
+                    while ai < v.variant_arms.len:
+                        let arm = unsafe: read(v.variant_arms.data + ai)
+                        if arm.name.equal(arm_name):
+                            return Option[CursorResult].some(value = variant_arm_name_result(v.name, arm, arm_name))
+                        ai += 1
+            _:
+                pass
+        di += 1
     return Option[CursorResult].none
 
 
