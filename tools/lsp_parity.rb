@@ -303,8 +303,12 @@ MT
 
 # A `str` receiver's extending method (`equal` in std.str) and the same call
 # through a struct field, so the builtin-`str` type key and the field-chain walk
-# are both exercised.
+# are both exercised.  The guarded locals (`var x = … else:`) pin the narrowed
+# binding type: their member calls resolve through the success type, not the
+# initializer's `Option[…]`/`T?`.
 STR_METHOD_SOURCE = <<~MT
+  import std.string as string
+
   function str_eq(a: str, b: str) -> bool:
       return a.equal(b)
 
@@ -313,6 +317,29 @@ STR_METHOD_SOURCE = <<~MT
 
   function named_eq(n: Named) -> bool:
       return n.name.equal("x")
+
+  struct Holder:
+      size: int
+
+  extending Holder:
+      function doubled() -> int:
+          return this.size * 2
+
+  function maybe_holder() -> Holder?:
+      return null
+
+  function guarded_holder() -> int:
+      var holder = maybe_holder() else:
+          return 0
+      return holder.doubled()
+
+  function maybe_text() -> Option[string.String]:
+      return Option[string.String].none
+
+  function guarded_text() -> str:
+      var text = maybe_text() else:
+          return ""
+      return text.as_str()
 MT
 
 def path_to_uri(path)
@@ -732,6 +759,19 @@ def corpus(dir, paths)
     "textDocument" => { "uri" => strings_uri },
     "position" => { "line" => named_line, "character" => named_col + 7 },
   }]
+  # The reported shape: guarded locals over a nullable and an
+  # `Option[string.String]` initializer, whose member calls resolve through the
+  # narrowed binding type.
+  text_line, text_col = find_pos(STR_METHOD_SOURCE, "text.as_str()")
+  requests["hover/guarded-local-str-method"] = ["textDocument/hover", {
+    "textDocument" => { "uri" => strings_uri },
+    "position" => { "line" => text_line, "character" => text_col + 5 },
+  }]
+  holder_line, holder_col = find_pos(STR_METHOD_SOURCE, "holder.doubled()")
+  requests["hover/guarded-local-method"] = ["textDocument/hover", {
+    "textDocument" => { "uri" => strings_uri },
+    "position" => { "line" => holder_line, "character" => holder_col + 8 },
+  }]
   # A field name in its own declaration (the `field <name>: <type>` arm).
   requests["hover/field-declaration"] = ["textDocument/hover", at.call("x: int")]
   requests["signatureHelp"] = ["textDocument/signatureHelp", at.call("compute(3, 4)", off: 8)]
@@ -958,13 +998,10 @@ def run_stress(client, dir, paths)
   end
   outcomes["stress/open-close+hover"] = client.request("textDocument/hover", { "textDocument" => { "uri" => main_uri }, "position" => { "line" => 0, "character" => 0 } })
 
-  # 8. cache-invalidating client notifications, after the measured probes so
-  # they cannot perturb them (they are here for crash coverage).
-  client.notify("workspace/didChangeConfiguration", { "settings" => { "milkTea" => { "format" => { "mode" => "tidy" } } } })
-  client.notify("workspace/didChangeWatchedFiles", { "changes" => [{ "uri" => main_uri, "type" => 2 }] })
-  client.notify("workspace/didChangeWorkspaceFolders", { "event" => { "added" => [], "removed" => [] } })
-  client.notify("workspace/willRenameFiles", { "files" => [{ "oldUri" => main_uri, "newUri" => path_to_uri(File.join(dir, "renamed.mt")) }] })
-
+  # 8. cache-invalidating client notifications: they run after the C5 probes
+  # below (see the end of this method) so they cannot perturb a measured
+  # request — `willRenameFiles` moves the host's indexed document to the new
+  # URI, and a later reference query would see that copy (`renamed.mt`).
   # 9. client-behaviour probes (C5): measured outcomes for the notification
   # paths the corpus does not cover — configuration changes, watched files,
   # workspace-folder events, cancellation and closed-file disk edits.  Probes
@@ -1004,12 +1041,20 @@ def run_stress(client, dir, paths)
   client.notify("$/cancelRequest", { "id" => 987_654 })
   outcomes["c5/cancel-then-hover"] = client.request("textDocument/hover", { "textDocument" => { "uri" => main_uri }, "position" => { "line" => 0, "character" => 0 } })
 
-  # 9e. adding a workspace folder while the current root remains.
+  # 9e. adding a workspace folder while the current root remains.  The host
+  # reindexes the new root on a worker, so an immediate query can still see the
+  # pre-folder index (its documented facts lag); poll a fixed number of times
+  # and record the settled answer.
   extra_dir = File.join(dir, "extra_ws")
   FileUtils.mkdir_p(extra_dir)
   File.write(File.join(extra_dir, "extra.mt"), "public function extra_marker() -> int:\n    return 9\n")
   client.notify("workspace/didChangeWorkspaceFolders", { "event" => { "added" => [{ "uri" => path_to_uri(extra_dir), "name" => "extra_ws" }], "removed" => [] } })
-  outcomes["c5/workspace-folder-added+workspaceSymbol"] = client.request("workspace/symbol", { "query" => "extra_marker" })
+  folder_symbol_result = nil
+  5.times do |attempt|
+    sleep 0.05 if attempt.positive?
+    folder_symbol_result = client.request("workspace/symbol", { "query" => "extra_marker" })
+  end
+  outcomes["c5/workspace-folder-added+workspaceSymbol"] = folder_symbol_result
 
   # 9f. a closed file is edited on disk: hover before the edit, then after —
   # the client sends no notification, so this pins each server's content-cache
@@ -1021,6 +1066,14 @@ def run_stress(client, dir, paths)
   File.write(paths[:scratch], "function scratch_renamed() -> int:\n    return 2\n")
   sleep 0.2
   outcomes["c5/closed-edit-after-hover"] = client.request("textDocument/hover", { "textDocument" => { "uri" => scratch_uri }, "position" => { "line" => 0, "character" => 10 } })
+
+  # The cache-invalidating notifications run after every measured probe (see
+  # step 8): `willRenameFiles` moves the host's indexed document to `renamed.mt`,
+  # so any later reference query would see that copy.
+  client.notify("workspace/didChangeConfiguration", { "settings" => { "milkTea" => { "format" => { "mode" => "tidy" } } } })
+  client.notify("workspace/didChangeWatchedFiles", { "changes" => [{ "uri" => main_uri, "type" => 2 }] })
+  client.notify("workspace/didChangeWorkspaceFolders", { "event" => { "added" => [], "removed" => [] } })
+  client.notify("workspace/willRenameFiles", { "files" => [{ "oldUri" => main_uri, "newUri" => path_to_uri(File.join(dir, "renamed.mt")) }] })
 
   outcomes
 end

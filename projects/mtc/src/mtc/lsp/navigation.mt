@@ -864,8 +864,9 @@ public function type_of_value_with_bindings(
     return Option[types.Type].none
 
 
-## The type of the local named `name` declared on `want_line`: the inferred type
-## of its initializer (an annotated local has no inferred type here).
+## The type of the local named `name` declared on `want_line`: its binding type
+## (the resolved annotation, or the initializer's inferred type with an `else`
+## guard's success-type narrowing).
 function local_type_at_line(stmt: ast.Stmt, name: str, want_line: ptr_uint, analysis: ref[analyzer.Analysis]) -> Option[types.Type]:
     match find_local_decl_at_line(stmt, name, want_line):
         Option.some as found:
@@ -878,12 +879,7 @@ function local_type_at_line(stmt: ast.Stmt, name: str, want_line: ptr_uint, anal
                             return Option[types.Type].some(value = destructured.value)
                         Option.none:
                             pass
-                    if loc.stmt_type != null:
-                        let declared_ptr = analysis.local_decl_types.get(loc.line)
-                        if declared_ptr != null:
-                            return Option[types.Type].some(value = unsafe: read(declared_ptr))
-                        return Option[types.Type].none
-                    return type_render.initializer_type(analysis, loc.value)
+                    return type_render.local_binding_type(analysis, found.value)
                 _:
                     return Option[types.Type].none
         Option.none:

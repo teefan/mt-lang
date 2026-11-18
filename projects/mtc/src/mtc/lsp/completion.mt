@@ -1989,23 +1989,7 @@ function find_local_type(
                     if entry.line == loc.line and entry.name.equal(name):
                         return Option[types.Type].some(value = entry.ty)
                     di2 += 1
-                # An annotated local carries the analyzer's resolved declared
-                # type; an unannotated one its initializer's inferred type.
-                if loc.stmt_type != null:
-                    let declared_ptr = unsafe: read(analysis).local_decl_types.get(loc.line)
-                    if declared_ptr != null:
-                        return Option[types.Type].some(value = unsafe: read(declared_ptr))
-                    return Option[types.Type].none
-                match type_render.initializer_type(analysis, loc.value):
-                    Option.some as inited:
-                        # A guarded `let x = … else:` binds the *narrowed*
-                        # success type, which is what the analyzer puts in its
-                        # scope and the host's snapshot carries.
-                        if loc.else_body != null:
-                            return Option[types.Type].some(value = analyzer.unwrap_nullable_type(inited.value))
-                        return Option[types.Type].some(value = inited.value)
-                    Option.none:
-                        return Option[types.Type].none
+                return type_render.local_binding_type(analysis, stmt)
         ast.Stmt.stmt_block as blk:
             var si: ptr_uint = 0
             while si < blk.statements.len:

@@ -15,7 +15,8 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-135-2026-11-18)
+- [Status at a glance](#status-at-a-glance-session-136-2026-11-18)
+- [Session 136 — guarded-local member hover](#session-136--guarded-local-member-hover)
 - [Session 135 — chained-hover audit](#session-135--chained-hover-audit)
 - [Session 134 — the session-133 LSP follow-ups and hover latency](#session-134--the-session-133-lsp-follow-ups-and-hover-latency)
 - [Session 133 — VS Code LSP audit on the compiler sources](#session-133--vs-code-lsp-audit-on-the-compiler-sources)
@@ -80,7 +81,7 @@ history.
 - [Session 74 — decisions closed](#session-74--decisions-closed)
 - [Session 73 — the `mtc test` CLI matrix](#session-73--the-mtc-test-cli-matrix)
 - [Session 72 — the `check`/analyzer surface](#session-72--the-checkanalyzer-surface)
-- [Handoff](#handoff-session-75)
+- [Handoff](#handoff-session-136)
 - [How to start a work session](#how-to-start-a-work-session)
 - [The program — tracks and stopping rules (all closed)](#the-program--tracks-and-stopping-rules-all-closed)
 - [Deliberate differences (do not chase)](#deliberate-differences-do-not-chase)
@@ -89,7 +90,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 135, 2026-11-18)
+## Status at a glance (session 136, 2026-11-18)
 
 | Area | State |
 | --- | --- |
@@ -101,7 +102,7 @@ history.
 | `cli:parity` | **224 match / 0 differ / 0 pending** of 224 cases (`--timings` values, `debug`'s Ruby node ids and the synthesized test-runner path normalized; 43 `test` cases plus the second-batch sweep: global extraction, resolution flags, per-command operand models, missing/empty operands, completions/std/snapshot/cache/lsp/dap/bindgen/deps) |
 | **`check` diagnostics (new)** | **501 agree / 0 verdict / 0 position / 3 message of 504** files (`tools/diag_parity.rb check`; the 3 message files are `std/cli.mt`, `examples/reflection_advanced.mt`, and `examples/memory_stress_test.mt`) |
 | Linter corpus | **624 agree / 34 differ of 658** (hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  The `std`+`examples` residue is still the 4 documented rows (two self-only `redundant-cast` in `std/cli.mt`, the self-only `prefer-let` cluster in `std/fs.windows.mt`, the host-only `constant-condition` in `examples/reflection_advanced.mt`); the 30 additional rows are `projects/mtc/src` files where the host linter times out (`<timeout after 180s>`) or reports pre-existing source-only warnings. |
-| LSP | harness **30/30 capability keys + the documented `typeDefinition/imported` row and the self-better `imported-variant-arm` row** (**84 requests**, re-recorded session 135; the stress section keeps its 3 documented rows); project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **70–80 KB/cycle raw / ~3–28 LS at 200 cycles**.  Session 134 closed the four session-133 gaps (f-string interpolation hover, cross-file rename, `ref[ImportedStruct]` fields, imported-generic-field method hover) and added the per-document token/binding caches (hover 117–119.7 → 30.5 ms on `analyzer.mt`).  Session 135's chained-hover audit fixed file-scoped module resolution for package-local modules, match-arm payload-field hover (`a.value`, `c.name`), and `str` member hover (`equal`/`slice`/`len`); hover on the same mix is 32.5 ms (host 16 ms), the added cost being the package-root fallback only when the workspace roots miss a module.  The module-qualified variant arm (`ast.Decl.decl_const`) is a self-better extension (the host returns null). |
+| LSP | harness **30/30 capability keys + the documented `typeDefinition/imported` row and the self-better `imported-variant-arm` row** (**86 requests**, re-recorded session 136; the stress section keeps its 3 documented rows); project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal** on the main fixture; valgrind **0 errors**; edit latency **4.9 ms median**; soak **70–80 KB/cycle raw / ~3–28 LS at 200 cycles**.  Session 134 closed the four session-133 gaps (f-string interpolation hover, cross-file rename, `ref[ImportedStruct]` fields, imported-generic-field method hover) and added the per-document token/binding caches (hover 117–119.7 → 30.5 ms on `analyzer.mt`).  Session 135's chained-hover audit fixed file-scoped module resolution for package-local modules, match-arm payload-field hover (`a.value`, `c.name`), and `str` member hover (`equal`/`slice`/`len`); hover on the same mix is 32.5 ms (host 16 ms), the added cost being the package-root fallback only when the workspace roots miss a module.  The module-qualified variant arm (`ast.Decl.decl_const`) is a self-better extension (the host returns null).  Session 136 fixed guarded-local member hover (`var x = … else:` binds the narrowed success type: `.release`/`.as_str` on an `Option[string.String]` local now answer) and pinned it with `hover/guarded-local-method` and `hover/guarded-local-str-method`. |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the real lldb-dap bridge closes the VS Code F5 launch deadlock (configurationDone no longer waits for the launch response), proven by `tools/dap_async_probe.rb`; desktop F5 smoke passed session 74 |
 | Formatter | **776/776** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
@@ -117,6 +118,61 @@ done, and session 72 added the analyzer/`check` surface that no gate had
 measured.  The only residuals are the documented `tracy` custom-generator entry
 and the optional desktop F5 smoke.  Track G (throughput) closed in session 72:
 the self is now faster than the host.
+
+## Session 136 — guarded-local member hover
+
+Hovering a member of a local declared with an `else` guard
+(`var file_path = uri_ops.file_uri_to_path(uri) else:` at
+`projects/mtc/src/mtc/lsp/code_lens.mt:30`) answered null on `.release`
+(line 33) and `.as_str` (line 40), while the host answered the
+`std.string.String` method.  The analyzer narrows the guarded binding to the
+success type (`String`), and both `completion.mt` and the host's facts use that
+type, but `navigation.mt`'s `local_type_at_line` returned the initializer's
+recorded type (`Option[String]`) for an unannotated local; `receiver_path_type`
+therefore started at `Option` and every member path bailed.
+
+New `type_render.local_binding_type(analysis, stmt)` is the single binding-type
+rule: the resolved annotation for an annotated local, else the initializer's
+inferred type, narrowed with `analyzer.unwrap_nullable_type` when the
+declaration carries an `else` body (`T?`, `Option[T]`, `Result[T, E]`).
+`navigation.mt`'s `local_type_at_line` and `completion.mt`'s `find_local_type`
+both delegate to it, so the narrowing cannot drift between them again
+(`completion.mt` already had it inline; navigation did not).
+
+Verified against the host: `code_lens.mt:33:21` and `:38:19` answer
+`editable function release() -> void` at `std/string.mt:56`, and `:40:25`
+answers `function as_str() -> str` at `std/string.mt:211` — text and location
+byte-equal.  Harness: **86 requests**; new `hover/guarded-local-method`
+(nullable struct local, `holder.doubled()`) and `hover/guarded-local-str-method`
+(`Option[string.String]` local, `text.as_str()`) in `strings.mt`.  Two C5
+probe fixes were needed for the recorded set to stay stable: the
+cache-invalidating notifications (`willRenameFiles` included) now run after
+every measured probe — the host moves its indexed document to `renamed.mt`,
+and a later references query saw that copy — and the added-workspace-folder
+symbol probe polls a fixed number of times so the host's asynchronous reindex
+has settled.
+
+Verification: dev suite 22/0; `test/mt` 61/0; bootstrap fixed point; harness
+86 requests with the two documented request rows and three stress rows
+(stable over two runs); recovery 6/6; project audit hover on SimpleGame 915
+entries with the one documented `lb@1653:24` row; `tmp/probe-ws` 0 hover
+diffs; refactor guard `--check --strict --ratchet` after the reviewed baseline
+refresh (125,385 code lines; completion −11, navigation −5, type_render +17).
+
+Discovered while extending the fixture, not fixed here:
+
+1. **`milkTea/debugInfo`'s Functions section does not qualify nested named
+   types.**  A function returning `Sample?` renders `Sample?` (host
+   `main.Sample?`), and `Option[Sample]` renders `Option[Sample]` (host
+   `std.option.Option[main.Sample]`): `binding_type_repr` resolves a bare
+   `ty_named` through `analysis.types` but does not recurse into a nullable
+   base or generic arguments.  The recorded main fixture has no such return
+   type, so its row stayed byte-equal; adding one reproduces the diff.
+2. **`workspace/willRenameFiles` does not move the index entry.**  The host's
+   `rename_indexed_file` moves the cached document (and applies module-index
+   events) to the new URI, so later references include `renamed.mt`; the self
+   invalidates caches for the old path only.  Both predate this session and are
+   orthogonal to the binding-type fix.
 
 ## Session 135 — chained-hover audit
 
@@ -2506,47 +2562,50 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
-## Handoff (session 135)
+## Handoff (session 136)
 
-**Next session:** no functional hover gap is known.  Session 135 closed
+**Next session:** no functional hover gap is known.  Session 136 fixed
+guarded-local member hover (`var x = … else:` binds the narrowed success type,
+so a member chain on an `Option[String]` local resolves `String`'s method) and
+pinned it with `hover/guarded-local-method` and
+`hover/guarded-local-str-method`.  Session 135 closed
 file-scoped module resolution (package `source_root` modules now resolve for
 import/alias/type/method/field/enum hover and definition), match-arm
 payload-field hover (`a.value`, `c.name`), `str` member hover
 (`equal`/`slice`/`len`), and a module-qualified variant arm
 (`ast.Decl.decl_const`), which is self-better (the host returns null) and pinned
-by `hover/imported-variant-arm`.  Keep the harness (**84 requests**) in step
-when a context changes and exercise the context in VS Code.  The remaining LSP
-item is latency: hover on `analyzer.mt` is ~32–36 ms vs the host's 16 ms after
-the caches and the module-resolution fix.  The added cost is the package-root
-fallback (manifest walk) only when the workspace roots miss a module; if it
-matters, cache the package source root per requesting file/package instead of
-re-walking it.  The other repeated work remains `document_analysis_for`'s
-content hash/source copy per helper, the definition index warm, and the
-analysis-table scans.  Do not re-introduce a whole-file lex per lookup and keep
-the token/binding cache one-document (or make it explicitly
+by `hover/imported-variant-arm`.  Keep the harness (**86 requests**) in step
+when a context changes and exercise the context in VS Code.  The two
+LSP findings not fixed in session 136 are recorded in that section: nested
+named types are unqualified in `milkTea/debugInfo`'s Functions section, and
+`workspace/willRenameFiles` does not move the index entry to the new URI.  The
+remaining LSP item is latency: hover on `analyzer.mt` is ~32–36 ms vs the
+host's 16 ms after the caches and the module-resolution fix.  The added cost is
+the package-root fallback (manifest walk) only when the workspace roots miss a
+module; if it matters, cache the package source root per requesting
+file/package instead of re-walking it.  The other repeated work remains
+`document_analysis_for`'s content hash/source copy per helper, the definition
+index warm, and the analysis-table scans.  Do not re-introduce a whole-file lex
+per lookup and keep the token/binding cache one-document (or make it explicitly
 multi-entry before any helper holds a span across a cross-file fetch).  Keep
 heavy parity sweeps memory-capped (`--mem-mb`, `-j 2`–`4`) — `mtc test` no
 longer accumulates memory, but each independent compiler still peaks at
 2.5–3.4 GB on compiler-sized closures.
 
-**Current tree (session 135):** `d318e6cf` (f-string hover, cross-file
-rename, imported-type/member hover, token/binding caches), `19462c06`
-(file-scoped module resolution, payload-field hover), `60a07c1f` (`str` member
-hover + payload field walk), `ac939dc1` (self-better module-qualified variant
-arm).  The harness's new cases are `hover/format-string`,
-`completion/ref-imported-field`, `hover/imported-field-method` ×2,
-`rename/imported-function`, the package-`source_root` group
-(`hover/package-module`, `hover/package-type`,
-`hover/variant-payload-field`, `hover/package-method`),
-`hover/str-method`, `hover/str-method-field-chain`, and
-`hover/imported-variant-arm` (the last is the only new host/self difference).
+**Current tree (session 136):** the session-135 commits (`d318e6cf`,
+`19462c06`, `60a07c1f`, `ac939dc1`) plus the guarded-local fix in
+`type_render.mt`/`navigation.mt`/`completion.mt` and the harness's
+`hover/guarded-local-method` and `hover/guarded-local-str-method` cases
+(the fixtures live in `strings.mt`).  Two C5 probe fixes ride along: the
+cache-invalidating notifications run after the measured probes, and the
+added-folder symbol probe settles the host's asynchronous reindex.
 
 **First actions:** rebuild and smoke the tree before measuring —
 `ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`,
 `tmp/mtc-dev test projects/mtc -I . --timeout 120`,
 `ruby tools/refactor_guard.rb --check`.  Then re-record the LSP harness
 (`ruby tools/lsp_parity.rb record --server self --self tmp/mtc-dev --out
-tmp/lsp-self.json --stress` and the host counterpart; 84 requests; expect the
+tmp/lsp-self.json --stress` and the host counterpart; 86 requests; expect the
 documented `typeDefinition/imported` row, the self-better
 `imported-variant-arm` row, and the 3 stress rows).  For the latency task,
 recreate the hover bench from the session-135 record (or use
@@ -2654,14 +2713,17 @@ moved.**
 
 ### Open items, in priority order
 
-1. **LSP audit follow-ups (sessions 134–135).**  No functional hover/completion/
+1. **LSP audit follow-ups (sessions 134–136).**  No functional hover/completion/
    rename gap is known.  Session 134 closed f-string interpolation hover,
    cross-file rename, `ref[ImportedStruct]` completion and imported-generic-field
    method hover, and added the per-document token/binding caches (117–119.7 →
    30.5 ms).  Session 135 closed package-`source_root` module resolution,
    match-arm payload-field hover, `str` member hover, and a self-better
-   module-qualified variant-arm hover.  The remaining latency work is recorded
-   in the session-135
+   module-qualified variant-arm hover.  Session 136 closed guarded-local member
+   hover and recorded two new findings in its section: nested named types are
+   unqualified in `milkTea/debugInfo`'s Functions section, and
+   `workspace/willRenameFiles` does not move the index entry.  The remaining
+   latency work is recorded in the session-136
    handoff: the package-root fallback walk, `document_analysis_for`'s per-helper
    source copy/hash, the definition-index warm, and the analysis-table scans; the
    memory list (semantic-token payloads, diagnostics) is unchanged.
@@ -3399,8 +3461,8 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 135 (re-verified) | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 61 files / 0 failed (peak RSS 135 MB under the new compiler) | session 135 (re-verified) | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 136 (re-verified) | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 61 files / 0 failed (peak RSS 135 MB under the new compiler) | session 136 (re-verified) | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | **49/49 same** under the gate (15 top-level + 34 sdl3) | session 128 (re-verified) | `tools/gates.sh --areas examples --run` |
 | `sexpr lex` / `parse` | lex 739/739 (session 120); **parse 772 match / 0 differ / 4 host-rejected of 776** (session 130; counts include `tmp` fixtures) | session 130 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
 | `sexpr lower` | **715 match / 53 host-rejected** of 776; the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (empty-output differ or self-fail depending on how the loop limit lands); every extracted module matches | session 130 | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
@@ -3411,7 +3473,7 @@ when the tree moved.  Target = the Definition of Done above.
 | docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 71 | `ruby tools/docs_smoke.rb` |
 | lint corpus | full: **624 agree / 34 differ of 658**; focused `std`+`examples`: **501 agree / 3 differ of 504** (the documented residue); hostfail 0, selffail 0; **43/43 rules, 13/13 fixers** | session 101 (focused re-verified 129) | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 635/635 | session 71 | `ruby tools/unused_import_parity.rb` |
-| LSP harness | 30/30 capabilities; **84 requests** with the documented `typeDefinition/imported` and self-better `imported-variant-arm` rows | session 135 | `tools/lsp_parity.rb record/compare --stress` |
+| LSP harness | 30/30 capabilities; **86 requests** with the documented `typeDefinition/imported` and self-better `imported-variant-arm` rows | session 136 | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 135 (re-verified) | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
 | LSP recovery | 6/6 byte-equal | session 135 (re-verified) | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | 4.9 ms median per `didChange`; `didOpen` ~52 ms cold | session 29 | `ruby tmp/lsp_edit_perf.rb --bin <bin>` (transient probe) |
@@ -3422,7 +3484,7 @@ when the tree moved.  Target = the Definition of Done above.
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 | bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 130 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 33 unused / 6 test-only exports; **6,341 duplicated lines / 882 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61; `--check --strict --ratchet` ok (baseline refreshed for the session-135 chained-hover fixes) | session 135 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 33 unused / 6 test-only exports; **6,341 duplicated lines / 882 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61; `--check --strict --ratchet` ok (baseline refreshed for the session-136 `local_binding_type` helper: 125,385 code lines; completion −11, navigation −5, type_render +17) | session 136 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 

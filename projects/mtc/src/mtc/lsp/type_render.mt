@@ -30,6 +30,30 @@ public function initializer_type(analysis: ref[analyzer.Analysis], value: ptr[as
     return Option[types.Type].some(value = unsafe: read(ty_ptr))
 
 
+## The binding type of a local declaration: the resolved annotation for an
+## annotated local, else its initializer's inferred type.  A guarded declaration
+## (`var x = … else:`) binds the *success* type — the analyzer narrows the
+## initializer's `T?`/`Option[T]`/`Result[T, E]` for the scope, and the host's
+## facts carry that narrowed type, so a member chain on the local starts there.
+public function local_binding_type(analysis: ref[analyzer.Analysis], stmt: ast.Stmt) -> Option[types.Type]:
+    match stmt:
+        ast.Stmt.stmt_local as loc:
+            if loc.stmt_type != null:
+                let declared_ptr = unsafe: read(analysis).local_decl_types.get(loc.line)
+                if declared_ptr != null:
+                    return Option[types.Type].some(value = unsafe: read(declared_ptr))
+                return Option[types.Type].none
+            match initializer_type(analysis, loc.value):
+                Option.some as inited:
+                    if loc.else_body != null:
+                        return Option[types.Type].some(value = analyzer.unwrap_nullable_type(inited.value))
+                    return Option[types.Type].some(value = inited.value)
+                Option.none:
+                    return Option[types.Type].none
+        _:
+            return Option[types.Type].none
+
+
 ## The host's `short_type_detail`: a type's own name with its generic
 ## arguments, without the module qualifier.
 public function short_name(ty: types.Type) -> string.String:

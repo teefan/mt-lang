@@ -1261,7 +1261,7 @@
     ]
   },
   "sizes": {
-    "total_code": 125384,
+    "total_code": 125385,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1740,8 +1740,8 @@
         "max_function": 53
       },
       "projects/mtc/src/mtc/lsp/completion.mt": {
-        "lines": 3618,
-        "code": 2959,
+        "lines": 3602,
+        "code": 2948,
         "max_line": 160,
         "max_function": 131
       },
@@ -1848,8 +1848,8 @@
         "max_function": 79
       },
       "projects/mtc/src/mtc/lsp/navigation.mt": {
-        "lines": 5603,
-        "code": 4326,
+        "lines": 5599,
+        "code": 4321,
         "max_line": 206,
         "max_function": 190
       },
@@ -1938,8 +1938,8 @@
         "max_function": 66
       },
       "projects/mtc/src/mtc/lsp/type_render.mt": {
-        "lines": 321,
-        "code": 230,
+        "lines": 345,
+        "code": 247,
         "max_line": 119,
         "max_function": 60
       },
