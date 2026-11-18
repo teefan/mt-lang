@@ -1260,7 +1260,7 @@
     ]
   },
   "sizes": {
-    "total_code": 125280,
+    "total_code": 125301,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1847,8 +1847,8 @@
         "max_function": 79
       },
       "projects/mtc/src/mtc/lsp/navigation.mt": {
-        "lines": 5475,
-        "code": 4225,
+        "lines": 5499,
+        "code": 4246,
         "max_line": 206,
         "max_function": 176
       },

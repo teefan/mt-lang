@@ -1869,6 +1869,8 @@ function receiver_type_name(ty: types.Type) -> str:
             # A builtin receiver (`vec3`, `mat4`) names no module, but its
             # methods still live in an `extending` block.
             return p.name
+        types.Type.ty_str:
+            return "str"
         types.Type.ty_nullable as nl:
             return receiver_type_name(unsafe: read(nl.base))
         _:
@@ -3315,6 +3317,8 @@ public function type_to_key_name(t: types.Type) -> str:
             return op.name
         types.Type.ty_primitive as p:
             return p.name
+        types.Type.ty_str:
+            return "str"
         _:
             return ""
 
@@ -3323,6 +3327,19 @@ public function type_to_key_name(t: types.Type) -> str:
 ## imported) or a builtin vector/matrix/quaternion field, the host's
 ## `project_field_receiver_type_for_completion(...).field(name)`.
 public function field_of_type(analysis: ref[analyzer.Analysis], ty: types.Type, field_name: str) -> Option[types.Type]:
+    # A match-arm payload binding's fields are the arm's synthesized payload
+    # fields (`c.name` in `ast.Decl.decl_const as c`), with no struct to scan.
+    match ty:
+        types.Type.ty_variant_arm_payload as payload:
+            var pi: ptr_uint = 0
+            while pi < payload.fields.len:
+                let pf = unsafe: read(payload.fields.data + pi)
+                if pf.name.equal(field_name):
+                    return Option[types.Type].some(value = pf.ty)
+                pi += 1
+            return Option[types.Type].none
+        _:
+            pass
     let field_ty = project_value_receiver_type(types.unwrap_nullable(ty))
     let type_name = type_to_key_name(field_ty)
     let fields_ptr = unsafe: read(analysis).structs.get(type_name)
@@ -3366,6 +3383,13 @@ public function field_of_type(analysis: ref[analyzer.Analysis], ty: types.Type, 
 ## (the host's `Types::Vector`/`Matrix`/`Quaternion` field tables).  Completion's
 ## field-chain walk reads the same table.
 public function builtin_field_type_name(type_name: str, field_name: str) -> Option[str]:
+    # The host's `Types::StringView` fields (`str` is a pointer + length view).
+    if type_name.equal("str"):
+        if field_name.equal("data"):
+            return Option[str].some(value = "ptr[char]")
+        if field_name.equal("len"):
+            return Option[str].some(value = "ptr_uint")
+        return Option[str].none
     if type_name.equal("vec2"):
         return builtin_vector_field(field_name, 2, "float")
     if type_name.equal("vec3"):

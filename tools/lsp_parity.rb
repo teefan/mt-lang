@@ -301,6 +301,20 @@ PACKAGE_USER_SOURCE = <<~MT
       return b.get()
 MT
 
+# A `str` receiver's extending method (`equal` in std.str) and the same call
+# through a struct field, so the builtin-`str` type key and the field-chain walk
+# are both exercised.
+STR_METHOD_SOURCE = <<~MT
+  function str_eq(a: str, b: str) -> bool:
+      return a.equal(b)
+
+  struct Named:
+      name: str
+
+  function named_eq(n: Named) -> bool:
+      return n.name.equal("x")
+MT
+
 def path_to_uri(path)
   "file://#{path.split("/").map { |seg| CGI.escape(seg).gsub("+", "%20") }.join("/")}"
 end
@@ -329,6 +343,7 @@ def build_workspace(dir)
     package_manifest: File.join(dir, "pkg", "package.toml"),
     package_local: File.join(dir, "pkg", "src", "local_mod.mt"),
     package_user: File.join(dir, "pkg", "src", "user.mt"),
+    strings: File.join(dir, "strings.mt"),
   }
   File.write(paths[:alpha], ALPHA_SOURCE)
   File.write(paths[:beta], BETA_SOURCE)
@@ -347,6 +362,7 @@ def build_workspace(dir)
   File.write(paths[:package_manifest], PACKAGE_MANIFEST)
   File.write(paths[:package_local], PACKAGE_LOCAL_SOURCE)
   File.write(paths[:package_user], PACKAGE_USER_SOURCE)
+  File.write(paths[:strings], STR_METHOD_SOURCE)
   File.write(File.join(dir, "assets", "file.txt"), "hello\n")
   paths
 end
@@ -695,6 +711,18 @@ def corpus(dir, paths)
   requests["hover/package-method"] = ["textDocument/hover", {
     "textDocument" => { "uri" => package_uri },
     "position" => { "line" => method_line, "character" => method_col + 2 },
+  }]
+  # A `str` receiver's extending method, directly and through a struct field.
+  strings_uri = path_to_uri(paths[:strings])
+  str_line, str_col = find_pos(STR_METHOD_SOURCE, "a.equal(b)")
+  requests["hover/str-method"] = ["textDocument/hover", {
+    "textDocument" => { "uri" => strings_uri },
+    "position" => { "line" => str_line, "character" => str_col + 2 },
+  }]
+  named_line, named_col = find_pos(STR_METHOD_SOURCE, "n.name.equal")
+  requests["hover/str-method-field-chain"] = ["textDocument/hover", {
+    "textDocument" => { "uri" => strings_uri },
+    "position" => { "line" => named_line, "character" => named_col + 7 },
   }]
   # A field name in its own declaration (the `field <name>: <type>` arm).
   requests["hover/field-declaration"] = ["textDocument/hover", at.call("x: int")]
