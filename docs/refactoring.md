@@ -194,11 +194,11 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 136, 2026-11-18)
+## 6. Current baseline (session 137, 2026-11-18)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 157,906 / 125,385 |
+| source files / lines / code lines | 169 / 157,906 / 125,477 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |

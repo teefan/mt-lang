@@ -1261,7 +1261,7 @@
     ]
   },
   "sizes": {
-    "total_code": 125385,
+    "total_code": 125477,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1758,8 +1758,8 @@
         "max_function": 186
       },
       "projects/mtc/src/mtc/lsp/debug_info.mt": {
-        "lines": 1327,
-        "code": 1064,
+        "lines": 1409,
+        "code": 1131,
         "max_line": 279,
         "max_function": 94
       },
@@ -1968,10 +1968,10 @@
         "max_function": 57
       },
       "projects/mtc/src/mtc/lsp/workspace_notifications.mt": {
-        "lines": 159,
-        "code": 107,
+        "lines": 193,
+        "code": 132,
         "max_line": 110,
-        "max_function": 29
+        "max_function": 41
       },
       "projects/mtc/src/mtc/lsp/workspace_symbols.mt": {
         "lines": 211,

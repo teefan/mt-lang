@@ -1264,20 +1264,102 @@ public function debug_type_repr(t: types.Type) -> str:
             return types.type_to_string(t)
 
 
-## A binding type as the module's declared types render it: a bare named type
-## (`Sample`, recorded by the construction path without a module) takes the
-## declared type's own rendering (`main.Sample`), so the dump reads like the
-## host's facts, whose types always carry their module.
+## A binding type as the module's declared types render it: a named type
+## without a module (`Sample`, recorded by the construction or annotation path
+## without one) takes the declared type's own rendering (`main.Sample`), and the
+## resolution recurses through a nullable base and through generic/imported
+## arguments, so the dump reads like the host's facts, whose types always carry
+## their module (`main.Sample?`, `std.option.Option[main.Sample]`).  The prelude
+## variants render under their owning modules, as the host's do.
 function binding_type_repr(analysis: ref[analyzer.Analysis], t: types.Type) -> str:
+    var text = string.String.create()
+    append_binding_type_repr(ref_of(text), analysis, t)
+    return text.as_str()
+
+
+function append_binding_type_repr(target: ref[string.String], analysis: ref[analyzer.Analysis], t: types.Type) -> void:
     match t:
         types.Type.ty_named as n:
-            if n.module_name.len == 0:
-                let declared = analysis.types.get(n.name)
-                if declared != null:
-                    return debug_type_repr(unsafe: read(declared))
+            if n.module_name.len > 0:
+                target.append(n.module_name)
+                target.append(".")
+                target.append(n.name)
+                return
+            if n.name.equal("Option"):
+                target.append("std.option.Option")
+                return
+            if n.name.equal("Result"):
+                target.append("std.result.Result")
+                return
+            let declared = analysis.types.get(n.name)
+            if declared != null:
+                # An alias resolves through its target; a bare declaration of
+                # the same name (`module_name` empty) has no better spelling
+                # and must not recurse.
+                match unsafe: read(declared):
+                    types.Type.ty_named as dn:
+                        if dn.module_name.len > 0:
+                            target.append(dn.module_name)
+                            target.append(".")
+                            target.append(dn.name)
+                            return
+                    _:
+                        append_binding_type_repr(target, analysis, unsafe: read(declared))
+                        return
+            target.append(n.name)
+        types.Type.ty_nullable as nl:
+            append_binding_type_repr(target, analysis, unsafe: read(nl.base))
+            target.append("?")
+        types.Type.ty_imported as im:
+            append_binding_type_name(target, analysis, im.module_name, im.name)
+            append_binding_type_args(target, analysis, im.args)
+        types.Type.ty_generic as g:
+            append_binding_type_name(target, analysis, "", g.name)
+            append_binding_type_args(target, analysis, g.args)
         _:
-            pass
-    return debug_type_repr(t)
+            target.append(types.type_to_string(t))
+
+
+## A type name with its owning module: the recorded module when present, else
+## the declared type's, with the prelude variants under `std.option` /
+## `std.result` (the host's `Types::Variant#to_s`).
+function append_binding_type_name(target: ref[string.String], analysis: ref[analyzer.Analysis], module_name: str, name: str) -> void:
+    if module_name.len > 0:
+        target.append(module_name)
+        target.append(".")
+        target.append(name)
+        return
+    if name.equal("Option"):
+        target.append("std.option.Option")
+        return
+    if name.equal("Result"):
+        target.append("std.result.Result")
+        return
+    let declared = analysis.types.get(name)
+    if declared != null:
+        match unsafe: read(declared):
+            types.Type.ty_named as dn:
+                if dn.module_name.len > 0:
+                    target.append(dn.module_name)
+                    target.append(".")
+                    target.append(name)
+                    return
+            _:
+                pass
+    target.append(name)
+
+
+function append_binding_type_args(target: ref[string.String], analysis: ref[analyzer.Analysis], args: span[types.Type]) -> void:
+    if args.len == 0:
+        return
+    target.append("[")
+    var i: ptr_uint = 0
+    while i < args.len:
+        if i > 0:
+            target.append(", ")
+        append_binding_type_repr(target, analysis, unsafe: read(args.data + i))
+        i += 1
+    target.append("]")
 
 
 ## `%3d`: right-aligned in `width`.

@@ -72,14 +72,82 @@ public function handle_did_change_workspace_folders(ws: ref[workspace.Workspace]
     ws.force_reindex()
 
 
-## Handle workspace/willRenameFiles notification.  Clears caches for
-## each renamed file's old path.  The client handles the didOpen/didClose
-## transition separately — this just ensures lingering cache entries for
-## the old path don't persist.
+## Handle workspace/willRenameFiles notification.  Moves each renamed file's
+## reference and definition entries to the new path (the host's
+## `rename_indexed_file` + module-index events) and clears the old per-file
+## caches.  The new path is not a feature document of its own (the host answers
+## no hover, symbol or reference request for it until the client opens it), but
+## its content joins the workspace scans through those entries.
 public function handle_will_rename_files(ws: ref[workspace.Workspace], params: json.Value) -> void:
-    # Clear per-file caches for old paths and force index rebuild.
-    invalidate_for_renamed_files(ws, params)
+    move_renamed_documents(ws, params)
     ws.force_reindex()
+
+
+## Walk the notification's `files` array and move each `{oldUri, newUri}` pair.
+function move_renamed_documents(ws: ref[workspace.Workspace], params: json.Value) -> void:
+    let obj_ptr = params.as_object() else:
+        return
+    unsafe:
+        let files_ptr = read(obj_ptr).get("files")
+        if files_ptr == null:
+            return
+        let files_arr = read(files_ptr).as_array()
+        if files_arr == null:
+            return
+        var fi: ptr_uint = 0
+        while fi < read(files_arr).len():
+            let file_ptr = read(files_arr).get(fi)
+            fi += 1
+            if file_ptr == null:
+                continue
+            let file_obj = read(file_ptr).as_object()
+            if file_obj == null:
+                continue
+            let old_uri_ptr = read(file_obj).get("oldUri")
+            if old_uri_ptr == null:
+                continue
+            match read(old_uri_ptr).as_string():
+                Option.some as old_uri:
+                    let new_uri_ptr = read(file_obj).get("newUri")
+                    if new_uri_ptr == null:
+                        continue
+                    match read(new_uri_ptr).as_string():
+                        Option.some as new_uri:
+                            var old_path = uri_ops.file_uri_to_path(old_uri.value) else:
+                                continue
+                            var new_path = uri_ops.file_uri_to_path(new_uri.value) else:
+                                old_path.release()
+                                continue
+                            move_renamed_document(ws, old_path.as_str(), new_path.as_str())
+                            old_path.release()
+                            new_path.release()
+                        Option.none:
+                            pass
+                Option.none:
+                    pass
+
+
+## Move one file's identifier and definition entries to the new path and drop
+## the old path's entries and caches (the host's `rename_indexed_file`).  The
+## new path is not a feature document of its own — the host answers no hover,
+## symbol or reference request for it until the client opens it — but its
+## content participates in the workspace scans through those entries.
+function move_renamed_document(ws: ref[workspace.Workspace], old_path: str, new_path: str) -> void:
+    var content = ws.document_source(old_path) else:
+        drop_renamed_document(ws, old_path)
+        return
+    defer: content.release()
+    refidx.note(ref_of(ws.reference_index), new_path, content.as_str())
+    defidx.warm_names(ref_of(ws.definition_index), new_path, content.as_str())
+    drop_renamed_document(ws, old_path)
+
+
+## Drop the old path's per-file caches and index entries.
+function drop_renamed_document(ws: ref[workspace.Workspace], old_path: str) -> void:
+    ws.diagnostic_cache_clear(old_path)
+    ws.semantic_token_cache_remove(old_path)
+    defidx.forget(ref_of(ws.definition_index), old_path)
+    refidx.forget(ref_of(ws.reference_index), old_path)
 
 
 ## Handle workspace/didChangeWatchedFiles notification.  Clears diagnostic and
@@ -123,37 +191,3 @@ function note_watched_paths(ws: ref[workspace.Workspace], params: json.Value) ->
                         Option.none:
                             pass
         i += 1
-
-
-## Clear diagnostic and semantic token caches for old file paths in a
-## willRenameFiles notification.  Walks the params.files array and
-## clears per-URI caches for each oldUri.
-function invalidate_for_renamed_files(ws: ref[workspace.Workspace], params: json.Value) -> void:
-    let obj_ptr = params.as_object()
-    if obj_ptr == null:
-        return
-    unsafe:
-        let files_ptr = read(obj_ptr).get("files")
-        if files_ptr == null:
-            return
-        let files_arr = read(files_ptr).as_array()
-        if files_arr == null:
-            return
-        var fi: ptr_uint = 0
-        while fi < read(files_arr).len():
-            let file_ptr = read(files_arr).get(fi)
-            if file_ptr != null:
-                let file_obj = read(file_ptr).as_object()
-                if file_obj != null:
-                    let old_uri_ptr = read(file_obj).get("oldUri")
-                    if old_uri_ptr != null:
-                        match read(old_uri_ptr).as_string():
-                            Option.some as old_str:
-                                var old_path = uri_ops.file_uri_to_path(old_str.value) else:
-                                    continue
-                                ws.diagnostic_cache_clear(old_path.as_str())
-                                ws.semantic_token_cache_remove(old_path.as_str())
-                                old_path.release()
-                            Option.none:
-                                pass
-            fi += 1

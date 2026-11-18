@@ -342,6 +342,32 @@ STR_METHOD_SOURCE = <<~MT
       return text.as_str()
 MT
 
+# Named types nested in a nullable return or a generic argument: the debugInfo
+# Facts section must qualify each with its declaring module (`Sample?` ->
+# `main.Sample?`, `Option[Sample]` -> `std.option.Option[main.Sample]`), as the
+# host's facts do.  Kept free of extending blocks and locals so the section's
+# other fields stay identical too.
+NESTED_TYPES_SOURCE = <<~MT
+  struct Sample:
+      x: int
+
+  variant Pair[A, B]:
+      left(a: A)
+      right(b: B)
+
+  function plain() -> Sample:
+      return Sample(x = 1)
+
+  function nullable() -> Sample?:
+      return null
+
+  function optioned() -> Option[Sample]:
+      return Option[Sample].none
+
+  function generic_pair() -> Pair[int, Sample]:
+      return Pair[int, Sample].left(a = 1)
+MT
+
 def path_to_uri(path)
   "file://#{path.split("/").map { |seg| CGI.escape(seg).gsub("+", "%20") }.join("/")}"
 end
@@ -371,6 +397,7 @@ def build_workspace(dir)
     package_local: File.join(dir, "pkg", "src", "local_mod.mt"),
     package_user: File.join(dir, "pkg", "src", "user.mt"),
     strings: File.join(dir, "strings.mt"),
+    nested_types: File.join(dir, "nested_types.mt"),
   }
   File.write(paths[:alpha], ALPHA_SOURCE)
   File.write(paths[:beta], BETA_SOURCE)
@@ -390,6 +417,7 @@ def build_workspace(dir)
   File.write(paths[:package_local], PACKAGE_LOCAL_SOURCE)
   File.write(paths[:package_user], PACKAGE_USER_SOURCE)
   File.write(paths[:strings], STR_METHOD_SOURCE)
+  File.write(paths[:nested_types], NESTED_TYPES_SOURCE)
   File.write(File.join(dir, "assets", "file.txt"), "hello\n")
   paths
 end
@@ -846,6 +874,12 @@ def corpus(dir, paths)
   requests["workspace/diagnostic"] = ["workspace/diagnostic", {}]
   requests["milkTea/documentContext"] = ["milkTea/documentContext", tc]
   requests["milkTea/debugInfo"] = ["milkTea/debugInfo", tc]
+  # A named type nested in a nullable return or a generic argument keeps its
+  # declaring module in the Facts section (`main.Sample?`,
+  # `std.option.Option[main.Sample]`).
+  requests["milkTea/debugInfo/nested-types"] = ["milkTea/debugInfo", {
+    "textDocument" => { "uri" => path_to_uri(paths[:nested_types]) },
+  }]
   requests["workspace/symbol"] = ["workspace/symbol", { "query" => "compute" }]
   requests["formatting"] = ["textDocument/formatting", tc.merge("options" => { "tabSize" => 4, "insertSpaces" => true })]
   requests["rangeFormatting"] = ["textDocument/rangeFormatting", tc.merge("range" => { "start" => { "line" => 10, "character" => 0 }, "end" => { "line" => 12, "character" => 0 } }, "options" => { "tabSize" => 4, "insertSpaces" => true })]
@@ -873,6 +907,7 @@ def run_corpus(client, dir, paths)
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:generics]), "languageId" => "milk-tea", "version" => 1, "text" => GENERICS_SOURCE } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:helper]), "languageId" => "milk-tea", "version" => 1, "text" => HELPER_SOURCE } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:inlay]), "languageId" => "milk-tea", "version" => 1, "text" => INLAY_SOURCE } })
+  client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:nested_types]), "languageId" => "milk-tea", "version" => 1, "text" => NESTED_TYPES_SOURCE } })
   # `reserved.mt` stays closed: its reserved-name *sema* error differs between
   # the engines (Track 2), and only the open documents feed
   # `workspace/diagnostic`.  The code-action request reads it from disk.
@@ -1074,6 +1109,16 @@ def run_stress(client, dir, paths)
   client.notify("workspace/didChangeWatchedFiles", { "changes" => [{ "uri" => main_uri, "type" => 2 }] })
   client.notify("workspace/didChangeWorkspaceFolders", { "event" => { "added" => [], "removed" => [] } })
   client.notify("workspace/willRenameFiles", { "files" => [{ "oldUri" => main_uri, "newUri" => path_to_uri(File.join(dir, "renamed.mt")) }] })
+
+  # The rename's index move: a references query for a declaration in the old
+  # document must see the moved copy under the new URI (the host's
+  # `rename_indexed_file`).
+  rename_line, rename_col = find_pos(MAIN_SOURCE, "compute(3, 4)")
+  outcomes["c5/willRenameFiles+references"] = client.request("textDocument/references", {
+    "textDocument" => { "uri" => main_uri },
+    "position" => { "line" => rename_line, "character" => rename_col },
+    "context" => { "includeDeclaration" => true },
+  })
 
   outcomes
 end
