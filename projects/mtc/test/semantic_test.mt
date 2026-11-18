@@ -251,6 +251,133 @@ function test_call_argument_type_mismatch_is_flagged() -> void:
     expect_flagged(source)
 
 
+# The session-138 call-argument compatibility table: a positional argument is
+# inferred with the parameter's expected type, and a compile-time numeric value
+# must fit the parameter's range.
+@[test]
+function test_call_argument_in_range_literal_is_clean() -> void:
+    var source = <<-SRC
+        function f(x: ubyte) -> int:
+            return 1
+        function g() -> int:
+            return f(32)
+    SRC
+    expect_clean(source)
+
+
+@[test]
+function test_call_argument_out_of_range_literal_is_flagged() -> void:
+    var source = <<-SRC
+        function f(x: ubyte) -> int:
+            return 1
+        function g() -> int:
+            return f(300)
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_call_argument_in_range_conditional_is_clean() -> void:
+    var source = <<-SRC
+        function f(x: ubyte) -> int:
+            return 1
+        function g(cond: bool) -> int:
+            return f(if cond: 32 else: 200)
+    SRC
+    expect_clean(source)
+
+
+@[test]
+function test_call_argument_narrowed_conditional_is_clean() -> void:
+    var source = <<-SRC
+        function f(x: ubyte) -> int:
+            return 1
+        function g(cond: bool, ch: ubyte) -> int:
+            return f(if cond: 32 else: ch)
+    SRC
+    expect_clean(source)
+
+
+@[test]
+function test_call_argument_ubyte_branches_are_clean() -> void:
+    var source = <<-SRC
+        function f(x: ubyte) -> int:
+            return 1
+        function g(cond: bool, lo: ubyte, hi: ubyte) -> int:
+            return f(if cond: lo else: hi)
+    SRC
+    expect_clean(source)
+
+
+@[test]
+function test_call_argument_out_of_range_conditional_is_flagged() -> void:
+    var source = <<-SRC
+        function f(x: ubyte) -> int:
+            return 1
+        function g(cond: bool) -> int:
+            return f(if cond: 300 else: 200)
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_declaration_out_of_range_conditional_is_flagged() -> void:
+    var source = <<-SRC
+        function g(cond: bool) -> int:
+            let x: ubyte = if cond: 32 else: 300
+            return int<-x
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_method_call_out_of_range_literal_is_flagged() -> void:
+    var source = <<-SRC
+        struct Counter:
+            value: int
+        extending Counter:
+            function add(a: ubyte) -> int:
+                return int<-a
+        function g(c: Counter) -> int:
+            return c.add(300)
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_constructor_field_out_of_range_literal_is_flagged() -> void:
+    var source = <<-SRC
+        struct Shade:
+            value: ubyte
+        function g() -> int:
+            let s = Shade(value = 300)
+            return int<-s.value
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_specialized_call_argument_out_of_range_literal_is_flagged() -> void:
+    var source = <<-SRC
+        function identity[T](x: T) -> T:
+            return x
+        function g() -> int:
+            return int<-identity[ubyte](300)
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_specialized_call_argument_narrowed_conditional_is_clean() -> void:
+    var source = <<-SRC
+        function identity[T](x: T) -> T:
+            return x
+        function g(cond: bool, ch: ubyte) -> int:
+            return int<-identity[ubyte](if cond: 32 else: ch)
+    SRC
+    expect_clean(source)
+
+
 @[test]
 function test_unknown_name_is_flagged() -> void:
     # A bare identifier that resolves to no local, value, function, or type is

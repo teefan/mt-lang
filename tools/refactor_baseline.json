@@ -1262,7 +1262,7 @@
     ]
   },
   "sizes": {
-    "total_code": 125521,
+    "total_code": 125770,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -2173,10 +2173,10 @@
         "max_function": 39
       },
       "projects/mtc/src/mtc/semantic/analyzer.mt": {
-        "lines": 9683,
-        "code": 7204,
+        "lines": 9988,
+        "code": 7454,
         "max_line": 342,
-        "max_function": 109
+        "max_function": 119
       },
       "projects/mtc/src/mtc/semantic/control_flow/builder.mt": {
         "lines": 959,
@@ -2221,10 +2221,10 @@
         "max_function": 31
       },
       "projects/mtc/src/mtc/semantic/type_compatibility.mt": {
-        "lines": 342,
-        "code": 237,
+        "lines": 352,
+        "code": 236,
         "max_line": 134,
-        "max_function": 161
+        "max_function": 169
       },
       "projects/mtc/src/mtc/semantic/types.mt": {
         "lines": 1359,

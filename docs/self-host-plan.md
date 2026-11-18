@@ -15,7 +15,8 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-138-2026-11-18)
+- [Status at a glance](#status-at-a-glance-session-139-2026-11-18)
+- [Session 139 — call-argument compatibility](#session-139--call-argument-compatibility)
 - [Session 138 — formatter audit](#session-138--formatter-audit)
 - [Session 137 — nested-type facts and the rename index move](#session-137--nested-type-facts-and-the-rename-index-move)
 - [Session 136 — guarded-local member hover](#session-136--guarded-local-member-hover)
@@ -85,45 +86,127 @@ history.
 - [Session 72 — the `check`/analyzer surface](#session-72--the-checkanalyzer-surface)
 - [Handoff](#handoff-session-138)
 - [How to start a work session](#how-to-start-a-work-session)
-- [The program — tracks and stopping rules (tracks closed; one analyzer item open)](#the-program--tracks-and-stopping-rules-tracks-closed-one-analyzer-item-open)
+- [The program — tracks and stopping rules (all tracks closed)](#the-program--tracks-and-stopping-rules-all-tracks-closed)
 - [Deliberate differences (do not chase)](#deliberate-differences-do-not-chase)
 - [Ledger](#ledger)
 - [Porting notes](#porting-notes)
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 138, 2026-11-18)
+## Status at a glance (session 139, 2026-11-18)
 
 | Area | State |
 | --- | --- |
-| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** |
+| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** (re-verified session 139) |
 | `test/mt` | **61 files / 0 failed**; peak RSS **135 MB** under the region-scoped test compiler (session 129) |
-| Examples | **49/49 same** under the gate (15 top-level examples + `examples/sdl3` 34/34); the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); the raylib sample builds |
-| `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **772 match / 0 differ / 4 host-rejected of 776**; counts drift with the tree and `tmp` fixtures) |
-| `sexpr lower` | **715 match / 53 host-rejected of 776**; the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (empty-output differ or self-fail depending on how the loop limit lands).  All extracted modules match |
-| `cli:parity` | **227 match / 0 differ / 0 pending** of 227 cases (`--timings` values, `debug`'s Ruby node ids and the synthesized test-runner path normalized; 43 `test` cases plus the second-batch sweep: global extraction, resolution flags, per-command operand models, missing/empty operands, completions/std/snapshot/cache/lsp/dap/bindgen/deps) |
-| **`check` diagnostics (new)** | **501 agree / 0 verdict / 0 position / 3 message of 504** files (`tools/diag_parity.rb check`; the 3 message files are `std/cli.mt`, `examples/reflection_advanced.mt`, and `examples/memory_stress_test.mt`) |
-| **Analyzer call-argument compatibility (OPEN)** | The self infers call arguments before resolving the callee, with the ambient expected-type hint, and its argument-compatibility fallback is permissive: it rejects valid `ubyte`-typed conditional arguments (`f(if cond: lo else: hi)`) and accepts out-of-range constants (`f(300)`, `f(if cond: 300 else: 200)`).  The host resolves the callee first, infers each argument with the parameter type, and applies `call_argument_compatible?`.  Session 138 table and root cause; port the model as the next functional task. |
-| Linter corpus | **624 agree / 34 differ of 658** (hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  The `std`+`examples` residue is still the 4 documented rows (two self-only `redundant-cast` in `std/cli.mt`, the self-only `prefer-let` cluster in `std/fs.windows.mt`, the host-only `constant-condition` in `examples/reflection_advanced.mt`); the 30 additional rows are `projects/mtc/src` files where the host linter times out (`<timeout after 180s>`) or reports pre-existing source-only warnings. |
-| LSP | harness **30/30 capability keys + the documented `typeDefinition/imported` row and the self-better `imported-variant-arm` row** (**87 requests** + 28 stress probes, re-recorded session 137; the stress section keeps its 3 documented rows); project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal** on both fixtures (the main fixture and the nested-type fixture); valgrind **0 errors**; edit latency **4.9 ms median**; soak **70–80 KB/cycle raw / ~3–28 LS at 200 cycles**.  Session 134 closed the four session-133 gaps (f-string interpolation hover, cross-file rename, `ref[ImportedStruct]` fields, imported-generic-field method hover) and added the per-document token/binding caches (hover 117–119.7 → 30.5 ms on `analyzer.mt`).  Session 135's chained-hover audit fixed file-scoped module resolution for package-local modules, match-arm payload-field hover (`a.value`, `c.name`), and `str` member hover (`equal`/`slice`/`len`); hover on the same mix is 32.5 ms (host 16 ms), the added cost being the package-root fallback only when the workspace roots miss a module.  The module-qualified variant arm (`ast.Decl.decl_const`) is a self-better extension (the host returns null).  Session 136 fixed guarded-local member hover (`var x = … else:` binds the narrowed success type) and pinned it with `hover/guarded-local-method` and `hover/guarded-local-str-method`.  Session 137 qualified nested named types in `debugInfo`'s Functions section and ported the `willRenameFiles` index move. |
+| Examples | **49/49 same** under the gate (15 top-level examples + `examples/sdl3` 34/34; re-verified session 139); the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); the raylib sample builds |
+| `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **772 match / 0 differ / 4 host-rejected of 776**; counts drift with the tree and `tmp` fixtures; unchanged by session 139, which touches no lexer/parser code) |
+| `sexpr lower` | **717 match / 53 host-rejected of 778** (selffail 0); the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (empty-output differ or self-fail depending on how the loop limit lands).  All extracted modules match; re-measured session 139 after the argument-inference port |
+| `cli:parity` | **227 match / 0 differ / 0 pending** of 227 cases (re-verified session 139; `--timings` values, `debug`'s Ruby node ids and the synthesized test-runner path normalized; 43 `test` cases plus the second-batch sweep: global extraction, resolution flags, per-command operand models, missing/empty operands, completions/std/snapshot/cache/lsp/dap/bindgen/deps) |
+| **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** files (re-verified session 139; `tools/diag_parity.rb check`; the 3 message files are `std/cli.mt`, `examples/reflection_advanced.mt`, and `examples/memory_stress_test.mt`) |
+| **Analyzer call-argument compatibility (CLOSED, session 139)** | The session-138 table now matches in both directions and at the same message/position: in-range literals and conditional/`ubyte` arguments are accepted, out-of-range constants (`f(300)`, `f(if cond: 300 else: 200)`, `let x: ubyte = if c: 32 else: 300`) are rejected.  The self resolves each argument with the parameter's expected type (direct/imported functions, constructors, static and value-receiver methods, explicit specializations) and folds compile-time numeric constants at argument sites.  Residual divergences are documented in the session-139 record and the Handoff. |
+| Linter corpus | **624 agree / 34 differ of 658** (hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  Focused `std`+`examples` re-verified session 139: **501 agree / 3 differ of 504**, the same documented 3-file residue (two self-only `redundant-cast` in `std/cli.mt`, the self-only `prefer-let` cluster in `std/fs.windows.mt`, the host-only `constant-condition` in `examples/reflection_advanced.mt`); the 30 additional corpus rows are `projects/mtc/src` files where the host linter times out (`<timeout after 180s>`) or reports pre-existing source-only warnings. |
+| LSP | harness **30/30 capability keys + the documented `typeDefinition/imported` row and the self-better `imported-variant-arm` row** (**87 requests** + 28 stress probes, re-recorded and re-compared session 139; the stress section keeps its 3 documented rows); project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6** (re-verified session 139); `milkTea/debugInfo` **byte-equal** on both fixtures (the main fixture and the nested-type fixture); valgrind **0 errors**; edit latency **4.9 ms median**; soak **70–80 KB/cycle raw / ~3–28 LS at 200 cycles**.  Session 134 closed the four session-133 gaps (f-string interpolation hover, cross-file rename, `ref[ImportedStruct]` fields, imported-generic-field method hover) and added the per-document token/binding caches (hover 117–119.7 → 30.5 ms on `analyzer.mt`).  Session 135's chained-hover audit fixed file-scoped module resolution for package-local modules, match-arm payload-field hover (`a.value`, `c.name`), and `str` member hover (`equal`/`slice`/`len`); hover on the same mix is 32.5 ms (host 16 ms), the added cost being the package-root fallback only when the workspace roots miss a module.  The module-qualified variant arm (`ast.Decl.decl_const`) is a self-better extension (the host returns null).  Session 136 fixed guarded-local member hover (`var x = … else:` binds the narrowed success type) and pinned it with `hover/guarded-local-method` and `hover/guarded-local-str-method`.  Session 137 qualified nested named types in `debugInfo`'s Functions section and ported the `willRenameFiles` index move. |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the real lldb-dap bridge closes the VS Code F5 launch deadlock (configurationDone no longer waits for the launch response), proven by `tools/dap_async_probe.rb`; desktop F5 smoke passed session 74 |
 | Formatter | **778/778** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift); session 138's audit also fixed the `format DIR` hang before operand expansion, the host-shaped lex/parse diagnostics on format failures, tab rendering in diagnostic blocks, and the empty-file canonical newline |
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
 | Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 130).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
 | Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
-| **Refactoring safety (new)** | structural guard: 169 files / 125,521 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **33 unused + 6 test-only** public declarations; 6,343 duplicated lines / 883 windows; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json` (refreshed session 138 for the formatter audit); one command: `tools/gates.sh --areas refactor --run` |
+| **Refactoring safety** | structural guard: 169 files / 125,770 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **33 unused + 6 test-only** public declarations; 6,343 duplicated lines / 883 windows; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json` (refreshed session 139 for the call-argument port, +249 code lines); one command: `tools/gates.sh --areas refactor --run` |
 
-Rough completion against the per-track Definition of Done: **~99%**.  The
+Rough completion against the per-track Definition of Done: **~100%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix (including
 the `mtc test` surface and the command-surface sweep added in session 73), wasm,
 docs, the linter corpus, the imported bindings and bindgen reproducibility are
 done, and session 72 added the analyzer/`check` surface that no gate had
-measured.  The one open functional item is the **call-argument compatibility
-port** found in session 138 (table and root cause in that section; it is not a
-documented residue, it is missing type-checker behaviour).  The other residuals
-are the documented `tracy` custom-generator entry and the optional desktop F5
-smoke.  Track G (throughput) closed in session 72: the self is now faster than
-the host.
+measured.  Session 139 closed the last open functional item, the
+**call-argument compatibility port** found in session 138: the coercion table
+matches in both directions, and `check` diagnostics are back at the verified
+baseline.  The remaining residuals are narrow, documented divergences (named
+call arguments and the explicit-specialization/extern call paths described in
+the session-139 record), plus the `tracy` custom-generator entry and the
+optional desktop F5 smoke.  Track G (throughput) closed in session 72: the self
+is now faster than the host.
+
+## Session 139 — call-argument compatibility
+
+Ported the host's call-argument model; the session-138 table now matches in both
+directions, including the diagnostic message and column.
+
+**Expected-type inference.**  `infer_and_check_call` now resolves per-argument
+expected types before inferring any argument (`call_argument_expected_types`,
+`semantic/analyzer.mt`): direct functions, imported module functions, local and
+imported struct constructors (by field name), static struct methods, value-
+receiver methods on a bare local or `this` (the receiver's declared type is in
+scope, so no inference is needed), and explicit specializations through a quiet
+type-argument subset.  An argument whose parameter is not statically known
+(generic parameter, unresolved callee, named-argument call) is inferred with
+**no** hint, not with the enclosing expression's hint — a `return f(...)` no
+longer forces `f`'s arguments to the function's return type.  Named-argument
+calls keep no positional hints because the host canonicalizes argument order and
+the self does not.
+
+**Compile-time numeric range.**  `fold_int_constant` no longer requires a
+`const` table: literals and literal arithmetic fold everywhere, and the table is
+only needed to resolve named constants.  `types_compatible_with_consts` no
+longer accepts an unevaluable integer literal chain as compatible (the float and
+char contextual forms keep their rules), so `f(if cond: 300 else: 200)` cannot
+hide behind the old blanket rule; the if/match hint checks now pass
+`ctx.const_values`, which is what makes the *fitting* branch chain (`32`/`200`
+into `ubyte`) keep the declared type while the out-of-range one selects the
+common type and is rejected.  The same folding is applied at
+`check_signature_call`, struct construction, the `array`/`span`/`simd` builtin
+constructions (which now also set the element/`len` expected type), and
+`expect_eq`/`expect_ne`.
+
+**Explicit specializations.**  `check_specialization_call` argument-checks a
+generic function's positional arguments with the explicitly substituted
+parameter types (`check_substituted_arguments`).  A bare specialized value
+(`work_ready[Frame]` passed as a function value) is not an arity check: the
+`infer_expr_inner` path passes `check_call = false`.
+
+**Host pathology found while iterating.**  A `let resolved = f(...) else:` guard
+binding an `Option[types.Type]` payload in this module made the host analyze the
+self-host source ~4.5x slower (69 s → 297 s for `mtc check .../main.mt`,
+GC-dominated); the equivalent `match` keeps it at 66 s.  The quiet-specialization
+helper uses the `match` form; keep that shape in mind for future
+`Option[types.Type]` guards in the compiler sources.
+
+Verification: the 26-probe matrix (the seven session-138 rows in both statement
+and `return` contexts, plus methods, static methods, constructors, imported
+functions, and explicit specializations) is 26/26 on exit status and message;
+dev suite **22/0**; bootstrap fixed point + self-tests **22/0**; `test/mt`
+**61/0**; CLI **227/227**; `diag_parity check` **501/0/0/3 of 504**;
+`check_parity` **647/26 of 673** (identical to the pre-change compiler); focused
+lint **501/3 of 504** (the documented residue); `sexpr lower` **717 match / 8
+differ / 53 host-rejected of 778** (the same eight artifacts); examples
+**49/49**; LSP harness **87 requests** with the same 2 request + 3 stress rows,
+capabilities 30/30, recovery OK; refactor guard `--check --strict --ratchet`
+after the reviewed baseline refresh (125,770 code lines; 6,343 duplicated lines
+/ 883 windows).
+
+Known and left alone (each is outside the session-138 table and pre-dates this
+change unless noted):
+
+- **Named call arguments** still skip positional type checking (the self's
+  `check_signature_call` bails on `any_named`; the host canonicalizes them to
+  parameter order).  Constructors are checked by field name.
+- **Explicit specialization on imported functions and specialized methods**
+  (`heap.must_alloc[T](...)`, `x.method[T](...)`) resolves and substitutes the
+  return type but does not yet argument-check; local generic functions do.
+- **Extern/foreign call arguments** remain unchecked (`check_signature_call`
+  returns early for `sig.is_extern`); the host checks them with
+  `call_argument_compatible?(external: true)` and the passing-mode rules.
+- **Nullable numeric parameters**: `let x: ubyte? = 200` and `g(200)` with
+  `g(x: ubyte?)` are still accepted, while the host rejects both.  The
+  nullable auto-wrap rule in `types_compatible_with_consts` recurses into the
+  numeric coercion; the accurate fix is the host's exact-base auto-wrap plus
+  nullable-aware pointer-coercion rules, deliberately not changed here because
+  it moves assignment/return diagnostics the handoff asked to keep stable.
+- **Constructor field diagnostics report the construction expression's column**
+  rather than the host's binding/statement column (`field P.value expects ...`);
+  pre-existing, visible for the newly rejected out-of-range constants.
+
 
 ## Session 138 — formatter audit
 
@@ -2701,43 +2784,32 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
-## Handoff (session 138)
+## Handoff (session 139)
 
-**Next session:** the one open functional gap is **call-argument
-compatibility** (session 138 has the table and the root cause).  The self
-rejects valid arguments whose type narrows under the parameter's expected type
-(`f(if cond: lo else: hi)` with `f(x: ubyte)`) and accepts values the host
-rejects (`f(300)`, `f(if cond: 300 else: 200)`).  It is a type-checker port, not
-a formatter or LSP item: resolve the callee first, infer each positional
-argument with `expected_type: parameter.type`, and port
-`call_argument_compatible?`/`implicit_ref_argument_compatible?` at argument
-sites (constructors, member calls, specializations and foreign calls too); add
-the session-138 table as analyzer tests.  Do not patch call sites or tune the
-conditional inference alone.  No functional hover, facts-section or formatter
-gap is known.  Session 138 audited `mtc format` against the host and fixed four
-defects: the `format DIR` hang before operand expansion, generic stdout parse
-errors instead of the host's lex/parse diagnostic blocks, tab rendering in
-diagnostic blocks, and the empty-file canonical newline; the only remaining
-formatter difference is the documented host `--check` non-ASCII artifact.
-Session 137 closed the two findings recorded in session 136: nested named
-types are qualified in `milkTea/debugInfo`'s Functions section, and
-`workspace/willRenameFiles` moves the reference/definition entries to the new
-path (while staying a non-feature document, as the host's does).  Session 136
-fixed guarded-local member hover (`var x = … else:` binds the narrowed success
-type, so a member chain on an `Option[String]` local resolves `String`'s
-method) and pinned it with `hover/guarded-local-method` and
-`hover/guarded-local-str-method`.  Session 135 closed
-file-scoped module resolution (package `source_root` modules now resolve for
-import/alias/type/method/field/enum hover and definition), match-arm
-payload-field hover (`a.value`, `c.name`), `str` member hover
-(`equal`/`slice`/`len`), and a module-qualified variant arm
-(`ast.Decl.decl_const`), which is self-better (the host returns null) and pinned
-by `hover/imported-variant-arm`.  Keep the harness (**87 requests**) in step
-when a context changes and exercise the context in VS Code.  The
-remaining LSP item is latency: hover on `analyzer.mt` is ~32–36 ms vs the
-host's 16 ms after the caches and the module-resolution fix.  The added cost is
-the package-root fallback (manifest walk) only when the workspace roots miss a
-module; if it matters, cache the package source root per requesting
+**Next session:** no functional parity item is open.  Session 139 closed the
+last one, the **call-argument compatibility port** (the session-138 table and
+root cause): arguments are inferred with the parameter's expected type for
+direct and imported functions, local/imported constructors, static and
+value-receiver methods, and explicit specializations; compile-time numeric
+constants are folded at argument sites; and the 26-probe matrix matches the host
+in both directions (exit status, message, and column).  The documented residual
+divergences are at the end of the session-139 record — named call arguments skip
+positional checks, explicit specialization on imported functions/methods
+substitutes but does not argument-check, extern/foreign call arguments are
+unchecked, nullable numeric parameters (`g(200)` with `g(x: ubyte?)`) stay
+accepted, and constructor field diagnostics use the construction column.  None
+is a regression from this session; take one as its own item when it matters.
+
+**Watch the host compile time.**  Binding an `Option[types.Type]` payload with
+`let ... else:` in the compiler sources makes the host analyzer ~4.5x slower on
+that module (69 s → 297 s for `mtc check .../main.mt`, GC-dominated); the
+equivalent `match` is flat.  Session 139 hit this in
+`try_quiet_type_substitutions` and kept the `match` form.
+
+**Next work, if any:** the LSP latency item.  Hover on `analyzer.mt` is ~32–36 ms
+vs the host's 16 ms after the caches and the module-resolution fix.  The added
+cost is the package-root fallback (manifest walk) only when the workspace roots
+miss a module; if it matters, cache the package source root per requesting
 file/package instead of re-walking it.  The other repeated work remains
 `document_analysis_for`'s content hash/source copy per helper, the definition
 index warm, and the analysis-table scans.  Do not re-introduce a whole-file lex
@@ -2745,43 +2817,34 @@ per lookup and keep the token/binding cache one-document (or make it explicitly
 multi-entry before any helper holds a span across a cross-file fetch).  Keep
 heavy parity sweeps memory-capped (`--mem-mb`, `-j 2`–`4`) — `mtc test` no
 longer accumulates memory, but each independent compiler still peaks at
-2.5–3.4 GB on compiler-sized closures.
+2.5–3.4 GB on compiler-sized closures.  Keep the harness (**87 requests**) in
+step when a context changes and exercise the context in VS Code.
 
-**Current tree (session 138):** `4c393b9d` (document_link formatting),
-`f7661b52` (the formatter audit fixes in `main/format_cli.mt`, `main.mt`,
-`pretty_printer/ast_formatter.mt`, the new CLI parity cases and the formatter
-unit test), plus the session-137 commit (`f0b989dc`, nested types + rename
-move) and session-136 (`c10651c8`, guarded locals).
+**Current tree (session 139):** the call-argument port in
+`semantic/analyzer.mt` (expected-type argument resolution, the
+array/span/simd/`expect_eq` folding, the substituted-specialization check),
+`semantic/type_compatibility.mt` (table-free literal folding, the integer
+literal-chain tightening), the 12 analyzer tests in `test/semantic_test.mt`, and
+the refreshed `tools/refactor_baseline.json`.  The previous tree is the
+session-138 formatter audit (`f7661b52`); the session-137 commit (`f0b989dc`)
+and session-136 (`c10651c8`) are unchanged below it.
 
 **First actions:** rebuild and smoke the tree before measuring —
-`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`,
-`tmp/mtc-dev test projects/mtc -I . --timeout 120`,
-`ruby tools/refactor_guard.rb --check`.  Then re-record the LSP harness
-(`ruby tools/lsp_parity.rb record --server self --self tmp/mtc-dev --out
-tmp/lsp-self.json --stress` and the host counterpart; 87 requests; expect the
-documented `typeDefinition/imported` row, the self-better
-`imported-variant-arm` row, and the 3 stress rows); the formatter sweep is
-`ruby tools/format_parity.rb all -j 16` (778/778) and the CLI matrix is
-**227 cases** (`ruby tools/cli_parity.rb -q`).  For the latency task,
-recreate the hover bench from the session-135 record (or use
-`tmp/lsp_hover_bench.rb` when present) with `--pos LINE:CHAR` and measure
-`semantic/analyzer.mt` plus the arm/str positions on `lsp/completion.mt`; use
-`tools/lsp_soak.rb --bin tmp/mtc-dev --cycles 200 --mode full` for the leak
-meter.
+`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`
+(~105 s host-side), `tmp/mtc-dev test projects/mtc -I . --timeout 120`,
+`ruby tools/refactor_guard.rb --check`.  Recreate the session-139 coercion
+matrix from that record (26 probes: the 7 rows in statement and `return`
+contexts, methods, constructors, imported calls, specializations); the analyzer
+gates are `ruby tools/diag_parity.rb check -j 8 std examples`,
+`ruby tools/check_parity.rb`, `ruby tools/cli_parity.rb -q`, `tools/bootstrap.sh
+-j 16`, `build/stage2/mtc test test/mt -I .`, and `ruby tools/sexpr_parity.rb
+lower -q -j 8 --host-cache tmp/sexpr-host-cache`.  Re-record the LSP harness
+(self and host; 87 requests; expect the documented `typeDefinition/imported`
+row, the self-better `imported-variant-arm` row, and the 3 stress rows) and run
+`tools/lsp_recovery_probe.rb --check` after an analyzer/facts change.  The
+formatter sweep is `ruby tools/format_parity.rb all -j 16` (778/778) and the CLI
+matrix is **227 cases**.
 
-**Analyzer first actions (the open task):** reproduce the session-138 coercion
-table with `mtc check` on one small file per row; read the host's
-`core/semantic_analyzer/calls.rb:817` (`infer_expression(..., expected_type:
-parameter.type)`) and `core/semantic_analyzer/type_compatibility.rb:6`
-(`call_argument_compatible?`), then the self's `infer_and_check_call`
-(`analyzer.mt:6249`), `check_signature_call` and `incompatible_value`.  Plan the
-port across direct functions, methods, constructors, specializations and
-foreign calls; keep assignment/return/local checks unchanged.  Gates:
-`tmp/mtc-dev test projects/mtc -I . --timeout 120`, `ruby tools/diag_parity.rb
-check -j 8 std examples`, `ruby tools/check_parity.rb`, `ruby
-tools/cli_parity.rb -q`, then `tools/bootstrap.sh -j 16` on the frozen tree.
-Do not leave the argument path permissive or double-infer with duplicate
-diagnostics.
 
 **Read this first, then *Status at a glance* and the Ledger.**  The parity
 program stays closed, and session 73 closed the last *measurement* gaps: the
@@ -2871,7 +2934,7 @@ pre-existing `std/fs.windows.mt` host-facts loss).
 ### How to start
 
 Build the dev compiler
-(`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~35 s),
+(`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~105 s),
 run `tmp/mtc-dev test projects/mtc -I . --timeout 120`, and measure only the
 class the change can move with the matching harness.  For the test command that
 is `ruby tools/cli_parity.rb --self tmp/mtc-dev -f '^test-'`; the full matrix is
@@ -2882,16 +2945,17 @@ moved.**
 
 ### Open items, in priority order
 
-1. **Call-argument compatibility (OPEN, session 138).**  The one known
-   functional gap.  The self rejects valid arguments whose type narrows under
-   the parameter's expected type (a `ubyte`-typed conditional argument) and
-   accepts out-of-range constants (`f(300)`, `f(if cond: 300 else: 200)`).
-   Port the host's model: resolve the callee first, infer each positional
-   argument with `expected_type: parameter.type`, and apply
-   `call_argument_compatible?`/`implicit_ref_argument_compatible?` at argument
-   sites.  Root cause and table in the session-138 record; gates in the
-   Handoff.
-2. **LSP audit follow-ups (sessions 134–138).**  No functional hover/completion/
+1. **Call-argument compatibility — CLOSED (session 139).**  The session-138
+   table now matches the host in both directions (in-range literals and
+   narrowed/`ubyte` conditionals accepted; `f(300)`,
+   `f(if cond: 300 else: 200)` and `let x: ubyte = if c: 32 else: 300`
+   rejected), with the same message and column.  The port covers direct and
+   imported functions, constructors, static/value-receiver methods, and
+   explicit specializations.  The narrow residual divergences (named arguments,
+   imported/method explicit specialization checks, extern/foreign argument
+   checks, nullable numeric parameters, constructor field columns) are listed at
+   the end of the session-139 record; none is a regression from this session.
+2. **LSP audit follow-ups (sessions 134–139).**  No functional hover/completion/
    rename gap is known.  Session 134 closed f-string interpolation hover,
    cross-file rename, `ref[ImportedStruct]` completion and imported-generic-field
    method hover, and added the per-document token/binding caches (117–119.7 →
@@ -2900,8 +2964,10 @@ moved.**
    module-qualified variant-arm hover.  Session 136 closed guarded-local member
    hover; session 137 qualified nested named types in `milkTea/debugInfo` and
    ported the `willRenameFiles` index move; session 138 fixed four formatter
-   defects and added the formatter tests.  The remaining
-   latency work is recorded in the session-138
+   defects and added the formatter tests; session 139 re-verified the harness
+   (87 requests, the same 2 request + 3 stress rows) and recovery after the
+   analyzer change.  The remaining
+   latency work is recorded in the session-139
    handoff: the package-root fallback walk, `document_analysis_for`'s per-helper
    source copy/hash, the definition-index warm, and the analysis-table scans; the
    memory list (semantic-token payloads, diagnostics) is unchanged.
@@ -2943,7 +3009,7 @@ sections and *Deliberate differences*.
 | Wasm build/preview | Track B item 1 (closed); `wasm_preview.mt` | `ruby tools/wasm_smoke.rb` |
 | Docs server | Track B item 2 (closed); `docs_app.mt` | `ruby tools/docs_smoke.rb` |
 | Linter corpus residue | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb -q` (`--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
-| Analyzer / `check` diagnostics | the session-72 section; Track C's analyzer notes; the session-138 coercion table (open call-argument item) | `ruby tools/diag_parity.rb check -j 8 std examples`; `ruby tools/check_parity.rb` |
+| Analyzer / `check` diagnostics | the session-72 section; Track C's analyzer notes; the session-139 call-argument record | `ruby tools/diag_parity.rb check -j 8 std examples`; `ruby tools/check_parity.rb` |
 | Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb --json tmp/ib-parity.json`; `ruby tools/bindgen_parity.rb --self build/stage2/mtc`; regenerate `std/c/*.mt` and diff |
 | LSP feature parity / residue | Track E; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb record --server host\|self` + `compare`; `tools/lsp_project_audit.rb --workspace DIR [--canonical]`; `tools/lsp_recovery_probe.rb --check`; `tools/lsp_soak.rb` |
 | DAP | Track F (closed); `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both]`; `ruby tools/dap_async_probe.rb` |
@@ -2958,7 +3024,7 @@ sections and *Deliberate differences*.
 Iterate cheap, prove once:
 
 - **Tier 1 — per edit.**  Build the dev compiler
-  (`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~35 s)
+  (`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~105 s)
   and run `tmp/mtc-dev test projects/mtc -I . --timeout 120`.  Measure only the
   class you touch: a focused `ruby tools/lint_parity.rb -q <paths>`, a single
   file's host-vs-self diff, `ruby tools/sexpr_parity.rb lower -q <path>` (the
@@ -3077,16 +3143,15 @@ click-through) remain.
 
 ```
 Continue the Milk Tea self-host work in /home/teefan/Projects/Ruby/mt-lang
-(branch `selfhost`). The tracks are closed (Track H passed; session 72 closed
-the analyzer/`check` surface, the last real `lower` residue, and Track G
+(branch `selfhost`). Every parity track is closed (Track H passed; session 72
+closed the analyzer/`check` surface, the last real `lower` residue, and Track G
 throughput; session 73 closed the `mtc test` CLI matrix and the command-surface
-sweep — now 227/227), but **one functional item is open**: the session-138
-call-argument compatibility port (per-parameter expected-type inference plus the
-host's `call_argument_compatible?` at argument sites; see the Handoff for the
-table, root cause and gates). Start from
-this file's Handoff, then that item, then the remaining latencies. Work in tiers:
+sweep — now 227/227; session 139 closed the last functional item, the
+call-argument compatibility port, and re-verified the analyzer/LSP/CLI gates).
+Start from this file's Handoff, then the documented residual divergences at the
+end of the session-139 record, then the LSP latency item. Work in tiers:
 iterate on the dev compiler
-(ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev, ~35 s;
+(ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev, ~105 s;
 tmp/mtc-dev test projects/mtc -I . --timeout 120), measure only the class you
 touch, and run the tier-2 proofs once on frozen sources — `tools/gates.sh`
 prints the set (`--run` executes it, logs in tmp/gates/). Do not replay the
@@ -3107,7 +3172,7 @@ quote sets where a counter drifts; run generated binaries as
 `timeout 10 bash -c 'ulimit -v 20000000; …'`; no hacks — fix root causes.
 ```
 
-## The program — tracks and stopping rules (tracks closed; one analyzer item open)
+## The program — tracks and stopping rules (all tracks closed)
 
 Goal: close every remaining self-host gap so `build/stage2/mtc` matches the Ruby
 host on observable behavior everywhere — `--sexpr` dumps, CLI messages/commands,
@@ -3115,9 +3180,11 @@ LSP, DAP, linter, formatter, imported bindings, bindgen — while keeping the
 self-host's documented improvements (malformed-frame recovery, synchronous
 facts, speed, determinism).  **Every track is closed at its documented
 residue (session 73); Track H's final matrix passed, session 72 measured the
-one surface no gate had covered (`check`) and cleared it, and session 73
-measured and cleared the `mtc test` surface.  There is no ranked open parity
-work left; the track sections below are the stopping rules to preserve.**
+one surface no gate had covered (`check`) and cleared it, session 73
+measured and cleared the `mtc test` surface, and session 139 closed the last
+functional item (call-argument compatibility).  Any remaining differences are
+the documented residuals; the track sections below are the stopping rules to
+preserve.**
 
 Confirmed scope decision: **all** unported CLI subsystems are in scope (`deps`,
 `docs`, wasm/emcc + preview, `--bundle`/`--archive`, `--jobs`, toolchain
@@ -3319,16 +3386,17 @@ Analyzer gaps that gate lint rows and LSP entries:
 - **Null assignability + immutable parameters — CLOSED (session 66).**  A bare
   `null` is accepted only by a nullable target (a typed null must match the
   nullable base; the host's `null_assignable_to?`), and parameters are bound
-  immutably (`cannot assign to immutable p`).  **Remaining (OPEN, session
-  138):** the call-argument model.  The self must infer each positional argument
-  with its parameter's expected type (the host's
-  `infer_expression(..., expected_type: parameter.type)`) and port
-  `call_argument_compatible?`/`implicit_ref_argument_compatible?` (constant fit,
-  lossless integers, nullability, pointer mutability, own-to-raw, cstr literals,
-  external numeric/pointer, proc/task) at argument sites.  Today the self
-  rejects valid `ubyte`-typed conditional arguments and accepts out-of-range
-  constants; the session-138 table pins both directions.  The host's positive
-  generic-vs-scalar split (`ptr[int]` → `str`) is part of the same port.
+  immutably (`cannot assign to immutable p`).  **Call-argument model — CLOSED
+  (session 139).**  The self infers each positional argument with its
+  parameter's expected type and folds compile-time numeric constants at
+  argument sites (direct/imported functions, constructors, static and
+  value-receiver methods, explicit specializations).  The session-138 table
+  matches in both directions.  The narrow residuals (named arguments, imported/
+  method explicit specialization checks, extern/foreign argument checks,
+  nullable numeric parameters, constructor field columns) are listed at the end
+  of the session-139 record; the host's positive generic-vs-scalar split
+  (`ptr[int]` → `str`) remains a permissive self fallback, which the corpus does
+  not exercise.
 - **Constant-value coercion — CLOSED (session 72).**  The host folds via
   `evaluate_compile_time_const_value` (`semantic_analyzer/top_level.rb:280`) +
   `numeric_constant_fits_type?`; the self now folds through
@@ -3657,21 +3725,21 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 138 (re-verified) | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 61 files / 0 failed (peak RSS 135 MB under the new compiler) | session 138 (re-verified) | `build/stage2/mtc test test/mt -I .` |
-| examples / sdl3 | **49/49 same** under the gate (15 top-level + 34 sdl3) | session 128 (re-verified) | `tools/gates.sh --areas examples --run` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 139 (re-verified) | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 61 files / 0 failed (peak RSS 135 MB under the new compiler) | session 139 (re-verified) | `build/stage2/mtc test test/mt -I .` |
+| examples / sdl3 | **49/49 same** under the gate (15 top-level + 34 sdl3) | session 139 (re-verified) | `tools/gates.sh --areas examples --run` |
 | `sexpr lex` / `parse` | lex 739/739 (session 120); **parse 772 match / 0 differ / 4 host-rejected of 776** (session 130; counts include `tmp` fixtures) | session 130 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | **715 match / 53 host-rejected** of 776; the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (empty-output differ or self-fail depending on how the loop limit lands); every extracted module matches | session 130 | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
-| `cli:parity` | **227 match / 0 differ / 0 pending** of 227 (case-backed; timings, `debug` node ids and the synthesized test-runner path normalized) | session 138 | `ruby tools/cli_parity.rb -q` |
+| `sexpr lower` | **717 match / 53 host-rejected** of 778 (selffail 0); the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (empty-output differ or self-fail depending on how the loop limit lands); every extracted module matches | session 139 | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `cli:parity` | **227 match / 0 differ / 0 pending** of 227 (case-backed; timings, `debug` node ids and the synthesized test-runner path normalized) | session 139 (re-verified) | `ruby tools/cli_parity.rb -q` |
 | `mtc test` matrix | **43 cases**, included in `cli:parity` 227/227: file/dir operands, human/TAP/JUnit, filters, death tests, `--timeout/--mem/--jobs/--sanitize`, `--locked/--frozen`, validation errors, build-error channels | session 73 | `ruby tools/cli_parity.rb -f '^test-'` |
-| **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** (`std`+`examples`; the 3 are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows) | session 115 (re-verified 127) | `ruby tools/diag_parity.rb check -j 8 std examples`; byte-level: `ruby tools/check_parity.rb` |
+| **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** (`std`+`examples`; the 3 are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows); byte-level `check_parity` **647/26 of 673**, unchanged from the pre-change compiler | session 139 (re-verified) | `ruby tools/diag_parity.rb check -j 8 std examples`; byte-level: `ruby tools/check_parity.rb` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 71 | `ruby tools/wasm_smoke.rb` |
 | docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 71 | `ruby tools/docs_smoke.rb` |
-| lint corpus | full: **624 agree / 34 differ of 658**; focused `std`+`examples`: **501 agree / 3 differ of 504** (the documented residue); hostfail 0, selffail 0; **43/43 rules, 13/13 fixers** | session 101 (focused re-verified 129) | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| lint corpus | full: **624 agree / 34 differ of 658**; focused `std`+`examples`: **501 agree / 3 differ of 504** (the documented residue); hostfail 0, selffail 0; **43/43 rules, 13/13 fixers** | session 101 (focused re-verified 139) | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 635/635 | session 71 | `ruby tools/unused_import_parity.rb` |
-| LSP harness | 30/30 capabilities; **87 requests** + 28 stress probes with the documented `typeDefinition/imported` and self-better `imported-variant-arm` rows | session 137 | `tools/lsp_parity.rb record/compare --stress` |
+| LSP harness | 30/30 capabilities; **87 requests** + 28 stress probes with the documented `typeDefinition/imported` and self-better `imported-variant-arm` rows (and the 3 stress rows) | session 139 (re-verified) | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 135 (re-verified) | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
-| LSP recovery | 6/6 byte-equal | session 135 (re-verified) | `tools/lsp_recovery_probe.rb --check` |
+| LSP recovery | 6/6 byte-equal | session 139 (re-verified) | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | 4.9 ms median per `didChange`; `didOpen` ~52 ms cold | session 29 | `ruby tmp/lsp_edit_perf.rb --bin <bin>` (transient probe) |
 | LSP valgrind | 0 errors over the harness drive; ~64 KB definitely-lost per 10-cycle soak (one-time index level) | session 135 (re-verified) | `tools/gates.sh --only valgrind_lsp --run` |
 | LSP soak | 70–80 KB/cycle raw / ~3–28 KB/cycle least-squares at 200 cycles (meter; one-time index level; noisy raw slope) | session 135 | `ruby tools/lsp_soak.rb --quiet` |
@@ -3680,7 +3748,7 @@ when the tree moved.  Target = the Definition of Done above.
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 | bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 130 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 33 unused / 6 test-only exports; **6,343 duplicated lines / 883 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61; `--check --strict --ratchet` ok (baseline refreshed for the session-138 formatter audit: 125,521 code lines, **6,343 duplicated lines / 883 windows**; the diagnostic tab renderer is one shared helper) | session 138 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 33 unused / 6 test-only exports; **6,343 duplicated lines / 883 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61; `--check --strict --ratchet` ok (baseline refreshed for the session-139 call-argument port: **125,770 code lines** / 158,401 raw; duplication unchanged) | session 139 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 

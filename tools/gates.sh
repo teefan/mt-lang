@@ -131,18 +131,18 @@ gate_tier() {
 
 gate_label() {
     case "$1" in
-        dev_build)      echo "dev build to tmp/mtc-dev (~50 s)" ;;
+        dev_build)      echo "dev build to tmp/mtc-dev (~105 s)" ;;
         dev_tests)      echo "self-host suite, one process per file (~1 min)" ;;
         bootstrap)      echo "bootstrap --fast: fixed point only (~3 min)" ;;
         test_mt)        echo "test/mt under stage2 (61 files / 0 failed)" ;;
         sexpr_lex)      echo "sexpr lex parity (739/739)" ;;
-        sexpr_parse)    echo "sexpr parse parity (735 match / 0 differ / 4 host-rejected of 739)" ;;
+        sexpr_parse)    echo "sexpr parse parity (772 match / 0 differ / 4 host-rejected of 776)" ;;
         sexpr_lower)    echo "sexpr lower parity (meter, ~1 min warm / ~4 min cold host cache)" ;;
-        cli_parity)     echo "CLI parity (224 cases; 224 match; no allowlist)" ;;
+        cli_parity)     echo "CLI parity (227 cases; 227 match; no allowlist)" ;;
         wasm_smoke)     echo "wasm preview end-to-end (host + self HTTP/signal smoke)" ;;
         docs_smoke)     echo "docs server end-to-end (host + self routes/SIGINT smoke)" ;;
         scoreboard)     echo "parity scoreboard (meter)" ;;
-        format)         echo "formatter parity all modes (739/739)" ;;
+        format)         echo "formatter parity all modes (778/778)" ;;
         lint_parity)    echo "corpus-wide lint parity (meter, ~5 min)" ;;
         diag_parity)    echo "check diagnostic parity: verdict/message/position (~2 min)" ;;
         check_parity)   echo "byte-level check output parity (meter)" ;;

@@ -91,7 +91,7 @@ self-hosted compiler, and matching the host everywhere is the program's goal.
   `git diff --name-only` (or `--areas`), prints it, and `--run` executes it in order
   (each gate logs to `tmp/gates/<id>.log`; hard gates stop the run, meters continue).
   - **Tier 1 — per edit / per workstream (minutes)**: rebuild the dev compiler
-    (`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~35 s), run
+    (`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~105 s), run
     `tmp/mtc-dev test projects/mtc -I . --timeout 120`, and measure **only the class you
     touched** — a focused `ruby tools/lint_parity.rb -q <paths>`, one file's host-vs-self
     lint diff, `tmp/diag_probe.rb`, `ruby tools/sexpr_parity.rb lex|parse -q
@@ -99,13 +99,13 @@ self-hosted compiler, and matching the host everywhere is the program's goal.
     file / resolved import-closure digest; the self always runs live).
     Do not run the corpus-wide sweep or the audit as the iteration loop.
   - **Tier 2 — once per commit, on frozen sources, backgrounded**:
-    `tools/bootstrap.sh -j 16` (fixed point + 21/0 self-tests) and
+    `tools/bootstrap.sh -j 16` (fixed point + 22 files / 0 failed self-tests) and
     `build/stage2/mtc test test/mt -I .` (61/0) are the hard proofs; then the area
     sweeps — linter: `rake parity:scoreboard`, `ruby tools/lint_parity.rb -q`
-    (635 files; read its summary, it is not expected to reach 0 yet),
+    (658 files; read its summary, it is not expected to reach 0 yet),
     `ruby tools/unused_import_parity.rb` (635/635), `ruby tools/cli_parity.rb`
-    (224 match / 0 differ / 0 pending); LSP: `tools/lsp_parity.rb
-    record|compare` (30/30 + the 5 documented entries),
+    (227 match / 0 differ / 0 pending); LSP: `tools/lsp_parity.rb
+    record|compare` (30/30 + the 2 documented request rows and 3 stress rows),
     `tools/lsp_recovery_probe.rb --check`, `tools/lsp_project_audit.rb --workspace DIR`
     (drift ±10 — compare differing *sets*), valgrind on an LSP drive + the Neovim smoke;
     lowering/C backend: `ruby tools/sexpr_parity.rb lower -q -j 16

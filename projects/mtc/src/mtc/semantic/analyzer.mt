@@ -5377,7 +5377,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 record_call_kind(ctx, ep, call_expr_kind(ctx, call.callee))
                 return ty
             ast.Expr.expr_specialization as spec:
-                let ty = check_specialization_call(ctx, scope, spec.callee, spec.arguments, span[types.Type](), span[ast.Argument]())
+                let ty = check_specialization_call(ctx, scope, spec.callee, spec.arguments, span[types.Type](), span[ast.Argument](), false)
                 record_call_kind(ctx, ep, specialization_kind(ctx, spec.callee, spec.arguments))
                 return ty
             ast.Expr.expr_await as aw:
@@ -5561,7 +5561,7 @@ function infer_if_expr_type(ctx: ref[Context], scope: ref[sscope.Scope], conditi
     # numeric common type would be long.
     let hint_ty = ctx.expected_type_hint
     if not types.is_error(hint_ty):
-        if compat.types_compatible(hint_ty, then_ty, then_expr) and compat.types_compatible(hint_ty, else_ty, else_expr):
+        if compat.types_compatible_with_consts(hint_ty, then_ty, then_expr, ptr_of(ctx.const_values)) and compat.types_compatible_with_consts(hint_ty, else_ty, else_expr, ptr_of(ctx.const_values)):
             return hint_ty
     return sem_exprs.conditional_common_type(then_ty, else_ty, then_expr, else_expr)
 
@@ -5580,7 +5580,7 @@ function infer_match_expr_type(ctx: ref[Context], scope: ref[sscope.Scope], scru
             scope_enter(scope)
             bind_match_arm_names(ctx, scope, expr_scrutinee_ty, arm.binding_name, arm.pattern, arm.binding_line, arm.binding_column)
             let arm_ty = infer_expr(ctx, scope, arm.value)
-            if all_fit_hint and not compat.types_compatible(match_hint, arm_ty, arm.value):
+            if all_fit_hint and not compat.types_compatible_with_consts(match_hint, arm_ty, arm.value, ptr_of(ctx.const_values)):
                 all_fit_hint = false
             arm_types.push(arm_ty)
             arm_exprs.push(arm.value)
@@ -6225,6 +6225,251 @@ function infer_unary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, opera
     return types.Type.ty_error
 
 
+## Per-argument expected types for a call, resolved before any argument is
+## inferred.  The host infers each positional argument with
+## `expected_type: parameter.type`; an argument whose parameter is not
+## statically known is inferred with no hint, never with the enclosing
+## expression's hint (a `return f(...)` must not force `f`'s arguments to the
+## function's return type).  An empty result means "no parameter is known".
+function call_argument_expected_types(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument]) -> vec.Vec[types.Type]:
+    # Named arguments are canonicalized to parameter order in the host; the self
+    # infers them in source order, so a positional hint could name the wrong
+    # parameter.  Constructors are the named-argument path that matters, and
+    # `check_construction` sets each field's hint by name itself.
+    var named_scan: ptr_uint = 0
+    while named_scan < args.len:
+        unsafe:
+            match read(args.data + named_scan).arg_name:
+                Option.some:
+                    return vec.Vec[types.Type].create()
+                Option.none:
+                    pass
+        named_scan += 1
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                if is_builtin_call_name(id.name) or is_callable_builtin_name(id.name) or scope_get(scope, id.name) != null:
+                    return vec.Vec[types.Type].create()
+                let sigp = ctx.functions.get(id.name)
+                if sigp != null:
+                    return expected_from_params(read(sigp).params, args.len)
+                let fieldsp = ctx.structs.get(id.name)
+                if fieldsp != null:
+                    return expected_from_fields(read(fieldsp), args)
+                return vec.Vec[types.Type].create()
+            ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as rid:
+                        if scope_get(scope, rid.name) == null and ctx.import_aliases.contains(rid.name):
+                            let module_name_ptr = ctx.import_aliases.get(rid.name) else:
+                                return vec.Vec[types.Type].create()
+                            let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
+                                return vec.Vec[types.Type].create()
+                            let sig_ptr = read(binding_ptr).functions.get(ma.member_name)
+                            if sig_ptr != null:
+                                return expected_from_params(read(sig_ptr).params, args.len)
+                            let fields_ptr = read(binding_ptr).structs.get(ma.member_name)
+                            if fields_ptr != null:
+                                return expected_from_fields(read(fields_ptr), args)
+                            return vec.Vec[types.Type].create()
+                    _:
+                        pass
+                # A static struct method (`Counter.make(...)`,
+                # `lib.Adder.make(...)`).
+                match static_struct_receiver_type(ctx, scope, ma.receiver):
+                    Option.some as rt:
+                        return expected_from_method(ctx, rt.value, ma.member_name, args)
+                    Option.none:
+                        pass
+                # A value-receiver method on a bare local or `this`: the
+                # receiver's declared type is in scope, so resolving the
+                # signature needs no inference.
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as rid:
+                        let rtp = scope_get(scope, rid.name) else:
+                            return vec.Vec[types.Type].create()
+                        return expected_from_method(ctx, unwrap_ref(unsafe: read(rtp)), ma.member_name, args)
+                    _:
+                        return vec.Vec[types.Type].create()
+            ast.Expr.expr_specialization as spec:
+                match read(spec.callee):
+                    ast.Expr.expr_identifier as id:
+                        if scope_get(scope, id.name) != null:
+                            return vec.Vec[types.Type].create()
+                        # Builtin vector/array constructions type every
+                        # positional argument at the element type.
+                        if id.name.equal("simd") or id.name.equal("array"):
+                            if spec.arguments.len >= 1:
+                                match quiet_explicit_type(ctx, read(spec.arguments.data + 0).value):
+                                    Option.some as elem:
+                                        return expected_repeated(elem.value, args.len)
+                                    Option.none:
+                                        return vec.Vec[types.Type].create()
+                            return vec.Vec[types.Type].create()
+                        let tps_ptr = ctx.function_type_params.get(id.name) else:
+                            return vec.Vec[types.Type].create()
+                        let sigp = ctx.functions.get(id.name) else:
+                            return vec.Vec[types.Type].create()
+                        var subs = map_mod.Map[str, types.Type].create()
+                        defer: subs.release()
+                        if not try_quiet_type_substitutions(ctx, read(tps_ptr), spec.arguments, ref_of(subs)):
+                            return vec.Vec[types.Type].create()
+                        return expected_from_substituted_params(read(sigp).params, args.len, ref_of(subs))
+                    ast.Expr.expr_member_access as ma:
+                        match read(ma.receiver):
+                            ast.Expr.expr_identifier as rid:
+                                if scope_get(scope, rid.name) == null and ctx.import_aliases.contains(rid.name):
+                                    let module_name_ptr = ctx.import_aliases.get(rid.name) else:
+                                        return vec.Vec[types.Type].create()
+                                    let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
+                                        return vec.Vec[types.Type].create()
+                                    let tps_ptr = read(binding_ptr).function_type_params.get(ma.member_name) else:
+                                        return vec.Vec[types.Type].create()
+                                    let sig_ptr = read(binding_ptr).functions.get(ma.member_name) else:
+                                        return vec.Vec[types.Type].create()
+                                    var subs = map_mod.Map[str, types.Type].create()
+                                    defer: subs.release()
+                                    if not try_quiet_type_substitutions(ctx, read(tps_ptr), spec.arguments, ref_of(subs)):
+                                        return vec.Vec[types.Type].create()
+                                    return expected_from_substituted_params(read(sig_ptr).params, args.len, ref_of(subs))
+                                let rtp = scope_get(scope, rid.name) else:
+                                    return vec.Vec[types.Type].create()
+                                let recv_ty = unwrap_ref(unsafe: read(rtp))
+                                let mtps = method_type_params_of(ctx, recv_ty, ma.member_name) else:
+                                    return vec.Vec[types.Type].create()
+                                let sig = resolve_method_sig(ctx, recv_ty, ma.member_name) else:
+                                    return vec.Vec[types.Type].create()
+                                var subs = map_mod.Map[str, types.Type].create()
+                                defer: subs.release()
+                                if not try_quiet_type_substitutions(ctx, mtps, spec.arguments, ref_of(subs)):
+                                    return vec.Vec[types.Type].create()
+                                return expected_from_substituted_params(sig.params, args.len, ref_of(subs))
+                            _:
+                                return vec.Vec[types.Type].create()
+                    _:
+                        return vec.Vec[types.Type].create()
+            _:
+                return vec.Vec[types.Type].create()
+
+
+## One expected type per positional parameter.  A parameter carrying a type
+## variable (a generic function or extending block) has no statically-known
+## type, so its argument is inferred with no hint.
+function expected_from_params(params: span[ParamEntry], arg_count: ptr_uint) -> vec.Vec[types.Type]:
+    var hints = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < arg_count:
+        if i < params.len:
+            let pty = unsafe: read(params.data + i).ty
+            if types.contains_error(pty) or types.contains_type_var(pty):
+                hints.push(types.Type.ty_error)
+            else:
+                hints.push(pty)
+        else:
+            hints.push(types.Type.ty_error)
+        i += 1
+    return hints
+
+
+## The expected type of each named constructor argument (`Counter(value = 3)`),
+## keyed by field name; positional arguments have no hint.
+function expected_from_fields(fields: span[FieldEntry], args: span[ast.Argument]) -> vec.Vec[types.Type]:
+    var hints = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        var hint = types.Type.ty_error
+        unsafe:
+            match read(args.data + i).arg_name:
+                Option.some as nm:
+                    let ftp = field_type(fields, nm.value)
+                    if ftp != null:
+                        let ft = read(ftp)
+                        if not types.contains_error(ft) and not types.contains_type_var(ft):
+                            hint = ft
+                Option.none:
+                    pass
+        hints.push(hint)
+        i += 1
+    return hints
+
+
+function expected_from_method(ctx: ref[Context], receiver_type: types.Type, method_name: str, args: span[ast.Argument]) -> vec.Vec[types.Type]:
+    match resolve_method_sig(ctx, receiver_type, method_name):
+        Option.some as sig:
+            return expected_from_params(sig.value.params, args.len)
+        Option.none:
+            return vec.Vec[types.Type].create()
+
+
+## The same hint for every positional argument (`simd[E, N](…)` / `array[E, N](…)`).
+function expected_repeated(ty: types.Type, arg_count: ptr_uint) -> vec.Vec[types.Type]:
+    var hints = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < arg_count:
+        hints.push(ty)
+        i += 1
+    return hints
+
+
+## As `expected_from_params`, with the explicit specialization's substitutions
+## applied first.
+function expected_from_substituted_params(params: span[ParamEntry], arg_count: ptr_uint, subs: ref[map_mod.Map[str, types.Type]]) -> vec.Vec[types.Type]:
+    var hints = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < arg_count:
+        var hint = types.Type.ty_error
+        if i < params.len:
+            let pty = substitute_type(unsafe: read(params.data + i).ty, subs)
+            if not types.contains_error(pty) and not types.contains_type_var(pty):
+                hint = pty
+        hints.push(hint)
+        i += 1
+    return hints
+
+
+## Build the explicit specialization's substitution map without diagnosing.
+## `check_specialization_call` resolves the same type arguments once, with
+## diagnostics; the hint pre-pass must not report them twice, so it only accepts
+## a bare name the analyzer already knows (a primitive/installed type or a type
+## parameter) and gives up on anything that needs full resolution.
+function try_quiet_type_substitutions(ctx: ref[Context], type_params: span[ast.TypeParam], type_args: span[ast.TypeArgument], subs: ref[map_mod.Map[str, types.Type]]) -> bool:
+    if type_args.len != type_params.len or not all_plain_type_params(type_params):
+        return false
+    var i: ptr_uint = 0
+    while i < type_params.len:
+        var tp: ast.TypeParam
+        var tref: ptr[ast.TypeRef]
+        unsafe:
+            tp = read(type_params.data + i)
+            tref = read(type_args.data + i).value
+        # A `let ... else:` guard binding an `Option[types.Type]` payload makes
+        # the host analyzer ~4.5x slower on this module (a recursive-type guard
+        # pathology); the equivalent match keeps the host's compile time flat.
+        match quiet_explicit_type(ctx, tref):
+            Option.some as resolved:
+                subs.set(tp.name, resolved.value)
+            Option.none:
+                return false
+        i += 1
+    return true
+
+
+function quiet_explicit_type(ctx: ref[Context], tref: ptr[ast.TypeRef]) -> Option[types.Type]:
+    unsafe:
+        let t = read(tref)
+        if t.nullable or t.arguments.len > 0 or t.is_fn or t.is_proc or t.is_dyn or t.is_tuple:
+            return Option[types.Type].none
+        if t.name.parts.len != 1:
+            return Option[types.Type].none
+        let name = read(t.name.parts.data + 0)
+        let known_ptr = ctx.types.get(name)
+        if known_ptr != null:
+            return Option[types.Type].some(value = read(known_ptr))
+        if ctx.type_params.contains(name):
+            return Option[types.Type].some(value = types.Type.ty_var(name = name))
+        return Option[types.Type].none
+
+
 ## Infer a call's result type and, when the callee is a local top-level
 ## function, check argument count and (positional) argument types.  When the
 ## callee names a local struct, treat it as a struct construction and validate
@@ -6232,6 +6477,9 @@ function infer_unary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, opera
 function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument]) -> types.Type:
     var arg_types = vec.Vec[types.Type].create()
     var any_named = false
+    var expected = call_argument_expected_types(ctx, scope, callee, args)
+    defer: expected.release()
+    let saved_hint = ctx.expected_type_hint
     # The compile-time handle builtins take *names*, not values: the host
     # evaluates them specially and records no callable-value site for their
     # arguments.
@@ -6246,6 +6494,12 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
         var arg: ast.Argument
         unsafe:
             arg = read(args.data + i)
+        ctx.expected_type_hint = types.Type.ty_error
+        if i < expected.len:
+            let hint_ptr = expected.get(i)
+            if hint_ptr != null:
+                unsafe:
+                    ctx.expected_type_hint = read(hint_ptr)
         arg_types.push(infer_expr(ctx, scope, arg.arg_value))
         match arg.arg_name:
             Option.some:
@@ -6254,6 +6508,7 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
                 pass
         i += 1
 
+    ctx.expected_type_hint = saved_hint
     let arg_span = arg_types.as_span()
 
     check_str_construction_unsafe(ctx, scope, callee)
@@ -6273,7 +6528,7 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
                     ast.Expr.expr_member_access as ma:
                         return check_member_call(ctx, scope, ma.receiver, ma.member_name, args, arg_span, any_named, ma.line, ma.column)
                     ast.Expr.expr_specialization as spec:
-                        return check_specialization_call(ctx, scope, spec.callee, spec.arguments, arg_span, args)
+                        return check_specialization_call(ctx, scope, spec.callee, spec.arguments, arg_span, args, true)
                     ast.Expr.expr_identifier:
                         return check_call(ctx, scope, callee, args, arg_span, any_named)
                     _:
@@ -6281,12 +6536,47 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
                         return types.Type.ty_error
 
 
+## Positional argument checking for an explicitly specialized generic function:
+## the parameter types are substituted from the explicit type arguments, then
+## the same compatibility rule runs.  Skipped for named arguments (their
+## positional order is not the declared one) and extern signatures.
+function check_substituted_arguments(ctx: ref[Context], display_name: str, sig: FnSig, args: span[ast.Argument], arg_types: span[types.Type], subs: ref[map_mod.Map[str, types.Type]], line: ptr_uint, column: ptr_uint) -> void:
+    var any_named = false
+    var i: ptr_uint = 0
+    while i < args.len:
+        unsafe:
+            match read(args.data + i).arg_name:
+                Option.some:
+                    any_named = true
+                Option.none:
+                    pass
+        i += 1
+    if any_named or sig.is_extern:
+        return
+    if not sig.is_variadic and (arg_types.len > sig.params.len or arg_types.len < sig.required_count):
+        report(ctx, line, column, arity_message(display_name, sig.required_count, arg_types.len))
+        return
+    i = 0
+    while i < arg_types.len and i < sig.params.len:
+        unsafe:
+            let atype = read(arg_types.data + i)
+            let pe = read(sig.params.data + i)
+            let pty = substitute_type(pe.ty, subs)
+            if not types.contains_type_var(pty) and not types.contains_error(pty):
+                var arg_expr: ptr[ast.Expr]? = null
+                if i < args.len:
+                    arg_expr = read(args.data + i).arg_value
+                if incompatible_value_with_consts(pty, atype, arg_expr, ref_of(ctx.const_values)):
+                    report(ctx, line, column, argument_message(pe.name, display_name, pty, atype))
+        i += 1
+
+
 ## A call whose callee is a specialization `name[Type](...)`.  Associated-function
 ## hook builtins (hash/equal/order/default) are checked: when the type argument
 ## is a fully-known local struct, the required hook must exist.  Everything else
 ## (primitives, imported types, type variables, user generic functions) stays
 ## permissive.
-function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], arg_types: span[types.Type], arg_exprs: span[ast.Argument]) -> types.Type:
+function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], arg_types: span[types.Type], arg_exprs: span[ast.Argument], check_call: bool) -> types.Type:
     unsafe:
         match read(spec_callee):
             ast.Expr.expr_identifier as id:
@@ -6306,6 +6596,8 @@ function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], 
                     validate_explicit_type_args(ctx, read(tps_ptr), type_args, ref_of(subs), id.line, id.column)
                     let sigp = ctx.functions.get(id.name)
                     if sigp != null:
+                        if check_call:
+                            check_substituted_arguments(ctx, id.name, read(sigp), arg_exprs, arg_types, ref_of(subs), id.line, id.column)
                         return substitute_type(read(sigp).return_type, ref_of(subs))
                 # A generic struct construction with explicit type arguments
                 # (`Pair[int, bool](first = 10, second = true)`): the value is an
@@ -7029,8 +7321,11 @@ function check_builtin_construction(
             var arg: ast.Argument
             unsafe:
                 arg = read(args.data + i)
+            let saved_hint = ctx.expected_type_hint
+            ctx.expected_type_hint = elem_ty
             let at = infer_expr(ctx, scope, arg.arg_value)
-            if incompatible_value(elem_ty, at, arg.arg_value):
+            ctx.expected_type_hint = saved_hint
+            if incompatible_value_with_consts(elem_ty, at, arg.arg_value, ref_of(ctx.const_values)):
                 report(ctx, line, column, diag.array_element_message(elem_ty, at))
                 return types.Type.ty_error
             i += 1
@@ -7052,13 +7347,19 @@ function check_builtin_construction(
         match arg.arg_name:
             Option.some as nm:
                 if nm.value.equal("data"):
+                    let saved_hint = ctx.expected_type_hint
+                    ctx.expected_type_hint = data_ty
                     let at = infer_expr(ctx, scope, arg.arg_value)
+                    ctx.expected_type_hint = saved_hint
                     if not span_data_fits(elem_ty, at):
                         report(ctx, line, column, diag.field_type_mismatch_message(display, "data", data_ty, at))
                         return types.Type.ty_error
                 else if nm.value.equal("len"):
+                    let saved_hint = ctx.expected_type_hint
+                    ctx.expected_type_hint = len_ty
                     let at = infer_expr(ctx, scope, arg.arg_value)
-                    if incompatible_value(len_ty, at, arg.arg_value):
+                    ctx.expected_type_hint = saved_hint
+                    if incompatible_value_with_consts(len_ty, at, arg.arg_value, ref_of(ctx.const_values)):
                         report(ctx, line, column, diag.field_type_mismatch_message(display, "len", len_ty, at))
                         return types.Type.ty_error
                 else:
@@ -8724,9 +9025,13 @@ function check_construction(ctx: ref[Context], scope: ref[sscope.Scope], struct_
                 if ft == null:
                     report(ctx, line, column, unknown_member_message("field", struct_name, nm.value))
                 else:
+                    let field_ty = unsafe: read(ft)
+                    let saved_hint = ctx.expected_type_hint
+                    ctx.expected_type_hint = field_ty
                     let vt = infer_expr(ctx, scope, arg.arg_value)
-                    if incompatible_value(unsafe: read(ft), vt, arg.arg_value):
-                        report(ctx, line, column, field_type_mismatch_message(struct_name, nm.value, unsafe: read(ft), vt))
+                    ctx.expected_type_hint = saved_hint
+                    if incompatible_value_with_consts(field_ty, vt, arg.arg_value, ref_of(ctx.const_values)):
+                        report(ctx, line, column, field_type_mismatch_message(struct_name, nm.value, field_ty, vt))
             _:
                 pass
         i += 1
@@ -9247,7 +9552,7 @@ function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_na
             return Option[types.Type].none
         let left_ty = infer_expr(ctx, scope, unsafe: read(args.data + 0).arg_value)
         let right_ty = infer_expr(ctx, scope, unsafe: read(args.data + 1).arg_value)
-        if incompatible_value(left_ty, right_ty, unsafe: read(args.data + 1).arg_value) and incompatible_value(right_ty, left_ty, unsafe: read(args.data + 0).arg_value):
+        if incompatible_value_with_consts(left_ty, right_ty, unsafe: read(args.data + 1).arg_value, ref_of(ctx.const_values)) and incompatible_value_with_consts(right_ty, left_ty, unsafe: read(args.data + 0).arg_value, ref_of(ctx.const_values)):
             var cmp_msg = string.String.from_str(callee_name)
             cmp_msg.append(" operands are not comparable")
             report(ctx, line, column, cmp_msg.as_str())
@@ -9380,7 +9685,7 @@ function check_signature_call(ctx: ref[Context], display_name: str, sig: FnSig, 
             var arg_expr: ptr[ast.Expr]? = null
             if i < args.len:
                 arg_expr = read(args.data + i).arg_value
-            if incompatible_value(pe.ty, atype, arg_expr):
+            if incompatible_value_with_consts(pe.ty, atype, arg_expr, ref_of(ctx.const_values)):
                 report(ctx, line, column, argument_message(pe.name, display_name, pe.ty, atype))
         i += 1
 

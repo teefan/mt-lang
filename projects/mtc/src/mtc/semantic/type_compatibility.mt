@@ -19,7 +19,7 @@ import mtc.semantic.types as types
 ## `evaluate_compile_time_const_value` reach for the value-range coercion: any
 ## expression with a statically-known integer value (a literal, a named const,
 ## or arithmetic over them) is subject to the same range test.
-public function fold_int_constant(const_values: ref[map_mod.Map[str, ptr[ast.Expr]]], ep: ptr[ast.Expr]?) -> Option[long]:
+public function fold_int_constant(const_values: ptr[map_mod.Map[str, ptr[ast.Expr]]]?, ep: ptr[ast.Expr]?) -> Option[long]:
     let p = ep else:
         return Option[long].none
     unsafe:
@@ -29,7 +29,9 @@ public function fold_int_constant(const_values: ref[map_mod.Map[str, ptr[ast.Exp
             ast.Expr.expr_char_literal as ch:
                 return Option[long].some(value = long<-ch.value)
             ast.Expr.expr_identifier as id:
-                let chain = const_values.get(id.name)
+                let table_ptr = const_values else:
+                    return Option[long].none
+                let chain = unsafe: read(table_ptr).get(id.name)
                 if chain != null:
                     return fold_int_constant(const_values, read(chain))
                 return Option[long].none
@@ -82,10 +84,11 @@ public function fold_int_constant(const_values: ref[map_mod.Map[str, ptr[ast.Exp
 
 
 ## True when the expression is a compile-time numeric literal (integer, float,
-## or char), including a unary-minus literal like `-42`.  The self-host has no
-## constant evaluator, so a literal source is treated as assignable to any
-## numeric target — mirroring Ruby's exact_compile_time_numeric_compatibility?
-## without range-checking the value.
+## or char), including a unary-minus literal like `-42`.  The host's
+## `exact_compile_time_numeric_compatibility?` folds the value and requires it
+## to fit the target; an unevaluable *chain* is not accepted for an integer
+## target.  This predicate gates the contextual int→float / char forms, where
+## the value range is not folded by the self.
 public function is_numeric_literal_expr(ep: ptr[ast.Expr]?) -> bool:
     let p = ep else:
         return false
@@ -105,10 +108,10 @@ public function is_numeric_literal_expr(ep: ptr[ast.Expr]?) -> bool:
                 return false
 
 
-## True when `ep` is a numeric literal, or an `if`/`match` expression whose
-## branches are all numeric literals.  The host types such branches with the
-## expected type (`let shade: ubyte = if c: 0xFF else: 0x00`), so a
-## literal-valued branch chain is compatible with any numeric target.
+## True when `ep` is a numeric literal, or an `if` expression whose branches
+## are all numeric literals.  The self's expected-type inference types such a
+## chain at the target type, so the chain itself clears the host's range test
+## only for the contextual int→float and char forms.
 public function is_numeric_literal_valued_expr(ep: ptr[ast.Expr]?) -> bool:
     let p = ep else:
         return false
@@ -155,10 +158,9 @@ public function constant_fits_target(
     let target_name = integer_primitive_name(target)
     if not types.is_fixed_width_integer_name(target_name):
         return Option[bool].none
-    let table_ptr = const_values else:
-        return Option[bool].none
-    var table: map_mod.Map[str, ptr[ast.Expr]] = unsafe: read(table_ptr)
-    match fold_int_constant(ref_of(table), source_expr):
+    # A literal (or an expression over literals) folds without a `const` table;
+    # the table is only needed to resolve named constants.
+    match fold_int_constant(const_values, source_expr):
         Option.some as folded:
             return Option[bool].some(value = types.integer_constant_fits(target_name, folded.value))
         Option.none:
@@ -200,6 +202,14 @@ public function types_compatible_with_consts(
     #    `actual_type == expected_type` before reaching the numeric coercion, so
     #    a `ulong` literal the parser stores as a negative `long`
     #    (`14695981039346656037`) keeps its declared type and passes.
+    #    A literal-valued `if` chain is not a substitute for the range test: the
+    #    host accepts `let x: ubyte = if c: 32 else: 200` because both branches
+    #    *fit* (the expected-type inference does that), and rejects
+    #    `if c: 300 else: 200` because one branch does not.  So an integer
+    #    target only accepts a source whose folded value fits — an unevaluable
+    #    chain falls through to the structural rules.  Float targets keep the
+    #    contextual int→float coercion for a literal chain, which has no range
+    #    fold on the self side.
     if source_expr != null and not types.type_equals(expected, actual):
         let bare = types.unwrap_nullable(expected)
         if types.is_char_type(bare):
@@ -220,7 +230,7 @@ public function types_compatible_with_consts(
                     Option.some as fits:
                         return fits.value
                     Option.none:
-                        if is_numeric_literal_valued_expr(source_expr):
+                        if types.is_float_type(bare) and is_numeric_literal_valued_expr(source_expr):
                             return true
 
     # 2  Unresolved types never force a mismatch — including types that merely

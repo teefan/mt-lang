@@ -194,11 +194,11 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 138, 2026-11-18)
+## 6. Current baseline (session 139, 2026-11-18)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 158,086 / 125,521 |
+| source files / lines / code lines | 169 / 158,401 / 125,770 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
@@ -210,7 +210,10 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 22 / 61 |
 
-Session 131 added the completion/diagnostic feature set (+296 code lines, +2
+Session 139 added the call-argument compatibility port (+249 code lines:
+per-parameter expected-type inference, the table-free literal fold, the
+substituted-specialization check, and the array/span construction hints;
+duplication unchanged).  Session 131 added the completion/diagnostic feature set (+296 code lines, +2
 duplication windows, +1 test file); dead exports dropped from 35 to 33 as the
 superseded cursor helpers were removed.  Session 132 added the format-string
 completion context (+185 code lines, +1 shared parameter-loop window); the
