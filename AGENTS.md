@@ -105,7 +105,7 @@ self-hosted compiler, and matching the host everywhere is the program's goal.
     (635 files; read its summary, it is not expected to reach 0 yet),
     `ruby tools/unused_import_parity.rb` (635/635), `ruby tools/cli_parity.rb`
     (224 match / 0 differ / 0 pending); LSP: `tools/lsp_parity.rb
-    record|compare` (30/30 + the 4 documented entries),
+    record|compare` (30/30 + the 5 documented entries),
     `tools/lsp_recovery_probe.rb --check`, `tools/lsp_project_audit.rb --workspace DIR`
     (drift ±10 — compare differing *sets*), valgrind on an LSP drive + the Neovim smoke;
     lowering/C backend: `ruby tools/sexpr_parity.rb lower -q -j 16

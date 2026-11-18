@@ -204,7 +204,7 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 | vocabulary violations | 0 |
 | alias violations | 0 (169 modules) |
 | dead exports (unused / test-only) | 33 / 6 |
-| duplication (windows / duplicated lines) | 881 / 6,317 (window 12) |
+| duplication (windows / duplicated lines) | 882 / 6,341 (window 12) |
 | functions ≥ 200 lines | 1 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
