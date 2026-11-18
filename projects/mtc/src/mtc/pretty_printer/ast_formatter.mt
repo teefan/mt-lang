@@ -77,6 +77,10 @@ function create_formatter(file: ast.SourceFile) -> Formatter:
 public function format_source_file(file: ast.SourceFile) -> string.String:
     var f = create_formatter(file)
     emit_source_file(ref_of(f), file)
+    # The host's pretty printer always ends with a newline, including for an
+    # empty file (the CST modes leave an empty file empty).
+    if f.buffer.len == 0:
+        f.buffer.append("\n")
     return f.buffer
 
 
@@ -89,6 +93,10 @@ public function format_source_file_with_trivia(file: ast.SourceFile, source: str
     var f = create_formatter(file)
     build_comment_state(ref_of(f), source, trivia)
     emit_source_file(ref_of(f), file)
+    # The host's pretty printer always ends with a newline, including for an
+    # empty file (the CST modes leave an empty file empty).
+    if f.buffer.len == 0:
+        f.buffer.append("\n")
     return f.buffer
 
 

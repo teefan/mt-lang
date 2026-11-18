@@ -73,6 +73,15 @@ function test_formatting_is_idempotent() -> void:
 
 
 @[test]
+function test_empty_source_formats_to_a_newline() -> void:
+    ## The host's pretty printer always ends with a newline, including for an
+    ## empty file; the CST modes leave an empty file empty.
+    var formatted = format_source_with_comments("")
+    defer: formatted.release()
+    expect_eq(formatted.as_str(), "\n")
+
+
+@[test]
 function test_already_formatted_is_stable() -> void:
     ## Canonical input should round-trip unchanged.
     var source = <<-SRC

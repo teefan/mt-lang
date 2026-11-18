@@ -1479,9 +1479,22 @@ public function print_parse_diagnostics(path: str, source: str, diags: span[psta
     let _ = terminal.flush_stderr()
 
 
+## Append a source line as the host's ErrorFormatter renders it (a tab becomes
+## one space), keeping the caret columns aligned.
+function append_rendered_source_line(target: ref[string.String], source_line: str) -> void:
+    var i: ptr_uint = 0
+    while i < source_line.len:
+        let ch = source_line.byte_at(i)
+        if ch == 9:
+            target.push_byte(32)
+        else:
+            target.push_byte(ch)
+        i += 1
+
+
 ## `error[<code>]: <message> -- <path>:<line>:<col>` plus the source line and
 ## caret, the host ErrorFormatter's block.
-function print_diagnostic_block(path: str, source: str, line: ptr_uint, column: ptr_uint, code: str, message: str) -> void:
+public function print_diagnostic_block(path: str, source: str, line: ptr_uint, column: ptr_uint, code: str, message: str) -> void:
     var block = string.String.create()
     defer: block.release()
     block.append("error[")
@@ -1513,7 +1526,7 @@ function print_diagnostic_block(path: str, source: str, line: ptr_uint, column: 
             block.append("   |\n")
             block.append(gutter.as_str())
             block.append(" | ")
-            block.append(source_line)
+            append_rendered_source_line(ref_of(block), source_line)
             block.append("\n")
             block.append("      | ")
             var sp: ptr_uint = 1
@@ -1614,7 +1627,7 @@ function print_severity_diagnostic_block(
             block.append("   |\n")
             block.append(gutter.as_str())
             block.append(" | ")
-            block.append(source_line)
+            append_rendered_source_line(ref_of(block), source_line)
             block.append("\n")
             block.append("      | ")
             var sp: ptr_uint = 1

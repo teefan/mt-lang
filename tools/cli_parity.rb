@@ -143,6 +143,7 @@ FIXTURES = {
         return 0
     MT
   "standalone/syntax_error.mt" => "function main() -> int:\n    let x = (\n    return 0\n",
+  "standalone/unicode.mt" => "## Café — a documented helper.\nfunction main() -> int:\n    return 0\n",
   "standalone/sema_error.mt" => "function main() -> int:\n    let x: int = \"not an int\"\n    print(x)\n    return 0\n",
   "standalone/no_main.mt" => "public function lib_fn(x: int) -> int:\n    return x\n",
   "standalone/external_bindings.mt" => <<~MT,
@@ -357,6 +358,9 @@ def build_cases
   add.call("format-directory-check", ["format", "--check", "multi"])
   add.call("format-multiple", ["format", "--check", "multi/a.mt", "multi/b.mt"])
   add.call("format-multiple-no-check", ["format", "multi/a.mt", "multi/b.mt"])
+  add.call("format-directory-no-check", ["format", "multi"])
+  add.call("format-parse-error", ["format", "standalone/syntax_error.mt"])
+  add.call("format-unicode", ["format", "--canonical", "standalone/unicode.mt"])
   add.call("debug-missing-file", ["debug", "standalone/nope.mt"])
   add.call("debug", ["debug", "standalone/clean.mt", "-I", FIXROOT])
 

@@ -10,9 +10,38 @@ import std.time as time
 import std.vec as vec
 
 import mtc.formatter.tidy as tidy
+import mtc.lexer.lexer as lexer_mod
+import mtc.lexer.token as token_mod
+import mtc.parser.parser as parser
+import mtc.parser.state as pstate
 import mtc.profile as profile_mod
 import mtc.cli_help as cli_help
 import mtc.main as main
+
+
+## Report a formatter failure the way the host CLI does: the lexer's
+## `error[lex/error]` blocks when lexing failed, else the parser's
+## `error[parse/error]` blocks, on stderr.
+function report_format_failure(path: str, source: str) -> int:
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: lex_diags.release()
+    let _tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
+    if lex_diags.len() > 0:
+        let lex_ptr = lex_diags.get(0) else:
+            return 1
+        let lex = unsafe: read(lex_ptr)
+        main.print_diagnostic_block(path, source, lex.line, lex.column, "lex/error", str.cstr_as_str(lex.message))
+        return 1
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: parse_diags.release()
+    let _file = parser.parse_source(source, ref_of(parse_diags))
+    if parse_diags.len() > 0:
+        let parsed_ptr = parse_diags.get(0) else:
+            return 1
+        let parsed = unsafe: read(parsed_ptr)
+        main.print_diagnostic_block(path, source, parsed.line, parsed.column, "parse/error", str.cstr_as_str(parsed.message))
+        return 1
+    return 1
 
 
 ## Format one source file and apply the single-file output rules.
@@ -44,8 +73,7 @@ function format_one_path(
 
             let started_ms = monotonic_ms()
             var formatted = tidy.format_source_profiled(source_text, path, mode, explicit_max_line_length, profile_ptr) else:
-                stdio.print_format(c"error: %.*s: parse error\n", int<-(path.len), path.data)
-                return 1
+                return report_format_failure(path, source_text)
             defer: formatted.release()
             let fmt_text = formatted.as_str()
 
@@ -101,8 +129,7 @@ function format_paths_command(
                     var source = content.value
                     defer: source.release()
                     var formatted = tidy.format_source(source.as_str(), path, mode, explicit_max_line_length) else:
-                        stdio.print_format(c"error: %.*s: parse error\n", int<-(path.len), path.data)
-                        return 1
+                        return report_format_failure(path, source.as_str())
                     defer: formatted.release()
                     if source.as_str() != formatted.as_str():
                         stdio.print_format(c"needs formatting %.*s\n", int<-(path.len), path.data)
@@ -129,8 +156,7 @@ function format_paths_command(
                 var source = content.value
                 defer: source.release()
                 var formatted = tidy.format_source(source.as_str(), path, mode, explicit_max_line_length) else:
-                    stdio.print_format(c"error: %.*s: parse error\n", int<-(path.len), path.data)
-                    return 1
+                    return report_format_failure(path, source.as_str())
                 defer: formatted.release()
                 if source.as_str() != formatted.as_str():
                     match fs.write_text(path, formatted.as_str()):
@@ -240,6 +266,15 @@ public function format_command(args: span[str]) -> int:
             has_directory = true
         di += 1
 
+    let multiple_sources = inputs.len() > 1 or has_directory
+    # Reject a multi-source run before expanding the operands: walking a large
+    # tree only to print the usage error is the host's behaviour too, but the
+    # self's recursive walk is far dearer than the host's `Dir.glob`.
+    if multiple_sources and not check_mode and not write_mode:
+        main.eprint_line("format on multiple sources requires --check or --write")
+        cli_help.print_usage(true)
+        return 1
+
     var paths = vec.Vec[str].create()
     defer: paths.release()
     var expanded_owner = vec.Vec[string.String].create()
@@ -255,12 +290,7 @@ public function format_command(args: span[str]) -> int:
         stdio.print_line(msg.as_str())
         return 0
 
-    let multiple_sources = inputs.len() > 1 or has_directory
     if multiple_sources:
-        if not check_mode and not write_mode:
-            main.eprint_line("format on multiple sources requires --check or --write")
-            cli_help.print_usage(true)
-            return 1
         return format_paths_command(ref_of(paths), check_mode, write_mode, mode, explicit_max_line_length)
 
     let path_ptr = paths.get(0) else:
