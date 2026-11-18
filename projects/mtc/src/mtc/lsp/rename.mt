@@ -1,8 +1,12 @@
 ## Rename — find all occurrences of an identifier and return a WorkspaceEdit.
 ##
 ## Token-accurate cursor resolution ensures identifiers inside string literals
-## and comments are never rewritten.  Scope-aware filtering via lsp.scope
-## prevents shadowed locals in unrelated scopes from being renamed alongside.
+## and comments are never rewritten.  A local binding keeps the scope-aware
+## same-file rename via lsp.scope; every other name follows the host's
+## `workspace_symbol_identity_rename_changes`: resolve the cursor's definition
+## and rename each occurrence whose own definition resolves to the same
+## declaration, across every open document.  A name with no resolvable
+## definition falls back to the host's lexical same-file scan.
 
 import std.fmt
 import std.json as json
@@ -11,10 +15,19 @@ import std.string as string
 import std.vec as vec
 
 import mtc.lsp.cursor as cursor
+import mtc.lsp.navigation as navigation
 import mtc.lsp.protocol as proto
 import mtc.lsp.scope as scope_mod
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
+
+
+## The declaration a rename targets: the declaring document path and the
+## definition pipeline's 1-based line / 0-based column.
+struct RenameIdentity:
+    path: string.String
+    line: ptr_uint
+    column: ptr_uint
 
 
 ## Handle textDocument/rename.
@@ -48,12 +61,194 @@ public function handle_rename(
     var bindings = scope_mod.collect_bindings(source, ast_file)
     defer: bindings.release()
 
+    # A local binding at the cursor: the same-file, scope-filtered rename (the
+    # host's `scoped_rename_changes`).
+    if scope_mod.local_binding_line(ref_of(bindings), target.text, target.line).is_some():
+        var filtered = filter_occurrences(source, target.text, target.line, ref_of(bindings))
+        defer: filtered.release()
+        var local_json = build_rename_edits_json(source, target.text, uri, new_name, ref_of(filtered))
+        proto.write_response_raw(id, local_json.as_str())
+        local_json.release()
+        return
+
+    # Everything else: the definition-identity rename across the open
+    # documents, then the lexical same-file fallback.
+    match resolve_rename_identity(ws, uri, line, character):
+        Option.some as identity:
+            var identity_json = build_identity_edits_json(ws, file_path.as_str(), uri, target.text, new_name, identity.value)
+            if identity_json.len() > 0:
+                proto.write_response_raw(id, identity_json.as_str())
+                identity_json.release()
+                identity.value.path.release()
+                return
+            identity_json.release()
+            identity.value.path.release()
+        Option.none:
+            pass
+
     var filtered = filter_occurrences(source, target.text, target.line, ref_of(bindings))
     defer: filtered.release()
-
     var edits_json = build_rename_edits_json(source, target.text, uri, new_name, ref_of(filtered))
     proto.write_response_raw(id, edits_json.as_str())
     edits_json.release()
+
+
+## The cursor's definition, as the identity each candidate must match.  None
+## when the definition pipeline answers nothing (the host then falls through to
+## its lexical rename).
+function resolve_rename_identity(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+) -> Option[RenameIdentity]:
+    var payload = navigation.resolve_cursor_at(ws, uri, line, character, false) else:
+        return Option[RenameIdentity].none
+    payload.hover_text.release()
+    payload.docs.release()
+    payload.from_modules.release()
+    if payload.line == 0:
+        payload.target_uri.release()
+        return Option[RenameIdentity].none
+    var path = string.String.create()
+    if payload.target_uri.len() > 0:
+        match uri_ops.file_uri_to_path(payload.target_uri.as_str()):
+            Option.some as resolved_path:
+                path.append(resolved_path.value.as_str())
+                resolved_path.value.release()
+            Option.none:
+                path.append(payload.target_uri.as_str())
+    else:
+        match uri_ops.file_uri_to_path(uri):
+            Option.some as resolved_path:
+                path.append(resolved_path.value.as_str())
+                resolved_path.value.release()
+            Option.none:
+                path.append(uri)
+    payload.target_uri.release()
+    return Option[RenameIdentity].some(value = RenameIdentity(path = path, line = payload.line, column = payload.column))
+
+
+## The `{"changes":{…}}` edit set: every occurrence of `name` in the seed
+## document and in each open document whose own definition resolves to
+## `identity`.  Empty when no occurrence matches, so the caller can fall back.
+function build_identity_edits_json(
+    ws: ref[workspace.Workspace],
+    seed_path: str,
+    seed_uri: str,
+    name: str,
+    new_name: str,
+    identity: RenameIdentity,
+) -> string.String:
+    var result = string.String.create()
+    result.append("{\"changes\":{")
+    var first_doc = true
+
+    var seed_json = identity_document_edits(ws, seed_path, seed_uri, name, new_name, identity)
+    if seed_json.len() > 0:
+        append_document_changes(ref_of(result), seed_uri, ref_of(seed_json), ref_of(first_doc))
+        seed_json.release()
+    else:
+        seed_json.release()
+
+    let open_paths = ws.open_paths_in_order()
+    var pi: ptr_uint = 0
+    while pi < open_paths.len:
+        let path = unsafe: read(open_paths.data + pi).as_str()
+        if not path.equal(seed_path):
+            var doc_uri = navigation.file_uri_for_path(path)
+            var doc_json = identity_document_edits(ws, path, doc_uri.as_str(), name, new_name, identity)
+            if doc_json.len() > 0:
+                append_document_changes(ref_of(result), doc_uri.as_str(), ref_of(doc_json), ref_of(first_doc))
+                doc_json.release()
+            else:
+                doc_json.release()
+            doc_uri.release()
+        pi += 1
+
+    if first_doc:
+        # No occurrence resolved to the target: let the caller fall back.
+        result.release()
+        return string.String.create()
+
+    result.append("}}")
+    return result
+
+
+## One document's edit array for the identity rename, or an empty string when
+## none of its occurrences resolves to `identity`.
+function identity_document_edits(
+    ws: ref[workspace.Workspace],
+    path: str,
+    doc_uri: str,
+    name: str,
+    new_name: str,
+    identity: RenameIdentity,
+) -> string.String:
+    var edits = string.String.create()
+    var content_opt = ws.document_source(path)
+    if content_opt.is_some():
+        var content = content_opt.unwrap()
+        var occurrences = cursor.identifier_occurrences(content.as_str(), name)
+        var oi: ptr_uint = 0
+        while oi < occurrences.len():
+            let op = occurrences.get(oi) else:
+                break
+            let occ = unsafe: read(op)
+            if occurrence_matches_identity(ws, path, doc_uri, content.as_str(), occ, identity):
+                if edits.len() > 0:
+                    edits.append(",")
+                append_edit_span(ref_of(edits), occ, new_name)
+            oi += 1
+        occurrences.release()
+        content.release()
+    return edits
+
+
+## Whether the occurrence's own definition resolves to `identity`.
+function occurrence_matches_identity(
+    ws: ref[workspace.Workspace],
+    path: str,
+    doc_uri: str,
+    source: str,
+    occ: cursor.CursorToken,
+    identity: RenameIdentity,
+) -> bool:
+    var payload = navigation.resolve_cursor(ws, doc_uri, source, occ.line - 1, occ.column - 1, false) else:
+        return false
+    payload.hover_text.release()
+    payload.docs.release()
+    payload.from_modules.release()
+    var matches = false
+    if payload.line == identity.line and payload.column == identity.column:
+        if payload.target_uri.len() > 0:
+            match uri_ops.file_uri_to_path(payload.target_uri.as_str()):
+                Option.some as candidate_path:
+                    matches = candidate_path.value.as_str().equal(identity.path.as_str())
+                    candidate_path.value.release()
+                Option.none:
+                    pass
+        else:
+            matches = path.equal(identity.path.as_str())
+    payload.target_uri.release()
+    return matches
+
+
+## Append `"<uri>":[<edits>]` to the changes object, comma-separated.
+function append_document_changes(
+    result: ref[string.String],
+    doc_uri: str,
+    edits: ref[string.String],
+    first_doc: ref[bool],
+) -> void:
+    if not unsafe: read(first_doc):
+        result.append(",")
+    unsafe: read(first_doc) = false
+    result.append("\"")
+    proto.append_escaped(result, doc_uri)
+    result.append("\":[")
+    result.append(edits.as_str())
+    result.append("]")
 
 
 ## Handle textDocument/prepareRename: the range of the identifier under the
@@ -129,23 +324,28 @@ function build_rename_edits_json(source: str, old_name: str, uri: str, new_name:
         let occ = unsafe: read(op)
         if oi > 0:
             result.append(",")
-        let lz = if occ.line > 0: occ.line - 1 else: 0z
-        let col = if occ.column > 0: occ.column - 1 else: 0z
-        result.append("{\"range\":{\"start\":{\"line\":")
-        result.append_format(f"#{lz}")
-        result.append(",\"character\":")
-        result.append_format(f"#{col}")
-        result.append("},\"end\":{\"line\":")
-        result.append_format(f"#{lz}")
-        result.append(",\"character\":")
-        result.append_format(f"#{col + occ.length}")
-        result.append("}},\"newText\":\"")
-        append_escaped(ref_of(result), new_name)
-        result.append("\"}")
+        append_edit_span(ref_of(result), occ, new_name)
         oi += 1
 
     result.append("]}}")
     return result
+
+
+## One `TextEdit` object for an occurrence.
+function append_edit_span(result: ref[string.String], occ: cursor.CursorToken, new_name: str) -> void:
+    let lz = if occ.line > 0: occ.line - 1 else: 0z
+    let col = if occ.column > 0: occ.column - 1 else: 0z
+    result.append("{\"range\":{\"start\":{\"line\":")
+    result.append_format(f"#{lz}")
+    result.append(",\"character\":")
+    result.append_format(f"#{col}")
+    result.append("},\"end\":{\"line\":")
+    result.append_format(f"#{lz}")
+    result.append(",\"character\":")
+    result.append_format(f"#{col + occ.length}")
+    result.append("}},\"newText\":\"")
+    proto.append_escaped(result, new_name)
+    result.append("\"}")
 
 
 function append_escaped(output: ref[string.String], text: str) -> void:

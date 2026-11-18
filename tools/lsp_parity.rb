@@ -30,6 +30,7 @@ ROOT = File.expand_path("..", __dir__)
 MAIN_SOURCE = <<~MT
   import mod_alpha as alpha
   import mod_beta as beta
+  import flat_mod
 
   ## A sample struct.
   ## @param x the x value
@@ -70,6 +71,7 @@ MAIN_SOURCE = <<~MT
       total += compute(3, 4)
       let _color = Color.green
       total += alpha.fn_alpha(10)
+      total += flat_mod.flat_fn(5)
       let c = Circle(radius = 1.0)
       let area = c.area()
       let _a = area
@@ -95,6 +97,14 @@ BETA_SOURCE = <<~MT
   ## Beta helper module.
   public function fn_beta(value: int) -> int:
       return value + 3
+MT
+
+# A flat (`.mt` file) module — the directory-shaped `mod_alpha/lib.mt` pair is
+# not linked by the host's import-dependency graph, so a cross-file rename needs
+# a module name the graph can match.
+FLAT_SOURCE = <<~MT
+  public function flat_fn(value: int) -> int:
+      return value + 2
 MT
 
 # A std-generic fixture: the locals' inferred types come from imported generic
@@ -228,6 +238,32 @@ FORMAT_SOURCE = <<~'MT'
       return local_value
 MT
 
+# An imported struct with a field of an imported generic type: a
+# `ref[ImportedStruct]` receiver completes its fields, and a method reached
+# through the field (`r.lookup.len()`) resolves through the chain.  The holder
+# module is imported, not opened, so only the requests below touch it.
+HOLDING_SOURCE = <<~MT
+  import std.map as map_mod
+
+  public struct Holder:
+      lookup: map_mod.Map[str, int]
+
+  extending Holder:
+      public function put(key: str, value: int) -> void:
+          this.lookup.set(key, value)
+MT
+
+IMPORTED_SOURCE = <<~MT
+  import mod_holding as holding
+
+  function imported_demo(r: ref[holding.Holder], h: holding.Holder) -> int:
+      let via_ref = r.lookup.len()
+      let via_value = h.lookup.len()
+      let _via_ref = via_ref
+      let _via_value = via_value
+      return 0
+MT
+
 def path_to_uri(path)
   "file://#{path.split("/").map { |seg| CGI.escape(seg).gsub("+", "%20") }.join("/")}"
 end
@@ -235,10 +271,13 @@ end
 def build_workspace(dir)
   FileUtils.mkdir_p(File.join(dir, "mod_alpha"))
   FileUtils.mkdir_p(File.join(dir, "mod_beta"))
+  FileUtils.mkdir_p(File.join(dir, "mod_holding"))
   FileUtils.mkdir_p(File.join(dir, "assets"))
   paths = {
     alpha: File.join(dir, "mod_alpha", "lib.mt"),
     beta: File.join(dir, "mod_beta", "lib.mt"),
+    holding: File.join(dir, "mod_holding", "lib.mt"),
+    flat: File.join(dir, "flat_mod.mt"),
     main: File.join(dir, "main.mt"),
     scratch: File.join(dir, "scratch.mt"),
     containers: File.join(dir, "containers.mt"),
@@ -248,9 +287,12 @@ def build_workspace(dir)
     inlay: File.join(dir, "inlay.mt"),
     reserved: File.join(dir, "reserved.mt"),
     format: File.join(dir, "format.mt"),
+    imported: File.join(dir, "imported.mt"),
   }
   File.write(paths[:alpha], ALPHA_SOURCE)
   File.write(paths[:beta], BETA_SOURCE)
+  File.write(paths[:holding], HOLDING_SOURCE)
+  File.write(paths[:flat], FLAT_SOURCE)
   File.write(paths[:main], MAIN_SOURCE)
   File.write(paths[:scratch], "function scratch_fn() -> int:\n    return 1\n")
   File.write(paths[:containers], CONTAINERS_SOURCE)
@@ -260,6 +302,7 @@ def build_workspace(dir)
   File.write(paths[:inlay], INLAY_SOURCE)
   File.write(paths[:reserved], RESERVED_SOURCE)
   File.write(paths[:format], FORMAT_SOURCE)
+  File.write(paths[:imported], IMPORTED_SOURCE)
   File.write(File.join(dir, "assets", "file.txt"), "hello\n")
   paths
 end
@@ -559,6 +602,32 @@ def corpus(dir, paths)
     "textDocument" => { "uri" => path_to_uri(paths[:format]) },
     "position" => { "line" => format_line, "character" => format_open + 3 },
   }]
+  # Hover inside the interpolation: the host re-lexes `local_value` and answers
+  # the binding (range is the inner identifier, not the whole f-string).
+  requests["hover/format-string"] = ["textDocument/hover", {
+    "textDocument" => { "uri" => path_to_uri(paths[:format]) },
+    "position" => { "line" => format_line, "character" => format_open + 3 },
+  }]
+  # An imported struct reached through `ref[T]`: fields complete, and the method
+  # of an imported generic field resolves through the receiver chain.
+  imported_uri = path_to_uri(paths[:imported])
+  ref_line, ref_col = find_pos(IMPORTED_SOURCE, "r.lookup.len()")
+  value_line, value_col = find_pos(IMPORTED_SOURCE, "h.lookup.len()")
+  requests["completion/ref-imported-field"] = ["textDocument/completion", {
+    "textDocument" => { "uri" => imported_uri },
+    "position" => { "line" => ref_line, "character" => ref_col + 2 },
+  }]
+  requests["hover/imported-field-method"] = ["textDocument/hover", {
+    "textDocument" => { "uri" => imported_uri },
+    "position" => { "line" => ref_line, "character" => ref_col + 9 },
+  }]
+  requests["hover/imported-field-method/value"] = ["textDocument/hover", {
+    "textDocument" => { "uri" => imported_uri },
+    "position" => { "line" => value_line, "character" => value_col + 9 },
+  }]
+  # Cross-file rename of an imported function: `flat_mod.mt` is open, so its
+  # declaration is edited alongside the call site in `main.mt`.
+  requests["rename/imported-function"] = ["textDocument/rename", at.call("flat_mod.flat_fn(5)", off: 11).merge("newName" => "renamed_flat_fn")]
   # A field name in its own declaration (the `field <name>: <type>` arm).
   requests["hover/field-declaration"] = ["textDocument/hover", at.call("x: int")]
   requests["signatureHelp"] = ["textDocument/signatureHelp", at.call("compute(3, 4)", off: 8)]
@@ -653,6 +722,7 @@ def run_corpus(client, dir, paths)
   client.notify("initialized", {})
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:main]), "languageId" => "milk-tea", "version" => 1, "text" => MAIN_SOURCE } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:alpha]), "languageId" => "milk-tea", "version" => 1, "text" => ALPHA_SOURCE } })
+  client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:flat]), "languageId" => "milk-tea", "version" => 1, "text" => FLAT_SOURCE } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:beta]), "languageId" => "milk-tea", "version" => 1, "text" => BETA_SOURCE } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:scratch]), "languageId" => "milk-tea", "version" => 1, "text" => "function scratch_fn() -> int:\n    return 1\n" } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:containers]), "languageId" => "milk-tea", "version" => 1, "text" => CONTAINERS_SOURCE } })

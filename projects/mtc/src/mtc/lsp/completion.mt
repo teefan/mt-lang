@@ -1263,21 +1263,6 @@ function type_receiver_completions(
     return alloc
 
 
-## The host's `project_receiver_type_for_completion`: a `ref[T]`/`ptr[T]`/
-## `const_ptr[T]` receiver projects to `T` (a `ref`'s lifetime argument is
-## skipped).
-function project_value_receiver_type(ty: types.Type) -> types.Type:
-    match ty:
-        types.Type.ty_generic as g:
-            if g.name.equal("ref") and g.args.len >= 1:
-                return types.pointer_element(ty)
-            if (g.name.equal("ptr") or g.name.equal("const_ptr")) and g.args.len == 1:
-                return unsafe: read(g.args.data + 0)
-            return ty
-        _:
-            return ty
-
-
 ## Completions for a value receiver: the type's fields (kind 8, `0_`) then its
 ## methods (kind 6, `1_`).  Returns null when the type has neither.
 function value_receiver_completions(
@@ -1289,8 +1274,8 @@ function value_receiver_completions(
     # The host's `project_field_receiver_type_for_completion`: the fields come
     # from the type with a nullable unwrapped and `ref`/`ptr` projected; the
     # methods project through `ref`/`ptr` alone.
-    let field_ty = project_value_receiver_type(types.unwrap_nullable(receiver_ty))
-    let type_name = type_to_key_name(field_ty)
+    let field_ty = navigation.project_value_receiver_type(types.unwrap_nullable(receiver_ty))
+    let type_name = navigation.type_to_key_name(field_ty)
 
     var items_json = string.String.create()
     items_json.append("[")
@@ -1332,8 +1317,8 @@ function value_receiver_completions(
                 if type_name.len > 0:
                     emit_builtin_fields(ref_of(items_json), analysis, field_ty, prefix, uri, ref_of(first), ref_of(count))
 
-    let method_ty = project_value_receiver_type(receiver_ty)
-    let method_name = type_to_key_name(method_ty)
+    let method_ty = navigation.project_value_receiver_type(receiver_ty)
+    let method_name = navigation.type_to_key_name(method_ty)
     var methods = vec.Vec[ReceiverMethod].create()
     defer: methods.release()
     var method_seen = map_mod.Map[str, bool].create()
@@ -1375,7 +1360,7 @@ function emit_builtin_fields(
     first: ref[bool],
     count: ref[ptr_uint],
 ) -> void:
-    let name = type_to_key_name(receiver_ty)
+    let name = navigation.type_to_key_name(receiver_ty)
     if name.equal("vec2") or name.equal("vec3") or name.equal("vec4") or
        name.equal("ivec2") or name.equal("ivec3") or name.equal("ivec4") or name.equal("quat"):
         let width = vector_field_width(name)
@@ -1432,7 +1417,7 @@ function emit_soa_fields(
         types.Type.ty_generic as g:
             if g.args.len < 2:
                 return
-            let element_name = type_to_key_name(unsafe: read(g.args.data + 0))
+            let element_name = navigation.type_to_key_name(unsafe: read(g.args.data + 0))
             let fields_ptr = unsafe: read(analysis).structs.get(element_name) else:
                 return
             var count_text = type_render.qualified_name(unsafe: read(g.args.data + 1), "")
@@ -1565,29 +1550,6 @@ function emit_payload_field_items(
         fi += 1
 
 
-## The `(module, type)` an imported type reference names.  The analyzer produces
-## two shapes for one: `ty_imported` for a specialized or imported nominal
-## (`node.Node`, `Vec[int]`) and a `ty_named` whose `module_name` is set for a
-## plain imported name.
-public struct ImportedTypeRef:
-    module_name: str
-    name: str
-
-
-function imported_type_reference(ty: types.Type) -> Option[ImportedTypeRef]:
-    match ty:
-        types.Type.ty_imported as im:
-            if im.module_name.len > 0:
-                return Option[ImportedTypeRef].some(value = ImportedTypeRef(module_name = im.module_name, name = im.name))
-            return Option[ImportedTypeRef].none
-        types.Type.ty_named as n:
-            if n.module_name.len > 0:
-                return Option[ImportedTypeRef].some(value = ImportedTypeRef(module_name = n.module_name, name = n.name))
-            return Option[ImportedTypeRef].none
-        _:
-            return Option[ImportedTypeRef].none
-
-
 ## An *imported* type's members for a value receiver (`var n = node.Node.create(…)`
 ## then `n.`): the analysis's `imported_type_members` record carries the declaring
 ## module's fields and method signatures, and the host renders both with that
@@ -1600,7 +1562,11 @@ function imported_value_receiver_completions(
     prefix: str,
     uri: str,
 ) -> ptr[string.String]?:
-    let reference = imported_type_reference(receiver_ty) else:
+    # The host's `project_field_receiver_type_for_completion` unwraps a nullable
+    # and projects `ref`/`ptr` before it looks the type up, so a
+    # `ref[ImportedStruct]` receiver answers the struct's fields.
+    let projected_ty = navigation.project_value_receiver_type(types.unwrap_nullable(receiver_ty))
+    let reference = navigation.imported_type_reference(projected_ty) else:
         return null
     let module_name = reference.module_name
     let im_name = reference.name
@@ -1803,7 +1769,7 @@ function value_chain_completions(
         let seg_ptr = segments.get(si) else:
             break
         let seg = unsafe: read(seg_ptr)
-        match field_of_type(analysis, current_ty, seg):
+        match navigation.field_of_type(analysis, current_ty, seg):
             Option.some as ft:
                 current_ty = ft.value
             Option.none:
@@ -1814,48 +1780,6 @@ function value_chain_completions(
     if imported_items != null:
         return imported_items
     return value_receiver_completions(analysis, current_ty, prefix, uri)
-
-
-## The type of `field_name` on `ty` — a struct field (local, nested or
-## imported) or a builtin vector/matrix/quaternion field, the host's
-## `project_field_receiver_type_for_completion(...).field(name)`.
-function field_of_type(analysis: ref[analyzer.Analysis], ty: types.Type, field_name: str) -> Option[types.Type]:
-    let field_ty = project_value_receiver_type(types.unwrap_nullable(ty))
-    let type_name = type_to_key_name(field_ty)
-    let fields_ptr = unsafe: read(analysis).structs.get(type_name)
-    if fields_ptr != null:
-        let fields = unsafe: read(fields_ptr)
-        var i: ptr_uint = 0
-        while i < fields.len:
-            let f = unsafe: read(fields.data + i)
-            if f.name.equal(field_name):
-                return Option[types.Type].some(value = f.ty)
-            i += 1
-        return Option[types.Type].none
-    match imported_type_reference(field_ty):
-        Option.some as reference:
-            var key = string.String.create()
-            defer: key.release()
-            key.append(reference.value.module_name)
-            key.append(".")
-            key.append(reference.value.name)
-            let member_ptr = unsafe: read(analysis).imported_type_members.get(key.as_str())
-            if member_ptr != null:
-                let members = unsafe: read(member_ptr)
-                var mi: ptr_uint = 0
-                while mi < members.fields.len:
-                    let f = unsafe: read(members.fields.data + mi)
-                    if f.name.equal(field_name):
-                        return Option[types.Type].some(value = f.ty)
-                    mi += 1
-            return Option[types.Type].none
-        Option.none:
-            pass
-    match navigation.builtin_field_type_name(type_name, field_name):
-        Option.some as type_text:
-            return Option[types.Type].some(value = types.primitive(type_text.value))
-        Option.none:
-            return Option[types.Type].none
 
 
 ## Resolve a receiver name to the value's type: the innermost local or
@@ -3296,7 +3220,7 @@ public function named_argument_completion_items(
     var fields: span[analyzer.FieldEntry] = span[analyzer.FieldEntry]()
     let ty_ptr = unsafe: read(analysis).types.get(callee)
     if ty_ptr != null:
-        let type_name = type_to_key_name(unsafe: read(ty_ptr))
+        let type_name = navigation.type_to_key_name(unsafe: read(ty_ptr))
         let struct_fields = unsafe: read(analysis).structs.get(type_name)
         if struct_fields != null:
             fields = unsafe: read(struct_fields)
@@ -3482,29 +3406,12 @@ public function resolve_receiver_type_name(analysis: ref[analyzer.Analysis], nam
         let tp = a.types.get(name)
         if tp != null:
             let t = read(tp)
-            return type_to_key_name(t)
+            return navigation.type_to_key_name(t)
 
         if a.type_names.contains(name):
             return name
 
         return ""
-
-
-## Extract the key name from a Type (e.g. Vec[int] → "Vec").
-function type_to_key_name(t: types.Type) -> str:
-    match t:
-        types.Type.ty_generic as g:
-            return g.name
-        types.Type.ty_named as n:
-            return n.name
-        types.Type.ty_imported as im:
-            return im.name
-        types.Type.ty_opaque as op:
-            return op.name
-        types.Type.ty_primitive as p:
-            return p.name
-        _:
-            return ""
 
 
 ## The file's module name, as the host infers it from the module roots.

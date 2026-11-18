@@ -13,6 +13,7 @@ import std.string as string
 import std.vec as vec
 import std.log as log
 
+import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.loader.module_loader as loader
 import mtc.parser.ast as ast
@@ -24,6 +25,7 @@ import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.lsp.definition_index as defidx
 import mtc.lsp.reference_index as refidx
+import mtc.lsp.scope as scope_mod
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
 import mtc.lsp.workspace_index as idx
@@ -75,6 +77,29 @@ public struct DiagnosticCache:
     entries: map_mod.Map[string.String, DiagnosticCacheEntry]
 
 
+## The one-document lex cache.  Every position lookup (identifier at, token at,
+## interpolation at, the keyword/builtin arms, the import path scan) needs the
+## same whole-file token stream, and the host reuses one tokenized document per
+## request.  The cache holds the last document's stream, keyed by path and
+## content hash; a request takes the span once per lookup and never holds it
+## across a different document's fetch.
+public struct TokenCacheEntry:
+    path: string.String
+    content_hash: uint
+    tokens: vec.Vec[token_mod.Token]
+
+
+## The one-document scope-binding cache.  `collect_bindings` walks the whole
+## AST and every declaration's source lines; hover resolves a local through it
+## on every request, so the walk is cached beside its owning source copy (the
+## binding names are views into it).
+public struct BindingCacheEntry:
+    path: string.String
+    content_hash: uint
+    source: string.String
+    bindings: vec.Vec[scope_mod.Binding]
+
+
 public struct SemanticTokenCacheEntry:
     source_hash: uint
     result_id: string.String
@@ -106,6 +131,8 @@ public struct Workspace:
     ## completion and references see the edit without a full re-walk.
     index_dirty: vec.Vec[string.String]
     semantic_token_cache: map_mod.Map[string.String, SemanticTokenCacheEntry]
+    token_cache: TokenCacheEntry
+    binding_cache: BindingCacheEntry
     config_request_id: ptr_uint
     config_received: bool
     index_built: bool
@@ -180,6 +207,17 @@ extending Workspace:
             module_cache = loader.create_module_cache(),
             index_dirty = vec.Vec[string.String].create(),
             semantic_token_cache = map_mod.Map[string.String, SemanticTokenCacheEntry].create(),
+            token_cache = TokenCacheEntry(
+                path = string.String.create(),
+                content_hash = 0,
+                tokens = vec.Vec[token_mod.Token].create(),
+            ),
+            binding_cache = BindingCacheEntry(
+                path = string.String.create(),
+                content_hash = 0,
+                source = string.String.create(),
+                bindings = vec.Vec[scope_mod.Binding].create(),
+            ),
             config_request_id = 0,
             config_received = false,
             index_built = false,
@@ -211,6 +249,8 @@ extending Workspace:
         discover_project_root(path, ref_of(this.module_roots))
         append_compiler_module_roots(path, ref_of(this.module_roots))
         this.drain_retired_regions()
+        this.release_token_cache()
+        this.release_binding_cache()
         release_diagnostic_cache(ref_of(this.diagnostic_cache))
         this.diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create())
         release_analysis_cache(ref_of(this.analysis_cache))
@@ -347,6 +387,73 @@ extending Workspace:
                 return Option[string.String].none
 
 
+    ## The token stream of `path`'s current `source`, from the one-document lex
+    ## cache.  The span points into the cache (valid until the next call for a
+    ## different document), so a request takes it per lookup and never holds it
+    ## across a cross-file fetch.
+    public editable function document_tokens(path: str, source: str) -> span[token_mod.Token]:
+        let current_hash = fnv1a_hash(source)
+        if this.token_cache.path.as_str().equal(path) and this.token_cache.content_hash == current_hash:
+            return this.token_cache.tokens.as_span()
+        var previous = this.token_cache
+        previous.path.release()
+        previous.tokens.release()
+        var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+        defer: lex_diags.release()
+        this.token_cache = TokenCacheEntry(
+            path = string.String.from_str(path),
+            content_hash = current_hash,
+            tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags)),
+        )
+        return this.token_cache.tokens.as_span()
+
+
+    ## Drop the cached token stream (re-rooting the workspace).
+    public editable function release_token_cache() -> void:
+        var previous = this.token_cache
+        previous.path.release()
+        previous.tokens.release()
+        this.token_cache = TokenCacheEntry(
+            path = string.String.create(),
+            content_hash = 0,
+            tokens = vec.Vec[token_mod.Token].create(),
+        )
+
+
+    ## The scope bindings of `path`'s current `source`, cached with the source
+    ## copy their name views point into.  The span is valid until the next call
+    ## for a different document (the same one-entry rule as `document_tokens`).
+    public editable function document_bindings(path: str, source: str, ast_file: ast.SourceFile) -> span[scope_mod.Binding]:
+        let current_hash = fnv1a_hash(source)
+        if this.binding_cache.path.as_str().equal(path) and this.binding_cache.content_hash == current_hash:
+            return this.binding_cache.bindings.as_span()
+        var previous = this.binding_cache
+        previous.path.release()
+        previous.source.release()
+        previous.bindings.release()
+        var stored_source = string.String.from_str(source)
+        this.binding_cache = BindingCacheEntry(
+            path = string.String.from_str(path),
+            content_hash = current_hash,
+            source = stored_source,
+            bindings = scope_mod.collect_bindings(stored_source.as_str(), ast_file),
+        )
+        return this.binding_cache.bindings.as_span()
+
+
+    public editable function release_binding_cache() -> void:
+        var previous = this.binding_cache
+        previous.path.release()
+        previous.source.release()
+        previous.bindings.release()
+        this.binding_cache = BindingCacheEntry(
+            path = string.String.create(),
+            content_hash = 0,
+            source = string.String.create(),
+            bindings = vec.Vec[scope_mod.Binding].create(),
+        )
+
+
     ## The byte offset of an incoming LSP position (0-based line, character in
     ## UTF-16 code units) in the document's current text.  Positions are
     ## converted once at the request boundary so the byte-based scanners see
@@ -444,6 +551,11 @@ extending Workspace:
     ## an unchanged closed document is neither re-read nor re-lexed.
     public editable function note_document_tokens(path: str) -> void:
         if path.len == 0:
+            return
+        # The index drops an entry on every open/change/close, so an indexed
+        # document is current: skip the content hash the note would otherwise
+        # compute on every hover.
+        if refidx.is_indexed(ref_of(this.reference_index), path):
             return
         # An open document's buffer is its current content; index it directly
         # (no disk read, no copy: the index keeps its own stored text).
@@ -768,6 +880,8 @@ extending Workspace:
 
     public editable function release() -> void:
         this.drain_retired_regions()
+        this.release_token_cache()
+        this.release_binding_cache()
         this.root_path.release()
         release_module_roots(ref_of(this.module_roots))
         defidx.release(ref_of(this.definition_index))

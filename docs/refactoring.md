@@ -198,13 +198,13 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 168 / 157,140 / 124,816 |
+| source files / lines / code lines | 169 / 157,696 / 125,224 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
-| alias violations | 0 (168 modules) |
+| alias violations | 0 (169 modules) |
 | dead exports (unused / test-only) | 33 / 6 |
-| duplication (windows / duplicated lines) | 891 / 6,381 (window 12) |
+| duplication (windows / duplicated lines) | 888 / 6,353 (window 12) |
 | functions ≥ 200 lines | 1 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
@@ -221,3 +221,10 @@ item-field reader across the two hierarchy modules (−48 duplicated lines,
 −13 windows), and added the imported enum member source line, the
 hierarchy follow-up unwrapping and the specialization registration order.
 The remaining function over the limit is the excluded `binding_at` (385).
+
+Session 134 added the shared `lsp/fstring.mt` splitter (moved out of
+`semantic_tokens`), the shared type-field lookup (moved from completion to
+navigation), and the one-document token/binding caches (+413 code lines, −28
+duplicated lines, −3 windows).  The caches are deliberately one-document: the
+hover path only holds a span within the helper that fetched it, and the handoff
+notes the multi-entry change any cross-file span would require.

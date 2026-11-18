@@ -15,6 +15,7 @@ import std.str
 import std.string as string
 import std.vec as vec
 
+import mtc.lsp.fstring as fstring
 import mtc.lsp.utils as utils
 import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
@@ -44,16 +45,19 @@ public function identifier_at(source: str, line: ptr_uint, character: ptr_uint) 
     defer: lex_diags.release()
     var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer: tokens.release()
+    return identifier_at_in(tokens.as_span(), source, line, character)
 
+
+## `identifier_at` over an existing token stream (the workspace's cached
+## document tokens), so a request does not re-lex the file per lookup.
+public function identifier_at_in(tokens: span[token_mod.Token], source: str, line: ptr_uint, character: ptr_uint) -> Option[CursorToken]:
     let target_line = line + 1
     let target_col = character + 1
 
     # Pass 1: exact containment [column, column + len).
     var ti: ptr_uint = 0
-    while ti < tokens.len():
-        let tp = tokens.get(ti) else:
-            break
-        let tok = unsafe: read(tp)
+    while ti < tokens.len:
+        let tok = unsafe: read(tokens.data + ti)
         if tok.kind == tk.TokenKind.identifier and tok.line == target_line:
             let len = tok.end_offset - tok.start_offset
             if target_col >= tok.column and target_col < tok.column + len:
@@ -62,10 +66,8 @@ public function identifier_at(source: str, line: ptr_uint, character: ptr_uint) 
 
     # Pass 2: end-inclusive — cursor sitting right after the identifier.
     ti = 0
-    while ti < tokens.len():
-        let tp = tokens.get(ti) else:
-            break
-        let tok = unsafe: read(tp)
+    while ti < tokens.len:
+        let tok = unsafe: read(tokens.data + ti)
         if tok.kind == tk.TokenKind.identifier and tok.line == target_line:
             let len = tok.end_offset - tok.start_offset
             if target_col == tok.column + len:
@@ -73,6 +75,53 @@ public function identifier_at(source: str, line: ptr_uint, character: ptr_uint) 
         ti += 1
 
     return Option[CursorToken].none
+
+
+## `interpolation_identifier_at_in` over an existing token stream.
+public function interpolation_identifier_at_in(tokens: span[token_mod.Token], source: str, line: ptr_uint, character: ptr_uint) -> Option[CursorToken]:
+    match interpolation_token_at_in(tokens, source, line, character):
+        Option.some as tok:
+            if tok.value.kind != tk.TokenKind.identifier:
+                return Option[CursorToken].none
+            let length = tok.value.end_offset - tok.value.start_offset
+            return Option[CursorToken].some(value = CursorToken(
+                text = source.slice(tok.value.start_offset, length),
+                line = tok.value.line,
+                column = tok.value.column,
+                length = length,
+            ))
+        Option.none:
+            return Option[CursorToken].none
+
+
+## The token at the LSP position inside an f-string interpolation, whatever its
+## kind: a hover ranges the inner token, and the caller decides what to resolve.
+## Every f-string token is offered to the splitter, which only answers when the
+## position falls inside one of its `#{…}` expressions.
+public function interpolation_token_at(source: str, line: ptr_uint, character: ptr_uint) -> Option[fstring.FstringToken]:
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
+    defer: tokens.release()
+    return interpolation_token_at_in(tokens.as_span(), source, line, character)
+
+
+## `interpolation_token_at` over an existing token stream.
+public function interpolation_token_at_in(tokens: span[token_mod.Token], source: str, line: ptr_uint, character: ptr_uint) -> Option[fstring.FstringToken]:
+    let target_line = line + 1
+    let target_col = character + 1
+    var ti: ptr_uint = 0
+    while ti < tokens.len:
+        let tok = unsafe: read(tokens.data + ti)
+        if tok.kind == tk.TokenKind.fstring:
+            let lexeme = unsafe: token_mod.token_lexeme(tok, source)
+            match fstring.interpolation_token_at(tok.start_offset, lexeme, tok.line, tok.column, target_line, target_col):
+                Option.some as hit:
+                    return Option[fstring.FstringToken].some(value = hit.value)
+                Option.none:
+                    pass
+        ti += 1
+    return Option[fstring.FstringToken].none
 
 
 ## The token at the LSP position regardless of kind, excluding the structural
@@ -83,16 +132,18 @@ public function token_at(source: str, line: ptr_uint, character: ptr_uint) -> Op
     defer: lex_diags.release()
     var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer: tokens.release()
+    return token_at_in(tokens.as_span(), source, line, character)
 
+
+## `token_at` over an existing token stream.
+public function token_at_in(tokens: span[token_mod.Token], source: str, line: ptr_uint, character: ptr_uint) -> Option[CursorToken]:
     let target_line = line + 1
     let target_col = character + 1
 
     # Pass 1: exact containment [column, column + len).
     var ti: ptr_uint = 0
-    while ti < tokens.len():
-        let tp = tokens.get(ti) else:
-            break
-        let tok = unsafe: read(tp)
+    while ti < tokens.len:
+        let tok = unsafe: read(tokens.data + ti)
         if hoverable_token_kind(tok.kind) and tok.line == target_line:
             let len = tok.end_offset - tok.start_offset
             if target_col >= tok.column and target_col < tok.column + len:
@@ -101,10 +152,8 @@ public function token_at(source: str, line: ptr_uint, character: ptr_uint) -> Op
 
     # Pass 2: end-inclusive — cursor sitting right after the token.
     ti = 0
-    while ti < tokens.len():
-        let tp = tokens.get(ti) else:
-            break
-        let tok = unsafe: read(tp)
+    while ti < tokens.len:
+        let tok = unsafe: read(tokens.data + ti)
         if hoverable_token_kind(tok.kind) and tok.line == target_line:
             let len = tok.end_offset - tok.start_offset
             if target_col == tok.column + len:
@@ -301,6 +350,39 @@ public function type_receiver_at(source: str, line: ptr_uint, character: ptr_uin
         if alias_end < pos - 1:
             module_alias = line_text.slice(alias_end, pos - 1 - alias_end)
     return Option[TypeReceiver].some(value = TypeReceiver(name = name, module_alias = module_alias))
+
+
+## The full dot-receiver path before the cursor as one contiguous slice of the
+## line — `ctx.lookup|` gives "ctx.lookup" — or none when the chain contains a
+## `[…]` group (the completion path joins skipped segments, so it is not a
+## slice).  Used where the receiver is a field chain (`ctx.lookup.set`), which
+## the immediate-receiver helpers cannot type.
+public function dot_receiver_path_text_at(source: str, line: ptr_uint, character: ptr_uint) -> Option[str]:
+    let line_text = source_line(source, line + 1)
+    var idx: int = int<-character
+    if idx > int<-line_text.len:
+        idx = int<-line_text.len
+    idx -= 1
+    # Walk back past the hovered identifier to its dot.
+    while idx >= 0 and utils.is_word_byte(line_text.byte_at(ptr_uint<-idx)):
+        idx -= 1
+    if idx < 0 or line_text.byte_at(ptr_uint<-idx) != 46:
+        return Option[str].none
+    let path_end = ptr_uint<-idx
+
+    var left: int = idx - 1
+    var start_pos: int = -1
+    while true:
+        if left < 0 or not utils.is_word_byte(line_text.byte_at(ptr_uint<-left)):
+            return Option[str].none
+        while left >= 0 and utils.is_word_byte(line_text.byte_at(ptr_uint<-left)):
+            left -= 1
+        start_pos = left + 1
+        if left >= 0 and line_text.byte_at(ptr_uint<-left) == 46:
+            left -= 1
+            continue
+        break
+    return Option[str].some(value = line_text.slice(ptr_uint<-start_pos, path_end - ptr_uint<-start_pos))
 
 
 ## The full dot-receiver path at the cursor — the host's

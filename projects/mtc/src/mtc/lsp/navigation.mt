@@ -61,7 +61,7 @@ function builtin_name_at(
     defer: lex_diags.release()
     var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer: tokens.release()
-    let ti = token_index_at(ref_of(tokens), line, character) else:
+    let ti = token_index_at(tokens.as_span(), line, character) else:
         return false
     let tp = tokens.get(ti) else:
         return false
@@ -366,7 +366,7 @@ public function handle_definition(
     # The host's arm order: the module/member arms first (inside
     # `resolve_cursor`), then `alias.Member`'s module fallback, then the builtin
     # gate, then the local rule, then the definition index.
-    var result = resolve_cursor(ws, uri, line, character, false)
+    var result = resolve_cursor_at(ws, uri, line, character, false)
 
     # `alias.Member` where the member is not a declaration of that module: the
     # host's definition pipeline answers the module file itself (the same
@@ -491,14 +491,22 @@ public function handle_hover(
     character: ptr_uint,
     id: json.Value,
 ) -> void:
-    var hover_token_range = hover_range_json(ws, uri, line, character)
+    var hover_path = uri_ops.file_uri_to_path(uri) else:
+        proto.write_response(id, json.null_value())
+        return
+    defer: hover_path.release()
+    var hover_content = ws.document_source(hover_path.as_str()) else:
+        proto.write_response(id, json.null_value())
+        return
+    defer: hover_content.release()
+    let hover_source = hover_content.as_str()
+    if hover_source.len == 0:
+        proto.write_response(id, json.null_value())
+        return
+
+    var hover_token_range = hover_range_json(ws, hover_path.as_str(), hover_source, line, character)
     # The host's `find_token_at(uri, …)` tokenizes the hovered document.
-    match uri_ops.file_uri_to_path(uri):
-        Option.some as hover_path:
-            ws.note_document_tokens(hover_path.value.as_str())
-            hover_path.value.release()
-        Option.none:
-            pass
+    ws.note_document_tokens(hover_path.as_str())
     # An `import` line's path or alias resolves to the module file, ahead of the
     # keyword/builtin tables: `str` in `import std.str` is the module, not the
     # builtin type.
@@ -510,28 +518,28 @@ public function handle_hover(
             pass
     # The host's dispatch order: field declarations and named-argument labels,
     # then bindings, then names and members, and the keyword/builtin tables last.
-    match resolve_field_or_label_hover(ws, uri, line, character):
+    match resolve_field_or_label_hover(ws, hover_path.as_str(), hover_source, line, character):
         Option.some as field_result:
             write_hover_result(ws, id, field_result.value, uri, hover_token_range)
             return
         Option.none:
             pass
 
-    match resolve_local_hover(ws, uri, line, character):
+    match resolve_local_hover(ws, hover_path.as_str(), hover_source, line, character):
         Option.some as loc_result:
             var loc_payload = loc_result.value
             # The host prints a binding's hover location from its token index —
             # the last declaration of the name before the cursor, else the first
             # — not from the binding: a `for` or `match` binding, or a local the
             # index does not know, ends up with no `Defined at` line.
-            apply_hover_index_location(ws, uri, line, character, ref_of(loc_payload))
+            apply_hover_index_location(ws, hover_path.as_str(), hover_source, line, character, ref_of(loc_payload))
             note_hover_definition_file(ws, loc_payload)
             write_hover_result(ws, id, loc_payload, uri, hover_token_range)
             return
         Option.none:
             pass
 
-    match resolve_cursor(ws, uri, line, character, true):
+    match resolve_cursor(ws, uri, hover_source, line, character, true):
         Option.some as res:
             note_hover_definition_file(ws, res.value)
             write_hover_result(ws, id, res.value, uri, hover_token_range)
@@ -539,7 +547,7 @@ public function handle_hover(
         Option.none:
             pass
 
-    match resolve_keyword_or_builtin_hover(ws, uri, line, character):
+    match resolve_keyword_or_builtin_hover(ws, hover_path.as_str(), hover_source, line, character):
         Option.some as kw_result:
             write_hover_result(ws, id, kw_result.value, uri, hover_token_range)
             return
@@ -578,36 +586,37 @@ function note_hover_definition_file(ws: ref[workspace.Workspace], payload: Curso
 ## line, exactly as the host's does.
 function apply_hover_index_location(
     ws: ref[workspace.Workspace],
-    uri: str,
+    file_path: str,
+    source: str,
     line: ptr_uint,
     character: ptr_uint,
     payload: ref[CursorResult],
 ) -> void:
-    var file_path = uri_ops.file_uri_to_path(uri) else:
-        payload.line = 0
-        payload.column = 0
-        return
-    defer: file_path.release()
-    var content = ws.document_source(file_path.as_str()) else:
-        payload.line = 0
-        payload.column = 0
-        return
-    defer: content.release()
-    match cursor.identifier_at(content.as_str(), line, character):
+    let tokens = ws.document_tokens(file_path, source)
+    var name_text: str = ""
+    match cursor.identifier_at_in(tokens, source, line, character):
         Option.some as name:
-            match find_definition_global(ws, name.value.text, uri, line + 1, character + 1):
-                Option.some as found:
-                    payload.line = found.value.line
-                    payload.column = if found.value.column > 0: found.value.column - 1 else: 0z
-                    payload.name_len = found.value.length
-                    payload.target_uri.release()
-                    payload.target_uri = file_uri_for_path(found.value.path.as_str())
-                    found.value.path.release()
-                    return
+            name_text = name.value.text
+        Option.none:
+            match cursor.interpolation_identifier_at_in(tokens, source, line, character):
+                Option.some as inner:
+                    name_text = inner.value.text
                 Option.none:
                     pass
-        Option.none:
-            pass
+    if name_text.len > 0:
+        var preferred_uri = file_uri_for_path(file_path)
+        defer: preferred_uri.release()
+        match find_definition_global(ws, name_text, preferred_uri.as_str(), line + 1, character + 1):
+            Option.some as found:
+                payload.line = found.value.line
+                payload.column = if found.value.column > 0: found.value.column - 1 else: 0z
+                payload.name_len = found.value.length
+                payload.target_uri.release()
+                payload.target_uri = file_uri_for_path(found.value.path.as_str())
+                found.value.path.release()
+                return
+            Option.none:
+                pass
     payload.line = 0
     payload.column = 0
 
@@ -615,23 +624,34 @@ function apply_hover_index_location(
 ## The `"range":{...}` fragment for the identifier under the cursor (the host
 ## includes it so the client can highlight the hovered symbol), or an empty
 ## string when no identifier is there.
-function hover_range_json(ws: ref[workspace.Workspace], uri: str, line: ptr_uint, character: ptr_uint) -> string.String:
+function hover_range_json(ws: ref[workspace.Workspace], file_path: str, source: str, line: ptr_uint, character: ptr_uint) -> string.String:
     var empty = string.String.create()
-    var file_path = uri_ops.file_uri_to_path(uri) else:
-        return empty
-    defer: file_path.release()
-    var content = ws.document_source(file_path.as_str()) else:
-        return empty
-    defer: content.release()
-    match cursor.identifier_at(content.as_str(), line, character):
+    let tokens = ws.document_tokens(file_path, source)
+    match cursor.identifier_at_in(tokens, source, line, character):
         Option.some as tok:
             var frag = hover_range_fragment(tok.value)
             empty.release()
             return frag
         Option.none:
             pass
+    # A format string's interpolation token (`f"v=#{value}"`) ranges its own
+    # token, as the host's `token_context_at` does for the re-lexed expression.
+    match cursor.interpolation_token_at_in(tokens, source, line, character):
+        Option.some as inner:
+            let inner_len = inner.value.end_offset - inner.value.start_offset
+            let inner_token = cursor.CursorToken(
+                text = source.slice(inner.value.start_offset, inner_len),
+                line = inner.value.line,
+                column = inner.value.column,
+                length = inner_len,
+            )
+            var frag = hover_range_fragment(inner_token)
+            empty.release()
+            return frag
+        Option.none:
+            pass
     # Keywords, builtins and operators: the host ranges the token itself.
-    match cursor.token_at(content.as_str(), line, character):
+    match cursor.token_at_in(tokens, source, line, character):
         Option.some as tok:
             var frag = hover_range_fragment(tok.value)
             empty.release()
@@ -770,23 +790,8 @@ public function ast_for_document(
 ## local or parameter, its recorded type for a module-level value.  The binding
 ## comes from the scope walk, so the innermost enclosing declaration answers — a
 ## same-named local in another function cannot (the host resolves a member
-## receiver from its scope snapshot the same way).  The inlay hints use this for
-## a `receiver.method(...)` callee; callers that resolve several names from the
-## same source collect the bindings once and pass them to the `_with_bindings`
-## variant.
-public function type_of_value(
-    analysis: ref[analyzer.Analysis],
-    ast_file: ast.SourceFile,
-    name: str,
-    target_line: ptr_uint,
-    source_text: str,
-) -> Option[types.Type]:
-    var bindings = scope_mod.collect_bindings(source_text, ast_file)
-    defer: bindings.release()
-    return type_of_value_with_bindings(analysis, ast_file, name, target_line, ref_of(bindings))
-
-
-## The type of `name` at `target_line` using an already-collected binding list.
+## receiver from its scope snapshot the same way).  Callers that resolve several
+## names from the same source collect the bindings once and pass them in.
 public function type_of_value_with_bindings(
     analysis: ref[analyzer.Analysis],
     ast_file: ast.SourceFile,
@@ -1388,33 +1393,24 @@ function quick_hover_doc(doc: hover_docs.HoverDoc) -> CursorResult:
 ## label — the host's arms that run *ahead* of every name and member lookup.
 function resolve_field_or_label_hover(
     ws: ref[workspace.Workspace],
-    uri: str,
+    file_path: str,
+    source: str,
     line: ptr_uint,
     character: ptr_uint,
 ) -> Option[CursorResult]:
-    var file_path = uri_ops.file_uri_to_path(uri) else:
-        return Option[CursorResult].none
-    defer: file_path.release()
-    var content = ws.document_source(file_path.as_str()) else:
-        return Option[CursorResult].none
-    defer: content.release()
-    let source = content.as_str()
     if source.len == 0:
         return Option[CursorResult].none
 
-    match field_declaration_hover(ws, file_path.as_str(), source, line, character):
+    match field_declaration_hover(ws, file_path, source, line, character):
         Option.some as fd:
             return Option[CursorResult].some(value = fd.value)
         Option.none:
             pass
 
-    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
-    defer: lex_diags.release()
-    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
-    defer: tokens.release()
-    match token_index_at(ref_of(tokens), line, character):
+    var tokens = ws.document_tokens(file_path, source)
+    match token_index_at(tokens, line, character):
         Option.some as matched_index:
-            match named_argument_label_hover(ws, source, file_path.as_str(), ref_of(tokens), matched_index.value):
+            match named_argument_label_hover(ws, source, file_path, tokens, matched_index.value):
                 Option.some as label_hover:
                     return Option[CursorResult].some(value = label_hover.value)
                 Option.none:
@@ -1430,26 +1426,18 @@ function resolve_field_or_label_hover(
 ## table; an import alias named `ptr` resolves to its module).
 function resolve_keyword_or_builtin_hover(
     ws: ref[workspace.Workspace],
-    uri: str,
+    file_path: str,
+    source: str,
     line: ptr_uint,
     character: ptr_uint,
 ) -> Option[CursorResult]:
-    var file_path = uri_ops.file_uri_to_path(uri) else:
-        return Option[CursorResult].none
-    defer: file_path.release()
-    var content = ws.document_source(file_path.as_str()) else:
-        return Option[CursorResult].none
-    defer: content.release()
-    let source = content.as_str()
     if source.len == 0:
         return Option[CursorResult].none
 
-    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
-    defer: lex_diags.release()
-    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
+    var tokens = copy_tokens(ws.document_tokens(file_path, source))
     defer: tokens.release()
 
-    let matched_index = token_index_at(ref_of(tokens), line, character) else:
+    let matched_index = token_index_at(tokens.as_span(), line, character) else:
         return Option[CursorResult].none
     let tp = tokens.get(matched_index) else:
         return Option[CursorResult].none
@@ -1462,7 +1450,7 @@ function resolve_keyword_or_builtin_hover(
             # The host prints a keyword's location from its token index when the
             # name is declared somewhere in the workspace; a builtin's arm
             # carries no location at all.
-            apply_hover_index_location(ws, uri, line, character, ref_of(keyword_result))
+            apply_hover_index_location(ws, file_path, source, line, character, ref_of(keyword_result))
             return Option[CursorResult].some(value = keyword_result)
         Option.none:
             pass
@@ -1477,7 +1465,7 @@ function resolve_keyword_or_builtin_hover(
     match builtin_specialization_hover(tokens, source, matched_index, lexeme):
         Option.some as bs:
             var specialization_result = quick_hover_doc(bs.value)
-            apply_hover_index_location(ws, uri, line, character, ref_of(specialization_result))
+            apply_hover_index_location(ws, file_path, source, line, character, ref_of(specialization_result))
             return Option[CursorResult].some(value = specialization_result)
         Option.none:
             pass
@@ -1487,7 +1475,7 @@ function resolve_keyword_or_builtin_hover(
     match hover_docs.builtin_type(lexeme):
         Option.some as bt:
             var builtin_type_result = quick_hover_doc(bt.value)
-            apply_hover_index_location(ws, uri, line, character, ref_of(builtin_type_result))
+            apply_hover_index_location(ws, file_path, source, line, character, ref_of(builtin_type_result))
             return Option[CursorResult].some(value = builtin_type_result)
         Option.none:
             pass
@@ -1495,7 +1483,7 @@ function resolve_keyword_or_builtin_hover(
     match hover_docs.builtin_call(lexeme):
         Option.some as bu:
             var builtin_call_result = quick_hover_doc(bu.value)
-            apply_hover_index_location(ws, uri, line, character, ref_of(builtin_call_result))
+            apply_hover_index_location(ws, file_path, source, line, character, ref_of(builtin_call_result))
             return Option[CursorResult].some(value = builtin_call_result)
         Option.none:
             pass
@@ -1524,14 +1512,34 @@ function resolve_keyword_or_builtin_hover(
     return Option[CursorResult].none
 
 
+## A mutable copy of a cached token span, for the helpers that still take a
+## vector (the keyword/builtin arms).
+function copy_tokens(tokens: span[token_mod.Token]) -> vec.Vec[token_mod.Token]:
+    var copy = vec.Vec[token_mod.Token].create()
+    var i: ptr_uint = 0
+    while i < tokens.len:
+        copy.push(unsafe: read(tokens.data + i))
+        i += 1
+    return copy
+
+
+## A mutable copy of the cached scope bindings; the `scope` helpers take a
+## vector, and a copy is far cheaper than re-walking the AST.
+function copy_bindings(bindings: span[scope_mod.Binding]) -> vec.Vec[scope_mod.Binding]:
+    var copy = vec.Vec[scope_mod.Binding].create()
+    var i: ptr_uint = 0
+    while i < bindings.len:
+        copy.push(unsafe: read(bindings.data + i))
+        i += 1
+    return copy
+
+
 ## The index of the token covering the 0-based position, or none.
-function token_index_at(tokens: ref[vec.Vec[token_mod.Token]], line: ptr_uint, character: ptr_uint) -> Option[ptr_uint]:
+function token_index_at(tokens: span[token_mod.Token], line: ptr_uint, character: ptr_uint) -> Option[ptr_uint]:
     let target_line = line + 1
     var ti: ptr_uint = 0
-    while ti < tokens.len():
-        let tp = tokens.get(ti) else:
-            break
-        let t = unsafe: read(tp)
+    while ti < tokens.len:
+        let t = unsafe: read(tokens.data + ti)
         if t.line > target_line:
             break
         if t.line == target_line and t.column - 1 <= character and t.column - 1 + t.end_offset - t.start_offset > character:
@@ -1540,13 +1548,31 @@ function token_index_at(tokens: ref[vec.Vec[token_mod.Token]], line: ptr_uint, c
     return Option[ptr_uint].none
 
 
-## Resolve the symbol at the given cursor position.  Parses the file, runs
-## semantic analysis, finds the identifier under the cursor, and looks up its
-## definition or type in the analysis maps.  `alias.member` accesses and
-## import aliases resolve cross-file into the imported module.
-function resolve_cursor(
+## `resolve_cursor` for callers that do not already hold the document text
+## (the definition pipeline); the hover path passes its one source copy.
+public function resolve_cursor_at(
     ws: ref[workspace.Workspace],
     uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+    for_hover: bool,
+) -> Option[CursorResult]:
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        return Option[CursorResult].none
+    defer: file_path.release()
+    var content = ws.document_source(file_path.as_str()) else:
+        return Option[CursorResult].none
+    defer: content.release()
+    return resolve_cursor(ws, uri, content.as_str(), line, character, for_hover)
+
+
+## Resolve the symbol at the given cursor position.  Finds the identifier under
+## the cursor and looks it up in the analysis maps.  `alias.member` accesses and
+## import aliases resolve cross-file into the imported module.
+public function resolve_cursor(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    source: str,
     line: ptr_uint,
     character: ptr_uint,
     # A definition/declaration request shares this dispatch but not the host's
@@ -1559,20 +1585,28 @@ function resolve_cursor(
         return Option[CursorResult].none
     defer: file_path.release()
 
-    var content = ws.document_source(file_path.as_str()) else:
-        return Option[CursorResult].none
-    defer: content.release()
-
-    let source = content.as_str()
     if source.len == 0:
         return Option[CursorResult].none
 
-    let target = cursor.identifier_at(source, line, character) else:
-        return Option[CursorResult].none
+    var target: cursor.CursorToken
+    let document_tokens = ws.document_tokens(file_path.as_str(), source)
+    match cursor.identifier_at_in(document_tokens, source, line, character):
+        Option.some as plain:
+            target = plain.value
+        Option.none:
+            # A hover resolves an identifier inside a format string's
+            # interpolation; the host's `token_context_at` does this ahead of
+            # `find_token_at` (definitions keep the plain token, as the host's
+            # definition pipeline does).
+            match cursor.interpolation_identifier_at_in(document_tokens, source, line, character):
+                Option.some as inner:
+                    target = inner.value
+                Option.none:
+                    return Option[CursorResult].none
 
     # A segment of an `import a.b.c` path resolves to that module's file, as the
     # alias itself does (the host's `import_path_info_at`).
-    match import_module_name_at(source, line, character):
+    match import_module_name_at(document_tokens, source, line, character):
         Option.some as import_name:
             defer: import_name.value.release()
             return resolve_module_reference(ws, import_name.value.as_str())
@@ -1617,8 +1651,14 @@ function resolve_cursor(
     # module rather than a same-named local declaration.
     match cursor.dot_receiver_at(source, line, character):
         Option.some as recv:
+            var receiver_path = recv.value
+            match cursor.dot_receiver_path_text_at(source, line, character):
+                Option.some as path_text:
+                    receiver_path = path_text.value
+                Option.none:
+                    pass
             match resolve_member_method_hover(
-                ws, ast_file, ref_of(analysis), source, file_path.as_str(), recv.value, target.text,
+                ws, ast_file, ref_of(analysis), source, file_path.as_str(), receiver_path, target.text,
                 line + 1, current_module.as_str()):
                 Option.some as member_result:
                     return Option[CursorResult].some(value = member_result.value)
@@ -1959,22 +1999,22 @@ function find_field_token_in_type(source: str, type_name: str, field_name: str) 
     defer: lex_diags.release()
     var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer: tokens.release()
+    return find_field_token_in_type_in(tokens.as_span(), source, type_name, field_name)
 
+
+## `find_field_token_in_type` over an existing token stream.
+function find_field_token_in_type_in(tokens: span[token_mod.Token], source: str, type_name: str, field_name: str) -> Option[token_mod.Token]:
     var ti: ptr_uint = 0
-    while ti < tokens.len():
-        let tp = tokens.get(ti) else:
-            break
-        let tok = unsafe: read(tp)
+    while ti < tokens.len:
+        let tok = unsafe: read(tokens.data + ti)
         if tok.kind == tk.TokenKind.tk_struct or tok.kind == tk.TokenKind.tk_union:
-            match next_code_index(tokens.as_span(), ti + 1):
+            match next_code_index(tokens, ti + 1):
                 Option.some as name_index:
-                    let np = tokens.get(name_index.value) else:
-                        break
-                    let name_tok = unsafe: read(np)
+                    let name_tok = unsafe: read(tokens.data + name_index.value)
                     if name_tok.kind == tk.TokenKind.identifier:
                         let lexeme = unsafe: token_mod.token_lexeme(name_tok, source)
                         if lexeme.equal(type_name):
-                            match find_field_token_in_body(tokens.as_span(), source, ti, field_name):
+                            match find_field_token_in_body(tokens, source, ti, field_name):
                                 Option.some as found:
                                     return Option[token_mod.Token].some(value = found.value)
                                 Option.none:
@@ -2093,7 +2133,8 @@ function field_hover_result(
     # `public struct` has no location to report and the hover prints none.
     var field_line: ptr_uint = 0
     var field_column: ptr_uint = 0
-    match find_field_token_in_type(decl_source.as_str(), type_name, field_name):
+    let decl_tokens = ws.document_tokens(decl_path, decl_source.as_str())
+    match find_field_token_in_type_in(decl_tokens, decl_source.as_str(), type_name, field_name):
         Option.some as field_token:
             field_line = field_token.value.line
             field_column = field_token.value.column
@@ -2112,26 +2153,63 @@ function field_hover_result(
     ))
 
 
+## The type of a receiver chain's last segment: the first segment is a value
+## (`ctx`, `this`, a parameter), and each following segment is a field of the
+## previous type.  None when the value name does not resolve or a field is
+## missing, so the caller keeps its no-answer behaviour.
+function receiver_path_type(
+    ws: ref[workspace.Workspace],
+    file_path: str,
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    path: str,
+    target_line: ptr_uint,
+    source_text: str,
+) -> Option[types.Type]:
+    var first_end: ptr_uint = 0
+    while first_end < path.len and path.byte_at(first_end) != '.':
+        first_end += 1
+    let first = path.slice(0, first_end)
+    var bindings = copy_bindings(ws.document_bindings(file_path, source_text, ast_file))
+    defer: bindings.release()
+    var current_ty = type_of_value_with_bindings(analysis, ast_file, first, target_line, ref_of(bindings)) else:
+        return Option[types.Type].none
+    var si = first_end
+    while si < path.len:
+        si += 1
+        var seg_end = si
+        while seg_end < path.len and path.byte_at(seg_end) != '.':
+            seg_end += 1
+        let field_name = path.slice(si, seg_end - si)
+        match field_of_type(analysis, current_ty, field_name):
+            Option.some as field_ty:
+                current_ty = field_ty.value
+            Option.none:
+                return Option[types.Type].none
+        si = seg_end
+    return Option[types.Type].some(value = current_ty)
+
+
 ## Hover for the method name of a member call (`v.push(1)`, `d.push_back(x)`):
 ## the method's declaration signature, the module that declares it, and — through
 ## the shortened signature — that module's `*From <module>*` line.  The receiver
-## type comes from the analysis (a local, parameter or module-level value); the
-## method is looked up in this module's `extending` blocks and then in the module
-## that declares the receiver's type.  None when the receiver is not a value or
-## no such method is declared, so `EnumType.member` and `alias.member` keep their
-## own paths.
+## is a value name or a field chain (`ctx.lookup.set`, `this.cache.set`): the
+## first segment resolves through the analysis (a local, parameter or
+## module-level value) and each later one through the previous field's type.
+## None when a segment does not resolve, so `EnumType.member` and `alias.member`
+## keep their own paths.
 function resolve_member_method_hover(
     ws: ref[workspace.Workspace],
     ast_file: ast.SourceFile,
     analysis: ref[analyzer.Analysis],
     source: str,
     file_path: str,
-    receiver_name: str,
+    receiver_path: str,
     method_name: str,
     target_line: ptr_uint,
     current_module: str,
 ) -> Option[CursorResult]:
-    let receiver_ty = type_of_value(analysis, ast_file, receiver_name, target_line, source) else:
+    let receiver_ty = receiver_path_type(ws, file_path, analysis, ast_file, receiver_path, target_line, source) else:
         return Option[CursorResult].none
     # The host projects the receiver through a pointer-like first
     # (`project_field_receiver_type`), so `r.x` on a `ref[vec3]` resolves the
@@ -2352,22 +2430,15 @@ function is_structural_token_kind(kind: tk.TokenKind) -> bool:
 ## `import std.vec as vec` names `std.vec` for a cursor on `std`, on the path's
 ## `vec`, and on the alias.  Any other line or token returns none, so the
 ## keyword/builtin tables never answer for a path segment.
-function import_module_name_at(source: str, line: ptr_uint, character: ptr_uint) -> Option[string.String]:
-    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
-    defer: lex_diags.release()
-    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
-    defer: tokens.release()
-
+function import_module_name_at(tokens: span[token_mod.Token], source: str, line: ptr_uint, character: ptr_uint) -> Option[string.String]:
     let target_line = line + 1
     let target_col = character + 1
 
     var line_tokens = vec.Vec[token_mod.Token].create()
     defer: line_tokens.release()
     var ti: ptr_uint = 0
-    while ti < tokens.len():
-        let tp = tokens.get(ti) else:
-            break
-        let tok = unsafe: read(tp)
+    while ti < tokens.len:
+        let tok = unsafe: read(tokens.data + ti)
         if tok.line == target_line and not is_structural_token_kind(tok.kind):
             line_tokens.push(tok)
         ti += 1
@@ -2417,7 +2488,8 @@ function resolve_import_cursor(ws: ref[workspace.Workspace], uri: str, line: ptr
     var content = ws.document_source(file_path.as_str()) else:
         return Option[CursorResult].none
     defer: content.release()
-    match import_module_name_at(content.as_str(), line, character):
+    let import_tokens = ws.document_tokens(file_path.as_str(), content.as_str())
+    match import_module_name_at(import_tokens, content.as_str(), line, character):
         Option.some as module_name:
             defer: module_name.value.release()
             return resolve_module_reference(ws, module_name.value.as_str())
@@ -3117,6 +3189,103 @@ function find_method_line_in_type(file: ast.SourceFile, type_name: str, name: st
     return find_method_line(file, name)
 
 
+## The `(module, type)` an imported type reference names.  The analyzer produces
+## two shapes for one: `ty_imported` for a specialized or imported nominal
+## (`node.Node`, `Vec[int]`) and a `ty_named` whose `module_name` is set for a
+## plain imported name.
+public struct ImportedTypeRef:
+    module_name: str
+    name: str
+
+
+public function imported_type_reference(ty: types.Type) -> Option[ImportedTypeRef]:
+    match ty:
+        types.Type.ty_imported as im:
+            if im.module_name.len > 0:
+                return Option[ImportedTypeRef].some(value = ImportedTypeRef(module_name = im.module_name, name = im.name))
+            return Option[ImportedTypeRef].none
+        types.Type.ty_named as n:
+            if n.module_name.len > 0:
+                return Option[ImportedTypeRef].some(value = ImportedTypeRef(module_name = n.module_name, name = n.name))
+            return Option[ImportedTypeRef].none
+        _:
+            return Option[ImportedTypeRef].none
+
+
+## The host's `project_receiver_type_for_completion`: a `ref[T]`/`ptr[T]`/
+## `const_ptr[T]` receiver projects to `T` (a `ref`'s lifetime argument is
+## skipped).
+public function project_value_receiver_type(ty: types.Type) -> types.Type:
+    match ty:
+        types.Type.ty_generic as g:
+            if g.name.equal("ref") and g.args.len >= 1:
+                return types.pointer_element(ty)
+            if (g.name.equal("ptr") or g.name.equal("const_ptr")) and g.args.len == 1:
+                return unsafe: read(g.args.data + 0)
+            return ty
+        _:
+            return ty
+
+
+## Extract the key name from a Type (e.g. Vec[int] → "Vec").
+public function type_to_key_name(t: types.Type) -> str:
+    match t:
+        types.Type.ty_generic as g:
+            return g.name
+        types.Type.ty_named as n:
+            return n.name
+        types.Type.ty_imported as im:
+            return im.name
+        types.Type.ty_opaque as op:
+            return op.name
+        types.Type.ty_primitive as p:
+            return p.name
+        _:
+            return ""
+
+
+## The type of `field_name` on `ty` — a struct field (local, nested or
+## imported) or a builtin vector/matrix/quaternion field, the host's
+## `project_field_receiver_type_for_completion(...).field(name)`.
+public function field_of_type(analysis: ref[analyzer.Analysis], ty: types.Type, field_name: str) -> Option[types.Type]:
+    let field_ty = project_value_receiver_type(types.unwrap_nullable(ty))
+    let type_name = type_to_key_name(field_ty)
+    let fields_ptr = unsafe: read(analysis).structs.get(type_name)
+    if fields_ptr != null:
+        let fields = unsafe: read(fields_ptr)
+        var i: ptr_uint = 0
+        while i < fields.len:
+            let f = unsafe: read(fields.data + i)
+            if f.name.equal(field_name):
+                return Option[types.Type].some(value = f.ty)
+            i += 1
+        return Option[types.Type].none
+    match imported_type_reference(field_ty):
+        Option.some as reference:
+            var key = string.String.create()
+            defer: key.release()
+            key.append(reference.value.module_name)
+            key.append(".")
+            key.append(reference.value.name)
+            let member_ptr = unsafe: read(analysis).imported_type_members.get(key.as_str())
+            if member_ptr != null:
+                let members = unsafe: read(member_ptr)
+                var mi: ptr_uint = 0
+                while mi < members.fields.len:
+                    let f = unsafe: read(members.fields.data + mi)
+                    if f.name.equal(field_name):
+                        return Option[types.Type].some(value = f.ty)
+                    mi += 1
+            return Option[types.Type].none
+        Option.none:
+            pass
+    match builtin_field_type_name(type_name, field_name):
+        Option.some as type_text:
+            return Option[types.Type].some(value = types.primitive(type_text.value))
+        Option.none:
+            return Option[types.Type].none
+
+
 ## The declared type of a builtin vector/matrix/quaternion field, as the hover
 ## renders it: `vec3.x` → `float`, `mat4.col0` → `vec4`, `quat.w` → `float`
 ## (the host's `Types::Vector`/`Matrix`/`Quaternion` field tables).  Completion's
@@ -3356,18 +3525,20 @@ function find_decl_line_in(decl: ast.Decl, name: str, kind: str) -> ptr_uint:
 
 ## Return the string text of the identifier or keyword token at the given
 ## 0-based cursor position, or none if no token covers the position.
-function find_token_str(source: str, line: ptr_uint, character: ptr_uint) -> Option[string.String]:
-    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
-    defer: lex_diags.release()
-    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
-    defer: tokens.release()
+function find_token_str(tokens: span[token_mod.Token], source: str, line: ptr_uint, character: ptr_uint) -> Option[string.String]:
+    # Inside an f-string interpolation the lexer's token is the whole string;
+    # the host's `token_context_at` re-lexes the expression and answers its
+    # inner token instead, so an identifier there resolves normally.
+    match cursor.interpolation_identifier_at_in(tokens, source, line, character):
+        Option.some as inner:
+            return Option[string.String].some(value = string.String.from_str(inner.value.text))
+        Option.none:
+            pass
 
     let target_line = line + 1
     var ti: ptr_uint = 0
     while ti < tokens.len:
-        let tp = tokens.get(ti) else:
-            break
-        let t = unsafe: read(tp)
+        let t = unsafe: read(tokens.data + ti)
         if t.line > target_line:
             break
         if t.line == target_line and t.column - 1 <= character and t.column - 1 + (t.end_offset - t.start_offset) > character:
@@ -3966,19 +4137,15 @@ function named_argument_label_hover(
     ws: ref[workspace.Workspace],
     source: str,
     file_path: str,
-    tokens: ref[vec.Vec[token_mod.Token]],
+    tokens: span[token_mod.Token],
     ti: ptr_uint,
 ) -> Option[CursorResult]:
-    if ti == 0 or ti + 1 >= tokens.len():
+    if ti == 0 or ti + 1 >= tokens.len:
         return Option[CursorResult].none
-    let label_ptr = tokens.get(ti) else:
-        return Option[CursorResult].none
-    let label_tok = unsafe: read(label_ptr)
+    let label_tok = unsafe: read(tokens.data + ti)
     if label_tok.kind != tk.TokenKind.identifier:
         return Option[CursorResult].none
-    let eq_ptr = tokens.get(ti + 1) else:
-        return Option[CursorResult].none
-    if unsafe: read(eq_ptr).kind != tk.TokenKind.equal:
+    if unsafe: read(tokens.data + ti + 1).kind != tk.TokenKind.equal:
         return Option[CursorResult].none
 
     # The head of the enclosing call: the identifier before its `(`.
@@ -4143,16 +4310,14 @@ struct AggregateHead:
 ## label.  None when the head is not an identifier.
 function find_aggregate_head(
     source: str,
-    tokens: ref[vec.Vec[token_mod.Token]],
+    tokens: span[token_mod.Token],
     ti: ptr_uint,
 ) -> Option[AggregateHead]:
     var opener: int = -1
     var depth: int = 0
     var k: int = int<-(ti - 1)
     while k >= 0:
-        let kp = read(tokens).get(ptr_uint<-k) else:
-            break
-        let kind = unsafe: read(kp).kind
+        let kind = unsafe: read(tokens.data + ptr_uint<-k).kind
         if kind == tk.TokenKind.rparen or kind == tk.TokenKind.rbracket:
             depth += 1
         else if kind == tk.TokenKind.lparen or kind == tk.TokenKind.lbracket:
@@ -4163,9 +4328,7 @@ function find_aggregate_head(
         k -= 1
     if opener < 1:
         return Option[AggregateHead].none
-    let head_ptr = read(tokens).get(ptr_uint<-(opener - 1)) else:
-        return Option[AggregateHead].none
-    let head = unsafe: read(head_ptr)
+    let head = unsafe: read(tokens.data + ptr_uint<-(opener - 1))
     if head.kind != tk.TokenKind.identifier:
         return Option[AggregateHead].none
     let type_name = cursor.token_text(source, head)
@@ -4173,12 +4336,9 @@ function find_aggregate_head(
     # An `alias.Type(...)` literal names its type through a module alias.
     var module_alias: str = ""
     if opener >= 3:
-        let dot_ptr = read(tokens).get(ptr_uint<-(opener - 2)) else:
-            return Option[AggregateHead].none
-        if unsafe: read(dot_ptr).kind == tk.TokenKind.dot:
-            let alias_ptr = read(tokens).get(ptr_uint<-(opener - 3)) else:
-                return Option[AggregateHead].none
-            let alias_tok = unsafe: read(alias_ptr)
+        let dot_tok = unsafe: read(tokens.data + ptr_uint<-(opener - 2))
+        if dot_tok.kind == tk.TokenKind.dot:
+            let alias_tok = unsafe: read(tokens.data + ptr_uint<-(opener - 3))
             if alias_tok.kind == tk.TokenKind.identifier:
                 module_alias = cursor.token_text(source, alias_tok)
     return Option[AggregateHead].some(value = AggregateHead(
@@ -4193,36 +4353,26 @@ function find_aggregate_head(
 ## between the variant and the arm, so walk back over the `[…]` group.
 function find_variant_arm_name(
     source: str,
-    tokens: ref[vec.Vec[token_mod.Token]],
+    tokens: span[token_mod.Token],
     opener: int,
     module_alias: str,
 ) -> Option[str]:
     var variant_of_label: str = module_alias
     if variant_of_label.len == 0 and opener >= 4:
-        var close_kind = tk.TokenKind.eof
-        var dot_kind = tk.TokenKind.eof
-        let close_ptr = read(tokens).get(ptr_uint<-(opener - 3)) else:
-            return Option[str].none
-        close_kind = unsafe: read(close_ptr).kind
-        let dot_ptr2 = read(tokens).get(ptr_uint<-(opener - 2)) else:
-            return Option[str].none
-        dot_kind = unsafe: read(dot_ptr2).kind
+        let close_kind = unsafe: read(tokens.data + ptr_uint<-(opener - 3)).kind
+        let dot_kind = unsafe: read(tokens.data + ptr_uint<-(opener - 2)).kind
         if close_kind == tk.TokenKind.rbracket and dot_kind == tk.TokenKind.dot:
             var lk: int = opener - 4
             var bracket_depth: int = 1
             while lk >= 0:
-                let inner_ptr = read(tokens).get(ptr_uint<-lk) else:
-                    break
-                let inner_kind = unsafe: read(inner_ptr).kind
+                let inner_kind = unsafe: read(tokens.data + ptr_uint<-lk).kind
                 if inner_kind == tk.TokenKind.rbracket:
                     bracket_depth += 1
                 else if inner_kind == tk.TokenKind.lbracket:
                     bracket_depth -= 1
                     if bracket_depth == 0:
                         if lk >= 1:
-                            let name_ptr = read(tokens).get(ptr_uint<-(lk - 1)) else:
-                                break
-                            let name_tok2 = unsafe: read(name_ptr)
+                            let name_tok2 = unsafe: read(tokens.data + ptr_uint<-(lk - 1))
                             if name_tok2.kind == tk.TokenKind.identifier:
                                 variant_of_label = cursor.token_text(source, name_tok2)
                         break
@@ -4232,17 +4382,11 @@ function find_variant_arm_name(
 
 function resolve_local_hover(
     ws: ref[workspace.Workspace],
-    uri: str,
+    file_path: str,
+    source: str,
     line: ptr_uint,
     character: ptr_uint,
 ) -> Option[CursorResult]:
-    var file_path = uri_ops.file_uri_to_path(uri) else:
-        return Option[CursorResult].none
-    defer: file_path.release()
-    var cw = ws.document_source(file_path.as_str()) else:
-        return Option[CursorResult].none
-    defer: cw.release()
-    let source = cw.as_str()
     if source.len == 0:
         return Option[CursorResult].none
 
@@ -4252,7 +4396,7 @@ function resolve_local_hover(
     if cursor.dot_receiver_at(source, line, character).is_some():
         return Option[CursorResult].none
 
-    var name_opt = find_token_str(source, line, character)
+    var name_opt = find_token_str(ws.document_tokens(file_path, source), source, line, character)
     var name = name_opt else:
         return Option[CursorResult].none
     defer: name.release()
@@ -4265,7 +4409,7 @@ function resolve_local_hover(
         Option.none:
             pass
 
-    let doc = workspace.document_analysis_for(ws, file_path.as_str()) else:
+    let doc = workspace.document_analysis_for(ws, file_path) else:
         return Option[CursorResult].none
     var ast_file = doc.ast_file
     var analysis = doc.analysis
@@ -4273,9 +4417,9 @@ function resolve_local_hover(
     # The file's own module name, so a type declared here renders qualified
     # (`main.Sample`) and the renderer can report `*From main*`, as the host
     # does from its semantic facts.
-    var module_roots = ws.effective_module_roots_for(file_path.as_str())
+    var module_roots = ws.effective_module_roots_for(file_path)
     defer: module_roots.release()
-    var current_module = resolver.infer_module_name(file_path.as_str(), module_roots.as_span())
+    var current_module = resolver.infer_module_name(file_path, module_roots.as_span())
     defer: current_module.release()
 
     # The analyzer's refinement record at the cursor: a local narrowed by a
@@ -4305,7 +4449,7 @@ function resolve_local_hover(
     # binding resolution.  Its declaration line comes from the scope bindings, so
     # a same-named local in another function (or an unrelated block) cannot win,
     # and a parameter resolves as `parameter <name>: <type>`.
-    var bindings = scope_mod.collect_bindings(source, ast_file)
+    var bindings = copy_bindings(ws.document_bindings(file_path, source, ast_file))
     defer: bindings.release()
     match scope_mod.local_binding_line(ref_of(bindings), name.as_str(), target_line):
         Option.some as want:

@@ -247,6 +247,7 @@
     "lsp.execute_command": "exec_cmd",
     "lsp.folding": "folding",
     "lsp.formatting": "formatting",
+    "lsp.fstring": "fstring",
     "lsp.highlight": "highlight",
     "lsp.hover_docs": "hover_docs",
     "lsp.inlay_hints": "inlay",
@@ -340,14 +341,14 @@
       "projects/mtc/src/mtc/lowering/async.mt:326:function:int_type",
       "projects/mtc/src/mtc/lowering/async.mt:330:function:void_type",
       "projects/mtc/src/mtc/lowering/lowering.mt:54:struct:LoweringError",
-      "projects/mtc/src/mtc/lsp/navigation.mt:748:function:analysis_for_document",
-      "projects/mtc/src/mtc/lsp/navigation.mt:759:function:ast_for_document",
+      "projects/mtc/src/mtc/lsp/navigation.mt:768:function:analysis_for_document",
+      "projects/mtc/src/mtc/lsp/navigation.mt:779:function:ast_for_document",
       "projects/mtc/src/mtc/lsp/protocol.mt:108:function:read_message",
       "projects/mtc/src/mtc/lsp/protocol.mt:324:function:write_progress_begin",
       "projects/mtc/src/mtc/lsp/protocol.mt:332:function:write_progress_report",
       "projects/mtc/src/mtc/lsp/protocol.mt:348:function:write_progress_end",
-      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2641:function:classify_identifier",
-      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2667:function:collect_param_names",
+      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2541:function:classify_identifier",
+      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2567:function:collect_param_names",
       "projects/mtc/src/mtc/packages/graph.mt:263:function:node_at",
       "projects/mtc/src/mtc/packages/graph.mt:267:function:root_node",
       "projects/mtc/src/mtc/packages/graph.mt:334:function:package_for_path",
@@ -372,8 +373,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 891,
-    "duplicated_lines": 6381,
+    "windows": 888,
+    "duplicated_lines": 6353,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -607,7 +608,6 @@
       "44c4ef207ccdb0c5ae77918057e0efc86aee50bc",
       "459513aac8992d2755100f75300278cb2b0bdb6b",
       "45f09c8595593faf3e5ca99f0ebb4c02de534854",
-      "468e0fb4c92c09a3a161534bd9c045c13c25e30d",
       "46cf4145a781717e1ac87abdd9055f3baf1a50b3",
       "474aba796a5e9fa5738e633198019cec7f393dc5",
       "4792fdb6c7eecd7d38febe5e0ba0ad0cdc0c49ba",
@@ -831,7 +831,6 @@
       "7e8c82c26ce82a2a2623cb3d93373240db87d084",
       "7e95b25a38b1cc721c47e4ceafad87a71ecbae8d",
       "7f167bccd66a666d8729f71fe8e01c9e24ba4c35",
-      "806506bc1753d0ac4ed1ac4e6f204ee1141370aa",
       "808aa6c95ca3a3e61a696b941c811b377667347e",
       "80ef5152dca588a13cdefe57a9bddde150bc737c",
       "812f8363f2e7cf3a3b109d7d93e0c467d6b0ca56",
@@ -1257,7 +1256,6 @@
       "fca0f003dfa8a93b4cd38b9fd1af0c00516b228a",
       "fd234ba0427bb49fb81d14285178ed01edc7ee50",
       "fd48ecfb935ca266593dc823cc2f8b03fa0059de",
-      "fd54f4835ebb7f569e832d6e9263c3102d31f153",
       "fdccfac0a625bf2295368c5c71748345d7100cff",
       "fec5ddd0bd6478d2113f9021cb82587469f74099",
       "fecc1d59bac85c5bd5e7e9a7e4a6f86cafe91a92",
@@ -1269,7 +1267,7 @@
     ]
   },
   "sizes": {
-    "total_code": 124816,
+    "total_code": 125224,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1748,15 +1746,15 @@
         "max_function": 53
       },
       "projects/mtc/src/mtc/lsp/completion.mt": {
-        "lines": 3711,
-        "code": 3034,
+        "lines": 3618,
+        "code": 2959,
         "max_line": 160,
         "max_function": 131
       },
       "projects/mtc/src/mtc/lsp/cursor.mt": {
-        "lines": 418,
-        "code": 299,
-        "max_line": 126,
+        "lines": 500,
+        "code": 355,
+        "max_line": 155,
         "max_function": 55
       },
       "projects/mtc/src/mtc/lsp/debug_ast.mt": {
@@ -1819,6 +1817,12 @@
         "max_line": 118,
         "max_function": 64
       },
+      "projects/mtc/src/mtc/lsp/fstring.mt": {
+        "lines": 209,
+        "code": 164,
+        "max_line": 103,
+        "max_function": 38
+      },
       "projects/mtc/src/mtc/lsp/highlight.mt": {
         "lines": 243,
         "code": 187,
@@ -1850,10 +1854,10 @@
         "max_function": 79
       },
       "projects/mtc/src/mtc/lsp/navigation.mt": {
-        "lines": 5256,
-        "code": 4068,
+        "lines": 5400,
+        "code": 4169,
         "max_line": 206,
-        "max_function": 174
+        "max_function": 176
       },
       "projects/mtc/src/mtc/lsp/on_type_formatting.mt": {
         "lines": 119,
@@ -1886,10 +1890,10 @@
         "max_function": 93
       },
       "projects/mtc/src/mtc/lsp/rename.mt": {
-        "lines": 152,
-        "code": 118,
+        "lines": 352,
+        "code": 277,
         "max_line": 150,
-        "max_function": 37
+        "max_function": 60
       },
       "projects/mtc/src/mtc/lsp/scope.mt": {
         "lines": 664,
@@ -1904,8 +1908,8 @@
         "max_function": 50
       },
       "projects/mtc/src/mtc/lsp/semantic_tokens.mt": {
-        "lines": 3068,
-        "code": 2367,
+        "lines": 2968,
+        "code": 2289,
         "max_line": 303,
         "max_function": 153
       },
@@ -1958,8 +1962,8 @@
         "max_function": 30
       },
       "projects/mtc/src/mtc/lsp/workspace.mt": {
-        "lines": 1151,
-        "code": 816,
+        "lines": 1265,
+        "code": 897,
         "max_line": 169,
         "max_function": 53
       },

@@ -15,7 +15,8 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-133-2026-11-18)
+- [Status at a glance](#status-at-a-glance-session-134-2026-11-18)
+- [Session 134 — the session-133 LSP follow-ups and hover latency](#session-134--the-session-133-lsp-follow-ups-and-hover-latency)
 - [Session 133 — VS Code LSP audit on the compiler sources](#session-133--vs-code-lsp-audit-on-the-compiler-sources)
 - [Session 132 — format-string completion, the hover bail, and the attribute probe](#session-132--format-string-completion-the-hover-bail-and-the-attribute-probe)
 - [Session 131 — VS Code LSP sweep and completion/diagnostic fixes](#session-131--vs-code-lsp-sweep-and-completiondiagnostic-fixes)
@@ -87,7 +88,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 133, 2026-11-18)
+## Status at a glance (session 134, 2026-11-18)
 
 | Area | State |
 | --- | --- |
@@ -99,13 +100,13 @@ history.
 | `cli:parity` | **224 match / 0 differ / 0 pending** of 224 cases (`--timings` values, `debug`'s Ruby node ids and the synthesized test-runner path normalized; 43 `test` cases plus the second-batch sweep: global extraction, resolution flags, per-command operand models, missing/empty operands, completions/std/snapshot/cache/lsp/dap/bindgen/deps) |
 | **`check` diagnostics (new)** | **501 agree / 0 verdict / 0 position / 3 message of 504** files (`tools/diag_parity.rb check`; the 3 message files are `std/cli.mt`, `examples/reflection_advanced.mt`, and `examples/memory_stress_test.mt`) |
 | Linter corpus | **624 agree / 34 differ of 658** (hostfail 0, selffail 0); **43/43 rules, 13/13 fixers**.  The `std`+`examples` residue is still the 4 documented rows (two self-only `redundant-cast` in `std/cli.mt`, the self-only `prefer-let` cluster in `std/fs.windows.mt`, the host-only `constant-condition` in `examples/reflection_advanced.mt`); the 30 additional rows are `projects/mtc/src` files where the host linter times out (`<timeout after 180s>`) or reports pre-existing source-only warnings. |
-| LSP | harness **30/30 capability keys + the documented `typeDefinition/imported` row** (72 requests, re-recorded session 132); project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **74–75 KB/cycle raw / ~28 LS at 200 cycles** (meter, one-time index level documented).  Session 131 fixed the completion-resolve abort, ported the host's attribute / named-argument / specialization completion contexts, made pushes pull-gated (no duplicate diagnostics), and restored hover/definition on parse-error buffers.  Session 132 added the format-string completion context and removed the last parse-error hover bail; imported attributes are absent on both sides (probe-confirmed, not a gap).  Session 133 audited the server in VS Code on the compiler sources: four functional gaps remain (f-string interpolation hover, cross-file rename, `ref[ImportedStruct]` fields in completion, imported-generic-field method hover), plus the large-file latency list in the session record. |
+| LSP | harness **30/30 capability keys + the documented `typeDefinition/imported` row** (**77 requests**, re-recorded session 134; the stress section keeps its 3 documented rows); project audit canonical **6** differing entries (4 documented rows + 2 builtin-hover warm artifacts), non-canonical 4–5 with ±drift; recovery **6/6**; `milkTea/debugInfo` **byte-equal**; valgrind **0 errors**; edit latency **4.9 ms median**; soak **70.4 KB/cycle raw / 10.7 LS at 200 cycles** with the new caches.  Session 134 closed the four session-133 gaps (f-string interpolation hover, cross-file rename, `ref[ImportedStruct]` fields, imported-generic-field method hover) and added the per-document token/binding caches: hover on `analyzer.mt` fell **117–119.7 ms → 33.0 ms** (host 16 ms).  Sessions 131–133 fixed the completion-resolve abort, the attribute/named-argument/specialization/format-string completion contexts, the pull-gated diagnostics, the parse-error hover/definition bails, the dead O(file²) hover scan, the imported enum-member line, the hierarchy follow-up shape and the specialization order. |
 | DAP | **zero differing rows** on the `dap_smoke` matrix, except the documented self-better `lldb-real frame0 name`; the real lldb-dap bridge closes the VS Code F5 launch deadlock (configurationDone no longer waits for the launch response), proven by `tools/dap_async_probe.rb`; desktop F5 smoke passed session 74 |
 | Formatter | **776/776** byte-identical in all three modes (`:canonical`, `:preserve`, `:tidy`; counts drift) |
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
 | Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 130).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
 | Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
-| **Refactoring safety (new)** | structural guard: 168 files / 124,816 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **33 unused + 6 test-only** public declarations; 6,381 duplicated lines / 891 windows; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json` (refreshed session 133 for the audit fixes and the shared hierarchy-item helper); one command: `tools/gates.sh --areas refactor --run` |
+| **Refactoring safety (new)** | structural guard: 169 files / 125,224 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **33 unused + 6 test-only** public declarations; 6,353 duplicated lines / 888 windows; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json` (refreshed session 134 for the f-string/type-lookup shared modules and the token/binding caches); one command: `tools/gates.sh --areas refactor --run` |
 
 Rough completion against the per-track Definition of Done: **100%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix (including
@@ -115,6 +116,66 @@ done, and session 72 added the analyzer/`check` surface that no gate had
 measured.  The only residuals are the documented `tracy` custom-generator entry
 and the optional desktop F5 smoke.  Track G (throughput) closed in session 72:
 the self is now faster than the host.
+
+## Session 134 — the session-133 LSP follow-ups and hover latency
+
+Closed the four session-133 functional gaps and the hover re-lex:
+
+1. **Hover inside `f"#{…}"`** (`lsp/fstring.mt`, new; `cursor.mt`).  The
+   interpolation splitter (find the `#{`, balance braces, split the format
+   spec, re-lex the expression) moved out of `semantic_tokens` into a shared
+   module.  Cursor gained token-stream variants
+   (`interpolation_token_at_in`, `interpolation_identifier_at_in`) so the hover
+   range and resolution answer the *inner* identifier with the host's document
+   coordinates.  A definition request keeps the plain token, as the host's
+   definition pipeline does.  `hover/format-string` is host-identical (the range
+   is the inner identifier, not the whole f-string).
+2. **Cross-file rename** (`rename.mt`).  The self followed the host's
+   `workspace_symbol_identity_rename_changes`: a cursor on a local binding keeps
+   the scope-filtered same-file rename; every other name resolves the cursor's
+   definition and renames each occurrence in every open document whose *own*
+   definition resolves to the same `(path, line, column)`, with the host's
+   lexical same-file fallback when nothing resolves.  Renaming an imported
+   extending method now updates the declaration in its defining module and the
+   call site.  `rename/imported-function` (a flat module is required: the host's
+   import-dependency graph does not link the directory-shaped
+   `mod_alpha/lib.mt`) covers it in the harness.
+3. **`ref[ImportedStruct]` completion** (`completion.mt`).
+   `imported_value_receiver_completions` now projects `ref`/`ptr` and nullable
+   before the imported-member lookup, matching the host's
+   `project_field_receiver_type_for_completion`; `r.` answers the struct fields.
+4. **Imported generic field method hover** (`navigation.mt`, `completion.mt`).
+   `resolve_member_method_hover` walks the full receiver chain (`ctx.lookup.set`,
+   `this.cache.set`) instead of looking only at the segment before the dot:
+   the first segment resolves through the analysis, each later one through the
+   previous field's type.  `ImportedTypeRef`/`imported_type_reference`/
+   `project_value_receiver_type`/`type_to_key_name`/`field_of_type` moved from
+   completion to navigation so both features share one lookup.  Both the value
+   and `ref[ImportedStruct]` receivers are host-identical on
+   `hover/imported-field-method`.
+5. **Per-document token and binding caches** (`workspace.mt`, `cursor.mt`,
+   `navigation.mt`).  Hover asked for the same whole-file token stream a dozen
+   times per request; each lookup re-lexed the file.  `Workspace` now keeps the
+   one-document token stream (`document_tokens`) and scope bindings
+   (`document_bindings`, with the source copy its name views point into), keyed
+   by path and content hash; cursor gained `_in` variants over an existing token
+   stream.  The hover path takes one source copy, passes it to every helper, and
+   `note_document_tokens` skips the content hash when the reference index already
+   holds the document (the index is dropped on every open/change/close).  Median
+   hover on `semantic/analyzer.mt` (9,684 lines): **117–119.7 ms → 33.0 ms**
+   (audit probe; 30.7 ms on the stage2 hover bench), host 16 ms; ~78% of the
+   old cost was repeated `lex_reporting`, and the remaining gap is the
+   loader-backed analysis lookup and definition-index warm, not tokenization.
+
+Verification: dev suite 22/0; `test/mt` 61/0; bootstrap fixed point; LSP harness
+**77 requests** (the 72 record plus `hover/format-string`,
+`completion/ref-imported-field`, `hover/imported-field-method` ×2,
+`rename/imported-function`) with only the documented `typeDefinition/imported`
+row; recovery OK; canonical project audit **6**; valgrind **0 errors**; soak
+**70.4 KB/cycle raw / 10.7 KB/cycle least-squares** at 200 cycles; refactor
+guard `--check --strict --ratchet` after a reviewed baseline refresh (125,224
+code lines; 6,353 duplicated lines / 888 windows — the shared f-string/type
+lookup removed 28 duplicated lines).
 
 ## Session 133 — VS Code LSP audit on the compiler sources
 
@@ -2357,22 +2418,23 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
-## Handoff (session 133)
+## Handoff (session 134)
 
-**Next session:** the session-133 VS Code audit left four functional gaps and
-the large-file latency list in its section.  In order: (1) hover inside
-`f"... #{...}"` (the token pipeline never sees the inner expression — reuse the
-semantic-token f-string split); (2) cross-file rename (reuse the references
-pipeline instead of the current single-file scan); (3) completion after a
-`ref[ImportedStruct]` receiver (fields are missing; unwrap `ref` before the
-imported-member lookup); (4) hover on `receiver.field.method(...)` with an
-imported generic field (`Holder.lookup.set`); (5) the per-document token cache
-the hover profile calls for (repeated whole-file `lex_reporting`, hover 117 ms
-vs the host's 16 ms).  Keep the harness (72 requests) in step when a context
-changes and exercise the context in VS Code — a context regression is invisible
-unless the fixture covers it.  Keep heavy parity sweeps memory-capped
-(`--mem-mb`, `-j 2`–`4`) — `mtc test` no longer accumulates memory, but each
-independent compiler still peaks at 2.5–3.4 GB on compiler-sized closures.
+**Next session:** no functional LSP gap is known.  The session-134 harness is
+**77 requests**; keep it in step when a context changes and exercise the context
+in VS Code — a context regression is invisible unless the fixture covers it.
+The remaining LSP item is latency: hover on `analyzer.mt` is 33.0 ms vs the
+host's 16 ms after the token/binding caches.  Profile **by stage**, not by
+guessing: the remaining repeated work is `document_analysis_for`'s content hash
+and source copy per helper, the definition-index warm for hovers that resolve a
+cross-file location, and the analysis-table scans in `resolve_cursor`; a
+per-request `DocumentAnalysis`/source lease would remove the first two.  Do not
+re-introduce a whole-file lex per lookup (the 117 ms regression) and keep the
+token/binding cache one-document (or make it explicitly multi-entry before any
+helper holds a span across a cross-file fetch — the current spans are
+deliberately short-lived).  Keep heavy parity sweeps memory-capped (`--mem-mb`,
+`-j 2`–`4`) — `mtc test` no longer accumulates memory, but each independent
+compiler still peaks at 2.5–3.4 GB on compiler-sized closures.
 
 **Read this first, then *Status at a glance* and the Ledger.**  The parity
 program stays closed, and session 73 closed the last *measurement* gaps: the
@@ -2473,12 +2535,14 @@ moved.**
 
 ### Open items, in priority order
 
-1. **LSP audit follow-ups (session 133).**  f-string interpolation hover;
-   cross-file rename; `ref[ImportedStruct]` receiver fields in completion;
-   imported-generic-field method hover; and the large-file latency/memory list
-   (token cache, semantic-token payloads, diagnostics).  Session 133 already
-   fixed the dead O(file²) hover scan, the imported enum member `From` line,
-   the hierarchy follow-up shape, and the specialization completion order.
+1. **LSP audit follow-ups (session 134).**  The four functional gaps are
+   closed (f-string interpolation hover, cross-file rename, `ref[ImportedStruct]`
+   completion, imported-generic-field method hover) and the per-document
+   token/binding caches cut hover on `analyzer.mt` from 117–119.7 ms to 33.0 ms
+   (host 16 ms).  The remaining latency work is recorded in the session-134
+   handoff: `document_analysis_for`'s per-helper source copy/hash, the
+   definition-index warm, and the analysis-table scans; the memory list
+   (semantic-token payloads, diagnostics) is unchanged.
 2. **Track G follow-ups are recorded, not pending.**  The post-fix profile is
    flat; `String.as_str()`'s per-call UTF-8 revalidation (~7%) is a documented
    invariant, and the ~2% scans are over small collections.  Reopen only with a
@@ -3220,18 +3284,18 @@ when the tree moved.  Target = the Definition of Done above.
 | docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 71 | `ruby tools/docs_smoke.rb` |
 | lint corpus | full: **624 agree / 34 differ of 658**; focused `std`+`examples`: **501 agree / 3 differ of 504** (the documented residue); hostfail 0, selffail 0; **43/43 rules, 13/13 fixers** | session 101 (focused re-verified 129) | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | unused-import | 635/635 | session 71 | `ruby tools/unused_import_parity.rb` |
-| LSP harness | 30/30 capabilities; 72 requests with the documented `typeDefinition/imported` row only | session 133 (re-verified) | `tools/lsp_parity.rb record/compare --stress` |
-| LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 132 (re-verified) | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
+| LSP harness | 30/30 capabilities; **77 requests** with the documented `typeDefinition/imported` row only | session 134 | `tools/lsp_parity.rb record/compare --stress` |
+| LSP project audit | canonical 6 (4 documented + 2 warm artifacts); non-canonical 4–5 ±drift | session 134 (re-verified) | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
 | LSP recovery | 6/6 byte-equal | session 130 (re-verified) | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | 4.9 ms median per `didChange`; `didOpen` ~52 ms cold | session 29 | `ruby tmp/lsp_edit_perf.rb --bin <bin>` (transient probe) |
 | LSP valgrind | 0 errors over the harness drive; ~64 KB definitely-lost per 10-cycle soak (one-time index level) | session 132 (re-verified) | `tools/gates.sh --only valgrind_lsp --run` |
-| LSP soak | 74–75 KB/cycle raw / ~28 KB/cycle least-squares at 200 cycles (meter; one-time index level) | session 132 (raw 74.5, LS 13.2) | `ruby tools/lsp_soak.rb --quiet` |
+| LSP soak | 70.4 KB/cycle raw / 10.7 KB/cycle least-squares at 200 cycles (meter; one-time index level) | session 134 (with the token/binding caches) | `ruby tools/lsp_soak.rb --quiet` |
 | formatter | 776/776 all three modes byte-identical with the current compiler | session 129 | `ruby tools/format_parity.rb all --self tmp/mtc-dev -j 16` |
 | DAP | zero differing rows except the documented self-better frame0 row; the async-order F5 probe (`tools/dap_async_probe.rb`) proves launch → breakpoint → frame/locals → evaluate against real `lldb-dap` | session 73 (re-verified) | `ruby tools/dap_smoke.rb` (`--allow-skip` to waive a missing adapter); `ruby tools/dap_async_probe.rb` |
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 | bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 130 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 168 files); 33 unused / 6 test-only exports; **6,381 duplicated lines / 891 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61; `--check --strict --ratchet` ok (baseline refreshed for the session-133 audit fixes and the shared hierarchy-item helper) | session 133 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 168 files); 33 unused / 6 test-only exports; **6,353 duplicated lines / 888 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61; `--check --strict --ratchet` ok (baseline refreshed for the session-134 f-string/type-lookup shared modules and the document caches) | session 134 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 
