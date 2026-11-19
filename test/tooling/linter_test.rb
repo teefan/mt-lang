@@ -3744,4 +3744,18 @@ class MilkTeaLinterPreferInlineMethodsTest < Minitest::Test
     fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-unsafe"])
     assert_includes fixed, "unsafe:"
   end
+
+  def test_redundant_type_annotation_ignores_function_type_annotations
+    source = <<~MT
+      function is_positive(x: int) -> bool:
+          return x > 0
+
+      function main() -> int:
+          let f: fn(x: int) -> bool = is_positive
+          return 0
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt")
+    refute warnings.any? { |entry| entry.code == "redundant-type-annotation" }
+  end
 end

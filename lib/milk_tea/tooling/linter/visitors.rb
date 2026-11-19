@@ -632,7 +632,7 @@ module MilkTea
       def check_redundant_type_annotation(statement)
         return unless statement.is_a?(AST::LocalDecl)
         return unless statement.kind == :let
-        return unless statement.type
+        return unless statement.type.is_a?(AST::TypeRef)
         return unless statement.value
 
         return if statement.type.nullable

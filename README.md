@@ -56,7 +56,7 @@ let total = (
 )
 ```
 
-Milk Tea also accepts operator-led continuation when the previous line ends with a binary operator:
+Milk Tea also accepts continuation when the previous line ends with a binary operator:
 
 ```mt
 let total = subtotal +
@@ -64,11 +64,12 @@ let total = subtotal +
     discount
 ```
 
-This also applies to range expressions:
+This also applies to range expressions in `for` headers:
 
 ```mt
-let values = 1 ..
-    4
+for i in 0 ..
+    4:
+    pass
 ```
 
 Starting a physical line with an operator is a hard parse error (`operator '<op>' cannot start a statement`). Continue by ending the previous line with the operator, or wrap the expression in `()` if that layout reads better. The continuation operator set is closed: `+` `-` `*` `/` `%`, `|` `&` `^`, `<<` `>>`, `==` `!=` `<` `<=` `>` `>=`, `and` `or` `is`, and `..`. Member-access chains that exceed one line wrap in `()` with leading dots:
@@ -137,7 +138,6 @@ Supported top-level declarations:
 - `foreign function`
 - `event`
 - `static_assert(...)`
-- `emit` — compile-time code generation inside `const function` or `inline` bodies
 - `when` (compile-time conditional; may appear at module level or inside function bodies)
 
 File-kind note:
@@ -171,7 +171,7 @@ var runtime = maybe_runtime else:
     return 1
 
 let parsed = parse(input) else as error:
-    return error
+    return Result[Output, Error].failure(error = error)
 
 let _ = initialize() else:
     return 1
@@ -260,6 +260,7 @@ struct Header:
 @[align(16)]
 struct Mat4:
     data: array[float, 16]
+```
 
 Nested structs declare scoped types inside an enclosing struct body:
 
@@ -314,7 +315,7 @@ variant Token:
 Rules:
 
 - `struct` and `opaque` may declare nominal interface conformance with `implements`.
-- `struct` bodies may contain `function`, `editable function`, and `static function` declarations directly — they desugar to `extending` blocks targeting the enclosing struct. This is pure syntactic sugar; the compiler emits identical code as a separate `extending` block.
+- `struct` bodies may contain `function`, `editable function`, `static function`, `const function`, and `static const function` declarations directly — they desugar to `extending` blocks targeting the enclosing struct. This is pure syntactic sugar; the compiler emits identical code as a separate `extending` block.
 - `attribute[target, ...]` declares reusable declaration attributes for `struct`, `field`, `callable`, `const`, `event`, `enum`, `flags`, `union`, and `variant` targets.
 - Attributes are applied with one or more leading `@[name(...)]` blocks. Built-in `packed`, `align(bytes)`, and `deprecated(message)` are predefined attributes.
 - `variant` arms may carry named payload fields.
@@ -542,7 +543,7 @@ Range arms are refutable — they do not count toward exhaustiveness — and req
 
 - Enum and variant matches must be exhaustive unless `_` is present.
 - Integer, `str`, and tuple matches require `_`. Integer match arms accept integer literals and char literals; `str` match arms accept string literals; tuple match arms accept tuple literal patterns whose elements may be literals, char literals, string literals, or `_` discard.
-- Multiple pattern values may share the same arm body using `|`: `kind` matches `kind_a | kind_b`.
+- Multiple pattern values may share the same arm body using `|`: `EventKind.quit | EventKind.cancel`.
 - Variant payload arms may bind with `as name`.
 - Variant payload arms may destructure fields inline with struct patterns: `Variant.arm(field > 0, other)` — comparisons are guards (arm skipped if false), identifiers are bindings (field becomes a local), and `field = value` is an equality guard.
 
@@ -570,10 +571,10 @@ let label = match rgb:
     (0, 255, 0): "green"
     _: "other"
 
-# Statement form with wildcards
+# Statement form with a literal arm and a wildcard
 match point:
-    (_, y) if y > 0:
-        handle_above(y)
+    (0, 0):
+        handle_origin()
     _:
         handle_other()
 ```
@@ -594,8 +595,8 @@ Loop forms:
 - `for item in items:` for arrays, spans, and custom iterables
 - Custom iterable protocol: `items.iter()` must take no arguments, be a non-editable method, and return the iterator value.
 - Iterator forms: either `next() ->` nullable pointer-like item, or `next() -> bool` together with `current() -> T`.
-- `for left, right in xs, ys:` for parallel array/span iteration
-- Parallel `for` does not accept ranges.
+- `for left, right in xs, ys:` for lockstep array/span iteration (arrays and spans only)
+- The lockstep form does not accept ranges; `parallel for` is the separate data-parallel form described below.
 
 `parallel for` dispatches loop iterations across multiple CPU cores using real OS threads:
 
@@ -998,7 +999,7 @@ Heredoc notes:
 - No truthy or falsy coercion.
 - Outside external-call boundaries, enum and flags values do not implicitly coerce to their backing integer types.
 - Mixed signed and unsigned integer arithmetic promotes to the narrowest signed type that holds both ranges (e.g. `ubyte + int` is `int`, `int + uint` is `long`); mixing with a 64-bit unsigned type such as `ulong` or `ptr_uint` requires an explicit cast.
-- Non-widening integer conversions (narrowing, signed → unsigned) require an explicit cast. Lossless widening conversions (same signedness to wider or equal width, unsigned → wider signed) are implicit.
+- Non-widening integer conversions (narrowing, signed → unsigned) require an explicit cast. Lossless widening conversions (same signedness to wider or equal width, unsigned → wider signed) are implicit. Exact compile-time numeric constants (literals and `const` values) may initialize a different numeric type without a cast when the value fits the target.
 - `%` requires integer-compatible operands.
 - Bitwise operators require matching integer or flags types.
 - Shift operators require integer operands.
@@ -1135,14 +1136,14 @@ Current compiler rejects:
 - `ptr_of`, `const_ptr_of`, and `ref_of` require an addressable source expression
 - safe array indexing requires an addressable array value; `get(arr, i)` provides recoverable bounds-checked access
 - legacy call-site markers `in`, `out`, and `inout` are rejected; parameter modes are declared on `foreign function`
-- `ptr_of` / `ref_of` cannot target a `ref` value directly
+- `ref_of` cannot target a `ref` value directly; `ptr_of` accepts one
 - pointer comparison is not treated as boolean truthiness
 
 ### Type system restrictions
 
 - conditions must be `bool`; integers and pointers have no implicit truthy or falsy coercion
-- mixed signed and unsigned integer arithmetic requires an explicit cast
-- non-widening integer conversions (narrowing, signed → unsigned) require an explicit `T<-value` cast; lossless widening is implicit
+- mixed signed and unsigned integer arithmetic promotes to the narrowest signed type that holds both ranges (e.g. `ubyte + int` is `int`, `int + uint` is `long`); mixing with a 64-bit unsigned type (`ulong`, `ptr_uint`) requires an explicit cast
+- non-widening integer conversions (narrowing, signed → unsigned) require an explicit `T<-value` cast (except exact compile-time constants that fit the target); lossless widening is implicit
 - enum and flags values do not implicitly coerce to their backing integer types outside external-call boundaries
 - `enum` backing types must be integer primitives; `flags` members must be compile-time integer constants
 - `variant` arm payloads cannot use `ref[T]` in v1
@@ -1163,7 +1164,7 @@ Current compiler rejects:
 - `==`/`!=` on structs and variants requires all fields equality-comparable; use `equal[T]` otherwise
 - range expressions are restricted to `for`-loop iterables, range index reads (`a[start..stop]`), and range-index assignment targets
 - `str` is an immutable borrowed view: index and range-index results cannot be assigned through
-- functions, methods, generic functions, and variant arms must be called — they are not usable as bare values
+- a free function name is only usable as a callable value where an expected `fn(...)` or `proc(...)` type supplies the coercion (annotated local, argument, return, or field initializer); an unannotated `let f = some_function` is rejected. Method names and unspecialized generic functions must be called. No-payload variant arms are values; payload arms are constructors and must be called.
 - `read(...)` of a raw pointer requires `unsafe`
 - a statement cannot begin with a binary operator (including `+`, `-`, `and`, `or`, `is`, `..`); continuation requires ending the previous line with the operator or wrapping in `()`
 
@@ -1192,7 +1193,7 @@ Current compiler rejects:
 - user-defined `attribute` declarations target `struct`, `field`, `callable`, `const`, `event`, `enum`, `flags`, `union`, or `variant`
 - `@[...]` attribute applications are only accepted on the above declaration kinds
 - `attribute` declarations are not allowed in external files
-- only built-in `packed` and `align(...)` struct attributes are allowed in external files
+- only built-in `packed`, `align(...)`, and `deprecated(...)` attributes are allowed in external files, subject to each attribute's target kinds
 
 ### Concurrency restrictions
 
@@ -1263,7 +1264,7 @@ mtc toolchain tools           # List available native tools
 Tooling and editors:
 
 ```
-mtc bindgen <header.h>        # Generate an external binding module from a C header
+mtc bindgen <module> <header.h> # Generate an external binding module from a C header
 mtc snapshot <path>           # Render a highlighted HTML snapshot of a source file
 mtc lsp                       # Start the Language Server Protocol server
 mtc dap                       # Start the Debug Adapter Protocol server
@@ -1292,7 +1293,7 @@ mtc bindgen mylib.mt mylib.h --nullable-policy nullable_policy.json --nullable-r
 
 Types must match what bindgen would otherwise emit for the symbol (minus the `?`). Bindgen rejects policy entries for unknown symbols, so a stale policy fails loudly instead of silently drifting.
 
-Build and run commands support `--profile`, `--platform`, `--cc`, `--keep-c`, `--locked`, `--frozen`, and `-I` include paths. Dependency-locked flows support `--locked` (use package.lock) and `--frozen` (require current package.lock).
+Build and run commands support `-o`/`--output`, `--profile`, `--platform`, `--cc`, `--keep-c C_PATH`, `--no-cache`, `--locked`, `--frozen`, and `-I` include paths. Dependency-locked flows support `--locked` (use package.lock) and `--frozen` (require current package.lock).
 
 Global options work with any command (before or after the subcommand, up to a `--` separator): `-h`/`--help` (also `mtc help <command>` for command-specific help), `-V`/`--version`, `-q`/`--quiet` (suppress informational output), `-v`/`--verbose` (per-file progress), and `--color auto|always|never`. Generate shell completions with `mtc completions bash|zsh|fish`. Timing breakdowns use `--timings` (on `format` and `lint`); `lint` reports warnings with per-file progress.
 

@@ -15,7 +15,7 @@ Create a new application package scaffold with:
 mtc new my-project
 ```
 
-This writes `package.toml` and `src/main.mt` into `my-project/`. The scaffold uses an explicit `build.entry = "src/main.mt"`, normalizes the directory basename to snake_case for `package.name`, and generates a headerless entry file. For example, both `mtc new my-project` and `mtc new MyProject` generate `package.name = "my_project"` and `src/main.mt` with just the entry `function main()`.
+This writes `package.toml` and `src/main.mt` into `my-project/`. The scaffold uses an explicit `build.entry = "src/main.mt"`, normalizes the directory basename to snake_case for `package.name`, and generates a headerless entry file. For example, both `mtc new my-project` and `mtc new MyProject` generate `package.name = "my_project"` and `src/main.mt` with just the entry `function main() -> int:` returning `0`.
 The generated manifest also writes `package.source_root = "src"` explicitly so imports resolve from `src/` without requiring a `src.` prefix.
 
 Minimal package example:
