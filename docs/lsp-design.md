@@ -486,7 +486,7 @@ fixed the same day.
 | JSON | `JSON.parse` / `JSON.dump` | `std.json.parse` / raw-string rendering |
 | Transport | Stdio `Content-Length` framing | Same (getchar loop) |
 | Capabilities | 30 advertised | 30 advertised (parity) |
-| Caches | Multi-layer (tokens, AST, facts, semantic tokens) | Per-file diagnostic/semantic-token caches + workspace-symbol index |
+| Caches | Multi-layer (tokens, AST, facts, semantic tokens) | Per-document text/version, token, binding and loader-backed analysis caches + per-file diagnostic/semantic-token caches + workspace-symbol index |
 | Module resolution | `ModuleLoader` (shared) | Same `module_loader.mt` |
 | Linter | Ruby `Linter.lint_source` | Same `linter.lint_source` |
 | Outgoing requests | Async callback via `send_request` | Synchronous via `send_request` + response dispatch |
@@ -497,7 +497,7 @@ fixed the same day.
 
 | Feature | Status |
 |---------|--------|
-| **Live parity status** | **See [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure)** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; **87 requests** + 28 stress probes; **5 documented differing entries**) and by the project audit (7075 entries / **4 stable differing entries + the host's first-file `documentSymbol` race**, session 28) |
+| **Live parity status** | **See [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure)** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; **88 requests** + 28 stress probes; **6 documented differing entries**) and by the project audit (7075 entries / **8 stable differing entries + the host's first-file `documentSymbol` race**, session 140) |
 | **Position encoding** | **Request positions are converted at the boundary** (session 27): the client's `character` counts UTF-16 code units, and `Workspace.position_byte_offset` maps it to the byte offset the token scanners use, against the current buffer, for every position- and range-carrying request (`position_params`, `selectionRange` positions, `rangeFormatting`).  Out-of-range positions keep the raw column, so the bounds behavior is unchanged.  **Emitted positions stay byte-based**, as the Ruby host's are (its lexer runs on the binary line); a client's UTF-16 cursor lands correctly, while a *response range* after a multi-byte character on the same line can be one column off — the same value the host emits.  The host's own decoding of `character` is a plain copy (`decode_client_char` is a no-op under utf-16), so it resolves slice-based paths by *characters*; on text with astral characters the self would follow the spec instead (not exercised by the corpus). |
 | Diagnostics (push + pull) | **DONE (stage 4)** — the editor *buffer* is analysed (not the file on disk); `lex/error`, `parse/error`, `import/load-error`, `sema/error` and lint items carry the host's codes, `data.stage`, token-length ranges (import failures anchor at the module-path text) and MarkupContent for quoted-identifier sema messages; `workspace/diagnostic` reports every open document in didOpen order with `previousResultIds`.  `diagnostic/pull` and `workspace/diagnostic` are byte-equal to the host. |
 | Incremental text sync (change:2) | **DONE** — range-based edits, UTF-8 line/char→byte conversion |
@@ -597,6 +597,7 @@ recovery result:
   | 11 | The reference index bounds its retained text (32 MiB): past it the oldest noted documents are evicted with their hash/stamp entries and re-read on demand, so a document re-noted after an eviction answers in a later index position than the host's whole-session order (result *sets* unaffected) | self-better (long sessions) | `lsp_index_test.mt` (the bound), the audit (small workspaces never evict) |
   | 12 | `milkTea/debugInfo`: the header, token table, AST tree, parse errors and diagnostics are byte-equal (session 33); the host's Facts and Bindings sections embed Ruby `object_id`s and binding ids allocated in the host's analysis order — not ported yet | remainder documented | `lsp_parity` (`milkTea/debugInfo`) |
   | 13 | Hover on a module-qualified variant arm (`local.Local.one`, `ast.Decl.decl_const`): the host returns null; the self resolves the arm in the imported type's module from the requesting document's loaded program | self-better (session 135) | `lsp_parity` (`hover/imported-variant-arm`) |
+  | 14 | Member resolution through a call/index receiver (`read(p).get_object`, `make_sample().sum()`, `particles[0].y`): the host's chain requires an identifier immediately before the dot and returns null (or a same-named global for definitions); the self reads the analyzer's recorded receiver type | self-better (session 140) | `lsp_parity` (`hover/chained-method`), `lsp_project_audit` (`data_structures@250:17`, canonical) |
 
   The *checklist* for anything not in this table: `tools/lsp_parity.rb
   compare` must show only its documented entries, `tools/lsp_recovery_probe.rb

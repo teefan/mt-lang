@@ -497,11 +497,10 @@ public function handle_hover(
         proto.write_response(id, json.null_value())
         return
     defer: hover_path.release()
-    var hover_content = ws.document_source(hover_path.as_str()) else:
+    var hover_text = ws.document_text(hover_path.as_str()) else:
         proto.write_response(id, json.null_value())
         return
-    defer: hover_content.release()
-    let hover_source = hover_content.as_str()
+    let hover_source = hover_text.text
     if hover_source.len == 0:
         proto.write_response(id, json.null_value())
         return
@@ -1567,10 +1566,9 @@ public function resolve_cursor_at(
     var file_path = uri_ops.file_uri_to_path(uri) else:
         return Option[CursorResult].none
     defer: file_path.release()
-    var content = ws.document_source(file_path.as_str()) else:
+    var content = ws.document_text(file_path.as_str()) else:
         return Option[CursorResult].none
-    defer: content.release()
-    return resolve_cursor(ws, uri, content.as_str(), line, character, for_hover)
+    return resolve_cursor(ws, uri, content.text, line, character, for_hover)
 
 
 ## Resolve the symbol at the given cursor position.  Finds the identifier under
@@ -1669,24 +1667,29 @@ public function resolve_cursor(
     # The host resolves a *member access* before its name tables
     # (`resolve_member_access_hover_info` runs ahead of the signature lookup),
     # so `d.push_back(…)` and `rl.Color.hex_digit(…)` report their defining
-    # module rather than a same-named local declaration.
-    match cursor.dot_receiver_at(source, line, character):
-        Option.some as recv:
-            var receiver_path = recv.value
-            match cursor.dot_receiver_path_text_at(source, line, character):
-                Option.some as path_text:
-                    receiver_path = path_text.value
-                Option.none:
-                    pass
-            match resolve_member_method_hover(
-                ws, ast_file, ref_of(analysis), source, file_path.as_str(), receiver_path, target.text,
-                line + 1, current_module.as_str()):
-                Option.some as member_result:
-                    return Option[CursorResult].some(value = member_result.value)
-                Option.none:
-                    pass
-        Option.none:
-            pass
+    # module rather than a same-named local declaration.  A receiver that is not
+    # a name/field chain (`read(p).get_object`) has no text path; the analyzer's
+    # recorded receiver type answers it (a self-better extension: the host
+    # requires an identifier immediately before the dot).
+    if cursor.member_dot_at(source, line, character):
+        var receiver_path: str = ""
+        match cursor.dot_receiver_at(source, line, character):
+            Option.some as recv:
+                receiver_path = recv.value
+                match cursor.dot_receiver_path_text_at(source, line, character):
+                    Option.some as path_text:
+                        receiver_path = path_text.value
+                    Option.none:
+                        pass
+            Option.none:
+                pass
+        match resolve_member_method_hover(
+            ws, ast_file, ref_of(analysis), source, file_path.as_str(), receiver_path, target.text,
+            line + 1, character + 1, current_module.as_str()):
+            Option.some as member_result:
+                return Option[CursorResult].some(value = member_result.value)
+            Option.none:
+                pass
 
     # `Type.method(...)` / `Type[T].method(...)` / `alias.Type.method(...)`: a
     # *type* receiver, whose method lives in the type's own module.
@@ -2265,10 +2268,28 @@ function resolve_member_method_hover(
     receiver_path: str,
     method_name: str,
     target_line: ptr_uint,
+    target_character: ptr_uint,
     current_module: str,
 ) -> Option[CursorResult]:
-    let receiver_ty = receiver_path_type(ws, file_path, analysis, ast_file, receiver_path, target_line, source) else:
-        return Option[CursorResult].none
+    var receiver_ty = types.Type.ty_error
+    var resolved_receiver = false
+    if receiver_path.len > 0:
+        match receiver_path_type(ws, file_path, analysis, ast_file, receiver_path, target_line, source):
+            Option.some as path_ty:
+                receiver_ty = path_ty.value
+                resolved_receiver = true
+            Option.none:
+                pass
+    if not resolved_receiver:
+        # The receiver is not a name/field chain (`read(p).get_object`,
+        # `build().field`, `a[0].b`): the analyzer recorded the expression's
+        # inferred type at the member token's position.
+        match analyzer.member_receiver_type_at(analysis, target_line, target_character):
+            Option.some as recorded_ty:
+                receiver_ty = recorded_ty.value
+                resolved_receiver = true
+            Option.none:
+                return Option[CursorResult].none
     # A match-arm payload binding (`a` in `Kind.alpha as a`): its fields are the
     # arm's synthesized payload fields, with no declaring struct to scan.
     match receiver_ty:
@@ -2571,11 +2592,10 @@ function resolve_import_cursor(ws: ref[workspace.Workspace], uri: str, line: ptr
     var file_path = uri_ops.file_uri_to_path(uri) else:
         return Option[CursorResult].none
     defer: file_path.release()
-    var content = ws.document_source(file_path.as_str()) else:
+    var content = ws.document_text(file_path.as_str()) else:
         return Option[CursorResult].none
-    defer: content.release()
-    let import_tokens = ws.document_tokens(file_path.as_str(), content.as_str())
-    match import_module_name_at(import_tokens, content.as_str(), line, character):
+    let import_tokens = ws.document_tokens(file_path.as_str(), content.text)
+    match import_module_name_at(import_tokens, content.text, line, character):
         Option.some as module_name:
             defer: module_name.value.release()
             return resolve_module_reference(ws, module_name.value.as_str(), file_path.as_str())

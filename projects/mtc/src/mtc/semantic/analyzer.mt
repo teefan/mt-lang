@@ -343,6 +343,11 @@ struct Context:
     inside_async: bool
     resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
     resolved_call_kinds: map_mod.Map[ptr_uint, str]
+    ## The receiver type of a member access whose receiver is not a plain
+    ## name/field chain (`read(p).method`, `make().field`, `a[0].b`), keyed by
+    ## the member name's position (`binding_key`).  The LSP's text-based
+    ## receiver walk cannot resolve those, so it reads the inferred type here.
+    member_receiver_types: map_mod.Map[ptr_uint, types.Type]
     ## The host's `expected_type` argument while inferring a value expression in
     ## a declared position (a local's annotation, an assignment target, a
     ## return type): an if/match expression whose branches all fit it takes
@@ -452,6 +457,8 @@ public struct Analysis:
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
     resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
     resolved_call_kinds: map_mod.Map[ptr_uint, str]
+    ## See `Context.member_receiver_types`.
+    member_receiver_types: map_mod.Map[ptr_uint, types.Type]
     ## See `Context.local_decl_types`.
     local_decl_types: map_mod.Map[ptr_uint, types.Type]
     ## See `Context.destructure_types`.
@@ -632,6 +639,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         interfaces = ctx.interfaces,
         resolved_expr_types = ctx.resolved_expr_types,
         resolved_call_kinds = ctx.resolved_call_kinds,
+        member_receiver_types = ctx.member_receiver_types,
         local_decl_types = ctx.local_decl_types,
         destructure_types = ctx.destructure_types,
         arm_binding_types = ctx.arm_binding_types,
@@ -728,6 +736,7 @@ function create_context(module_name: str, imported_modules: ptr[map_mod.Map[str,
         inside_async = false,
         resolved_expr_types = map_mod.Map[ptr_uint, types.Type].create(),
         resolved_call_kinds = map_mod.Map[ptr_uint, str].create(),
+        member_receiver_types = map_mod.Map[ptr_uint, types.Type].create(),
         expected_type_hint = types.Type.ty_error,
         local_decl_types = map_mod.Map[ptr_uint, types.Type].create(),
         destructure_types = vec.Vec[DestructureTypeEntry].create(),
@@ -7999,7 +8008,13 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
         Option.none:
             pass
 
-    let recv = unwrap_ref(infer_expr(ctx, scope, receiver))
+    let recv_ty = infer_expr(ctx, scope, receiver)
+    # The LSP's text-based receiver walk cannot resolve a call/index/cast
+    # receiver, so record the expression's inferred type at the member token's
+    # position (see `member_receiver_types`).
+    if not receiver_is_text_chain(receiver):
+        ctx.member_receiver_types.set(binding_key(line, column), recv_ty)
+    let recv = unwrap_ref(recv_ty)
     # A raw/mutable pointer receiver projects to its pointee only when the
     # pointer type itself declares no method of that name (the host's
     # `project_method_receiver_type`): `ptr[T].load()` resolves on the pointer
@@ -8902,6 +8917,13 @@ function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], rece
                                     return imported_type.value
                                 Option.none:
                                     let raw_recv = infer_expr(ctx, scope, receiver)
+                                    # Keep the LSP's fallback fact: a receiver that
+                                    # is not a plain name/field chain (`read(p)`,
+                                    # `make()`, `a[0]`) cannot be resolved from the
+                                    # source text, so record its inferred type at the
+                                    # member's position.
+                                    if not receiver_is_text_chain(receiver):
+                                        ctx.member_receiver_types.set(binding_key(line, column), raw_recv)
                                     # A field read through a raw pointer dereferences
                                     # it — the host requires unsafe
                                     # (`raw pointer dereference requires unsafe`).
@@ -8913,6 +8935,31 @@ function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], rece
                                             mark_required_unsafe(ctx)
                                     let recv = project_pointer_receiver(raw_recv)
                                     return check_member(ctx, recv, member, is_method_call, line, column)
+
+
+## True when a member access's receiver expression is a plain identifier or a
+## field chain rooted at one — the shape the LSP resolves from source text
+## (`ctx.cache.get`).  Every other receiver (a call, an index, a cast, a
+## dereference) is recorded in `member_receiver_types` for the LSP fallback.
+function receiver_is_text_chain(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier:
+                return true
+            ast.Expr.expr_member_access as ma:
+                return receiver_is_text_chain(ma.receiver)
+            _:
+                return false
+
+
+## The inferred receiver type of the member access whose member name starts at
+## `line`:`column` (1-based), when the receiver is not a plain name/field chain.
+## None for the chains `receiver_path_type` already resolves.
+public function member_receiver_type_at(analysis: ref[Analysis], line: ptr_uint, column: ptr_uint) -> Option[types.Type]:
+    let ty_ptr = unsafe: read(analysis).member_receiver_types.get(binding_key(line, column))
+    if ty_ptr == null:
+        return Option[types.Type].none
+    return Option[types.Type].some(value = unsafe: read(ty_ptr))
 
 
 ## Resolve `alias.Type.member` where `alias` is an imported module and `Type` is

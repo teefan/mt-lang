@@ -77,7 +77,11 @@ MAIN_SOURCE = <<~MT
       let _a = area
       let asset = "assets/file.txt"
       let _asset = asset
+      total += make_sample().sum()
       return total
+
+  function make_sample() -> Sample:
+      return Sample(x = 2, y = 3)
 MT
 
 ALPHA_SOURCE = <<~MT
@@ -671,6 +675,10 @@ def corpus(dir, paths)
   requests["hover/struct"] = ["textDocument/hover", at.call("struct Sample", within: nil)]
   requests["hover/local"] = ["textDocument/hover", at.call("let s = Sample")]
   requests["hover/method-call"] = ["textDocument/hover", at.call("s.sum()")]
+  # A call receiver (`make_sample().sum()`): the host requires an identifier
+  # immediately before the dot and answers null; the self resolves the method
+  # through the analyzer's recorded receiver type (a documented self-better row).
+  requests["hover/chained-method"] = ["textDocument/hover", at.call("make_sample().sum()", off: 14)]
   # A qualified enum member: `member: Type = <value>` at the member's own
   # declaration (the enum-member arm, not the receiver's type).
   requests["hover/enum-member"] = ["textDocument/hover", at.call("Color.green", off: 6)]

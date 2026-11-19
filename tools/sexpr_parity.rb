@@ -18,7 +18,7 @@
 #
 # Options:
 #   --self PATH      self-host compiler binary  (default: build/stage2/mtc)
-#   -j, --jobs N     parallel workers           (default: nproc)
+#   -j, --jobs N     parallel workers           (default: nproc; 4 for lower)
 #   -I, --include D  extra module root for `lower` (repeatable)
 #   --timeout SEC    per self-host invocation timeout (default: 120)
 #   --mem-mb MB      virtual-memory cap for the self-host binary (0 = off)
@@ -57,6 +57,7 @@ mode = nil
 targets = []
 self_bin = nil
 jobs = Etc.nprocessors
+jobs_explicit = false
 includes = []
 timeout_s = 120
 mem_mb = 0
@@ -70,7 +71,7 @@ until argv.empty?
   a = argv.shift
   case a
   when "--self"     then self_bin = argv.shift
-  when "-j", "--jobs" then jobs = argv.shift.to_i
+  when "-j", "--jobs" then jobs = argv.shift.to_i; jobs_explicit = true
   when "-I", "--include" then includes << argv.shift
   when "--timeout"  then timeout_s = argv.shift.to_i
   when "--mem-mb"   then mem_mb = argv.shift.to_i
@@ -91,6 +92,17 @@ end
 mode ||= "all"
 jobs = 1 if jobs < 1
 modes = mode == "all" ? MODES : [mode]
+
+# A lower sweep runs one self compiler per worker; a compiler-sized closure
+# peaks at ~3.8 GiB (the documented `main*` loop-guard artifacts), so the
+# nproc-wide default has exhausted a 31 GiB workstation.  Keep the default
+# bounded; an explicit -j still wins.  --mem-mb caps a runaway process.
+if mode == "lower" && !jobs_explicit
+  jobs = 4 if jobs > 4
+end
+if modes.include?("lower") && mem_mb.zero?
+  warn "note: lower runs are memory-heavy (a compiler-sized closure peaks ~3.8 GiB); pass --mem-mb 8000 and keep -j at 4."
+end
 
 self_bin ||= File.join(ROOT, "build", "stage2", "mtc")
 self_bin = File.expand_path(self_bin)

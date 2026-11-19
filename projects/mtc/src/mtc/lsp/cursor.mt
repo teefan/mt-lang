@@ -385,6 +385,21 @@ public function dot_receiver_path_text_at(source: str, line: ptr_uint, character
     return Option[str].some(value = line_text.slice(ptr_uint<-start_pos, path_end - ptr_uint<-start_pos))
 
 
+## True when the cursor's identifier is the member of a dot access (`x.mem|`),
+## whatever the receiver shape — `read(p).get|` and `a[0].b|` included.  The
+## text-based receiver path resolves only name/field chains; the hover falls
+## back to the analyzer's recorded receiver type for the rest.
+public function member_dot_at(source: str, line: ptr_uint, character: ptr_uint) -> bool:
+    let line_text = source_line(source, line + 1)
+    var pos = character
+    if pos > line_text.len:
+        pos = line_text.len
+
+    while pos > 0 and utils.is_word_byte(line_text.byte_at(pos - 1)):
+        pos -= 1
+    return pos > 0 and line_text.byte_at(pos - 1) == 46
+
+
 ## The full dot-receiver path at the cursor — the host's
 ## `find_dot_receiver_path`: every identifier segment before the hovered dot,
 ## joined by `.`, with `[…]` groups skipped (`a[0].b` gives `a.b`).  Unlike

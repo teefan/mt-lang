@@ -137,7 +137,7 @@ gate_label() {
         test_mt)        echo "test/mt under stage2 (61 files / 0 failed)" ;;
         sexpr_lex)      echo "sexpr lex parity (739/739)" ;;
         sexpr_parse)    echo "sexpr parse parity (772 match / 0 differ / 4 host-rejected of 776)" ;;
-        sexpr_lower)    echo "sexpr lower parity (meter, ~1 min warm / ~4 min cold host cache)" ;;
+        sexpr_lower)    echo "sexpr lower parity (meter, memory-capped: -j 4 --mem-mb 8000)" ;;
         cli_parity)     echo "CLI parity (227 cases; 227 match; no allowlist)" ;;
         wasm_smoke)     echo "wasm preview end-to-end (host + self HTTP/signal smoke)" ;;
         docs_smoke)     echo "docs server end-to-end (host + self routes/SIGINT smoke)" ;;
@@ -174,7 +174,7 @@ gate_cmd() {
         test_mt)       echo "build/stage2/mtc test test/mt -I ." ;;
         sexpr_lex)     echo "ruby tools/sexpr_parity.rb lex -q --host-cache tmp/sexpr-host-cache" ;;
         sexpr_parse)   echo "ruby tools/sexpr_parity.rb parse -q --host-cache tmp/sexpr-host-cache" ;;
-        sexpr_lower)   echo "ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache" ;;
+        sexpr_lower)   echo "ruby tools/sexpr_parity.rb lower -q -j 4 --mem-mb 8000 --host-cache tmp/sexpr-host-cache" ;;
         cli_parity)    echo "ruby tools/cli_parity.rb -q" ;;
         scoreboard)    echo "rake parity:scoreboard" ;;
         format)        echo "ruby tools/format_parity.rb all -j 16" ;;

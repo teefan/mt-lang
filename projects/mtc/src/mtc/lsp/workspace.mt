@@ -100,6 +100,29 @@ public struct BindingCacheEntry:
     bindings: vec.Vec[scope_mod.Binding]
 
 
+## A document's current text and content fingerprint.  The `str` view is
+## produced by one `String.as_str` validation per document version, so the many
+## helpers one hover calls share a single UTF-8 scan instead of re-validating
+## (and re-hashing) the whole file each time.
+public struct DocumentText:
+    text: str
+    hash: uint
+
+
+## The per-document text cache entry.  An *open* document's `text` is a view
+## into its `open_docs` buffer (nothing is copied; the entry is dropped on every
+## open/change/close), while a *closed* document owns `source` and is
+## revalidated by its stat stamp so an external edit is still noticed.
+struct TextCacheEntry:
+    source: string.String
+    text: str
+    hash: uint
+    open: bool
+    size: ptr_uint
+    modified_seconds: ptr_int
+    modified_nanoseconds: ptr_int
+
+
 public struct SemanticTokenCacheEntry:
     source_hash: uint
     result_id: string.String
@@ -133,6 +156,7 @@ public struct Workspace:
     semantic_token_cache: map_mod.Map[string.String, SemanticTokenCacheEntry]
     token_cache: TokenCacheEntry
     binding_cache: BindingCacheEntry
+    text_cache: map_mod.Map[string.String, TextCacheEntry]
     config_request_id: ptr_uint
     config_received: bool
     index_built: bool
@@ -218,6 +242,7 @@ extending Workspace:
                 source = string.String.create(),
                 bindings = vec.Vec[scope_mod.Binding].create(),
             ),
+            text_cache = map_mod.Map[string.String, TextCacheEntry].create(),
             config_request_id = 0,
             config_received = false,
             index_built = false,
@@ -251,6 +276,8 @@ extending Workspace:
         this.drain_retired_regions()
         this.release_token_cache()
         this.release_binding_cache()
+        release_text_cache(ref_of(this.text_cache))
+        this.text_cache = map_mod.Map[string.String, TextCacheEntry].create()
         release_diagnostic_cache(ref_of(this.diagnostic_cache))
         this.diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create())
         release_analysis_cache(ref_of(this.analysis_cache))
@@ -306,6 +333,7 @@ extending Workspace:
             Option.some as path_payload:
                 this.untrack_open_path(path_payload.value.as_str())
                 this.open_docs.remove(path_payload.value)
+                this.forget_document_text(path_payload.value.as_str())
                 loader.invalidate_module_cache(ref_of(this.module_cache))
                 defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
                 refidx.forget(ref_of(this.reference_index), path_payload.value.as_str())
@@ -324,6 +352,7 @@ extending Workspace:
     ## Store a document's text, releasing the buffer it replaces (`set` returns
     ## the previous value on an existing key and drops it otherwise).
     public editable function set_open_doc(path: string.String, text: str) -> void:
+        this.forget_document_text(path.as_str())
         let previous = this.open_docs.set(path, string.String.from_str(text))
         match previous:
             Option.some as old:
@@ -387,12 +416,129 @@ extending Workspace:
                 return Option[string.String].none
 
 
+    ## The document's current text and content hash, validated once per document
+    ## version.  The returned `str` is borrowed: an open document's buffer lives
+    ## in `open_docs` until the next open/change/close, a closed one's in its
+    ## cache entry until the stat stamp changes.  Callers hold it for one
+    ## request only.
+    public editable function document_text(path: str) -> Option[DocumentText]:
+        var key = string.String.from_str(path)
+        defer: key.release()
+        let cached_ptr = this.text_cache.get(key)
+        if cached_ptr != null:
+            unsafe:
+                let cached = read(cached_ptr)
+                if cached.open:
+                    return Option[DocumentText].some(value = DocumentText(text = cached.text, hash = cached.hash))
+                match fs_mod.metadata(path):
+                    Result.success as meta:
+                        let stamp = meta.value
+                        if cached.size == stamp.size and cached.modified_seconds == stamp.modified_seconds and cached.modified_nanoseconds == stamp.modified_nanoseconds:
+                            return Option[DocumentText].some(value = DocumentText(text = cached.text, hash = cached.hash))
+                    Result.failure as failure_payload:
+                        var err = failure_payload.error
+                        err.release()
+
+        let open_ptr = this.open_docs.get(key)
+        if open_ptr != null:
+            unsafe:
+                let validated = read(open_ptr).as_str()
+                let hash = fnv1a_hash(validated)
+                this.put_text_cache(path, string.String.create(), validated, hash, true, 0, 0, 0)
+                return Option[DocumentText].some(value = DocumentText(text = validated, hash = hash))
+
+        var size: ptr_uint = 0
+        var modified_seconds: ptr_int = 0
+        var modified_nanoseconds: ptr_int = 0
+        match fs_mod.metadata(path):
+            Result.success as meta:
+                let stamp = meta.value
+                size = stamp.size
+                modified_seconds = stamp.modified_seconds
+                modified_nanoseconds = stamp.modified_nanoseconds
+            Result.failure as failure_payload:
+                var err = failure_payload.error
+                err.release()
+
+        match fs_mod.read_text(path):
+            Result.success as content:
+                var source = content.value
+                let validated = source.as_str()
+                let hash = fnv1a_hash(validated)
+                this.put_text_cache(path, source, validated, hash, false, size, modified_seconds, modified_nanoseconds)
+                return Option[DocumentText].some(value = DocumentText(text = validated, hash = hash))
+            Result.failure as failure_payload:
+                var err = failure_payload.error
+                err.release()
+                return Option[DocumentText].none
+
+
+    ## The content hash of `source` when it is the cached text of `path` (the
+    ## common case: every helper in one request passes the same validated view),
+    ## else a fresh hash.  This keeps the token/binding caches' version check
+    ## from re-scanning the whole document per lookup.
+    public function document_hash_for(path: str, source: str) -> uint:
+        var key = string.String.from_str(path)
+        defer: key.release()
+        let cached_ptr = this.text_cache.get(key)
+        if cached_ptr != null:
+            unsafe:
+                let cached = read(cached_ptr)
+                if cached.text.len == source.len and cached.text.data == source.data:
+                    return cached.hash
+        return fnv1a_hash(source)
+
+
+    ## Drop a document's text cache entry (open/change/close).
+    public editable function forget_document_text(path: str) -> void:
+        var key = string.String.from_str(path)
+        defer: key.release()
+        let previous = this.text_cache.remove(key)
+        match previous:
+            Option.some as old:
+                var entry = old.value
+                entry.source.release()
+            Option.none:
+                pass
+
+
+    ## Replace a document's text cache entry, releasing the buffer it owned.
+    editable function put_text_cache(
+        path: str,
+        source: string.String,
+        text: str,
+        hash: uint,
+        open: bool,
+        size: ptr_uint,
+        modified_seconds: ptr_int,
+        modified_nanoseconds: ptr_int,
+    ) -> void:
+        var key = string.String.from_str(path)
+        defer: key.release()
+        let previous = this.text_cache.remove(key)
+        match previous:
+            Option.some as old:
+                var entry = old.value
+                entry.source.release()
+            Option.none:
+                pass
+        this.text_cache.set(string.String.from_str(path), TextCacheEntry(
+            source = source,
+            text = text,
+            hash = hash,
+            open = open,
+            size = size,
+            modified_seconds = modified_seconds,
+            modified_nanoseconds = modified_nanoseconds,
+        ))
+
+
     ## The token stream of `path`'s current `source`, from the one-document lex
     ## cache.  The span points into the cache (valid until the next call for a
     ## different document), so a request takes it per lookup and never holds it
     ## across a cross-file fetch.
     public editable function document_tokens(path: str, source: str) -> span[token_mod.Token]:
-        let current_hash = fnv1a_hash(source)
+        let current_hash = this.document_hash_for(path, source)
         if this.token_cache.path.as_str().equal(path) and this.token_cache.content_hash == current_hash:
             return this.token_cache.tokens.as_span()
         var previous = this.token_cache
@@ -424,7 +570,7 @@ extending Workspace:
     ## copy their name views point into.  The span is valid until the next call
     ## for a different document (the same one-entry rule as `document_tokens`).
     public editable function document_bindings(path: str, source: str, ast_file: ast.SourceFile) -> span[scope_mod.Binding]:
-        let current_hash = fnv1a_hash(source)
+        let current_hash = this.document_hash_for(path, source)
         if this.binding_cache.path.as_str().equal(path) and this.binding_cache.content_hash == current_hash:
             return this.binding_cache.bindings.as_span()
         var previous = this.binding_cache
@@ -459,14 +605,13 @@ extending Workspace:
     ## converted once at the request boundary so the byte-based scanners see
     ## the columns a spec client means; an unknown document keeps the raw
     ## character.
-    public function position_byte_offset(uri: str, line: ptr_uint, character: ptr_uint) -> ptr_uint:
+    public editable function position_byte_offset(uri: str, line: ptr_uint, character: ptr_uint) -> ptr_uint:
         var path = uri_ops.file_uri_to_path(uri) else:
             return character
         defer: path.release()
-        var source = this.document_source(path.as_str()) else:
+        var source = this.document_text(path.as_str()) else:
             return character
-        defer: source.release()
-        return utils.position_to_byte(source.as_str(), line, character)
+        return utils.position_to_byte(source.text, line, character)
 
 
     ## The roots the workspace *symbol* index walks: the host's `index_workspace`
@@ -882,6 +1027,7 @@ extending Workspace:
         this.drain_retired_regions()
         this.release_token_cache()
         this.release_binding_cache()
+        release_text_cache(ref_of(this.text_cache))
         this.root_path.release()
         release_module_roots(ref_of(this.module_roots))
         defidx.release(ref_of(this.definition_index))
@@ -936,6 +1082,16 @@ function release_dirty_paths(paths: ref[vec.Vec[string.String]]) -> void:
         unsafe: read(p).release()
         i += 1
     paths.clear()
+
+
+function release_text_cache(cache: ref[map_mod.Map[string.String, TextCacheEntry]]) -> void:
+    var entries_iter = cache.entries()
+    while entries_iter.next():
+        let entry = entries_iter.current()
+        unsafe:
+            var entry_value = read(entry.value)
+            entry_value.source.release()
+    cache.release()
 
 
 function release_parse_cache(cache: ref[map_mod.Map[string.String, ParseCacheEntry]]) -> void:
@@ -1115,13 +1271,12 @@ public function document_raw_ast(ws: ref[Workspace], path: str) -> Option[ast.So
 ## Sharing a single loader run across every feature that needs imports is what
 ## keeps a large file's requests cheap.
 public function analysis_entry_for(ws: ref[Workspace], path: str) -> Option[ptr[AnalysisCacheEntry]]:
-    var content = ws.document_source(path) else:
+    var text = ws.document_text(path) else:
         return Option[ptr[AnalysisCacheEntry]].none
-    defer: content.release()
-    if content.len() == 0:
+    if text.text.len == 0:
         return Option[ptr[AnalysisCacheEntry]].none
 
-    let current_hash = fnv1a_hash(content.as_str())
+    let current_hash = text.hash
     var cache_key = string.String.from_str(path)
     defer: cache_key.release()
 
@@ -1134,7 +1289,7 @@ public function analysis_entry_for(ws: ref[Workspace], path: str) -> Option[ptr[
 
     var roots = ws.effective_module_roots_for(path)
     defer: roots.release()
-    var program = loader.check_program_with_source(path, roots.as_span(), resolver.Platform.linux, content.as_str(), true, ptr_of(ws.module_cache), ptr_of(ws.open_docs))
+    var program = loader.check_program_with_source(path, roots.as_span(), resolver.Platform.linux, text.text, true, ptr_of(ws.module_cache), ptr_of(ws.open_docs))
 
     if program.analyses.len() == 0:
         program.release()

@@ -108,9 +108,11 @@ self-hosted compiler, and matching the host everywhere is the program's goal.
     record|compare` (30/30 + the 2 documented request rows and 3 stress rows),
     `tools/lsp_recovery_probe.rb --check`, `tools/lsp_project_audit.rb --workspace DIR`
     (drift ±10 — compare differing *sets*), valgrind on an LSP drive + the Neovim smoke;
-    lowering/C backend: `ruby tools/sexpr_parity.rb lower -q -j 16
+    lowering/C backend: `ruby tools/sexpr_parity.rb lower -q -j 4 --mem-mb 8000
     --host-cache tmp/sexpr-host-cache` (~1 min warm vs ~4 min cold; the self
-    side is measured live) plus the example
+    side is measured live; memory-capped because each compiler-sized closure
+    peaks 3.4–3.8 GiB and the seven `main*` artifacts together exhausted a
+    31 GiB workstation at `-j 16`) plus the example
     sweeps (`examples/*.mt` 15/15, `examples/sdl3` 34/34, a raylib sample).
   - **Do not replay a baseline a previous session verified at the same commit.**  The
     ledger records the last verified numbers per commit; a new session re-measures only

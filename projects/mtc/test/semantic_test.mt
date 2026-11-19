@@ -3316,3 +3316,50 @@ function test_binding_ids_follow_the_hosts_allocation_order() -> void:
             return
         expect_eq(int<-unsafe: read(dp).id, int<-expected_decl_ids[i])
         i += 1
+
+
+@[test]
+function test_member_receiver_type_records_non_text_receivers() -> void:
+    # The LSP resolves `a.b.c` from source text; a call or index receiver has no
+    # text path, so the analyzer records its inferred type at the member's
+    # position and the hover falls back to it.
+    let source = "struct Box:\n    value: int\n\nextending Box:\n    function get() -> int:\n        return this.value\n\nfunction read_box(b: ptr[Box]) -> Box:\n    return unsafe: read(b)\n\nfunction box_value(b: ptr[Box]) -> int:\n    return read_box(b).get()\n"
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    expect_eq(int<-pdiags.len(), 0)
+    var analysis = analyzer.check_source_file(file)
+    defer: analysis.diagnostics.release()
+
+    # `get` in `read_box(b).get()` (line 12, column 24).
+    let ty = analyzer.member_receiver_type_at(ref_of(analysis), 12, 24) else:
+        expect(false, "call receiver type not recorded")
+        return
+    match ty:
+        types.Type.ty_named as named:
+            expect(named.name == "Box", "call receiver type")
+        _:
+            expect(false, "expected a named Box receiver")
+
+    # A plain `this.value` chain stays a text chain (no recorded fallback).
+    expect(analyzer.member_receiver_type_at(ref_of(analysis), 6, 21).is_none())
+
+
+@[test]
+function test_member_receiver_type_records_index_receivers() -> void:
+    let source = "struct Point:\n    x: float\n\nfunction first_x(points: span[Point]) -> float:\n    return points[0].x\n"
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    expect_eq(int<-pdiags.len(), 0)
+    var analysis = analyzer.check_source_file(file)
+    defer: analysis.diagnostics.release()
+
+    let ty = analyzer.member_receiver_type_at(ref_of(analysis), 5, 22) else:
+        expect(false, "index receiver type not recorded")
+        return
+    match ty:
+        types.Type.ty_named as named:
+            expect(named.name == "Point", "index receiver type")
+        _:
+            expect(false, "expected a named Point receiver")

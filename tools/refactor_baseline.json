@@ -341,8 +341,8 @@
       "projects/mtc/src/mtc/lowering/async.mt:326:function:int_type",
       "projects/mtc/src/mtc/lowering/async.mt:330:function:void_type",
       "projects/mtc/src/mtc/lowering/lowering.mt:54:struct:LoweringError",
-      "projects/mtc/src/mtc/lsp/navigation.mt:770:function:analysis_for_document",
-      "projects/mtc/src/mtc/lsp/navigation.mt:781:function:ast_for_document",
+      "projects/mtc/src/mtc/lsp/navigation.mt:769:function:analysis_for_document",
+      "projects/mtc/src/mtc/lsp/navigation.mt:780:function:ast_for_document",
       "projects/mtc/src/mtc/lsp/protocol.mt:108:function:read_message",
       "projects/mtc/src/mtc/lsp/protocol.mt:324:function:write_progress_begin",
       "projects/mtc/src/mtc/lsp/protocol.mt:332:function:write_progress_report",
@@ -355,7 +355,7 @@
       "projects/mtc/src/mtc/packages/manifest.mt:192:function:load_option",
       "projects/mtc/src/mtc/packages/source.mt:358:function:clone_source",
       "projects/mtc/src/mtc/packages/source.mt:561:function:cache_materialized",
-      "projects/mtc/src/mtc/semantic/analyzer.mt:4218:function:flow_type_at_position",
+      "projects/mtc/src/mtc/semantic/analyzer.mt:4227:function:flow_type_at_position",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:236:function:graph_edge_refinement_of",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:249:function:graph_edge_label",
       "projects/mtc/src/mtc/semantic/types.mt:1352:function:is_definitely_non_str",
@@ -1262,7 +1262,7 @@
     ]
   },
   "sizes": {
-    "total_code": 125770,
+    "total_code": 125934,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1747,8 +1747,8 @@
         "max_function": 131
       },
       "projects/mtc/src/mtc/lsp/cursor.mt": {
-        "lines": 500,
-        "code": 355,
+        "lines": 515,
+        "code": 363,
         "max_line": 155,
         "max_function": 55
       },
@@ -1849,10 +1849,10 @@
         "max_function": 79
       },
       "projects/mtc/src/mtc/lsp/navigation.mt": {
-        "lines": 5599,
-        "code": 4321,
+        "lines": 5619,
+        "code": 4335,
         "max_line": 206,
-        "max_function": 190
+        "max_function": 195
       },
       "projects/mtc/src/mtc/lsp/on_type_formatting.mt": {
         "lines": 119,
@@ -1957,10 +1957,10 @@
         "max_function": 30
       },
       "projects/mtc/src/mtc/lsp/workspace.mt": {
-        "lines": 1272,
-        "code": 900,
+        "lines": 1427,
+        "code": 1019,
         "max_line": 169,
-        "max_function": 53
+        "max_function": 52
       },
       "projects/mtc/src/mtc/lsp/workspace_index.mt": {
         "lines": 442,
@@ -2173,8 +2173,8 @@
         "max_function": 39
       },
       "projects/mtc/src/mtc/semantic/analyzer.mt": {
-        "lines": 9988,
-        "code": 7454,
+        "lines": 10035,
+        "code": 7477,
         "max_line": 342,
         "max_function": 119
       },
