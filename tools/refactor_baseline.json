@@ -355,10 +355,10 @@
       "projects/mtc/src/mtc/packages/manifest.mt:192:function:load_option",
       "projects/mtc/src/mtc/packages/source.mt:358:function:clone_source",
       "projects/mtc/src/mtc/packages/source.mt:561:function:cache_materialized",
-      "projects/mtc/src/mtc/semantic/analyzer.mt:4235:function:flow_type_at_position",
+      "projects/mtc/src/mtc/semantic/analyzer.mt:4319:function:flow_type_at_position",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:236:function:graph_edge_refinement_of",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:249:function:graph_edge_label",
-      "projects/mtc/src/mtc/semantic/types.mt:1352:function:is_definitely_non_str",
+      "projects/mtc/src/mtc/semantic/types.mt:1349:function:is_definitely_non_str",
       "projects/mtc/src/mtc/sexpr.mt:150:function:sexpr_list1",
       "projects/mtc/src/mtc/version_info.mt:2:const:GIT_REVISION"
     ],
@@ -367,14 +367,14 @@
       "projects/mtc/src/mtc/linter/linter.mt:197:function:lint_source",
       "projects/mtc/src/mtc/parser/parser.mt:869:function:parse_reporting",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:572:function:flow_create",
-      "projects/mtc/src/mtc/semantic/types.mt:1096:function:nominal_key",
+      "projects/mtc/src/mtc/semantic/types.mt:1107:function:nominal_key",
       "projects/mtc/src/mtc/sexpr.mt:1090:function:dump_ir"
     ]
   },
   "duplication": {
     "window": 12,
-    "windows": 883,
-    "duplicated_lines": 6343,
+    "windows": 884,
+    "duplicated_lines": 6345,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -604,6 +604,7 @@
       "459513aac8992d2755100f75300278cb2b0bdb6b",
       "45f09c8595593faf3e5ca99f0ebb4c02de534854",
       "46cf4145a781717e1ac87abdd9055f3baf1a50b3",
+      "473cebbc7c683c8b73acb06a14aa60defe5c1eb7",
       "474aba796a5e9fa5738e633198019cec7f393dc5",
       "4792fdb6c7eecd7d38febe5e0ba0ad0cdc0c49ba",
       "47e3237117b9f879ba43c33f218728bfafe11f1f",
@@ -626,7 +627,6 @@
       "4cd3fae342873fd91e807c0e50319574c52359c6",
       "4d0e4fb112c94aea8e94c06a964be6ff5d6422e3",
       "4d94b53a5c47f0c1262655b5a471080c2d71c7fd",
-      "4de0cb7e7ad90b5d676723ec6f06080014aae067",
       "4e0a1857d76fe33d23d0387a3d08faa1b70504cf",
       "4e1018ae823b57852012bf396199402fc4701e80",
       "4e5f070011bf39e90a52f93be9c5dd357865d8c7",
@@ -843,6 +843,7 @@
       "83d63db7db5ee7a18791bee7e33a4705c97e4b67",
       "842505d91b3e5fa9b51cdefd4bbc31156f2746b9",
       "843046182785c7051e9965e6af3028b92852ee66",
+      "844a998bc497181be67e264b760c92c338170897",
       "84d455734af8874ea81b2f4125f52796c454928d",
       "84db928ca513b879bb6232943d837b03d58a78df",
       "85420b351a2ec8fa66216f82e648bdc17c8a61da",
@@ -887,6 +888,7 @@
       "9530fd2d4abbce57e3f1cf54a92a946093cf1630",
       "95609188c4c6dea28fd97dab91ebb3e59de87b42",
       "95dde39650bc565928d7eb25302109ca3b0fac8a",
+      "9623c929fe2924c03cd537718a9266d62b0bbaae",
       "969bf6559a78f62bc5c20b847f8c09e1273a30c2",
       "972d19ec9ef8425019f01c59643133e3491655b3",
       "97852e584afa8c6f88cc5cb2f568573cbf2e2146",
@@ -1017,7 +1019,6 @@
       "baecd2d9ecc876e25d189e9fe0c36f04e02bb718",
       "bb143fab9f15e46e0f0be7fc9d466d0c62141f72",
       "bba844fb493a0194e58bb68c14e5897a0c3944f3",
-      "bbbb590aa6072ceeb117a5cf066bc26a0eef7051",
       "bbfddbcb1153a6ad71621d5701940a5e2d2ce802",
       "bc1846c8ea3db82524cf11f24f84cf37a9d74108",
       "bcad09aa66f88039ba905f6091c5b9fb7f09b7b1",
@@ -1189,6 +1190,7 @@
       "eabf380449d2d4658db6b24aa8257cd7258172cb",
       "eaeb81e4b3a6f38fe7d6fa559917637e10cc07ef",
       "eb2ad5ee98cd633915efb83373073ab200c07d07",
+      "eb355245a46d60f8f7b10fdc87a7163f3dd020d1",
       "eb98d1bc2272909a71b656389179e27d775d867f",
       "eba771be0549a7f8daed3ec48b02c1115066292a",
       "ebbbe402794c5946a71b0be96dd10a2525de3d6e",
@@ -1232,7 +1234,6 @@
       "f54216d64962f831e36a48ef4ac2083611bc03af",
       "f5959dfe3ca8fb7d9b4216f3b21e221afb201376",
       "f65a2374d2c2884e3713182f1f255f35d2de476b",
-      "f6732fea31cfc0597fe3c05aa4c56f4fa14fc09f",
       "f7fe06b148d41de102d27d9732d9deff380aa98a",
       "f843344127321335a45c1eef14bc6fc3fc302506",
       "f8458b1d1d406d3aab3f7f9e15f95f5b0cd5cb1e",
@@ -1262,7 +1263,7 @@
     ]
   },
   "sizes": {
-    "total_code": 126014,
+    "total_code": 126536,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1675,8 +1676,8 @@
         "max_function": 84
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 18471,
-        "code": 13596,
+        "lines": 18520,
+        "code": 13632,
         "max_line": 483,
         "max_function": 195
       },
@@ -2173,8 +2174,8 @@
         "max_function": 39
       },
       "projects/mtc/src/mtc/semantic/analyzer.mt": {
-        "lines": 10142,
-        "code": 7557,
+        "lines": 10610,
+        "code": 7940,
         "max_line": 342,
         "max_function": 119
       },
@@ -2221,14 +2222,14 @@
         "max_function": 31
       },
       "projects/mtc/src/mtc/semantic/type_compatibility.mt": {
-        "lines": 352,
-        "code": 236,
-        "max_line": 134,
-        "max_function": 169
+        "lines": 498,
+        "code": 341,
+        "max_line": 123,
+        "max_function": 191
       },
       "projects/mtc/src/mtc/semantic/types.mt": {
-        "lines": 1359,
-        "code": 1003,
+        "lines": 1356,
+        "code": 1001,
         "max_line": 161,
         "max_function": 164
       },
@@ -2285,6 +2286,6 @@
   "markers": [],
   "tests": {
     "projects": 22,
-    "test_mt": 61
+    "test_mt": 62
   }
 }

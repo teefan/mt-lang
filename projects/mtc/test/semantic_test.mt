@@ -207,6 +207,48 @@ function test_non_bool_while_condition_is_flagged() -> void:
 
 
 @[test]
+function test_struct_condition_is_flagged() -> void:
+    var source = <<-SRC
+        struct S:
+            x: int
+        function f(s: S) -> void:
+            if s:
+                pass
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_pointer_condition_is_flagged() -> void:
+    var source = <<-SRC
+        function f(p: ptr[int]?) -> void:
+            if p:
+                pass
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_null_condition_is_flagged() -> void:
+    var source = <<-SRC
+        function f() -> void:
+            if null:
+                pass
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_if_expression_condition_must_be_bool() -> void:
+    var source = <<-SRC
+        function f() -> int:
+            let n = if 1: 10 else: 20
+            return n
+    SRC
+    expect_flagged(source)
+
+
+@[test]
 function test_comparison_condition_is_clean() -> void:
     var source = <<-SRC
         function f(n: int) -> void:
@@ -454,6 +496,72 @@ function test_named_arguments_call_is_clean() -> void:
             pass
         function g() -> void:
             configure(host = "localhost", port = 8080)
+    SRC
+    expect_clean(source)
+
+
+@[test]
+function test_named_argument_unknown_parameter_is_flagged() -> void:
+    var source = <<-SRC
+        function configure(host: str, port: int) -> void:
+            pass
+        function g() -> void:
+            configure(unknown = "localhost", port = 8080)
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_named_argument_duplicate_is_flagged() -> void:
+    var source = <<-SRC
+        function configure(host: str, port: int) -> void:
+            pass
+        function g() -> void:
+            configure(host = "a", host = "b")
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_positional_after_named_is_flagged() -> void:
+    var source = <<-SRC
+        function configure(host: str, port: int) -> void:
+            pass
+        function g() -> void:
+            configure(host = "localhost", 8080)
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_named_argument_type_is_checked() -> void:
+    var source = <<-SRC
+        function configure(host: str, port: ubyte) -> void:
+            pass
+        function g() -> void:
+            configure(host = "localhost", port = 300)
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_named_argument_out_of_order_is_clean() -> void:
+    var source = <<-SRC
+        function configure(host: str, port: int) -> void:
+            pass
+        function g() -> void:
+            configure(port = 8080, host = "localhost")
+    SRC
+    expect_clean(source)
+
+
+@[test]
+function test_named_argument_with_default_gap_is_clean() -> void:
+    var source = <<-SRC
+        function configure(host: str, port: int = 80, secure: bool = false) -> void:
+            pass
+        function g() -> void:
+            configure(host = "localhost", secure = true)
     SRC
     expect_clean(source)
 
@@ -1894,6 +2002,62 @@ function test_ref_param_accepts_struct_arg_is_clean() -> void:
 
 
 # =============================================================================
+#  Extern / foreign call checking
+# =============================================================================
+
+@[test]
+function test_foreign_call_arity_is_flagged() -> void:
+    var source = <<-SRC
+        external function c_ext(x: ubyte) -> void
+        foreign function ext(x: ubyte) -> void = c_ext
+        function g() -> void:
+            ext()
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_foreign_call_extra_argument_is_flagged() -> void:
+    var source = <<-SRC
+        external function c_ext(x: ubyte) -> void
+        foreign function ext(x: ubyte) -> void = c_ext
+        function g() -> void:
+            ext(1, 2)
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_foreign_call_argument_type_is_flagged() -> void:
+    var source = <<-SRC
+        external function c_ext(x: ubyte) -> void
+        foreign function ext(x: ubyte) -> void = c_ext
+        function g() -> void:
+            ext("bad")
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_foreign_call_matching_argument_is_clean() -> void:
+    var source = <<-SRC
+        external function c_ext(x: ubyte) -> void
+        foreign function ext(x: ubyte) -> void = c_ext
+        function g() -> void:
+            ext(32)
+    SRC
+    expect_clean(source)
+
+
+@[test]
+function test_static_assert_non_bool_condition_is_flagged() -> void:
+    var source = <<-SRC
+        static_assert(1, "bad")
+    SRC
+    expect_flagged(source)
+
+
+# =============================================================================
 #  Nullable base compatibility
 # =============================================================================
 
@@ -1907,10 +2071,22 @@ function test_nullable_target_accepts_base_is_clean() -> void:
 
 
 @[test]
-function test_nullable_byte_accepts_literal_is_clean() -> void:
+function test_nullable_byte_rejects_literal_is_flagged() -> void:
+    # The host's nullable rule is exact-base auto-wrap; an `int` literal does
+    # not coerce into `byte?` (only a `byte` value does).
     var source = <<-SRC
         function f() -> void:
             var x: byte? = 42
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_nullable_byte_accepts_base_is_clean() -> void:
+    var source = <<-SRC
+        function f() -> void:
+            var b: byte = 42
+            var x: byte? = b
     SRC
     expect_clean(source)
 
@@ -3169,6 +3345,62 @@ function test_method_specialization_on_a_value_receiver() -> void:
     if not write_file(root.as_str(), "base.mt", METHOD_SPEC_BASE):
         expect(false, "could not write base")
     if not write_file(root.as_str(), "main.mt", METHOD_SPEC_MAIN):
+        expect(false, "could not write main")
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+    expect_eq(int<-program.diagnostic_count(), 1)
+
+
+const IMPORTED_SPEC_LIB: str = <<-SRC
+public function ident[T](value: T) -> T:
+    return value
+SRC
+
+const IMPORTED_SPEC_ARITY_MAIN: str = <<-SRC
+import lib
+
+function f() -> int:
+    return lib.ident[int]()
+SRC
+
+const IMPORTED_SPEC_TYPE_MAIN: str = <<-SRC
+import lib
+
+function f() -> int:
+    return lib.ident[int]("bad")
+SRC
+
+
+@[test]
+function test_imported_specialization_argument_is_checked() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_spec_arg_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+    if not write_file(root.as_str(), "lib.mt", IMPORTED_SPEC_LIB):
+        expect(false, "could not write lib")
+    if not write_file(root.as_str(), "main.mt", IMPORTED_SPEC_TYPE_MAIN):
+        expect(false, "could not write main")
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+    expect_eq(int<-program.diagnostic_count(), 1)
+
+
+@[test]
+function test_imported_specialization_arity_is_checked() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_spec_arity_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+    if not write_file(root.as_str(), "lib.mt", IMPORTED_SPEC_LIB):
+        expect(false, "could not write lib")
+    if not write_file(root.as_str(), "main.mt", IMPORTED_SPEC_ARITY_MAIN):
         expect(false, "could not write main")
 
     var main_path = path_ops.join(root.as_str(), "main.mt")

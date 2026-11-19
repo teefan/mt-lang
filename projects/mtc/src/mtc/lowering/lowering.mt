@@ -9120,7 +9120,13 @@ function lower_monomorphized_call(ctx: ref[LoweringContext], callee: ptr[ast.Exp
         note_validated_spec_reach(ctx, spec_key)
     let ret_ty = cross_module_return_type(ctx, spec_key, call_ep)
     var ret_type_ptr = types.alloc_type(ret_ty)
-    return lower_plain_call_spec(ctx, spec_key, call_args, call_ep, ret_type_ptr, ctx.specialization_cache.get(spec_key))
+    var ordered_args = call_args
+    match gm.decl:
+        ast.Decl.decl_function as fun:
+            ordered_args = expand_default_args(fun.method_params, call_args)
+        _:
+            pass
+    return lower_plain_call_spec(ctx, spec_key, ordered_args, call_ep, ret_type_ptr, ctx.specialization_cache.get(spec_key))
 
 
 ## A generic function's AST declaration plus the module that defines it.
@@ -10582,6 +10588,10 @@ struct MethodInfo:
     method_kind: ast.MethodKind
     return_type: types.Type
     params: span[analyzer.ParamEntry]
+    ## The declared AST parameters, including default values.  The analyzer's
+    ## `ParamEntry` drops defaults, so named/omitted-argument lowering reads
+    ## this list to reorder and fill them (`expand_default_args`).
+    ast_params: span[ast.Param]
     ## The callee's `async` flag: async methods keep the value receiver
     ## convention (the host's `pointer_lowered_sync_method_receiver?`).
     is_async: bool
@@ -10781,6 +10791,7 @@ function resolve_primitive_method_info(ctx: ref[LoweringContext], type_name: str
             method_kind = sig.method_kind,
             return_type = qualify_type(ctx, ret),
             params = sig.params,
+            ast_params = find_method_params_in_source(ctx.analysis.source_file, type_name, method_name),
             is_async = sig.is_async,
         ))
     var ai: ptr_uint = 0
@@ -10804,6 +10815,7 @@ function resolve_primitive_method_info(ctx: ref[LoweringContext], type_name: str
                 method_kind = sig.method_kind,
                 return_type = qualify_type(ctx, ret),
                 params = sig.params,
+                ast_params = find_method_params_in_source(a.source_file, type_name, method_name),
                 is_async = sig.is_async,
             ))
         ai += 1
@@ -10837,7 +10849,7 @@ public function resolve_method_info(ctx: ref[LoweringContext], receiver_ty: type
                     var ret = sig.return_type
                     if not sig.has_return_type:
                         ret = ctx.void_ty
-                    return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, gv.value, method_name), method_kind = sig.method_kind, return_type = ret, params = sig.params, is_async = sig.is_async))
+                    return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, gv.value, method_name), method_kind = sig.method_kind, return_type = ret, params = sig.params, ast_params = find_method_params_in_source(ctx.analysis.source_file, gv.value, method_name), is_async = sig.is_async))
             Option.none:
                 pass
         return Option[MethodInfo].none
@@ -10858,7 +10870,7 @@ public function resolve_method_info(ctx: ref[LoweringContext], receiver_ty: type
         var ret = sig.return_type
         if not sig.has_return_type:
             ret = ctx.void_ty
-        return Option[MethodInfo].some(value = MethodInfo(c_name = method_c_name_for_receiver(effective_ty, ctx.module_name, type_name, method_name, sig.method_kind), method_kind = sig.method_kind, return_type = qualify_type(ctx, ret), params = sig.params, is_async = sig.is_async))
+        return Option[MethodInfo].some(value = MethodInfo(c_name = method_c_name_for_receiver(effective_ty, ctx.module_name, type_name, method_name, sig.method_kind), method_kind = sig.method_kind, return_type = qualify_type(ctx, ret), params = sig.params, ast_params = find_method_params_in_source(ctx.analysis.source_file, lookup_name, method_name), is_async = sig.is_async))
     # Search imported modules' method_sigs when the method is not found locally.
     # When the receiver type carries a specific originating module (ty_imported),
     # restrict the search to that module first so that structs with the same name
@@ -10909,6 +10921,7 @@ public function resolve_method_info(ctx: ref[LoweringContext], receiver_ty: type
                 method_kind = sig.method_kind,
                 return_type = resolve_method_return_from_import(ctx, a.module_name, sig, effective_ty),
                 params = sig.params,
+                ast_params = find_method_params_in_source(a.source_file, lookup_name, method_name),
                 is_async = sig.is_async,
             ))
         ai += 1
@@ -10954,6 +10967,7 @@ function resolve_method_info_imported(ctx: ref[LoweringContext], receiver_ty: ty
                     method_kind = sig.method_kind,
                     return_type = resolve_method_return_from_import(ctx, a.module_name, sig, effective_ty),
                     params = sig.params,
+                    ast_params = find_method_params_in_source(a.source_file, lookup_name, method_name),
                     is_async = sig.is_async,
                 ))
             return Option[MethodInfo].none
@@ -10966,11 +10980,12 @@ function resolve_method_info_imported(ctx: ref[LoweringContext], receiver_ty: ty
 ## arguments and emit a direct call to the static C function.
 function lower_static_call_args(ctx: ref[LoweringContext], mi: MethodInfo, args: span[ast.Argument]) -> ptr[ir.Expr]:
     var ir_args = vec.Vec[ir.Expr].create()
+    let ordered_args = expand_default_args(mi.ast_params, args)
     var i: ptr_uint = 0
-    while i < args.len:
+    while i < ordered_args.len:
         var arg: ast.Argument
         unsafe:
-            arg = read(args.data + i)
+            arg = read(ordered_args.data + i)
         var lowered = lower_expr(ctx, arg.arg_value)
         # The host contextualizes every call argument, so a bare literal takes
         # the declared parameter's type (`Color.from_rgba(10, 20, 30, 200)`).
@@ -10993,6 +11008,10 @@ function lower_static_call_args(ctx: ref[LoweringContext], mi: MethodInfo, args:
 
 function lower_method_resolved(ctx: ref[LoweringContext], mi: MethodInfo, receiver: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let recv = lower_expr(ctx, receiver)
+    # Named arguments are placed by parameter name and omitted defaults are
+    # filled from the declaration (the host's `expand_function_defaults`; the
+    # analyzer has already rejected unknown/duplicate/out-of-order names).
+    let ordered_args = expand_default_args(mi.ast_params, args)
     var ir_args = vec.Vec[ir.Expr].create()
     match build_receiver_arg(ctx, recv, mi.method_kind, mi.is_async):
         Option.some as recv_arg:
@@ -11001,10 +11020,10 @@ function lower_method_resolved(ctx: ref[LoweringContext], mi: MethodInfo, receiv
         Option.none:
             pass
     var i: ptr_uint = 0
-    while i < args.len:
+    while i < ordered_args.len:
         var arg: ast.Argument
         unsafe:
-            arg = read(args.data + i)
+            arg = read(ordered_args.data + i)
         var lowered = lower_expr(ctx, arg.arg_value)
         lowered = coerce_literal_to_param_type(ctx, mi.params, i, arg.arg_value, lowered)
         if i < mi.params.len:
@@ -11284,6 +11303,32 @@ function find_method_in_block(methods: span[ast.Method], name: str) -> Option[as
             return Option[ast.Method].some(value = m)
         i += 1
     return Option[ast.Method].none
+
+
+## The declared AST parameters of `type_name.method_name` in `source_file`
+## (an inline struct method or an `extending` block), including default values.
+## Empty when the method is not declared there (the lowering then leaves the
+## argument list in source order).
+function find_method_params_in_source(source_file: ast.SourceFile, type_name: str, method_name: str) -> span[ast.Param]:
+    var di: ptr_uint = 0
+    while di < source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_extending_block as ex:
+                unsafe:
+                    let tref = read(ex.type_name)
+                    if qname_last(tref.name) == type_name:
+                        match find_method_in_block(ex.methods, method_name):
+                            Option.some as m:
+                                return m.value.method_params
+                            Option.none:
+                                pass
+            _:
+                pass
+        di += 1
+    return span[ast.Param]()
 
 
 ## True when a type is an unresolved type parameter (`ty_var`, or a bare named
@@ -11733,6 +11778,7 @@ function lower_monomorphized_method(ctx: ref[LoweringContext], info: GenericRece
             ret_ty = unsafe: read(fr)
 
     let recv = lower_expr(ctx, receiver)
+    let ordered_args = expand_default_args(gm.method.method_params, args)
     var ir_args = vec.Vec[ir.Expr].create()
     var param_offset: ptr_uint = 0
     if is_builtin_pointer_generic(info.owner_name) and gm.method.method_kind != ast.MethodKind.mk_static:
@@ -11757,10 +11803,10 @@ function lower_monomorphized_method(ctx: ref[LoweringContext], info: GenericRece
             Option.none:
                 pass
     var i: ptr_uint = 0
-    while i < args.len:
+    while i < ordered_args.len:
         var arg: ast.Argument
         unsafe:
-            arg = read(args.data + i)
+            arg = read(ordered_args.data + i)
         var lowered = lower_expr(ctx, arg.arg_value)
         lowered = coerce_arg_to_param(cached, param_offset + i, lowered)
         lowered = coerce_monomorphized_arg_to_proc(ctx, cached, param_offset + i, lowered, arg.arg_value)
@@ -13686,15 +13732,16 @@ function is_dyn_type(t: types.Type) -> bool:
 ## A required parameter with no argument and no default terminates the fill
 ## (the analyzer reports the arity error before lowering).
 function expand_default_args(params: span[ast.Param], args: span[ast.Argument]) -> span[ast.Argument]:
+    # A method whose AST parameter list is unavailable (a prelude method
+    # resolved only through a binding) must not silently drop named arguments.
+    if params.len == 0:
+        return args
     var has_defaults = false
     var pi: ptr_uint = 0
     while pi < params.len:
         if unsafe: read(params.data + pi).default_value != null:
             has_defaults = true
         pi += 1
-    if not has_defaults:
-        return args
-
     var any_named = false
     var ai: ptr_uint = 0
     while ai < args.len:
@@ -13704,6 +13751,8 @@ function expand_default_args(params: span[ast.Param], args: span[ast.Argument]) 
             Option.none:
                 pass
         ai += 1
+    if not has_defaults and not any_named:
+        return args
 
     if not any_named:
         if args.len >= params.len:

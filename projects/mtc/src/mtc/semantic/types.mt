@@ -254,6 +254,17 @@ public function is_str(t: Type) -> bool:
             return false
 
 
+## True only for the `bool` primitive.  Conditions accept nothing else (the
+## host's `ensure_assignable!(bool)`): named types, pointers, nullables, `null`
+## and `str` all reject.  Callers treat an unresolved type permissively.
+public function is_bool_type(t: Type) -> bool:
+    match t:
+        Type.ty_primitive as p:
+            return p.name == "bool"
+        _:
+            return false
+
+
 public function is_numeric(t: Type) -> bool:
     match t:
         Type.ty_primitive as p:
@@ -1333,20 +1344,6 @@ public function definitely_incompatible(target: Type, source: Type) -> bool:
     if tc == CAT_OTHER or sc == CAT_OTHER:
         return false
     return tc != sc
-
-
-## True when `t` is a concretely-known type that is definitely not `bool`
-## (a non-bool primitive or str).  Condition checking flags a non-bool
-## `if`/`while` condition only when the type is concrete; unknown types
-## (`ty_error`, named, generic, …) stay permissive.
-public function is_definitely_non_bool(t: Type) -> bool:
-    match t:
-        Type.ty_primitive as p:
-            return not p.name == "bool"
-        Type.ty_str:
-            return true
-        _:
-            return false
 
 
 public function is_definitely_non_str(t: Type) -> bool:

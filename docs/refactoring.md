@@ -194,22 +194,27 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 139, 2026-11-18)
+## 6. Current baseline (session 141, 2026-11-20)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 158,401 / 125,770 |
+| source files / lines / code lines | 169 / 159,405 / 126,536 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (169 modules) |
 | dead exports (unused / test-only) | 33 / 6 |
-| duplication (windows / duplicated lines) | 883 / 6,343 (window 12) |
+| duplication (windows / duplicated lines) | 884 / 6,345 (window 12) |
 | functions ≥ 200 lines | 1 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
-| test files (projects/mtc / test/mt) | 22 / 61 |
+| test files (projects/mtc / test/mt) | 22 / 62 |
 
+Session 141 added the semantic conformance port (+522 code lines: condition
+enforcement, named-argument canonicalization and lowering, extern/foreign
+checks, imported/method specialization checks, and the exact-base nullable
+rule; +2 duplicated lines).  Session 140 refreshed the baseline for the
+per-document text cache, receiver facts and match dispatch (+244 code lines).
 Session 139 added the call-argument compatibility port (+249 code lines:
 per-parameter expected-type inference, the table-free literal fold, the
 substituted-specialization check, and the array/span construction hints;

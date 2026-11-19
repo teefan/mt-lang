@@ -354,6 +354,12 @@ struct Context:
     ## that type (`let n: uint = if p: uint<-x else: 0` is `uint`, not the
     ## branches' numeric common type).  `ty_error` when there is no context.
     expected_type_hint: types.Type
+    ## The enclosing statement's anchor: a `LocalDecl`'s binding name, a
+    ## `return` keyword, an expression statement's first line.  The host's
+    ## positionless expression checks (an if-expression condition) report at
+    ## the current statement, not at the nested expression.
+    statement_line: ptr_uint
+    statement_column: ptr_uint
     ## The *declared* type of an annotated local, keyed by its declaration line:
     ## a local with an annotation has no inferred initializer type, so this is
     ## the only record of its type (the host reads the same type off its scope
@@ -738,6 +744,8 @@ function create_context(module_name: str, imported_modules: ptr[map_mod.Map[str,
         resolved_call_kinds = map_mod.Map[ptr_uint, str].create(),
         member_receiver_types = map_mod.Map[ptr_uint, types.Type].create(),
         expected_type_hint = types.Type.ty_error,
+        statement_line = 0,
+        statement_column = 0,
         local_decl_types = map_mod.Map[ptr_uint, types.Type].create(),
         destructure_types = vec.Vec[DestructureTypeEntry].create(),
         arm_payload_field_types = map_mod.Map[str, span[types.PayloadField]].create(),
@@ -1229,13 +1237,32 @@ function collect_import_aliases(ctx: ref[Context], file: ast.SourceFile) -> void
             ast.Decl.decl_import as imp:
                 let module_name = qname_to_str(imp.path)
                 if not ctx.require_resolved_imports or find_binding(ctx, module_name) != null:
-                    ctx.import_aliases.set(import_alias_name(imp.path, imp.alias_name), module_name)
+                    let alias = import_alias_name(imp.path, imp.alias_name)
+                    ctx.import_aliases.set(alias, module_name)
                     if not vec_contains_str(ref_of(ctx.import_order), module_name):
                         ctx.import_order.push(module_name)
                     record_import_symbol_count(ctx, module_name)
+                    record_imported_constants(ctx, alias, module_name)
             _:
                 pass
         i += 1
+
+
+## Expose an imported module's constants under their qualified source name
+## (`sdl.ALPHA_OPAQUE`), so compile-time numeric folding can evaluate an
+## imported constant used as a call argument.  The bare names stay in the
+## imported binding; only the qualified key is added here to avoid collisions.
+function record_imported_constants(ctx: ref[Context], alias: str, module_name: str) -> void:
+    let binding_ptr = find_binding(ctx, module_name) else:
+        return
+    var entries = unsafe: read(binding_ptr).const_values.entries()
+    while entries.next():
+        let entry = entries.current()
+        var key = string.String.create()
+        key.append(alias)
+        key.append(".")
+        key.append(unsafe: read(entry.key))
+        ctx.const_values.set(key.as_str(), unsafe: read(entry.value))
 
 
 ## The local name an import is bound to: the explicit alias, or the last path
@@ -2463,7 +2490,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                 let er_ptr = ef.return_type
                 if er_ptr != null:
                     extern_ret = resolve_type(ctx, er_ptr)
-                let sig = build_foreign_fn_sig(ctx, ef.name, ef.extern_params, extern_ret)
+                let sig = build_foreign_fn_sig(ctx, ef.name, ef.extern_params, extern_ret, ef.variadic)
                 ctx.suppressed_type_names.clear()
                 ctx.type_params.clear()
                 ctx.functions.set(ef.name, sig)
@@ -2474,7 +2501,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                 check_reserved_value_name(ctx, "function", ff.name, ff.line, 1)
                 enter_suppressed_type_params(ctx, ff.type_params)
                 enter_type_params(ctx, ff.type_params)
-                let sig = build_foreign_fn_sig(ctx, ff.name, ff.foreign_params, resolve_type(ctx, ff.return_type))
+                let sig = build_foreign_fn_sig(ctx, ff.name, ff.foreign_params, resolve_type(ctx, ff.return_type), ff.variadic)
                 ctx.suppressed_type_names.clear()
                 ctx.type_params.clear()
                 ctx.functions.set(ff.name, sig)
@@ -2547,7 +2574,7 @@ function dup_message(kind: str, name: str) -> str:
 ## `build_fn_sig` uses for ordinary Params.  The return type is resolved at the
 ## call site and passed in already, because the two declarations have different
 ## return_type pointer types (`ptr[TypeRef]?` vs `ptr[TypeRef]`).
-function build_foreign_fn_sig(ctx: ref[Context], name: str, params: span[ast.ForeignParam], ret: types.Type) -> FnSig:
+function build_foreign_fn_sig(ctx: ref[Context], name: str, params: span[ast.ForeignParam], ret: types.Type, variadic: bool) -> FnSig:
     var param_entries = vec.Vec[ParamEntry].create()
     var i: ptr_uint = 0
     while i < params.len:
@@ -2559,7 +2586,7 @@ function build_foreign_fn_sig(ctx: ref[Context], name: str, params: span[ast.For
     return FnSig(name = name, params = param_entries.as_span(),
         return_type = ret, has_return_type = true,
         method_kind = ast.MethodKind.mk_plain, is_async = false,
-        is_variadic = true, is_extern = true, required_count = param_entries.len())
+        is_variadic = variadic, is_extern = true, required_count = param_entries.len())
 
 
 function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, method_kind: ast.MethodKind, is_async: bool) -> FnSig:
@@ -3123,8 +3150,13 @@ function check_top_level_static_asserts(ctx: ref[Context], file: ast.SourceFile)
         match d:
             ast.Decl.decl_static_assert as sa:
                 let ct = infer_expr_noscope(ctx, sa.condition)
-                if types.is_definitely_non_bool(ct):
-                    report(ctx, sa.line, 1, "static_assert condition must be bool")
+                if not types.contains_error(ct):
+                    match ct:
+                        types.Type.ty_var:
+                            pass
+                        _:
+                            if not types.is_bool_type(ct):
+                                report(ctx, sa.line, 1, condition_message("static_assert", ct))
             _:
                 pass
         i += 1
@@ -3500,6 +3532,42 @@ function incompatible_value_with_consts(
     return not compat.types_compatible_with_consts(target, source_ty, source_expr, ptr_of(const_values))
 
 
+function incompatible_external_value_with_consts(
+    target: types.Type,
+    source_ty: types.Type,
+    source_expr: ptr[ast.Expr]?,
+    const_values: ref[map_mod.Map[str, ptr[ast.Expr]]],
+) -> bool:
+    return not compat.types_compatible_external_with_consts(target, source_ty, source_expr, ptr_of(const_values))
+
+
+## True when `ep` is `alias.member` and `member` is an exported constant of the
+## imported module.  The self records imported constants under a qualified name
+## but cannot fold one whose initializer references the imported module's own
+## imports (`std.sdl3`'s `ALPHA_OPAQUE = c.SDL_ALPHA_OPAQUE`); the host folds it
+## before the FFI range check.  The call site skips the range test for this
+## narrow shape rather than rejecting a valid foreign call.
+function is_imported_constant_member(ctx: ref[Context], ep: ptr[ast.Expr]?) -> bool:
+    let expr = ep else:
+        return false
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as rid:
+                        if not ctx.import_aliases.contains(rid.name):
+                            return false
+                        let module_name_ptr = ctx.import_aliases.get(rid.name) else:
+                            return false
+                        let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
+                            return false
+                        return read(binding_ptr).const_values.contains(ma.member_name)
+                    _:
+                        return false
+            _:
+                return false
+
+
 function incompatible_value(target: types.Type, source_ty: types.Type, source_expr: ptr[ast.Expr]?) -> bool:
     return not compat.types_compatible(target, source_ty, source_expr)
 
@@ -3543,6 +3611,10 @@ function apply_narrow_by_name(ctx: ref[Context], scope: ref[sscope.Scope], narro
 ## local's type the way the host's completion snapshots do.
 function check_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, sp: ptr[ast.Stmt], next_stmt: ptr[ast.Stmt]?) -> void:
     let start_pos = statement_position(sp)
+    let saved_statement_line = ctx.statement_line
+    let saved_statement_column = ctx.statement_column
+    ctx.statement_line = start_pos / 1000000
+    ctx.statement_column = start_pos % 1000000
     record_flow_snapshot_at(ctx, scope, start_pos, false, false)
     check_stmt_inner(ctx, scope, chk, sp)
     # The host applies the dataflow's non-null set for the *next* statement
@@ -3562,6 +3634,8 @@ function check_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags
         if end_line > start_pos / 1000000:
             record_flow_snapshot_at(ctx, scope, start_pos, true, true)
         record_flow_snapshot_at(ctx, scope, end_line * 1000000 + 999999, false, false)
+    ctx.statement_line = saved_statement_line
+    ctx.statement_column = saved_statement_column
 
 
 function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, sp: ptr[ast.Stmt]) -> void:
@@ -3768,7 +3842,17 @@ function assign_target_type(scope: ref[sscope.Scope], target: ptr[ast.Expr], inf
 
 function check_condition(ctx: ref[Context], scope: ref[sscope.Scope], cond: ptr[ast.Expr], keyword: str, line: ptr_uint, column: ptr_uint) -> void:
     let ct = infer_expr(ctx, scope, cond)
-    if types.is_definitely_non_bool(ct):
+    if types.contains_error(ct):
+        return
+    # An unresolved generic parameter stays permissive (the host's
+    # `types_compatible?` has no rule that makes a TypeVar incompatible with
+    # bool); every concrete non-bool type rejects.
+    match ct:
+        types.Type.ty_var:
+            return
+        _:
+            pass
+    if not types.is_bool_type(ct):
         report(ctx, line, column, condition_message(keyword, ct))
 
 
@@ -5634,8 +5718,17 @@ function infer_proc_type(ctx: ref[Context], scope: ref[sscope.Scope], method_par
 function infer_if_expr_type(ctx: ref[Context], scope: ref[sscope.Scope], condition: ptr[ast.Expr], then_expr: ptr[ast.Expr], else_expr: ptr[ast.Expr]) -> types.Type:
     # Each branch is checked with the condition's refinements in
     # scope (`let x = if p != null: read(p) else: …`), the host's
-    # `infer_if_expression`.
-    let _cond_ty = infer_expr(ctx, scope, condition)
+    # `infer_if_expression`.  The host requires a bool condition; its
+    # diagnostic has no expression position (the AST if-expression carries
+    # none), so it reports at the enclosing statement's anchor.
+    let cond_ty = infer_expr(ctx, scope, condition)
+    if not types.contains_error(cond_ty):
+        match cond_ty:
+            types.Type.ty_var:
+                pass
+            _:
+                if not types.is_bool_type(cond_ty):
+                    report(ctx, ctx.statement_line, ctx.statement_column, condition_message("if expression", cond_ty))
     scope_enter(scope)
     var then_refs = flow_refinements(ctx, condition, true, scope)
     apply_refinements_to_frame(ctx, scope, ref_of(then_refs))
@@ -6450,6 +6543,340 @@ function call_argument_expected_types(ctx: ref[Context], scope: ref[sscope.Scope
                 return vec.Vec[types.Type].create()
 
 
+## Resolve the parameter list a call's named arguments map onto.  False means
+## the callee is not a signature-bearing function/method (a builtin, struct or
+## variant constructor, a callable value, or an unresolved name).
+function call_parameter_info(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], name_out: ref[str], sig_out: ref[FnSig]) -> bool:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                return identifier_parameter_info(ctx, scope, id.name, name_out, sig_out)
+            ast.Expr.expr_member_access as ma:
+                return member_parameter_info(ctx, scope, ma.receiver, ma.member_name, name_out, sig_out)
+            ast.Expr.expr_specialization as spec:
+                return specialization_parameter_info(ctx, scope, spec.callee, name_out, sig_out)
+            _:
+                return false
+
+
+function identifier_parameter_info(ctx: ref[Context], scope: ref[sscope.Scope], name: str, name_out: ref[str], sig_out: ref[FnSig]) -> bool:
+    if is_builtin_call_name(name) or is_callable_builtin_name(name) or scope_get(scope, name) != null:
+        return false
+    let sig_ptr = ctx.functions.get(name)
+    if sig_ptr == null:
+        return false
+    read(name_out) = name
+    unsafe:
+        read(sig_out) = read(sig_ptr)
+    return true
+
+
+## A member call's signature: an imported function (`lib.f`, `heap.must_alloc`),
+## a static struct method (`Counter.make`) or an instance method on a value.
+## `with` is the aggregate-copy / simd builtin (named arguments are field names
+## or rejected), so it never canonicalizes.
+function member_parameter_info(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], member: str, name_out: ref[str], sig_out: ref[FnSig]) -> bool:
+    if member == "with":
+        return false
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as rid:
+                if scope_get(scope, rid.name) == null and ctx.import_aliases.contains(rid.name):
+                    let module_name_ptr = ctx.import_aliases.get(rid.name)
+                    if module_name_ptr == null:
+                        return false
+                    let binding_ptr = find_binding(ctx, read(module_name_ptr))
+                    if binding_ptr == null:
+                        return false
+                    let sig_ptr = read(binding_ptr).functions.get(member)
+                    if sig_ptr == null:
+                        return false
+                    read(name_out) = member
+                    read(sig_out) = read(sig_ptr)
+                    return true
+            _:
+                pass
+
+    match static_struct_receiver_type(ctx, scope, receiver):
+        Option.some as static_type:
+            match resolve_method_sig(ctx, static_type.value, member):
+                Option.some as sig:
+                    unsafe:
+                        read(name_out) = member
+                        read(sig_out) = sig.value
+                    return true
+                Option.none:
+                    pass
+        Option.none:
+            pass
+
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as rid:
+                let rtp = scope_get(scope, rid.name)
+                if rtp == null:
+                    return false
+                let recv_ty = unwrap_ref(read(rtp))
+                match resolve_method_sig(ctx, recv_ty, member):
+                    Option.some as sig:
+                        read(name_out) = member
+                        read(sig_out) = sig.value
+                        return true
+                    Option.none:
+                        return false
+            _:
+                pass
+
+    let recv = unwrap_ref(infer_expr(ctx, scope, receiver))
+    match resolve_method_sig(ctx, recv, member):
+        Option.some as sig:
+            unsafe:
+                read(name_out) = member
+                read(sig_out) = sig.value
+            return true
+        Option.none:
+            return false
+
+
+## A specialization's signature: a local/imported generic function
+## (`ident[int]`, `lib.ident[int]`) or a generic method on a value receiver
+## (`storage.alloc[ptr[char]]`).  A specialization of a struct/variant/builtin
+## is a construction and keeps its named fields.
+function specialization_parameter_info(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], name_out: ref[str], sig_out: ref[FnSig]) -> bool:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                return identifier_parameter_info(ctx, scope, id.name, name_out, sig_out)
+            ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as rid:
+                        if scope_get(scope, rid.name) == null and ctx.import_aliases.contains(rid.name):
+                            let module_name_ptr = ctx.import_aliases.get(rid.name)
+                            if module_name_ptr == null:
+                                return false
+                            let binding_ptr = find_binding(ctx, read(module_name_ptr))
+                            if binding_ptr == null:
+                                return false
+                            let sig_ptr = read(binding_ptr).functions.get(ma.member_name)
+                            if sig_ptr == null:
+                                return false
+                            read(name_out) = ma.member_name
+                            read(sig_out) = read(sig_ptr)
+                            return true
+                        let rtp = scope_get(scope, rid.name)
+                        if rtp == null:
+                            return false
+                        let recv_ty = unwrap_ref(read(rtp))
+                        if method_type_params_of(ctx, recv_ty, ma.member_name).is_none():
+                            return false
+                        match resolve_method_sig(ctx, recv_ty, ma.member_name):
+                            Option.some as sig:
+                                read(name_out) = ma.member_name
+                                read(sig_out) = sig.value
+                                return true
+                            Option.none:
+                                return false
+                    _:
+                        let recv_ty = unwrap_ref(infer_expr(ctx, scope, ma.receiver))
+                        if method_type_params_of(ctx, recv_ty, ma.member_name).is_none():
+                            return false
+                        match resolve_method_sig(ctx, recv_ty, ma.member_name):
+                            Option.some as sig:
+                                read(name_out) = ma.member_name
+                                read(sig_out) = sig.value
+                                return true
+                            Option.none:
+                                return false
+            _:
+                return false
+
+
+## The callee's source position packed as `line * 1_000_000 + column` (the
+## analyzer's usual key): an identifier's own position, a member's name
+## position, or the underlying callee of a specialization.
+function callee_position(callee: ptr[ast.Expr]) -> ptr_uint:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                return id.line * 1000000 + id.column
+            ast.Expr.expr_member_access as ma:
+                return ma.line * 1000000 + ma.column
+            ast.Expr.expr_specialization as spec:
+                return callee_position(spec.callee)
+            _:
+                return 0
+
+
+## Canonicalize a call's named arguments to parameter order, mirroring Ruby's
+## `canonicalize_call_arguments`: unknown names, duplicate names and a
+## positional argument after a named one are reported.  A positional argument
+## fills the first free slot, so `f(1, y = 2)` leaves x to the positional; a
+## named argument may overwrite a positional slot, as the host does.  Omitted
+## parameters with a default (every index at/after `required_count`, since the
+## language requires all required parameters first) become a permissive
+## placeholder so later arguments keep their parameter alignment.  False means
+## the call has no named arguments or no signature to canonicalize against;
+## the caller then keeps the source argument list.
+function canonicalize_call_arguments(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    callee: ptr[ast.Expr],
+    args: span[ast.Argument],
+    line: ptr_uint,
+    column: ptr_uint,
+    dest: ref[vec.Vec[ast.Argument]],
+) -> bool:
+    var any_named = false
+    var ni: ptr_uint = 0
+    while ni < args.len:
+        unsafe:
+            match read(args.data + ni).arg_name:
+                Option.some:
+                    any_named = true
+                Option.none:
+                    pass
+        ni += 1
+    if not any_named:
+        return false
+    var display_name: str
+    var sig: FnSig
+    if not call_parameter_info(ctx, scope, callee, ref_of(display_name), ref_of(sig)):
+        return false
+    canonicalize_call_arguments_for(ctx, display_name, sig, args, line, column, dest)
+    return true
+
+
+function canonicalize_call_arguments_for(
+    ctx: ref[Context],
+    display_name: str,
+    sig: FnSig,
+    args: span[ast.Argument],
+    line: ptr_uint,
+    column: ptr_uint,
+    dest: ref[vec.Vec[ast.Argument]],
+) -> void:
+    var slots = vec.Vec[ast.Argument].create()
+    defer: slots.release()
+    var filled = vec.Vec[bool].create()
+    defer: filled.release()
+    var pi: ptr_uint = 0
+    while pi < sig.params.len:
+        slots.push(zero[ast.Argument])
+        filled.push(false)
+        pi += 1
+
+    var named_seen = false
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        match arg.arg_name:
+            Option.some as nm:
+                named_seen = true
+                var found = false
+                var duplicate = false
+                var pj: ptr_uint = 0
+                while pj < sig.params.len:
+                    if unsafe: read(sig.params.data + pj).name == nm.value:
+                        found = true
+                        let slot_ptr = slots.get(pj)
+                        if slot_ptr != null:
+                            unsafe:
+                                match read(ptr[ast.Argument]<-slot_ptr).arg_name:
+                                    Option.some as existing:
+                                        if existing.value == nm.value:
+                                            duplicate = true
+                                    Option.none:
+                                        pass
+                        if duplicate:
+                            report(ctx, line, column, duplicate_named_argument_message(nm.value, display_name))
+                        else:
+                            unsafe:
+                                read(ptr[ast.Argument]<-slot_ptr) = arg
+                            let fptr = filled.get(pj)
+                            if fptr != null:
+                                unsafe:
+                                    read(fptr) = true
+                        break
+                    pj += 1
+                if not found:
+                    report(ctx, line, column, unknown_parameter_message(nm.value, display_name))
+            Option.none:
+                if named_seen:
+                    report(ctx, line, column, positional_after_named_message(display_name))
+                var placed = false
+                var pj: ptr_uint = 0
+                while pj < sig.params.len:
+                    if not bool_slot(ref_of(filled), pj):
+                        let slot_ptr = slots.get(pj)
+                        if slot_ptr != null:
+                            unsafe:
+                                read(ptr[ast.Argument]<-slot_ptr) = ast.Argument(arg_name = Option[str].none, arg_value = arg.arg_value)
+                        let fptr = filled.get(pj)
+                        if fptr != null:
+                            unsafe:
+                                read(fptr) = true
+                        placed = true
+                        break
+                    pj += 1
+                if not placed:
+                    report(ctx, line, column, arity_message(display_name, sig.params.len, args.len))
+        i += 1
+
+    # Omitted defaulted parameters keep their slot; the lowering fills the real
+    # default expression, while analysis only needs an error placeholder whose
+    # type is permissive.
+    var error_expr = heap.must_alloc[ast.Expr](1)
+    unsafe:
+        read(error_expr) = ast.Expr.expr_error(line = 0, column = 0, message = "")
+    var result = vec.Vec[ast.Argument].create()
+    pi = 0
+    while pi < sig.params.len:
+        if bool_slot(ref_of(filled), pi):
+            let slot_ptr = slots.get(pi)
+            if slot_ptr != null:
+                unsafe:
+                    let slot_arg = read(ptr[ast.Argument]<-slot_ptr)
+                    result.push(ast.Argument(arg_name = Option[str].none, arg_value = slot_arg.arg_value))
+        else if pi >= sig.required_count:
+            result.push(ast.Argument(arg_name = Option[str].none, arg_value = error_expr))
+        pi += 1
+    read(dest) = result
+
+
+function bool_slot(values: ref[vec.Vec[bool]], index: ptr_uint) -> bool:
+    let ptr_value = values.get(index)
+    if ptr_value == null:
+        return false
+    return unsafe: read(ptr_value)
+
+
+function duplicate_named_argument_message(name: str, display_name: str) -> str:
+    var buf = string.String.create()
+    buf.append("duplicate named argument '")
+    buf.append(name)
+    buf.append("' in call to ")
+    buf.append(display_name)
+    return buf.as_str()
+
+
+function unknown_parameter_message(name: str, display_name: str) -> str:
+    var buf = string.String.create()
+    buf.append("unknown parameter '")
+    buf.append(name)
+    buf.append("' for ")
+    buf.append(display_name)
+    return buf.as_str()
+
+
+function positional_after_named_message(display_name: str) -> str:
+    var buf = string.String.create()
+    buf.append("positional argument after named argument in call to ")
+    buf.append(display_name)
+    return buf.as_str()
+
+
 ## One expected type per positional parameter.  A parameter carrying a type
 ## variable (a generic function or extending block) has no statically-known
 ## type, so its argument is inferred with no hint.
@@ -6575,7 +7002,14 @@ function quiet_explicit_type(ctx: ref[Context], tref: ptr[ast.TypeRef]) -> Optio
 function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument]) -> types.Type:
     var arg_types = vec.Vec[types.Type].create()
     var any_named = false
-    var expected = call_argument_expected_types(ctx, scope, callee, args)
+    let call_pos = callee_position(callee)
+    var canonical_args = vec.Vec[ast.Argument].create()
+    defer: canonical_args.release()
+    let has_canonical = canonicalize_call_arguments(ctx, scope, callee, args, call_pos / 1000000, call_pos % 1000000, ref_of(canonical_args))
+    var effective_args = args
+    if has_canonical:
+        effective_args = canonical_args.as_span()
+    var expected = call_argument_expected_types(ctx, scope, callee, effective_args)
     defer: expected.release()
     let saved_hint = ctx.expected_type_hint
     # The compile-time handle builtins take *names*, not values: the host
@@ -6588,10 +7022,10 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
         if suppress_sites:
             ctx.callable_site_suppression -= 1
     var i: ptr_uint = 0
-    while i < args.len:
+    while i < effective_args.len:
         var arg: ast.Argument
         unsafe:
-            arg = read(args.data + i)
+            arg = read(effective_args.data + i)
         ctx.expected_type_hint = types.Type.ty_error
         if i < expected.len:
             let hint_ptr = expected.get(i)
@@ -6611,24 +7045,24 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
 
     check_str_construction_unsafe(ctx, scope, callee)
 
-    match try_imported_call(ctx, scope, callee, args, arg_span, any_named):
+    match try_imported_call(ctx, scope, callee, effective_args, arg_span, any_named):
         Option.some as imported:
             return imported.value
         Option.none:
             pass
 
-    match try_construction(ctx, scope, callee, args):
+    match try_construction(ctx, scope, callee, effective_args):
         Option.some as ct:
             return ct.value
         Option.none:
             unsafe:
                 match read(callee):
                     ast.Expr.expr_member_access as ma:
-                        return check_member_call(ctx, scope, ma.receiver, ma.member_name, args, arg_span, any_named, ma.line, ma.column)
+                        return check_member_call(ctx, scope, ma.receiver, ma.member_name, effective_args, arg_span, any_named, ma.line, ma.column)
                     ast.Expr.expr_specialization as spec:
-                        return check_specialization_call(ctx, scope, spec.callee, spec.arguments, arg_span, args, true)
+                        return check_specialization_call(ctx, scope, spec.callee, spec.arguments, arg_span, effective_args, true)
                     ast.Expr.expr_identifier:
-                        return check_call(ctx, scope, callee, args, arg_span, any_named)
+                        return check_call(ctx, scope, callee, effective_args, arg_span, any_named)
                     _:
                         let _ignored = infer_expr(ctx, scope, callee)
                         return types.Type.ty_error
@@ -6636,8 +7070,8 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
 
 ## Positional argument checking for an explicitly specialized generic function:
 ## the parameter types are substituted from the explicit type arguments, then
-## the same compatibility rule runs.  Skipped for named arguments (their
-## positional order is not the declared one) and extern signatures.
+## the same compatibility rule runs.  Named arguments have already been
+## canonicalized to parameter order by the caller.
 function check_substituted_arguments(ctx: ref[Context], display_name: str, sig: FnSig, args: span[ast.Argument], arg_types: span[types.Type], subs: ref[map_mod.Map[str, types.Type]], line: ptr_uint, column: ptr_uint) -> void:
     var any_named = false
     var i: ptr_uint = 0
@@ -6649,9 +7083,13 @@ function check_substituted_arguments(ctx: ref[Context], display_name: str, sig: 
                 Option.none:
                     pass
         i += 1
-    if any_named or sig.is_extern:
+    if any_named:
         return
-    if not sig.is_variadic and (arg_types.len > sig.params.len or arg_types.len < sig.required_count):
+    if sig.is_variadic:
+        if arg_types.len < sig.required_count:
+            report(ctx, line, column, arity_message(display_name, sig.required_count, arg_types.len))
+            return
+    else if arg_types.len > sig.params.len or arg_types.len < sig.required_count:
         report(ctx, line, column, arity_message(display_name, sig.required_count, arg_types.len))
         return
     i = 0
@@ -6664,7 +7102,13 @@ function check_substituted_arguments(ctx: ref[Context], display_name: str, sig: 
                 var arg_expr: ptr[ast.Expr]? = null
                 if i < args.len:
                     arg_expr = read(args.data + i).arg_value
-                if incompatible_value_with_consts(pty, atype, arg_expr, ref_of(ctx.const_values)):
+                var incompatible = false
+                if sig.is_extern:
+                    if not (is_imported_constant_member(ctx, arg_expr) and types.is_numeric(pty) and types.is_numeric(atype)):
+                        incompatible = incompatible_external_value_with_consts(pty, atype, arg_expr, ref_of(ctx.const_values))
+                else:
+                    incompatible = incompatible_value_with_consts(pty, atype, arg_expr, ref_of(ctx.const_values))
+                if incompatible:
                     report(ctx, line, column, argument_message(pe.name, display_name, pty, atype))
         i += 1
 
@@ -6725,10 +7169,10 @@ function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], 
                 match read(ma.receiver):
                     ast.Expr.expr_identifier as rid:
                         if scope_get(scope, rid.name) == null and ctx.import_aliases.contains(rid.name):
-                            return check_imported_specialization_call(ctx, scope, spec_callee, type_args)
+                            return check_imported_specialization_call(ctx, scope, spec_callee, type_args, arg_types, arg_exprs)
                     _:
                         pass
-                return check_specialized_method_call(ctx, scope, ma.receiver, ma.member_name, type_args, ma.line, ma.column)
+                return check_specialized_method_call(ctx, scope, ma.receiver, ma.member_name, type_args, arg_types, arg_exprs, ma.line, ma.column)
             _:
                 return types.Type.ty_error
 
@@ -6738,7 +7182,7 @@ function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], 
 ## parameters bind the explicit arguments and its return type is substituted
 ## (`ptr[T]?` -> `ptr[ptr[char]]?`).  The permissive error type when the method
 ## or its parameters are not resolvable.
-function check_specialized_method_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], method_name: str, type_args: span[ast.TypeArgument], line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_specialized_method_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], method_name: str, type_args: span[ast.TypeArgument], arg_types: span[types.Type], arg_exprs: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> types.Type:
     let recv_ty = unwrap_ref(infer_expr(ctx, scope, receiver))
     let tps = method_type_params_of(ctx, recv_ty, method_name) else:
         return types.Type.ty_error
@@ -6752,6 +7196,7 @@ function check_specialized_method_call(ctx: ref[Context], scope: ref[sscope.Scop
     # The host's specialized-call arm records/enforces an editable receiver
     # exactly like a normal member call.
     check_editable_receiver_immutable(ctx, scope, receiver, recv_ty, method_name, line, column)
+    check_substituted_arguments(ctx, method_name, sig, arg_exprs, arg_types, ref_of(subs), line, column)
     return substitute_type(sig.return_type, ref_of(subs))
 
 
@@ -6801,7 +7246,7 @@ function method_receiver_type_name(recv: types.Type) -> str:
 ## (`heap.must_alloc[ubyte](64)`): validate the type arguments against the
 ## declared parameters and substitute them into the return type, as the
 ## identifier arm does for a local generic function.
-function check_imported_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument]) -> types.Type:
+function check_imported_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], arg_types: span[types.Type], arg_exprs: span[ast.Argument]) -> types.Type:
     unsafe:
         match read(callee):
             ast.Expr.expr_member_access as ma:
@@ -6820,6 +7265,7 @@ function check_imported_specialization_call(ctx: ref[Context], scope: ref[sscope
                         var subs = map_mod.Map[str, types.Type].create()
                         defer: subs.release()
                         validate_explicit_type_args(ctx, read(tps_ptr), type_args, ref_of(subs), ma.line, ma.column)
+                        check_substituted_arguments(ctx, ma.member_name, read(sigp), arg_exprs, arg_types, ref_of(subs), ma.line, ma.column)
                         return substitute_type(read(sigp).return_type, ref_of(subs))
                     _:
                         return types.Type.ty_error
@@ -9270,6 +9716,20 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
             return types.Type.ty_error
 
 
+## The value a member access yields when it is called: a function-typed field
+## (`node.condition_fn(...)`) returns its declared return type, not the
+## function type itself.  The host resolves callable values through
+## `check_callable_value_call`; the self's field-call arm needs the same.
+function member_call_result_type(field_ty: types.Type, is_method_call: bool) -> types.Type:
+    if not is_method_call:
+        return field_ty
+    match field_ty:
+        types.Type.ty_function as fn_ty:
+            return unsafe: read(fn_ty.return_type)
+        _:
+            return field_ty
+
+
 function check_named_member(ctx: ref[Context], module_name: str, name: str, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
     # A struct declared in another module reaches the analyzer as a
     # `ty_named` with that module's name (an exported field's type);
@@ -9290,7 +9750,7 @@ function check_named_member(ctx: ref[Context], module_name: str, name: str, memb
                 while ui < ufields.len:
                     let ufe = read(ufields.data + ui)
                     if ufe.name == member:
-                        return ufe.ty
+                        return member_call_result_type(ufe.ty, is_method_call)
                     ui += 1
         # Not a locally-declared struct (enum/variant/opaque/imported).
         return types.Type.ty_error
@@ -9300,7 +9760,7 @@ function check_named_member(ctx: ref[Context], module_name: str, name: str, memb
         while i < fields.len:
             let fe = read(fields.data + i)
             if fe.name == member:
-                return fe.ty
+                return member_call_result_type(fe.ty, is_method_call)
             i += 1
     if member == "with" or has_method(ctx, name, member):
         return types.Type.ty_error
@@ -9326,7 +9786,7 @@ function check_imported_receiver_member(ctx: ref[Context], module_name: str, nam
             while i < fields.len:
                 let fe = unsafe: read(fields.data + i)
                 if fe.name == member:
-                    return substitute_type(fe.ty, ref_of(subs))
+                    return member_call_result_type(substitute_type(fe.ty, ref_of(subs)), is_method_call)
                 i += 1
             return types.Type.ty_error
     return check_imported_member_args(ctx, module_name, name, member, args, is_method_call, line, column)
@@ -9498,7 +9958,7 @@ function check_imported_member_depth(ctx: ref[Context], module_name: str, type_n
             while i < fields.len:
                 let fe = read(fields.data + i)
                 if fe.name == member:
-                    return substituted_field_type(binding, type_name, args, fe.ty)
+                    return member_call_result_type(substituted_field_type(binding, type_name, args, fe.ty), is_method_call)
                 i += 1
 
         let union_ptr = binding.unions.get(type_name)
@@ -9508,7 +9968,7 @@ function check_imported_member_depth(ctx: ref[Context], module_name: str, type_n
             while ui < ufields.len:
                 let ufe = read(ufields.data + ui)
                 if ufe.name == member:
-                    return substituted_field_type(binding, type_name, args, ufe.ty)
+                    return member_call_result_type(substituted_field_type(binding, type_name, args, ufe.ty), is_method_call)
                 ui += 1
 
         # A private type reached through a public signature (a function whose
@@ -9520,7 +9980,7 @@ function check_imported_member_depth(ctx: ref[Context], module_name: str, type_n
             while pi < fields.len:
                 let fe = read(fields.data + pi)
                 if fe.name == member:
-                    return substituted_field_type(binding, type_name, args, fe.ty)
+                    return member_call_result_type(substituted_field_type(binding, type_name, args, fe.ty), is_method_call)
                 pi += 1
 
         let private_union_ptr = binding.private_unions.get(type_name)
@@ -9530,7 +9990,7 @@ function check_imported_member_depth(ctx: ref[Context], module_name: str, type_n
             while pui < ufields.len:
                 let ufe = read(ufields.data + pui)
                 if ufe.name == member:
-                    return substituted_field_type(binding, type_name, args, ufe.ty)
+                    return member_call_result_type(substituted_field_type(binding, type_name, args, ufe.ty), is_method_call)
                 pui += 1
 
         if member == "with" or binding_has_member(binding, type_name, member):
@@ -9824,22 +10284,30 @@ function check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast
 function check_signature_call(ctx: ref[Context], display_name: str, sig: FnSig, args: span[ast.Argument], arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> void:
     if not any_named:
         record_mutable_lvalue_argument_sites(ctx, sig, args, arg_types)
-    if sig.is_extern:
-        return
-    if not sig.is_variadic and (arg_types.len > sig.params.len or arg_types.len < sig.required_count):
+    if sig.is_variadic:
+        if arg_types.len < sig.required_count:
+            report(ctx, line, column, arity_message(display_name, sig.required_count, arg_types.len))
+            return
+    else if arg_types.len > sig.params.len or arg_types.len < sig.required_count:
         report(ctx, line, column, arity_message(display_name, sig.required_count, arg_types.len))
         return
     if any_named:
         return
     var i: ptr_uint = 0
-    while i < arg_types.len:
+    while i < arg_types.len and i < sig.params.len:
         unsafe:
             let atype = read(arg_types.data + i)
             let pe = read(sig.params.data + i)
             var arg_expr: ptr[ast.Expr]? = null
             if i < args.len:
                 arg_expr = read(args.data + i).arg_value
-            if incompatible_value_with_consts(pe.ty, atype, arg_expr, ref_of(ctx.const_values)):
+            var incompatible = false
+            if sig.is_extern:
+                if not (is_imported_constant_member(ctx, arg_expr) and types.is_numeric(pe.ty) and types.is_numeric(atype)):
+                    incompatible = incompatible_external_value_with_consts(pe.ty, atype, arg_expr, ref_of(ctx.const_values))
+            else:
+                incompatible = incompatible_value_with_consts(pe.ty, atype, arg_expr, ref_of(ctx.const_values))
+            if incompatible:
                 report(ctx, line, column, argument_message(pe.name, display_name, pe.ty, atype))
         i += 1
 

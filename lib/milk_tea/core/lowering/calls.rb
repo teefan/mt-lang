@@ -48,7 +48,8 @@ module MilkTea
           end
         when :method
           receiver_arg = lower_method_receiver_argument(receiver, callee_type, callee_binding, env:)
-          arguments = [receiver_arg, *lower_call_arguments(expression.arguments, callee_type, env:)]
+          lowered_arguments = callee_binding ? expand_function_defaults(expression.arguments, callee_binding) : expression.arguments
+          arguments = [receiver_arg, *lower_call_arguments(lowered_arguments, callee_type, env:)]
           IR::Call.new(callee: callee_name, arguments:, type:)
         when :str_buffer_clear
           IR::Call.new(

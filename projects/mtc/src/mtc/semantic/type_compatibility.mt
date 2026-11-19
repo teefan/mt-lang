@@ -35,6 +35,24 @@ public function fold_int_constant(const_values: ptr[map_mod.Map[str, ptr[ast.Exp
                 if chain != null:
                     return fold_int_constant(const_values, read(chain))
                 return Option[long].none
+            ast.Expr.expr_member_access as ma:
+                # An imported constant (`sdl.ALPHA_OPAQUE`) is recorded under
+                # its qualified source name by `record_imported_constants`.
+                let table_ptr = const_values else:
+                    return Option[long].none
+                unsafe:
+                    match read(ma.receiver):
+                        ast.Expr.expr_identifier as rid:
+                            var key = string.String.create()
+                            key.append(rid.name)
+                            key.append(".")
+                            key.append(ma.member_name)
+                            let chain = read(table_ptr).get(key.as_str())
+                            if chain != null:
+                                return fold_int_constant(const_values, read(chain))
+                            return Option[long].none
+                        _:
+                            return Option[long].none
             ast.Expr.expr_unary_op as un:
                 let v = fold_int_constant(const_values, un.operand) else:
                     return Option[long].none
@@ -210,7 +228,12 @@ public function types_compatible_with_consts(
     #    chain falls through to the structural rules.  Float targets keep the
     #    contextual int→float coercion for a literal chain, which has no range
     #    fold on the self side.
-    if source_expr != null and not types.type_equals(expected, actual):
+    #
+    #    A *nullable* target does not run the compile-time numeric coercion at
+    #    all: the host's `exact_compile_time_numeric_compatibility?` requires a
+    #    primitive target, and its only nullable rule is exact-base auto-wrap
+    #    (`T` -> `T?`).  `let x: ubyte? = 200` is therefore invalid.
+    if source_expr != null and not types.is_nullable_type(expected) and not types.type_equals(expected, actual):
         let bare = types.unwrap_nullable(expected)
         if types.is_char_type(bare):
             # An integer-valued source is assignable to `char` when the value is
@@ -269,15 +292,32 @@ public function types_compatible_with_consts(
         let a_elem = types.pointer_element(actual)
         return types_compatible_with_consts(e_elem, a_elem, null, const_values)
 
-    # 5  Auto-wrap:  T  →  T?   (non-nullable stored into an optional).
+    # 5  Auto-wrap:  T  →  T?   (non-nullable stored into an optional).  The
+    #    host's only nullable rule is exact base equality plus its pointer
+    #    coercions (`expected_type.is_a?(Nullable) && actual_type ==
+    #    expected_type.base`, then mutable-to-const / owning-to-raw); a numeric
+    #    literal does not coerce into a nullable numeric target.
     let e_nullable = types.is_nullable_type(expected)
     let a_nullable = types.is_nullable_type(actual)
     if e_nullable and not a_nullable:
-        return types_compatible_with_consts(types.unwrap_nullable(expected), actual, source_expr, const_values)
+        let base = types.unwrap_nullable(expected)
+        if types.type_equals(base, actual):
+            return true
+        return nullable_base_pointer_compatible(base, actual)
 
-    # 6  Both nullable: compare the inner types.
+    # 6  Both nullable: the bases must be equal, or a pointer coercion.
     if e_nullable and a_nullable:
-        return types_compatible_with_consts(types.unwrap_nullable(expected), types.unwrap_nullable(actual), source_expr, const_values)
+        let expected_base = types.unwrap_nullable(expected)
+        let actual_base = types.unwrap_nullable(actual)
+        if types.type_equals(expected_base, actual_base):
+            return true
+        return nullable_base_pointer_compatible(expected_base, actual_base)
+
+    # 6b A nullable target accepts nothing else.  Continuing into the pointer,
+    #    array/span and str/cstr rules would let a non-nullable source through
+    #    a nullable target the host rejects (`cstr?` from `str`).
+    if e_nullable:
+        return false
 
     # 7  ptr[T]  →  const_ptr[T]   (mutable-to-const pointer coercion).
     match actual:
@@ -350,3 +390,109 @@ public function types_compatible_with_consts(
     #      design — unresolved generics, imported types, and type variables are
     #      never flagged as mismatches).
     return not types.definitely_incompatible(expected, actual)
+
+
+## External/foreign call argument compatibility: the structural assignability
+## rule plus the FFI boundary coercions the host's
+## `argument_types_compatible?(external: true)` adds.  The call site passes the
+## declared public parameter type, not the lowering's boundary projection.
+public function types_compatible_external_with_consts(
+    expected: types.Type,
+    actual: types.Type,
+    source_expr: ptr[ast.Expr]?,
+    const_values: ptr[map_mod.Map[str, ptr[ast.Expr]]]?,
+) -> bool:
+    if types_compatible_with_consts(expected, actual, source_expr, const_values):
+        return true
+    if external_cstr_argument_compatible(expected, actual):
+        return true
+    if external_void_pointer_argument_compatible(expected, actual):
+        return true
+    return false
+
+
+## A `str` public parameter with a `cstr` boundary (`str as cstr`) accepts a
+## `cstr` argument as well as `str` (the host's
+## `foreign_cstr_argument_compatible?`).
+function external_cstr_argument_compatible(expected: types.Type, actual: types.Type) -> bool:
+    match expected:
+        types.Type.ty_primitive as ep:
+            if ep.name == "str":
+                match actual:
+                    types.Type.ty_primitive as ap:
+                        return ap.name == "cstr"
+                    _:
+                        return false
+            return false
+        _:
+            return false
+
+
+## The host's `external_void_pointer_argument_compatibility?`: a pointer
+## argument may cross an FFI boundary when either pointee is `void`, except a
+## const pointer narrowed to a mutable one.  Nullable wrappers compare their
+## bases; an actual nullable into a non-null target is rejected.
+function external_void_pointer_argument_compatible(expected: types.Type, actual: types.Type) -> bool:
+    match expected:
+        types.Type.ty_nullable as en:
+            match actual:
+                types.Type.ty_nullable as an:
+                    return external_void_pointer_argument_compatible(unsafe: read(en.base), unsafe: read(an.base))
+                _:
+                    return external_void_pointer_argument_compatible(unsafe: read(en.base), actual)
+        _:
+            pass
+    match actual:
+        types.Type.ty_nullable:
+            return false
+        _:
+            pass
+    if not types.is_pointer_type(expected) or not types.is_pointer_type(actual):
+        return false
+    match actual:
+        types.Type.ty_generic as ag:
+            if ag.name == "const_ptr":
+                match expected:
+                    types.Type.ty_generic as eg:
+                        if eg.name == "ptr":
+                            return false
+                    _:
+                        pass
+        _:
+            pass
+    return types.is_void(types.pointer_element(expected)) or types.is_void(types.pointer_element(actual))
+
+
+## The pointer coercions a nullable target accepts on non-nullable bases:
+## `ptr[T]` -> `const_ptr[T]` and `own[T]` -> `ptr[T]`/`const_ptr[T]` (the
+## host's `mutable_to_const_pointer_compatibility?` and
+## `own_to_raw_pointer_compatibility?`).
+function nullable_base_pointer_compatible(expected_base: types.Type, actual_base: types.Type) -> bool:
+    # The self checks a method's declared signature before substituting the
+    # receiver's type arguments; a type variable is permissive until the
+    # lowering resolves it (the host compares the substituted types).
+    if types.contains_type_var(expected_base) or types.contains_type_var(actual_base):
+        return true
+    unsafe:
+        match actual_base:
+            types.Type.ty_generic as ag:
+                if ag.args.len < 1:
+                    return false
+                let actual_element = read(ag.args.data + 0)
+                if ag.name == "ptr":
+                    match expected_base:
+                        types.Type.ty_generic as eg:
+                            if eg.name == "const_ptr" and eg.args.len >= 1:
+                                return types_compatible_with_consts(read(eg.args.data + 0), actual_element, null, null)
+                        _:
+                            pass
+                if ag.name == "own":
+                    match expected_base:
+                        types.Type.ty_generic as eg2:
+                            if (eg2.name == "ptr" or eg2.name == "const_ptr") and eg2.args.len >= 1:
+                                return types_compatible_with_consts(read(eg2.args.data + 0), actual_element, null, null)
+                        _:
+                            pass
+            _:
+                pass
+    return false
