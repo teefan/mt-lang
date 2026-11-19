@@ -102,7 +102,7 @@ history.
 | `test/mt` | **61 files / 0 failed**; peak RSS **135 MB** under the region-scoped test compiler (session 129) |
 | Examples | **49/49 same** under the gate (15 top-level examples + `examples/sdl3` 34/34; re-verified session 139); the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **772 match / 0 differ / 4 host-rejected of 776**; counts drift with the tree and `tmp` fixtures; unchanged by sessions 139–140, which touch no lexer/parser code) |
-| `sexpr lower` | **717 match / 53 host-rejected of 778**; the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (empty-output differ or self-fail depending on how the loop limit lands; the session-140 full sweep split them 3 differ / 5 self-fail, a focused run 1 / 7).  All extracted modules match.  Run it memory-capped (`-j 4 --mem-mb 8000`): each `main*` artifact peaks ~3.8 GiB and the seven together can exhaust a 31 GiB workstation at `-j 16` (session 140) |
+| `sexpr lower` | **717 match / 1 differ / 53 host-rejected / 7 self-fail of 778**; the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (the signal-aware harness counts their SIGABRT as self-fail).  All extracted modules match.  Run it memory-capped (`-j 4 --mem-mb 8000`): each `main*` artifact peaks ~3.8 GiB and the seven together can exhaust a 31 GiB workstation at `-j 16` (session 140) |
 | `cli:parity` | **227 match / 0 differ / 0 pending** of 227 cases (re-verified session 140; `--timings` values, `debug`'s Ruby node ids and the synthesized test-runner path normalized; 43 `test` cases plus the second-batch sweep: global extraction, resolution flags, per-command operand models, missing/empty operands, completions/std/snapshot/cache/lsp/dap/bindgen/deps) |
 | **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** files (re-verified session 140; `tools/diag_parity.rb check`; the 3 message files are `std/cli.mt`, `examples/reflection_advanced.mt`, and `examples/memory_stress_test.mt`) |
 | **Analyzer call-argument compatibility (CLOSED, session 139)** | The session-138 table now matches in both directions and at the same message/position: in-range literals and conditional/`ubyte` arguments are accepted, out-of-range constants (`f(300)`, `f(if cond: 300 else: 200)`, `let x: ubyte = if c: 32 else: 300`) are rejected.  The self resolves each argument with the parameter's expected type (direct/imported functions, constructors, static and value-receiver methods, explicit specializations) and folds compile-time numeric constants at argument sites.  Residual divergences are documented in the session-139 record and the Handoff. |
@@ -113,7 +113,7 @@ history.
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
 | Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 130).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
 | Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
-| **Refactoring safety** | structural guard: 169 files / 125,934 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **33 unused + 6 test-only** public declarations; 6,343 duplicated lines / 883 windows; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json` (refreshed session 140 for the LSP text cache and receiver facts, +164 code lines); one command: `tools/gates.sh --areas refactor --run` |
+| **Refactoring safety** | structural guard: 169 files / 126,014 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **33 unused + 6 test-only** public declarations; 6,343 duplicated lines / 883 windows; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json` (refreshed session 140 for the LSP text cache, receiver facts and match dispatch, +244 code lines); one command: `tools/gates.sh --areas refactor --run` |
 
 Rough completion against the per-track Definition of Done: **~100%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix (including
@@ -124,13 +124,15 @@ measured.  Session 139 closed the last open functional item, the
 **call-argument compatibility port** found in session 138: the coercion table
 matches in both directions, and `check` diagnostics are back at the verified
 baseline.  Session 140 closed the LSP hover-latency item (32–36 → 2.0–7.7 ms
-on `analyzer.mt`, now faster than the host) and extended member resolution to
-call/index receivers.  The remaining residuals are narrow, documented
-divergences (named call arguments and the explicit-specialization/extern call
-paths described in the session-139 record; completion after a non-text
-receiver; the invalid arm-payload `match` lowering abort), plus the `tracy`
-custom-generator entry and the optional desktop F5 smoke.  Track G (throughput)
-closed in session 72: the self is now faster than the host.
+on `analyzer.mt`, now faster than the host), extended member resolution to
+call/index receivers, and closed the invalid-match lowering abort (the analyzer
+now runs the host's scrutinee dispatch, including the event `wait()` result
+type it exposed).  The remaining residuals are narrow, documented divergences
+(named call arguments and the explicit-specialization/extern call paths
+described in the session-139 record; completion after a non-text receiver; the
+CLI sema block's lone caret), plus the `tracy` custom-generator entry and the
+optional desktop F5 smoke.  Track G (throughput) closed in session 72: the self
+is now faster than the host.
 
 ## Session 140 — LSP hover latency and chained receivers
 
@@ -187,24 +189,46 @@ and the documented command are now `-j 4 --mem-mb 8000` (validated: the cap
 still reaches the loop guard), and `sexpr_parity` caps the default lower jobs at
 4 and warns when no cap is passed.
 
-**Found while testing, not fixed (pre-existing).**  Matching on a variant-arm
-payload value (`match x:` where `x` is bound by `Outer.some as x` and its type
-is a variant) is rejected by the host with `match requires an enum, variant, or
-integer scrutinee, got Outer.some payload`; the self's analyzer accepts it and
-the lowering fatals with `match requires known type, got Outer_some`.  The
-self should report the host's sema diagnostic instead of aborting.  This is
-unrelated to the session's changes; the repro is a two-variant nested match.
+**Match-scrutinee dispatch (fixed).**  Matching on a variant-arm payload value
+(`match x:` where `x` is bound by `Outer.some as x`) was rejected by the host
+with `match requires an enum, variant, or integer scrutinee, got Outer.some
+payload`, while the self's analyzer accepted it and the lowering aborted with
+`match requires known type, got Outer_some`.  The same fatal hit a `float`,
+`bool`, `char` or nullable scrutinee.  `check_match_stmt` and
+`infer_match_expr_type` now run the host's dispatch first (enum, variant,
+integer, `str`, tuple; a recovered `<error>` stays permissive), report the
+host's message at the `match` token with its length, and skip the arms — so
+structs, flags, payloads, floats, bools, chars and nullables are diagnosed
+instead of crashing.  `match_scrutinee_text` renders the host's qualified
+`to_s` for the message (`tmp.main.S`, `std.vec.Vec[int]`, `Outer.some payload`).
+A prelude type with no import binding (`Option[int]` in a single-file check)
+keeps its local arm table.
+
+The check exposed a real inference gap: the self typed event `wait()` as
+`void`, while the host returns `Task[Result[payload|void, EventError]]`.
+`event_method_call_type` now builds that type from the event's declared payload,
+so `match await no_payload_event.wait()` in `examples/event_stress_test.mt`
+remains a valid `Result` match (the example builds and runs byte-identically).
+Regression: `test_match_on_arm_payload_is_flagged` (message, line, column).
+
+**Harness signal handling.**  `sexpr_parity` recorded a signal-killed self
+process (the documented `main*` loop-guard abort is SIGABRT) as exit status 0,
+which classified its empty output as a `differ` and could hide a real self
+crash.  The runner now records `128 + signal`; the focused artifact run is
+**1 differ + 7 self-fail**, and so is the full sweep (717 match / 1 differ / 53
+host-rejected / 7 self-fail of 778), deterministic.
 
 Verification: bootstrap fixed point + self-tests **22/0**; `test/mt` **61/0**;
 CLI **227/227**; `diag_parity check` **501/0/0/3 of 504**; `check_parity`
-**647/26 of 673**; focused lint unchanged; `sexpr lower` **717 match / 53
-host-rejected** with the same eight artifacts; LSP harness **88 requests**
-(3 documented request rows: `hover/chained-method`, `hover/imported-variant-arm`,
-`typeDefinition/imported`) + the 3 stress rows; recovery **6/6**; canonical
-audit **10** (the 8 documented rows + 2 warm artifacts); valgrind **0 errors**;
-soak **78.3 KB/cycle raw / 30.2 LS**; refactor guard `--check --strict
---ratchet` after the reviewed baseline refresh (125,934 code lines; duplication
-unchanged).
+**647/26 of 673**; examples **49/49** (the event example included); focused
+lint unchanged; `sexpr lower` **717 match / 1 differ / 53 host-rejected / 7
+self-fail** with the same eight artifacts; LSP harness **88
+requests** (3 documented request rows: `hover/chained-method`,
+`hover/imported-variant-arm`, `typeDefinition/imported`) + the 3 stress rows;
+recovery **6/6**; canonical audit **10** (the 8 documented rows + 2 warm
+artifacts); valgrind **0 errors**; soak **78.3 KB/cycle raw / 30.2 LS**;
+refactor guard `--check --strict --ratchet` after the reviewed baseline refresh
+(126,014 code lines; duplication unchanged).
 
 
 ## Session 139 — call-argument compatibility
@@ -2879,12 +2903,18 @@ documented.  The LSP audit's canonical set is now 10 (8 documented rows + 2
 warm artifacts); the four new `data_structures@250:17` rows are the
 index-receiver resolution and stay.
 
-**Found while testing, not fixed (pre-existing):** a `match` on a variant-arm
+**Match-scrutinee dispatch (fixed in session 140):** a `match` on a variant-arm
 payload value (nested match through `Outer.some as x`) is rejected by the host
 with `match requires an enum, variant, or integer scrutinee, got Outer.some
-payload`; the self's analyzer accepts it and the lowering aborts with `match
-requires known type, got Outer_some`.  The self should emit the host's sema
-diagnostic.  Two-variant repro; unrelated to the session-140 changes.
+payload`; the self used to accept it and abort in the lowering (`match requires
+known type, got Outer_some`).  `check_match_stmt`/`infer_match_expr_type` now
+run the host's dispatch (enum, variant, integer, `str`, tuple) and report the
+host's message/position before the arms; structs, flags, floats, bools, chars
+and nullables are covered too.  The check exposed a wrong event type — `wait()`
+was `void`, now `Task[Result[payload|void, EventError]]` — so the event example
+stays valid.  The CLI sema block still renders a lone caret (the diagnostic
+carries the `match` token length for the LSP; the block printer is a pre-existing
+gap).
 
 **Watch the host compile time.**  Binding an `Option[types.Type]` payload with
 `let ... else:` in the compiler sources makes the host analyzer ~4.5x slower on
@@ -2896,20 +2926,22 @@ equivalent `match` is flat.  Session 139 hit this in
 `sexpr lower`.  Each compiler-sized closure peaks 3.4–3.8 GiB, and the seven
 `main*.mt` loop-guard artifacts together exhausted this 31 GiB workstation at
 `-j 16` (session 140: the kernel killed an unrelated 12.9 GiB Python process;
-the `mtc lsp` server was 94 MB).  `sexpr_parity` now defaults lower to 4 jobs
-and warns when no cap is passed; `gates.sh` and the documented commands carry
-the cap.
+the `mtc lsp` server was 94 MB).  `sexpr_parity` now defaults lower to 4 jobs,
+warns when no cap is passed, and records a signal-killed self process as
+`128 + signal` (the loop-guard aborts are self-fail, not empty-output differ).
 
 **Current tree (session 140):** `lsp/workspace.mt` (the per-document text
 cache, `document_text`/`document_hash_for`, stat-stamped closed documents),
 `lsp/navigation.mt` (the text-view hand-off, the receiver fallback),
 `lsp/cursor.mt` (`member_dot_at`), `semantic/analyzer.mt`
 (`member_receiver_types`, `receiver_is_text_chain`, the
-`check_member_call`/`resolve_member_access` recording), the two receiver tests
-in `test/semantic_test.mt`, the `hover/chained-method` case (88 requests) and
-the refreshed `tools/refactor_baseline.json`.  The previous tree is the
-session-139 call-argument port (`1ca2b78f`); session 138 (`f7661b52`) and
-session 137 (`f0b989dc`) are unchanged below it.
+`check_member_call`/`resolve_member_access` recording, the match-scrutinee
+dispatch and its type text, and the event `wait()` result type), the three
+tests in `test/semantic_test.mt` (two receiver facts + the match diagnostic),
+the `hover/chained-method` case (88 requests), the `sexpr_parity` signal/cap
+handling, and the refreshed `tools/refactor_baseline.json`.  The previous tree
+is the session-140 LSP commit (`6843cdf9`); the session-139 call-argument port
+is `1ca2b78f` and session 138 (`f7661b52`) below it.
 
 **First actions:** rebuild and smoke the tree before measuring —
 `ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`
@@ -3050,19 +3082,11 @@ moved.**
    members, guarded locals, and the nested-type/rename-index moves.  The
    canonical audit set is 10 (8 documented + 2 warm artifacts).  The memory
    list (semantic-token payloads, diagnostics) is unchanged.
-3. **Invalid arm-payload `match` aborts the lowering — found session 140.**
-   `match x:` where `x` is the payload of a variant arm (`Outer.some as x`) and
-   its type is a variant is rejected by the host as `match requires an enum,
-   variant, or integer scrutinee, got Outer.some payload`; the self's analyzer
-   accepts it and `lowering/match.mt` fatals with `match requires known type,
-   got Outer_some`.  Report the host's sema diagnostic instead.  Repro:
-   two variants, nested match through the outer arm's payload.  Pre-existing;
-   unrelated to session 140.
-4. **Track G follow-ups are recorded, not pending.**  The post-fix profile is
+3. **Track G follow-ups are recorded, not pending.**  The post-fix profile is
    flat; `String.as_str()`'s per-call UTF-8 revalidation (~7%) is a documented
    invariant, and the ~2% scans are over small collections.  Reopen only with a
    fresh `perf record` showing a hotspot.
-5. **No manual items remain.**  The desktop F5 click-through passed (session 74,
+4. **No manual items remain.**  The desktop F5 click-through passed (session 74,
    above); it also found an extension-packaging defect: `activationEvents:
    ["onDebug:milk-tea"]` is ignored by VS Code 1.146, so the extension must be
    activated by opening a `.mt` file first.  Fix that in the extension repo
@@ -3831,7 +3855,7 @@ when the tree moved.  Target = the Definition of Done above.
 | `test/mt` | 61 files / 0 failed (peak RSS 135 MB under the new compiler) | session 140 (re-verified) | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | **49/49 same** under the gate (15 top-level + 34 sdl3) | session 139 (re-verified) | `tools/gates.sh --areas examples --run` |
 | `sexpr lex` / `parse` | lex 739/739 (session 120); **parse 772 match / 0 differ / 4 host-rejected of 776** (session 130; counts include `tmp` fixtures) | session 130 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | **717 match / 53 host-rejected** of 778; the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (empty-output differ or self-fail depending on how the loop limit lands; the session-140 full sweep split them 3 differ / 5 self-fail, the focused run 1 / 7); every extracted module matches | session 140 | `ruby tools/sexpr_parity.rb lower -q -j 4 --mem-mb 8000 --host-cache tmp/sexpr-host-cache` (each `main*` artifact peaks ~3.8 GiB) |
+| `sexpr lower` | **717 match / 1 differ / 53 host-rejected / 7 self-fail** of 778; the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (signal-aware harness: their SIGABRT is self-fail); every extracted module matches | session 140 | `ruby tools/sexpr_parity.rb lower -q -j 4 --mem-mb 8000 --host-cache tmp/sexpr-host-cache` (each `main*` artifact peaks ~3.8 GiB) |
 | `cli:parity` | **227 match / 0 differ / 0 pending** of 227 (case-backed; timings, `debug` node ids and the synthesized test-runner path normalized) | session 140 (re-verified) | `ruby tools/cli_parity.rb -q` |
 | `mtc test` matrix | **43 cases**, included in `cli:parity` 227/227: file/dir operands, human/TAP/JUnit, filters, death tests, `--timeout/--mem/--jobs/--sanitize`, `--locked/--frozen`, validation errors, build-error channels | session 73 | `ruby tools/cli_parity.rb -f '^test-'` |
 | **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** (`std`+`examples`; the 3 are the documented `std/cli.mt` ×2 and `examples/reflection_advanced.mt` rows); byte-level `check_parity` **647/26 of 673**, unchanged from the pre-change compiler | session 140 (re-verified) | `ruby tools/diag_parity.rb check -j 8 std examples`; byte-level: `ruby tools/check_parity.rb` |
@@ -3851,7 +3875,7 @@ when the tree moved.  Target = the Definition of Done above.
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 | bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 130 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 33 unused / 6 test-only exports; **6,343 duplicated lines / 883 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61; `--check --strict --ratchet` ok (baseline refreshed for the session-140 text cache and receiver facts: **125,934 code lines**; duplication unchanged) | session 140 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 33 unused / 6 test-only exports; **6,343 duplicated lines / 883 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/61; `--check --strict --ratchet` ok (baseline refreshed for the session-140 text cache, receiver facts and match dispatch: **126,014 code lines**; duplication unchanged) | session 140 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 

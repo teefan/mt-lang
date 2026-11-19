@@ -444,7 +444,13 @@ def run_self(bin, mode, file, includes, timeout_s, mem_mb)
   full = ["timeout", timeout_s.to_s, *full]
 
   out, err, status = Open3.capture3(*full)
-  [out, err, status.exitstatus]
+  rc = status.exitstatus
+  # A process killed by a signal (the documented `main*` loop-guard abort is
+  # SIGABRT) has no exit status; recording 0 here would misclassify an empty
+  # output as a `differ` and hide real self crashes.
+  rc = 128 + status.termsig if rc.nil? && status.signaled?
+  rc = 1 if rc.nil?
+  [out, err, rc]
 end
 
 # ── worker ───────────────────────────────────────────────────────────────────

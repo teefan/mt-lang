@@ -3363,3 +3363,26 @@ function test_member_receiver_type_records_index_receivers() -> void:
             expect(named.name == "Point", "index receiver type")
         _:
             expect(false, "expected a named Point receiver")
+
+
+@[test]
+function test_match_on_arm_payload_is_flagged() -> void:
+    # `Outer.some as x` binds the arm's payload struct, not the `Inner` field;
+    # matching that struct is invalid (the host reports the sema error) and
+    # used to reach the lowering fatal "match requires known type, got
+    # Outer_some".  The diagnostic must match the host's text and position.
+    let source = "variant Inner:\n    alpha(value: int)\n    beta\n\nvariant Outer:\n    some(value: Inner)\n    none\n\nfunction pick(o: Outer) -> int:\n    match o:\n        Outer.some as x:\n            match x:\n                Inner.alpha as a:\n                    return a.value\n                Inner.beta:\n                    return 0\n        Outer.none:\n            return 0\n"
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    expect_eq(int<-pdiags.len(), 0)
+    var analysis = analyzer.check_source_file(file)
+    defer: analysis.diagnostics.release()
+    expect(analysis.diagnostics.len() > 0, "match diagnostic missing")
+    let dp = analysis.diagnostics.get(0) else:
+        expect(false, "match diagnostic missing")
+        return
+    let diag = unsafe: read(dp)
+    expect(diag.message == "match requires an enum, variant, or integer scrutinee, got Outer.some payload", "match scrutinee message")
+    expect_eq(int<-diag.line, 12)
+    expect_eq(int<-diag.column, 13)

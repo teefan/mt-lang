@@ -3715,6 +3715,14 @@ function check_match_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
         # exhaustiveness pass reuses it (inferring twice would report
         # every unknown name in the scrutinee twice).
         let scrutinee_ty = infer_expr_inner(ctx, scope, scrutinee)
+        # The host's dispatch rejects anything but an enum, variant, integer,
+        # str or tuple before checking the arms.  Without it a payload struct
+        # (`Outer.some as x` then `match x:`) passed analysis and reached the
+        # lowering, which aborts with "match requires known type, got
+        # Outer_some".  An error type is the parser-recovery path.
+        if not match_scrutinee_supported(ctx, scrutinee_ty):
+            report_at(ctx, line, column, 5, match_scrutinee_message(scrutinee_ty))
+            return
         var ai: ptr_uint = 0
         while ai < arms.len:
             var arm: ast.MatchArm
@@ -4518,6 +4526,82 @@ function match_case_names_for(ctx: ref[Context], module_name: str, type_name: st
     let binding_ptr = find_binding(ctx, module_name) else:
         return null
     return unsafe: read(binding_ptr).match_case_names.get(type_name)
+
+
+## The host's match-scrutinee dispatch (`check_match_stmt` /
+## `infer_match_expression`): an enum or variant (local or imported), an
+## integer, `str`, or a tuple.  Flags are not matchable (the host dispatches
+## `Types::Enum`, and `Types::Flags` is a sibling), and neither is a payload
+## struct — the case that used to reach the lowering fatal.  A recovered
+## (`<error>`) scrutinee keeps the permissive arm checks.
+function match_scrutinee_supported(ctx: ref[Context], t: types.Type) -> bool:
+    if types.is_error(t):
+        return true
+    match t:
+        types.Type.ty_primitive as p:
+            return is_integer_name(p.name)
+        types.Type.ty_str:
+            return true
+        types.Type.ty_tuple:
+            return true
+        types.Type.ty_named as n:
+            return match_case_names_for(ctx, "", n.name) != null
+        types.Type.ty_imported as im:
+            # A prelude variant keeps its arm table in the local context even
+            # when its nominal module is `std.option`/`std.result` (a
+            # single-file check has no import bindings).
+            if im.module_name.len == 0 or prelude_variant_module(im.name).len > 0:
+                return match_case_names_for(ctx, "", im.name) != null
+            return match_case_names_for(ctx, im.module_name, im.name) != null
+        types.Type.ty_generic as g:
+            return match_case_names_for(ctx, "", g.name) != null
+        _:
+            return false
+
+
+## The host's `to_s` for the scrutinee in the match error: a nominal type
+## carries its declaring module (`tmp.main.S`, `std.vec.Vec[int]`), the rest
+## come from `type_to_string`.
+function match_scrutinee_text(t: types.Type) -> str:
+    match t:
+        types.Type.ty_named as n:
+            if n.module_name.len == 0:
+                return n.name
+            var buf = string.String.create()
+            buf.append(n.module_name)
+            buf.append(".")
+            buf.append(n.name)
+            return buf.as_str()
+        types.Type.ty_imported as im:
+            var buf = string.String.create()
+            if im.module_name.len > 0:
+                buf.append(im.module_name)
+                buf.append(".")
+            buf.append(im.name)
+            if im.args.len > 0:
+                buf.append("[")
+                var ai: ptr_uint = 0
+                while ai < im.args.len:
+                    if ai > 0:
+                        buf.append(", ")
+                    buf.append(match_scrutinee_text(unsafe: read(im.args.data + ai)))
+                    ai += 1
+                buf.append("]")
+            return buf.as_str()
+        types.Type.ty_nullable as nl:
+            var buf = string.String.create()
+            buf.append(match_scrutinee_text(unsafe: read(nl.base)))
+            buf.append("?")
+            return buf.as_str()
+        _:
+            return types.type_to_string(t)
+
+
+function match_scrutinee_message(t: types.Type) -> str:
+    var buf = string.String.create()
+    buf.append("match requires an enum, variant, or integer scrutinee, got ")
+    buf.append(match_scrutinee_text(t))
+    return buf.as_str()
 
 
 function check_case_match(ctx: ref[Context], module_name: str, type_name: str, arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
@@ -5401,7 +5485,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
             ast.Expr.expr_if as ife:
                 return infer_if_expr_type(ctx, scope, ife.condition, ife.then_expr, ife.else_expr)
             ast.Expr.expr_match as me:
-                return infer_match_expr_type(ctx, scope, me.scrutinee, me.arms)
+                return infer_match_expr_type(ctx, scope, me.scrutinee, me.arms, me.line, me.column)
             ast.Expr.expr_detach as det:
                 return infer_detach_type(ctx, det.expression, det.line, det.column)
             ast.Expr.expr_sizeof:
@@ -5574,11 +5658,16 @@ function infer_if_expr_type(ctx: ref[Context], scope: ref[sscope.Scope], conditi
             return hint_ty
     return sem_exprs.conditional_common_type(then_ty, else_ty, then_expr, else_expr)
 
-function infer_match_expr_type(ctx: ref[Context], scope: ref[sscope.Scope], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm]) -> types.Type:
+function infer_match_expr_type(ctx: ref[Context], scope: ref[sscope.Scope], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], line: ptr_uint, column: ptr_uint) -> types.Type:
     unsafe:
         # An `as name` arm binds the arm's payload type from the
         # scrutinee's type, so it is inferred once, before the arms.
         let expr_scrutinee_ty = infer_expr_inner(ctx, scope, scrutinee)
+        # The host rejects anything but an enum, variant, integer, str or tuple
+        # before inferring the arm values (see `match_scrutinee_supported`).
+        if not match_scrutinee_supported(ctx, expr_scrutinee_ty):
+            report_at(ctx, line, column, 5, match_scrutinee_message(expr_scrutinee_ty))
+            return types.Type.ty_error
         var arm_types = vec.Vec[types.Type].create()
         var arm_exprs = vec.Vec[ptr[ast.Expr]].create()
         let match_hint = ctx.expected_type_hint
@@ -8004,7 +8093,7 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
             # recorded type, so it must be inferred here too (this arm returns
             # before the generic path below would).
             let _recv_ty = infer_expr(ctx, scope, receiver)
-            return event_method_call_type(method_name)
+            return event_method_call_type(ctx, method_name, event_name.value)
         Option.none:
             pass
 
@@ -8696,8 +8785,10 @@ function event_value_receiver(ctx: ref[Context], scope: ref[sscope.Scope], recei
 
 ## The builtin event method result types (the host's
 ## `check_event_method_call`): `subscribe`/`subscribe_once` yield
-## `Result[Subscription, EventError]`, `unsubscribe` a `bool`, `emit`/`wait` void.
-function event_method_call_type(method_name: str) -> types.Type:
+## `Result[Subscription, EventError]`, `unsubscribe` a `bool`, `emit` `void`,
+## and `wait` a `Task[Result[payload|void, EventError]]` — the payload is the
+## event's declared type, so `await event.wait()` is the matchable `Result`.
+function event_method_call_type(ctx: ref[Context], method_name: str, event_name: str) -> types.Type:
     if method_name == "subscribe" or method_name == "subscribe_once":
         var results = vec.Vec[types.Type].create()
         results.push(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "Subscription"))
@@ -8705,6 +8796,22 @@ function event_method_call_type(method_name: str) -> types.Type:
         return types.Type.ty_generic(name = "Result", args = results.as_span())
     if method_name == "unsubscribe":
         return types.primitive("bool")
+    if method_name == "wait":
+        var payload_ty = types.primitive("void")
+        let info_ptr = ctx.event_types.get(event_name)
+        if info_ptr != null:
+            unsafe:
+                let info = read(info_ptr)
+                let pt = info.payload_type
+                if pt != null:
+                    payload_ty = resolve_type(ctx, pt)
+        var results = vec.Vec[types.Type].create()
+        results.push(payload_ty)
+        results.push(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "EventError"))
+        var result_ty = types.Type.ty_generic(name = "Result", args = results.as_span())
+        var task_args = vec.Vec[types.Type].create()
+        task_args.push(result_ty)
+        return types.Type.ty_generic(name = "Task", args = task_args.as_span())
     return types.primitive("void")
 
 
