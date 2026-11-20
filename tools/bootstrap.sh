@@ -14,13 +14,17 @@
 #                        remaining cost is the two self-builds (~5 min each).
 #   --profile PROFILE    Build profile: debug or release (default: debug)
 #   --keep-c             Save generated C files alongside binaries
+#   --allow-ruby-host    Permit the Ruby host as stage0 when no seed exists.
+#                        Without this flag the script fails instead of silently
+#                        falling back, so the native path stays the only
+#                        supported one.
 #   -j N                 Parallel jobs for C compilation (default: nproc)
 #
 # Stage0 resolution order:
 #   1. --bootstrap PATH (explicit)
 #   2. $MTC_BOOTSTRAP environment variable
-#   3. bin/bootstrap-mtc in the repo root (if present)
-#   4. ruby -Ilib bin/mtc (Ruby host fallback)
+#   3. vendor/bootstrap/<platform>/mtc (committed seed, sha256-verified)
+#   4. ruby -Ilib bin/mtc (Ruby host, only with --allow-ruby-host)
 #   5. Error
 #
 # Output:
@@ -44,6 +48,7 @@ SKIP_VERIFY=0
 FAST=0
 PROFILE="debug"
 KEEP_C=0
+ALLOW_RUBY_HOST=0
 JOBS="$(nproc 2>/dev/null || echo 1)"
 BUILD_DIR="${MTC_BUILD_DIR:-build}"
 
@@ -76,6 +81,10 @@ while [[ $# -gt 0 ]]; do
             KEEP_C=1
             shift
             ;;
+        --allow-ruby-host)
+            ALLOW_RUBY_HOST=1
+            shift
+            ;;
         -j)
             JOBS="$2"
             shift 2
@@ -101,6 +110,22 @@ fi
 
 # ── stage0 resolution ────────────────────────────────────────────────────────
 
+# Verify the committed seed against its recorded sha256.  A mismatched seed is
+# fatal: it means the binary was replaced or corrupted and its behaviour cannot
+# be trusted as a build base.
+verify_seed() {
+    local seed_dir="$1"
+    if [[ ! -f "$seed_dir/mtc.sha256" ]]; then
+        echo "error: seed checksum missing: $seed_dir/mtc.sha256" >&2
+        exit 1
+    fi
+    if ! (cd "$seed_dir" && sha256sum -c --quiet mtc.sha256) >&2; then
+        echo "error: seed checksum mismatch: $seed_dir/mtc" >&2
+        echo "  Replace the seed or pass --bootstrap PATH to use another compiler." >&2
+        exit 1
+    fi
+}
+
 resolve_stage0() {
     # 1. explicit --bootstrap
     if [[ -n "$BOOTSTRAP_PATH" ]]; then
@@ -124,28 +149,37 @@ resolve_stage0() {
         exit 1
     fi
 
-    # 3. bin/bootstrap-mtc in the repo root
-    local repo_bootstrap="$PROJECT_ROOT/bin/bootstrap-mtc"
-    if [[ -x "$repo_bootstrap" ]]; then
-        echo "stage0: $repo_bootstrap (repo snapshot)" >&2
-        echo "$repo_bootstrap"
+    # 3. committed seed for this platform
+    local seed_platform seed_dir
+    seed_platform="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
+    seed_dir="$PROJECT_ROOT/vendor/bootstrap/$seed_platform"
+    if [[ -f "$seed_dir/mtc" ]]; then
+        chmod +x "$seed_dir/mtc"
+        verify_seed "$seed_dir"
+        echo "stage0: $seed_dir/mtc (seed, sha256 verified)" >&2
+        echo "$seed_dir/mtc"
         return
     fi
 
-    # 4. Ruby host fallback
-    if command -v ruby &>/dev/null; then
-        local ruby_cmd="ruby -Ilib bin/mtc"
-        if $ruby_cmd version &>/dev/null; then
-            echo "stage0: ruby -Ilib bin/mtc (Ruby host)" >&2
-            echo "$ruby_cmd"
-            return
+    # 4. Ruby host (explicit opt-in only)
+    if [[ "$ALLOW_RUBY_HOST" -eq 1 ]]; then
+        if command -v ruby &>/dev/null; then
+            local ruby_cmd="ruby -Ilib bin/mtc"
+            if $ruby_cmd version &>/dev/null; then
+                echo "stage0: ruby -Ilib bin/mtc (Ruby host, --allow-ruby-host)" >&2
+                echo "$ruby_cmd"
+                return
+            fi
         fi
+        echo "error: --allow-ruby-host was passed but no working ruby was found." >&2
+        exit 1
     fi
 
     # 5. Error
-    echo "error: no bootstrap compiler found." >&2
-    echo "  Install Ruby for stage0, or set \$MTC_BOOTSTRAP to an mtc binary." >&2
-    echo "  See docs/bootstrap-design.md for details." >&2
+    echo "error: no bootstrap compiler found for $seed_platform." >&2
+    echo "  expected seed: $seed_dir/mtc" >&2
+    echo "  Pass --bootstrap PATH, set \$MTC_BOOTSTRAP, or pass --allow-ruby-host" >&2
+    echo "  to build with the Ruby host.  See docs/bootstrap-design.md." >&2
     exit 1
 }
 

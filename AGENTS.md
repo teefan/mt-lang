@@ -85,6 +85,15 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 The Ruby host in `lib/` (`ruby -Ilib bin/mtc`) is the reference implementation; `projects/mtc` is the
 self-hosted compiler, and matching the host everywhere is the program's goal.
 
+**Host retirement (session 142).**  The native self-host is now the
+shipped-compiler target; the Ruby host is frozen as an independent oracle and
+retired from live development.  `tools/bootstrap.sh` builds from the committed
+seed (`vendor/bootstrap/<platform>/mtc`, sha256-verified) and no longer falls
+back to Ruby unless `--allow-ruby-host` is passed.  New work lands in
+`projects/mtc` and `std/` only.  The phases and their gates are in
+`docs/self-host-plan.md` § "Host retirement program"; phase 1 (porting the
+structural guard) is the next item.
+
 - **Rebuild before measuring**: `ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc`.
   A stale `build/stage2/mtc` is the classic false result.
 - **Gates are tiered — iterate cheap, prove once.**  `tools/gates.sh` picks the set from

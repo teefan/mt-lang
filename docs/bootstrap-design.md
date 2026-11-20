@@ -2,8 +2,11 @@
 
 Status: **Phase 1 implemented** (`tools/bootstrap.sh`, in use for every compiler
 change: 3-stage build, revision stamping, `diff`-based fixed-point verification,
-self-test run). Phases 2–3 (binary release tooling, developer tooling) remain
-proposals. Last updated: 2026-09-25.
+self-test run) plus the **native seed path**: stage0 defaults to a committed,
+sha256-verified `vendor/bootstrap/<platform>/mtc`, and the Ruby host is only
+usable with `--allow-ruby-host`. Phase 2 (binary release tooling) and Phase 3
+(developer tooling) remain proposals; download-on-demand is not implemented.
+Last updated: 2026-11-20.
 
 ## 0. Motivation
 
@@ -30,7 +33,8 @@ them to Milk Tea's constraints (Ruby host, C backend, source-only stdlib).
 Implemented by `tools/bootstrap.sh` (§3), which persists every stage:
 
 ```
-stage0 (bin/bootstrap-mtc, $MTC_BOOTSTRAP, or ruby -Ilib bin/mtc)
+stage0 (vendor/bootstrap/<platform>/mtc, $MTC_BOOTSTRAP, or ruby -Ilib bin/mtc
+        with --allow-ruby-host)
         ──build──→ build/stage1/mtc   (fast dev path: --stage 1)
 stage1  ──build──→ build/stage2/mtc   (distributable artifact, --stage 2)
 stage2  ──build──→ build/stage3/mtc   (verification only)
@@ -40,9 +44,9 @@ stage2  ──build──→ build/stage3/mtc   (verification only)
 
 Stage 1/2/3 binaries, their generated C (`--keep-c`) and the fixed-point diff
 all live under `$MTC_BUILD_DIR` (default `build/`), so a bootstrap run leaves
-the artifacts behind for inspection.  The only piece of this design that is not
-wired up yet is the *snapshot download* (`$MTC_BOOTSTRAP_URL`): stage0 falls
-back to an existing binary or the Ruby host.
+the artifacts behind for inspection.  The snapshot download
+(`$MTC_BOOTSTRAP_URL`) is not wired up; the committed seed covers the primary
+host instead.
 
 ### 1.2 Target model (mirrors Rust/Go)
 
@@ -87,41 +91,58 @@ stage2 (matching Rust) with stage3 as verification-only.
 
 ### 2.1 Snapshot concept
 
-A **snapshot** is a pre-built `mtc` binary from the last stable release. It
-replaces Ruby as the stage0 compiler for contributors who don't have (or don't
-want to install) Ruby. The snapshot is NOT committed to the repository — it is
-either provided locally by the user or downloaded on demand (see §2.2).
+A **snapshot** (seed) is a pre-built `mtc` binary from the last stable release.
+It replaces Ruby as the stage0 compiler.  A seed only has to compile the source
+tree at its own commit; a language change in the compiler or `std/` is what
+forces a refresh.
 
 ### 2.2 Snapshot storage strategy
 
-**Recommendation: user-provided or download-on-demand, locally cached.**
+**Decision: one committed seed per supported host.**
 
-- The user sets `$MTC_BOOTSTRAP` to point at a pre-built `mtc` binary.
-- Alternatively, the bootstrap script can download a snapshot from a configured
-  URL into a local cache directory.
-- The cache lives at `$XDG_CACHE_HOME/milk_tea/bootstrap/` (or `~/.cache/milk_tea/bootstrap/`).
+- `vendor/bootstrap/<platform>/mtc` plus `mtc.sha256`; `tools/bootstrap.sh`
+  verifies the checksum before use and fails on a mismatch.
+- Only `linux-x86_64` is present.  A missing platform is a hard error that
+  names the expected path.
+- The checked-in binary is a release-profile **stage2** compiler, so its code
+  generation comes from Milk Tea, not from the Ruby host.  Provenance and the
+  regeneration command are in `vendor/bootstrap/README.md`.
 
-We reject committing binaries to the repository (bloats history, opaque diffs)
-and git-lfs (extra tooling requirement for every contributor).
+This supersedes the earlier "never commit binaries" recommendation:
+
+- The repository has no CI and no artifact host, so download-on-demand would
+  leave a fresh clone unable to build without Ruby — the exact dependency the
+  seed exists to remove.
+- One ~6 MB release binary per platform is bounded; it is replaced when a
+  release is cut, not accumulated.
+- `.gitattributes` marks `vendor/bootstrap/**` as binary so line-ending
+  normalization cannot corrupt it.
+
+Download-on-demand (`$MTC_BOOTSTRAP_URL` into `$XDG_CACHE_HOME`) remains the
+plan for platforms without a committed seed and for consuming published
+releases; it is not implemented.
 
 ### 2.3 Stage0 resolution order
 
 The bootstrap script resolves the stage0 compiler in this order:
 
-1. `--bootstrap PATH` (explicit, highest priority)
-2. `$MTC_BOOTSTRAP` environment variable
-3. `bin/bootstrap-mtc` in the repo root (if present — user places it there)
-4. Download snapshot from `$MTC_BOOTSTRAP_URL` into local cache
-5. `ruby -Ilib bin/mtc` (Ruby host — existing fallback)
-6. Error: "No bootstrap compiler found. Install Ruby or set MTC_BOOTSTRAP."
+1. `--bootstrap PATH` (explicit, highest priority; not checksum-verified)
+2. `$MTC_BOOTSTRAP` environment variable (not checksum-verified)
+3. `vendor/bootstrap/<platform>/mtc` (committed seed; sha256 verified)
+4. `ruby -Ilib bin/mtc` (only with `--allow-ruby-host`)
+5. Error: names the expected seed path and the three ways to supply one
+
+The `bin/bootstrap-mtc` path was removed; `vendor/bootstrap/` replaces it and
+carries a checksum, which a user-placed file could not.
 
 ### 2.4 Snapshot format
 
-Minimum: a single native `mtc` binary for linux/x86-64 (the primary dev host).
+The repository ships the minimum: one native `mtc` binary per platform
+(`linux-x86-64` today).
 
-Full: binaries for linux/x86-64 and windows/x86-64, plus the `std/` directory
-tree (source files — no pre-compiled artifacts needed since stdlib is
-source-only).
+A release package adds binaries for each supported platform plus the `std/`
+directory tree (source files — no pre-compiled artifacts are needed because the
+standard library is source-only).  That packaging is Phase 2.
 
 ---
 
@@ -137,10 +158,12 @@ tools/bootstrap.sh [OPTIONS]
 
 Options:
   --bootstrap PATH     Path to stage0 mtc binary (default: auto-detect)
-  --stage {1,2}        Build target stage (default: 2)
+  --stage {1,2,3}      Build target stage (default: 3)
   --no-verify          Skip stage3 fixed-point check
-  --keep-c DIR         Save generated C files to DIR
-  --profile {debug,release}  Build profile (default: release)
+  --fast               Fixed point only (implies --keep-c; skips the suite)
+  --keep-c             Save generated C files alongside binaries
+  --profile {debug,release}  Build profile (default: debug)
+  --allow-ruby-host    Permit the Ruby host as stage0 when no seed exists
   -j N                 Parallel jobs for C compilation (default: nproc)
 ```
 
@@ -270,8 +293,11 @@ $XDG_CACHE_HOME/milk_tea/
 ### Phase 1: Bootstrap script — DONE (`tools/bootstrap.sh`)
 
 - [x] `tools/bootstrap.sh`
-- [x] Support `$MTC_BOOTSTRAP`, `--bootstrap`, Ruby fallback (snapshot download
-      not implemented — `$MTC_BOOTSTRAP_URL` is unused)
+- [x] Support `$MTC_BOOTSTRAP`, `--bootstrap` (snapshot download not
+      implemented — `$MTC_BOOTSTRAP_URL` is unused)
+- [x] Committed sha256-verified seed (`vendor/bootstrap/<platform>/`) as the
+      default stage0; the Ruby host requires `--allow-ruby-host`, and a fresh
+      clone bootstraps with only a C compiler
 - [x] 3-stage build + fixed-point verification via `diff`
 - [x] `--stage 1` fast path for development (`--stage 2` stops after stage2)
 - [x] `--no-verify` to skip stage3
@@ -284,8 +310,9 @@ $XDG_CACHE_HOME/milk_tea/
 - Script to build release binaries for linux/x86-64 (and windows/x86-64 via
   MinGW cross-compilation when supported)
 - Package: `mtc` + `std/` + docs → `.tar.gz` / `.zip`
-- Snapshot update: copy the release `mtc` binary to the snapshot cache and
-  update `$MTC_BOOTSTRAP_URL`
+- Snapshot update: copy the release `mtc` binary into
+  `vendor/bootstrap/<platform>/` and refresh `mtc.sha256`; additionally publish
+  it for download-on-demand
 
 ### Phase 3: Developer tooling (future)
 
