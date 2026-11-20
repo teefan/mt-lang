@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# End-to-end smoke for `mtc run --platform wasm`: build a package, start each
+# End-to-end smoke for `mtc run --platform wasm`: build a package, start the
 # compiler's preview server, fetch the entry + its emcc sidecars, check the
 # static-file/MIME/error surface, then SIGTERM and require exit 0.
 #
@@ -18,7 +18,6 @@ require "uri"
 
 ROOT = File.expand_path("..", __dir__)
 SELF = File.expand_path(ENV.fetch("SELF", File.join(ROOT, "build/stage2/mtc")), ROOT)
-HOST_CMD = ["ruby", "-I#{File.join(ROOT, "lib")}", File.join(ROOT, "bin/mtc")]
 
 class SmokeFailure < StandardError; end
 
@@ -185,14 +184,11 @@ check(File.file?(self_bin) && File.executable?(self_bin), "self compiler not fou
 
 root = Dir.mktmpdir("wasm-smoke")
 begin
-  host_dir = File.join(root, "host")
   self_dir = File.join(root, "self")
-  write_fixture(host_dir, "smokehost")
   write_fixture(self_dir, "smokeself")
 
-  exercise(HOST_CMD + ["run", ".", "-I", ROOT, "--platform", "wasm", "--no-cache"], host_dir, "host")
   exercise([self_bin, "run", ".", "-I", ROOT, "--platform", "wasm", "--no-cache"], self_dir, "self")
-  puts "wasm smoke: host=ok self=ok"
+  puts "wasm smoke: self=ok"
 ensure
   if keep?
     puts "kept fixture: #{root}"

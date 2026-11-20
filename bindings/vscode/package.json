@@ -278,7 +278,7 @@
           ],
           "enumDescriptions": [
             "Preserves line structure and multi-line calls; normalizes inline whitespace (recommended).",
-            "Fully verbatim — keeps all spacing and alignment as written.",
+            "Fully verbatim \u2014 keeps all spacing and alignment as written.",
             "Full AST re-emit: normalizes everything including multi-line call layout.",
             "Alias for safe."
           ],
@@ -569,7 +569,6 @@
     "bundle": "node ./scripts/build-extension.js",
     "compile": "npm run typecheck && npm run bundle",
     "watch": "node ./scripts/build-extension.js --watch",
-    "check:tm-sync": "node ./scripts/check-tm-grammar-sync.js",
     "package": "npm run compile && vsce package --skip-license",
     "vsix:build": "npm run package",
     "vscode:install": "code --install-extension \"${npm_package_name}-${npm_package_version}.vsix\" --force",

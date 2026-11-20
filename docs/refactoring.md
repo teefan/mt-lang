@@ -140,13 +140,13 @@ score.
 
 2. **Iterate cheap.**
    ```sh
-   ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev   # ~35 s
+   "$(tools/bootstrap.sh --print-stage0)" build projects/mtc -I . --no-cache -o tmp/mtc-dev   # ~25 s
    tmp/mtc-dev test projects/mtc -I . --timeout 120                        # 22 files
    ruby tools/refactor_guard.rb --check
    ```
-   Then the focused parity harness for the class you touched (lint, sexpr,
-   CLI, LSP, formatter). Count the test files, not just `0 failed` — `mtc test`
-   silently skips a file that fails to lex/parse.
+   Then the recorded golden for the class you touched
+   (`tools/gates.sh --areas oracles --run`). Count the test files, not just
+   `0 failed` — `mtc test` silently skips a file that fails to lex/parse.
 
 3. **Measure before and after.**
    ```sh

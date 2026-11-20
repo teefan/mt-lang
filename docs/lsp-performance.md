@@ -1,6 +1,8 @@
 # LSP Performance Research
 
-> Host-side research (the Ruby LSP).  Self-host LSP measurements — the
+> Host-side research (the Ruby LSP, archived at
+> `archive/host-ruby-0.4.26`; paths and benchmark files below name that tree).
+> Self-host LSP measurements — the
 > `[LSP perf]` per-request log, the edit-cycle numbers and the remaining
 > per-module caching step — live in
 > [self-host-plan.md](./self-host-plan.md) (§0g "Editor responsiveness" and the

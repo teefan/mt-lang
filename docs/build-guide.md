@@ -583,16 +583,24 @@ handshake, and `mtc docs` serves the reference page, its CSS/JS assets, and a
 ### Building from source
 
 The repository ships a checksummed bootstrap compiler, so a fresh clone builds
-with only a C compiler:
+with only a C compiler.  The compiler's own imports also need the vendored
+`third_party/` sources (cJSON, libuv, pcre2, ...): fetch them once with the seed
+(network required) or copy them from another checkout.
 
 ```sh
+vendor/bootstrap/<platform>/mtc toolchain bootstrap   # fetch third_party/ once
 tools/bootstrap.sh            # stage1 -> stage2 -> stage3, fixed point, self-tests
 build/stage2/mtc run hello.mt
 ```
 
 `tools/bootstrap.sh` resolves stage0 as `--bootstrap PATH`, `$MTC_BOOTSTRAP`,
-`vendor/bootstrap/<platform>/mtc` (sha256-verified), then the Ruby host only
-with `--allow-ruby-host`. Stage2 is the distributable compiler; stage3 proves
-the fixed point (`stage2.c == stage3.c`). `tools/release.sh --refresh-seed`
-replaces the seed with the release build so the next cycle bootstraps from the
-released compiler.
+or `vendor/bootstrap/<platform>/mtc` (sha256-verified); there is no second
+compiler. Stage2 is the distributable compiler; stage3 proves the fixed point
+(`stage2.c == stage3.c`). `tools/release.sh --refresh-seed` replaces the seed
+with the release build so the next cycle bootstraps from the released compiler.
+
+For an iteration build, compile the tree with the seed directly:
+
+```sh
+"$(tools/bootstrap.sh --print-stage0)" build projects/mtc -I . --no-cache -o tmp/mtc-dev
+```

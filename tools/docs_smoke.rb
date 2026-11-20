@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Host-vs-self smoke for `mtc docs`: start each server (ephemeral port), fetch
-# the reference/module/source/highlight/search/static/404 routes, compare the
+# Smoke for `mtc docs`: start the server (ephemeral port), fetch the
+# reference/module/source/highlight/search/static/404 routes, check the
 # byte-stable responses, then SIGTERM and require exit 0.
 #
 #   ruby tools/docs_smoke.rb [--self PATH] [--verbose]
@@ -16,7 +16,6 @@ require "uri"
 
 ROOT = File.expand_path("..", __dir__)
 SELF = File.expand_path(ENV.fetch("SELF", File.join(ROOT, "build/stage2/mtc")), ROOT)
-HOST_CMD = ["ruby", "-I#{File.join(ROOT, "lib")}", File.join(ROOT, "bin/mtc")]
 
 class SmokeFailure < StandardError; end
 
@@ -165,16 +164,8 @@ rescue StandardError
 end
 
 self_bin = self_path
-check(File.file?(self_bin) && File.executable?(self_bin), "self compiler not found: #{self_bin}")
+check(File.file?(self_bin) && File.executable?(self_bin), "compiler not found: #{self_bin}")
 
-host = exercise(HOST_CMD + ["docs"], "host")
-self_result = exercise([self_bin, "docs"], "self")
+exercise([self_bin, "docs"], "self")
 
-%i[root reference source css js].each do |key|
-  check(host[key] == self_result[key], "host/self #{key} bytes differ")
-end
-if host[:highlight] && self_result[:highlight]
-  check(host[:highlight] == self_result[:highlight], "host/self highlight bytes differ")
-end
-
-puts "docs smoke: host=ok self=ok"
+puts "docs smoke: self=ok"

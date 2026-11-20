@@ -1,13 +1,15 @@
 # Self-Host LSP Architecture
 
-Status: **Server implemented — 30 capabilities advertised at Ruby parity, and now
-measured against the host by `tools/lsp_parity.rb`.**
-Last updated: 2026-10-04 (session 33: the `milkTea/debugInfo` AST section is
-byte-equal and the remaining difference is the Facts/Bindings sections; the
-formatter measures 712/712 in all three modes).
+Status: **native server implemented — 30 capabilities.**  Host-differential
+measurement ended with the host retirement (session 143); this document's
+`lsp_parity`/`lsp_project_audit`/`lsp_recovery_probe` comparisons are historical,
+and the archived host is at tag `archive/host-ruby-0.4.26`.  The surviving
+instruments are `tools/lsp_parity.rb record --server self`, `tools/lsp_soak.rb`
+and the valgrind gate.
+Last updated: 2026-11-20 (host retired; behavior unchanged).
 42 modules, ~29.3k lines, 30 capabilities advertised at Ruby parity.
 
-> **Parity is measured by the self-vs-host harness, not by capability
+> **Historical note:** parity was measured by the self-vs-host harness, not by capability
 > advertisement.**  `tools/lsp_parity.rb` (`record --server host|self`,
 > `compare`, `--stress`) drives an out-of-process corpus of 72 requests — every
 > endpoint plus the `codeLens`/`completionItem`/`documentLink` resolve calls a

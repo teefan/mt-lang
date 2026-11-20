@@ -1,19 +1,17 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 #
-# DAP audit: drives `mtc dap` (host and self-host) through a session and reports
-# what each answers, so the gap between them is measured rather than asserted.
+# DAP smoke: drives `mtc dap` through a session and reports what it answers.
 #
-#   ruby tools/dap_smoke.rb [--server host|self|both] [--json OUT] [--verbose]
-#                           [--self-bin PATH]
+#   ruby tools/dap_smoke.rb [--json OUT] [--verbose] [--self-bin PATH]
+#                           [--allow-skip]
 #
-# `--self-bin` points the `self` server at an iteration build (e.g.
-# `tmp/mtc-dev`); the default is the gated `build/stage2/mtc`.
+# `--self-bin` points the server at an iteration build (e.g. `tmp/mtc-dev`);
+# the default is the gated `build/stage2/mtc`.
 #
-# The self-host adapter has one backend (`process`); the host also has the
-# `lldb-dap` bridge, which is where stepping, evaluate, setVariable, attach,
-# breakpoint verification, real variables and pause diagnostics come from.  Run
-# both to see the difference.
+# The adapter has one backend (`process`) plus the `lldb-dap` bridge, which is
+# where stepping, evaluate, setVariable, attach, breakpoint verification, real
+# variables and pause diagnostics come from.
 #
 # Each run: initialize, launch a program, wait for its output and terminated
 # event, then probe the debugging surface (threads, stackTrace, scopes,
@@ -336,20 +334,16 @@ def summarize(response)
   end
 end
 
-def server_command(server, backend: "process", adapter_path: nil)
+def server_command(backend: "process", adapter_path: nil)
   args = ["dap", "--backend=#{backend}"]
   args << "--adapter-path=#{adapter_path}" if adapter_path
-  if server == "self"
-    [$self_bin, *args]
-  else
-    ["ruby", "-I#{File.join(ROOT, 'lib')}", File.join(ROOT, "bin", "mtc"), *args]
-  end
+  [$self_bin, *args]
 end
 
 ## One lldb-dap session against the fake adapter: the whole bridge surface the
 ## real adapter will exercise, without a debuggee.
-def run_fake_backend_session(server, workdir, program_binary, adapter_path, into)
-  client = DapClient.new(server_command(server, backend: "lldb-dap", adapter_path: adapter_path), workdir)
+def run_fake_backend_session(workdir, program_binary, adapter_path, into)
+  client = DapClient.new(server_command(backend: "lldb-dap", adapter_path: adapter_path), workdir)
   begin
     r = client.request("initialize", { "adapterID" => "milk-tea", "clientID" => "dap_smoke" })
     into["lldb initialize"] = summarize(r)
@@ -384,8 +378,8 @@ end
 
 ## One session, one launch: a second launch in the same session is an adapter
 ## error on both sides and would mask everything after it.
-def run_launch_session(server, workdir, program, label, into)
-  client = DapClient.new(server_command(server), workdir)
+def run_launch_session(workdir, program, label, into)
+  client = DapClient.new(server_command, workdir)
   begin
     client.request("initialize", { "adapterID" => "milk-tea", "clientID" => "dap_smoke" })
     response = client.request("launch", { "program" => program, "stopOnEntry" => false })
@@ -408,8 +402,8 @@ def run_launch_session(server, workdir, program, label, into)
   end
 end
 
-def run_session(server, workdir, program_binary)
-  client = DapClient.new(server_command(server), workdir)
+def run_session(workdir, program_binary)
+  client = DapClient.new(server_command, workdir)
   out = {}
   begin
     r = client.request("initialize", { "adapterID" => "milk-tea", "clientID" => "dap_smoke" })
@@ -474,14 +468,14 @@ end
 ## its own debug map is in play) and drives a breakpoint session.  Skipped with
 ## a loud row when lldb-dap is not on PATH; the gate treats that as a failure
 ## unless --allow-skip is passed.
-def run_real_lldb_session(server, workdir, source, into)
+def run_real_lldb_session(workdir, source, into)
   adapter = find_lldb_dap
   unless adapter
     into["lldb-real skipped"] = "lldb-dap not found on PATH"
     return
   end
 
-  client = DapClient.new(server_command(server, backend: "lldb-dap"), workdir)
+  client = DapClient.new(server_command(backend: "lldb-dap"), workdir)
   begin
     r = client.request("initialize", { "adapterID" => "milk-tea", "clientID" => "dap_smoke" })
     into["lldb-real initialize"] = summarize(r)
@@ -518,12 +512,11 @@ def run_real_lldb_session(server, workdir, source, into)
   end
 end
 
-options = { server: "both", json: nil, verbose: false, self_bin: SELF_SERVER, allow_skip: false }
+options = { json: nil, verbose: false, self_bin: SELF_SERVER, allow_skip: false }
 OptionParser.new do |opts|
-  opts.on("--server SERVER", %w[host self both]) { |v| options[:server] = v }
   opts.on("--json PATH") { |v| options[:json] = v }
   opts.on("--verbose") { options[:verbose] = true }
-  opts.on("--self-bin PATH", "Self server binary (default build/stage2/mtc)") { |v| options[:self_bin] = v }
+  opts.on("--self-bin PATH", "Server binary (default build/stage2/mtc)") { |v| options[:self_bin] = v }
   opts.on("--allow-skip", "Allow the real lldb-dap rows to be skipped") { options[:allow_skip] = true }
 end.parse!
 $self_bin = options[:self_bin]
@@ -534,64 +527,53 @@ Dir.mktmpdir("dap-smoke") do |dir|
   FileUtils.mkdir_p(File.join(workdir, "src"))
   File.write(File.join(workdir, "src", "main.mt"), PROGRAM)
   binary = File.join(dir, "main")
-  build = system(File.join(ROOT, "bin", "mtc"), "build", File.join(workdir, "src", "main.mt"),
+  build = system($self_bin, "build", File.join(workdir, "src", "main.mt"),
                  "-o", binary, chdir: workdir, out: File::NULL, err: File::NULL)
   abort "could not build the smoke program" unless build
 
-  servers = options[:server] == "both" ? %w[host self] : [options[:server]]
   fake_path = File.join(dir, "fake_lldb_dap.rb")
   File.write(fake_path, FAKE_LLDB_ADAPTER)
-  servers.each do |server|
-    results[server] = run_session(server, workdir, binary)
-    run_launch_session(server, workdir, File.join("src", "main.mt"), "launch(.mt)", results[server])
-    run_fake_backend_session(server, workdir, binary, fake_path, results[server])
-    run_real_lldb_session(server, workdir, File.join(workdir, "src", "main.mt"), results[server])
-  end
+  results = run_session(workdir, binary)
+  run_launch_session(workdir, File.join("src", "main.mt"), "launch(.mt)", results)
+  run_fake_backend_session(workdir, binary, fake_path, results)
+  run_real_lldb_session(workdir, File.join(workdir, "src", "main.mt"), results)
 end
 
-keys = results.values.flat_map(&:keys).uniq
+keys = results.keys
 width = keys.map(&:length).max
-puts format("%-#{width}s  %-34s  %s", "request", "host", "self")
+puts format("%-#{width}s  %s", "request", "self")
 keys.each do |key|
   next if key == "stderr"
-  host = results.dig("host", key) || "-"
-  self_ = results.dig("self", key) || "-"
-  flag = host == self_ ? " " : "*"
-  puts format("%s%-#{width}s  %-34s  %s", flag, key, host.to_s[0, 34], self_.to_s[0, 60])
+
+  puts format("%-#{width}s  %s", key, results[key].to_s[0, 80])
 end
 puts
-servers_error = results.values.any? { |r| (r["stderr"] || []).any? { |l| l =~ /error|malformed/i } }
-puts "stderr: #{results.transform_values { |r| (r['stderr'] || []).size }.inspect}#{servers_error ? ' (check lines)' : ''}"
-results.each do |server, out|
-  next unless options[:verbose]
-  puts "== #{server} stderr =="
-  (out["stderr"] || []).each { |line| puts "  #{line}" }
+servers_error = (results["stderr"] || []).any? { |l| l =~ /error|malformed/i }
+puts "stderr: #{(results['stderr'] || []).size} line(s)#{servers_error ? ' (check lines)' : ''}"
+if options[:verbose]
+  puts "== stderr =="
+  (results["stderr"] || []).each { |line| puts "  #{line}" }
 end
 File.write(options[:json], JSON.pretty_generate(results)) if options[:json]
 
-# Assertion layer: only the documented self-better row may differ.  A missing
-# lldb-dap is a failure by default so a machine without LLVM cannot look green.
-DOCUMENTED_DIFFERENCES = {
-  "lldb-real frame0 name" => ["main_add", "add"],
-}.freeze
-
-differing = []
-if results.key?("host") && results.key?("self")
-  keys.each do |key|
-    next if key == "stderr"
-
-    host = results.dig("host", key)
-    self_ = results.dig("self", key)
-    next if host == self_
-    next if DOCUMENTED_DIFFERENCES[key] == [host.to_s, self_.to_s]
-
-    differing << key
-  end
+# Assertion layer: the real lldb-dap session must reach the breakpoint and
+# report the Milk Tea frame.  A missing lldb-dap is a failure by default so a
+# machine without LLVM cannot look green.
+skipped = results.key?("lldb-real skipped")
+aborted = results.key?("lldb-real exception") ||
+          results["exception"].to_s.length.positive?
+# `error: ... is not supported by the process backend` is an expected capability
+# row; only a harness exception is fatal here.
+bad_rows = keys.reject { |k| k == "stderr" }
+                .select { |k| results[k].to_s.start_with?("exception:") }
+checks = {}
+unless skipped
+  checks["lldb-real breakpoint stop"] = results["lldb-real breakpoint stop"] == "breakpoint"
+  checks["lldb-real frame0 name"] = results["lldb-real frame0 name"] == "add"
+  checks["lldb-real terminated"] = results["lldb-real terminated"] == true
 end
-skipped = results.values.any? { |r| r.key?("lldb-real skipped") }
-aborted = results.values.any? { |r| r.key?("lldb-real exception") }
-puts "differing rows: #{differing.empty? ? 'none' : differing.join(', ')}"
+checks.each { |name, ok| puts "check #{name}: #{ok ? 'ok' : 'FAIL'}" }
 if skipped && !options[:allow_skip]
   puts "lldb-dap is required (pass --allow-skip to accept a missing adapter)"
 end
-exit 1 if differing.any? || aborted || (skipped && !options[:allow_skip])
+exit 1 if aborted || bad_rows.any? || checks.any? { |_, ok| !ok } || (skipped && !options[:allow_skip])

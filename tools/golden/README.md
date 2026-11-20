@@ -1,21 +1,21 @@
 # Recorded golden fixtures
 
-These files are the post-retirement regression oracle for the parity sweeps.
-Each harness can record the self-host compiler's normalized output once and
-replay it without consulting the Ruby host:
+These files are the regression oracle for the post-retirement compiler.  Each
+harness requires `--record FILE` or `--expect FILE`; the live host branches are
+gone.
 
 ```sh
 # record (reviews are the fixture diff)
 ruby tools/cli_parity.rb --record tools/golden/cli.json
 ruby tools/diag_parity.rb check std examples --record tools/golden/diag.json
 ruby tools/lint_parity.rb --record tools/golden/lint.json
-ruby tools/format_parity.rb all -j 16 --record tools/golden/format.json
+ruby tools/format_parity.rb all -j 4 --record tools/golden/format.json
 
 # replay
 ruby tools/cli_parity.rb --expect tools/golden/cli.json -q
 ruby tools/diag_parity.rb check std examples --expect tools/golden/diag.json -q
 ruby tools/lint_parity.rb --expect tools/golden/lint.json -q
-ruby tools/format_parity.rb all -j 16 --expect tools/golden/format.json -q
+ruby tools/format_parity.rb all -j 4 --expect tools/golden/format.json -q
 ```
 
 `tools/gates.sh --areas oracles` runs the replay set plus the syntax check.

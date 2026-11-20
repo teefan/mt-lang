@@ -1918,8 +1918,8 @@
           "sha256": "8a8a4f4cfbf1cd68234ddd27b3d6a667b2bbc53a6035139fe8c9929acbc2997c"
         },
         "projects/mtc/src/mtc/toolchain_cli.mt": {
-          "digest": "49d56c76feb8df4aecffbb7a23cc3b70eea5e28945cf332cd33393d816896484",
-          "sha256": "49d56c76feb8df4aecffbb7a23cc3b70eea5e28945cf332cd33393d816896484"
+          "digest": "32494c598eb18a9648b5140b3d88e5b7933f0ed3b8d48d0ba7cd1288f193466a",
+          "sha256": "32494c598eb18a9648b5140b3d88e5b7933f0ed3b8d48d0ba7cd1288f193466a"
         },
         "projects/mtc/src/mtc/wasm_preview.mt": {
           "digest": "40bf7a52cea8cefdaa62bce94a462a97346f0bb5b61908092980268ebce4ca24",
@@ -2856,22 +2856,6 @@
         "std/zstd.mt": {
           "digest": "c2f459daf32ce5ad95fd32b2e2e322eca3ea5fa2d0781ee517c1e51459de63e7",
           "sha256": "c2f459daf32ce5ad95fd32b2e2e322eca3ea5fa2d0781ee517c1e51459de63e7"
-        },
-        "test/examples/compile_fail/assign_immutable.mt": {
-          "digest": "95767b0cbf6a98539cb913b2e3a04dc6acb8a9eb8f017ba844c2323846281a3f",
-          "sha256": "95767b0cbf6a98539cb913b2e3a04dc6acb8a9eb8f017ba844c2323846281a3f"
-        },
-        "test/examples/testing_attr_demo.mt": {
-          "digest": "e9adcd596f2371f9e8cb59393e81480614f2957a2aa2b83e1a9e9df0bfa04210",
-          "sha256": "e9adcd596f2371f9e8cb59393e81480614f2957a2aa2b83e1a9e9df0bfa04210"
-        },
-        "test/examples/testing_demo.mt": {
-          "digest": "a1415c9da57fbd2940de520d64991c912729ac55c73f4b28ad659ea2d282236b",
-          "sha256": "a1415c9da57fbd2940de520d64991c912729ac55c73f4b28ad659ea2d282236b"
-        },
-        "test/examples/testing_fatal_demo.mt": {
-          "digest": "b55412f00956898c0d38cd0e5cc4bbe708355ea48458b656e1f72853ba25377e",
-          "sha256": "b55412f00956898c0d38cd0e5cc4bbe708355ea48458b656e1f72853ba25377e"
         },
         "test/mt/behavior_tree_test.mt": {
           "digest": "20312ad5c26e8597340d138c565b72f3740d06750fa892edc8a50bee218c1f30",
@@ -5032,8 +5016,8 @@
           "sha256": "8a8a4f4cfbf1cd68234ddd27b3d6a667b2bbc53a6035139fe8c9929acbc2997c"
         },
         "projects/mtc/src/mtc/toolchain_cli.mt": {
-          "digest": "49d56c76feb8df4aecffbb7a23cc3b70eea5e28945cf332cd33393d816896484",
-          "sha256": "d4359ffb7b0526e085794c2adf2b90b8d3a2126a727e3d2334476cafbb644bd0"
+          "digest": "32494c598eb18a9648b5140b3d88e5b7933f0ed3b8d48d0ba7cd1288f193466a",
+          "sha256": "ab07942f58ca3368c9c1ba051e1de24e058a2bcb7d80d8dd3b7355d415962558"
         },
         "projects/mtc/src/mtc/wasm_preview.mt": {
           "digest": "40bf7a52cea8cefdaa62bce94a462a97346f0bb5b61908092980268ebce4ca24",
@@ -5970,22 +5954,6 @@
         "std/zstd.mt": {
           "digest": "c2f459daf32ce5ad95fd32b2e2e322eca3ea5fa2d0781ee517c1e51459de63e7",
           "sha256": "c2f459daf32ce5ad95fd32b2e2e322eca3ea5fa2d0781ee517c1e51459de63e7"
-        },
-        "test/examples/compile_fail/assign_immutable.mt": {
-          "digest": "95767b0cbf6a98539cb913b2e3a04dc6acb8a9eb8f017ba844c2323846281a3f",
-          "sha256": "2b76839c0bbb7cc1cdc2095721d5462010f36a2612371b3020faa20d7a0b6857"
-        },
-        "test/examples/testing_attr_demo.mt": {
-          "digest": "e9adcd596f2371f9e8cb59393e81480614f2957a2aa2b83e1a9e9df0bfa04210",
-          "sha256": "0cea611da99401896a2e735999686d99931a615156f9365b816b9833fd2b5f21"
-        },
-        "test/examples/testing_demo.mt": {
-          "digest": "a1415c9da57fbd2940de520d64991c912729ac55c73f4b28ad659ea2d282236b",
-          "sha256": "12623584f17b77cd27280bdf463766fafc6bca8f40ea7c6659b5ceb6ea7a43d1"
-        },
-        "test/examples/testing_fatal_demo.mt": {
-          "digest": "b55412f00956898c0d38cd0e5cc4bbe708355ea48458b656e1f72853ba25377e",
-          "sha256": "cdd13c3fc8dba675e0165bfaa73e0ea3620461293ee766fff90a8287081d3dfe"
         },
         "test/mt/behavior_tree_test.mt": {
           "digest": "20312ad5c26e8597340d138c565b72f3740d06750fa892edc8a50bee218c1f30",
@@ -8146,8 +8114,8 @@
           "sha256": "46d6946e056e20bb817c9e9b426a3d310f104544c69c00cbc3687cac688c3fc2"
         },
         "projects/mtc/src/mtc/toolchain_cli.mt": {
-          "digest": "49d56c76feb8df4aecffbb7a23cc3b70eea5e28945cf332cd33393d816896484",
-          "sha256": "c17e048f1fed224da768a795ea79e87a672772d2c9e231e47d43964a529d5119"
+          "digest": "32494c598eb18a9648b5140b3d88e5b7933f0ed3b8d48d0ba7cd1288f193466a",
+          "sha256": "c9e917debfbe6bc12755259da04e4733a2e360aec891a39fa1a8a61ded166566"
         },
         "projects/mtc/src/mtc/wasm_preview.mt": {
           "digest": "40bf7a52cea8cefdaa62bce94a462a97346f0bb5b61908092980268ebce4ca24",
@@ -9084,22 +9052,6 @@
         "std/zstd.mt": {
           "digest": "c2f459daf32ce5ad95fd32b2e2e322eca3ea5fa2d0781ee517c1e51459de63e7",
           "sha256": "588e78ec4e9043cad46c4303be9132da3a57d766b379f668eb898a63b6d790a9"
-        },
-        "test/examples/compile_fail/assign_immutable.mt": {
-          "digest": "95767b0cbf6a98539cb913b2e3a04dc6acb8a9eb8f017ba844c2323846281a3f",
-          "sha256": "95767b0cbf6a98539cb913b2e3a04dc6acb8a9eb8f017ba844c2323846281a3f"
-        },
-        "test/examples/testing_attr_demo.mt": {
-          "digest": "e9adcd596f2371f9e8cb59393e81480614f2957a2aa2b83e1a9e9df0bfa04210",
-          "sha256": "647acacd21fc02907e1a1a9daf2da84e2a7c92f4a0d33ae18f9c248880cb17f7"
-        },
-        "test/examples/testing_demo.mt": {
-          "digest": "a1415c9da57fbd2940de520d64991c912729ac55c73f4b28ad659ea2d282236b",
-          "sha256": "5254c56a1c1c304cde995282db54f4becefd6cdf51e772a6a21129b7fc8e7c93"
-        },
-        "test/examples/testing_fatal_demo.mt": {
-          "digest": "b55412f00956898c0d38cd0e5cc4bbe708355ea48458b656e1f72853ba25377e",
-          "sha256": "3cba537afd761760924ea181f12d8727c67a0a78ee4e9dbbc8959e5081e1c261"
         },
         "test/mt/behavior_tree_test.mt": {
           "digest": "20312ad5c26e8597340d138c565b72f3740d06750fa892edc8a50bee218c1f30",

@@ -1,45 +1,37 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 #
-# cli_parity — compare the self-hosted `mtc` CLI against the Ruby host compiler,
-# byte for byte: stdout, stderr and exit status for the same argv in the same
-# working directory.
+# cli_parity — replay the checked-in self-host CLI oracle: stdout, stderr and
+# exit status for every case's argv in its working directory.
 #
-# The Ruby host is loaded once in the parent (its CLI is invoked in-process),
-# while the self-host binary is spawned per case.  Fixtures are materialized
-# into tmp/cli-parity/fixtures so the matrix is self-contained.
+# The fixture in tools/golden/cli.json was recorded from the native compiler.
+# `--expect` re-runs the same cases and fails on any difference, so the CLI
+# surface is pinned without a reference implementation.
 #
 # Usage:
-#   tools/cli_parity.rb [options]
+#   tools/cli_parity.rb --expect FILE [options]
+#   tools/cli_parity.rb --record FILE [options]
 #
 # Options:
-#   --self PATH      self-host compiler binary  (default: build/stage2/mtc)
+#   --self PATH      compiler binary           (default: build/stage2/mtc)
 #   --max-diffs N    failing cases to detail    (default: 25)
-#   --keep           keep the materialized fixtures and per-case outputs
 #   -q, --quiet      print only the summary
-#   -f, --filter RE  only run cases whose name matches RE
-#   --record FILE    record the self's normalized results to FILE (host-free)
-#   --expect FILE    replay FILE and fail on any difference (host-free)
+#   -f, --filter RE  only run cases whose name matches RE (expect mode only)
+#   --record FILE    record the compiler's normalized results to FILE
+#   --expect FILE    replay FILE and fail on any difference
 #   -h, --help       show this message
 #
-# Exit status: 0 when every comparable case matches, 1 otherwise.  A case may be
-# marked `pending:` while its subsystem is unimplemented; it is reported as
-# PENDING and never counts as a failure.  A pending case that starts matching is
-# a failure, forcing the flag's removal so a landed feature cannot silently
-# regress back into pending.
+# Exit status: 0 when every comparable case matches, 1 otherwise.
 
 require "fileutils"
 require "open3"
-require "stringio"
 require "tmpdir"
 require_relative "lib/golden"
 
 ROOT = File.expand_path("..", __dir__)
-$LOAD_PATH.unshift(File.join(ROOT, "lib"))
 
 self_bin = nil
 max_diffs = 25
-keep = false
 quiet = false
 filter = nil
 record_path = nil
@@ -51,7 +43,6 @@ until argv.empty?
   case a
   when "--self"      then self_bin = argv.shift
   when "--max-diffs" then max_diffs = argv.shift.to_i
-  when "--keep"      then keep = true
   when "-q", "--quiet" then quiet = true
   when "-f", "--filter" then filter = argv.shift
   when "--record" then record_path = argv.shift
@@ -69,8 +60,8 @@ end
 self_bin ||= File.join(ROOT, "build", "stage2", "mtc")
 self_bin = File.expand_path(self_bin)
 unless File.executable?(self_bin)
-  warn "error: self-host compiler not found or not executable: #{self_bin}"
-  warn "       build one with: ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o #{self_bin}"
+  warn "error: compiler not found or not executable: #{self_bin}"
+  warn "       build it with tools/bootstrap.sh -j 4"
   exit 1
 end
 
@@ -78,6 +69,10 @@ record_path = File.expand_path(record_path, ROOT) if record_path
 expect_path = File.expand_path(expect_path, ROOT) if expect_path
 if record_path && expect_path
   warn "error: --record and --expect are mutually exclusive"
+  exit 1
+end
+unless record_path || expect_path
+  warn "error: pass --expect FILE to replay the oracle or --record FILE to refresh it"
   exit 1
 end
 if record_path && filter
@@ -316,13 +311,13 @@ end
 
 # ── cases ───────────────────────────────────────────────────────────────────
 
-def case_entry(name, argv, cwd: nil, stdin: nil, pending: false, isolate: false)
-  { name:, argv:, cwd: cwd || FIXROOT, stdin:, pending:, isolate: }
+def case_entry(name, argv, cwd: nil, isolate: false, ignore_rc: false)
+  { name:, argv:, cwd: cwd || FIXROOT, isolate:, ignore_rc: }
 end
 
 def build_cases
   cases = []
-  add = ->(name, argv, cwd: nil, pending: false, isolate: false) { cases << case_entry(name, argv, cwd:, pending:, isolate:) }
+  add = ->(name, argv, cwd: nil, isolate: false, ignore_rc: false) { cases << case_entry(name, argv, cwd:, isolate:, ignore_rc:) }
   pkg = File.join(FIXROOT, "pkg")
 
   # Version / help / dispatch
@@ -464,7 +459,9 @@ def build_cases
   add.call("std-unknown-sub", ["std", "bogus"])
   add.call("cache-status", ["cache", "status"])
   add.call("toolchain-no-sub", ["toolchain"])
-  add.call("toolchain-doctor", ["toolchain", "doctor"])
+  # `doctor` reports the machine (system headers, built vendored prefixes), so
+  # its exit status reflects environment state; the oracle pins the output shape.
+  add.call("toolchain-doctor", ["toolchain", "doctor"], ignore_rc: true)
   add.call("deps-no-sub", ["deps"])
   add.call("deps-unknown-sub", ["deps", "bogus"])
   add.call("deps-tree", ["deps", "tree"], cwd: pkg)
@@ -603,6 +600,13 @@ def normalize(text, self_bin:)
   # text, streams and status still compare.
   text = text.gsub(%r{\S*/__mt_test_runner_\d+}, "<RUNNER>")
   text = text.gsub(/^built .*\[cached\]$/, "built <TARGET> [cached]")
+  # `cache status` counts depend on earlier cases in the same run (and on the
+  # checkout's build history); pin the report shape, not the population.
+  text = text.gsub(/^(cache\s+)\d+ programs, \d+ binaries/, '\\1<N> programs, <N> binaries')
+  text = text.gsub(/^(cache\s+<N> programs, <N> binaries)\s+\([^)]*\)$/, '\\1 (<SIZE>)')
+  # pcre2's binding header lives under the per-checkout vendored build prefix,
+  # which `toolchain tools` creates; the doctor row is environment state.
+  text = text.gsub(/^(?:ok|fail) (binding\/pcre2): .*$/, 'binding/pcre2: <BUILD>')
   # `--timings` values (and phase breakdowns) are wall-clock measurements and
   # differ between any two runs; compare the report's structure only.
   text = text.gsub(/^(\s+\S+: )[\d.]+ms(?:\s+\(.*\))?$/, '\1<MS>')
@@ -620,148 +624,42 @@ materialize_fixtures
 cases = build_cases
 cases = cases.select { |c| c[:name].match?(Regexp.new(filter)) } if filter
 
-# Recorded mode: the self is the only compiler consulted.  The fixture is the
-# post-retirement oracle, so `pending:` cases are recorded like any other (the
-# pending flag describes host parity, not self behavior).
-if record_path || expect_path
-  # Build cases report `[cached]` on a warm cache, so record and replay both
-  # need the same cache history.  An empty per-run root makes every run cold
-  # and keeps the user's real cache untouched.
-  cache_root = File.join(ROOT, "tmp", "cli-parity", "cache")
-  FileUtils.rm_rf(cache_root)
-  FileUtils.mkdir_p(cache_root)
+# The fixture is the compiler's own recorded behavior: the Ruby host is gone,
+# so there is no live comparison mode.
+# Build cases report `[cached]` on a warm cache, so record and replay both
+# need the same cache history.  An empty per-run root makes every run cold
+# and keeps the user's real cache untouched.
+cache_root = File.join(ROOT, "tmp", "cli-parity", "cache")
+FileUtils.rm_rf(cache_root)
+FileUtils.mkdir_p(cache_root)
 
-  actual = {}
-  cases.each do |c|
-    isolate_backup = c[:isolate] ? snapshot_dir(c[:cwd]) : nil
-    sout, serr, status = Open3.capture3({ "XDG_CACHE_HOME" => cache_root }, self_bin, *c[:argv], chdir: c[:cwd])
-    restore_dir(c[:cwd], isolate_backup) if isolate_backup
-    FileUtils.rm_rf(isolate_backup) if isolate_backup
-    # Whether a build reports `[cached]` depends on artifacts left by earlier
-    # cases in the sequence, so it is not a stable golden property (the live
-    # parity mode still compares it).  Collapse the whole line.  `cache status`
-    # prints a byte total that varies by a tenth of a KiB between runs, so keep
-    # the counts and normalize the size.
-    recorded_stdout = normalize(sout, self_bin: self_bin)
-                        .gsub(/^built .*$/, "built <TARGET>")
-                        .gsub(/^(cache\s+\d+ programs, \d+ binaries)\s+\([^)]*\)$/, '\1 (<SIZE>)')
-    actual[c[:name]] = {
-      "stdout" => recorded_stdout,
-      "stderr" => normalize(serr, self_bin: self_bin),
-      "rc" => status.exitstatus || (128 + status.termsig.to_i),
-    }
-  end
-
-  if record_path
-    Golden.write(record_path, "cli_parity", actual)
-    puts "recorded #{actual.length} case(s) -> #{record_path}" unless quiet
-    exit 0
-  end
-
-  expected = Golden.read(expect_path, "cli_parity")
-  expected = expected.select { |name, _| actual.key?(name) } if filter
-  diffs = Golden.diff(expected, actual)
-  puts format("cases=%d golden=%d differ=%d", actual.length, expected.length, diffs.length)
-  diffs.first(max_diffs).each { |line| puts "  #{line}" }
-  exit(diffs.empty? ? 0 : 1)
-end
-
-require "milk_tea"
-
-if !quiet
-  puts "host: ruby #{RUBY_VERSION} (milk_tea #{MilkTea::VERSION})"
-  puts "self: #{self_bin} (built #{File.mtime(self_bin).strftime('%Y-%m-%d %H:%M')})"
-end
-
-results = { pass: [], fail: [], pending: [] }
-kept = File.join(ROOT, "tmp", "cli-parity", "cases")
-
+actual = {}
 cases.each do |c|
-  argv = c[:argv]
-  name = c[:name]
   isolate_backup = c[:isolate] ? snapshot_dir(c[:cwd]) : nil
-
-  hout = StringIO.new
-  herr = StringIO.new
-  hrc =
-    begin
-      # The host CLI runs in-process, so its working directory must be set to the
-      # case's cwd for relative operands to resolve like the spawned self-host.
-      Dir.chdir(c[:cwd]) do
-        MilkTea::CLI.start(argv.dup, out: hout, err: herr)
-      end
-    rescue StandardError => e
-      herr.puts "harness exception: #{e.class}: #{e.message}"
-      99
-    end
-
+  sout, serr, status = Open3.capture3({ "XDG_CACHE_HOME" => cache_root }, self_bin, *c[:argv], chdir: c[:cwd])
   restore_dir(c[:cwd], isolate_backup) if isolate_backup
-
-  sout, serr, status = Open3.capture3(self_bin, *argv, chdir: c[:cwd])
-  src = status.exitstatus
-
-  expected = [normalize(hout.string, self_bin:), normalize(herr.string, self_bin:), hrc]
-  actual   = [normalize(sout,        self_bin:), normalize(serr,        self_bin:), src]
-
-  if expected == actual
-    if c[:pending]
-      results[:fail] << [name, argv, expected, actual,
-                         "pending case now matches; remove pending:"]
-    else
-      results[:pass] << name
-    end
-  elsif c[:pending]
-    results[:pending] << name
-  else
-    results[:fail] << [name, argv, expected, actual]
-  end
-
-  if keep
-    dir = File.join(kept, name)
-    FileUtils.mkdir_p(dir)
-    File.write(File.join(dir, "host.out"), hout.string)
-    File.write(File.join(dir, "host.err"), herr.string)
-    File.write(File.join(dir, "host.rc"), hrc.to_s)
-    File.write(File.join(dir, "self.out"), sout)
-    File.write(File.join(dir, "self.err"), serr)
-    File.write(File.join(dir, "self.rc"), src.to_s)
-  end
-
   FileUtils.rm_rf(isolate_backup) if isolate_backup
+  # Whether a build reports `[cached]` depends on artifacts left by earlier
+  # cases in the sequence, so it is not a stable golden property.  Collapse the
+  # whole line.  `cache status` counts and sizes are normalized in `normalize`.
+  recorded_stdout = normalize(sout, self_bin: self_bin)
+                      .gsub(/^built .*$/, "built <TARGET>")
+  actual[c[:name]] = {
+    "stdout" => recorded_stdout,
+    "stderr" => normalize(serr, self_bin: self_bin),
+    "rc" => c[:ignore_rc] ? 0 : (status.exitstatus || (128 + status.termsig.to_i)),
+  }
 end
 
-FileUtils.rm_rf(File.join(ROOT, "tmp", "cli-parity", "fixtures")) unless keep
-
-def first_diff(a, b)
-  n = [a.length, b.length].min
-  i = 0
-  i += 1 while i < n && a[i] == b[i]
-  i
+if record_path
+  Golden.write(record_path, "cli_parity", actual)
+  puts "recorded #{actual.length} case(s) -> #{record_path}" unless quiet
+  exit 0
 end
 
-def snippet(text, at)
-  text[[at - 60, 0].max, 200].to_s.gsub(/\s+/, " ").strip
-end
-
-puts format("cases=%d match=%d differ=%d pending=%d",
-            cases.length, results[:pass].length, results[:fail].length, results[:pending].length)
-
-unless quiet
-  results[:fail].take(max_diffs).each do |name, argv, expected, actual, note|
-    puts "\nDIFF #{name}   argv: mtc #{argv.join(' ')}"
-    puts "  note: #{note}" if note
-    %w[stdout stderr].each_with_index do |stream, i|
-      next if expected[i] == actual[i]
-      at = first_diff(expected[i], actual[i])
-      puts "  #{stream} @#{at}"
-      puts "    host: #{snippet(expected[i], at)}"
-      puts "    self: #{snippet(actual[i], at)}"
-    end
-    puts "  exit: host=#{expected[2]} self=#{actual[2]}" if expected[2] != actual[2]
-  end
-  puts "\n... #{results[:fail].length - max_diffs} more differing case(s)" if results[:fail].length > max_diffs
-  puts "pending (known gaps): #{results[:pending].join(', ')}" unless results[:pending].empty?
-  puts "kept per-case outputs under tmp/cli-parity/cases/" if keep
-end
-
-exit(results[:fail].empty? ? 0 : 1)
+expected = Golden.read(expect_path, "cli_parity")
+expected = expected.select { |name, _| actual.key?(name) } if filter
+diffs = Golden.diff(expected, actual)
+puts format("cases=%d golden=%d differ=%d", actual.length, expected.length, diffs.length)
+diffs.first(max_diffs).each { |line| puts "  #{line}" }
+exit(diffs.empty? ? 0 : 1)

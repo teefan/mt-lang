@@ -1,39 +1,37 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Diagnostic parity: compare what the two compilers *report* about a file,
-# independent of how they render it.
-#
-# The existing sweeps only compare files both compilers accept:
-#   * `sexpr_parity` skips a file the host rejects (the "host-rejected" bucket),
-#     so a disagreement about *whether* a file is valid is invisible;
-#   * `cli_parity`'s `check`/`parse` fixtures abort at their first error.
-# This harness compares the diagnostic verdict itself: exit status, the
-# `code: message` set, and the positions.
+# Diagnostic oracle: replay the compiler's per-file diagnostic verdict — exit
+# status, the `code: message` set, and the positions — against a digest-keyed
+# fixture.  A diagnostic change on an unchanged input is a regression that must
+# be reviewed and re-recorded.
 #
 # Usage:
-#   ruby tools/diag_parity.rb [TARGET...] [options]
+#   ruby tools/diag_parity.rb [TARGET...] --expect FILE [options]
+#   ruby tools/diag_parity.rb [TARGET...] --record FILE [options]
 #   ruby tools/diag_parity.rb parse [TARGET...]    # parse diagnostics only
 #   ruby tools/diag_parity.rb check [TARGET...]    # check diagnostics only
 #   TARGET           files or directories       (default: std examples projects/mtc/src)
-#   --self PATH      self-host compiler binary  (default: build/stage2/mtc)
+#   --self PATH      compiler binary            (default: build/stage2/mtc)
 #   -j N             parallel workers           (default: 4, hard-capped)
 #   --timeout SEC    per-invocation timeout     (default: 120)
 #   --max-files N    print at most N differing files (default: 10)
 #   -q, --quiet      print only the summary
-#   --record FILE    record the self's diagnostics to FILE (host-free)
-#   --expect FILE    replay FILE and fail on any difference (host-free)
+#   --record FILE    record the compiler's diagnostics to FILE
+#   --expect FILE    replay FILE and fail on any difference
 #   -h, --help       show this message
 #
-# Exit status: 0 when every file's diagnostic set matches, 1 otherwise.
+# Exit status: 0 when every compared file matches, 1 otherwise.
 
 require "digest"
-require "open3"
+require "fileutils"
 require "optparse"
 require_relative "lib/golden"
 require_relative "lib/jobs"
 
 ROOT = File.expand_path("..", __dir__)
+MEM_CAP_BYTES = 20_000_000 * 1024
+
 mode = "check"
 argv = ARGV.dup
 mode = argv.shift if %w[parse check].include?(argv.first)
@@ -62,7 +60,9 @@ options[:jobs] = Jobs.clamp(options[:jobs])
 if options[:record] && options[:expect]
   abort "error: --record and --expect are mutually exclusive"
 end
-recorded = !options[:record].nil? || !options[:expect].nil?
+unless options[:record] || options[:expect]
+  abort "error: pass --expect FILE to replay the oracle or --record FILE to refresh it"
+end
 
 targets = argv.empty? ? %w[std examples projects/mtc/src] : argv
 files = targets.flat_map do |t|
@@ -70,45 +70,44 @@ files = targets.flat_map do |t|
   File.directory?(p) ? Dir.glob(File.join(p, "**", "*.mt")).sort : [p]
 end.reject { |f| File.basename(f).start_with?("__mt_test_runner_") }.uniq
 
-# Host: `warning[unused-local]: msg -- path:2:9` blocks on stderr.
-# Self (check): `path:2: unused-local: msg` one-liners on stdout.
-# Self (parse): `parse error: L7:22 lexeme=')' kind=rparen: msg`.
-HOST_DIAG = /^(error|warning|hint|info)\[([^\]]+)\]: (.*?) -- (.*):(\d+):(\d+)$/
-SELF_DIAG = /^(.*):(\d+): ([a-z0-9-]+): (.*)$/
+abort "compiler not found: #{options[:self]}" unless File.executable?(options[:self])
+
+# A diagnostic block renders its location as `-- path:line:col`.
+BLOCK_DIAG = /^(error|warning|hint|info)\[([^\]]+)\]: (.*?) -- (.*):(\d+):(\d+)$/
+# A one-line diagnostic (`path:line: code: msg`) carries no column.
+ONE_LINE_DIAG = /^(.*):(\d+): ([a-z0-9-]+): (.*)$/
+# Parse failures use `parse error: L7:22 lexeme=')' kind=rparen: msg`.
 SELF_PARSE = /^parse error: L(\d+):(\d+) lexeme='.*?' kind=\S+: (.*)$/
 
 def norm_msg(msg)
-  # The host embeds the location in some message text; the renderer strips it.
   msg.sub(/ at .*:\d+:\d+\z/, "").strip
 end
 
-def diags(mode, stdout, stderr)
+def diags(stdout, stderr)
   out = []
   (stderr + stdout).each_line do |line|
     line = line.chomp
-    if (m = line.match(HOST_DIAG))
+    if (m = line.match(BLOCK_DIAG))
       _sev, code, msg, _path, l, c = m.captures
-      out << [code, norm_msg(msg), l.to_i, c.to_i, :host_format]
-    elsif (m = line.match(SELF_DIAG))
+      out << [code, norm_msg(msg), l.to_i, c.to_i]
+    elsif (m = line.match(ONE_LINE_DIAG))
       _path, l, code, msg = m.captures
-      out << [code, norm_msg(msg), l.to_i, c.to_i, :one_line]
+      out << [code, norm_msg(msg), l.to_i, 0]
     elsif (m = line.match(SELF_PARSE))
       l, c, msg = m.captures
-      out << ["parse/error", norm_msg(msg), l.to_i, c.to_i, :self_parse]
+      out << ["parse/error", norm_msg(msg), l.to_i, c.to_i]
     end
   end
   out
 end
 
-# Compare on code + message (positions are reported separately: a same-message
-# different-position is a position bug, a different message is a wording bug).
 # A golden fixture is digest-keyed: a file whose text changed since recording is
 # skipped (its row is stale by design), so source edits do not turn the gate
 # red.  Only unchanged inputs are re-measured against the fixture.
 golden_expected = nil
 changed_inputs = 0
 unrecorded_inputs = 0
-if recorded && options[:expect]
+if options[:expect]
   golden_expected = Golden.read(options[:expect], "diag_parity")
   unless golden_expected["mode"] == mode
     abort "error: fixture mode #{golden_expected['mode'].inspect} does not match #{mode.inspect}"
@@ -128,98 +127,62 @@ if recorded && options[:expect]
   files = selected
 end
 
-queue = Queue.new
-files.each { |f| queue << f }
-res = []
+# A spawn/wait pool, not threads: Open3's reader threads trip a Ruby 4.0 VM
+# teardown bug on long sweeps, and the harness only needs bounded parallelism.
+tmp_dir = File.join(ROOT, "tmp", "diag-parity")
+FileUtils.rm_rf(tmp_dir)
+FileUtils.mkdir_p(tmp_dir)
+
+work = files.dup
+running = []
 golden = {}
-mutex = Mutex.new
-threads = [options[:jobs], files.length].min.times.map do
-  Thread.new do
-    loop do
-      f = begin
-        queue.pop(true)
-      rescue ThreadError
-        break
-      end
-      sout, serr, ss = Open3.capture3(
-        "bash", "-c", "ulimit -v 20000000; exec \"$0\" \"$@\"",
-        options[:self], mode, f, chdir: ROOT
-      )
-      sd = diags(mode, sout, serr).map { |d| d[0, 4] }
-      src = ss.exitstatus || 128 + ss.termsig.to_i
-      relative = f.sub("#{ROOT}/", "")
-
-      if recorded
-        mutex.synchronize do
-          golden[relative] = {
-            "digest" => Digest::SHA256.file(f).hexdigest,
-            "rc" => src,
-            "diags" => sd.sort,
-          }
-        end
-        next
-      end
-
-      # Only the generated self binary needs the memory cap; the Ruby host is
-      # itself a large process and aborts under a 20 GB `ulimit -v`.
-      hout, herr, hs = Open3.capture3("timeout", options[:timeout].to_s, "ruby", "-Ilib", "bin/mtc", mode, f, chdir: ROOT)
-      # A Ruby host killed by a signal is an out-of-memory casualty of running
-      # many hosts in parallel, not a disagreement: retry it alone.
-      if hs.exitstatus.nil? && hs.termsig
-        hout, herr, hs = Open3.capture3("timeout", options[:timeout].to_s, "ruby", "-Ilib", "bin/mtc", mode, f, chdir: ROOT)
-      end
-      hd = diags(mode, hout, herr).map { |d| d[0, 4] }
-      hrc = hs.exitstatus || 128 + hs.termsig.to_i
-      mutex.synchronize { res << [relative, hrc, src, hd.sort, sd.sort] }
-    end
+index = 0
+until work.empty? && running.empty?
+  while running.length < options[:jobs] && !work.empty?
+    file = work.shift
+    out_path = File.join(tmp_dir, "#{index}.out")
+    err_path = File.join(tmp_dir, "#{index}.err")
+    index += 1
+    pid = Process.spawn(
+      "timeout", options[:timeout].to_s, options[:self], mode, file,
+      chdir: ROOT, out: out_path, err: err_path, rlimit_as: MEM_CAP_BYTES
+    )
+    running << [pid, file, out_path, err_path]
   end
+
+  pid, status = Process.wait2
+  entry = running.find { |row| row[0] == pid }
+  running.delete(entry)
+  _pid, file, out_path, err_path = entry
+  stdout = File.binread(out_path).force_encoding(Encoding::UTF_8)
+  stderr = File.binread(err_path).force_encoding(Encoding::UTF_8)
+  FileUtils.rm_f([out_path, err_path])
+  rc = status.exitstatus || 128 + status.termsig.to_i
+  relative = file.sub("#{ROOT}/", "")
+  golden[relative] = {
+    "digest" => Digest::SHA256.file(file).hexdigest,
+    "rc" => rc,
+    "diags" => diags(stdout, stderr).sort,
+  }
 end
-threads.each(&:join)
+FileUtils.rm_rf(tmp_dir)
 
-if recorded
-  payload = { "mode" => mode, "files" => golden }
-  if options[:record]
-    Golden.write(options[:record], "diag_parity", payload)
-    puts "recorded #{golden.length} file(s) -> #{options[:record]}" unless options[:quiet]
-    exit 0
-  end
-
-  expected = {}
-  actual = {}
-  golden.each do |relative, row|
-    recorded_row = golden_expected["files"][relative]
-    expected[relative] = { "rc" => recorded_row["rc"], "diags" => recorded_row["diags"] }
-    actual[relative] = { "rc" => row["rc"], "diags" => row["diags"] }
-  end
-  diffs = Golden.diff(expected, actual)
-  puts "mode=#{mode} files=#{golden.length} changed=#{changed_inputs} " \
-       "unrecorded=#{unrecorded_inputs} differ=#{diffs.length}"
-  diffs.first(options[:max_files] * 4).each { |line| puts "  #{line}" }
-  exit(diffs.empty? ? 0 : 1)
+payload = { "mode" => mode, "files" => golden.sort.to_h }
+if options[:record]
+  Golden.write(options[:record], "diag_parity", payload)
+  puts "recorded #{golden.length} file(s) -> #{options[:record]}" unless options[:quiet]
+  exit 0
 end
 
-res.sort_by!(&:first)
-
-verdict_differ = res.select { |(_f, hrc, src, _h, _s)| (hrc.zero?) != (src.zero?) }
-msg_differ = res.select { |(_f, hrc, src, h, s)| (hrc.zero? == src.zero?) && h.map { |d| d[0, 2] } != s.map { |d| d[0, 2] } }
-pos_differ = res.select { |(_f, hrc, src, h, s)| (hrc.zero? == src.zero?) && h.map { |d| d[0, 2] } == s.map { |d| d[0, 2] } && h != s }
-agree = res.length - verdict_differ.length - msg_differ.length - pos_differ.length
-
-unless options[:quiet]
-  { "VERDICT (one accepts, the other rejects)" => verdict_differ,
-    "MESSAGE (same verdict, different diagnostics)" => msg_differ,
-    "POSITION (same diagnostics, different positions)" => pos_differ }.each do |label, list|
-    next if list.empty?
-
-    puts "── #{label}: #{list.length}"
-    list.first(options[:max_files]).each do |(f, hrc, src, h, s)|
-      puts "  #{f}  host rc=#{hrc} self rc=#{src}"
-      (h - s).first(3).each { |d| puts "    host-only: #{d[2]}:#{d[3]} #{d[0]}: #{d[1]}" }
-      (s - h).first(3).each { |d| puts "    self-only: #{d[2]}:#{d[3]} #{d[0]}: #{d[1]}" }
-    end
-    puts "  (showing #{[list.length, options[:max_files]].min} of #{list.length})" if list.length > options[:max_files]
-  end
+expected = {}
+actual = {}
+golden.each do |relative, row|
+  recorded_row = golden_expected["files"][relative]
+  expected[relative] = { "rc" => recorded_row["rc"], "diags" => recorded_row["diags"] }
+  actual[relative] = { "rc" => row["rc"], "diags" => row["diags"] }
 end
-
-puts "mode=#{mode} files=#{res.length} agree=#{agree} verdict=#{verdict_differ.length} message=#{msg_differ.length} position=#{pos_differ.length}"
-exit(agree == res.length ? 0 : 1)
+diffs = Golden.diff(expected, actual)
+puts "mode=#{mode} files=#{golden.length} changed=#{changed_inputs} " \
+     "unrecorded=#{unrecorded_inputs} differ=#{diffs.length}"
+diffs.first(options[:max_files] * 4).each { |line| puts "  #{line}" }
+exit(diffs.empty? ? 0 : 1)

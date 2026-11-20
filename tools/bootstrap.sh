@@ -14,18 +14,14 @@
 #                        remaining cost is the two self-builds (~5 min each).
 #   --profile PROFILE    Build profile: debug or release (default: debug)
 #   --keep-c             Save generated C files alongside binaries
-#   --allow-ruby-host    Permit the Ruby host as stage0 when no seed exists.
-#                        Without this flag the script fails instead of silently
-#                        falling back, so the native path stays the only
-#                        supported one.
+#   --print-stage0       Resolve and verify stage0, print its path, and exit.
 #   -j N                 Parallel compiler jobs (default: 4, hard-capped)
 #
 # Stage0 resolution order:
 #   1. --bootstrap PATH (explicit)
 #   2. $MTC_BOOTSTRAP environment variable
 #   3. vendor/bootstrap/<platform>/mtc (committed seed, sha256-verified)
-#   4. ruby -Ilib bin/mtc (Ruby host, only with --allow-ruby-host)
-#   5. Error
+#   4. Error
 #
 # Output:
 #   build/stage1/mtc  — compiler built by stage0
@@ -48,7 +44,7 @@ SKIP_VERIFY=0
 FAST=0
 PROFILE="debug"
 KEEP_C=0
-ALLOW_RUBY_HOST=0
+PRINT_STAGE0=0
 JOBS="$(nproc 2>/dev/null || echo 1)"
 [ "$JOBS" -gt 4 ] && JOBS=4
 BUILD_DIR="${MTC_BUILD_DIR:-build}"
@@ -82,8 +78,8 @@ while [[ $# -gt 0 ]]; do
             KEEP_C=1
             shift
             ;;
-        --allow-ruby-host)
-            ALLOW_RUBY_HOST=1
+        --print-stage0)
+            PRINT_STAGE0=1
             shift
             ;;
         -j)
@@ -168,29 +164,20 @@ resolve_stage0() {
         return
     fi
 
-    # 4. Ruby host (explicit opt-in only)
-    if [[ "$ALLOW_RUBY_HOST" -eq 1 ]]; then
-        if command -v ruby &>/dev/null; then
-            local ruby_cmd="ruby -Ilib bin/mtc"
-            if $ruby_cmd version &>/dev/null; then
-                echo "stage0: ruby -Ilib bin/mtc (Ruby host, --allow-ruby-host)" >&2
-                echo "$ruby_cmd"
-                return
-            fi
-        fi
-        echo "error: --allow-ruby-host was passed but no working ruby was found." >&2
-        exit 1
-    fi
-
-    # 5. Error
+    # 4. Error
     echo "error: no bootstrap compiler found for $seed_platform." >&2
     echo "  expected seed: $seed_dir/mtc" >&2
-    echo "  Pass --bootstrap PATH, set \$MTC_BOOTSTRAP, or pass --allow-ruby-host" >&2
-    echo "  to build with the Ruby host.  See docs/bootstrap-design.md." >&2
+    echo "  Pass --bootstrap PATH or set \$MTC_BOOTSTRAP." >&2
+    echo "  See docs/bootstrap-design.md." >&2
     exit 1
 }
 
 MTC_STAGE0="$(resolve_stage0)"
+
+if [[ "$PRINT_STAGE0" -eq 1 ]]; then
+    echo "$MTC_STAGE0"
+    exit 0
+fi
 
 # ── build flags ──────────────────────────────────────────────────────────────
 

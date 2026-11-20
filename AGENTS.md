@@ -80,76 +80,69 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - The host OS is Arch Linux (Manjaro) and use `pacman` as package manager. Sudo password is stored in the `.env` file.
 - Use `gdb`, `strace`, `valgrind` or `lldb` to debug compiled binary files when necessary.
 
-## Self-Host Parity Program
+## Self-Host Program
 
-The Ruby host in `lib/` (`ruby -Ilib bin/mtc`) is the reference implementation; `projects/mtc` is the
-self-hosted compiler, and matching the host everywhere is the program's goal.
+The native self-host in `projects/mtc` is the compiler; `std/` is its library.
+The Ruby host (`lib/`) was retired in session 143
+(host-retirement phase 4) and is archived at tag `archive/host-ruby-0.4.26`
+(inspect it with `git show archive/host-ruby-0.4.26:path` when historical
+behavior is needed).  There is no second compiler: new work lands in
+`projects/mtc` and `std/` only, and correctness is defined by
+`docs/language-manual.md`, `test/mt`, and the recorded oracles — not by host
+byte-identity.
 
-**Host retirement (session 142).**  The native self-host is now the
-shipped-compiler target; the Ruby host is frozen as an independent oracle and
-retired from live development.  `tools/bootstrap.sh` builds from the committed
-seed (`vendor/bootstrap/<platform>/mtc`, sha256-verified) and no longer falls
-back to Ruby unless `--allow-ruby-host` is passed.  New work lands in
-`projects/mtc` and `std/` only.  The phases and their gates are in
-`docs/self-host-plan.md` § "Host retirement program"; phases 0 (native bootstrap
-seed), 1 (guard carve-out), 2 (recorded oracles) and 3 (release tooling) are
-done, and phase 4 (retiring the host tree) is next.  The recorded gates are
-`tools/golden/{cli,diag,lint,format}.json` replayed with `--expect`; their rows
-are digest-keyed, so a file whose text changed since recording is skipped
-rather than reported as a regression.  Releases are built with
-`tools/release.sh` (deterministic archive, checksums, clean-path smoke), and the
-version is the authored `cli_help.VERSION` constant, never a git stamp.
-
-- **Rebuild before measuring**: `ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc`.
-  A stale `build/stage2/mtc` is the classic false result.
-- **Gates are tiered — iterate cheap, prove once.**  `tools/gates.sh` picks the set from
-  `git diff --name-only` (or `--areas`), prints it, and `--run` executes it in order
-  (each gate logs to `tmp/gates/<id>.log`; hard gates stop the run, meters continue).
-  - **Tier 1 — per edit / per workstream (minutes)**: rebuild the dev compiler
-    (`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~105 s), run
-    `tmp/mtc-dev test projects/mtc -I . --timeout 120`, and measure **only the class you
-    touched** — a focused `ruby tools/lint_parity.rb -q <paths>`, one file's host-vs-self
-    lint diff, `tmp/diag_probe.rb`, `ruby tools/sexpr_parity.rb lex|parse -q
-    --host-cache tmp/sexpr-host-cache` (the cache reuses the host's outputs per
-    file / resolved import-closure digest; the self always runs live).
-    Do not run the corpus-wide sweep or the audit as the iteration loop.
+- **Build**: `tools/bootstrap.sh -j 4` (seed → stage1 → stage2 → stage3, fixed
+  point, in-language suite).  Stage0 is `vendor/bootstrap/<platform>/mtc`
+  (sha256-verified); `--bootstrap PATH` and `$MTC_BOOTSTRAP` override it.
+  `tools/bootstrap.sh --print-stage0` prints the resolved path.  A missing or
+  corrupted seed is a hard error.  The build also needs the vendored
+  `third_party/` sources; `mtc toolchain bootstrap` fetches them once (a literal
+  clone has none).
+- **Rebuild before measuring**: build the tree with the seed —
+  `"$(tools/bootstrap.sh --print-stage0)" build projects/mtc -I . --no-cache -o tmp/mtc-dev`
+  (~25 s).  A stale `build/stage2/mtc` is the classic false result.
+- **Gates are tiered — iterate cheap, prove once.**  `tools/gates.sh` picks the
+  set from `git diff --name-only` (or `--areas`), prints it, and `--run` executes
+  it in order (each gate logs to `tmp/gates/<id>.log`; hard gates stop the run,
+  meters continue).
+  - **Tier 1 — per edit / per workstream (minutes)**: the seed dev build above,
+    `tmp/mtc-dev test projects/mtc -I . --timeout 120`, and
+    `ruby tools/refactor_guard.rb --check` when the shape changes.  Measure only
+    the class you touched: `tools/gates.sh --only golden_diag --run`, or one
+    file's recorded row.
   - **Tier 2 — once per commit, on frozen sources, backgrounded**:
-    `tools/bootstrap.sh -j 4` (fixed point + 22 files / 0 failed self-tests) and
-    `build/stage2/mtc test test/mt -I .` (61/0) are the hard proofs; then the area
-    sweeps — linter: `rake parity:scoreboard`, `ruby tools/lint_parity.rb -q`
-    (658 files; read its summary, it is not expected to reach 0 yet),
-    `ruby tools/unused_import_parity.rb` (635/635), `ruby tools/cli_parity.rb`
-    (227 match / 0 differ / 0 pending); LSP: `tools/lsp_parity.rb
-    record|compare` (30/30 + the 2 documented request rows and 3 stress rows),
-    `tools/lsp_recovery_probe.rb --check`, `tools/lsp_project_audit.rb --workspace DIR`
-    (drift ±10 — compare differing *sets*), valgrind on an LSP drive + the Neovim smoke;
-    lowering/C backend: `ruby tools/sexpr_parity.rb lower -q -j 4 --mem-mb 8000
-    --host-cache tmp/sexpr-host-cache` (~1 min warm vs ~4 min cold; the self
-    side is measured live; memory-capped because each compiler-sized closure
-    peaks 3.4–3.8 GiB and the seven `main*` artifacts together exhausted a
-    31 GiB workstation at `-j 16`) plus the example
-    sweeps (`examples/*.mt` 15/15, `examples/sdl3` 34/34, a raylib sample).
-  - **Do not replay a baseline a previous session verified at the same commit.**  The
-    ledger records the last verified numbers per commit; a new session re-measures only
-    the classes its task can move (or nothing, if the tree is unchanged).  Re-measure
-    when the tree moved or a number is surprising.
+    `tools/bootstrap.sh -j 4` (fixed point + 22 files / 0 failed) and
+    `build/stage2/mtc test test/mt -I .` (85/0) are the hard proofs; then the
+    recorded oracles (`tools/gates.sh --areas oracles --run`):
+    `golden_cli` 227 cases, `golden_diag` 504 files, `golden_lint` 672 files,
+    `golden_format` 774 files × 3 modes.  Area sweeps: `examples` 49/49,
+    `bindings` 29/29, DAP, wasm/docs smoke, LSP valgrind/soak, refactor guard.
+  - `tools/golden/*.json` is the post-retirement oracle: `--record` refreshes
+    it, `--expect` replays it.  Diagnostics/lint/formatter rows are digest-keyed,
+    so an input whose text changed is skipped (`changed=N`), not failed.
+    Re-record only for a reviewed behavior change; never to silence an
+    unexplained difference.
+  - **Do not replay a baseline a previous session verified at the same commit.**
+    The ledger records the last verified numbers per commit; a new session
+    re-measures only the classes its task can move (or nothing, if the tree is
+    unchanged).  Re-measure when the tree moved or a number is surprising.
 - **Never edit sources while a gate runs**: `bootstrap.sh` compiles the working tree, so an edit
   mid-run silently corrupts the result — check the exit status, not just the tail.
-- **Refactoring the self-host (session 75)**: behavior and structure are guarded separately.
+- **Refactoring the self-host**: behavior and structure are guarded separately.
   Run `tools/gates.sh --areas refactor --run` (dev build, dev tests, structural guard,
-  `test/mt`, CLI parity, scoreboard) and read `docs/refactoring.md`.
+  `test/mt`, `golden_cli`) and read `docs/refactoring.md`.
   `ruby tools/refactor_guard.rb --check` is the fast invariant check (layering, naming,
   markers); `--check --strict --ratchet` adds new dead exports and code/duplication growth
   against `tools/refactor_baseline.json`.  Refresh the baseline only with a reviewed
   structural change, never to silence a check.
 - **Live state**: `docs/self-host-plan.md` is the single source of truth — the session protocol,
-  the ranked program, the ledger, and the §0j/§0k session records.  Sync it in the same commit as
-  the code change.  Session plans under `~/.commandcode/plans/` are transient working notes,
-  never the record.
-- `tools/lsp_project_audit.rb --workspace DIR` diffs every LSP request against the host live; its
-  per-method counters drift ±10 between runs (the host warms its caches as the audit proceeds), so
-  compare *sets of differing keys* when verifying a fix. Fast fixtures: `tmp/probe-ws`, `tmp/probe2`,
-  `tmp/probe4` (container statics), `tmp/probe5` (cross-file definition), `tmp/probe6` (member field).
+  the post-retirement program, the ledger, and the session records.  Sync it in the same
+  commit as the code change.  Session plans under `~/.commandcode/plans/` are transient
+  working notes, never the record.
+- **LSP instruments**: the host-differential harness, project audit and recovery probe are
+  retired with the host.  `tools/lsp_parity.rb record --server self` records a normalized
+  corpus run (the valgrind gate drives it through a wrapper), `tools/lsp_soak.rb` measures
+  RSS growth, and `tools/dap_smoke.rb` is self-only.
 
 ## C Binary Testing Safety
 

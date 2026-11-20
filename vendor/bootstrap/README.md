@@ -2,7 +2,9 @@
 
 A seed is a prebuilt `mtc` binary that `tools/bootstrap.sh` uses as stage0 to
 build the current compiler from source.  It exists so a fresh clone can build
-the toolchain with only a C compiler — no Ruby, no network.
+the toolchain with only a C compiler — no Ruby.  The source build also needs the
+vendored `third_party/` sources, which `mtc toolchain bootstrap` fetches once
+(network required, then cached in the checkout).
 
 ## Layout
 
@@ -17,17 +19,17 @@ hard error that names the expected path.
 
 ## Provenance
 
-The checked-in `linux-x86_64` seed was built at commit `6a67c937` with:
+The checked-in `linux-x86_64` seed is the release build of the `0.4.26` tree,
+refreshed with:
 
 ```sh
-tools/bootstrap.sh --stage 2 --profile release -j 16
-cp build/stage2/mtc vendor/bootstrap/linux-x86_64/mtc
+tools/release.sh --refresh-seed
 ```
 
-It is a **stage2** compiler — built by a stage1 compiler that was itself built
-by the Ruby host — so its code generation comes from Milk Tea, not Ruby.  The
-verification run (`tools/bootstrap.sh -j 16`) then proves the seed reaches a
-fixed point.
+It is a **stage2** compiler whose code generation comes from Milk Tea; the
+native bootstrap that produced it never invoked the archived Ruby host.  The
+verification run (`tools/bootstrap.sh -j 4`) then proves the seed reaches a
+fixed point and passes the self-tests.
 
 ## Replacement policy
 
@@ -42,4 +44,4 @@ refreshing the checksum.
 ## Bypassing the seed
 
 `--bootstrap PATH` and `$MTC_BOOTSTRAP` take precedence and are not
-checksum-verified.  To build with the Ruby host, pass `--allow-ruby-host`.
+checksum-verified.

@@ -877,16 +877,12 @@ function doctor_command(quiet: bool) -> int:
     defer: release_checks(ref_of(checks))
 
     info(quiet, "Checking system tools...")
-    let ruby_detail = ruby_description()
-    push_check_owned(ref_of(checks), "ruby", true, ruby_detail)
-
     let cc = env_or_default("CC", "cc")
     let cc_ok = executable_available(cc)
     push_check(ref_of(checks), "cc", cc_ok, cc)
 
     let ar = env_or_default("AR", "ar")
     push_check(ref_of(checks), "ar", executable_available(ar), ar)
-    push_check(ref_of(checks), "bundle", executable_available("bundle"), "bundle")
     push_check(ref_of(checks), "git", executable_available("git"), "git")
 
     let clang = env_or_default("CLANG", "clang")
@@ -1004,8 +1000,6 @@ function push_check(checks: ref[vec.Vec[CheckRow]], name: str, ok: bool, detail:
     ))
 
 
-function push_check_owned(checks: ref[vec.Vec[CheckRow]], name: str, ok: bool, detail: string.String) -> void:
-    checks.push(CheckRow(name = string.String.from_str(name), detail = detail, ok = ok))
 
 
 ## Append a binding row to the binding block, keeping it sorted by name (the
@@ -1080,28 +1074,6 @@ function executable_available(name: str) -> bool:
             return false
         Option.none:
             return false
-
-
-## The host's `RUBY_DESCRIPTION` row detail.
-function ruby_description() -> string.String:
-    var command = vec.Vec[str].create()
-    defer: command.release()
-    command.push("ruby")
-    command.push("-e")
-    command.push("print RUBY_DESCRIPTION")
-    match process.capture(command.as_span()):
-        Result.success as captured:
-            var result = captured.value
-            defer: result.release()
-            if result.status.success():
-                match result.stdout_text():
-                    Option.some as text:
-                        return string.String.from_str(text.value)
-                    Option.none:
-                        pass
-        Result.failure:
-            pass
-    return string.String.from_str("ruby")
 
 
 ## The first missing sentinel under `checkout` (the host's `missing`, which

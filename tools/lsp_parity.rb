@@ -1,18 +1,18 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# lsp_parity — drive the same JSON-RPC corpus through the Ruby host LSP and the
-# self-host LSP (`mtc lsp`), recording normalized responses so the two can be
-# compared endpoint by endpoint.
+# lsp_parity — drive the JSON-RPC corpus through the native LSP (`mtc lsp`) and
+# record normalized responses, so a recorded baseline can be compared endpoint
+# by endpoint.  `record` also accepts a wrapper path as `--server`, which is how
+# the valgrind gate drives the same corpus under a memory checker.
 #
 # Usage:
-#   ruby tools/lsp_parity.rb record --server host  --out /tmp/host.json
-#   ruby tools/lsp_parity.rb record --server self  --out /tmp/self.json
-#   ruby tools/lsp_parity.rb compare /tmp/host.json /tmp/self.json [--full]
+#   ruby tools/lsp_parity.rb record --server self --out /tmp/self.json
+#   ruby tools/lsp_parity.rb compare /tmp/baseline.json /tmp/self.json [--full]
 #
 # Options for `record`:
-#   --server host|self|PATH   server to drive (default: host)
-#   --self PATH               self-host binary (default: build/stage2/mtc)
+#   --server self|PATH        server to drive (default: self)
+#   --self PATH               compiler binary (default: build/stage2/mtc)
 #   --out FILE                where the recording is written (required)
 #   --timeout SEC             per-request timeout (default: 20)
 #   --stress                  also run the stress sequence (rapid edits, odd
@@ -21,8 +21,6 @@
 require "cgi/escape"
 require "fileutils"
 require "json"
-require "open3"
-require "tmpdir"
 require "timeout"
 
 ROOT = File.expand_path("..", __dir__)
@@ -620,11 +618,10 @@ def spawn_server(kind, self_bin)
   stderr_read, stderr_write = IO.pipe
 
   cmd = case kind
-        when "host"
-          [RbConfig.ruby, "-I", File.join(ROOT, "lib"), "-e",
-           "require 'milk_tea'; MilkTea::LSP::Server.new.run"]
         when "self"
           [self_bin, "lsp"]
+        when "host"
+          abort "error: the Ruby host LSP is retired; use --server self or a wrapper path"
         else
           [kind]
         end
@@ -1136,7 +1133,7 @@ end
 mode = ARGV.shift
 case mode
 when "record"
-  server = "host"
+  server = "self"
   self_bin = File.join(ROOT, "build", "stage2", "mtc")
   out_path = nil
   timeout_s = 20
@@ -1250,5 +1247,5 @@ when "compare"
   puts "TOTAL differing entries: #{total_diff}"
   exit(total_diff.zero? ? 0 : 1)
 else
-  abort "usage: lsp_parity.rb record --server host|self --out FILE [--stress] | compare A B"
+  abort "usage: lsp_parity.rb record --server self|PATH --out FILE [--stress] | compare A B"
 end

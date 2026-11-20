@@ -94,12 +94,11 @@ infer_area() {
         tools/golden/*|tools/lib/golden.rb)       echo oracles ;;
         tools/cli_parity.rb|tools/diag_parity.rb|tools/lint_parity.rb|tools/format_parity.rb) echo oracles ;;
         tools/lib/refactor_guard.rb)               echo refactor_tools ;;
-        lib/*)                                    echo host ;;
         std/*)                                    echo std ;;
         examples/*)                               echo examples ;;
         docs/*)                                   echo docs ;;
         tools/refactor_guard.rb|tools/refactor_baseline.json|tools/test/refactor_guard_test.rb) echo refactor_tools ;;
-        tools/*|Rakefile)                         echo tools ;;
+        tools/*)                                  echo tools ;;
         *)                                        echo other ;;
     esac
 }
@@ -120,7 +119,7 @@ fi
 
 gate_kind() {
     case "$1" in
-        bootstrap|test_mt|dev_build|dev_tests|unused_import|recovery|format|dap|tools_check|bindings|bindings_parity|bindgen_parity|wasm_smoke|docs_smoke|diag_parity|refactor_guard|guard_tests|cli_parity|sexpr_lex|sexpr_parse|golden_cli|golden_diag|golden_lint|golden_format) echo hard ;;
+        bootstrap|test_mt|dev_build|dev_tests|dap|tools_check|bindings|wasm_smoke|docs_smoke|refactor_guard|guard_tests|golden_cli|golden_diag|golden_lint|golden_format|examples) echo hard ;;
         *) echo meter ;;
     esac
 }
@@ -134,39 +133,23 @@ gate_tier() {
 
 gate_label() {
     case "$1" in
-        dev_build)      echo "dev build to tmp/mtc-dev (~105 s)" ;;
+        dev_build)      echo "dev build to tmp/mtc-dev from the seed (~1 min)" ;;
         dev_tests)      echo "self-host suite, one process per file (~1 min)" ;;
         bootstrap)      echo "bootstrap --fast: fixed point only (~3 min)" ;;
-        test_mt)        echo "test/mt under stage2 (61 files / 0 failed)" ;;
-        sexpr_lex)      echo "sexpr lex parity (739/739)" ;;
-        sexpr_parse)    echo "sexpr parse parity (772 match / 0 differ / 4 host-rejected of 776)" ;;
-        sexpr_lower)    echo "sexpr lower parity (meter, memory-capped: -j 4 --mem-mb 8000)" ;;
-        cli_parity)     echo "CLI parity (227 cases; 227 match; no allowlist)" ;;
-        golden_cli)     echo "recorded CLI golden (227 cases; host-free)" ;;
-        golden_diag)    echo "recorded diagnostics golden (std+examples; host-free)" ;;
-        golden_lint)    echo "recorded lint golden (corpus; host-free)" ;;
-        golden_format)  echo "recorded formatter golden (all modes; host-free)" ;;
-        wasm_smoke)     echo "wasm preview end-to-end (host + self HTTP/signal smoke)" ;;
-        docs_smoke)     echo "docs server end-to-end (host + self routes/SIGINT smoke)" ;;
-        scoreboard)     echo "parity scoreboard (meter)" ;;
-        format)         echo "formatter parity all modes (778/778)" ;;
-        lint_parity)    echo "corpus-wide lint parity (meter, ~5 min)" ;;
-        diag_parity)    echo "check diagnostic parity: verdict/message/position (~2 min)" ;;
-        check_parity)   echo "byte-level check output parity (meter)" ;;
-        unused_import)  echo "unused-import parity (635/635, ~30 min)" ;;
+        test_mt)        echo "test/mt under stage2 (85 files / 0 failed)" ;;
+        golden_cli)     echo "recorded CLI oracle (227 cases)" ;;
+        golden_diag)    echo "recorded diagnostics oracle (std+examples)" ;;
+        golden_lint)    echo "recorded lint oracle (corpus)" ;;
+        golden_format)  echo "recorded formatter oracle (all modes)" ;;
+        wasm_smoke)     echo "wasm preview end-to-end (HTTP/signal smoke)" ;;
+        docs_smoke)     echo "docs server end-to-end (routes/SIGINT smoke)" ;;
         refactor_guard) echo "structural guard: layering/naming/markers (fast)" ;;
         guard_tests)    echo "refactor guard unit tests" ;;
-        harness)        echo "LSP harness 30/30 + 5 documented entries (~3 min)" ;;
-        recovery)       echo "LSP recovery probe (byte-compared)" ;;
-        fixtures)       echo "LSP fixture sweep vs baselines (when tmp/ has it)" ;;
-        audit)          echo "full LSP project audit (meter, ~5-15 min)" ;;
-        examples)       echo "example emit-c sweeps: examples/*.mt + examples/sdl3" ;;
+        examples)       echo "example emit-c sweep: examples/*.mt + examples/sdl3" ;;
         valgrind_lsp)   echo "valgrind over an LSP drive (0 errors)" ;;
         neovim)         echo "headless-Neovim smoke (when tmp/ has the script)" ;;
         soak)           echo "long-session soak meter (~25 s): RSS slope for mixed requests" ;;
         bindings)       echo "imported-bindings --all --check (29/29)" ;;
-        bindings_parity) echo "imported-bindings vs host parity report (29/29)" ;;
-        bindgen_parity) echo "bindgen reproducibility vs the host (33 match / 1 custom)" ;;
         dap)            echo "DAP smoke + async launch-order probe (lldb-dap required)" ;;
         tools_check)    echo "Ruby/bash syntax check for the tools/ harnesses" ;;
         *)              echo "$1" ;;
@@ -175,40 +158,25 @@ gate_label() {
 
 gate_cmd() {
     case "$1" in
-        dev_build)     echo "ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev" ;;
+        dev_build)     echo "\"$(tools/bootstrap.sh --print-stage0)\" build projects/mtc -I . --no-cache -o tmp/mtc-dev" ;;
         dev_tests)     echo "gates_dev_tests" ;;
         bootstrap)     echo "tools/bootstrap.sh -j 4 --fast" ;;
         test_mt)       echo "build/stage2/mtc test test/mt -I ." ;;
-        sexpr_lex)     echo "ruby tools/sexpr_parity.rb lex -q --host-cache tmp/sexpr-host-cache" ;;
-        sexpr_parse)   echo "ruby tools/sexpr_parity.rb parse -q --host-cache tmp/sexpr-host-cache" ;;
-        sexpr_lower)   echo "ruby tools/sexpr_parity.rb lower -q -j 4 --mem-mb 8000 --host-cache tmp/sexpr-host-cache" ;;
-        cli_parity)    echo "ruby tools/cli_parity.rb -q" ;;
         golden_cli)    echo "ruby tools/cli_parity.rb --expect tools/golden/cli.json -q" ;;
         golden_diag)   echo "ruby tools/diag_parity.rb check std examples --expect tools/golden/diag.json -q" ;;
         golden_lint)   echo "ruby tools/lint_parity.rb --expect tools/golden/lint.json -q" ;;
         golden_format) echo "ruby tools/format_parity.rb all -j 4 --expect tools/golden/format.json -q" ;;
-        scoreboard)    echo "rake parity:scoreboard" ;;
-        format)        echo "ruby tools/format_parity.rb all -j 4" ;;
-        lint_parity)   echo "ruby tools/lint_parity.rb -q" ;;
-        unused_import) echo "ruby tools/unused_import_parity.rb" ;;
-        harness)       echo "ruby tools/lsp_parity.rb record --server host --out tmp/lsp-host-gates.json --stress && ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self-gates.json --stress && ruby tools/lsp_parity.rb compare tmp/lsp-host-gates.json tmp/lsp-self-gates.json" ;;
-        recovery)      echo "ruby tools/lsp_recovery_probe.rb --check" ;;
-        fixtures)      echo "[ -f tmp/fixtures_sweep.sh ] && bash tmp/fixtures_sweep.sh || echo 'skipped: no tmp/fixtures_sweep.sh (session-local)'" ;;
-        audit)         echo "[ -d \${SIMPLEGAME:-\$HOME/Projects/MilkTea/SimpleGame} ] && { ruby tools/lsp_project_audit.rb --workspace \${SIMPLEGAME:-\$HOME/Projects/MilkTea/SimpleGame} --json tmp/audit-gates.json --max-diffs 0 --timeout 60 && ruby tools/lsp_audit_diffs.rb tmp/audit-gates.json; } || echo 'skipped: no SimpleGame workspace'" ;;
         examples)      echo "gates_examples" ;;
         valgrind_lsp)  echo "command -v valgrind >/dev/null && gates_valgrind || echo 'skipped: valgrind not installed'" ;;
         neovim)        echo "gates_neovim" ;;
         soak)          echo "ruby tools/lsp_soak.rb --quiet" ;;
         bindings)      echo "build/stage2/mtc imported-bindings --all --check" ;;
-        bindings_parity) echo "ruby tools/imported_bindings_parity.rb --json tmp/gates/ib-parity.json" ;;
-        bindgen_parity) echo "ruby tools/bindgen_parity.rb --self build/stage2/mtc -q" ;;
         dap)           echo "ruby tools/dap_smoke.rb && ruby tools/dap_async_probe.rb" ;;
         wasm_smoke)    echo "ruby tools/wasm_smoke.rb --self build/stage2/mtc" ;;
         docs_smoke)    echo "ruby tools/docs_smoke.rb --self build/stage2/mtc" ;;
         refactor_guard) echo "ruby tools/refactor_guard.rb --check -q" ;;
         guard_tests)   echo "ruby tools/test/refactor_guard_test.rb" ;;
-        check_parity)  echo "ruby tools/check_parity.rb -q --host-cache tmp/check-host-cache" ;;
-        tools_check)   echo "for f in tools/*.rb tools/lib/*.rb tools/test/*.rb; do ruby -c \"\$f\" >/dev/null || exit 1; done; bash -n tools/gates.sh tools/bootstrap.sh && echo 'tools syntax ok'" ;;
+        tools_check)   echo "for f in tools/*.rb tools/lib/*.rb tools/test/*.rb; do ruby -c \"\$f\" >/dev/null || exit 1; done; bash -n tools/gates.sh tools/bootstrap.sh tools/release.sh tools/release_smoke.sh && echo 'tools syntax ok'" ;;
         *)             echo "true" ;;
     esac
 }
@@ -216,34 +184,18 @@ gate_cmd() {
 gate_summary() {
     case "$1" in
         dev_build|bootstrap|dev_tests|test_mt) echo "fixed point|test file|built projects" ;;
-        sexpr_lex)      echo "^mode=lex" ;;
-        sexpr_parse)    echo "^mode=parse" ;;
-        sexpr_lower)    echo "^mode=lower|match=" ;;
-        cli_parity)     echo "^cases=" ;;
         golden_cli)     echo "^cases=" ;;
         golden_diag)    echo "^mode=" ;;
         golden_lint)    echo "^files=" ;;
-        golden_format)  echo "differ|recorded" ;;
-        scoreboard)     echo "^cli |^lex |^parse |^lint " ;;
-        format)         echo "differ|match" ;;
-        lint_parity)    echo "^files=" ;;
-        diag_parity)    echo "^mode=" ;;
-        unused_import)  echo "^files=" ;;
-        harness)        echo "TOTAL differing|capabilities:" ;;
-        recovery)       echo "recovery parity" ;;
-        fixtures)       echo "added [1-9]|^== |total differing|skipped" ;;
-        audit)          echo "TOTAL differing|skipped" ;;
-        examples)       echo "^examples same=|DIFF " ;;
+        golden_format)  echo "^modes=" ;;
+        examples)       echo "^examples ok=" ;;
         valgrind_lsp)   echo "ERROR SUMMARY|skipped" ;;
         neovim)         echo "HOVER|Error|skipped" ;;
         soak)           echo "^label=" ;;
         bindings)       echo "verified|changed" ;;
-        bindings_parity) echo "^bindings=" ;;
-        bindgen_parity) echo "^files=" ;;
-        dap)            echo "differing rows|dap async probe|stderr:" ;;
+        dap)            echo "^check |lldb-dap|stderr:" ;;
         refactor_guard) echo "^refactor_guard:" ;;
         guard_tests)    echo "runs, .* failures" ;;
-        check_parity)   echo "^files=" ;;
         tools_check)    echo "tools syntax ok" ;;
         *)              echo "." ;;
     esac
@@ -290,20 +242,22 @@ gates_dev_tests() {
     return $rc
 }
 
-# Inline example sweep: emit-c exit status + first diagnostic line, host vs self.
+# Inline example sweep: every example must emit C successfully.  The host
+# comparison is gone with the host; a compile failure is a hard gate failure.
 gates_examples() {
-    local rc=0 same=0 differ=0 f out_h out_s line_h line_s
+    local rc=0 ok=0 failed=0 f out first
     for f in examples/*.mt examples/sdl3/*/*.mt; do
         [ -e "$f" ] || continue
-        out_h="$(timeout 120 ruby -Ilib bin/mtc emit-c "$f" 2>&1 >/dev/null)"; line_h="$(printf '%s\n' "$out_h" | head -1)"
-        out_s="$(timeout 120 build/stage2/mtc emit-c "$f" 2>&1 >/dev/null)"; line_s="$(printf '%s\n' "$out_s" | head -1)"
-        if [ "$line_h" != "$line_s" ]; then
-            rc=1; differ=$((differ + 1)); echo "DIFF $f"; echo "  host: $line_h"; echo "  self: $line_s"
+        out="$(timeout 120 build/stage2/mtc emit-c "$f" 2>&1 >/dev/null)"
+        if [ $? -ne 0 ]; then
+            rc=1; failed=$((failed + 1))
+            first="$(printf '%s\n' "$out" | head -1)"
+            echo "FAIL $f: $first"
         else
-            same=$((same + 1))
+            ok=$((ok + 1))
         fi
     done
-    echo "examples same=$same differ=$differ"
+    echo "examples ok=$ok failed=$failed"
     return $rc
 }
 
@@ -335,29 +289,28 @@ EOF
 
 gates_for_area() {
     case "$1" in
-        analyzer)  echo "dev_tests refactor_guard bootstrap test_mt cli_parity check_parity diag_parity scoreboard lint_parity unused_import harness recovery fixtures audit examples valgrind_lsp neovim" ;;
-        linter)    echo "dev_tests refactor_guard bootstrap test_mt cli_parity diag_parity scoreboard lint_parity unused_import harness fixtures audit" ;;
-        lsp)       echo "dev_tests refactor_guard bootstrap harness recovery fixtures audit valgrind_lsp neovim soak" ;;
-        codegen)   echo "dev_tests refactor_guard bootstrap test_mt sexpr_lower examples" ;;
-        parser)    echo "dev_tests refactor_guard bootstrap sexpr_lex sexpr_parse diag_parity recovery cli_parity scoreboard" ;;
-        loader)    echo "dev_tests refactor_guard bootstrap test_mt cli_parity audit examples" ;;
-        cli)       echo "dev_tests refactor_guard bootstrap test_mt cli_parity" ;;
-        formatter) echo "dev_tests refactor_guard bootstrap format" ;;
-        bindings)  echo "dev_tests refactor_guard bootstrap bindings bindings_parity bindgen_parity" ;;
+        analyzer)  echo "dev_tests refactor_guard bootstrap test_mt golden_cli golden_diag golden_lint examples valgrind_lsp neovim" ;;
+        linter)    echo "dev_tests refactor_guard bootstrap test_mt golden_cli golden_diag golden_lint" ;;
+        lsp)       echo "dev_tests refactor_guard bootstrap valgrind_lsp neovim soak" ;;
+        codegen)   echo "dev_tests refactor_guard bootstrap test_mt examples" ;;
+        parser)    echo "dev_tests refactor_guard bootstrap golden_cli golden_diag" ;;
+        loader)    echo "dev_tests refactor_guard bootstrap test_mt golden_cli examples" ;;
+        cli)       echo "dev_tests refactor_guard bootstrap test_mt golden_cli" ;;
+        formatter) echo "dev_tests refactor_guard bootstrap golden_format" ;;
+        bindings)  echo "dev_tests refactor_guard bootstrap bindings" ;;
         dap)       echo "dev_tests refactor_guard bootstrap dap" ;;
-        std)       echo "examples lint_parity" ;;
+        std)       echo "examples golden_lint" ;;
         examples)  echo "examples" ;;
-        host)      echo "bootstrap" ;;
         tests)     echo "dev_build dev_tests refactor_guard" ;;
-        wasm)      echo "dev_tests refactor_guard bootstrap test_mt cli_parity wasm_smoke" ;;
-        docs_cli)  echo "dev_tests refactor_guard bootstrap test_mt cli_parity docs_smoke" ;;
-        packages|toolchain) echo "dev_tests refactor_guard bootstrap test_mt cli_parity" ;;
+        wasm)      echo "dev_tests refactor_guard bootstrap test_mt golden_cli wasm_smoke" ;;
+        docs_cli)  echo "dev_tests refactor_guard bootstrap test_mt golden_cli docs_smoke" ;;
+        packages|toolchain) echo "dev_tests refactor_guard bootstrap test_mt golden_cli" ;;
         tools)     echo "tools_check guard_tests refactor_guard" ;;
         oracles)   echo "tools_check golden_cli golden_diag golden_lint golden_format" ;;
         refactor_tools) echo "tools_check guard_tests refactor_guard" ;;
-        refactor)  echo "dev_tests refactor_guard test_mt cli_parity scoreboard" ;;
+        refactor)  echo "dev_tests refactor_guard test_mt golden_cli" ;;
         docs|other) echo "" ;;
-        *)         echo "bootstrap test_mt scoreboard" ;;
+        *)         echo "bootstrap test_mt" ;;
     esac
 }
 

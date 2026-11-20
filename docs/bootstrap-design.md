@@ -1,16 +1,17 @@
 # Milk Tea Bootstrap & Release Design
 
-Status: **Phases 1–2 implemented**: `tools/bootstrap.sh` (3-stage build,
-fixed-point verification, self-tests) with the committed native seed, and
-`tools/release.sh` (deterministic archive, checksums, clean-path smoke,
-seed refresh). Phase 3 (developer tooling) remains a proposal. Last updated:
+Status: **Phases 1–2 implemented, host retired**: `tools/bootstrap.sh`
+(3-stage build, fixed-point verification, self-tests) with the committed native
+seed, and `tools/release.sh` (deterministic archive, checksums, clean-path
+smoke, seed refresh). The Ruby host was retired in session 143; the seed is the
+only stage0. Phase 3 (developer tooling) remains a proposal. Last updated:
 2026-11-20.
 
 ## 0. Motivation
 
-Milk Tea is self-hosting: the compiler (`mtc`) compiles itself. Today the
-bootstrap host is the Ruby compiler (`ruby -Ilib bin/mtc`). As the language
-matures, we need:
+Milk Tea is self-hosting: the compiler (`mtc`) compiles itself. The Ruby host
+that originally bootstrapped the language is retired and archived (tag
+`archive/host-ruby-0.4.26`). The requirements that drove this design were:
 
 1. A **Ruby-free bootstrap path** for contributors who don't have Ruby.
 2. A **release pipeline** that ships pre-built `mtc` binaries.
@@ -20,7 +21,7 @@ matures, we need:
    on every change.
 
 This document draws from Rust, Go, and Zig bootstrap architectures and adapts
-them to Milk Tea's constraints (Ruby host, C backend, source-only stdlib).
+them to Milk Tea's constraints (native seed, C backend, source-only stdlib).
 
 ---
 
@@ -31,8 +32,7 @@ them to Milk Tea's constraints (Ruby host, C backend, source-only stdlib).
 Implemented by `tools/bootstrap.sh` (§3), which persists every stage:
 
 ```
-stage0 (vendor/bootstrap/<platform>/mtc, $MTC_BOOTSTRAP, or ruby -Ilib bin/mtc
-        with --allow-ruby-host)
+stage0 (vendor/bootstrap/<platform>/mtc or $MTC_BOOTSTRAP)
         ──build──→ build/stage1/mtc   (fast dev path: --stage 1)
 stage1  ──build──→ build/stage2/mtc   (distributable artifact, --stage 2)
 stage2  ──build──→ build/stage3/mtc   (verification only)
@@ -127,8 +127,7 @@ The bootstrap script resolves the stage0 compiler in this order:
 1. `--bootstrap PATH` (explicit, highest priority; not checksum-verified)
 2. `$MTC_BOOTSTRAP` environment variable (not checksum-verified)
 3. `vendor/bootstrap/<platform>/mtc` (committed seed; sha256 verified)
-4. `ruby -Ilib bin/mtc` (only with `--allow-ruby-host`)
-5. Error: names the expected seed path and the three ways to supply one
+4. Error: names the expected seed path and the two ways to supply one
 
 The `bin/bootstrap-mtc` path was removed; `vendor/bootstrap/` replaces it and
 carries a checksum, which a user-placed file could not.
@@ -168,7 +167,7 @@ Options:
   --fast               Fixed point only (implies --keep-c; skips the suite)
   --keep-c             Save generated C files alongside binaries
   --profile {debug,release}  Build profile (default: debug)
-  --allow-ruby-host    Permit the Ruby host as stage0 when no seed exists
+  --print-stage0       Resolve and verify stage0, print its path, and exit
   -j N                 Parallel jobs for C compilation (default: nproc)
 ```
 
@@ -301,8 +300,7 @@ $XDG_CACHE_HOME/milk_tea/
 - [x] Support `$MTC_BOOTSTRAP`, `--bootstrap` (snapshot download not
       implemented — `$MTC_BOOTSTRAP_URL` is unused)
 - [x] Committed sha256-verified seed (`vendor/bootstrap/<platform>/`) as the
-      default stage0; the Ruby host requires `--allow-ruby-host`, and a fresh
-      clone bootstraps with only a C compiler
+      only stage0; a fresh clone bootstraps with only a C compiler
 - [x] 3-stage build + fixed-point verification via `diff`
 - [x] `--stage 1` fast path for development (`--stage 2` stops after stage2)
 - [x] `--no-verify` to skip stage3
