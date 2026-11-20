@@ -396,6 +396,11 @@ struct Context:
     flow_types: vec.Vec[FlowTypeEntry]
     flow_recorded: map_mod.Map[str, types.Type]
     flow_scratch: vec.Vec[FlowName]
+    ## Constants *declared* by this module (own names only).  `const_values`
+    ## also carries the qualified imported aliases used for compile-time
+    ## folding; exporting those would make every importer re-prefix them, so the
+    ## names compound along the import graph.
+    declared_const_values: map_mod.Map[str, ptr[ast.Expr]]
     const_values: map_mod.Map[str, ptr[ast.Expr]]
     declared_attributes: map_mod.Map[str, span[str]]
     diagnostics: vec.Vec[SemanticDiagnostic]
@@ -484,6 +489,7 @@ public struct Analysis:
     ## See `Context.flow_types`: the local refinement record the LSP resolves a
     ## hover's type through.
     flow_types: vec.Vec[FlowTypeEntry]
+    declared_const_values: map_mod.Map[str, ptr[ast.Expr]]
     const_values: map_mod.Map[str, ptr[ast.Expr]]
     module_name: str
     module_kind: ast.ModuleKind
@@ -653,6 +659,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         method_type_params = ctx.method_type_params,
         callable_value_sites = ctx.callable_value_sites,
         flow_types = ctx.flow_types,
+        declared_const_values = ctx.declared_const_values,
         const_values = ctx.const_values,
         module_name = module_name,
         module_kind = file.module_kind,
@@ -760,6 +767,7 @@ function create_context(module_name: str, imported_modules: ptr[map_mod.Map[str,
         flow_types = vec.Vec[FlowTypeEntry].create(),
         flow_recorded = map_mod.Map[str, types.Type].create(),
         flow_scratch = vec.Vec[FlowName].create(),
+        declared_const_values = map_mod.Map[str, ptr[ast.Expr]].create(),
         const_values = map_mod.Map[str, ptr[ast.Expr]].create(),
         declared_attributes = map_mod.Map[str, span[str]].create(),
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
@@ -1678,6 +1686,7 @@ function declare_values_and_functions_extra(ctx: ref[Context], extra: span[ast.D
                     let val = c.value else:
                         i += 1
                         continue
+                    ctx.declared_const_values.set(c.name, val)
                     ctx.const_values.set(c.name, val)
                     record_decl_callable_sites(ctx, val)
             ast.Decl.decl_function as fun:
@@ -2458,6 +2467,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                             let val = c.value else:
                                 i += 1
                                 continue
+                            ctx.declared_const_values.set(c.name, val)
                             ctx.const_values.set(c.name, val)
                         Option.none:
                             pass

@@ -1,12 +1,10 @@
 # Milk Tea Bootstrap & Release Design
 
-Status: **Phase 1 implemented** (`tools/bootstrap.sh`, in use for every compiler
-change: 3-stage build, revision stamping, `diff`-based fixed-point verification,
-self-test run) plus the **native seed path**: stage0 defaults to a committed,
-sha256-verified `vendor/bootstrap/<platform>/mtc`, and the Ruby host is only
-usable with `--allow-ruby-host`. Phase 2 (binary release tooling) and Phase 3
-(developer tooling) remain proposals; download-on-demand is not implemented.
-Last updated: 2026-11-20.
+Status: **Phases 1–2 implemented**: `tools/bootstrap.sh` (3-stage build,
+fixed-point verification, self-tests) with the committed native seed, and
+`tools/release.sh` (deterministic archive, checksums, clean-path smoke,
+seed refresh). Phase 3 (developer tooling) remains a proposal. Last updated:
+2026-11-20.
 
 ## 0. Motivation
 
@@ -137,12 +135,19 @@ carries a checksum, which a user-placed file could not.
 
 ### 2.4 Snapshot format
 
-The repository ships the minimum: one native `mtc` binary per platform
-(`linux-x86-64` today).
+The release archive is the distribution unit:
 
-A release package adds binaries for each supported platform plus the `std/`
-directory tree (source files — no pre-compiled artifacts are needed because the
-standard library is source-only).  That packaging is Phase 2.
+```
+mtc-<version>-<platform>/
+  bin/mtc   std/   docs/   docs_public/   VERSION   README.md   LICENSE
+```
+
+`tools/release.sh` builds it deterministically, writes
+`mtc-<version>-<platform>.tar.gz` plus a `.sha256`, and `--refresh-seed` copies
+the release binary into `vendor/bootstrap/<platform>/mtc` with a fresh
+checksum.  The repository ships the minimum (one seed per platform,
+`linux-x86-64` today); download-on-demand for other platforms remains future
+work.
 
 ---
 
@@ -302,17 +307,22 @@ $XDG_CACHE_HOME/milk_tea/
 - [x] `--stage 1` fast path for development (`--stage 2` stops after stage2)
 - [x] `--no-verify` to skip stage3
 - [x] `--profile debug|release`, `--keep-c`, `-j N`, `$MTC_BUILD_DIR`
-- [x] git-revision stamping of `projects/mtc/src/mtc/version_info.mt` (restored
-      on exit) and a `build/stage2/mtc test projects/mtc` self-test step
+- [x] version is the authored `cli_help.VERSION` constant (the old git-revision
+      stamp produced an ignored generated file and was removed)
+- [x] `build/stage2/mtc test projects/mtc` self-test step
 
-### Phase 2: Release tooling
+### Phase 2: Release tooling — DONE (`tools/release.sh`)
 
-- Script to build release binaries for linux/x86-64 (and windows/x86-64 via
-  MinGW cross-compilation when supported)
-- Package: `mtc` + `std/` + docs → `.tar.gz` / `.zip`
-- Snapshot update: copy the release `mtc` binary into
-  `vendor/bootstrap/<platform>/` and refresh `mtc.sha256`; additionally publish
-  it for download-on-demand
+- [x] `tools/release.sh` builds a release-profile stage2 with the seed and
+      packages `bin/mtc` + `std/` + `docs/` + `docs_public/` + `VERSION` +
+      `README.md` + `LICENSE`
+- [x] deterministic `.tar.gz` (sorted entries, fixed owner/mtime, `gzip -n`)
+      plus a `.sha256`
+- [x] `--refresh-seed` updates `vendor/bootstrap/<platform>/` and its checksum
+- [x] `tools/release_smoke.sh`: extracts the archive outside the checkout,
+      builds/runs a std-importing program, completes an LSP initialize
+      handshake, and checks the docs page/assets/404 routes
+- [ ] Windows/MinGW packaging and download-on-demand publication (future)
 
 ### Phase 3: Developer tooling (future)
 

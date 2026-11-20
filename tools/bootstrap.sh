@@ -18,7 +18,7 @@
 #                        Without this flag the script fails instead of silently
 #                        falling back, so the native path stays the only
 #                        supported one.
-#   -j N                 Parallel jobs for C compilation (default: nproc)
+#   -j N                 Parallel compiler jobs (default: 4, hard-capped)
 #
 # Stage0 resolution order:
 #   1. --bootstrap PATH (explicit)
@@ -50,6 +50,7 @@ PROFILE="debug"
 KEEP_C=0
 ALLOW_RUBY_HOST=0
 JOBS="$(nproc 2>/dev/null || echo 1)"
+[ "$JOBS" -gt 4 ] && JOBS=4
 BUILD_DIR="${MTC_BUILD_DIR:-build}"
 
 # ── argument parsing ─────────────────────────────────────────────────────────
@@ -95,6 +96,12 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Parallel compiler fan-out is memory-bound: keep it at or below 4.
+if [ "$JOBS" -gt 4 ]; then
+    echo "warning: -j $JOBS capped at 4 (parallel compiler fan-out is memory-bound)" >&2
+    JOBS=4
+fi
 
 # ── validate ─────────────────────────────────────────────────────────────────
 
@@ -184,15 +191,6 @@ resolve_stage0() {
 }
 
 MTC_STAGE0="$(resolve_stage0)"
-
-# ── git revision stamp ────────────────────────────────────────────────────────
-
-GIT_REV="$(git -C "$PROJECT_ROOT" rev-parse --short=7 HEAD 2>/dev/null || echo "unknown")"
-VERSION_FILE="$PROJECT_ROOT/projects/mtc/src/mtc/version_info.mt"
-# Save original for restoration
-ORIG_CONTENT="$(cat "$VERSION_FILE")"
-sed -i "s/__PLACEHOLDER__/$GIT_REV/" "$VERSION_FILE"
-trap 'echo "$ORIG_CONTENT" > "$VERSION_FILE"' EXIT
 
 # ── build flags ──────────────────────────────────────────────────────────────
 

@@ -21,7 +21,7 @@
 #
 # Options:
 #   --self PATH      self-host compiler binary  (default: build/stage2/mtc)
-#   -j, --jobs N     parallel workers           (default: nproc)
+#   -j, --jobs N     parallel workers           (default: 4, hard-capped)
 #   --timeout SEC    per self-host invocation timeout (default: 30)
 #   --mem-mb MB      virtual-memory cap for the self-host binary (0 = off)
 #   --max-diffs N    differing files to detail  (default: 20)
@@ -39,13 +39,14 @@ require "fileutils"
 require "open3"
 require "shellwords"
 require_relative "lib/golden"
+require_relative "lib/jobs"
 
 ROOT = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(File.join(ROOT, "lib"))
 
 MODES = %w[preserve tidy canonical].freeze
 HOST_MODES = { "preserve" => :preserve, "tidy" => :tidy, "canonical" => :safe }.freeze
-EXCLUDE_DIRS = %w[.git .opencode build node_modules third_party tmp].freeze
+EXCLUDE_DIRS = %w[.git .opencode build dist node_modules third_party tmp].freeze
 
 def usage
   File.read(__FILE__).lines.drop(2).take_while { |l| l.start_with?("#") }
@@ -57,7 +58,7 @@ end
 modes = []
 targets = []
 self_bin = nil
-jobs = Etc.nprocessors
+jobs = [Etc.nprocessors, Jobs::MAX].min
 timeout_s = 30
 mem_mb = 0
 max_diffs = 20
@@ -93,7 +94,7 @@ end
 
 modes = MODES.dup if modes.empty?
 modes.uniq!
-jobs = 1 if jobs < 1
+jobs = Jobs.clamp(jobs)
 
 self_bin ||= File.join(ROOT, "build", "stage2", "mtc")
 self_bin = File.expand_path(self_bin)
@@ -178,7 +179,8 @@ def run_self(bin, mode, file, timeout_s, mem_mb)
   full = ["timeout", timeout_s.to_s, *full]
 
   out, err, status = Open3.capture3(*full)
-  [out, status.exitstatus, err]
+  rc = status.exitstatus || (128 + status.termsig.to_i)
+  [out, rc, err]
 end
 
 # ── worker ───────────────────────────────────────────────────────────────────

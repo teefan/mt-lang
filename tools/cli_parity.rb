@@ -648,7 +648,7 @@ if record_path || expect_path
     actual[c[:name]] = {
       "stdout" => recorded_stdout,
       "stderr" => normalize(serr, self_bin: self_bin),
-      "rc" => status.exitstatus,
+      "rc" => status.exitstatus || (128 + status.termsig.to_i),
     }
   end
 

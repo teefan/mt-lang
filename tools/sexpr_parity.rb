@@ -18,7 +18,7 @@
 #
 # Options:
 #   --self PATH      self-host compiler binary  (default: build/stage2/mtc)
-#   -j, --jobs N     parallel workers           (default: nproc; 4 for lower)
+#   -j, --jobs N     parallel workers           (default: 4, hard-capped)
 #   -I, --include D  extra module root for `lower` (repeatable)
 #   --timeout SEC    per self-host invocation timeout (default: 120)
 #   --mem-mb MB      virtual-memory cap for the self-host binary (0 = off)
@@ -39,12 +39,13 @@ require "json"
 require "open3"
 require "shellwords"
 require "stringio"
+require_relative "lib/jobs"
 
 ROOT = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(File.join(ROOT, "lib"))
 
 MODES = %w[lex parse lower].freeze
-EXCLUDE_DIRS = %w[.git .opencode build node_modules third_party tmp].freeze
+EXCLUDE_DIRS = %w[.git .opencode build dist node_modules third_party tmp].freeze
 
 def usage
   File.read(__FILE__).lines.drop(2).take_while { |l| l.start_with?("#") }
@@ -56,7 +57,7 @@ end
 mode = nil
 targets = []
 self_bin = nil
-jobs = Etc.nprocessors
+jobs = [Etc.nprocessors, Jobs::MAX].min
 jobs_explicit = false
 includes = []
 timeout_s = 120
@@ -71,7 +72,7 @@ until argv.empty?
   a = argv.shift
   case a
   when "--self"     then self_bin = argv.shift
-  when "-j", "--jobs" then jobs = argv.shift.to_i; jobs_explicit = true
+  when "-j", "--jobs" then jobs = argv.shift.to_i
   when "-I", "--include" then includes << argv.shift
   when "--timeout"  then timeout_s = argv.shift.to_i
   when "--mem-mb"   then mem_mb = argv.shift.to_i
@@ -90,18 +91,14 @@ until argv.empty?
 end
 
 mode ||= "all"
-jobs = 1 if jobs < 1
+jobs = Jobs.clamp(jobs)
 modes = mode == "all" ? MODES : [mode]
 
 # A lower sweep runs one self compiler per worker; a compiler-sized closure
-# peaks at ~3.8 GiB (the documented `main*` loop-guard artifacts), so the
-# nproc-wide default has exhausted a 31 GiB workstation.  Keep the default
-# bounded; an explicit -j still wins.  --mem-mb caps a runaway process.
-if mode == "lower" && !jobs_explicit
-  jobs = 4 if jobs > 4
-end
+# peaks at ~3.8 GiB (the documented `main*` loop-guard artifacts), so the job
+# count is capped by Jobs.  --mem-mb caps a runaway process.
 if modes.include?("lower") && mem_mb.zero?
-  warn "note: lower runs are memory-heavy (a compiler-sized closure peaks ~3.8 GiB); pass --mem-mb 8000 and keep -j at 4."
+  warn "note: lower runs are memory-heavy (a compiler-sized closure peaks ~3.8 GiB); pass --mem-mb 8000."
 end
 
 self_bin ||= File.join(ROOT, "build", "stage2", "mtc")

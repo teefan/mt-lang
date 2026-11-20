@@ -9,7 +9,8 @@ Gem::Specification.new do |spec|
   spec.summary       = "The Milk Tea programming language compiler toolchain"
   spec.description   = "A statically-typed, compiled programming language with C ABI interop, " \
                         "async/await, generics, pattern matching, and a comprehensive standard library. " \
-                        "Includes the mtc compiler, LSP server (mtc lsp), and DAP debug adapter (mtc dap)."
+                        "Includes the mtc compiler, LSP server (mtc lsp), and DAP debug adapter (mtc dap). " \
+                        "Deprecated: the native self-host release replaces this gem."
   spec.homepage      = "https://teefan.github.io/mt-lang/"
   spec.license       = "MIT"
   spec.licenses      = ["MIT"]
@@ -51,6 +52,9 @@ Gem::Specification.new do |spec|
 
   spec.post_install_message = <<~MSG
     Milk Tea #{MilkTea::VERSION} installed!
+
+    DEPRECATED: the native self-host release replaces this gem. Install the
+    mtc-<version>-<platform> archive from the project releases instead.
 
     System requirements:
       - A C compiler (gcc or clang) must be available on PATH

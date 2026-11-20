@@ -17,7 +17,7 @@ history.
 
 - [Status at a glance](#status-at-a-glance-session-142-2026-11-20)
 - [Host retirement program](#host-retirement-program)
-- [Session 142 — seed, guard carve-out, and recorded oracles (phases 0–2)](#session-142--seed-guard-carve-out-and-recorded-oracles-phases-02)
+- [Session 142 — seed, guard carve-out, recorded oracles, release path (phases 0–3)](#session-142--seed-guard-carve-out-recorded-oracles-release-path-phases-03)
 - [Session 141 — semantic conformance: conditions, named arguments, FFI](#session-141--semantic-conformance-conditions-named-arguments-ffi)
 - [Session 140 — LSP hover latency and chained receivers](#session-140--lsp-hover-latency-and-chained-receivers)
 - [Session 139 — call-argument compatibility](#session-139--call-argument-compatibility)
@@ -102,7 +102,9 @@ history.
 | Area | State |
 | --- | --- |
 | Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** (re-verified session 142 on the phase-2 sources, stage0 = the committed seed) |
-| Bootstrap stage0 | **committed seed**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256`; Ruby host requires `--allow-ruby-host`; a full bootstrap with a failing `ruby` shim never invoked Ruby (session 142) |
+| Bootstrap stage0 | **committed seed**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (refreshed session 142 to the release build, `b29241f4…`); Ruby host requires `--allow-ruby-host`; a full bootstrap with a failing `ruby` shim never invoked Ruby |
+| Release archive | **3.52 MiB deterministic tar.gz** (`mtc-0.4.26-linux-x86_64`), checksummed beside the archive; identical across two packagings of the same inputs; clean-path smoke (std build/run, LSP initialize, docs page/CSS/JS/404) green; the version is the authored `cli_help.VERSION` (session 142) |
+| Analyzer memory | `check main.mt` **712 MiB / 6.6 s** (was 9,228 MiB / ~58 s); `lowering.mt` **274 MiB** (was 2,322 MiB); the lint sweep no longer times out.  All tooling fan-out is capped at **4**, so the worst 4-way sweep is ~3 GiB (session 142) |
 | `test/mt` | **85 files / 0 failed** (62 in-language tests + 23 compile-fail diagnostics fixtures; session 142); peak RSS **135 MB** under the region-scoped test compiler (session 129) |
 | Examples | **49/49 same** under the gate (15 top-level examples + `examples/sdl3` 34/34; re-verified session 141); the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **772 match / 0 differ / 4 host-rejected of 776**; counts drift with the tree and `tmp` fixtures; unchanged by sessions 139–141, which touch no lexer/parser code) |
@@ -117,7 +119,7 @@ history.
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
 | Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 130).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
 | Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
-| **Refactoring safety** | structural guard: 169 files / 126,595 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **33 unused + 6 test-only** public declarations; 6,345 duplicated lines / 884 windows; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json` (refreshed session 142 for the phase-2 semantic fixes; the test glob is now recursive); one command: `tools/gates.sh --areas refactor --run` |
+| **Refactoring safety** | structural guard: 169 files / 126,602 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **33 unused + 6 test-only** public declarations; 6,345 duplicated lines / 884 windows; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json` (refreshed session 142 for the phase-2 semantic fixes; the test glob is now recursive); one command: `tools/gates.sh --areas refactor --run` |
 
 Rough completion against the per-track Definition of Done: **~100%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix (including
@@ -158,7 +160,7 @@ Phases, in order; each gate proves the previous one:
 | 0. Seed | committed sha256-verified stage2 seed; Ruby host behind `--allow-ruby-host` | **DONE (session 142)**: full bootstrap with a failing `ruby` shim → fixed point + 22/0; `test/mt` 62/0 |
 | 1. Guard | carve `MilkTea::RefactorGuard` (820 Ruby lines, stdlib only) out of `lib/` into `tools/lib/`; a native `.mt` port is deferred | **DONE (session 142)**: report and JSON byte-identical to the pre-move guard; 15 tests pass |
 | 2. Oracles | **DONE (session 142)**: shared `tools/lib/golden.rb`; `--record`/`--expect` in the four sweeps; digest-keyed fixtures under `tools/golden/`; negative corpus as `# expect-error:` fixtures under `test/mt/diagnostics/` | the replay set runs green with `lib/` moved away (no host process is started) |
-| 3. Product | `tools/release.sh`, per-platform packaging, version stamping, install docs; retire or stub the gem | clean-path install + `mtc run` / `mtc lsp` from the tarball |
+| 3. Product | **DONE (session 142)**: `tools/release.sh` builds a deterministic archive (`bin/mtc`, `std/`, `docs/`, `docs_public/`, `VERSION`, `README`, `LICENSE`) with a checksum and optional seed refresh; `tools/release_smoke.sh` verifies a clean-path extract | extract outside the checkout → std-importing program builds/runs, LSP initialize handshake, docs page/assets/404 |
 | 4. Delete | archive `lib/milk_tea`, `test/**` and the gemspec; remove dead tools | a fresh clone builds and passes from source with only a C compiler |
 
 Why this order: the seed must exist before any self-only language change; the
@@ -173,7 +175,7 @@ scope.  Qualified-type rendering, module/`static_assert` bare-vs-block and
 `lint` on an unresolved import are differences from a host that will no longer
 be maintained; re-adjudicate each on its own merit.
 
-## Session 142 — seed, guard carve-out, and recorded oracles (phases 0–2)
+## Session 142 — seed, guard carve-out, recorded oracles, release path (phases 0–3)
 
 Removed the Ruby host from the default bootstrap path and moved the last live
 host component out of `lib/`.
@@ -274,23 +276,94 @@ intersection, and
 
 **Verification.**  Fixed point holds on the new sources, and the four recorded
 gates replay green **with `lib/` moved aside** (no host process is started):
-CLI **227/227**, diagnostics **504 files / 0 differ**, lint **666 compared /
-0 differ** (7 compiler-sized files time out at 180 s and stay unrecorded), and
-the formatter **779 files × 3 modes / 0 differ**.  Live parity is unchanged:
+CLI **227/227**, diagnostics **504 files / 0 differ**, lint **672 compared /
+0 differ** (0 unrecorded after the phase-3 memory fix), and the formatter
+**778 files × 3 modes / 0 differ**.  Live parity is unchanged:
 `cli_parity` **227/227**, `diag_parity check std examples`
 **501 agree / 0 verdict / 3 message / 0 position of 504**.  `test/mt` is now
 **85/0** and the dev suite **22/0**.  The guard passes
-`--check --strict --ratchet` after a reviewed refresh: **126,595 code lines**,
+`--check --strict --ratchet` after a reviewed refresh: **126,602 code lines**,
 tests **22/85** (its glob now counts subdirectories, so the new fixtures are
 visible).
 
-**Linter performance (noted, not closed).**  The self linter takes ~58 s on
-`projects/mtc/src/mtc/main.mt` alone, and 7 compiler-sized files exceed the
-180 s per-file timeout under `-j 8` — why the recorded lint golden leaves them
-unrecorded.  Pre-existing, harmless to the verdicts, and the next performance
-item after the retirement.
+**Linter performance — resolved in phase 3.**  The self linter took ~58 s and
+9.2 GiB on `main.mt`, and 7 compiler-sized files exceeded the 180 s per-file
+timeout.  The phase-3 investigation below found the cause and fixed it; the lint
+sweep no longer times out.
 
-**Still open from phase 2:** nothing; phase 3 is the release path.
+**Still open from phase 2:** nothing.
+
+### Phase 3 in the same session — release path
+
+`tools/release.sh` reads the version from the authored
+`projects/mtc/src/mtc/cli_help.mt` (`VERSION` plus the help banner), refuses a
+mismatch, builds a release-profile stage2 with the seed, and packs
+`bin/mtc` + `std/` + `docs/` + `docs_public/` + `VERSION` + `README.md` +
+`LICENSE`.  The archive is deterministic: sorted entries, owner 0, a fixed
+`--mtime`, and `gzip -n`; two packagings of the same binary produce the same
+checksum.  `--refresh-seed` copies the release compiler into
+`vendor/bootstrap/<platform>/` and regenerates `mtc.sha256`.
+
+`tools/release_smoke.sh` extracts the archive under `/tmp` (outside the
+checkout, so an ancestor `std/` cannot mask a missing one), clears
+`MILK_TEA_MODULE_ROOT`/`MILK_TEA_STD_ROOT`, builds and runs a `std.stdio`
+program, completes an LSP `initialize` handshake, and checks `mtc docs` for the
+reference page, `/css/docs.css`, `/js/docs.js`, and a 404.  The docs check found
+a real packaging bug: `serve_asset` resolved only the checkout path
+(`projects/mtc/src/mtc/docs_public`), so the first archive 404'd its own CSS.
+It now prefers `<root>/docs_public/` and falls back to the checkout path.
+
+**Version stamping.**  `version_info.mt` was a gitignored generated file whose
+`__PLACEHOLDER__` had long since been replaced, leaving a frozen `98c096e` that
+nothing read; `bootstrap.sh` still rewrote it every run and `main.mt` imported
+it for no reason.  Removed all three.  The version is `cli_help.VERSION`, an
+authored constant, so a release build never consults git.
+
+**Distribution.**  README install now documents the native archive (with the
+gem marked deprecated); the gemspec description and post-install message mark
+the gem deprecated.  `docs/build-guide.md` §10 documents the archive layout,
+module-root resolution, the release commands, and building from the seed.  The
+gemspec and the host tests are removed in phase 4.
+
+### Analyzer memory (found while capping the fan-out)
+
+A `mtc lint` run was exhausting RAM.  One `lint main.mt` measured **9,228 MiB**,
+identical to `check main.mt` — the linter was innocent; the analyzer was the
+consumer.  Per-file measurements isolated it: `lowering.mt` 2,322 MiB while
+`analyzer.mt` was 73 MiB, so it was not closure size either.  Massif with
+`--pages-as-heap=yes` attributed 61% of the 2.47 GiB peak to `String` builds in
+`record_imported_constants`: the analyzer's exported `const_values` carried the
+qualified imported aliases it had synthesized for folding, so every importer
+re-prefixed them and the names compounded along the import graph (a 13k-line
+file imports its way to millions of `<alias>.<name>` keys).
+
+The fix splits the maps: `Analysis.declared_const_values` holds only the
+module's own constants and is what the binding exports; `ctx.const_values`
+remains the internal fold cache.  Measured after: `check main.mt`
+**712 MiB in 6.6 s** (was 9,228 MiB / ~58 s), `lowering.mt` **274 MiB** (was
+2,322 MiB), and lint matches check.  The recorded lint sweep drops from
+**3:44 with 7 files timing out** to **39 s with 0 timeouts** (672 files).  The
+host rejects a transitive `a.C`, which matches the narrowed export; the self
+still accepts *unknown* members on an imported module (`a.NOPE`), a separate
+pre-existing gap.
+
+### Parallelism cap
+
+Every harness routes its worker count through `tools/lib/jobs.rb`
+(`Jobs::MAX = 4`), `bootstrap.sh` and `release.sh` clamp `-j` at 4, and the gate
+commands use `-j 4`.  The clamp warns when an explicit value is higher.  With
+the memory fix above, the worst compiler-sized lint is ~700 MiB, so a 4-way
+sweep stays around 3 GiB.
+
+**Verification.**  The release build and smoke pass; two packagings of the same
+inputs produce the same checksum (the first mismatch was a docs edit between
+runs, not the archive).  The refreshed seed reaches the fixed point
+(`stage2.c == stage3.c`), and a bootstrap through the fixed seed analyzes the
+compiler at **3.6 GiB** instead of 12.3 GiB.  The recorded gates are re-recorded
+on the fixed compiler and replay with no skips, including with `lib/` moved
+aside; `test/mt` 85/0, `cli:parity` 227/227, `diag_parity` 501/0/0/3 of 504,
+docs smoke host+self ok, and the guard ratchet after a reviewed baseline
+refresh (126,602 code lines).
 
 ## Session 141 — semantic conformance: conditions, named arguments, FFI
 
@@ -3128,22 +3201,24 @@ rows), formatter 739/739 in all three modes.
 
 ## Handoff (session 142)
 
-**Next session:** host retirement **phase 3 — release tooling**.  Phases 0–2
-are done: stage0 is the committed seed, the structural guard lives in
-`tools/lib/`, and the four parity sweeps have a host-free recorded mode with
-fixtures under `tools/golden/`.
+**Next session:** host retirement **phase 4 — retire the host tree**.  Phases
+0–3 are done: the seed bootstraps a fresh clone, the guard lives in
+`tools/lib/`, the recorded gates replay without the host, and
+`tools/release.sh` produces a deterministic archive with a clean-path smoke.
 
-- `tools/release.sh` (or a `rake release:native` task): build a release-profile
-  stage2, package `mtc` + `std/` + docs per platform, checksum it, and emit the
-  next seed (`vendor/bootstrap/<platform>/mtc` + `mtc.sha256`).  Version
-  stamping must not depend on `git rev-parse` at build time.
-- Decide the gem's fate: retire `mt-lang` or publish a stub that points at the
-  native install.  Update README §install and `docs/build-guide.md`.
-- Verify on a clean path: untar, `mtc run hello.mt`, `mtc lsp` handshake, and a
-  fresh-clone bootstrap with only a C compiler.
-- Phase 4 then archives `lib/milk_tea`, `test/**` and the gemspec, and removes
-  the host-coupled tools (`gen_cli_help` becomes dead; the bindgen/imported
-  bindings harnesses retire once the self generator is the source of truth).
+- Move `lib/milk_tea`, the Ruby `test/**` suite and `milk_tea.gemspec` to an
+  archive tag.  Keep only Rakefile tasks that are vendored-library tooling and
+  do not load the compiler; `tools/lib/refactor_guard.rb` already stands alone.
+- Remove the host-coupled tools: `gen_cli_help.rb` (its output `cli_help.mt` is
+  now authored), `bindgen_parity.rb` and `imported_bindings_parity.rb` (the self
+  owns `imported-bindings --all --check`), and the host side of
+  `cli_parity`/`format_parity`/`diag_parity`/`lint_parity` (the `--expect` path
+  is the survivor).
+- Swap the gates: use `golden_*` in the analyzer/cli/linter/formatter area sets
+  and drop the live parity twins.  Remove `--allow-ruby-host` once the frozen
+  host is gone.
+- Phase 4's gate: a fresh clone with only a C compiler builds, passes
+  `test/mt`, and replays every golden.
 
 **Recorded gates now.**  `--expect` replays against
 `tools/golden/{cli,diag,lint,format}.json`; diagnostics/lint/format rows are
@@ -3154,11 +3229,11 @@ cover those areas, and running both would double tier-2 cost.  Phase 4 swaps
 them in.
 
 **Build state.**  `vendor/bootstrap/linux-x86_64/mtc` is the seed
-(`0257ee4f…`, release stage2); `tools/bootstrap.sh` verifies it and no longer
-falls back to Ruby without `--allow-ruby-host`.  The guard's numbers are
-**126,595 code lines**, 6,345 duplicated / 884 windows, tests **22/85**; the
-baseline was refreshed for the phase-2 semantic fixes.  `test/mt` 85/0 and the
-four recorded gates replay green with `lib/` moved aside.
+(`b29241f4…`, release, 6,289,144 B), refreshed from the release build.  The
+release artifact is `mtc-0.4.26-linux-x86_64.tar.gz` (3.52 MiB, deterministic,
+checksummed beside the archive).  The guard's numbers are **126,602 code lines**,
+6,345 duplicated / 884 windows, tests **22/85**; the baseline was refreshed for
+the phase-2 semantic fixes and the phase-3 source removals.
 
 ## Handoff (session 141)
 
@@ -3367,10 +3442,11 @@ moved.**
 
 ### Open items, in priority order
 
-1. **Host retirement — phase 3 (OPEN; active program).**  Phases 0–2 landed:
-   the native seed is the default stage0, the guard lives in `tools/lib/`, and
-   the recorded oracles replay without the host; build the native release path
-   next (see the session-142 Handoff).
+1. **Host retirement — phase 4 (OPEN; active program).**  Phases 0–3 landed:
+   the native seed is the default stage0, the guard lives in `tools/lib/`, the
+   recorded oracles replay without the host, and the release archive is
+   deterministic with a clean-path smoke; retire the host tree next (see the
+   session-142 Handoff).
    **Output-diagnostic parity** is re-scoped by the retirement decision: the CLI
    caret length, the zero-column linter warnings
    (`redundant-else`, `unreachable-code`, `redundant-null-check`,
@@ -3438,8 +3514,8 @@ sections and *Deliberate differences*.
 | Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb --json tmp/ib-parity.json`; `ruby tools/bindgen_parity.rb --self build/stage2/mtc`; regenerate `std/c/*.mt` and diff |
 | LSP feature parity / residue | Track E; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb record --server host\|self` + `compare`; `tools/lsp_project_audit.rb --workspace DIR [--canonical]`; `tools/lsp_recovery_probe.rb --check`; `tools/lsp_soak.rb` |
 | DAP | Track F (closed); `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both]`; `ruby tools/dap_async_probe.rb` |
-| Formatter (`:tidy`, `:preserve`, `:canonical`) | Track E/formatter history at `d8a199c7` §7 | `ruby tools/format_parity.rb all -j 16` (739/739, counts drift) |
-| Bootstrap / release | `docs/bootstrap-design.md` (seed policy), `vendor/bootstrap/README.md` | `tools/bootstrap.sh -j 16` (full); `--fast` = fixed point only; stage0 is the sha256-verified seed, Ruby requires `--allow-ruby-host` |
+| Formatter (`:tidy`, `:preserve`, `:canonical`) | Track E/formatter history at `d8a199c7` §7 | `ruby tools/format_parity.rb all -j 4` (778/778, counts drift) |
+| Bootstrap / release | `docs/bootstrap-design.md` (seed policy), `vendor/bootstrap/README.md` | `tools/bootstrap.sh -j 4` (full); `--fast` = fixed point only; stage0 is the sha256-verified seed, Ruby requires `--allow-ruby-host` |
 | In-language tests | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` |
 | Refactoring pass | `docs/refactoring.md`; `tools/refactor_guard.rb --help` | `tools/gates.sh --areas refactor --run`; `ruby tools/refactor_guard.rb --check --strict --ratchet` |
 | Example builds | Track H | per-family sweeps (15 top-level, `examples/sdl3` 34/34, a raylib sample) |
@@ -3457,7 +3533,7 @@ Iterate cheap, prove once:
 - **Tier 2 — once per commit, on frozen sources.**  `tools/gates.sh` prints the
   gate set for the working-tree diff (or accepts `--areas linter`); `--run`
   executes them with logs under `tmp/gates/`.  Hard proofs: `tools/bootstrap.sh
-  -j 16 --fast` (fixed point; the full form also runs the suite) and
+  -j 4 --fast` (fixed point; the full form also runs the suite) and
   `build/stage2/mtc test test/mt -I .` (61/0), then the sweep that covers the
   area (lower/lint/CLI/LSP/DAP/format).
 - **Batch the ceremony, not the care.**  Land 3–5 fixes per commit, each
@@ -3488,6 +3564,9 @@ Iterate cheap, prove once:
 - **Sandbox generated binaries**: `timeout 10 bash -c 'ulimit -v 20000000; …'`.
   A 124 exit is a hang, 137 an OOM/SIGKILL, 139 a SIGSEGV, 134 a SIGABRT/double
   free — investigate, don't call it test noise.
+- **Parallelism is capped at 4**: every harness routes `-j` through
+  `tools/lib/jobs.rb`; `bootstrap.sh` and `release.sh` clamp too.  The compiler
+  is a multi-GiB process, so a wider fan-out exhausts RAM.
 - **Check the self-test suite's file count, not just `0 failed`** — `mtc test`
   silently skips a file that fails to lex/parse (`18 test file(s), 0 failed`
   with a broken `projects/mtc/test/*.mt`); the full-corpus sweep's `hostfail`
@@ -3503,7 +3582,9 @@ Iterate cheap, prove once:
   `tools/refactor_baseline.json` only for a deliberate structural change, never
   to silence a check.
 - **Generated binaries are not deliverables** — clean stray runners and scratch
-  artifacts; gitignored gate output under `tmp/` and `build/` may stay.
+  artifacts; gitignored gate output under `tmp/`, `build/` and `dist/` may stay.
+  The committed bootstrap seed under `vendor/bootstrap/` is the deliberate
+  exception; `tools/release.sh --refresh-seed` produces it.
 - Commit trailer: `Co-authored-by: CommandCodeBot <noreply@commandcode.ai>`.
 
 ### Phase order and current position
@@ -4182,14 +4263,14 @@ when the tree moved.  Target = the Definition of Done above.
 
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 142 (from the committed seed) | `tools/bootstrap.sh -j 16` |
-| bootstrap seed | `vendor/bootstrap/linux-x86_64/mtc`, release stage2, 6.28 MB, sha256 `0257ee4f…`; verified with a failing `ruby` shim on `PATH` (shim never invoked) | session 142 | `PATH=tmp/no-ruby:$PATH tools/bootstrap.sh -j 16 --keep-c` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 142 (from the committed seed) | `tools/bootstrap.sh -j 4` |
+| bootstrap seed | `vendor/bootstrap/linux-x86_64/mtc`, release stage2, 6,289,144 B, sha256 `b29241f4…`; refreshed from the release build and proven by a fixed-point bootstrap (the original shim proof is in the phase-0 record) | session 142 | `tools/bootstrap.sh -j 4 --keep-c` |
 | `test/mt` | **85 files / 0 failed** (62 in-language + 23 compile-fail diagnostics fixtures; peak RSS 135 MB under the new compiler) | session 142 | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | **49/49 same** under the gate (15 top-level + 34 sdl3) | session 141 (re-verified) | `tools/gates.sh --areas examples --run` |
 | `sexpr lex` / `parse` | lex 739/739 (session 120); **parse 772 match / 0 differ / 4 host-rejected of 776** (session 130; counts include `tmp` fixtures) | session 130 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
 | `sexpr lower` | **718 match / 1 differ / 53 host-rejected / 7 self-fail** of 779; the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (signal-aware harness: their SIGABRT is self-fail); every extracted module matches | session 141 | `ruby tools/sexpr_parity.rb lower -q -j 4 --mem-mb 8000 --host-cache tmp/sexpr-host-cache` (each `main*` artifact peaks ~3.8 GiB) |
 | `cli:parity` | **227 match / 0 differ / 0 pending** of 227 (case-backed; timings, `debug` node ids and the synthesized test-runner path normalized) | session 142 (re-verified) | `ruby tools/cli_parity.rb -q` |
-| recorded oracles | **CLI 227/227; diagnostics 504 files / 0 differ; lint 666 compared / 0 differ (7 timeouts unrecorded); formatter 779 files × 3 modes / 0 differ**; every replay is green with `lib/` moved aside | session 142 | `tools/gates.sh --areas oracles --run` |
+| recorded oracles | **CLI 227/227; diagnostics 504 files / 0 differ; lint 672 compared / 0 differ (0 unrecorded); formatter 778 files × 3 modes / 0 differ**; every replay is green with `lib/` moved aside | session 142 | `tools/gates.sh --areas oracles --run` |
 | `mtc test` matrix | **43 cases**, included in `cli:parity` 227/227: file/dir operands, human/TAP/JUnit, filters, death tests, `--timeout/--mem/--jobs/--sanitize`, `--locked/--frozen`, validation errors, build-error channels | session 73 | `ruby tools/cli_parity.rb -f '^test-'` |
 | **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** (`std`+`examples`; the 3 files are `std/cli.mt` (2 self-only redundant-cast), `examples/reflection_advanced.mt` (host-only constant-condition + loop-single-iteration columns) and `examples/memory_stress_test.mt` (positionless owning-release-double rendering)); byte-level `check_parity` **647/26 of 673** | session 142 (re-verified) | `ruby tools/diag_parity.rb check -j 8 std examples`; byte-level: `ruby tools/check_parity.rb` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 71 | `ruby tools/wasm_smoke.rb` |
@@ -4203,12 +4284,13 @@ when the tree moved.  Target = the Definition of Done above.
 | LSP edit latency | 4.9 ms median per `didChange`; `didOpen` ~52 ms cold | session 29 | `ruby tmp/lsp_edit_perf.rb --bin <bin>` (transient probe) |
 | LSP valgrind | 0 errors over the harness drive; ~64 KB definitely-lost per 10-cycle soak (one-time index level) | session 135 (re-verified) | `tools/gates.sh --only valgrind_lsp --run` |
 | LSP soak | 78.3 KB/cycle raw / 30.2 KB/cycle least-squares at 200 cycles (meter; one-time index level; raw slope in the recorded 70–80 band, LS at the noisy edge) | session 140 | `ruby tools/lsp_soak.rb --quiet` |
-| formatter | **778/778** all three modes byte-identical with the current compiler; the formatter audit's fixes verified on the scratch matrix (339 comparisons) | session 138 | `ruby tools/format_parity.rb all --self tmp/mtc-dev -j 16` |
+| formatter | **778/778** all three modes byte-identical with the current compiler; the formatter audit's fixes verified on the scratch matrix (339 comparisons) | session 138 | `ruby tools/format_parity.rb all --self tmp/mtc-dev -j 4` |
 | DAP | zero differing rows except the documented self-better frame0 row; the async-order F5 probe (`tools/dap_async_probe.rb`) proves launch → breakpoint → frame/locals → evaluate against real `lldb-dap` | session 73 (re-verified) | `ruby tools/dap_smoke.rb` (`--allow-skip` to waive a missing adapter); `ruby tools/dap_async_probe.rb` |
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 | bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 130 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
-| throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 33 unused / 6 test-only exports; **6,345 duplicated lines / 884 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85; `--check --strict --ratchet` ok (baseline refreshed for the session-142 semantic fixes: **126,595 code lines**; the test glob is recursive) | session 142 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 4 --fast` |
+| analyzer memory | `check main.mt` **712 MiB / 6.6 s** (was 9,228 MiB / ~58 s); `lowering.mt` **274 MiB** (was 2,322 MiB).  Cause: transitive re-export of imported constants multiplied the qualified fold keys; the binding now exports `declared_const_values` only | session 142 | `time build/stage2/mtc check projects/mtc/src/mtc/main.mt`; sample peak RSS via `ps -o rss= -p PID` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 33 unused / 6 test-only exports; **6,345 duplicated lines / 884 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85; `--check --strict --ratchet` ok (baseline refreshed for the session-142 semantic fixes: **126,602 code lines**; the test glob is recursive) | session 142 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 

@@ -4,9 +4,16 @@ A statically typed, indentation-based systems language for games.
 Compiles to readable C. Safe by default, explicit by design.
 
 ```bash
-gem install mt-lang
+tar xzf mtc-<version>-linux-x86_64.tar.gz
+export PATH="$PWD/mtc-<version>-linux-x86_64/bin:$PATH"
 mtc run hello.mt
 ```
+
+The release archive ships the compiler, the standard library, and the docs site;
+a C compiler (`cc`) is required to compile programs. The `mt-lang` gem is
+deprecated in favour of the native archives. Building the toolchain from source
+also needs only a C compiler — see
+[docs/build-guide.md](docs/build-guide.md#10-toolchain-installation-and-bootstrapping).
 
 [VS Code extension](https://marketplace.visualstudio.com/items?itemName=teefan.milk-tea-lang) &mdash; syntax highlighting, IntelliSense, debugging
 

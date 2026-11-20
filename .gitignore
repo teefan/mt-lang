@@ -87,3 +87,4 @@ bindings/vscode/themes/current-snapshot.json
 vgcore.*
 core
 core.*
+.commandcode/

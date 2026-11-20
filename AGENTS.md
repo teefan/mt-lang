@@ -92,11 +92,13 @@ seed (`vendor/bootstrap/<platform>/mtc`, sha256-verified) and no longer falls
 back to Ruby unless `--allow-ruby-host` is passed.  New work lands in
 `projects/mtc` and `std/` only.  The phases and their gates are in
 `docs/self-host-plan.md` § "Host retirement program"; phases 0 (native bootstrap
-seed), 1 (guard carve-out) and 2 (recorded oracles) are done, and phase 3
-(release tooling) is next.  The recorded gates are
+seed), 1 (guard carve-out), 2 (recorded oracles) and 3 (release tooling) are
+done, and phase 4 (retiring the host tree) is next.  The recorded gates are
 `tools/golden/{cli,diag,lint,format}.json` replayed with `--expect`; their rows
 are digest-keyed, so a file whose text changed since recording is skipped
-rather than reported as a regression.
+rather than reported as a regression.  Releases are built with
+`tools/release.sh` (deterministic archive, checksums, clean-path smoke), and the
+version is the authored `cli_help.VERSION` constant, never a git stamp.
 
 - **Rebuild before measuring**: `ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc`.
   A stale `build/stage2/mtc` is the classic false result.
@@ -112,7 +114,7 @@ rather than reported as a regression.
     file / resolved import-closure digest; the self always runs live).
     Do not run the corpus-wide sweep or the audit as the iteration loop.
   - **Tier 2 — once per commit, on frozen sources, backgrounded**:
-    `tools/bootstrap.sh -j 16` (fixed point + 22 files / 0 failed self-tests) and
+    `tools/bootstrap.sh -j 4` (fixed point + 22 files / 0 failed self-tests) and
     `build/stage2/mtc test test/mt -I .` (61/0) are the hard proofs; then the area
     sweeps — linter: `rake parity:scoreboard`, `ruby tools/lint_parity.rb -q`
     (658 files; read its summary, it is not expected to reach 0 yet),

@@ -88,7 +88,7 @@ infer_area() {
         projects/mtc/src/mtc/docs_cli.mt|projects/mtc/src/mtc/docs_app.mt) echo docs_cli ;;
         projects/mtc/src/mtc/wasm*.mt|projects/mtc/src/mtc/wasm/*) echo wasm ;;
         projects/mtc/src/mtc/toolchain_cli.mt)    echo toolchain ;;
-        projects/mtc/src/mtc/main.mt|projects/mtc/src/mtc/build*.mt|projects/mtc/src/mtc/build_cache.mt|projects/mtc/src/mtc/version_info.mt) echo cli ;;
+        projects/mtc/src/mtc/main.mt|projects/mtc/src/mtc/build*.mt|projects/mtc/src/mtc/build_cache.mt) echo cli ;;
         projects/mtc/test/*|test/mt/*)            echo tests ;;
         test/diagnostics/*)                       echo oracles ;;
         tools/golden/*|tools/lib/golden.rb)       echo oracles ;;
@@ -177,7 +177,7 @@ gate_cmd() {
     case "$1" in
         dev_build)     echo "ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev" ;;
         dev_tests)     echo "gates_dev_tests" ;;
-        bootstrap)     echo "tools/bootstrap.sh -j 16 --fast" ;;
+        bootstrap)     echo "tools/bootstrap.sh -j 4 --fast" ;;
         test_mt)       echo "build/stage2/mtc test test/mt -I ." ;;
         sexpr_lex)     echo "ruby tools/sexpr_parity.rb lex -q --host-cache tmp/sexpr-host-cache" ;;
         sexpr_parse)   echo "ruby tools/sexpr_parity.rb parse -q --host-cache tmp/sexpr-host-cache" ;;
@@ -186,9 +186,9 @@ gate_cmd() {
         golden_cli)    echo "ruby tools/cli_parity.rb --expect tools/golden/cli.json -q" ;;
         golden_diag)   echo "ruby tools/diag_parity.rb check std examples --expect tools/golden/diag.json -q" ;;
         golden_lint)   echo "ruby tools/lint_parity.rb --expect tools/golden/lint.json -q" ;;
-        golden_format) echo "ruby tools/format_parity.rb all -j 16 --expect tools/golden/format.json -q" ;;
+        golden_format) echo "ruby tools/format_parity.rb all -j 4 --expect tools/golden/format.json -q" ;;
         scoreboard)    echo "rake parity:scoreboard" ;;
-        format)        echo "ruby tools/format_parity.rb all -j 16" ;;
+        format)        echo "ruby tools/format_parity.rb all -j 4" ;;
         lint_parity)   echo "ruby tools/lint_parity.rb -q" ;;
         unused_import) echo "ruby tools/unused_import_parity.rb" ;;
         harness)       echo "ruby tools/lsp_parity.rb record --server host --out tmp/lsp-host-gates.json --stress && ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self-gates.json --stress && ruby tools/lsp_parity.rb compare tmp/lsp-host-gates.json tmp/lsp-self-gates.json" ;;
@@ -261,6 +261,7 @@ gates_dev_tests() {
     local d="tmp/gate-dev-tests" f name rc=0 failed=0 n=0
     local files=(projects/mtc/test/*.mt)
     local jobs=$(( $(nproc) / 2 ))
+    [ "$jobs" -gt 4 ] && jobs=4
     [ "$jobs" -lt 1 ] && jobs=1
     rm -rf "$d"; mkdir -p "$d"
     printf '%s\n' "${files[@]}" \

@@ -14,7 +14,7 @@
 #   TARGET           files or directories       (default: std examples projects/mtc/src)
 #   --self PATH      self-host compiler binary  (default: build/stage2/mtc)
 #   --host CMD       host compiler command      (default: ruby -Ilib bin/mtc)
-#   -j N             parallel workers           (default: 8)
+#   -j N             parallel workers           (default: 4, hard-capped)
 #   --timeout SEC    per-invocation timeout     (default: 180)
 #   -q, --quiet      print only the summary
 #   --max-files N    print at most N differing files (default: 20)
@@ -27,12 +27,13 @@ require "digest"
 require "json"
 require "open3"
 require "optparse"
+require_relative "lib/jobs"
 
 ROOT = File.expand_path("..", __dir__)
 options = {
   self: File.join(ROOT, "build/stage2/mtc"),
   host: ["ruby", "-Ilib", "bin/mtc", "check"],
-  jobs: 8,
+  jobs: 4,
   timeout: 180,
   quiet: false,
   max_files: 20,
@@ -47,6 +48,7 @@ OptionParser.new do |opts|
   opts.on("--host-cache FILE") { |v| options[:host_cache] = File.expand_path(v, ROOT) }
   opts.on("-h", "--help") { puts opts; exit 0 }
 end.parse!
+options[:jobs] = Jobs.clamp(options[:jobs])
 targets = ARGV.empty? ? %w[std examples projects/mtc/src] : ARGV
 
 abort "self-host binary not found: #{options[:self]}" unless File.executable?(options[:self])

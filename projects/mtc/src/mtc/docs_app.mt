@@ -295,9 +295,14 @@ async function serve_asset(
     content_type: str,
     head_only: bool,
 ) -> void:
-    var path = path_ops.join(root_dir, "projects/mtc/src/mtc/docs_public")
-    var full = path_ops.join(path.as_str(), name)
-    path.release()
+    # A release package ships the assets at `<root>/docs_public/`; a checkout
+    # keeps them beside the compiler sources.
+    var base = path_ops.join(root_dir, "docs_public")
+    if not fs.exists(base.as_str()):
+        base.release()
+        base = path_ops.join(root_dir, "projects/mtc/src/mtc/docs_public")
+    defer: base.release()
+    var full = path_ops.join(base.as_str(), name)
     defer: full.release()
     await serve_file(connection, full.as_str(), content_type, head_only)
 

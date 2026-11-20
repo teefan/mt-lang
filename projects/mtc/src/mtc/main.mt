@@ -72,7 +72,6 @@ import mtc.packages.lock as package_lock
 import mtc.packages.manifest as manifest
 import mtc.packages.source as pkg_source
 import mtc.wasm_preview as wasm_preview
-import mtc.version_info as ver
 import mtc.cli_help as cli_help
 
 

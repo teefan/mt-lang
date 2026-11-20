@@ -12,7 +12,7 @@
 #   TARGET           files or directories       (default: std examples projects/mtc/src)
 #   --self PATH      self-host compiler binary  (default: build/stage2/mtc)
 #   --host CMD       host compiler command      (default: ruby -Ilib bin/mtc)
-#   -j N             parallel workers           (default: 8)
+#   -j N             parallel workers           (default: 4, hard-capped)
 #   --timeout SEC    per-invocation timeout     (default: 180)
 #   -q, --quiet      print only the summary
 #   --max-files N    print at most N differing files (default: 20)
@@ -31,12 +31,13 @@ require "json"
 require "open3"
 require "optparse"
 require_relative "lib/golden"
+require_relative "lib/jobs"
 
 ROOT = File.expand_path("..", __dir__)
 options = {
   self: File.join(ROOT, "build/stage2/mtc"),
   host: ["ruby", "-Ilib", "bin/mtc", "lint"],
-  jobs: 8,
+  jobs: 4,
   timeout: 180,
   quiet: false,
   max_files: 20,
@@ -56,6 +57,7 @@ OptionParser.new do |opts|
   opts.on("-h", "--help") { puts opts; exit 0 }
 end.parse!
 
+options[:jobs] = Jobs.clamp(options[:jobs])
 if options[:record] && options[:expect]
   abort "error: --record and --expect are mutually exclusive"
 end
@@ -75,7 +77,12 @@ end
 
 def lint_output(command, file, timeout)
   out, status = Open3.capture2e("timeout", timeout.to_s, *command, file, chdir: ROOT)
-  status.exitstatus == 124 ? "<timeout after #{timeout}s>" : out
+  return "<timeout after #{timeout}s>" if status.exitstatus == 124
+  # A signalled process (OOM killer, for one) captured no output; make that
+  # explicit so it is never mistaken for a clean run.
+  return "<killed by signal #{status.termsig}>" if status.exitstatus.nil?
+
+  out
 end
 
 # Host-output cache.  The host is deterministic but expensive (one Ruby
@@ -174,9 +181,10 @@ workers = Array.new(options[:jobs]) do
       self_host = lint_output([options[:self], "lint"], file, options[:timeout])
       relative = file.delete_prefix("#{ROOT}/")
       if recorded
-        # A timed-out file is not a stable oracle (the self linter is slow on
-        # the largest compiler sources); leave it unreferenced.
-        if self_host.start_with?("<timeout after ")
+        # A timed-out or signalled file is not a stable oracle (the self linter
+        # is slow and memory-hungry on the largest compiler sources); leave it
+        # unreferenced.
+        if self_host.start_with?("<timeout after ", "<killed by signal ")
           mutex.synchronize { timed_out += 1 }
           next
         end

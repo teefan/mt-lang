@@ -17,7 +17,7 @@
 #   ruby tools/diag_parity.rb check [TARGET...]    # check diagnostics only
 #   TARGET           files or directories       (default: std examples projects/mtc/src)
 #   --self PATH      self-host compiler binary  (default: build/stage2/mtc)
-#   -j N             parallel workers           (default: 8)
+#   -j N             parallel workers           (default: 4, hard-capped)
 #   --timeout SEC    per-invocation timeout     (default: 120)
 #   --max-files N    print at most N differing files (default: 10)
 #   -q, --quiet      print only the summary
@@ -31,6 +31,7 @@ require "digest"
 require "open3"
 require "optparse"
 require_relative "lib/golden"
+require_relative "lib/jobs"
 
 ROOT = File.expand_path("..", __dir__)
 mode = "check"
@@ -39,7 +40,7 @@ mode = argv.shift if %w[parse check].include?(argv.first)
 
 options = {
   self: File.join(ROOT, "build/stage2/mtc"),
-  jobs: 8,
+  jobs: 4,
   timeout: 120,
   quiet: false,
   max_files: 10,
@@ -57,6 +58,7 @@ OptionParser.new do |opts|
   opts.on("-h", "--help") { puts opts; exit 0 }
 end.parse!(argv)
 
+options[:jobs] = Jobs.clamp(options[:jobs])
 if options[:record] && options[:expect]
   abort "error: --record and --expect are mutually exclusive"
 end

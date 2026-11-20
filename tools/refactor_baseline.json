@@ -125,7 +125,6 @@
       "main -> sexpr",
       "main -> std_catalog",
       "main -> toolchain_cli",
-      "main -> version_info",
       "main -> wasm_preview",
       "packages -> cli_help",
       "packages -> packages",
@@ -322,7 +321,6 @@
     "strings": "strings",
     "toolchain_bindings": "raw_bindings",
     "toolchain_cli": "toolchain_cli",
-    "version_info": "ver",
     "wasm_preview": "wasm_preview",
     "wasm_shell": "wasm_shell"
   },
@@ -355,12 +353,11 @@
       "projects/mtc/src/mtc/packages/manifest.mt:192:function:load_option",
       "projects/mtc/src/mtc/packages/source.mt:358:function:clone_source",
       "projects/mtc/src/mtc/packages/source.mt:561:function:cache_materialized",
-      "projects/mtc/src/mtc/semantic/analyzer.mt:4319:function:flow_type_at_position",
+      "projects/mtc/src/mtc/semantic/analyzer.mt:4329:function:flow_type_at_position",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:236:function:graph_edge_refinement_of",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:249:function:graph_edge_label",
       "projects/mtc/src/mtc/semantic/types.mt:1354:function:is_definitely_non_str",
-      "projects/mtc/src/mtc/sexpr.mt:150:function:sexpr_list1",
-      "projects/mtc/src/mtc/version_info.mt:2:const:GIT_REVISION"
+      "projects/mtc/src/mtc/sexpr.mt:150:function:sexpr_list1"
     ],
     "test_only": [
       "projects/mtc/src/mtc/linter/fix_engine.mt:61:function:is_fixable",
@@ -1263,7 +1260,7 @@
     ]
   },
   "sizes": {
-    "total_code": 126595,
+    "total_code": 126602,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1406,8 +1403,8 @@
         "max_function": 65
       },
       "projects/mtc/src/mtc/docs_app.mt": {
-        "lines": 1103,
-        "code": 946,
+        "lines": 1108,
+        "code": 949,
         "max_line": 132,
         "max_function": 81
       },
@@ -1982,8 +1979,8 @@
         "max_function": 29
       },
       "projects/mtc/src/mtc/main.mt": {
-        "lines": 3760,
-        "code": 3077,
+        "lines": 3759,
+        "code": 3076,
         "max_line": 277,
         "max_function": 179
       },
@@ -2174,8 +2171,8 @@
         "max_function": 39
       },
       "projects/mtc/src/mtc/semantic/analyzer.mt": {
-        "lines": 10652,
-        "code": 7967,
+        "lines": 10662,
+        "code": 7973,
         "max_line": 342,
         "max_function": 119
       },
@@ -2262,12 +2259,6 @@
         "code": 1068,
         "max_line": 173,
         "max_function": 169
-      },
-      "projects/mtc/src/mtc/version_info.mt": {
-        "lines": 2,
-        "code": 1,
-        "max_line": 67,
-        "max_function": 0
       },
       "projects/mtc/src/mtc/wasm_preview.mt": {
         "lines": 239,
