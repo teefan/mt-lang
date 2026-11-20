@@ -253,7 +253,7 @@ module MilkTea
 
     def test_files
       @test_files ||= TEST_ROOTS.flat_map do |relative|
-        Dir.glob(File.join(root, relative, "*.mt"))
+        Dir.glob(File.join(root, relative, "**", "*.mt"))
            .reject { |path| File.basename(path).start_with?("__mt_test_runner_") }
            .sort
       end
@@ -611,9 +611,9 @@ module MilkTea
 
     def test_report
       {
-        projects: Dir.glob(File.join(root, "projects/mtc/test/*.mt"))
+        projects: Dir.glob(File.join(root, "projects/mtc/test/**/*.mt"))
                     .reject { |path| File.basename(path).start_with?("__mt_test_runner_") }.length,
-        test_mt: Dir.glob(File.join(root, "test/mt/*.mt"))
+        test_mt: Dir.glob(File.join(root, "test/mt/**/*.mt"))
                    .reject { |path| File.basename(path).start_with?("__mt_test_runner_") }.length,
       }
     end

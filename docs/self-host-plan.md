@@ -17,7 +17,7 @@ history.
 
 - [Status at a glance](#status-at-a-glance-session-142-2026-11-20)
 - [Host retirement program](#host-retirement-program)
-- [Session 142 — bootstrap seed and guard carve-out (phases 0–1)](#session-142--bootstrap-seed-and-guard-carve-out-phases-01)
+- [Session 142 — seed, guard carve-out, and recorded oracles (phases 0–2)](#session-142--seed-guard-carve-out-and-recorded-oracles-phases-02)
 - [Session 141 — semantic conformance: conditions, named arguments, FFI](#session-141--semantic-conformance-conditions-named-arguments-ffi)
 - [Session 140 — LSP hover latency and chained receivers](#session-140--lsp-hover-latency-and-chained-receivers)
 - [Session 139 — call-argument compatibility](#session-139--call-argument-compatibility)
@@ -101,9 +101,9 @@ history.
 
 | Area | State |
 | --- | --- |
-| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** (re-verified session 142, stage0 = the committed seed) |
+| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** (re-verified session 142 on the phase-2 sources, stage0 = the committed seed) |
 | Bootstrap stage0 | **committed seed**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256`; Ruby host requires `--allow-ruby-host`; a full bootstrap with a failing `ruby` shim never invoked Ruby (session 142) |
-| `test/mt` | **62 files / 0 failed** (session 141 added the named-argument lowering tests); peak RSS **135 MB** under the region-scoped test compiler (session 129) |
+| `test/mt` | **85 files / 0 failed** (62 in-language tests + 23 compile-fail diagnostics fixtures; session 142); peak RSS **135 MB** under the region-scoped test compiler (session 129) |
 | Examples | **49/49 same** under the gate (15 top-level examples + `examples/sdl3` 34/34; re-verified session 141); the two `async_*` examples hit the host's own loop guard at rc 134 on both compilers (documented CPS-resume limit); the raylib sample builds |
 | `sexpr lex` / `parse` | 0 differ (lex **739/739**; parse **772 match / 0 differ / 4 host-rejected of 776**; counts drift with the tree and `tmp` fixtures; unchanged by sessions 139–141, which touch no lexer/parser code) |
 | `sexpr lower` | **718 match / 1 differ / 53 host-rejected / 7 self-fail of 779**; the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (the signal-aware harness counts their SIGABRT as self-fail).  All extracted modules match.  Run it memory-capped (`-j 4 --mem-mb 8000`): each `main*` artifact peaks ~3.8 GiB and the seven together can exhaust a 31 GiB workstation at `-j 16` (session 140) |
@@ -117,7 +117,7 @@ history.
 | Imported bindings | **29/29 verified** against the host generator and the checked-in modules (re-verified session 72) |
 | Bindgen reproducibility | **33 match / 0 differ / 0 error / 1 custom of 34 registry bindings** (re-verified session 130).  The one custom entry is `tracy`, whose host registry generator returns the hand-written checked-in `std/c/tracy.mt` verbatim. |
 | Compiler throughput | **`emit-c` 17.1 s vs the host's 54.3 s** (3.2x faster); full `build` 32.7 s vs 76.3 s; `bootstrap --fast` 2.6 min (session 72, after making the variant lookup non-quadratic).  C output byte-identical |
-| **Refactoring safety** | structural guard: 169 files / 126,536 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **33 unused + 6 test-only** public declarations; 6,345 duplicated lines / 884 windows; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/62.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json` (refreshed session 141 for the semantic conformance port, +522 code lines and +2 duplicated lines); one command: `tools/gates.sh --areas refactor --run` |
+| **Refactoring safety** | structural guard: 169 files / 126,595 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **33 unused + 6 test-only** public declarations; 6,345 duplicated lines / 884 windows; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json` (refreshed session 142 for the phase-2 semantic fixes; the test glob is now recursive); one command: `tools/gates.sh --areas refactor --run` |
 
 Rough completion against the per-track Definition of Done: **~100%**.  The
 self-hosting foundation, `lower` dump parity, the CLI behavior matrix (including
@@ -157,7 +157,7 @@ Phases, in order; each gate proves the previous one:
 | --- | --- | --- |
 | 0. Seed | committed sha256-verified stage2 seed; Ruby host behind `--allow-ruby-host` | **DONE (session 142)**: full bootstrap with a failing `ruby` shim → fixed point + 22/0; `test/mt` 62/0 |
 | 1. Guard | carve `MilkTea::RefactorGuard` (820 Ruby lines, stdlib only) out of `lib/` into `tools/lib/`; a native `.mt` port is deferred | **DONE (session 142)**: report and JSON byte-identical to the pre-move guard; 15 tests pass |
-| 2. Oracles | one `--record`/`--expect` mechanism for the sweeps; record CLI, diagnostics, lint and formatter at the flip commit; add negative-diagnostic fixtures | every recorded gate replays green with no Ruby present |
+| 2. Oracles | **DONE (session 142)**: shared `tools/lib/golden.rb`; `--record`/`--expect` in the four sweeps; digest-keyed fixtures under `tools/golden/`; negative corpus as `# expect-error:` fixtures under `test/mt/diagnostics/` | the replay set runs green with `lib/` moved away (no host process is started) |
 | 3. Product | `tools/release.sh`, per-platform packaging, version stamping, install docs; retire or stub the gem | clean-path install + `mtc run` / `mtc lsp` from the tarball |
 | 4. Delete | archive `lib/milk_tea`, `test/**` and the gemspec; remove dead tools | a fresh clone builds and passes from source with only a C compiler |
 
@@ -173,7 +173,7 @@ scope.  Qualified-type rendering, module/`static_assert` bare-vs-block and
 `lint` on an unresolved import are differences from a host that will no longer
 be maintained; re-adjudicate each on its own merit.
 
-## Session 142 — bootstrap seed and guard carve-out (phases 0–1)
+## Session 142 — seed, guard carve-out, and recorded oracles (phases 0–2)
 
 Removed the Ruby host from the default bootstrap path and moved the last live
 host component out of `lib/`.
@@ -223,6 +223,74 @@ re-home: `cli_parity` calls `MilkTea::CLI.start` and `format_parity` calls
 `cli_help.mt` from the host's command table, and the bindgen/imported-bindings
 harnesses use the Ruby registries as the generator of record (the self owns
 `imported-bindings --all --check`, 29/29).
+
+### Phase 2 in the same session — recorded oracles
+
+`tools/lib/golden.rb` is one record/replay helper: `--record FILE` writes the
+self's normalized results, `--expect FILE` replays them without starting the
+host.  All four sweeps gained the pair:
+
+- `cli_parity` records per case `{stdout, stderr, rc}`.  The recorded path
+  isolates `XDG_CACHE_HOME` (an empty per-run root), because build cases report
+  `[cached]` on a warm cache and the record/replay pair must see the same cache
+  history.
+- `diag_parity`, `lint_parity` and `format_parity` record per file (formatter:
+  per mode) and are **digest-keyed**: an input whose text changed since
+  recording is skipped and reported as `changed=N`; an input with no row is
+  `unrecorded=N`.  Only unchanged inputs are compared, so a source edit does
+  not turn the gate red.  The recorded branches never `require "milk_tea"` (the
+  host banner and the host worker are parity-only), which is the property the
+  phase gate verifies by moving `lib/` aside.
+
+The negative corpus reuses the in-language runner instead of a second harness:
+23 fixtures under `test/mt/diagnostics/`, one `# expect-error:` per rejected
+construct, run by the ordinary `mtc test test/mt` gate.
+
+**Bugs the corpus exposed (fixed).**  The three probes that disagreed with the
+host were genuine self-accepts-invalid gaps:
+
+- `let … else:` never checked its initializer shape.  `check_local` now reports
+  the host's message when the value is not nullable/`Option`/`Result` (error
+  types stay permissive).
+- Postfix `?` never checked its source.  `infer_unary` now requires
+  `Option`/`Result` and reports at the statement anchor, matching the host.
+- `read` accepted zero/one argument without validation, any non-pointer, and a
+  nullable pointer.  The builtin now reports the host's arity and operand
+  messages and rejects nullable operands (error types stay permissive).
+- `str`/`cstr` categories: `scalar_category` classified neither `str` nor
+  `cstr` as its own category, so `puts(1)` passed the permissive fallback, and
+  the `str as cstr` boundary rule matched only `ty_primitive("str")` while the
+  public type is `ty_str`.  Both fixed; `std/raylib/runtime.mt` accepts
+  `cstr` arguments again and `extern` calls reject `int`.
+
+**Nullability merge bug (fixed).**  The corpus's flow probe found a real CFG
+bug: `pred_edge_state` applied each predecessor's edge refinement *after*
+intersecting the predecessor states, so the non-null set depended on predecessor
+order.  `if value == null: pass` therefore narrowed `value` to non-null past the
+merge, and the self accepted `read(value)` on a nullable pointer with no guard.
+The refinement is now folded into the predecessor's contribution before the
+intersection, and
+`test_cfg_fallthrough_branch_does_not_narrow_after_merge` pins it.
+
+**Verification.**  Fixed point holds on the new sources, and the four recorded
+gates replay green **with `lib/` moved aside** (no host process is started):
+CLI **227/227**, diagnostics **504 files / 0 differ**, lint **666 compared /
+0 differ** (7 compiler-sized files time out at 180 s and stay unrecorded), and
+the formatter **779 files × 3 modes / 0 differ**.  Live parity is unchanged:
+`cli_parity` **227/227**, `diag_parity check std examples`
+**501 agree / 0 verdict / 3 message / 0 position of 504**.  `test/mt` is now
+**85/0** and the dev suite **22/0**.  The guard passes
+`--check --strict --ratchet` after a reviewed refresh: **126,595 code lines**,
+tests **22/85** (its glob now counts subdirectories, so the new fixtures are
+visible).
+
+**Linter performance (noted, not closed).**  The self linter takes ~58 s on
+`projects/mtc/src/mtc/main.mt` alone, and 7 compiler-sized files exceed the
+180 s per-file timeout under `-j 8` — why the recorded lint golden leaves them
+unrecorded.  Pre-existing, harmless to the verdicts, and the next performance
+item after the retirement.
+
+**Still open from phase 2:** nothing; phase 3 is the release path.
 
 ## Session 141 — semantic conformance: conditions, named arguments, FFI
 
@@ -3060,32 +3128,37 @@ rows), formatter 739/739 in all three modes.
 
 ## Handoff (session 142)
 
-**Next session:** host retirement **phase 2 — recorded oracles**.  Phases 0 and
-1 are done: stage0 is the committed seed, and the structural guard now lives in
-`tools/lib/` with no dependency on the host.
+**Next session:** host retirement **phase 3 — release tooling**.  Phases 0–2
+are done: stage0 is the committed seed, the structural guard lives in
+`tools/lib/`, and the four parity sweeps have a host-free recorded mode with
+fixtures under `tools/golden/`.
 
-- Add one shared `--record FILE` / `--expect FILE` mechanism to `cli_parity`,
-  `diag_parity`, `lint_parity` and `format_parity` (`lsp_parity` already has
-  `record`/`compare`), then record the expected results at the flip commit.
-  A recorded gate must pass with **no Ruby on `PATH`**.
-- Re-home the remaining host couplings: `cli_parity` calls
-  `MilkTea::CLI.start` and `format_parity` calls
-  `MilkTea::Formatter.check_source` in-process (both disappear under the
-  recorded path); `sexpr_parity` borrows `MilkTea::ModuleLoader` for module-name
-  resolution; `gen_cli_help` becomes dead (`cli_help.mt` becomes authored
-  source); the bindgen/imported-bindings harnesses retire because the self
-  already owns `imported-bindings --all --check` (29/29).
-- Add negative-diagnostic fixtures (`case.mt` + expected message/position) from
-  the session-141 probe matrix; that is the replacement oracle for the classes
-  the differential harnesses covered.  `sexpr lower` goldens stay out of scope
-  (779 IR dumps; the backend is proven by the fixed point and example sweeps).
+- `tools/release.sh` (or a `rake release:native` task): build a release-profile
+  stage2, package `mtc` + `std/` + docs per platform, checksum it, and emit the
+  next seed (`vendor/bootstrap/<platform>/mtc` + `mtc.sha256`).  Version
+  stamping must not depend on `git rev-parse` at build time.
+- Decide the gem's fate: retire `mt-lang` or publish a stub that points at the
+  native install.  Update README §install and `docs/build-guide.md`.
+- Verify on a clean path: untar, `mtc run hello.mt`, `mtc lsp` handshake, and a
+  fresh-clone bootstrap with only a C compiler.
+- Phase 4 then archives `lib/milk_tea`, `test/**` and the gemspec, and removes
+  the host-coupled tools (`gen_cli_help` becomes dead; the bindgen/imported
+  bindings harnesses retire once the self generator is the source of truth).
+
+**Recorded gates now.**  `--expect` replays against
+`tools/golden/{cli,diag,lint,format}.json`; diagnostics/lint/format rows are
+digest-keyed, so changed inputs are skipped (`changed=N`) instead of failing.
+`tools/gates.sh --areas oracles --run` runs the set.  They are deliberately not
+yet in the analyzer/cli/linter/formatter area sets — the live parity gates still
+cover those areas, and running both would double tier-2 cost.  Phase 4 swaps
+them in.
 
 **Build state.**  `vendor/bootstrap/linux-x86_64/mtc` is the seed
 (`0257ee4f…`, release stage2); `tools/bootstrap.sh` verifies it and no longer
-falls back to Ruby without `--allow-ruby-host`.  `build/stage2/mtc` is the
-debug compiler from the session-142 verification run (fixed point + 22/0).
-`test/mt` 62/0.  The guard's numbers are unchanged from session 141 (126,536
-code lines, 6,345 duplicated / 884 windows, tests 22/62).
+falls back to Ruby without `--allow-ruby-host`.  The guard's numbers are
+**126,595 code lines**, 6,345 duplicated / 884 windows, tests **22/85**; the
+baseline was refreshed for the phase-2 semantic fixes.  `test/mt` 85/0 and the
+four recorded gates replay green with `lib/` moved aside.
 
 ## Handoff (session 141)
 
@@ -3294,9 +3367,10 @@ moved.**
 
 ### Open items, in priority order
 
-1. **Host retirement — phase 2 (OPEN; active program).**  Phases 0 and 1
-   landed: the native seed is the default stage0 and the guard lives in
-   `tools/lib/`; record the golden oracles next (see the session-142 Handoff).
+1. **Host retirement — phase 3 (OPEN; active program).**  Phases 0–2 landed:
+   the native seed is the default stage0, the guard lives in `tools/lib/`, and
+   the recorded oracles replay without the host; build the native release path
+   next (see the session-142 Handoff).
    **Output-diagnostic parity** is re-scoped by the retirement decision: the CLI
    caret length, the zero-column linter warnings
    (`redundant-else`, `unreachable-code`, `redundant-null-check`,
@@ -4110,13 +4184,14 @@ when the tree moved.  Target = the Definition of Done above.
 | --- | --- | --- | --- |
 | bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed** | session 142 (from the committed seed) | `tools/bootstrap.sh -j 16` |
 | bootstrap seed | `vendor/bootstrap/linux-x86_64/mtc`, release stage2, 6.28 MB, sha256 `0257ee4f…`; verified with a failing `ruby` shim on `PATH` (shim never invoked) | session 142 | `PATH=tmp/no-ruby:$PATH tools/bootstrap.sh -j 16 --keep-c` |
-| `test/mt` | 62 files / 0 failed (peak RSS 135 MB under the new compiler) | session 141 (re-verified) | `build/stage2/mtc test test/mt -I .` |
+| `test/mt` | **85 files / 0 failed** (62 in-language + 23 compile-fail diagnostics fixtures; peak RSS 135 MB under the new compiler) | session 142 | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 | **49/49 same** under the gate (15 top-level + 34 sdl3) | session 141 (re-verified) | `tools/gates.sh --areas examples --run` |
 | `sexpr lex` / `parse` | lex 739/739 (session 120); **parse 772 match / 0 differ / 4 host-rejected of 776** (session 130; counts include `tmp` fixtures) | session 130 | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
 | `sexpr lower` | **718 match / 1 differ / 53 host-rejected / 7 self-fail** of 779; the same eight artifacts: 1 real differ (`memory_stress_test`, the documented ref-name leak) + 7 `main*.mt` guard artifacts (signal-aware harness: their SIGABRT is self-fail); every extracted module matches | session 141 | `ruby tools/sexpr_parity.rb lower -q -j 4 --mem-mb 8000 --host-cache tmp/sexpr-host-cache` (each `main*` artifact peaks ~3.8 GiB) |
-| `cli:parity` | **227 match / 0 differ / 0 pending** of 227 (case-backed; timings, `debug` node ids and the synthesized test-runner path normalized) | session 141 (re-verified) | `ruby tools/cli_parity.rb -q` |
+| `cli:parity` | **227 match / 0 differ / 0 pending** of 227 (case-backed; timings, `debug` node ids and the synthesized test-runner path normalized) | session 142 (re-verified) | `ruby tools/cli_parity.rb -q` |
+| recorded oracles | **CLI 227/227; diagnostics 504 files / 0 differ; lint 666 compared / 0 differ (7 timeouts unrecorded); formatter 779 files × 3 modes / 0 differ**; every replay is green with `lib/` moved aside | session 142 | `tools/gates.sh --areas oracles --run` |
 | `mtc test` matrix | **43 cases**, included in `cli:parity` 227/227: file/dir operands, human/TAP/JUnit, filters, death tests, `--timeout/--mem/--jobs/--sanitize`, `--locked/--frozen`, validation errors, build-error channels | session 73 | `ruby tools/cli_parity.rb -f '^test-'` |
-| **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** (`std`+`examples`; the 3 files are `std/cli.mt` (2 self-only redundant-cast), `examples/reflection_advanced.mt` (host-only constant-condition + loop-single-iteration columns) and `examples/memory_stress_test.mt` (positionless owning-release-double rendering)); byte-level `check_parity` **647/26 of 673** | session 141 (re-verified) | `ruby tools/diag_parity.rb check -j 8 std examples`; byte-level: `ruby tools/check_parity.rb` |
+| **`check` diagnostics** | **501 agree / 0 verdict / 0 position / 3 message of 504** (`std`+`examples`; the 3 files are `std/cli.mt` (2 self-only redundant-cast), `examples/reflection_advanced.mt` (host-only constant-condition + loop-single-iteration columns) and `examples/memory_stress_test.mt` (positionless owning-release-double rendering)); byte-level `check_parity` **647/26 of 673** | session 142 (re-verified) | `ruby tools/diag_parity.rb check -j 8 std examples`; byte-level: `ruby tools/check_parity.rb` |
 | wasm preview | host=ok self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 71 | `ruby tools/wasm_smoke.rb` |
 | docs server | host=ok self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 71 | `ruby tools/docs_smoke.rb` |
 | lint corpus | full: **624 agree / 34 differ of 658**; focused `std`+`examples`: **501 agree / 3 differ of 504** (the documented residue); hostfail 0, selffail 0; **43/43 rules, 13/13 fixers** | session 101 (focused re-verified 141) | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
@@ -4133,7 +4208,7 @@ when the tree moved.  Target = the Definition of Done above.
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 | bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 130 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 33 unused / 6 test-only exports; **6,345 duplicated lines / 884 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/62; `--check --strict --ratchet` ok (baseline refreshed for the session-141 semantic port: **126,536 code lines**, +2 duplicated lines) | session 142 (moved to `tools/lib/`, same numbers) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 33 unused / 6 test-only exports; **6,345 duplicated lines / 884 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85; `--check --strict --ratchet` ok (baseline refreshed for the session-142 semantic fixes: **126,595 code lines**; the test glob is recursive) | session 142 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 

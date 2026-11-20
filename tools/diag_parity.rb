@@ -21,12 +21,16 @@
 #   --timeout SEC    per-invocation timeout     (default: 120)
 #   --max-files N    print at most N differing files (default: 10)
 #   -q, --quiet      print only the summary
+#   --record FILE    record the self's diagnostics to FILE (host-free)
+#   --expect FILE    replay FILE and fail on any difference (host-free)
 #   -h, --help       show this message
 #
 # Exit status: 0 when every file's diagnostic set matches, 1 otherwise.
 
+require "digest"
 require "open3"
 require "optparse"
+require_relative "lib/golden"
 
 ROOT = File.expand_path("..", __dir__)
 mode = "check"
@@ -39,6 +43,8 @@ options = {
   timeout: 120,
   quiet: false,
   max_files: 10,
+  record: nil,
+  expect: nil,
 }
 OptionParser.new do |opts|
   opts.on("--self PATH") { |v| options[:self] = File.expand_path(v, ROOT) }
@@ -46,8 +52,15 @@ OptionParser.new do |opts|
   opts.on("--timeout SEC", Integer) { |v| options[:timeout] = v }
   opts.on("-q", "--quiet") { options[:quiet] = true }
   opts.on("--max-files N", Integer) { |v| options[:max_files] = v }
+  opts.on("--record FILE") { |v| options[:record] = File.expand_path(v, ROOT) }
+  opts.on("--expect FILE") { |v| options[:expect] = File.expand_path(v, ROOT) }
   opts.on("-h", "--help") { puts opts; exit 0 }
 end.parse!(argv)
+
+if options[:record] && options[:expect]
+  abort "error: --record and --expect are mutually exclusive"
+end
+recorded = !options[:record].nil? || !options[:expect].nil?
 
 targets = argv.empty? ? %w[std examples projects/mtc/src] : argv
 files = targets.flat_map do |t|
@@ -87,9 +100,36 @@ end
 
 # Compare on code + message (positions are reported separately: a same-message
 # different-position is a position bug, a different message is a wording bug).
+# A golden fixture is digest-keyed: a file whose text changed since recording is
+# skipped (its row is stale by design), so source edits do not turn the gate
+# red.  Only unchanged inputs are re-measured against the fixture.
+golden_expected = nil
+changed_inputs = 0
+unrecorded_inputs = 0
+if recorded && options[:expect]
+  golden_expected = Golden.read(options[:expect], "diag_parity")
+  unless golden_expected["mode"] == mode
+    abort "error: fixture mode #{golden_expected['mode'].inspect} does not match #{mode.inspect}"
+  end
+  selected = []
+  files.each do |f|
+    relative = f.sub("#{ROOT}/", "")
+    row = golden_expected["files"][relative]
+    if row.nil?
+      unrecorded_inputs += 1
+    elsif row["digest"] == Digest::SHA256.file(f).hexdigest
+      selected << f
+    else
+      changed_inputs += 1
+    end
+  end
+  files = selected
+end
+
 queue = Queue.new
 files.each { |f| queue << f }
 res = []
+golden = {}
 mutex = Mutex.new
 threads = [options[:jobs], files.length].min.times.map do
   Thread.new do
@@ -99,6 +139,25 @@ threads = [options[:jobs], files.length].min.times.map do
       rescue ThreadError
         break
       end
+      sout, serr, ss = Open3.capture3(
+        "bash", "-c", "ulimit -v 20000000; exec \"$0\" \"$@\"",
+        options[:self], mode, f, chdir: ROOT
+      )
+      sd = diags(mode, sout, serr).map { |d| d[0, 4] }
+      src = ss.exitstatus || 128 + ss.termsig.to_i
+      relative = f.sub("#{ROOT}/", "")
+
+      if recorded
+        mutex.synchronize do
+          golden[relative] = {
+            "digest" => Digest::SHA256.file(f).hexdigest,
+            "rc" => src,
+            "diags" => sd.sort,
+          }
+        end
+        next
+      end
+
       # Only the generated self binary needs the memory cap; the Ruby host is
       # itself a large process and aborts under a 20 GB `ulimit -v`.
       hout, herr, hs = Open3.capture3("timeout", options[:timeout].to_s, "ruby", "-Ilib", "bin/mtc", mode, f, chdir: ROOT)
@@ -107,19 +166,36 @@ threads = [options[:jobs], files.length].min.times.map do
       if hs.exitstatus.nil? && hs.termsig
         hout, herr, hs = Open3.capture3("timeout", options[:timeout].to_s, "ruby", "-Ilib", "bin/mtc", mode, f, chdir: ROOT)
       end
-      sout, serr, ss = Open3.capture3(
-        "bash", "-c", "ulimit -v 20000000; exec \"$0\" \"$@\"",
-        options[:self], mode, f, chdir: ROOT
-      )
       hd = diags(mode, hout, herr).map { |d| d[0, 4] }
-      sd = diags(mode, sout, serr).map { |d| d[0, 4] }
       hrc = hs.exitstatus || 128 + hs.termsig.to_i
-      src = ss.exitstatus || 128 + ss.termsig.to_i
-      mutex.synchronize { res << [f.sub("#{ROOT}/", ""), hrc, src, hd.sort, sd.sort] }
+      mutex.synchronize { res << [relative, hrc, src, hd.sort, sd.sort] }
     end
   end
 end
 threads.each(&:join)
+
+if recorded
+  payload = { "mode" => mode, "files" => golden }
+  if options[:record]
+    Golden.write(options[:record], "diag_parity", payload)
+    puts "recorded #{golden.length} file(s) -> #{options[:record]}" unless options[:quiet]
+    exit 0
+  end
+
+  expected = {}
+  actual = {}
+  golden.each do |relative, row|
+    recorded_row = golden_expected["files"][relative]
+    expected[relative] = { "rc" => recorded_row["rc"], "diags" => recorded_row["diags"] }
+    actual[relative] = { "rc" => row["rc"], "diags" => row["diags"] }
+  end
+  diffs = Golden.diff(expected, actual)
+  puts "mode=#{mode} files=#{golden.length} changed=#{changed_inputs} " \
+       "unrecorded=#{unrecorded_inputs} differ=#{diffs.length}"
+  diffs.first(options[:max_files] * 4).each { |line| puts "  #{line}" }
+  exit(diffs.empty? ? 0 : 1)
+end
+
 res.sort_by!(&:first)
 
 verdict_differ = res.select { |(_f, hrc, src, _h, _s)| (hrc.zero?) != (src.zero?) }

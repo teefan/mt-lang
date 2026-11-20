@@ -90,6 +90,9 @@ infer_area() {
         projects/mtc/src/mtc/toolchain_cli.mt)    echo toolchain ;;
         projects/mtc/src/mtc/main.mt|projects/mtc/src/mtc/build*.mt|projects/mtc/src/mtc/build_cache.mt|projects/mtc/src/mtc/version_info.mt) echo cli ;;
         projects/mtc/test/*|test/mt/*)            echo tests ;;
+        test/diagnostics/*)                       echo oracles ;;
+        tools/golden/*|tools/lib/golden.rb)       echo oracles ;;
+        tools/cli_parity.rb|tools/diag_parity.rb|tools/lint_parity.rb|tools/format_parity.rb) echo oracles ;;
         tools/lib/refactor_guard.rb)               echo refactor_tools ;;
         lib/*)                                    echo host ;;
         std/*)                                    echo std ;;
@@ -117,7 +120,7 @@ fi
 
 gate_kind() {
     case "$1" in
-        bootstrap|test_mt|dev_build|dev_tests|unused_import|recovery|format|dap|tools_check|bindings|bindings_parity|bindgen_parity|wasm_smoke|docs_smoke|diag_parity|refactor_guard|guard_tests|cli_parity|sexpr_lex|sexpr_parse) echo hard ;;
+        bootstrap|test_mt|dev_build|dev_tests|unused_import|recovery|format|dap|tools_check|bindings|bindings_parity|bindgen_parity|wasm_smoke|docs_smoke|diag_parity|refactor_guard|guard_tests|cli_parity|sexpr_lex|sexpr_parse|golden_cli|golden_diag|golden_lint|golden_format) echo hard ;;
         *) echo meter ;;
     esac
 }
@@ -139,6 +142,10 @@ gate_label() {
         sexpr_parse)    echo "sexpr parse parity (772 match / 0 differ / 4 host-rejected of 776)" ;;
         sexpr_lower)    echo "sexpr lower parity (meter, memory-capped: -j 4 --mem-mb 8000)" ;;
         cli_parity)     echo "CLI parity (227 cases; 227 match; no allowlist)" ;;
+        golden_cli)     echo "recorded CLI golden (227 cases; host-free)" ;;
+        golden_diag)    echo "recorded diagnostics golden (std+examples; host-free)" ;;
+        golden_lint)    echo "recorded lint golden (corpus; host-free)" ;;
+        golden_format)  echo "recorded formatter golden (all modes; host-free)" ;;
         wasm_smoke)     echo "wasm preview end-to-end (host + self HTTP/signal smoke)" ;;
         docs_smoke)     echo "docs server end-to-end (host + self routes/SIGINT smoke)" ;;
         scoreboard)     echo "parity scoreboard (meter)" ;;
@@ -176,6 +183,10 @@ gate_cmd() {
         sexpr_parse)   echo "ruby tools/sexpr_parity.rb parse -q --host-cache tmp/sexpr-host-cache" ;;
         sexpr_lower)   echo "ruby tools/sexpr_parity.rb lower -q -j 4 --mem-mb 8000 --host-cache tmp/sexpr-host-cache" ;;
         cli_parity)    echo "ruby tools/cli_parity.rb -q" ;;
+        golden_cli)    echo "ruby tools/cli_parity.rb --expect tools/golden/cli.json -q" ;;
+        golden_diag)   echo "ruby tools/diag_parity.rb check std examples --expect tools/golden/diag.json -q" ;;
+        golden_lint)   echo "ruby tools/lint_parity.rb --expect tools/golden/lint.json -q" ;;
+        golden_format) echo "ruby tools/format_parity.rb all -j 16 --expect tools/golden/format.json -q" ;;
         scoreboard)    echo "rake parity:scoreboard" ;;
         format)        echo "ruby tools/format_parity.rb all -j 16" ;;
         lint_parity)   echo "ruby tools/lint_parity.rb -q" ;;
@@ -209,6 +220,10 @@ gate_summary() {
         sexpr_parse)    echo "^mode=parse" ;;
         sexpr_lower)    echo "^mode=lower|match=" ;;
         cli_parity)     echo "^cases=" ;;
+        golden_cli)     echo "^cases=" ;;
+        golden_diag)    echo "^mode=" ;;
+        golden_lint)    echo "^files=" ;;
+        golden_format)  echo "differ|recorded" ;;
         scoreboard)     echo "^cli |^lex |^parse |^lint " ;;
         format)         echo "differ|match" ;;
         lint_parity)    echo "^files=" ;;
@@ -337,6 +352,7 @@ gates_for_area() {
         docs_cli)  echo "dev_tests refactor_guard bootstrap test_mt cli_parity docs_smoke" ;;
         packages|toolchain) echo "dev_tests refactor_guard bootstrap test_mt cli_parity" ;;
         tools)     echo "tools_check guard_tests refactor_guard" ;;
+        oracles)   echo "tools_check golden_cli golden_diag golden_lint golden_format" ;;
         refactor_tools) echo "tools_check guard_tests refactor_guard" ;;
         refactor)  echo "dev_tests refactor_guard test_mt cli_parity scoreboard" ;;
         docs|other) echo "" ;;

@@ -18,6 +18,8 @@
 #   --keep           keep the materialized fixtures and per-case outputs
 #   -q, --quiet      print only the summary
 #   -f, --filter RE  only run cases whose name matches RE
+#   --record FILE    record the self's normalized results to FILE (host-free)
+#   --expect FILE    replay FILE and fail on any difference (host-free)
 #   -h, --help       show this message
 #
 # Exit status: 0 when every comparable case matches, 1 otherwise.  A case may be
@@ -30,6 +32,7 @@ require "fileutils"
 require "open3"
 require "stringio"
 require "tmpdir"
+require_relative "lib/golden"
 
 ROOT = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(File.join(ROOT, "lib"))
@@ -39,6 +42,8 @@ max_diffs = 25
 keep = false
 quiet = false
 filter = nil
+record_path = nil
+expect_path = nil
 
 argv = ARGV.dup
 until argv.empty?
@@ -49,6 +54,8 @@ until argv.empty?
   when "--keep"      then keep = true
   when "-q", "--quiet" then quiet = true
   when "-f", "--filter" then filter = argv.shift
+  when "--record" then record_path = argv.shift
+  when "--expect" then expect_path = argv.shift
   when "-h", "--help"
     puts File.read(__FILE__).lines.drop(2).take_while { |l| l.start_with?("#") }
              .map { |l| l.sub(/\A# ?/, "") }.join
@@ -64,6 +71,17 @@ self_bin = File.expand_path(self_bin)
 unless File.executable?(self_bin)
   warn "error: self-host compiler not found or not executable: #{self_bin}"
   warn "       build one with: ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o #{self_bin}"
+  exit 1
+end
+
+record_path = File.expand_path(record_path, ROOT) if record_path
+expect_path = File.expand_path(expect_path, ROOT) if expect_path
+if record_path && expect_path
+  warn "error: --record and --expect are mutually exclusive"
+  exit 1
+end
+if record_path && filter
+  warn "error: --record cannot be combined with --filter (it would truncate the fixture)"
   exit 1
 end
 
@@ -597,17 +615,63 @@ def normalize(text, self_bin:)
   text
 end
 
+materialize_fixtures
+
+cases = build_cases
+cases = cases.select { |c| c[:name].match?(Regexp.new(filter)) } if filter
+
+# Recorded mode: the self is the only compiler consulted.  The fixture is the
+# post-retirement oracle, so `pending:` cases are recorded like any other (the
+# pending flag describes host parity, not self behavior).
+if record_path || expect_path
+  # Build cases report `[cached]` on a warm cache, so record and replay both
+  # need the same cache history.  An empty per-run root makes every run cold
+  # and keeps the user's real cache untouched.
+  cache_root = File.join(ROOT, "tmp", "cli-parity", "cache")
+  FileUtils.rm_rf(cache_root)
+  FileUtils.mkdir_p(cache_root)
+
+  actual = {}
+  cases.each do |c|
+    isolate_backup = c[:isolate] ? snapshot_dir(c[:cwd]) : nil
+    sout, serr, status = Open3.capture3({ "XDG_CACHE_HOME" => cache_root }, self_bin, *c[:argv], chdir: c[:cwd])
+    restore_dir(c[:cwd], isolate_backup) if isolate_backup
+    FileUtils.rm_rf(isolate_backup) if isolate_backup
+    # Whether a build reports `[cached]` depends on artifacts left by earlier
+    # cases in the sequence, so it is not a stable golden property (the live
+    # parity mode still compares it).  Collapse the whole line.  `cache status`
+    # prints a byte total that varies by a tenth of a KiB between runs, so keep
+    # the counts and normalize the size.
+    recorded_stdout = normalize(sout, self_bin: self_bin)
+                        .gsub(/^built .*$/, "built <TARGET>")
+                        .gsub(/^(cache\s+\d+ programs, \d+ binaries)\s+\([^)]*\)$/, '\1 (<SIZE>)')
+    actual[c[:name]] = {
+      "stdout" => recorded_stdout,
+      "stderr" => normalize(serr, self_bin: self_bin),
+      "rc" => status.exitstatus,
+    }
+  end
+
+  if record_path
+    Golden.write(record_path, "cli_parity", actual)
+    puts "recorded #{actual.length} case(s) -> #{record_path}" unless quiet
+    exit 0
+  end
+
+  expected = Golden.read(expect_path, "cli_parity")
+  expected = expected.select { |name, _| actual.key?(name) } if filter
+  diffs = Golden.diff(expected, actual)
+  puts format("cases=%d golden=%d differ=%d", actual.length, expected.length, diffs.length)
+  diffs.first(max_diffs).each { |line| puts "  #{line}" }
+  exit(diffs.empty? ? 0 : 1)
+end
+
 require "milk_tea"
 
 if !quiet
   puts "host: ruby #{RUBY_VERSION} (milk_tea #{MilkTea::VERSION})"
   puts "self: #{self_bin} (built #{File.mtime(self_bin).strftime('%Y-%m-%d %H:%M')})"
 end
-
-materialize_fixtures
-
-cases = build_cases
-cases = cases.select { |c| c[:name].match?(Regexp.new(filter)) } if filter
 
 results = { pass: [], fail: [], pending: [] }
 kept = File.join(ROOT, "tmp", "cli-parity", "cases")

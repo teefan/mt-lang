@@ -123,6 +123,8 @@ end
 def excluded?(path)
   parts = path.split(File::SEPARATOR)
   return true if parts.any? { |p| EXCLUDE_DIRS.include?(p) }
+  return true if path.include?("test/mt/diagnostics/")
+
   path.include?("/bindings/vscode/")
 end
 

@@ -5033,6 +5033,33 @@ public function unwrap_nullable_type(t: types.Type) -> types.Type:
             return t
 
 
+## True when `t` is a shape a `let … else:` guard accepts: `T?`, `Option[T]`
+## or `Result[T, E]`.  The loader binds std.option / std.result, so those
+## arrive as `ty_imported`.
+function is_let_else_source(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_nullable:
+            return true
+        types.Type.ty_generic as g:
+            return (g.name == "Option" or g.name == "Result") and g.args.len >= 1
+        types.Type.ty_imported as im:
+            return (im.name == "Option" or im.name == "Result") and im.args.len >= 1
+        _:
+            return false
+
+
+## True when `t` is `Option[T]` or `Result[T, E]`.  Postfix `?` does not accept
+## a bare nullable: unlike a guard, it propagates a variant's failure arm.
+function is_option_or_result(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_generic as g:
+            return (g.name == "Option" or g.name == "Result") and g.args.len >= 1
+        types.Type.ty_imported as im:
+            return (im.name == "Option" or im.name == "Result") and im.args.len >= 1
+        _:
+            return false
+
+
 ## True for the compile-time handle builtins whose arguments are declaration
 ## *names* rather than values (`callable_of(identity)`, `field_of(T, f)`,
 ## `has_attribute(x, a)`, `size_of(T)`, `align_of(T)`, `members_of`,
@@ -5217,6 +5244,11 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlag
     # T?, Option[T], and Result[T,E] all narrow their success type.
     let has_guard = else_body != null
     let narrowed = unwrap_nullable_type(value_type)
+
+    # A guard requires a nullable, Option or Result initializer; the host
+    # reports at the binding name (the statement's anchor).
+    if has_guard and has_value and not types.contains_error(value_type) and not is_let_else_source(value_type):
+        report(ctx, line, column, diag.let_else_initializer_message(name, value_type))
 
     # Compatibility: a plain local compares its declared type against the value
     # type directly; a guarded local's annotation names the *success* type, so
@@ -6411,7 +6443,11 @@ function infer_unary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, opera
     if op == "?":
         # The try operator propagates the failure and yields the success type
         # (`Result[T, E]?` and `Option[T]?` both give `T`), exactly like a
-        # guard-unwrapped binding.
+        # guard-unwrapped binding.  A bare nullable is not a propagation
+        # source; the host reports at the enclosing statement's anchor.
+        if not types.contains_error(ot) and not is_option_or_result(ot):
+            report(ctx, ctx.statement_line, ctx.statement_column, diag.propagation_message(ot))
+            return types.Type.ty_error
         return unwrap_nullable_type(ot)
     return types.Type.ty_error
 
@@ -10102,23 +10138,29 @@ function follow_type_alias(ctx: ref[Context], binding_ptr: ptr[ModuleBinding], t
 function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_name: str, args: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> Option[types.Type]:
     if callee_name == "read":
         if args.len != 1:
-            return Option[types.Type].none
+            report(ctx, line, column, diag.read_arity_message(args.len))
+            return Option[types.Type].some(value = types.Type.ty_error)
         var arg: ast.Argument = unsafe: read(args.data + 0)
         let at = infer_expr(ctx, scope, arg.arg_value)
+        # An unresolved operand is the recovery path; do not cascade a second
+        # diagnostic on top of the one that produced it.
+        if types.contains_error(at):
+            return Option[types.Type].some(value = types.Type.ty_error)
         # The host's `infer_reference_value_type`: a `ref` reads its referent; a
         # raw pointer dereferences and requires unsafe, while an `own[T]`
         # auto-dereferences (no requirement).  A nullable pointer is not a read
-        # source (the host rejects it), so it stays on the permissive path.
+        # source — the host rejects it instead of silently unwrapping it.
         if types.is_ref_type(at):
             return Option[types.Type].some(value = types.pointer_element(at))
-        if types.is_pointer_type(at):
+        if types.is_pointer_type(at) and not types.is_nullable_type(at):
             if not types.is_own_type(at) and not in_generic_body(ctx):
                 if ctx.unsafe_depth == 0:
                     report(ctx, line, column, "raw pointer dereference requires unsafe")
                 else:
                     mark_required_unsafe(ctx)
             return Option[types.Type].some(value = types.pointer_element(at))
-        return Option[types.Type].none
+        report(ctx, line, column, diag.read_operand_message(at))
+        return Option[types.Type].some(value = types.Type.ty_error)
     if callee_name == "ptr_of" or callee_name == "const_ptr_of" or callee_name == "ref_of":
         if args.len != 1:
             return Option[types.Type].none

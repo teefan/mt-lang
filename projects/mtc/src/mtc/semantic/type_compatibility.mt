@@ -415,15 +415,17 @@ public function types_compatible_external_with_consts(
 ## `cstr` argument as well as `str` (the host's
 ## `foreign_cstr_argument_compatible?`).
 function external_cstr_argument_compatible(expected: types.Type, actual: types.Type) -> bool:
-    match expected:
-        types.Type.ty_primitive as ep:
-            if ep.name == "str":
-                match actual:
-                    types.Type.ty_primitive as ap:
-                        return ap.name == "cstr"
-                    _:
-                        return false
+    match actual:
+        types.Type.ty_primitive as ap:
+            if ap.name != "cstr":
+                return false
+        _:
             return false
+    match expected:
+        types.Type.ty_str:
+            return true
+        types.Type.ty_primitive as ep:
+            return ep.name == "str"
         _:
             return false
 

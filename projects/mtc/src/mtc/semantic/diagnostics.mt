@@ -28,6 +28,43 @@ public function local_mismatch_message(expected: types.Type, got: types.Type, na
     return buf.as_str()
 
 
+## The `let … else:` guard requires a nullable, `Option[T]` or `Result[T, E]`
+## initializer (the host's `check_local_decl_let_else`).
+public function let_else_initializer_message(name: str, got: types.Type) -> str:
+    var buf = string.String.create()
+    buf.append("let-else initializer for ")
+    buf.append(name)
+    buf.append(" must be nullable, Option[T], or Result[T, E], got ")
+    buf.append(types.type_to_string(got))
+    return buf.as_str()
+
+
+## Postfix `?` accepts only `Option[T]` or `Result[T, E]` (the host's
+## `infer_propagate_expression`).
+public function propagation_message(got: types.Type) -> str:
+    var buf = string.String.create()
+    buf.append("propagation expects Result[T, E] or Option[T], got ")
+    buf.append(types.type_to_string(got))
+    return buf.as_str()
+
+
+## The host's `validate_read_call_arguments!`.
+public function read_arity_message(got: ptr_uint) -> str:
+    var buf = string.String.create()
+    buf.append("read expects 1 argument, got ")
+    buf.append(uint_to_str(got))
+    return buf.as_str()
+
+
+## The host's `infer_reference_value_type` fallthrough: only `ref[T]`, `ptr[T]`
+## and `own[T]` are read sources (a nullable pointer is not).
+public function read_operand_message(got: types.Type) -> str:
+    var buf = string.String.create()
+    buf.append("read expects ref[...] or ptr[...], got ")
+    buf.append(types.type_to_string(got))
+    return buf.as_str()
+
+
 public function assign_message(target: types.Type, value: types.Type) -> str:
     var buf = string.String.create()
     buf.append("cannot assign ")

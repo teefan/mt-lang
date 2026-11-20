@@ -2855,6 +2855,28 @@ function test_cfg_write_removes_the_refinement() -> void:
 
 
 @[test]
+function test_cfg_fallthrough_branch_does_not_narrow_after_merge() -> void:
+    var source = <<-SRC
+        function f(handle: ptr[int]?) -> void:
+            if handle == null:
+                pass
+            let bound = handle
+    SRC
+    var cfg = cfgb.empty_cfg()
+    var graph = cfgg.empty_graph()
+    defer: cfgg.graph_release(ref_of(graph))
+    var flow = cfgg.flow_create(0, 0)
+    defer: cfgg.flow_release(ref_of(flow))
+    var body: ptr[ast.Stmt]? = null
+    if not build_flow(source, ref_of(cfg), ref_of(graph), ref_of(flow), ref_of(body)):
+        expect(false, "the fallthrough source did not build")
+        return
+    let key = binding_key(ref_of(cfg), "handle")
+    let after_if = block_statement(body, 1)
+    expect(not nonnull_at(ref_of(graph), ref_of(flow), after_if, key), "handle is not non-null after a fallthrough branch")
+
+
+@[test]
 function test_cfg_while_body_keeps_the_condition_refinement() -> void:
     var source = <<-SRC
         function f(handle: ptr[int]?) -> void:

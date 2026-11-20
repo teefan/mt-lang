@@ -358,7 +358,7 @@
       "projects/mtc/src/mtc/semantic/analyzer.mt:4319:function:flow_type_at_position",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:236:function:graph_edge_refinement_of",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:249:function:graph_edge_label",
-      "projects/mtc/src/mtc/semantic/types.mt:1349:function:is_definitely_non_str",
+      "projects/mtc/src/mtc/semantic/types.mt:1354:function:is_definitely_non_str",
       "projects/mtc/src/mtc/sexpr.mt:150:function:sexpr_list1",
       "projects/mtc/src/mtc/version_info.mt:2:const:GIT_REVISION"
     ],
@@ -367,7 +367,7 @@
       "projects/mtc/src/mtc/linter/linter.mt:197:function:lint_source",
       "projects/mtc/src/mtc/parser/parser.mt:869:function:parse_reporting",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:572:function:flow_create",
-      "projects/mtc/src/mtc/semantic/types.mt:1107:function:nominal_key",
+      "projects/mtc/src/mtc/semantic/types.mt:1112:function:nominal_key",
       "projects/mtc/src/mtc/sexpr.mt:1090:function:dump_ir"
     ]
   },
@@ -1263,7 +1263,7 @@
     ]
   },
   "sizes": {
-    "total_code": 126536,
+    "total_code": 126595,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -2174,8 +2174,8 @@
         "max_function": 39
       },
       "projects/mtc/src/mtc/semantic/analyzer.mt": {
-        "lines": 10610,
-        "code": 7940,
+        "lines": 10652,
+        "code": 7967,
         "max_line": 342,
         "max_function": 119
       },
@@ -2192,14 +2192,14 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt": {
-        "lines": 739,
-        "code": 529,
+        "lines": 746,
+        "code": 532,
         "max_line": 146,
         "max_function": 41
       },
       "projects/mtc/src/mtc/semantic/diagnostics.mt": {
-        "lines": 299,
-        "code": 224,
+        "lines": 336,
+        "code": 246,
         "max_line": 120,
         "max_function": 16
       },
@@ -2222,14 +2222,14 @@
         "max_function": 31
       },
       "projects/mtc/src/mtc/semantic/type_compatibility.mt": {
-        "lines": 498,
-        "code": 341,
+        "lines": 500,
+        "code": 343,
         "max_line": 123,
         "max_function": 191
       },
       "projects/mtc/src/mtc/semantic/types.mt": {
-        "lines": 1356,
-        "code": 1001,
+        "lines": 1361,
+        "code": 1006,
         "max_line": 161,
         "max_function": 164
       },
@@ -2286,6 +2286,6 @@
   "markers": [],
   "tests": {
     "projects": 22,
-    "test_mt": 62
+    "test_mt": 85
   }
 }

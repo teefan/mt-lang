@@ -20,6 +20,8 @@
 #                    when the file's digest matches, and the whole cache is
 #                    dropped when the host compiler's sources change.  The
 #                    self-host side always runs live.
+#   --record FILE    record the self's lint output to FILE (host-free)
+#   --expect FILE    replay FILE and fail on any difference (host-free)
 #   -h, --help       show this message
 #
 # Exit status: 0 when every file's output is byte-identical, 1 otherwise.
@@ -28,6 +30,7 @@ require "digest"
 require "json"
 require "open3"
 require "optparse"
+require_relative "lib/golden"
 
 ROOT = File.expand_path("..", __dir__)
 options = {
@@ -37,6 +40,8 @@ options = {
   timeout: 180,
   quiet: false,
   max_files: 20,
+  record: nil,
+  expect: nil,
 }
 OptionParser.new do |opts|
   opts.on("--self PATH") { |v| options[:self] = File.expand_path(v, ROOT) }
@@ -46,8 +51,15 @@ OptionParser.new do |opts|
   opts.on("-q", "--quiet") { options[:quiet] = true }
   opts.on("--max-files N", Integer) { |v| options[:max_files] = v }
   opts.on("--host-cache FILE") { |v| options[:host_cache] = File.expand_path(v, ROOT) }
+  opts.on("--record FILE") { |v| options[:record] = File.expand_path(v, ROOT) }
+  opts.on("--expect FILE") { |v| options[:expect] = File.expand_path(v, ROOT) }
   opts.on("-h", "--help") { puts opts; exit 0 }
 end.parse!
+
+if options[:record] && options[:expect]
+  abort "error: --record and --expect are mutually exclusive"
+end
+recorded = !options[:record].nil? || !options[:expect].nil?
 targets = ARGV.empty? ? %w[std examples projects/mtc/src] : ARGV
 
 abort "self-host binary not found: #{options[:self]}" unless File.executable?(options[:self])
@@ -119,12 +131,37 @@ def analysis_failure?(text)
     text.lines.any? { |line| line.start_with?("error[") || line.start_with?("error: ") }
 end
 
+# A golden fixture is digest-keyed: a file whose text changed since recording is
+# skipped (its row is stale by design), so source edits do not turn the gate
+# red.  Only unchanged inputs are re-measured against the fixture.
+golden_expected = nil
+changed_inputs = 0
+unrecorded_inputs = 0
+if recorded && options[:expect]
+  golden_expected = Golden.read(options[:expect], "lint_parity")
+  selected = []
+  files.each do |f|
+    relative = f.delete_prefix("#{ROOT}/")
+    row = golden_expected["files"][relative]
+    if row.nil?
+      unrecorded_inputs += 1
+    elsif row["digest"] == Digest::SHA256.file(f).hexdigest
+      selected << f
+    else
+      changed_inputs += 1
+    end
+  end
+  files = selected
+end
+
 results = Queue.new
 files.each { |f| results << f }
 
 diffs = []
 hostfail = []
 selffail = []
+golden = {}
+timed_out = 0
 mutex = Mutex.new
 workers = Array.new(options[:jobs]) do
   Thread.new do
@@ -134,9 +171,25 @@ workers = Array.new(options[:jobs]) do
       rescue ThreadError
         break
       end
-      host = host_lint(options, host_cache, digests, cache_mutex, file)
       self_host = lint_output([options[:self], "lint"], file, options[:timeout])
       relative = file.delete_prefix("#{ROOT}/")
+      if recorded
+        # A timed-out file is not a stable oracle (the self linter is slow on
+        # the largest compiler sources); leave it unreferenced.
+        if self_host.start_with?("<timeout after ")
+          mutex.synchronize { timed_out += 1 }
+          next
+        end
+        mutex.synchronize do
+          golden[relative] = {
+            "digest" => Digest::SHA256.file(file).hexdigest,
+            "output" => self_host.gsub(ROOT, "<ROOT>"),
+          }
+        end
+        next
+      end
+
+      host = host_lint(options, host_cache, digests, cache_mutex, file)
       if analysis_failure?(host)
         mutex.synchronize { hostfail << [relative, host] }
       elsif analysis_failure?(self_host)
@@ -148,6 +201,28 @@ workers = Array.new(options[:jobs]) do
   end
 end
 workers.each(&:join)
+
+if recorded
+  payload = { "files" => golden }
+  if options[:record]
+    Golden.write(options[:record], "lint_parity", payload)
+    puts "recorded #{golden.length} file(s) (#{timed_out} timed out) -> #{options[:record]}" unless options[:quiet]
+    exit 0
+  end
+
+  expected = {}
+  actual = {}
+  golden.each do |relative, row|
+    recorded_row = golden_expected["files"][relative]
+    expected[relative] = { "output" => recorded_row["output"] }
+    actual[relative] = { "output" => row["output"] }
+  end
+  diffs = Golden.diff(expected, actual)
+  puts "files=#{golden.length} changed=#{changed_inputs} " \
+       "unrecorded=#{unrecorded_inputs} differ=#{diffs.length}"
+  diffs.first(options[:max_files] * 2).each { |line| puts "  #{line}" }
+  exit(diffs.empty? ? 0 : 1)
+end
 
 if options[:host_cache]
   tmp_path = "#{options[:host_cache]}.tmp"

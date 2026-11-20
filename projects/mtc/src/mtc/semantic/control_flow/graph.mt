@@ -653,20 +653,24 @@ public function solve_nullability(graph: ref[CfgGraph], flow: ref[NullabilityFlo
 
 ## Compute the state carried by the edge `pred → to` into `work`: the
 ## predecessor's in-state, minus the predecessor's writes, plus the edge's
-## refinements.  `has` records that at least one predecessor contributed, so an
-## empty state is not confused with "no predecessor".
+## refinements.  Contributions are intersected across predecessors, so a
+## refinement must be folded into *this* predecessor's contribution before the
+## intersection — applying it afterwards would overwrite the intersection and
+## make the result depend on predecessor order.  `has` records that at least
+## one predecessor contributed, so an empty state is not confused with "no
+## predecessor".
 function pred_edge_state(graph: ref[CfgGraph], flow: ref[NullabilityFlow], pred: ptr_uint, to: ptr_uint, work: ptr[bool], has: ref[bool]) -> void:
     let row = read(flow).row_size
     let node = graph_node(graph, pred) else:
         return
+    let first = not read(has)
     var index: ptr_uint = 0
     while index < row:
         let value = flow_get(flow, pred * row + index)
-        if read(has):
-            if not value:
-                unsafe: read(work + index) = false
-        else:
+        if first:
             unsafe: read(work + index) = value
+        else if not value:
+            unsafe: read(work + index) = false
         index += 1
     unsafe:
         var wi: ptr_uint = 0
@@ -682,7 +686,10 @@ function pred_edge_state(graph: ref[CfgGraph], flow: ref[NullabilityFlow], pred:
             break
         unsafe:
             if read(r).from == pred and read(r).to == to and read(r).key < row:
-                read(work + read(r).key) = read(r).non_null
+                if first:
+                    read(work + read(r).key) = read(r).non_null
+                else if not read(r).non_null:
+                    read(work + read(r).key) = false
         ri += 1
     read(has) = true
 

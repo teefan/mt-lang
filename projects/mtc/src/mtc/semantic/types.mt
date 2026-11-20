@@ -522,6 +522,7 @@ public function type_to_string(t: Type) -> str:
 const CAT_BOOL: int = 1
 const CAT_NUMERIC: int = 2
 const CAT_STR: int = 3
+const CAT_CSTR: int = 4
 const CAT_OTHER: int = 0
 
 
@@ -530,6 +531,10 @@ function scalar_category(t: Type) -> int:
         Type.ty_primitive as p:
             if p.name == "bool":
                 return CAT_BOOL
+            if p.name == "cstr":
+                return CAT_CSTR
+            if p.name == "str":
+                return CAT_STR
             if is_numeric_name(p.name):
                 return CAT_NUMERIC
             return CAT_OTHER

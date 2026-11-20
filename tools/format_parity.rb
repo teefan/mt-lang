@@ -26,15 +26,19 @@
 #   --mem-mb MB      virtual-memory cap for the self-host binary (0 = off)
 #   --max-diffs N    differing files to detail  (default: 20)
 #   --keep           keep generated outputs and print their directory
+#   --record FILE    record the self's per-mode output hashes to FILE (host-free)
+#   --expect FILE    replay FILE and fail on any difference (host-free)
 #   -q, --quiet      print only the summary
 #   -h, --help       show this message
 #
 # Exit status: 0 when every comparable file matches, 1 otherwise.
 
+require "digest"
 require "etc"
 require "fileutils"
 require "open3"
 require "shellwords"
+require_relative "lib/golden"
 
 ROOT = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(File.join(ROOT, "lib"))
@@ -59,6 +63,8 @@ mem_mb = 0
 max_diffs = 20
 keep = false
 quiet = false
+record_path = nil
+expect_path = nil
 
 argv = ARGV.dup
 until argv.empty?
@@ -71,6 +77,8 @@ until argv.empty?
   when "--max-diffs" then max_diffs = argv.shift.to_i
   when "--keep"     then keep = true
   when "-q", "--quiet" then quiet = true
+  when "--record"   then record_path = argv.shift
+  when "--expect"   then expect_path = argv.shift
   when "-h", "--help" then puts usage; exit 0
   else
     if MODES.include?(a)
@@ -95,6 +103,14 @@ unless File.executable?(self_bin)
   exit 1
 end
 
+record_path = File.expand_path(record_path, ROOT) if record_path
+expect_path = File.expand_path(expect_path, ROOT) if expect_path
+if record_path && expect_path
+  warn "error: --record and --expect are mutually exclusive"
+  exit 1
+end
+recorded = !record_path.nil? || !expect_path.nil?
+
 newest_src = Dir.glob(File.join(ROOT, "projects", "mtc", "src", "**", "*.mt"))
                 .map { |f| File.mtime(f) }.max
 if newest_src && File.mtime(self_bin) < newest_src
@@ -106,6 +122,8 @@ end
 def excluded?(path)
   parts = path.split(File::SEPARATOR)
   return true if parts.any? { |p| EXCLUDE_DIRS.include?(p) }
+  return true if path.include?("test/mt/diagnostics/")
+
   path.include?("/bindings/vscode/")
 end
 
@@ -130,11 +148,15 @@ if files.empty?
   exit 1
 end
 
-require "milk_tea"
+require "milk_tea" unless recorded
 
 unless quiet
-  puts "host: ruby #{RUBY_VERSION} (milk_tea #{MilkTea::VERSION})"
-  puts "self: #{self_bin} (built #{File.mtime(self_bin).strftime('%Y-%m-%d %H:%M')})"
+  if recorded
+    puts "self: #{self_bin} (built #{File.mtime(self_bin).strftime('%Y-%m-%d %H:%M')})"
+  else
+    puts "host: ruby #{RUBY_VERSION} (milk_tea #{MilkTea::VERSION})"
+    puts "self: #{self_bin} (built #{File.mtime(self_bin).strftime('%Y-%m-%d %H:%M')})"
+  end
 end
 
 # ── host / self invocation ───────────────────────────────────────────────────
@@ -195,6 +217,29 @@ def run_workers(mode, jobs, files, host_dir, self_dir, self_bin, timeout_s, mem_
   pids.each { |pid| Process.wait(pid) }
 end
 
+# Recorded mode: no host process at all.  The self's output is hashed per
+# (file, mode) and compared with the committed fixture.
+def run_self_workers(mode, jobs, files, self_dir, self_bin, timeout_s, mem_mb)
+  jobs = files.length if jobs > files.length
+  pids = (0...jobs).map do |worker|
+    fork do
+      idx = worker
+      while idx < files.length
+        file = files[idx]
+        sout, src, serr = run_self(self_bin, mode, file, timeout_s, mem_mb)
+        if src.zero?
+          File.binwrite(File.join(self_dir, "#{idx}.out"), sout)
+        else
+          File.write(File.join(self_dir, "#{idx}.err"), "#{serr}\n(exit #{src})")
+        end
+        idx += jobs
+      end
+      exit!(0)
+    end
+  end
+  pids.each { |pid| Process.wait(pid) }
+end
+
 # ── comparison ───────────────────────────────────────────────────────────────
 
 def first_diff(a, b)
@@ -216,6 +261,31 @@ end
 # ── run ──────────────────────────────────────────────────────────────────────
 
 overall_ok = true
+recorded_data = {}
+
+# A golden fixture is digest-keyed: a file whose text changed since recording is
+# skipped (its row is stale by design), so source edits do not turn the gate
+# red.  Only unchanged inputs are re-measured against the fixture.
+golden_expected = nil
+changed_inputs = 0
+unrecorded_inputs = 0
+if recorded && expect_path
+  golden_expected = Golden.read(expect_path, "format_parity")
+  first_mode = golden_expected["files"].values.first || {}
+  selected = []
+  files.each do |file|
+    relative = file.delete_prefix("#{ROOT}/")
+    row = first_mode[relative]
+    if row.nil?
+      unrecorded_inputs += 1
+    elsif row["digest"] == Digest::SHA256.file(file).hexdigest
+      selected << file
+    else
+      changed_inputs += 1
+    end
+  end
+  files = selected
+end
 
 modes.each do |mode|
   host_dir = File.join(ROOT, "tmp", "format-parity", mode, "host")
@@ -225,8 +295,36 @@ modes.each do |mode|
   FileUtils.mkdir_p(self_dir)
 
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-  run_workers(mode, jobs, files, host_dir, self_dir, self_bin, timeout_s, mem_mb)
+  if recorded
+    run_self_workers(mode, jobs, files, self_dir, self_bin, timeout_s, mem_mb)
+  else
+    run_workers(mode, jobs, files, host_dir, self_dir, self_bin, timeout_s, mem_mb)
+  end
   elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+  if recorded
+    rows = {}
+    files.each_with_index do |file, idx|
+      self_out = File.join(self_dir, "#{idx}.out")
+      err_path = File.join(self_dir, "#{idx}.err")
+      rows[file.delete_prefix("#{ROOT}/")] =
+        if File.exist?(err_path) || !File.exist?(self_out)
+          {
+            "digest" => Digest::SHA256.file(file).hexdigest,
+            "error" => File.read(err_path).lines.first.to_s.strip
+                                            .gsub(ROOT, "<ROOT>").gsub(self_bin, "<SELF>"),
+          }
+        else
+          {
+            "digest" => Digest::SHA256.file(file).hexdigest,
+            "sha256" => Digest::SHA256.hexdigest(File.binread(self_out)),
+          }
+        end
+    end
+    recorded_data[mode] = rows
+    puts format("%-10s %3d file(s) recorded (%.1fs)", mode, files.length, elapsed) unless quiet
+    next
+  end
 
   match = 0
   differ = []
@@ -275,6 +373,32 @@ modes.each do |mode|
     puts "     host: #{h}"
     puts "     self: #{s}"
   end unless quiet
+end
+
+if recorded
+  payload = { "modes" => modes, "files" => recorded_data }
+  if record_path
+    Golden.write(record_path, "format_parity", payload)
+    puts "recorded #{modes.length} mode(s) over #{files.length} file(s) -> #{record_path}" unless quiet
+    exit 0
+  end
+
+  expected = {}
+  actual = {}
+  recorded_data.each do |mode, rows|
+    expected[mode] = {}
+    actual[mode] = {}
+    rows.each do |relative, row|
+      recorded_row = golden_expected["files"].dig(mode, relative)
+      expected[mode][relative] = recorded_row.reject { |key, _| key == "digest" }
+      actual[mode][relative] = row.reject { |key, _| key == "digest" }
+    end
+  end
+  diffs = Golden.diff(expected, actual)
+  puts "modes=#{modes.length} files=#{files.length} changed=#{changed_inputs} " \
+       "unrecorded=#{unrecorded_inputs} differ=#{diffs.length}"
+  diffs.first(max_diffs * 2).each { |line| puts "  #{line}" }
+  exit(diffs.empty? ? 0 : 1)
 end
 
 if keep
