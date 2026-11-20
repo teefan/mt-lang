@@ -17,7 +17,7 @@ history.
 
 - [Status at a glance](#status-at-a-glance-session-142-2026-11-20)
 - [Host retirement program](#host-retirement-program)
-- [Session 142 — native bootstrap seed (retirement phase 0)](#session-142--native-bootstrap-seed-retirement-phase-0)
+- [Session 142 — bootstrap seed and guard carve-out (phases 0–1)](#session-142--bootstrap-seed-and-guard-carve-out-phases-01)
 - [Session 141 — semantic conformance: conditions, named arguments, FFI](#session-141--semantic-conformance-conditions-named-arguments-ffi)
 - [Session 140 — LSP hover latency and chained receivers](#session-140--lsp-hover-latency-and-chained-receivers)
 - [Session 139 — call-argument compatibility](#session-139--call-argument-compatibility)
@@ -156,7 +156,7 @@ Phases, in order; each gate proves the previous one:
 | Phase | Work | Gate |
 | --- | --- | --- |
 | 0. Seed | committed sha256-verified stage2 seed; Ruby host behind `--allow-ruby-host` | **DONE (session 142)**: full bootstrap with a failing `ruby` shim → fixed point + 22/0; `test/mt` 62/0 |
-| 1. Guard | port `MilkTea::RefactorGuard` (820 Ruby lines, no Mt equivalent) to `.mt`, or to a consumer of `mtc parse --sexpr` | the guard reproduces the ledger's structure numbers |
+| 1. Guard | carve `MilkTea::RefactorGuard` (820 Ruby lines, stdlib only) out of `lib/` into `tools/lib/`; a native `.mt` port is deferred | **DONE (session 142)**: report and JSON byte-identical to the pre-move guard; 15 tests pass |
 | 2. Oracles | one `--record`/`--expect` mechanism for the sweeps; record CLI, diagnostics, lint and formatter at the flip commit; add negative-diagnostic fixtures | every recorded gate replays green with no Ruby present |
 | 3. Product | `tools/release.sh`, per-platform packaging, version stamping, install docs; retire or stub the gem | clean-path install + `mtc run` / `mtc lsp` from the tarball |
 | 4. Delete | archive `lib/milk_tea`, `test/**` and the gemspec; remove dead tools | a fresh clone builds and passes from source with only a C compiler |
@@ -173,9 +173,10 @@ scope.  Qualified-type rendering, module/`static_assert` bare-vs-block and
 `lint` on an unresolved import are differences from a host that will no longer
 be maintained; re-adjudicate each on its own merit.
 
-## Session 142 — native bootstrap seed (retirement phase 0)
+## Session 142 — bootstrap seed and guard carve-out (phases 0–1)
 
-Removed the Ruby host from the default bootstrap path.
+Removed the Ruby host from the default bootstrap path and moved the last live
+host component out of `lib/`.
 
 **Seed.** `vendor/bootstrap/linux-x86_64/mtc` is a release-profile **stage2**
 compiler (6.28 MB, built at `6a67c937` by the Ruby host → stage1 → stage2, so
@@ -201,13 +202,27 @@ paths verified separately: missing seed → the platform-named error;
 corrupted checksum → mismatch error; `--allow-ruby-host` with the seed removed
 → Ruby host build.
 
-**Open next.** Phase 1: port the structural guard, which is the only live piece
-of host infrastructure that has no Mt counterpart.  The other host tooling
-dependencies are known: `cli_parity`/`format_parity` call host internals
-in-process, `sexpr_parity` borrows the host's module resolver, `gen_cli_help`
-generates `cli_help.mt` from the host's command table, and the
-bindgen/imported-bindings harnesses use the Ruby registries as the generator of
-record (the self owns `imported-bindings --all --check`, 29/29).
+**Guard (phase 1).**  The guard turned out to be purely textual, not
+parser-coupled: `RefactorGuard` scans `projects/mtc/src` with anchored regexes
+and depends only on the Ruby stdlib (`digest`, `fileutils`, `json`).  That makes
+a native `.mt` port unnecessary work — reimplementing nine regexes as hand
+scanners is how a guard silently drifts from the rules it claims to enforce —
+so the file moved instead: `lib/milk_tea/tooling/refactor_guard.rb` →
+`tools/lib/refactor_guard.rb`, its test → `tools/test/refactor_guard_test.rb`
+(dropping the `test_helper` dependency, which loaded the whole host), and
+`tools/gates.sh` follows the new paths.  `tools/lib/*.rb` joined the marker
+globs with the guard's existing self-skip.  The report and the `--json` output
+are byte-identical to the pre-move guard, and the relocated test is **15 runs /
+52 assertions / 0 failures**.  A native `.mt` guard remains optional and would
+belong with a parse-based facts surface, not a scanner port.
+
+**Open next.**  Phase 2: the recorded oracles.  Known host tooling couplings to
+re-home: `cli_parity` calls `MilkTea::CLI.start` and `format_parity` calls
+`MilkTea::Formatter.check_source` in-process, `sexpr_parity` borrows
+`MilkTea::ModuleLoader` for module-name resolution, `gen_cli_help` generates
+`cli_help.mt` from the host's command table, and the bindgen/imported-bindings
+harnesses use the Ruby registries as the generator of record (the self owns
+`imported-bindings --all --check`, 29/29).
 
 ## Session 141 — semantic conformance: conditions, named arguments, FFI
 
@@ -3045,43 +3060,32 @@ rows), formatter 739/739 in all three modes.
 
 ## Handoff (session 142)
 
-**Next session:** host retirement **phase 1 — port the structural guard**.  It
-is the only live host component with no Mt counterpart: `MilkTea::RefactorGuard`
-is 820 lines of Ruby (`lib/milk_tea/tooling/refactor_guard.rb`) driving
-`tools/refactor_guard.rb`, and it enforces layering, naming, dead exports,
-duplication windows, function length and file size against
-`tools/refactor_baseline.json`.  The flip is a large refactor and the guard is
-what keeps it honest, so it moves before any self-only language work.
+**Next session:** host retirement **phase 2 — recorded oracles**.  Phases 0 and
+1 are done: stage0 is the committed seed, and the structural guard now lives in
+`tools/lib/` with no dependency on the host.
 
-- Read `docs/refactoring.md` (the rule set and the baseline contract) and the
-  guard's `--help`.  Reproduce the ledger's numbers on the current tree before
-  changing any rule.
-- Disposition decision: implement the guard in `.mt` (a `mtc guard` surface or a
-  separate tool in `projects/mtc`) reading the self's own parse, rather than a
-  Ruby consumer of `mtc parse --sexpr`.  A Ruby consumer would leave the guard
-  dependent on the interpreter the flip exists to remove.  `mtc parse --sexpr`
-  already dumps the AST if a staged port is useful.
-- Keep the baseline JSON as the ratchet input; refresh it only for a reviewed
-  structural change, exactly as today.
-
-**Then phase 2 — oracles.**  One shared `--record FILE` / `--expect FILE`
-mechanism for `cli_parity`, `diag_parity`, `lint_parity` and `format_parity`
-(`lsp_parity` already has `record`/`compare`), recorded at the flip commit.
-Known host couplings to re-home: `cli_parity` calls `MilkTea::CLI.start` and
-`format_parity` calls `MilkTea::Formatter.check_source` in-process;
-`sexpr_parity` borrows `MilkTea::ModuleLoader` for module-name resolution;
-`gen_cli_help` becomes dead (`cli_help.mt` becomes authored source); the
-bindgen/imported-bindings harnesses retire because the self already owns
-`imported-bindings --all --check` (29/29).  Add negative-diagnostic fixtures
-(`case.mt` + expected message/position) from the session-141 probe matrix; that
-is the replacement oracle for the classes the differential harnesses covered.
+- Add one shared `--record FILE` / `--expect FILE` mechanism to `cli_parity`,
+  `diag_parity`, `lint_parity` and `format_parity` (`lsp_parity` already has
+  `record`/`compare`), then record the expected results at the flip commit.
+  A recorded gate must pass with **no Ruby on `PATH`**.
+- Re-home the remaining host couplings: `cli_parity` calls
+  `MilkTea::CLI.start` and `format_parity` calls
+  `MilkTea::Formatter.check_source` in-process (both disappear under the
+  recorded path); `sexpr_parity` borrows `MilkTea::ModuleLoader` for module-name
+  resolution; `gen_cli_help` becomes dead (`cli_help.mt` becomes authored
+  source); the bindgen/imported-bindings harnesses retire because the self
+  already owns `imported-bindings --all --check` (29/29).
+- Add negative-diagnostic fixtures (`case.mt` + expected message/position) from
+  the session-141 probe matrix; that is the replacement oracle for the classes
+  the differential harnesses covered.  `sexpr lower` goldens stay out of scope
+  (779 IR dumps; the backend is proven by the fixed point and example sweeps).
 
 **Build state.**  `vendor/bootstrap/linux-x86_64/mtc` is the seed
 (`0257ee4f…`, release stage2); `tools/bootstrap.sh` verifies it and no longer
 falls back to Ruby without `--allow-ruby-host`.  `build/stage2/mtc` is the
 debug compiler from the session-142 verification run (fixed point + 22/0).
-`test/mt` 62/0.  The remaining live code is unchanged from session 141, so its
-verified numbers stand.
+`test/mt` 62/0.  The guard's numbers are unchanged from session 141 (126,536
+code lines, 6,345 duplicated / 884 windows, tests 22/62).
 
 ## Handoff (session 141)
 
@@ -3290,8 +3294,9 @@ moved.**
 
 ### Open items, in priority order
 
-1. **Host retirement — phase 1 (OPEN; active program).**  Phase 0 landed the
-   native seed; port the structural guard next (see the session-142 Handoff).
+1. **Host retirement — phase 2 (OPEN; active program).**  Phases 0 and 1
+   landed: the native seed is the default stage0 and the guard lives in
+   `tools/lib/`; record the golden oracles next (see the session-142 Handoff).
    **Output-diagnostic parity** is re-scoped by the retirement decision: the CLI
    caret length, the zero-column linter warnings
    (`redundant-else`, `unreachable-code`, `redundant-null-check`,
@@ -4128,7 +4133,7 @@ when the tree moved.  Target = the Definition of Done above.
 | imported bindings | **29 verified / 0 changed of 29** | session 72 (re-verified) | `build/stage2/mtc imported-bindings --all --check`; `ruby tools/imported_bindings_parity.rb` |
 | bindgen | **33 match / 0 differ / 0 error / 1 custom of 34** registry entries (the custom entry is the host's `tracy` generator, which returns the checked-in module) | session 130 (re-verified) | `ruby tools/bindgen_parity.rb --self build/stage2/mtc` |
 | throughput | `emit-c` **17.1 s** (host 54.3 s); `build` **32.7 s** (host 76.3 s); `bootstrap --fast` **157 s**.  Output byte-identical to the pre-fix compiler | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .`; `tools/bootstrap.sh -j 16 --fast` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 33 unused / 6 test-only exports; **6,345 duplicated lines / 884 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/62; `--check --strict --ratchet` ok (baseline refreshed for the session-141 semantic port: **126,536 code lines**, +2 duplicated lines) | session 141 | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby -Ilib -Itest test/tooling/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 33 unused / 6 test-only exports; **6,345 duplicated lines / 884 windows**; **1 function ≥ 200 lines** (the excluded `binding_at`, 385); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/62; `--check --strict --ratchet` ok (baseline refreshed for the session-141 semantic port: **126,536 code lines**, +2 duplicated lines) | session 142 (moved to `tools/lib/`, same numbers) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 

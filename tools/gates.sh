@@ -90,12 +90,12 @@ infer_area() {
         projects/mtc/src/mtc/toolchain_cli.mt)    echo toolchain ;;
         projects/mtc/src/mtc/main.mt|projects/mtc/src/mtc/build*.mt|projects/mtc/src/mtc/build_cache.mt|projects/mtc/src/mtc/version_info.mt) echo cli ;;
         projects/mtc/test/*|test/mt/*)            echo tests ;;
-        lib/milk_tea/tooling/refactor_guard.rb)   echo refactor_tools ;;
+        tools/lib/refactor_guard.rb)               echo refactor_tools ;;
         lib/*)                                    echo host ;;
         std/*)                                    echo std ;;
         examples/*)                               echo examples ;;
         docs/*)                                   echo docs ;;
-        tools/refactor_guard.rb|tools/refactor_baseline.json|test/tooling/refactor_guard_test.rb) echo refactor_tools ;;
+        tools/refactor_guard.rb|tools/refactor_baseline.json|tools/test/refactor_guard_test.rb) echo refactor_tools ;;
         tools/*|Rakefile)                         echo tools ;;
         *)                                        echo other ;;
     esac
@@ -195,9 +195,9 @@ gate_cmd() {
         wasm_smoke)    echo "ruby tools/wasm_smoke.rb --self build/stage2/mtc" ;;
         docs_smoke)    echo "ruby tools/docs_smoke.rb --self build/stage2/mtc" ;;
         refactor_guard) echo "ruby tools/refactor_guard.rb --check -q" ;;
-        guard_tests)   echo "ruby -Ilib -Itest test/tooling/refactor_guard_test.rb" ;;
+        guard_tests)   echo "ruby tools/test/refactor_guard_test.rb" ;;
         check_parity)  echo "ruby tools/check_parity.rb -q --host-cache tmp/check-host-cache" ;;
-        tools_check)   echo "for f in tools/*.rb; do ruby -c \"\$f\" >/dev/null || exit 1; done; bash -n tools/gates.sh tools/bootstrap.sh && echo 'tools syntax ok'" ;;
+        tools_check)   echo "for f in tools/*.rb tools/lib/*.rb tools/test/*.rb; do ruby -c \"\$f\" >/dev/null || exit 1; done; bash -n tools/gates.sh tools/bootstrap.sh && echo 'tools syntax ok'" ;;
         *)             echo "true" ;;
     esac
 }

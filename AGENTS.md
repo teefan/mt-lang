@@ -91,8 +91,8 @@ retired from live development.  `tools/bootstrap.sh` builds from the committed
 seed (`vendor/bootstrap/<platform>/mtc`, sha256-verified) and no longer falls
 back to Ruby unless `--allow-ruby-host` is passed.  New work lands in
 `projects/mtc` and `std/` only.  The phases and their gates are in
-`docs/self-host-plan.md` § "Host retirement program"; phase 1 (porting the
-structural guard) is the next item.
+`docs/self-host-plan.md` § "Host retirement program"; phases 0 (native bootstrap
+seed) and 1 (guard carve-out) are done, and phase 2 (recorded oracles) is next.
 
 - **Rebuild before measuring**: `ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc`.
   A stale `build/stage2/mtc` is the classic false result.

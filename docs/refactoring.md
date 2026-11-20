@@ -31,8 +31,9 @@ Source-area diffs now automatically include `dev_tests` and `refactor_guard`.
 ## 2. The structural guard
 
 `tools/refactor_guard.rb` (implementation:
-`lib/milk_tea/tooling/refactor_guard.rb`) is textual and fast (~2 s), so it is
-safe to run on every edit.
+`tools/lib/refactor_guard.rb`) is textual and fast (~2 s), so it is safe to run
+on every edit.  The implementation uses only the Ruby standard library and does
+not load the compiler, so it survives the Ruby host's retirement.
 
 ```sh
 ruby tools/refactor_guard.rb                  # human report

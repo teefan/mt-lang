@@ -33,6 +33,7 @@ module MilkTea
       "test/mt/*.mt",
       "lib/**/*.rb",
       "tools/*.rb",
+      "tools/lib/*.rb",
       "tools/*.sh",
       "Rakefile",
     ].freeze
@@ -597,7 +598,7 @@ module MilkTea
       markers = []
       marker_files.each do |path|
         # The guard itself names the marker words in its own regex/comment.
-        next if relative(path) == "lib/milk_tea/tooling/refactor_guard.rb"
+        next if relative(path) == "tools/lib/refactor_guard.rb"
 
 
         File.foreach(path).with_index(1) do |line, number|

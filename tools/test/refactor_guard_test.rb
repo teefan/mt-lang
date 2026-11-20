@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "minitest/autorun"
 require "tmpdir"
-require_relative "../test_helper"
+require_relative "../lib/refactor_guard"
 
 class MilkTeaRefactorGuardTest < Minitest::Test
   SOURCE = "projects/mtc/src/mtc"

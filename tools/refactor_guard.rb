@@ -34,7 +34,7 @@
 
 require "json"
 require "optparse"
-require_relative "../lib/milk_tea/tooling/refactor_guard"
+require_relative "lib/refactor_guard"
 
 ROOT = File.expand_path("..", __dir__)
 
