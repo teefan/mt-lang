@@ -12,6 +12,8 @@ import std.string as string
 import std.str
 import std.fmt as fmt
 import std.mem.heap as heap
+import std.map as map_mod
+import std.vec as vec
 
 
 ## One field of a variant arm's payload.  The host's `Types::VariantArmPayload`
@@ -1388,3 +1390,523 @@ public function is_definitely_non_str(t: Type) -> bool:
             return true
         _:
             return false
+
+
+# ---------------------------------------------------------------------------
+#  Interning — one canonical node per distinct type
+# ---------------------------------------------------------------------------
+#  A `TypeId` is an index into a compilation-wide table, so a recursive IR node
+#  carries 4 bytes instead of a 72-byte `Type` value.  The relation used to
+#  deduplicate is *stricter* than `type_equals`: that predicate deliberately
+#  treats the prelude spellings `Option[T]`/`std.option.Option[T]` as equal and
+#  a `ty_named` as equal to a matching `ty_imported`, because assignment is
+#  allowed between them.  They *render* differently, so merging them here would
+#  silently rewrite every IR dump and every generated C type.  `type_identical`
+#  therefore compares the variant tag first and never crosses variants.
+
+const TYPE_SEED: uint = 0x811C9DC5
+const TYPE_PRIME: uint = 0x01000193
+
+
+## Fold one more byte into a running FNV-1a hash.
+function hash_byte(current: uint, byte_value: ubyte) -> uint:
+    return (current ^ uint<-byte_value) * TYPE_PRIME
+
+
+## Fold a string into a running hash (length-prefixed so `"ab"` + `"c"` and
+## `"a"` + `"bc"` cannot collide across fields).
+function hash_str(current: uint, text: str) -> uint:
+    var h = current
+    h = hash_byte(h, ubyte<-(text.len & 0xFF))
+    h = hash_byte(h, ubyte<-((text.len >> 8) & 0xFF))
+    var i: ptr_uint = 0
+    while i < text.len:
+        h = hash_byte(h, text.byte_at(i))
+        i += 1
+    return h
+
+
+## Fold a 64-bit value into a running hash.
+function hash_word(current: uint, value: ulong) -> uint:
+    var h = current
+    var remaining = value
+    var i: ptr_uint = 0
+    while i < 8:
+        h = hash_byte(h, ubyte<-(remaining & 0x00000000000000FF))
+        remaining = remaining >> 8
+        i += 1
+    return h
+
+
+## The variant tag, so two variants with coincidentally equal payload bytes do
+## not hash alike.
+public function type_tag_index(t: Type) -> uint:
+    match t:
+        Type.ty_primitive:
+            return 1
+        Type.ty_str:
+            return 2
+        Type.ty_error:
+            return 3
+        Type.ty_nil:
+            return 4
+        Type.ty_type_meta:
+            return 5
+        Type.ty_handle:
+            return 6
+        Type.ty_nullable:
+            return 7
+        Type.ty_null:
+            return 8
+        Type.ty_event:
+            return 9
+        Type.ty_named:
+            return 10
+        Type.ty_variant_arm_payload:
+            return 11
+        Type.ty_imported:
+            return 12
+        Type.ty_var:
+            return 13
+        Type.ty_lifetime:
+            return 14
+        Type.ty_dyn:
+            return 15
+        Type.ty_dyn_vtable:
+            return 16
+        Type.ty_opaque:
+            return 17
+        Type.ty_generic:
+            return 18
+        Type.ty_function:
+            return 19
+        Type.ty_literal_int:
+            return 20
+        Type.ty_tuple:
+            return 21
+
+
+## The structural hash of `t` under the interning relation.
+public function type_hash(t: Type) -> uint:
+    var h = hash_word(TYPE_SEED, ulong<-type_tag_index(t))
+    match t:
+        Type.ty_primitive as p:
+            return hash_str(h, p.name)
+        Type.ty_str:
+            return h
+        Type.ty_error:
+            return h
+        Type.ty_nil:
+            return h
+        Type.ty_type_meta:
+            return h
+        Type.ty_handle:
+            return h
+        Type.ty_nullable as n:
+            return hash_word(h, ulong<-type_hash(unsafe: read(n.base)))
+        Type.ty_null as n:
+            let target = n.target
+            if target == null:
+                return h
+            return hash_word(h, ulong<-type_hash(unsafe: read(target)))
+        Type.ty_event as e:
+            h = hash_str(h, e.name)
+            h = hash_word(h, ulong<-e.capacity)
+            h = hash_str(h, e.linkage_name)
+            let payload_type = e.payload_type
+            if payload_type == null:
+                return h
+            return hash_word(h, ulong<-type_hash(unsafe: read(payload_type)))
+        Type.ty_named as n:
+            h = hash_str(h, n.name)
+            h = hash_str(h, n.module_name)
+            match n.linkage_name:
+                Option.some as linkage:
+                    h = hash_byte(h, ubyte<-1)
+                    return hash_str(h, linkage.value)
+                Option.none:
+                    return hash_byte(h, ubyte<-0)
+        Type.ty_variant_arm_payload as p:
+            let payload = unsafe: read(p.payload)
+            h = hash_str(h, payload.c_name)
+            h = hash_str(h, payload.display_name)
+            h = hash_str(h, payload.name)
+            h = hash_str(h, payload.variant_name)
+            h = hash_str(h, payload.module_name)
+            h = hash_word(h, ulong<-payload.fields.len)
+            var fi: ptr_uint = 0
+            while fi < payload.fields.len:
+                var field: PayloadField
+                unsafe:
+                    field = read(payload.fields.data + fi)
+                h = hash_str(h, field.name)
+                h = hash_word(h, ulong<-type_hash(field.ty))
+                fi += 1
+            return h
+        Type.ty_imported as i:
+            h = hash_str(h, i.module_name)
+            h = hash_str(h, i.name)
+            return hash_types(h, i.args)
+        Type.ty_var as v:
+            return hash_str(h, v.name)
+        Type.ty_lifetime as l:
+            return hash_str(h, l.name)
+        Type.ty_dyn as d:
+            h = hash_str(h, d.iface)
+            return hash_types(h, d.args)
+        Type.ty_dyn_vtable as d:
+            return hash_str(h, d.linkage_name)
+        Type.ty_opaque as o:
+            h = hash_str(h, o.module_name)
+            return hash_str(h, o.name)
+        Type.ty_generic as g:
+            h = hash_str(h, g.name)
+            return hash_types(h, g.args)
+        Type.ty_function as f:
+            h = hash_str(h, f.name)
+            h = hash_word(h, ulong<-type_hash(unsafe: read(f.return_type)))
+            h = hash_types(h, f.params)
+            var pi: ptr_uint = 0
+            while pi < f.param_names.len:
+                var pname: str
+                unsafe:
+                    pname = read(f.param_names.data + pi)
+                h = hash_str(h, pname)
+                pi += 1
+            h = hash_word(h, ulong<-f.param_names.len)
+            h = hash_byte(h, ubyte<-1)
+            if f.variadic:
+                h = hash_byte(h, ubyte<-1)
+            else:
+                h = hash_byte(h, ubyte<-0)
+            if f.is_proc:
+                return hash_byte(h, ubyte<-1)
+            return hash_byte(h, ubyte<-0)
+        Type.ty_literal_int as l:
+            return hash_word(h, ulong<-l.value)
+        Type.ty_tuple as tp:
+            h = hash_types(h, tp.elements)
+            match tp.field_names:
+                Option.some as names:
+                    h = hash_byte(h, ubyte<-1)
+                    var ni: ptr_uint = 0
+                    while ni < names.value.len:
+                        var field_name: str
+                        unsafe:
+                            field_name = read(names.value.data + ni)
+                        h = hash_str(h, field_name)
+                        ni += 1
+                    return h
+                Option.none:
+                    return hash_byte(h, ubyte<-0)
+
+
+## Fold a type sequence into a running hash.
+function hash_types(current: uint, items: span[Type]) -> uint:
+    var h = hash_word(current, ulong<-items.len)
+    var i: ptr_uint = 0
+    while i < items.len:
+        var item: Type
+        unsafe:
+            item = read(items.data + i)
+        h = hash_word(h, ulong<-type_hash(item))
+        i += 1
+    return h
+
+
+## Strict structural identity: the interning relation.  Equal only when the
+## variant tags match and every field is identical under this same relation.
+public function type_identical(a: Type, b: Type) -> bool:
+    if type_tag_index(a) != type_tag_index(b):
+        return false
+    match a:
+        Type.ty_primitive as pa:
+            match b:
+                Type.ty_primitive as pb:
+                    return pa.name == pb.name
+                _:
+                    return false
+        Type.ty_str:
+            return true
+        Type.ty_error:
+            return true
+        Type.ty_nil:
+            return true
+        Type.ty_type_meta:
+            return true
+        Type.ty_handle:
+            return true
+        Type.ty_nullable as na:
+            match b:
+                Type.ty_nullable as nb:
+                    return type_identical(unsafe: read(na.base), unsafe: read(nb.base))
+                _:
+                    return false
+        Type.ty_null as na:
+            match b:
+                Type.ty_null as nb:
+                    let ta = na.target
+                    let tb = nb.target
+                    if ta == null:
+                        return tb == null
+                    if tb == null:
+                        return false
+                    return type_identical(unsafe: read(ta), unsafe: read(tb))
+                _:
+                    return false
+        Type.ty_event as ea:
+            match b:
+                Type.ty_event as eb:
+                    if ea.name != eb.name or ea.capacity != eb.capacity or ea.linkage_name != eb.linkage_name:
+                        return false
+                    let pa = ea.payload_type
+                    let pb = eb.payload_type
+                    if pa == null:
+                        return pb == null
+                    if pb == null:
+                        return false
+                    return type_identical(unsafe: read(pa), unsafe: read(pb))
+                _:
+                    return false
+        Type.ty_named as na:
+            match b:
+                Type.ty_named as nb:
+                    if na.name != nb.name or na.module_name != nb.module_name:
+                        return false
+                    match na.linkage_name:
+                        Option.some as la:
+                            match nb.linkage_name:
+                                Option.some as lb:
+                                    return la.value == lb.value
+                                Option.none:
+                                    return false
+                        Option.none:
+                            match nb.linkage_name:
+                                Option.some:
+                                    return false
+                                Option.none:
+                                    return true
+                _:
+                    return false
+        Type.ty_variant_arm_payload as pa:
+            match b:
+                Type.ty_variant_arm_payload as pb:
+                    let left = unsafe: read(pa.payload)
+                    let right = unsafe: read(pb.payload)
+                    if left.c_name != right.c_name or left.display_name != right.display_name:
+                        return false
+                    if left.name != right.name or left.variant_name != right.variant_name:
+                        return false
+                    if left.module_name != right.module_name or left.fields.len != right.fields.len:
+                        return false
+                    var fi: ptr_uint = 0
+                    while fi < left.fields.len:
+                        var lf: PayloadField
+                        var rf: PayloadField
+                        unsafe:
+                            lf = read(left.fields.data + fi)
+                            rf = read(right.fields.data + fi)
+                        if lf.name != rf.name or not type_identical(lf.ty, rf.ty):
+                            return false
+                        fi += 1
+                    return true
+                _:
+                    return false
+        Type.ty_imported as ia:
+            match b:
+                Type.ty_imported as ib:
+                    return ia.module_name == ib.module_name and ia.name == ib.name and types_identical(ia.args, ib.args)
+                _:
+                    return false
+        Type.ty_var as va:
+            match b:
+                Type.ty_var as vb:
+                    return va.name == vb.name
+                _:
+                    return false
+        Type.ty_lifetime as la:
+            match b:
+                Type.ty_lifetime as lb:
+                    return la.name == lb.name
+                _:
+                    return false
+        Type.ty_dyn as da:
+            match b:
+                Type.ty_dyn as db:
+                    return da.iface == db.iface and types_identical(da.args, db.args)
+                _:
+                    return false
+        Type.ty_dyn_vtable as da:
+            match b:
+                Type.ty_dyn_vtable as db:
+                    return da.linkage_name == db.linkage_name
+                _:
+                    return false
+        Type.ty_opaque as oa:
+            match b:
+                Type.ty_opaque as ob:
+                    return oa.module_name == ob.module_name and oa.name == ob.name
+                _:
+                    return false
+        Type.ty_generic as ga:
+            match b:
+                Type.ty_generic as gb:
+                    return ga.name == gb.name and types_identical(ga.args, gb.args)
+                _:
+                    return false
+        Type.ty_function as fa:
+            match b:
+                Type.ty_function as fb:
+                    if fa.variadic != fb.variadic or fa.is_proc != fb.is_proc:
+                        return false
+                    if fa.name != fb.name:
+                        return false
+                    if not type_identical(unsafe: read(fa.return_type), unsafe: read(fb.return_type)):
+                        return false
+                    if fa.param_names.len != fb.param_names.len:
+                        return false
+                    var pni: ptr_uint = 0
+                    while pni < fa.param_names.len:
+                        unsafe:
+                            if read(fa.param_names.data + pni) != read(fb.param_names.data + pni):
+                                return false
+                        pni += 1
+                    return types_identical(fa.params, fb.params)
+                _:
+                    return false
+        Type.ty_literal_int as la:
+            match b:
+                Type.ty_literal_int as lb:
+                    return la.value == lb.value
+                _:
+                    return false
+        Type.ty_tuple as ta:
+            match b:
+                Type.ty_tuple as tb:
+                    if not types_identical(ta.elements, tb.elements):
+                        return false
+                    match ta.field_names:
+                        Option.some as na:
+                            match tb.field_names:
+                                Option.some as nb:
+                                    if na.value.len != nb.value.len:
+                                        return false
+                                    var ni: ptr_uint = 0
+                                    while ni < na.value.len:
+                                        unsafe:
+                                            if read(na.value.data + ni) != read(nb.value.data + ni):
+                                                return false
+                                        ni += 1
+                                    return true
+                                Option.none:
+                                    return false
+                        Option.none:
+                            match tb.field_names:
+                                Option.some:
+                                    return false
+                                Option.none:
+                                    return true
+                _:
+                    return false
+
+
+## Identity of two type sequences.
+function types_identical(a: span[Type], b: span[Type]) -> bool:
+    if a.len != b.len:
+        return false
+    var i: ptr_uint = 0
+    while i < a.len:
+        var left: Type
+        var right: Type
+        unsafe:
+            left = read(a.data + i)
+            right = read(b.data + i)
+        if not type_identical(left, right):
+            return false
+        i += 1
+    return true
+
+
+## The interning table.  `entries` is the id → type mapping (id 0 is `ty_nil`,
+## so a zero-initialised id is meaningful); `buckets` maps a structural hash to
+## the ids that share it, and a candidate is confirmed with `type_identical`.
+public struct TypeStore:
+    entries: vec.Vec[Type]
+    buckets: map_mod.Map[uint, vec.Vec[uint]]
+    hits: ptr_uint
+    misses: ptr_uint
+
+
+public function create_type_store() -> TypeStore:
+    var store = TypeStore(
+        entries = vec.Vec[Type].create(),
+        buckets = map_mod.Map[uint, vec.Vec[uint]].create(),
+        hits = 0,
+        misses = 0,
+    )
+    let nil_id = store.intern(Type.ty_nil)
+    if nil_id != 0:
+        fatal(c"type interning: ty_nil must take id 0")
+    return store
+
+
+extending TypeStore:
+    public editable function len() -> ptr_uint:
+        return this.entries.len()
+
+
+    ## The canonical id for `t`.  Reuses an existing node whose entry is
+    ## `type_identical`; otherwise appends and returns the new id.
+    public editable function intern(t: Type) -> uint:
+        let key = type_hash(t)
+        let bucket = this.buckets.get(key)
+        if bucket != null:
+            var i: ptr_uint = 0
+            unsafe:
+                let id_list = read(bucket)
+                while i < id_list.len():
+                    let id_ptr = id_list.get(i) else:
+                        break
+                    let candidate = read(id_ptr)
+                    let stored = this.entries.get(ptr_uint<-candidate) else:
+                        break
+                    if type_identical(read(stored), t):
+                        this.hits += 1
+                        return candidate
+                    i += 1
+        let new_id = uint<-this.entries.len()
+        this.entries.push(t)
+        this.misses += 1
+        if bucket == null:
+            var fresh = vec.Vec[uint].create()
+            fresh.push(new_id)
+            this.buckets.set(key, fresh)
+        else:
+            unsafe:
+                read(bucket).push(new_id)
+        return new_id
+
+
+    ## The type behind `id`; `ty_error` for an out-of-range id (a malformed IR
+    ## node, which the C backend reports as an ordinary type error).
+    public function get(id: uint) -> Type:
+        let slot = this.entries.get(ptr_uint<-id) else:
+            return Type.ty_error
+        return unsafe: read(slot)
+
+
+    ## The table as a span, for `ir.Program.type_table`.  The caller keeps the
+    ## store's vector alive; the program borrows it.
+    public function as_table() -> span[Type]:
+        return this.entries.as_span()
+
+
+    public editable function release() -> void:
+        var iter = this.buckets.values()
+        while true:
+            let bucket_ptr = iter.next() else:
+                break
+            unsafe:
+                read(bucket_ptr).release()
+        this.buckets.release()
+        this.entries.release()

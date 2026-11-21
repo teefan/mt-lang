@@ -506,6 +506,10 @@ public struct LoweringContext:
     # nullable over an opaque base (`FILE?`) lowers to a nullable C pointer
     # rather than an invalid value-optional struct over an incomplete C type.
     opaque_keys: map_mod.Map[str, bool]
+    ## The compilation's interned type store: every `TypeId` an IR node carries
+    ## comes from here, and `lower` hands its table to the finished program.
+    ## Shared by reference across every module's context.
+    types: ptr[types.TypeStore]
 
 
 ## Per-event runtime linkage information.  Each declared `event Name[N]`
@@ -729,7 +733,11 @@ public function lower(program: loader.Program) -> ir.Program:
     # lowering so a `Vec[T]` instance registered while qualifying one module's
     # types is visible to method resolution in every other module.
     var generic_instances = map_mod.Map[str, GenericReceiver].create()
-    monomorphized.collect_program_returns(program, ref_of(program_returns), ref_of(program_async), ref_of(prelude_arm_field_types), ref_of(generic_instances))
+    # The compilation's interned type store.  Heap-allocated so every module's
+    # context shares one table, and so the finished program can carry it.
+    let type_store_ptr = heap_mod.must_alloc[types.TypeStore](1)
+    read(type_store_ptr) = types.create_type_store()
+    monomorphized.collect_program_returns(program, ref_of(program_returns), ref_of(program_async), ref_of(prelude_arm_field_types), ref_of(generic_instances), type_store_ptr)
 
     var constants = vec.Vec[ir.Constant].create()
     var globals = vec.Vec[ir.Global].create()
@@ -774,7 +782,7 @@ public function lower(program: loader.Program) -> ir.Program:
             i += 1
             continue
         let is_root = i == program.root_index
-        var fragment = monomorphized.lower_module(analysis, ref_of(program_returns), ref_of(program_async), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(pending_synthetic_structs), ref_of(synthetic_functions), ref_of(synthetic_enums), ptr_of(emitted_functions), ptr_of(emitted_structs), ptr_of(emitted_constants), ref_of(spec_infos), ref_of(expanded_decls))
+        var fragment = monomorphized.lower_module(analysis, ref_of(program_returns), ref_of(program_async), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(pending_synthetic_structs), ref_of(synthetic_functions), ref_of(synthetic_enums), ptr_of(emitted_functions), ptr_of(emitted_structs), ptr_of(emitted_constants), ref_of(spec_infos), ref_of(expanded_decls), type_store_ptr)
         module_fragments.push(fragment)
         module_analyses.push(analysis)
         globals.append_span(fragment.globals)
@@ -864,6 +872,8 @@ public function lower(program: loader.Program) -> ir.Program:
         monomorphized_variants = monomorphized_variants.as_span(),
         external_structs = external_structs.as_span(),
         str_buffer_structs = str_buffer_synthetic.as_span(),
+        type_table = unsafe: read(type_store_ptr).as_table(),
+        arena = null,
     )
     return proc_renumber.renumber_program_procs(assembled, module_fn_count)
 

@@ -371,6 +371,39 @@ aside; `test/mt` 85/0, `cli:parity` 227/227, `diag_parity` 501/0/0/3 of 504,
 docs smoke host+self ok, and the guard ratchet after a reviewed baseline
 refresh (126,602 code lines).
 
+## Session 150 — IR type handles, arena ownership, phase release
+
+Continues session 149's memory program: the IR type-handle/arena refactor, not a
+parity defect.  Working baseline reproduced first, so the numbers below are the
+same quantity as session 149's: `check main.mt` **626,288 KiB**, `lower`
+**1,316,716 KiB**, `emit-c` **1,363,920 KiB** (HWM via `wait4` rusage);
+`size_of` is `Type` 72 / `ir.Expr` 168 / `ir.Stmt` 144 B.
+
+**Meter.** `/usr/bin/time` is not installed on this host; `tools/peak_rss.py`
+prints `hwm=<KiB> wall=<s> rc=` from `wait4` rusage — the same quantity as
+VmHWM, so the numbers stay comparable with session 149's.
+
+**Type interning machinery (inert).** `semantic/types.mt` gains `type_hash`
+(structural FNV-1a), `type_identical`, and `TypeStore` (`entries` + a
+`hash -> ids` bucket map, confirmed with `type_identical`).  Identity is
+deliberately *stricter* than `type_equals`: that predicate treats
+`Option[T]`/`std.option.Option[T]` and a matching `ty_imported` as equal because
+assignment is allowed between them, but they **render** differently, so
+interning on it would silently rewrite every IR dump and generated C type.
+`ir.Program` gains `type_table` and `arena`; `ir.release` frees the arena and is
+idempotent across the program's value copies.  `lower()` creates one store per
+compilation and threads it through `LoweringContext.types` exactly as
+`program_returns`/`program_async` already are — no module-level mutable store.
+
+Interning is **non-recursive**: one handle names a whole type and its children
+stay inline in the stored value, so `ptr[ptr[int]]` costs one entry, not three.
+
+Verified inert: examples and `test/mt` fixtures lower byte-identically, and the
+three self-referential compiler sources differ only by the new declarations.
+Dev suite **22/0** (three new interning tests, including the
+rendering-distinctness case); guard `--check` ok; memory unchanged.  `lower
+main.mt` **1,320,504 KiB**.
+
 ## Session 149 — whole-program memory reduction
 
 Committed `01a5408` (16 files).  Session 142 removed the analyzer's const-map

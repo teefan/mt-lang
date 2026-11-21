@@ -175,7 +175,7 @@ public function generic_instance_contains(ctx: ref[lowering.LoweringContext], na
 
 ## Create a fully initialised lowering.LoweringContext for a single module.  Every field is
 ## set explicitly so all code paths start from a known clean state.
-function create_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map_mod.Map[str, types.Type]], prog_async: ptr[map_mod.Map[str, bool]], pl_field_types: ptr[map_mod.Map[str, types.Type]], prog_analyses: span[analyzer.Analysis], lod_modules: span[loader.LoadedModule], gen_instances: ptr[map_mod.Map[str, lowering.GenericReceiver]], spec_infos: ptr[map_mod.Map[str, lowering.SpecInfo]]) -> lowering.LoweringContext:
+function create_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map_mod.Map[str, types.Type]], prog_async: ptr[map_mod.Map[str, bool]], pl_field_types: ptr[map_mod.Map[str, types.Type]], prog_analyses: span[analyzer.Analysis], lod_modules: span[loader.LoadedModule], gen_instances: ptr[map_mod.Map[str, lowering.GenericReceiver]], spec_infos: ptr[map_mod.Map[str, lowering.SpecInfo]], type_store: ptr[types.TypeStore]) -> lowering.LoweringContext:
     return lowering.LoweringContext(
         module_name = analysis.module_name,
         analysis = analysis,
@@ -269,6 +269,7 @@ function create_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[
         void_ty = types.primitive("void"),
         ptr_void_ty = types.Type.ty_generic(name = "ptr", args = lowering.sp_type(types.primitive("void"))),
         opaque_keys = collect_opaque_keys(prog_analyses),
+        types = type_store,
     )
 
 
@@ -301,7 +302,7 @@ function collect_opaque_keys(prog_analyses: span[analyzer.Analysis]) -> map_mod.
 ## Pre-scan every module's function declarations and record each one's resolved
 ## return type keyed by its C linkage name, so cross-module calls can look them
 ## up regardless of lowering order.
-public function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[str, types.Type]], async_sink: ref[map_mod.Map[str, bool]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], gen_instances: ref[map_mod.Map[str, lowering.GenericReceiver]]) -> void:
+public function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[str, types.Type]], async_sink: ref[map_mod.Map[str, bool]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], gen_instances: ref[map_mod.Map[str, lowering.GenericReceiver]], type_store: ptr[types.TypeStore]) -> void:
     # Specialization metadata is only meaningful for the module fragments the
     # driver assembles; this pass discards it.
     var discarded_spec_infos = map_mod.Map[str, lowering.SpecInfo].create()
@@ -311,7 +312,7 @@ public function collect_program_returns(program: loader.Program, sink: ref[map_m
             mi += 1
             continue
         var analysis = unsafe: read(a_ptr)
-        var ctx = create_lowering_context(analysis, ptr_of(read(sink)), ptr_of(read(async_sink)), ptr_of(read(prelude_arm_field_types)), program.analyses.as_span(), program.modules.as_span(), ptr_of(read(gen_instances)), ptr_of(discarded_spec_infos))
+        var ctx = create_lowering_context(analysis, ptr_of(read(sink)), ptr_of(read(async_sink)), ptr_of(read(prelude_arm_field_types)), program.analyses.as_span(), program.modules.as_span(), ptr_of(read(gen_instances)), ptr_of(discarded_spec_infos), type_store)
         var di: ptr_uint = 0
         while di < analysis.source_file.declarations.len:
             var d: ast.Decl
@@ -886,8 +887,8 @@ function decl_lowering_pass(d: ast.Decl) -> ptr_uint:
             return 2
 
 
-public function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], program_async: ref[map_mod.Map[str, bool]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, lowering.GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]], synthetic_functions: ref[vec.Vec[ir.Function]], synthetic_enums: ref[vec.Vec[ir.EnumDecl]], emitted_functions: ptr[vec.Vec[ir.Function]], emitted_structs: ptr[vec.Vec[ir.StructDecl]], emitted_constants: ptr[vec.Vec[ir.Constant]], spec_infos: ref[map_mod.Map[str, lowering.SpecInfo]], expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]]) -> ir.Program:
-    var ctx = create_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(program_async)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)))
+public function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], program_async: ref[map_mod.Map[str, bool]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, lowering.GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]], synthetic_functions: ref[vec.Vec[ir.Function]], synthetic_enums: ref[vec.Vec[ir.EnumDecl]], emitted_functions: ptr[vec.Vec[ir.Function]], emitted_structs: ptr[vec.Vec[ir.StructDecl]], emitted_constants: ptr[vec.Vec[ir.Constant]], spec_infos: ref[map_mod.Map[str, lowering.SpecInfo]], expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]], type_store: ptr[types.TypeStore]) -> ir.Program:
+    var ctx = create_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(program_async)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)), type_store)
     ctx.is_root_module = is_root
     ctx.pending_emitted_functions = emitted_functions
     ctx.pending_emitted_structs = emitted_structs
@@ -1061,6 +1062,9 @@ public function lower_module(analysis: analyzer.Analysis, program_returns: ref[m
             break
         monomorphized_variants.push(unsafe: read(gv_ptr))
 
+    # A fragment is an intermediate: the shared type store keeps growing while
+    # later modules lower, so a table captured here would be a stale span.  The
+    # assembled program carries the finished table (see `lowering.lower`).
     return ir.Program(
         module_name = analysis.module_name,
         includes = span[ir.Include](),
@@ -1076,6 +1080,8 @@ public function lower_module(analysis: analyzer.Analysis, program_returns: ref[m
         type_aliases = span[ir.TypeAlias](),
         source_path = "",
         external_structs = ctx.pending_external_structs.as_span(),
+        type_table = span[types.Type](),
+        arena = null,
     )
 
 

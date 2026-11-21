@@ -10,6 +10,12 @@
 ## other's internals.
 
 import mtc.semantic.types as types
+import std.mem.heap as heap
+
+
+## An interned type handle: an index into `Program.type_table`.  Now that type
+## nodes are 4 bytes instead of 72, the recursive IR variants stay small.
+public type TypeId = uint
 
 
 # =============================================================================
@@ -261,6 +267,17 @@ public struct Program:
     ## collects them from the type universe and the C backend emits them, so
     ## they ride here rather than in `:structs`.  The dumper ignores the field.
     str_buffer_structs: span[StructDecl]
+    ## The compilation's interned type table: `TypeId` indexes it.  The nodes in
+    ## this program that carry a `TypeId` are only meaningful together with this
+    ## table.  The table's `Type` values borrow the analysis storage they were
+    ## built from (boxed interiors and spans), so the IR must be released no
+    ## later than that storage.
+    type_table: span[types.Type]
+    ## The region that owns this program's IR nodes; `release` frees it.  Null
+    ## on a program assembled without one (an empty or test-built program).
+    ## Every copy of a `Program` shares the same region, so `release` is
+    ## idempotent across copies.
+    arena: ptr[heap.Region]?
 
 
 ## One external struct's field layout, keyed by `naming.type_c_key` so the C
@@ -294,6 +311,8 @@ public function empty_program(module_name: str, source_path: str) -> Program:
         monomorphized_variants = span[VariantDecl](),
         external_structs = span[ExternalStructLayout](),
         str_buffer_structs = span[StructDecl](),
+        type_table = span[types.Type](),
+        arena = null,
     )
 
 
@@ -309,3 +328,21 @@ public function has_entrypoint(program: Program) -> bool:
                 return true
         i += 1
     return false
+
+
+## Free the program's IR nodes.  The arena is shared by every copy of the
+## program (the lowering returns it by value several times), so this is
+## idempotent: the first call frees the region and clears the pointer, and any
+## later call through another copy sees `arena == null`.  `release_all` is
+## itself a no-op on an already-released region.
+##
+## The program's strings are ordinary heap and are *not* freed here: several
+## borrow module- or analysis-owned text.  Call this only once the program is no
+## longer needed, and no later than the analysis storage its type table borrows.
+public function release(program: ref[Program]) -> void:
+    let region = program.arena
+    if region == null:
+        return
+    unsafe:
+        read(region).release_all()
+    program.arena = null
