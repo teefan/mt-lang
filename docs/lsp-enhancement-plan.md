@@ -1,6 +1,7 @@
 # LSP Enhancement Plan
 
-Status: **audit complete (session 144); implementation not started.**
+Status: **audit complete (session 144); phase 0 conformance harness landed (session 145);
+implementation phases 1–4 not started.**
 Baseline: **LSP 3.18.0** (2026-06-04); 3.19 is upcoming.
 Implementation: `projects/mtc/src/mtc/lsp` — 43 `.mt` files, ~31.9k lines,
 entry point `mtc lsp` (`projects/mtc/src/mtc/lsp/server.mt`).
@@ -10,7 +11,7 @@ against `build/stage2/mtc` (0.4.26, release) on 2026-11-21.
 This is the plan of record for LSP work.  `docs/self-host-plan.md` remains the
 project ledger; this document carries the LSP-specific state, findings and
 phase gates.  The audit was targeted, not a line-by-line review of all 31.9k
-lines: **the conformance harness (phase 0) is the authority once it exists.**
+lines: **the conformance harness (`tools/lsp_conformance.rb`) is the authority.**
 
 ## 1. Current state
 
@@ -27,11 +28,20 @@ an oracle.  The existing instruments are:
   (`0 errors` in session 143) and soak.
 - `projects/mtc/test/{completion,cursor,lsp_index,lsp_utils}_test.mt` — unit
   coverage for helpers, not protocol conformance.
+- `tools/lsp_conformance.rb` — the spec oracle (phase 0, session 145): 26 cases
+  from §5 with explicit assertions, a standalone stdio client, `--bin`,
+  `--only`, `--timeout` and `--json`.  It is the `lsp_conformance` hard tier-2
+  gate; at the phase-0 commit it is **red by design** (3 pass / 23 fail) and is
+  the stopping rule for phases 1–4.  `--bin` accepts a wrapper, so the same
+  cases can be driven under valgrind; the existing `valgrind_lsp` corpus drive
+  remains the memory instrument because 26 cold valgrind server startups are
+  not a better use of tier-2 time.
 
-There is no spec-conformance harness.  `tools/lsp_parity.rb` is
-host-parity-shaped: it sends `workspace/willRenameFiles` as a **notification**
-(`tools/lsp_parity.rb:1116`) and its fixtures are ASCII.  Both mask real
-defects.
+`tools/lsp_parity.rb` remains host-parity-shaped: it sends
+`workspace/willRenameFiles` as a **notification**
+(`tools/lsp_parity.rb:1116`) and its fixtures are ASCII.  The conformance
+harness covers both blind spots; keep the parity corpus for endpoint coverage,
+not conformance.
 
 ## 2. Spec coverage
 
@@ -169,7 +179,7 @@ cancel a later request that reuses the id.
 Each phase is one commit, with the plan and ledger synced.  Tests come first in
 every phase.
 
-### Phase 0 — conformance harness (1 session)
+### Phase 0 — conformance harness (1 session) — **DONE (session 145)**
 
 Create `tools/lsp_conformance.rb`: spawn `mtc lsp` over stdio, initialize, run
 cases with **explicit assertions**, print a per-case pass/fail summary, exit 1
@@ -177,6 +187,14 @@ on failure, support `--json OUT` and `--bin PATH`.  No host.  Seed it with the
 cases in §5.  Wire it into `tools/gates.sh` as a hard tier-2 gate
 (`lsp_conformance`), add it to the `lsp` area and to `tools_check`, and add a
 valgrind drive if practical.  Do not re-record the old host comparisons.
+
+Landed: 26 cases (the §5 rows, with the UTF-16 and completion rows split so a
+failure names one boundary), the gate in the `lsp` tier-2 set, and syntax
+coverage through the existing `tools_check` glob (`tools/*.rb`).  Current
+baseline: **3 pass / 23 fail** — ASCII output and the two behaviors already
+implemented (`textDocument/diagnostic` full/unchanged and exit-after-shutdown)
+pass; every audited P0/P1 defect is red.  The harness caps each server's
+address space and reaps its process group; use `--only` for the phase loop.
 
 ### Phase 1 — position encoding (P0)
 
@@ -247,8 +265,8 @@ valgrind drive if practical.  Do not re-record the old host comparisons.
 
 ## 5. Conformance cases
 
-Add these to `tools/lsp_conformance.rb` (and, where useful, the
-`lsp_parity` corpus):
+Implemented in `tools/lsp_conformance.rb` (the UTF-16 and completion rows are
+split into per-boundary cases).  Add new cases here first, then to the harness:
 
 | Case | Assertion |
 |---|---|
@@ -284,11 +302,13 @@ ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json --stress
 ruby tools/lsp_soak.rb --quiet                           # raw slope in the 70–80 band
 ```
 
-Add `lsp_conformance` to the `lsp` area and `tools_check` in phase 0.  Do not
-run the recorded CLI/diag/lint/format goldens for an LSP-only change unless the
-compiler shared code changes.  A user-visible change (quick fix, rename,
-multi-root) should also get a VS Code extension-host smoke; the extension
-packaging fixes are a separate repo.
+`lsp_conformance` is in the `lsp` area and `tools_check` covers its syntax.
+Until the phases land the gate is red on purpose; run only the class being
+fixed (`--only utf16`, `--only lifecycle`, …) while iterating, then the whole
+suite once per phase.  Do not run the recorded CLI/diag/lint/format goldens for
+an LSP-only change unless the compiler shared code changes.  A user-visible
+change (quick fix, rename, multi-root) should also get a VS Code extension-host
+smoke; the extension packaging fixes are a separate repo.
 
 ## 7. Constraints and risks
 
@@ -325,12 +345,13 @@ Start the LSP enhancement program in /home/teefan/Projects/Ruby/mt-lang
 cases. The compiler is the native self-host; the Ruby host is archived and
 must not be used as an oracle.
 
-Start with phase 0: add tools/lsp_conformance.rb with the cases in §5, wire it
-into tools/gates.sh (lsp area, tools_check) and make the UTF-16, willRename,
-quickfix-kind and completion-resolve cases fail. Then fix phase 1 (position
-encoding: negotiate utf-8 when offered, otherwise convert both directions with
-cached line maps; replace the scalar didChange counter), followed by phases
-2–4 in order. Work in tiers: seed dev build (~25 s), tmp/mtc-dev test
+Phase 0 is done: tools/lsp_conformance.rb and the lsp_conformance gate exist,
+and the gate is red on the audited defects. Start phase 1 (position encoding:
+negotiate utf-8 when offered, otherwise convert both directions with cached
+line maps; replace the scalar didChange counter), then phases 2–4 in order.
+Work the red cases with `ruby tools/lsp_conformance.rb --bin tmp/mtc-dev
+--only <class>`; close each phase by making its cases pass and then run the
+whole suite. Work in tiers: seed dev build (~25 s), tmp/mtc-dev test
 projects/mtc (22/0), then bootstrap/test/mt and the LSP gates on frozen
 sources. Sync docs/self-host-plan.md and this plan's status/ledger in the same
 commit; commit trailer: Co-authored-by: CommandCodeBot <noreply@commandcode.ai>.

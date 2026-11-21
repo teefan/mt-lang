@@ -119,7 +119,7 @@ fi
 
 gate_kind() {
     case "$1" in
-        bootstrap|test_mt|dev_build|dev_tests|dap|tools_check|bindings|wasm_smoke|docs_smoke|refactor_guard|guard_tests|golden_cli|golden_diag|golden_lint|golden_format|examples) echo hard ;;
+        bootstrap|test_mt|dev_build|dev_tests|dap|tools_check|bindings|wasm_smoke|docs_smoke|refactor_guard|guard_tests|golden_cli|golden_diag|golden_lint|golden_format|examples|lsp_conformance) echo hard ;;
         *) echo meter ;;
     esac
 }
@@ -146,6 +146,7 @@ gate_label() {
         refactor_guard) echo "structural guard: layering/naming/markers (fast)" ;;
         guard_tests)    echo "refactor guard unit tests" ;;
         examples)       echo "example emit-c sweep: examples/*.mt + examples/sdl3" ;;
+        lsp_conformance) echo "LSP 3.18 spec conformance (explicit assertions)" ;;
         valgrind_lsp)   echo "valgrind over an LSP drive (0 errors)" ;;
         neovim)         echo "headless-Neovim smoke (when tmp/ has the script)" ;;
         soak)           echo "long-session soak meter (~25 s): RSS slope for mixed requests" ;;
@@ -167,6 +168,7 @@ gate_cmd() {
         golden_lint)   echo "ruby tools/lint_parity.rb --expect tools/golden/lint.json -q" ;;
         golden_format) echo "ruby tools/format_parity.rb all -j 4 --expect tools/golden/format.json -q" ;;
         examples)      echo "gates_examples" ;;
+        lsp_conformance) echo "ruby tools/lsp_conformance.rb --bin build/stage2/mtc" ;;
         valgrind_lsp)  echo "command -v valgrind >/dev/null && gates_valgrind || echo 'skipped: valgrind not installed'" ;;
         neovim)        echo "gates_neovim" ;;
         soak)          echo "ruby tools/lsp_soak.rb --quiet" ;;
@@ -189,6 +191,7 @@ gate_summary() {
         golden_lint)    echo "^files=" ;;
         golden_format)  echo "^modes=" ;;
         examples)       echo "^examples ok=" ;;
+        lsp_conformance) echo "^lsp conformance:" ;;
         valgrind_lsp)   echo "ERROR SUMMARY|skipped" ;;
         neovim)         echo "HOVER|Error|skipped" ;;
         soak)           echo "^label=" ;;
@@ -291,7 +294,7 @@ gates_for_area() {
     case "$1" in
         analyzer)  echo "dev_tests refactor_guard bootstrap test_mt golden_cli golden_diag golden_lint examples valgrind_lsp neovim" ;;
         linter)    echo "dev_tests refactor_guard bootstrap test_mt golden_cli golden_diag golden_lint" ;;
-        lsp)       echo "dev_tests refactor_guard bootstrap valgrind_lsp neovim soak" ;;
+        lsp)       echo "dev_tests refactor_guard bootstrap lsp_conformance valgrind_lsp neovim soak" ;;
         codegen)   echo "dev_tests refactor_guard bootstrap test_mt examples" ;;
         parser)    echo "dev_tests refactor_guard bootstrap golden_cli golden_diag" ;;
         loader)    echo "dev_tests refactor_guard bootstrap test_mt golden_cli examples" ;;
