@@ -15,8 +15,11 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-142-2026-11-20)
+- [Status at a glance](#status-at-a-glance-session-144-2026-11-21)
+- [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
+- [Session 144 — LSP conformance audit and enhancement plan](#session-144--lsp-conformance-audit-and-enhancement-plan)
+- [Session 143 — host retirement phase 4 (delete)](#session-143--host-retirement-phase-4-delete)
 - [Session 142 — seed, guard carve-out, recorded oracles, release path (phases 0–3)](#session-142--seed-guard-carve-out-recorded-oracles-release-path-phases-03)
 - [Session 141 — semantic conformance: conditions, named arguments, FFI](#session-141--semantic-conformance-conditions-named-arguments-ffi)
 - [Session 140 — LSP hover latency and chained receivers](#session-140--lsp-hover-latency-and-chained-receivers)
@@ -97,7 +100,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 143, 2026-11-20)
+## Status at a glance (session 144, 2026-11-21)
 
 | Area | State |
 | --- | --- |
@@ -112,7 +115,8 @@ history.
 | `check` diagnostics | the 504-file diagnostic oracle is the gate; the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field column remains the only position residual. |
 | Linter | **43/43 rules, 13/13 fixers**; the 672-file lint oracle is the corpus gate (the live host-diff corpus is retired).  The historical residue (3 self-only `std` files, the host-timeout rows) is recorded in *Deliberate differences*. |
-| LSP | self-only instruments: valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class on `analyzer.mt`; soak **78.3 KB/cycle raw / 30.2 LS at 200 cycles** (raw in the 70–80 band); `milkTea/debugInfo` byte-equal on the recorded fixtures.  The host-differential harness/audit/recovery probes are retired with the host; `lsp_parity record --server self` and `lsp_soak` remain |
+| LSP | self-only instruments: valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class on `analyzer.mt`; soak **73.8 KB/cycle raw / 19.0 LS at 200 cycles** (session 143; raw in the 70–80 band); `milkTea/debugInfo` byte-equal on the recorded fixtures.  The host-differential harness/audit/recovery probes are retired with the host; `lsp_parity record --server self` and `lsp_soak` remain |
+| LSP conformance (audit, session 144) | **42/54 client→server requests; 30 capability keys**; verified P0 defects: UTF-16 output positions are byte columns, `quickFix` kind spelling, unanswered `workspace/willRenameFiles`, completion-resolve docs; P1: multi-root, watched-file registration, pull-diagnostic scope/refresh, lifecycle.  Plan and evidence: `docs/lsp-enhancement-plan.md` |
 | DAP | self-only `dap_smoke`: all probes answer, the real lldb-dap breakpoint session reaches `add` and terminates; `dap_async_probe` proves the VS Code launch ordering; desktop F5 smoke passed session 74 |
 | Formatter | **774 files × 3 modes** (`:canonical`, `:preserve`, `:tidy`) replay from the digest-keyed oracle; counts drift with the tree |
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check` (the host parity report is retired) |
@@ -354,6 +358,42 @@ on the fixed compiler and replay with no skips, including with `lib/` moved
 aside; `test/mt` 85/0, `cli:parity` 227/227, `diag_parity` 501/0/0/3 of 504,
 docs smoke host+self ok, and the guard ratchet after a reviewed baseline
 refresh (126,602 code lines).
+
+## Session 144 — LSP conformance audit and enhancement plan
+
+Audited the native LSP against the LSP 3.18 meta-model and live probes on
+`build/stage2/mtc` (0.4.26).  No code changed; the durable output is
+`docs/lsp-enhancement-plan.md`.
+
+**Coverage.**  42 of 54 client→server requests are dispatched and 30 capability
+keys are advertised.  Every core editor feature is present; missing items are
+mostly auxiliary (`rangesFormatting`, file-create/delete operations, `moniker`,
+`inlineValue`, `documentColor`, notebooks, and the 3.18 `inlineCompletion` /
+`textDocumentContent` additions).
+
+**Verified defects (P0).**
+
+- **UTF-16 positions:** incoming positions are decoded correctly, but every
+  emitted range is a UTF-8 byte column (semantic-token length for `"😀"` is 6
+  instead of 4), and `didChange` counts scalars, so an astral edit lands at the
+  wrong offset.
+- **`codeAction` kinds:** `quickFix` instead of `quickfix`, so the standard
+  Quick Fix filter does not match.
+- **`workspace/willRenameFiles`:** it is a request returning `WorkspaceEdit |
+  null`; the server dispatches it without an id and never responds (probe:
+  timeout), and it does not compute import rewrites.
+- **Completion resolve:** `collect_doc_text` searches for a line starting with
+  the bare name (never matches `function foo`), and the resolve response
+  rebuilds only `label`+`documentation` when docs are found.
+
+**P1:** multi-root is advertised but `Workspace` has one root;
+`workspace/didChangeWatchedFiles` is in the wrong capability and is never
+dynamically registered; `workspace/diagnostic` reports open documents only and
+never sends `workspace/diagnostic/refresh`; the lifecycle lacks
+initialized/shutdown state and the exit-code rule; `$/cancelRequest` leaves
+stale ids that can cancel a later reused id.  The host-parity harness masked
+the rename defect (it sends the request as a notification) and the UTF-16
+defects (ASCII fixtures).
 
 ## Session 143 — host retirement phase 4 (delete)
 
@@ -3265,6 +3305,36 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
+## Handoff (session 144)
+
+**Next session:** start the **LSP enhancement program**.  Read
+`docs/lsp-enhancement-plan.md` — it is the plan of record, with the 3.18
+coverage matrix, the verified defects and file locations, the phase plan, the
+conformance cases and the kickoff prompt.  No code changed in the audit
+session; the tree starts at the host-retirement state.
+
+The audit found the server covers 42/54 client→server requests and 30
+capability keys, but has four P0 conformance defects:
+
+1. **UTF-16 positions** are byte columns on output and scalars on incremental
+   input (only ASCII is correct); fix the encoding at one boundary, preferably
+   by negotiating `utf-8` and falling back to a cached byte↔unit conversion.
+2. **`quickFix`** must be `quickfix` in the capability and every action.
+3. **`workspace/willRenameFiles`** must answer (it is a request) with a
+   `WorkspaceEdit` that rewrites imports, or `null`.
+4. **Completion resolve** must find docs from `data.uri`/`data.name` and echo
+   the full item with `documentation` added.
+
+Then P1: multi-root, watched-file registration, pull-diagnostic scope/refresh,
+lifecycle, and safe `$/cancelRequest` handling.  **First action: phase 0**, the
+new `tools/lsp_conformance.rb` (the existing harness is host-parity-shaped and
+masks the rename and UTF-16 defects); wire it into `tools/gates.sh` and make
+the cases fail before fixing them.
+
+**Build state:** unchanged from session 143 — seed `b29241f4…`, seed dev build
+~25 s, `test/mt` 85/0, dev suite 22/0, valgrind 0, soak in the 70–80 raw band.
+Do not use the archived Ruby host as an oracle for LSP behavior.
+
 ## Handoff (session 143)
 
 **Next session:** the host-retirement program is complete.  There is one
@@ -3548,48 +3618,53 @@ the ledger's baselines unless the tree moved.**
 
 ### Open items, in priority order
 
-1. **Host retirement — CLOSED (session 143).**  Phases 0–4 are done: the seed
+1. **LSP enhancement — OPEN; active program (session 144).**  The audit found
+   42/54 client→server requests and 30 capability keys implemented, with four
+   P0 conformance defects: UTF-16 positions are byte columns on output and
+   scalar-counted on incremental input; `codeAction` uses `quickFix` instead of
+   `quickfix`; `workspace/willRenameFiles` is a request that never responds and
+   computes no import edits; completion resolve never finds docs and strips the
+   item when it does.  P1: multi-root, watched-file registration,
+   pull-diagnostic scope/refresh, lifecycle state, and `$/cancelRequest`.
+   Phase plan, evidence, file locations, conformance cases and the kickoff
+   prompt are in `docs/lsp-enhancement-plan.md`.  Start with phase 0: the new
+   `tools/lsp_conformance.rb` and failing cases, then the position-encoding fix.
+2. **Host retirement — CLOSED (session 143).**  Phases 0–4 are done: the seed
    is the only stage0, the guard lives in `tools/lib/`, the recorded oracles
    replay with no host source present, the release path is deterministic, and
    `lib/`, the Ruby suite, the gemspec and the host-coupled harnesses are
    removed.  The archived tag is `archive/host-ruby-0.4.26`.
-   **Output-diagnostic defects remain** (accuracy, not parity): the CLI caret
+3. **Output-diagnostic defects — OPEN (accuracy, not parity).**  The CLI caret
    length, the zero-column linter warnings (`redundant-else`,
    `unreachable-code`, `redundant-null-check`, `loop-single-iteration`,
    `duplicate-if-condition`) and the constructor-field column.  Qualified-type
    rendering, module/`static_assert` bare-vs-block and `lint` on an unresolved
    import are re-adjudicated on merit rather than chased as host byte-identity.
-2. **Call-argument compatibility and conditions — CLOSED (sessions 139/141).**
+4. **Call-argument compatibility and conditions — CLOSED (sessions 139/141).**
    The session-138 table matches the archived host in both directions;
    session 141 closed named arguments, imported/method explicit specialization
    checks, extern/foreign arity/types, and nullable numeric targets, and made
-   `if`/`while`/`static_assert`/if-expression conditions strictly bool.  The
-   named-argument lowering order/default bugs are fixed.
-3. **LSP follow-ups (sessions 134–140).**  No functional hover/completion/
-   rename gap is known.  Session 140 closed the hover-latency item (32–36 →
-   2.0–7.7 ms on `analyzer.mt`) with the per-document text cache and gave
-   member resolution to call/index receivers.  Completion after such a receiver
-   (`read(p).|`) is not extended: the analyzer fact is keyed by the member
-   token, and a bare dot has none.  Earlier sessions closed f-string
-   interpolation hover, cross-file rename, `ref[ImportedStruct]` completion,
-   imported-generic-field method hover, package-`source_root` resolution, arm
-   payload fields, `str` members, guarded locals, and the nested-type/rename-
-   index moves.  The memory list (semantic-token payloads, diagnostics) is
-   unchanged.
-4. **Track G follow-ups are recorded, not pending.**  The post-fix profile is
+   `if`/`while`/`static_assert`/if-expression conditions strictly bool.
+5. **Earlier LSP follow-ups (sessions 134–140) — CLOSED.**  Hover latency is
+   2.0–7.7 ms on `analyzer.mt`, call/index receivers resolve, and the earlier
+   hover/completion/rename gaps are fixed.  Completion after a non-text
+   receiver (`read(p).|`) remains unextended and is folded into the enhancement
+   plan rather than tracked separately.
+6. **Track G follow-ups are recorded, not pending.**  The post-fix profile is
    flat; `String.as_str()`'s per-call UTF-8 revalidation (~7%) is a documented
    invariant, and the ~2% scans are over small collections.  Reopen only with a
    fresh `perf record` showing a hotspot.
-5. **No manual items remain.**  The desktop F5 click-through passed (session
+7. **No manual items remain.**  The desktop F5 click-through passed (session
    74); it found an extension-packaging defect: `activationEvents:
    ["onDebug:milk-tea"]` is ignored by VS Code 1.146, so the extension should
    add `onLanguage:milk-tea` in the extension repo.  The LSP ref-lifetime and
    imported-member-location decisions are closed.
 
 **Do not chase** the archived host differences — the `lower` artifacts, the old
-`check`/linter rows, the LSP audit rows, the DAP frame0 row or the
+`check`/linter rows, the old LSP audit rows, the DAP frame0 row or the
 test-runner binary directory.  They are historical records with the reason each
-was a host artifact, not gates.  Fix only the real defects listed above.
+was a host artifact, not gates.  Fix only the real defects listed above; the
+LSP program uses the 3.18 spec, not the archived host, as its reference.
 
 ### Session records (historical)
 
@@ -4386,6 +4461,7 @@ historical record.
 | wasm preview | self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 71 (tool now self-only) | `ruby tools/wasm_smoke.rb --self build/stage2/mtc` |
 | docs server | self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 71 (tool now self-only) | `ruby tools/docs_smoke.rb --self build/stage2/mtc` |
 | LSP instruments | valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class; soak **73.8 KB/cycle raw / 19.0 LS** at 200 cycles (session 143; raw in the 70–80 band); `debugInfo` byte-equal | sessions 135/140/143 (self-only) | `tools/gates.sh --areas lsp --only valgrind_lsp,soak --run`; `ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json` |
+| LSP spec conformance | **42/54 client→server requests; 30 capability keys**; P0 defects: UTF-16 output positions, `quickFix` kind, unanswered `willRenameFiles`, completion-resolve docs; audit and phase plan in `docs/lsp-enhancement-plan.md` | session 144 (audit; no code change) | read the plan; `tools/lsp_conformance.rb` is phase 0 |
 | DAP | self-only smoke: every probe answers; real lldb-dap reaches the `add` breakpoint and terminates; async launch-order probe green | session 143 (adapted) | `ruby tools/dap_smoke.rb`; `ruby tools/dap_async_probe.rb` |
 | imported bindings | **29 verified / 0 changed of 29** (native check; the host parity report is retired) | session 72 (native) | `build/stage2/mtc imported-bindings --all --check` |
 | throughput | `emit-c` **17.1 s**, full `build` **32.7 s**, `bootstrap --fast` **2.6 min** (session 72; the archived host measured 54.3 s / 76.3 s) | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .` |

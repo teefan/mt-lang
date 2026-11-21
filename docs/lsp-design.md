@@ -6,8 +6,9 @@ measurement ended with the host retirement (session 143); this document's
 and the archived host is at tag `archive/host-ruby-0.4.26`.  The surviving
 instruments are `tools/lsp_parity.rb record --server self`, `tools/lsp_soak.rb`
 and the valgrind gate.
-Last updated: 2026-11-20 (host retired; behavior unchanged).
-42 modules, ~29.3k lines, 30 capabilities advertised at Ruby parity.
+Last updated: 2026-11-21 (session-144 audit; behavior unchanged).
+43 modules, ~31.9k lines, 30 capability keys.  The 3.18 conformance audit and
+phase plan are in `docs/lsp-enhancement-plan.md`; use that as the work list.
 
 > **Historical note:** parity was measured by the self-vs-host harness, not by capability
 > advertisement.**  `tools/lsp_parity.rb` (`record --server host|self`,

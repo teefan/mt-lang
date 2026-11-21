@@ -139,10 +139,11 @@ byte-identity.
   the post-retirement program, the ledger, and the session records.  Sync it in the same
   commit as the code change.  Session plans under `~/.commandcode/plans/` are transient
   working notes, never the record.
-- **LSP instruments**: the host-differential harness, project audit and recovery probe are
-  retired with the host.  `tools/lsp_parity.rb record --server self` records a normalized
-  corpus run (the valgrind gate drives it through a wrapper), `tools/lsp_soak.rb` measures
-  RSS growth, and `tools/dap_smoke.rb` is self-only.
+- **LSP work**: read `docs/lsp-enhancement-plan.md` first — it carries the LSP 3.18
+  coverage matrix, the verified defects, the phase plan and the conformance cases.  The
+  host-differential harness/audit/recovery probes are retired; the surviving instruments
+  are `tools/lsp_parity.rb record --server self`, `tools/lsp_soak.rb`, and the valgrind
+  gate.  `tools/lsp_conformance.rb` (phase 0 of the plan) is the spec oracle once added.
 
 ## C Binary Testing Safety
 
