@@ -3,6 +3,7 @@
 import std.json as json
 import std.string as string
 
+import mtc.cli_help as cli_help
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
@@ -23,6 +24,7 @@ public function handle_initialize(id: json.Value, params: json.Value, ws: ref[wo
     ws.pull_diagnostics_active = client_supports_pull_diagnostics(params)
     let position_encoding = client_position_encoding(params)
     ws.set_position_encoding(position_encoding.equal("utf-16"))
+    ws.initialize_received = true
 
     var r = string.String.create()
     defer: r.release()
@@ -54,7 +56,7 @@ public function handle_initialize(id: json.Value, params: json.Value, ws: ref[wo
     # signatureHelp: trigger on open-paren and comma
     r.append(",\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"],\"retriggerCharacters\":[\",\"]}")
     r.append(",\"renameProvider\":{\"prepareProvider\":true}")
-    r.append(",\"codeActionProvider\":{\"codeActionKinds\":[\"quickFix\",\"source.fixAll\"]}")
+    r.append(",\"codeActionProvider\":{\"codeActionKinds\":[\"quickfix\",\"source.fixAll\"]}")
     r.append(",\"executeCommandProvider\":{\"commands\":[\"mtc.restartServer\"]}")
     r.append(",\"documentRangeFormattingProvider\":true")
     r.append(",\"linkedEditingRangeProvider\":true")
@@ -73,7 +75,12 @@ public function handle_initialize(id: json.Value, params: json.Value, ws: ref[wo
     r.append(",\"workspace\":{\"workspaceFolders\":{\"supported\":true,\"changeNotifications\":true},")
     r.append("\"fileOperations\":{\"willRename\":{\"filters\":[{\"pattern\":{\"glob\":\"**/*.mt\"},\"scheme\":\"file\"}]}},")
     r.append("\"didChangeWatchedFiles\":{\"dynamicRegistration\":true}}")
-    r.append("}}}")
+    r.append("}")
+    r.append(",\"serverInfo\":{\"name\":\"milk-tea\",\"version\":\"")
+    r.append(cli_help.VERSION)
+    r.append("\"}")
+    r.append(",\"experimental\":{\"milkTea\":{\"documentContext\":true,\"debugInfo\":true}}")
+    r.append("}}")
 
     proto.write_framed_json(r.as_str())
 
@@ -139,9 +146,9 @@ function client_position_encoding(params: json.Value) -> str:
     return "utf-16"
 
 
-## Handle the `initialized` notification (no-op).
-public function handle_initialized() -> void:
-    pass
+## Handle the `initialized` notification.
+public function handle_initialized(ws: ref[workspace.Workspace]) -> void:
+    ws.initialized = true
 
 
 ## True when the client advertised pull-diagnostics support

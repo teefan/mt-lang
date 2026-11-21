@@ -53,6 +53,7 @@ public function run(args: span[str]) -> int:
     defer: ws.release()
 
     var running = true
+    var exit_code = 0
     while running:
         var read_status: ptr_uint = proto.READ_OK
         var msg_opt = proto.read_message_status(ref_of(read_status))
@@ -64,19 +65,29 @@ public function run(args: span[str]) -> int:
                     handle_incoming_response(ws, msg)
                 else:
                     let method = msg.method.as_str()
+                    let is_request = not msg.id.is_null()
                     if method == "exit":
                         log.debug("lsp: → exit")
                         running = false
+                        # The spec's exit code: 0 only after a shutdown request.
+                        if not ws.shutdown_received:
+                            exit_code = 1
+                    else if method == "initialize" and ws.initialize_received:
+                        if is_request:
+                            proto.write_error(msg.id, -32600, "Invalid Request")
+                    else if not ws.initialize_received and method != "initialize":
+                        if is_request:
+                            proto.write_error(msg.id, -32002, "Server not initialized")
+                    else if ws.shutdown_received:
+                        if is_request:
+                            proto.write_error(msg.id, -32600, "Invalid Request")
                     else if method == "$/cancelRequest":
-                        handle_cancel_request(ws, msg.params)
+                        # The loop is synchronous: an in-flight request cannot be
+                        # cancelled, so cancellation is deliberately ignored
+                        # rather than kept in a stale id set.
+                        pass
                     else if method.len > 0:
-                        let req_id = extract_request_id(msg.id)
-                        if req_id > 0 and ws.is_request_cancelled(req_id):
-                            log.debug("lsp: cancelled request")
-                            proto.write_error(msg.id, -32800, "Request cancelled")
-                            ws.clear_cancelled(req_id)
-                        else:
-                            running = dispatch_method(ws, method, msg)
+                        running = dispatch_method(ws, method, msg)
             Option.none:
                 # Only a real EOF ends the session: a malformed frame is
                 # reported (JSON-RPC ParseError, id null) and the loop goes on,
@@ -90,7 +101,7 @@ public function run(args: span[str]) -> int:
         # superseded parses and analyses retired can be freed at this boundary.
         ws.drain_retired_regions()
 
-    return 0
+    return exit_code
 
 
 ## Milliseconds since a `monotonic_ms()` sample.
@@ -183,9 +194,10 @@ function dispatch_known_method(ws: ref[workspace.Workspace], method: str, msg: p
     if method == "initialize":
         lifecycle.handle_initialize(msg.id, msg.params, ws)
     else if method == "initialized":
-        lifecycle.handle_initialized()
+        lifecycle.handle_initialized(ws)
         schedule_config_request(ws)
     else if method == "shutdown":
+        ws.shutdown_received = true
         var result = json.null_value()
         proto.write_response(msg.id, result)
     else if method == "exit":
@@ -573,26 +585,6 @@ function extract_command_name(params: json.Value) -> str:
         let cmd_str = read(cmd_ptr).as_string() else:
             return ""
         return cmd_str
-
-
-## Handle the $/cancelRequest notification by marking the target request
-## id as cancelled in the workspace.
-function handle_cancel_request(ws: ref[workspace.Workspace], params: json.Value) -> void:
-    let req_id = extract_cancel_id(params)
-    if req_id > 0:
-        ws.cancel_request(req_id)
-
-
-## Extract the numeric request id from a $/cancelRequest params.
-function extract_cancel_id(params: json.Value) -> ptr_uint:
-    let obj_ptr = params.as_object()
-    if obj_ptr == null: return 0
-    unsafe:
-        let id_ptr = read(obj_ptr).get("id")
-        if id_ptr == null: return 0
-        let n = read(id_ptr).as_number() else:
-            return 0
-        return ptr_uint<-int<-n
 
 
 ## Extract the numeric request id from a json.Value id field, or 0.

@@ -18,10 +18,12 @@ public function handle_did_open(ws: ref[workspace.Workspace], params: json.Value
         return
     let text = text_doc_text(params)
     ws.open(uri, text)
-    diag.publish_empty_for_uri(ws, uri)
     var file_path = uri_ops.file_uri_to_path(uri) else:
+        diag.publish_empty_for_uri(ws, uri)
         return
     defer: file_path.release()
+    ws.set_document_version(file_path.as_str(), text_doc_version(params))
+    diag.publish_empty_for_uri(ws, uri)
     publish_after_change(ws, uri, file_path.as_str())
 
 
@@ -45,11 +47,13 @@ public function handle_did_change(ws: ref[workspace.Workspace], params: json.Val
             debug_msg.release()
             var updated = apply_content_changes(ws, src.value.as_str(), params)
             ws.change(uri, updated.as_str())
+            ws.set_document_version(file_path.as_str(), text_doc_version(params))
             updated.release()
             src.value.release()
         Option.none:
             var updated = apply_content_changes(ws, "", params)
             ws.change(uri, updated.as_str())
+            ws.set_document_version(file_path.as_str(), text_doc_version(params))
             updated.release()
 
     publish_after_change(ws, uri, file_path.as_str())
@@ -175,12 +179,36 @@ function read_num(p: ptr[json.Value]?) -> ptr_uint:
         return ptr_uint<-(read(p).as_number().unwrap_or(0.0))
 
 
+## The client's `textDocument.version`, or 0 when the message omits it.
+function text_doc_version(params: json.Value) -> ptr_int:
+    let obj_ptr = params.as_object() else:
+        return 0
+    unsafe:
+        let td_ptr = read(obj_ptr).get("textDocument")
+        if td_ptr == null:
+            return 0
+        let td_obj = read(td_ptr).as_object() else:
+            return 0
+        let version_ptr = read(td_obj).get("version")
+        if version_ptr == null:
+            return 0
+        let version = read(version_ptr).as_number() else:
+            return 0
+        return ptr_int<-int<-version
+
+
 ## Handle textDocument/didClose: remove from workspace, clear diagnostics.
 public function handle_did_close(ws: ref[workspace.Workspace], params: json.Value) -> void:
     let uri = text_doc_uri(params)
     if uri.len == 0:
         return
     ws.close(uri)
+    match uri_ops.file_uri_to_path(uri):
+        Option.some as file_path:
+            ws.forget_document_version(file_path.value.as_str())
+            file_path.value.release()
+        Option.none:
+            pass
     diag.publish_empty_for_uri(ws, uri)
 
 

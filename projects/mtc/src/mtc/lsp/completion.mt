@@ -241,52 +241,116 @@ function dot_receiver_completions(
     return method_fallback_completions(analysis, ast_file, prefix, uri)
 
 
-## Handle completionItem/resolve.  When the editor resolves a completion
-## item, look up the symbol name in the workspace index, find its
-## declaration file, extract ## doc comments above it, and add
-## `documentation` markdown to the item.
+## Handle completionItem/resolve.  The item's `data.uri`/`data.name` identify
+## its declaration file when the item belongs to the current document; imported
+## items fall back to the workspace index by name.  `##` docs above the
+## declaration become Markdown `documentation`, and the resolved item is the
+## original item with that field added (never a rebuilt label-only object).
 public function handle_completion_resolve(
     ws: ref[workspace.Workspace],
     params: json.Value,
     id: json.Value,
 ) -> void:
     let label = extract_string_field(params, "label")
-    if label.len == 0:
+    let data_name = extract_item_data_field(params, "name")
+    let name = if data_name.len > 0: data_name else: label
+    if name.len == 0:
         proto.write_response(id, params)
         return
+    let data_uri = extract_item_data_field(params, "uri")
+    log.info(f"resolve: name=#{name} uri=#{data_uri}")
 
-    # Look up the label in the workspace symbol index.
-    ws.build_index_if_needed()
-    var match_indices = idx.query_index(ref_of(ws.index), label, 1)
-    defer: match_indices.release()
-    if match_indices.len() == 0:
-        proto.write_response(id, params)
-        return
-
-    let ei = match_indices.get(0) else:
-        proto.write_response(id, params)
-        return
-    let entry = unsafe: idx.read_entry(ref_of(ws.index), read(ei))
-    let path = unsafe: read(entry).path.as_str()
-    log.info(f"resolve: resolving label=#{label} in path=#{path}")
-
-    # Read doc comments from the target file above the declaration.
-    var doc_text = collect_doc_text(path, label)
+    var doc_text = resolve_completion_docs(ws, name, data_uri, extract_item_kind(params))
     defer: doc_text.release()
     if doc_text.len() == 0:
         proto.write_response(id, params)
         return
 
-    # Build response JSON with documentation injected.
-    var result_json = string.String.create()
-    defer: result_json.release()
-    result_json.append("{\"label\":\"")
-    proto.append_escaped(ref_of(result_json), label)
-    result_json.append("\",\"documentation\":{\"kind\":\"markdown\",\"value\":\"")
-    proto.append_escaped(ref_of(result_json), doc_text.as_str())
-    result_json.append("\"}}")
+    let obj_ptr = params.as_object() else:
+        proto.write_response(id, params)
+        return
+    var documentation = json.create_object_value()
+    let doc_obj = documentation.as_object() else:
+        proto.write_response(id, params)
+        return
+    unsafe:
+        read(doc_obj).set("kind", json.string_from_str("markdown"))
+        read(doc_obj).set("value", json.string_from_str(doc_text.as_str()))
+        read(obj_ptr).set("documentation", documentation)
+    proto.write_response(id, params)
 
-    proto.write_response_raw(id, result_json.as_str())
+
+## The declaration file's doc text for a completion item.  The current
+## document is tried first (its `data.uri`); imported items then consult the
+## workspace index by exact name.  A local/parameter item never falls back to a
+## same-named global.
+function resolve_completion_docs(
+    ws: ref[workspace.Workspace],
+    name: str,
+    data_uri: str,
+    kind: int,
+) -> string.String:
+    if data_uri.len > 0:
+        match uri_ops.file_uri_to_path(data_uri):
+            Option.some as path:
+                var docs = collect_doc_text(path.value.as_str(), name)
+                path.value.release()
+                if docs.len() > 0:
+                    return docs
+                docs.release()
+            Option.none:
+                pass
+
+    if kind == KIND_VARIABLE:
+        return string.String.create()
+
+    ws.build_index_if_needed()
+    var match_indices = idx.query_index(ref_of(ws.index), name, 8)
+    defer: match_indices.release()
+    var i: ptr_uint = 0
+    while i < match_indices.len():
+        let ei = match_indices.get(i) else:
+            break
+        i += 1
+        let entry = unsafe: idx.read_entry(ref_of(ws.index), read(ei))
+        if not unsafe: read(entry).name.as_str().equal(name):
+            continue
+        var docs = collect_doc_text(unsafe: read(entry).path.as_str(), name)
+        if docs.len() > 0:
+            return docs
+        docs.release()
+    return string.String.create()
+
+
+## Read a `data.<field>` string from a completion item.
+function extract_item_data_field(value: json.Value, field: str) -> str:
+    let obj_ptr = value.as_object() else:
+        return ""
+    unsafe:
+        let data_ptr = read(obj_ptr).get("data")
+        if data_ptr == null:
+            return ""
+        let data_obj = read(data_ptr).as_object() else:
+            return ""
+        let field_ptr = read(data_obj).get(field)
+        if field_ptr == null:
+            return ""
+        let field_str = read(field_ptr).as_string() else:
+            return ""
+        return field_str
+
+
+## The item's numeric `kind`, or 0 when absent.
+function extract_item_kind(value: json.Value) -> int:
+    let obj_ptr = value.as_object() else:
+        return 0
+    unsafe:
+        let kind_ptr = read(obj_ptr).get("kind")
+        if kind_ptr == null:
+            return 0
+        let kind = read(kind_ptr).as_number() else:
+            return 0
+        return int<-kind
 
 
 ## Extract a string field from a JSON Value.  Returns "" when absent.
@@ -303,85 +367,131 @@ function extract_string_field(value: json.Value, field: str) -> str:
         return field_str
 
 
-## Collect ## documentation comment lines above a named declaration.
+## Collect the contiguous `##` documentation lines above a named declaration.
+## Declarations may be indented (methods, fields, enum/variant members) and may
+## be preceded by modifiers and a declaration keyword (`public static function
+## foo`, `const NAME`, `red`), which the old bare-name scan never matched.
 public function collect_doc_text(path: str, name: str) -> string.String:
     var result = string.String.create()
+    if name.len == 0:
+        return result
 
     log.info(f"collect_doc_text: path=#{path} name=#{name}")
     match fs_mod.read_text(path):
         Result.success as payload:
             var source = payload.value
             defer: source.release()
+            var lines = utils.split_lines(source.as_str())
+            defer: lines.release()
 
-            # Find the declaration line — scan line by line, checking
-            # whether each line starts with the target name followed by
-            # a non-word character.  Byte-counter `li` stays at valid
-            # UTF-8 boundaries (start of file, after each LF).
             var target_line: ptr_uint = 0
-            var current_line: ptr_uint = 1
+            var found = false
             var li: ptr_uint = 0
-            while li < source.as_str().len:
-                let remaining = source.as_str().slice(li, source.as_str().len - li)
-                match remaining.find_byte(10):
-                    Option.some as nl_pos:
-                        let nl_end = nl_pos.value + li
-                        if nl_end - li >= name.len and source.as_str().starts_with_at(li, name):
-                            let after = li + name.len
-                            var is_decl = false
-                            if after >= source.as_str().len:
-                                is_decl = true
-                            else:
-                                let c = source.as_str().byte_at(after)
-                                is_decl = c == '(' or c == ':' or c == '<' or
-                                    c == ' ' or c == '\n' or c == '{'
-                            if is_decl:
-                                target_line = current_line
-                        li = nl_end + 1
-                        current_line += 1
-                    Option.none:
-                        if source.as_str().len - li >= name.len and source.as_str().starts_with_at(li, name):
-                            target_line = current_line
-                        li = source.as_str().len
-
-            if target_line == 0:
+            while li < lines.len() and not found:
+                let line_text = utils.line_at(ref_of(lines), li)
+                if declaration_line_has_name(line_text, name):
+                    target_line = li
+                    found = true
+                li += 1
+            if not found:
                 return result
 
-            # Walk backward from the target line, collecting ## lines.
             var doc_lines = vec.Vec[str].create()
             defer: doc_lines.release()
-            current_line = 1
-            li = 0
-            while li < source.as_str().len and current_line < target_line:
-                let remaining = source.as_str().slice(li, source.as_str().len - li)
-                match remaining.find_byte(10):
-                    Option.some as nl_pos:
-                        let nl_end = nl_pos.value + li
-                        let line_text = source.as_str().slice(li, nl_end - li)
-                        if line_text.len >= 2 and line_text.starts_with("##"):
-                            var doc_content = line_text.slice(2, line_text.len - 2)
-                            var trimmed = trim_left(doc_content)
-                            doc_lines.push(trimmed)
-                        else:
-                            doc_lines.clear()
-                        li = nl_end + 1
-                    Option.none:
-                        break
-                current_line += 1
-
-            var di: ptr_uint = 0
-            while di < doc_lines.len():
-                let dp = doc_lines.get(di) else:
+            var di = target_line
+            while di > 0:
+                di -= 1
+                let line_text = utils.line_at(ref_of(lines), di)
+                let trimmed = trim_left(line_text)
+                if trimmed.len >= 2 and trimmed.starts_with("##"):
+                    let content = trimmed.slice(2, trimmed.len - 2)
+                    doc_lines.push(trim_left(content))
+                else:
                     break
-                if di > 0:
+
+            var ordered = vec.Vec[str].create()
+            defer: ordered.release()
+            var oi = doc_lines.len()
+            while oi > 0:
+                oi -= 1
+                let dp = doc_lines.get(oi) else:
+                    break
+                ordered.push(unsafe: read(dp))
+            var xi: ptr_uint = 0
+            while xi < ordered.len():
+                let xp = ordered.get(xi) else:
+                    break
+                if xi > 0:
                     result.append("\n")
-                unsafe:
-                    result.append(read(dp))
-                di += 1
+                result.append(unsafe: read(xp))
+                xi += 1
 
         Result.failure:
             pass
 
     return result
+
+
+## True when `line_text` declares `name`.  Leading modifiers are skipped, a
+## declaration keyword is followed by the name, and a field/member/arm line
+## starts with its own name.  The terminator check keeps a call or an
+## expression from being mistaken for a declaration where the name is first.
+function declaration_line_has_name(line_text: str, name: str) -> bool:
+    let trimmed = trim_left(line_text)
+    if trimmed.len == 0:
+        return false
+    var i: ptr_uint = 0
+    while i < trimmed.len:
+        let word_start = i
+        while i < trimmed.len and utils.is_word_byte(trimmed.byte_at(i)):
+            i += 1
+        if i == word_start:
+            return false
+        let word = trimmed.slice(word_start, i - word_start)
+        while i < trimmed.len and trimmed.byte_at(i) == ' ':
+            i += 1
+        if is_declaration_modifier(word):
+            continue
+        if is_declaration_keyword(word):
+            let name_start = i
+            while i < trimmed.len and utils.is_word_byte(trimmed.byte_at(i)):
+                i += 1
+            if i == name_start:
+                return false
+            if not trimmed.slice(name_start, i - name_start).equal(name):
+                return false
+            return declaration_terminator_ok(trimmed, i)
+        if not word.equal(name):
+            return false
+        return declaration_terminator_ok(trimmed, i)
+    return false
+
+
+function is_declaration_modifier(word: str) -> bool:
+    return word.equal("public") or word.equal("private") or word.equal("static") or
+        word.equal("async") or word.equal("editable") or word.equal("final") or
+        word.equal("readonly") or word.equal("inline") or word.equal("local") or
+        word.equal("unsafe")
+
+
+function is_declaration_keyword(word: str) -> bool:
+    return word.equal("function") or word.equal("struct") or word.equal("enum") or
+        word.equal("variant") or word.equal("flags") or word.equal("interface") or
+        word.equal("union") or word.equal("event") or word.equal("opaque") or
+        word.equal("type") or word.equal("const") or word.equal("var") or
+        word.equal("let") or word.equal("attribute")
+
+
+## The byte after a declared name must start a declaration shape: a parameter
+## list, a type/field colon, a generic clause, an initializer, or end of line.
+function declaration_terminator_ok(line_text: str, index: ptr_uint) -> bool:
+    var i = index
+    while i < line_text.len and line_text.byte_at(i) == ' ':
+        i += 1
+    if i >= line_text.len:
+        return true
+    let b = line_text.byte_at(i)
+    return b == '(' or b == ':' or b == '<' or b == '='
 
 
 ## Strip leading whitespace from the start of a string.

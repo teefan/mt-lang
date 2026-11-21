@@ -16,6 +16,7 @@ import mtc.linter.linter as linter_mod
 import mtc.linter.scope_tracking as scope_tracking
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
+import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
@@ -139,6 +140,11 @@ public function publish_for_uri(ws: ref[workspace.Workspace], uri: str, root_pat
     unsafe:
         read(params_obj).set("uri", json.string_from_str(uri))
         read(params_obj).set("diagnostics", diagnostics)
+        match ws.document_version(root_path):
+            Option.some as version:
+                read(params_obj).set("version", json.number_value(double<-version.value))
+            Option.none:
+                pass
 
     proto.write_notification("textDocument/publishDiagnostics", params)
 
@@ -157,6 +163,16 @@ public function publish_empty_for_uri(ws: ref[workspace.Workspace], uri: str) ->
     unsafe:
         read(params_obj).set("uri", json.string_from_str(uri))
         read(params_obj).set("diagnostics", empty_diag)
+        match uri_ops.file_uri_to_path(uri):
+            Option.some as path:
+                match ws.document_version(path.value.as_str()):
+                    Option.some as version:
+                        read(params_obj).set("version", json.number_value(double<-version.value))
+                    Option.none:
+                        pass
+                path.value.release()
+            Option.none:
+                pass
 
     proto.write_notification("textDocument/publishDiagnostics", params)
 

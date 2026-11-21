@@ -312,7 +312,7 @@ function emit_quickfix_action(
         json_text.append("\"")
     else:
         json_text.append("null")
-    json_text.append(",\"kind\":\"quickFix\"")
+    json_text.append(",\"kind\":\"quickfix\"")
     append_diag_echo(json_text, diag)
     if has_edit:
         var out_start = start_char
@@ -470,7 +470,7 @@ function emit_reserved_name_action(
 
     json_text.append("{\"title\":\"")
     proto.append_escaped(json_text, title)
-    json_text.append("\",\"kind\":\"quickFix\"")
+    json_text.append("\",\"kind\":\"quickfix\"")
     append_diag_echo(json_text, diag)
     json_text.append(",\"edit\":{\"changes\":{\"")
     proto.append_escaped(json_text, uri)

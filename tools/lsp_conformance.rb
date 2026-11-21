@@ -930,6 +930,17 @@ add_case("publish/diagnostics-version") do |ctx, client|
 end
 
 
+add_case("lifecycle/server-info") do |ctx, client|
+  response = init!(client, ctx.root)
+  info = response.dig("result", "serverInfo") || {}
+  ctx.check(info["name"].to_s.length.positive?, "serverInfo.name is missing")
+  ctx.check(info["version"].to_s.length.positive?, "serverInfo.version is missing")
+  experimental = response.dig("result", "experimental", "milkTea") || {}
+  ctx.eq(experimental["documentContext"], true, "experimental.milkTea.documentContext")
+  ctx.eq(experimental["debugInfo"], true, "experimental.milkTea.debugInfo")
+end
+
+
 add_case("lifecycle/pre-init-request") do |ctx, client|
   response = client.request("textDocument/hover", hover_params(File.join(ctx.root, "main.mt"), 0, 0))
   ctx.eq(response.dig("error", "code"), -32_002, "request before initialize")

@@ -1,7 +1,7 @@
 # LSP Enhancement Plan
 
-Status: **audit complete (session 144); phases 0–1 landed (session 145);
-implementation phases 2–4 not started.**
+Status: **audit complete (session 144); phases 0–2 landed (session 145);
+implementation phases 3–4 not started.**
 Baseline: **LSP 3.18.0** (2026-06-04); 3.19 is upcoming.
 Implementation: `projects/mtc/src/mtc/lsp` — 43 `.mt` files, ~31.9k lines,
 entry point `mtc lsp` (`projects/mtc/src/mtc/lsp/server.mt`).
@@ -28,13 +28,13 @@ an oracle.  The existing instruments are:
   (`0 errors` in session 143) and soak.
 - `projects/mtc/test/{completion,cursor,lsp_index,lsp_utils}_test.mt` — unit
   coverage for helpers, not protocol conformance.
-- `tools/lsp_conformance.rb` — the spec oracle (phases 0–1, session 145): 29
+- `tools/lsp_conformance.rb` — the spec oracle (phases 0–2, session 145): 30
   cases from §5 with explicit assertions, a standalone stdio client, `--bin`,
   `--only`, `--timeout` and `--json`.  It is the `lsp_conformance` hard tier-2
-  gate; at the phase-1 commit it is **red by design** (13 pass / 16 fail): the
-  encoding cases, ASCII output, pull full/unchanged and exit-after-shutdown
-  pass; phases 2–4 own the rest.  `--bin` accepts a wrapper, so the same cases
-  can be driven under valgrind; the existing `valgrind_lsp` corpus drive
+  gate; at the phase-2 commit it is **red by design** (24 pass / 6 fail): the
+  encoding, quickfix, completion, lifecycle and cancel cases are green; the
+  six remaining belong to phases 3–4.  `--bin` accepts a wrapper, so the same
+  cases can be driven under valgrind; the existing `valgrind_lsp` corpus drive
   remains the memory instrument because cold valgrind server startups are not
   a better use of tier-2 time.
 
@@ -235,7 +235,7 @@ is byte-identical: **88/88 entries, 0 differ** against the pre-change
 recording.  The conformance suite grew to 29 cases (UTF-8 negotiation,
 highlight and references were added); 13 pass.
 
-### Phase 2 — small conformance fixes (P0/P1)
+### Phase 2 — small conformance fixes (P0/P1) — **DONE (session 145)**
 
 - `quickfix` spelling in the capability and every action.
 - Completion resolve: find docs by `data.uri`/`data.name`, fix the declaration
@@ -246,6 +246,20 @@ highlight and references were added); 13 pass.
   `publishDiagnostics.version`.
 - `$/cancelRequest`: track outstanding ids or deliberately ignore it (the
   single-threaded loop cannot cancel in-flight work); remove the stale set.
+
+Landed: both action emitters and the capability use `quickfix`;
+`completionItem/resolve` takes `data.uri`/`data.name`, falls back to the index
+for imported items, scans keyword/modifier/indented declarations and contiguous
+`##` blocks, and adds `documentation` to the original item (all fields echoed).
+The message loop now enforces the initialize/shutdown state, returns `-32002`
+before init and `-32600` for a duplicate init or post-shutdown request, exits 1
+without shutdown, advertises `serverInfo`/`experimental`, tracks document
+versions for push and workspace-pull diagnostics, and deliberately ignores
+`$/cancelRequest` (the stale id set is gone).  The suite grew to 30 cases with
+the `lifecycle/server-info` assertion; 24 pass.  ASCII endpoint replay against
+the pre-phase-2 recording has exactly the five intended differences: the
+`quickfix` capability, `serverInfo`/`experimental` in `initialize`, two code
+actions, and the workspace-diagnostic version.
 
 ### Phase 3 — file and workspace operations (P1)
 
@@ -299,7 +313,7 @@ split into per-boundary cases).  Add new cases here first, then to the harness:
 | multi-root | a symbol in an added folder resolves; removing the folder removes it |
 | watched files | after a dynamic registration, an on-disk change updates symbols/diagnostics without reopening |
 | pull diagnostics | `textDocument/diagnostic` full/unchanged round-trip; `workspace/diagnostic` scope is as advertised; a dependent refresh follows an import change |
-| lifecycle | pre-init `-32002`; duplicate init `-32600`; post-shutdown `-32600`; exit rc 0 after shutdown, 1 without |
+| lifecycle | pre-init `-32002`; duplicate init `-32600`; post-shutdown `-32600`; exit rc 0 after shutdown, 1 without; `serverInfo` and the `experimental` `milkTea` block are present |
 | cancel | a cancel for a completed id does not cancel a later reused id |
 | publish | `publishDiagnostics.version` matches the document version |
 
@@ -324,8 +338,8 @@ ruby tools/lsp_soak.rb --quiet                           # raw slope in the 70�
 ```
 
 `lsp_conformance` is in the `lsp` area and `tools_check` covers its syntax.
-At the phase-1 commit the suite is 13/29; the remaining red cases are the
-phase 2–4 work list.  Run only the class being fixed (`--only utf16`,
+At the phase-2 commit the suite is 24/30; the remaining red cases are the
+phase 3–4 work list.  Run only the class being fixed (`--only utf16`,
 `--only lifecycle`, …) while iterating, then the whole suite once per phase.
 Do not run the recorded CLI/diag/lint/format goldens for an LSP-only change
 unless the compiler shared code changes.  A user-visible
@@ -367,10 +381,10 @@ Start the LSP enhancement program in /home/teefan/Projects/Ruby/mt-lang
 cases. The compiler is the native self-host; the Ruby host is archived and
 must not be used as an oracle.
 
-Phases 0–1 are done: the conformance gate exists and position encoding is
-negotiated (utf-8 when offered, UTF-16 fallback with cached line maps); the
-gate is red on the remaining audited defects. Start phase 2 (quickfix spelling,
-completion resolve, lifecycle, cancel), then phases 3–4 in order.
+Phases 0–2 are done: the conformance gate exists, position encoding is
+negotiated, and the quickfix/completion/lifecycle/cancel fixes pass. Start
+phase 3 (`willRenameFiles`, multi-root, watched files), then phase 4
+(workspace-diagnostic scope and refresh).
 Work the red cases with `ruby tools/lsp_conformance.rb --bin tmp/mtc-dev
 --only <class>`; close each phase by making its cases pass and then run the
 whole suite. Work in tiers: seed dev build (~25 s), tmp/mtc-dev test

@@ -91,6 +91,7 @@
       "lowering -> parser",
       "lowering -> semantic",
       "lowering -> strings",
+      "lsp -> cli_help",
       "lsp -> float_text",
       "lsp -> formatter",
       "lsp -> lexer",
@@ -1280,7 +1281,7 @@
     ]
   },
   "sizes": {
-    "total_code": 126855,
+    "total_code": 127043,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1759,8 +1760,8 @@
         "max_function": 53
       },
       "projects/mtc/src/mtc/lsp/completion.mt": {
-        "lines": 3602,
-        "code": 2948,
+        "lines": 3712,
+        "code": 3038,
         "max_line": 160,
         "max_function": 131
       },
@@ -1795,8 +1796,8 @@
         "max_function": 38
       },
       "projects/mtc/src/mtc/lsp/diagnostics.mt": {
-        "lines": 480,
-        "code": 343,
+        "lines": 496,
+        "code": 359,
         "max_line": 134,
         "max_function": 95
       },
@@ -1855,10 +1856,10 @@
         "max_function": 154
       },
       "projects/mtc/src/mtc/lsp/lifecycle.mt": {
-        "lines": 169,
-        "code": 130,
+        "lines": 176,
+        "code": 137,
         "max_line": 329,
-        "max_function": 58
+        "max_function": 64
       },
       "projects/mtc/src/mtc/lsp/linked_editing_range.mt": {
         "lines": 117,
@@ -1885,10 +1886,10 @@
         "max_function": 133
       },
       "projects/mtc/src/mtc/lsp/pull_diagnostics.mt": {
-        "lines": 314,
-        "code": 245,
-        "max_line": 94,
-        "max_function": 85
+        "lines": 327,
+        "code": 255,
+        "max_line": 109,
+        "max_function": 89
       },
       "projects/mtc/src/mtc/lsp/reference_index.mt": {
         "lines": 440,
@@ -1927,10 +1928,10 @@
         "max_function": 149
       },
       "projects/mtc/src/mtc/lsp/server.mt": {
-        "lines": 678,
-        "code": 524,
+        "lines": 670,
+        "code": 519,
         "max_line": 250,
-        "max_function": 180
+        "max_function": 181
       },
       "projects/mtc/src/mtc/lsp/signature_help.mt": {
         "lines": 136,
@@ -1945,8 +1946,8 @@
         "max_function": 156
       },
       "projects/mtc/src/mtc/lsp/text_docs.mt": {
-        "lines": 250,
-        "code": 204,
+        "lines": 278,
+        "code": 229,
         "max_line": 148,
         "max_function": 66
       },
@@ -1975,8 +1976,8 @@
         "max_function": 30
       },
       "projects/mtc/src/mtc/lsp/workspace.mt": {
-        "lines": 1485,
-        "code": 1053,
+        "lines": 1541,
+        "code": 1098,
         "max_line": 169,
         "max_function": 52
       },

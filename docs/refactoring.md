@@ -199,8 +199,8 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 168 / 159,821 / 126,855 |
-| layering edges / violations | 110 / 0 |
+| source files / lines / code lines | 168 / 160,043 / 127,043 |
+| layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (168 modules) |
@@ -215,6 +215,9 @@ Session 145 refreshed the baseline for the LSP position-encoding work (+253
 code lines: negotiated UTF-8/UTF-16 boundaries, the per-document line-start
 map, and the emitter audit; +106 duplicated lines from the per-module
 conversion pattern; `position_to_byte` renamed to the two explicit decoders).
+Phase 2 added the completion-resolve declaration scan, lifecycle/version state
+and the semantic-token cache key fix (+188 code lines, +1 layering edge
+`lsp -> cli_help`; duplication unchanged).
 Session 141 added the semantic conformance port (+522 code lines: condition
 enforcement, named-argument canonicalization and lowering, extern/foreign
 checks, imported/method specialization checks, and the exact-base nullable

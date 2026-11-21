@@ -152,7 +152,9 @@ public function handle_workspace_diagnostic(
                 if hit:
                     result_json.append("\",\"kind\":\"unchanged\",\"resultId\":\"")
                     proto.append_escaped(ref_of(result_json), cached_id.as_str())
-                    result_json.append("\",\"items\":[],\"version\":null}")
+                    result_json.append("\",\"items\":[],\"version\":")
+                    append_version_or_null(ws, path, ref_of(result_json))
+                    result_json.append("}")
                     continue
 
                 var roots = ws.effective_module_roots_for(path)
@@ -174,12 +176,23 @@ public function handle_workspace_diagnostic(
                 proto.append_escaped(ref_of(result_json), result_id.as_str())
                 result_json.append("\",\"items\":")
                 result_json.append(diag_json.as_str())
-                result_json.append(",\"version\":null}")
+                result_json.append(",\"version\":")
+                append_version_or_null(ws, path, ref_of(result_json))
+                result_json.append("}")
                 result_id.release()
                 diag_json.release()
 
     result_json.append("]}")
     proto.write_response_raw(id, result_json.as_str())
+
+
+## Append a document's client version, or JSON null when it is not open.
+function append_version_or_null(ws: ref[workspace.Workspace], path: str, output: ref[string.String]) -> void:
+    match ws.document_version(path):
+        Option.some as version:
+            output.append_format(f"#{version.value}")
+        Option.none:
+            output.append("null")
 
 
 ## The `previousResultIds` value recorded for `path`, or "" when absent.  The

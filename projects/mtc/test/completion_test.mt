@@ -50,6 +50,56 @@ function test_doc_text_does_not_slice_through_multibyte_text() -> void:
     expect(docs.as_str().equal("field doc"), docs.as_str())
 
 
+@[test]
+function test_doc_text_finds_declarations_with_keywords_and_indentation() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_doc_") else:
+        expect(false, "could not create temp dir")
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var file_path = path_ops.join(root.as_str(), "decls.mt")
+    defer: file_path.release()
+    let content = <<-SRC
+        ## Foo docs.
+        public function foo() -> int:
+            return 0
+
+        struct S:
+            ## Field docs.
+            value: int
+
+            ## Method docs.
+            function method() -> int:
+                return 1
+
+        ## Enum docs.
+        enum Color:
+            ## Member docs.
+            red
+    SRC
+    match fs.write_text(file_path.as_str(), content):
+        Result.success:
+            pass
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            expect(false, "could not write decls.mt")
+            return
+
+    var foo_docs = comp.collect_doc_text(file_path.as_str(), "foo")
+    defer: foo_docs.release()
+    expect(foo_docs.as_str().equal("Foo docs."), foo_docs.as_str())
+    var field_docs = comp.collect_doc_text(file_path.as_str(), "value")
+    defer: field_docs.release()
+    expect(field_docs.as_str().equal("Field docs."), field_docs.as_str())
+    var method_docs = comp.collect_doc_text(file_path.as_str(), "method")
+    defer: method_docs.release()
+    expect(method_docs.as_str().equal("Method docs."), method_docs.as_str())
+    var member_docs = comp.collect_doc_text(file_path.as_str(), "red")
+    defer: member_docs.release()
+    expect(member_docs.as_str().equal("Member docs."), member_docs.as_str())
+
+
 ## Parse and analyze a standalone test source.
 function analyze_source(source: str) -> analyzer.Analysis:
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()

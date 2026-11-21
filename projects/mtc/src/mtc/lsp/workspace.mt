@@ -109,6 +109,14 @@ public struct DocumentText:
     hash: uint
 
 
+## One open document's client version, for `publishDiagnostics.version` and
+## `workspace/diagnostic` items.  A Vec keeps the path ownership explicit (a
+## string-keyed map would leak the key on replacement/removal).
+struct DocumentVersionEntry:
+    path: string.String
+    version: ptr_int
+
+
 ## The per-document text cache entry.  An *open* document's `text` is a view
 ## into its `open_docs` buffer (nothing is copied; the entry is dropped on every
 ## open/change/close), while a *closed* document owns `source` and is
@@ -146,7 +154,13 @@ public struct Workspace:
     ## documents in the client's open order, which a hash map cannot express.
     open_doc_order: vec.Vec[string.String]
     document_contexts: map_mod.Map[string.String, string.String]
-    cancelled_ids: vec.Vec[ptr_uint]
+    document_versions: vec.Vec[DocumentVersionEntry]
+    ## Lifecycle state: `initialize` sets `initialize_received`, the
+    ## `initialized` notification sets `initialized`, and `shutdown` sets
+    ## `shutdown_received`.  The message loop gates requests on these flags.
+    initialize_received: bool
+    initialized: bool
+    shutdown_received: bool
     diagnostic_cache: DiagnosticCache
     analysis_cache: map_mod.Map[string.String, AnalysisCacheEntry]
     parse_cache: map_mod.Map[string.String, ParseCacheEntry]
@@ -233,7 +247,10 @@ extending Workspace:
             open_docs = map_mod.Map[string.String, string.String].create(),
             open_doc_order = vec.Vec[string.String].create(),
             document_contexts = map_mod.Map[string.String, string.String].create(),
-            cancelled_ids = vec.Vec[ptr_uint].create(),
+            document_versions = vec.Vec[DocumentVersionEntry].create(),
+            initialize_received = false,
+            initialized = false,
+            shutdown_received = false,
             diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create()),
             analysis_cache = map_mod.Map[string.String, AnalysisCacheEntry].create(),
             parse_cache = map_mod.Map[string.String, ParseCacheEntry].create(),
@@ -914,34 +931,49 @@ extending Workspace:
                 pass
 
 
-    ## Mark a request as cancelled by its numeric id.
-    public editable function cancel_request(id: ptr_uint) -> void:
-        this.cancelled_ids.push(id)
-
-
-    ## True when the given numeric request id was cancelled.
-    public function is_request_cancelled(id: ptr_uint) -> bool:
+    ## Record the client's version for an open document.
+    public editable function set_document_version(path: str, version: ptr_int) -> void:
         var i: ptr_uint = 0
-        while i < this.cancelled_ids.len():
-            let cid = this.cancelled_ids.get(i) else:
+        while i < this.document_versions.len():
+            let entry = this.document_versions.get(i) else:
                 break
-            unsafe:
-                if read(cid) == id:
-                    return true
+            if unsafe: read(entry).path.as_str().equal(path):
+                unsafe: read(entry).version = version
+                return
             i += 1
-        return false
+        this.document_versions.push(DocumentVersionEntry(
+            path = string.String.from_str(path),
+            version = version,
+        ))
 
 
-    ## Remove a cancelled id after the request has been processed.
-    public editable function clear_cancelled(id: ptr_uint) -> void:
+    ## The client's last version for `path`, or none when it is not open.
+    public function document_version(path: str) -> Option[ptr_int]:
         var i: ptr_uint = 0
-        while i < this.cancelled_ids.len():
-            let cid = this.cancelled_ids.get(i) else:
+        while i < this.document_versions.len():
+            let entry = this.document_versions.get(i) else:
                 break
-            unsafe:
-                if read(cid) == id:
-                    this.cancelled_ids.swap_remove(i)
-                    break
+            if unsafe: read(entry).path.as_str().equal(path):
+                return Option[ptr_int].some(value = unsafe: read(entry).version)
+            i += 1
+        return Option[ptr_int].none
+
+
+    ## Drop a closed document's version.
+    public editable function forget_document_version(path: str) -> void:
+        var i: ptr_uint = 0
+        while i < this.document_versions.len():
+            let entry = this.document_versions.get(i) else:
+                break
+            if unsafe: read(entry).path.as_str().equal(path):
+                let removed = this.document_versions.remove(i)
+                match removed:
+                    Option.some as old:
+                        var entry_value = old.value
+                        entry_value.path.release()
+                    Option.none:
+                        pass
+                return
             i += 1
 
 
@@ -1008,31 +1040,44 @@ extending Workspace:
         utf16: bool,
     ) -> void:
         var key = string.String.from_str(path)
-        # Replace any previous entry (releasing its strings and token data).
-        var lookup = string.String.from_str(path)
-        defer: lookup.release()
-        let stale_ptr = this.semantic_token_cache.get(lookup)
+        let stale_ptr = this.semantic_token_cache.get(key)
         if stale_ptr != null:
+            # Update in place: the map owns the key, and replacing the entry
+            # through remove/set would leak it on every edit.
             unsafe:
                 var stale = read(stale_ptr)
                 stale.result_id.release()
                 stale.data.release()
-            this.semantic_token_cache.remove(lookup)
-        var entry = SemanticTokenCacheEntry(
+                read(stale_ptr).source_hash = source_hash
+                read(stale_ptr).result_id = result_id
+                read(stale_ptr).token_count = token_count
+                read(stale_ptr).data = data
+                read(stale_ptr).utf16 = utf16
+            key.release()
+            return
+        this.semantic_token_cache.set(key, SemanticTokenCacheEntry(
             source_hash = source_hash,
             result_id = result_id,
             token_count = token_count,
             data = data,
             utf16 = utf16,
-        )
-        this.semantic_token_cache.set(key, entry)
+        ))
 
 
     ## Remove a specific cached semantic token entry.
     public editable function semantic_token_cache_remove(path: str) -> void:
         var key = string.String.from_str(path)
-        defer: key.release()
-        this.semantic_token_cache.remove(key)
+        let removed = this.semantic_token_cache.remove_entry(key)
+        key.release()
+        match removed:
+            Option.some as payload:
+                var removed_entry = payload.value
+                removed_entry.key.release()
+                var entry = removed_entry.value
+                entry.result_id.release()
+                entry.data.release()
+            Option.none:
+                pass
 
 
     ## Clear all cached semantic token entries.
@@ -1099,7 +1144,7 @@ extending Workspace:
             oi += 1
         this.open_doc_order.release()
         this.document_contexts.release()
-        this.cancelled_ids.release()
+        release_document_versions(ref_of(this.document_versions))
         release_diagnostic_cache(ref_of(this.diagnostic_cache))
         release_semantic_token_cache(ref_of(this.semantic_token_cache))
         release_analysis_cache(ref_of(this.analysis_cache))
@@ -1139,6 +1184,16 @@ function release_dirty_paths(paths: ref[vec.Vec[string.String]]) -> void:
         unsafe: read(p).release()
         i += 1
     paths.clear()
+
+
+function release_document_versions(versions: ref[vec.Vec[DocumentVersionEntry]]) -> void:
+    var i: ptr_uint = 0
+    while i < versions.len():
+        let entry = versions.get(i) else:
+            break
+        unsafe: read(entry).path.release()
+        i += 1
+    versions.release()
 
 
 function release_text_cache(cache: ref[map_mod.Map[string.String, TextCacheEntry]]) -> void:
@@ -1479,6 +1534,7 @@ function release_semantic_token_cache(cache: ref[map_mod.Map[string.String, Sema
     while entries_iter.next():
         let entry = entries_iter.current()
         unsafe:
+            read(entry.key).release()
             var entry_value = read(entry.value)
             entry_value.result_id.release()
             entry_value.data.release()
