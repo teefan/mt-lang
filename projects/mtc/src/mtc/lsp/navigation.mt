@@ -1691,6 +1691,11 @@ public function resolve_cursor(
     # program, so this costs no extra parse.
     match cursor.type_receiver_at(source, line, character):
         Option.some as arm_recv:
+            match resolve_aliased_enum_member(ws, ast_file, ref_of(analysis), doc.program, arm_recv.value, target.text, file_path.as_str()):
+                Option.some as alias_hit:
+                    return Option[CursorResult].some(value = alias_hit.value)
+                Option.none:
+                    pass
             match resolve_imported_variant_arm(ws, ref_of(analysis), arm_recv.value, target.text, file_path.as_str(), doc.program):
                 Option.some as arm_hit:
                     return Option[CursorResult].some(value = arm_hit.value)
@@ -2780,6 +2785,124 @@ function imported_enum_member_result(
             Option.none:
                 pass
     return Option[CursorResult].none
+
+
+## The resolved target of a type-name receiver used as `Type.member`: its
+## underlying enum/flags name, the module that declares it ("" for a local
+## type), the module that declared the alias ("" when unqualified), and the
+## alias module's AST.
+struct AliasedEnumTarget:
+    type_name: str
+    owner_module: str
+    alias_module: str
+    module_file: ast.SourceFile
+
+
+## Resolve `receiver.name` through the alias module's analysis to its
+## underlying type.  The alias module's analysis comes from the requesting
+## document's loaded program when available, so a repeated hover costs no
+## re-analysis.
+function aliased_enum_target(
+    ws: ref[workspace.Workspace],
+    file: ast.SourceFile,
+    analysis: ref[analyzer.Analysis],
+    program: Option[loader.Program],
+    receiver: cursor.TypeReceiver,
+    from_path: str,
+) -> Option[AliasedEnumTarget]:
+    if receiver.module_alias.len > 0:
+        let module_ptr = unsafe: read(analysis).imports.get(receiver.module_alias) else:
+            return Option[AliasedEnumTarget].none
+        let alias_module = unsafe: read(module_ptr)
+        match module_analysis_from_program(program, alias_module):
+            Option.some as analysis_ptr:
+                let alias_analysis = unsafe: read(analysis_ptr.value)
+                return aliased_target_in_analysis(alias_analysis, alias_module, receiver.name)
+            Option.none:
+                let alias_entry = module_analysis_entry_for_name(ws, alias_module, from_path) else:
+                    return Option[AliasedEnumTarget].none
+                return aliased_target_in_analysis(unsafe: read(alias_entry).analysis, alias_module, receiver.name)
+    let ty_ptr = unsafe: read(analysis).types.get(receiver.name) else:
+        return Option[AliasedEnumTarget].none
+    return aliased_target_from_type(file, "", unsafe: read(ty_ptr))
+
+
+function aliased_target_in_analysis(alias_analysis: analyzer.Analysis, alias_module: str, name: str) -> Option[AliasedEnumTarget]:
+    let ty_ptr = alias_analysis.types.get(name) else:
+        return Option[AliasedEnumTarget].none
+    return aliased_target_from_type(alias_analysis.source_file, alias_module, unsafe: read(ty_ptr))
+
+
+function aliased_target_from_type(file: ast.SourceFile, alias_module: str, ty: types.Type) -> Option[AliasedEnumTarget]:
+    let type_name = type_to_key_name(ty)
+    if type_name.len == 0:
+        return Option[AliasedEnumTarget].none
+    return Option[AliasedEnumTarget].some(value = AliasedEnumTarget(
+        type_name = type_name,
+        owner_module = types.nominal_module(ty),
+        alias_module = alias_module,
+        module_file = file,
+    ))
+
+
+## `alias.Type.member` where `Type` is a type alias for an enum/flags
+## (`type BodyType = c.b3BodyType`): resolve the alias to its underlying type
+## and report the member from the declaring module's AST.  This also covers a
+## local alias to an imported enum.  The location is dropped for an imported
+## declaration, matching the direct `alias.Enum.member` behavior.
+function resolve_aliased_enum_member(
+    ws: ref[workspace.Workspace],
+    file: ast.SourceFile,
+    analysis: ref[analyzer.Analysis],
+    program: Option[loader.Program],
+    receiver: cursor.TypeReceiver,
+    member_name: str,
+    from_path: str,
+) -> Option[CursorResult]:
+    let target = aliased_enum_target(ws, file, analysis, program, receiver, from_path) else:
+        return Option[CursorResult].none
+    if target.owner_module.len == 0 or target.owner_module.equal(target.alias_module):
+        return enum_member_result_in_file(target.module_file, target.type_name, member_name)
+    match module_ast_from_program(program, target.owner_module):
+        Option.some as owner_file:
+            return owned_enum_member_result(owner_file.value, target.type_name, member_name, target.owner_module)
+        Option.none:
+            pass
+    let owner_entry = module_analysis_entry_for_name(ws, target.owner_module, from_path) else:
+        return Option[CursorResult].none
+    return owned_enum_member_result(unsafe: read(owner_entry).analysis.source_file, target.type_name, member_name, target.owner_module)
+
+
+function owned_enum_member_result(
+    file: ast.SourceFile,
+    type_name: str,
+    member_name: str,
+    owner_module: str,
+) -> Option[CursorResult]:
+    match enum_member_result_in_file(file, type_name, member_name):
+        Option.some as hit:
+            var located = hit.value
+            located.line = 0
+            located.column = 0
+            located.from_modules.release()
+            located.from_modules = string.String.from_str(owner_module)
+            return Option[CursorResult].some(value = located)
+        Option.none:
+            return Option[CursorResult].none
+
+
+## The workspace analysis cache entry for `module_name`, loading the module on
+## first use.  The caller releases the resolved path only; the entry is owned by
+## the workspace cache.
+function module_analysis_entry_for_name(
+    ws: ref[workspace.Workspace],
+    module_name: str,
+    from_path: str,
+) -> Option[ptr[workspace.AnalysisCacheEntry]]:
+    var module_path = resolve_module_source_path_for(ws, module_name, from_path) else:
+        return Option[ptr[workspace.AnalysisCacheEntry]].none
+    defer: module_path.release()
+    return workspace.analysis_entry_for(ws, module_path.as_str())
 
 
 ## A declaration whose own name token the cursor is on: its 1-based line and the
@@ -4157,6 +4280,25 @@ function resolve_imported_variant_arm(
     let module_doc = workspace.document_analysis_for(ws, module_path.as_str()) else:
         return Option[CursorResult].none
     return variant_arm_in_type_in_file(module_doc.ast_file, receiver.name, arm_name)
+
+
+## The loaded analysis for `module_name` from the requesting document's program,
+## or none when the program does not carry it (a single-file fallback).
+function module_analysis_from_program(
+    program: Option[loader.Program],
+    module_name: str,
+) -> Option[ptr[analyzer.Analysis]]:
+    let loaded = program else:
+        return Option[ptr[analyzer.Analysis]].none
+    let analyses = loaded.analyses
+    var i: ptr_uint = 0
+    while i < analyses.len():
+        let ap = analyses.get(i) else:
+            break
+        if unsafe: read(ap).module_name.equal(module_name):
+            return Option[ptr[analyzer.Analysis]].some(value = ap)
+        i += 1
+    return Option[ptr[analyzer.Analysis]].none
 
 
 ## An imported module's AST from the requesting document's loaded program (the

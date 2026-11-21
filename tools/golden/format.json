@@ -1646,8 +1646,8 @@
           "sha256": "4e38410463b9797f07880eace9c44e52ce51390a9dd063bd98ed8059e3e50aec"
         },
         "projects/mtc/src/mtc/lsp/navigation.mt": {
-          "digest": "9b09f9e0a2d9f8e5a2bcd30734f901a1b109f4f68e72bf2bebfde7370fb36edf",
-          "sha256": "9b09f9e0a2d9f8e5a2bcd30734f901a1b109f4f68e72bf2bebfde7370fb36edf"
+          "digest": "cec47d0b80be88b5ae4c1a1b6e6925c7bab31593b2ef300c49d36da9e857437e",
+          "sha256": "cec47d0b80be88b5ae4c1a1b6e6925c7bab31593b2ef300c49d36da9e857437e"
         },
         "projects/mtc/src/mtc/lsp/on_type_formatting.mt": {
           "digest": "7d8a5ae56535ad0c6e54137c67ac3798ae4a580b94998def912156f9f6b1ed26",
@@ -4748,8 +4748,8 @@
           "sha256": "c5b06ac03ef4313eb4dcb2ebb5f85eb77611abf7c6abef42fc0118a6248561d8"
         },
         "projects/mtc/src/mtc/lsp/navigation.mt": {
-          "digest": "9b09f9e0a2d9f8e5a2bcd30734f901a1b109f4f68e72bf2bebfde7370fb36edf",
-          "sha256": "bf015ec3d5d678b96d8db1636cbff69527e6da9fe4b933bb2021fbf4c61489fb"
+          "digest": "cec47d0b80be88b5ae4c1a1b6e6925c7bab31593b2ef300c49d36da9e857437e",
+          "sha256": "1e0ef08c78cd13f8a0b3782bbff8ed86963d611ea68ec20df40ffec842799ec4"
         },
         "projects/mtc/src/mtc/lsp/on_type_formatting.mt": {
           "digest": "7d8a5ae56535ad0c6e54137c67ac3798ae4a580b94998def912156f9f6b1ed26",
@@ -7850,8 +7850,8 @@
           "sha256": "3fad14eb9ca64e1efbc9bd697e1ee350b7c0b2f4449bfcd902b761a21fa04a01"
         },
         "projects/mtc/src/mtc/lsp/navigation.mt": {
-          "digest": "9b09f9e0a2d9f8e5a2bcd30734f901a1b109f4f68e72bf2bebfde7370fb36edf",
-          "sha256": "312b449655e3dc35f125792e66a4f5b12cb067f662bd2f89888d2a42126747bb"
+          "digest": "cec47d0b80be88b5ae4c1a1b6e6925c7bab31593b2ef300c49d36da9e857437e",
+          "sha256": "0f8190febbd8aff9aa9bdc84c6ec9a5bb513238a7931fadf3c6d1c16124a1396"
         },
         "projects/mtc/src/mtc/lsp/on_type_formatting.mt": {
           "digest": "7d8a5ae56535ad0c6e54137c67ac3798ae4a580b94998def912156f9f6b1ed26",

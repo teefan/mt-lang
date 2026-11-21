@@ -121,7 +121,7 @@ score.
 
 ### Size, markers, tests
 
-- **127,821 code lines**; **1 function ≥ 200 lines**; **11 files ≥ 2,000 code
+- **127,929 code lines**; **1 function ≥ 200 lines**; **11 files ≥ 2,000 code
   lines**. The ratchet counts these, so a refactor cannot trade one long
   function for another.  Session 130 closed the rest: only `binding_at` (385,
   excluded) remains.
@@ -195,11 +195,11 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 147, 2026-11-21)
+## 6. Current baseline (session 148, 2026-11-21)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 160,976 / 127,821 |
+| source files / lines / code lines | 169 / 161,118 / 127,929 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
@@ -211,6 +211,10 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 22 / 85 |
 
+Session 148 refreshed the baseline for the aliased enum-member hover (+108
+code lines: the alias target resolution, the program-analysis lookup, the
+declaring-module scan, and the conformance case's harness-only code excluded
+from this count).  Duplication, sizes and test counts are unchanged.
 Session 147 refreshed the baseline for the non-text receiver completion
 extension (+69 code lines: the parser's empty-name member recovery, the
 analyzer's incomplete-access fact, and the completion fallback/helper split).

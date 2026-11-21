@@ -1,8 +1,9 @@
 # LSP Enhancement Plan
 
 Status: **audit complete (session 144); phases 0–5 landed (session 145); the
-non-text receiver completion extension landed in session 147.  The enhancement
-program, including the optional phase-5 subset, is complete.**
+non-text receiver completion extension landed in session 147 and the aliased
+enum-member hover in session 148.  The enhancement program, including the
+optional phase-5 subset, is complete.**
 Baseline: **LSP 3.18.0** (2026-06-04); 3.19 is upcoming.
 Implementation: `projects/mtc/src/mtc/lsp` — 43 `.mt` files, ~31.9k lines,
 entry point `mtc lsp` (`projects/mtc/src/mtc/lsp/server.mt`).
@@ -29,14 +30,14 @@ an oracle.  The existing instruments are:
   (`0 errors` in session 143) and soak.
 - `projects/mtc/test/{completion,cursor,lsp_index,lsp_utils}_test.mt` — unit
   coverage for helpers, not protocol conformance.
-- `tools/lsp_conformance.rb` — the spec oracle (phases 0–5 + the session-147
-  completion extension): 36 cases from §5 with explicit assertions, a
-  standalone stdio client, `--bin`, `--only`, `--timeout` and `--json`.  It is
-  the `lsp_conformance` hard tier-2 gate and is **green 36/36** at the
-  session-147 commit.  `--bin` accepts a wrapper, so the same cases can be
-  driven under valgrind; the existing `valgrind_lsp` corpus drive remains the
-  memory instrument because cold valgrind server startups are not a better use
-  of tier-2 time.
+- `tools/lsp_conformance.rb` — the spec oracle (phases 0–5, the session-147
+  completion extension and the session-148 aliased hover): 37 cases from §5
+  with explicit assertions, a standalone stdio client, `--bin`, `--only`,
+  `--timeout` and `--json`.  It is the `lsp_conformance` hard tier-2 gate and
+  is **green 37/37** at the session-148 commit.  `--bin` accepts a wrapper, so
+  the same cases can be driven under valgrind; the existing `valgrind_lsp`
+  corpus drive remains the memory instrument because cold valgrind server
+  startups are not a better use of tier-2 time.
 
 `tools/lsp_parity.rb` remains host-parity-shaped: it sends
 `workspace/willRenameFiles` as a **notification**
@@ -373,6 +374,7 @@ split into per-boundary cases).  Add new cases here first, then to the harness:
 | cancel | a cancel for a completed id does not cancel a later reused id |
 | publish | `publishDiagnostics.version` matches the document version |
 | completion after a non-text receiver | a trailing dot after a call (`make().`), an index (`arr[0].`) and a plain value (`p.`) offers the receiver's fields; a type receiver (`P.`) keeps its static member |
+| aliased enum-member hover | an enum member behind a module-qualified type alias (`a.ColorAlias.red`) renders the underlying declaration and its owning module |
 
 **Session 147 — non-text receiver completion.**  A trailing dot is still a
 parse error, but the parser now recovers with an empty-name `MemberAccess` that
@@ -384,6 +386,16 @@ it when the text chain cannot resolve the receiver, including the
 no-member-token case.  Type receivers (`Type[...]`, `alias.Type`) keep the
 static-member path.  The new case `completion/incomplete-dot-receiver` asserts
 a call, a value, an index and a type receiver.
+
+**Session 148 — aliased enum-member hover.**  A type alias that re-exports an
+enum (`public type BodyType = c.b3BodyType`) was not in the receiver's
+`static_member_types`/`member_names` maps, so `alias.Type.member` hovers
+returned null.  `resolve_cursor` now resolves the receiver through the alias
+module's analysis (the loaded program when available), follows the resolved
+type's `owner_module`, and scans the declaring module's AST for the member.
+The new case `hover/aliased-enum-member` covers a module-qualified alias and a
+same-file alias; the hover renders the underlying declaration
+(`b3_dynamicBody: b3BodyType = 2`) and its owning module.
 
 ## 6. Verification
 
@@ -406,7 +418,7 @@ ruby tools/lsp_soak.rb --quiet                           # raw slope in the 70�
 ```
 
 `lsp_conformance` is in the `lsp` area and `tools_check` covers its syntax.
-At the session-147 commit the suite is **36/36** and the gate is green.  Run only
+At the session-148 commit the suite is **37/37** and the gate is green.  Run only
 the class being fixed (`--only utf16`, `--only lifecycle`, …) while iterating,
 then the whole suite once per phase.  The 3.18 additions and the editor
 features with no matching language construct remain intentionally
@@ -451,8 +463,8 @@ Start the LSP enhancement program in /home/teefan/Projects/Ruby/mt-lang
 cases. The compiler is the native self-host; the Ruby host is archived and
 must not be used as an oracle.
 
-Phases 0–5 are done and the session-147 completion extension is landed: the
-conformance gate is green 36/36, and the program is complete.  Only the
+Phases 0–5 are done and the session-147/148 extensions are landed: the
+conformance gate is green 37/37, and the program is complete.  Only the
 deliberately skipped editor features (3.18 additions, moniker, inlineValue,
 documentColor, notebooks) remain out of scope.
 Work the red cases with `ruby tools/lsp_conformance.rb --bin tmp/mtc-dev

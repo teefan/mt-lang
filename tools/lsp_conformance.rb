@@ -844,6 +844,30 @@ add_case("completion/incomplete-dot-receiver") do |ctx, client|
 end
 
 
+add_case("hover/aliased-enum-member") do |ctx, client|
+  init!(client, ctx.root)
+  write_fixture(ctx.root, "enums.mt", "public enum Color: int\n    red = 1\n    blue = 2\n")
+  write_fixture(ctx.root, "alias.mt", "import enums as e\n\npublic type ColorAlias = e.Color\n")
+  path = write_fixture(ctx.root, "main.mt", <<~MT)
+    import alias as a
+
+    function main() -> int:
+        let c = a.ColorAlias.red
+        return 0
+  MT
+  open!(client, path)
+  response = client.request("textDocument/hover", {
+    "textDocument" => { "uri" => path_to_uri(path) },
+    "position" => { "line" => 3, "character" => 25 },
+  })
+  value = response.dig("result", "contents", "value").to_s
+  ctx.check(value.include?("red: Color = 1"),
+            "hover on an enum member behind a type alias returned #{value.inspect}")
+  ctx.check(value.include?("*From enums*"),
+            "aliased enum member hover did not name the owning module: #{value.inspect}")
+end
+
+
 add_case("capabilities/ranges-formatting") do |ctx, client|
   response = init!(client, ctx.root)
   ctx.eq(response.dig("result", "capabilities", "documentRangeFormattingProvider", "rangesSupport"),

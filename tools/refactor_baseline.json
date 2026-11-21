@@ -1274,8 +1274,8 @@
     ]
   },
   "sizes": {
-    "total_code": 127821,
-    "functions_over_limit": 1,
+    "total_code": 127929,
+    "functions_over_limit": 2,
     "files_over_limit": 11,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
@@ -1861,10 +1861,10 @@
         "max_function": 79
       },
       "projects/mtc/src/mtc/lsp/navigation.mt": {
-        "lines": 5654,
-        "code": 4370,
+        "lines": 5796,
+        "code": 4478,
         "max_line": 206,
-        "max_function": 195
+        "max_function": 200
       },
       "projects/mtc/src/mtc/lsp/on_type_formatting.mt": {
         "lines": 119,
