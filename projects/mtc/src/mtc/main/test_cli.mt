@@ -276,49 +276,39 @@ function run_compile_fail_file(file_path: str, source_text: str, options: TestRu
         ri += 1
     eff_roots.push(path_ops.dirname(file_path))
 
-    var program = loader.check_program(file_path, eff_roots.as_span(), options.platform)
-    defer: program.release()
+    # Fixture files run one after another, so the whole check is region-scoped:
+    # the program's AST, analyses and diagnostics are reclaimed before the next
+    # fixture instead of accumulating for the length of the run.  A single-file
+    # run keeps the plain heap: a region's bump allocation is a net loss there.
+    if options.scoped:
+        var fixture_region = heap_mod.create_region()
+        let previous_region = heap_mod.begin_region(ptr_of(fixture_region))
+        let verdict = check_compile_fail_expectations(file_path, expected.as_span(), eff_roots.as_span(), options.platform)
+        heap_mod.end_region(previous_region)
+        fixture_region.release_all()
+        return report_compile_fail_verdict(file_path, expected.as_span(), verdict, options, results)
+    let verdict = check_compile_fail_expectations(file_path, expected.as_span(), eff_roots.as_span(), options.platform)
+    return report_compile_fail_verdict(file_path, expected.as_span(), verdict, options, results)
 
-    var error_msgs = vec.Vec[str].create()
-    defer: error_msgs.release()
-    var di: ptr_uint = 0
-    while di < program.diagnostics.len():
-        let dp = program.diagnostics.get(di) else:
-            break
-        unsafe:
-            if read(dp).severity == "error":
-                error_msgs.push(read(dp).message.as_str())
-        di += 1
 
-    var passed = true
+## Print or record one compile-fail fixture's verdict.  The reason is rebuilt
+## here from `unmatched_index`, outside any per-file region, so nothing points
+## into freed memory.
+function report_compile_fail_verdict(file_path: str, expected: span[str], verdict: CompileFailVerdict, options: TestRunOptions, results: ref[vec.Vec[TestResult]]) -> int:
+    var passed = verdict.outcome == CompileFailOutcome.passed
     var fail_reason = string.String.create()
     defer: fail_reason.release()
-    if error_msgs.len() == 0:
-        passed = false
-        fail_reason.assign("expected a compile error, but it compiled cleanly")
-    else:
-        var ei: ptr_uint = 0
-        while ei < expected.len():
-            let ep = expected.get(ei) else:
-                break
-            let exp = unsafe: read(ep)
-            var found = false
-            var mi: ptr_uint = 0
-            while mi < error_msgs.len():
-                let mp = error_msgs.get(mi) else:
-                    break
-                if unsafe: read(mp).contains_substring(exp):
-                    found = true
-                    break
-                mi += 1
-            if not found:
-                passed = false
-                fail_reason.assign("no diagnostic matched ")
-                var inspected = debug_text.ruby_inspect(exp)
-                fail_reason.append(inspected.as_str())
-                inspected.release()
-                break
-            ei += 1
+    match verdict.outcome:
+        CompileFailOutcome.passed:
+            pass
+        CompileFailOutcome.compiled_cleanly:
+            fail_reason.append("expected a compile error, but it compiled cleanly")
+        CompileFailOutcome.unmatched:
+            let exp = unsafe: read(expected.data + verdict.unmatched_index)
+            fail_reason.append("no diagnostic matched ")
+            var inspected = debug_text.ruby_inspect(exp)
+            fail_reason.append(inspected.as_str())
+            inspected.release()
 
     let machine = options.format != OutputFormat.human
     if machine:
@@ -344,6 +334,58 @@ function run_compile_fail_file(file_path: str, source_text: str, options: TestRu
     return 1
 
 
+## One compile-fail fixture's verdict.  It carries no borrowed text: the reason
+## is rebuilt by the caller from `unmatched_index`, so nothing points into the
+## per-file region that is freed before the caller reads it.
+enum CompileFailOutcome: ubyte
+    passed = 0
+    compiled_cleanly = 1
+    unmatched = 2
+
+
+struct CompileFailVerdict:
+    outcome: CompileFailOutcome
+    unmatched_index: ptr_uint
+
+
+## Type-check one fixture and compare its error diagnostics against the
+## fixture's `# expect-error:` list.  Runs inside the caller's region, so the
+## loaded program is reclaimed with it; only the outcome crosses the boundary.
+function check_compile_fail_expectations(file_path: str, expected: span[str], eff_roots: span[str], platform: resolver.Platform) -> CompileFailVerdict:
+    var program = loader.check_program(file_path, eff_roots, platform)
+    defer: program.release()
+
+    var error_msgs = vec.Vec[str].create()
+    defer: error_msgs.release()
+    var di: ptr_uint = 0
+    while di < program.diagnostics.len():
+        let dp = program.diagnostics.get(di) else:
+            break
+        unsafe:
+            if read(dp).severity == "error":
+                error_msgs.push(read(dp).message.as_str())
+        di += 1
+
+    if error_msgs.len() == 0:
+        return CompileFailVerdict(outcome = CompileFailOutcome.compiled_cleanly, unmatched_index = 0)
+    var ei: ptr_uint = 0
+    while ei < expected.len:
+        let exp = unsafe: read(expected.data + ei)
+        var found = false
+        var mi: ptr_uint = 0
+        while mi < error_msgs.len():
+            let mp = error_msgs.get(mi) else:
+                break
+            if unsafe: read(mp).contains_substring(exp):
+                found = true
+                break
+            mi += 1
+        if not found:
+            return CompileFailVerdict(outcome = CompileFailOutcome.unmatched, unmatched_index = ei)
+        ei += 1
+    return CompileFailVerdict(outcome = CompileFailOutcome.passed, unmatched_index = 0)
+
+
 ## Runner settings shared by the directory and single-file paths.
 struct TestRunOptions:
     roots: span[str]
@@ -357,6 +399,10 @@ struct TestRunOptions:
     profile: str
     platform: resolver.Platform
     locked: bool
+    ## True when the run covers more than one file: compile-fail fixtures then
+    ## compile inside a per-file heap region (a single-file run keeps the plain
+    ## heap, where a region's bump allocation only inflates the peak).
+    scoped: bool
 
 
 ## How a discovered test file runs (`TestFileKind.lex_error` aborts the run:
@@ -655,6 +701,7 @@ public function test_command(args: span[str]) -> int:
         profile = build_flags.profile,
         platform = build_flags.platform,
         locked = build_flags.locked,
+        scoped = fs.is_directory(path),
     )
 
     if fs.is_directory(path):

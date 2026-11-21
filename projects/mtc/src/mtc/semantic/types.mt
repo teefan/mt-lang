@@ -1382,16 +1382,6 @@ public function definitely_incompatible(target: Type, source: Type) -> bool:
     return tc != sc
 
 
-public function is_definitely_non_str(t: Type) -> bool:
-    match t:
-        Type.ty_str:
-            return false
-        Type.ty_primitive:
-            return true
-        _:
-            return false
-
-
 # ---------------------------------------------------------------------------
 #  Interning — one canonical node per distinct type
 # ---------------------------------------------------------------------------

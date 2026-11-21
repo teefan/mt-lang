@@ -179,8 +179,16 @@ extending Region:
 
 
     ## Resize a region-owned allocation: shrink updates the header in place;
-    ## grow allocates a new payload and copies (the old payload stays abandoned
-    ## in its block, like every bump allocation).
+    ## grow extends in place when the payload is the block's most recent
+    ## allocation and the block still has room, otherwise it allocates a new
+    ## payload and copies (the old payload stays abandoned in its block, like
+    ## every bump allocation).
+    ##
+    ## In-place growth is what keeps a region from inflating the peak: a vector
+    ## that doubles repeatedly (`Vec.reserve`, `String.reserve`) would otherwise
+    ## abandon ~2x its final size in dead copies.  The extension is safe because
+    ## bump allocation only ever hands out the tail of the block, so the bytes
+    ## after the payload are unallocated.
     public editable function resize_payload(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]?:
         if memory == null or size_bytes == 0:
             return null
@@ -191,10 +199,12 @@ extending Region:
             if size_bytes <= old_size:
                 read(header - 2) = size_bytes
                 return memory
-            let grown = this.alloc_aligned_bytes(size_bytes, minimum_alignment) else:
-                return null
-            cstring.copy_bytes(ptr[void]<-grown, ptr[void]<-source, old_size)
-            return ptr[void]<-grown
+            let grown = grow_payload_in_place(this, memory, old_size, size_bytes) else:
+                let moved = this.alloc_aligned_bytes(size_bytes, minimum_alignment) else:
+                    return null
+                cstring.copy_bytes(ptr[void]<-moved, ptr[void]<-source, old_size)
+                return ptr[void]<-moved
+            return grown
 
 
     ## Free every block and reset the region.  Only this call frees region
@@ -215,6 +225,32 @@ extending Region:
         this.block_count = 0
         this.block_capacity = 0
         this.next_block_bytes = 0
+
+
+## Extend the most recent allocation in the region's current block from
+## `old_size` to `size_bytes` in place, or null when it is not that allocation
+## or the block cannot hold the larger payload.  Only the block's tail is
+## unallocated, so a payload ending exactly at `used` may claim the bytes after
+## it; anything else must move.
+function grow_payload_in_place(region: ref[Region], memory: ptr[void]?, old_size: ptr_uint, size_bytes: ptr_uint) -> ptr[void]?:
+    if region.block_count == 0:
+        return null
+    let blocks = region.blocks else:
+        return null
+    unsafe:
+        let block_ptr = blocks + (region.block_count - 1)
+        let data = read(block_ptr).data else:
+            return null
+        let target = ptr[ubyte]<-memory
+        let offset = reinterpret[ptr_uint](target) - reinterpret[ptr_uint](data)
+        if read(block_ptr).used != offset + old_size:
+            return null
+        let needed = offset + size_bytes
+        if needed > read(block_ptr).capacity:
+            return null
+        read(block_ptr).used = needed
+        read(ptr[ptr_uint]<-target - 2) = size_bytes
+        return memory
 
 
 public function alloc_bytes(size_bytes: ptr_uint) -> ptr[void]?:

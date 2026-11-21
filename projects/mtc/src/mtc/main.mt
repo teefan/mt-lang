@@ -1017,14 +1017,55 @@ struct CheckFileResult:
     fatal: bool
 
 
+## A per-file heap region for the commands that process several sources.
+## A region is a bump allocator: it frees everything at once and cannot reuse
+## memory released inside it.  For a single file that is a pure loss (the
+## abandoned temporaries land in the peak — measured ~2x on `main.mt`), so the
+## region is activated only when the command has more than one file.  There it
+## is what keeps the peak flat: without it each file's AST, analyses and
+## import bindings stayed live until process exit (~34 MB per file, which made
+## `check` over the compiler tree grow to 15.2 GB).
+struct FileRegion:
+    region: heap.Region
+    previous: ptr[heap.Region]?
+    active: bool
+
+
+## Start a per-file region when `scoped`.  The returned value is inert
+## otherwise, so callers end it unconditionally.
+##
+## `state` is written through a pointer rather than returned by value: the
+## active-region registry holds `&state.region`, so the Region must live in the
+## caller's frame — returning a struct by value would leave the registry
+## pointing at a dead temporary.
+function begin_file_region(state: ref[FileRegion], scoped: bool) -> void:
+    read(state).region = heap.create_region()
+    read(state).previous = null
+    read(state).active = scoped
+    if scoped:
+        read(state).previous = heap.begin_region(ptr_of(read(state).region))
+
+
+## End the per-file region: reclaim every allocation made since `begin_file_region`.
+function end_file_region(state: ref[FileRegion]) -> void:
+    if not read(state).active:
+        return
+    heap.end_region(read(state).previous)
+    read(state).region.release_all()
+
+
 ## Check one source file and print its diagnostics.  Returns none when the
 ## operand resolves to no source file (the host skips it).
+##
+## `scoped` gives the file's compile its own heap region (see `FileRegion`); the
+## caller sets it when the command processes more than one file.
 function check_one_file(
     source_path: str,
     roots: ref[vec.Vec[str]],
     owned_roots: ref[vec.Vec[string.String]],
     platform: resolver.Platform,
     resolution: ResolutionFlags,
+    scoped: bool,
 ) -> Option[CheckFileResult]:
     var file_roots = vec.Vec[str].create()
     defer: file_roots.release()
@@ -1072,6 +1113,15 @@ function check_one_file(
     add_module_roots(effective, ref_of(file_roots), owned_roots)
     if file_roots.is_empty():
         file_roots.push(path_ops.dirname(effective))
+
+    # Compile this file inside a heap region when the command has more than one
+    # source (see `FileRegion`): the AST, the analyses' maps and every binding
+    # are then reclaimed in one step.  The region starts after `add_module_roots`,
+    # which pushes into the caller-owned `owned_roots` and must stay ordinary
+    # heap.
+    var file_region = zero[FileRegion]
+    begin_file_region(ref_of(file_region), scoped)
+    defer: end_file_region(ref_of(file_region))
 
     var program = loader.check_program(effective, file_roots.as_span(), platform)
     defer: program.release()
@@ -1269,7 +1319,8 @@ function check_command(args: span[str]) -> int:
         let raw_path = source_files.get(fi) else:
             break
         let source_path = unsafe: read(raw_path).as_str()
-        let result = check_one_file(source_path, ref_of(roots), ref_of(owned_roots), platform, resolution) else:
+        let scoped = source_files.len() > 1
+        let result = check_one_file(source_path, ref_of(roots), ref_of(owned_roots), platform, resolution, scoped) else:
             fi += 1
             continue
         if result.fatal:
@@ -1898,6 +1949,120 @@ struct LintFileResult:
     had_warnings: bool
 
 
+## What one region-scoped lint pass measured and reported.
+struct LintScan:
+    warnings: ptr_uint
+    fix_mode: bool
+    elapsed_ms: double
+
+
+## Lint (or fix) one source file inside a heap region of its own.  The caller
+## owns the region boundary (see `lint_one_file`), so every allocation this
+## function makes — the loaded program's AST and analyses, the lint AST, the
+## warning list — is freed in one step once it returns; only counts and a
+## duration come back.
+function lint_file_scoped(
+    src: str,
+    fp: str,
+    lint_target: str,
+    lint_flags: LintFlags,
+    platform: resolver.Platform,
+    lint_roots: span[str],
+    select_set: span[str],
+    ignore_set: span[str],
+    file_profile: ptr[profile_mod.Profile]?,
+) -> LintScan:
+    # Load the module so the lint sees what the analyzer knows: which
+    # methods are `editable` (prefer-let on `var v` + `v.push(1)`),
+    # which types own resources, and which imports failed.  The host's
+    # linter runs on analyzed files too.
+    var lint_program = loader.check_program(lint_target, lint_roots, platform)
+    defer: lint_program.release()
+    var owning_names = lint_program.owning_type_span()
+    var unresolved_paths = vec.Vec[str].create()
+    defer: unresolved_paths.release()
+    var options = linter_mod.default_lint_options()
+    options.owning_type_names = owning_names
+    options.select = select_set
+    options.ignore = ignore_set
+    options.profile = file_profile
+    if lint_program.analyses.len() > 0:
+        var up: ptr_uint = 0
+        while up < lint_program.unresolved_import_paths.len():
+            let upp = lint_program.unresolved_import_paths.get(up) else:
+                break
+            unresolved_paths.push(unsafe: read(upp).as_str())
+            up += 1
+        options.unresolved_import_paths = unresolved_paths.as_span()
+        let root_analysis_ptr = lint_program.analyses.get(lint_program.root_index)
+        if root_analysis_ptr != null:
+            unsafe:
+                options.editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
+                options.mutating_sites = read(root_analysis_ptr).mutating_argument_sites.as_span()
+                options.mutable_lvalue_sites = read(root_analysis_ptr).mutable_lvalue_sites.as_span()
+                options.directional_ffi_sites = read(root_analysis_ptr).directional_ffi_sites.as_span()
+                options.analysis = root_analysis_ptr
+
+    if lint_flags.fix_mode:
+        let fix_started_ms = format_cli.monotonic_ms()
+        var fixed = fix_engine.fix_source(src, fp, options)
+        defer: fixed.release()
+        let elapsed = format_cli.monotonic_ms() - fix_started_ms
+        if not fixed.as_str().equal(src):
+            match fs.write_text(fp, fixed.as_str()):
+                Result.success:
+                    if not cli_quiet:
+                        stdio.print_format(c"fixed %.*s\n", int<-(fp.len), fp.data)
+                Result.failure as write_err:
+                    var wem = write_err.error
+                    defer: wem.release()
+                    stdio.print_format(c"error: cannot write %.*s\n", int<-(fp.len), fp.data)
+        return LintScan(warnings = 0, fix_mode = true, elapsed_ms = elapsed)
+
+    var diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: diags.release()
+    var file = parser.parse_source(src, ref_of(diags))
+    # The analysis' expression-type maps are keyed by expression
+    # pointer, so lint the AST the analysis was built from (the host
+    # lints `facts.ast` too); the fresh parse is the fallback.
+    let maybe_analysis = options.analysis
+    if maybe_analysis != null:
+        unsafe:
+            file = read(maybe_analysis).source_file
+
+    var providers = scope_tracking.build_import_method_providers(file, lint_program.analyses.as_span())
+    defer: providers.release()
+    options.method_providers = providers.as_span()
+    let lint_scan_started_ms = format_cli.monotonic_ms()
+    var warns = linter_mod.lint_source_with(file, src, fp, options)
+    let lint_scan_total_ms = format_cli.monotonic_ms() - lint_scan_started_ms
+    defer: warns.release()
+    let warning_count = warns.len()
+    var wi: ptr_uint = 0
+    while wi < warns.len():
+        let wp = warns.get(wi) else:
+            break
+        unsafe:
+            let w = read(wp)
+            if w.line == 0:
+                stdio.print_format(
+                    c"%.*s:: %.*s: %.*s\n",
+                    int<-(w.path.len), w.path.data,
+                    int<-(w.code.len), w.code.data,
+                    int<-(w.message.len), w.message.data,
+                )
+            else:
+                stdio.print_format(
+                    c"%.*s:%d: %.*s: %.*s\n",
+                    int<-(w.path.len), w.path.data,
+                    int<-(w.line),
+                    int<-(w.code.len), w.code.data,
+                    int<-(w.message.len), w.message.data,
+                )
+        wi += 1
+    return LintScan(warnings = warning_count, fix_mode = false, elapsed_ms = lint_scan_total_ms)
+
+
 ## Lint (or fix) one source file.  Returns none after printing a read/resolution
 ## error; `--ignore-generated` and `--fix` return a zero-warning result.
 function lint_one_file(
@@ -1909,6 +2074,7 @@ function lint_one_file(
     select_set: span[str],
     ignore_set: span[str],
     timing_entries: ref[vec.Vec[LintTimingEntry]],
+    scoped: bool,
 ) -> Option[LintFileResult]:
     if cli_verbose:
         if lint_flags.fix_mode:
@@ -1925,10 +2091,6 @@ function lint_one_file(
             if lint_flags.ignore_generated and src.as_str().starts_with("# generated by mtc"):
                 return Option[LintFileResult].some(value = LintFileResult(warnings = 0, had_warnings = false))
 
-            # Load the module so the lint sees what the analyzer knows: which
-            # methods are `editable` (prefer-let on `var v` + `v.push(1)`),
-            # which types own resources, and which imports failed.  The host's
-            # linter runs on analyzed files too.
             var lint_roots = vec.Vec[str].create()
             defer: lint_roots.release()
             var rj: ptr_uint = 0
@@ -1956,107 +2118,42 @@ function lint_one_file(
                         return Option[LintFileResult].none
                     Result.success:
                         pass
+            # The module roots land in this frame's vectors, which outlive the
+            # per-file region below, so they are resolved before it starts.
             add_module_roots(lint_target, ref_of(lint_roots), owned_roots)
             if lint_roots.is_empty():
                 lint_roots.push(path_ops.dirname(lint_target))
-            var lint_program = loader.check_program(lint_target, lint_roots.as_span(), platform)
-            defer: lint_program.release()
-            var owning_names = lint_program.owning_type_span()
-            var unresolved_paths = vec.Vec[str].create()
-            defer: unresolved_paths.release()
-            var options = linter_mod.default_lint_options()
-            options.owning_type_names = owning_names
-            options.select = select_set
-            options.ignore = ignore_set
-            if lint_program.analyses.len() > 0:
-                var up: ptr_uint = 0
-                while up < lint_program.unresolved_import_paths.len():
-                    let upp = lint_program.unresolved_import_paths.get(up) else:
-                        break
-                    unresolved_paths.push(unsafe: read(upp).as_str())
-                    up += 1
-                options.unresolved_import_paths = unresolved_paths.as_span()
-                let root_analysis_ptr = lint_program.analyses.get(lint_program.root_index)
-                if root_analysis_ptr != null:
-                    unsafe:
-                        options.editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
-                        options.mutating_sites = read(root_analysis_ptr).mutating_argument_sites.as_span()
-                        options.mutable_lvalue_sites = read(root_analysis_ptr).mutable_lvalue_sites.as_span()
-                        options.directional_ffi_sites = read(root_analysis_ptr).directional_ffi_sites.as_span()
-                        options.analysis = root_analysis_ptr
 
+            # The `--timings` profile outlives this file (its entries print after
+            # the whole run), so the Profile struct and the phase vectors it
+            # grows are ordinary heap allocated *before* the per-file region:
+            # an existing libc allocation grows through `libc.realloc` and is
+            # never captured by the region.
             var file_profile: ptr[profile_mod.Profile]? = null
             if lint_flags.timings:
                 file_profile = create_heap_profile()
-            options.profile = file_profile
 
-            if lint_flags.fix_mode:
-                let fix_started_ms = format_cli.monotonic_ms()
-                var fixed = fix_engine.fix_source(src.as_str(), fp, options)
-                defer: fixed.release()
-                if lint_flags.timings:
-                    push_lint_timing(
-                        timing_entries, fp, file_profile, format_cli.monotonic_ms() - fix_started_ms, true
-                    )
-                    file_profile = null
-                if not fixed.as_str().equal(src.as_str()):
-                    match fs.write_text(fp, fixed.as_str()):
-                        Result.success:
-                            if not cli_quiet:
-                                stdio.print_format(c"fixed %.*s\n", int<-(fp.len), fp.data)
-                        Result.failure as write_err:
-                            var wem = write_err.error
-                            defer: wem.release()
-                            stdio.print_format(c"error: cannot write %.*s\n", int<-(fp.len), fp.data)
-                return Option[LintFileResult].some(value = LintFileResult(warnings = 0, had_warnings = false))
+            # Per-file region (see `FileRegion`): otherwise each linted file
+            # retained its AST and analyses until process exit.  It is started
+            # only for a multi-file run — for one file its bump allocation is a
+            # net loss — so the timing entry below stays outside either way.
+            var file_region = zero[FileRegion]
+            begin_file_region(ref_of(file_region), scoped)
+            let scanned = lint_file_scoped(
+                src.as_str(), fp, lint_target, lint_flags, platform, lint_roots.as_span(),
+                select_set, ignore_set, file_profile
+            )
+            end_file_region(ref_of(file_region))
 
-            var diags = vec.Vec[pstate.ParseDiagnostic].create()
-            defer: diags.release()
-            var file = parser.parse_source(src.as_str(), ref_of(diags))
-            # The analysis' expression-type maps are keyed by expression
-            # pointer, so lint the AST the analysis was built from (the host
-            # lints `facts.ast` too); the fresh parse is the fallback.
-            let maybe_analysis = options.analysis
-            if maybe_analysis != null:
-                unsafe:
-                    file = read(maybe_analysis).source_file
-
-            var providers = scope_tracking.build_import_method_providers(file, lint_program.analyses.as_span())
-            defer: providers.release()
-            options.method_providers = providers.as_span()
-            let lint_scan_started_ms = format_cli.monotonic_ms()
-            var warns = linter_mod.lint_source_with(file, src.as_str(), fp, options)
-            let lint_scan_total_ms = format_cli.monotonic_ms() - lint_scan_started_ms
-            defer: warns.release()
+            # The timing entry owns a path String and grows the caller's
+            # entries vector, so it is built after the region is gone.
             if lint_flags.timings:
-                push_lint_timing(timing_entries, fp, file_profile, lint_scan_total_ms, false)
-                file_profile = null
-            let warning_count = warns.len()
-            var wi: ptr_uint = 0
-            while wi < warns.len():
-                let wp = warns.get(wi) else:
-                    break
-                unsafe:
-                    let w = read(wp)
-                    if w.line == 0:
-                        stdio.print_format(
-                            c"%.*s:: %.*s: %.*s\n",
-                            int<-(w.path.len), w.path.data,
-                            int<-(w.code.len), w.code.data,
-                            int<-(w.message.len), w.message.data,
-                        )
-                    else:
-                        stdio.print_format(
-                            c"%.*s:%d: %.*s: %.*s\n",
-                            int<-(w.path.len), w.path.data,
-                            int<-(w.line),
-                            int<-(w.code.len), w.code.data,
-                            int<-(w.message.len), w.message.data,
-                        )
-                wi += 1
+                push_lint_timing(timing_entries, fp, file_profile, scanned.elapsed_ms, scanned.fix_mode)
+            if scanned.fix_mode:
+                return Option[LintFileResult].some(value = LintFileResult(warnings = 0, had_warnings = false))
             return Option[LintFileResult].some(value = LintFileResult(
-                warnings = warning_count,
-                had_warnings = warning_count > 0,
+                warnings = scanned.warnings,
+                had_warnings = scanned.warnings > 0,
             ))
         Result.failure as read_err:
             var em = read_err.error
@@ -2139,9 +2236,10 @@ function lint_command(args: span[str]) -> int:
         let fp_ptr = source_files.get(fi) else:
             break
         let fp = unsafe: read(fp_ptr).as_str()
+        let scoped = source_files.len() > 1
         let result = lint_one_file(
             fp, lint_flags, platform, roots.as_span(), ref_of(owned_roots), select_set.as_span(), ignore_set.as_span(),
-            ref_of(timing_entries)
+            ref_of(timing_entries), scoped
         ) else:
             return 1
         if result.had_warnings:
@@ -2385,7 +2483,7 @@ function lower_command(args: span[str]) -> int:
         defer: file_owned.release()
         if apply_locked_resolution(path, resolution, ref_of(file_roots), ref_of(file_owned)) != 0:
             return 1
-        let rc = lower_one_path(path, ref_of(file_roots), ref_of(file_owned), platform, sexpr, multiple and not sexpr)
+        let rc = lower_one_path(path, ref_of(file_roots), ref_of(file_owned), platform, sexpr, multiple and not sexpr, multiple)
         if rc != 0:
             return rc
         pi += 1
@@ -2395,7 +2493,7 @@ function lower_command(args: span[str]) -> int:
 ## Lower one source file and print the rendered IR (or its `--sexpr` dump).
 ## The header is printed after a successful check, matching the host's loop
 ## (`check_program` raises before the header on an invalid file).
-function lower_one_path(path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]], platform: resolver.Platform, sexpr: bool, header: bool) -> int:
+function lower_one_path(path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]], platform: resolver.Platform, sexpr: bool, header: bool, scoped: bool) -> int:
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
     let effective = effective_source_path(path, roots, ref_of(entry_path_owner), ref_of(source_root_owner)) else:
@@ -2412,6 +2510,12 @@ function lower_one_path(path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[
         source_root_owner.release()
         return 1
     add_module_roots(effective, roots, owned)
+
+    # Per-file region (see `FileRegion`): a multi-operand `lower` otherwise
+    # retains every file's AST, analyses and IR until process exit.
+    var file_region = zero[FileRegion]
+    begin_file_region(ref_of(file_region), scoped)
+    defer: end_file_region(ref_of(file_region))
 
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer: program.release()
@@ -2534,7 +2638,7 @@ function resolve_emit_c_operand(
 
 
 ## Compile one checked program to C and print it.
-function emit_c_one_path(path: str, roots: ref[vec.Vec[str]], owned_roots: ref[vec.Vec[string.String]], platform: resolver.Platform) -> int:
+function emit_c_one_path(path: str, roots: ref[vec.Vec[str]], owned_roots: ref[vec.Vec[string.String]], platform: resolver.Platform, scoped: bool) -> int:
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
     let effective = effective_source_path(path, roots, ref_of(entry_path_owner), ref_of(source_root_owner)) else:
@@ -2552,6 +2656,12 @@ function emit_c_one_path(path: str, roots: ref[vec.Vec[str]], owned_roots: ref[v
         entry_path_owner.release()
         source_root_owner.release()
         return 1
+
+    # Per-file region (see `FileRegion`): a multi-operand `emit-c` otherwise
+    # retains every file's AST, analyses and C source until process exit.
+    var file_region = zero[FileRegion]
+    begin_file_region(ref_of(file_region), scoped)
+    defer: end_file_region(ref_of(file_region))
 
     var program = loader.check_program(effective, roots.as_span(), platform)
     defer: program.release()
@@ -2637,7 +2747,7 @@ function emit_c_command(args: span[str]) -> int:
             return 1
         if multiple:
             stdio.print_format(c"/* --- %.*s --- */\n", int<-(path.len), path.data)
-        let rc = emit_c_one_path(path, ref_of(file_roots), ref_of(file_owned), platform)
+        let rc = emit_c_one_path(path, ref_of(file_roots), ref_of(file_owned), platform, multiple)
         if rc != 0:
             return rc
         if multiple and pi + 1 < program_paths.len():
@@ -3357,10 +3467,20 @@ struct LintTimingEntry:
 
 
 ## A heap profile for one linted file.
+##
+## The three phase vectors are pre-reserved here so they own libc storage from
+## the start: the caller may create this profile outside a per-file heap region
+## and keep recording phases inside it, and a vector that already owns libc
+## memory grows through `libc.realloc` instead of capturing region memory that
+## dies with the file.  Phase names are literals, so a shallow copy of them
+## never dangles.
 function create_heap_profile() -> ptr[profile_mod.Profile]:
     let memory = unsafe: ptr[profile_mod.Profile]<-heap.must_alloc[profile_mod.Profile](1)
     unsafe:
         read(memory) = profile_mod.create()
+        read(memory).names.reserve(32)
+        read(memory).totals.reserve(32)
+        read(memory).counts.reserve(32)
     return memory
 
 

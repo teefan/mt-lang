@@ -5707,9 +5707,15 @@
         "diags": []
       },
       "std/mem/heap.mt": {
-        "digest": "dea5eef5509808600fc37b788f83f9605b507decb2c1d1a966a424d94976a7a4",
+        "digest": "c2e5df944f177046800616ebc24525bfa9416e461056124d6623ea2bf1c7be3b",
         "rc": 0,
         "diags": [
+          [
+            "line-too-long",
+            "line exceeds max length of 120 columns (128); wrap the expression",
+            235,
+            121
+          ],
           [
             "prefer-inline-methods",
             "methods on 'Region' can be written inline inside the struct declaration",
