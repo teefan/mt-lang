@@ -15,9 +15,10 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-148-2026-11-21)
+- [Status at a glance](#status-at-a-glance-session-149-2026-11-21)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
+- [Session 149 — whole-program memory reduction](#session-149--whole-program-memory-reduction)
 - [Session 148 — aliased enum-member hover](#session-148--aliased-enum-member-hover)
 - [Session 147 — non-text receiver completion and extension activation](#session-147--non-text-receiver-completion-and-extension-activation)
 - [Session 146 — output diagnostics: caret length and warning anchors](#session-146--output-diagnostics-caret-length-and-warning-anchors)
@@ -104,7 +105,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 148, 2026-11-21)
+## Status at a glance (session 149, 2026-11-21)
 
 | Area | State |
 | --- | --- |
@@ -112,8 +113,8 @@ history.
 | Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** (session 145, stage0 = the committed seed, a `ruby` shim that exits 127 never invoked) |
 | Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`b29241f4…`, release); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
 | Release archive | **3.52 MiB deterministic tar.gz** (`mtc-0.4.26-linux-x86_64`), checksummed beside the archive; identical across two packagings of the same inputs; clean-path smoke (std build/run, LSP initialize, docs page/CSS/JS/404) green; the version is the authored `cli_help.VERSION` |
-| Analyzer memory | `check main.mt` **712 MiB / 6.6 s** (was 9,228 MiB / ~58 s); `lowering.mt` **274 MiB** (was 2,322 MiB).  All tooling fan-out is capped at **4**, so the worst 4-way sweep is ~3 GiB (session 142) |
-| `test/mt` | **85 files / 0 failed** (62 in-language tests + 23 compile-fail diagnostics fixtures; session 148 replayed); peak RSS **135 MB** under the region-scoped test compiler |
+| Analyzer/IR memory | `check main.mt` **611 MiB / 6 s**; `lower main.mt` **1,277 MiB / 12 s**; `emit-c main.mt` **1,331 MiB / 13 s** (was 720 / 3,571 / 3,631 MiB; session 149).  The old analyzer const blow-up (**9,228 MiB** on `main.mt`, session 142) and the cross-module async rescan (682 MB of the lower peak, session 149) are gone.  `lowering.mt` check **274 MiB** (session 142).  All tooling fan-out is capped at **4**. |
+| `test/mt` | **85 files / 0 failed** (62 in-language tests + 23 compile-fail diagnostics fixtures; session 149 replayed); peak RSS **135 MB** under the region-scoped test compiler |
 | Examples | **49/49 build** under the self-only `emit-c` gate (15 top-level + `examples/sdl3` 34/34; session 143; was host-compared 49/49 in session 141) |
 | Recorded oracles | **CLI 227/227 cases; diagnostics 504 files / 0 differ; lint 673 files / 0 differ; formatter 775 files × 3 modes / 0 differ** — digest-keyed and replayed green with no host source present (session 146 refreshed the diag, CLI, lint and formatter fixtures for the output-diagnostic fixes and stale session-145 rows) |
 | `check` diagnostics | the 504-file diagnostic oracle is the gate; the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
@@ -369,6 +370,55 @@ on the fixed compiler and replay with no skips, including with `lib/` moved
 aside; `test/mt` 85/0, `cli:parity` 227/227, `diag_parity` 501/0/0/3 of 504,
 docs smoke host+self ok, and the guard ratchet after a reviewed baseline
 refresh (126,602 code lines).
+
+## Session 149 — whole-program memory reduction
+
+Committed `01a5408` (16 files).  Session 142 removed the analyzer's const-map
+blow-up and the fan-out cap; this session attacked the remaining whole-program
+pipeline on `projects/mtc/src/mtc/main.mt`: **check 720 MiB, lower 3,571 MiB,
+emit-c 3,631 MiB**.  The work was measured step by step with `VmHWM` sampling
+and Massif (`--pages-as-heap=yes`, one process at a time):
+
+- **Compiler-mode analyzer facts.**  `semantic/analyzer.mt` has a
+  `tooling_facts` switch; `main.mt` clears it for `check`, `lower`, `emit-c`,
+  `build`, `run` and `lint`.  The seven maps only the LSP consumes
+  (`flow_types`, `local_decl_types`, `destructure_types`, `arm_binding_types`,
+  `callable_value_sites`, `resolved_call_kinds`, `member_receiver_types`) are
+  then not populated.  The LSP and the in-language semantic tests keep the
+  default (enabled).  check 720→684 MiB; lower/emit 33–50 MiB.
+- **Largest `Type` variant boxed.**  `ty_variant_arm_payload` now stores
+  `ptr[VariantArmPayload]`; `Type` **104→72 B**.  check 684→611 MiB; lower
+  3,538→3,258 MiB.
+- **Widest IR expression boxed.**  `expr_reinterpret` stores
+  `ptr[ReinterpretExpr]`; `ir.Expr` **328→232→168 B**, `ir.Stmt` **176→144 B**.
+  lower 3,258→3,194 MiB; emit 3,297→3,235 MiB.
+- **Massif found the dominant leak.**  `is_cross_module_function_async` rescanned
+  every module's declarations and allocated a `qualified_c_name` string per
+  candidate on every cross-module call: **682 MB, 20% of the lower peak**.  A
+  `program_async` map is now built once beside `program_returns` in
+  `collect_program_returns` and threaded through `LoweringContext`; the lookup
+  is a map hit.  lower **3,194→1,277 MiB** (25→12 s); emit-c
+  **3,235→1,331 MiB** (26→13 s).
+
+Final: **check 611 MiB / 6 s, lower 1,277 MiB / 12 s, emit-c 1,331 MiB /
+13 s** — lower/emit −64%, roughly 2× faster.  A second Massif pass over the
+new ~1.28 GiB peak has no single hotspot: `Vec[types.Type]` growth ~259 MB,
+`String` appends ~89 MB, IR `Stmt` vectors ~78 MB, lexer tokens ~75 MB.
+
+**Verification.**  Self tests **22/22**; `test/mt` **85/85**; bootstrap fixed
+point (`stage2.c == stage3.c`, `tools/bootstrap.sh --fast -j 4`); LSP
+conformance **37/37**; refactor guard `--check` ok; `git diff --check` clean.
+
+**Next.**  The planned structural step is an interned type handle (`TypeId`) for
+IR nodes (and then the analyzer maps), an arena-owned `ir.Program`, and phase
+release (AST/analysis/IR/C before `cc`); the long-term shape is per-module or
+per-function lowering/codegen with a global type table.  Reference models:
+rustc's `Ty<'tcx>`/`CtxtInterners`, query system and codegen units; Zig's
+InternPool (`u32`), Sema arena and per-function AIR; Odin's per-thread
+permanent/temporary arenas and direct LLVM emission.  Operational warning: the
+seven-process OOM was the pre-fix `sexpr lower -j 16` fan-out (see *Memory
+incident (operational)*); keep at most **4** compiler instances and run one LSP
+probe server set at a time, under a memory cap, sweeping orphans.
 
 ## Session 148 — aliased enum-member hover
 
@@ -3599,6 +3649,39 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
+## Handoff (session 149)
+
+**Next session:** start the IR type-handle/arena refactor.  The memory batch is
+committed at `01a5408`; the tree is clean, and `build/stage2/mtc` is the
+fixed-point binary produced by `tools/bootstrap.sh --fast -j 4`.
+
+**Baseline to preserve.**  `check main.mt` **611 MiB / 6 s**, `lower main.mt`
+**1,277 MiB / 12 s**, `emit-c main.mt` **1,331 MiB / 13 s**; `Type` **72 B**,
+`ir.Expr` **168 B**, `ir.Stmt` **144 B**.  Self tests **22/22**, `test/mt`
+**85/85**, LSP conformance **37/37**, guard `--check` ok.  Re-measure with
+`VmHWM`/Massif on one process before and after each step.
+
+**Order of work.**
+1. **TypeId interning.**  Introduce a per-compilation type table and an
+   interned handle; change the IR type fields first (the remaining ~1.28 GiB is
+   spread, with `Vec[types.Type]` growth ~259 MB), then the analyzer maps.
+   `ir.Expr` should approach ~48–64 B; map values 72 B → 4/8 B.  Rust
+   `Ty<'tcx>`/`CtxtInterners` and Zig's InternPool are the reference designs.
+2. **IR arena/ownership.**  Allocate IR nodes from an arena, make
+   `ir.Program` own its storage, and add `release()`; phase release (C source
+   after write, debug map before `cc`, IR/Program before `cc`).
+3. **Streaming per module/function.**  A global signature/type pass, then
+   lower/emit and free one unit at a time (rustc codegen units, Zig AIR per
+   function, Odin direct LLVM).
+4. **Re-profile.**  The remaining peak is `Vec[types.Type]` growth (~259 MB),
+   `String` appends (~89 MB), IR `Stmt` vectors (~78 MB), lexer tokens
+   (~75 MB); TypeId/arena targets the first and fifth.
+
+**Operational.**  At most **4** compiler instances; one LSP probe server set at
+a time; probe servers under a memory cap and orphan sweep; never `-j 16`; use
+`-j 4 --mem-mb 8000` for heavy sweeps.  The seven-process OOM was the pre-fix
+`sexpr lower -j 16` fan-out, not an LSP leak (the LSP measured 94–660 MB).
+
 ## Handoff (session 148)
 
 **Next session:** no open compiler or LSP item remains.  Session 148 closed the
@@ -4206,10 +4289,12 @@ recorded oracles (tools/golden/{cli,diag,lint,format}.json). New work lands in
 projects/mtc and std/ only, and correctness is the language manual + the
 suite, not host byte-identity.
 
-Start from this file's Handoff, Status at a glance and Ledger. No open
-compiler or LSP item remains: the output-diagnostic batch closed in session
-146, and session 147 closed non-text receiver completion and the extension
-activation event. Work in tiers:
+Start from this file's Handoff (session 149), Status at a glance and Ledger.
+Session 149 committed the whole-program memory batch (`01a5408`); the next
+item is the planned IR type-handle/arena refactor, not a parity defect.  The
+measured baseline on `projects/mtc/src/mtc/main.mt` is check **611 MiB / 6 s**,
+lower **1,277 MiB / 12 s**, emit-c **1,331 MiB / 13 s**; preserve it and
+measure each step. Work in tiers:
 build the dev compiler with the seed
 ("$(tools/bootstrap.sh --print-stage0)" build projects/mtc -I . --no-cache -o
 tmp/mtc-dev, ~25 s), run tmp/mtc-dev test projects/mtc -I . --timeout 120,
@@ -4230,8 +4315,10 @@ Co-authored-by: CommandCodeBot <noreply@commandcode.ai>.
 HARD RULES: never edit sources while a gate runs (bootstrap compiles the
 working tree — check the exit status, not the tail); rebuild before measuring;
 quote sets where a counter drifts; run generated binaries as
-`timeout 10 bash -c 'ulimit -v 20000000; …'`; no hacks — fix root causes;
-never restore lib/ to run a retired tool (refresh the golden instead).
+`timeout 10 bash -c 'ulimit -v 20000000; …'`; at most four compiler instances
+and one LSP probe server set at a time, under a memory cap, sweeping orphans;
+no hacks — fix root causes; never restore lib/ to run a retired tool (refresh
+the golden instead).
 ```
 
 ## The program — tracks and stopping rules (all tracks closed)
