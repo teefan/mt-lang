@@ -33,8 +33,8 @@
 require "digest"
 require "etc"
 require "fileutils"
-require "open3"
 require "shellwords"
+require "tmpdir"
 require_relative "lib/golden"
 require_relative "lib/jobs"
 
@@ -166,8 +166,17 @@ def run_self(bin, mode, file, timeout_s, mem_mb)
   end
   full = ["timeout", timeout_s.to_s, *full]
 
-  out, err, status = Open3.capture3(*full)
+  # A spawn/wait run, not Open3: Open3's reader threads trip a Ruby 4.0 VM
+  # teardown segfault on a long sweep (diag_parity/lint_parity use the same).
+  out_path = File.join(Dir.tmpdir, "mtc-format-#{Process.pid}.out")
+  err_path = File.join(Dir.tmpdir, "mtc-format-#{Process.pid}.err")
+  FileUtils.rm_f([out_path, err_path])
+  pid = Process.spawn(*full, out: out_path, err: err_path)
+  _pid, status = Process.wait2(pid)
   rc = status.exitstatus || (128 + status.termsig.to_i)
+  out = File.binread(out_path).force_encoding(Encoding::UTF_8)
+  err = File.binread(err_path).force_encoding(Encoding::UTF_8)
+  FileUtils.rm_f([out_path, err_path])
   [out, rc, err]
 end
 

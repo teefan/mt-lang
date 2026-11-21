@@ -100,7 +100,7 @@ textual counting cannot see aliasing or dynamic dispatch, and names are matched
 globally (two modules exporting the same name can mask each other). Existing
 candidates are frozen; a **new** one fails `--strict`.
 
-Current baseline: **33 unused, 6 test-only**. Examples worth triaging:
+Current baseline: **32 unused, 6 test-only**. Examples worth triaging:
 `c_backend.CBackendError`, `lowering.LoweringError`, `lowering/async.mt` type
 helpers, `lsp/navigation.mt analysis_for_document`/`ast_for_document`,
 `packages/*` helpers, and `version_info.GIT_REVISION`.
@@ -110,7 +110,7 @@ helpers, `lsp/navigation.mt analysis_for_document`/`ast_for_document`,
 Normalized 12-line windows (comments/blanks stripped, literals replaced with
 `S`/`N`) hashed across all functions. Overlapping windows make the cluster count
 large; `duplicated_lines` is the ratcheted metric. Current baseline:
-**6,429 duplicated lines in 904 window clusters**.  Session 125 fixed the
+**6,470 duplicated lines in 896 window clusters**.  Session 125 fixed the
 function-end scan for multi-line signatures, so this baseline includes bodies
 the earlier metric skipped; session 126's splits also shifted a few window
 boundaries, session 131's completion/diagnostic feature growth added two
@@ -121,12 +121,12 @@ score.
 
 ### Size, markers, tests
 
-- **124,809 code lines**; **1 function ≥ 200 lines**; **11 files ≥ 2,000 code
+- **127,752 code lines**; **1 function ≥ 200 lines**; **11 files ≥ 2,000 code
   lines**. The ratchet counts these, so a refactor cannot trade one long
   function for another.  Session 130 closed the rest: only `binding_at` (385,
   excluded) remains.
 - **0 marker comments** (`TODO`/`FIXME`/`XXX`/`HACK`); any new one fails.
-- Test trees: **22** files in `projects/mtc/test`, **61** in `test/mt`. The
+- Test trees: **22** files in `projects/mtc/test`, **85** in `test/mt`. The
   ratchet fails if either count drops (silent-skip protection).
 
 ## 3. The refactor protocol
@@ -195,11 +195,11 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 145, 2026-11-21)
+## 6. Current baseline (session 146, 2026-11-21)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 160,848 / 127,722 |
+| source files / lines / code lines | 169 / 160,882 / 127,752 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
@@ -211,6 +211,11 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 22 / 85 |
 
+Session 146 refreshed the baseline for the warning-anchor work (+30 code
+lines: the five position emitters, the null-check condition carry, and the
+unreachable statement-column fallback; the shifted baseline key for the
+pre-existing `reserved_name_fixes` export).  Duplication, sizes and test counts
+are unchanged.
 Session 145 refreshed the baseline for the LSP position-encoding work (+253
 code lines: negotiated UTF-8/UTF-16 boundaries, the per-document line-start
 map, and the emitter audit; +106 duplicated lines from the per-module

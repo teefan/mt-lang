@@ -18,10 +18,12 @@ import std.vec as vec
 import mtc.parser.ast as ast
 
 
-## A redundant null check: the tested name and the line of the `if` branch.
+## A redundant null check: the tested name, the line of the `if` branch, and the
+## branch condition (the linter derives the reported condition span from it).
 public struct Diag:
     name: str
     line: ptr_uint
+    condition: ptr[ast.Expr]
 
 
 ## A null-test refinement extracted from a condition.  `non_null_if_true`
@@ -662,7 +664,7 @@ function walk_if(
 
         let checked = null_check_name(br.condition)
         if checked.len != 0 and set_contains(ref_of(current), checked):
-            diags.push(Diag(name = checked, line = br.line))
+            diags.push(Diag(name = checked, line = br.line, condition = br.condition))
 
         var pairs = vec.Vec[NullPair].create()
         collect_null_pairs(br.condition, true, ref_of(pairs))

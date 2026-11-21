@@ -24,7 +24,6 @@
 # Exit status: 0 when every comparable case matches, 1 otherwise.
 
 require "fileutils"
-require "open3"
 require "tmpdir"
 require_relative "lib/golden"
 
@@ -624,6 +623,20 @@ materialize_fixtures
 cases = build_cases
 cases = cases.select { |c| c[:name].match?(Regexp.new(filter)) } if filter
 
+## Spawn a case and return `[stdout, stderr, status]`.  A spawn/wait capture,
+## not Open3: Open3's reader threads trip a Ruby 4.0 VM teardown segfault on a
+## long sweep (the same reason diag_parity/lint_parity use spawn).
+def capture_case(env, binary, argv, chdir, root)
+  out_path = File.join(root, "tmp", "cli-parity", "stdout")
+  err_path = File.join(root, "tmp", "cli-parity", "stderr")
+  FileUtils.rm_f([out_path, err_path])
+  pid = Process.spawn(env, binary, *argv, chdir: chdir, out: out_path, err: err_path)
+  _pid, status = Process.wait2(pid)
+  [File.binread(out_path).force_encoding(Encoding::UTF_8),
+   File.binread(err_path).force_encoding(Encoding::UTF_8),
+   status]
+end
+
 # The fixture is the compiler's own recorded behavior: the Ruby host is gone,
 # so there is no live comparison mode.
 # Build cases report `[cached]` on a warm cache, so record and replay both
@@ -636,7 +649,7 @@ FileUtils.mkdir_p(cache_root)
 actual = {}
 cases.each do |c|
   isolate_backup = c[:isolate] ? snapshot_dir(c[:cwd]) : nil
-  sout, serr, status = Open3.capture3({ "XDG_CACHE_HOME" => cache_root }, self_bin, *c[:argv], chdir: c[:cwd])
+  sout, serr, status = capture_case({ "XDG_CACHE_HOME" => cache_root }, self_bin, c[:argv], c[:cwd], ROOT)
   restore_dir(c[:cwd], isolate_backup) if isolate_backup
   FileUtils.rm_rf(isolate_backup) if isolate_backup
   # Whether a build reports `[cached]` depends on artifacts left by earlier

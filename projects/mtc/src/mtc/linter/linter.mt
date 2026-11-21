@@ -1020,7 +1020,19 @@ function statement_column(stmt: ptr[ast.Stmt]) -> ptr_uint:
             ast.Stmt.stmt_unsafe as u:
                 return u.column
             ast.Stmt.stmt_expression as e:
-                return expression_column(e.expression)
+                let col = expression_column(e.expression)
+                if col != 0:
+                    return col
+                # The host's source fallback: the first non-space column.
+                match source_code_line(e.line):
+                    Option.some as text:
+                        let line_text = text.value
+                        var i: ptr_uint = 0
+                        while i < line_text.len and (line_text.byte_at(i) == 32 or line_text.byte_at(i) == 9):
+                            i += 1
+                        return if i < line_text.len: i + 1 else: 0
+                    Option.none:
+                        return 0
             ast.Stmt.stmt_when as wn:
                 return wn.column
             ast.Stmt.stmt_error_block as eb:
@@ -1353,7 +1365,14 @@ function check_duplicate_if_conditions(branches: span[ast.IfBranch], path: str, 
                         var line = expression_line(br.condition)
                         if line == 0:
                             line = br.line
-                        push_warning(warnings, path, line, "duplicate-if-condition", "duplicate condition matches an earlier if/else-if branch and is unreachable", "warning")
+                        push_warning_at(
+                            warnings, path, line,
+                            expression_column(br.condition),
+                            expression_length(br.condition),
+                            "duplicate-if-condition",
+                            "duplicate condition matches an earlier if/else-if branch and is unreachable",
+                            "warning",
+                        )
                     else:
                         seen.push(sig.value)
                 Option.none:
@@ -1831,11 +1850,12 @@ function lint_null_check_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec
             break
         unsafe:
             let d = read(dp)
+            let span = condition_span(d.condition, d.line, false)
             var buf = string.String.create()
             buf.append("'")
             buf.append(d.name)
             buf.append("' is already known to be non-null here — this nil check is redundant")
-            push_warning(warnings, path, d.line, "redundant-null-check", buf.as_str(), "hint")
+            push_warning_at(warnings, path, span.line, span.column, span.length, "redundant-null-check", buf.as_str(), "hint")
         di += 1
 
 
@@ -2055,7 +2075,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                     scope_push()
                     visit_body(iff.else_body, path, warnings)
                     scope_pop(path, warnings)
-                rules_redundant_else.check_redundant_else(iff.branches, iff.else_body, iff.else_line, path, warnings)
+                rules_redundant_else.check_redundant_else(iff.branches, iff.else_body, iff.else_line, iff.else_column, path, warnings)
                 check_duplicate_if_conditions(iff.branches, path, warnings)
                 # The If-preference rules are full-tier only.
                 if lint_full_tier:
@@ -6720,7 +6740,12 @@ function unreachable_column(node: ptr[flow_graph.CfgNode]) -> ptr_uint:
         if kind.equal("match_binding"):
             let arm = reinterpret[ptr[ast.MatchArm]](read(node).statement)
             return expression_column(read(arm).pattern)
-        return read(node).column
+        let column = read(node).column
+        if column != 0:
+            return column
+        # The builder stamps 0 for expression statements; recover the host's
+        # statement anchor from the AST.
+        return statement_column(reinterpret[ptr[ast.Stmt]](read(node).statement))
 
 
 function unreachable_length(node: ptr[flow_graph.CfgNode]) -> ptr_uint:
@@ -6932,16 +6957,19 @@ function lint_loop_single_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.V
         match read(sp):
             ast.Stmt.stmt_while as wh:
                 if loop_body_always_terminates(wh.body):
-                    push_warning(
-                        warnings, path, wh.line, "loop-single-iteration",
+                    push_warning_at(
+                        warnings, path, wh.line, wh.column,
+                        if wh.length > 0: wh.length else: 5,
+                        "loop-single-iteration",
                         "loop body always exits on the first iteration - consider replacing with an 'if' block",
                         "warning"
                     )
                 lint_loop_single_in_body(wh.body, path, warnings)
             ast.Stmt.stmt_for as fr:
                 if loop_body_always_terminates(fr.body):
-                    push_warning(
-                        warnings, path, fr.line, "loop-single-iteration",
+                    push_warning_at(
+                        warnings, path, fr.line, fr.column, 3,
+                        "loop-single-iteration",
                         "loop body always exits on the first iteration - consider iterating directly without a loop",
                         "warning"
                     )

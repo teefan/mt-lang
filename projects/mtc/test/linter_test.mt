@@ -66,6 +66,19 @@ function message_of(warns: ref[vec.Vec[linter.Warning]], code: str) -> str:
     return ""
 
 
+## The first warning with `code`; a zeroed Warning when absent.
+function warning_of(warns: ref[vec.Vec[linter.Warning]], code: str) -> linter.Warning:
+    var i: ptr_uint = 0
+    while i < warns.len():
+        let wp = warns.get(i) else:
+            break
+        unsafe:
+            if read(wp).code.equal(code):
+                return read(wp)
+        i += 1
+    return linter.Warning(path = "", line = 0, column = 0, length = 0, code = "", message = "", severity = "")
+
+
 # =============================================================================
 #  line-too-long
 # =============================================================================
@@ -405,6 +418,23 @@ function test_duplicate_if_condition_flagged() -> void:
 
 
 @[test]
+function test_duplicate_if_condition_reports_condition_span() -> void:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            if a == 1:
+                return 1
+            else if a == 1:
+                return 2
+            return 0
+    SRC
+    var warns = lint_text(source)
+    defer: warns.release()
+    let w = warning_of(ref_of(warns), "duplicate-if-condition")
+    expect_eq(int<-w.line, 4)
+    expect_eq(int<-w.column, 13)
+
+
+@[test]
 function test_distinct_if_conditions_clean() -> void:
     var source = <<-SRC
         function demo(a: int) -> int:
@@ -501,6 +531,23 @@ function test_redundant_else_flagged() -> void:
                 return 2
     SRC
     expect_one(source, "redundant-else")
+
+
+@[test]
+function test_redundant_else_reports_else_keyword_span() -> void:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            if a > 0:
+                return 1
+            else:
+                return 2
+    SRC
+    var warns = lint_text(source)
+    defer: warns.release()
+    let w = warning_of(ref_of(warns), "redundant-else")
+    expect_eq(int<-w.line, 4)
+    expect_eq(int<-w.column, 5)
+    expect_eq(int<-w.length, 4)
 
 
 @[test]
@@ -790,6 +837,26 @@ function test_unreachable_after_return_flagged() -> void:
 
 
 @[test]
+function test_unreachable_expression_statement_reports_source_span() -> void:
+    # The CFG node carries no column for an expression statement; the warning
+    # recovers the first non-space column from the AST/source.
+    var source = <<-SRC
+        function helper() -> void:
+            pass
+
+        function demo() -> int:
+            return 1
+            helper()
+    SRC
+    var warns = lint_text(source)
+    defer: warns.release()
+    let w = warning_of(ref_of(warns), "unreachable-code")
+    expect_eq(int<-w.line, 6)
+    expect_eq(int<-w.column, 5)
+    expect_eq(int<-w.length, 6)
+
+
+@[test]
 function test_unreachable_statement_clean() -> void:
     var source = <<-SRC
         function demo(a: int) -> int:
@@ -888,6 +955,38 @@ function test_loop_single_break_flagged() -> void:
             return 0
     SRC
     expect_one(source, "loop-single-iteration")
+
+
+@[test]
+function test_loop_single_iteration_reports_loop_keyword_span() -> void:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            while a < 100:
+                return a
+            return 0
+    SRC
+    var warns = lint_text(source)
+    defer: warns.release()
+    let w = warning_of(ref_of(warns), "loop-single-iteration")
+    expect_eq(int<-w.line, 2)
+    expect_eq(int<-w.column, 5)
+    expect_eq(int<-w.length, 5)
+
+
+@[test]
+function test_loop_single_iteration_reports_for_keyword_span() -> void:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            for i in 0..10:
+                return a
+            return 0
+    SRC
+    var warns = lint_text(source)
+    defer: warns.release()
+    let w = warning_of(ref_of(warns), "loop-single-iteration")
+    expect_eq(int<-w.line, 2)
+    expect_eq(int<-w.column, 9)
+    expect_eq(int<-w.length, 3)
 
 
 @[test]
@@ -994,6 +1093,24 @@ function test_redundant_null_check_nested_flagged() -> void:
             return 0
     SRC
     expect_one(source, "redundant-null-check")
+
+
+@[test]
+function test_redundant_null_check_reports_condition_span() -> void:
+    var source = <<-SRC
+        function demo(x: ptr[int]?) -> int:
+            if x != null:
+                if x != null:
+                    return 1
+                return 2
+            return 0
+    SRC
+    var warns = lint_text(source)
+    defer: warns.release()
+    let w = warning_of(ref_of(warns), "redundant-null-check")
+    expect_eq(int<-w.line, 3)
+    expect_eq(int<-w.column, 12)
+    expect_eq(int<-w.length, 9)
 
 
 @[test]

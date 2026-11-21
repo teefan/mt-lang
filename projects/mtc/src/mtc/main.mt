@@ -1393,6 +1393,10 @@ public function print_program_diagnostics(program: ref[loader.Program]) -> ptr_u
                                 block.push_byte(32)
                                 sp += 1
                             block.push_byte(94)
+                            var tilde: ptr_uint = if rd.length > 0: rd.length - 1 else: 0
+                            while tilde > 0:
+                                block.push_byte(126)
+                                tilde -= 1
                             block.append("\n")
                     Result.failure:
                         pass

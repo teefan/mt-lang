@@ -333,7 +333,7 @@
       "projects/mtc/src/mtc/dap/lldb_backend.mt:28:const:KIND_SYNC_FUNCTIONS",
       "projects/mtc/src/mtc/dap/lldb_backend.mt:29:const:KIND_SYNC_EXCEPTIONS",
       "projects/mtc/src/mtc/imported_bindings/naming.mt:361:function:apply_rename_rules",
-      "projects/mtc/src/mtc/linter/linter.mt:6349:function:reserved_name_fixes",
+      "projects/mtc/src/mtc/linter/linter.mt:6369:function:reserved_name_fixes",
       "projects/mtc/src/mtc/lowering/async.mt:162:function:count_async_states",
       "projects/mtc/src/mtc/lowering/async.mt:274:function:build_async_frame",
       "projects/mtc/src/mtc/lowering/async.mt:316:function:task_type",
@@ -1274,7 +1274,7 @@
     ]
   },
   "sizes": {
-    "total_code": 127722,
+    "total_code": 127752,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1543,14 +1543,14 @@
         "max_function": 91
       },
       "projects/mtc/src/mtc/linter/linter.mt": {
-        "lines": 6991,
-        "code": 5605,
+        "lines": 7019,
+        "code": 5630,
         "max_line": 276,
         "max_function": 185
       },
       "projects/mtc/src/mtc/linter/nullcheck.mt": {
-        "lines": 697,
-        "code": 555,
+        "lines": 699,
+        "code": 556,
         "max_line": 109,
         "max_function": 128
       },
@@ -1581,7 +1581,7 @@
       "projects/mtc/src/mtc/linter/rules_redundant_else.mt": {
         "lines": 273,
         "code": 233,
-        "max_line": 178,
+        "max_line": 201,
         "max_function": 46
       },
       "projects/mtc/src/mtc/linter/rules_trailing_comma.mt": {
@@ -1999,8 +1999,8 @@
         "max_function": 41
       },
       "projects/mtc/src/mtc/main.mt": {
-        "lines": 3759,
-        "code": 3076,
+        "lines": 3763,
+        "code": 3080,
         "max_line": 277,
         "max_function": 179
       },

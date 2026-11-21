@@ -119,7 +119,7 @@
     },
     "emit-c-external": {
       "stdout": "",
-      "stderr": "error[parse/error]: expected ')' after call arguments -- <FIXTURE>/standalone/external_bindings.mt:4:10\n   |\n    4 |     puts(message as cstr)\n      |          ^\n",
+      "stderr": "error[parse/error]: expected ')' after call arguments -- <FIXTURE>/standalone/external_bindings.mt:4:10\n   |\n    4 |     puts(message as cstr)\n      |          ^~~~~~~\n",
       "rc": 1
     },
     "emit-c-multiple": {
