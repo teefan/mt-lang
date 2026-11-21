@@ -206,6 +206,9 @@ public struct Workspace:
     ## `workspace/didChangeWatchedFiles`; `initialized` then registers it.
     client_watched_files_dynamic: bool
     watched_files_registered: bool
+    ## True when the client advertised `workspace.diagnostics.refreshSupport`;
+    ## dependent changes then trigger `workspace/diagnostic/refresh`.
+    client_diagnostic_refresh_support: bool
     ## Regions of replaced parse-cache entries, kept alive until the request
     ## boundary (see `drain_retired_regions`).
     retired_regions: vec.Vec[heap.Region]
@@ -292,6 +295,7 @@ extending Workspace:
             position_encoding_utf16 = true,
             client_watched_files_dynamic = false,
             watched_files_registered = false,
+            client_diagnostic_refresh_support = false,
             retired_regions = vec.Vec[heap.Region].create(),
         )
 

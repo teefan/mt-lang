@@ -199,13 +199,13 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 168 / 160,512 / 127,439 |
+| source files / lines / code lines | 168 / 160,611 / 127,521 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (168 modules) |
 | dead exports (unused / test-only) | 32 / 6 |
-| duplication (windows / duplicated lines) | 904 / 6,451 (window 12) |
+| duplication (windows / duplicated lines) | 906 / 6,477 (window 12) |
 | functions ≥ 200 lines | 1 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
@@ -220,7 +220,9 @@ and the semantic-token cache key fix (+188 code lines, +1 layering edge
 `lsp -> cli_help`; duplication unchanged).  Phase 3 added multi-root state, the
 `willRenameFiles` import rewrite, the watched-file registration and the
 workspace-folder notification handler (+396 code lines; edges and duplication
-unchanged).
+unchanged).  Phase 4 added the workspace-wide diagnostic report and dependent
+refresh requests (+82 code lines, +2 duplication clusters / 26 duplicated
+lines).
 Session 141 added the semantic conformance port (+522 code lines: condition
 enforcement, named-argument canonicalization and lowering, extern/foreign
 checks, imported/method specialization checks, and the exact-base nullable

@@ -371,8 +371,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 904,
-    "duplicated_lines": 6451,
+    "windows": 906,
+    "duplicated_lines": 6477,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -663,6 +663,7 @@
       "56de369c1e62f84a8ce5580459b381cb899a09be",
       "56f11e30d7af921afbb67c047081eabba1eb8eaa",
       "57091c0c56c5bf25876ccc041e2d12329be03056",
+      "5715dd7a235293da3a94eb448ec7e2c592df1b67",
       "5741736737b62d782cbde0da58413fa18c06cc6a",
       "57977a596a2a87835cd400d8bd207ef6d516e52f",
       "57ac1db1cbfcccb48194dbecbf3de1885eb5fc5f",
@@ -685,6 +686,7 @@
       "5d412bb1e9b945308ac603256d4924d093f5d126",
       "5d531c5e8baa992e03ecbd83f39859508b371b15",
       "5d7029d0af255e88a059bc605681711d4430a0cc",
+      "5dbc24e112ceafff0140ded04ac0de57f6480ccd",
       "5e6eeb377145f9234af316733b4457c1e9c25373",
       "5ea285d39cc465fe590c08e8c5d039d333b921b6",
       "5edcbe20434cca088aa8ca932de1b0013dc5a88a",
@@ -1281,7 +1283,7 @@
     ]
   },
   "sizes": {
-    "total_code": 127439,
+    "total_code": 127521,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1856,10 +1858,10 @@
         "max_function": 154
       },
       "projects/mtc/src/mtc/lsp/lifecycle.mt": {
-        "lines": 262,
-        "code": 211,
+        "lines": 293,
+        "code": 239,
         "max_line": 329,
-        "max_function": 64
+        "max_function": 65
       },
       "projects/mtc/src/mtc/lsp/linked_editing_range.mt": {
         "lines": 117,
@@ -1886,10 +1888,10 @@
         "max_function": 133
       },
       "projects/mtc/src/mtc/lsp/pull_diagnostics.mt": {
-        "lines": 327,
-        "code": 255,
-        "max_line": 109,
-        "max_function": 89
+        "lines": 385,
+        "code": 301,
+        "max_line": 121,
+        "max_function": 68
       },
       "projects/mtc/src/mtc/lsp/reference_index.mt": {
         "lines": 440,
@@ -1946,8 +1948,8 @@
         "max_function": 156
       },
       "projects/mtc/src/mtc/lsp/text_docs.mt": {
-        "lines": 278,
-        "code": 229,
+        "lines": 280,
+        "code": 231,
         "max_line": 148,
         "max_function": 66
       },
@@ -1976,8 +1978,8 @@
         "max_function": 30
       },
       "projects/mtc/src/mtc/lsp/workspace.mt": {
-        "lines": 1588,
-        "code": 1127,
+        "lines": 1592,
+        "code": 1129,
         "max_line": 169,
         "max_function": 52
       },
@@ -1988,8 +1990,8 @@
         "max_function": 57
       },
       "projects/mtc/src/mtc/lsp/workspace_notifications.mt": {
-        "lines": 518,
-        "code": 419,
+        "lines": 522,
+        "code": 423,
         "max_line": 121,
         "max_function": 73
       },

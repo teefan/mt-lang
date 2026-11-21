@@ -8,6 +8,7 @@ import std.fmt
 import std.json as json
 import std.str
 import std.string as string
+import std.vec as vec
 
 import mtc.lsp.diagnostics as diag
 import mtc.lsp.protocol as proto
@@ -17,6 +18,11 @@ import mtc.lsp.workspace as workspace
 
 const FNV_OFFSET: uint = 0x811C9DC5
 const FNV_PRIME:  uint = 0x01000193
+
+## The workspace report is bounded: indexed files in workspace order, plus any
+## open document the index has not seen yet.  A larger workspace gets the first
+## 500 files (the client can still pull individual documents).
+const MAX_WORKSPACE_DIAGNOSTIC_FILES: ptr_uint = 500
 
 
 ## Handle textDocument/diagnostic.  Computes diagnostics for a single
@@ -91,99 +97,151 @@ public function handle_document_diagnostic(
     proto.write_response_raw(id, result_json.as_str())
 
 
-## Handle workspace/diagnostic.  Reports every open document in didOpen order
-## (the host's `open_document_uris` is insertion-ordered), reusing the same
-## per-document cache as the single-document pull: a document whose fingerprint
-## and `previousResultIds` entry still match is reported as `unchanged`.
+## Handle workspace/diagnostic.  Reports the indexed workspace, not just open
+## documents, reusing the same per-document cache as the single-document pull:
+## a document whose fingerprint and `previousResultIds` entry still match is
+## reported as `unchanged`.
 public function handle_workspace_diagnostic(
     ws: ref[workspace.Workspace],
     params: json.Value,
     id: json.Value,
 ) -> void:
+    ws.build_index_if_needed()
+    var paths = workspace_diagnostic_paths(ws)
+    defer: release_diagnostic_paths(ref_of(paths))
+
     var result_json = string.String.create()
     defer: result_json.release()
     result_json.append("{\"items\":[")
-
-    let paths = ws.open_paths_in_order()
     var first = true
     var pi: ptr_uint = 0
-    while pi < paths.len:
-        let path = unsafe: read(paths.data + pi).as_str()
+    while pi < paths.len():
+        let path_ptr = paths.get(pi) else:
+            break
         pi += 1
-
-        var content_opt = ws.document_source(path)
-        match content_opt:
-            Option.none:
-                continue
-            Option.some as payload:
-                var content = payload.value
-                defer: content.release()
-                let source = content.as_str()
-                if source.len == 0:
-                    continue
-
-                let current_hash = fnv1a_hash(source)
-                let previous_id = previous_result_id_for(params, path)
-
-                # Cache hit: the same fingerprint and the client's previous
-                # result id for this document.
-                var hit = false
-                var cached_id = string.String.create()
-                defer: cached_id.release()
-                let cached_ptr = ws.diagnostic_cache_get(path)
-                if cached_ptr != null:
-                    let cached = unsafe: read(cached_ptr)
-                    if cached.source_hash == current_hash:
-                        cached_id.append(cached.result_id.as_str())
-                        if previous_id.equal(cached_id.as_str()):
-                            hit = true
-
-                if not first:
-                    result_json.append(",")
-                first = false
-
-                var doc_uri = string.String.from_str("file://")
-                defer: doc_uri.release()
-                doc_uri.append(path)
-
-                result_json.append("{\"uri\":\"")
-                proto.append_escaped(ref_of(result_json), doc_uri.as_str())
-
-                if hit:
-                    result_json.append("\",\"kind\":\"unchanged\",\"resultId\":\"")
-                    proto.append_escaped(ref_of(result_json), cached_id.as_str())
-                    result_json.append("\",\"items\":[],\"version\":")
-                    append_version_or_null(ws, path, ref_of(result_json))
-                    result_json.append("}")
-                    continue
-
-                var roots = ws.effective_module_roots_for(path)
-                defer: roots.release()
-                var diagnostics = diag.collect_diagnostics(ws, doc_uri.as_str(), path, source)
-
-                var diag_json = string.String.create()
-                append_json_value_into(ref_of(diag_json), diagnostics)
-                json.release_value(diagnostics)
-
-                var result_id = string.String.create()
-                result_id.append_format(f"#{current_hash:x}")
-
-                var cached_diag = string.String.from_str(diag_json.as_str())
-                var owned_id = string.String.from_str(result_id.as_str())
-                ws.diagnostic_cache_set(path, current_hash, owned_id, cached_diag)
-
-                result_json.append("\",\"kind\":\"full\",\"resultId\":\"")
-                proto.append_escaped(ref_of(result_json), result_id.as_str())
-                result_json.append("\",\"items\":")
-                result_json.append(diag_json.as_str())
-                result_json.append(",\"version\":")
-                append_version_or_null(ws, path, ref_of(result_json))
-                result_json.append("}")
-                result_id.release()
-                diag_json.release()
-
+        append_workspace_document_report(ws, params, unsafe: read(path_ptr).as_str(), ref_of(result_json), ref_of(first))
     result_json.append("]}")
     proto.write_response_raw(id, result_json.as_str())
+
+
+## The indexed `.mt` files plus any open document the index has not seen.
+function workspace_diagnostic_paths(ws: ref[workspace.Workspace]) -> vec.Vec[string.String]:
+    var paths = vec.Vec[string.String].create()
+    var i: ptr_uint = 0
+    while i < ws.index.files.len() and paths.len() < MAX_WORKSPACE_DIAGNOSTIC_FILES:
+        let file_ptr = ws.index.files.get(i) else:
+            break
+        i += 1
+        let path = unsafe: read(file_ptr).path.as_str()
+        if not diagnostic_path_present(ref_of(paths), path):
+            paths.push(string.String.from_str(path))
+
+    let open_paths = ws.open_paths_in_order()
+    var oi: ptr_uint = 0
+    while oi < open_paths.len and paths.len() < MAX_WORKSPACE_DIAGNOSTIC_FILES:
+        let path = unsafe: read(open_paths.data + oi).as_str()
+        oi += 1
+        if not diagnostic_path_present(ref_of(paths), path):
+            paths.push(string.String.from_str(path))
+    return paths
+
+
+function diagnostic_path_present(paths: ref[vec.Vec[string.String]], path: str) -> bool:
+    var i: ptr_uint = 0
+    while i < paths.len():
+        let entry = paths.get(i) else:
+            break
+        if unsafe: read(entry).as_str().equal(path):
+            return true
+        i += 1
+    return false
+
+
+function release_diagnostic_paths(paths: ref[vec.Vec[string.String]]) -> void:
+    var i: ptr_uint = 0
+    while i < paths.len():
+        let entry = paths.get(i) else:
+            break
+        unsafe: read(entry).release()
+        i += 1
+    paths.release()
+
+
+## One workspace report item: full diagnostics or an `unchanged` cache hit.
+function append_workspace_document_report(
+    ws: ref[workspace.Workspace],
+    params: json.Value,
+    path: str,
+    result_json: ref[string.String],
+    first: ref[bool],
+) -> void:
+    var content = ws.document_source(path) else:
+        return
+    defer: content.release()
+    let source = content.as_str()
+    if source.len == 0:
+        return
+
+    let current_hash = fnv1a_hash(source)
+    let previous_id = previous_result_id_for(params, path)
+    var hit = false
+    var cached_id = string.String.create()
+    defer: cached_id.release()
+    let cached_ptr = ws.diagnostic_cache_get(path)
+    if cached_ptr != null:
+        let cached = unsafe: read(cached_ptr)
+        if cached.source_hash == current_hash:
+            cached_id.append(cached.result_id.as_str())
+            if previous_id.equal(cached_id.as_str()):
+                hit = true
+
+    if not unsafe: read(first):
+        result_json.append(",")
+    unsafe: read(first) = false
+
+    var doc_uri = string.String.from_str("file://")
+    defer: doc_uri.release()
+    doc_uri.append(path)
+    result_json.append("{\"uri\":\"")
+    proto.append_escaped(result_json, doc_uri.as_str())
+
+    if hit:
+        result_json.append("\",\"kind\":\"unchanged\",\"resultId\":\"")
+        proto.append_escaped(result_json, cached_id.as_str())
+        result_json.append("\",\"items\":[],\"version\":")
+        append_version_or_null(ws, path, result_json)
+        result_json.append("}")
+        return
+
+    var diagnostics = diag.collect_diagnostics(ws, doc_uri.as_str(), path, source)
+    var diag_json = string.String.create()
+    defer: diag_json.release()
+    append_json_value_into(ref_of(diag_json), diagnostics)
+    json.release_value(diagnostics)
+
+    var result_id = string.String.create()
+    defer: result_id.release()
+    result_id.append_format(f"#{current_hash:x}")
+    var cached_diag = string.String.from_str(diag_json.as_str())
+    var owned_id = string.String.from_str(result_id.as_str())
+    ws.diagnostic_cache_set(path, current_hash, owned_id, cached_diag)
+
+    result_json.append("\",\"kind\":\"full\",\"resultId\":\"")
+    proto.append_escaped(result_json, result_id.as_str())
+    result_json.append("\",\"items\":")
+    result_json.append(diag_json.as_str())
+    result_json.append(",\"version\":")
+    append_version_or_null(ws, path, result_json)
+    result_json.append("}")
+
+
+## Ask a pull-diagnostics client to refresh dependents after a content change.
+## The loop is synchronous; the request is fire-and-forget (its response id is
+## ignored by `handle_incoming_response`).
+public function request_workspace_refresh(ws: ref[workspace.Workspace]) -> void:
+    if not ws.pull_diagnostics_active or not ws.client_diagnostic_refresh_support:
+        return
+    proto.send_request("workspace/diagnostic/refresh", "null")
 
 
 ## Append a document's client version, or JSON null when it is not open.

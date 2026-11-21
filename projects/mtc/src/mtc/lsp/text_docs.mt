@@ -7,6 +7,7 @@ import std.log as log
 
 import mtc.lsp.diagnostics as diag
 import mtc.lsp.protocol as proto
+import mtc.lsp.pull_diagnostics as pull_diag
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
@@ -57,6 +58,7 @@ public function handle_did_change(ws: ref[workspace.Workspace], params: json.Val
             updated.release()
 
     publish_after_change(ws, uri, file_path.as_str())
+    pull_diag.request_workspace_refresh(ws)
 
 
 ## Re-check the document's new content and publish its diagnostics.  The

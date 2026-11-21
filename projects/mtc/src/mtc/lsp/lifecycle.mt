@@ -24,6 +24,7 @@ public function handle_initialize(id: json.Value, params: json.Value, ws: ref[wo
     apply_client_root(params, ws)
     ws.pull_diagnostics_active = client_supports_pull_diagnostics(params)
     ws.client_watched_files_dynamic = client_supports_watched_files_registration(params)
+    ws.client_diagnostic_refresh_support = client_supports_diagnostic_refresh(params)
     let position_encoding = client_position_encoding(params)
     ws.set_position_encoding(position_encoding.equal("utf-16"))
     ws.initialize_received = true
@@ -189,6 +190,36 @@ function client_supports_watched_files_registration(params: json.Value) -> bool:
         if dynamic_ptr == null:
             return false
         match read(dynamic_ptr).as_boolean():
+            Option.some as flag:
+                return flag.value
+            Option.none:
+                return false
+
+
+## True when the client advertised `workspace.diagnostics.refreshSupport`.
+function client_supports_diagnostic_refresh(params: json.Value) -> bool:
+    let obj_ptr = params.as_object() else:
+        return false
+    unsafe:
+        let caps_ptr = read(obj_ptr).get("capabilities")
+        if caps_ptr == null:
+            return false
+        let caps_obj = read(caps_ptr).as_object() else:
+            return false
+        let workspace_ptr = read(caps_obj).get("workspace")
+        if workspace_ptr == null:
+            return false
+        let workspace_obj = read(workspace_ptr).as_object() else:
+            return false
+        let diagnostics_ptr = read(workspace_obj).get("diagnostics")
+        if diagnostics_ptr == null:
+            return false
+        let diagnostics_obj = read(diagnostics_ptr).as_object() else:
+            return false
+        let refresh_ptr = read(diagnostics_obj).get("refreshSupport")
+        if refresh_ptr == null:
+            return false
+        match read(refresh_ptr).as_boolean():
             Option.some as flag:
                 return flag.value
             Option.none:

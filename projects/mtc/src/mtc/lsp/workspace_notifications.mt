@@ -14,6 +14,7 @@ import std.vec as vec
 
 import mtc.lsp.definition_index as defidx
 import mtc.lsp.protocol as proto
+import mtc.lsp.pull_diagnostics as pull_diag
 import mtc.lsp.reference_index as refidx
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
@@ -26,6 +27,7 @@ import mtc.lsp.workspace as workspace
 public function handle_did_change_configuration(ws: ref[workspace.Workspace], params: json.Value) -> void:
     apply_format_mode_setting(ws, params)
     ws.diagnostic_cache_clear_all()
+    pull_diag.request_workspace_refresh(ws)
 
 
 ## Apply `settings.milkTea.format.mode` (with the host's `milk_tea` / bare
@@ -119,6 +121,7 @@ public function handle_did_change_workspace_folders(ws: ref[workspace.Workspace]
             views.push(read(path_ptr).as_str())
             vi += 1
         ws.set_roots(views.as_span())
+        pull_diag.request_workspace_refresh(ws)
 
 
 ## Collect the `uri` paths of a workspace-folders array into `paths`.
@@ -484,6 +487,7 @@ public function handle_did_change_watched_files(ws: ref[workspace.Workspace], pa
     ws.diagnostic_cache_clear_all()
     ws.semantic_token_cache_remove_all()
     note_watched_paths(ws, params)
+    pull_diag.request_workspace_refresh(ws)
 
 
 ## Mark every `changes[].uri` path dirty for the workspace symbol index and

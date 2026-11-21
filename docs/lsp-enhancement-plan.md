@@ -1,7 +1,7 @@
 # LSP Enhancement Plan
 
-Status: **audit complete (session 144); phases 0–3 landed (session 145);
-implementation phase 4 not started.**
+Status: **audit complete (session 144); phases 0–4 landed (session 145);
+the mandatory enhancement program is complete.**
 Baseline: **LSP 3.18.0** (2026-06-04); 3.19 is upcoming.
 Implementation: `projects/mtc/src/mtc/lsp` — 43 `.mt` files, ~31.9k lines,
 entry point `mtc lsp` (`projects/mtc/src/mtc/lsp/server.mt`).
@@ -28,14 +28,13 @@ an oracle.  The existing instruments are:
   (`0 errors` in session 143) and soak.
 - `projects/mtc/test/{completion,cursor,lsp_index,lsp_utils}_test.mt` — unit
   coverage for helpers, not protocol conformance.
-- `tools/lsp_conformance.rb` — the spec oracle (phases 0–3, session 145): 30
+- `tools/lsp_conformance.rb` — the spec oracle (phases 0–4, session 145): 30
   cases from §5 with explicit assertions, a standalone stdio client, `--bin`,
   `--only`, `--timeout` and `--json`.  It is the `lsp_conformance` hard tier-2
-  gate; at the phase-3 commit it is **red by design** (28 pass / 2 fail): only
-  the phase-4 workspace-diagnostic scope and refresh cases remain.  `--bin`
-  accepts a wrapper, so the same cases can be driven under valgrind; the
-  existing `valgrind_lsp` corpus drive remains the memory instrument because
-  cold valgrind server startups are not a better use of tier-2 time.
+  gate and is **green 30/30** at the phase-4 commit.  `--bin` accepts a
+  wrapper, so the same cases can be driven under valgrind; the existing
+  `valgrind_lsp` corpus drive remains the memory instrument because cold
+  valgrind server startups are not a better use of tier-2 time.
 
 `tools/lsp_parity.rb` remains host-parity-shaped: it sends
 `workspace/willRenameFiles` as a **notification**
@@ -299,6 +298,28 @@ paths.  The suite is **28/30**; only phase 4 remains.
 - If push diagnostics remain for non-pull clients, republish dependents or
   document that they are refreshed on request only.
 
+### Phase 4 — pull diagnostics (P1) — **DONE (session 145)**
+
+- Either scan workspace roots for `workspace/diagnostic` (bounded, with
+  progress/partial results) or set `workspaceDiagnostics: false` until it
+  exists.  Do not advertise a workspace report that only covers open files.
+- Parse `workspace.diagnostics.refreshSupport` and send
+  `workspace/diagnostic/refresh` after changes that affect dependents
+  (including watched-file changes).
+- If push diagnostics remain for non-pull clients, republish dependents or
+  document that they are refreshed on request only.
+
+Landed: `workspace/diagnostic` now reports the indexed workspace (bounded to
+500 files, plus open documents the index has not seen), reusing the
+per-document fingerprint cache and emitting versions for open documents.
+`initialize` reads `workspace.diagnostics.refreshSupport`;
+`workspace/diagnostic/refresh` is sent after `didChange`, configuration
+changes, workspace-folder changes and watched-file changes when that support
+is advertised.  Push-only clients still receive the edited document's
+diagnostics on every change; dependent open documents are not proactively
+republished and update on their next edit, save or pull.  The conformance
+suite is **30/30**.
+
 ### Phase 5 — optional features (P2/P3)
 
 - `textDocument/rangesFormatting` (3.16): loop over ranges; cheap.
@@ -351,10 +372,9 @@ ruby tools/lsp_soak.rb --quiet                           # raw slope in the 70�
 ```
 
 `lsp_conformance` is in the `lsp` area and `tools_check` covers its syntax.
-At the phase-3 commit the suite is 28/30; the two red cases are the phase-4
-workspace-diagnostic scope and refresh.  Run only the class being fixed
-(`--only utf16`, `--only lifecycle`, …) while iterating, then the whole suite
-once per phase.
+At the phase-4 commit the suite is **30/30** and the gate is green.  Run only
+the class being fixed (`--only utf16`, `--only lifecycle`, …) while iterating,
+then the whole suite once per phase.  Phase 5 remains optional.
 Do not run the recorded CLI/diag/lint/format goldens for an LSP-only change
 unless the compiler shared code changes.  A user-visible
 change (quick fix, rename, multi-root) should also get a VS Code extension-host
@@ -395,10 +415,10 @@ Start the LSP enhancement program in /home/teefan/Projects/Ruby/mt-lang
 cases. The compiler is the native self-host; the Ruby host is archived and
 must not be used as an oracle.
 
-Phases 0–3 are done: the conformance gate exists, encoding is negotiated,
-quickfix/completion/lifecycle/cancel pass, and `willRenameFiles`, multi-root
-and watched files are implemented. Start phase 4: workspace-diagnostic scope
-and refresh.
+Phases 0–4 are done: the conformance gate is green 30/30, and the mandatory
+program is complete.  Optional phase 5 work remains (rangesFormatting,
+progress/partial results, refresh requests for secondary endpoints, and the
+3.18 additions only with a concrete use case).
 Work the red cases with `ruby tools/lsp_conformance.rb --bin tmp/mtc-dev
 --only <class>`; close each phase by making its cases pass and then run the
 whole suite. Work in tiers: seed dev build (~25 s), tmp/mtc-dev test
