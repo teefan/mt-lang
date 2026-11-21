@@ -110,18 +110,54 @@ public function handle_workspace_diagnostic(
     var paths = workspace_diagnostic_paths(ws)
     defer: release_diagnostic_paths(ref_of(paths))
 
-    var result_json = string.String.create()
-    defer: result_json.release()
-    result_json.append("{\"items\":[")
-    var first = true
-    var pi: ptr_uint = 0
-    while pi < paths.len():
-        let path_ptr = paths.get(pi) else:
-            break
-        pi += 1
-        append_workspace_document_report(ws, params, unsafe: read(path_ptr).as_str(), ref_of(result_json), ref_of(first))
-    result_json.append("]}")
-    proto.write_response_raw(id, result_json.as_str())
+    let work_token = proto.extract_token(params, "workDoneToken")
+    let partial_token = proto.extract_token(params, "partialResultToken")
+    match work_token:
+        Option.some as token:
+            proto.write_progress_for(token.value, "begin", "Milk Tea", "Workspace diagnostics", -1)
+        Option.none:
+            pass
+
+    match partial_token:
+        Option.some as token:
+            # Stream one document report per `$/progress` notification; the
+            # final response carries no duplicate items.
+            var pi: ptr_uint = 0
+            while pi < paths.len():
+                let path_ptr = paths.get(pi) else:
+                    break
+                pi += 1
+                var item = string.String.create()
+                var item_first = true
+                append_workspace_document_report(ws, params, unsafe: read(path_ptr).as_str(), ref_of(item), ref_of(item_first))
+                if item.len() > 0:
+                    var chunk = string.String.create()
+                    chunk.append("{\"items\":[")
+                    chunk.append(item.as_str())
+                    chunk.append("]}")
+                    proto.write_partial_result(token.value, chunk.as_str())
+                    chunk.release()
+                item.release()
+            proto.write_response_raw(id, "{\"items\":[]}")
+        Option.none:
+            var result_json = string.String.create()
+            defer: result_json.release()
+            result_json.append("{\"items\":[")
+            var first = true
+            var pi: ptr_uint = 0
+            while pi < paths.len():
+                let path_ptr = paths.get(pi) else:
+                    break
+                pi += 1
+                append_workspace_document_report(ws, params, unsafe: read(path_ptr).as_str(), ref_of(result_json), ref_of(first))
+            result_json.append("]}")
+            proto.write_response_raw(id, result_json.as_str())
+
+    match work_token:
+        Option.some as token:
+            proto.write_progress_for(token.value, "end", "", "", -1)
+        Option.none:
+            pass
 
 
 ## The indexed `.mt` files plus any open document the index has not seen.
@@ -233,15 +269,6 @@ function append_workspace_document_report(
     result_json.append(",\"version\":")
     append_version_or_null(ws, path, result_json)
     result_json.append("}")
-
-
-## Ask a pull-diagnostics client to refresh dependents after a content change.
-## The loop is synchronous; the request is fire-and-forget (its response id is
-## ignored by `handle_incoming_response`).
-public function request_workspace_refresh(ws: ref[workspace.Workspace]) -> void:
-    if not ws.pull_diagnostics_active or not ws.client_diagnostic_refresh_support:
-        return
-    proto.send_request("workspace/diagnostic/refresh", "null")
 
 
 ## Append a document's client version, or JSON null when it is not open.

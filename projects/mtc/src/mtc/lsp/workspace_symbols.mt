@@ -15,7 +15,15 @@ import mtc.lsp.protocol as proto
 import mtc.lsp.workspace as workspace
 
 
-public function handle_workspace_symbol(ws: ref[workspace.Workspace], query: str, id: json.Value) -> void:
+public function handle_workspace_symbol(ws: ref[workspace.Workspace], query: str, params: json.Value, id: json.Value) -> void:
+    let work_token = proto.extract_token(params, "workDoneToken")
+    let partial_token = proto.extract_token(params, "partialResultToken")
+    match work_token:
+        Option.some as token:
+            proto.write_progress_for(token.value, "begin", "Milk Tea", "Workspace symbols", -1)
+        Option.none:
+            pass
+
     ws.build_index_if_needed()
 
     var json_text = string.String.create()
@@ -36,7 +44,18 @@ public function handle_workspace_symbol(ws: ref[workspace.Workspace], query: str
     append_document_symbols(ws, ws.open_paths_in_order(), query, json_text, first, emitted)
 
     json_text.append("]")
-    proto.write_response_raw(id, json_text.as_str())
+    match partial_token:
+        Option.some as token:
+            proto.write_partial_result(token.value, json_text.as_str())
+            proto.write_response_raw(id, "[]")
+        Option.none:
+            proto.write_response_raw(id, json_text.as_str())
+
+    match work_token:
+        Option.some as token:
+            proto.write_progress_for(token.value, "end", "", "", -1)
+        Option.none:
+            pass
 
 
 ## Emit the symbols of every workspace-walked file, in the host's

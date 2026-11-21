@@ -219,6 +219,8 @@ function dispatch_known_method(ws: ref[workspace.Workspace], method: str, msg: p
         formatting.handle_formatting(ws, msg.params, msg.id)
     else if method == "textDocument/rangeFormatting":
         formatting.handle_range_formatting(ws, msg.params, msg.id)
+    else if method == "textDocument/rangesFormatting":
+        formatting.handle_ranges_formatting(ws, msg.params, msg.id)
     else if method == "textDocument/willSaveWaitUntil":
         formatting.handle_will_save_wait_until(ws, msg.params, msg.id)
 
@@ -258,7 +260,7 @@ function dispatch_known_method(ws: ref[workspace.Workspace], method: str, msg: p
         selection.handle_selection_range(ws, uri, positions.as_span(), msg.id)
         positions.release()
     else if method == "workspace/symbol":
-        wsym.handle_workspace_symbol(ws, extract_query(msg.params), msg.id)
+        wsym.handle_workspace_symbol(ws, extract_query(msg.params), msg.params, msg.id)
 
     # Code lens
     else if method == "textDocument/codeLens":

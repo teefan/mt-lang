@@ -9,6 +9,7 @@
 import std.json as json
 import std.str
 import std.string as string
+import std.vec as vec
 
 import mtc.formatter.tidy as tidy
 import mtc.lsp.protocol as proto
@@ -85,6 +86,61 @@ public function handle_range_formatting(ws: ref[workspace.Workspace], params: js
     defer: formatted.release()
 
     emit_text_edit(id, range.start_line, range.start_char, range.end_line, range.end_char, formatted.as_str())
+
+
+## Handle textDocument/rangesFormatting (LSP 3.16): format each requested
+## range independently and return one TextEdit per changed range.
+public function handle_ranges_formatting(ws: ref[workspace.Workspace], params: json.Value, id: json.Value) -> void:
+    let uri = proto.extract_text_doc_uri(params)
+    if uri.len == 0:
+        proto.write_error(id, -32602, "invalid params: missing textDocument.uri")
+        return
+
+    var owned_path = uri_ops.file_uri_to_path(uri) else:
+        proto.write_error(id, -32602, "invalid uri")
+        return
+    defer: owned_path.release()
+
+    var source_text = ws.document_source(owned_path.as_str()) else:
+        proto.write_error(id, -32800, "format request failed: could not read file")
+        return
+    defer: source_text.release()
+
+    let source = source_text.as_str()
+    var ranges = extract_ranges(params)
+    defer: ranges.release()
+
+    var result = string.String.create()
+    defer: result.release()
+    result.append("[")
+    var first = true
+    var i: ptr_uint = 0
+    while i < ranges.len():
+        let range_ptr = ranges.get(i) else:
+            break
+        i += 1
+        let range = unsafe: read(range_ptr)
+        let start_char = ws.position_byte_offset(uri, range.start_line, range.start_char)
+        let end_char = ws.position_byte_offset(uri, range.end_line, range.end_char)
+        let start_offset = line_offset(source, range.start_line, start_char)
+        let end_offset = line_offset(source, range.end_line, end_char)
+        if start_offset > end_offset or end_offset > source.len:
+            continue
+        let segment = source.slice(start_offset, end_offset - start_offset)
+        var formatted = format_with_mode(ws, segment, owned_path.as_str()) else:
+            continue
+        if formatted.as_str().equal(segment):
+            formatted.release()
+            continue
+        if not first:
+            result.append(",")
+        first = false
+        append_text_edit_json(
+            ref_of(result), range.start_line, range.start_char,
+            range.end_line, range.end_char, formatted.as_str())
+        formatted.release()
+    result.append("]")
+    proto.write_response_raw(id, result.as_str())
 
 
 ## Handle textDocument/willSaveWaitUntil: answer with the full-document edit the
@@ -220,6 +276,28 @@ function newline_count(source: str) -> ptr_uint:
     return count
 
 
+## Append one TextEdit object in the client's (echoed) range coordinates.
+function append_text_edit_json(
+    result: ref[string.String],
+    start_line: ptr_uint,
+    start_char: ptr_uint,
+    end_line: ptr_uint,
+    end_char: ptr_uint,
+    new_text: str,
+) -> void:
+    result.append("{\"range\":{\"start\":{\"line\":")
+    result.append_format(f"#{start_line}")
+    result.append(",\"character\":")
+    result.append_format(f"#{start_char}")
+    result.append("},\"end\":{\"line\":")
+    result.append_format(f"#{end_line}")
+    result.append(",\"character\":")
+    result.append_format(f"#{end_char}")
+    result.append("}},\"newText\":\"")
+    proto.append_escaped(result, new_text)
+    result.append("\"}")
+
+
 ## Extract the range from a rangeFormatting request params.
 struct FormatRange:
     start_line: ptr_uint
@@ -240,6 +318,34 @@ function extract_range(params: json.Value) -> FormatRange:
         let range_obj = read(range_ptr).as_object()
         if range_obj == null:
             return result
+        return parse_range_object(range_obj)
+
+
+## Extract the `ranges` array of a rangesFormatting request.
+function extract_ranges(params: json.Value) -> vec.Vec[FormatRange]:
+    var result = vec.Vec[FormatRange].create()
+    let obj_ptr = params.as_object() else:
+        return result
+    unsafe:
+        let ranges_ptr = read(obj_ptr).get("ranges")
+        if ranges_ptr == null:
+            return result
+        let ranges = read(ranges_ptr).as_array() else:
+            return result
+        var i: ptr_uint = 0
+        while i < read(ranges).len():
+            let range_ptr = read(ranges).get(i) else:
+                break
+            i += 1
+            let range_obj = read(range_ptr).as_object() else:
+                continue
+            result.push(parse_range_object(range_obj))
+    return result
+
+
+function parse_range_object(range_obj: ptr[json.Object]) -> FormatRange:
+    var result = FormatRange(start_line = 0, start_char = 0, end_line = 0, end_char = 0)
+    unsafe:
         let start_ptr = read(range_obj).get("start")
         if start_ptr != null:
             let start_obj = read(start_ptr).as_object()

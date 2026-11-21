@@ -1,7 +1,7 @@
 # LSP Enhancement Plan
 
-Status: **audit complete (session 144); phases 0–4 landed (session 145);
-the mandatory enhancement program is complete.**
+Status: **audit complete (session 144); phases 0–5 landed (session 145);
+the enhancement program, including the optional phase-5 subset, is complete.**
 Baseline: **LSP 3.18.0** (2026-06-04); 3.19 is upcoming.
 Implementation: `projects/mtc/src/mtc/lsp` — 43 `.mt` files, ~31.9k lines,
 entry point `mtc lsp` (`projects/mtc/src/mtc/lsp/server.mt`).
@@ -28,10 +28,10 @@ an oracle.  The existing instruments are:
   (`0 errors` in session 143) and soak.
 - `projects/mtc/test/{completion,cursor,lsp_index,lsp_utils}_test.mt` — unit
   coverage for helpers, not protocol conformance.
-- `tools/lsp_conformance.rb` — the spec oracle (phases 0–4, session 145): 30
+- `tools/lsp_conformance.rb` — the spec oracle (phases 0–5, session 145): 35
   cases from §5 with explicit assertions, a standalone stdio client, `--bin`,
   `--only`, `--timeout` and `--json`.  It is the `lsp_conformance` hard tier-2
-  gate and is **green 30/30** at the phase-4 commit.  `--bin` accepts a
+  gate and is **green 35/35** at the phase-5 commit.  `--bin` accepts a
   wrapper, so the same cases can be driven under valgrind; the existing
   `valgrind_lsp` corpus drive remains the memory instrument because cold
   valgrind server startups are not a better use of tier-2 time.
@@ -320,7 +320,7 @@ diagnostics on every change; dependent open documents are not proactively
 republished and update on their next edit, save or pull.  The conformance
 suite is **30/30**.
 
-### Phase 5 — optional features (P2/P3)
+### Phase 5 — optional features (P2/P3) — **DONE (implemented subset, session 145)**
 
 - `textDocument/rangesFormatting` (3.16): loop over ranges; cheap.
 - Progress (`window/workDoneProgress/create`, `$/progress`) and
@@ -330,6 +330,22 @@ suite is **30/30**.
 - 3.18 `inlineCompletion` and `workspace/textDocumentContent` only with a
   concrete use case; skip `moniker`, `inlineValue`, `documentColor` and
   notebooks unless the language gains a matching feature.
+
+Landed: `documentRangeFormattingProvider.rangesSupport` is advertised and
+`textDocument/rangesFormatting` formats each range independently, returning
+one edit per changed range.  `initialize` parses the `refreshSupport` flags for
+diagnostics, code lens, semantic tokens and inlay hints; a shared refresh
+module sends `workspace/{diagnostic,codeLens,semanticTokens,inlayHint}/refresh`
+after content/configuration/folder/watched changes when supported.
+`workspace/diagnostic` and `workspace/symbol` honor client
+`workDoneToken`/`partialResultToken`: diagnostic reports stream one document
+per `$/progress` notification (final response empty), symbol results are sent
+as one partial array, and work-done begin/end bracket both.  No
+`window/workDoneProgress/create` is needed because the work is request-scoped
+and uses the client's token; the semantic-token rules still apply.
+`inlineCompletion`, `textDocumentContent`, `moniker`, `inlineValue`,
+`documentColor` and notebooks remain intentionally unadvertised (no language
+feature or concrete use case).  The conformance suite is **35/35**.
 
 ## 5. Conformance cases
 
@@ -341,6 +357,9 @@ split into per-boundary cases).  Add new cases here first, then to the harness:
 | UTF-16 BMP / astral fixture | semantic token lengths, diagnostic ranges, hover range, rename edit, inlay hint, selection range, document highlight, references, and an incremental `didChange` all equal UTF-16 expectations |
 | encoding negotiation | a client offering `utf-8` gets `positionEncoding:"utf-8"` and byte columns; a client offering nothing (or UTF-16 only) gets UTF-16 |
 | ASCII fixture | byte and UTF-16 outputs unchanged from the current recording |
+| rangesFormatting | the capability advertises `rangesSupport`; each requested range produces an edit with the echoed range |
+| refresh endpoints | a change sends diagnostic/codeLens/semanticTokens/inlayHint refresh requests when each is supported |
+| progress/partial results | workspace diagnostics and symbols honor workDone/partialResult tokens with begin/end and partial values |
 | `codeAction` | advertised kinds are `quickfix`/`source.fixAll`; every returned action's kind is standard |
 | completion + resolve | a documented `function foo` returns docs; the resolved item keeps `kind`, `detail`, `insertText`, `sortText`, `data` |
 | `workspace/willRenameFiles` | **request** receives a `WorkspaceEdit` (or `null`) within the timeout; imports in a dependent file are rewritten |
@@ -372,9 +391,11 @@ ruby tools/lsp_soak.rb --quiet                           # raw slope in the 70�
 ```
 
 `lsp_conformance` is in the `lsp` area and `tools_check` covers its syntax.
-At the phase-4 commit the suite is **30/30** and the gate is green.  Run only
+At the phase-5 commit the suite is **35/35** and the gate is green.  Run only
 the class being fixed (`--only utf16`, `--only lifecycle`, …) while iterating,
-then the whole suite once per phase.  Phase 5 remains optional.
+then the whole suite once per phase.  The 3.18 additions and the editor
+features with no matching language construct remain intentionally
+unadvertised.
 Do not run the recorded CLI/diag/lint/format goldens for an LSP-only change
 unless the compiler shared code changes.  A user-visible
 change (quick fix, rename, multi-root) should also get a VS Code extension-host
@@ -415,10 +436,9 @@ Start the LSP enhancement program in /home/teefan/Projects/Ruby/mt-lang
 cases. The compiler is the native self-host; the Ruby host is archived and
 must not be used as an oracle.
 
-Phases 0–4 are done: the conformance gate is green 30/30, and the mandatory
-program is complete.  Optional phase 5 work remains (rangesFormatting,
-progress/partial results, refresh requests for secondary endpoints, and the
-3.18 additions only with a concrete use case).
+Phases 0–5 are done: the conformance gate is green 35/35, and the program is
+complete.  Only the deliberately skipped editor features (3.18 additions,
+moniker, inlineValue, documentColor, notebooks) remain out of scope.
 Work the red cases with `ruby tools/lsp_conformance.rb --bin tmp/mtc-dev
 --only <class>`; close each phase by making its cases pass and then run the
 whole suite. Work in tiers: seed dev build (~25 s), tmp/mtc-dev test

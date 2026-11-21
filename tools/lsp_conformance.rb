@@ -793,6 +793,120 @@ add_case("completion/resolve-preserves-item") do |ctx, client|
 end
 
 
+add_case("capabilities/ranges-formatting") do |ctx, client|
+  response = init!(client, ctx.root)
+  ctx.eq(response.dig("result", "capabilities", "documentRangeFormattingProvider", "rangesSupport"),
+         true, "documentRangeFormattingProvider.rangesSupport")
+end
+
+
+add_case("formatting/ranges") do |ctx, client|
+  init!(client, ctx.root)
+  source = "function main() -> int:\n    let x = 1   \n    return x\n"
+  path = write_fixture(ctx.root, "main.mt", source)
+  uri = path_to_uri(path)
+  open!(client, path)
+  response = client.request("textDocument/rangesFormatting", {
+    "textDocument" => { "uri" => uri },
+    "ranges" => [{
+      "start" => { "line" => 1, "character" => 0 },
+      "end" => { "line" => 2, "character" => 0 },
+    }],
+    "options" => { "tabSize" => 4, "insertSpaces" => true },
+  })
+  edits = Array(response["result"])
+  ctx.check(edits.is_a?(Array), "rangesFormatting did not return an array")
+  edit = edits.find { |e| e.dig("range", "start", "line") == 1 }
+  ctx.check(edit, "rangesFormatting produced no edit for the requested range")
+  if edit
+    ctx.eq(edit.dig("range", "end", "line"), 2, "edit end line")
+    ctx.eq(edit["newText"].to_s.rstrip, "    let x = 1", "formatted range text")
+  end
+end
+
+
+add_case("workspace/refresh-endpoints") do |ctx, client|
+  init!(client, ctx.root, capabilities: {
+         "textDocument" => { "diagnostic" => {} },
+         "workspace" => {
+           "diagnostics" => { "refreshSupport" => true },
+           "codeLens" => { "refreshSupport" => true },
+           "semanticTokens" => { "refreshSupport" => true },
+           "inlayHint" => { "refreshSupport" => true },
+         },
+       })
+  path = write_fixture(ctx.root, "main.mt", SIMPLE_SOURCE)
+  open!(client, path)
+  client.notify("textDocument/didChange", {
+    "textDocument" => { "uri" => path_to_uri(path), "version" => 2 },
+    "contentChanges" => [{ "text" => SIMPLE_SOURCE + "\n" }],
+  })
+  %w[workspace/diagnostic/refresh workspace/codeLens/refresh
+     workspace/semanticTokens/refresh workspace/inlayHint/refresh].each do |method|
+    ctx.check(client.wait_server_request(method, 2.0), "no #{method} after a content change")
+  end
+end
+
+
+add_case("progress/workspace-diagnostic") do |ctx, client|
+  init!(client, ctx.root, capabilities: {
+         "textDocument" => { "diagnostic" => {} },
+         "window" => { "workDoneProgress" => true },
+       })
+  path = write_fixture(ctx.root, "open.mt", PULL_OPEN_SOURCE)
+  uri = path_to_uri(path)
+  open!(client, path)
+  response = client.request("workspace/diagnostic", {
+    "previousResultIds" => [],
+    "workDoneToken" => "wd",
+    "partialResultToken" => "pd",
+  })
+  ctx.eq(Array(response.dig("result", "items")), [], "partial workspace report final items")
+  begin_msg = client.wait_notification("$/progress", 2.0) do |params|
+    params["token"] == "wd" && params.dig("value", "kind") == "begin"
+  end
+  ctx.check(begin_msg, "no workDone progress begin")
+  partial = client.wait_notification("$/progress", 2.0) do |params|
+    params["token"] == "pd" && params["value"].is_a?(Hash)
+  end
+  ctx.check(partial, "no partial workspace diagnostic result")
+  if partial
+    uris = Array(partial.dig("params", "value", "items")).map { |item| item["uri"] }
+    ctx.check(uris.include?(uri), "partial workspace report omitted the open document")
+  end
+  end_msg = client.wait_notification("$/progress", 2.0) do |params|
+    params["token"] == "wd" && params.dig("value", "kind") == "end"
+  end
+  ctx.check(end_msg, "no workDone progress end")
+end
+
+
+add_case("progress/workspace-symbol") do |ctx, client|
+  init!(client, ctx.root, capabilities: { "window" => { "workDoneProgress" => true } })
+  path = write_fixture(ctx.root, "main.mt", SIMPLE_SOURCE)
+  uri = path_to_uri(path)
+  open!(client, path)
+  response = client.request("workspace/symbol", {
+    "query" => "main",
+    "workDoneToken" => "sw",
+    "partialResultToken" => "sp",
+  })
+  ctx.eq(Array(response["result"]), [], "partial workspace symbol final result")
+  partial = client.wait_notification("$/progress", 2.0) do |params|
+    params["token"] == "sp"
+  end
+  ctx.check(partial, "no partial workspace symbol result")
+  if partial
+    names = Array(partial.dig("params", "value")).map { |item| item["name"] }
+    ctx.check(names.include?("main"), "partial workspace symbol result omitted main")
+  end
+  ctx.check(client.wait_notification("$/progress", 2.0) { |params| params["token"] == "sw" && params.dig("value", "kind") == "begin" },
+            "no workspace symbol progress begin")
+  ctx.check(client.wait_notification("$/progress", 2.0) { |params| params["token"] == "sw" && params.dig("value", "kind") == "end" },
+            "no workspace symbol progress end")
+end
+
+
 add_case("workspace/will-rename-files") do |ctx, client|
   init!(client, ctx.root)
   helper = write_fixture(ctx.root, "helper.mt", HELPER_SOURCE)

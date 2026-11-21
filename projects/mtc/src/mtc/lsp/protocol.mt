@@ -319,6 +319,60 @@ public function write_notification(method: str, params: json.Value) -> void:
     write_framed_json(response_text.as_str())
 
 
+## Extract a request's optional `workDoneToken` / `partialResultToken` value.
+public function extract_token(params: json.Value, field: str) -> Option[json.Value]:
+    let obj_ptr = params.as_object() else:
+        return Option[json.Value].none
+    unsafe:
+        let token_ptr = read(obj_ptr).get(field)
+        if token_ptr == null:
+            return Option[json.Value].none
+        return Option[json.Value].some(value = read(token_ptr))
+
+
+## Send one `$/progress` notification for a client-provided token.  `percentage`
+## below zero omits the percentage field.
+public function write_progress_for(
+    token: json.Value,
+    kind: str,
+    title: str,
+    message: str,
+    percentage: int,
+) -> void:
+    var text = string.String.create()
+    defer: text.release()
+    text.append("{\"jsonrpc\":\"2.0\",\"method\":\"$/progress\",\"params\":{\"token\":")
+    append_json_value(ref_of(text), token)
+    text.append(",\"value\":{\"kind\":\"")
+    append_escaped(ref_of(text), kind)
+    text.append("\"")
+    if title.len > 0:
+        text.append(",\"title\":\"")
+        append_escaped(ref_of(text), title)
+        text.append("\"")
+    if message.len > 0:
+        text.append(",\"message\":\"")
+        append_escaped(ref_of(text), message)
+        text.append("\"")
+    if percentage >= 0:
+        text.append(",\"percentage\":")
+        text.append_format(f"#{percentage}")
+    text.append("}}}")
+    write_framed_json(text.as_str())
+
+
+## Send a partial result value for a request's `partialResultToken`.
+public function write_partial_result(token: json.Value, value_json: str) -> void:
+    var text = string.String.create()
+    defer: text.release()
+    text.append("{\"jsonrpc\":\"2.0\",\"method\":\"$/progress\",\"params\":{\"token\":")
+    append_json_value(ref_of(text), token)
+    text.append(",\"value\":")
+    text.append(value_json)
+    text.append("}}")
+    write_framed_json(text.as_str())
+
+
 ## Send a $/progress begin notification.  Returns the token string the
 ## caller should pass to report_progress / end_progress.
 public function write_progress_begin(title: str, message: str, cancellable: bool) -> str:

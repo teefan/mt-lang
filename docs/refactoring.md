@@ -199,13 +199,13 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 168 / 160,611 / 127,521 |
+| source files / lines / code lines | 169 / 160,848 / 127,722 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (168 modules) |
 | dead exports (unused / test-only) | 32 / 6 |
-| duplication (windows / duplicated lines) | 906 / 6,477 (window 12) |
+| duplication (windows / duplicated lines) | 896 / 6,470 (window 12) |
 | functions ≥ 200 lines | 1 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
@@ -222,7 +222,9 @@ and the semantic-token cache key fix (+188 code lines, +1 layering edge
 workspace-folder notification handler (+396 code lines; edges and duplication
 unchanged).  Phase 4 added the workspace-wide diagnostic report and dependent
 refresh requests (+82 code lines, +2 duplication clusters / 26 duplicated
-lines).
+lines).  Phase 5 added rangesFormatting, the shared refresh module and
+progress/partial-result transport (+201 code lines, one new file; the
+formatting helpers removed 10 duplication clusters / 7 duplicated lines).
 Session 141 added the semantic conformance port (+522 code lines: condition
 enforcement, named-argument canonicalization and lowering, extern/foreign
 checks, imported/method specialization checks, and the exact-base nullable

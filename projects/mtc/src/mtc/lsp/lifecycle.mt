@@ -24,7 +24,10 @@ public function handle_initialize(id: json.Value, params: json.Value, ws: ref[wo
     apply_client_root(params, ws)
     ws.pull_diagnostics_active = client_supports_pull_diagnostics(params)
     ws.client_watched_files_dynamic = client_supports_watched_files_registration(params)
-    ws.client_diagnostic_refresh_support = client_supports_diagnostic_refresh(params)
+    ws.client_diagnostic_refresh_support = client_workspace_refresh(params, "diagnostics")
+    ws.client_code_lens_refresh_support = client_workspace_refresh(params, "codeLens")
+    ws.client_semantic_tokens_refresh_support = client_workspace_refresh(params, "semanticTokens")
+    ws.client_inlay_hint_refresh_support = client_workspace_refresh(params, "inlayHint")
     let position_encoding = client_position_encoding(params)
     ws.set_position_encoding(position_encoding.equal("utf-16"))
     ws.initialize_received = true
@@ -61,7 +64,7 @@ public function handle_initialize(id: json.Value, params: json.Value, ws: ref[wo
     r.append(",\"renameProvider\":{\"prepareProvider\":true}")
     r.append(",\"codeActionProvider\":{\"codeActionKinds\":[\"quickfix\",\"source.fixAll\"]}")
     r.append(",\"executeCommandProvider\":{\"commands\":[\"mtc.restartServer\"]}")
-    r.append(",\"documentRangeFormattingProvider\":true")
+    r.append(",\"documentRangeFormattingProvider\":{\"rangesSupport\":true}")
     r.append(",\"linkedEditingRangeProvider\":true")
     r.append(",\"documentLinkProvider\":{\"resolveProvider\":true}")
     r.append(",\"codeLensProvider\":{\"resolveProvider\":true}")
@@ -196,8 +199,8 @@ function client_supports_watched_files_registration(params: json.Value) -> bool:
                 return false
 
 
-## True when the client advertised `workspace.diagnostics.refreshSupport`.
-function client_supports_diagnostic_refresh(params: json.Value) -> bool:
+## True when the client advertised `workspace.<section>.refreshSupport`.
+function client_workspace_refresh(params: json.Value, section: str) -> bool:
     let obj_ptr = params.as_object() else:
         return false
     unsafe:
@@ -211,12 +214,12 @@ function client_supports_diagnostic_refresh(params: json.Value) -> bool:
             return false
         let workspace_obj = read(workspace_ptr).as_object() else:
             return false
-        let diagnostics_ptr = read(workspace_obj).get("diagnostics")
-        if diagnostics_ptr == null:
+        let section_ptr = read(workspace_obj).get(section)
+        if section_ptr == null:
             return false
-        let diagnostics_obj = read(diagnostics_ptr).as_object() else:
+        let section_obj = read(section_ptr).as_object() else:
             return false
-        let refresh_ptr = read(diagnostics_obj).get("refreshSupport")
+        let refresh_ptr = read(section_obj).get("refreshSupport")
         if refresh_ptr == null:
             return false
         match read(refresh_ptr).as_boolean():

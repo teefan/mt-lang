@@ -209,6 +209,10 @@ public struct Workspace:
     ## True when the client advertised `workspace.diagnostics.refreshSupport`;
     ## dependent changes then trigger `workspace/diagnostic/refresh`.
     client_diagnostic_refresh_support: bool
+    ## Per-endpoint refresh support for results that can depend on other files.
+    client_code_lens_refresh_support: bool
+    client_semantic_tokens_refresh_support: bool
+    client_inlay_hint_refresh_support: bool
     ## Regions of replaced parse-cache entries, kept alive until the request
     ## boundary (see `drain_retired_regions`).
     retired_regions: vec.Vec[heap.Region]
@@ -296,6 +300,9 @@ extending Workspace:
             client_watched_files_dynamic = false,
             watched_files_registered = false,
             client_diagnostic_refresh_support = false,
+            client_code_lens_refresh_support = false,
+            client_semantic_tokens_refresh_support = false,
+            client_inlay_hint_refresh_support = false,
             retired_regions = vec.Vec[heap.Region].create(),
         )
 
