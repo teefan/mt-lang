@@ -57,13 +57,62 @@ function test_utf16_column_out_of_range_keeps_raw() -> void:
 @[test]
 function test_position_to_byte_lines() -> void:
     let source = "## §1 x\nab§c\ntail"
-    if utils.position_to_byte(source, 0, 4) != 5:
+    if utils.position_to_byte_utf16(source, 0, 4) != 5:
         expect(false, "first line conversion")
-    if utils.position_to_byte(source, 1, 2) != 2:
+    if utils.position_to_byte_utf16(source, 1, 2) != 2:
         expect(false, "second line byte offset within the line")
-    if utils.position_to_byte(source, 2, 4) != 4:
+    if utils.position_to_byte_utf16(source, 2, 4) != 4:
         expect(false, "last line without a trailing newline")
     # A line past the end keeps the raw character.
-    if utils.position_to_byte(source, 7, 3) != 3:
+    if utils.position_to_byte_utf16(source, 7, 3) != 3:
         expect(false, "missing line keeps the raw character")
+    return
+
+
+@[test]
+function test_position_to_byte_utf8() -> void:
+    let source = "a§b\ncd"
+    if utils.position_to_byte_utf8(source, 0, 2) != 2:
+        expect(false, "utf-8 byte column inside a multibyte line")
+    if utils.position_to_byte_utf8(source, 0, 9) != 4:
+        expect(false, "utf-8 column past the line clamps to its end")
+    if utils.position_to_byte_utf8(source, 1, 1) != 6:
+        expect(false, "utf-8 second line offset")
+    if utils.position_to_byte_utf8(source, 4, 1) != source.len:
+        expect(false, "utf-8 line past the text clamps to the text length")
+    return
+
+
+@[test]
+function test_byte_to_utf16_column() -> void:
+    let line = "a§🌍b"
+    # a=1, section sign=2 bytes/1 unit, emoji=4 bytes/2 units, b=1.
+    if utils.byte_to_utf16_column(line, 0) != 0:
+        expect(false, "byte 0")
+    if utils.byte_to_utf16_column(line, 1) != 1:
+        expect(false, "before the section sign")
+    if utils.byte_to_utf16_column(line, 3) != 2:
+        expect(false, "after the section sign")
+    if utils.byte_to_utf16_column(line, 7) != 4:
+        expect(false, "after the astral character")
+    if utils.byte_to_utf16_column(line, 8) != 5:
+        expect(false, "end of line")
+    if utils.byte_to_utf16_column(line, 99) != 5:
+        expect(false, "a column past the line returns its unit count")
+    return
+
+
+@[test]
+function test_line_starts_and_index() -> void:
+    let source = "ab\ncd\n"
+    var starts = utils.build_line_starts(source)
+    defer: starts.release()
+    if starts.len() != 3:
+        expect(false, "one start per line, including the trailing empty line")
+    if utils.line_at_index(source, starts.as_span(), 0) != "ab":
+        expect(false, "first line")
+    if utils.line_at_index(source, starts.as_span(), 1) != "cd":
+        expect(false, "second line")
+    if utils.line_at_index(source, starts.as_span(), 2) != "":
+        expect(false, "trailing empty line")
     return

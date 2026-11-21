@@ -25,6 +25,14 @@ import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
 
+## The outline's document view for the current request.  The symbol builders
+## are pure string functions; this request-scoped context (the same pattern the
+## linter uses) lets their shared `append_span` convert byte columns without
+## threading the source through every child builder.
+var symbol_source: str = ""
+var symbol_utf16: bool = false
+
+
 ## LSP SymbolKind values, matching the host's numbering.
 const SYMBOLKIND_FUNCTION:    int = 12
 const SYMBOLKIND_STRUCT:      int = 23
@@ -70,6 +78,8 @@ public function handle_document_symbols(ws: ref[workspace.Workspace], uri: str, 
     # written — inside its enclosing const function's body — so the walk emits
     # them there and stops before the appended tail.
     let emitted_start = doc.parsed_declaration_count
+    symbol_source = source
+    symbol_utf16 = ws.position_encoding_utf16
 
     var json_text = string.String.create()
     defer: json_text.release()
@@ -796,14 +806,20 @@ function render_arm_symbol(name: str, variant_line: ptr_uint, detail: str) -> st
 
 
 function append_span(json_out: ref[string.String], line: ptr_uint, start_char: ptr_uint, end_char: ptr_uint) -> void:
+    var start_out = start_char
+    var end_out = end_char
+    if symbol_utf16:
+        let line_text = utils.source_line(symbol_source, line + 1)
+        start_out = utils.byte_to_utf16_column(line_text, start_char)
+        end_out = utils.byte_to_utf16_column(line_text, end_char)
     json_out.append("{\"start\":{\"line\":")
     json_out.append_format(f"#{line}")
     json_out.append(",\"character\":")
-    json_out.append_format(f"#{start_char}")
+    json_out.append_format(f"#{start_out}")
     json_out.append("},\"end\":{\"line\":")
     json_out.append_format(f"#{line}")
     json_out.append(",\"character\":")
-    json_out.append_format(f"#{end_char}")
+    json_out.append_format(f"#{end_out}")
     json_out.append("}}")
 
 

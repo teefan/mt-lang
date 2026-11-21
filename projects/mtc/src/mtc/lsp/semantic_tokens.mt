@@ -26,6 +26,7 @@ import mtc.lsp.fstring as fstring
 import mtc.lsp.protocol as proto
 import mtc.lsp.scope as scope_mod
 import mtc.lsp.uri as uri_ops
+import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
 
@@ -114,7 +115,7 @@ public function handle_semantic_tokens_delta(
     let cached_ptr = ws.semantic_token_cache_get(file_path.as_str())
     if cached_ptr != null:
         let cached = unsafe: read(cached_ptr)
-        if cached.source_hash == current_hash:
+        if cached.source_hash == current_hash and cached.utf16 == ws.position_encoding_utf16:
             var empty_json = string.String.create()
             defer: empty_json.release()
             empty_json.append("{\"edits\":[]}")
@@ -122,7 +123,7 @@ public function handle_semantic_tokens_delta(
             return
 
     # Compute full tokens (reuse existing full handler logic).
-    var full_data = compute_token_data(ws, file_path.as_str(), source, false, 0, 0)
+    var full_data = compute_token_data(ws, file_path.as_str(), source, false, 0, 0, ws.position_encoding_utf16)
     defer: full_data.release()
 
     var result_id = string.String.create()
@@ -153,7 +154,7 @@ public function handle_semantic_tokens_delta(
             break
         cached_copy.push(unsafe: read(cp))
         ci += 1
-    ws.semantic_token_cache_set(file_path.as_str(), current_hash, string.String.from_str(result_id.as_str()), full_data.len() / 5, cached_copy)
+    ws.semantic_token_cache_set(file_path.as_str(), current_hash, string.String.from_str(result_id.as_str()), full_data.len() / 5, cached_copy, ws.position_encoding_utf16)
 
     if have_previous:
         var edits = compute_delta_edits(ref_of(old_data), ref_of(full_data))
@@ -1928,6 +1929,7 @@ function compute_token_data(
     clip: bool,
     clip_start_line: ptr_uint,
     clip_end_line: ptr_uint,
+    utf16: bool,
 ) -> vec.Vec[uint]:
     # The cache holds the tokens of the document's last computed version; when
     # the text is unchanged they are exactly what this call would produce, so
@@ -1937,7 +1939,7 @@ function compute_token_data(
         if cached_ptr != null:
             unsafe:
                 let cached = read(cached_ptr)
-                if cached.source_hash == fnv1a_hash(source) and cached.data.len() > 0:
+                if cached.source_hash == fnv1a_hash(source) and cached.data.len() > 0 and cached.utf16 == utf16:
                     var reused = vec.Vec[uint].create()
                     var ri: ptr_uint = 0
                     while ri < cached.data.len():
@@ -1951,6 +1953,11 @@ function compute_token_data(
     defer: lex_diags.release()
     var all_tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer: all_tokens.release()
+
+    # One line split for the whole token pass: the UTF-16 path converts each
+    # token's byte column against its own line, never rescanning the document.
+    var lines = utils.split_lines(source)
+    defer: lines.release()
 
     # The parse and check are shared with the other features through the
     # workspace's caches — the loader-backed entry when the document loads
@@ -2048,29 +2055,19 @@ function compute_token_data(
         if token_type == TOKEN_STRING:
             let lexeme = unsafe: token_mod.token_lexeme(tok, source)
             if kind == tk.TokenKind.fstring and not scan_is_heredoc(lexeme):
-                emit_fstring_entries(ref_of(data), lexeme, line_num, ptr_uint<-col_num, ref_of(prev_line), ref_of(prev_char), ref_of(facts), source)
+                emit_fstring_entries(ref_of(data), lexeme, line_num, ptr_uint<-col_num, ref_of(prev_line), ref_of(prev_char), ref_of(facts), source, ref_of(lines), utf16)
                 ti += 1
                 continue
             if scan_is_heredoc(lexeme):
                 if not scan_heredoc_embedded_tag(lexeme):
-                    emit_heredoc_lines(ref_of(data), lexeme, line_num, col_num, ref_of(prev_line), ref_of(prev_char))
+                    emit_heredoc_lines(ref_of(data), lexeme, line_num, col_num, ref_of(prev_line), ref_of(prev_char), ref_of(lines), utf16)
                 ti += 1
                 continue
             if scan_lexeme_has_newline(lexeme):
-                emit_heredoc_lines(ref_of(data), lexeme, line_num, col_num, ref_of(prev_line), ref_of(prev_char))
+                emit_heredoc_lines(ref_of(data), lexeme, line_num, col_num, ref_of(prev_line), ref_of(prev_char), ref_of(lines), utf16)
                 ti += 1
                 continue
-        let delta_line = line_num - prev_line
-        var delta_char = col_num
-        if delta_line == 0:
-            delta_char = col_num - prev_char
-        data.push(delta_line)
-        data.push(delta_char)
-        data.push(char_num)
-        data.push(token_type)
-        data.push(token_mod)
-        prev_line = line_num
-        prev_char = col_num
+        emit_span(ref_of(data), line_num, col_num, char_num, token_type, token_mod, ref_of(prev_line), ref_of(prev_char), ref_of(lines), utf16)
         ti += 1
 
     return data
@@ -2120,6 +2117,8 @@ function emit_heredoc_lines(
     first_col: uint,
     prev_line: ref[uint],
     prev_char: ref[uint],
+    lines: ref[vec.Vec[str]],
+    utf16: bool,
 ) -> void:
     var segment_start: ptr_uint = 0
     var line_index: uint = 0
@@ -2130,17 +2129,7 @@ function emit_heredoc_lines(
             if length > 0:
                 let line = first_line + line_index
                 let col: uint = if line_index == 0: first_col else: 0
-                let delta_line = line - unsafe: read(prev_line)
-                var delta_char = col
-                if delta_line == 0:
-                    delta_char = col - unsafe: read(prev_char)
-                data.push(delta_line)
-                data.push(delta_char)
-                data.push(length)
-                data.push(TOKEN_STRING)
-                data.push(0)
-                unsafe: read(prev_line) = line
-                unsafe: read(prev_char) = col
+                emit_span(data, line, col, length, TOKEN_STRING, 0, prev_line, prev_char, lines, utf16)
             segment_start = i + 1
             line_index += 1
         i += 1
@@ -2171,6 +2160,8 @@ function emit_fstring_entries(
     prev_char: ref[uint],
     facts: ref[ScanFacts],
     source: str,
+    lines: ref[vec.Vec[str]],
+    utf16: bool,
 ) -> void:
     var cursor = first_col
     var i: ptr_uint = 2
@@ -2186,8 +2177,8 @@ function emit_fstring_entries(
             let part = fstring.split_part(lexeme, expr_start, expr_end)
             let hash_col = first_col + part.expr_start - 2
             if hash_col > cursor:
-                emit_span(data, first_line, cursor, hash_col - cursor, TOKEN_STRING, 0, prev_line, prev_char)
-            emit_fstring_expr(data, part, first_line, first_col, facts, prev_line, prev_char)
+                emit_span(data, first_line, cursor, hash_col - cursor, TOKEN_STRING, 0, prev_line, prev_char, lines, utf16)
+            emit_fstring_expr(data, part, first_line, first_col, facts, prev_line, prev_char, lines, utf16)
             let raw_len = part.source.len + (if part.has_spec: 1 + part.spec.len else: 0)
             cursor = first_col + part.expr_start + raw_len + 1
             i = expr_end + 1
@@ -2198,7 +2189,7 @@ function emit_fstring_entries(
         i += 1
     let end_col: ptr_uint = first_col + lexeme.len - 1
     if end_col + 1 > cursor:
-        emit_span(data, first_line, cursor, end_col + 1 - cursor, TOKEN_STRING, 0, prev_line, prev_char)
+        emit_span(data, first_line, cursor, end_col + 1 - cursor, TOKEN_STRING, 0, prev_line, prev_char, lines, utf16)
 
 
 ## Emit the entries of one interpolation: its expression re-lexed and
@@ -2214,13 +2205,15 @@ function emit_fstring_expr(
     facts: ref[ScanFacts],
     prev_line: ref[uint],
     prev_char: ref[uint],
+    lines: ref[vec.Vec[str]],
+    utf16: bool,
 ) -> void:
     if part.source.len == 0:
         return
     let base_col = first_col + part.expr_start
-    emit_shifted_sub_tokens(data, part.source, line, base_col, facts, prev_line, prev_char)
+    emit_shifted_sub_tokens(data, part.source, line, base_col, facts, prev_line, prev_char, lines, utf16)
     if part.has_spec and part.spec.len > 0:
-        emit_shifted_sub_tokens(data, part.spec, line, base_col + part.source.len + 1, facts, prev_line, prev_char)
+        emit_shifted_sub_tokens(data, part.spec, line, base_col + part.source.len + 1, facts, prev_line, prev_char, lines, utf16)
 
 
 function emit_shifted_sub_tokens(
@@ -2231,6 +2224,8 @@ function emit_shifted_sub_tokens(
     facts: ref[ScanFacts],
     prev_line: ref[uint],
     prev_char: ref[uint],
+    lines: ref[vec.Vec[str]],
+    utf16: bool,
 ) -> void:
     var diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: diags.release()
@@ -2262,7 +2257,7 @@ function emit_shifted_sub_tokens(
         if cls.token_type != TOKEN_NONE:
             let col: ptr_uint = tok.column - 1
             let length: ptr_uint = tok.end_offset - tok.start_offset
-            emit_span(data, uint<-tok.line - 1, col, length, cls.token_type, cls.token_mod, prev_line, prev_char)
+            emit_span(data, uint<-tok.line - 1, col, length, cls.token_type, cls.token_mod, prev_line, prev_char, lines, utf16)
         ti += 1
 
 
@@ -2298,21 +2293,29 @@ function emit_span(
     token_mod: uint,
     prev_line: ref[uint],
     prev_char: ref[uint],
+    lines: ref[vec.Vec[str]],
+    utf16: bool,
 ) -> void:
     if length == 0:
         return
+    var start_char = col
+    var out_length = length
+    if utf16:
+        let line_text = utils.line_at(lines, line)
+        start_char = utils.byte_to_utf16_column(line_text, col)
+        out_length = utils.byte_to_utf16_column(line_text, col + length) - start_char
     let delta_line = line - unsafe: read(prev_line)
-    var delta_char = col
+    var delta_char = start_char
     if delta_line == 0:
-        delta_char = col - unsafe: read(prev_char)
+        delta_char = start_char - unsafe: read(prev_char)
     data.push(uint<-delta_line)
     data.push(uint<-delta_char)
-    data.push(uint<-length)
+    data.push(uint<-out_length)
     data.push(token_type)
     data.push(token_mod)
     unsafe:
         read(prev_line) = line
-        read(prev_char) = uint<-col
+        read(prev_char) = uint<-start_char
 
 
 ## The host's legend names, indexed by our legend constants.
@@ -2500,7 +2503,7 @@ function emit_semantic_tokens(
         return
     defer: content.release()
 
-    var data = compute_token_data(ws, file_path.as_str(), content.as_str(), clip, clip_start_line, clip_end_line)
+    var data = compute_token_data(ws, file_path.as_str(), content.as_str(), clip, clip_start_line, clip_end_line, ws.position_encoding_utf16)
     defer: data.release()
 
     # Remember the tokens of this version (the response shape stays the host's:
@@ -2515,7 +2518,7 @@ function emit_semantic_tokens(
             ci += 1
         var result_id = string.String.create()
         result_id.append_format(f"#{fnv1a_hash(content.as_str()):x}")
-        ws.semantic_token_cache_set(file_path.as_str(), fnv1a_hash(content.as_str()), result_id, data.len() / 5, cached_copy)
+        ws.semantic_token_cache_set(file_path.as_str(), fnv1a_hash(content.as_str()), result_id, data.len() / 5, cached_copy, ws.position_encoding_utf16)
 
     var json_text = build_tokens_json(ref_of(data))
     proto.write_response_raw(id, json_text.as_str())
@@ -2673,7 +2676,7 @@ function build_tokens_json(data: ref[vec.Vec[uint]]) -> string.String:
 ## `[deltaLine, deltaStartChar, length, tokenTypeIndex, modifierBits]`; the
 ## entry format uses absolute 0-based line/startChar and character lengths.
 public function snapshot_entries_for(ws: ref[workspace.Workspace], file_path: str, source: str) -> string.String:
-    var data = compute_token_data(ws, file_path, source, false, 0, 0)
+    var data = compute_token_data(ws, file_path, source, false, 0, 0, false)
     defer: data.release()
     var result = string.String.create()
     result.append("[")

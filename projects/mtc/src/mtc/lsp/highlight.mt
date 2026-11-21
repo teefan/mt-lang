@@ -94,14 +94,16 @@ public function handle_document_highlight(
         emitted += 1
         let lz = if occ.line > 0: occ.line - 1 else: 0z
         let col = if occ.column > 0: occ.column - 1 else: 0z
+        let out_col = ws.output_character_in(source, lz, col)
+        let out_end = ws.output_character_in(source, lz, col + occ.length)
         json_text.append("{\"range\":{\"start\":{\"line\":")
         json_text.append_format(f"#{lz}")
         json_text.append(",\"character\":")
-        json_text.append_format(f"#{col}")
+        json_text.append_format(f"#{out_col}")
         json_text.append("},\"end\":{\"line\":")
         json_text.append_format(f"#{lz}")
         json_text.append(",\"character\":")
-        json_text.append_format(f"#{col + occ.length}")
+        json_text.append_format(f"#{out_end}")
         json_text.append("}},\"kind\":1}")
         oi += 1
     json_text.append("]")

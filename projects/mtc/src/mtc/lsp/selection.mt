@@ -52,7 +52,7 @@ public function handle_selection_range(
         let character = unsafe: read(positions.data + pi + 1)
         if pi > 0:
             json_text.append(",")
-        append_selection_range(ref_of(json_text), ref_of(lines), line, character)
+        append_selection_range(ref_of(json_text), ref_of(lines), line, character, ws.position_encoding_utf16)
         pi += 2
     json_text.append("]")
     proto.write_response_raw(id, json_text.as_str())
@@ -63,6 +63,7 @@ function append_selection_range(
     lines: ref[vec.Vec[str]],
     line: ptr_uint,
     character: ptr_uint,
+    utf16: bool,
 ) -> void:
     let line_text = utils.line_at(lines, line)
     if line_text.len == 0:
@@ -74,19 +75,23 @@ function append_selection_range(
     # Innermost: the word under the cursor when there is one.
     match word_bounds(line_text, character):
         Option.some as bounds:
-            append_range_open(json_text, line, bounds.value.start_char, line, bounds.value.end_char)
+            append_range_open(
+                json_text, line, output_column(lines, line, bounds.value.start_char, utf16),
+                line, output_column(lines, line, bounds.value.end_char, utf16))
             depth += 1
         Option.none:
             pass
 
     # The full line.
-    append_range_open(json_text, line, 0, line, line_text.len)
+    append_range_open(json_text, line, 0, line, output_column(lines, line, line_text.len, utf16))
     depth += 1
 
     # The same-indent statement run and the enclosing indent block.
     match statement_range(lines, line):
         Option.some as stmt:
-            append_range_open(json_text, stmt.value.start_line, 0, stmt.value.end_line, stmt.value.end_character)
+            append_range_open(
+                json_text, stmt.value.start_line, 0,
+                stmt.value.end_line, output_column(lines, stmt.value.end_line, stmt.value.end_character, utf16))
             depth += 1
             match enclosing_block_range(lines, line):
                 Option.some as block:
@@ -95,7 +100,7 @@ function append_selection_range(
                         block.value.start_line,
                         0,
                         block.value.end_line,
-                        block.value.end_character
+                        output_column(lines, block.value.end_line, block.value.end_character, utf16)
                     )
                     depth += 1
                 Option.none:
@@ -108,6 +113,13 @@ function append_selection_range(
     while di < depth:
         json_text.append("}")
         di += 1
+
+
+## The outgoing character column for a byte column on one line.
+function output_column(lines: ref[vec.Vec[str]], line: ptr_uint, byte_col: ptr_uint, utf16: bool) -> ptr_uint:
+    if not utf16:
+        return byte_col
+    return utils.byte_to_utf16_column(utils.line_at(lines, line), byte_col)
 
 
 ## Emit `{"range":{...}` and leave the object open; nested parents follow as

@@ -1,7 +1,7 @@
 # LSP Enhancement Plan
 
-Status: **audit complete (session 144); phase 0 conformance harness landed (session 145);
-implementation phases 1–4 not started.**
+Status: **audit complete (session 144); phases 0–1 landed (session 145);
+implementation phases 2–4 not started.**
 Baseline: **LSP 3.18.0** (2026-06-04); 3.19 is upcoming.
 Implementation: `projects/mtc/src/mtc/lsp` — 43 `.mt` files, ~31.9k lines,
 entry point `mtc lsp` (`projects/mtc/src/mtc/lsp/server.mt`).
@@ -28,14 +28,15 @@ an oracle.  The existing instruments are:
   (`0 errors` in session 143) and soak.
 - `projects/mtc/test/{completion,cursor,lsp_index,lsp_utils}_test.mt` — unit
   coverage for helpers, not protocol conformance.
-- `tools/lsp_conformance.rb` — the spec oracle (phase 0, session 145): 26 cases
-  from §5 with explicit assertions, a standalone stdio client, `--bin`,
+- `tools/lsp_conformance.rb` — the spec oracle (phases 0–1, session 145): 29
+  cases from §5 with explicit assertions, a standalone stdio client, `--bin`,
   `--only`, `--timeout` and `--json`.  It is the `lsp_conformance` hard tier-2
-  gate; at the phase-0 commit it is **red by design** (3 pass / 23 fail) and is
-  the stopping rule for phases 1–4.  `--bin` accepts a wrapper, so the same
-  cases can be driven under valgrind; the existing `valgrind_lsp` corpus drive
-  remains the memory instrument because 26 cold valgrind server startups are
-  not a better use of tier-2 time.
+  gate; at the phase-1 commit it is **red by design** (13 pass / 16 fail): the
+  encoding cases, ASCII output, pull full/unchanged and exit-after-shutdown
+  pass; phases 2–4 own the rest.  `--bin` accepts a wrapper, so the same cases
+  can be driven under valgrind; the existing `valgrind_lsp` corpus drive
+  remains the memory instrument because cold valgrind server startups are not
+  a better use of tier-2 time.
 
 `tools/lsp_parity.rb` remains host-parity-shaped: it sends
 `workspace/willRenameFiles` as a **notification**
@@ -190,13 +191,13 @@ valgrind drive if practical.  Do not re-record the old host comparisons.
 
 Landed: 26 cases (the §5 rows, with the UTF-16 and completion rows split so a
 failure names one boundary), the gate in the `lsp` tier-2 set, and syntax
-coverage through the existing `tools_check` glob (`tools/*.rb`).  Current
+coverage through the existing `tools_check` glob (`tools/*.rb`).  Phase-0
 baseline: **3 pass / 23 fail** — ASCII output and the two behaviors already
 implemented (`textDocument/diagnostic` full/unchanged and exit-after-shutdown)
 pass; every audited P0/P1 defect is red.  The harness caps each server's
 address space and reaps its process group; use `--only` for the phase loop.
 
-### Phase 1 — position encoding (P0)
+### Phase 1 — position encoding (P0) — **DONE (session 145)**
 
 1. Decide the encoding model.  Recommended: negotiate `utf-8` when the client
    offers it (`general.positionEncodings`) and keep byte offsets internally;
@@ -208,12 +209,31 @@ address space and reaps its process group; use `--only` for the phase loop.
 3. Replace `text_docs.mt`'s scalar `line_char_to_byte` with the shared decoder.
 4. Audit every range emitter: `semantic_tokens`, `diagnostics`, `navigation`
    (hover), `highlight`, `references`, `rename`, `code_actions`,
-   `linked_editing_range`, `selection`, `symbols`, `inlay_hints`,
-   `type_hierarchy`, `call_hierarchy`, `document_link`, `code_lens`.
-   Formatting is line-based/echoed and should need no change.
+   `linked_editing_range`, `selection`, `symbols`, `workspace_symbols`,
+   `inlay_hints`, `type_hierarchy`, `call_hierarchy`, `document_link`,
+   `code_lens`.  Formatting is line-based/echoed and should need no change.
 5. Tests: semantic token lengths, diagnostic ranges, rename edits, hover
-   ranges, inlay hints, selection ranges, and an astral `didChange`, each on a
-   UTF-16 fixture.  ASCII output must be unchanged.
+   ranges, inlay hints, selection ranges, document highlight, references, and an
+   astral `didChange`, each on a UTF-16 fixture, plus the UTF-8 negotiation
+   case.  ASCII output must be unchanged.
+
+Landed: `initialize` reads `capabilities.general.positionEncodings` and picks
+`utf-8` when the client offers it (byte columns stay the wire format);
+otherwise it advertises UTF-16 and converts at both boundaries
+(`Workspace.position_encoding_utf16`).  Incoming positions route through
+`position_byte_offset_in` (`position_to_byte_utf16`/`position_to_byte_utf8`);
+`didChange` now applies edits against its in-progress buffer with the same
+decoder, and the scalar `line_char_to_byte` is gone.  Outgoing positions use
+`byte_to_utf16_column` with per-document line-start maps cached in every
+`TextCacheEntry`; `output_character_in`/`output_character` are the shared
+helpers.  The emitter audit covered semantic tokens (one line split per pass),
+diagnostics, hover/definition, highlight, references, rename, code actions,
+linked editing, selection, document/workspace symbols, inlay hints, type and
+call hierarchy, and document links; code lens, formatting and on-type
+formatting are line-based (or echo the client's range).  ASCII endpoint parity
+is byte-identical: **88/88 entries, 0 differ** against the pre-change
+recording.  The conformance suite grew to 29 cases (UTF-8 negotiation,
+highlight and references were added); 13 pass.
 
 ### Phase 2 — small conformance fixes (P0/P1)
 
@@ -270,7 +290,8 @@ split into per-boundary cases).  Add new cases here first, then to the harness:
 
 | Case | Assertion |
 |---|---|
-| UTF-16 BMP / astral fixture | semantic token lengths, diagnostic ranges, hover range, rename edit, inlay hint, selection range, and an incremental `didChange` all equal UTF-16 expectations |
+| UTF-16 BMP / astral fixture | semantic token lengths, diagnostic ranges, hover range, rename edit, inlay hint, selection range, document highlight, references, and an incremental `didChange` all equal UTF-16 expectations |
+| encoding negotiation | a client offering `utf-8` gets `positionEncoding:"utf-8"` and byte columns; a client offering nothing (or UTF-16 only) gets UTF-16 |
 | ASCII fixture | byte and UTF-16 outputs unchanged from the current recording |
 | `codeAction` | advertised kinds are `quickfix`/`source.fixAll`; every returned action's kind is standard |
 | completion + resolve | a documented `function foo` returns docs; the resolved item keeps `kind`, `detail`, `insertText`, `sortText`, `data` |
@@ -303,10 +324,11 @@ ruby tools/lsp_soak.rb --quiet                           # raw slope in the 70�
 ```
 
 `lsp_conformance` is in the `lsp` area and `tools_check` covers its syntax.
-Until the phases land the gate is red on purpose; run only the class being
-fixed (`--only utf16`, `--only lifecycle`, …) while iterating, then the whole
-suite once per phase.  Do not run the recorded CLI/diag/lint/format goldens for
-an LSP-only change unless the compiler shared code changes.  A user-visible
+At the phase-1 commit the suite is 13/29; the remaining red cases are the
+phase 2–4 work list.  Run only the class being fixed (`--only utf16`,
+`--only lifecycle`, …) while iterating, then the whole suite once per phase.
+Do not run the recorded CLI/diag/lint/format goldens for an LSP-only change
+unless the compiler shared code changes.  A user-visible
 change (quick fix, rename, multi-root) should also get a VS Code extension-host
 smoke; the extension packaging fixes are a separate repo.
 
@@ -345,10 +367,10 @@ Start the LSP enhancement program in /home/teefan/Projects/Ruby/mt-lang
 cases. The compiler is the native self-host; the Ruby host is archived and
 must not be used as an oracle.
 
-Phase 0 is done: tools/lsp_conformance.rb and the lsp_conformance gate exist,
-and the gate is red on the audited defects. Start phase 1 (position encoding:
-negotiate utf-8 when offered, otherwise convert both directions with cached
-line maps; replace the scalar didChange counter), then phases 2–4 in order.
+Phases 0–1 are done: the conformance gate exists and position encoding is
+negotiated (utf-8 when offered, UTF-16 fallback with cached line maps); the
+gate is red on the remaining audited defects. Start phase 2 (quickfix spelling,
+completion resolve, lifecycle, cancel), then phases 3–4 in order.
 Work the red cases with `ruby tools/lsp_conformance.rb --bin tmp/mtc-dev
 --only <class>`; close each phase by making its cases pass and then run the
 whole suite. Work in tiers: seed dev build (~25 s), tmp/mtc-dev test

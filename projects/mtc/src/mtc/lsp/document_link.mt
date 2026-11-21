@@ -16,6 +16,7 @@ import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
+import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
 ## Handle textDocument/documentLink.  Scans the document source for string
@@ -75,7 +76,7 @@ public function handle_document_link(
                         result.append(",")
                     first = false
                     let tok_len = token.end_offset - token.start_offset
-                    append_link(ref_of(result), token.line, token.column, tok_len, target_uri.as_str())
+                    append_link(ref_of(result), token.line, token.column, tok_len, target_uri.as_str(), source, ws.position_encoding_utf16)
                     resolved.release()
                     target_uri.release()
                 else:
@@ -237,16 +238,24 @@ function append_link(
     line: ptr_uint,
     column: ptr_uint,
     length: ptr_uint,
-    target_uri: str
+    target_uri: str,
+    source: str,
+    utf16: bool,
 ) -> void:
+    var start_col = column - 1
+    var end_col = start_col + length
+    if utf16:
+        let line_text = utils.source_line(source, line)
+        end_col = utils.byte_to_utf16_column(line_text, end_col)
+        start_col = utils.byte_to_utf16_column(line_text, start_col)
     output.append("{\"range\":{\"start\":{\"line\":")
     output.append_format(f"#{line - 1}")
     output.append(",\"character\":")
-    output.append_format(f"#{column - 1}")
+    output.append_format(f"#{start_col}")
     output.append("},\"end\":{\"line\":")
     output.append_format(f"#{line - 1}")
     output.append(",\"character\":")
-    output.append_format(f"#{(column - 1) + length}")
+    output.append_format(f"#{end_col}")
     output.append("}},\"target\":\"")
     proto.append_escaped(output, target_uri)
     output.append("\",\"tooltip\":\"Open linked file\"}")

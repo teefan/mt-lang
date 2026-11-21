@@ -116,16 +116,18 @@ function emit_document_symbols(
         var uri = string.String.create()
         uri.append("file://")
         uri.append(path)
-        emit_symbol_json(json_text, first, uri.as_str(), symbol)
+        emit_symbol_json(ws, json_text, first, uri.as_str(), path, symbol)
         uri.release()
 
 
 ## The host's `format_symbol`: a `{name, kind, location}` entry at the symbol's
 ## own token.
 function emit_symbol_json(
+    ws: ref[workspace.Workspace],
     json_text: ref[string.String],
     first: ref[bool],
     uri: str,
+    path: str,
     symbol: defidx.SymbolEntry,
 ) -> void:
     if not unsafe: read(first):
@@ -133,7 +135,9 @@ function emit_symbol_json(
     unsafe: read(first) = false
 
     let lz = if symbol.line > 0: symbol.line - 1 else: 0z
-    let colz = if symbol.column > 0: symbol.column - 1 else: 0z
+    let byte_col = if symbol.column > 0: symbol.column - 1 else: 0z
+    let colz = ws.output_character(path, lz, byte_col)
+    let end_colz = ws.output_character(path, lz, byte_col + symbol.name.len())
     json_text.append("{\"name\":\"")
     proto.append_escaped(json_text, symbol.name.as_str())
     json_text.append("\",\"kind\":")
@@ -147,7 +151,7 @@ function emit_symbol_json(
     json_text.append("},\"end\":{\"line\":")
     json_text.append_format(f"#{lz}")
     json_text.append(",\"character\":")
-    json_text.append_format(f"#{colz + symbol.name.len()}")
+    json_text.append_format(f"#{end_colz}")
     json_text.append("}}}}")
 
 

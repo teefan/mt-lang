@@ -87,7 +87,7 @@ public function handle_references(
     match resolve_static_reference_target(ws, file_path.as_str(), source, file_ast, ref_of(analysis), target):
         Option.some as static_target:
             collect_static_method_references(ws, static_target.value, include_declaration, ref_of(entries))
-            write_reference_entries(ref_of(entries), target.text, no_skip_location(), id)
+            write_reference_entries(ws, ref_of(entries), target.text, no_skip_location(), id)
             return
         Option.none:
             pass
@@ -98,7 +98,7 @@ public function handle_references(
     match scope_mod.local_binding_line(ref_of(bindings), target.text, target.line):
         Option.some as binding_line:
             collect_scoped_entries(source, file_ast, ref_of(bindings), target.text, binding_line.value, include_declaration, file_path.as_str(), ref_of(entries))
-            write_reference_entries(ref_of(entries), target.text, no_skip_location(), id)
+            write_reference_entries(ws, ref_of(entries), target.text, no_skip_location(), id)
             return
         Option.none:
             pass
@@ -106,7 +106,7 @@ public function handle_references(
     # A name this document declares at module level.
     if module_level_name(ref_of(analysis), target.text):
         collect_module_level_references(ws, file_path.as_str(), source, file_ast, ref_of(analysis), ref_of(bindings), target.text, include_declaration, ref_of(entries))
-        write_reference_entries(ref_of(entries), target.text, no_skip_location(), id)
+        write_reference_entries(ws, ref_of(entries), target.text, no_skip_location(), id)
         return
 
     # Everything else: the workspace identifier index (the host's
@@ -125,7 +125,7 @@ public function handle_references(
                 found.path.release()
             Option.none:
                 pass
-    write_reference_entries(ref_of(entries), target.text, skip, id)
+    write_reference_entries(ws, ref_of(entries), target.text, skip, id)
     skip.path.release()
 
 
@@ -200,6 +200,7 @@ struct SkipLocation:
 ## (uri, line, character) in first-seen order — the host's
 ## `results.uniq { |r| [r[:uri], r.dig(:range, :start, :line), …] }`.
 function write_reference_entries(
+    ws: ref[workspace.Workspace],
     entries: ref[vec.Vec[refidx.ReferenceEntry]],
     name: str,
     skip: SkipLocation,
@@ -224,7 +225,7 @@ function write_reference_entries(
         if not first:
             text.append(",")
         first = false
-        append_reference_json(ref_of(text), entry, name)
+        append_reference_json(ws, ref_of(text), entry, name)
 
     text.append("]")
     proto.write_response_raw(id, text.as_str())
@@ -270,9 +271,11 @@ function reference_seen(seen: ref[vec.Vec[string_mod.String]], entry: refidx.Ref
 
 ## Append one Location object: 0-based start/end from the token's 1-based lexer
 ## position, spanning the searched name (the host's `name.length` end).
-function append_reference_json(text: ref[string_mod.String], entry: refidx.ReferenceEntry, name: str) -> void:
+function append_reference_json(ws: ref[workspace.Workspace], text: ref[string_mod.String], entry: refidx.ReferenceEntry, name: str) -> void:
     let lz = if entry.line > 0: entry.line - 1 else: 0z
     let col = if entry.column > 0: entry.column - 1 else: 0z
+    let out_col = ws.output_character(entry.path, lz, col)
+    let out_end = ws.output_character(entry.path, lz, col + name.len)
 
     var uri = string_mod.String.create()
     uri.append("file://")
@@ -284,11 +287,11 @@ function append_reference_json(text: ref[string_mod.String], entry: refidx.Refer
     text.append("\",\"range\":{\"start\":{\"line\":")
     text.append_format(f"#{lz}")
     text.append(",\"character\":")
-    text.append_format(f"#{col}")
+    text.append_format(f"#{out_col}")
     text.append("},\"end\":{\"line\":")
     text.append_format(f"#{lz}")
     text.append(",\"character\":")
-    text.append_format(f"#{col + name.len}")
+    text.append_format(f"#{out_end}")
     text.append("}}}")
 
 

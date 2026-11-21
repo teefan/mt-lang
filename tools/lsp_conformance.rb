@@ -524,6 +524,62 @@ add_case("capabilities/workspace-shape") do |ctx, client|
 end
 
 
+add_case("encoding/utf8-negotiation") do |ctx, client|
+  response = init!(client, ctx.root,
+                   capabilities: { "general" => { "positionEncodings" => %w[utf-8 utf-16] } })
+  ctx.eq(response.dig("result", "capabilities", "positionEncoding"), "utf-8",
+         "advertised position encoding when the client offers utf-8")
+
+  path = write_fixture(ctx.root, "main.mt", UTF16_SOURCE)
+  uri = path_to_uri(path)
+  open!(client, path)
+  tokens = decode_semantic_tokens(
+    Array(client.request("textDocument/semanticTokens/full",
+                         { "textDocument" => { "uri" => uri } }).dig("result", "data"))
+  )
+  token = tokens.find { |t| t[:line] == 5 && t[:type] == 18 }
+  ctx.check(token, "no string token on the astral line")
+  ctx.eq(token && token[:length], 6, "UTF-8 semantic token length (bytes)") if token
+
+  range = client.request("textDocument/hover", hover_params(path, 5, 21)).dig("result", "range")
+  ctx.eq(range && range.dig("start", "character"), 21, "UTF-8 hover range start") if range
+  ctx.eq(range && range.dig("end", "character"), 27, "UTF-8 hover range end") if range
+
+  message = publish_for(client, uri, 5.0, require_items: true)
+  diag = Array(message&.dig("params", "diagnostics")).find do |d|
+    d.dig("range", "start", "line") == 7
+  end
+  ctx.eq(diag && diag.dig("range", "start", "character"), 21, "UTF-8 diagnostic start")
+end
+
+
+add_case("utf16/document-highlight") do |ctx, client|
+  init!(client, ctx.root)
+  path = write_fixture(ctx.root, "main.mt", UTF16_SOURCE)
+  open!(client, path)
+  response = client.request("textDocument/documentHighlight", hover_params(path, 5, 20))
+  range = Array(response["result"]).find { |h| h.dig("range", "start", "line") == 5 }&.dig("range")
+  ctx.check(range, "no document highlight on the astral line")
+  ctx.eq(range && range.dig("start", "character"), 19, "highlight start (UTF-16)") if range
+  ctx.eq(range && range.dig("end", "character"), 25, "highlight end (UTF-16)") if range
+end
+
+
+add_case("utf16/references") do |ctx, client|
+  init!(client, ctx.root)
+  path = write_fixture(ctx.root, "main.mt", UTF16_SOURCE)
+  open!(client, path)
+  response = client.request("textDocument/references",
+                            hover_params(path, 5, 20).merge("context" => { "includeDeclaration" => true }))
+  location = Array(response["result"]).find { |loc| loc.dig("range", "start", "line") == 5 }
+  ctx.check(location, "no reference on the astral line")
+  if location
+    ctx.eq(location.dig("range", "start", "character"), 19, "reference start (UTF-16)")
+    ctx.eq(location.dig("range", "end", "character"), 25, "reference end (UTF-16)")
+  end
+end
+
+
 add_case("utf16/semantic-token-length") do |ctx, client|
   init!(client, ctx.root)
   path = write_fixture(ctx.root, "main.mt", UTF16_SOURCE)

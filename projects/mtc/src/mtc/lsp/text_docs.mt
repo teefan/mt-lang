@@ -43,12 +43,12 @@ public function handle_did_change(ws: ref[workspace.Workspace], params: json.Val
             debug_msg.append_format(f"lsp: didChange buflen=#{buf_len}")
             log.debug(debug_msg.as_str())
             debug_msg.release()
-            var updated = apply_content_changes(src.value.as_str(), params)
+            var updated = apply_content_changes(ws, src.value.as_str(), params)
             ws.change(uri, updated.as_str())
             updated.release()
             src.value.release()
         Option.none:
-            var updated = apply_content_changes("", params)
+            var updated = apply_content_changes(ws, "", params)
             ws.change(uri, updated.as_str())
             updated.release()
 
@@ -68,7 +68,7 @@ public function publish_after_change(ws: ref[workspace.Workspace], uri: str, fil
 
 ## Apply contentChanges from a didChange notification to a document string.
 ## Returns the updated document as an owned String.
-function apply_content_changes(current: str, params: json.Value) -> string.String:
+function apply_content_changes(ws: ref[workspace.Workspace], current: str, params: json.Value) -> string.String:
     let obj_ptr = params.as_object()
     if obj_ptr == null:
         return string.String.from_str(current)
@@ -128,7 +128,7 @@ function apply_content_changes(current: str, params: json.Value) -> string.Strin
             let start_char = read_num(read(start_obj_ptr).get("character"))
             let end_line = read_num(read(end_obj_ptr).get("line"))
             let end_char = read_num(read(end_obj_ptr).get("character"))
-            var updated = apply_utf8_range_edit(result.as_str(), start_line, start_char, end_line, end_char, new_text)
+            var updated = apply_range_edit(ws, result.as_str(), start_line, start_char, end_line, end_char, new_text)
             result.clear()
             result.append(updated.as_str())
             updated.release()
@@ -136,12 +136,13 @@ function apply_content_changes(current: str, params: json.Value) -> string.Strin
     return result
 
 
-function apply_utf8_range_edit(
+function apply_range_edit(
+    ws: ref[workspace.Workspace],
     source: str, start_line: ptr_uint, start_char: ptr_uint,
     end_line: ptr_uint, end_char: ptr_uint, new_text: str,
 ) -> string.String:
-    let start_byte = line_char_to_byte(source, start_line, start_char)
-    let end_byte = line_char_to_byte(source, end_line, end_char)
+    let start_byte = ws.position_byte_offset_in(source, start_line, start_char)
+    let end_byte = ws.position_byte_offset_in(source, end_line, end_char)
     var diag_msg = string.String.create()
     diag_msg.append_format(f"lsp: range_edit src=#{source.len} L#{start_line}:#{start_char}->b#{start_byte} L#{end_line}:#{end_char}->b#{end_byte}")
     log.debug(diag_msg.as_str())
@@ -165,34 +166,6 @@ function apply_utf8_range_edit(
             log.error(err2.as_str())
             err2.release()
     return result
-
-
-function is_cont_byte(b: ubyte) -> bool:
-    return (b & ubyte<-(0xC0)) == ubyte<-(0x80)
-
-
-function line_char_to_byte(source: str, line: ptr_uint, char_offset: ptr_uint) -> ptr_uint:
-    var current_line: ptr_uint = 0
-    var byte_pos: ptr_uint = 0
-    while byte_pos < source.len:
-        if current_line == line:
-            # Within target line: count chars up to char_offset
-            var char_count: ptr_uint = 0
-            var pos: ptr_uint = byte_pos
-            while pos < source.len and source.byte_at(pos) != 10:
-                if char_count >= char_offset:
-                    return pos
-                if not is_cont_byte(source.byte_at(pos)):
-                    char_count += 1
-                pos += 1
-            return pos
-        # Advance to next line
-        while byte_pos < source.len and source.byte_at(byte_pos) != 10:
-            byte_pos += 1
-        if byte_pos < source.len:
-            byte_pos += 1
-        current_line += 1
-    return source.len
 
 
 function read_num(p: ptr[json.Value]?) -> ptr_uint:

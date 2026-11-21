@@ -19,6 +19,7 @@ import mtc.lsp.navigation as navigation
 import mtc.lsp.protocol as proto
 import mtc.lsp.scope as scope_mod
 import mtc.lsp.uri as uri_ops
+import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
 
@@ -66,7 +67,7 @@ public function handle_rename(
     if scope_mod.local_binding_line(ref_of(bindings), target.text, target.line).is_some():
         var filtered = filter_occurrences(source, target.text, target.line, ref_of(bindings))
         defer: filtered.release()
-        var local_json = build_rename_edits_json(source, target.text, uri, new_name, ref_of(filtered))
+        var local_json = build_rename_edits_json(source, target.text, uri, new_name, ref_of(filtered), ws.position_encoding_utf16)
         proto.write_response_raw(id, local_json.as_str())
         local_json.release()
         return
@@ -88,7 +89,7 @@ public function handle_rename(
 
     var filtered = filter_occurrences(source, target.text, target.line, ref_of(bindings))
     defer: filtered.release()
-    var edits_json = build_rename_edits_json(source, target.text, uri, new_name, ref_of(filtered))
+    var edits_json = build_rename_edits_json(source, target.text, uri, new_name, ref_of(filtered), ws.position_encoding_utf16)
     proto.write_response_raw(id, edits_json.as_str())
     edits_json.release()
 
@@ -189,6 +190,7 @@ function identity_document_edits(
     var content_opt = ws.document_source(path)
     if content_opt.is_some():
         var content = content_opt.unwrap()
+        var lines = utils.split_lines(content.as_str())
         var occurrences = cursor.identifier_occurrences(content.as_str(), name)
         var oi: ptr_uint = 0
         while oi < occurrences.len():
@@ -198,9 +200,10 @@ function identity_document_edits(
             if occurrence_matches_identity(ws, path, doc_uri, content.as_str(), occ, identity):
                 if edits.len() > 0:
                     edits.append(",")
-                append_edit_span(ref_of(edits), occ, new_name)
+                append_edit_span(ref_of(edits), occ, new_name, ref_of(lines), ws.position_encoding_utf16)
             oi += 1
         occurrences.release()
+        lines.release()
         content.release()
     return edits
 
@@ -275,7 +278,12 @@ public function handle_prepare_rename(
         return
 
     let lz = if target.line > 0: target.line - 1 else: 0z
-    let col = if target.column > 0: target.column - 1 else: 0z
+    var col = if target.column > 0: target.column - 1 else: 0z
+    var end_col = col + target.length
+    if ws.position_encoding_utf16:
+        let line_text = utils.source_line(content.as_str(), target.line)
+        end_col = utils.byte_to_utf16_column(line_text, end_col)
+        col = utils.byte_to_utf16_column(line_text, col)
     var json_text = string.String.create()
     defer: json_text.release()
     json_text.append("{\"range\":{\"start\":{\"line\":")
@@ -285,7 +293,7 @@ public function handle_prepare_rename(
     json_text.append("},\"end\":{\"line\":")
     json_text.append_format(f"#{lz}")
     json_text.append(",\"character\":")
-    json_text.append_format(f"#{col + target.length}")
+    json_text.append_format(f"#{end_col}")
     json_text.append("}},\"placeholder\":\"")
     proto.append_escaped(ref_of(json_text), target.text)
     json_text.append("\"}")
@@ -311,12 +319,13 @@ function filter_occurrences(source: str, name: str, target_line: ptr_uint, bindi
 
 
 ## Build a WorkspaceEdit JSON with a TextEdit for each occurrence.
-function build_rename_edits_json(source: str, old_name: str, uri: str, new_name: str, occurrences: ref[vec.Vec[cursor.CursorToken]]) -> string.String:
+function build_rename_edits_json(source: str, old_name: str, uri: str, new_name: str, occurrences: ref[vec.Vec[cursor.CursorToken]], utf16: bool) -> string.String:
     var result = string.String.create()
     result.append("{\"changes\":{\"")
     append_escaped(ref_of(result), uri)
     result.append("\":[")
 
+    var lines = utils.split_lines(source)
     var oi: ptr_uint = 0
     while oi < occurrences.len():
         let op = occurrences.get(oi) else:
@@ -324,17 +333,25 @@ function build_rename_edits_json(source: str, old_name: str, uri: str, new_name:
         let occ = unsafe: read(op)
         if oi > 0:
             result.append(",")
-        append_edit_span(ref_of(result), occ, new_name)
+        append_edit_span(ref_of(result), occ, new_name, ref_of(lines), utf16)
         oi += 1
+    lines.release()
 
     result.append("]}}")
     return result
 
 
-## One `TextEdit` object for an occurrence.
-function append_edit_span(result: ref[string.String], occ: cursor.CursorToken, new_name: str) -> void:
+## One `TextEdit` object for an occurrence.  `utf16` is always true when the
+## caller is an LSP request; the parameter keeps the same-file and identity
+## paths on one conversion boundary.
+function append_edit_span(result: ref[string.String], occ: cursor.CursorToken, new_name: str, lines: ref[vec.Vec[str]], utf16: bool) -> void:
     let lz = if occ.line > 0: occ.line - 1 else: 0z
-    let col = if occ.column > 0: occ.column - 1 else: 0z
+    var col = if occ.column > 0: occ.column - 1 else: 0z
+    var end_col = col + occ.length
+    if utf16:
+        let line_text = utils.line_at(lines, lz)
+        end_col = utils.byte_to_utf16_column(line_text, end_col)
+        col = utils.byte_to_utf16_column(line_text, col)
     result.append("{\"range\":{\"start\":{\"line\":")
     result.append_format(f"#{lz}")
     result.append(",\"character\":")
@@ -342,7 +359,7 @@ function append_edit_span(result: ref[string.String], occ: cursor.CursorToken, n
     result.append("},\"end\":{\"line\":")
     result.append_format(f"#{lz}")
     result.append(",\"character\":")
-    result.append_format(f"#{col + occ.length}")
+    result.append_format(f"#{end_col}")
     result.append("}},\"newText\":\"")
     proto.append_escaped(result, new_name)
     result.append("\"}")

@@ -121,6 +121,8 @@ struct TextCacheEntry:
     size: ptr_uint
     modified_seconds: ptr_int
     modified_nanoseconds: ptr_int
+    ## Byte offset of every line start, for O(line) byte→UTF-16 conversion.
+    line_starts: vec.Vec[ptr_uint]
 
 
 public struct SemanticTokenCacheEntry:
@@ -131,6 +133,9 @@ public struct SemanticTokenCacheEntry:
     ## diff against what the client actually holds (recomputing from the new
     ## source would compare it with itself and report no edits).
     data: vec.Vec[uint]
+    ## The data's column encoding; a cached UTF-8 pass must not be replayed to a
+    ## UTF-16 client.
+    utf16: bool
 
 
 public struct Workspace:
@@ -175,6 +180,10 @@ public struct Workspace:
     ## the server then suppresses `publishDiagnostics`, as the host does, so the
     ## client does not show every diagnostic twice.
     pull_diagnostics_active: bool
+    ## The negotiated position encoding.  UTF-16 is the LSP default for a client
+    ## that advertises nothing; `initialize` switches it to UTF-8 when the
+    ## client offers that encoding.  Internal columns are always byte offsets.
+    position_encoding_utf16: bool
     ## Regions of replaced parse-cache entries, kept alive until the request
     ## boundary (see `drain_retired_regions`).
     retired_regions: vec.Vec[heap.Region]
@@ -254,6 +263,7 @@ extending Workspace:
             platform_override = string.String.create(),
             strict_current_root_diagnostics = false,
             pull_diagnostics_active = false,
+            position_encoding_utf16 = true,
             retired_regions = vec.Vec[heap.Region].create(),
         )
 
@@ -498,6 +508,7 @@ extending Workspace:
             Option.some as old:
                 var entry = old.value
                 entry.source.release()
+                entry.line_starts.release()
             Option.none:
                 pass
 
@@ -520,6 +531,7 @@ extending Workspace:
             Option.some as old:
                 var entry = old.value
                 entry.source.release()
+                entry.line_starts.release()
             Option.none:
                 pass
         this.text_cache.set(string.String.from_str(path), TextCacheEntry(
@@ -530,6 +542,7 @@ extending Workspace:
             size = size,
             modified_seconds = modified_seconds,
             modified_nanoseconds = modified_nanoseconds,
+            line_starts = utils.build_line_starts(text),
         ))
 
 
@@ -611,7 +624,49 @@ extending Workspace:
         defer: path.release()
         var source = this.document_text(path.as_str()) else:
             return character
-        return utils.position_to_byte(source.text, line, character)
+        return this.position_byte_offset_in(source.text, line, character)
+
+
+    ## The byte offset of an incoming position in `source` under the negotiated
+    ## encoding.  `didChange` applies edits against its own in-progress buffer,
+    ## so it converts against that text rather than the cached document.
+    public function position_byte_offset_in(source: str, line: ptr_uint, character: ptr_uint) -> ptr_uint:
+        if this.position_encoding_utf16:
+            return utils.position_to_byte_utf16(source, line, character)
+        return utils.position_to_byte_utf8(source, line, character)
+
+
+    ## The outgoing character column for an internal byte column at `line` in
+    ## `source` (a validated view of the document).  Emitters that hold the
+    ## document text use this; the UTF-8 path is the identity.
+    public function output_character_in(source: str, line: ptr_uint, byte_col: ptr_uint) -> ptr_uint:
+        if not this.position_encoding_utf16:
+            return byte_col
+        return utils.byte_to_utf16_column(utils.source_line(source, line + 1), byte_col)
+
+
+    ## The outgoing character column for `path`'s current text.  For a result
+    ## whose document the handler did not read (cross-file navigation), this
+    ## fetches the line through the document cache.
+    public editable function output_character(path: str, line: ptr_uint, byte_col: ptr_uint) -> ptr_uint:
+        if not this.position_encoding_utf16:
+            return byte_col
+        let source = this.document_text(path) else:
+            return byte_col
+        var key = string.String.from_str(path)
+        defer: key.release()
+        let cached_ptr = this.text_cache.get(key)
+        if cached_ptr != null:
+            unsafe:
+                let cached = read(cached_ptr)
+                let line_text = utils.line_at_index(cached.text, cached.line_starts.as_span(), line)
+                return utils.byte_to_utf16_column(line_text, byte_col)
+        return this.output_character_in(source.text, line, byte_col)
+
+
+    ## Select the position encoding `initialize` negotiated.
+    public editable function set_position_encoding(utf16: bool) -> void:
+        this.position_encoding_utf16 = utf16
 
 
     ## The roots the workspace *symbol* index walks: the host's `index_workspace`
@@ -950,6 +1005,7 @@ extending Workspace:
         result_id: string.String,
         token_count: ptr_uint,
         data: vec.Vec[uint],
+        utf16: bool,
     ) -> void:
         var key = string.String.from_str(path)
         # Replace any previous entry (releasing its strings and token data).
@@ -967,6 +1023,7 @@ extending Workspace:
             result_id = result_id,
             token_count = token_count,
             data = data,
+            utf16 = utf16,
         )
         this.semantic_token_cache.set(key, entry)
 
@@ -1091,6 +1148,7 @@ function release_text_cache(cache: ref[map_mod.Map[string.String, TextCacheEntry
         unsafe:
             var entry_value = read(entry.value)
             entry_value.source.release()
+            entry_value.line_starts.release()
     cache.release()
 
 

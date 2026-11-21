@@ -91,7 +91,7 @@ public function handle_prepare_type_hierarchy(
             var result = string.String.create()
             defer: result.release()
             result.append("[")
-            append_hierarchy_item(ref_of(result), name, kind, kind_text, uri, token_payload.value.line, token_payload.value.column, token_payload.value.length)
+            append_hierarchy_item(ref_of(result), name, kind, kind_text, uri, token_payload.value.line, token_payload.value.column, token_payload.value.length, source, ws.position_encoding_utf16)
             result.append("]")
             proto.write_response_raw(id, result.as_str())
 
@@ -142,7 +142,7 @@ public function handle_supertypes(
                     if not first:
                         result.append(",")
                     first = false
-                    append_hierarchy_item(ref_of(result), iface_name, KIND_INTERFACE, "interface", item_uri, 1, 0, iface_name.len)
+                    append_hierarchy_item(ref_of(result), iface_name, KIND_INTERFACE, "interface", item_uri, 1, 0, iface_name.len, source, ws.position_encoding_utf16)
                 si += 1
 
     result.append("]")
@@ -208,7 +208,7 @@ public function handle_subtypes(
                                 result.append(",")
                             first = false
                             var target_uri = build_file_uri(path)
-                            append_hierarchy_item(ref_of(result), entry_name, entry.kind, hierarchy_kind_text(entry.kind), target_uri.as_str(), entry.line, 0, entry_name.len)
+                            append_hierarchy_item(ref_of(result), entry_name, entry.kind, hierarchy_kind_text(entry.kind), target_uri.as_str(), entry.line, 0, entry_name.len, content.as_str(), ws.position_encoding_utf16)
                             target_uri.release()
                     content.release()
                 Result.failure:
@@ -258,9 +258,16 @@ function append_hierarchy_item(
     line: ptr_uint,
     column: ptr_uint,
     length: ptr_uint,
+    source: str,
+    utf16: bool,
 ) -> void:
     let lz = if line > 0: line - 1 else: 0z
-    let colz = if column > 0: column - 1 else: 0z
+    var colz = if column > 0: column - 1 else: 0z
+    var end_colz = colz + length
+    if utf16:
+        let line_text = utils.source_line(source, line)
+        end_colz = utils.byte_to_utf16_column(line_text, end_colz)
+        colz = utils.byte_to_utf16_column(line_text, colz)
     output.append("{\"name\":\"")
     proto.append_escaped(output, name)
     output.append("\",\"kind\":")
@@ -274,7 +281,7 @@ function append_hierarchy_item(
     output.append("},\"end\":{\"line\":")
     output.append_format(f"#{lz}")
     output.append(",\"character\":")
-    output.append_format(f"#{colz + length}")
+    output.append_format(f"#{end_colz}")
     output.append("}},\"selectionRange\":{\"start\":{\"line\":")
     output.append_format(f"#{lz}")
     output.append(",\"character\":")
@@ -282,5 +289,5 @@ function append_hierarchy_item(
     output.append("},\"end\":{\"line\":")
     output.append_format(f"#{lz}")
     output.append(",\"character\":")
-    output.append_format(f"#{colz + length}")
+    output.append_format(f"#{end_colz}")
     output.append("}}}")

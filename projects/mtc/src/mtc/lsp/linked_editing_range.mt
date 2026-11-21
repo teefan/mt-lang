@@ -11,6 +11,7 @@ import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.scope as scope_mod
 import mtc.lsp.uri as uri_ops
+import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
 
@@ -79,7 +80,7 @@ public function handle_linked_editing_range(
                     if not first:
                         ranges_json.append(",")
                     first = false
-                    append_range_json(ref_of(ranges_json), occ.line, occ.column, occ.length)
+                    append_range_json(ref_of(ranges_json), occ.line, occ.column, occ.length, source, ws.position_encoding_utf16)
                 oi += 1
 
             if first:
@@ -98,13 +99,19 @@ public function handle_linked_editing_range(
 
 
 ## Append a single range object `{"start":{"line":...,"character":...},"end":...}`.
-function append_range_json(output: ref[string.String], line: ptr_uint, column: ptr_uint, length: ptr_uint) -> void:
+function append_range_json(output: ref[string.String], line: ptr_uint, column: ptr_uint, length: ptr_uint, source: str, utf16: bool) -> void:
+    var start_col = column - 1
+    var end_col = start_col + length
+    if utf16:
+        let line_text = utils.source_line(source, line)
+        end_col = utils.byte_to_utf16_column(line_text, end_col)
+        start_col = utils.byte_to_utf16_column(line_text, start_col)
     output.append("{\"start\":{\"line\":")
     output.append_format(f"#{line - 1}")
     output.append(",\"character\":")
-    output.append_format(f"#{column - 1}")
+    output.append_format(f"#{start_col}")
     output.append("},\"end\":{\"line\":")
     output.append_format(f"#{line - 1}")
     output.append(",\"character\":")
-    output.append_format(f"#{(column - 1) + length}")
+    output.append_format(f"#{end_col}")
     output.append("}}")

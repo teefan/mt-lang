@@ -23,6 +23,13 @@ import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
 
+## The code-action request's document view.  Every fix edits the request's own
+## document, so these two request-scoped values are all the deep fix helpers
+## need to convert their byte columns to the negotiated encoding.
+var fix_output_source: str = ""
+var fix_output_utf16: bool = false
+
+
 ## Handle textDocument/codeAction.
 public function handle_code_actions(ws: ref[workspace.Workspace], uri: str, params: json.Value, id: json.Value) -> void:
     var file_path = uri_ops.file_uri_to_path(uri) else:
@@ -36,6 +43,8 @@ public function handle_code_actions(ws: ref[workspace.Workspace], uri: str, para
     defer: content.release()
 
     let source = content.as_str()
+    fix_output_source = source
+    fix_output_utf16 = ws.position_encoding_utf16
 
     var only_kinds = extract_only_kinds(params)
     var want_quickfix = only_kinds.len == 0
@@ -128,7 +137,7 @@ public function handle_code_actions(ws: ref[workspace.Workspace], uri: str, para
         while di < read(diags_array).len():
             let diag_ptr = read(diags_array).get(di) else:
                 break
-            append_fix_for_diagnostic(ref_of(json_text), ref_of(emitted), uri, content.as_str(), read(diag_ptr))
+            append_fix_for_diagnostic(ws, ref_of(json_text), ref_of(emitted), uri, content.as_str(), read(diag_ptr))
             di += 1
 
     json_text.append("]")
@@ -195,13 +204,14 @@ function is_engine_quickfix_code(code: str) -> bool:
 ## `cannot assign … expected …` message), then the per-code branch, then the
 ## message-driven unsafe-wrap, match-arm and import actions.
 function append_fix_for_diagnostic(
+    ws: ref[workspace.Workspace],
     json_text: ref[string.String],
     emitted: ref[ptr_uint],
     uri: str,
     source: str,
     diag: json.Value,
 ) -> void:
-    match extract_diagnostic_info(diag):
+    match extract_diagnostic_info(ws, uri, diag):
         Option.none:
             return
         Option.some as info_payload:
@@ -305,16 +315,23 @@ function emit_quickfix_action(
     json_text.append(",\"kind\":\"quickFix\"")
     append_diag_echo(json_text, diag)
     if has_edit:
+        var out_start = start_char
+        var out_end = end_char
+        if fix_output_utf16:
+            let start_text = utils.source_line(fix_output_source, start_line + 1)
+            let end_text = utils.source_line(fix_output_source, end_line + 1)
+            out_start = utils.byte_to_utf16_column(start_text, start_char)
+            out_end = utils.byte_to_utf16_column(end_text, end_char)
         json_text.append(",\"edit\":{\"changes\":{\"")
         proto.append_escaped(json_text, uri)
         json_text.append("\":[{\"range\":{\"start\":{\"line\":")
         json_text.append_format(f"#{start_line}")
         json_text.append(",\"character\":")
-        json_text.append_format(f"#{start_char}")
+        json_text.append_format(f"#{out_start}")
         json_text.append("},\"end\":{\"line\":")
         json_text.append_format(f"#{end_line}")
         json_text.append(",\"character\":")
-        json_text.append_format(f"#{end_char}")
+        json_text.append_format(f"#{out_end}")
         json_text.append("}},\"newText\":\"")
         proto.append_escaped(json_text, new_text)
         json_text.append("\"}]}}")
@@ -948,7 +965,7 @@ function append_engine_fix(
 
 
 ## Pull code and range fields out of one Diagnostic JSON object.
-function extract_diagnostic_info(diag: json.Value) -> Option[DiagnosticInfo]:
+function extract_diagnostic_info(ws: ref[workspace.Workspace], uri: str, diag: json.Value) -> Option[DiagnosticInfo]:
     unsafe:
         let diag_obj = diag.as_object()
         if diag_obj == null:
@@ -982,11 +999,17 @@ function extract_diagnostic_info(diag: json.Value) -> Option[DiagnosticInfo]:
         if end_obj == null:
             return Option[DiagnosticInfo].none
 
+        let info_line = number_of(start_obj, "line")
+        var start_char = number_of(start_obj, "character")
+        var end_char = number_of(end_obj, "character")
+        if ws.position_encoding_utf16:
+            start_char = ws.position_byte_offset(uri, info_line, start_char)
+            end_char = ws.position_byte_offset(uri, info_line, end_char)
         return Option[DiagnosticInfo].some(value = DiagnosticInfo(
             code = code,
-            line = number_of(start_obj, "line"),
-            start_char = number_of(start_obj, "character"),
-            end_char = number_of(end_obj, "character")
+            line = info_line,
+            start_char = start_char,
+            end_char = end_char
         ))
 
 

@@ -18,7 +18,7 @@ history.
 - [Status at a glance](#status-at-a-glance-session-145-2026-11-21)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
-- [Session 145 — LSP conformance harness (phase 0)](#session-145--lsp-conformance-harness-phase-0)
+- [Session 145 — LSP conformance harness and position encoding (phases 0–1)](#session-145--lsp-conformance-harness-and-position-encoding-phases-01)
 - [Session 144 — LSP conformance audit and enhancement plan](#session-144--lsp-conformance-audit-and-enhancement-plan)
 - [Session 143 — host retirement phase 4 (delete)](#session-143--host-retirement-phase-4-delete)
 - [Session 142 — seed, guard carve-out, recorded oracles, release path (phases 0–3)](#session-142--seed-guard-carve-out-recorded-oracles-release-path-phases-03)
@@ -106,24 +106,24 @@ history.
 | Area | State |
 | --- | --- |
 | Compiler | **native self-host only**; the Ruby host is archived at tag `archive/host-ruby-0.4.26`, and `lib/`, the Ruby `test/**` suite, `milk_tea.gemspec`, `Rakefile`, `Gemfile` and `bin/mtc` are removed (session 143) |
-| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** (session 143, stage0 = the committed seed, a `ruby` shim that exits 127 never invoked) |
+| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** (session 145, stage0 = the committed seed, a `ruby` shim that exits 127 never invoked) |
 | Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`b29241f4…`, release); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
 | Release archive | **3.52 MiB deterministic tar.gz** (`mtc-0.4.26-linux-x86_64`), checksummed beside the archive; identical across two packagings of the same inputs; clean-path smoke (std build/run, LSP initialize, docs page/CSS/JS/404) green; the version is the authored `cli_help.VERSION` |
 | Analyzer memory | `check main.mt` **712 MiB / 6.6 s** (was 9,228 MiB / ~58 s); `lowering.mt` **274 MiB** (was 2,322 MiB).  All tooling fan-out is capped at **4**, so the worst 4-way sweep is ~3 GiB (session 142) |
-| `test/mt` | **85 files / 0 failed** (62 in-language tests + 23 compile-fail diagnostics fixtures; session 143); peak RSS **135 MB** under the region-scoped test compiler |
+| `test/mt` | **85 files / 0 failed** (62 in-language tests + 23 compile-fail diagnostics fixtures; session 145 replayed); peak RSS **135 MB** under the region-scoped test compiler |
 | Examples | **49/49 build** under the self-only `emit-c` gate (15 top-level + `examples/sdl3` 34/34; session 143; was host-compared 49/49 in session 141) |
 | Recorded oracles | **CLI 227/227 cases; diagnostics 504 files / 0 differ; lint 672 files / 0 differ; formatter 774 files × 3 modes / 0 differ** — digest-keyed and replayed green with no host source present (session 143) |
 | `check` diagnostics | the 504-file diagnostic oracle is the gate; the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field column remains the only position residual. |
 | Linter | **43/43 rules, 13/13 fixers**; the 672-file lint oracle is the corpus gate (the live host-diff corpus is retired).  The historical residue (3 self-only `std` files, the host-timeout rows) is recorded in *Deliberate differences*. |
-| LSP | self-only instruments: valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class on `analyzer.mt`; soak **73.8 KB/cycle raw / 19.0 LS at 200 cycles** (session 143; raw in the 70–80 band); `milkTea/debugInfo` byte-equal on the recorded fixtures.  The host-differential harness/audit/recovery probes are retired with the host; `lsp_parity record --server self` and `lsp_soak` remain |
-| LSP conformance | **phase 0 harness landed (session 145)**: `tools/lsp_conformance.rb`, **26 spec cases, 3 pass / 23 fail** at the audit baseline; the `lsp_conformance` tier-2 gate is **red by design** until phases 1–4.  Coverage 42/54 requests, 30 capability keys; P0: UTF-16 positions, `quickFix` spelling, unanswered `workspace/willRenameFiles`, completion resolve; P1: multi-root, watched-file registration, pull scope/refresh, lifecycle, cancel.  Plan and evidence: `docs/lsp-enhancement-plan.md` |
+| LSP | self-only instruments: valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class on `analyzer.mt`; soak **76.0 KB/cycle raw / 19.5 LS at 200 cycles** (session 145; raw in the 70–80 band); `milkTea/debugInfo` byte-equal on the recorded fixtures.  The host-differential harness/audit/recovery probes are retired with the host; `lsp_parity record --server self` and `lsp_soak` remain |
+| LSP conformance | **phases 0–1 landed (session 145)**: `tools/lsp_conformance.rb`, **29 spec cases, 13 pass / 16 fail**; UTF-16/UTF-8 positions, ASCII output, highlight/references, pull full/unchanged and exit-after-shutdown are green.  The `lsp_conformance` tier-2 gate stays **red by design** until phases 2–4.  Coverage 42/54 requests, 30 capability keys; remaining P0: `quickFix` spelling, `workspace/willRenameFiles`, completion resolve; P1: multi-root, watched-file registration, pull scope/refresh, lifecycle, cancel.  Plan and evidence: `docs/lsp-enhancement-plan.md` |
 | DAP | self-only `dap_smoke`: all probes answer, the real lldb-dap breakpoint session reaches `add` and terminates; `dap_async_probe` proves the VS Code launch ordering; desktop F5 smoke passed session 74 |
 | Formatter | **774 files × 3 modes** (`:canonical`, `:preserve`, `:tidy`) replay from the digest-keyed oracle; counts drift with the tree |
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check` (the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 17.1 s** and full `build` 32.7 s (session 72; the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 169 files / 126,602 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **33 unused + 6 test-only** public declarations; 6,345 duplicated lines / 884 windows; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` |
+| **Refactoring safety** | structural guard: 168 files / 126,855 code lines; 110 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **32 unused + 6 test-only** public declarations; 6,451 duplicated lines / 904 clusters; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` |
 
 Rough completion against the per-track Definition of Done: **~100%**, now
 against the archived host record rather than a live reference.  The
@@ -360,10 +360,11 @@ aside; `test/mt` 85/0, `cli:parity` 227/227, `diag_parity` 501/0/0/3 of 504,
 docs smoke host+self ok, and the guard ratchet after a reviewed baseline
 refresh (126,602 code lines).
 
-## Session 145 — LSP conformance harness (phase 0)
+## Session 145 — LSP conformance harness and position encoding (phases 0–1)
 
-Added the spec oracle for the LSP enhancement program.  No compiler code
-changed; the deliverable is `tools/lsp_conformance.rb` and its gate.
+Added the spec oracle for the LSP enhancement program and closed the position
+encoding P0.  Phase 0 changed no compiler code; phase 1 changed only the LSP
+subsystem and its unit test.
 
 **Harness.** One standalone Ruby stdio client (`Content-Length` JSON-RPC,
 buffered reads with deadlines, server→client requests answered, process groups
@@ -390,7 +391,44 @@ rewrite; multi-root add/remove; watched-file registration; workspace-diagnostic
 scope and refresh; `publishDiagnostics.version`; pre-init/duplicate-init/
 post-shutdown codes; exit status without shutdown; stale `$/cancelRequest`.
 
-**Next.** Phase 1 — position encoding at one boundary.
+### Phase 1 in the same session — position encoding
+
+`initialize` now reads `capabilities.general.positionEncodings`: it advertises
+`utf-8` when the client offers it (the server's byte columns stay the wire
+format), otherwise the LSP default UTF-16, and sets
+`Workspace.position_encoding_utf16` for both boundaries.
+
+**Incoming.** `position_byte_offset_in` routes to
+`utils.position_to_byte_utf16`/`position_to_byte_utf8`; position params,
+selection ranges, range formatting and inlay-hint ranges share it.
+`didChange` applies each edit against its own in-progress buffer through the
+same decoder — the scalar `line_char_to_byte` and `is_cont_byte` are gone, so an
+astral edit lands at the UTF-16 offset the client meant.
+
+**Outgoing.** `utils.byte_to_utf16_column` plus the line-start map cached in
+every `TextCacheEntry` (`utils.build_line_starts`/`line_at_index`) make a
+conversion O(line length); `output_character_in`/`output_character` are the
+shared helpers.  The audit converted semantic tokens (one line split per pass),
+diagnostics, hover and definition locations, highlight, references, rename,
+code actions, linked editing, selection, document and workspace symbols, inlay
+hints, type and call hierarchy, and document links.  Code lens, formatting and
+on-type formatting are line-based or echo the client's range.  The semantic
+token cache records its column encoding, so a cached UTF-8 pass is never
+replayed to a UTF-16 client.
+
+**Tests and verification.** The conformance suite grew to 29 cases: UTF-8
+negotiation, document highlight and references joined the seven UTF-16 cases
+and the ASCII anchor.  `lsp_conformance` is **13 pass / 16 fail**; the
+remaining failures are the phase 2–4 list.  `lsp_utils_test.mt` covers both
+decoders, `byte_to_utf16_column` and the line-start map.  ASCII endpoint
+parity against the pre-change recording is **88/88 entries, 0 differ**.
+Seed dev build; dev suite **22/0**; bootstrap fixed point + **22/0**;
+`test/mt` **85/0**; valgrind **0 errors**; soak **76.0 KB/cycle raw / 19.5 LS**
+at 200 cycles; guard `--check --strict --ratchet` after the reviewed baseline
+refresh (**126,855** code lines; 6,451 duplicated / 904 clusters; 32 unused +
+6 test-only exports; tests 22/85).
+
+**Next.** Phase 2 — quickfix spelling, completion resolve, lifecycle, cancel.
 
 ## Session 144 — LSP conformance audit and enhancement plan
 
@@ -3340,29 +3378,32 @@ rows), formatter 739/739 in all three modes.
 
 ## Handoff (session 145)
 
-**Next session:** phase 1 of the LSP enhancement program — position encoding.
-The phase-0 harness is in place and `lsp_conformance` is a hard tier-2 gate that
-is **red by design** (3/26 pass).  Do not weaken an assertion; the failures are
-the phase work list.
+**Next session:** phase 2 of the LSP enhancement program — the small P0/P1
+conformance fixes.  Phases 0–1 are done; `lsp_conformance` is a hard tier-2 gate
+that is **red by design** (13/29 pass).  Do not weaken an assertion; the
+remaining failures are the phase work list.
 
-- **Phase 1:** decide the encoding model (prefer negotiating `utf-8` when the
-  client offers it, keeping byte offsets internally; otherwise convert both
-  directions with cached per-document line maps), replace `didChange`'s scalar
-  counter with the shared decoder, and audit every range emitter.  Expected
-  result: the seven `utf16/*` cases green, `ascii/outputs-unchanged` still
-  green.
+- **Phase 2:** `quickfix` spelling in the capability and every action;
+  completion resolve by `data.uri`/`data.name` with the full item echoed and
+  documentation added; lifecycle state (`-32002` before init, `-32600` for a
+  duplicate init and post-shutdown requests, exit 1 without shutdown,
+  `serverInfo`, `experimental`, document versions and
+  `publishDiagnostics.version`); remove the stale `$/cancelRequest` set.
+  Expected to clear `capabilities/code-action-kinds`,
+  `code-action/returned-kind`, both completion cases, the four lifecycle
+  cases, `publish/diagnostics-version` and `cancel/completed-id-reuse`.
 - Iterate with the seed dev build
   (`"$(tools/bootstrap.sh --print-stage0)" build projects/mtc -I . --no-cache -o tmp/mtc-dev`)
-  and `ruby tools/lsp_conformance.rb --bin tmp/mtc-dev --only utf16`.
-- **Phase 2** (quickfix spelling, completion resolve, lifecycle, cancel), then
-  **phase 3** (`willRenameFiles`, multi-root, watched files) and **phase 4**
+  and `ruby tools/lsp_conformance.rb --bin tmp/mtc-dev --only <class>`.
+- **Phase 3** (`willRenameFiles`, multi-root, watched files) and **phase 4**
   (workspace-diagnostic scope and refresh) follow in order.
 
-**Baseline:** 23.8 s seed dev build; fresh dev suite 22/0; conformance 26 cases,
-3 pass / 23 fail.  Build state otherwise unchanged from session 143 (seed
-`b29241f4…`, `test/mt` 85/0, valgrind 0, soak in the 70–80 raw band).  The
-tier-2 set for an LSP change is `tools/gates.sh --areas lsp --run`; it stops at
-`lsp_conformance` while the gate is red, which is intended.
+**Baseline:** conformance 29 cases, 13 pass / 16 fail; UTF-16/UTF-8 positions,
+ASCII output, highlight/references, pull full/unchanged and exit-after-shutdown
+pass.  Bootstrap fixed point + self-tests 22/0; `test/mt` 85/0; valgrind 0;
+soak 76.0 KB/cycle raw / 19.5 LS; ASCII endpoint parity 88/88 entries, 0 differ.
+The tier-2 set for an LSP change is `tools/gates.sh --areas lsp --run`; it stops
+at `lsp_conformance` while the gate is red, which is intended.
 
 ## Handoff (session 144)
 
@@ -3677,18 +3718,16 @@ the ledger's baselines unless the tree moved.**
 
 ### Open items, in priority order
 
-1. **LSP enhancement — OPEN; active program (session 145: phase 0 done).**  The
-   audit found 42/54 client→server requests and 30 capability keys implemented,
-   with four P0 conformance defects: UTF-16 positions are byte columns on output
-   and scalar-counted on incremental input; `codeAction` uses `quickFix` instead
-   of `quickfix`; `workspace/willRenameFiles` is a request that never responds
-   and computes no import edits; completion resolve never finds docs and strips
-   the item when it does.  P1: multi-root, watched-file registration,
-   pull-diagnostic scope/refresh, lifecycle state, and `$/cancelRequest`.
-   Phase plan, evidence, file locations and conformance cases are in
-   `docs/lsp-enhancement-plan.md`.  Phase 0 landed the spec harness
-   (`tools/lsp_conformance.rb`, 26 cases, 3 pass / 23 fail, hard tier-2 gate);
-   start phase 1: the position-encoding boundary.
+1. **LSP enhancement — OPEN; active program (session 145: phases 0–1 done).**
+   The audit found 42/54 client→server requests and 30 capability keys
+   implemented, with four P0 conformance defects.  Phase 1 closed the UTF-16
+   position defect (negotiated UTF-8/UTF-16 with one conversion boundary and
+   cached line maps).  Remaining: `quickFix` spelling,
+   `workspace/willRenameFiles` response/import edits, completion resolve, then
+   P1 multi-root, watched-file registration, pull-diagnostic scope/refresh,
+   lifecycle state and `$/cancelRequest`.  Phase plan, evidence and conformance
+   cases are in `docs/lsp-enhancement-plan.md`; the spec gate is 13/29 and stays
+   red until phases 2–4 land.  Start phase 2.
 2. **Host retirement — CLOSED (session 143).**  Phases 0–4 are done: the seed
    is the only stage0, the guard lives in `tools/lib/`, the recorded oracles
    replay with no host source present, the release path is deterministic, and
@@ -4509,10 +4548,10 @@ historical record.
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
 | host tree | **removed**; `lib/`, Ruby `test/**`, gemspec, Rakefile, Gemfile and `bin/mtc` are gone; archived tag `archive/host-ruby-0.4.26` | session 143 | `git show archive/host-ruby-0.4.26:path` |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed**; a `ruby` shim that exits 127 is never invoked | session 143 | `tools/bootstrap.sh -j 4` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed**; a `ruby` shim that exits 127 is never invoked | session 145 (replayed) | `tools/bootstrap.sh -j 4` |
 | bootstrap seed | `vendor/bootstrap/linux-x86_64/mtc`, release stage2, 6,289,144 B, sha256 `b29241f4…`; the only stage0 | session 142 | `tools/bootstrap.sh --print-stage0` |
 | fresh-clone gate | a `git clone` + `third_party/` (no `build/`, `tmp/`, `lib/`): a `ruby` shim that exits 127 is never invoked; fixed point + 22/0; `test/mt` 85/0; goldens 227 / 504 / 672 / 774×3 | session 143 | `git clone`, symlink/copy `third_party/`, `tools/bootstrap.sh -j 4` |
-| `test/mt` | **85 files / 0 failed** (62 in-language + 23 compile-fail diagnostics fixtures); peak RSS 135 MB | session 143 | `build/stage2/mtc test test/mt -I .` |
+| `test/mt` | **85 files / 0 failed** (62 in-language + 23 compile-fail diagnostics fixtures); peak RSS 135 MB | session 145 (replayed) | `build/stage2/mtc test test/mt -I .` |
 | examples | **49/49 build** under the self-only `emit-c` gate (15 top-level + 34 sdl3) | session 143 | `tools/gates.sh --areas examples --run` |
 | recorded CLI oracle | **227/227 cases**, host-free | session 143 (replayed) | `ruby tools/cli_parity.rb --expect tools/golden/cli.json -q` |
 | recorded diagnostics oracle | **504 files / 0 differ** (`changed=0`, `unrecorded=0`) | session 143 (replayed) | `ruby tools/diag_parity.rb check std examples --expect tools/golden/diag.json -q` |
@@ -4520,14 +4559,14 @@ historical record.
 | recorded formatter oracle | **774 files × 3 modes / 0 differ** (`changed=0`, `unrecorded=0`) | session 143 (replayed) | `ruby tools/format_parity.rb all -j 4 --expect tools/golden/format.json -q` |
 | wasm preview | self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 71 (tool now self-only) | `ruby tools/wasm_smoke.rb --self build/stage2/mtc` |
 | docs server | self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 71 (tool now self-only) | `ruby tools/docs_smoke.rb --self build/stage2/mtc` |
-| LSP instruments | valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class; soak **73.8 KB/cycle raw / 19.0 LS** at 200 cycles (session 143; raw in the 70–80 band); `debugInfo` byte-equal | sessions 135/140/143 (self-only) | `tools/gates.sh --areas lsp --only valgrind_lsp,soak --run`; `ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json` |
-| LSP spec conformance | **phase 0 harness: 26 cases, 3 pass / 23 fail** (red by design; phases 1–4); coverage 42/54 requests, 30 capability keys; P0 defects: UTF-16 output positions, `quickFix` kind, unanswered `willRenameFiles`, completion-resolve docs; plan in `docs/lsp-enhancement-plan.md` | session 145 | `ruby tools/lsp_conformance.rb --bin build/stage2/mtc` |
+| LSP instruments | valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class; soak **76.0 KB/cycle raw / 19.5 LS** at 200 cycles (session 145; raw in the 70–80 band); `debugInfo` byte-equal | sessions 135/140/145 (self-only) | `tools/gates.sh --areas lsp --only valgrind_lsp,soak --run`; `ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json` |
+| LSP spec conformance | **phases 0–1: 29 cases, 13 pass / 16 fail** (red by design; phases 2–4); UTF-16/UTF-8 positions, ASCII output, highlight/references green; coverage 42/54 requests, 30 capability keys; remaining P0: `quickFix` kind, unanswered `willRenameFiles`, completion-resolve docs; plan in `docs/lsp-enhancement-plan.md` | session 145 | `ruby tools/lsp_conformance.rb --bin build/stage2/mtc` |
 | DAP | self-only smoke: every probe answers; real lldb-dap reaches the `add` breakpoint and terminates; async launch-order probe green | session 143 (adapted) | `ruby tools/dap_smoke.rb`; `ruby tools/dap_async_probe.rb` |
 | imported bindings | **29 verified / 0 changed of 29** (native check; the host parity report is retired) | session 72 (native) | `build/stage2/mtc imported-bindings --all --check` |
 | throughput | `emit-c` **17.1 s**, full `build` **32.7 s**, `bootstrap --fast` **2.6 min** (session 72; the archived host measured 54.3 s / 76.3 s) | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .` |
 | analyzer memory | `check main.mt` **712 MiB / 6.6 s**; `lowering.mt` **274 MiB**; fan-out capped at 4 | session 142 | `time build/stage2/mtc check projects/mtc/src/mtc/main.mt` |
 | release archive | 3.52 MiB deterministic `mtc-0.4.26-linux-x86_64.tar.gz`, checksummed; clean-path smoke green | session 142 | `tools/release.sh --skip-build`; `tools/release_smoke.sh` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 33 unused / 6 test-only exports; 6,345 duplicated lines / 884 windows; 1 function ≥ 200 lines (`binding_at`); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 143 (unchanged; host deletion is outside the scanned tree) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (110 edges, 168 files); 32 unused / 6 test-only exports; 6,451 duplicated lines / 904 clusters; 1 function ≥ 200 lines (`binding_at`); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 145 (baseline refreshed for the LSP encoding change) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 
 ## Porting notes
 

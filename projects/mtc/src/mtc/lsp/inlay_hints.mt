@@ -23,6 +23,7 @@ import mtc.lsp.cursor as cursor
 import mtc.lsp.navigation as navigation
 import mtc.lsp.protocol as proto
 import mtc.lsp.scope as scope_mod
+import mtc.lsp.utils as utils
 import mtc.lsp.type_render as type_render
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
@@ -143,7 +144,7 @@ public function handle_inlay_hint(
                     let fn_name = cursor.token_text(source, callee)
                     match receiver_method_sig_for(analysis, ast_file, receiver_name, fn_name, receiver_tok.line, ref_of(bindings)):
                         Option.some as sig:
-                            emit_call_hints(ref_of(json_text), ref_of(emitted), source, ref_of(tokens), ti + 1, sig.value, range)
+                            emit_call_hints(ref_of(json_text), ref_of(emitted), source, ref_of(tokens), ti + 1, sig.value, range, ws.position_encoding_utf16)
                         Option.none:
                             pass
                     ti += 1
@@ -170,7 +171,7 @@ public function handle_inlay_hint(
                         let psig = find_function_params(module_file.declarations, fn_name)
                         match psig:
                             Option.some as sig:
-                                emit_call_hints(ref_of(json_text), ref_of(emitted), source, ref_of(tokens), ti + 1, sig.value, range)
+                                emit_call_hints(ref_of(json_text), ref_of(emitted), source, ref_of(tokens), ti + 1, sig.value, range, ws.position_encoding_utf16)
                             Option.none:
                                 pass
                 ti += 1
@@ -186,17 +187,18 @@ public function handle_inlay_hint(
                     ref_of(tokens),
                     ti + 1,
                     read(sig_ptr),
-                    range
+                    range,
+                    ws.position_encoding_utf16
                 )
         ti += 1
 
     # Type-annotation hints for inferred locals, after the parameter hints —
     # the host's collect_inferred_type_hints.
-    emit_type_hints(ref_of(json_text), ref_of(emitted), ast_file, ref_of(analysis), range)
+    emit_type_hints(ref_of(json_text), ref_of(emitted), ast_file, ref_of(analysis), range, source, ws.position_encoding_utf16)
 
     # Return-type hints for callables whose return type was not written, last —
     # the host's collect_inferred_return_hints.
-    emit_return_hints(ref_of(json_text), ref_of(emitted), ast_file, ref_of(analysis), range)
+    emit_return_hints(ref_of(json_text), ref_of(emitted), ast_file, ref_of(analysis), range, source, ws.position_encoding_utf16)
 
     json_text.append("]")
     proto.write_response_raw(id, json_text.as_str())
@@ -211,6 +213,8 @@ function emit_type_hints(
     file: ast.SourceFile,
     analysis: ref[analyzer.Analysis],
     range: HintRange,
+    source: str,
+    utf16: bool,
 ) -> void:
     var di: ptr_uint = 0
     while di < file.declarations.len:
@@ -220,12 +224,12 @@ function emit_type_hints(
         match decl:
             ast.Decl.decl_function as fun:
                 if fun.body != null:
-                    emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-fun.body), analysis, range)
+                    emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-fun.body), analysis, range, source, utf16)
             ast.Decl.decl_extending_block as ext:
                 var mi: ptr_uint = 0
                 while mi < ext.methods.len:
                     let method = unsafe: read(ext.methods.data + mi)
-                    emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-method.body), analysis, range)
+                    emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-method.body), analysis, range, source, utf16)
                     mi += 1
             _:
                 pass
@@ -238,40 +242,42 @@ function emit_type_hints_in_stmt(
     stmt: ast.Stmt,
     analysis: ref[analyzer.Analysis],
     range: HintRange,
+    source: str,
+    utf16: bool,
 ) -> void:
     match stmt:
         ast.Stmt.stmt_block as blk:
             var si: ptr_uint = 0
             while si < blk.statements.len:
                 var inner = unsafe: read(blk.statements.data + si)
-                emit_type_hints_in_stmt(json_text, emitted, inner, analysis, range)
+                emit_type_hints_in_stmt(json_text, emitted, inner, analysis, range, source, utf16)
                 si += 1
         ast.Stmt.stmt_local as loc:
-            emit_local_type_hint(json_text, emitted, loc.name, loc.stmt_type, loc.value, loc.line, loc.column, analysis, range)
+            emit_local_type_hint(json_text, emitted, loc.name, loc.stmt_type, loc.value, loc.line, loc.column, analysis, range, source, utf16)
         ast.Stmt.stmt_if as iff:
             var bi: ptr_uint = 0
             while bi < iff.branches.len:
                 let branch = unsafe: read(iff.branches.data + bi)
-                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(branch.body), analysis, range)
+                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(branch.body), analysis, range, source, utf16)
                 bi += 1
             if iff.else_body != null:
-                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-iff.else_body), analysis, range)
+                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-iff.else_body), analysis, range, source, utf16)
         ast.Stmt.stmt_while as wh:
             if wh.body != null:
-                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-wh.body), analysis, range)
+                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-wh.body), analysis, range, source, utf16)
         ast.Stmt.stmt_for as fo:
             if fo.body != null:
-                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-fo.body), analysis, range)
+                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-fo.body), analysis, range, source, utf16)
         ast.Stmt.stmt_match as ma:
             var ai: ptr_uint = 0
             while ai < ma.arms.len:
                 let arm = unsafe: read(ma.arms.data + ai)
                 if arm.body != null:
-                    emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-arm.body), analysis, range)
+                    emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-arm.body), analysis, range, source, utf16)
                 ai += 1
         ast.Stmt.stmt_unsafe as un:
             if un.body != null:
-                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-un.body), analysis, range)
+                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-un.body), analysis, range, source, utf16)
         _:
             pass
 
@@ -289,6 +295,8 @@ function emit_local_type_hint(
     column: ptr_uint,
     analysis: ref[analyzer.Analysis],
     range: HintRange,
+    source: str,
+    utf16: bool,
 ) -> void:
     if name.len == 0 or name.equal("_") or stmt_type != null:
         return
@@ -302,7 +310,9 @@ function emit_local_type_hint(
             if is_error_type(ty.value):
                 return
             var label = type_render.short_name(ty.value)
-            let name_end = if column > 0: (column - 1) + name.len else: name.len
+            var name_end = if column > 0: (column - 1) + name.len else: name.len
+            if utf16:
+                name_end = utils.byte_to_utf16_column(utils.source_line(source, line), name_end)
             if unsafe: read(emitted) > 0:
                 json_text.append(",")
             unsafe: read(emitted) = read(emitted) + 1
@@ -337,6 +347,8 @@ function emit_return_hints(
     file: ast.SourceFile,
     analysis: ref[analyzer.Analysis],
     range: HintRange,
+    source: str,
+    utf16: bool,
 ) -> void:
     var di: ptr_uint = 0
     while di < file.declarations.len:
@@ -347,14 +359,14 @@ function emit_return_hints(
             ast.Decl.decl_function as fun:
                 let sig_ptr = unsafe: read(analysis).functions.get(fun.name)
                 if sig_ptr != null:
-                    emit_return_hint(json_text, emitted, fun.name, fun.line, fun.column, unsafe: read(sig_ptr), range)
+                    emit_return_hint(json_text, emitted, fun.name, fun.line, fun.column, unsafe: read(sig_ptr), range, source, utf16)
             ast.Decl.decl_extending_block as ext:
                 var mi: ptr_uint = 0
                 while mi < ext.methods.len:
                     let method = unsafe: read(ext.methods.data + mi)
                     match find_method_sig(analysis, method.name):
                         Option.some as sig:
-                            emit_return_hint(json_text, emitted, method.name, method.line, method.column, sig.value, range)
+                            emit_return_hint(json_text, emitted, method.name, method.line, method.column, sig.value, range, source, utf16)
                         Option.none:
                             pass
                     mi += 1
@@ -394,6 +406,8 @@ function emit_return_hint(
     column: ptr_uint,
     sig: analyzer.FnSig,
     range: HintRange,
+    source: str,
+    utf16: bool,
 ) -> void:
     if sig.has_return_type:
         return
@@ -405,7 +419,9 @@ function emit_return_hint(
     let col_zero = if column > 0: column - 1 else: 0z
     if not in_hint_range(range, line_zero, col_zero):
         return
-    let name_end = if column > 0: (column - 1) + name.len else: name.len
+    var name_end = if column > 0: (column - 1) + name.len else: name.len
+    if utf16:
+        name_end = utils.byte_to_utf16_column(utils.source_line(source, line), name_end)
     if unsafe: read(emitted) > 0:
         json_text.append(",")
     unsafe: read(emitted) = read(emitted) + 1
@@ -428,6 +444,7 @@ function emit_call_hints(
     lparen_index: ptr_uint,
     sig: analyzer.FnSig,
     range: HintRange,
+    utf16: bool,
 ) -> void:
     var arg_starts = collect_argument_starts(tokens, lparen_index)
     defer: arg_starts.release()
@@ -443,7 +460,7 @@ function emit_call_hints(
         let param = unsafe: read(sig.params.data + ai)
 
         let arg_line = if arg_tok.line > 0: arg_tok.line - 1 else: 0z
-        let arg_col = if arg_tok.column > 0: arg_tok.column - 1 else: 0z
+        var arg_col = if arg_tok.column > 0: arg_tok.column - 1 else: 0z
         if not in_hint_range(range, arg_line, arg_col):
             ai += 1
             continue
@@ -459,6 +476,8 @@ function emit_call_hints(
                 ai += 1
                 continue
 
+        if utf16:
+            arg_col = utils.byte_to_utf16_column(utils.source_line(source, arg_tok.line), arg_col)
         if unsafe: read(emitted) > 0:
             json_text.append(",")
         unsafe:

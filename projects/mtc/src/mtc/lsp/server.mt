@@ -345,7 +345,9 @@ function dispatch_known_method(ws: ref[workspace.Workspace], method: str, msg: p
     else if method == "textDocument/inlayHint":
         let uri = extract_text_doc_uri(msg.params)
         var range = extract_range_lines(msg.params)
-        inlay.handle_inlay_hint(ws, uri, range.start_line, range.start_char, range.end_line, range.end_char, msg.id)
+        let start_char = ws.position_byte_offset(uri, range.start_line, range.start_char)
+        let end_char = ws.position_byte_offset(uri, range.end_line, range.end_char)
+        inlay.handle_inlay_hint(ws, uri, range.start_line, start_char, range.end_line, end_char, msg.id)
     else if method == "textDocument/onTypeFormatting":
         var pos = position_params(ws, msg.params)
         on_type.handle_on_type_formatting(ws, pos.uri, pos.line, extract_trigger_character(msg.params), msg.id)

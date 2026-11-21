@@ -16,6 +16,7 @@ import mtc.linter.linter as linter_mod
 import mtc.linter.scope_tracking as scope_tracking
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
+import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
 
@@ -55,7 +56,7 @@ public function collect_diagnostics(ws: ref[workspace.Workspace], uri: str, root
         unsafe:
             let d = read(d_ptr)
             if d.path.as_str().equal(root_path):
-                let diag = diagnostic_from_load_diagnostic(d, source, uri)
+                let diag = diagnostic_from_load_diagnostic(ws, d, source, uri)
                 if not diag.is_null():
                     read(array_ptr).push(diag)
 
@@ -112,7 +113,7 @@ public function collect_diagnostics(ws: ref[workspace.Workspace], uri: str, root
             break
         unsafe:
             let w = read(w_ptr)
-            let diag = diagnostic_from_warning(w, root_source)
+            let diag = diagnostic_from_warning(ws, w, root_source)
             if not diag.is_null():
                 read(array_ptr).push(diag)
 
@@ -166,7 +167,7 @@ public function publish_empty_for_uri(ws: ref[workspace.Workspace], uri: str) ->
 ## pipeline stage, the range spans the offending token, import failures anchor at
 ## the module path text, parse/lex messages carry the error's own location
 ## suffix, and sema messages that quote identifiers become MarkupContent.
-function diagnostic_from_load_diagnostic(d: loader.LoadDiagnostic, source: str, uri: str) -> json.Value:
+function diagnostic_from_load_diagnostic(ws: ref[workspace.Workspace], d: loader.LoadDiagnostic, source: str, uri: str) -> json.Value:
     var diag = json.create_object_value()
     let diag_obj = diag.as_object() else:
         return json.null_value()
@@ -179,6 +180,11 @@ function diagnostic_from_load_diagnostic(d: loader.LoadDiagnostic, source: str, 
         length = d.symbol_name.len()
     if length == 0:
         length = 1
+    if ws.position_encoding_utf16:
+        let line_text = utils.source_line(source, line_zero + 1)
+        let end_byte = start_char + length
+        start_char = utils.byte_to_utf16_column(line_text, start_char)
+        length = utils.byte_to_utf16_column(line_text, end_byte) - start_char
 
     let lsp_code = lsp_code_for(d.code)
     let stage = stage_for(d.code)
@@ -355,7 +361,7 @@ function import_path_start(d: loader.LoadDiagnostic, source: str) -> ptr_uint:
 ## message's quoted symbol on that line — mirroring the Ruby LSP's
 ## `extract_warning_range` fallback.  When no symbol is found, the range is
 ## [0, 1] like Ruby's.
-function diagnostic_from_warning(w: linter_mod.Warning, source: str) -> json.Value:
+function diagnostic_from_warning(ws: ref[workspace.Workspace], w: linter_mod.Warning, source: str) -> json.Value:
     var diag = json.create_object_value()
     let diag_obj = diag.as_object() else:
         return json.null_value()
@@ -392,6 +398,10 @@ function diagnostic_from_warning(w: linter_mod.Warning, source: str) -> json.Val
                         end_char = start_char + (tok.end_offset - tok.start_offset)
                         break
                 ti += 1
+    if ws.position_encoding_utf16:
+        let line_text = utils.source_line(source, line_zero + 1)
+        start_char = utils.byte_to_utf16_column(line_text, start_char)
+        end_char = utils.byte_to_utf16_column(line_text, end_char)
 
     var range = json.create_object_value()
     let range_obj = range.as_object() else:

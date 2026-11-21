@@ -339,14 +339,14 @@
       "projects/mtc/src/mtc/lowering/async.mt:326:function:int_type",
       "projects/mtc/src/mtc/lowering/async.mt:330:function:void_type",
       "projects/mtc/src/mtc/lowering/lowering.mt:54:struct:LoweringError",
-      "projects/mtc/src/mtc/lsp/navigation.mt:769:function:analysis_for_document",
-      "projects/mtc/src/mtc/lsp/navigation.mt:780:function:ast_for_document",
+      "projects/mtc/src/mtc/lsp/navigation.mt:785:function:analysis_for_document",
+      "projects/mtc/src/mtc/lsp/navigation.mt:796:function:ast_for_document",
       "projects/mtc/src/mtc/lsp/protocol.mt:108:function:read_message",
       "projects/mtc/src/mtc/lsp/protocol.mt:324:function:write_progress_begin",
       "projects/mtc/src/mtc/lsp/protocol.mt:332:function:write_progress_report",
       "projects/mtc/src/mtc/lsp/protocol.mt:348:function:write_progress_end",
-      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2541:function:classify_identifier",
-      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2567:function:collect_param_names",
+      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2544:function:classify_identifier",
+      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2570:function:collect_param_names",
       "projects/mtc/src/mtc/packages/graph.mt:263:function:node_at",
       "projects/mtc/src/mtc/packages/graph.mt:267:function:root_node",
       "projects/mtc/src/mtc/packages/graph.mt:334:function:package_for_path",
@@ -370,8 +370,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 884,
-    "duplicated_lines": 6345,
+    "windows": 904,
+    "duplicated_lines": 6451,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -399,7 +399,6 @@
       "06d481bc74e415f8c869f6acde72f3a37b225fda",
       "06dcff872ad22ffd0daaeabbdcab9b8a0499c6e3",
       "07462a4914ebecd7d739ca72cc11c0a25585af0d",
-      "077fa37f5f3e71cea4a5969a926ba518ae772bc0",
       "08bba07d2384a04094e28ff6295e8dfa75fda3fd",
       "08d010e04f401cf4f800ab51182eec32f4abdfd1",
       "091619c40c05ebf6aec9692585439be71abe1941",
@@ -426,6 +425,7 @@
       "0e840e3a73e5119325b9c0f8719f3f9da232eecc",
       "0edd0b70215297f3250f90059e73b280b055be04",
       "0edd26a4bda9521575d8b128fec47523ed3b80bb",
+      "0edfa527c22f8f7fc3fa2cc20a59731b2485b645",
       "0fb697dfe84ead81d35d499574cd1eafd8441ac3",
       "0fc4c7b681c72025535d67cd4ce0b0be4186ca3e",
       "10976286b8eece0346a8db5c3bc0c1c062660b17",
@@ -441,10 +441,12 @@
       "138ad8832054fb97d33d9fa9ab156eb393b96269",
       "13c05249129dd4c7fbc18e5da3331adbbbb19699",
       "13d3952ae3de021b8ae04ee1037e6cb7da8933ac",
+      "13d617f534e294b5373a7f415cb5d8cd2807e1a3",
       "1505262d1069bc25044e931b0e46fa2b902e013a",
       "15dee3312a98b4bc15173d32dbcd45a9f21b7fb8",
       "15e137f1ea67642384d345632a19050e6ecb2546",
       "15eb1d3dfc6a44e9f7edea2c27939a05fa5e2dd9",
+      "15f2047524c1eff8223aba17f6f4f546757f6273",
       "16054a55eb3777788dd7a8b24d7c2679d7ea469d",
       "163f0da59a60e4df21fa8bb2dd90cab9d2e9220b",
       "1640e9407025d0b3d8f20f8c504f5fabc6eb98e7",
@@ -512,7 +514,6 @@
       "2b46ee3eb1a1058c0a25f34c60afa6ade2129275",
       "2c4143bc753c28ea70178e5a7e293ed89fabee17",
       "2c812d60db1043e3f11f06bdf11b7fe253ac41cf",
-      "2d18ef26bde945aea7f86558a18836ab8ef600bb",
       "2d296bed945482333ba88525e486c494f7c44d99",
       "2d309ca3218f7fe01bfbae687cf5ed862866fe8a",
       "2e23ef248a29893600f5e6280642e8cd2567b914",
@@ -564,6 +565,7 @@
       "3ace845224e4353a62b3164ccdc77629ba657c6e",
       "3b185b292938cb2feb3c8e7957466ed699b445ab",
       "3b259e125e3ea3965f2d83817861e07f86a7374a",
+      "3b2fd76c7af3a4c612d5891bf98f58c575b347eb",
       "3b35e506562774bf148dcacd1dbf421758ac5278",
       "3b439b470c7b54c28126f7ea925a9764a8e555d5",
       "3b89609949719806f0744f2d08f4de66138d3f5b",
@@ -577,6 +579,7 @@
       "3cedb30ab108e4154e1d2479129b302e454a810b",
       "3d0ade7cbed39ac8c1f0384d53c528918bd91166",
       "3d1d8f43dc1dc2c90aefd8928499df8c66e0f255",
+      "3d5b4fb3309cded2c302a5370756576f029325db",
       "3de044a3c16f864a002c75dfc49b5f30700a2d73",
       "3df0f54a008384e871d5d6db26b6cf7771edaf41",
       "3e97e7b24745c5e5614aac59479057e443f7d016",
@@ -593,6 +596,7 @@
       "424f52cbbfd551f0ad0fe8f552479f9c1a8e06c5",
       "426a8f563b8f847f4fa2ff041eddce527424143f",
       "4280d3dbc19ea0d030fb9307948b4206e59ed2f1",
+      "4334db9c67be0ce8a713b811edb1709200fdd522",
       "43cbdf3755340ed3ed143ebf568f98865e8fcba4",
       "442a5056f46e5531645f554e5259eab047956cc9",
       "444108fd893e26a7dd9d0ee4b5ff3523d497390c",
@@ -636,6 +640,7 @@
       "4feba198db5a97186d311627d2510e8b37a53081",
       "50095461c5a1df984cd9ae9b8e37479fb60cf17d",
       "501323fc64a5531c07a9665e461d59469a59eaea",
+      "506059cffae116fec8b3eb84fbcf04d24f088d1e",
       "51352a07d80f4213ed13a5b1cccbcb165d9e79f5",
       "51391a9967b240646d3131e8e7935e091361c930",
       "5159fb93eea8eb4128300c217d1df984732933cd",
@@ -653,6 +658,7 @@
       "54b86bc710712648da5a41fc28b7d9fdebbaf023",
       "557b97b2f5d351b4c4e63b065fd7ef3a8d40c05e",
       "55f4d2cc7aa6ed6f387617b7b1c8f19416c30227",
+      "56c1b68418796824b3b41d9caaf2e0d3bfccd15d",
       "56de369c1e62f84a8ce5580459b381cb899a09be",
       "56f11e30d7af921afbb67c047081eabba1eb8eaa",
       "57091c0c56c5bf25876ccc041e2d12329be03056",
@@ -670,7 +676,6 @@
       "5adb3a914d24abf439c76a606d8f09bcb8f43f8f",
       "5b55170b93ad1a19ab1b60288d47bb944637a2a1",
       "5bbb490937b30c00a875a1e2aa3c3693b1e2c2cf",
-      "5be368aa09c23c6cefa094ffdbfe2903726c4e17",
       "5c8e5859842ff6d34641ec1d632a67f99fa7897a",
       "5cb95c74f0a1bad794043f164840fa948e820a9a",
       "5cdb376e25d1a88196fbc63315da3ca9f4d588ae",
@@ -709,6 +714,7 @@
       "634961bbe223b5e5cd3ecd2760c1abeae4e1a7c3",
       "63609727ea57d2d309f611c179cc3dac3a88a3e1",
       "63ada7529f8d7689ab5436b49f6644e5c17b32a6",
+      "641e2681233ef746b91eb8091d59793abc22c984",
       "6433b38ddf0a5d076b03f22f865d8f4803bed52a",
       "6442893fd2feef89082d6f048fab0b553165e014",
       "64ac5e1abd5f055186f2ddbd501e66d8056d94c4",
@@ -788,6 +794,7 @@
       "769df03ba7ebbf4d2a13fb4a56599b58ada50855",
       "76b5f136415e0fa1af68c92cbf45ecfc64ae8fb3",
       "76b77054a69575382cb5aa7f7c6357e096e36035",
+      "76fad99b1a807636e7fc8de2bf00e1708d2eac80",
       "77186f8d354e4be443ad7626caecf0e71e407da6",
       "7763ca34f583476b7fddde0eaefa2cfe455adac6",
       "779a2947bc81dfa72265dd8e39f3535f0355681a",
@@ -924,6 +931,7 @@
       "9f0d5c83284cbb52ef4dc6d6d6b0eef774dc2fc7",
       "9f1db620b85531a5527ad3e76d780a5db91e60fe",
       "9f5561aa7f7cce1adbd42409cbcc10d5f158d106",
+      "9fd2017031ab03f2c65730e1fa045f74d2de4661",
       "9ff50d6bf670093c5079b1948a0a6e9c86d950fa",
       "a0378244b41036a5c6d606b1751372ac134916a4",
       "a0e5594a5e3f0d66ea144aeb2ae85a8eb1b9ff39",
@@ -934,13 +942,15 @@
       "a30a95f024fa3f7da0ad58cc8e5f7df74d998f94",
       "a32c8bede1b83026458d8317cfb670518f0c7740",
       "a338ed3113f5855c53d98d3148b90d95189e6913",
-      "a39221edca63e8bb798ec36bbc9139939f6e3d89",
       "a39d378123924a0a38c0cd413f97b85bb591c8cd",
+      "a45f416240c00c974b3148d3dc71371460c628ec",
       "a4ac2b36e827720a7897a53490b25e667cc96753",
       "a5a3cdc3b4d56551278d15d32d611f284826ecf1",
       "a5bb00240fbd94bd1441184472c9e99b08179c9c",
       "a5c004e6faf0143a500a5f383915c21d969835ff",
       "a5fbe3582894134cff2e71b95aa8f99b5d97bc53",
+      "a622ad1ae4b9a38c3b04985f84af63fa3993ae72",
+      "a634be3849b69bf493854a98a6dc4e20fcb59657",
       "a63a46b9575d7abaf09d0f703d4e129016421a03",
       "a657fdb16b3c1e0dcdf18b16f5e595c50435664d",
       "a676b5b2dc09cf85ff8ef08428bcfb5d780b6ce7",
@@ -955,10 +965,12 @@
       "a87da272401a3a446133e49be7dc35f51675f6c7",
       "a8c3714b4078be63a628d4a0736a4660c936ea5e",
       "a8f5b2243cd12c6933d71a3ca6aae310d6a1fe16",
+      "a900c99c290cd54f3af8efa9dcda48e4e056901a",
       "a90cb2878ddea8268b1f73fb728183182726c198",
       "a96aecb60d8ca31154bb272dedf1b851d1b597bf",
       "aa2f08ede2f9ff0a9fe2bbd2518c9823c6a002b2",
       "aa3a5ef46efcb5d204f87a57e4f1d56029dd5591",
+      "aa5b9c207015204dc698a14df013780fbcc10dfe",
       "aa91bc0a5b7b19bf3fb0b9383aab76a87eb237d8",
       "aa962ba07ba08f4c4dd017c0d083745e31c1a2b5",
       "aab5bd0d05bbebb31dde79ca911f8d42083582ff",
@@ -969,6 +981,7 @@
       "ac35f986934021b2991017f1f42b03e751b67f1b",
       "acd521f4fc77005947eefac618805355914c8832",
       "ad1021d347e1a2b85da6cfb669fb321cf9dc4b91",
+      "ae4b2d414558becd41c6898b283c60789e3d14a3",
       "ae74ab6745434279ef526e22ff4a641c37a39269",
       "ae82d5dbdc1d073a01897b106fd206bf1ec11a39",
       "ae85d9366aba89ca4e4f15743e140e14a7aefffb",
@@ -981,6 +994,7 @@
       "b00635244b5846d8c1a17466c86287456b57c3e6",
       "b00d5fdd7ccab38e62f38f9211a21ebd4218630f",
       "b01a29862ba942d9c6a50c27036223b73f6c071d",
+      "b03b859a323a3ec04a3c94032004cfe6f815b547",
       "b042412440751c53455e04e2c684cbb07df67718",
       "b0b41fbd02048ff8126ab737aa7c7c608dbd33b8",
       "b0b914fb60c70109e6be64be3962057866919e49",
@@ -997,6 +1011,7 @@
       "b2b71cd59302e9a68df62c3d385ba932ff872419",
       "b2b910ca91cff84d2b3c3281b6d1e2dacd3b0346",
       "b333b6c261230afa0867b75acde255e45363b324",
+      "b41595d379d70073d2feb7985e8f0a79d4b63412",
       "b48227c36400f93a41a75034c82cd24117792724",
       "b4de14a949b99aef2e90373cd4b493294aa73a03",
       "b554ca9e5b1b0bb9f11673d6cf788d4efb2b059d",
@@ -1116,20 +1131,22 @@
       "d4aa1c72e2ad24db900c99d532ef3258f358b5f0",
       "d4dbb22a36b46624bfbdbf94038c227df52698f3",
       "d4e7db5e21113449e225f9ec201a5b9543c1b58e",
+      "d52218cb5206d4eaec80d9aac1695ce0dc06a22d",
       "d5466817815070814dc7bb464d5119094238a35f",
       "d56469226c5e5f7b91bd9902930e7d79d3625ce3",
       "d594d4bc32fe64906c380cf6785ba0d3e651482e",
       "d5b82966c1136a3ac326260ccabab9c29150a188",
       "d5ec80e03ca7b2f9e1b99bc3c1f615eea75ae946",
-      "d6ccec51f5ab3ef17b4fa30a09b31978261156a3",
       "d6d1f6cb70a49a0c2fe2409c52b280300eeae0c9",
       "d704d2062554d9913cc20197d2227a14dc047cd7",
       "d709410841b636c90861af813f02bfdd8622bfba",
       "d75dc1e4b66df794aea68471f2322143f5bdb4f0",
       "d75f3b33fbb58701f68e2fad224b288d4db83456",
+      "d774cc94966d65f10f478b84de9474da901f82e8",
       "d7dafe7d7ecab36f5427ed85c3999c1aa59b0ab7",
       "d8167d5405ffd62a36947a4535e678fc3da9b3e0",
       "d822dfbc62fb5d0e2b65deb8a571075388d44f18",
+      "d8e1ee9597e9fa209b7471895ef21008d59c9df2",
       "d9378f186ee8a55581863f8cb7f23d97a89c9b4b",
       "d95ecd9c365f6c0f6a6225575fa70845819c5930",
       "d969c3d2f9ec28a8903789389c86365dafe0afe1",
@@ -1156,6 +1173,7 @@
       "e01cbf6c1cbf5c0170381145411b9397aeb33594",
       "e11c56ad51b59d155740609033e8b11a92f5fff9",
       "e135d05b4e1e0d56154c69cd3283fac51f703509",
+      "e1972c0bc0ad7dcc0722d53372d2f1e72457b7fe",
       "e1aaf1525723f7e63379c7a30c29164177465de6",
       "e1e0795b1e946e33f4d9498052a6c0f3aac59cbb",
       "e1f6177ed725d0c9e1d2264525acc210c88e195d",
@@ -1208,6 +1226,7 @@
       "ef8e2012fbc8ccbfee26923bcbc48ce79b81f0ee",
       "efa9da64d119728a702ca8f4d52e405d7f1f8b49",
       "efdd63327a9a868bcbf7a6a9bd59d7640e812776",
+      "eff4fa4e4d52fe0f5e2dc9fa225cd6e703617c00",
       "f0156955eb93369b53755d6f7feb319da5041ae6",
       "f01d81e357b953044df52c4f7b61fa4b612a6281",
       "f0671437e25319c62b886117779ef3d6ad02dc3f",
@@ -1229,6 +1248,7 @@
       "f4327b739b1557b84f4d37bb9158151ee16d8f3e",
       "f5277a188afcb2dc204b8700968012c457c44c64",
       "f54216d64962f831e36a48ef4ac2083611bc03af",
+      "f588c744d59aa26492771c9527f960a44a38b2d0",
       "f5959dfe3ca8fb7d9b4216f3b21e221afb201376",
       "f65a2374d2c2884e3713182f1f255f35d2de476b",
       "f7fe06b148d41de102d27d9732d9deff380aa98a",
@@ -1260,7 +1280,7 @@
     ]
   },
   "sizes": {
-    "total_code": 126602,
+    "total_code": 126855,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1721,16 +1741,16 @@
         "max_function": 45
       },
       "projects/mtc/src/mtc/lsp/call_hierarchy.mt": {
-        "lines": 576,
-        "code": 490,
-        "max_line": 134,
-        "max_function": 95
+        "lines": 599,
+        "code": 513,
+        "max_line": 170,
+        "max_function": 97
       },
       "projects/mtc/src/mtc/lsp/code_actions.mt": {
-        "lines": 1046,
-        "code": 861,
+        "lines": 1069,
+        "code": 879,
         "max_line": 120,
-        "max_function": 109
+        "max_function": 111
       },
       "projects/mtc/src/mtc/lsp/code_lens.mt": {
         "lines": 182,
@@ -1775,10 +1795,10 @@
         "max_function": 38
       },
       "projects/mtc/src/mtc/lsp/diagnostics.mt": {
-        "lines": 470,
-        "code": 333,
-        "max_line": 119,
-        "max_function": 91
+        "lines": 480,
+        "code": 343,
+        "max_line": 134,
+        "max_function": 95
       },
       "projects/mtc/src/mtc/lsp/document_context.mt": {
         "lines": 39,
@@ -1787,9 +1807,9 @@
         "max_function": 11
       },
       "projects/mtc/src/mtc/lsp/document_link.mt": {
-        "lines": 252,
-        "code": 196,
-        "max_line": 117,
+        "lines": 261,
+        "code": 205,
+        "max_line": 139,
         "max_function": 62
       },
       "projects/mtc/src/mtc/lsp/execute_command.mt": {
@@ -1817,10 +1837,10 @@
         "max_function": 38
       },
       "projects/mtc/src/mtc/lsp/highlight.mt": {
-        "lines": 243,
-        "code": 187,
+        "lines": 245,
+        "code": 189,
         "max_line": 125,
-        "max_function": 90
+        "max_function": 92
       },
       "projects/mtc/src/mtc/lsp/hover_docs.mt": {
         "lines": 273,
@@ -1829,26 +1849,26 @@
         "max_function": 108
       },
       "projects/mtc/src/mtc/lsp/inlay_hints.mt": {
-        "lines": 675,
-        "code": 554,
-        "max_line": 133,
-        "max_function": 153
+        "lines": 694,
+        "code": 573,
+        "max_line": 161,
+        "max_function": 154
       },
       "projects/mtc/src/mtc/lsp/lifecycle.mt": {
-        "lines": 128,
-        "code": 95,
+        "lines": 169,
+        "code": 130,
         "max_line": 329,
-        "max_function": 54
+        "max_function": 58
       },
       "projects/mtc/src/mtc/lsp/linked_editing_range.mt": {
-        "lines": 110,
-        "code": 82,
-        "max_line": 115,
+        "lines": 117,
+        "code": 89,
+        "max_line": 141,
         "max_function": 79
       },
       "projects/mtc/src/mtc/lsp/navigation.mt": {
-        "lines": 5619,
-        "code": 4335,
+        "lines": 5654,
+        "code": 4370,
         "max_line": 206,
         "max_function": 195
       },
@@ -1877,15 +1897,15 @@
         "max_function": 35
       },
       "projects/mtc/src/mtc/lsp/references.mt": {
-        "lines": 1259,
-        "code": 960,
+        "lines": 1262,
+        "code": 963,
         "max_line": 201,
         "max_function": 93
       },
       "projects/mtc/src/mtc/lsp/rename.mt": {
-        "lines": 352,
-        "code": 277,
-        "max_line": 150,
+        "lines": 369,
+        "code": 292,
+        "max_line": 163,
         "max_function": 60
       },
       "projects/mtc/src/mtc/lsp/scope.mt": {
@@ -1895,22 +1915,22 @@
         "max_function": 66
       },
       "projects/mtc/src/mtc/lsp/selection.mt": {
-        "lines": 215,
-        "code": 166,
-        "max_line": 113,
-        "max_function": 50
+        "lines": 227,
+        "code": 175,
+        "max_line": 112,
+        "max_function": 55
       },
       "projects/mtc/src/mtc/lsp/semantic_tokens.mt": {
-        "lines": 2968,
+        "lines": 2971,
         "code": 2289,
         "max_line": 303,
-        "max_function": 153
+        "max_function": 149
       },
       "projects/mtc/src/mtc/lsp/server.mt": {
-        "lines": 676,
-        "code": 522,
+        "lines": 678,
+        "code": 524,
         "max_line": 250,
-        "max_function": 178
+        "max_function": 180
       },
       "projects/mtc/src/mtc/lsp/signature_help.mt": {
         "lines": 136,
@@ -1919,21 +1939,21 @@
         "max_function": 70
       },
       "projects/mtc/src/mtc/lsp/symbols.mt": {
-        "lines": 1588,
-        "code": 1308,
+        "lines": 1604,
+        "code": 1318,
         "max_line": 182,
         "max_function": 156
       },
       "projects/mtc/src/mtc/lsp/text_docs.mt": {
-        "lines": 277,
-        "code": 225,
+        "lines": 250,
+        "code": 204,
         "max_line": 148,
         "max_function": 66
       },
       "projects/mtc/src/mtc/lsp/type_hierarchy.mt": {
-        "lines": 286,
-        "code": 232,
-        "max_line": 174,
+        "lines": 293,
+        "code": 239,
+        "max_line": 220,
         "max_function": 66
       },
       "projects/mtc/src/mtc/lsp/type_render.mt": {
@@ -1949,14 +1969,14 @@
         "max_function": 23
       },
       "projects/mtc/src/mtc/lsp/utils.mt": {
-        "lines": 175,
-        "code": 125,
+        "lines": 250,
+        "code": 181,
         "max_line": 107,
         "max_function": 30
       },
       "projects/mtc/src/mtc/lsp/workspace.mt": {
-        "lines": 1427,
-        "code": 1019,
+        "lines": 1485,
+        "code": 1053,
         "max_line": 169,
         "max_function": 52
       },
@@ -1973,10 +1993,10 @@
         "max_function": 41
       },
       "projects/mtc/src/mtc/lsp/workspace_symbols.mt": {
-        "lines": 211,
-        "code": 160,
+        "lines": 215,
+        "code": 164,
         "max_line": 115,
-        "max_function": 29
+        "max_function": 31
       },
       "projects/mtc/src/mtc/main.mt": {
         "lines": 3759,
@@ -2255,8 +2275,8 @@
         "max_function": 385
       },
       "projects/mtc/src/mtc/toolchain_cli.mt": {
-        "lines": 1248,
-        "code": 1068,
+        "lines": 1220,
+        "code": 1044,
         "max_line": 173,
         "max_function": 169
       },

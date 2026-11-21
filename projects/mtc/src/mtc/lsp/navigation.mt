@@ -29,6 +29,7 @@ import mtc.lsp.protocol as proto
 import mtc.lsp.scope as scope_mod
 import mtc.lsp.type_render as type_render
 import mtc.lsp.uri as uri_ops
+import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 import mtc.pretty_printer.ast_formatter as ast_formatter
 
@@ -469,6 +470,16 @@ public function handle_definition(
         return
 
     let lz = if target_line > 0: ptr_uint<-(int<-(target_line) - 1) else: 0z
+    if ws.position_encoding_utf16:
+        match uri_ops.file_uri_to_path(target_uri.as_str()):
+            Option.some as target_path:
+                let converted_start = ws.output_character(target_path.value.as_str(), lz, target_column)
+                let converted_end = ws.output_character(target_path.value.as_str(), lz, target_column + target_len)
+                target_column = converted_start
+                target_len = converted_end - converted_start
+                target_path.value.release()
+            Option.none:
+                pass
     var json_text = string.String.create()
     defer: json_text.release()
     # A single definition is a bare `Location` object, as the host emits.
@@ -630,7 +641,7 @@ function hover_range_json(ws: ref[workspace.Workspace], file_path: str, source: 
     let tokens = ws.document_tokens(file_path, source)
     match cursor.identifier_at_in(tokens, source, line, character):
         Option.some as tok:
-            var frag = hover_range_fragment(tok.value)
+            var frag = hover_range_fragment(tok.value, utils.source_line(source, tok.value.line), ws.position_encoding_utf16)
             empty.release()
             return frag
         Option.none:
@@ -646,7 +657,7 @@ function hover_range_json(ws: ref[workspace.Workspace], file_path: str, source: 
                 column = inner.value.column,
                 length = inner_len,
             )
-            var frag = hover_range_fragment(inner_token)
+            var frag = hover_range_fragment(inner_token, utils.source_line(source, inner_token.line), ws.position_encoding_utf16)
             empty.release()
             return frag
         Option.none:
@@ -654,7 +665,7 @@ function hover_range_json(ws: ref[workspace.Workspace], file_path: str, source: 
     # Keywords, builtins and operators: the host ranges the token itself.
     match cursor.token_at_in(tokens, source, line, character):
         Option.some as tok:
-            var frag = hover_range_fragment(tok.value)
+            var frag = hover_range_fragment(tok.value, utils.source_line(source, tok.value.line), ws.position_encoding_utf16)
             empty.release()
             return frag
         Option.none:
@@ -662,18 +673,23 @@ function hover_range_json(ws: ref[workspace.Workspace], file_path: str, source: 
 
 
 ## Render the `"range":{...}` fragment for a resolved cursor token.
-function hover_range_fragment(tok: cursor.CursorToken) -> string.String:
+function hover_range_fragment(tok: cursor.CursorToken, line_text: str, utf16: bool) -> string.String:
     let lz = if tok.line > 0: tok.line - 1 else: 0z
     let col = if tok.column > 0: tok.column - 1 else: 0z
+    var start_col = col
+    var end_col = col + tok.length
+    if utf16:
+        start_col = utils.byte_to_utf16_column(line_text, col)
+        end_col = utils.byte_to_utf16_column(line_text, col + tok.length)
     var frag = string.String.create()
     frag.append("\"range\":{\"start\":{\"line\":")
     frag.append_format(f"#{lz}")
     frag.append(",\"character\":")
-    frag.append_format(f"#{col}")
+    frag.append_format(f"#{start_col}")
     frag.append("},\"end\":{\"line\":")
     frag.append_format(f"#{lz}")
     frag.append(",\"character\":")
-    frag.append_format(f"#{col + tok.length}")
+    frag.append_format(f"#{end_col}")
     frag.append("}}")
     return frag
 
@@ -731,7 +747,7 @@ public function handle_type_definition(
     if analysis.types.contains(target.text) or analysis.interfaces.contains(target.text):
         let decl_line = type_declaration_line(ast_file, target.text)
         if decl_line > 0:
-            respond_single_location(id, uri, source, decl_line, target.text)
+            respond_single_location(ws, id, uri, source, decl_line, target.text)
         else:
             proto.write_response(id, json.null_value())
         return
@@ -1003,7 +1019,7 @@ function respond_imported_type_location(
             var target_uri = string.String.from_str("file://")
             defer: target_uri.release()
             target_uri.append(absolute_path.as_str())
-            respond_token_location(id, target_uri.as_str(), token)
+            respond_token_location(ws, id, target_uri.as_str(), token)
             return true
 
 
@@ -1021,9 +1037,18 @@ function respond_module_location(id: json.Value, target_uri: str) -> void:
 ## Respond with a `Location` pointing at a definition token (1-based
 ## line/column — the host's `token_to_range`, emitted as a bare Location object
 ## like `respond_single_location`).
-function respond_token_location(id: json.Value, target_uri: str, token: defidx.DefinitionToken) -> void:
+function respond_token_location(ws: ref[workspace.Workspace], id: json.Value, target_uri: str, token: defidx.DefinitionToken) -> void:
     let lz = if token.line > 0: token.line - 1 else: 0z
-    let col = if token.column > 0: token.column - 1 else: 0z
+    var col = if token.column > 0: token.column - 1 else: 0z
+    var end_col = col + token.length
+    if ws.position_encoding_utf16:
+        match uri_ops.file_uri_to_path(target_uri):
+            Option.some as target_path:
+                end_col = ws.output_character(target_path.value.as_str(), lz, end_col)
+                col = ws.output_character(target_path.value.as_str(), lz, col)
+                target_path.value.release()
+            Option.none:
+                pass
     var json_text = string.String.create()
     defer: json_text.release()
     json_text.append("{\"uri\":\"")
@@ -1035,13 +1060,13 @@ function respond_token_location(id: json.Value, target_uri: str, token: defidx.D
     json_text.append("},\"end\":{\"line\":")
     json_text.append_format(f"#{lz}")
     json_text.append(",\"character\":")
-    json_text.append_format(f"#{col + token.length}")
+    json_text.append_format(f"#{end_col}")
     json_text.append("}}}")
     proto.write_response_raw(id, json_text.as_str())
 
 
 ## Respond with a `Location` pointing at `name` on its declaration line.
-function respond_single_location(id: json.Value, uri: str, source: str, decl_line: ptr_uint, name: str) -> void:
+function respond_single_location(ws: ref[workspace.Workspace], id: json.Value, uri: str, source: str, decl_line: ptr_uint, name: str) -> void:
     let lz = if decl_line > 0: decl_line - 1 else: 0z
     var column: ptr_uint = 0
     match cursor.token_start_in_line(cursor.source_line(source, decl_line), name):
@@ -1049,6 +1074,11 @@ function respond_single_location(id: json.Value, uri: str, source: str, decl_lin
             column = pos.value
         Option.none:
             pass
+    var end_column = column + name.len
+    if ws.position_encoding_utf16:
+        let line_text = utils.source_line(source, decl_line)
+        end_column = utils.byte_to_utf16_column(line_text, end_column)
+        column = utils.byte_to_utf16_column(line_text, column)
 
     var json_text = string.String.create()
     defer: json_text.release()
@@ -1063,7 +1093,7 @@ function respond_single_location(id: json.Value, uri: str, source: str, decl_lin
     json_text.append("},\"end\":{\"line\":")
     json_text.append_format(f"#{lz}")
     json_text.append(",\"character\":")
-    json_text.append_format(f"#{column + name.len}")
+    json_text.append_format(f"#{end_column}")
     json_text.append("}}}")
     proto.write_response_raw(id, json_text.as_str())
 
@@ -1134,7 +1164,7 @@ public function handle_implementation(
                         if emitted > 0:
                             json_text.append(",")
                         emitted += 1
-                        append_location(ref_of(json_text), uri, source, decl_line, struct_name)
+                        append_location(ref_of(json_text), uri, source, decl_line, struct_name, ws.position_encoding_utf16)
                     break
                 qi += 1
 
@@ -1208,7 +1238,7 @@ function append_method_implementation_locations(
                 if unsafe: read(emitted) > 0:
                     json_text.append(",")
                 unsafe: read(emitted) += 1
-                append_location(json_text, target_uri.as_str(), content.as_str(), decl_line, method_name)
+                append_location(json_text, target_uri.as_str(), content.as_str(), decl_line, method_name, ws.position_encoding_utf16)
                 target_uri.release()
         content.release()
 
@@ -1223,7 +1253,7 @@ function qualified_name_matches(qn: ast.QualifiedName, name: str) -> bool:
 
 
 ## Append one Location object pointing at `name` on `decl_line`.
-function append_location(json_text: ref[string.String], uri: str, source: str, decl_line: ptr_uint, name: str) -> void:
+function append_location(json_text: ref[string.String], uri: str, source: str, decl_line: ptr_uint, name: str, utf16: bool) -> void:
     let lz = if decl_line > 0: decl_line - 1 else: 0z
     var column: ptr_uint = 0
     match cursor.token_start_in_line(cursor.source_line(source, decl_line), name):
@@ -1231,6 +1261,11 @@ function append_location(json_text: ref[string.String], uri: str, source: str, d
             column = pos.value
         Option.none:
             pass
+    var end_column = column + name.len
+    if utf16:
+        let line_text = utils.source_line(source, decl_line)
+        end_column = utils.byte_to_utf16_column(line_text, end_column)
+        column = utils.byte_to_utf16_column(line_text, column)
     json_text.append("{\"uri\":\"")
     proto.append_escaped(json_text, uri)
     json_text.append("\",\"range\":{\"start\":{\"line\":")
@@ -1240,7 +1275,7 @@ function append_location(json_text: ref[string.String], uri: str, source: str, d
     json_text.append("},\"end\":{\"line\":")
     json_text.append_format(f"#{lz}")
     json_text.append(",\"character\":")
-    json_text.append_format(f"#{column + name.len}")
+    json_text.append_format(f"#{end_column}")
     json_text.append("}}}")
 
 

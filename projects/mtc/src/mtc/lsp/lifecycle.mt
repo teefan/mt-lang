@@ -21,6 +21,8 @@ const TOKEN_MODIFIERS_JSON: str = "\"tokenModifiers\":[\"declaration\",\"definit
 public function handle_initialize(id: json.Value, params: json.Value, ws: ref[workspace.Workspace]) -> void:
     apply_client_root(params, ws)
     ws.pull_diagnostics_active = client_supports_pull_diagnostics(params)
+    let position_encoding = client_position_encoding(params)
+    ws.set_position_encoding(position_encoding.equal("utf-16"))
 
     var r = string.String.create()
     defer: r.release()
@@ -30,7 +32,9 @@ public function handle_initialize(id: json.Value, params: json.Value, ws: ref[wo
 
     # capabilities
     r.append(",\"result\":{\"capabilities\":{")
-    r.append("\"positionEncoding\":\"utf-16\"")
+    r.append("\"positionEncoding\":\"")
+    r.append(position_encoding)
+    r.append("\"")
     r.append(",\"textDocumentSync\":{\"openClose\":true,\"change\":2,\"save\":{\"includeText\":true},\"willSaveWaitUntil\":true}")
     r.append(",\"definitionProvider\":true")
     r.append(",\"declarationProvider\":true")
@@ -96,6 +100,43 @@ function apply_client_root(params: json.Value, ws: ref[workspace.Workspace]) -> 
                 return
             if root_path.len > 0:
                 ws.set_root(root_path)
+
+
+## The position encoding this server will emit.  UTF-8 is chosen when the
+## client offers it (it keeps the server's byte columns as the wire format);
+## otherwise the LSP default, UTF-16, is selected and positions are converted
+## at both boundaries.
+function client_position_encoding(params: json.Value) -> str:
+    let obj_ptr = params.as_object() else:
+        return "utf-16"
+    unsafe:
+        let caps_ptr = read(obj_ptr).get("capabilities")
+        if caps_ptr == null:
+            return "utf-16"
+        let caps_obj = read(caps_ptr).as_object() else:
+            return "utf-16"
+        let general_ptr = read(caps_obj).get("general")
+        if general_ptr == null:
+            return "utf-16"
+        let general_obj = read(general_ptr).as_object() else:
+            return "utf-16"
+        let encodings_ptr = read(general_obj).get("positionEncodings")
+        if encodings_ptr == null:
+            return "utf-16"
+        let encodings = read(encodings_ptr).as_array() else:
+            return "utf-16"
+        var i: ptr_uint = 0
+        while i < read(encodings).len():
+            let entry_ptr = read(encodings).get(i) else:
+                break
+            match read(entry_ptr).as_string():
+                Option.some as encoding:
+                    if encoding.value.equal("utf-8"):
+                        return "utf-8"
+                Option.none:
+                    pass
+            i += 1
+    return "utf-16"
 
 
 ## Handle the `initialized` notification (no-op).

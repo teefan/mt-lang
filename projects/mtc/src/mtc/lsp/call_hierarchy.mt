@@ -114,7 +114,9 @@ public function handle_prepare_call_hierarchy(
                 decl_line,
                 decl_column,
                 name.len,
-                ""
+                "",
+                source,
+                ws.position_encoding_utf16
             )
             result.append("]")
             proto.write_response_raw(id, result.as_str())
@@ -174,7 +176,7 @@ public function handle_incoming_calls(
                             result.append(",")
                         first = false
                         var target_uri = build_file_uri(path)
-                        append_incoming_call(ref_of(result), name, caller_name, target_uri.as_str(), entry.line, occ.line, occ.column)
+                        append_incoming_call(ref_of(result), name, caller_name, target_uri.as_str(), entry.line, occ.line, occ.column, source, ws.position_encoding_utf16)
                         target_uri.release()
                         # Only report once per caller per file.
                         break
@@ -249,7 +251,7 @@ public function handle_outgoing_calls(
         if not first:
             result.append(",")
         first = false
-        append_outgoing_call(ref_of(result), callee.name, callee.line, callee.column, callee.length)
+        append_outgoing_call(ref_of(result), callee.name, callee.line, callee.column, callee.length, source, ws.position_encoding_utf16)
         ci += 1
 
     result.append("]")
@@ -456,9 +458,16 @@ function append_call_item(
     column: ptr_uint,
     length: ptr_uint,
     receiver_type: str,
+    source: str,
+    utf16: bool,
 ) -> void:
     let lz = if line > 0: line - 1 else: 0z
-    let colz = if column > 0: column - 1 else: 0z
+    var colz = if column > 0: column - 1 else: 0z
+    var end_colz = colz + length
+    if utf16:
+        let line_text = utils.source_line(source, line)
+        end_colz = utils.byte_to_utf16_column(line_text, end_colz)
+        colz = utils.byte_to_utf16_column(line_text, colz)
     output.append("{\"name\":\"")
     proto.append_escaped(output, name)
     output.append("\",\"kind\":")
@@ -472,7 +481,7 @@ function append_call_item(
     output.append("},\"end\":{\"line\":")
     output.append_format(f"#{lz}")
     output.append(",\"character\":")
-    output.append_format(f"#{colz + length}")
+    output.append_format(f"#{end_colz}")
     output.append("}},\"selectionRange\":{\"start\":{\"line\":")
     output.append_format(f"#{lz}")
     output.append(",\"character\":")
@@ -480,7 +489,7 @@ function append_call_item(
     output.append("},\"end\":{\"line\":")
     output.append_format(f"#{lz}")
     output.append(",\"character\":")
-    output.append_format(f"#{colz + length}")
+    output.append_format(f"#{end_colz}")
     output.append("}},\"data\":{\"name\":\"")
     proto.append_escaped(output, name)
     output.append("\",\"uri\":\"")
@@ -503,10 +512,17 @@ function append_incoming_call(
     line: ptr_uint,
     ref_line: ptr_uint,
     ref_col: ptr_uint,
+    source: str,
+    utf16: bool,
 ) -> void:
     let lz = if line > 0: line - 1 else: 0z
     let rlz = if ref_line > 0: ref_line - 1 else: 0z
-    let rcz = if ref_col > 0: ref_col - 1 else: 0z
+    var rcz = if ref_col > 0: ref_col - 1 else: 0z
+    var ref_end = rcz + target_name.len
+    if utf16:
+        let line_text = utils.source_line(source, ref_line)
+        ref_end = utils.byte_to_utf16_column(line_text, ref_end)
+        rcz = utils.byte_to_utf16_column(line_text, rcz)
     output.append("{\"from\":{\"name\":\"")
     proto.append_escaped(output, caller_name)
     output.append("\",\"kind\":")
@@ -529,7 +545,7 @@ function append_incoming_call(
     output.append("},\"end\":{\"line\":")
     output.append_format(f"#{rlz}")
     output.append(",\"character\":")
-    output.append_format(f"#{rcz + target_name.len}")
+    output.append_format(f"#{ref_end}")
     output.append("}}]}")
 
 
@@ -539,9 +555,16 @@ function append_outgoing_call(
     line: ptr_uint,
     column: ptr_uint,
     length: ptr_uint,
+    source: str,
+    utf16: bool,
 ) -> void:
     let lz = if line > 0: line - 1 else: 0z
-    let cz = if column > 0: column - 1 else: 0z
+    var cz = if column > 0: column - 1 else: 0z
+    var end_cz = cz + length
+    if utf16:
+        let line_text = utils.source_line(source, line)
+        end_cz = utils.byte_to_utf16_column(line_text, end_cz)
+        cz = utils.byte_to_utf16_column(line_text, cz)
     output.append("{\"to\":{\"name\":\"")
     proto.append_escaped(output, callee_name)
     output.append("\",\"kind\":")
@@ -555,7 +578,7 @@ function append_outgoing_call(
     output.append("},\"end\":{\"line\":")
     output.append_format(f"#{lz}")
     output.append(",\"character\":")
-    output.append_format(f"#{cz + length}")
+    output.append_format(f"#{end_cz}")
     output.append("}},\"selectionRange\":{\"start\":{\"line\":")
     output.append_format(f"#{lz}")
     output.append(",\"character\":")
@@ -563,7 +586,7 @@ function append_outgoing_call(
     output.append("},\"end\":{\"line\":")
     output.append_format(f"#{lz}")
     output.append(",\"character\":")
-    output.append_format(f"#{cz + length}")
+    output.append_format(f"#{end_cz}")
     output.append("}}}")
     output.append(",\"fromRanges\":[{\"start\":{\"line\":")
     output.append_format(f"#{lz}")
@@ -572,5 +595,5 @@ function append_outgoing_call(
     output.append("},\"end\":{\"line\":")
     output.append_format(f"#{lz}")
     output.append(",\"character\":")
-    output.append_format(f"#{cz + length}")
+    output.append_format(f"#{end_cz}")
     output.append("}}]}")

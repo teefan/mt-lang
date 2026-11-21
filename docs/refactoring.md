@@ -195,22 +195,26 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 141, 2026-11-20)
+## 6. Current baseline (session 145, 2026-11-21)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 159,405 / 126,536 |
-| layering edges / violations | 111 / 0 |
+| source files / lines / code lines | 168 / 159,821 / 126,855 |
+| layering edges / violations | 110 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
-| alias violations | 0 (169 modules) |
-| dead exports (unused / test-only) | 33 / 6 |
-| duplication (windows / duplicated lines) | 884 / 6,345 (window 12) |
+| alias violations | 0 (168 modules) |
+| dead exports (unused / test-only) | 32 / 6 |
+| duplication (windows / duplicated lines) | 904 / 6,451 (window 12) |
 | functions ≥ 200 lines | 1 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
-| test files (projects/mtc / test/mt) | 22 / 62 |
+| test files (projects/mtc / test/mt) | 22 / 85 |
 
+Session 145 refreshed the baseline for the LSP position-encoding work (+253
+code lines: negotiated UTF-8/UTF-16 boundaries, the per-document line-start
+map, and the emitter audit; +106 duplicated lines from the per-module
+conversion pattern; `position_to_byte` renamed to the two explicit decoders).
 Session 141 added the semantic conformance port (+522 code lines: condition
 enforcement, named-argument canonicalization and lowering, extern/foreign
 checks, imported/method specialization checks, and the exact-base nullable
