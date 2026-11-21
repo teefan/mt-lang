@@ -172,7 +172,7 @@ function collect_constant_refs_expr(ep: ptr[ir.Expr], by_name: ref[map_mod.Map[s
                 collect_constant_refs_expr(cond.then_expression, by_name, referenced, program)
                 collect_constant_refs_expr(cond.else_expression, by_name, referenced, program)
             ir.Expr.expr_reinterpret as rin:
-                collect_constant_refs_expr(rin.expression, by_name, referenced, program)
+                collect_constant_refs_expr(unsafe: read(rin.payload).expression, by_name, referenced, program)
             ir.Expr.expr_address_of as addr:
                 collect_constant_refs_expr(addr.expression, by_name, referenced, program)
             ir.Expr.expr_cast as cast:

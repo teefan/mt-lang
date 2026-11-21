@@ -246,6 +246,11 @@ public struct LoweringContext:
     # variant matches; mirrors Ruby's @match_label_counter.
     match_label_counter: ptr_uint
     program_returns: ptr[map_mod.Map[str, types.Type]]
+    ## Async cross-module functions, keyed by their C linkage name.  Built once
+    ## with `program_returns`; `is_cross_module_function_async` used to rescan
+    ## every module's declarations and allocate a C name per candidate on every
+    ## cross-module call.
+    program_async: ptr[map_mod.Map[str, bool]]
     # Shared across all modules: concrete prelude (Option/Result) arm payload
     # field types, keyed by the arm's payload struct C name
     # (`Result_std_string_String_std_fs_Error_success` → `std_string_String`).
@@ -711,6 +716,10 @@ public function lower(program: loader.Program) -> ir.Program:
     # `mod.func(...)` call in one module can resolve the result type of a
     # function defined in another.
     var program_returns = map_mod.Map[str, types.Type].create()
+    # Async cross-module functions, keyed by C linkage name, so the call lowering
+    # does not rescan every module's declarations (and allocate a C name per
+    # candidate) for every cross-module call.
+    var program_async = map_mod.Map[str, bool].create()
     # Shared prelude arm-payload field types (see LoweringContext.prelude_arm_field_types).
     # Populated by `collect_program_returns` (which resolves every function's
     # return type, emitting the concrete Option/Result decls) so it is available
@@ -720,7 +729,7 @@ public function lower(program: loader.Program) -> ir.Program:
     # lowering so a `Vec[T]` instance registered while qualifying one module's
     # types is visible to method resolution in every other module.
     var generic_instances = map_mod.Map[str, GenericReceiver].create()
-    monomorphized.collect_program_returns(program, ref_of(program_returns), ref_of(prelude_arm_field_types), ref_of(generic_instances))
+    monomorphized.collect_program_returns(program, ref_of(program_returns), ref_of(program_async), ref_of(prelude_arm_field_types), ref_of(generic_instances))
 
     var constants = vec.Vec[ir.Constant].create()
     var globals = vec.Vec[ir.Global].create()
@@ -765,7 +774,7 @@ public function lower(program: loader.Program) -> ir.Program:
             i += 1
             continue
         let is_root = i == program.root_index
-        var fragment = monomorphized.lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(pending_synthetic_structs), ref_of(synthetic_functions), ref_of(synthetic_enums), ptr_of(emitted_functions), ptr_of(emitted_structs), ptr_of(emitted_constants), ref_of(spec_infos), ref_of(expanded_decls))
+        var fragment = monomorphized.lower_module(analysis, ref_of(program_returns), ref_of(program_async), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(pending_synthetic_structs), ref_of(synthetic_functions), ref_of(synthetic_enums), ptr_of(emitted_functions), ptr_of(emitted_structs), ptr_of(emitted_constants), ref_of(spec_infos), ref_of(expanded_decls))
         module_fragments.push(fragment)
         module_analyses.push(analysis)
         globals.append_span(fragment.globals)
@@ -7447,7 +7456,7 @@ public function ir_expr_type(ep: ptr[ir.Expr]) -> types.Type:
             ir.Expr.expr_offsetof as x:
                 return x.ty
             ir.Expr.expr_reinterpret as x:
-                return x.ty
+                return unsafe: read(x.payload).ty
             ir.Expr.expr_nullable_index as x:
                 return x.ty
             ir.Expr.expr_nullable_span_index as x:
@@ -8343,25 +8352,10 @@ function cross_module_return_type(ctx: ref[LoweringContext], c_name: str, call_e
 
 
 function is_cross_module_function_async(ctx: ref[LoweringContext], c_name: str) -> bool:
-    var ai: ptr_uint = 0
-    while ai < ctx.program_analyses.len:
-        var a: analyzer.Analysis
-        unsafe:
-            a = read(ctx.program_analyses.data + ai)
-        var di: ptr_uint = 0
-        while di < a.source_file.declarations.len:
-            var d: ast.Decl
-            unsafe:
-                d = read(a.source_file.declarations.data + di)
-            match d:
-                ast.Decl.decl_function as fun:
-                    if naming.qualified_c_name(a.module_name, fun.name) == c_name:
-                        return fun.is_async
-                _:
-                    pass
-            di += 1
-        ai += 1
-    return false
+    let p = unsafe: read(ctx.program_async).get(c_name)
+    if p == null:
+        return false
+    return unsafe: read(p)
 
 
 ## Lower a specialized call `Name[TypeArgs](args)`, including the built-in
@@ -8441,7 +8435,7 @@ function lower_specialization_call(ctx: ref[LoweringContext], spec_callee: ptr[a
                                     pass
                         _:
                             pass
-                    return alloc_expr(ir.Expr.expr_reinterpret(target_type = target_ty, source_type = source_ty, expression = lowered, ty = target_ty))
+                    return alloc_expr(ir.Expr.expr_reinterpret(payload = utils.alloc_reinterpret_expr(target_type = target_ty, source_type = source_ty, expression = lowered, ty = target_ty)))
                 # Builtin `zero[T]` → zero-initialized value of type T.
                 if id.name == "zero" and type_args.len == 1:
                     let z_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
@@ -15632,7 +15626,8 @@ function inlineable_foreign_value(ep: ptr[ir.Expr]) -> bool:
             ir.Expr.expr_conditional as c:
                 return inlineable_foreign_value(c.condition) and inlineable_foreign_value(c.then_expression) and inlineable_foreign_value(c.else_expression)
             ir.Expr.expr_reinterpret as r:
-                return inlineable_foreign_value(r.expression)
+                let rp = unsafe: read(r.payload)
+                return inlineable_foreign_value(rp.expression)
             ir.Expr.expr_cast as c:
                 return inlineable_foreign_value(c.expression)
             ir.Expr.expr_address_of as a:

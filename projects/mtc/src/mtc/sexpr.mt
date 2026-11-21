@@ -564,9 +564,10 @@ function types_value(ctx: ref[SexprContext], t: types.Type) -> SexprValue:
         types.Type.ty_variant_arm_payload as ap:
             # The host tags the payload distinctly but renders its fields through
             # the `Types::Struct` branch (`:name`, `:module_name`).
+            let payload = unsafe: read(ap.payload)
             var apf = vec.Vec[SexprField].create()
-            apf.push(field_str("name", ap.name))
-            apf.push(field_module_name("module_name", ap.module_name))
+            apf.push(field_str("name", payload.name))
+            apf.push(field_module_name("module_name", payload.module_name))
             return node("Types::VariantArmPayload", apf.as_span())
         types.Type.ty_imported as im:
             var imf = vec.Vec[SexprField].create()
@@ -803,11 +804,12 @@ function ir_expr_value(ctx: ref[SexprContext], ep: ptr[ir.Expr]) -> SexprValue:
                 f.push(field_value("type", types_value(ctx, x.ty)))
                 return node("IR::Conditional", f.as_span())
             ir.Expr.expr_reinterpret as x:
+                let rp = unsafe: read(x.payload)
                 var f = vec.Vec[SexprField].create()
-                f.push(field_value("target_type", types_value(ctx, x.target_type)))
-                f.push(field_value("source_type", types_value(ctx, x.source_type)))
-                f.push(field_value("expression", ir_expr_value(ctx, x.expression)))
-                f.push(field_value("type", types_value(ctx, x.ty)))
+                f.push(field_value("target_type", types_value(ctx, rp.target_type)))
+                f.push(field_value("source_type", types_value(ctx, rp.source_type)))
+                f.push(field_value("expression", ir_expr_value(ctx, rp.expression)))
+                f.push(field_value("type", types_value(ctx, rp.ty)))
                 return node("IR::ReinterpretExpr", f.as_span())
             ir.Expr.expr_sizeof as x:
                 var f = vec.Vec[SexprField].create()

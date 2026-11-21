@@ -241,6 +241,12 @@ function extract_include_paths(
 function dispatch_command(args: span[str], saw_include: bool, include_flag: str) -> int:
     let cmd = args[0]
 
+    # The compiler pipeline never reads the LSP-only analyzer facts; skipping
+    # their collection avoids paying for them on compiler-sized modules.  The
+    # LSP and the in-language semantic tests keep the default (enabled).
+    if cmd == "check" or cmd == "lower" or cmd == "emit-c" or cmd == "build" or cmd == "run" or cmd == "lint":
+        analyzer.set_tooling_facts(false)
+
     if cmd == "version" or cmd == "--version" or cmd == "-V":
         stdio.print_format(c"mtc %.*s\n", int<-(cli_help.VERSION.len), cli_help.VERSION.data)
         return 0

@@ -129,7 +129,8 @@ function collect_pfor_ir_names_expr(ep: ir.Expr, result: ref[PforNames]) -> void
                 collect_pfor_ir_names_expr(unsafe: read(al.elements.data + ali), result)
                 ali += 1
         ir.Expr.expr_reinterpret as r:
-            collect_pfor_ir_names_expr(unsafe: read(r.expression), result)
+            let rp = unsafe: read(r.payload)
+            collect_pfor_ir_names_expr(unsafe: read(rp.expression), result)
         _:
             pass
 

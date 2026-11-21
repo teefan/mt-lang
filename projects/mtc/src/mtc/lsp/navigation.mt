@@ -2333,8 +2333,8 @@ function resolve_member_method_hover(
     # A match-arm payload binding (`a` in `Kind.alpha as a`): its fields are the
     # arm's synthesized payload fields, with no declaring struct to scan.
     match receiver_ty:
-        types.Type.ty_variant_arm_payload as payload:
-            return variant_arm_field_hover(payload.fields, method_name, current_module)
+        types.Type.ty_variant_arm_payload as arm:
+            return variant_arm_field_hover(unsafe: read(arm.payload).fields, method_name, current_module)
         _:
             pass
     # The host projects the receiver through a pointer-like first
@@ -3519,10 +3519,11 @@ public function field_of_type(analysis: ref[analyzer.Analysis], ty: types.Type, 
     # A match-arm payload binding's fields are the arm's synthesized payload
     # fields (`c.name` in `ast.Decl.decl_const as c`), with no struct to scan.
     match ty:
-        types.Type.ty_variant_arm_payload as payload:
+        types.Type.ty_variant_arm_payload as arm:
+            let payload_fields = unsafe: read(arm.payload).fields
             var pi: ptr_uint = 0
-            while pi < payload.fields.len:
-                let pf = unsafe: read(payload.fields.data + pi)
+            while pi < payload_fields.len:
+                let pf = unsafe: read(payload_fields.data + pi)
                 if pf.name.equal(field_name):
                     return Option[types.Type].some(value = pf.ty)
                 pi += 1

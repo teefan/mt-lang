@@ -64,6 +64,16 @@ public struct SwitchCase:
 #  Expressions (recursive — heap-allocated via ptr[Expr])
 # =============================================================================
 
+## The payload of `expr_reinterpret`.  Boxed because it carries three `Type`
+## values (the widest expression variant); keeping it inline would set the size
+## of every `Expr` node.
+public struct ReinterpretExpr:
+    target_type: types.Type
+    source_type: types.Type
+    expression: ptr[Expr]
+    ty: types.Type
+
+
 public variant Expr:
     expr_name(name: str, ty: types.Type, pointer: Option[bool])
     expr_member(receiver: ptr[Expr], member: str, ty: types.Type)
@@ -77,7 +87,7 @@ public variant Expr:
     expr_unary(operator: str, operand: ptr[Expr], ty: types.Type)
     expr_binary(operator: str, left: ptr[Expr], right: ptr[Expr], ty: types.Type)
     expr_conditional(condition: ptr[Expr], then_expression: ptr[Expr], else_expression: ptr[Expr], ty: types.Type)
-    expr_reinterpret(target_type: types.Type, source_type: types.Type, expression: ptr[Expr], ty: types.Type)
+    expr_reinterpret(payload: ptr[ReinterpretExpr])
     expr_sizeof(target_type: types.Type, ty: types.Type)
     expr_alignof(target_type: types.Type, ty: types.Type)
     expr_offsetof(target_type: types.Type, field: str, ty: types.Type)

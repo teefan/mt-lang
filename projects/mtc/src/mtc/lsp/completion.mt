@@ -1476,8 +1476,8 @@ function value_receiver_completions(
     else:
         match field_ty:
             # A match-arm payload binding's type: the arm's declared fields.
-            types.Type.ty_variant_arm_payload as payload:
-                emit_payload_field_items(ref_of(items_json), payload.fields, prefix, uri, ref_of(first), ref_of(count))
+            types.Type.ty_variant_arm_payload as arm:
+                emit_payload_field_items(ref_of(items_json), unsafe: read(arm.payload).fields, prefix, uri, ref_of(first), ref_of(count))
             # A tuple's positional or named fields.
             types.Type.ty_tuple as tup:
                 emit_tuple_field_items(ref_of(items_json), tup.elements, tup.field_names, prefix, uri, ref_of(first), ref_of(count))

@@ -23,6 +23,18 @@ public struct PayloadField:
     ty: Type
 
 
+## The payload of `ty_variant_arm_payload`.  Boxed: it is the largest `Type`
+## variant (five `str` fields plus a span) and rare, so keeping it inline would
+## make every `Type` — and every IR node embedding one — pay its size.
+public struct VariantArmPayload:
+    variant_name: str
+    name: str
+    module_name: str
+    c_name: str
+    display_name: str
+    fields: span[PayloadField]
+
+
 public variant Type:
     ty_primitive(name: str)
     ty_str
@@ -49,7 +61,7 @@ public variant Type:
     # struct's C linkage name (`std_option_Option_some`).  Mirrors Ruby's
     # `Types::VariantArmPayload`, which the sexpr dumper tags distinctly but
     # whose fields it renders like a `Types::Struct` (`:name`, `:module_name`).
-    ty_variant_arm_payload(variant_name: str, name: str, module_name: str, c_name: str, display_name: str, fields: span[PayloadField])
+    ty_variant_arm_payload(payload: ptr[VariantArmPayload])
     ty_imported(module_name: str, name: str, args: span[Type])
     ty_var(name: str)
     # An explicit lifetime argument on a `ref` type (`ref[@a, T]`).  The host
@@ -91,6 +103,22 @@ public function literal_int(value: long) -> Type:
     return Type.ty_literal_int(value = value)
 
 
+## Construct an arm payload from already-computed parts.  `proc_renumber`
+## rebuilds one with renamed `__proc_N__` symbols.
+public function variant_arm_payload_raw(variant_name: str, name: str, module_name: str, c_name: str, display_name: str, fields: span[PayloadField]) -> Type:
+    var payload = heap.must_alloc[VariantArmPayload](1)
+    unsafe:
+        read(payload) = VariantArmPayload(
+            variant_name = variant_name,
+            name = name,
+            module_name = module_name,
+            c_name = c_name,
+            display_name = display_name,
+            fields = fields,
+        )
+    return Type.ty_variant_arm_payload(payload = payload)
+
+
 ## The binding type of an `as name` variant match arm.  `variant_name` is the
 ## owning variant's declared name (`Option`), `module_name` its module
 ## (`std.option`), and `c_name` the payload struct's C linkage name.
@@ -99,7 +127,7 @@ public function variant_arm_payload(variant_name: str, module_name: str, c_name:
     buf.append(variant_name)
     buf.append("_")
     buf.append(arm_name)
-    return Type.ty_variant_arm_payload(
+    return variant_arm_payload_raw(
         variant_name = variant_name,
         name = buf.as_str(),
         module_name = module_name,
@@ -123,7 +151,7 @@ public function variant_arm_payload_with(variant_name: str, module_name: str, c_
     display.append(".")
     display.append(arm_name)
     display.append(" payload")
-    return Type.ty_variant_arm_payload(
+    return variant_arm_payload_raw(
         variant_name = variant_name,
         name = buf.as_str(),
         module_name = module_name,
@@ -402,9 +430,10 @@ public function type_to_string(t: Type) -> str:
             # The host's `VariantArmPayload#to_s` is `<variant>.<arm> payload`;
             # the lowering's constructions carry no display text, so they keep
             # the payload struct's own name.
-            if ap.display_name.len > 0:
-                return ap.display_name
-            return ap.name
+            let payload = unsafe: read(ap.payload)
+            if payload.display_name.len > 0:
+                return payload.display_name
+            return payload.name
         Type.ty_imported as im:
             if im.args.len == 0:
                 return im.name
@@ -703,7 +732,7 @@ public function type_equals(a: Type, b: Type) -> bool:
         Type.ty_variant_arm_payload as apa:
             match b:
                 Type.ty_variant_arm_payload as apb:
-                    return apa.c_name == apb.c_name
+                    return unsafe: read(apa.payload).c_name == unsafe: read(apb.payload).c_name
                 _:
                     return false
         Type.ty_imported as ia:

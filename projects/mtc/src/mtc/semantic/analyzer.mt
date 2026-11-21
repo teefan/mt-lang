@@ -29,6 +29,17 @@ import mtc.semantic.scope as sscope
 import mtc.c_naming as naming
 
 
+## When false, the analyzer skips the fact maps that only the LSP consumes
+## (`flow_types`, `local_decl_types`, `destructure_types`, …).  The compiler
+## pipeline clears it before analysis; the LSP and the in-language semantic
+## tests keep the default so their fact assertions remain valid.
+var tooling_facts_enabled: bool = true
+
+
+public function set_tooling_facts(enabled: bool) -> void:
+    tooling_facts_enabled = enabled
+
+
 public struct SemanticDiagnostic:
     line: ptr_uint
     column: ptr_uint
@@ -330,6 +341,8 @@ struct Context:
     ## the alias are reported as unknown names (the LSP's `allow_missing_imports`
     ## equivalent).  The compile path leaves it false and stays permissive.
     require_resolved_imports: bool
+    ## See `tooling_facts_enabled`.
+    tooling_facts: bool
     types: map_mod.Map[str, types.Type]
     attribute_apps: map_mod.Map[str, vec.Vec[ast.AttributeApplication]]
     field_attribute_apps: map_mod.Map[str, vec.Vec[ast.AttributeApplication]]
@@ -740,6 +753,7 @@ function create_context(module_name: str, imported_modules: ptr[map_mod.Map[str,
         import_aliases = map_mod.Map[str, str].create(),
         imported_modules = imported_modules,
         require_resolved_imports = require_resolved_imports,
+        tooling_facts = tooling_facts_enabled,
         types = map_mod.Map[str, types.Type].create(),
         attribute_apps = map_mod.Map[str, vec.Vec[ast.AttributeApplication]].create(),
         field_attribute_apps = map_mod.Map[str, vec.Vec[ast.AttributeApplication]].create(),
@@ -1710,7 +1724,8 @@ function record_decl_callable_sites(ctx: ref[Context], ep: ptr[ast.Expr]?) -> vo
         match read(p):
             ast.Expr.expr_identifier as id:
                 if ctx.functions.contains(id.name):
-                    ctx.callable_value_sites.push(CallableValueSite(line = id.line, column = id.column))
+                    if ctx.tooling_facts:
+                        ctx.callable_value_sites.push(CallableValueSite(line = id.line, column = id.column))
             ast.Expr.expr_specialization as sp:
                 # `int_with_bits[64]`: the specialization's callee is the value
                 # (its type arguments are types, not expressions).
@@ -4055,7 +4070,8 @@ function record_flow_snapshot_at(ctx: ref[Context], scope: ref[sscope.Scope], po
             if previous != null:
                 changed = not types.type_equals(read(previous), ty)
             if changed:
-                ctx.flow_types.push(FlowTypeEntry(at = position, name = name, ty = ty, cleared = false))
+                if ctx.tooling_facts:
+                    ctx.flow_types.push(FlowTypeEntry(at = position, name = name, ty = ty, cleared = false))
                 if not replay:
                     let _prev = ctx.flow_recorded.set(name, ty)
         si += 1
@@ -4069,7 +4085,8 @@ function record_flow_snapshot_at(ctx: ref[Context], scope: ref[sscope.Scope], po
             if not flow_scratch_contains(ref_of(ctx.flow_scratch), name):
                 if not skip_clears:
                     to_clear.push(name)
-                    ctx.flow_types.push(FlowTypeEntry(at = position, name = name, ty = types.Type.ty_error, cleared = true))
+                    if ctx.tooling_facts:
+                        ctx.flow_types.push(FlowTypeEntry(at = position, name = name, ty = types.Type.ty_error, cleared = true))
     var ci: ptr_uint = 0
     while ci < to_clear.len():
         let name_ptr = to_clear.get(ci) else:
@@ -4261,7 +4278,8 @@ function max_u(a: ptr_uint, b: ptr_uint) -> ptr_uint:
 function record_flow_barrier(ctx: ref[Context], line: ptr_uint) -> void:
     if line == 0:
         return
-    ctx.flow_types.push(FlowTypeEntry(at = (line - 1) * 1000000 + 999999, name = "", ty = types.Type.ty_error, cleared = true))
+    if ctx.tooling_facts:
+        ctx.flow_types.push(FlowTypeEntry(at = (line - 1) * 1000000 + 999999, name = "", ty = types.Type.ty_error, cleared = true))
 
 
 ## The analyzer's refinement record for a local at a position: the type the
@@ -5218,7 +5236,8 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlag
                         scope_set_storage(scope, dn, field_ty)
                         scope_set_binding_id(scope, dn, statement_binding_id)
                         record_binding_type(ctx, statement_binding_id, field_ty)
-                        ctx.destructure_types.push(DestructureTypeEntry(line = line, name = dn, ty = field_ty))
+                        if ctx.tooling_facts:
+                            ctx.destructure_types.push(DestructureTypeEntry(line = line, name = dn, ty = field_ty))
                         bound_any = true
                 di += 1
             if bound_any:
@@ -5234,7 +5253,8 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlag
     if lt != null:
         declared = resolve_type(ctx, lt)
         has_declared = true
-        ctx.local_decl_types.set(line, declared)
+        if ctx.tooling_facts:
+            ctx.local_decl_types.set(line, declared)
 
     var value_type: types.Type = types.Type.ty_error
     var has_value = false
@@ -5362,7 +5382,8 @@ function record_expr_type(ctx: ref[Context], ep: ptr[ast.Expr], ty: types.Type) 
 
 function record_call_kind(ctx: ref[Context], callee: ptr[ast.Expr], kind: str) -> void:
     let key = unsafe: reinterpret[ptr_uint](callee)
-    ctx.resolved_call_kinds.set(key, kind)
+    if ctx.tooling_facts:
+        ctx.resolved_call_kinds.set(key, kind)
 
 
 function call_expr_kind(ctx: ref[Context], callee: ptr[ast.Expr]) -> str:
@@ -5900,7 +5921,8 @@ function infer_identifier(ctx: ref[Context], scope: ref[sscope.Scope], node_key:
         # `record_callable_value_identifier_site`: valid only where an expected
         # type exists (the host errors "must be called" otherwise), which is
         # what the token scanner renders `function` for.
-        ctx.callable_value_sites.push(CallableValueSite(line = line, column = column))
+        if ctx.tooling_facts:
+            ctx.callable_value_sites.push(CallableValueSite(line = line, column = column))
     if not is_known_value_identifier(ctx, name):
         report_at(ctx, line, column, name.len, unknown_name_message(name))
     return types.Type.ty_error
@@ -5938,7 +5960,8 @@ function bind_match_arm_names(ctx: ref[Context], scope: ref[sscope.Scope], scrut
             scope_set_binding_id(scope, bn.value, arm_id)
             record_binding_type(ctx, arm_id, binding_ty)
             record_declaration_site(ctx, arm_key, arm_id)
-            ctx.arm_binding_types.push(ArmBindingEntry(line = line, name = bn.value, ty = binding_ty))
+            if ctx.tooling_facts:
+                ctx.arm_binding_types.push(ArmBindingEntry(line = line, name = bn.value, ty = binding_ty))
         Option.none:
             pass
     let p = pattern else:
@@ -8593,7 +8616,7 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
     # The LSP's text-based receiver walk cannot resolve a call/index/cast
     # receiver, so record the expression's inferred type at the member token's
     # position (see `member_receiver_types`).
-    if not receiver_is_text_chain(receiver):
+    if ctx.tooling_facts and not receiver_is_text_chain(receiver):
         ctx.member_receiver_types.set(binding_key(line, column), recv_ty)
     let recv = unwrap_ref(recv_ty)
     # A raw/mutable pointer receiver projects to its pointee only when the
@@ -9478,7 +9501,7 @@ function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], rece
         # empty member name.  Record the receiver's type at the dot for the
         # LSP completion fallback and suppress the member check.
         let recv_ty = infer_expr(ctx, scope, receiver)
-        if not receiver_is_text_chain(receiver):
+        if ctx.tooling_facts and not receiver_is_text_chain(receiver):
             ctx.member_receiver_types.set(binding_key(line, column), recv_ty)
         return types.Type.ty_error
     # An instantiated imported receiver resolves the member against the binding
@@ -9529,7 +9552,7 @@ function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], rece
                                     # `make()`, `a[0]`) cannot be resolved from the
                                     # source text, so record its inferred type at the
                                     # member's position.
-                                    if not receiver_is_text_chain(receiver):
+                                    if ctx.tooling_facts and not receiver_is_text_chain(receiver):
                                         ctx.member_receiver_types.set(binding_key(line, column), raw_recv)
                                     # A field read through a raw pointer dereferences
                                     # it — the host requires unsafe
@@ -9728,9 +9751,10 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
             # A bound match arm (`Option.some as p`) is the arm's payload struct
             # — the host's `Types::VariantArmPayload` — so `p.value` reads the
             # field the analyzer substituted for the scrutinee's arguments.
+            let payload = unsafe: read(ap.payload)
             var fi: ptr_uint = 0
-            while fi < ap.fields.len:
-                let field = unsafe: read(ap.fields.data + fi)
+            while fi < payload.fields.len:
+                let field = unsafe: read(payload.fields.data + fi)
                 if field.name == member:
                     return field.ty
                 fi += 1

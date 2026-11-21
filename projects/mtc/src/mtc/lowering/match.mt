@@ -1308,7 +1308,7 @@ public function is_recursive_variant_field(recv_ty: types.Type, field_ty: types.
         # (`Result.success as p` → `ty_variant_arm_payload`), which already
         # carries the payload's C name.
         types.Type.ty_variant_arm_payload as rap:
-            recv_c = rap.c_name
+            recv_c = unsafe: read(rap.payload).c_name
         _:
             return false
     var field_c: str
@@ -1437,7 +1437,7 @@ public function arm_payload_field_type(ctx: ref[lowering.LoweringContext], recv_
             name = n.name
         types.Type.ty_variant_arm_payload as ap:
             # The registry is keyed by the payload struct's C name.
-            name = ap.c_name
+            name = unsafe: read(ap.payload).c_name
         _:
             return Option[types.Type].none
     let arm_ptr = ctx.arm_payload_fields.get(name)

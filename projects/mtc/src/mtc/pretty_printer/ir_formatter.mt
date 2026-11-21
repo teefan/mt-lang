@@ -615,7 +615,7 @@ function expr_type(ep: ptr[ir.Expr]) -> types.Type:
             ir.Expr.expr_conditional as e:
                 return e.ty
             ir.Expr.expr_reinterpret as e:
-                return e.ty
+                return unsafe: read(e.payload).ty
             ir.Expr.expr_sizeof as e:
                 return e.ty
             ir.Expr.expr_alignof as e:
@@ -702,7 +702,8 @@ function render_expr(ep: ptr[ir.Expr], parent_precedence: int) -> str:
                 let else_expr = render_expr(e.else_expression, IF_EXPRESSION_PRECEDENCE)
                 return wrap(strings.join_six("if ", condition, ": ", then_expr, strings.join_two(" else: ", else_expr), ""), parent_precedence, IF_EXPRESSION_PRECEDENCE)
             ir.Expr.expr_reinterpret as e:
-                return strings.join_six("reinterpret[", render_type(e.target_type), " <- ", render_type(e.source_type), strings.join_three("](", render_expr(e.expression, 0), ")"), "")
+                let rp = unsafe: read(e.payload)
+                return strings.join_six("reinterpret[", render_type(rp.target_type), " <- ", render_type(rp.source_type), strings.join_three("](", render_expr(rp.expression, 0), ")"), "")
             ir.Expr.expr_sizeof as e:
                 return strings.join_three("size_of(", render_type(e.target_type), ")")
             ir.Expr.expr_alignof as e:

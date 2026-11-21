@@ -74,6 +74,17 @@ public function alloc_stmt(value: ir.Stmt) -> own[ir.Stmt]:
     return node
 
 
+public function alloc_reinterpret_expr(target_type: types.Type, source_type: types.Type, expression: ptr[ir.Expr], ty: types.Type) -> ptr[ir.ReinterpretExpr]:
+    var node = heap_mod.must_alloc[ir.ReinterpretExpr](1)
+    read(node) = ir.ReinterpretExpr(
+        target_type = target_type,
+        source_type = source_type,
+        expression = expression,
+        ty = ty,
+    )
+    return node
+
+
 # =============================================================================
 #  IR expression type extraction
 # =============================================================================

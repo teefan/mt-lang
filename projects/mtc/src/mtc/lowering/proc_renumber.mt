@@ -234,7 +234,8 @@ function collect_expr_proc(e: ir.Expr, order: ref[ProcOrder]) -> void:
             collect_expr_proc(unsafe: read(c.then_expression), order)
             collect_expr_proc(unsafe: read(c.else_expression), order)
         ir.Expr.expr_reinterpret as r:
-            collect_expr_proc(unsafe: read(r.expression), order)
+            let rp = unsafe: read(r.payload)
+            collect_expr_proc(unsafe: read(rp.expression), order)
         ir.Expr.expr_address_of as a:
             collect_expr_proc(unsafe: read(a.expression), order)
         ir.Expr.expr_cast as c:
@@ -357,13 +358,14 @@ function rename_type(t: types.Type, mapping: ref[map_mod.Map[str, str]]) -> type
                 linkage_name = rename_opt_str(n.linkage_name, mapping),
             )
         types.Type.ty_variant_arm_payload as ap:
-            return types.Type.ty_variant_arm_payload(
-                variant_name = ap.variant_name,
-                name = rename_proc_str(ap.name, mapping),
-                module_name = ap.module_name,
-                c_name = rename_proc_str(ap.c_name, mapping),
-                display_name = ap.display_name,
-                fields = rename_payload_fields(ap.fields, mapping),
+            let payload = unsafe: read(ap.payload)
+            return types.variant_arm_payload_raw(
+                variant_name = payload.variant_name,
+                name = rename_proc_str(payload.name, mapping),
+                module_name = payload.module_name,
+                c_name = rename_proc_str(payload.c_name, mapping),
+                display_name = payload.display_name,
+                fields = rename_payload_fields(payload.fields, mapping),
             )
         types.Type.ty_imported as im:
             return types.Type.ty_imported(
@@ -495,11 +497,14 @@ function rename_expr(ep: ptr[ir.Expr], mapping: ref[map_mod.Map[str, str]]) -> p
                 ty = rename_type(c.ty, mapping),
             ))
         ir.Expr.expr_reinterpret as r:
+            let rp = unsafe: read(r.payload)
             return utils.alloc_expr(ir.Expr.expr_reinterpret(
-                target_type = rename_type(r.target_type, mapping),
-                source_type = rename_type(r.source_type, mapping),
-                expression = rename_expr(r.expression, mapping),
-                ty = rename_type(r.ty, mapping),
+                payload = utils.alloc_reinterpret_expr(
+                    target_type = rename_type(rp.target_type, mapping),
+                    source_type = rename_type(rp.source_type, mapping),
+                    expression = rename_expr(rp.expression, mapping),
+                    ty = rename_type(rp.ty, mapping),
+                )
             ))
         ir.Expr.expr_sizeof as z:
             return utils.alloc_expr(ir.Expr.expr_sizeof(target_type = rename_type(z.target_type, mapping), ty = rename_type(z.ty, mapping)))

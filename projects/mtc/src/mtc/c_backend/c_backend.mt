@@ -855,7 +855,7 @@ function collect_slice_from_expr(ep: ptr[ir.Expr], has_str: ref[bool], has_str_i
             ir.Expr.expr_address_of as addr:
                 collect_slice_from_expr(addr.expression, has_str, has_str_index, has_str_concat, span_types, seen)
             ir.Expr.expr_reinterpret as rin:
-                collect_slice_from_expr(rin.expression, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_expr(unsafe: read(rin.payload).expression, has_str, has_str_index, has_str_concat, span_types, seen)
             ir.Expr.expr_aggregate_literal as agg:
                 var fi: ptr_uint = 0
                 while fi < agg.fields.len:
@@ -1800,7 +1800,7 @@ function c_type(t: types.Type) -> str:
                 return naming.qualified_c_name(n.module_name, n.name)
             return n.name
         types.Type.ty_variant_arm_payload as ap:
-            return ap.c_name
+            return unsafe: read(ap.payload).c_name
         types.Type.ty_var as v:
             # Unresolved type parameter — should have been substituted during
             # monomorphization.  Emit the raw name; if it reaches C it will
@@ -3247,7 +3247,7 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
         # (`register_variant_arm_aliases`), so this edge orders the variant's
         # full definition first.
         types.Type.ty_variant_arm_payload as ap:
-            return Option[str].some(value = ap.c_name)
+            return Option[str].some(value = unsafe: read(ap.payload).c_name)
         _:
             return Option[str].none
 
@@ -4111,13 +4111,14 @@ function render_expr(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 # Bit reinterpret (not a numeric cast): a union compound literal
                 # copies the source bits into the target representation, so
                 # `reinterpret[uint](f)` yields the IEEE bits rather than `(uint)f`.
+                let rp = unsafe: read(rin.payload)
                 var rbuf = string.String.create()
                 rbuf.append("((union { ")
-                rbuf.append(c_type(rin.source_type))
+                rbuf.append(c_type(rp.source_type))
                 rbuf.append(" __s; ")
-                rbuf.append(c_type(rin.ty))
+                rbuf.append(c_type(rp.ty))
                 rbuf.append(" __t; }){ .__s = (")
-                rbuf.append(render_expr(e, rin.expression))
+                rbuf.append(render_expr(e, rp.expression))
                 rbuf.append(") }).__t")
                 return rbuf.as_str()
             ir.Expr.expr_array_literal as arr:
@@ -4372,7 +4373,7 @@ function checked_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], 
             ir.Expr.expr_cast as cast:
                 checked_from_expr(cast.expression, seen, collected)
             ir.Expr.expr_reinterpret as rin:
-                checked_from_expr(rin.expression, seen, collected)
+                checked_from_expr(unsafe: read(rin.payload).expression, seen, collected)
             ir.Expr.expr_nullable_index as ni:
                 let nn = nullable_array_index_helper_name(ni.receiver_type)
                 if not seen.contains(nn):
@@ -4617,7 +4618,7 @@ function span_index_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]
             ir.Expr.expr_cast as cast:
                 span_index_from_expr(cast.expression, seen, collected)
             ir.Expr.expr_reinterpret as rin:
-                span_index_from_expr(rin.expression, seen, collected)
+                span_index_from_expr(unsafe: read(rin.payload).expression, seen, collected)
             ir.Expr.expr_nullable_index as ni:
                 span_index_from_expr(ni.receiver, seen, collected)
                 span_index_from_expr(ni.index, seen, collected)
@@ -5886,7 +5887,7 @@ function expr_result_type(ep: ptr[ir.Expr]) -> types.Type:
             ir.Expr.expr_conditional as x:
                 return x.ty
             ir.Expr.expr_reinterpret as x:
-                return x.ty
+                return unsafe: read(x.payload).ty
             ir.Expr.expr_sizeof as x:
                 return x.ty
             ir.Expr.expr_alignof as x:
@@ -6524,8 +6525,9 @@ function task_scan_expr(program: ir.Program, ep: ptr[ir.Expr], seen: ref[map_mod
                 collect_task_type(program, seen, elements, cast.ty)
                 task_scan_expr(program, cast.expression, seen, elements)
             ir.Expr.expr_reinterpret as rin:
-                collect_task_type(program, seen, elements, rin.ty)
-                task_scan_expr(program, rin.expression, seen, elements)
+                let rp = unsafe: read(rin.payload)
+                collect_task_type(program, seen, elements, rp.ty)
+                task_scan_expr(program, rp.expression, seen, elements)
             ir.Expr.expr_aggregate_literal as agg:
                 collect_task_type(program, seen, elements, agg.ty)
                 var i: ptr_uint = 0
@@ -7697,8 +7699,7 @@ function expr_uses_offsetof(ep: ptr[ir.Expr]) -> bool:
                 return expr_uses_offsetof(cond.condition) or expr_uses_offsetof(cond.then_expression) or expr_uses_offsetof(cond.else_expression)
 
             ir.Expr.expr_reinterpret as rin:
-
-                return expr_uses_offsetof(rin.expression)
+                return expr_uses_offsetof(unsafe: read(rin.payload).expression)
 
             ir.Expr.expr_cast as cast:
 

@@ -175,7 +175,7 @@ public function generic_instance_contains(ctx: ref[lowering.LoweringContext], na
 
 ## Create a fully initialised lowering.LoweringContext for a single module.  Every field is
 ## set explicitly so all code paths start from a known clean state.
-function create_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map_mod.Map[str, types.Type]], pl_field_types: ptr[map_mod.Map[str, types.Type]], prog_analyses: span[analyzer.Analysis], lod_modules: span[loader.LoadedModule], gen_instances: ptr[map_mod.Map[str, lowering.GenericReceiver]], spec_infos: ptr[map_mod.Map[str, lowering.SpecInfo]]) -> lowering.LoweringContext:
+function create_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map_mod.Map[str, types.Type]], prog_async: ptr[map_mod.Map[str, bool]], pl_field_types: ptr[map_mod.Map[str, types.Type]], prog_analyses: span[analyzer.Analysis], lod_modules: span[loader.LoadedModule], gen_instances: ptr[map_mod.Map[str, lowering.GenericReceiver]], spec_infos: ptr[map_mod.Map[str, lowering.SpecInfo]]) -> lowering.LoweringContext:
     return lowering.LoweringContext(
         module_name = analysis.module_name,
         analysis = analysis,
@@ -193,6 +193,7 @@ function create_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[
         variants = map_mod.Map[str, lowering.VariantInfo].create(),
         match_label_counter = 0,
         program_returns = prog_returns,
+        program_async = prog_async,
         prelude_arm_field_types = pl_field_types,
         pending_specializations = vec.Vec[lowering.PendingSpecialization].create(),
         specialization_cache = map_mod.Map[str, ir.Function].create(),
@@ -300,7 +301,7 @@ function collect_opaque_keys(prog_analyses: span[analyzer.Analysis]) -> map_mod.
 ## Pre-scan every module's function declarations and record each one's resolved
 ## return type keyed by its C linkage name, so cross-module calls can look them
 ## up regardless of lowering order.
-public function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], gen_instances: ref[map_mod.Map[str, lowering.GenericReceiver]]) -> void:
+public function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[str, types.Type]], async_sink: ref[map_mod.Map[str, bool]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], gen_instances: ref[map_mod.Map[str, lowering.GenericReceiver]]) -> void:
     # Specialization metadata is only meaningful for the module fragments the
     # driver assembles; this pass discards it.
     var discarded_spec_infos = map_mod.Map[str, lowering.SpecInfo].create()
@@ -310,7 +311,7 @@ public function collect_program_returns(program: loader.Program, sink: ref[map_m
             mi += 1
             continue
         var analysis = unsafe: read(a_ptr)
-        var ctx = create_lowering_context(analysis, ptr_of(read(sink)), ptr_of(read(prelude_arm_field_types)), program.analyses.as_span(), program.modules.as_span(), ptr_of(read(gen_instances)), ptr_of(discarded_spec_infos))
+        var ctx = create_lowering_context(analysis, ptr_of(read(sink)), ptr_of(read(async_sink)), ptr_of(read(prelude_arm_field_types)), program.analyses.as_span(), program.modules.as_span(), ptr_of(read(gen_instances)), ptr_of(discarded_spec_infos))
         var di: ptr_uint = 0
         while di < analysis.source_file.declarations.len:
             var d: ast.Decl
@@ -318,6 +319,11 @@ public function collect_program_returns(program: loader.Program, sink: ref[map_m
                 d = read(analysis.source_file.declarations.data + di)
             match d:
                 ast.Decl.decl_function as fun:
+                    # Record async functions once; cross-module call lowering
+                    # reads this instead of rescanning every declaration and
+                    # allocating a C name per candidate on every call.
+                    if fun.is_async:
+                        async_sink.set(naming.qualified_c_name(analysis.module_name, fun.name), true)
                     # A generic function's return type still carries type
                     # parameters; resolving it here (with no substitution
                     # context) would instantiate bogus concrete types.  Its
@@ -880,8 +886,8 @@ function decl_lowering_pass(d: ast.Decl) -> ptr_uint:
             return 2
 
 
-public function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, lowering.GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]], synthetic_functions: ref[vec.Vec[ir.Function]], synthetic_enums: ref[vec.Vec[ir.EnumDecl]], emitted_functions: ptr[vec.Vec[ir.Function]], emitted_structs: ptr[vec.Vec[ir.StructDecl]], emitted_constants: ptr[vec.Vec[ir.Constant]], spec_infos: ref[map_mod.Map[str, lowering.SpecInfo]], expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]]) -> ir.Program:
-    var ctx = create_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)))
+public function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], program_async: ref[map_mod.Map[str, bool]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, lowering.GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]], synthetic_functions: ref[vec.Vec[ir.Function]], synthetic_enums: ref[vec.Vec[ir.EnumDecl]], emitted_functions: ptr[vec.Vec[ir.Function]], emitted_structs: ptr[vec.Vec[ir.StructDecl]], emitted_constants: ptr[vec.Vec[ir.Constant]], spec_infos: ref[map_mod.Map[str, lowering.SpecInfo]], expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]]) -> ir.Program:
+    var ctx = create_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(program_async)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)))
     ctx.is_root_module = is_root
     ctx.pending_emitted_functions = emitted_functions
     ctx.pending_emitted_structs = emitted_structs
