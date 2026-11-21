@@ -1281,7 +1281,7 @@
     ]
   },
   "sizes": {
-    "total_code": 127043,
+    "total_code": 127439,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1856,8 +1856,8 @@
         "max_function": 154
       },
       "projects/mtc/src/mtc/lsp/lifecycle.mt": {
-        "lines": 176,
-        "code": 137,
+        "lines": 262,
+        "code": 211,
         "max_line": 329,
         "max_function": 64
       },
@@ -1928,10 +1928,10 @@
         "max_function": 149
       },
       "projects/mtc/src/mtc/lsp/server.mt": {
-        "lines": 670,
-        "code": 519,
+        "lines": 681,
+        "code": 525,
         "max_line": 250,
-        "max_function": 181
+        "max_function": 182
       },
       "projects/mtc/src/mtc/lsp/signature_help.mt": {
         "lines": 136,
@@ -1976,8 +1976,8 @@
         "max_function": 30
       },
       "projects/mtc/src/mtc/lsp/workspace.mt": {
-        "lines": 1541,
-        "code": 1098,
+        "lines": 1588,
+        "code": 1127,
         "max_line": 169,
         "max_function": 52
       },
@@ -1988,10 +1988,10 @@
         "max_function": 57
       },
       "projects/mtc/src/mtc/lsp/workspace_notifications.mt": {
-        "lines": 193,
-        "code": 132,
-        "max_line": 110,
-        "max_function": 41
+        "lines": 518,
+        "code": 419,
+        "max_line": 121,
+        "max_function": 73
       },
       "projects/mtc/src/mtc/lsp/workspace_symbols.mt": {
         "lines": 215,

@@ -199,7 +199,7 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 168 / 160,043 / 127,043 |
+| source files / lines / code lines | 168 / 160,512 / 127,439 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
@@ -217,7 +217,10 @@ map, and the emitter audit; +106 duplicated lines from the per-module
 conversion pattern; `position_to_byte` renamed to the two explicit decoders).
 Phase 2 added the completion-resolve declaration scan, lifecycle/version state
 and the semantic-token cache key fix (+188 code lines, +1 layering edge
-`lsp -> cli_help`; duplication unchanged).
+`lsp -> cli_help`; duplication unchanged).  Phase 3 added multi-root state, the
+`willRenameFiles` import rewrite, the watched-file registration and the
+workspace-folder notification handler (+396 code lines; edges and duplication
+unchanged).
 Session 141 added the semantic conformance port (+522 code lines: condition
 enforcement, named-argument canonicalization and lowering, extern/foreign
 checks, imported/method specialization checks, and the exact-base nullable

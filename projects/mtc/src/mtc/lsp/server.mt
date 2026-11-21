@@ -196,6 +196,7 @@ function dispatch_known_method(ws: ref[workspace.Workspace], method: str, msg: p
     else if method == "initialized":
         lifecycle.handle_initialized(ws)
         schedule_config_request(ws)
+        schedule_watched_files_registration(ws)
     else if method == "shutdown":
         ws.shutdown_received = true
         var result = json.null_value()
@@ -321,7 +322,7 @@ function dispatch_known_method(ws: ref[workspace.Workspace], method: str, msg: p
     else if method == "workspace/didChangeWorkspaceFolders":
         ws_notif.handle_did_change_workspace_folders(ws, msg.params)
     else if method == "workspace/willRenameFiles":
-        ws_notif.handle_will_rename_files(ws, msg.params)
+        ws_notif.handle_will_rename_files(ws, msg.params, msg.id)
     else if method == "workspace/didChangeWatchedFiles":
         ws_notif.handle_did_change_watched_files(ws, msg.params)
 
@@ -601,6 +602,16 @@ function extract_request_id(id: json.Value) -> ptr_uint:
 function schedule_config_request(ws: ref[workspace.Workspace]) -> void:
     let id = proto.send_request("workspace/configuration", "[{\"section\":\"milkTea.format.mode\"},{\"section\":\"milkTea.lsp.dependencyResolution\"},{\"section\":\"milkTea.lsp.platform\"},{\"section\":\"milkTea.lsp.strictCurrentRootDiagnostics\"}]")
     ws.set_pending_config_request(id)
+
+
+## Register `workspace/didChangeWatchedFiles` when the client supports dynamic
+## registration.  The response is not needed; the handler's cache/index
+## invalidation is what keeps an external edit visible.
+function schedule_watched_files_registration(ws: ref[workspace.Workspace]) -> void:
+    if not ws.client_watched_files_dynamic or ws.watched_files_registered:
+        return
+    ws.watched_files_registered = true
+    proto.send_request("client/registerCapability", "{\"registrations\":[{\"id\":\"mtc-watched-files\",\"method\":\"workspace/didChangeWatchedFiles\",\"registerOptions\":{\"watchers\":[{\"globPattern\":\"**/*.mt\"}]}}]}")
 
 
 ## Handle an incoming JSON-RPC response.  Dispatches based on the response

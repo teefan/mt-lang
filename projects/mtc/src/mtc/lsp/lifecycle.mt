@@ -2,6 +2,7 @@
 
 import std.json as json
 import std.string as string
+import std.vec as vec
 
 import mtc.cli_help as cli_help
 import mtc.lsp.protocol as proto
@@ -22,6 +23,7 @@ const TOKEN_MODIFIERS_JSON: str = "\"tokenModifiers\":[\"declaration\",\"definit
 public function handle_initialize(id: json.Value, params: json.Value, ws: ref[workspace.Workspace]) -> void:
     apply_client_root(params, ws)
     ws.pull_diagnostics_active = client_supports_pull_diagnostics(params)
+    ws.client_watched_files_dynamic = client_supports_watched_files_registration(params)
     let position_encoding = client_position_encoding(params)
     ws.set_position_encoding(position_encoding.equal("utf-16"))
     ws.initialize_received = true
@@ -73,8 +75,7 @@ public function handle_initialize(id: json.Value, params: json.Value, ws: ref[wo
     r.append("},\"full\":{\"delta\":true},\"range\":true}")
     # workspace: folders + file operations + watched files
     r.append(",\"workspace\":{\"workspaceFolders\":{\"supported\":true,\"changeNotifications\":true},")
-    r.append("\"fileOperations\":{\"willRename\":{\"filters\":[{\"pattern\":{\"glob\":\"**/*.mt\"},\"scheme\":\"file\"}]}},")
-    r.append("\"didChangeWatchedFiles\":{\"dynamicRegistration\":true}}")
+    r.append("\"fileOperations\":{\"willRename\":{\"filters\":[{\"pattern\":{\"glob\":\"**/*.mt\"},\"scheme\":\"file\"}]}}}")
     r.append("}")
     r.append(",\"serverInfo\":{\"name\":\"milk-tea\",\"version\":\"")
     r.append(cli_help.VERSION)
@@ -85,12 +86,16 @@ public function handle_initialize(id: json.Value, params: json.Value, ws: ref[wo
     proto.write_framed_json(r.as_str())
 
 
-## Re-root the workspace from the client's `rootUri` (or `rootPath`).
+## Re-root the workspace from the client's `workspaceFolders`, or its
+## `rootUri`/`rootPath` for a single-root client.
 function apply_client_root(params: json.Value, ws: ref[workspace.Workspace]) -> void:
     let obj_ptr = params.as_object()
     if obj_ptr == null:
         return
     unsafe:
+        let folders_ptr = read(obj_ptr).get("workspaceFolders")
+        if folders_ptr != null and apply_workspace_folders(ws, folders_ptr):
+            return
         let root_uri_ptr = read(obj_ptr).get("rootUri")
         if root_uri_ptr != null:
             let root_uri = read(root_uri_ptr).as_string() else:
@@ -107,6 +112,87 @@ function apply_client_root(params: json.Value, ws: ref[workspace.Workspace]) -> 
                 return
             if root_path.len > 0:
                 ws.set_root(root_path)
+
+
+## Apply a non-empty `workspaceFolders` value; false leaves the caller to use
+## `rootUri`/`rootPath` (a null array or one with no usable URI).
+function apply_workspace_folders(ws: ref[workspace.Workspace], folders_value: ptr[json.Value]) -> bool:
+    unsafe:
+        let folders = read(folders_value).as_array() else:
+            return false
+        var folder_paths = vec.Vec[string.String].create()
+        defer: release_owned_paths(ref_of(folder_paths))
+        var fi: ptr_uint = 0
+        while fi < read(folders).len():
+            let folder_ptr = read(folders).get(fi) else:
+                break
+            fi += 1
+            let folder_obj = read(folder_ptr).as_object() else:
+                continue
+            let uri_ptr = read(folder_obj).get("uri")
+            if uri_ptr == null:
+                continue
+            let uri_str = read(uri_ptr).as_string() else:
+                continue
+            match uri_ops.file_uri_to_path(uri_str):
+                Option.some as path:
+                    folder_paths.push(path.value)
+                Option.none:
+                    pass
+        if folder_paths.len() == 0:
+            return false
+        var views = vec.Vec[str].create()
+        defer: views.release()
+        var vi: ptr_uint = 0
+        while vi < folder_paths.len():
+            let path_ptr = folder_paths.get(vi) else:
+                break
+            views.push(read(path_ptr).as_str())
+            vi += 1
+        ws.set_roots(views.as_span())
+        return true
+
+
+## Release a vector of owned path strings.
+function release_owned_paths(paths: ref[vec.Vec[string.String]]) -> void:
+    var i: ptr_uint = 0
+    while i < paths.len():
+        let entry = paths.get(i) else:
+            break
+        unsafe: read(entry).release()
+        i += 1
+    paths.release()
+
+
+## True when the client advertised dynamic registration for
+## `workspace/didChangeWatchedFiles`.
+function client_supports_watched_files_registration(params: json.Value) -> bool:
+    let obj_ptr = params.as_object() else:
+        return false
+    unsafe:
+        let caps_ptr = read(obj_ptr).get("capabilities")
+        if caps_ptr == null:
+            return false
+        let caps_obj = read(caps_ptr).as_object() else:
+            return false
+        let workspace_ptr = read(caps_obj).get("workspace")
+        if workspace_ptr == null:
+            return false
+        let workspace_obj = read(workspace_ptr).as_object() else:
+            return false
+        let watched_ptr = read(workspace_obj).get("didChangeWatchedFiles")
+        if watched_ptr == null:
+            return false
+        let watched_obj = read(watched_ptr).as_object() else:
+            return false
+        let dynamic_ptr = read(watched_obj).get("dynamicRegistration")
+        if dynamic_ptr == null:
+            return false
+        match read(dynamic_ptr).as_boolean():
+            Option.some as flag:
+                return flag.value
+            Option.none:
+                return false
 
 
 ## The position encoding this server will emit.  UTF-8 is chosen when the

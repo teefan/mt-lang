@@ -147,7 +147,11 @@ public struct SemanticTokenCacheEntry:
 
 
 public struct Workspace:
+    ## The primary root (the first workspace folder); path labels are rendered
+    ## relative to it.
     root_path: string.String
+    ## Every workspace folder, in client order.  A single-root client has one.
+    roots: vec.Vec[string.String]
     module_roots: vec.Vec[string.String]
     open_docs: map_mod.Map[string.String, string.String]
     ## Open document paths in didOpen order: `workspace/diagnostic` reports
@@ -198,6 +202,10 @@ public struct Workspace:
     ## that advertises nothing; `initialize` switches it to UTF-8 when the
     ## client offers that encoding.  Internal columns are always byte offsets.
     position_encoding_utf16: bool
+    ## True when the client advertised dynamic registration for
+    ## `workspace/didChangeWatchedFiles`; `initialized` then registers it.
+    client_watched_files_dynamic: bool
+    watched_files_registered: bool
     ## Regions of replaced parse-cache entries, kept alive until the request
     ## boundary (see `drain_retired_regions`).
     retired_regions: vec.Vec[heap.Region]
@@ -243,6 +251,7 @@ extending Workspace:
         append_compiler_module_roots(root, ref_of(roots))
         return Workspace(
             root_path = string.String.from_str(root),
+            roots = root_vec(root),
             module_roots = roots,
             open_docs = map_mod.Map[string.String, string.String].create(),
             open_doc_order = vec.Vec[string.String].create(),
@@ -281,25 +290,44 @@ extending Workspace:
             strict_current_root_diagnostics = false,
             pull_diagnostics_active = false,
             position_encoding_utf16 = true,
+            client_watched_files_dynamic = false,
+            watched_files_registered = false,
             retired_regions = vec.Vec[heap.Region].create(),
         )
 
 
-    ## Re-root the workspace from the client's `initialize` rootUri, mirroring
-    ## the host's `workspace_root_path=` assignment.  The workspace root itself
-    ## is a module root (imports resolve relative to it), followed by the
-    ## discovered project root (the nearest `std/` ancestor).  The index and the
-    ## diagnostic cache are dropped so they rebuild against the new root.
-    public editable function set_root(path: str) -> void:
-        if path.len == 0:
-            return
-        this.root_path.release()
-        this.root_path = string.String.from_str(path)
+    ## Re-root the workspace from the client's workspace folders.  Every folder
+    ## is a module root (imports resolve relative to each), and the first is the
+    ## primary used for path labels.  The index and all per-file caches are
+    ## dropped so they rebuild against the new roots.
+    public editable function set_roots(paths: span[str]) -> void:
         release_module_roots(ref_of(this.module_roots))
         this.module_roots = vec.Vec[string.String].create()
-        this.module_roots.push(string.String.from_str(path))
-        discover_project_root(path, ref_of(this.module_roots))
-        append_compiler_module_roots(path, ref_of(this.module_roots))
+        release_module_roots(ref_of(this.roots))
+        this.roots = vec.Vec[string.String].create()
+        this.root_path.release()
+        this.root_path = string.String.create()
+        var i: ptr_uint = 0
+        while i < paths.len:
+            let path = unsafe: read(paths.data + i)
+            if path.len > 0 and not owned_root_contains(ref_of(this.roots), path):
+                if this.root_path.len() == 0:
+                    this.root_path.append(path)
+                this.roots.push(string.String.from_str(path))
+                append_owned_root(path, ref_of(this.module_roots))
+                discover_project_root(path, ref_of(this.module_roots))
+                append_compiler_module_roots(path, ref_of(this.module_roots))
+            i += 1
+        this.reset_after_reroot()
+
+
+    ## Single-root convenience path (and the pre-multi-root API).
+    public editable function set_root(path: str) -> void:
+        this.set_roots(array[str, 1](path).as_span())
+
+
+    ## Drop every cache and index after a root change.
+    public editable function reset_after_reroot() -> void:
         this.drain_retired_regions()
         this.release_token_cache()
         this.release_binding_cache()
@@ -691,29 +719,21 @@ extending Workspace:
     ## `module_roots` stays wider for import resolution — walking them would index
     ## the whole compiler tree for a project outside it.
     public function workspace_index_roots() -> vec.Vec[string.String]:
-        var roots = vec.Vec[string.String].create()
-        if this.root_path.len() == 0:
-            return roots
-        roots.push(string.String.from_str(this.root_path.as_str()))
-
-        match package_manifest.package_source_root_for_path(this.root_path.as_str()):
-            Option.some as source_root:
-                var present = false
-                var i: ptr_uint = 0
-                while i < roots.len():
-                    let entry = roots.get(i) else:
-                        break
-                    if unsafe: read(entry).as_str().equal(source_root.value.as_str()):
-                        present = true
-                        break
-                    i += 1
-                if present:
+        var result = vec.Vec[string.String].create()
+        var i: ptr_uint = 0
+        while i < this.roots.len():
+            let root_ptr = this.roots.get(i) else:
+                break
+            i += 1
+            let root = unsafe: read(root_ptr).as_str()
+            append_owned_root(root, ref_of(result))
+            match package_manifest.package_source_root_for_path(root):
+                Option.some as source_root:
+                    append_owned_root(source_root.value.as_str(), ref_of(result))
                     source_root.value.release()
-                else:
-                    roots.push(source_root.value)
-            Option.none:
-                pass
-        return roots
+                Option.none:
+                    pass
+        return result
 
 
     ## Resolve a source file path to the effective module roots for dependency
@@ -1131,6 +1151,7 @@ extending Workspace:
         this.release_binding_cache()
         release_text_cache(ref_of(this.text_cache))
         this.root_path.release()
+        release_module_roots(ref_of(this.roots))
         release_module_roots(ref_of(this.module_roots))
         defidx.release(ref_of(this.definition_index))
         refidx.release(ref_of(this.reference_index))
@@ -1505,6 +1526,32 @@ public function append_compiler_module_roots(path: str, roots: ref[vec.Vec[strin
         if not already_present:
             roots.push(string.String.from_str(candidate))
         i += 1
+
+
+## The initial single-root vector for `Workspace.create`.
+function root_vec(root: str) -> vec.Vec[string.String]:
+    var roots = vec.Vec[string.String].create()
+    if root.len > 0:
+        roots.push(string.String.from_str(root))
+    return roots
+
+
+## True when the owned root list already contains `path`.
+function owned_root_contains(roots: ref[vec.Vec[string.String]], path: str) -> bool:
+    var i: ptr_uint = 0
+    while i < roots.len():
+        let entry = roots.get(i) else:
+            break
+        if unsafe: read(entry).as_str().equal(path):
+            return true
+        i += 1
+    return false
+
+
+## Append `path` to an owned root list when it is not already present.
+function append_owned_root(path: str, roots: ref[vec.Vec[string.String]]) -> void:
+    if not owned_root_contains(roots, path):
+        roots.push(string.String.from_str(path))
 
 
 function release_module_roots(roots: ref[vec.Vec[string.String]]) -> void:
