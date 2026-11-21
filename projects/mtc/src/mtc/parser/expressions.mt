@@ -265,19 +265,47 @@ function parse_postfix(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     while true:
         pstate.step(s)
         if pstate.match_kind(s, tk.TokenKind.dot):
-            parser.consume_name_allowing_keywords(s, c"expected member name after '.'")
-            let member = parser.previous_lexeme(s)
-            let member_tok = pstate.previous_token(s)
-            var node = parser.alloc_expr(s)
-            unsafe:
-                let mt = read(member_tok)
-                read(node) = ast.Expr.expr_member_access(
-                    receiver = left,
-                    member_name = member,
-                    line = mt.line,
-                    column = mt.column,
-                )
-            left = node
+            let dot_tok = pstate.previous_token(s)
+            var has_member = parser.check_name(s)
+            if not has_member:
+                let next_tok = pstate.peek(s)
+                if next_tok != null:
+                    has_member = parser.is_keyword_token(unsafe: read(next_tok))
+            if has_member:
+                parser.consume_name_allowing_keywords(s, c"expected member name after '.'")
+                let member = parser.previous_lexeme(s)
+                let member_tok = pstate.previous_token(s)
+                var node = parser.alloc_expr(s)
+                unsafe:
+                    let mt = read(member_tok)
+                    read(node) = ast.Expr.expr_member_access(
+                        receiver = left,
+                        member_name = member,
+                        line = mt.line,
+                        column = mt.column,
+                    )
+                left = node
+            else:
+                # An incomplete access (`read(p).`): report the error and keep
+                # the receiver as an empty-name member access.  The analyzer
+                # records the receiver's type at the dot so completion can
+                # answer even though no member token exists yet.  Rewind to the
+                # error token and clear the panic so the enclosing statement
+                # keeps this node instead of substituting its ErrorExpr.
+                let had_panic = s.panic
+                parser.consume_name_allowing_keywords(s, c"expected member name after '.'")
+                var node = parser.alloc_expr(s)
+                unsafe:
+                    let dt = read(dot_tok)
+                    read(node) = ast.Expr.expr_member_access(
+                        receiver = left,
+                        member_name = "",
+                        line = dt.line,
+                        column = dt.column,
+                    )
+                if s.panic and not had_panic:
+                    parser.rewind_to_panic(s)
+                left = node
         else if pstate.check(s, tk.TokenKind.lbracket):
             if postfix_bracket_starts_specialization(s, left):
                 var spec_result = try_parse_specialization(s, left)

@@ -1574,8 +1574,8 @@
           "sha256": "1a9216a5bb197b0f87e9a8082bd52869095e58ef72c4e1c209014615cb60f95f"
         },
         "projects/mtc/src/mtc/lsp/completion.mt": {
-          "digest": "d7eb7d4c92cea234b855ec3bdcc48e73f86f1922ac2393375b857d8e8e2ad46a",
-          "sha256": "c7200e27378e26da5a663966a1b217612f119260db437ff259d7b1aeeb86d382"
+          "digest": "50a31f68a85529b53bd27e09577817c15dde0062258143bbcc801049c46fbaa2",
+          "sha256": "c0860f38836b8034b485048d5caf1ac9cd3dbba387335749b2edc5d67cd0fe21"
         },
         "projects/mtc/src/mtc/lsp/cursor.mt": {
           "digest": "e38d344cd7181b1a8c4f2f7c117aef92218a2e8ebff79ffed7614db2e3c44b89",
@@ -1826,8 +1826,8 @@
           "sha256": "d0712de860309e047394b3727f6cce03a0ae7675b662f2e4c6644d5f84d7dfbf"
         },
         "projects/mtc/src/mtc/parser/expressions.mt": {
-          "digest": "674c0d307aa3c0d51fbce6034e3652a6f12cbb384568256b72ca4f673b83bab4",
-          "sha256": "674c0d307aa3c0d51fbce6034e3652a6f12cbb384568256b72ca4f673b83bab4"
+          "digest": "b84cb4bf1a98b1539127bb3bb24f3a8e489df5ff702ba919554ab52537556678",
+          "sha256": "b84cb4bf1a98b1539127bb3bb24f3a8e489df5ff702ba919554ab52537556678"
         },
         "projects/mtc/src/mtc/parser/literal_parsing.mt": {
           "digest": "71a1adc9c2ff079d3fb203ed771e8c9a7eab636c3e78a3d366f1848baa074afd",
@@ -1866,8 +1866,8 @@
           "sha256": "f845f8af78e8d45e0ce5ba1f2ec0edcad66b3dcd8f23c6b5abf0788f3811bb72"
         },
         "projects/mtc/src/mtc/semantic/analyzer.mt": {
-          "digest": "c40d5e734d80cd951019b4750b0cbcc2805bcabd90e32e67bde0353b0ede30de",
-          "sha256": "7042f865f261e23d5b15cf01eb6452699d93e3abaea44cb50c850865da5adffb"
+          "digest": "8e17960dc966e5ddd538d248b3fbafcaa203236727ef9c5d44323014bb2bc51e",
+          "sha256": "f72d7487cd417995acc84b3ca5cc60a928d81f284a68ae13a340a62091755621"
         },
         "projects/mtc/src/mtc/semantic/control_flow/builder.mt": {
           "digest": "483061fc0f76335c80a09135fea81188ff0b1b4287b016b173c5df032a9b2114",
@@ -1942,8 +1942,8 @@
           "sha256": "430a4fa6196f4dfed460495496aaac86466fe36dc47aaabafe70fec502937201"
         },
         "projects/mtc/test/completion_test.mt": {
-          "digest": "2bccfb96c55ea701c7fd409de0f57d58464ec306db179add29c1709376e6bcb7",
-          "sha256": "2bccfb96c55ea701c7fd409de0f57d58464ec306db179add29c1709376e6bcb7"
+          "digest": "6a4f93a0250eb745e328b921c47d72240e5c904e66b58fdae2773fb57e01125b",
+          "sha256": "6a4f93a0250eb745e328b921c47d72240e5c904e66b58fdae2773fb57e01125b"
         },
         "projects/mtc/test/cursor_test.mt": {
           "digest": "9d3fcc947210f122db998ecc19669699b175feca2576054101219639e39b0fc2",
@@ -4676,8 +4676,8 @@
           "sha256": "9febd654fb9c80bd0a0f7266fea4633a872746b2c87c3f23cda9fd3bf4ba3e93"
         },
         "projects/mtc/src/mtc/lsp/completion.mt": {
-          "digest": "d7eb7d4c92cea234b855ec3bdcc48e73f86f1922ac2393375b857d8e8e2ad46a",
-          "sha256": "fa290035880b9edf6c82ec10bbec67b602a88f2c4df9a2e75c7d170b95fefc0f"
+          "digest": "50a31f68a85529b53bd27e09577817c15dde0062258143bbcc801049c46fbaa2",
+          "sha256": "0969404fa86f1fcd48fda320929c84c12ec39cc5853db2d2e0b145700480f7e0"
         },
         "projects/mtc/src/mtc/lsp/cursor.mt": {
           "digest": "e38d344cd7181b1a8c4f2f7c117aef92218a2e8ebff79ffed7614db2e3c44b89",
@@ -4928,8 +4928,8 @@
           "sha256": "4a9f4e7039b87a38bcfb0ba3f164757346d9da8224aa16f7e31658ead4287081"
         },
         "projects/mtc/src/mtc/parser/expressions.mt": {
-          "digest": "674c0d307aa3c0d51fbce6034e3652a6f12cbb384568256b72ca4f673b83bab4",
-          "sha256": "3744d5ef3f0a6e92c47ef6130e6bc9dee7cd64883675241182f80ddae03a95d6"
+          "digest": "b84cb4bf1a98b1539127bb3bb24f3a8e489df5ff702ba919554ab52537556678",
+          "sha256": "4f4043f01d190f83dc3e88c1c940ce7f0b3d6e6feea9f16898327a2edd48c77b"
         },
         "projects/mtc/src/mtc/parser/literal_parsing.mt": {
           "digest": "71a1adc9c2ff079d3fb203ed771e8c9a7eab636c3e78a3d366f1848baa074afd",
@@ -4968,8 +4968,8 @@
           "sha256": "7ed3d2e98ffcbeedf0197e5fb05a140c3ec424d072f30c5a167222ecc545c328"
         },
         "projects/mtc/src/mtc/semantic/analyzer.mt": {
-          "digest": "c40d5e734d80cd951019b4750b0cbcc2805bcabd90e32e67bde0353b0ede30de",
-          "sha256": "f5698de92229f1b9e2a746614b6f108248fc12b6fcfecc10c12c94592f6af6df"
+          "digest": "8e17960dc966e5ddd538d248b3fbafcaa203236727ef9c5d44323014bb2bc51e",
+          "sha256": "98c8a9700b941c51d2926f5a0e7fd821a973997c032ac8896b64e66c3e858556"
         },
         "projects/mtc/src/mtc/semantic/control_flow/builder.mt": {
           "digest": "483061fc0f76335c80a09135fea81188ff0b1b4287b016b173c5df032a9b2114",
@@ -5044,8 +5044,8 @@
           "sha256": "f352ed5bb96a244f5e656364f078bf97b7e6deea35bb2e9d5eb4a0a95e06254f"
         },
         "projects/mtc/test/completion_test.mt": {
-          "digest": "2bccfb96c55ea701c7fd409de0f57d58464ec306db179add29c1709376e6bcb7",
-          "sha256": "2a5d93ec5d4dc06a5e35a6dbc5bb7abac95550fb28bcdf0f3307402a8b68f8a2"
+          "digest": "6a4f93a0250eb745e328b921c47d72240e5c904e66b58fdae2773fb57e01125b",
+          "sha256": "3d98ac2b5394695f4524360d65eee5ab0a67f3836eb43ca918307baeabf58aa2"
         },
         "projects/mtc/test/cursor_test.mt": {
           "digest": "9d3fcc947210f122db998ecc19669699b175feca2576054101219639e39b0fc2",
@@ -7778,8 +7778,8 @@
           "sha256": "37dc5a95fcf872b86d5ec317dbb677b10602cfd0cc3fe834ff039a2af103bbf9"
         },
         "projects/mtc/src/mtc/lsp/completion.mt": {
-          "digest": "d7eb7d4c92cea234b855ec3bdcc48e73f86f1922ac2393375b857d8e8e2ad46a",
-          "sha256": "b1d2238aa99392e6c47c127b405053de5f29a73fd95f9779e2a76c8cd66c86e4"
+          "digest": "50a31f68a85529b53bd27e09577817c15dde0062258143bbcc801049c46fbaa2",
+          "sha256": "fd164c2b96945d85d9cdbdcbed1cf86627e0c21c3b7588c5266a7a5896866394"
         },
         "projects/mtc/src/mtc/lsp/cursor.mt": {
           "digest": "e38d344cd7181b1a8c4f2f7c117aef92218a2e8ebff79ffed7614db2e3c44b89",
@@ -8030,8 +8030,8 @@
           "sha256": "66739a8c823f4f44039587f06fbfa04f7b3eae902374e7f7f4b47f03d762cc83"
         },
         "projects/mtc/src/mtc/parser/expressions.mt": {
-          "digest": "674c0d307aa3c0d51fbce6034e3652a6f12cbb384568256b72ca4f673b83bab4",
-          "sha256": "10c71f5596d7c2cedc1d4473e2987ed32f50d412a3edf56a2773cc409928c824"
+          "digest": "b84cb4bf1a98b1539127bb3bb24f3a8e489df5ff702ba919554ab52537556678",
+          "sha256": "d0f96950368d35f0206bf33f6f46cdce869c5bef510c77896e09c6d67237c9ea"
         },
         "projects/mtc/src/mtc/parser/literal_parsing.mt": {
           "digest": "71a1adc9c2ff079d3fb203ed771e8c9a7eab636c3e78a3d366f1848baa074afd",
@@ -8070,8 +8070,8 @@
           "sha256": "7f0ac5665f6f4e367501bfd1106f74b4a606109c239476f450a28c2e7f432e40"
         },
         "projects/mtc/src/mtc/semantic/analyzer.mt": {
-          "digest": "c40d5e734d80cd951019b4750b0cbcc2805bcabd90e32e67bde0353b0ede30de",
-          "sha256": "33a557133092f498d50726d62810bfba61f91e421a46eb1e15d1ecb112852c21"
+          "digest": "8e17960dc966e5ddd538d248b3fbafcaa203236727ef9c5d44323014bb2bc51e",
+          "sha256": "52bb94800cadd017760bfdf35cae44f1e98cae06d3672f5b70f0db6996756100"
         },
         "projects/mtc/src/mtc/semantic/control_flow/builder.mt": {
           "digest": "483061fc0f76335c80a09135fea81188ff0b1b4287b016b173c5df032a9b2114",
@@ -8146,8 +8146,8 @@
           "sha256": "76540ce903471deba3dc758e69faedb1eed95c002778d0ddcb74e5a2a2c3bc55"
         },
         "projects/mtc/test/completion_test.mt": {
-          "digest": "2bccfb96c55ea701c7fd409de0f57d58464ec306db179add29c1709376e6bcb7",
-          "sha256": "81868c88b95769d5357298ef7ef0652220a4109c5eb2ef8f2c94424df697f829"
+          "digest": "6a4f93a0250eb745e328b921c47d72240e5c904e66b58fdae2773fb57e01125b",
+          "sha256": "5e4cd620712baebe46115acc6edf01d285ab1785db5351152ce338257a3bbbde"
         },
         "projects/mtc/test/cursor_test.mt": {
           "digest": "9d3fcc947210f122db998ecc19669699b175feca2576054101219639e39b0fc2",

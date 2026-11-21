@@ -1,7 +1,8 @@
 # LSP Enhancement Plan
 
-Status: **audit complete (session 144); phases 0–5 landed (session 145);
-the enhancement program, including the optional phase-5 subset, is complete.**
+Status: **audit complete (session 144); phases 0–5 landed (session 145); the
+non-text receiver completion extension landed in session 147.  The enhancement
+program, including the optional phase-5 subset, is complete.**
 Baseline: **LSP 3.18.0** (2026-06-04); 3.19 is upcoming.
 Implementation: `projects/mtc/src/mtc/lsp` — 43 `.mt` files, ~31.9k lines,
 entry point `mtc lsp` (`projects/mtc/src/mtc/lsp/server.mt`).
@@ -28,13 +29,14 @@ an oracle.  The existing instruments are:
   (`0 errors` in session 143) and soak.
 - `projects/mtc/test/{completion,cursor,lsp_index,lsp_utils}_test.mt` — unit
   coverage for helpers, not protocol conformance.
-- `tools/lsp_conformance.rb` — the spec oracle (phases 0–5, session 145): 35
-  cases from §5 with explicit assertions, a standalone stdio client, `--bin`,
-  `--only`, `--timeout` and `--json`.  It is the `lsp_conformance` hard tier-2
-  gate and is **green 35/35** at the phase-5 commit.  `--bin` accepts a
-  wrapper, so the same cases can be driven under valgrind; the existing
-  `valgrind_lsp` corpus drive remains the memory instrument because cold
-  valgrind server startups are not a better use of tier-2 time.
+- `tools/lsp_conformance.rb` — the spec oracle (phases 0–5 + the session-147
+  completion extension): 36 cases from §5 with explicit assertions, a
+  standalone stdio client, `--bin`, `--only`, `--timeout` and `--json`.  It is
+  the `lsp_conformance` hard tier-2 gate and is **green 36/36** at the
+  session-147 commit.  `--bin` accepts a wrapper, so the same cases can be
+  driven under valgrind; the existing `valgrind_lsp` corpus drive remains the
+  memory instrument because cold valgrind server startups are not a better use
+  of tier-2 time.
 
 `tools/lsp_parity.rb` remains host-parity-shaped: it sends
 `workspace/willRenameFiles` as a **notification**
@@ -49,23 +51,24 @@ Against the 3.18 meta-model (69 requests, 26 notifications):
 | Bucket | Count |
 |---|---|
 | Client→server requests | 54 |
-| Dispatched by `server.mt` | 42 |
+| Dispatched by `server.mt` | 43 |
 | Capability keys advertised | 30 (of 36 top-level `ServerCapabilities` fields) |
 | Client→server notifications handled | 10 of 19 |
 
 Supported areas: definition/declaration/typeDefinition/implementation,
 references, document highlight, hover, completion + resolve, signature help,
 document/workspace symbols, rename + prepareRename, code actions, code lens +
-resolve, document links + resolve, formatting/rangeFormatting/onTypeFormatting/
-willSaveWaitUntil, folding range, selection range, linked editing, inlay hints,
-semantic tokens (full/range/delta), diagnostics (push + pull), type hierarchy,
-call hierarchy, executeCommand, workspace folders and a rename filter.
+resolve, document links + resolve, formatting/rangeFormatting/rangesFormatting/
+onTypeFormatting/willSaveWaitUntil, folding range, selection range, linked
+editing, inlay hints, semantic tokens (full/range/delta), diagnostics (push +
+pull), type hierarchy, call hierarchy, executeCommand, workspace folders and a
+rename filter.
 
 Missing client→server requests:
 
-- Applicable but not implemented: `textDocument/rangesFormatting`,
-  `workspace/willCreateFiles`, `workspace/willDeleteFiles`, and the
-  `didCreate`/`didRename`/`didDelete` notifications.
+- Applicable but not implemented: `workspace/willCreateFiles`,
+  `workspace/willDeleteFiles`, and the `didCreate`/`didRename`/`didDelete`
+  notifications.
 - Low value / not applicable: `textDocument/moniker` (LSIF),
   `textDocument/inlineValue` (DAP covers values), `documentColor` /
   `colorPresentation` (no color-literal syntax), `notebookDocumentSync`,
@@ -345,7 +348,7 @@ as one partial array, and work-done begin/end bracket both.  No
 and uses the client's token; the semantic-token rules still apply.
 `inlineCompletion`, `textDocumentContent`, `moniker`, `inlineValue`,
 `documentColor` and notebooks remain intentionally unadvertised (no language
-feature or concrete use case).  The conformance suite is **35/35**.
+feature or concrete use case).  The conformance suite is **36/36**.
 
 ## 5. Conformance cases
 
@@ -369,6 +372,18 @@ split into per-boundary cases).  Add new cases here first, then to the harness:
 | lifecycle | pre-init `-32002`; duplicate init `-32600`; post-shutdown `-32600`; exit rc 0 after shutdown, 1 without; `serverInfo` and the `experimental` `milkTea` block are present |
 | cancel | a cancel for a completed id does not cancel a later reused id |
 | publish | `publishDiagnostics.version` matches the document version |
+| completion after a non-text receiver | a trailing dot after a call (`make().`), an index (`arr[0].`) and a plain value (`p.`) offers the receiver's fields; a type receiver (`P.`) keeps its static member |
+
+**Session 147 — non-text receiver completion.**  A trailing dot is still a
+parse error, but the parser now recovers with an empty-name `MemberAccess` that
+keeps the receiver (it rewinds to the dot and clears the panic so the
+enclosing statement keeps the node instead of substituting its `ErrorExpr`).
+The analyzer records the receiver's inferred type at the dot — the same
+`member_receiver_types` fact hover uses — and `handle_completion` falls back to
+it when the text chain cannot resolve the receiver, including the
+no-member-token case.  Type receivers (`Type[...]`, `alias.Type`) keep the
+static-member path.  The new case `completion/incomplete-dot-receiver` asserts
+a call, a value, an index and a type receiver.
 
 ## 6. Verification
 
@@ -391,7 +406,7 @@ ruby tools/lsp_soak.rb --quiet                           # raw slope in the 70�
 ```
 
 `lsp_conformance` is in the `lsp` area and `tools_check` covers its syntax.
-At the phase-5 commit the suite is **35/35** and the gate is green.  Run only
+At the session-147 commit the suite is **36/36** and the gate is green.  Run only
 the class being fixed (`--only utf16`, `--only lifecycle`, …) while iterating,
 then the whole suite once per phase.  The 3.18 additions and the editor
 features with no matching language construct remain intentionally
@@ -436,9 +451,10 @@ Start the LSP enhancement program in /home/teefan/Projects/Ruby/mt-lang
 cases. The compiler is the native self-host; the Ruby host is archived and
 must not be used as an oracle.
 
-Phases 0–5 are done: the conformance gate is green 35/35, and the program is
-complete.  Only the deliberately skipped editor features (3.18 additions,
-moniker, inlineValue, documentColor, notebooks) remain out of scope.
+Phases 0–5 are done and the session-147 completion extension is landed: the
+conformance gate is green 36/36, and the program is complete.  Only the
+deliberately skipped editor features (3.18 additions, moniker, inlineValue,
+documentColor, notebooks) remain out of scope.
 Work the red cases with `ruby tools/lsp_conformance.rb --bin tmp/mtc-dev
 --only <class>`; close each phase by making its cases pass and then run the
 whole suite. Work in tiers: seed dev build (~25 s), tmp/mtc-dev test

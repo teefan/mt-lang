@@ -420,6 +420,25 @@ DOCS_SOURCE = <<~MT
       return fo
 MT
 
+INCOMPLETE_DOT_SOURCE = <<~MT
+  struct P:
+      x: int
+      y: int
+      static function origin() -> P:
+          return P(x = 0, y = 0)
+
+  function make() -> P:
+      return P(x = 1, y = 2)
+
+  function demo(p: P) -> int:
+      let q = make().
+      let r = p.
+      let arr = array[P, 1](p)
+      let s = arr[0].
+      let t = P.
+      return 0
+MT
+
 HELPER_SOURCE = <<~MT
   public function helper_sum(a: int, b: int) -> int:
       return a + b
@@ -790,6 +809,38 @@ add_case("completion/resolve-preserves-item") do |ctx, client|
   %w[kind detail insertText sortText data].each do |field|
     ctx.eq(resolved[field], item[field], "resolved item field #{field}")
   end
+end
+
+
+add_case("completion/incomplete-dot-receiver") do |ctx, client|
+  init!(client, ctx.root)
+  path = write_fixture(ctx.root, "main.mt", INCOMPLETE_DOT_SOURCE)
+  open!(client, path)
+  # A trailing dot is a parse error, but completion must still answer from the
+  # receiver's inferred type: a call (`make().`), a plain value (`p.`, the text
+  # path), and an index expression (`arr[0].`, the analyzer's recorded type).
+  [[10, 19], [11, 14], [13, 19]].each do |line, character|
+    list = client.request("textDocument/completion", {
+      "textDocument" => { "uri" => path_to_uri(path) },
+      "position" => { "line" => line, "character" => character },
+    })
+    items = list.dig("result", "items") || Array(list["result"])
+    labels = Array(items).map { |i| i["label"] }
+    ctx.check(labels.include?("x"),
+              "completion at #{line}:#{character} did not offer field x (got #{labels.inspect})")
+    ctx.check(labels.include?("y"),
+              "completion at #{line}:#{character} did not offer field y (got #{labels.inspect})")
+  end
+  # A type receiver keeps its static path even though the analyzer also records
+  # an instance type for the specialization shape.
+  list = client.request("textDocument/completion", {
+    "textDocument" => { "uri" => path_to_uri(path) },
+    "position" => { "line" => 14, "character" => 14 },
+  })
+  items = list.dig("result", "items") || Array(list["result"])
+  labels = Array(items).map { |i| i["label"] }
+  ctx.check(labels.include?("origin"),
+            "completion after P. did not offer static member origin (got #{labels.inspect})")
 end
 
 

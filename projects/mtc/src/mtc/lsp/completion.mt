@@ -148,6 +148,20 @@ public function handle_completion(
             type_alias = trecv.value.module_alias
         Option.none:
             pass
+    # A receiver the text chain cannot resolve (a call, index or cast, or a
+    # trailing dot) has its inferred type recorded by the analyzer at the
+    # member token — the dot itself when no member name is typed yet.
+    var has_recorded_type = false
+    var recorded_type: types.Type = types.Type.ty_error
+    let member_column = dot_member_column(source, line, character)
+    if member_column > 0:
+        match analyzer.member_receiver_type_at(ref_of(analysis), line + 1, member_column):
+            Option.some as recorded_ty:
+                recorded_type = recorded_ty.value
+                has_recorded_type = true
+            Option.none:
+                pass
+
     match cursor.member_receiver_path_at(source, line, character):
         Option.some as path_payload:
             let receiver_path = path_payload.value
@@ -160,6 +174,16 @@ public function handle_completion(
                     segment_start = pi + 1
                 pi += 1
             let receiver = receiver_path.slice(segment_start, receiver_path.len - segment_start)
+            # A type receiver (`Type[...]`, `alias.Type`) keeps its static
+            # member path: the analyzer also records an instance type for a
+            # specialization, but static members are the useful answer here.
+            let type_context = type_receiver_known(ref_of(analysis), receiver, type_alias)
+            if has_recorded_type and not type_context:
+                var recorded_items = typed_receiver_completions(
+                    ref_of(analysis), ast_file, recorded_type, prefix, uri)
+                proto.write_response_raw(id, recorded_items.as_str())
+                recorded_items.release()
+                return
             var dot_items = dot_receiver_completions(
                 ws, ref_of(analysis), ast_file, file_path.as_str(), uri, receiver, receiver_path,
                 type_alias, prefix, line)
@@ -167,7 +191,12 @@ public function handle_completion(
             dot_items.release()
             return
         Option.none:
-            pass
+            if has_recorded_type:
+                var recorded_items = typed_receiver_completions(
+                    ref_of(analysis), ast_file, recorded_type, prefix, uri)
+                proto.write_response_raw(id, recorded_items.as_str())
+                recorded_items.release()
+                return
 
     var items_json = build_completions_json(
         ws, ref_of(analysis), ast_file, file_path.as_str(), uri, line, prefix)
@@ -223,21 +252,50 @@ function dot_receiver_completions(
     # record, since the current module's tables do not carry them.
     match receiver_value_type(analysis, ast_file, receiver, line + 1):
         Option.some as ty:
-            var imported_items = imported_value_receiver_completions(analysis, ty.value, prefix, uri)
-            if imported_items != null:
-                let result = unsafe: read(imported_items)
-                heap.release(imported_items)
-                return result
-            var value_items = value_receiver_completions(
-                analysis, ty.value, prefix, uri)
-            if value_items != null:
-                let result = unsafe: read(value_items)
-                heap.release(value_items)
-                return result
+            return typed_receiver_completions(analysis, ast_file, ty.value, prefix, uri)
         Option.none:
             pass
 
     # 4. The file's method list.
+    return method_fallback_completions(analysis, ast_file, prefix, uri)
+
+
+## The 1-based byte column of the member token before the cursor: the dot
+## itself when no member name is typed yet (`read(p).|`), else the member's
+## first byte.  0 when the cursor is not in a dot context.
+function dot_member_column(source: str, line: ptr_uint, character: ptr_uint) -> ptr_uint:
+    let line_text = utils.source_line(source, line + 1)
+    var pos = character
+    if pos > line_text.len:
+        pos = line_text.len
+    while pos > 0 and utils.is_word_byte(line_text.byte_at(pos - 1)):
+        pos -= 1
+    if pos == 0 or line_text.byte_at(pos - 1) != 46:
+        return 0
+    if pos == character:
+        return pos
+    return pos + 1
+
+
+## Complete a receiver whose type is already known: imported members first,
+## then the local value's fields and methods, then the file's method list.
+function typed_receiver_completions(
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    receiver_ty: types.Type,
+    prefix: str,
+    uri: str,
+) -> string.String:
+    var imported_items = imported_value_receiver_completions(analysis, receiver_ty, prefix, uri)
+    if imported_items != null:
+        let result = unsafe: read(imported_items)
+        heap.release(imported_items)
+        return result
+    var value_items = value_receiver_completions(analysis, receiver_ty, prefix, uri)
+    if value_items != null:
+        let result = unsafe: read(value_items)
+        heap.release(value_items)
+        return result
     return method_fallback_completions(analysis, ast_file, prefix, uri)
 
 

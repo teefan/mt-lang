@@ -8,6 +8,7 @@ import std.string as string_mod
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.types as types
 import mtc.lsp.completion as comp
 
 
@@ -280,3 +281,57 @@ function test_receiver_type_resolution() -> void:
     if not name.equal("Vec"):
         expect(false, "Vec type not resolved")
     return
+
+
+@[test]
+function test_incomplete_dot_records_non_text_receiver_type() -> void:
+    # A trailing dot is a parse error, but the analyzer keeps the receiver as
+    # an empty-name member access and records its type at the dot.  Completion
+    # falls back to that fact; the text path cannot see `make()`/`arr[0]`.
+    var source = <<-SRC
+        struct P:
+            x: int
+            y: int
+
+        function make() -> P:
+            return P(x = 1, y = 2)
+
+        function demo() -> int:
+            let q = make().
+            let arr = array[P, 1](make())
+            let s = arr[0].
+            return 0
+    SRC
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: parse_diags.release()
+    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    var analysis = analyzer.check_source_file(ast_file)
+    expect_eq(int<-parse_diags.len(), 2)
+
+    let make_fact = analyzer.member_receiver_type_at(ref_of(analysis), 9, 19)
+    match make_fact:
+        Option.some as ty:
+            match ty.value:
+                types.Type.ty_named as named:
+                    expect_eq(named.name, "P")
+                _:
+                    expect(false, "make() receiver is not P")
+        Option.none:
+            expect(false, "make(). receiver type not recorded")
+
+    let index_fact = analyzer.member_receiver_type_at(ref_of(analysis), 11, 19)
+    match index_fact:
+        Option.some as ty:
+            match ty.value:
+                types.Type.ty_named as named:
+                    expect_eq(named.name, "P")
+                    var items = comp.typed_receiver_completions(
+                        ref_of(analysis), ast_file, ty.value, "", "file:///probe.mt")
+                    defer: items.release()
+                    let rendered = items.as_str()
+                    expect(rendered.contains_substring("\"label\":\"x\""), rendered)
+                    expect(rendered.contains_substring("\"label\":\"y\""), rendered)
+                _:
+                    expect(false, "arr[0] receiver is not P")
+        Option.none:
+            expect(false, "arr[0]. receiver type not recorded")

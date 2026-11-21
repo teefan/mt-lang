@@ -1274,7 +1274,7 @@
     ]
   },
   "sizes": {
-    "total_code": 127752,
+    "total_code": 127821,
     "functions_over_limit": 1,
     "files_over_limit": 11,
     "files": {
@@ -1753,10 +1753,10 @@
         "max_function": 53
       },
       "projects/mtc/src/mtc/lsp/completion.mt": {
-        "lines": 3712,
-        "code": 3038,
+        "lines": 3770,
+        "code": 3080,
         "max_line": 160,
-        "max_function": 131
+        "max_function": 138
       },
       "projects/mtc/src/mtc/lsp/cursor.mt": {
         "lines": 515,
@@ -2131,10 +2131,10 @@
         "max_function": 44
       },
       "projects/mtc/src/mtc/parser/expressions.mt": {
-        "lines": 373,
-        "code": 321,
+        "lines": 401,
+        "code": 343,
         "max_line": 125,
-        "max_function": 51
+        "max_function": 79
       },
       "projects/mtc/src/mtc/parser/literal_parsing.mt": {
         "lines": 433,
@@ -2191,8 +2191,8 @@
         "max_function": 39
       },
       "projects/mtc/src/mtc/semantic/analyzer.mt": {
-        "lines": 10662,
-        "code": 7973,
+        "lines": 10670,
+        "code": 7978,
         "max_line": 342,
         "max_function": 119
       },

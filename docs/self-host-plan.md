@@ -15,9 +15,10 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-146-2026-11-21)
+- [Status at a glance](#status-at-a-glance-session-147-2026-11-21)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
+- [Session 147 — non-text receiver completion and extension activation](#session-147--non-text-receiver-completion-and-extension-activation)
 - [Session 146 — output diagnostics: caret length and warning anchors](#session-146--output-diagnostics-caret-length-and-warning-anchors)
 - [Session 145 — LSP conformance and protocol work (phases 0–5)](#session-145--lsp-conformance-and-protocol-work-phases-05)
 - [Session 144 — LSP conformance audit and enhancement plan](#session-144--lsp-conformance-audit-and-enhancement-plan)
@@ -93,7 +94,7 @@ history.
 - [Session 74 — decisions closed](#session-74--decisions-closed)
 - [Session 73 — the `mtc test` CLI matrix](#session-73--the-mtc-test-cli-matrix)
 - [Session 72 — the `check`/analyzer surface](#session-72--the-checkanalyzer-surface)
-- [Handoff](#handoff-session-146)
+- [Handoff](#handoff-session-147)
 - [How to start a work session](#how-to-start-a-work-session)
 - [The program — tracks and stopping rules (all tracks closed)](#the-program--tracks-and-stopping-rules-all-tracks-closed)
 - [Deliberate differences (do not chase)](#deliberate-differences-do-not-chase)
@@ -102,7 +103,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 146, 2026-11-21)
+## Status at a glance (session 147, 2026-11-21)
 
 | Area | State |
 | --- | --- |
@@ -111,20 +112,20 @@ history.
 | Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`b29241f4…`, release); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
 | Release archive | **3.52 MiB deterministic tar.gz** (`mtc-0.4.26-linux-x86_64`), checksummed beside the archive; identical across two packagings of the same inputs; clean-path smoke (std build/run, LSP initialize, docs page/CSS/JS/404) green; the version is the authored `cli_help.VERSION` |
 | Analyzer memory | `check main.mt` **712 MiB / 6.6 s** (was 9,228 MiB / ~58 s); `lowering.mt` **274 MiB** (was 2,322 MiB).  All tooling fan-out is capped at **4**, so the worst 4-way sweep is ~3 GiB (session 142) |
-| `test/mt` | **85 files / 0 failed** (62 in-language tests + 23 compile-fail diagnostics fixtures; session 146 replayed); peak RSS **135 MB** under the region-scoped test compiler |
+| `test/mt` | **85 files / 0 failed** (62 in-language tests + 23 compile-fail diagnostics fixtures; session 147 replayed); peak RSS **135 MB** under the region-scoped test compiler |
 | Examples | **49/49 build** under the self-only `emit-c` gate (15 top-level + `examples/sdl3` 34/34; session 143; was host-compared 49/49 in session 141) |
 | Recorded oracles | **CLI 227/227 cases; diagnostics 504 files / 0 differ; lint 673 files / 0 differ; formatter 775 files × 3 modes / 0 differ** — digest-keyed and replayed green with no host source present (session 146 refreshed the diag, CLI, lint and formatter fixtures for the output-diagnostic fixes and stale session-145 rows) |
 | `check` diagnostics | the 504-file diagnostic oracle is the gate; the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field anchor is a reviewed difference, not a residual (session 146). |
 | Linter | **43/43 rules, 13/13 fixers**; the 673-file lint oracle is the corpus gate (the live host-diff corpus is retired).  The historical residue (3 self-only `std` files, the host-timeout rows) is recorded in *Deliberate differences*. |
-| LSP | self-only instruments: valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class on `analyzer.mt`; soak **68.9 KB/cycle raw / 5.7 LS at 200 cycles** (session 145; no positive slope); `milkTea/debugInfo` byte-equal on the recorded fixtures.  The host-differential harness/audit/recovery probes are retired with the host; `lsp_parity record --server self` and `lsp_soak` remain |
-| LSP conformance | **phases 0–5 landed (session 145)**: `tools/lsp_conformance.rb`, **35 spec cases, 35 pass / 0 fail**; the `lsp_conformance` tier-2 gate is green.  Coverage 42/54 requests, 30 capability keys; rangesFormatting, refresh endpoints and progress/partial results are implemented; only the deliberately skipped editor features remain out of scope.  Plan and evidence: `docs/lsp-enhancement-plan.md` |
+| LSP | self-only instruments: valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class on `analyzer.mt`; soak **76.0 KB/cycle raw / 42.7 LS at 200 cycles** (session 147; no positive slope); `milkTea/debugInfo` byte-equal on the recorded fixtures.  Completion after a non-text receiver (`read(p).`, `make().`, `arr[0].`) landed in session 147.  The host-differential harness/audit/recovery probes are retired with the host; `lsp_parity record --server self` and `lsp_soak` remain |
+| LSP conformance | **phases 0–5 + the session-147 completion extension**: `tools/lsp_conformance.rb`, **36 spec cases, 36 pass / 0 fail**; the `lsp_conformance` tier-2 gate is green.  Coverage 43/54 requests, 30 capability keys; rangesFormatting, refresh endpoints, progress/partial results and non-text receiver completion are implemented; only the deliberately skipped editor features remain out of scope.  Plan and evidence: `docs/lsp-enhancement-plan.md` |
 | DAP | self-only `dap_smoke`: all probes answer, the real lldb-dap breakpoint session reaches `add` and terminates; `dap_async_probe` proves the VS Code launch ordering; desktop F5 smoke passed session 74 |
 | Formatter | **775 files × 3 modes** (`:canonical`, `:preserve`, `:tidy`) replay from the digest-keyed oracle; counts drift with the tree |
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check` (the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 17.1 s** and full `build` 32.7 s (session 72; the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 169 files / 127,752 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **32 unused + 6 test-only** public declarations; 6,470 duplicated lines / 896 clusters; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 146 for the warning-anchor logic and a shifted dead-export key) |
+| **Refactoring safety** | structural guard: 169 files / 127,821 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **32 unused + 6 test-only** public declarations; 6,470 duplicated lines / 896 clusters; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 147 for the completion extension) |
 
 Rough completion against the per-track Definition of Done: **~100%**, now
 against the archived host record rather than a live reference.  The
@@ -141,8 +142,10 @@ all three are differences from a retired host and are re-adjudicated on merit
 as they are touched.  The CLI caret length, the five zero-column linter
 warnings and the unreachable expression anchor were fixed in session 146.  The
 constructor-field anchor keeps the construction column by design (the host's
-declaration anchor is less precise), and the optional desktop F5 smoke remains
-an extension-repo item.
+declaration anchor is less precise).  Session 147 landed the non-text receiver
+completion extension and the extension activation event; no open compiler or
+LSP item remains.  The desktop F5 click-through is an optional manual step, not
+a tracked defect.
 
 ## Host retirement program
 
@@ -365,6 +368,46 @@ on the fixed compiler and replay with no skips, including with `lib/` moved
 aside; `test/mt` 85/0, `cli:parity` 227/227, `diag_parity` 501/0/0/3 of 504,
 docs smoke host+self ok, and the guard ratchet after a reviewed baseline
 refresh (126,602 code lines).
+
+## Session 147 — non-text receiver completion and extension activation
+
+Closed the two optional items from the session-146 handoff.
+
+**Completion after a non-text receiver.**  A trailing dot (`read(p).`,
+`make().`, `arr[0].`) was a parse error that discarded the receiver (the
+initializer became an `ErrorExpr`), so no analyzer fact existed and completion
+fell back to the global bucket.  `parse_postfix` now reports the same error but
+recovers with an empty-name `MemberAccess` carrying the receiver: it reports,
+advances to the sync point, builds the node, then rewinds to the dot/error
+token and clears the panic so the enclosing statement keeps the node instead
+of substituting its `ErrorExpr`.  `resolve_member_access` treats an empty member
+as an incomplete access: it infers the receiver, records
+`member_receiver_types` at the dot (the hover fact), and returns without a
+member check.
+
+Completion looks up that fact at the dot (or the typed member's start) and
+answers fields/methods from the receiver type when the text chain cannot
+resolve it; a type receiver (`Type[...]`, `alias.Type`) keeps its static-member
+path via `type_receiver_known`.  `typed_receiver_completions` factors the
+imported → value → method-fallback chain shared with the text receiver path.
+The new conformance case `completion/incomplete-dot-receiver` covers a call, a
+plain value, an index expression and a type receiver; the in-language
+`test_incomplete_dot_records_non_text_receiver_type` pins the analyzer fact and
+the typed completion output.
+
+**Extension activation.**  `bindings/vscode/package.json` now activates on
+`onLanguage:milk-tea` as well as `onDebug:milk-tea`.  The extension source lives
+in this repo under `bindings/vscode` (`dist/` and the `.vsix` are gitignored
+build artifacts), so the earlier "separate repo" note was stale.
+
+**Verification.**  Full bootstrap fixed point + **22/0**; dev suite **22/0**;
+`test/mt` **85/0**; LSP conformance **36/36**; valgrind **0 errors**; soak
+**76.0 KB/cycle raw / 42.7 LS** at 200 cycles; CLI **227/227**, diagnostics
+**504/0**, lint **673/0**, formatter **775×3/0** (lint/format re-recorded for
+the changed compiler sources); guard `--check --strict --ratchet` after the
+reviewed baseline refresh (**127,821** code lines; 6,470 duplicated / 896
+clusters; 32 unused + 6 test-only; tests 22/85).  The parser recovery keeps one
+parse error per trailing dot, so the CLI and diagnostics goldens are unchanged.
 
 ## Session 146 — output diagnostics: caret length and warning anchors
 
@@ -3525,6 +3568,25 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
+## Handoff (session 147)
+
+**Next session:** no open compiler or LSP item remains.  The host is retired,
+the four recorded oracles and the LSP conformance gate are green, and the two
+optional session-146 items (non-text receiver completion and the extension
+activation event) are closed.  Reopen only for a real defect: the documented
+host-difference residuals are re-adjudicated on merit, and the desktop F5
+click-through is an optional manual smoke.
+
+**Baseline:** dev suite **22/0**; bootstrap fixed point + **22/0**; `test/mt`
+**85/0**; LSP conformance **36/36**; valgrind **0 errors**; soak **76.0
+KB/cycle raw / 42.7 LS**; goldens CLI **227/227**, diagnostics **504/0**, lint
+**673/0**, formatter **775×3/0**; guard **127,821** code lines.
+
+**Session 147's instruments:** `ruby tools/lsp_conformance.rb --bin
+build/stage2/mtc` (36 cases) is the spec gate; `tools/gates.sh --areas lsp
+--run` covers it with valgrind and soak.  The parser recovery is covered by
+`test/mt` and the CLI parse-error rows.
+
 ## Handoff (session 146)
 
 **Next session:** the output-diagnostic batch is closed.  The CLI caret now
@@ -3876,15 +3938,17 @@ the ledger's baselines unless the tree moved.**
 
 ### Open items, in priority order
 
-1. **LSP enhancement — CLOSED (session 145: phases 0–5).**  The audit found
-   42/54 client→server requests and 30 capability keys implemented.  Phases 1–5
-   closed the UTF-16 position defect, `quickfix` spelling, completion resolve,
-   lifecycle/cancel, publish version, `willRenameFiles`, multi-root,
-   watched-file registration, workspace-diagnostic scope/refresh,
-   rangesFormatting, refresh requests and progress/partial results.  The
-   `lsp_conformance` spec gate is **35/35 green**.  Only the deliberately
-   skipped editor features remain out of scope; the plan is in
-   `docs/lsp-enhancement-plan.md`.
+1. **LSP enhancement — CLOSED (sessions 145/147: phases 0–5 + completion).**
+   The audit found 42/54 client→server requests and 30 capability keys
+   implemented.  Phases 1–5 closed the UTF-16 position defect, `quickfix`
+   spelling, completion resolve, lifecycle/cancel, publish version,
+   `willRenameFiles`, multi-root, watched-file registration,
+   workspace-diagnostic scope/refresh, rangesFormatting, refresh requests and
+   progress/partial results.  Session 147 added non-text receiver completion
+   (`read(p).`, `make().`, `arr[0].`), bringing the coverage to 43/54.  The
+   `lsp_conformance` spec gate is **36/36 green**.
+   Only the deliberately skipped editor features remain out of scope; the plan
+   is in `docs/lsp-enhancement-plan.md`.
 2. **Host retirement — CLOSED (session 143).**  Phases 0–4 are done: the seed
    is the only stage0, the guard lives in `tools/lib/`, the recorded oracles
    replay with no host source present, the release path is deterministic, and
@@ -3904,16 +3968,19 @@ the ledger's baselines unless the tree moved.**
 5. **Earlier LSP follow-ups (sessions 134–140) — CLOSED.**  Hover latency is
    2.0–7.7 ms on `analyzer.mt`, call/index receivers resolve, and the earlier
    hover/completion/rename gaps are fixed.  Completion after a non-text
-   receiver (`read(p).|`) remains unextended and is folded into the enhancement
-   plan rather than tracked separately.
+   receiver (`read(p).|`) was the last open follow-up and landed in session 147
+   (call, index and trailing-dot receivers; type receivers keep the static
+   path).
 6. **Track G follow-ups are recorded, not pending.**  The post-fix profile is
    flat; `String.as_str()`'s per-call UTF-8 revalidation (~7%) is a documented
    invariant, and the ~2% scans are over small collections.  Reopen only with a
    fresh `perf record` showing a hotspot.
 7. **No manual items remain.**  The desktop F5 click-through passed (session
-   74); it found an extension-packaging defect: `activationEvents:
-   ["onDebug:milk-tea"]` is ignored by VS Code 1.146, so the extension should
-   add `onLanguage:milk-tea` in the extension repo.  The LSP ref-lifetime and
+   74).  Its extension-packaging defect — `activationEvents:
+   ["onDebug:milk-tea"]` alone is not enough for VS Code 1.146 — is fixed in
+   session 147 by adding `onLanguage:milk-tea` to
+   `bindings/vscode/package.json` (the extension source is in this repo; the
+   `.vsix` is a local build artifact).  The LSP ref-lifetime and
    imported-member-location decisions are closed.
 
 **Do not chase** the archived host differences — the `lower` artifacts, the old
@@ -4094,10 +4161,10 @@ recorded oracles (tools/golden/{cli,diag,lint,format}.json). New work lands in
 projects/mtc and std/ only, and correctness is the language manual + the
 suite, not host byte-identity.
 
-Start from this file's Handoff, Status at a glance and Ledger. No compiler
-defect is pending: the output-diagnostic batch closed in session 146. The
-remaining optional items are completion after a non-text receiver and the
-extension-repo `activationEvents` fix. Work in tiers:
+Start from this file's Handoff, Status at a glance and Ledger. No open
+compiler or LSP item remains: the output-diagnostic batch closed in session
+146, and session 147 closed non-text receiver completion and the extension
+activation event. Work in tiers:
 build the dev compiler with the seed
 ("$(tools/bootstrap.sh --print-stage0)" build projects/mtc -I . --no-cache -o
 tmp/mtc-dev, ~25 s), run tmp/mtc-dev test projects/mtc -I . --timeout 120,
@@ -4715,7 +4782,7 @@ historical record.
 | bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed**; a `ruby` shim that exits 127 is never invoked | session 146 (replayed) | `tools/bootstrap.sh -j 4` |
 | bootstrap seed | `vendor/bootstrap/linux-x86_64/mtc`, release stage2, 6,289,144 B, sha256 `b29241f4…`; the only stage0 | session 142 | `tools/bootstrap.sh --print-stage0` |
 | fresh-clone gate | a `git clone` + `third_party/` (no `build/`, `tmp/`, `lib/`): a `ruby` shim that exits 127 is never invoked; fixed point + 22/0; `test/mt` 85/0; goldens 227 / 504 / 672 / 774×3 | session 143 | `git clone`, symlink/copy `third_party/`, `tools/bootstrap.sh -j 4` |
-| `test/mt` | **85 files / 0 failed** (62 in-language + 23 compile-fail diagnostics fixtures); peak RSS 135 MB | session 146 (replayed) | `build/stage2/mtc test test/mt -I .` |
+| `test/mt` | **85 files / 0 failed** (62 in-language + 23 compile-fail diagnostics fixtures); peak RSS 135 MB | session 147 (replayed) | `build/stage2/mtc test test/mt -I .` |
 | output diagnostics | caret `^` + `~` per `length`; five linter anchors (duplicate condition, `else`, loop, null-check condition span, unreachable expression fallback) pinned by in-language spans | session 146 | `tmp/mtc-dev test projects/mtc -I . --timeout 120`; `ruby tools/refactor_guard.rb --check --strict --ratchet` |
 | examples | **49/49 build** under the self-only `emit-c` gate (15 top-level + 34 sdl3) | session 143 | `tools/gates.sh --areas examples --run` |
 | recorded CLI oracle | **227/227 cases**, host-free | session 146 (replayed) | `ruby tools/cli_parity.rb --expect tools/golden/cli.json -q` |
@@ -4724,14 +4791,15 @@ historical record.
 | recorded formatter oracle | **775 files × 3 modes / 0 differ** (`changed=0`, `unrecorded=0`) | session 146 (replayed) | `ruby tools/format_parity.rb all -j 4 --expect tools/golden/format.json -q` |
 | wasm preview | self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 71 (tool now self-only) | `ruby tools/wasm_smoke.rb --self build/stage2/mtc` |
 | docs server | self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 71 (tool now self-only) | `ruby tools/docs_smoke.rb --self build/stage2/mtc` |
-| LSP instruments | valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class; soak **68.9 KB/cycle raw / 5.7 LS** at 200 cycles (session 145; no positive slope); `debugInfo` byte-equal | sessions 135/140/145 (self-only) | `tools/gates.sh --areas lsp --only valgrind_lsp,soak --run`; `ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json` |
-| LSP spec conformance | **phases 0–5: 35 cases, 35 pass / 0 fail**; gate green; all protocol, workspace, pull-diagnostic, formatting-range, refresh and progress/partial cases green; coverage 42/54 requests, 30 capability keys; plan in `docs/lsp-enhancement-plan.md` | session 145 | `ruby tools/lsp_conformance.rb --bin build/stage2/mtc` |
+| LSP instruments | valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class; soak **76.0 KB/cycle raw / 42.7 LS** at 200 cycles (session 147; no positive slope); `debugInfo` byte-equal | sessions 135/140/145/147 (self-only) | `tools/gates.sh --areas lsp --only valgrind_lsp,soak --run`; `ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json` |
+| LSP spec conformance | **phases 0–5 + completion: 36 cases, 36 pass / 0 fail**; gate green; all protocol, workspace, pull-diagnostic, formatting-range, refresh, progress/partial and non-text receiver completion cases green; coverage 43/54 requests, 30 capability keys; plan in `docs/lsp-enhancement-plan.md` | session 147 | `ruby tools/lsp_conformance.rb --bin build/stage2/mtc` |
 | DAP | self-only smoke: every probe answers; real lldb-dap reaches the `add` breakpoint and terminates; async launch-order probe green | session 143 (adapted) | `ruby tools/dap_smoke.rb`; `ruby tools/dap_async_probe.rb` |
 | imported bindings | **29 verified / 0 changed of 29** (native check; the host parity report is retired) | session 72 (native) | `build/stage2/mtc imported-bindings --all --check` |
 | throughput | `emit-c` **17.1 s**, full `build` **32.7 s**, `bootstrap --fast` **2.6 min** (session 72; the archived host measured 54.3 s / 76.3 s) | session 72 | time `build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .` |
 | analyzer memory | `check main.mt` **712 MiB / 6.6 s**; `lowering.mt` **274 MiB**; fan-out capped at 4 | session 142 | `time build/stage2/mtc check projects/mtc/src/mtc/main.mt` |
 | release archive | 3.52 MiB deterministic `mtc-0.4.26-linux-x86_64.tar.gz`, checksummed; clean-path smoke green | session 142 | `tools/release.sh --skip-build`; `tools/release_smoke.sh` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 32 unused / 6 test-only exports; 6,470 duplicated lines / 896 clusters; 1 function ≥ 200 lines (`binding_at`); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 146 (baseline refreshed for the warning-anchor logic and a shifted dead-export key) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 32 unused / 6 test-only exports; 6,470 duplicated lines / 896 clusters; 1 function ≥ 200 lines (`binding_at`); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 147 (baseline refreshed for the completion extension) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| extension activation | `bindings/vscode/package.json` activates on `onLanguage:milk-tea` and `onDebug:milk-tea`; `dist/` and `.vsix` are local artifacts | session 147 | `git show HEAD:bindings/vscode/package.json` |
 
 ## Porting notes
 

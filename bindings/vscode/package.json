@@ -25,7 +25,8 @@
     "mt"
   ],
   "activationEvents": [
-    "onDebug:milk-tea"
+    "onDebug:milk-tea",
+    "onLanguage:milk-tea"
   ],
   "main": "./dist/extension.js",
   "contributes": {

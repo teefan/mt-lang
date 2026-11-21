@@ -9473,6 +9473,14 @@ function imported_method_return_type(ctx: ref[Context], recv: types.Type, member
 ## is a static member access (validate against members/arms/methods); anything
 ## else is an instance access (struct field/method or permissive).
 function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+    if member.len == 0:
+        # An incomplete dot access (`read(p).`): the parser recovered with an
+        # empty member name.  Record the receiver's type at the dot for the
+        # LSP completion fallback and suppress the member check.
+        let recv_ty = infer_expr(ctx, scope, receiver)
+        if not receiver_is_text_chain(receiver):
+            ctx.member_receiver_types.set(binding_key(line, column), recv_ty)
+        return types.Type.ty_error
     # An instantiated imported receiver resolves the member against the binding
     # with the type arguments substituted.
     match specialization_imported_receiver(ctx, scope, receiver):
