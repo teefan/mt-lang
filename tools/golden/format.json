@@ -1866,8 +1866,8 @@
           "sha256": "f845f8af78e8d45e0ce5ba1f2ec0edcad66b3dcd8f23c6b5abf0788f3811bb72"
         },
         "projects/mtc/src/mtc/semantic/analyzer.mt": {
-          "digest": "32f66cc26b9876ddc0aff11ec9f4cd182f730e1e2adc749651f7ba5b51920fef",
-          "sha256": "10f34bbebf235a56e21dd2e04569394988a6eb7d0389cd9875a75349adcdbc72"
+          "digest": "9903abef92a622166d0dcf2abdb05b08ace7f62bf91781c4d3c267823532d0ea",
+          "sha256": "304a1b03623629289775fffbe9f907f9ce7d20b28fa24426c06d031cf58a3a91"
         },
         "projects/mtc/src/mtc/semantic/control_flow/builder.mt": {
           "digest": "483061fc0f76335c80a09135fea81188ff0b1b4287b016b173c5df032a9b2114",
@@ -4968,8 +4968,8 @@
           "sha256": "7ed3d2e98ffcbeedf0197e5fb05a140c3ec424d072f30c5a167222ecc545c328"
         },
         "projects/mtc/src/mtc/semantic/analyzer.mt": {
-          "digest": "32f66cc26b9876ddc0aff11ec9f4cd182f730e1e2adc749651f7ba5b51920fef",
-          "sha256": "fb4100d9e2a32ce417a77bef0cca1598101e8bdeac54e840bbfec0b12ae06d99"
+          "digest": "9903abef92a622166d0dcf2abdb05b08ace7f62bf91781c4d3c267823532d0ea",
+          "sha256": "7b917d47f9fc13f8f152cf0f54151d4b33c3fc679d9f35ef37e8f3a0d2d14d47"
         },
         "projects/mtc/src/mtc/semantic/control_flow/builder.mt": {
           "digest": "483061fc0f76335c80a09135fea81188ff0b1b4287b016b173c5df032a9b2114",
@@ -8070,8 +8070,8 @@
           "sha256": "7f0ac5665f6f4e367501bfd1106f74b4a606109c239476f450a28c2e7f432e40"
         },
         "projects/mtc/src/mtc/semantic/analyzer.mt": {
-          "digest": "32f66cc26b9876ddc0aff11ec9f4cd182f730e1e2adc749651f7ba5b51920fef",
-          "sha256": "cf1fc34cbecfb7f2012398c9f19534eafd94f68d9261f5e713e3af440fb1cdf3"
+          "digest": "9903abef92a622166d0dcf2abdb05b08ace7f62bf91781c4d3c267823532d0ea",
+          "sha256": "3f1ca32cad02e4ac12be1116b433fbd6cec0097a387e4c3dc5fb124392f72451"
         },
         "projects/mtc/src/mtc/semantic/control_flow/builder.mt": {
           "digest": "483061fc0f76335c80a09135fea81188ff0b1b4287b016b173c5df032a9b2114",

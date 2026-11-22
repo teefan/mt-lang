@@ -678,7 +678,11 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         module_kind = file.module_kind,
         imported_modules = stable_imported_modules,
         unsafe_statement_lines = required_unsafe_line_list(ref_of(ctx)),
-        imported_type_members = collect_imported_type_members(ref_of(ctx)),
+        # Imported type members are read only by the linter and the LSP
+        # (completion, inlay hints, navigation) - never by lowering or the C
+        # backend - so a plain compile leaves the map empty instead of
+        # collecting ~29 MB of records per module graph.
+        imported_type_members = if ctx.tooling_facts: collect_imported_type_members(ref_of(ctx)) else: map_mod.Map[str, ImportedTypeMembers].create(),
         uses_parallel_for = ctx.uses_parallel_for,
         declared_attributes = ctx.declared_attributes,
         imports = ctx.import_aliases,

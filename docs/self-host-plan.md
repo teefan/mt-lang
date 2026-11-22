@@ -552,6 +552,42 @@ a deliberate structural cost of boxing — the refreshed baseline records it.
 (2 functions ≥ 200 lines — the pre-existing `binding_at` exception — and the
 duplication baseline carries the deref idiom).
 
+### Re-profile: `TypeId` is not worth it; the analyzer builds tooling-only facts
+
+Before starting the planned `TypeId` handle, a live-heap profile (Massif, *not*
+`--pages-as-heap`, which counts reserved pages and reported a misleading
+1,034 MB) put the `lower main.mt` peak at **834.6 MB live** (HWM 957 MiB, the
+difference being allocator fragmentation).  The breakdown:
+
+| Live at peak | Share |
+| --- | --- |
+| `String` buffers (`ubyte` growth) | 109.5 MB (13.1%) |
+| `Vec[Type]` growth | 82.3 MB (9.9%) |
+| `ir.Expr` nodes | 50.6 MB (6.1%) |
+| `ir.Stmt` growth | 47.9 MB (5.7%) |
+| `resolved_expr_types` map | 37.5 MB (4.5%) |
+| `imported_type_members` map | 29.2 MB (3.5%) |
+| `functions` (`FnSig`) map | 23.1 MB (2.8%) |
+
+Against those numbers `TypeId` would save only **~40 MB (4.8%)** — 14 MB of
+`ir.Expr`, 10 MB of `ir.Stmt`, 16 MB of the map — for ~3,000 call-site edits.
+With `Type` already at 24 B it is no longer the best lever, so the handle stays
+unstarted.
+
+The profile instead surfaced a **plain defect**: `imported_type_members` was
+collected on *every* compile, but only the linter and the LSP ever read it
+(`prefer-struct-with`, completion, inlay hints, navigation) — lowering and the C
+backend never touch it.  Session 149's `tooling_facts` switch exists for exactly
+this, so the map is now built behind it:
+`imported_type_members = if ctx.tooling_facts: collect… else: <empty map>`.
+
+`check` **526 → 421 MiB** (−20%), `lower` **980 → 865 MiB** (−12%), `emit-c`
+**1,027 → 910 MiB** (−11%).  `lint` already ran with `tooling_facts` off, so
+`prefer-struct-with` never fired there before this change either (verified with
+a probe on both sides); the linter's `--fix` path and the LSP keep facts on and
+are unaffected — LSP conformance stays **37/37** and `lsp_parity` records **88
+requests** with zero timeouts.
+
 ## Session 149 — whole-program memory reduction
 
 Committed `01a5408` (16 files).  Session 142 removed the analyzer's const-map
