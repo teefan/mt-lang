@@ -602,18 +602,10 @@ public function check_module_requiring_resolved_imports(file: ast.SourceFile, im
 
 
 public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?, module_name: str, source_path: str, require_resolved_imports: bool) -> Analysis:
-    # The loader's import map is a stack local that is intentionally leaked but
-    # not address-stable after `check_program` returns.  Store a stable shallow
-    # copy (the table itself is heap-owned and leaked) so a later re-analysis
-    # (the fix engine) can reuse the imports.
-    var stable_imported_modules = imported_modules
-    if imported_modules != null:
-        var stable: ptr[map_mod.Map[str, ModuleBinding]]
-        unsafe:
-            stable = ptr[map_mod.Map[str, ModuleBinding]]<-heap.must_alloc[map_mod.Map[str, ModuleBinding]](1)
-            read(stable) = read(imported_modules)
-        stable_imported_modules = stable
-
+    # The caller owns the import table and must keep it address-stable for as
+    # long as the analysis lives (the loader heap-allocates it and the fix
+    # engine reuses it).  Copying the map here would snapshot its bucket array,
+    # which `set` frees when the table grows.
     var ctx = create_context(module_name, imported_modules, require_resolved_imports)
     let source = expand_emit_declarations(file)
     collect_import_aliases(ref_of(ctx), source)
@@ -676,7 +668,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         const_values = ctx.const_values,
         module_name = module_name,
         module_kind = file.module_kind,
-        imported_modules = stable_imported_modules,
+        imported_modules = ctx.imported_modules,
         unsafe_statement_lines = required_unsafe_line_list(ref_of(ctx)),
         # Imported type members are read only by the linter and the LSP
         # (completion, inlay hints, navigation) - never by lowering or the C

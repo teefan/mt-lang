@@ -790,6 +790,18 @@ function push_non_cycle_deps(index: ptr_uint, cycle_members: ref[map_mod.Map[ptr
         i += 1
 
 
+## The program's import-binding table, heap-allocated so the pointer is stable
+## for the whole compilation.  Each `Analysis` retains this pointer for later
+## re-analysis (the fix engine) and the linter resolves imported members
+## through it, so it must never be copied: a by-value `Map` is a snapshot of
+## the bucket array, which `set` frees once the table grows.
+function create_shared_bindings() -> ptr[map_mod.Map[str, analyzer.ModuleBinding]]:
+    let bindings_ptr = heap.must_alloc[map_mod.Map[str, analyzer.ModuleBinding]](1)
+    unsafe:
+        read(bindings_ptr) = map_mod.Map[str, analyzer.ModuleBinding].create()
+    return bindings_ptr
+
+
 ## Analyse a module and build its export binding inside `region_ptr` (or on the
 ## ordinary heap when it is null), without emitting diagnostics or registering
 ## the binding.  Cycle passes use this for their provisional and final analyses.
@@ -1233,8 +1245,7 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
     # so a module's imports are already bound before it is checked.  (Per the
     # analyzer's arena-leak convention, transient bindings are intentionally
     # not released at program end.)
-    var bindings = map_mod.Map[str, analyzer.ModuleBinding].create()
-    let bindings_ptr = ptr_of(bindings)
+    let bindings_ptr = create_shared_bindings()
 
     # Retained per-module analyses, pushed in dependency-first order so the root
     # module is the last entry.  Consumed by the Lowering stage; intentionally

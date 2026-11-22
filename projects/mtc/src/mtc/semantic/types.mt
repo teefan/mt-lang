@@ -504,66 +504,61 @@ public function type_to_diagnostic_string(t: Type) -> str:
 ## argument is rendered the same way.  `type_to_string` is the *display* form
 ## (module dropped) used by the LSP and diagnostics, so the IR dump — which the
 ## host produces from `to_s` — needs this variant.
-public function type_to_qualified_string(t: Type) -> str:
+##
+## The IR formatter writes straight into its output buffer; that is the only
+## caller, so there is no string-returning wrapper.
+public function append_qualified_type(target: ref[string.String], t: Type) -> void:
     match t:
         Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
             if n_np.module_name.len > 0:
-                var b = string.String.create()
-                b.append(n_np.module_name)
-                b.append(".")
-                b.append(n_np.name)
-                return b.as_str()
-            return n_np.name
+                target.append(n_np.module_name)
+                target.append(".")
+                target.append(n_np.name)
+                return
+            target.append(n_np.name)
         Type.ty_opaque as o:
             let o_bp = unsafe: read(o.payload)
             if o_bp.module_name.len > 0:
-                var b = string.String.create()
-                b.append(o_bp.module_name)
-                b.append(".")
-                b.append(o_bp.name)
-                return b.as_str()
-            return o_bp.name
+                target.append(o_bp.module_name)
+                target.append(".")
+                target.append(o_bp.name)
+                return
+            target.append(o_bp.name)
         Type.ty_imported as im:
             let im_bp = unsafe: read(im.payload)
-            var b = string.String.create()
             if im_bp.module_name.len > 0:
-                b.append(im_bp.module_name)
-                b.append(".")
-            b.append(im_bp.name)
+                target.append(im_bp.module_name)
+                target.append(".")
+            target.append(im_bp.name)
             if im_bp.args.len > 0:
-                b.append("[")
+                target.append("[")
                 var i: ptr_uint = 0
                 while i < im_bp.args.len:
                     if i > 0:
-                        b.append(", ")
+                        target.append(", ")
                     unsafe:
-                        b.append(type_to_qualified_string(read(im_bp.args.data + i)))
+                        append_qualified_type(target, read(im_bp.args.data + i))
                     i += 1
-                b.append("]")
-            return b.as_str()
+                target.append("]")
         Type.ty_nullable as nl:
-            var b = string.String.create()
             unsafe:
-                b.append(type_to_qualified_string(read(nl.base)))
-            b.append("?")
-            return b.as_str()
+                append_qualified_type(target, read(nl.base))
+            target.append("?")
         Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
-            var b = string.String.create()
-            b.append(g_bp.name)
-            b.append("[")
+            target.append(g_bp.name)
+            target.append("[")
             var i: ptr_uint = 0
             while i < g_bp.args.len:
                 if i > 0:
-                    b.append(", ")
+                    target.append(", ")
                 unsafe:
-                    b.append(type_to_qualified_string(read(g_bp.args.data + i)))
+                    append_qualified_type(target, read(g_bp.args.data + i))
                 i += 1
-            b.append("]")
-            return b.as_str()
+            target.append("]")
         _:
-            return type_to_string(t)
+            target.append(type_to_string(t))
 
 
 public function type_to_string(t: Type) -> str:

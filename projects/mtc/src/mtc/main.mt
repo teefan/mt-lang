@@ -2542,10 +2542,7 @@ function lower_one_path(path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[
         entry_path_owner.release()
         source_root_owner.release()
         return 0
-    var rendered = ir_formatter.format_program(ir_program)
-    defer: rendered.release()
-    let text = rendered.as_str()
-    stdio.print_format(c"%.*s", int<-(text.len), text.data)
+    ir_formatter.write_program(ir_program)
     entry_path_owner.release()
     source_root_owner.release()
     return 0

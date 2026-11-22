@@ -4107,14 +4107,64 @@ function prefer_struct_with_fields(analysis: ref[analyzer.Analysis], ty: types.T
             let im_bp = unsafe: read(im.payload)
             if im_bp.args.len > 0:
                 return Option[span[analyzer.FieldEntry]].none
-            var key = string.String.create()
-            defer: key.release()
-            key.append(im_bp.module_name)
-            key.append(".")
-            key.append(im_bp.name)
-            let mp = unsafe: read(analysis).imported_type_members.get(key.as_str()) else:
+            return prefer_struct_with_binding_fields(im_bp.module_name, im_bp.name)
+        _:
+            return Option[span[analyzer.FieldEntry]].none
+
+
+## An imported type's struct fields, resolved through the loader's binding
+## table.  This deliberately does not read `Analysis.imported_type_members`:
+## that map is collected only when `tooling_facts` is on (the LSP), so a plain
+## `check` or `lint` leaves it empty and the rule would silently stop firing.
+##
+## A re-exported struct carries the alias module and name
+## (`std.raylib.Vector3` aliasing `std.c.raylib.Vector3`), so an alias is
+## followed to the binding that declares the struct.  The alias wins over a
+## same-named struct or union, matching the order the map was built in.
+function prefer_struct_with_binding_fields(module_name: str, type_name: str) -> Option[span[analyzer.FieldEntry]]:
+    let ap = lint_analysis else:
+        return Option[span[analyzer.FieldEntry]].none
+    let analysis = unsafe: ref_of(read(ap))
+    let bindings = unsafe: read(analysis).imported_modules else:
+        return Option[span[analyzer.FieldEntry]].none
+    let binding_ptr = unsafe: read(bindings).get(module_name) else:
+        return Option[span[analyzer.FieldEntry]].none
+    # Read every table through the binding pointer: a `ModuleBinding` is a by-value
+    # struct of maps, and copying it would make each map lookup read a stale copy.
+    unsafe:
+        let alias_ptr = read(binding_ptr).type_alias_types.get(type_name)
+        if alias_ptr != null:
+            return prefer_struct_with_alias_fields(bindings, read(alias_ptr), module_name)
+        let struct_ptr = read(binding_ptr).structs.get(type_name)
+        if struct_ptr != null:
+            return Option[span[analyzer.FieldEntry]].some(value = read(struct_ptr))
+        let union_ptr = read(binding_ptr).unions.get(type_name)
+        if union_ptr != null:
+            return Option[span[analyzer.FieldEntry]].some(value = read(union_ptr))
+    return Option[span[analyzer.FieldEntry]].none
+
+
+## The struct fields a type alias resolves to: an imported target resolves in
+## its own binding, a plain name in the alias' module.  An alias to anything
+## else (a proc, a primitive, a generic instance) has no struct fields.
+function prefer_struct_with_alias_fields(bindings: ptr[map_mod.Map[str, analyzer.ModuleBinding]], target: types.Type, alias_module: str) -> Option[span[analyzer.FieldEntry]]:
+    match target:
+        types.Type.ty_imported as tim:
+            let tim_bp = unsafe: read(tim.payload)
+            let target_ptr = unsafe: read(bindings).get(tim_bp.module_name) else:
                 return Option[span[analyzer.FieldEntry]].none
-            return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(mp).fields)
+            let fp = unsafe: read(target_ptr).structs.get(tim_bp.name) else:
+                return Option[span[analyzer.FieldEntry]].none
+            return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(fp))
+        types.Type.ty_named as tn:
+            let tn_np = unsafe: read(tn.payload)
+            if not tn_np.module_name.equal(alias_module):
+                return Option[span[analyzer.FieldEntry]].none
+            let target_ptr = unsafe: read(bindings).get(alias_module) else:
+                return Option[span[analyzer.FieldEntry]].none
+            let fp = unsafe: read(target_ptr).structs.get(tn_np.name) else:
+                return Option[span[analyzer.FieldEntry]].none
+            return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(fp))
         _:
             return Option[span[analyzer.FieldEntry]].none
 
