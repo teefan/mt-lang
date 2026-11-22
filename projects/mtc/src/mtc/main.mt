@@ -1019,16 +1019,37 @@ struct CheckFileResult:
 
 ## A per-file heap region for the commands that process several sources.
 ## A region is a bump allocator: it frees everything at once and cannot reuse
-## memory released inside it.  For a single file that is a pure loss (the
-## abandoned temporaries land in the peak — measured ~2x on `main.mt`), so the
-## region is activated only when the command has more than one file.  There it
-## is what keeps the peak flat: without it each file's AST, analyses and
-## import bindings stayed live until process exit (~34 MB per file, which made
-## `check` over the compiler tree grow to 15.2 GB).
+## memory released inside it, so a file's transient garbage lands in the peak.
+## Without it each file's AST, analyses and import bindings stayed live until
+## process exit (~32 MB per file measured, which made `check` over the compiler
+## tree grow to 15.2 GB).
 struct FileRegion:
     region: heap.Region
     previous: ptr[heap.Region]?
     active: bool
+
+
+## Whether one file's compile gets its own heap region.
+##
+## The region is a bump allocator: it frees a file's AST, analyses and IR in one
+## step at file end, but while the file compiles its growth abandons copies that
+## `realloc` would have reused — measured, a file's peak is up to ~2x with a
+## region (`main.mt` 421 -> 946 MiB).
+##
+## So the region costs about one file-peak and buys release of *every* file after
+## it.  With two files those are the same magnitude and it does not pay; from
+## three on, retention is unbounded (each file ~32 MB, or a whole heavy peak) and
+## it dominates.  Hence the region is used only when at least one file *follows*
+## the next one — the last two files of a run are compiled without it.
+##
+## A size threshold is not usable here: a source's bytes do not predict its
+## compile peak (`main.mt` is 158 KB and peaks at 798 MiB; the 1 MB
+## `lowering.mt` peaks at 286 MiB), because the peak tracks the import graph the
+## file pulls in.  Counting files needs no proxy and measured best on every
+## shape: `main.mt` + a 60-byte file 946 -> 421 MiB, 40 small files 891 -> 381,
+## 191 files 976, 8 heaviest 1,412.
+function should_scope_file(remaining_after: ptr_uint) -> bool:
+    return remaining_after >= 2
 
 
 ## Start a per-file region when `scoped`.  The returned value is inert
@@ -1319,7 +1340,7 @@ function check_command(args: span[str]) -> int:
         let raw_path = source_files.get(fi) else:
             break
         let source_path = unsafe: read(raw_path).as_str()
-        let scoped = source_files.len() > 1
+        let scoped = should_scope_file(source_files.len() - (fi + 1))
         let result = check_one_file(source_path, ref_of(roots), ref_of(owned_roots), platform, resolution, scoped) else:
             fi += 1
             continue
@@ -2236,7 +2257,7 @@ function lint_command(args: span[str]) -> int:
         let fp_ptr = source_files.get(fi) else:
             break
         let fp = unsafe: read(fp_ptr).as_str()
-        let scoped = source_files.len() > 1
+        let scoped = should_scope_file(source_files.len() - (fi + 1))
         let result = lint_one_file(
             fp, lint_flags, platform, roots.as_span(), ref_of(owned_roots), select_set.as_span(), ignore_set.as_span(),
             ref_of(timing_entries), scoped
@@ -2483,7 +2504,7 @@ function lower_command(args: span[str]) -> int:
         defer: file_owned.release()
         if apply_locked_resolution(path, resolution, ref_of(file_roots), ref_of(file_owned)) != 0:
             return 1
-        let rc = lower_one_path(path, ref_of(file_roots), ref_of(file_owned), platform, sexpr, multiple and not sexpr, multiple)
+        let rc = lower_one_path(path, ref_of(file_roots), ref_of(file_owned), platform, sexpr, multiple and not sexpr, paths.len() - (pi + 1))
         if rc != 0:
             return rc
         pi += 1
@@ -2493,7 +2514,7 @@ function lower_command(args: span[str]) -> int:
 ## Lower one source file and print the rendered IR (or its `--sexpr` dump).
 ## The header is printed after a successful check, matching the host's loop
 ## (`check_program` raises before the header on an invalid file).
-function lower_one_path(path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]], platform: resolver.Platform, sexpr: bool, header: bool, scoped: bool) -> int:
+function lower_one_path(path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]], platform: resolver.Platform, sexpr: bool, header: bool, remaining_files: ptr_uint) -> int:
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
     let effective = effective_source_path(path, roots, ref_of(entry_path_owner), ref_of(source_root_owner)) else:
@@ -2514,7 +2535,7 @@ function lower_one_path(path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[
     # Per-file region (see `FileRegion`): a multi-operand `lower` otherwise
     # retains every file's AST, analyses and IR until process exit.
     var file_region = zero[FileRegion]
-    begin_file_region(ref_of(file_region), scoped)
+    begin_file_region(ref_of(file_region), should_scope_file(remaining_files))
     defer: end_file_region(ref_of(file_region))
 
     var program = loader.check_program(effective, roots.as_span(), platform)
@@ -2635,7 +2656,7 @@ function resolve_emit_c_operand(
 
 
 ## Compile one checked program to C and print it.
-function emit_c_one_path(path: str, roots: ref[vec.Vec[str]], owned_roots: ref[vec.Vec[string.String]], platform: resolver.Platform, scoped: bool) -> int:
+function emit_c_one_path(path: str, roots: ref[vec.Vec[str]], owned_roots: ref[vec.Vec[string.String]], platform: resolver.Platform, remaining_files: ptr_uint) -> int:
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
     let effective = effective_source_path(path, roots, ref_of(entry_path_owner), ref_of(source_root_owner)) else:
@@ -2657,7 +2678,7 @@ function emit_c_one_path(path: str, roots: ref[vec.Vec[str]], owned_roots: ref[v
     # Per-file region (see `FileRegion`): a multi-operand `emit-c` otherwise
     # retains every file's AST, analyses and C source until process exit.
     var file_region = zero[FileRegion]
-    begin_file_region(ref_of(file_region), scoped)
+    begin_file_region(ref_of(file_region), should_scope_file(remaining_files))
     defer: end_file_region(ref_of(file_region))
 
     var program = loader.check_program(effective, roots.as_span(), platform)
@@ -2744,7 +2765,7 @@ function emit_c_command(args: span[str]) -> int:
             return 1
         if multiple:
             stdio.print_format(c"/* --- %.*s --- */\n", int<-(path.len), path.data)
-        let rc = emit_c_one_path(path, ref_of(file_roots), ref_of(file_owned), platform, multiple)
+        let rc = emit_c_one_path(path, ref_of(file_roots), ref_of(file_owned), platform, program_paths.len() - (pi + 1))
         if rc != 0:
             return rc
         if multiple and pi + 1 < program_paths.len():

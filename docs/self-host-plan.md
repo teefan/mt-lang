@@ -19,6 +19,7 @@ history.
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
 - [Session 151 — streaming IR dump; the analysis' import-table lifetime](#session-151--streaming-ir-dump-the-analysis-import-table-lifetime)
+  - [Region gate (session 152)](#region-gate-session-152--the-follow-up-measured-and-fixed)
 - [Session 150 — IR type handles, arena ownership, phase release](#session-150--ir-type-handles-arena-ownership-phase-release)
 - [Session 149 — whole-program memory reduction](#session-149--whole-program-memory-reduction)
 - [Session 148 — aliased enum-member hover](#session-148--aliased-enum-member-hover)
@@ -3960,9 +3961,11 @@ the MiB below are that value ÷ 1024).**  Single file `main.mt`: `check`
 **421 MiB / 5.4 s**, `lower` **798 MiB / 11.1 s**, `emit-c` **911 MiB / 12.1 s**;
 `build projects/mtc` **950 MiB**.  Sizes: `Type` **24 B**, `ir.Expr` **72 B**,
 `ir.Stmt` **96 B**, `ir.Function` **96 B**, `ir.Param` **64 B**, `ir.Field`
-**40 B**.  Multi-file is **flat in file count but ~2× a heavy file's peak**
-(`check M M` 946 MiB, `emit-c` over the 8 heaviest sources **1,655 MiB**); the
-full audit with every class is in *RAM audit (session 151)*.
+**40 B**.  Multi-file: the per-file region is gated on **file count** (session
+152), so a heavy file paired with a trivial one costs its single-file peak
+(`check main.mt` + a 60-byte file **422 MiB**, was 936) while a whole-tree run
+still stays flat.  The full audit with every class is in *RAM audit (session
+151)* and the gate's reasoning in *Region gate (session 152)*.
 
 **What this session did (verification: see the session record).**
 
@@ -4092,8 +4095,9 @@ trend), not its absolute RSS.
 are the compiler's small modules.  The flatness conclusion was right; the
 absolute numbers understated the heavy-file case by ~4×.  The practical rule:
 **`emit-c` over a handful of the heaviest sources is the memory worst case
-(1.6 GiB), not a whole-tree `check` (0.96 GiB)** — fan out by *file size*, not
-file count.
+(1.6 GiB), not a whole-tree `check` (0.96 GiB)**.  Note that "heaviest" means the
+largest *compile*, which tracks the import graph, not the source bytes: `main.mt`
+is 158 KB and peaks at 798 MiB while the 1 MB `lowering.mt` peaks at 286 MiB.
 
 **Open follow-up (not done).**  The region is gated on `source_files.len() > 1`
 (`main.mt:1322`, `:2239`; `lower_one_path`/`emit_c_one_path` take
@@ -4102,9 +4106,51 @@ the second pass reuses nothing.  The retention it buys is real (~34 MB/file), bu
 on a heavy file the *inflation* (up to +600 MiB) exceeds what it reclaims.  A
 size-aware gate — region only for files below some threshold, or a per-file
 `release_all()` between files instead of one region per file — would keep the
-flatness without paying 2× on the few files that dominate the peak.  Measure
-before choosing: the honest target is "no case above the single-file peak of the
-heaviest operand".
+flatness without paying 2× on the few files that dominate the peak.  **CLOSED —
+see *Region gate (session 152)* below.**
+
+### Region gate (session 152) — the follow-up, measured and fixed
+
+The follow-up's own diagnosis was half wrong, and the measurements corrected it.
+
+**It is the region, and nothing is retained.**  With the region disabled
+(`scoped = false`), `check main.mt tmp/leaf.mt` costs **432,068 KiB** against
+**432,024 KiB** for `main.mt` alone — so two files cost one file's peak, and the
++527 MiB was entirely the region's own blocks.  Massif on the two-file run put
+**1,073.7 of 1,081.5 MB in `Region.reserve_block`**, in geometric steps
+(16.8 → 33.6 → 67.1 → 134.2 → 268.4 → 536.9 MB, summing to 1,057 MB).
+
+**Two fixes were tried and rejected:**
+
+- **Stop doubling `next_block_bytes`** (size each block to demand).  Made every
+  case *worse* (`main.mt` + leaf 946 → 1,001 MiB; 191 files 976 → 1,030 MiB and
+  49% slower): the slack is what lets `resize_payload` extend vectors in place,
+  so removing it makes growth copy instead.
+- **A source-size threshold** (region only under 128 KiB).  Wrong proxy: source
+  bytes do not predict a compile's peak — `main.mt` is **158 KB** and peaks at
+  **798 MiB**, while the **1 MB** `lowering.mt` peaks at **286 MiB**, because the
+  peak tracks the import graph.  Also regressed the tree (976 → 1,864 MiB) by
+  leaving 9 large files unregioned and therefore fully retained.
+
+**What shipped:** the region costs about one file-peak and buys release of every
+file *after* it.  With two files those are the same magnitude; from three on,
+retention is unbounded and dominates.  So the gate is a file count —
+`should_scope_file(remaining_after)` is `remaining_after >= 2`, i.e. the last two
+files of a run compile without a region.  It needs no proxy and measured best on
+every shape:
+
+| Case | Always region | **Count rule** | Never region |
+| --- | --- | --- | --- |
+| `check main.mt` + a 60-byte file | 958,616 KiB | **432,440** | 432,068 |
+| `check` 40 small files (<16 KiB) | 891 MiB | **381,488** | 1,367,120 |
+| `check` 191 files | 976 MiB | **1,021,068** | 11,398,120 |
+| `lower` 8 heaviest | 1,445,576 | **1,490,972** | — |
+| `emit-c` 8 heaviest | 1,694,336 | **1,734,740** | — |
+
+The 8-heaviest sets pay 2-3% (their last two files are the ones left unregioned
+and they are all heavy); every other shape improves or is unchanged.  Output is
+byte-identical (`lower`/`check` on `main.mt`), dev suite **22/0**, diagnostics
+**504/0**.
 
 ## Handoff (session 150)
 
@@ -5482,7 +5528,7 @@ historical record.
 | imported bindings | **29 verified / 0 changed of 29** (native check; the host parity report is retired) | session 72 (native) | `build/stage2/mtc imported-bindings --all --check` |
 | throughput | `emit-c main.mt` **12.0 s**, full `build projects/mtc` **28.5 s**, `bootstrap --fast` ~2.6 min (session 151 audit; the session-72 row read 17.1 s / 32.7 s, before the session-149/151 memory work, and the archived host measured 54.3 s / 76.3 s) | session 151 audit | `time build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .` |
 | analyzer memory | `check main.mt` **421 MiB / 5.4 s**; `lower main.mt` **798 MiB**; `emit-c` **911 MiB**; `build projects/mtc` **950 MiB**; fan-out capped at 4.  `lower` was 885,460 KiB before session 151 replaced the IR formatter's per-line scratch with direct appends.  Worst case overall: `emit-c` over the 8 heaviest sources **1,655 MiB** (see *RAM audit*) | session 151 audit | `python3 tools/peak_rss.py -- build/stage2/mtc check projects/mtc/src/mtc/main.mt -I .` |
-| multi-file memory | flat in the file count but **~2× a heavy file's peak**: `check M M` **946 MiB**, `check projects/mtc` (191 files) **961 MiB**, 16 heaviest linted **949 MiB**, 8 heaviest lowered **1,412 MiB**, 8 heaviest `emit-c` **1,655 MiB** | session 151 audit | `python3 tools/peak_rss.py -- build/stage2/mtc check <files...> -I .` |
+| multi-file memory | the per-file region is gated on **file count**: used only while ≥2 files follow the one compiling (`should_scope_file`), so the last two files of a run are unregioned.  `check M + a 60-byte file` **422 MiB** (was 936 always-regioned), 40 small files **372 MiB** (1,333 never-regioned), `check projects/mtc` (191 files) **997 MiB** (11,133 never-regioned), `lower`/`emit-c` 8 heaviest **1,456 / 1,694 MiB** (2-3% above always-regioning).  Session 150's always-on row (`check` 191 files 1,019 MiB, 32 files 231 MiB, 16 linted 256 MiB, 8 lowered 346 MiB) used small files and understated the heavy case; see *RAM audit* and *Region gate* | session 152 | `python3 tools/peak_rss.py -- build/stage2/mtc check <files...> -I .` |
 | struct sizes | `Type` **24 B**, `ir.Expr` **72**, `ir.Stmt` **96**, `ir.Function` **96**, `ir.Param` **64**, `ir.Field` **40** (was 72 / 168 / 144 / 144 / 112 / 88 at session start) | session 150 | probe: `size_of` in a scratch program importing `mtc.ir` + `mtc.semantic.types` |
 | release archive | 3.52 MiB deterministic `mtc-0.4.26-linux-x86_64.tar.gz`, checksummed; clean-path smoke green | session 142 | `tools/release.sh --skip-build`; `tools/release_smoke.sh` |
 | refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files); 32 unused / 6 test-only exports; 6,470 duplicated lines / 896 clusters; 1 function ≥ 200 lines (`binding_at`); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 151 (baseline refreshed for the append-only emitters) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |

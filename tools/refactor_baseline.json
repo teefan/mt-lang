@@ -1262,7 +1262,7 @@
     ]
   },
   "sizes": {
-    "total_code": 129335,
+    "total_code": 129337,
     "functions_over_limit": 2,
     "files_over_limit": 11,
     "files": {
@@ -1987,8 +1987,8 @@
         "max_function": 41
       },
       "projects/mtc/src/mtc/main.mt": {
-        "lines": 3886,
-        "code": 3130,
+        "lines": 3907,
+        "code": 3132,
         "max_line": 277,
         "max_function": 189
       },
