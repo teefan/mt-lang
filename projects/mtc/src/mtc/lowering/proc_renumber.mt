@@ -352,11 +352,8 @@ function rename_type(t: types.Type, mapping: ref[map_mod.Map[str, str]]) -> type
                 payload_type = payload, linkage_name = rename_proc_str(ev.linkage_name, mapping),
             )
         types.Type.ty_named as n:
-            return types.Type.ty_named(
-                name = rename_proc_str(n.name, mapping),
-                module_name = n.module_name,
-                linkage_name = rename_opt_str(n.linkage_name, mapping),
-            )
+            let n_np = unsafe: read(n.payload)
+            return types.named_type(name = rename_proc_str(n_np.name, mapping), module_name = n_np.module_name, linkage_name = rename_opt_str(n_np.linkage_name, mapping))
         types.Type.ty_variant_arm_payload as ap:
             let payload = unsafe: read(ap.payload)
             return types.variant_arm_payload_raw(

@@ -545,22 +545,23 @@ function types_value(ctx: ref[SexprContext], t: types.Type) -> SexprValue:
                 ev_fields.push(field_value("payload_type", types_value(ctx, unsafe: read(ev_payload))))
             return node("Types::Event", ev_fields.as_span())
         types.Type.ty_named as n:
+            let n_np = unsafe: read(n.payload)
             # The host's built-in event support types are their own classes: the
             # `Subscription` handle renders as `(Types::Subscription)` and
             # `EventError` as the builtin enum (`type_declaration.rb:38,79`).
-            if n.module_name.len == 0 and n.name == "Subscription":
+            if n_np.module_name.len == 0 and n_np.name == "Subscription":
                 return node("Types::Subscription", span[SexprField]())
             var nf = vec.Vec[SexprField].create()
-            nf.push(field_str("name", n.name))
-            nf.push(field_module_name("module_name", n.module_name))
-            if n.module_name.len == 0 and n.name == "EventError":
+            nf.push(field_str("name", n_np.name))
+            nf.push(field_module_name("module_name", n_np.module_name))
+            if n_np.module_name.len == 0 and n_np.name == "EventError":
                 return node("Types::Enum", nf.as_span())
             # A module-qualified named type classifies through the qualified
             # kind map like an imported one (`std.c.box2d.b2HexColor` is the raw
             # module's enum, and no IR declaration carries it).
-            if n.module_name.len > 0:
-                return node(strings.join_two("Types::", imported_type_class(ctx, n.module_name, n.name)), nf.as_span())
-            return node(strings.join_two("Types::", named_type_class(ctx, n.name)), nf.as_span())
+            if n_np.module_name.len > 0:
+                return node(strings.join_two("Types::", imported_type_class(ctx, n_np.module_name, n_np.name)), nf.as_span())
+            return node(strings.join_two("Types::", named_type_class(ctx, n_np.name)), nf.as_span())
         types.Type.ty_variant_arm_payload as ap:
             # The host tags the payload distinctly but renders its fields through
             # the `Types::Struct` branch (`:name`, `:module_name`).

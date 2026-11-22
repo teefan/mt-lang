@@ -1022,7 +1022,8 @@ function type_is_from_std_c(tv: types.Type) -> bool:
         types.Type.ty_imported as im:
             return im.module_name.starts_with("std.c.")
         types.Type.ty_named as n:
-            return n.module_name.starts_with("std.c.")
+            let n_np = unsafe: read(n.payload)
+            return n_np.module_name.starts_with("std.c.")
         types.Type.ty_generic as g:
             var i: ptr_uint = 0
             while i < g.args.len:
@@ -1319,10 +1320,11 @@ function canonical_type_name(module_name: str, t: types.Type) -> str:
         types.Type.ty_primitive as p:
             return p.name
         types.Type.ty_named as n:
+            let n_np = unsafe: read(n.payload)
             var buf = string.String.create()
             buf.append(naming.module_c_prefix(module_name))
             buf.append("_")
-            buf.append(n.name)
+            buf.append(n_np.name)
             return buf.as_str()
         types.Type.ty_imported as im:
             if im.args.len > 0:
@@ -3379,7 +3381,8 @@ function lower_propagate_return(ctx: ref[LoweringContext], output: ref[vec.Vec[i
                 if tg.name == "Task":
                     is_task_ret = true
             types.Type.ty_named as tn:
-                if tn.name.starts_with("mt_task_"):
+                let tn_np = unsafe: read(tn.payload)
+                if tn_np.name.starts_with("mt_task_"):
                     is_task_ret = true
             _:
                 pass
@@ -3508,7 +3511,8 @@ function lower_propagate_storage(ctx: ref[LoweringContext], output: ref[vec.Vec[
                 if tg.name == "Task":
                     is_task_ret = true
             types.Type.ty_named as tn:
-                if tn.name.starts_with("mt_task_"):
+                let tn_np = unsafe: read(tn.payload)
+                if tn_np.name.starts_with("mt_task_"):
                     is_task_ret = true
             _:
                 pass
@@ -3676,7 +3680,8 @@ function lower_propagate_assign(ctx: ref[LoweringContext], output: ref[vec.Vec[i
                 if tg.name == "Task":
                     is_task_ret = true
             types.Type.ty_named as tn:
-                if tn.name.starts_with("mt_task_"):
+                let tn_np = unsafe: read(tn.payload)
+                if tn_np.name.starts_with("mt_task_"):
                     is_task_ret = true
             _:
                 pass
@@ -4124,8 +4129,9 @@ public function struct_fields_of(ctx: ref[LoweringContext], t: types.Type) -> Op
             module_name = im.module_name
             struct_name = im.name
         types.Type.ty_named as n:
-            module_name = if n.module_name.len > 0: n.module_name else: ctx.module_name
-            struct_name = n.name
+            let n_np = unsafe: read(n.payload)
+            module_name = if n_np.module_name.len > 0: n_np.module_name else: ctx.module_name
+            struct_name = n_np.name
         _:
             return Option[span[analyzer.FieldEntry]].none
     match find_imported_analysis(ctx, module_name):
@@ -4188,7 +4194,8 @@ function opaque_module_name_and_name(t: types.Type) -> OpaqueName:
         types.Type.ty_imported as im:
             return OpaqueName(module_name = im.module_name, name = im.name)
         types.Type.ty_named as n:
-            return OpaqueName(module_name = n.module_name, name = n.name)
+            let n_np = unsafe: read(n.payload)
+            return OpaqueName(module_name = n_np.module_name, name = n_np.name)
         _:
             return OpaqueName(module_name = "", name = "")
 
@@ -4198,9 +4205,10 @@ function module_has_opaque(ctx: ref[LoweringContext], t: types.Type) -> bool:
         types.Type.ty_imported as im:
             return find_imported_opaque_decl(ctx, im.module_name, im.name)
         types.Type.ty_named as n:
-            if n.module_name.len > 0:
-                return find_imported_opaque_decl(ctx, n.module_name, n.name)
-            return find_imported_opaque_decl(ctx, ctx.module_name, n.name)
+            let n_np = unsafe: read(n.payload)
+            if n_np.module_name.len > 0:
+                return find_imported_opaque_decl(ctx, n_np.module_name, n_np.name)
+            return find_imported_opaque_decl(ctx, ctx.module_name, n_np.name)
         _:
             return false
 
@@ -4226,57 +4234,59 @@ function find_imported_opaque_decl(ctx: ref[LoweringContext], module_name: str, 
 public function qualify_type(ctx: ref[LoweringContext], t: types.Type) -> types.Type:
     match t:
         types.Type.ty_named as n:
-            if is_raw_type_param_name(n.name):
+            let n_np = unsafe: read(n.payload)
+            if is_raw_type_param_name(n_np.name):
                 return ctx.void_ty
             # A nested struct's named type carries the parent-qualified C
             # linkage (`<module>_Rectangle_Edge`); converting it to
             # `ty_imported` would drop it and re-derive `<module>_Edge`.
-            if n.linkage_name.is_some():
+            if n_np.linkage_name.is_some():
                 return t
             # Built-in registered types (`EventError`, `Subscription`) carry no
             # owning module and must not be module-qualified.
-            if n.module_name.len == 0:
-                let registered_ptr = ctx.analysis.types.get(n.name)
+            if n_np.module_name.len == 0:
+                let registered_ptr = ctx.analysis.types.get(n_np.name)
                 if registered_ptr != null:
                     unsafe:
                         match read(registered_ptr):
                             types.Type.ty_named as rn:
-                                if rn.module_name.len == 0:
+                                let rn_np = unsafe: read(rn.payload)
+                                if rn_np.module_name.len == 0:
                                     return t
                             _:
                                 pass
             # Already-monomorphized concrete names (e.g. std_map_Node_str_bool)
             # are fully qualified: pass them through so re-qualifying in a
             # different module context does not double-prefix them.
-            if monomorphized.generic_instance_contains(ctx, n.name) or ctx.generic_struct_decls.contains(n.name):
+            if monomorphized.generic_instance_contains(ctx, n_np.name) or ctx.generic_struct_decls.contains(n_np.name):
                 return t
             # Concrete C names produced by generic_struct_c_name always contain
             # at least one underscore (module_prefix_Name_Arg).  Bare names
             # without underscores (like the type param `T`) should follow the
             # normal qualify path.
-            if n.name.find_byte('_').is_some():
+            if n_np.name.find_byte('_').is_some():
                 return t
             # Prelude variant instances (Option_str, Result_int_Error) and proc
             # typedefs (mt_proc_...) have global C names and must not be
             # module-prefixed.
-            if match_mod.is_prelude_variant_name(n.name) or n.name.starts_with("mt_proc_"):
+            if match_mod.is_prelude_variant_name(n_np.name) or n_np.name.starts_with("mt_proc_"):
                 return t
             # A bare type name may be a type imported from another module (e.g.
             # `Diag` used in `analyzer` but defined in `definite_assignment`).
             # Qualify it against its OWNER module, not the current one, so it does
             # not become a mis-attributed `<current_module>_Diag`.
-            match imported_type_module(ctx, n.name):
+            match imported_type_module(ctx, n_np.name):
                 Option.some as owner:
-                    return types.Type.ty_imported(module_name = owner.value, name = n.name, args = span[types.Type]())
+                    return types.Type.ty_imported(module_name = owner.value, name = n_np.name, args = span[types.Type]())
                 Option.none:
                     pass
             # The name may be declared in a module the current one does not
             # import (e.g. a reflected struct type from the caller's module,
             # reached through `fields_of(T)`): find its defining module
             # program-wide so it is not mis-attributed to the current module.
-            match find_declaring_module(ctx, n.name):
+            match find_declaring_module(ctx, n_np.name):
                 Option.some as owner:
-                    return types.Type.ty_imported(module_name = owner.value, name = n.name, args = span[types.Type]())
+                    return types.Type.ty_imported(module_name = owner.value, name = n_np.name, args = span[types.Type]())
                 Option.none:
                     pass
             # Resolve type aliases to their target type so the C backend sees
@@ -4286,8 +4296,8 @@ public function qualify_type(ctx: ref[LoweringContext], t: types.Type) -> types.
             # std_net_NativeSocketStorage`) handles the mapping, and keeping
             # the alias name avoids raw C type names (e.g. `sockaddr_storage`
             # without `struct` prefix) in function signatures / struct fields.
-            if ctx.analysis.type_alias_types.contains(n.name):
-                let resolved_ptr = ctx.analysis.type_alias_types.get(n.name) else:
+            if ctx.analysis.type_alias_types.contains(n_np.name):
+                let resolved_ptr = ctx.analysis.type_alias_types.get(n_np.name) else:
                     fatal(c"lowering: type alias lookup inconsistency")
                 let resolved_val = unsafe: read(resolved_ptr)
                 if not type_is_from_std_c(resolved_val):
@@ -4296,8 +4306,8 @@ public function qualify_type(ctx: ref[LoweringContext], t: types.Type) -> types.
             # against it, not the current module: lowering std.result's
             # `map_error[F]` with `ty_named("Error", "map_err_probe")` must not
             # produce `std.result.Error`.
-            let owner = if n.module_name.len > 0: n.module_name else: ctx.module_name
-            return types.Type.ty_imported(module_name = owner, name = n.name, args = span[types.Type]())
+            let owner = if n_np.module_name.len > 0: n_np.module_name else: ctx.module_name
+            return types.Type.ty_imported(module_name = owner, name = n_np.name, args = span[types.Type]())
         types.Type.ty_imported as im:
             if is_raw_type_param_name(im.name):
                 return ctx.void_ty
@@ -4525,8 +4535,9 @@ function imported_type_module(ctx: ref[LoweringContext], name: str) -> Option[st
                                 types.Type.ty_imported as aim:
                                     return Option[str].some(value = aim.module_name)
                                 types.Type.ty_named as nm:
-                                    if nm.module_name.len > 0:
-                                        return Option[str].some(value = nm.module_name)
+                                    let nm_np = unsafe: read(nm.payload)
+                                    if nm_np.module_name.len > 0:
+                                        return Option[str].some(value = nm_np.module_name)
                                 _:
                                     pass
                         Option.none:
@@ -4739,7 +4750,8 @@ function resolve_imported_alias_type(analyses: span[analyzer.Analysis], target_m
                     types.Type.ty_imported as aim:
                         return Option[types.Type].some(value = types.Type.ty_imported(module_name = aim.module_name, name = aim.name, args = aim.args))
                     types.Type.ty_named as nm:
-                        return Option[types.Type].some(value = types.Type.ty_named(linkage_name = Option[str].none, module_name = nm.module_name, name = nm.name))
+                        let nm_np = unsafe: read(nm.payload)
+                        return Option[types.Type].some(value = types.named_type(name = nm_np.name, module_name = nm_np.module_name, linkage_name = Option[str].none))
                     _:
                         return Option[types.Type].some(value = at)
         ai += 1
@@ -4762,11 +4774,12 @@ function imported_member_c_name(ctx: ref[LoweringContext], imported: analyzer.An
                         return aim.name
                     return naming.qualified_c_name(aim.module_name, aim.name)
                 types.Type.ty_named as nm:
-                    if nm.module_name.starts_with("std.c."):
-                        return nm.name
-                    if nm.module_name.len > 0:
-                        return naming.qualified_c_name(nm.module_name, nm.name)
-                    return nm.name
+                    let nm_np = unsafe: read(nm.payload)
+                    if nm_np.module_name.starts_with("std.c."):
+                        return nm_np.name
+                    if nm_np.module_name.len > 0:
+                        return naming.qualified_c_name(nm_np.module_name, nm_np.name)
+                    return nm_np.name
                 _:
                     return naming.qualified_c_name(target_module, member)
         Option.none:
@@ -4799,7 +4812,8 @@ public function nested_type_in_analysis(a: analyzer.Analysis, parts: span[str]) 
     let registered = unsafe: read(registered_ptr)
     match registered:
         types.Type.ty_named as n:
-            match n.linkage_name:
+            let n_np = unsafe: read(n.payload)
+            match n_np.linkage_name:
                 Option.some:
                     return Option[types.Type].some(value = registered)
                 Option.none:
@@ -4928,7 +4942,7 @@ public function resolve_type_ref(ctx: ref[LoweringContext], tp: ptr[ast.TypeRef]
                 if concrete_ptr != null:
                     resolved = unsafe: read(concrete_ptr)
                 else:
-                    resolved = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = name)
+                    resolved = types.named_type(name = name, module_name = "", linkage_name = Option[str].none)
         if t.nullable and not types.is_error(resolved):
             return types.Type.ty_nullable(base = types.alloc_type(resolved))
         return resolved
@@ -5079,7 +5093,7 @@ public function resolve_array_length_type(ctx: ref[LoweringContext], tp: ptr[ast
         let const_ptr = ctx.analysis.const_values.get(text)
         if const_ptr != null:
             return types.literal_int(comptime.const_eval_int(ctx, unsafe: read(const_ptr)))
-        return types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = text)
+        return types.named_type(name = text, module_name = "", linkage_name = Option[str].none)
     # A module-qualified constant (`array[b3.BodyId, human.BONE_COUNT]`): fold it
     # through the alias's module, evaluating the constant's value expression in
     # the module that declares it (the host's
@@ -5157,7 +5171,8 @@ function lower_with_call(ctx: ref[LoweringContext], receiver: ptr[ast.Expr], rec
         if struct_name.len == 0:
             match recv_ty:
                 types.Type.ty_named as n:
-                    struct_name = n.name
+                    let n_np = unsafe: read(n.payload)
+                    struct_name = n_np.name
                 types.Type.ty_imported as im:
                     struct_name = im.name
                 _:
@@ -6046,7 +6061,7 @@ public function lower_proc_expression_typed_named(ctx: ref[LoweringContext], met
         # Build retain: increment ref_count.
         ctx.pending_synthetic_functions.push(build_capturing_retain(retain_str, env_type_name))
 
-        let env_named_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = env_type_name)
+        let env_named_ty = types.named_type(name = env_type_name, module_name = "", linkage_name = Option[str].none)
         let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(env_named_ty))
         # The window is the enclosing statement's again: the env setup hoists
         # before the statement (the host's inline shape), or falls back to the
@@ -6385,7 +6400,7 @@ function proc_capture_visit_stmt(ctx: ref[LoweringContext], sp: ptr[ast.Stmt]?, 
 ## Takes captured values as parameters and returns a pointer to the initialized env.
 function build_env_setup_fn(ctx: ref[LoweringContext], c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
-    let env_ty_named = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = env_type_name)
+    let env_ty_named = types.named_type(name = env_type_name, module_name = "", linkage_name = Option[str].none)
     let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(env_ty_named))
     let uint_ty = types.primitive("ptr_uint")
 
@@ -6480,7 +6495,7 @@ function build_capturing_invoke(ctx: ref[LoweringContext], method_params: span[a
     ctx.cstr_backed_names.clear()
 
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
-    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = env_type_name)))
+    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.named_type(name = env_type_name, module_name = "", linkage_name = Option[str].none)))
 
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = Option[bool].some(value = false)))
@@ -6543,7 +6558,7 @@ function build_capturing_invoke(ctx: ref[LoweringContext], method_params: span[a
 ## Build a release function for capturing procs with ref-counting.
 function build_capturing_release(ctx: ref[LoweringContext], c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
-    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = env_type_name)))
+    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.named_type(name = env_type_name, module_name = "", linkage_name = Option[str].none)))
     let uint_ty = types.primitive("ptr_uint")
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = Option[bool].some(value = false)))
@@ -6581,7 +6596,7 @@ function build_capturing_release(ctx: ref[LoweringContext], c_name: str, env_typ
 ## Build a retain function for capturing procs (increments ref_count).
 function build_capturing_retain(c_name: str, env_type_name: str) -> ir.Function:
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
-    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = env_type_name)))
+    let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.named_type(name = env_type_name, module_name = "", linkage_name = Option[str].none)))
     let uint_ty = types.primitive("ptr_uint")
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = Option[bool].some(value = false)))
@@ -6810,7 +6825,8 @@ function proc_struct_fields(ctx: ref[LoweringContext], t: types.Type) -> Option[
                 if p != null:
                     return Option[span[ir.Field]].some(value = unsafe: read(p).fields)
         types.Type.ty_named as n:
-            let p = ctx.generic_struct_decls.get(n.name)
+            let n_np = unsafe: read(n.payload)
+            let p = ctx.generic_struct_decls.get(n_np.name)
             if p != null:
                 return Option[span[ir.Field]].some(value = unsafe: read(p).fields)
         types.Type.ty_generic as g:
@@ -7910,7 +7926,7 @@ function lower_member_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], arg
                         # arguments.  Mirrors the Ruby resolver's `resolve_type_expression`
                         # + `static:<method>` associated-function path.
                         if struct_exists_in_imports(ctx, recv_id.name):
-                            let static_recv_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = recv_id.name)
+                            let static_recv_ty = types.named_type(name = recv_id.name, module_name = "", linkage_name = Option[str].none)
                             match resolve_method_info(ctx, static_recv_ty, ma.member_name):
                                 Option.some as smi:
                                     if smi.value.method_kind == ast.MethodKind.mk_static:
@@ -7944,7 +7960,8 @@ function lower_member_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr], arg
                                                 types.Type.ty_imported as aim:
                                                     return lower_aggregate_literal_in_module(ctx, aim.name, args, aim.module_name)
                                                 types.Type.ty_named as nm:
-                                                    return lower_aggregate_literal_in_module(ctx, nm.name, args, nm.module_name)
+                                                    let nm_np = unsafe: read(nm.payload)
+                                                    return lower_aggregate_literal_in_module(ctx, nm_np.name, args, nm_np.module_name)
                                                 _:
                                                     pass
                                     # Check if ma.member_name is a variant arm in any
@@ -8212,9 +8229,10 @@ function lower_member_field_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr
                             unsafe:
                                 task_ret_ty = read(tg.args.data + 0)
                     types.Type.ty_named as tn:
-                        if tn.name.starts_with("mt_task_"):
+                        let tn_np = unsafe: read(tn.payload)
+                        if tn_np.name.starts_with("mt_task_"):
                             is_task = true
-                            let gi_ptr = monomorphized.generic_instance_get(ctx, tn.name)
+                            let gi_ptr = monomorphized.generic_instance_get(ctx, tn_np.name)
                             if gi_ptr != null:
                                 let gi = unsafe: read(gi_ptr)
                                 if gi.concrete_args.len >= 1:
@@ -8291,7 +8309,7 @@ function lower_member_field_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr
                         si += 1
                     return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = type_helpers.expr_type(ctx, call_ep)))
                 # Method found — try method resolution with the recovered type name.
-                var resolved_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = recv_name)
+                var resolved_ty = types.named_type(name = recv_name, module_name = "", linkage_name = Option[str].none)
                 match resolve_method_info(ctx, resolved_ty, ma.member_name):
                     Option.some as mi:
                         return lower_method_resolved(ctx, mi.value, ma.receiver, args, call_ep)
@@ -8621,14 +8639,15 @@ function resolve_method_return_from_import(ctx: ref[LoweringContext], module_nam
         ret = ctx.void_ty
     match ret:
         types.Type.ty_named as rn:
+            let rn_np = unsafe: read(rn.payload)
             match receiver_ty:
                 types.Type.ty_imported as rim:
                     if rim.args.len > 0:
-                        ret = types.Type.ty_imported(module_name = module_name, name = rn.name, args = rim.args)
+                        ret = types.Type.ty_imported(module_name = module_name, name = rn_np.name, args = rim.args)
                     else:
-                        ret = types.Type.ty_imported(module_name = module_name, name = rn.name, args = span[types.Type]())
+                        ret = types.Type.ty_imported(module_name = module_name, name = rn_np.name, args = span[types.Type]())
                 _:
-                    ret = types.Type.ty_imported(module_name = module_name, name = rn.name, args = span[types.Type]())
+                    ret = types.Type.ty_imported(module_name = module_name, name = rn_np.name, args = span[types.Type]())
         _:
             pass
     return qualify_type(ctx, ret)
@@ -9031,7 +9050,8 @@ function type_is_type_var(t: types.Type) -> bool:
         types.Type.ty_var:
             return true
         types.Type.ty_named as n:
-            if n.name == "T" or n.name == "K" or n.name == "V" or n.name == "U" or n.name == "E":
+            let n_np = unsafe: read(n.payload)
+            if n_np.name == "T" or n_np.name == "K" or n_np.name == "V" or n_np.name == "U" or n_np.name == "E":
                 return true
             return false
         types.Type.ty_imported as im:
@@ -9281,7 +9301,8 @@ function try_inferred_generic_call(ctx: ref[LoweringContext], module_name: Optio
 function expand_generic_arg_type(ctx: ref[LoweringContext], t: types.Type) -> types.Type:
     match t:
         types.Type.ty_named as n:
-            if n.module_name.len == 0:
+            let n_np = unsafe: read(n.payload)
+            if n_np.module_name.len == 0:
                 match generic_receiver_info(ctx, t):
                     Option.some as info:
                         # Preserve the owning module: without it a same-named
@@ -9527,8 +9548,9 @@ function proc_return_type(t: types.Type) -> types.Type:
             let fnt_ft = unsafe: read(fnt.payload)
             return unsafe: read(fnt_ft.return_type)
         types.Type.ty_named as n:
-            if n.name.starts_with("mt_proc_"):
-                let raw = n.name.slice(8, n.name.len - 8)
+            let n_np = unsafe: read(n.payload)
+            if n_np.name.starts_with("mt_proc_"):
+                let raw = n_np.name.slice(8, n_np.name.len - 8)
                 # Extract the return type (first underscore-separated component).
                 # For mt_proc_int → "int", mt_proc_str_int → "str".
                 match raw.find_substring("_"):
@@ -9945,9 +9967,10 @@ function lower_aggregate_literal_impl(ctx: ref[LoweringContext], struct_name: st
                         field_struct_name = aim.name
                         field_source_module = aim.module_name
                     types.Type.ty_named as anm:
-                        field_struct_name = anm.name
-                        if anm.module_name.len > 0:
-                            field_source_module = anm.module_name
+                        let anm_np = unsafe: read(anm.payload)
+                        field_struct_name = anm_np.name
+                        if anm_np.module_name.len > 0:
+                            field_source_module = anm_np.module_name
                     _:
                         pass
             Option.none:
@@ -9982,7 +10005,7 @@ function lower_aggregate_literal_impl(ctx: ref[LoweringContext], struct_name: st
         fields.push(ir.AggregateField(name = field_name, value = value))
         i += 1
     if source_module.len == 0:
-        var agg_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = struct_name)
+        var agg_ty = types.named_type(name = struct_name, module_name = "", linkage_name = Option[str].none)
         if is_builtin_type_name(struct_name) or struct_name == "str":
             agg_ty = types.Type.ty_primitive(name = struct_name)
         return alloc_expr(ir.Expr.expr_aggregate_literal(ty = agg_ty, fields = fields.as_span()))
@@ -10197,7 +10220,8 @@ function substitute_interface_type_params(t: types.Type, type_args: span[types.T
         types.Type.ty_var as v:
             return substitute_type_arg_by_name(t, v.name, type_args, type_params)
         types.Type.ty_named as n:
-            return substitute_type_arg_by_name(t, n.name, type_args, type_params)
+            let n_np = unsafe: read(n.payload)
+            return substitute_type_arg_by_name(t, n_np.name, type_args, type_params)
         _:
             return t
 
@@ -10290,8 +10314,9 @@ function gen_dyn_vtable_wrappers(ctx: ref[LoweringContext], concrete_name: str, 
             if cim.module_name.len > 0:
                 concrete_module = cim.module_name
         types.Type.ty_named as cnm:
-            if cnm.module_name.len > 0:
-                concrete_module = cnm.module_name
+            let cnm_np = unsafe: read(cnm.payload)
+            if cnm_np.module_name.len > 0:
+                concrete_module = cnm_np.module_name
         _:
             pass
     var c_ty = types.Type.ty_imported(module_name = concrete_module, name = concrete_type_name, args = span[types.Type]())
@@ -10316,7 +10341,8 @@ function gen_dyn_vtable_wrappers(ctx: ref[LoweringContext], concrete_name: str, 
         var method_info_opt: Option[DynMethodLookup]
         match concrete_type:
             types.Type.ty_named as n:
-                method_info_opt = find_dyn_method(ctx, n.name, m.name, concrete_type)
+                let n_np = unsafe: read(n.payload)
+                method_info_opt = find_dyn_method(ctx, n_np.name, m.name, concrete_type)
             types.Type.ty_imported as im:
                 method_info_opt = find_dyn_method(ctx, im.name, m.name, concrete_type)
             _:
@@ -10661,16 +10687,17 @@ function receiver_c_type_name(t: types.Type) -> Option[str]:
                 return Option[str].some(value = im.name)
             return Option[str].some(value = naming.qualified_c_name(im.module_name, im.name))
         types.Type.ty_named as n:
-            match n.linkage_name:
+            let n_np = unsafe: read(n.payload)
+            match n_np.linkage_name:
                 Option.some as linked:
                     return Option[str].some(value = linked.value)
                 Option.none:
                     pass
-            if n.module_name.len == 0:
+            if n_np.module_name.len == 0:
                 return Option[str].none
-            if n.module_name.starts_with("std.c."):
-                return Option[str].some(value = n.name)
-            return Option[str].some(value = naming.qualified_c_name(n.module_name, n.name))
+            if n_np.module_name.starts_with("std.c."):
+                return Option[str].some(value = n_np.name)
+            return Option[str].some(value = naming.qualified_c_name(n_np.module_name, n_np.name))
         _:
             return Option[str].none
 
@@ -10758,7 +10785,8 @@ function hook_type_name(t: types.Type) -> Option[str]:
         types.Type.ty_str:
             return Option[str].some(value = "str")
         types.Type.ty_named as n:
-            return Option[str].some(value = n.name)
+            let n_np = unsafe: read(n.payload)
+            return Option[str].some(value = n_np.name)
         types.Type.ty_imported as im:
             return Option[str].some(value = im.name)
         _:
@@ -10905,8 +10933,9 @@ public function resolve_method_info(ctx: ref[LoweringContext], receiver_ty: type
             # backend produces the module-qualified C name.
             match ret:
                 types.Type.ty_named as rn:
-                    if a.structs.contains(rn.name):
-                        ret = types.Type.ty_imported(module_name = a.module_name, name = rn.name, args = span[types.Type]())
+                    let rn_np = unsafe: read(rn.payload)
+                    if a.structs.contains(rn_np.name):
+                        ret = types.Type.ty_imported(module_name = a.module_name, name = rn_np.name, args = span[types.Type]())
                 _:
                     pass
             return Option[MethodInfo].some(value = MethodInfo(
@@ -10951,8 +10980,9 @@ function resolve_method_info_imported(ctx: ref[LoweringContext], receiver_ty: ty
                     ret = ctx.void_ty
                 match ret:
                     types.Type.ty_named as rn:
-                        if a.structs.contains(rn.name):
-                            ret = types.Type.ty_imported(module_name = a.module_name, name = rn.name, args = span[types.Type]())
+                        let rn_np = unsafe: read(rn.payload)
+                        if a.structs.contains(rn_np.name):
+                            ret = types.Type.ty_imported(module_name = a.module_name, name = rn_np.name, args = span[types.Type]())
                     _:
                         pass
                 return Option[MethodInfo].some(value = MethodInfo(
@@ -11331,7 +11361,8 @@ function type_is_unresolved_param(t: types.Type) -> bool:
         return true
     match t:
         types.Type.ty_named as n:
-            return is_raw_type_param_name(n.name)
+            let n_np = unsafe: read(n.payload)
+            return is_raw_type_param_name(n_np.name)
         types.Type.ty_imported as im:
             return is_raw_type_param_name(im.name)
         _:
@@ -11363,11 +11394,12 @@ function generic_receiver_info(ctx: ref[LoweringContext], recv_ty: types.Type) -
             owner_name = g.name
             raw_args = g.args
         types.Type.ty_named as n:
+            let n_np = unsafe: read(n.payload)
             # A registered generic instance carries its true owner: a user
             # variant whose type arguments mention Option/Result (e.g.
             # `Foo[Option[int]]`) would otherwise be misread as the prelude
             # variant by the fallback below.
-            let instance_ptr = monomorphized.generic_instance_get(ctx, n.name)
+            let instance_ptr = monomorphized.generic_instance_get(ctx, n_np.name)
             if instance_ptr != null:
                 let inst = unsafe: read(instance_ptr)
                 owner_name = inst.owner_name
@@ -11377,9 +11409,9 @@ function generic_receiver_info(ctx: ref[LoweringContext], recv_ty: types.Type) -
                 # Collapsed prelude-variant instance (`Option_str`): recover owner +
                 # args from the pending generic-variant registry so prelude methods
                 # monomorphize instead of falling to the module-qualified fallback.
-                if not match_mod.is_prelude_variant_name(n.name):
+                if not match_mod.is_prelude_variant_name(n_np.name):
                     return Option[GenericReceiver].none
-                match prelude_instance_args(ctx, n.name):
+                match prelude_instance_args(ctx, n_np.name):
                     Option.some as rec:
                         return Option[GenericReceiver].some(value = rec.value)
                     Option.none:
@@ -12347,14 +12379,15 @@ function is_event_type(ctx: ref[LoweringContext], t: types.Type) -> bool:
             # A struct event field's member read is typed as the event itself.
             return true
         types.Type.ty_named as n:
-            if ctx.analysis.events.contains(n.name):
+            let n_np = unsafe: read(n.payload)
+            if ctx.analysis.events.contains(n_np.name):
                 return true
-            if n.name.starts_with("mt_event_"):
-                let stripped = strip_event_cap_suffix(n.name)
+            if n_np.name.starts_with("mt_event_"):
+                let stripped = strip_event_cap_suffix(n_np.name)
                 if ctx.analysis.events.contains(stripped):
                     return true
-                return is_any_event_suffix(ctx, n.name)
-            return is_any_event_suffix(ctx, n.name)
+                return is_any_event_suffix(ctx, n_np.name)
+            return is_any_event_suffix(ctx, n_np.name)
         types.Type.ty_imported as im:
             if ctx.analysis.events.contains(im.name):
                 return true
@@ -12369,9 +12402,10 @@ function event_name_from_type(t: types.Type) -> str:
         types.Type.ty_event as e:
             return e.name
         types.Type.ty_named as n:
-            if n.name.starts_with("mt_event_"):
-                return event_name_from_c_linkage(n.name)
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            if n_np.name.starts_with("mt_event_"):
+                return event_name_from_c_linkage(n_np.name)
+            return n_np.name
         types.Type.ty_imported as im:
             if im.name.starts_with("mt_event_"):
                 return event_name_from_c_linkage(im.name)
@@ -12447,15 +12481,16 @@ function event_owner_for_receiver(ctx: ref[LoweringContext], t: types.Type) -> s
                 break
     match base:
         types.Type.ty_named as n:
-            match n.linkage_name:
+            let n_np = unsafe: read(n.payload)
+            match n_np.linkage_name:
                 Option.some as lk:
                     let prefix = strings.join_two(naming.sanitize_event_part(ctx.module_name), "_")
                     let linkage = lk.value
                     if linkage.len > prefix.len and linkage.starts_with(prefix):
                         return linkage.slice(prefix.len, linkage.len - prefix.len)
-                    return n.name
+                    return n_np.name
                 Option.none:
-                    return n.name
+                    return n_np.name
         types.Type.ty_imported as im:
             return im.name
         _:
@@ -12513,7 +12548,7 @@ function ensure_event_error_enum(ctx: ref[LoweringContext]) -> types.Type:
             is_flags = false,
         ))
         ctx.event_error_emitted = true
-    return types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "EventError")
+    return types.named_type(name = "EventError", module_name = "", linkage_name = Option[str].none)
 
 
 ## Ensure event runtime structs are declared (slot type, event type, subscript type).
@@ -12604,7 +12639,7 @@ public function ensure_event_runtime(ctx: ref[LoweringContext], owner: str, even
             ir.Field(name = "waiter_frame", ty = void_ptr_ty),
             ir.Field(name = "waiter", ty = wake_fn_ty),
             ir.Field(name = "event", ty = void_ptr_ty),
-            ir.Field(name = "subscription", ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription")),
+            ir.Field(name = "subscription", ty = types.named_type(name = "Subscription", module_name = "", linkage_name = Option[str].some(value = "mt_subscription"))),
             ir.Field(name = "result", ty = wait_result_ty),
         ),
         packed = false, alignment = 0, source_module = Option[str].none,
@@ -12613,7 +12648,7 @@ public function ensure_event_runtime(ctx: ref[LoweringContext], owner: str, even
     # event name (the host's `Types::Event#name`) while the linkage carries the
     # module/owner/name/payload/capacity identity.
     let capacity_val: long = long<-(ev.capacity)
-    let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = slot_cn)
+    let slot_ty = types.named_type(name = slot_cn, module_name = "", linkage_name = Option[str].none)
     let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(capacity_val)))
     ctx.pending_synthetic_structs.push(ir.StructDecl(
         name = event_name, linkage_name = event_cn,
@@ -12711,7 +12746,7 @@ function lower_event_method(ctx: ref[LoweringContext], recv: ptr[ir.Expr], recv_
             let listener_val = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
             unsafe:
                 call_args.push(read(listener_val))
-        let sub_plain_ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription")
+        let sub_plain_ty = types.named_type(name = "Subscription", module_name = "", linkage_name = Option[str].some(value = "mt_subscription"))
         let event_error_ty = ensure_event_error_enum(ctx)
         var result_args = vec.Vec[types.Type].create()
         result_args.push(sub_plain_ty)
@@ -12745,7 +12780,7 @@ function lower_event_method(ctx: ref[LoweringContext], recv: ptr[ir.Expr], recv_
 
 ## The host's `event_slot_pointer_expr`: `&event->slots[index]`.
 function event_slot_pointer_expr(info: ref[EventRuntimeInfo], event_expr: ptr[ir.Expr], slot_index_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
-    let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.slot_c_name)
+    let slot_ty = types.named_type(name = info.slot_c_name, module_name = "", linkage_name = Option[str].none)
     let slots_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(long<-(info.capacity))))
     let slots_member = alloc_expr(ir.Expr.expr_member(receiver = event_expr, member = "slots", ty = slots_ty))
     let slot_index = alloc_expr(ir.Expr.expr_index(receiver = slots_member, index = slot_index_expr, ty = slot_ty))
@@ -12754,7 +12789,7 @@ function event_slot_pointer_expr(info: ref[EventRuntimeInfo], event_expr: ptr[ir
 
 ## The host's `event_slot_local_decl`: `__mt_slot = &event->slots[index]`.
 function event_slot_local_decl(info: ref[EventRuntimeInfo], event_expr: ptr[ir.Expr], slot_index_expr: ptr[ir.Expr], local_name: str) -> ir.Stmt:
-    let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.slot_c_name)
+    let slot_ty = types.named_type(name = info.slot_c_name, module_name = "", linkage_name = Option[str].none)
     return ir.Stmt.stmt_local(
         name = local_name,
         linkage_name = local_name,
@@ -12850,7 +12885,7 @@ function event_slot_clear_statements(slot_pointer_expr: ptr[ir.Expr]) -> span[ir
 
 ## The host's `snapshot_field_expression`: `snapshots[index].field`.
 function event_snapshot_field_expr(info: ref[EventRuntimeInfo], snapshots_expr: ptr[ir.Expr], index_expr: ptr[ir.Expr], field_name: str, field_ty: types.Type) -> ptr[ir.Expr]:
-    let snapshot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = strings.join_two(info.linkage_name, "__snapshot"))
+    let snapshot_ty = types.named_type(name = strings.join_two(info.linkage_name, "__snapshot"), module_name = "", linkage_name = Option[str].none)
     let snapshot_index = alloc_expr(ir.Expr.expr_index(receiver = snapshots_expr, index = index_expr, ty = snapshot_ty))
     return alloc_expr(ir.Expr.expr_member(receiver = snapshot_index, member = field_name, ty = field_ty))
 
@@ -12864,7 +12899,7 @@ function event_wait_frame_field_expr(frame_expr: ptr[ir.Expr], field_name: str, 
 
 
 function event_subscription_literal(slot_expr: ptr[ir.Expr], generation_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
-    let sub_ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription")
+    let sub_ty = types.named_type(name = "Subscription", module_name = "", linkage_name = Option[str].some(value = "mt_subscription"))
     var fields = vec.Vec[ir.AggregateField].create()
     fields.push(ir.AggregateField(name = "slot", value = slot_expr))
     fields.push(ir.AggregateField(name = "generation", value = generation_expr))
@@ -12999,13 +13034,13 @@ function build_event_subscribe_fn(ctx: ref[LoweringContext], info: ref[EventRunt
     let bool_ty = ctx.bool_ty
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    let sub_plain_ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription")
+    let sub_plain_ty = types.named_type(name = "Subscription", module_name = "", linkage_name = Option[str].some(value = "mt_subscription"))
     let event_error_ty = ensure_event_error_enum(ctx)
     var result_args = vec.Vec[types.Type].create()
     result_args.push(sub_plain_ty)
     result_args.push(event_error_ty)
     let sub_result_ty = ensure_generic_variant(ctx, "Result", result_args.as_span())
-    let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.slot_c_name)
+    let slot_ty = types.named_type(name = info.slot_c_name, module_name = "", linkage_name = Option[str].none)
     let slot_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(slot_ty))
     let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(event_value_type(info)))
     let listener_ty = event_listener_type(info)
@@ -13048,13 +13083,13 @@ function build_event_subscribe_stateful_fn(ctx: ref[LoweringContext], info: ref[
     let bool_ty = ctx.bool_ty
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    let sub_plain_ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription")
+    let sub_plain_ty = types.named_type(name = "Subscription", module_name = "", linkage_name = Option[str].some(value = "mt_subscription"))
     let event_error_ty = ensure_event_error_enum(ctx)
     var result_args = vec.Vec[types.Type].create()
     result_args.push(sub_plain_ty)
     result_args.push(event_error_ty)
     let sub_result_ty = ensure_generic_variant(ctx, "Result", result_args.as_span())
-    let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.slot_c_name)
+    let slot_ty = types.named_type(name = info.slot_c_name, module_name = "", linkage_name = Option[str].none)
     let slot_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(slot_ty))
     let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(event_value_type(info)))
     var callee: str
@@ -13097,10 +13132,10 @@ function build_event_subscribe_stateful_fn(ctx: ref[LoweringContext], info: ref[
 function build_event_unsubscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn: str) -> ir.Function:
     let bool_ty = types.primitive("bool")
     let ptr_uint_ty = types.primitive("ptr_uint")
-    let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.slot_c_name)
+    let slot_ty = types.named_type(name = info.slot_c_name, module_name = "", linkage_name = Option[str].none)
     let slot_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(slot_ty))
     let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(event_value_type(info)))
-    let sub_ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription")
+    let sub_ty = types.named_type(name = "Subscription", module_name = "", linkage_name = Option[str].some(value = "mt_subscription"))
     let event_expr = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     let subscription_expr = alloc_expr(ir.Expr.expr_name(name = "subscription", ty = sub_ty, pointer = Option[bool].some(value = false)))
     let slot_index_expr = event_subscription_field_expr(subscription_expr, "slot", ptr_uint_ty)
@@ -13149,11 +13184,11 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     let bool_ty = types.primitive("bool")
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.slot_c_name)
+    let slot_ty = types.named_type(name = info.slot_c_name, module_name = "", linkage_name = Option[str].none)
     let slot_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(slot_ty))
-    let snapshot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = strings.join_two(info.linkage_name, "__snapshot"))
+    let snapshot_ty = types.named_type(name = strings.join_two(info.linkage_name, "__snapshot"), module_name = "", linkage_name = Option[str].none)
     let snapshots_ty = types.Type.ty_generic(name = "array", args = sp_type2(snapshot_ty, types.literal_int(long<-(info.capacity))))
-    let wait_frame_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.wait_frame_c_name)
+    let wait_frame_ty = types.named_type(name = info.wait_frame_c_name, module_name = "", linkage_name = Option[str].none)
     let wait_frame_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(wait_frame_ty))
     let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(event_value_type(info)))
     let event_expr = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
@@ -13310,7 +13345,7 @@ function build_event_wait_ready_fn(info: ref[EventRuntimeInfo], slot_cn: str, ev
     let void_ty = types.primitive("void")
     let bool_ty = types.primitive("bool")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.wait_frame_c_name)))
+    let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.named_type(name = info.wait_frame_c_name, module_name = "", linkage_name = Option[str].none)))
     let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     let frame_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_wait_frame", ty = wf_ptr_ty, pointer = Option[bool].some(value = false)))
     var body = vec.Vec[ir.Stmt].create()
@@ -13332,7 +13367,7 @@ function build_event_wait_set_waiter_fn(info: ref[EventRuntimeInfo], slot_cn: st
     let void_ty = types.primitive("void")
     let bool_ty = types.primitive("bool")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.wait_frame_c_name)))
+    let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.named_type(name = info.wait_frame_c_name, module_name = "", linkage_name = Option[str].none)))
     let wake_ty = event_task_wake_fn_type()
     let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     let frame_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_wait_frame", ty = wf_ptr_ty, pointer = Option[bool].some(value = false)))
@@ -13373,9 +13408,9 @@ function build_event_wait_release_fn(info: ref[EventRuntimeInfo], slot_cn: str, 
     let void_ty = types.primitive("void")
     let bool_ty = types.primitive("bool")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.wait_frame_c_name)))
+    let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.named_type(name = info.wait_frame_c_name, module_name = "", linkage_name = Option[str].none)))
     let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(event_value_type(info)))
-    let sub_ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription")
+    let sub_ty = types.named_type(name = "Subscription", module_name = "", linkage_name = Option[str].some(value = "mt_subscription"))
     let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     let frame_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_wait_frame", ty = wf_ptr_ty, pointer = Option[bool].some(value = false)))
     var body = vec.Vec[ir.Stmt].create()
@@ -13411,7 +13446,7 @@ function build_event_wait_take_result_fn(ctx: ref[LoweringContext], info: ref[Ev
     let void_ty = types.primitive("void")
     let bool_ty = types.primitive("bool")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.wait_frame_c_name)))
+    let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.named_type(name = info.wait_frame_c_name, module_name = "", linkage_name = Option[str].none)))
     let event_error_ty = ensure_event_error_enum(ctx)
     let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     let frame_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_wait_frame", ty = wf_ptr_ty, pointer = Option[bool].some(value = false)))
@@ -13436,12 +13471,12 @@ function build_event_wait_fn(ctx: ref[LoweringContext], info: ref[EventRuntimeIn
     let bool_ty = ctx.bool_ty
     let ptr_uint_ty = types.primitive("ptr_uint")
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
-    let wait_frame_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.wait_frame_c_name)
+    let wait_frame_ty = types.named_type(name = info.wait_frame_c_name, module_name = "", linkage_name = Option[str].none)
     let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(wait_frame_ty))
-    let slot_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = info.slot_c_name)
+    let slot_ty = types.named_type(name = info.slot_c_name, module_name = "", linkage_name = Option[str].none)
     let slot_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(slot_ty))
     let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(event_value_type(info)))
-    let sub_ty = types.Type.ty_named(linkage_name = Option[str].some(value = "mt_subscription"), module_name = "", name = "Subscription")
+    let sub_ty = types.named_type(name = "Subscription", module_name = "", linkage_name = Option[str].some(value = "mt_subscription"))
     let task_ty = tasks.make_task_type(info.wait_result_ty)
     let event_expr = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     let frame_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_wait_frame", ty = wf_ptr_ty, pointer = Option[bool].some(value = false)))
@@ -14179,7 +14214,8 @@ function is_external_module_type(t: types.Type) -> bool:
         types.Type.ty_imported as im:
             return im.module_name.starts_with("std.c.")
         types.Type.ty_named as n:
-            return n.module_name.starts_with("std.c.")
+            let n_np = unsafe: read(n.payload)
+            return n_np.module_name.starts_with("std.c.")
         _:
             return false
 
@@ -16054,10 +16090,11 @@ function deep_alias_target(ctx: ref[LoweringContext], t: types.Type) -> types.Ty
                 module_name = im.module_name
                 type_name = im.name
             types.Type.ty_named as nm:
-                if nm.module_name.len == 0:
+                let nm_np = unsafe: read(nm.payload)
+                if nm_np.module_name.len == 0:
                     return current
-                module_name = nm.module_name
-                type_name = nm.name
+                module_name = nm_np.module_name
+                type_name = nm_np.name
             _:
                 return current
         match resolve_imported_alias_type(ctx.program_analyses, module_name, type_name):
@@ -16375,7 +16412,8 @@ struct ProcCapture:
 function is_proc_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_named as n:
-            return n.name.find_substring("__proc_").is_some() or n.name.starts_with("mt_proc_")
+            let n_np = unsafe: read(n.payload)
+            return n_np.name.find_substring("__proc_").is_some() or n_np.name.starts_with("mt_proc_")
         types.Type.ty_function as fnt:
             let fnt_ft = unsafe: read(fnt.payload)
             return fnt_ft.is_proc
@@ -16453,7 +16491,8 @@ function type_contains_type_var(t: types.Type) -> bool:
         types.Type.ty_var:
             return true
         types.Type.ty_named as n:
-            if n.name == "T" or n.name == "U" or n.name == "K" or n.name == "V" or n.name == "E":
+            let n_np = unsafe: read(n.payload)
+            if n_np.name == "T" or n_np.name == "U" or n_np.name == "K" or n_np.name == "V" or n_np.name == "E":
                 return true
             return false
         types.Type.ty_generic as g:
@@ -16809,7 +16848,7 @@ function lower_identifier_member(ctx: ref[LoweringContext], receiver: ptr[ast.Ex
                 if id.name == "EventError" and member == "full":
                     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_name(
                         name = "EventError_full",
-                        ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "EventError"),
+                        ty = types.named_type(name = "EventError", module_name = "", linkage_name = Option[str].none),
                         pointer = Option[bool].some(value = false),
                     )))
                 if ctx.analysis.static_member_types.contains(id.name):
@@ -16818,7 +16857,7 @@ function lower_identifier_member(ctx: ref[LoweringContext], receiver: ptr[ast.Ex
                         types.Type.ty_error:
                             # Const initializers can miss the analyzer's type map;
                             # a static member's type is its declaring type.
-                            member_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = id.name)
+                            member_ty = types.named_type(name = id.name, module_name = ctx.module_name, linkage_name = Option[str].none)
                         _:
                             pass
                     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_name(
@@ -17120,7 +17159,8 @@ function lower_member_access(ctx: ref[LoweringContext], receiver: ptr[ast.Expr],
     # Only applicable when recv_ty is a variant arm payload struct.
     match recv_ty:
         types.Type.ty_named as rn:
-            if ctx.arm_payload_fields.contains(rn.name):
+            let rn_np = unsafe: read(rn.payload)
+            if ctx.arm_payload_fields.contains(rn_np.name):
                 if match_mod.is_recursive_variant_field(recv_ty, member_ty):
                     return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = result, ty = member_ty))
         types.Type.ty_imported as ri:
@@ -17153,8 +17193,9 @@ public function concrete_field_type(ctx: ref[LoweringContext], recv_ty: types.Ty
     var lookup_name: str = ""
     match base:
         types.Type.ty_named as n:
-            struct_name = n.name
-            lookup_name = n.name
+            let n_np = unsafe: read(n.payload)
+            struct_name = n_np.name
+            lookup_name = n_np.name
         types.Type.ty_imported as im:
             struct_name = im.name
             owner_module = im.module_name
@@ -17286,9 +17327,10 @@ function opaqueify_type(ctx: ref[LoweringContext], ty: types.Type) -> types.Type
                 ii += 1
             return types.Type.ty_imported(module_name = im.module_name, name = im.name, args = iargs.as_span())
         types.Type.ty_named as n:
-            let owner = if n.module_name.len > 0: n.module_name else: ctx.module_name
-            if find_imported_opaque_decl(ctx, owner, n.name):
-                return types.Type.ty_opaque(module_name = owner, name = n.name)
+            let n_np = unsafe: read(n.payload)
+            let owner = if n_np.module_name.len > 0: n_np.module_name else: ctx.module_name
+            if find_imported_opaque_decl(ctx, owner, n_np.name):
+                return types.Type.ty_opaque(module_name = owner, name = n_np.name)
             return ty
         types.Type.ty_generic as g:
             if g.args.len == 0:
@@ -17336,19 +17378,20 @@ public function lower_struct_decl(ctx: ref[LoweringContext], name: str, packed: 
         # `lower_struct_decl` emits it (`Types::Event#hidden_field_name`).
         match fty:
             types.Type.ty_named as nt:
-                match event_info_for_owner(ctx, owner, nt.name):
+                let nt_np = unsafe: read(nt.payload)
+                match event_info_for_owner(ctx, owner, nt_np.name):
                     Option.some as evi:
-                        var info = ensure_event_runtime(ctx, evi.value.owner_type_name, nt.name)
+                        var info = ensure_event_runtime(ctx, evi.value.owner_type_name, nt_np.name)
                         var ev_payload: ptr[types.Type]? = null
                         if info.has_payload:
                             ev_payload = types.alloc_type(info.payload_type)
                         fty = types.Type.ty_event(
-                            name = nt.name,
+                            name = nt_np.name,
                             capacity = info.capacity,
                             payload_type = ev_payload,
                             linkage_name = info.event_c_name,
                         )
-                        fname = strings.join_two("__event_", nt.name)
+                        fname = strings.join_two("__event_", nt_np.name)
                     Option.none:
                         pass
             _:
@@ -17470,7 +17513,7 @@ public function sp_str(value: str) -> span[str]:
 ## concrete type from the generic call site.
 function sp_str_type(name: str) -> span[types.Type]:
     var buf = vec.Vec[types.Type].create()
-    buf.push(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = name))
+    buf.push(types.named_type(name = name, module_name = "", linkage_name = Option[str].none))
     return buf.as_span()
 
 
@@ -17711,14 +17754,15 @@ public function variant_base_c_name(ty: types.Type, module_name: str) -> str:
             # (`engine_types_Outcome_int_EngineError` -> `engine_types_Outcome`).
             result = naming.type_c_key(ty)
         types.Type.ty_named as n:
-            if match_mod.is_prelude_variant_name(n.name):
-                result = n.name
+            let n_np = unsafe: read(n.payload)
+            if match_mod.is_prelude_variant_name(n_np.name):
+                result = n_np.name
             else:
                 # A named type's own module is authoritative: the caller's
                 # `module_name` is only the fallback for a bare declaration
                 # (`Expr` in `builder` vs an imported `ast.Expr`).
-                let owner = if n.module_name.len > 0: n.module_name else: module_name
-                result = naming.qualified_c_name(owner, n.name)
+                let owner = if n_np.module_name.len > 0: n_np.module_name else: module_name
+                result = naming.qualified_c_name(owner, n_np.name)
         _:
             result = naming.qualified_c_name(module_name, "")
     return result
@@ -17815,7 +17859,7 @@ public function resolve_field_type_ref(ctx: ref[LoweringContext], tref: ast.Type
             if concrete_ptr != null:
                 resolved = unsafe: read(concrete_ptr)
             else:
-                resolved = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = name)
+                resolved = types.named_type(name = name, module_name = "", linkage_name = Option[str].none)
     if tref.nullable and not types.is_error(resolved):
         return types.Type.ty_nullable(base = types.alloc_type(resolved))
     return resolved
@@ -18220,7 +18264,8 @@ public function append_span_stmts(dest: ref[vec.Vec[ir.Stmt]], stmts: span[ir.St
 public function named_type_name(t: types.Type) -> Option[str]:
     match t:
         types.Type.ty_named as n:
-            return Option[str].some(value = n.name)
+            let n_np = unsafe: read(n.payload)
+            return Option[str].some(value = n_np.name)
         types.Type.ty_imported as im:
             return Option[str].some(value = im.name)
         types.Type.ty_generic as g:
@@ -18298,7 +18343,8 @@ public function attribute_application_name_is(app: ast.AttributeApplication, nam
 public function type_simple_name(t: types.Type) -> str:
     match t:
         types.Type.ty_named as n:
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            return n_np.name
         types.Type.ty_imported as im:
             return im.name
         types.Type.ty_generic as g:

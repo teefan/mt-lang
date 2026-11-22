@@ -55,7 +55,7 @@ function test_type_store_keeps_render_distinct_spellings_apart() -> void:
     let int_ty = types.primitive("int")
     let generic_id = store.intern(types.Type.ty_generic(name = "Option", args = one_type(int_ty)))
     let imported_id = store.intern(types.Type.ty_imported(module_name = "std.option", name = "Option", args = one_type(int_ty)))
-    let named_id = store.intern(types.Type.ty_named(name = "Option", module_name = "std.option", linkage_name = Option[str].none))
+    let named_id = store.intern(types.named_type(name = "Option", module_name = "std.option", linkage_name = Option[str].none))
     expect(generic_id != imported_id)
     expect(imported_id != named_id)
     expect(generic_id != named_id)

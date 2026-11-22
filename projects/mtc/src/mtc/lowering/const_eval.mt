@@ -40,8 +40,9 @@ function enum_member_value_of_expr(ctx: ref[lowering.LoweringContext], ep: ptr[a
                         enum_name = im.name
                         enum_module = if im.module_name.len > 0: im.module_name else: ctx.module_name
                     types.Type.ty_named as nm:
-                        enum_name = nm.name
-                        enum_module = if nm.module_name.len > 0: nm.module_name else: ctx.module_name
+                        let nm_np = unsafe: read(nm.payload)
+                        enum_name = nm_np.name
+                        enum_module = if nm_np.module_name.len > 0: nm_np.module_name else: ctx.module_name
                     _:
                         pass
                 if enum_name.len > 0:
@@ -975,8 +976,9 @@ function try_const_struct_literal_ir(ctx: ref[lowering.LoweringContext], target:
     var field_module = ctx.module_name
     match target:
         types.Type.ty_named as nm:
-            struct_name = nm.name
-            field_module = nm.module_name
+            let nm_np = unsafe: read(nm.payload)
+            struct_name = nm_np.name
+            field_module = nm_np.module_name
         types.Type.ty_imported as im:
             struct_name = im.name
             field_module = im.module_name
@@ -1025,7 +1027,7 @@ function try_const_variant_literal_ir(ctx: ref[lowering.LoweringContext], varian
             Option.none:
                 return Option[ptr[ir.Expr]].none
         i += 1
-    let var_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = variant_name)
+    let var_ty = types.named_type(name = variant_name, module_name = ctx.module_name, linkage_name = Option[str].none)
     return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_variant_literal(ty = var_ty, arm_name = arm_name, fields = fields.as_span())))
 
 

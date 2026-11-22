@@ -654,7 +654,8 @@ function append_facts_type_row(target: ref[string.String], analysis: ref[analyze
 function facts_type_repr(analysis: ref[analyzer.Analysis], name: str, t: types.Type) -> str:
     match t:
         types.Type.ty_named as n:
-            if n.module_name.len == 0:
+            let n_np = unsafe: read(n.payload)
+            if n_np.module_name.len == 0:
                 if name == "Option":
                     return "std.option.Option"
                 if name == "Result":
@@ -1236,13 +1237,14 @@ function append_binding_site_row(target: ref[string.String], site: analyzer.Bind
 public function debug_type_repr(t: types.Type) -> str:
     match t:
         types.Type.ty_named as n:
-            if n.module_name.len > 0:
+            let n_np = unsafe: read(n.payload)
+            if n_np.module_name.len > 0:
                 var buf = string.String.create()
-                buf.append(n.module_name)
+                buf.append(n_np.module_name)
                 buf.append(".")
-                buf.append(n.name)
+                buf.append(n_np.name)
                 return buf.as_str()
-            return n.name
+            return n_np.name
         types.Type.ty_imported as im:
             if im.module_name.len > 0:
                 var buf = string.String.create()
@@ -1280,33 +1282,35 @@ function binding_type_repr(analysis: ref[analyzer.Analysis], t: types.Type) -> s
 function append_binding_type_repr(target: ref[string.String], analysis: ref[analyzer.Analysis], t: types.Type) -> void:
     match t:
         types.Type.ty_named as n:
-            if n.module_name.len > 0:
-                target.append(n.module_name)
+            let n_np = unsafe: read(n.payload)
+            if n_np.module_name.len > 0:
+                target.append(n_np.module_name)
                 target.append(".")
-                target.append(n.name)
+                target.append(n_np.name)
                 return
-            if n.name.equal("Option"):
+            if n_np.name.equal("Option"):
                 target.append("std.option.Option")
                 return
-            if n.name.equal("Result"):
+            if n_np.name.equal("Result"):
                 target.append("std.result.Result")
                 return
-            let declared = analysis.types.get(n.name)
+            let declared = analysis.types.get(n_np.name)
             if declared != null:
                 # An alias resolves through its target; a bare declaration of
                 # the same name (`module_name` empty) has no better spelling
                 # and must not recurse.
                 match unsafe: read(declared):
                     types.Type.ty_named as dn:
-                        if dn.module_name.len > 0:
-                            target.append(dn.module_name)
+                        let dn_np = unsafe: read(dn.payload)
+                        if dn_np.module_name.len > 0:
+                            target.append(dn_np.module_name)
                             target.append(".")
-                            target.append(dn.name)
+                            target.append(dn_np.name)
                             return
                     _:
                         append_binding_type_repr(target, analysis, unsafe: read(declared))
                         return
-            target.append(n.name)
+            target.append(n_np.name)
         types.Type.ty_nullable as nl:
             append_binding_type_repr(target, analysis, unsafe: read(nl.base))
             target.append("?")
@@ -1339,8 +1343,9 @@ function append_binding_type_name(target: ref[string.String], analysis: ref[anal
     if declared != null:
         match unsafe: read(declared):
             types.Type.ty_named as dn:
-                if dn.module_name.len > 0:
-                    target.append(dn.module_name)
+                let dn_np = unsafe: read(dn.payload)
+                if dn_np.module_name.len > 0:
+                    target.append(dn_np.module_name)
                     target.append(".")
                     target.append(name)
                     return

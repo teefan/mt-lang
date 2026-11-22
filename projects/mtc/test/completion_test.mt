@@ -313,7 +313,8 @@ function test_incomplete_dot_records_non_text_receiver_type() -> void:
         Option.some as ty:
             match ty.value:
                 types.Type.ty_named as named:
-                    expect_eq(named.name, "P")
+                    let named_np = unsafe: read(named.payload)
+                    expect_eq(named_np.name, "P")
                 _:
                     expect(false, "make() receiver is not P")
         Option.none:
@@ -324,7 +325,8 @@ function test_incomplete_dot_records_non_text_receiver_type() -> void:
         Option.some as ty:
             match ty.value:
                 types.Type.ty_named as named:
-                    expect_eq(named.name, "P")
+                    let named_np = unsafe: read(named.payload)
+                    expect_eq(named_np.name, "P")
                     var items = comp.typed_receiver_completions(
                         ref_of(analysis), ast_file, ty.value, "", "file:///probe.mt")
                     defer: items.release()

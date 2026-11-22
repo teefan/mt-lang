@@ -667,7 +667,8 @@ public function const_fold_unary_ir(ctx: ref[lowering.LoweringContext], op: str,
 public function const_receiver_struct_name(value: ptr[ir.Expr]) -> Option[str]:
     match lowering.ir_expr_type(value):
         types.Type.ty_named as n:
-            return Option[str].some(value = n.name)
+            let n_np = unsafe: read(n.payload)
+            return Option[str].some(value = n_np.name)
         types.Type.ty_imported as im:
             return Option[str].some(value = im.name)
         _:
@@ -725,7 +726,7 @@ public function const_aggregate_target_type(ctx: ref[lowering.LoweringContext], 
         Option.some as owner:
             if owner.value.structs.contains(name):
                 if owner_module == ctx.module_name:
-                    return Option[types.Type].some(value = types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = name))
+                    return Option[types.Type].some(value = types.named_type(name = name, module_name = ctx.module_name, linkage_name = Option[str].none))
                 return Option[types.Type].some(value = types.Type.ty_imported(module_name = owner_module, name = name, args = span[types.Type]()))
             let alias_ptr = owner.value.type_alias_types.get(name)
             if alias_ptr != null:
@@ -748,13 +749,14 @@ public function const_aggregate_target_type(ctx: ref[lowering.LoweringContext], 
 function const_struct_alias_target(ctx: ref[lowering.LoweringContext], t: types.Type) -> Option[types.Type]:
     match t:
         types.Type.ty_named as nm:
-            if nm.module_name.len == 0 or nm.module_name == ctx.module_name:
-                if ctx.analysis.structs.contains(nm.name):
+            let nm_np = unsafe: read(nm.payload)
+            if nm_np.module_name.len == 0 or nm_np.module_name == ctx.module_name:
+                if ctx.analysis.structs.contains(nm_np.name):
                     return Option[types.Type].some(value = t)
                 return Option[types.Type].none
-            match lowering.find_imported_analysis(ctx, nm.module_name):
+            match lowering.find_imported_analysis(ctx, nm_np.module_name):
                 Option.some as owner:
-                    if owner.value.structs.contains(nm.name):
+                    if owner.value.structs.contains(nm_np.name):
                         return Option[types.Type].some(value = t)
                 Option.none:
                     pass

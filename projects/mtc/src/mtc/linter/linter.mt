@@ -4099,7 +4099,8 @@ function prefer_struct_with_expr_type(analysis: ref[analyzer.Analysis], expr: pt
 function prefer_struct_with_fields(analysis: ref[analyzer.Analysis], ty: types.Type) -> Option[span[analyzer.FieldEntry]]:
     match ty:
         types.Type.ty_named as n:
-            let fp = unsafe: read(analysis).structs.get(n.name) else:
+            let n_np = unsafe: read(n.payload)
+            let fp = unsafe: read(analysis).structs.get(n_np.name) else:
                 return Option[span[analyzer.FieldEntry]].none
             return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(fp))
         types.Type.ty_imported as im:
@@ -4125,13 +4126,15 @@ function prefer_struct_with_fields(analysis: ref[analyzer.Analysis], ty: types.T
 function prefer_struct_with_same_type(a: types.Type, b: types.Type) -> bool:
     match a:
         types.Type.ty_named as na:
+            let na_np = unsafe: read(na.payload)
             match b:
                 types.Type.ty_named as nb:
-                    return named_modules_match(na.name, na.module_name, nb.name, nb.module_name)
+                    let nb_np = unsafe: read(nb.payload)
+                    return named_modules_match(na_np.name, na_np.module_name, nb_np.name, nb_np.module_name)
                 types.Type.ty_imported as ib:
                     if ib.args.len > 0:
                         return false
-                    return named_modules_match(na.name, na.module_name, ib.name, ib.module_name)
+                    return named_modules_match(na_np.name, na_np.module_name, ib.name, ib.module_name)
                 _:
                     return false
         types.Type.ty_imported as ia:
@@ -4143,7 +4146,8 @@ function prefer_struct_with_same_type(a: types.Type, b: types.Type) -> bool:
                         return false
                     return named_modules_match(ia.name, ia.module_name, ib.name, ib.module_name)
                 types.Type.ty_named as nb:
-                    return named_modules_match(ia.name, ia.module_name, nb.name, nb.module_name)
+                    let nb_np = unsafe: read(nb.payload)
+                    return named_modules_match(ia.name, ia.module_name, nb_np.name, nb_np.module_name)
                 _:
                     return false
         _:

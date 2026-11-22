@@ -535,7 +535,8 @@ function is_std_string_type(t: types.Type) -> bool:
         effective = types.pointer_element(effective)
     match effective:
         types.Type.ty_named as n:
-            return n.name == "String" and n.module_name == "std.string"
+            let n_np = unsafe: read(n.payload)
+            return n_np.name == "String" and n_np.module_name == "std.string"
         types.Type.ty_imported as im:
             return im.name == "String" and im.module_name == "std.string"
         _:

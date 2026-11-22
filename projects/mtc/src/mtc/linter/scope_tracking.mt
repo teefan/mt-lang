@@ -1146,7 +1146,8 @@ function type_leaf_name(ty: types.Type) -> str:
         types.Type.ty_str:
             return "str"
         types.Type.ty_named as n:
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            return n_np.name
         types.Type.ty_imported as im:
             return im.name
         types.Type.ty_generic as g:
@@ -1164,7 +1165,8 @@ function type_leaf_name(ty: types.Type) -> str:
 function type_module_name(ty: types.Type) -> str:
     match ty:
         types.Type.ty_named as n:
-            return n.module_name
+            let n_np = unsafe: read(n.payload)
+            return n_np.module_name
         types.Type.ty_imported as im:
             return im.module_name
         types.Type.ty_opaque as op:

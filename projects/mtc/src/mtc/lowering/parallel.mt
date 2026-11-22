@@ -580,7 +580,7 @@ public function lower_parallel_for(ctx: ref[lowering.LoweringContext], output: r
         ci += 1
     ctx.pending_synthetic_structs.push(ir.StructDecl(name = cap_name, linkage_name = cap_name, fields = cap_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
 
-    let cap_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = cap_name)
+    let cap_ty = types.named_type(name = cap_name, module_name = "", linkage_name = Option[str].none)
     let cap_ptr_ty = pfor_ptr_type(cap_ty)
     let void_ptr = void_ptr_ty()
     var worker_body = vec.Vec[ir.Stmt].create()
@@ -736,7 +736,7 @@ public function lower_parallel_block(ctx: ref[lowering.LoweringContext], output:
         idx += 1
 
     let fn_ty = types.function_type(name = "", params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = span[str]())
-    let spawn_item_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "mt_spawn_item")
+    let spawn_item_ty = types.named_type(name = "mt_spawn_item", module_name = "", linkage_name = Option[str].none)
     var call_site = vec.Vec[ir.Stmt].create()
     idx = 0
     while idx < infos.len():
@@ -876,7 +876,7 @@ function build_parallel_workers(ctx: ref[lowering.LoweringContext], bodies: span
                         pass
                 ci += 1
             ctx.pending_synthetic_structs.push(ir.StructDecl(name = cap_name, linkage_name = cap_name, fields = cap_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
-            cap_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = cap_name)
+            cap_ty = types.named_type(name = cap_name, module_name = "", linkage_name = Option[str].none)
             let cap_ptr_ty = pfor_ptr_type(cap_ty)
             worker_body.push(ir.Stmt.stmt_local(
                 name = "mt_cap", linkage_name = "mt_cap", ty = cap_ptr_ty,

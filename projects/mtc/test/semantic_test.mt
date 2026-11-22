@@ -3591,7 +3591,8 @@ function test_member_receiver_type_records_non_text_receivers() -> void:
         return
     match ty:
         types.Type.ty_named as named:
-            expect(named.name == "Box", "call receiver type")
+            let named_np = unsafe: read(named.payload)
+            expect(named_np.name == "Box", "call receiver type")
         _:
             expect(false, "expected a named Box receiver")
 
@@ -3614,7 +3615,8 @@ function test_member_receiver_type_records_index_receivers() -> void:
         return
     match ty:
         types.Type.ty_named as named:
-            expect(named.name == "Point", "index receiver type")
+            let named_np = unsafe: read(named.payload)
+            expect(named_np.name == "Point", "index receiver type")
         _:
             expect(false, "expected a named Point receiver")
 

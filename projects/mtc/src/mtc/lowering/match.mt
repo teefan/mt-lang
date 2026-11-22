@@ -1008,7 +1008,8 @@ function lower_variant_field_bindings(ctx: ref[lowering.LoweringContext], blk: r
                                 # Auto-dereference recursive variant fields.
                                 match payload_ty:
                                     types.Type.ty_named as pn:
-                                        if ctx.arm_payload_fields.contains(pn.name) and is_recursive_variant_field(payload_ty, field_ty):
+                                        let pn_np = unsafe: read(pn.payload)
+                                        if ctx.arm_payload_fields.contains(pn_np.name) and is_recursive_variant_field(payload_ty, field_ty):
                                             field_expr = lowering.alloc_expr(ir.Expr.expr_unary(operator = "*", operand = field_expr, ty = field_ty))
                                     types.Type.ty_imported as pi:
                                         if ctx.arm_payload_fields.contains(naming.qualified_c_name(pi.module_name, pi.name)) and is_recursive_variant_field(payload_ty, field_ty):
@@ -1140,9 +1141,10 @@ public function variant_declared_identity(ty: types.Type, fallback_module: str) 
                 return (im.name, variant_arm_owner_module(im.name, ""))
             return (im.name, im.module_name)
         types.Type.ty_named as n:
-            if is_prelude_variant_name(n.name):
-                return (n.name, variant_arm_owner_module(n.name, ""))
-            return (n.name, if n.module_name.len > 0: n.module_name else: fallback_module)
+            let n_np = unsafe: read(n.payload)
+            if is_prelude_variant_name(n_np.name):
+                return (n_np.name, variant_arm_owner_module(n_np.name, ""))
+            return (n_np.name, if n_np.module_name.len > 0: n_np.module_name else: fallback_module)
         _:
             return ("", fallback_module)
 
@@ -1291,7 +1293,8 @@ public function variant_type_args(ty: types.Type) -> span[types.Type]:
 function is_phantom_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_named as n:
-            return n.name == "_phantom"
+            let n_np = unsafe: read(n.payload)
+            return n_np.name == "_phantom"
         _:
             return false
 
@@ -1301,7 +1304,8 @@ public function is_recursive_variant_field(recv_ty: types.Type, field_ty: types.
     var recv_c: str
     match recv_ty:
         types.Type.ty_named as rn:
-            recv_c = rn.name
+            let rn_np = unsafe: read(rn.payload)
+            recv_c = rn_np.name
         types.Type.ty_imported as ri:
             recv_c = naming.qualified_c_name(ri.module_name, ri.name)
         # A match binding is typed as the arm payload struct directly
@@ -1314,7 +1318,8 @@ public function is_recursive_variant_field(recv_ty: types.Type, field_ty: types.
     var field_c: str
     match field_ty:
         types.Type.ty_named as nt:
-            field_c = naming.qualified_c_name("", nt.name)
+            let nt_np = unsafe: read(nt.payload)
+            field_c = naming.qualified_c_name("", nt_np.name)
         types.Type.ty_imported as fi:
             field_c = naming.qualified_c_name(fi.module_name, fi.name)
         _:
@@ -1327,7 +1332,8 @@ public function is_recursive_variant_field(recv_ty: types.Type, field_ty: types.
     # Also check bare names.
     match field_ty:
         types.Type.ty_named as nt2:
-            if recv_c.starts_with(nt2.name):
+            let nt2_np = unsafe: read(nt2.payload)
+            if recv_c.starts_with(nt2_np.name):
                 return true
         types.Type.ty_imported as fi2:
             if recv_c.starts_with(fi2.name):
@@ -1342,7 +1348,8 @@ public function is_recursive_variant_field_c(payload_c: str, field_ty: types.Typ
     var field_c: str
     match field_ty:
         types.Type.ty_named as nt:
-            field_c = naming.qualified_c_name("", nt.name)
+            let nt_np = unsafe: read(nt.payload)
+            field_c = naming.qualified_c_name("", nt_np.name)
         types.Type.ty_imported as fi:
             field_c = naming.qualified_c_name(fi.module_name, fi.name)
         _:
@@ -1424,7 +1431,7 @@ function variant_info_for_c_name(ctx: ref[lowering.LoweringContext], variant_c: 
 ## Return the arm payload type from a struct name and source module.
 public function payload_ty(ctx: ref[lowering.LoweringContext], struct_name: str, source_module: str) -> types.Type:
     if source_module.len == 0:
-        return types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = struct_name)
+        return types.named_type(name = struct_name, module_name = "", linkage_name = Option[str].none)
     return types.Type.ty_imported(module_name = source_module, name = struct_name, args = span[types.Type]())
 
 
@@ -1434,7 +1441,8 @@ public function arm_payload_field_type(ctx: ref[lowering.LoweringContext], recv_
     var name: str
     match recv_ty:
         types.Type.ty_named as n:
-            name = n.name
+            let n_np = unsafe: read(n.payload)
+            name = n_np.name
         types.Type.ty_variant_arm_payload as ap:
             # The registry is keyed by the payload struct's C name.
             name = unsafe: read(ap.payload).c_name
@@ -1501,8 +1509,9 @@ public function generic_variant_name(t: types.Type) -> Option[str]:
                 return Option[str].some(value = im.name)
             return Option[str].none
         types.Type.ty_named as n:
-            if is_prelude_variant_name(n.name):
-                return Option[str].some(value = n.name)
+            let n_np = unsafe: read(n.payload)
+            if is_prelude_variant_name(n_np.name):
+                return Option[str].some(value = n_np.name)
             return Option[str].none
         _:
             return Option[str].none

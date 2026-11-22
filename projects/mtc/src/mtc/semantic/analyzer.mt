@@ -1313,7 +1313,7 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
         match d:
             ast.Decl.decl_struct as s:
                 declare_type(ctx, s.name, s.line, s.column)
-                ctx.types.set(s.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = s.name))
+                ctx.types.set(s.name, types.named_type(name = s.name, module_name = ctx.module_name, linkage_name = Option[str].none))
                 register_module_type_name(ctx, s.name)
                 ctx.type_param_names.set(s.name, s.type_params)
                 ctx.implemented.set(s.name, s.impl_list)
@@ -1321,24 +1321,24 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
                 register_struct_events(ctx, s.struct_events, s.name)
             ast.Decl.decl_union as u:
                 declare_type(ctx, u.name, u.line, u.column)
-                ctx.types.set(u.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = u.name))
+                ctx.types.set(u.name, types.named_type(name = u.name, module_name = ctx.module_name, linkage_name = Option[str].none))
                 register_module_type_name(ctx, u.name)
             ast.Decl.decl_enum as e:
                 declare_type(ctx, e.name, e.line, e.column)
-                ctx.types.set(e.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = e.name))
+                ctx.types.set(e.name, types.named_type(name = e.name, module_name = ctx.module_name, linkage_name = Option[str].none))
                 register_module_type_name(ctx, e.name)
             ast.Decl.decl_flags as fl:
                 declare_type(ctx, fl.name, fl.line, fl.column)
-                ctx.types.set(fl.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = fl.name))
+                ctx.types.set(fl.name, types.named_type(name = fl.name, module_name = ctx.module_name, linkage_name = Option[str].none))
                 register_module_type_name(ctx, fl.name)
             ast.Decl.decl_variant as vr:
                 declare_type(ctx, vr.name, vr.line, vr.column)
-                ctx.types.set(vr.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = vr.name))
+                ctx.types.set(vr.name, types.named_type(name = vr.name, module_name = ctx.module_name, linkage_name = Option[str].none))
                 register_module_type_name(ctx, vr.name)
                 ctx.type_param_names.set(vr.name, vr.type_params)
             ast.Decl.decl_opaque as op:
                 declare_type(ctx, op.name, op.line, op.column)
-                ctx.types.set(op.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = op.name))
+                ctx.types.set(op.name, types.named_type(name = op.name, module_name = ctx.module_name, linkage_name = Option[str].none))
                 register_module_type_name(ctx, op.name)
                 ctx.implemented.set(op.name, op.opaque_implements)
             ast.Decl.decl_type_alias as ta:
@@ -1434,10 +1434,7 @@ function register_nested_struct_types(ctx: ref[Context], nested: span[ast.Decl],
                 # `Types::Struct.new(nested.name, …)`) but links through its
                 # parents (`<module>_Rectangle_Edge`), so a field, parameter or
                 # local of this type emits the declared C name.
-                let nested_ty = types.Type.ty_named(
-                    linkage_name = Option[str].some(value = nested_struct_linkage(ctx.module_name, qname)),
-                    module_name = ctx.module_name,
-                    name = s.name)
+                let nested_ty = types.named_type(name = s.name, module_name = ctx.module_name, linkage_name = Option[str].some(value = nested_struct_linkage(ctx.module_name, qname)))
                 ctx.types.set(qname, nested_ty)
                 if not ctx.type_names.contains(s.name):
                     declare_type(ctx, s.name, s.line, s.column)
@@ -1897,7 +1894,7 @@ function merge_prelude_binding_methods(ctx: ref[Context], module_name: str) -> v
 ## Ruby's type_declaration.rb built-in registration.
 function register_builtin_event_types(ctx: ref[Context]) -> void:
     if not ctx.type_names.contains("EventError"):
-        ctx.types.set("EventError", types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "EventError"))
+        ctx.types.set("EventError", types.named_type(name = "EventError", module_name = "", linkage_name = Option[str].none))
         ctx.static_member_types.set("EventError", true)
         ctx.match_case_types.set("EventError", true)
         ctx.method_keys.set(method_key("EventError", "full"), true)
@@ -1906,13 +1903,13 @@ function register_builtin_event_types(ctx: ref[Context]) -> void:
         ctx.match_case_names.set("EventError", members.as_span())
         ctx.member_names.set("EventError", members.as_span())
     if not ctx.type_names.contains("Subscription"):
-        ctx.types.set("Subscription", types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "Subscription"))
+        ctx.types.set("Subscription", types.named_type(name = "Subscription", module_name = "", linkage_name = Option[str].none))
 
 
 function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: str) -> void:
     if ctx.type_names.contains(name):
         return
-    ctx.types.set(name, types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = name))
+    ctx.types.set(name, types.named_type(name = name, module_name = "", linkage_name = Option[str].none))
     ctx.static_member_types.set(name, true)
     ctx.match_case_types.set(name, true)
     ctx.variant_types.set(name, true)
@@ -2232,7 +2229,7 @@ function resolve_field_entries_with_events(ctx: ref[Context], fields: span[ast.F
         unsafe:
             match read(struct_events.data + evi):
                 ast.Decl.decl_event as ev:
-                    result.push(FieldEntry(name = ev.name, ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = ev.name)))
+                    result.push(FieldEntry(name = ev.name, ty = types.named_type(name = ev.name, module_name = "", linkage_name = Option[str].none)))
                 _:
                     pass
         evi += 1
@@ -2270,8 +2267,9 @@ function canonical_extending_base(ctx: ref[Context], type_name: ptr[ast.TypeRef]
                 target_module = im.module_name
                 moved = true
             types.Type.ty_named as nn:
-                name = nn.name
-                target_module = nn.module_name
+                let nn_np = unsafe: read(nn.payload)
+                name = nn_np.name
+                target_module = nn_np.module_name
                 moved = true
             _:
                 pass
@@ -2537,7 +2535,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
             ast.Decl.decl_event as ev:
                 check_reserved_value_name(ctx, "event", ev.name, ev.line, ev.column)
                 if declare_value(ctx, ev.name, ev.line, ev.column):
-                    ctx.value_types.set(ev.name, types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = ev.name))
+                    ctx.value_types.set(ev.name, types.named_type(name = ev.name, module_name = "", linkage_name = Option[str].none))
             ast.Decl.decl_struct as s:
                 # Register struct events as values so they can be referenced
                 # in expressions like `window.closed.emit()`.  Also recurse
@@ -2682,7 +2680,7 @@ function resolve_type_at(ctx: ref[Context], t: ast.TypeRef, depth: int) -> types
         return wrap_nullable(base, t.nullable)
 
     if t.is_dyn:
-        return wrap_nullable(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "dyn"), t.nullable)
+        return wrap_nullable(types.named_type(name = "dyn", module_name = "", linkage_name = Option[str].none), t.nullable)
 
     if t.is_tuple:
         var elems = vec.Vec[types.Type].create()
@@ -2844,6 +2842,7 @@ function resolve_registered_type(ctx: ref[Context], name: str, arguments: span[a
         let registered = unsafe: read(registered_ptr)
         match registered:
             types.Type.ty_named as rn:
+                let rn_np = unsafe: read(rn.payload)
                 if arguments.len == 0:
                     return registered
             _:
@@ -2861,7 +2860,7 @@ function resolve_registered_type(ctx: ref[Context], name: str, arguments: span[a
             args.push(resolve_type_at(ctx, a, depth + 1))
             ai += 1
         return types.Type.ty_imported(module_name = ctx.module_name, name = name, args = args.as_span())
-    return types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = name)
+    return types.named_type(name = name, module_name = ctx.module_name, linkage_name = Option[str].none)
 
 
 function fold_qualified_const_type(ctx: ref[Context], name: str) -> types.Type:
@@ -4571,7 +4570,8 @@ function check_match(ctx: ref[Context], scope: ref[sscope.Scope], scrutinee_ty: 
 function scrutinee_type_name(t: types.Type) -> Option[str]:
     match t:
         types.Type.ty_named as n:
-            return Option[str].some(value = n.name)
+            let n_np = unsafe: read(n.payload)
+            return Option[str].some(value = n_np.name)
         types.Type.ty_imported as im:
             return Option[str].some(value = im.name)
         _:
@@ -4614,7 +4614,8 @@ function match_scrutinee_supported(ctx: ref[Context], t: types.Type) -> bool:
         types.Type.ty_tuple:
             return true
         types.Type.ty_named as n:
-            return match_case_names_for(ctx, "", n.name) != null
+            let n_np = unsafe: read(n.payload)
+            return match_case_names_for(ctx, "", n_np.name) != null
         types.Type.ty_imported as im:
             # A prelude variant keeps its arm table in the local context even
             # when its nominal module is `std.option`/`std.result` (a
@@ -4634,12 +4635,13 @@ function match_scrutinee_supported(ctx: ref[Context], t: types.Type) -> bool:
 function match_scrutinee_text(t: types.Type) -> str:
     match t:
         types.Type.ty_named as n:
-            if n.module_name.len == 0:
-                return n.name
+            let n_np = unsafe: read(n.payload)
+            if n_np.module_name.len == 0:
+                return n_np.name
             var buf = string.String.create()
-            buf.append(n.module_name)
+            buf.append(n_np.module_name)
             buf.append(".")
-            buf.append(n.name)
+            buf.append(n_np.name)
             return buf.as_str()
         types.Type.ty_imported as im:
             var buf = string.String.create()
@@ -4936,10 +4938,11 @@ function collection_loop_binding_type(ctx: ref[Context], element_ty: types.Type)
 function is_struct_like_type(ctx: ref[Context], t: types.Type) -> bool:
     match t:
         types.Type.ty_named as n:
-            if ctx.structs.contains(n.name) or ctx.unions.contains(n.name):
+            let n_np = unsafe: read(n.payload)
+            if ctx.structs.contains(n_np.name) or ctx.unions.contains(n_np.name):
                 return true
-            if n.module_name.len > 0:
-                return binding_has_struct_type(ctx, n.module_name, n.name)
+            if n_np.module_name.len > 0:
+                return binding_has_struct_type(ctx, n_np.module_name, n_np.name)
             return false
         types.Type.ty_imported as im:
             return binding_has_struct_type(ctx, im.module_name, im.name)
@@ -4982,7 +4985,8 @@ function method_return_type(ctx: ref[Context], recv: types.Type, method_name: st
         types.Type.ty_imported:
             return imported_method_return_type(ctx, recv, method_name)
         types.Type.ty_named as n:
-            if n.module_name.len > 0 and not n.module_name.equal(ctx.module_name):
+            let n_np = unsafe: read(n.payload)
+            if n_np.module_name.len > 0 and not n_np.module_name.equal(ctx.module_name):
                 return imported_method_return_type(ctx, recv, method_name)
         _:
             pass
@@ -6001,8 +6005,9 @@ function match_arm_payload_type(ctx: ref[Context], scrutinee_ty: types.Type, pat
             module_name = im.module_name
             args = im.args
         types.Type.ty_named as n:
-            variant_name = n.name
-            module_name = n.module_name
+            let n_np = unsafe: read(n.payload)
+            variant_name = n_np.name
+            module_name = n_np.module_name
         types.Type.ty_nullable as nl:
             return match_arm_payload_type(ctx, unsafe: read(nl.base), pattern)
         _:
@@ -6364,7 +6369,8 @@ function primitive_type_name_static(t: types.Type) -> str:
         types.Type.ty_primitive as p:
             return p.name
         types.Type.ty_named as n:
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            return n_np.name
         types.Type.ty_imported as im:
             return im.name
         _:
@@ -7241,8 +7247,9 @@ function method_type_params_of(ctx: ref[Context], recv: types.Type, method_name:
         types.Type.ty_imported as im:
             return binding_method_type_params(ctx, im.module_name, key)
         types.Type.ty_named as n:
-            if n.module_name.len > 0 and not n.module_name.equal(ctx.module_name):
-                return binding_method_type_params(ctx, n.module_name, key)
+            let n_np = unsafe: read(n.payload)
+            if n_np.module_name.len > 0 and not n_np.module_name.equal(ctx.module_name):
+                return binding_method_type_params(ctx, n_np.module_name, key)
         _:
             pass
     return Option[span[ast.TypeParam]].none
@@ -7261,7 +7268,8 @@ function binding_method_type_params(ctx: ref[Context], module_name: str, key: st
 function method_receiver_type_name(recv: types.Type) -> str:
     match recv:
         types.Type.ty_named as n:
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            return n_np.name
         types.Type.ty_imported as im:
             return im.name
         _:
@@ -7389,8 +7397,9 @@ function collect_binding_alias_members(
                     if fp != null:
                         fields = unsafe: read(fp)
             types.Type.ty_named as tn:
-                if tn.module_name.equal(module_name):
-                    let fp = unsafe: read(binding_ptr).structs.get(tn.name)
+                let tn_np = unsafe: read(tn.payload)
+                if tn_np.module_name.equal(module_name):
+                    let fp = unsafe: read(binding_ptr).structs.get(tn_np.name)
                     if fp != null:
                         fields = unsafe: read(fp)
             _:
@@ -7533,7 +7542,8 @@ function cast_side_incompatible(ctx: ref[Context], t: types.Type) -> bool:
             pass
     match t:
         types.Type.ty_named as n:
-            return not ctx.static_member_types.contains(n.name)
+            let n_np = unsafe: read(n.payload)
+            return not ctx.static_member_types.contains(n_np.name)
         types.Type.ty_imported as im:
             let binding = find_binding(ctx, im.module_name) else:
                 return false
@@ -8141,12 +8151,13 @@ function check_constraint_satisfied(ctx: ref[Context], actual: types.Type, const
     let constraint_id = qname_to_str(constraint.interface_ref)
     match actual:
         types.Type.ty_named as n:
-            let impl_ptr = ctx.implemented.get(n.name)
+            let n_np = unsafe: read(n.payload)
+            let impl_ptr = ctx.implemented.get(n_np.name)
             if impl_ptr == null:
                 return
             unsafe:
                 if not impl_list_contains(read(impl_ptr), constraint_id):
-                    report(ctx, line, column, constraint_unsatisfied_message(n.name, constraint_id))
+                    report(ctx, line, column, constraint_unsatisfied_message(n_np.name, constraint_id))
         types.Type.ty_imported as im:
             check_imported_constraint(ctx, im.module_name, im.name, constraint, constraint_id, line, column)
         _:
@@ -8366,12 +8377,13 @@ function check_hook_call(ctx: ref[Context], hook_name: str, type_args: span[ast.
 
     match arg_type:
         types.Type.ty_named as n:
-            if ctx.structs.contains(n.name):
-                match find_method_anywhere(ctx, n.name, hook_name):
+            let n_np = unsafe: read(n.payload)
+            if ctx.structs.contains(n_np.name):
+                match find_method_anywhere(ctx, n_np.name, hook_name):
                     Option.some:
                         pass
                     Option.none:
-                        report(ctx, line, column, hook_missing_message(hook_name, n.name))
+                        report(ctx, line, column, hook_missing_message(hook_name, n_np.name))
         _:
             pass
 
@@ -8503,7 +8515,7 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
     match static_type_receiver(ctx, scope, receiver):
         Option.some as tn:
             check_static_member(ctx, tn.value, method_name, line, column)
-            return types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = tn.value)
+            return types.named_type(name = tn.value, module_name = ctx.module_name, linkage_name = Option[str].none)
         Option.none:
             pass
 
@@ -8551,7 +8563,7 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
     # block declares them (std.linear_algebra's `extending mat4:`).
     match static_builtin_type_name(ctx, scope, receiver):
         Option.some as builtin_name:
-            return check_typed_method_call(ctx, types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = builtin_name.value), method_name, args, arg_types, any_named, line, column)
+            return check_typed_method_call(ctx, types.named_type(name = builtin_name.value, module_name = "", linkage_name = Option[str].none), method_name, args, arg_types, any_named, line, column)
         Option.none:
             pass
 
@@ -8663,7 +8675,8 @@ function check_typed_method_call(ctx: ref[Context], receiver_type: types.Type, m
             var type_name: Option[str] = Option[str].none
             match receiver_type:
                 types.Type.ty_named as n:
-                    type_name = Option[str].some(value = n.name)
+                    let n_np = unsafe: read(n.payload)
+                    type_name = Option[str].some(value = n_np.name)
                 _:
                     pass
             match type_name:
@@ -8802,7 +8815,7 @@ function static_struct_receiver_type(ctx: ref[Context], scope: ref[sscope.Scope]
                 if scope_get(scope, id.name) != null:
                     return Option[types.Type].none
                 if ctx.structs.contains(id.name):
-                    return Option[types.Type].some(value = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = id.name))
+                    return Option[types.Type].some(value = types.named_type(name = id.name, module_name = "", linkage_name = Option[str].none))
                 return Option[types.Type].none
             ast.Expr.expr_member_access as inner:
                 match read(inner.receiver):
@@ -8832,18 +8845,19 @@ function static_struct_receiver_type(ctx: ref[Context], scope: ref[sscope.Scope]
 function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name: str) -> Option[FnSig]:
     match receiver:
         types.Type.ty_named as n:
-            let sig_ptr = ctx.method_sigs.get(method_key(n.name, method_name))
+            let n_np = unsafe: read(n.payload)
+            let sig_ptr = ctx.method_sigs.get(method_key(n_np.name, method_name))
             if sig_ptr != null:
                 return Option[FnSig].some(value = unsafe: read(sig_ptr))
-            if n.module_name.len > 0:
-                let bp = find_binding(ctx, n.module_name)
+            if n_np.module_name.len > 0:
+                let bp = find_binding(ctx, n_np.module_name)
                 if bp != null:
-                    let bound = unsafe: read(bp).method_sigs.get(method_key(n.name, method_name))
+                    let bound = unsafe: read(bp).method_sigs.get(method_key(n_np.name, method_name))
                     if bound != null:
                         return Option[FnSig].some(value = unsafe: read(bound))
             # A prelude type's methods live in the seeded modules, not in the
             # current one (`Option[int].unwrap()`).
-            let prelude_sig = ctx.prelude_method_sigs.get(method_key(n.name, method_name))
+            let prelude_sig = ctx.prelude_method_sigs.get(method_key(n_np.name, method_name))
             if prelude_sig != null:
                 return Option[FnSig].some(value = unsafe: read(prelude_sig))
             # A raw or re-exported struct resolves its methods wherever they are
@@ -8851,7 +8865,7 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
             # type may arrive as a bare name from an imported signature): the
             # editable check needs the kind, so the search must not stop at the
             # current module.
-            return find_method_anywhere(ctx, n.name, method_name)
+            return find_method_anywhere(ctx, n_np.name, method_name)
         types.Type.ty_imported as im:
             let bp = find_binding(ctx, im.module_name)
             if bp != null:
@@ -9261,8 +9275,8 @@ function event_value_receiver(ctx: ref[Context], scope: ref[sscope.Scope], recei
 function event_method_call_type(ctx: ref[Context], method_name: str, event_name: str) -> types.Type:
     if method_name == "subscribe" or method_name == "subscribe_once":
         var results = vec.Vec[types.Type].create()
-        results.push(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "Subscription"))
-        results.push(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "EventError"))
+        results.push(types.named_type(name = "Subscription", module_name = "", linkage_name = Option[str].none))
+        results.push(types.named_type(name = "EventError", module_name = "", linkage_name = Option[str].none))
         return types.Type.ty_generic(name = "Result", args = results.as_span())
     if method_name == "unsubscribe":
         return types.primitive("bool")
@@ -9277,7 +9291,7 @@ function event_method_call_type(ctx: ref[Context], method_name: str, event_name:
                     payload_ty = resolve_type(ctx, pt)
         var results = vec.Vec[types.Type].create()
         results.push(payload_ty)
-        results.push(types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "EventError"))
+        results.push(types.named_type(name = "EventError", module_name = "", linkage_name = Option[str].none))
         var result_ty = types.Type.ty_generic(name = "Result", args = results.as_span())
         var task_args = vec.Vec[types.Type].create()
         task_args.push(result_ty)
@@ -9416,8 +9430,9 @@ function imported_method_return_type(ctx: ref[Context], recv: types.Type, member
     # imported signature) resolves its methods through the visible bindings.
     match recv:
         types.Type.ty_named as named:
-            let own = if named.module_name.len > 0: find_binding(ctx, named.module_name) else: null
-            let sig_ptr = imported_method_signature(ctx, own, named.name, member) else:
+            let named_np = unsafe: read(named.payload)
+            let own = if named_np.module_name.len > 0: find_binding(ctx, named_np.module_name) else: null
+            let sig_ptr = imported_method_signature(ctx, own, named_np.name, member) else:
                 return Option[types.Type].none
             let sig = unsafe: read(sig_ptr)
             if not sig.has_return_type:
@@ -9495,7 +9510,7 @@ function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], rece
                     match static_type_receiver(ctx, scope, receiver):
                         Option.some as tn:
                             check_static_member(ctx, tn.value, member, line, column)
-                            return types.Type.ty_named(linkage_name = Option[str].none, module_name = ctx.module_name, name = tn.value)
+                            return types.named_type(name = tn.value, module_name = ctx.module_name, linkage_name = Option[str].none)
                         Option.none:
                             match try_imported_type(ctx, scope, receiver, member):
                                 Option.some as imported_type:
@@ -9620,7 +9635,7 @@ function try_construction(ctx: ref[Context], scope: ref[sscope.Scope], callee: p
                             return Option[types.Type].some(value = read(builtin))
                     return Option[types.Type].none
                 check_construction(ctx, scope, id.name, read(fieldsp), args, id.line, id.column)
-                return Option[types.Type].some(value = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = id.name))
+                return Option[types.Type].some(value = types.named_type(name = id.name, module_name = "", linkage_name = Option[str].none))
             _:
                 return Option[types.Type].none
 
@@ -9699,7 +9714,8 @@ function has_field(fields: span[FieldEntry], name: str) -> bool:
 function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
     match receiver:
         types.Type.ty_named as n:
-            return check_named_member(ctx, n.module_name, n.name, member, is_method_call, line, column)
+            let n_np = unsafe: read(n.payload)
+            return check_named_member(ctx, n_np.module_name, n_np.name, member, is_method_call, line, column)
         types.Type.ty_imported as im:
             return check_imported_receiver_member(ctx, im.module_name, im.name, im.args, member, is_method_call, line, column)
         types.Type.ty_variant_arm_payload as ap:

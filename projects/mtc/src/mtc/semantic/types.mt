@@ -51,6 +51,13 @@ public struct FunctionType:
     name: str
 
 
+## The payload of `ty_named`.
+public struct NamedType:
+    name: str
+    module_name: str
+    linkage_name: Option[str]
+
+
 public variant Type:
     ty_primitive(name: str)
     ty_str
@@ -70,7 +77,7 @@ public variant Type:
     # linkage when it differs from `<module>_<name>` — a nested struct's type is
     # named by its short name (`Edge`) but linked through its parents
     # (`<module>_Rectangle_Edge`), mirroring Ruby's `Types::Struct#linkage_name`.
-    ty_named(name: str, module_name: str, linkage_name: Option[str])
+    ty_named(payload: ptr[NamedType])
     # The binding type of an `as name` variant match arm.  `variant_name` and
     # `module_name` identify the owning variant (`Option`, `std.option`); `name`
     # is the rendered payload name (`Option_some`); `c_name` is the payload
@@ -107,6 +114,13 @@ public function alloc_type(value: Type) -> ptr[Type]:
     unsafe:
         read(node) = value
     return node
+
+
+public function named_type(name: str, module_name: str, linkage_name: Option[str]) -> Type:
+    let payload = heap.must_alloc[NamedType](1)
+    unsafe:
+        read(payload) = NamedType(name = name, module_name = module_name, linkage_name = linkage_name)
+    return Type.ty_named(payload = payload)
 
 
 ## The one constructor for `ty_function`.  The arm's fields live in a boxed
@@ -345,13 +359,14 @@ public function is_numeric(t: Type) -> bool:
 public function type_to_diagnostic_string(t: Type) -> str:
     match t:
         Type.ty_named as n:
-            if n.module_name.len > 0:
+            let n_np = unsafe: read(n.payload)
+            if n_np.module_name.len > 0:
                 var b = string.String.create()
-                b.append(n.module_name)
+                b.append(n_np.module_name)
                 b.append(".")
-                b.append(n.name)
+                b.append(n_np.name)
                 return b.as_str()
-            return n.name
+            return n_np.name
         Type.ty_opaque as o:
             if o.module_name.len > 0:
                 var b = string.String.create()
@@ -390,13 +405,14 @@ public function type_to_diagnostic_string(t: Type) -> str:
 public function type_to_qualified_string(t: Type) -> str:
     match t:
         Type.ty_named as n:
-            if n.module_name.len > 0:
+            let n_np = unsafe: read(n.payload)
+            if n_np.module_name.len > 0:
                 var b = string.String.create()
-                b.append(n.module_name)
+                b.append(n_np.module_name)
                 b.append(".")
-                b.append(n.name)
+                b.append(n_np.name)
                 return b.as_str()
-            return n.name
+            return n_np.name
         Type.ty_opaque as o:
             if o.module_name.len > 0:
                 var b = string.String.create()
@@ -460,7 +476,8 @@ public function type_to_string(t: Type) -> str:
         Type.ty_handle:
             return "Handle"
         Type.ty_named as n:
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            return n_np.name
         Type.ty_variant_arm_payload as ap:
             # The host's `VariantArmPayload#to_s` is `<variant>.<arm> payload`;
             # the lowering's constructions carry no display text, so they keep
@@ -758,11 +775,13 @@ public function type_equals(a: Type, b: Type) -> bool:
                 _:
                     return false
         Type.ty_named as na:
+            let na_np = unsafe: read(na.payload)
             match b:
                 Type.ty_named as nb:
-                    return na.name == nb.name
+                    let nb_np = unsafe: read(nb.payload)
+                    return na_np.name == nb_np.name
                 Type.ty_imported as ib:
-                    return na.name == ib.name
+                    return na_np.name == ib.name
                 _:
                     return false
         Type.ty_variant_arm_payload as apa:
@@ -872,7 +891,8 @@ function imported_type_matches(module_name: str, name: str, args: span[Type], b:
                 i += 1
             return true
         Type.ty_named as nb:
-            return name == nb.name and args.len == 0
+            let nb_np = unsafe: read(nb.payload)
+            return name == nb_np.name and args.len == 0
         Type.ty_generic as gb:
             if not name == gb.name or args.len != gb.args.len:
                 return false
@@ -1179,7 +1199,8 @@ public function is_generic_type(t: Type) -> bool:
 public function nominal_key(t: Type) -> str:
     match t:
         Type.ty_named as n:
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            return n_np.name
         Type.ty_imported as im:
             var buf = string.String.create()
             buf.append(im.module_name)
@@ -1194,7 +1215,8 @@ public function nominal_key(t: Type) -> str:
 public function nominal_name(t: Type) -> str:
     match t:
         Type.ty_named as n:
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            return n_np.name
         Type.ty_imported as im:
             return im.name
         _:
@@ -1205,7 +1227,8 @@ public function nominal_name(t: Type) -> str:
 public function nominal_module(t: Type) -> str:
     match t:
         Type.ty_named as n:
-            return n.module_name
+            let n_np = unsafe: read(n.payload)
+            return n_np.module_name
         Type.ty_imported as im:
             return im.module_name
         _:
@@ -1544,9 +1567,10 @@ public function type_hash(t: Type) -> uint:
                 return h
             return hash_word(h, ulong<-type_hash(unsafe: read(payload_type)))
         Type.ty_named as n:
-            h = hash_str(h, n.name)
-            h = hash_str(h, n.module_name)
-            match n.linkage_name:
+            let n_np = unsafe: read(n.payload)
+            h = hash_str(h, n_np.name)
+            h = hash_str(h, n_np.module_name)
+            match n_np.linkage_name:
                 Option.some as linkage:
                     h = hash_byte(h, ubyte<-1)
                     return hash_str(h, linkage.value)
@@ -1696,19 +1720,21 @@ public function type_identical(a: Type, b: Type) -> bool:
                 _:
                     return false
         Type.ty_named as na:
+            let na_np = unsafe: read(na.payload)
             match b:
                 Type.ty_named as nb:
-                    if na.name != nb.name or na.module_name != nb.module_name:
+                    let nb_np = unsafe: read(nb.payload)
+                    if na_np.name != nb_np.name or na_np.module_name != nb_np.module_name:
                         return false
-                    match na.linkage_name:
+                    match na_np.linkage_name:
                         Option.some as la:
-                            match nb.linkage_name:
+                            match nb_np.linkage_name:
                                 Option.some as lb:
                                     return la.value == lb.value
                                 Option.none:
                                     return false
                         Option.none:
-                            match nb.linkage_name:
+                            match nb_np.linkage_name:
                                 Option.some:
                                     return false
                                 Option.none:

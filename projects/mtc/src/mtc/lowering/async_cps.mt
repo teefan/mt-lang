@@ -225,7 +225,7 @@ public function lower_async_fn(ctx: ref[lowering.LoweringContext], name: str, li
     # remember the insertion point and insert the frame there.
     let frame_index = ctx.pending_synthetic_structs.len()
     let ptr_ty = ptr_uint_type()
-    let frame_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = frame_c)
+    let frame_ty = types.named_type(name = frame_c, module_name = "", linkage_name = Option[str].none)
     let frame_ptr_ty = types.Type.ty_generic(name = "ptr", args = lowering.single_ty_span(frame_ty))
 
     # Common vtable param: void* __mt_frame_raw
@@ -712,7 +712,7 @@ function emit_async_cancel_fn(ctx: ref[lowering.LoweringContext], link_base: str
 
 function emit_async_constructor(ctx: ref[lowering.LoweringContext], name: str, link_base: str, frame_ptr_ty: types.Type, res_ty: types.Type, ctor_param_names: vec.Vec[str], ctor_param_tys: vec.Vec[types.Type], ctor_field_tys: vec.Vec[types.Type], receiver_ty_opt: Option[types.Type], receiver_editable: bool, synthetic_ctor: bool, functions: ref[vec.Vec[ir.Function]]) -> void:
     let frame_c = strings.join_two(link_base, "__frame")
-    let frame_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = frame_c)
+    let frame_ty = types.named_type(name = frame_c, module_name = "", linkage_name = Option[str].none)
     let resume_c = strings.join_two(link_base, "__resume")
     let task_ty = tasks.make_task_type(res_ty)
     let ptr_ty = ptr_uint_type()
@@ -1796,8 +1796,9 @@ public function extract_task_element_type(ctx: ref[lowering.LoweringContext], t:
             if tg.name == "Task" and tg.args.len >= 1:
                 return unsafe: read(tg.args.data + 0)
         types.Type.ty_named as tn:
-            if tn.name.starts_with("mt_task_"):
-                let gi_ptr = monomorphized.generic_instance_get(ctx, tn.name)
+            let tn_np = unsafe: read(tn.payload)
+            if tn_np.name.starts_with("mt_task_"):
+                let gi_ptr = monomorphized.generic_instance_get(ctx, tn_np.name)
                 if gi_ptr != null:
                     let gi = unsafe: read(gi_ptr)
                     if gi.concrete_args.len >= 1:

@@ -227,13 +227,14 @@ public function type_c_key(t: types.Type) -> str:
         types.Type.ty_handle:
             return "handle"
         types.Type.ty_named as n:
-            if n.module_name.len > 0:
+            let n_np = unsafe: read(n.payload)
+            if n_np.module_name.len > 0:
                 var buf = string.String.create()
-                buf.append(module_c_prefix(n.module_name))
+                buf.append(module_c_prefix(n_np.module_name))
                 buf.append("_")
-                buf.append(sanitize_identifier(n.name))
+                buf.append(sanitize_identifier(n_np.name))
                 return buf.as_str()
-            return sanitize_identifier(n.name)
+            return sanitize_identifier(n_np.name)
         types.Type.ty_var as v:
             return sanitize_identifier(v.name)
         types.Type.ty_dyn as d:
@@ -302,9 +303,10 @@ public function type_c_key(t: types.Type) -> str:
 public function type_to_s_qualified(t: types.Type) -> str:
     match t:
         types.Type.ty_named as n:
-            if n.module_name.len > 0:
-                return strings.join_three(n.module_name, ".", n.name)
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            if n_np.module_name.len > 0:
+                return strings.join_three(n_np.module_name, ".", n_np.name)
+            return n_np.name
         types.Type.ty_imported as im:
             if im.args.len == 0:
                 return strings.join_three(im.module_name, ".", im.name)

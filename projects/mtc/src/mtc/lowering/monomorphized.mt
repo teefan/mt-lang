@@ -133,7 +133,8 @@ public function substitute_type_params(ctx: ref[lowering.LoweringContext], ty: t
                 return types.Type.ty_imported(module_name = im.module_name, name = im.name, args = args.as_span())
             return ty
         types.Type.ty_named as n:
-            let concrete = sub.get(n.name)
+            let n_np = unsafe: read(n.payload)
+            let concrete = sub.get(n_np.name)
             if concrete != null:
                 return unsafe: read(concrete)
             return ty
@@ -377,9 +378,10 @@ public function spec_arg_type_to_s(t: types.Type) -> str:
         types.Type.ty_str:
             return "str"
         types.Type.ty_named as n:
-            if n.module_name.len > 0:
-                return strings.join_three(n.module_name, ".", n.name)
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            if n_np.module_name.len > 0:
+                return strings.join_three(n_np.module_name, ".", n_np.name)
+            return n_np.name
         types.Type.ty_imported as im:
             var buf = string.String.create()
             if im.module_name.len > 0:

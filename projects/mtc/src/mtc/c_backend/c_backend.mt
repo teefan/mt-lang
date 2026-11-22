@@ -1331,7 +1331,8 @@ function generic_has_type_param(args: span[types.Type]) -> bool:
                 types.Type.ty_var:
                     return true
                 types.Type.ty_named as n:
-                    if is_raw_type_param_name(n.name):
+                    let n_np = unsafe: read(n.payload)
+                    if is_raw_type_param_name(n_np.name):
                         return true
                 types.Type.ty_generic as g:
                     if generic_has_type_param(g.args):
@@ -1785,23 +1786,24 @@ function c_type(t: types.Type) -> str:
                 ai += 1
             return buf.as_str()
         types.Type.ty_named as n:
+            let n_np = unsafe: read(n.payload)
             # A nested struct's type links through its parents
             # (`<module>_Rectangle_Edge`), recorded at declaration time.
-            match n.linkage_name:
+            match n_np.linkage_name:
                 Option.some as linked:
                     return linked.value
                 Option.none:
                     pass
-            if n.module_name.len > 0:
-                if n.module_name.starts_with("std.c."):
+            if n_np.module_name.len > 0:
+                if n_np.module_name.starts_with("std.c."):
                     if std_c_backing_names != null:
                         let map_val2 = unsafe: read(ptr[map_mod.Map[str, str]]<-std_c_backing_names)
-                        let backing_ptr2 = map_val2.get(n.name)
+                        let backing_ptr2 = map_val2.get(n_np.name)
                         if backing_ptr2 != null:
                             return unsafe: read(backing_ptr2)
-                    return n.name
-                return naming.qualified_c_name(n.module_name, n.name)
-            return n.name
+                    return n_np.name
+                return naming.qualified_c_name(n_np.module_name, n_np.name)
+            return n_np.name
         types.Type.ty_variant_arm_payload as ap:
             return unsafe: read(ap.payload).c_name
         types.Type.ty_var as v:
@@ -2139,7 +2141,8 @@ function maybe_add_span(t: types.Type, seen: ref[map_mod.Map[str, bool]], collec
         types.Type.ty_var:
             return
         types.Type.ty_named as n:
-            if is_raw_type_param_name(n.name):
+            let n_np = unsafe: read(n.payload)
+            if is_raw_type_param_name(n_np.name):
                 return
         _:
             pass
@@ -2985,14 +2988,15 @@ function collect_soa_from_type(e: ref[Emitter], ty: types.Type, seen: ref[map_mo
 function soa_element_c_name(ty: types.Type) -> str:
     match ty:
         types.Type.ty_named as n:
-            match n.linkage_name:
+            let n_np = unsafe: read(n.payload)
+            match n_np.linkage_name:
                 Option.some as linked:
                     return linked.value
                 Option.none:
                     pass
-            if n.module_name.len > 0:
-                return naming.qualified_c_name(n.module_name, n.name)
-            return n.name
+            if n_np.module_name.len > 0:
+                return naming.qualified_c_name(n_np.module_name, n_np.name)
+            return n_np.name
         types.Type.ty_imported as im:
             return naming.qualified_c_name(im.module_name, im.name)
         _:
@@ -3143,8 +3147,9 @@ function struct_field_linkage(ty: types.Type) -> Option[str]:
         types.Type.ty_imported as im:
             return Option[str].some(value = naming.qualified_c_name(im.module_name, im.name))
         types.Type.ty_named as n:
+            let n_np = unsafe: read(n.payload)
             # A nested struct embeds via its parent-qualified linkage name.
-            match n.linkage_name:
+            match n_np.linkage_name:
                 Option.some as linked:
                     return Option[str].some(value = linked.value)
                 Option.none:
@@ -3183,14 +3188,15 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
                 return Option[str].some(value = naming.proc_type_c_name(ty))
             return Option[str].none
         types.Type.ty_named as n:
-            match n.linkage_name:
+            let n_np = unsafe: read(n.payload)
+            match n_np.linkage_name:
                 Option.some as linked:
                     return Option[str].some(value = linked.value)
                 Option.none:
                     pass
-            if n.module_name.len > 0:
-                return Option[str].some(value = naming.qualified_c_name(n.module_name, n.name))
-            return Option[str].some(value = n.name)
+            if n_np.module_name.len > 0:
+                return Option[str].some(value = naming.qualified_c_name(n_np.module_name, n_np.name))
+            return Option[str].some(value = n_np.name)
         types.Type.ty_imported as im:
             # The dependency key must equal the C name `c_type` renders, or a
             # by-value embedder can be ordered before the type it embeds.
@@ -6603,9 +6609,10 @@ function collect_task_type(program: ir.Program, seen: ref[map_mod.Map[str, bool]
                 collect_task_type(program, seen, elements, unsafe: read(g.args.data + ai))
                 ai += 1
         types.Type.ty_named as n:
-            if n.name.starts_with("mt_task_"):
-                if not seen.contains(n.name):
-                    seen.set(n.name, true)
+            let n_np = unsafe: read(n.payload)
+            if n_np.name.starts_with("mt_task_"):
+                if not seen.contains(n_np.name):
+                    seen.set(n_np.name, true)
         types.Type.ty_imported as im:
             if im.name.starts_with("mt_task_"):
                 if not seen.contains(im.name):
@@ -6931,7 +6938,8 @@ function bare_opaque_name(base: types.Type) -> str:
         types.Type.ty_imported as im:
             return im.name
         types.Type.ty_named as n:
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            return n_np.name
         _:
             return ""
 

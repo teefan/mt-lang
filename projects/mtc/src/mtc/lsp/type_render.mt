@@ -62,7 +62,8 @@ public function short_name(ty: types.Type) -> string.String:
         types.Type.ty_primitive as p:
             buf.append(p.name)
         types.Type.ty_named as n:
-            append_own_name(ref_of(buf), n.name)
+            let n_np = unsafe: read(n.payload)
+            append_own_name(ref_of(buf), n_np.name)
         types.Type.ty_opaque as o:
             append_own_name(ref_of(buf), o.name)
         types.Type.ty_imported as im:
@@ -122,12 +123,13 @@ public function qualified_name(ty: types.Type, current_module: str) -> string.St
         types.Type.ty_primitive as p:
             buf.append(p.name)
         types.Type.ty_named as n:
-            let owner = module_or_prelude(n.module_name, n.name)
-            if owner.len == 0 and is_moduleless_builtin_type(n.name):
-                buf.append(n.name)
+            let n_np = unsafe: read(n.payload)
+            let owner = module_or_prelude(n_np.module_name, n_np.name)
+            if owner.len == 0 and is_moduleless_builtin_type(n_np.name):
+                buf.append(n_np.name)
             else:
                 append_module_prefix(ref_of(buf), owner, current_module)
-                buf.append(n.name)
+                buf.append(n_np.name)
         types.Type.ty_opaque as o:
             append_module_prefix(ref_of(buf), o.module_name, current_module)
             buf.append(o.name)

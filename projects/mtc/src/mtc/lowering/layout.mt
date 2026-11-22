@@ -123,9 +123,10 @@ function layout_info(ctx: ref[lowering.LoweringContext], ty: types.Type) -> Opti
                 Option.none:
                     return Option[LayoutInfo].none
         types.Type.ty_named as na:
-            match layout_struct_fields(ctx, na.module_name, na.name):
+            let na_np = unsafe: read(na.payload)
+            match layout_struct_fields(ctx, na_np.module_name, na_np.name):
                 Option.some as fields:
-                    let meta = layout_struct_meta(ctx, na.module_name, na.name)
+                    let meta = layout_struct_meta(ctx, na_np.module_name, na_np.name)
                     return layout_aggregate_info(ctx, fields.value, meta.packed, meta.alignment)
                 Option.none:
                     return Option[LayoutInfo].none
@@ -256,9 +257,10 @@ public function layout_offset_of(ctx: ref[lowering.LoweringContext], ty: types.T
                 Option.none:
                     return Option[long].none
         types.Type.ty_named as na:
-            match layout_struct_fields(ctx, na.module_name, na.name):
+            let na_np = unsafe: read(na.payload)
+            match layout_struct_fields(ctx, na_np.module_name, na_np.name):
                 Option.some as fields:
-                    let meta = layout_struct_meta(ctx, na.module_name, na.name)
+                    let meta = layout_struct_meta(ctx, na_np.module_name, na_np.name)
                     return layout_struct_field_offset(ctx, fields.value, meta.packed, field)
                 Option.none:
                     return Option[long].none

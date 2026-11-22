@@ -1916,7 +1916,8 @@ function receiver_type_name(ty: types.Type) -> str:
         types.Type.ty_imported as im:
             return im.name
         types.Type.ty_named as n:
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            return n_np.name
         types.Type.ty_generic as g:
             return g.name
         types.Type.ty_primitive as p:
@@ -3471,8 +3472,9 @@ public function imported_type_reference(ty: types.Type) -> Option[ImportedTypeRe
                 return Option[ImportedTypeRef].some(value = ImportedTypeRef(module_name = im.module_name, name = im.name))
             return Option[ImportedTypeRef].none
         types.Type.ty_named as n:
-            if n.module_name.len > 0:
-                return Option[ImportedTypeRef].some(value = ImportedTypeRef(module_name = n.module_name, name = n.name))
+            let n_np = unsafe: read(n.payload)
+            if n_np.module_name.len > 0:
+                return Option[ImportedTypeRef].some(value = ImportedTypeRef(module_name = n_np.module_name, name = n_np.name))
             return Option[ImportedTypeRef].none
         _:
             return Option[ImportedTypeRef].none
@@ -3499,7 +3501,8 @@ public function type_to_key_name(t: types.Type) -> str:
         types.Type.ty_generic as g:
             return g.name
         types.Type.ty_named as n:
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            return n_np.name
         types.Type.ty_imported as im:
             return im.name
         types.Type.ty_opaque as op:
@@ -4259,7 +4262,8 @@ function resolve_imported_variant_arm(
             return Option[CursorResult].none
         match unsafe: read(ptr[types.Type]<-ty_ptr):
             types.Type.ty_named as n:
-                module_name = n.module_name
+                let n_np = unsafe: read(n.payload)
+                module_name = n_np.module_name
             types.Type.ty_imported as im:
                 module_name = im.module_name
             _:

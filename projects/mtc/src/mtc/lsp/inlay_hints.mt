@@ -624,7 +624,8 @@ function receiver_key_name(ty: types.Type) -> str:
         types.Type.ty_generic as g:
             return g.name
         types.Type.ty_named as n:
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            return n_np.name
         types.Type.ty_imported as im:
             return im.name
         types.Type.ty_opaque as op:

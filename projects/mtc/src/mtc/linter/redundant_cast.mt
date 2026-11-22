@@ -163,7 +163,8 @@ function type_name_of(t: types.Type) -> str:
         types.Type.ty_imported as im:
             return im.name
         types.Type.ty_named as n:
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            return n_np.name
         types.Type.ty_opaque as o:
             return o.name
         _:
@@ -178,17 +179,19 @@ function type_name_of(t: types.Type) -> str:
 function same_type(left: types.Type, right: types.Type) -> bool:
     match left:
         types.Type.ty_named as named:
+            let named_np = unsafe: read(named.payload)
             match right:
                 types.Type.ty_imported as imported:
-                    if named.module_name.len > 0:
-                        return named.name.equal(imported.name) and named.module_name.equal(imported.module_name)
+                    if named_np.module_name.len > 0:
+                        return named_np.name.equal(imported.name) and named_np.module_name.equal(imported.module_name)
                 _:
                     pass
         types.Type.ty_imported as imported:
             match right:
                 types.Type.ty_named as named:
-                    if named.module_name.len > 0:
-                        return named.name.equal(imported.name) and named.module_name.equal(imported.module_name)
+                    let named_np = unsafe: read(named.payload)
+                    if named_np.module_name.len > 0:
+                        return named_np.name.equal(imported.name) and named_np.module_name.equal(imported.module_name)
                 _:
                     pass
         _:
@@ -229,9 +232,11 @@ function same_type(left: types.Type, right: types.Type) -> bool:
                 _:
                     return false
         types.Type.ty_named as lna:
+            let lna_np = unsafe: read(lna.payload)
             match right:
                 types.Type.ty_named as rna:
-                    return lna.name.equal(rna.name)
+                    let rna_np = unsafe: read(rna.payload)
+                    return lna_np.name.equal(rna_np.name)
                 _:
                     return false
         types.Type.ty_opaque as lo:
@@ -575,14 +580,15 @@ function check_literal_operand(ctx: ref[Context], op: str, operand: ptr[ast.Expr
                         else:
                             return
                     types.Type.ty_named as n:
+                        let n_np = unsafe: read(n.payload)
                         let analysis = ctx.analysis else:
                             return
-                        var is_enum = unsafe: read(analysis).static_member_types.contains(n.name)
-                        if not is_enum and n.module_name.len > 0:
+                        var is_enum = unsafe: read(analysis).static_member_types.contains(n_np.name)
+                        if not is_enum and n_np.module_name.len > 0:
                             var key = string.String.create()
-                            key.append(n.module_name)
+                            key.append(n_np.module_name)
                             key.append(".")
-                            key.append(n.name)
+                            key.append(n_np.name)
                             is_enum = unsafe: read(analysis).static_member_types.contains(key.as_str())
                             key.release()
                         if not is_enum:

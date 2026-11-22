@@ -524,7 +524,8 @@ public function nominal_type_name(t: types.Type) -> str:
         types.Type.ty_primitive as p:
             return p.name
         types.Type.ty_named as n:
-            return n.name
+            let n_np = unsafe: read(n.payload)
+            return n_np.name
         types.Type.ty_imported as im:
             return im.name
         _:
@@ -604,13 +605,14 @@ public function cast_to_type(ep: ptr[ir.Expr], target: types.Type) -> ptr[ir.Exp
 public function enum_backing_or_self(ctx: ref[lowering.LoweringContext], t: types.Type) -> types.Type:
     match t:
         types.Type.ty_named as n:
+            let n_np = unsafe: read(n.payload)
             # The builtin event enum has no AST declaration to scan; its backing
             # is the host's `Types::Enum` int (`type_declaration.rb`'s builtin
             # registration).
-            if n.name == "EventError" and n.module_name.len == 0:
+            if n_np.name == "EventError" and n_np.module_name.len == 0:
                 return types.primitive("int")
-            let owner = if n.module_name.len > 0: n.module_name else: ctx.module_name
-            match find_enum_backing(ctx, owner, n.name):
+            let owner = if n_np.module_name.len > 0: n_np.module_name else: ctx.module_name
+            match find_enum_backing(ctx, owner, n_np.name):
                 Option.some as b:
                     return b.value
                 Option.none:
