@@ -1553,23 +1553,24 @@ function append_local_type(
 function outline_local_detail(ty: types.Type) -> string.String:
     match ty:
         types.Type.ty_function as fnt:
-            if not fnt.is_proc:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if not fnt_ft.is_proc:
                 return type_render.short_name(ty)
             var buf = string.String.create()
             buf.append("proc(")
             var i: ptr_uint = 0
-            while i < fnt.params.len:
+            while i < fnt_ft.params.len:
                 if i > 0:
                     buf.append(", ")
-                if i < fnt.param_names.len:
-                    buf.append(unsafe: read(fnt.param_names.data + i))
+                if i < fnt_ft.param_names.len:
+                    buf.append(unsafe: read(fnt_ft.param_names.data + i))
                     buf.append(": ")
                 unsafe:
-                    buf.append(types.type_to_string(read(fnt.params.data + i)))
+                    buf.append(types.type_to_string(read(fnt_ft.params.data + i)))
                 i += 1
             buf.append(") -> ")
             unsafe:
-                buf.append(types.type_to_string(read(fnt.return_type)))
+                buf.append(types.type_to_string(read(fnt_ft.return_type)))
             return buf
         _:
             return type_render.short_name(ty)
@@ -1588,9 +1589,10 @@ function contains_error_type(ty: types.Type) -> bool:
         types.Type.ty_nullable as nullable:
             return contains_error_type(unsafe: read(nullable.base))
         types.Type.ty_function as fn_type:
-            if contains_error_type(unsafe: read(fn_type.return_type)):
+            let fn_type_ft = unsafe: read(fn_type.payload)
+            if contains_error_type(unsafe: read(fn_type_ft.return_type)):
                 return true
-            return type_args_contain_error(fn_type.params)
+            return type_args_contain_error(fn_type_ft.params)
         _:
             return false
 

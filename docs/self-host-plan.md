@@ -472,6 +472,48 @@ suite **22/0**; `test/mt` **85/0**; CLI **227/227**; diagnostics **504/0**; lint
 the multi-file region path; guard `--check --strict --ratchet` ok after the
 reviewed refresh.
 
+### Boxing the widest `Type` arm
+
+The planned first step was the IR `TypeId` handle, but Massif on `lower main.mt`
+showed the boxed IR nodes were only **9.3%** of the peak (129 MB) while
+`Vec[Type]` growth alone was **18.2%** (253 MB) — the type representation pays
+in the analyzer's ~40 maps, every IR node and every type-argument vector, and
+there are ~1,525 IR construction sites to touch for the handle.  Shrinking
+`Type` first buys more for far less churn: a variant's size is its *widest*
+arm, and `ty_function` (two spans, a pointer, a `str`, two bools) was 56 bytes,
+so every one of the 21 arms cost 72 bytes.
+
+`FunctionType` is now a boxed payload (`ty_function(payload: ptr[FunctionType])`)
+with `types.function_type(...)` as the only constructor — the same shape session
+149 gave `ty_variant_arm_payload`.  `Type` **72 → 64 B**, `ir.Expr` **168 →
+152 B**, `ir.Stmt` **144 → 136 B**, `ir.Function` 144 → 136, `ir.Param` 112 →
+104, `ir.Field` 88 → 80.
+
+| Command (`main.mt`) | Before | After |
+| --- | --- | --- |
+| `check` | 628 MiB | **606 MiB** |
+| `lower` | 1,322 MiB | **1,258 MiB** |
+| `emit-c` | 1,369 MiB | **1,307 MiB** |
+
+The remaining arms (`ty_named` 48 B is now the widest, then `ty_event`,
+`ty_imported`, `ty_tuple`, `ty_generic`, `ty_dyn`) are NOT boxed yet: doing so
+was attempted and reverted, because **lowering cannot dispatch a `match` on a
+`Type` reached through an `as`-bound payload pointer** — `match requires known
+type, got Type_ty_named` (`semantic/types.mt` lowers fine, but any module whose
+`Type`-typed value flows that way aborts).  That pre-existing limitation is the
+blocker, and it reproduces on unmodified sources; fixing it is the prerequisite
+for the remaining boxing (and for the `TypeId` step, which has the same
+shape).  Boxing also required `ty_function`'s 51 match arms to read their fields
+through `payload` (`let x_ft = unsafe: read(x.payload)`), including nested
+`Type.ty_function as fb:` arms.
+
+**Verification.** Bootstrap fixed point holds; dev suite **22/0**; `test/mt`
+**85/0**; CLI **227/227**; diagnostics **504/0**; lint **673/0**; formatter
+**775×3/0**; examples **49/49**; valgrind **0 errors**; `lower`/`emit-c` output
+**byte-identical** to the pre-change compiler on examples, `test/mt` and
+`analyzer.mt`; guard `--check --strict --ratchet` ok (code 128,497 → 128,533,
+duplication unchanged at 6,498).
+
 ## Session 149 — whole-program memory reduction
 
 Committed `01a5408` (16 files).  Session 142 removed the analyzer's const-map

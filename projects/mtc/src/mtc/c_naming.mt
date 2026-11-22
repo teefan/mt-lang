@@ -122,17 +122,18 @@ public function proc_type_c_name(t: types.Type) -> str:
     var raw = string.String.create()
     match t:
         types.Type.ty_function as fnt:
+            let fnt_ft = unsafe: read(fnt.payload)
             raw.append("proc(")
             var i: ptr_uint = 0
-            while i < fnt.params.len:
+            while i < fnt_ft.params.len:
                 if i > 0:
                     raw.append(", ")
                 unsafe:
-                    raw.append(type_to_s_qualified(read(fnt.params.data + i)))
+                    raw.append(type_to_s_qualified(read(fnt_ft.params.data + i)))
                 i += 1
             raw.append(") -> ")
             unsafe:
-                raw.append(type_to_s_qualified(read(fnt.return_type)))
+                raw.append(type_to_s_qualified(read(fnt_ft.return_type)))
         _:
             raw.append(type_to_s_qualified(t))
     return strings.join_two("mt_proc_", sanitize_c_identifier(raw.as_str()))

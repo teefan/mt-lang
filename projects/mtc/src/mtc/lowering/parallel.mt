@@ -659,7 +659,7 @@ public function lower_parallel_for(ctx: ref[lowering.LoweringContext], output: r
         ci += 1
     let cap_init = lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = cap_ty, fields = cap_fields_out.as_span()))
     call_site.push(ir.Stmt.stmt_local(name = "mt_pfor_cap", linkage_name = "mt_pfor_cap", ty = cap_ty, value = cap_init, line = 0, source_path = ""))
-    let fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = span[str](), name = "")
+    let fn_ty = types.function_type(name = "", params = span[types.Type](), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = span[str]())
     var call_args = vec.Vec[ir.Expr].create()
     unsafe: call_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(name = worker_name, ty = fn_ty, pointer = Option[bool].some(value = false)))))
     unsafe: call_args.push(read(lowering.alloc_expr(ir.Expr.expr_address_of(
@@ -735,7 +735,7 @@ public function lower_parallel_block(ctx: ref[lowering.LoweringContext], output:
             wi += 1
         idx += 1
 
-    let fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = span[str](), name = "")
+    let fn_ty = types.function_type(name = "", params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = span[str]())
     let spawn_item_ty = types.Type.ty_named(linkage_name = Option[str].none, module_name = "", name = "mt_spawn_item")
     var call_site = vec.Vec[ir.Stmt].create()
     idx = 0
@@ -1025,7 +1025,7 @@ public function lower_detach_expr(ctx: ref[lowering.LoweringContext], expression
     )
     ctx.pending_synthetic_functions.push(worker)
     lowering.resume_stmt_setup(ctx, hoist_saved)
-    let fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = span[str](), name = "")
+    let fn_ty = types.function_type(name = "", params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = span[str]())
     var da = vec.Vec[ir.Expr].create()
     unsafe: da.push(read(lowering.alloc_expr(ir.Expr.expr_name(name = worker_name, ty = fn_ty, pointer = Option[bool].some(value = false)))))
     unsafe: da.push(read(lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr))))

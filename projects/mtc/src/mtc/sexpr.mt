@@ -620,18 +620,19 @@ function types_value(ctx: ref[SexprContext], t: types.Type) -> SexprValue:
             sf.push(field_value("arguments", types_list_value(ctx, g.args)))
             return node("Types::StructInstance", sf.as_span())
         types.Type.ty_function as fnt:
-            if fnt.is_proc:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if fnt_ft.is_proc:
                 var pf = vec.Vec[SexprField].create()
-                pf.push(field_value("params", param_list_value(ctx, fnt.params, fnt.param_names)))
-                pf.push(field_value("return_type", types_value(ctx, unsafe: read(fnt.return_type))))
+                pf.push(field_value("params", param_list_value(ctx, fnt_ft.params, fnt_ft.param_names)))
+                pf.push(field_value("return_type", types_value(ctx, unsafe: read(fnt_ft.return_type))))
                 return node("Types::Proc", pf.as_span())
             var ff = vec.Vec[SexprField].create()
-            ff.push(field_str("name", fnt.name))
-            ff.push(field_value("params", param_list_value(ctx, fnt.params, fnt.param_names)))
-            ff.push(field_value("return_type", types_value(ctx, unsafe: read(fnt.return_type))))
+            ff.push(field_str("name", fnt_ft.name))
+            ff.push(field_value("params", param_list_value(ctx, fnt_ft.params, fnt_ft.param_names)))
+            ff.push(field_value("return_type", types_value(ctx, unsafe: read(fnt_ft.return_type))))
             ff.push(field_nil("receiver_type"))
             ff.push(field_bool("receiver_editable", false))
-            ff.push(field_bool("variadic", fnt.variadic))
+            ff.push(field_bool("variadic", fnt_ft.variadic))
             ff.push(field_bool("external", false))
             return node("Types::Function", ff.as_span())
         types.Type.ty_tuple as tup:

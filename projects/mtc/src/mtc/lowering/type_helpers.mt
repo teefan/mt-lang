@@ -222,7 +222,7 @@ public function fallback_type_raw(ctx: ref[lowering.LoweringContext], ep: ptr[as
                                 param_types.push(read(s.value.params.data + pi).ty)
                                 param_names.push(read(s.value.params.data + pi).name)
                             pi += 1
-                        return types.Type.ty_function(name = id.name, params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = s.value.is_variadic, is_proc = false, param_names = param_names.as_span())
+                        return types.function_type(name = id.name, params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = s.value.is_variadic, is_proc = false, param_names = param_names.as_span())
                     Option.none:
                         pass
                 return types.Type.ty_error
@@ -308,7 +308,7 @@ public function fallback_type_raw(ctx: ref[lowering.LoweringContext], ep: ptr[as
                     # type-param inference (e.g. `map_error[F]`'s F from the proc's
                     # return type).
                     ret = lowering.resolve_field_type_ref(ctx, unsafe: read(rt))
-                return types.Type.ty_function(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true, param_names = proc_param_names.as_span())
+                return types.function_type(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true, param_names = proc_param_names.as_span())
             _:
                 return types.Type.ty_error
 

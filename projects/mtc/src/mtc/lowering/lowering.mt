@@ -564,7 +564,7 @@ function event_listener_type(info: ref[EventRuntimeInfo]) -> types.Type:
     if info.has_payload:
         params.push(info.payload_type)
         names.push("payload")
-    return types.Type.ty_function(name = strings.join_two(info.name, "__listener"), params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
+    return types.function_type(name = strings.join_two(info.name, "__listener"), params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
 
 
 ## The typed stateful listener: the host's `event_stateful_listener_function_type`,
@@ -578,7 +578,7 @@ function event_stateful_listener_type(info: ref[EventRuntimeInfo]) -> types.Type
     if info.has_payload:
         params.push(info.payload_type)
         names.push("payload")
-    return types.Type.ty_function(name = strings.join_two(info.name, "__stateful_listener"), params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
+    return types.function_type(name = strings.join_two(info.name, "__stateful_listener"), params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
 
 
 # =============================================================================
@@ -975,7 +975,8 @@ function collect_type_aliases(
             var qualified_tv = tv
             match tv:
                 types.Type.ty_function as fnt:
-                    if fnt.is_proc:
+                    let fnt_ft = unsafe: read(fnt.payload)
+                    if fnt_ft.is_proc:
                         let proc_name = naming.proc_type_c_name(tv)
                         # An alias that is only ever referenced as a typedef
                         # never reaches `resolve_type_ref`, so nothing else
@@ -4379,7 +4380,8 @@ public function qualify_type(ctx: ref[LoweringContext], t: types.Type) -> types.
                 return types.Type.ty_nullable(base = types.alloc_type(ptr_base))
             return types.Type.ty_nullable(base = types.alloc_type(qbase))
         types.Type.ty_function as fnt:
-            if fnt.is_proc:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if fnt_ft.is_proc:
                 # A proc value's IR type is the closure's own function type (the
                 # host's `Types::Proc`); the `mt_proc_*` C struct is synthesized
                 # from it by the backend.  Register the struct declaration and
@@ -4940,7 +4942,8 @@ public function resolve_type_ref(ctx: ref[LoweringContext], tp: ptr[ast.TypeRef]
 function proc_alias_struct_type(ctx: ref[LoweringContext], target: types.Type) -> types.Type:
     match target:
         types.Type.ty_function as fnt:
-            if fnt.is_proc:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if fnt_ft.is_proc:
                 return proc_ensure_struct_decl(ctx, naming.proc_type_c_name(target), target)
         _:
             pass
@@ -5041,12 +5044,7 @@ public function resolve_function_type_ref(ctx: ref[LoweringContext], tp: ptr[ast
     if fr != null:
         unsafe:
             ret = resolve_type_ref(ctx, fr)
-    return types.Type.ty_function(name = "", params = param_types.as_span(),
-        return_type = types.alloc_type(ret),
-        variadic = false,
-        is_proc = t.is_proc,
-        param_names = param_names.as_span(),
-    )
+    return types.function_type(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = t.is_proc, param_names = param_names.as_span())
 
 
 ## The compile-time length of an array type argument (`array[int, 3]` -> 3),
@@ -5621,17 +5619,18 @@ function lower_identifier_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr], nam
                 var fn_ty = type_helpers.expr_type(ctx, ep)
                 match fn_ty:
                     types.Type.ty_function as fnt:
+                        let fnt_ft = unsafe: read(fnt.payload)
                         # Only wrap in proc struct when the expected type
                         # is a proc (is_proc == true).  For plain fn
                         # fields, pass the function pointer directly.
-                        if fnt.is_proc:
+                        if fnt_ft.is_proc:
                             return lower_fn_to_proc(ctx, fn_c_name, fn_ty, "")
                         # The analyzer records a bare function reference
                         # with an empty type name (the contextual
                         # field/signature form); the host's binding type
                         # carries the function's own name (`fn <name>`).
-                        if fnt.name.len == 0:
-                            fn_ty = types.Type.ty_function(name = name, params = fnt.params, return_type = fnt.return_type, variadic = fnt.variadic, is_proc = false, param_names = fnt.param_names)
+                        if fnt_ft.name.len == 0:
+                            fn_ty = types.function_type(name = name, params = fnt_ft.params, return_type = fnt_ft.return_type, variadic = fnt_ft.variadic, is_proc = false, param_names = fnt_ft.param_names)
                     _:
                         pass
                 return alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = fn_ty, pointer = Option[bool].some(value = false)))
@@ -5918,12 +5917,7 @@ function lower_specialization_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr],
                                                 ptypes.push(read(sf.params.data + vpi).ty)
                                                 pnames.push(read(sf.params.data + vpi).name)
                                             vpi += 1
-                                        fn_ty = types.Type.ty_function(name = id.name, params = ptypes.as_span(),
-                                            return_type = types.alloc_type(sf.return_type),
-                                            variadic = false,
-                                            is_proc = false,
-                                            param_names = pnames.as_span(),
-                                        )
+                                        fn_ty = types.function_type(name = id.name, params = ptypes.as_span(), return_type = types.alloc_type(sf.return_type), variadic = false, is_proc = false, param_names = pnames.as_span())
                                     return alloc_expr(ir.Expr.expr_name(name = vspec_key, ty = fn_ty, pointer = Option[bool].some(value = false)))
                             _:
                                 pass
@@ -6675,21 +6669,22 @@ function proc_invoke_field_type(proc_ty: types.Type) -> types.Type:
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     match proc_ty:
         types.Type.ty_function as fn_ty:
+            let fn_ty_ft = unsafe: read(fn_ty.payload)
             var all_params = vec.Vec[types.Type].create()
             var all_names = vec.Vec[str].create()
             all_params.push(void_ptr)
             all_names.push("env")
             var i: ptr_uint = 0
-            while i < fn_ty.params.len:
+            while i < fn_ty_ft.params.len:
                 unsafe:
-                    all_params.push(read(fn_ty.params.data + i))
+                    all_params.push(read(fn_ty_ft.params.data + i))
                 var pname = ""
-                if i < fn_ty.param_names.len:
+                if i < fn_ty_ft.param_names.len:
                     unsafe:
-                        pname = read(fn_ty.param_names.data + i)
+                        pname = read(fn_ty_ft.param_names.data + i)
                 all_names.push(pname)
                 i += 1
-            return types.Type.ty_function(name = "", params = all_params.as_span(), return_type = fn_ty.return_type, variadic = false, is_proc = false, param_names = all_names.as_span())
+            return types.function_type(name = "", params = all_params.as_span(), return_type = fn_ty_ft.return_type, variadic = false, is_proc = false, param_names = all_names.as_span())
         _:
             return types.Type.ty_error
 
@@ -6698,7 +6693,7 @@ function proc_invoke_field_type(proc_ty: types.Type) -> types.Type:
 public function proc_lifecycle_fn_type() -> types.Type:
     var params = vec.Vec[types.Type].create()
     params.push(types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_primitive(name = "void"))))
-    return types.Type.ty_function(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = sp_str("env"))
+    return types.function_type(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = sp_str("env"))
 
 
 ## True when a type stores a proc value by value — the self's
@@ -6715,7 +6710,8 @@ function contains_proc_storage_type_depth(ctx: ref[LoweringContext], t: types.Ty
         return false
     match t:
         types.Type.ty_function as fnt:
-            return fnt.is_proc
+            let fnt_ft = unsafe: read(fnt.payload)
+            return fnt_ft.is_proc
         types.Type.ty_nullable as nl:
             return contains_proc_storage_type_depth(ctx, unsafe: read(nl.base), depth + 1)
         types.Type.ty_imported:
@@ -6770,7 +6766,8 @@ function proc_retain_stmt(recv: ptr[ir.Expr]) -> ir.Stmt:
 function proc_contained_release_stmts(ctx: ref[LoweringContext], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]]) -> void:
     match t:
         types.Type.ty_function as fnt:
-            if fnt.is_proc:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if fnt_ft.is_proc:
                 stmts.push(proc_release_stmt(recv))
         types.Type.ty_imported:
             proc_struct_field_release_stmts(ctx, recv, t, stmts, false)
@@ -6786,7 +6783,8 @@ function proc_contained_release_stmts(ctx: ref[LoweringContext], recv: ptr[ir.Ex
 public function proc_nullable_release_stmts(ctx: ref[LoweringContext], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]]) -> void:
     match t:
         types.Type.ty_function as fnt:
-            if fnt.is_proc:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if fnt_ft.is_proc:
                 let invoke_ty = proc_invoke_field_type(t)
                 let cond = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "invoke", ty = invoke_ty))
                 var body = vec.Vec[ir.Stmt].create()
@@ -6864,7 +6862,8 @@ function proc_struct_field_release_stmts(ctx: ref[LoweringContext], recv: ptr[ir
 public function proc_contained_retain_stmts(ctx: ref[LoweringContext], recv: ptr[ir.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]]) -> void:
     match t:
         types.Type.ty_function as fnt:
-            if fnt.is_proc:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if fnt_ft.is_proc:
                 stmts.push(proc_retain_stmt(recv))
         types.Type.ty_imported:
             proc_struct_field_retain_stmts(ctx, recv, t, stmts, Option[ptr[ast.Expr]].none)
@@ -6880,7 +6879,8 @@ public function proc_contained_retain_stmts(ctx: ref[LoweringContext], recv: ptr
 function proc_selective_retain_stmts(ctx: ref[LoweringContext], recv: ptr[ir.Expr], value_ast: ptr[ast.Expr], t: types.Type, stmts: ref[vec.Vec[ir.Stmt]]) -> void:
     match t:
         types.Type.ty_function as fnt:
-            if fnt.is_proc:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if fnt_ft.is_proc:
                 if not proc_expr_contains_proc_expr(value_ast):
                     stmts.push(proc_retain_stmt(recv))
         types.Type.ty_imported:
@@ -7755,8 +7755,9 @@ function lower_plain_identifier_call(ctx: ref[LoweringContext], callee: ptr[ast.
                     var ret_ty = type_helpers.expr_type(ctx, call_ep)
                     match lb.value.ty:
                         types.Type.ty_function as ft:
+                            let ft_ft = unsafe: read(ft.payload)
                             if is_void_type(ret_ty):
-                                ret_ty = unsafe: read(ft.return_type)
+                                ret_ty = unsafe: read(ft_ft.return_type)
                         _:
                             pass
                     let ret_type_ptr = types.alloc_type(ret_ty)
@@ -7811,9 +7812,10 @@ function lower_plain_identifier_call(ctx: ref[LoweringContext], callee: ptr[ast.
         # function declaration still takes the direct-call path below.
         match module_var_type(ctx, name):
             types.Type.ty_function as fn_var_ty:
+                let fn_var_ty_ft = unsafe: read(fn_var_ty.payload)
                 let c_name = naming.qualified_c_name(ctx.module_name, name)
                 let callee_expr = alloc_expr(ir.Expr.expr_name(name = c_name, ty = module_var_type(ctx, name), pointer = Option[bool].some(value = false)))
-                return lower_call_with_callee_expr(ctx, callee_expr, args, call_ep, unsafe: fn_var_ty.return_type, empty_fn_sig())
+                return lower_call_with_callee_expr(ctx, callee_expr, args, call_ep, unsafe: fn_var_ty_ft.return_type, empty_fn_sig())
             _:
                 pass
         var ret_ty = function_return_type(ctx, name)
@@ -8242,12 +8244,7 @@ function lower_member_field_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr
                     else if ma.member_name == "take_result":
                         ret = task_ret_ty
                     if ma.member_name == "set_waiter":
-                        let waiter_ty = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty),
-                            return_type = types.alloc_type(ctx.void_ty),
-                            variadic = false,
-                            is_proc = false,
-                            param_names = sp_str("frame"),
-                        )
+                        let waiter_ty = types.function_type(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
                         var params = vec.Vec[types.Type].create()
                         params.push(ctx.ptr_void_ty)
                         params.push(ctx.ptr_void_ty)
@@ -8256,19 +8253,9 @@ function lower_member_field_call(ctx: ref[LoweringContext], callee: ptr[ast.Expr
                         pnames.push("frame")
                         pnames.push("waiter_frame")
                         pnames.push("waiter")
-                        found_ft = types.Type.ty_function(name = "", params = params.as_span(),
-                            return_type = types.alloc_type(ctx.void_ty),
-                            variadic = false,
-                            is_proc = false,
-                            param_names = pnames.as_span(),
-                        )
+                        found_ft = types.function_type(name = "", params = params.as_span(), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = pnames.as_span())
                     else:
-                        found_ft = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty),
-                            return_type = types.alloc_type(ret),
-                            variadic = false,
-                            is_proc = false,
-                            param_names = sp_str("frame"),
-                        )
+                        found_ft = types.function_type(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = sp_str("frame"))
                 # A proc-typed field may be typed either as a `ty_function` with
                 # `is_proc` or as the shared proc struct it resolves to, so test
                 # the type rather than the variant: both must call through the
@@ -9522,8 +9509,9 @@ function pointer_or_span_element(t: types.Type) -> types.Type:
 function proc_param_type_at(t: types.Type, index: ptr_uint) -> types.Type:
     match t:
         types.Type.ty_function as fnt:
-            if index < fnt.params.len:
-                return unsafe: read(fnt.params.data + index)
+            let fnt_ft = unsafe: read(fnt.payload)
+            if index < fnt_ft.params.len:
+                return unsafe: read(fnt_ft.params.data + index)
         _:
             pass
     return types.Type.ty_error
@@ -9536,7 +9524,8 @@ function proc_param_type_at(t: types.Type, index: ptr_uint) -> types.Type:
 function proc_return_type(t: types.Type) -> types.Type:
     match t:
         types.Type.ty_function as fnt:
-            return unsafe: read(fnt.return_type)
+            let fnt_ft = unsafe: read(fnt.payload)
+            return unsafe: read(fnt_ft.return_type)
         types.Type.ty_named as n:
             if n.name.starts_with("mt_proc_"):
                 let raw = n.name.slice(8, n.name.len - 8)
@@ -10277,7 +10266,7 @@ function ensure_dyn_vtable_struct(ctx: ref[LoweringContext], iface_name: str, me
             pi += 1
         var ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: ctx.void_ty
         ret = substitute_interface_type_params(ret, type_args, type_params)
-        let fn_ty = types.Type.ty_function(name = "", params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = fn_param_names.as_span())
+        let fn_ty = types.function_type(name = "", params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = fn_param_names.as_span())
         fields.push(ir.Field(name = m.name, ty = fn_ty))
         mi += 1
     let vtable_decl = ir.StructDecl(name = strings.join_two("vtable_", iface_name), linkage_name = vtable_type_c_name, fields = fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none)
@@ -10447,7 +10436,7 @@ function gen_dyn_vtable_constant(ctx: ref[LoweringContext], iface_name: str, vta
             pi += 1
         var ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: ctx.void_ty
         ret = substitute_interface_type_params(ret, type_args, type_params)
-        let fn_ty = types.Type.ty_function(name = "", params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = fn_names.as_span())
+        let fn_ty = types.function_type(name = "", params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = fn_names.as_span())
         fields.push(ir.AggregateField(name = m.name, value = alloc_expr(ir.Expr.expr_name(name = wrapper_c_name, ty = fn_ty, pointer = Option[bool].some(value = false)))))
         mi += 1
     ctx.pending_dyn_constants.push(ir.Constant(
@@ -10576,7 +10565,7 @@ function dyn_vtable_method_fn_type(ctx: ref[LoweringContext], iface_name: str, m
                         fn_param_names.push(p.name)
                         pi += 1
                     var ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: ctx.void_ty
-                    return types.Type.ty_function(name = "", params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = fn_param_names.as_span())
+                    return types.function_type(name = "", params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = fn_param_names.as_span())
                 mi += 1
         Option.none:
             pass
@@ -12223,20 +12212,21 @@ function lower_fn_to_proc(ctx: ref[LoweringContext], fn_c_name: str, fn_ty: type
 
     match fn_ty:
         types.Type.ty_function as fnt:
+            let fnt_ft = unsafe: read(fnt.payload)
             let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
             var inv_params = vec.Vec[ir.Param].create()
             inv_params.push(ir.Param(name = "env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = Option[bool].some(value = false)))
             var call_args = vec.Vec[ir.Expr].create()
             var pi: ptr_uint = 0
-            while pi < fnt.params.len:
+            while pi < fnt_ft.params.len:
                 var p_ty: types.Type
                 unsafe:
-                    p_ty = read(fnt.params.data + pi)
+                    p_ty = read(fnt_ft.params.data + pi)
                 # The host's wrapper invoke takes the proc type's own parameter
                 # names (the proc annotation's names), not synthetic ones.
                 var pname = jstr_i("arg_", pi)
-                if pi < fnt.param_names.len:
-                    let annotated = unsafe: read(fnt.param_names.data + pi)
+                if pi < fnt_ft.param_names.len:
+                    let annotated = unsafe: read(fnt_ft.param_names.data + pi)
                     if annotated.len > 0:
                         pname = annotated
                 inv_params.push(ir.Param(name = pname, linkage_name = pname, ty = p_ty, pointer = Option[bool].some(value = false)))
@@ -12246,7 +12236,7 @@ function lower_fn_to_proc(ctx: ref[LoweringContext], fn_c_name: str, fn_ty: type
                 pi += 1
             var ret_ty = ctx.void_ty
             unsafe:
-                ret_ty = read(fnt.return_type)
+                ret_ty = read(fnt_ft.return_type)
             var inv_body = vec.Vec[ir.Stmt].create()
             if is_void_type(ret_ty):
                 let call = alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = call_args.as_span(), ty = ret_ty))
@@ -12605,7 +12595,7 @@ public function ensure_event_runtime(ctx: ref[LoweringContext], owner: str, even
         wait_result_args.push(ctx.void_ty)
     wait_result_args.push(event_error_ty)
     let wait_result_ty = ensure_generic_variant(ctx, "Result", wait_result_args.as_span())
-    let wake_fn_ty = types.Type.ty_function(name = "", params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
+    let wake_fn_ty = types.function_type(name = "", params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
     let wait_frame_cn = strings.join_two(linkage, "__wait_frame")
     ctx.pending_synthetic_structs.push(ir.StructDecl(
         name = wait_frame_cn, linkage_name = wait_frame_cn,
@@ -12954,7 +12944,7 @@ function event_stateful_listener_call_expr(info: ref[EventRuntimeInfo], snapshot
 
 function event_task_wake_fn_type() -> types.Type:
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
-    return types.Type.ty_function(name = "", params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = sp_str("frame"))
+    return types.function_type(name = "", params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = sp_str("frame"))
 
 
 ## The host's `Types::Task#field` type for the given field name.
@@ -12963,7 +12953,7 @@ function event_task_field_type(info: ref[EventRuntimeInfo], field_name: str) -> 
     if field_name == "frame":
         return void_ptr_ty
     if field_name == "ready":
-        return types.Type.ty_function(name = "", params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("bool")), variadic = false, is_proc = false, param_names = sp_str("frame"))
+        return types.function_type(name = "", params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("bool")), variadic = false, is_proc = false, param_names = sp_str("frame"))
     if field_name == "set_waiter":
         var params = vec.Vec[types.Type].create()
         var names = vec.Vec[str].create()
@@ -12973,11 +12963,11 @@ function event_task_field_type(info: ref[EventRuntimeInfo], field_name: str) -> 
         names.push("waiter_frame")
         params.push(event_task_wake_fn_type())
         names.push("waiter")
-        return types.Type.ty_function(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
+        return types.function_type(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
     if field_name == "release" or field_name == "cancel":
-        return types.Type.ty_function(name = "", params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = sp_str("frame"))
+        return types.function_type(name = "", params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = sp_str("frame"))
     if field_name == "take_result":
-        return types.Type.ty_function(name = "", params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(info.wait_result_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
+        return types.function_type(name = "", params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(info.wait_result_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
     fatal(c"event_task_field_type: unknown Task field")
 
 
@@ -14577,8 +14567,9 @@ function is_task_type(t: types.Type) -> bool:
 function task_root_proc_task_type(param_ty: types.Type) -> Option[types.Type]:
     match param_ty:
         types.Type.ty_function as fnt:
-            if fnt.is_proc and fnt.params.len == 0:
-                let ret = unsafe: read(fnt.return_type)
+            let fnt_ft = unsafe: read(fnt.payload)
+            if fnt_ft.is_proc and fnt_ft.params.len == 0:
+                let ret = unsafe: read(fnt_ft.return_type)
                 if is_task_type(ret):
                     return Option[types.Type].some(value = ret)
             return Option[types.Type].none
@@ -14619,7 +14610,8 @@ function lower_task_expression_as_root_proc(ctx: ref[LoweringContext], expr_ast:
     var ret_ty = ctx.void_ty
     match proc_ty:
         types.Type.ty_function as fnt:
-            ret_ty = unsafe: read(fnt.return_type)
+            let fnt_ft = unsafe: read(fnt.payload)
+            ret_ty = unsafe: read(fnt_ft.return_type)
         _:
             pass
     return lower_proc_expression_typed(ctx, span[ast.Param](), ret_ty, body, proc_ty)
@@ -16385,7 +16377,8 @@ function is_proc_type(t: types.Type) -> bool:
         types.Type.ty_named as n:
             return n.name.find_substring("__proc_").is_some() or n.name.starts_with("mt_proc_")
         types.Type.ty_function as fnt:
-            return fnt.is_proc
+            let fnt_ft = unsafe: read(fnt.payload)
+            return fnt_ft.is_proc
         _:
             return false
 
@@ -16394,7 +16387,8 @@ function is_proc_type(t: types.Type) -> bool:
 function is_fn_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_function as fnt:
-            return not fnt.is_proc
+            let fnt_ft = unsafe: read(fnt.payload)
+            return not fnt_ft.is_proc
         _:
             return false
 
@@ -16438,14 +16432,15 @@ function proc_struct_decl(struct_name: str, proc_ty: types.Type) -> ir.StructDec
 function proc_type_has_type_var(proc_ty: types.Type) -> bool:
     match proc_ty:
         types.Type.ty_function as fnt:
+            let fnt_ft = unsafe: read(fnt.payload)
             var i: ptr_uint = 0
-            while i < fnt.params.len:
+            while i < fnt_ft.params.len:
                 unsafe:
-                    if type_contains_type_var(read(fnt.params.data + i)):
+                    if type_contains_type_var(read(fnt_ft.params.data + i)):
                         return true
                 i += 1
             unsafe:
-                if type_contains_type_var(read(fnt.return_type)):
+                if type_contains_type_var(read(fnt_ft.return_type)):
                     return true
             return false
         _:
@@ -16566,7 +16561,8 @@ function lower_fn_field_call(ctx: ref[LoweringContext], field_expr: ptr[ir.Expr]
     var call_ty = type_helpers.expr_type(ctx, call_ep)
     match ir_expr_type(field_expr):
         types.Type.ty_function as ffn:
-            call_ty = unsafe: read(ffn.return_type)
+            let ffn_ft = unsafe: read(ffn.payload)
+            call_ty = unsafe: read(ffn_ft.return_type)
         _:
             pass
     return alloc_expr(ir.Expr.expr_call_indirect(callee = field_expr, arguments = call_args.as_span(), ty = call_ty))

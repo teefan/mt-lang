@@ -382,14 +382,8 @@ function rename_type(t: types.Type, mapping: ref[map_mod.Map[str, str]]) -> type
         types.Type.ty_generic as g:
             return types.Type.ty_generic(name = rename_proc_str(g.name, mapping), args = rename_types(g.args, mapping))
         types.Type.ty_function as fnt:
-            return types.Type.ty_function(
-                params = rename_types(fnt.params, mapping),
-                return_type = types.alloc_type(rename_type(unsafe: read(fnt.return_type), mapping)),
-                variadic = fnt.variadic,
-                is_proc = fnt.is_proc,
-                param_names = fnt.param_names,
-                name = rename_proc_str(fnt.name, mapping),
-            )
+            let fnt_ft = unsafe: read(fnt.payload)
+            return types.function_type(name = rename_proc_str(fnt_ft.name, mapping), params = rename_types(fnt_ft.params, mapping), return_type = types.alloc_type(rename_type(unsafe: read(fnt_ft.return_type), mapping)), variadic = fnt_ft.variadic, is_proc = fnt_ft.is_proc, param_names = fnt_ft.param_names)
         types.Type.ty_tuple as tup:
             return types.Type.ty_tuple(elements = rename_types(tup.elements, mapping), field_names = tup.field_names)
         _:

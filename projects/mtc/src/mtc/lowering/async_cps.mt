@@ -66,7 +66,7 @@ function async_param_field_type(receiver_ty_opt: Option[types.Type], receiver_ed
 ## The host's `async_info[:wake_type]` / the Task struct's `wake_fn`:
 ## `fn(frame: ptr[void]) -> void` (`types.rb:596-600`).
 function async_wake_fn_type(ctx: ref[lowering.LoweringContext]) -> types.Type:
-    return types.Type.ty_function(name = "", params = lowering.single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = lowering.sp_str("frame"))
+    return types.function_type(name = "", params = lowering.single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = lowering.sp_str("frame"))
 
 
 ## The type of a `Types::Task` field (`types.rb:601-632`): `frame`, `ready`,
@@ -75,9 +75,9 @@ function async_wake_fn_type(ctx: ref[lowering.LoweringContext]) -> types.Type:
 function task_field_type(ctx: ref[lowering.LoweringContext], result_ty: types.Type, field: str) -> types.Type:
     let void_ptr = ctx.ptr_void_ty
     if field == "ready":
-        return types.Type.ty_function(name = "", params = lowering.single_ty_span(void_ptr), return_type = types.alloc_type(ctx.bool_ty), variadic = false, is_proc = false, param_names = lowering.sp_str("frame"))
+        return types.function_type(name = "", params = lowering.single_ty_span(void_ptr), return_type = types.alloc_type(ctx.bool_ty), variadic = false, is_proc = false, param_names = lowering.sp_str("frame"))
     if field == "take_result":
-        return types.Type.ty_function(name = "", params = lowering.single_ty_span(void_ptr), return_type = types.alloc_type(result_ty), variadic = false, is_proc = false, param_names = lowering.sp_str("frame"))
+        return types.function_type(name = "", params = lowering.single_ty_span(void_ptr), return_type = types.alloc_type(result_ty), variadic = false, is_proc = false, param_names = lowering.sp_str("frame"))
     if field == "set_waiter":
         var ptypes = vec.Vec[types.Type].create()
         ptypes.push(void_ptr)
@@ -87,9 +87,9 @@ function task_field_type(ctx: ref[lowering.LoweringContext], result_ty: types.Ty
         pnames.push("frame")
         pnames.push("waiter_frame")
         pnames.push("waiter")
-        return types.Type.ty_function(name = "", params = ptypes.as_span(), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = pnames.as_span())
+        return types.function_type(name = "", params = ptypes.as_span(), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = pnames.as_span())
     if field == "release" or field == "cancel":
-        return types.Type.ty_function(name = "", params = lowering.single_ty_span(void_ptr), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = lowering.sp_str("frame"))
+        return types.function_type(name = "", params = lowering.single_ty_span(void_ptr), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = lowering.sp_str("frame"))
     return void_ptr
 
 
@@ -229,7 +229,7 @@ public function lower_async_fn(ctx: ref[lowering.LoweringContext], name: str, li
     let frame_ptr_ty = types.Type.ty_generic(name = "ptr", args = lowering.single_ty_span(frame_ty))
 
     # Common vtable param: void* __mt_frame_raw
-    var waiter_fn_ty = types.Type.ty_function(name = "", params = lowering.single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = lowering.sp_str("frame"))
+    var waiter_fn_ty = types.function_type(name = "", params = lowering.single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = lowering.sp_str("frame"))
     var vparams = vec.Vec[ir.Param].create()
     vparams.push(ir.Param(name = "frame", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
     let vparam_s = vparams.as_span()
@@ -1244,7 +1244,8 @@ function async_local_value_type(ctx: ref[lowering.LoweringContext], val: ptr[ast
                     ast.Expr.expr_member_access:
                         match type_helpers.expr_type(ctx, val):
                             types.Type.ty_function as fnt:
-                                return unsafe: read(fnt.return_type)
+                                let fnt_ft = unsafe: read(fnt.payload)
+                                return unsafe: read(fnt_ft.return_type)
                             _:
                                 pass
                     _:
@@ -1649,7 +1650,7 @@ public function build_async_main_entrypoint(ctx: ref[lowering.LoweringContext], 
         ai += 1
     let call_ast = alloc_ast_expr(ast.Expr.expr_call(callee = alloc_ast_expr(ast.Expr.expr_identifier(name = name, line = 0, column = 0)), args = ast_args.as_span()))
     let ret_ast = alloc_ast_stmt(ast.Stmt.stmt_ret(value = call_ast, line = 0, column = 0, length = 0))
-    let proc_fn_ty = types.Type.ty_function(name = "", params = span[types.Type](), return_type = types.alloc_type(task_ret), variadic = false, is_proc = true, param_names = span[str]())
+    let proc_fn_ty = types.function_type(name = "", params = span[types.Type](), return_type = types.alloc_type(task_ret), variadic = false, is_proc = true, param_names = span[str]())
     # The env setup is a prepared expression: hoist it into the C main body
     # (no `__proc_N__setup_env` fallback).
     let proc_base = body.len()

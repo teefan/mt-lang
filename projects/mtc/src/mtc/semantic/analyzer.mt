@@ -2678,7 +2678,7 @@ function resolve_type_at(ctx: ref[Context], t: ast.TypeRef, depth: int) -> types
         if fr != null:
             unsafe:
                 ret = resolve_type_at(ctx, read(fr), depth + 1)
-        let base = types.Type.ty_function(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = t.is_proc, param_names = param_names.as_span())
+        let base = types.function_type(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = t.is_proc, param_names = param_names.as_span())
         return wrap_nullable(base, t.nullable)
 
     if t.is_dyn:
@@ -5733,7 +5733,7 @@ function infer_proc_type(ctx: ref[Context], scope: ref[sscope.Scope], method_par
         if rt != null:
             ret = resolve_type(ctx, rt)
         check_proc_body(ctx, scope, param_types.as_span(), param_names.as_span(), ret, body)
-        return types.Type.ty_function(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true, param_names = param_names.as_span())
+        return types.function_type(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true, param_names = param_names.as_span())
 
 function infer_if_expr_type(ctx: ref[Context], scope: ref[sscope.Scope], condition: ptr[ast.Expr], then_expr: ptr[ast.Expr], else_expr: ptr[ast.Expr]) -> types.Type:
     # Each branch is checked with the condition's refinements in
@@ -8075,14 +8075,15 @@ function substitute_type(t: types.Type, subs: ref[map_mod.Map[str, types.Type]])
                 i += 1
             return types.Type.ty_generic(name = g.name, args = new_args.as_span())
         types.Type.ty_function as f:
+            let f_ft = unsafe: read(f.payload)
             var new_params = vec.Vec[types.Type].create()
             var pi2: ptr_uint = 0
-            while pi2 < f.params.len:
+            while pi2 < f_ft.params.len:
                 unsafe:
-                    new_params.push(substitute_type(read(f.params.data + pi2), subs))
+                    new_params.push(substitute_type(read(f_ft.params.data + pi2), subs))
                 pi2 += 1
-            let new_ret = substitute_type(unsafe: read(f.return_type), subs)
-            return types.Type.ty_function(name = f.name, params = new_params.as_span(), return_type = types.alloc_type(new_ret), variadic = f.variadic, is_proc = f.is_proc, param_names = f.param_names)
+            let new_ret = substitute_type(unsafe: read(f_ft.return_type), subs)
+            return types.function_type(name = f_ft.name, params = new_params.as_span(), return_type = types.alloc_type(new_ret), variadic = f_ft.variadic, is_proc = f_ft.is_proc, param_names = f_ft.param_names)
         types.Type.ty_imported as imported:
             return types.Type.ty_imported(module_name = imported.module_name, name = imported.name, args = substitute_type_span(imported.args, subs))
         _:
@@ -8272,12 +8273,7 @@ function argument_inference_type(ctx: ref[Context], scope: ref[sscope.Scope], ar
                         while pi < sig.params.len:
                             params.push(read(sig.params.data + pi).ty)
                             pi += 1
-                        return types.Type.ty_function(name = id.name, params = params.as_span(),
-                            return_type = types.alloc_type(sig.return_type),
-                            variadic = sig.is_variadic,
-                            is_proc = false,
-                            param_names = span[str](),
-                        )
+                        return types.function_type(name = id.name, params = params.as_span(), return_type = types.alloc_type(sig.return_type), variadic = sig.is_variadic, is_proc = false, param_names = span[str]())
                     _:
                         return inferred
         _:
@@ -8336,16 +8332,18 @@ function unify(pattern: types.Type, actual: types.Type, subs: ref[map_mod.Map[st
                 _:
                     pass
         types.Type.ty_function as pf:
+            let pf_ft = unsafe: read(pf.payload)
             match actual:
                 types.Type.ty_function as af:
-                    if pf.params.len == af.params.len:
+                    let af_ft = unsafe: read(af.payload)
+                    if pf_ft.params.len == af_ft.params.len:
                         var pi2: ptr_uint = 0
-                        while pi2 < pf.params.len:
+                        while pi2 < pf_ft.params.len:
                             unsafe:
-                                unify(read(pf.params.data + pi2), read(af.params.data + pi2), subs)
+                                unify(read(pf_ft.params.data + pi2), read(af_ft.params.data + pi2), subs)
                             pi2 += 1
                         unsafe:
-                            unify(read(pf.return_type), read(af.return_type), subs)
+                            unify(read(pf_ft.return_type), read(af_ft.return_type), subs)
                 _:
                     pass
         _:
@@ -9760,7 +9758,8 @@ function member_call_result_type(field_ty: types.Type, is_method_call: bool) -> 
         return field_ty
     match field_ty:
         types.Type.ty_function as fn_ty:
-            return unsafe: read(fn_ty.return_type)
+            let fn_ty_ft = unsafe: read(fn_ty.payload)
+            return unsafe: read(fn_ty_ft.return_type)
         _:
             return field_ty
 
@@ -10233,7 +10232,7 @@ function task_ready_field_type() -> types.Type:
     params.push(task_frame_field_type())
     var names = vec.Vec[str].create()
     names.push("frame")
-    return types.Type.ty_function(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("bool")), variadic = false, is_proc = false, param_names = names.as_span())
+    return types.function_type(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("bool")), variadic = false, is_proc = false, param_names = names.as_span())
 
 
 function task_void_field_type() -> types.Type:
@@ -10241,7 +10240,7 @@ function task_void_field_type() -> types.Type:
     params.push(task_frame_field_type())
     var names = vec.Vec[str].create()
     names.push("frame")
-    return types.Type.ty_function(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
+    return types.function_type(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
 
 
 function task_take_result_field_type(result_ty: types.Type) -> types.Type:
@@ -10249,7 +10248,7 @@ function task_take_result_field_type(result_ty: types.Type) -> types.Type:
     params.push(task_frame_field_type())
     var names = vec.Vec[str].create()
     names.push("frame")
-    return types.Type.ty_function(name = "", params = params.as_span(), return_type = types.alloc_type(result_ty), variadic = false, is_proc = false, param_names = names.as_span())
+    return types.function_type(name = "", params = params.as_span(), return_type = types.alloc_type(result_ty), variadic = false, is_proc = false, param_names = names.as_span())
 
 
 function task_set_waiter_field_type() -> types.Type:
@@ -10261,7 +10260,7 @@ function task_set_waiter_field_type() -> types.Type:
     names.push("frame")
     names.push("waiter_frame")
     names.push("waiter")
-    return types.Type.ty_function(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
+    return types.function_type(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
 
 
 ## Check a call to a top-level function by identifier and yield its result type.

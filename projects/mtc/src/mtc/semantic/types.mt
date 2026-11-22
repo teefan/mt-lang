@@ -37,6 +37,20 @@ public struct VariantArmPayload:
     fields: span[PayloadField]
 
 
+## The payload of `ty_function`.  Boxed like `VariantArmPayload`: it was the
+## widest arm (two spans, a pointer, a `str` and two bools = 48 bytes), and a
+## variant's size is its widest arm, so it set the size of *every* `Type` — and
+## therefore of every IR node, analyzer map value and `Vec[Type]` slot.  Boxing
+## it drops `Type` from 72 to 64 bytes.
+public struct FunctionType:
+    params: span[Type]
+    return_type: ptr[Type]
+    variadic: bool
+    is_proc: bool
+    param_names: span[str]
+    name: str
+
+
 public variant Type:
     ty_primitive(name: str)
     ty_str
@@ -83,7 +97,7 @@ public variant Type:
     # type came from a function *value* (`fn add`), empty for an anonymous
     # `fn(…)` annotation.  `to_s` renders `fn <name>` (the host's shape), so a
     # struct field's `fn(int) -> bool` renders `fn `.
-    ty_function(params: span[Type], return_type: ptr[Type], variadic: bool, is_proc: bool, param_names: span[str], name: str)
+    ty_function(payload: ptr[FunctionType])
     ty_literal_int(value: long)
     ty_tuple(elements: span[Type], field_names: Option[span[str]])
 
@@ -93,6 +107,23 @@ public function alloc_type(value: Type) -> ptr[Type]:
     unsafe:
         read(node) = value
     return node
+
+
+## The one constructor for `ty_function`.  The arm's fields live in a boxed
+## `FunctionType`, so callers build the payload here rather than naming the
+## variant arm directly.
+public function function_type(name: str, params: span[Type], return_type: ptr[Type], variadic: bool, is_proc: bool, param_names: span[str]) -> Type:
+    var payload = heap.must_alloc[FunctionType](1)
+    unsafe:
+        read(payload) = FunctionType(
+            params = params,
+            return_type = return_type,
+            variadic = variadic,
+            is_proc = is_proc,
+            param_names = param_names,
+            name = name,
+        )
+    return Type.ty_function(payload = payload)
 
 
 public function primitive(name: str) -> Type:
@@ -208,9 +239,10 @@ public function contains_error(t: Type) -> bool:
         Type.ty_imported as im:
             return any_contains_error(im.args)
         Type.ty_function as f:
-            if contains_error(unsafe: read(f.return_type)):
+            let f_ft = unsafe: read(f.payload)
+            if contains_error(unsafe: read(f_ft.return_type)):
                 return true
-            return any_contains_error(f.params)
+            return any_contains_error(f_ft.params)
         Type.ty_tuple as tp:
             return any_contains_error(tp.elements)
         _:
@@ -241,9 +273,10 @@ public function contains_type_var(t: Type) -> bool:
         Type.ty_imported as im:
             return any_contains_var(im.args)
         Type.ty_function as f:
-            if contains_type_var(unsafe: read(f.return_type)):
+            let f_ft = unsafe: read(f.payload)
+            if contains_type_var(unsafe: read(f_ft.return_type)):
                 return true
-            return any_contains_var(f.params)
+            return any_contains_var(f_ft.params)
         Type.ty_tuple as tp:
             return any_contains_var(tp.elements)
         _:
@@ -499,13 +532,14 @@ public function type_to_string(t: Type) -> str:
             buf.append("]")
             return buf.as_str()
         Type.ty_function as fnt:
-            if not fnt.is_proc:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if not fnt_ft.is_proc:
                 # The host's `Types::Function#to_s` is `fn <name>` — an
                 # anonymous function type (a field's `fn(…)` annotation) with no
                 # name renders `fn `.
                 var fbuf = string.String.create()
                 fbuf.append("fn ")
-                fbuf.append(fnt.name)
+                fbuf.append(fnt_ft.name)
                 return fbuf.as_str()
             # The host's `Types::Proc#to_s` renders its parameters by *type*
             # alone (`proc(int) -> int`); a source annotation's names appear
@@ -513,15 +547,15 @@ public function type_to_string(t: Type) -> str:
             var buf = string.String.create()
             buf.append("proc(")
             var i: ptr_uint = 0
-            while i < fnt.params.len:
+            while i < fnt_ft.params.len:
                 if i > 0:
                     buf.append(", ")
                 unsafe:
-                    buf.append(type_to_string(read(fnt.params.data + i)))
+                    buf.append(type_to_string(read(fnt_ft.params.data + i)))
                 i += 1
             buf.append(") -> ")
             unsafe:
-                buf.append(type_to_string(read(fnt.return_type)))
+                buf.append(type_to_string(read(fnt_ft.return_type)))
             return buf.as_str()
         Type.ty_literal_int as lit:
             var buf = string.String.create()
@@ -780,18 +814,20 @@ public function type_equals(a: Type, b: Type) -> bool:
         Type.ty_generic as ga:
             return generic_type_matches(ga.name, ga.args, b)
         Type.ty_function as fa:
+            let fa_ft = unsafe: read(fa.payload)
             match b:
                 Type.ty_function as fb:
-                    if fa.variadic != fb.variadic:
+                    let fb_ft = unsafe: read(fb.payload)
+                    if fa_ft.variadic != fb_ft.variadic:
                         return false
-                    if fa.params.len != fb.params.len:
+                    if fa_ft.params.len != fb_ft.params.len:
                         return false
-                    if not type_equals(unsafe: read(fa.return_type), unsafe: read(fb.return_type)):
+                    if not type_equals(unsafe: read(fa_ft.return_type), unsafe: read(fb_ft.return_type)):
                         return false
                     var i: ptr_uint = 0
-                    while i < fa.params.len:
+                    while i < fa_ft.params.len:
                         unsafe:
-                            if not type_equals(read(fa.params.data + i), read(fb.params.data + i)):
+                            if not type_equals(read(fa_ft.params.data + i), read(fb_ft.params.data + i)):
                                 return false
                         i += 1
                     return true
@@ -1553,23 +1589,24 @@ public function type_hash(t: Type) -> uint:
             h = hash_str(h, g.name)
             return hash_types(h, g.args)
         Type.ty_function as f:
-            h = hash_str(h, f.name)
-            h = hash_word(h, ulong<-type_hash(unsafe: read(f.return_type)))
-            h = hash_types(h, f.params)
+            let f_ft = unsafe: read(f.payload)
+            h = hash_str(h, f_ft.name)
+            h = hash_word(h, ulong<-type_hash(unsafe: read(f_ft.return_type)))
+            h = hash_types(h, f_ft.params)
             var pi: ptr_uint = 0
-            while pi < f.param_names.len:
+            while pi < f_ft.param_names.len:
                 var pname: str
                 unsafe:
-                    pname = read(f.param_names.data + pi)
+                    pname = read(f_ft.param_names.data + pi)
                 h = hash_str(h, pname)
                 pi += 1
-            h = hash_word(h, ulong<-f.param_names.len)
+            h = hash_word(h, ulong<-f_ft.param_names.len)
             h = hash_byte(h, ubyte<-1)
-            if f.variadic:
+            if f_ft.variadic:
                 h = hash_byte(h, ubyte<-1)
             else:
                 h = hash_byte(h, ubyte<-0)
-            if f.is_proc:
+            if f_ft.is_proc:
                 return hash_byte(h, ubyte<-1)
             return hash_byte(h, ubyte<-0)
         Type.ty_literal_int as l:
@@ -1745,23 +1782,25 @@ public function type_identical(a: Type, b: Type) -> bool:
                 _:
                     return false
         Type.ty_function as fa:
+            let fa_ft = unsafe: read(fa.payload)
             match b:
                 Type.ty_function as fb:
-                    if fa.variadic != fb.variadic or fa.is_proc != fb.is_proc:
+                    let fb_ft = unsafe: read(fb.payload)
+                    if fa_ft.variadic != fb_ft.variadic or fa_ft.is_proc != fb_ft.is_proc:
                         return false
-                    if fa.name != fb.name:
+                    if fa_ft.name != fb_ft.name:
                         return false
-                    if not type_identical(unsafe: read(fa.return_type), unsafe: read(fb.return_type)):
+                    if not type_identical(unsafe: read(fa_ft.return_type), unsafe: read(fb_ft.return_type)):
                         return false
-                    if fa.param_names.len != fb.param_names.len:
+                    if fa_ft.param_names.len != fb_ft.param_names.len:
                         return false
                     var pni: ptr_uint = 0
-                    while pni < fa.param_names.len:
+                    while pni < fa_ft.param_names.len:
                         unsafe:
-                            if read(fa.param_names.data + pni) != read(fb.param_names.data + pni):
+                            if read(fa_ft.param_names.data + pni) != read(fb_ft.param_names.data + pni):
                                 return false
                         pni += 1
-                    return types_identical(fa.params, fb.params)
+                    return types_identical(fa_ft.params, fb_ft.params)
                 _:
                     return false
         Type.ty_literal_int as la:

@@ -1756,9 +1756,10 @@ function c_type(t: types.Type) -> str:
                     return strings.join_two(unsafe: read(backing_ptr), "*")
             return strings.join_two(type_key, "*")
         types.Type.ty_function as fnt:
+            let fnt_ft = unsafe: read(fnt.payload)
             # A proc value is the synthesized `mt_proc_<sig>` closure struct; a
             # plain function type is a raw function pointer.
-            if fnt.is_proc:
+            if fnt_ft.is_proc:
                 return naming.proc_type_c_name(t)
             return c_fn_ptr_declarator(t, "")
         types.Type.ty_event as ev:
@@ -2161,8 +2162,9 @@ function add_nested_spans(t: types.Type, seen: ref[map_mod.Map[str, bool]], coll
         types.Type.ty_tuple as tup:
             add_span_args(tup.elements, seen, collected)
         types.Type.ty_function as fnt:
-            add_span_args(fnt.params, seen, collected)
-            maybe_add_span(unsafe: read(fnt.return_type), seen, collected)
+            let fnt_ft = unsafe: read(fnt.payload)
+            add_span_args(fnt_ft.params, seen, collected)
+            maybe_add_span(unsafe: read(fnt_ft.return_type), seen, collected)
         _:
             pass
 
@@ -2673,9 +2675,10 @@ function primitive_c_type(name: str) -> str:
 function c_fn_ptr_declarator(t: types.Type, name: str) -> str:
     match t:
         types.Type.ty_function as fnt:
+            let fnt_ft = unsafe: read(fnt.payload)
             var buf = string.String.create()
             unsafe:
-                buf.append(c_type(read(fnt.return_type)))
+                buf.append(c_type(read(fnt_ft.return_type)))
             if name.len == 0:
                 buf.append(" (*)(")
             else:
@@ -2683,26 +2686,26 @@ function c_fn_ptr_declarator(t: types.Type, name: str) -> str:
                 buf.append(name)
                 buf.append(")(")
             var i: ptr_uint = 0
-            while i < fnt.params.len:
+            while i < fnt_ft.params.len:
                 if i > 0:
                     buf.append(", ")
                 unsafe:
-                    buf.append(c_type(read(fnt.params.data + i)))
+                    buf.append(c_type(read(fnt_ft.params.data + i)))
                 # The host's `Types::Function#params` are named Parameters, so
                 # its declarators carry the names (`int32_t (*f)(int32_t x)`).
                 var pname = ""
-                if i < fnt.param_names.len:
+                if i < fnt_ft.param_names.len:
                     unsafe:
-                        pname = read(fnt.param_names.data + i)
+                        pname = read(fnt_ft.param_names.data + i)
                 if pname.len > 0:
                     buf.append(" ")
                     buf.append(pname)
                 i += 1
-            if fnt.variadic:
-                if fnt.params.len > 0:
+            if fnt_ft.variadic:
+                if fnt_ft.params.len > 0:
                     buf.append(", ")
                 buf.append("...")
-            if fnt.params.len == 0 and not fnt.variadic:
+            if fnt_ft.params.len == 0 and not fnt_ft.variadic:
                 buf.append("void")
             buf.append(")")
             return buf.as_str()
@@ -2737,7 +2740,8 @@ function c_decl(t: types.Type, name: str) -> str:
         # (`mt_proc_x items[2]`).
         match elem_t:
             types.Type.ty_function as ef:
-                if ef.is_proc:
+                let ef_ft = unsafe: read(ef.payload)
+                if ef_ft.is_proc:
                     return strings.join_six(c_type(elem_t), " ", inner_name, "[", long_to_str(array_length(t)), "]")
                 return c_fn_ptr_declarator(elem_t, strings.join_four(inner_name, "[", long_to_str(array_length(t)), "]"))
             _:
@@ -2749,7 +2753,8 @@ function c_decl(t: types.Type, name: str) -> str:
     # Generic variants: build `name_type0_type1_...` directly.
     match t:
         types.Type.ty_function as f:
-            if f.is_proc:
+            let f_ft = unsafe: read(f.payload)
+            if f_ft.is_proc:
                 return strings.join_three(c_type(t), " ", name)
             return c_fn_ptr_declarator(t, name)
         types.Type.ty_nullable as nl:
@@ -3172,8 +3177,9 @@ struct TypeNode:
 function by_value_dep_key(ty: types.Type) -> Option[str]:
     match ty:
         types.Type.ty_function as fnt:
+            let fnt_ft = unsafe: read(fnt.payload)
             # A proc value embeds the synthesized closure struct by value.
-            if fnt.is_proc:
+            if fnt_ft.is_proc:
                 return Option[str].some(value = naming.proc_type_c_name(ty))
             return Option[str].none
         types.Type.ty_named as n:
@@ -4472,7 +4478,8 @@ function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type, n
     var raw_fn = false
     match elem_type:
         types.Type.ty_function as fnt:
-            raw_fn = not fnt.is_proc
+            let fnt_ft = unsafe: read(fnt.payload)
+            raw_fn = not fnt_ft.is_proc
         _:
             pass
     var sig = string.String.create()
@@ -4480,9 +4487,10 @@ function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type, n
     if raw_fn:
         match elem_type:
             types.Type.ty_function as fnt:
+                let fnt_ft = unsafe: read(fnt.payload)
                 #   static inline RET (**name(RET (*array)[N], uintptr_t index))(params)
                 unsafe:
-                    sig.append(c_type(read(fnt.return_type)))
+                    sig.append(c_type(read(fnt_ft.return_type)))
                 sig.append(" (**")
                 sig.append(name)
                 sig.append("(")
@@ -4492,16 +4500,16 @@ function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type, n
                 sig.append(c_fn_ptr_declarator(elem_type, "*array"))
                 sig.append(", uintptr_t index))(")
                 var fpi: ptr_uint = 0
-                while fpi < fnt.params.len:
+                while fpi < fnt_ft.params.len:
                     if fpi > 0:
                         sig.append(", ")
                     unsafe:
-                        sig.append(c_type(read(fnt.params.data + fpi)))
+                        sig.append(c_type(read(fnt_ft.params.data + fpi)))
                     fpi += 1
-                if fnt.params.len == 0 and not fnt.variadic:
+                if fnt_ft.params.len == 0 and not fnt_ft.variadic:
                     sig.append("void")
-                if fnt.variadic:
-                    if fnt.params.len > 0:
+                if fnt_ft.variadic:
+                    if fnt_ft.params.len > 0:
                         sig.append(", ")
                     sig.append("...")
                 sig.append(") {")
@@ -4664,7 +4672,8 @@ function emit_checked_span_index_helper(e: ref[Emitter], receiver_type: types.Ty
     var raw_fn = false
     match elem:
         types.Type.ty_function as fnt:
-            raw_fn = not fnt.is_proc
+            let fnt_ft = unsafe: read(fnt.payload)
+            raw_fn = not fnt_ft.is_proc
         _:
             pass
     var sig = string.String.create()
@@ -4674,24 +4683,25 @@ function emit_checked_span_index_helper(e: ref[Emitter], receiver_type: types.Ty
         #   static inline RET (**name(SPAN span, uintptr_t index))(params)
         match elem:
             types.Type.ty_function as fnt:
+                let fnt_ft = unsafe: read(fnt.payload)
                 unsafe:
-                    sig.append(c_type(read(fnt.return_type)))
+                    sig.append(c_type(read(fnt_ft.return_type)))
                 sig.append(" (**")
                 sig.append(name)
                 sig.append("(")
                 sig.append(span_c)
                 sig.append(" span, uintptr_t index))(")
                 var fpi: ptr_uint = 0
-                while fpi < fnt.params.len:
+                while fpi < fnt_ft.params.len:
                     if fpi > 0:
                         sig.append(", ")
                     unsafe:
-                        sig.append(c_type(read(fnt.params.data + fpi)))
+                        sig.append(c_type(read(fnt_ft.params.data + fpi)))
                     fpi += 1
-                if fnt.params.len == 0 and not fnt.variadic:
+                if fnt_ft.params.len == 0 and not fnt_ft.variadic:
                     sig.append("void")
-                if fnt.variadic:
-                    if fnt.params.len > 0:
+                if fnt_ft.variadic:
+                    if fnt_ft.params.len > 0:
                         sig.append(", ")
                     sig.append("...")
                 sig.append(") {")
@@ -6975,20 +6985,21 @@ function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], opaques: re
                 ai += 1
 
         types.Type.ty_function as f:
+            let f_ft = unsafe: read(f.payload)
 
             var fi: ptr_uint = 0
 
-            while fi < f.params.len:
+            while fi < f_ft.params.len:
 
                 unsafe:
 
-                    collect_opt_type(needed, opaques, read(f.params.data + fi))
+                    collect_opt_type(needed, opaques, read(f_ft.params.data + fi))
 
                 fi += 1
 
             unsafe:
 
-                collect_opt_type(needed, opaques, read(f.return_type))
+                collect_opt_type(needed, opaques, read(f_ft.return_type))
 
         types.Type.ty_tuple as tu:
 
@@ -7331,20 +7342,21 @@ function collect_builtin_types(needed: ref[map_mod.Map[str, bool]], t: types.Typ
                 ai += 1
 
         types.Type.ty_function as f:
+            let f_ft = unsafe: read(f.payload)
 
             var fi: ptr_uint = 0
 
-            while fi < f.params.len:
+            while fi < f_ft.params.len:
 
                 unsafe:
 
-                    collect_builtin_types(needed, read(f.params.data + fi))
+                    collect_builtin_types(needed, read(f_ft.params.data + fi))
 
                 fi += 1
 
             unsafe:
 
-                collect_builtin_types(needed, read(f.return_type))
+                collect_builtin_types(needed, read(f_ft.return_type))
 
         types.Type.ty_tuple as tu:
 

@@ -148,13 +148,14 @@ public function substitute_type_params(ctx: ref[lowering.LoweringContext], ty: t
         types.Type.ty_nullable as nl:
             return types.Type.ty_nullable(base = types.alloc_type(substitute_type_params(ctx, unsafe: read(nl.base), sub)))
         types.Type.ty_function as fnt:
+            let fnt_ft = unsafe: read(fnt.payload)
             var fn_params = vec.Vec[types.Type].create()
             var pi: ptr_uint = 0
-            while pi < fnt.params.len:
+            while pi < fnt_ft.params.len:
                 unsafe:
-                    fn_params.push(substitute_type_params(ctx, read(fnt.params.data + pi), sub))
+                    fn_params.push(substitute_type_params(ctx, read(fnt_ft.params.data + pi), sub))
                 pi += 1
-            return types.Type.ty_function(name = fnt.name, params = fn_params.as_span(), return_type = types.alloc_type(substitute_type_params(ctx, unsafe: read(fnt.return_type), sub)), variadic = fnt.variadic, is_proc = fnt.is_proc, param_names = fnt.param_names)
+            return types.function_type(name = fnt_ft.name, params = fn_params.as_span(), return_type = types.alloc_type(substitute_type_params(ctx, unsafe: read(fnt_ft.return_type), sub)), variadic = fnt_ft.variadic, is_proc = fnt_ft.is_proc, param_names = fnt_ft.param_names)
         _:
             return ty
 
@@ -433,22 +434,23 @@ public function spec_arg_type_to_s(t: types.Type) -> str:
             buf.append(")")
             return buf.as_str()
         types.Type.ty_function as fnt:
-            if fnt.is_proc:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if fnt_ft.is_proc:
                 var buf = string.String.create()
                 buf.append("proc(")
                 var i: ptr_uint = 0
-                while i < fnt.params.len:
+                while i < fnt_ft.params.len:
                     if i > 0:
                         buf.append(", ")
                     unsafe:
-                        buf.append(spec_arg_type_to_s(read(fnt.params.data + i)))
+                        buf.append(spec_arg_type_to_s(read(fnt_ft.params.data + i)))
                     i += 1
                 buf.append(") -> ")
                 unsafe:
-                    buf.append(spec_arg_type_to_s(read(fnt.return_type)))
+                    buf.append(spec_arg_type_to_s(read(fnt_ft.return_type)))
                 return buf.as_str()
-            if fnt.name.len > 0:
-                return strings.join_two("fn ", fnt.name)
+            if fnt_ft.name.len > 0:
+                return strings.join_two("fn ", fnt_ft.name)
             return "fn "
         types.Type.ty_var as v:
             return v.name
