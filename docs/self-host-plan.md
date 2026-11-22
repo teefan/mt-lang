@@ -15,11 +15,11 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-151-2026-11-22)
+- [Status at a glance](#status-at-a-glance-session-152-2026-11-22)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
+- [Session 152 — the per-file region gate](#session-152--the-per-file-region-gate)
 - [Session 151 — streaming IR dump; the analysis' import-table lifetime](#session-151--streaming-ir-dump-the-analysis-import-table-lifetime)
-  - [Region gate (session 152)](#region-gate-session-152--the-follow-up-measured-and-fixed)
 - [Session 150 — IR type handles, arena ownership, phase release](#session-150--ir-type-handles-arena-ownership-phase-release)
 - [Session 149 — whole-program memory reduction](#session-149--whole-program-memory-reduction)
 - [Session 148 — aliased enum-member hover](#session-148--aliased-enum-member-hover)
@@ -99,7 +99,7 @@ history.
 - [Session 74 — decisions closed](#session-74--decisions-closed)
 - [Session 73 — the `mtc test` CLI matrix](#session-73--the-mtc-test-cli-matrix)
 - [Session 72 — the `check`/analyzer surface](#session-72--the-checkanalyzer-surface)
-- [Handoff](#handoff-session-148)
+- [Handoff](#handoff-session-152)
 - [How to start a work session](#how-to-start-a-work-session)
 - [The program — tracks and stopping rules (all tracks closed)](#the-program--tracks-and-stopping-rules-all-tracks-closed)
 - [Deliberate differences (do not chase)](#deliberate-differences-do-not-chase)
@@ -108,7 +108,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 151, 2026-11-22)
+## Status at a glance (session 152, 2026-11-22)
 
 | Area | State |
 | --- | --- |
@@ -117,7 +117,7 @@ history.
 | Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`b29241f4…`, release); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
 | Release archive | **3.52 MiB deterministic tar.gz** (`mtc-0.4.26-linux-x86_64`), checksummed beside the archive; identical across two packagings of the same inputs; clean-path smoke (std build/run, LSP initialize, docs page/CSS/JS/404) green; the version is the authored `cli_help.VERSION` |
 | Analyzer/IR memory | `check main.mt` **421 MiB / 5.4 s**; `lower main.mt` **798 MiB / 11.1 s**; `emit-c main.mt` **911 MiB / 12.1 s**; `build projects/mtc` **950 MiB** (session 151 audit; `peak_rss.py` reports **KiB** — the MiB figures are that value ÷ 1024).  Path: `Type` boxed 72 → 24 B (session 150), the analyzer's tooling-only `imported_type_members` gated behind `tooling_facts` (−20% on `check`), then the IR dump streamed and written straight into one buffer (−66 MiB on `lower`, session 151).  The old analyzer const blow-up (**9,228 MiB** on `main.mt`, session 142) and the cross-module async rescan (682 MB of the lower peak, session 149) are gone.  `lowering.mt` check **197 MiB** (session 151 audit).  All tooling fan-out is capped at **4**. |
-| Multi-file commands | **Flat in the file count, but ~2× a heavy file's peak** (session 151 audit).  The per-file heap region is a bump allocator: it frees everything at once and cannot reuse anything released inside it, so an abandoned temporary lands in the peak.  Measured: `check main.mt` alone **421 MiB**, the same file listed twice **946 MiB** (2.24×); `lower main.mt` alone **798 MiB**, `main.mt` + a 96 KiB `sexpr.mt` **1,407 MiB**.  The worst realistic sets: `check projects/mtc` (191 files) **961 MiB**, `lint` 16 heaviest **949 MiB**, `lower`/`emit-c` 8 heaviest **1,412 / 1,655 MiB**.  Session 150's row (`check` 191 files 1,019 MiB, 32 files 231 MiB, lint 16 files 256 MiB, lower/emit-c 8 files ~330 MiB) used alphabetically-early or small files, so it understated every figure; the *flatness* claim holds, the absolute values did not. |
+| Multi-file commands | **Flat in the file count, and no longer ~2× a heavy file's peak** (session 152).  The per-file heap region is a bump allocator: it frees everything at once and cannot reuse anything released inside it, so an abandoned temporary lands in the peak.  It buys release of every file *after* the one compiling, so it is now gated on the **file count** (`should_scope_file`, `remaining_after >= 2`): the last two files of a run compile unregioned.  Measured: `check main.mt` + a 60-byte file **422 MiB** (was 958,616 KiB always-regioned; 432,068 never-regioned), 40 small files **372 MiB** (1,367,120 never-regioned), `check projects/mtc` (191 files) **997 MiB** (11,398,120 never-regioned).  The `lower`/`emit-c` 8-heaviest sets pay 2–3% (**1,456 / 1,694 MiB**) because their last two files are heavy.  The old session-151 row (same file twice 946 MiB, `main.mt` + `sexpr.mt` 1,407 MiB) was the ungated region; see *Region gate (session 152)*. |
 | `test/mt` | **85 files / 0 failed** (62 in-language tests + 23 compile-fail diagnostics fixtures; session 151 audited); peak RSS **100 MiB** |
 | Examples | **49/49 build** under the self-only `emit-c` gate (15 top-level + `examples/sdl3` 34/34; session 143; was host-compared 49/49 in session 141) |
 | Recorded oracles | **CLI 227/227 cases; diagnostics 504 files / 0 differ; lint 673 files / 0 differ; formatter 775 files × 3 modes / 0 differ** — digest-keyed and replayed green with no host source present (session 146 refreshed the diag, CLI, lint and formatter fixtures for the output-diagnostic fixes and stale session-145 rows) |
@@ -131,7 +131,7 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check` (the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 17.1 s** and full `build` 32.7 s (session 72; the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 169 files / 127,929 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **32 unused + 6 test-only** public declarations; 6,470 duplicated lines / 896 clusters; **1 function ≥ 200 lines** (the excluded `binding_at`); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 148 for the aliased-enum hover) |
+| **Refactoring safety** | structural guard: 169 files / 162,873 lines / 129,337 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **30 unused + 7 test-only** public declarations; 6,525 duplicated lines / 885 clusters; **2 functions ≥ 200 lines** (the excluded `binding_at` at 385 and `resolve_cursor` at 200); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 152 for the region gate) |
 
 Rough completion against the per-track Definition of Done: **~100%**, now
 against the archived host record rather than a live reference.  The
@@ -4109,7 +4109,13 @@ size-aware gate — region only for files below some threshold, or a per-file
 flatness without paying 2× on the few files that dominate the peak.  **CLOSED —
 see *Region gate (session 152)* below.**
 
-### Region gate (session 152) — the follow-up, measured and fixed
+## Session 152 — the per-file region gate
+
+Continued the memory program's multi-file item: session 151 left the per-file
+region always on and measured it costing ~2× a heavy file's peak.  The fix is a
+file count, not a proxy.
+
+### Region gate — the follow-up, measured and fixed
 
 The follow-up's own diagnosis was half wrong, and the measurements corrected it.
 
@@ -4152,7 +4158,68 @@ and they are all heavy); every other shape improves or is unchanged.  Output is
 byte-identical (`lower`/`check` on `main.mt`), dev suite **22/0**, diagnostics
 **504/0**.
 
-## Handoff (session 150)
+## Handoff (session 152)
+
+**Next session:** the memory program — the remaining ranked targets are still
+open (below).  The tree is clean and `build/stage2/mtc` is the fixed-point binary
+from `tools/bootstrap.sh -j 4`.  This session changed only the region gate and
+the docs: the single-file baseline is untouched.
+
+**Baseline to preserve (measured by session 151's audit, `tools/peak_rss.py`,
+which prints KiB; the MiB below are that value ÷ 1024).**  Single file
+`main.mt`: `check` **421 MiB / 5.4 s**, `lower` **798 MiB / 11.1 s**, `emit-c`
+**911 MiB / 12.1 s**; `build projects/mtc` **950 MiB**.  Sizes: `Type` **24 B**,
+`ir.Expr` **72 B**, `ir.Stmt` **96 B**, `ir.Function` **96 B**, `ir.Param`
+**64 B**, `ir.Field` **40 B**.  Multi-file now costs **one** heavy file's peak
+(`check main.mt` + a 60-byte file **422 MiB**); the `lower`/`emit-c` 8-heaviest
+sets are **1,456 / 1,694 MiB**.  Full audit: *RAM audit (session 151)*; gate
+reasoning: *Region gate* above.
+
+**Next, ranked by measured live heap** (Massif *without* `--pages-as-heap`; the
+flag counts reserved pages and over-reports badly — it read 1,034 MB where the
+live peak is 834.6 MB).  Re-profile before each step: the profile is now flat
+enough that the ranking, not a single hotspot, picks the order.
+
+| Target | Live at `lower` peak |
+| --- | --- |
+| `String` buffers outside the formatter | no dominant site; see below |
+| `Vec[Type]` growth | 82.3 MB (9.9%) |
+| `ir.Expr` nodes | 50.6 MB (6.1%) |
+| `ir.Stmt` growth | 47.9 MB (5.7%) |
+| `resolved_expr_types` map | 37.5 MB (4.5%) |
+
+- **`String` buffers.**  The formatter's 69 MB is gone (session 151).  The
+  remaining growth is spread (`qualified_c_name` 13.7 MB, `analyzer.method_key`
+  13.7 MB at the peak, each "in 34/54 places"), so pick the site from a fresh
+  profile, not from the sizes here.
+- **`Vec[Type]` growth.**  `lowering.qualify_type` allocates a fresh `Vec[Type]`
+  recursively for every generic type with **no memoization**, from 93 sites.  It
+  has side effects (`ensure_generic_*` / `monomorphized.generic_instance_set`),
+  so a cache must keep the registration, not just the vector.
+- **`resolved_expr_types`** is read by lowering (`type_helpers.expr_type`) as
+  well as the linter/LSP, so it cannot be gated the way `imported_type_members`
+  was.
+
+**Do not start `TypeId`.**  Re-profiled in session 150 it saves ~40 MB of 834 MB
+(4.8%) for ~3,000 call-site edits.  The `TypeStore` / `type_hash` /
+`type_identical` machinery and `ir.Program.type_table`/`arena` from commit
+`e0ab80c4` remain in place and inert.
+
+**Structural.**  The guard is green (`--check --strict --ratchet`): 169 files /
+129,337 code lines, 111 edges, 0 layering/alias/naming/vocabulary violations,
+30 unused + 7 test-only exports, 6,525 duplicated lines / 885 clusters, **2**
+functions ≥ 200 lines (`binding_at` 385, `resolve_cursor` 200), 11 files ≥ 2,000
+code lines.  `resolve_cursor` is a 200-line boundary case, not a new target.
+
+**Verification this session.**  `when`-gate measurements above; output
+byte-identical (`lower`/`check` on `main.mt`); dev suite **22/0**; diagnostics
+**504/0**; guard ratchet ok after the reviewed baseline refresh.
+
+**Operational.**  At most **4** compiler instances; one LSP probe server set at a
+time; never `-j 16`; `-j 4 --mem-mb 8000` for heavy sweeps.  Massif runs on
+`main.mt` take ~100 s of instrumented time and are worth backgrounding.
+
+## Handoff (session 151)
 
 **Next session:** the memory program.  Five commits landed this session
 (`c0089d4d`, `40dd0e5d`, `011452ae`, `a3a6fffc`, `55081ce9`); the tree is clean
@@ -4876,20 +4943,23 @@ recorded oracles (tools/golden/{cli,diag,lint,format}.json). New work lands in
 projects/mtc and std/ only, and correctness is the language manual + the
 suite, not host byte-identity.
 
-Start from this file's Handoff (session 151), Status at a glance and Ledger.
+Start from this file's Handoff (session 152), Status at a glance and Ledger.
 Session 150 landed five memory commits (`c0089d4d` per-file regions for the
 multi-file commands, `40dd0e5d`/`011452ae`/`a3a6fffc` boxing the `Type` arms
 72 -> 24 B, `55081ce9` gating the analyzer's tooling-only map); session 151
 rewrote the IR formatter to append straight into one streamed buffer and fixed
-the dangling `Analysis.imported_modules` pointer that the gating had exposed.
+the dangling `Analysis.imported_modules` pointer that the gating had exposed;
+session 152 gated the per-file region on the file count (`should_scope_file`),
+so a multi-file run no longer pays ~2x a heavy file's peak.
 The measured baseline on `projects/mtc/src/mtc/main.mt` is check **421 MiB /
 5.4 s**, lower **798 MiB**, emit-c **911 MiB**, build projects/mtc **950 MiB**
 (`tools/peak_rss.py` prints KiB; convert before quoting MiB).  Preserve it and
-measure each step.  Multi-file runs cost ~2× a heavy file's peak, and `emit-c`
-over the heaviest sources is the worst case at **1.6 GiB** - see *RAM audit
-(session 151)*.  Do NOT start the `TypeId` handle: re-profiled it saves only
-~40 MB of 834 MB for ~3,000 edits.  The ranked targets are in the Handoff (the
-remaining `String` growth, then `Vec[Type]` growth in `qualify_type`).
+measure each step.  A multi-file run now costs one heavy file's peak, while
+`emit-c` over the heaviest sources remains the worst case at **1.6 GiB** - see
+*RAM audit (session 151)*.  Do NOT start the `TypeId` handle: re-profiled it
+saves only ~40 MB of 834 MB for ~3,000 edits.  The ranked targets are in the
+Handoff (the remaining `String` growth, then `Vec[Type]` growth in
+`qualify_type`).
 Work in tiers:
 build the dev compiler with the seed
 ("$(tools/bootstrap.sh --print-stage0)" build projects/mtc -I . --no-cache -o
