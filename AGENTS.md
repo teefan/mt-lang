@@ -101,6 +101,12 @@ byte-identity.
 - **Rebuild before measuring**: build the tree with the seed —
   `"$(tools/bootstrap.sh --print-stage0)" build projects/mtc -I . --no-cache -o tmp/mtc-dev`
   (~25 s).  A stale `build/stage2/mtc` is the classic false result.
+- **Measure peak with `tools/peak_rss.py`, profile with Massif *without*
+  `--pages-as-heap`.**  `peak_rss.py -- <cmd>` reports `wait4` rusage (VmHWM).
+  For attribution use `valgrind --tool=massif` plain, which tracks the live
+  heap; `--pages-as-heap=yes` counts reserved pages and over-reports badly
+  (1,034 MB against a true 834.6 MB live peak on `lower main.mt`).  A `main.mt`
+  run is ~100 s instrumented — background it.
 - **Gates are tiered — iterate cheap, prove once.**  `tools/gates.sh` picks the
   set from `git diff --name-only` (or `--areas`), prints it, and `--run` executes
   it in order (each gate logs to `tmp/gates/<id>.log`; hard gates stop the run,
