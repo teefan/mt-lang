@@ -2263,8 +2263,9 @@ function canonical_extending_base(ctx: ref[Context], type_name: ptr[ast.TypeRef]
         var moved = false
         match unsafe: read(resolved_ptr):
             types.Type.ty_imported as im:
-                name = im.name
-                target_module = im.module_name
+                let im_bp = unsafe: read(im.payload)
+                name = im_bp.name
+                target_module = im_bp.module_name
                 moved = true
             types.Type.ty_named as nn:
                 let nn_np = unsafe: read(nn.payload)
@@ -2689,7 +2690,7 @@ function resolve_type_at(ctx: ref[Context], t: ast.TypeRef, depth: int) -> types
             unsafe:
                 elems.push(resolve_type(ctx, t.arguments.data + ti))
             ti += 1
-        return types.Type.ty_tuple(elements = elems.as_span(), field_names = Option[span[str]].none)
+        return types.tuple_type(elements = elems.as_span(), field_names = Option[span[str]].none)
 
     # An `alias.Type` naming a type exported by an imported module resolves to a
     # concrete imported type (so its members are checkable); otherwise fall back
@@ -2726,7 +2727,7 @@ function resolve_imported_type(ctx: ref[Context], name: ast.QualifiedName) -> Op
             if val_ptr != null:
                 return Option[types.Type].some(value = unsafe: read(ptr[types.Type]<-val_ptr))
         if binding.structs.contains(type_name) or binding.type_aliases.contains(type_name) or binding.static_member_types.contains(type_name) or binding.interfaces.contains(type_name) or binding.types.contains(type_name):
-            return Option[types.Type].some(value = types.Type.ty_imported(module_name = read(module_name_ptr), name = type_name, args = span[types.Type]()))
+            return Option[types.Type].some(value = types.imported_type(module_name = read(module_name_ptr), name = type_name, args = span[types.Type]()))
     return Option[types.Type].none
 
 
@@ -2737,6 +2738,7 @@ function imported_type_with_args(ctx: ref[Context], imported: types.Type, argume
         return imported
     match imported:
         types.Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
             var resolved_args = vec.Vec[types.Type].create()
             var i: ptr_uint = 0
             while i < arguments.len:
@@ -2745,7 +2747,7 @@ function imported_type_with_args(ctx: ref[Context], imported: types.Type, argume
                     a = read(arguments.data + i)
                 resolved_args.push(resolve_type_at(ctx, a, depth + 1))
                 i += 1
-            return types.Type.ty_imported(module_name = im.module_name, name = im.name, args = resolved_args.as_span())
+            return types.imported_type(module_name = im_bp.module_name, name = im_bp.name, args = resolved_args.as_span())
         _:
             return imported
 
@@ -2827,7 +2829,7 @@ function resolve_generic_type(ctx: ref[Context], name: str, arguments: span[ast.
             a = read(arguments.data + i)
         args.push(resolve_type_at(ctx, a, depth + 1))
         i += 1
-    return types.Type.ty_generic(name = name, args = args.as_span())
+    return types.generic_type(name = name, args = args.as_span())
 
 
 function resolve_registered_type(ctx: ref[Context], name: str, arguments: span[ast.TypeRef], depth: int) -> types.Type:
@@ -2859,7 +2861,7 @@ function resolve_registered_type(ctx: ref[Context], name: str, arguments: span[a
                 a = read(arguments.data + ai)
             args.push(resolve_type_at(ctx, a, depth + 1))
             ai += 1
-        return types.Type.ty_imported(module_name = ctx.module_name, name = name, args = args.as_span())
+        return types.imported_type(module_name = ctx.module_name, name = name, args = args.as_span())
     return types.named_type(name = name, module_name = ctx.module_name, linkage_name = Option[str].none)
 
 
@@ -4573,7 +4575,8 @@ function scrutinee_type_name(t: types.Type) -> Option[str]:
             let n_np = unsafe: read(n.payload)
             return Option[str].some(value = n_np.name)
         types.Type.ty_imported as im:
-            return Option[str].some(value = im.name)
+            let im_bp = unsafe: read(im.payload)
+            return Option[str].some(value = im_bp.name)
         _:
             return Option[str].none
 
@@ -4582,7 +4585,8 @@ function scrutinee_type_name(t: types.Type) -> Option[str]:
 function scrutinee_type_module(t: types.Type) -> str:
     match t:
         types.Type.ty_imported as im:
-            return im.module_name
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.module_name
         _:
             return ""
 
@@ -4617,14 +4621,16 @@ function match_scrutinee_supported(ctx: ref[Context], t: types.Type) -> bool:
             let n_np = unsafe: read(n.payload)
             return match_case_names_for(ctx, "", n_np.name) != null
         types.Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
             # A prelude variant keeps its arm table in the local context even
             # when its nominal module is `std.option`/`std.result` (a
             # single-file check has no import bindings).
-            if im.module_name.len == 0 or prelude_variant_module(im.name).len > 0:
-                return match_case_names_for(ctx, "", im.name) != null
-            return match_case_names_for(ctx, im.module_name, im.name) != null
+            if im_bp.module_name.len == 0 or prelude_variant_module(im_bp.name).len > 0:
+                return match_case_names_for(ctx, "", im_bp.name) != null
+            return match_case_names_for(ctx, im_bp.module_name, im_bp.name) != null
         types.Type.ty_generic as g:
-            return match_case_names_for(ctx, "", g.name) != null
+            let g_bp = unsafe: read(g.payload)
+            return match_case_names_for(ctx, "", g_bp.name) != null
         _:
             return false
 
@@ -4644,18 +4650,19 @@ function match_scrutinee_text(t: types.Type) -> str:
             buf.append(n_np.name)
             return buf.as_str()
         types.Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
             var buf = string.String.create()
-            if im.module_name.len > 0:
-                buf.append(im.module_name)
+            if im_bp.module_name.len > 0:
+                buf.append(im_bp.module_name)
                 buf.append(".")
-            buf.append(im.name)
-            if im.args.len > 0:
+            buf.append(im_bp.name)
+            if im_bp.args.len > 0:
                 buf.append("[")
                 var ai: ptr_uint = 0
-                while ai < im.args.len:
+                while ai < im_bp.args.len:
                     if ai > 0:
                         buf.append(", ")
-                    buf.append(match_scrutinee_text(unsafe: read(im.args.data + ai)))
+                    buf.append(match_scrutinee_text(unsafe: read(im_bp.args.data + ai)))
                     ai += 1
                 buf.append("]")
             return buf.as_str()
@@ -4915,8 +4922,9 @@ function range_loop_element_type(ctx: ref[Context], scope: ref[sscope.Scope], it
 function collection_loop_element_type(iterable_ty: types.Type) -> Option[types.Type]:
     match iterable_ty:
         types.Type.ty_generic as g:
-            if (g.name.equal("array") or g.name.equal("span")) and g.args.len >= 1:
-                return Option[types.Type].some(value = unsafe: read(g.args.data + 0))
+            let g_bp = unsafe: read(g.payload)
+            if (g_bp.name.equal("array") or g_bp.name.equal("span")) and g_bp.args.len >= 1:
+                return Option[types.Type].some(value = unsafe: read(g_bp.args.data + 0))
         _:
             pass
     return Option[types.Type].none
@@ -4927,7 +4935,7 @@ function collection_loop_element_type(iterable_ty: types.Type) -> Option[types.T
 ## structs borrows each element), the element itself otherwise.
 function collection_loop_binding_type(ctx: ref[Context], element_ty: types.Type) -> types.Type:
     if is_struct_like_type(ctx, element_ty):
-        return types.Type.ty_generic(name = "ref", args = alloc_one_type_arg(element_ty))
+        return types.generic_type(name = "ref", args = alloc_one_type_arg(element_ty))
     return element_ty
 
 
@@ -4945,7 +4953,8 @@ function is_struct_like_type(ctx: ref[Context], t: types.Type) -> bool:
                 return binding_has_struct_type(ctx, n_np.module_name, n_np.name)
             return false
         types.Type.ty_imported as im:
-            return binding_has_struct_type(ctx, im.module_name, im.name)
+            let im_bp = unsafe: read(im.payload)
+            return binding_has_struct_type(ctx, im_bp.module_name, im_bp.name)
         _:
             return false
 
@@ -5008,15 +5017,17 @@ public function unwrap_nullable_type(t: types.Type) -> types.Type:
         types.Type.ty_nullable as n:
             return unsafe: read(n.base)
         types.Type.ty_generic as g:
-            if (g.name == "Option" or g.name == "Result") and g.args.len >= 1:
-                return unsafe: read(g.args.data + 0)
+            let g_bp = unsafe: read(g.payload)
+            if (g_bp.name == "Option" or g_bp.name == "Result") and g_bp.args.len >= 1:
+                return unsafe: read(g_bp.args.data + 0)
             return t
         types.Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
             # The loader binds std.option / std.result, so a guarded binding
             # over them carries the *imported* shape (`std.result.Result[T, E]`)
             # rather than a `ty_generic`.
-            if (im.name == "Option" or im.name == "Result") and im.args.len >= 1:
-                return unsafe: read(im.args.data + 0)
+            if (im_bp.name == "Option" or im_bp.name == "Result") and im_bp.args.len >= 1:
+                return unsafe: read(im_bp.args.data + 0)
             return t
         _:
             return t
@@ -5030,9 +5041,11 @@ function is_let_else_source(t: types.Type) -> bool:
         types.Type.ty_nullable:
             return true
         types.Type.ty_generic as g:
-            return (g.name == "Option" or g.name == "Result") and g.args.len >= 1
+            let g_bp = unsafe: read(g.payload)
+            return (g_bp.name == "Option" or g_bp.name == "Result") and g_bp.args.len >= 1
         types.Type.ty_imported as im:
-            return (im.name == "Option" or im.name == "Result") and im.args.len >= 1
+            let im_bp = unsafe: read(im.payload)
+            return (im_bp.name == "Option" or im_bp.name == "Result") and im_bp.args.len >= 1
         _:
             return false
 
@@ -5042,9 +5055,11 @@ function is_let_else_source(t: types.Type) -> bool:
 function is_option_or_result(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return (g.name == "Option" or g.name == "Result") and g.args.len >= 1
+            let g_bp = unsafe: read(g.payload)
+            return (g_bp.name == "Option" or g_bp.name == "Result") and g_bp.args.len >= 1
         types.Type.ty_imported as im:
-            return (im.name == "Option" or im.name == "Result") and im.args.len >= 1
+            let im_bp = unsafe: read(im.payload)
+            return (im_bp.name == "Option" or im_bp.name == "Result") and im_bp.args.len >= 1
         _:
             return false
 
@@ -5104,9 +5119,11 @@ public function is_callable_type(t: types.Type) -> bool:
 function is_generic_type_named(t: types.Type, name: str) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name == name
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name == name
         types.Type.ty_imported as im:
-            return im.name == name
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.name == name
         _:
             return false
 
@@ -5186,8 +5203,9 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlag
                 var field_ty: types.Type = types.Type.ty_error
                 match value_ty:
                     types.Type.ty_tuple as tup:
-                        if di < tup.elements.len:
-                            field_ty = unsafe: read(tup.elements.data + di)
+                        let tup_bp = unsafe: read(tup.payload)
+                        if di < tup_bp.elements.len:
+                            field_ty = unsafe: read(tup_bp.elements.data + di)
                     _:
                         pass
                 unsafe:
@@ -5306,11 +5324,13 @@ function check_local_else_body(ctx: ref[Context], scope: ref[sscope.Scope], chk:
 function let_else_error_type(value_type: types.Type) -> types.Type:
     match value_type:
         types.Type.ty_generic as g:
-            if g.name.equal("Result") and g.args.len == 2:
-                return unsafe: read(g.args.data + 1)
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name.equal("Result") and g_bp.args.len == 2:
+                return unsafe: read(g_bp.args.data + 1)
         types.Type.ty_imported as im:
-            if im.name.equal("Result") and im.args.len == 2:
-                return unsafe: read(im.args.data + 1)
+            let im_bp = unsafe: read(im.payload)
+            if im_bp.name.equal("Result") and im_bp.args.len == 2:
+                return unsafe: read(im_bp.args.data + 1)
         types.Type.ty_nullable as nl:
             return let_else_error_type(unsafe: read(nl.base))
         _:
@@ -5673,10 +5693,11 @@ function infer_index_access_type(ctx: ref[Context], scope: ref[sscope.Scope], re
                     return types.Type.ty_str
                 match rt:
                     types.Type.ty_generic as g:
-                        if g.name == "array" or g.name == "span":
+                        let g_bp = unsafe: read(g.payload)
+                        if g_bp.name == "array" or g_bp.name == "span":
                             var span_args = vec.Vec[types.Type].create()
                             span_args.push(types.pointer_element(rt))
-                            return types.Type.ty_generic(name = "span", args = span_args.as_span())
+                            return types.generic_type(name = "span", args = span_args.as_span())
                     _:
                         pass
             _:
@@ -5705,8 +5726,9 @@ function infer_await_type(ctx: ref[Context], scope: ref[sscope.Scope], expressio
     let awaited = infer_expr(ctx, scope, expression)
     match awaited:
         types.Type.ty_generic as task_g:
-            if task_g.name == "Task" and task_g.args.len == 1:
-                return unsafe: read(task_g.args.data + 0)
+            let task_g_bp = unsafe: read(task_g.payload)
+            if task_g_bp.name == "Task" and task_g_bp.args.len == 1:
+                return unsafe: read(task_g_bp.args.data + 0)
         _:
             pass
     return awaited
@@ -5998,12 +6020,14 @@ function match_arm_payload_type(ctx: ref[Context], scrutinee_ty: types.Type, pat
     var args = span[types.Type]()
     match scrutinee_ty:
         types.Type.ty_generic as g:
-            variant_name = g.name
-            args = g.args
+            let g_bp = unsafe: read(g.payload)
+            variant_name = g_bp.name
+            args = g_bp.args
         types.Type.ty_imported as im:
-            variant_name = im.name
-            module_name = im.module_name
-            args = im.args
+            let im_bp = unsafe: read(im.payload)
+            variant_name = im_bp.name
+            module_name = im_bp.module_name
+            args = im_bp.args
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
             variant_name = n_np.name
@@ -6372,7 +6396,8 @@ function primitive_type_name_static(t: types.Type) -> str:
             let n_np = unsafe: read(n.payload)
             return n_np.name
         types.Type.ty_imported as im:
-            return im.name
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.name
         _:
             return ""
 
@@ -6400,8 +6425,9 @@ function infer_tuple_literal(ctx: ref[Context], scope: ref[sscope.Scope], ep: pt
     var element_hint = types.Type.ty_error
     match outer_hint:
         types.Type.ty_generic as hg:
-            if hg.name == "array" and hg.args.len >= 1:
-                element_hint = unsafe: read(hg.args.data + 0)
+            let hg_bp = unsafe: read(hg.payload)
+            if hg_bp.name == "array" and hg_bp.args.len >= 1:
+                element_hint = unsafe: read(hg_bp.args.data + 0)
         _:
             pass
     ctx.expected_type_hint = element_hint
@@ -6427,7 +6453,7 @@ function infer_tuple_literal(ctx: ref[Context], scope: ref[sscope.Scope], ep: pt
     var field_names: Option[span[str]] = Option[span[str]].none
     if has_named:
         field_names = Option[span[str]].some(value = names.as_span())
-    return types.Type.ty_tuple(elements = elements.as_span(), field_names = field_names)
+    return types.tuple_type(elements = elements.as_span(), field_names = field_names)
 
 
 function infer_unary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, operand: ptr[ast.Expr]) -> types.Type:
@@ -7180,11 +7206,7 @@ function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], 
                     let fieldsp = ctx.structs.get(id.name)
                     if fieldsp != null:
                         check_construction(ctx, scope, id.name, read(fieldsp), arg_exprs, id.line, id.column)
-                        return types.Type.ty_imported(
-                            module_name = type_owner_module(ctx, id.name),
-                            name = id.name,
-                            args = resolve_type_arguments(ctx, type_args),
-                        )
+                        return types.imported_type(module_name = type_owner_module(ctx, id.name), name = id.name, args = resolve_type_arguments(ctx, type_args))
                 # A builtin construction with explicit type arguments
                 # (`array[int, 3](1, 2, 3)`, `span[int](data = …, len = 3)`): the
                 # host validates the arguments (`check_array_construction`, and
@@ -7245,7 +7267,8 @@ function method_type_params_of(ctx: ref[Context], recv: types.Type, method_name:
         return Option[span[ast.TypeParam]].some(value = unsafe: read(local_ptr))
     match recv:
         types.Type.ty_imported as im:
-            return binding_method_type_params(ctx, im.module_name, key)
+            let im_bp = unsafe: read(im.payload)
+            return binding_method_type_params(ctx, im_bp.module_name, key)
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
             if n_np.module_name.len > 0 and not n_np.module_name.equal(ctx.module_name):
@@ -7271,7 +7294,8 @@ function method_receiver_type_name(recv: types.Type) -> str:
             let n_np = unsafe: read(n.payload)
             return n_np.name
         types.Type.ty_imported as im:
-            return im.name
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.name
         _:
             return ""
 
@@ -7391,9 +7415,10 @@ function collect_binding_alias_members(
         var fields = span[FieldEntry]()
         match target:
             types.Type.ty_imported as tim:
-                let target_binding = find_binding(ctx, tim.module_name)
+                let tim_bp = unsafe: read(tim.payload)
+                let target_binding = find_binding(ctx, tim_bp.module_name)
                 if target_binding != null:
-                    let fp = unsafe: read(target_binding).structs.get(tim.name)
+                    let fp = unsafe: read(target_binding).structs.get(tim_bp.name)
                     if fp != null:
                         fields = unsafe: read(fp)
             types.Type.ty_named as tn:
@@ -7545,9 +7570,10 @@ function cast_side_incompatible(ctx: ref[Context], t: types.Type) -> bool:
             let n_np = unsafe: read(n.payload)
             return not ctx.static_member_types.contains(n_np.name)
         types.Type.ty_imported as im:
-            let binding = find_binding(ctx, im.module_name) else:
+            let im_bp = unsafe: read(im.payload)
+            let binding = find_binding(ctx, im_bp.module_name) else:
                 return false
-            return not unsafe: read(binding).static_member_types.contains(im.name)
+            return not unsafe: read(binding).static_member_types.contains(im_bp.name)
         _:
             return true
 
@@ -7797,7 +7823,8 @@ function known_byte_size(ty: types.Type) -> Option[long]:
                 return Option[long].some(value = 8)
             return Option[long].none
         types.Type.ty_generic as g:
-            if g.name == "ptr" or g.name == "const_ptr" or g.name == "own":
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "ptr" or g_bp.name == "const_ptr" or g_bp.name == "own":
                 return Option[long].some(value = 8)
             return Option[long].none
         _:
@@ -7841,7 +7868,7 @@ function check_adapt_call(ctx: ref[Context], type_args: span[ast.TypeArgument]) 
     while di < iface_qname.type_arguments.len:
         dyn_args.push(resolve_type(ctx, unsafe: iface_qname.type_arguments.data + di))
         di += 1
-    return types.Type.ty_dyn(iface = iface_name, args = dyn_args.as_span())
+    return types.dyn_type(iface = iface_name, args = dyn_args.as_span())
 
 
 ## `array[T, N](v0, …, vN)` and `span[T](data = …, len = …)` — the host's
@@ -7859,7 +7886,7 @@ function check_builtin_construction(
     line: ptr_uint,
     column: ptr_uint,
 ) -> types.Type:
-    let builtin_type = types.Type.ty_generic(name = name, args = resolve_type_arguments(ctx, type_args))
+    let builtin_type = types.generic_type(name = name, args = resolve_type_arguments(ctx, type_args))
 
     if name.equal("array"):
         if type_args.len != 2:
@@ -7916,7 +7943,7 @@ function check_builtin_construction(
         return types.Type.ty_error
     var span_elem_ref: ptr[ast.TypeRef] = unsafe: read(type_args.data + 0).value
     let elem_ty = resolve_type(ctx, span_elem_ref)
-    let data_ty = types.Type.ty_generic(name = "ptr", args = alloc_one_type_arg(elem_ty))
+    let data_ty = types.generic_type(name = "ptr", args = alloc_one_type_arg(elem_ty))
     let len_ty = types.primitive("ptr_uint")
     var display = types.type_to_string(builtin_type)
     var i: ptr_uint = 0
@@ -7966,8 +7993,9 @@ function span_data_fits(elem_ty: types.Type, actual: types.Type) -> bool:
     let a = types.unwrap_nullable(actual)
     match a:
         types.Type.ty_generic as g:
-            if g.name.equal("ptr") or g.name.equal("const_ptr") or g.name.equal("own"):
-                if g.args.len >= 1:
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name.equal("ptr") or g_bp.name.equal("const_ptr") or g_bp.name.equal("own"):
+                if g_bp.args.len >= 1:
                     return types.type_equals(types.pointer_element(a), elem_ty)
             return false
         _:
@@ -8016,7 +8044,7 @@ function check_simd_call(ctx: ref[Context], type_args: span[ast.TypeArgument], a
     var simd_args = vec.Vec[types.Type].create()
     simd_args.push(elem_ty)
     simd_args.push(types.literal_int(lanes))
-    return types.Type.ty_generic(name = "simd", args = simd_args.as_span())
+    return types.generic_type(name = "simd", args = simd_args.as_span())
 
 
 ## `v.with(lane, value)` returns a copy of `v` with one lane replaced.  The
@@ -8077,13 +8105,14 @@ function substitute_type(t: types.Type, subs: ref[map_mod.Map[str, types.Type]])
         types.Type.ty_nullable as n:
             return types.Type.ty_nullable(base = types.alloc_type(substitute_type(unsafe: read(n.base), subs)))
         types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
             var new_args = vec.Vec[types.Type].create()
             var i: ptr_uint = 0
-            while i < g.args.len:
+            while i < g_bp.args.len:
                 unsafe:
-                    new_args.push(substitute_type(read(g.args.data + i), subs))
+                    new_args.push(substitute_type(read(g_bp.args.data + i), subs))
                 i += 1
-            return types.Type.ty_generic(name = g.name, args = new_args.as_span())
+            return types.generic_type(name = g_bp.name, args = new_args.as_span())
         types.Type.ty_function as f:
             let f_ft = unsafe: read(f.payload)
             var new_params = vec.Vec[types.Type].create()
@@ -8095,7 +8124,8 @@ function substitute_type(t: types.Type, subs: ref[map_mod.Map[str, types.Type]])
             let new_ret = substitute_type(unsafe: read(f_ft.return_type), subs)
             return types.function_type(name = f_ft.name, params = new_params.as_span(), return_type = types.alloc_type(new_ret), variadic = f_ft.variadic, is_proc = f_ft.is_proc, param_names = f_ft.param_names)
         types.Type.ty_imported as imported:
-            return types.Type.ty_imported(module_name = imported.module_name, name = imported.name, args = substitute_type_span(imported.args, subs))
+            let imported_bp = unsafe: read(imported.payload)
+            return types.imported_type(module_name = imported_bp.module_name, name = imported_bp.name, args = substitute_type_span(imported_bp.args, subs))
         _:
             return t
 
@@ -8159,7 +8189,8 @@ function check_constraint_satisfied(ctx: ref[Context], actual: types.Type, const
                 if not impl_list_contains(read(impl_ptr), constraint_id):
                     report(ctx, line, column, constraint_unsatisfied_message(n_np.name, constraint_id))
         types.Type.ty_imported as im:
-            check_imported_constraint(ctx, im.module_name, im.name, constraint, constraint_id, line, column)
+            let im_bp = unsafe: read(im.payload)
+            check_imported_constraint(ctx, im_bp.module_name, im_bp.name, constraint, constraint_id, line, column)
         _:
             pass
 
@@ -8305,40 +8336,45 @@ function unify(pattern: types.Type, actual: types.Type, subs: ref[map_mod.Map[st
                     pass
             unify(unsafe: read(pn.base), inner_actual, subs)
         types.Type.ty_generic as pg:
-            if pg.name == "ref" and pg.args.len == 1:
-                unify(unsafe: read(pg.args.data + 0), unwrap_ref(actual), subs)
+            let pg_bp = unsafe: read(pg.payload)
+            if pg_bp.name == "ref" and pg_bp.args.len == 1:
+                unify(unsafe: read(pg_bp.args.data + 0), unwrap_ref(actual), subs)
             else:
                 match actual:
                     types.Type.ty_generic as ag:
-                        if (pg.name == "ptr" or pg.name == "const_ptr") and ag.name == "own" and pg.args.len >= 1 and ag.args.len >= 1:
+                        let ag_bp = unsafe: read(ag.payload)
+                        if (pg_bp.name == "ptr" or pg_bp.name == "const_ptr") and ag_bp.name == "own" and pg_bp.args.len >= 1 and ag_bp.args.len >= 1:
                             unsafe:
-                                unify(read(pg.args.data + 0), read(ag.args.data + 0), subs)
-                        else if pg.name == ag.name and pg.args.len == ag.args.len:
+                                unify(read(pg_bp.args.data + 0), read(ag_bp.args.data + 0), subs)
+                        else if pg_bp.name == ag_bp.name and pg_bp.args.len == ag_bp.args.len:
                             var i: ptr_uint = 0
-                            while i < pg.args.len:
+                            while i < pg_bp.args.len:
                                 unsafe:
-                                    unify(read(pg.args.data + i), read(ag.args.data + i), subs)
+                                    unify(read(pg_bp.args.data + i), read(ag_bp.args.data + i), subs)
                                 i += 1
                     _:
                         pass
         types.Type.ty_imported as pi:
+            let pi_bp = unsafe: read(pi.payload)
             # An imported generic type in a signature (`iter_filter[T]` takes
             # `Iter[T]`): unify the type arguments so the call's type parameters
             # bind from the argument types.
             match actual:
                 types.Type.ty_imported as ai:
-                    if pi.name == ai.name and pi.args.len == ai.args.len:
+                    let ai_bp = unsafe: read(ai.payload)
+                    if pi_bp.name == ai_bp.name and pi_bp.args.len == ai_bp.args.len:
                         var i: ptr_uint = 0
-                        while i < pi.args.len:
+                        while i < pi_bp.args.len:
                             unsafe:
-                                unify(read(pi.args.data + i), read(ai.args.data + i), subs)
+                                unify(read(pi_bp.args.data + i), read(ai_bp.args.data + i), subs)
                             i += 1
                 types.Type.ty_generic as ag:
-                    if pi.name == ag.name and pi.args.len == ag.args.len:
+                    let ag_bp = unsafe: read(ag.payload)
+                    if pi_bp.name == ag_bp.name and pi_bp.args.len == ag_bp.args.len:
                         var j: ptr_uint = 0
-                        while j < pi.args.len:
+                        while j < pi_bp.args.len:
                             unsafe:
-                                unify(read(pi.args.data + j), read(ag.args.data + j), subs)
+                                unify(read(pi_bp.args.data + j), read(ag_bp.args.data + j), subs)
                             j += 1
                 _:
                     pass
@@ -8440,11 +8476,7 @@ function try_imported_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: 
                         let fields_ptr = read(binding_ptr).structs.get(ma.member_name)
                         if fields_ptr != null:
                             check_construction(ctx, scope, ma.member_name, read(fields_ptr), args, ma.line, ma.column)
-                            return Option[types.Type].some(value = types.Type.ty_imported(
-                                module_name = read(module_name_ptr),
-                                name = ma.member_name,
-                                args = span[types.Type](),
-                            ))
+                            return Option[types.Type].some(value = types.imported_type(module_name = read(module_name_ptr), name = ma.member_name, args = span[types.Type]()))
 
                         # A re-exported type alias constructs its resolved target
                         # (`rl.Rectangle` is `c.Rectangle`): yield the target type,
@@ -8458,9 +8490,10 @@ function try_imported_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: 
                             let target = read(ptr[types.Type]<-alias_ptr)
                             match target:
                                 types.Type.ty_imported as tim:
-                                    let target_binding = find_binding(ctx, tim.module_name) else:
+                                    let tim_bp = unsafe: read(tim.payload)
+                                    let target_binding = find_binding(ctx, tim_bp.module_name) else:
                                         return Option[types.Type].none
-                                    if read(target_binding).structs.contains(tim.name):
+                                    if read(target_binding).structs.contains(tim_bp.name):
                                         return Option[types.Type].some(value = target)
                                 _:
                                     pass
@@ -8549,8 +8582,9 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
         Option.some as instance:
             match instance.value:
                 types.Type.ty_imported as im:
-                    if ctx.static_member_types.contains(im.name):
-                        check_static_member(ctx, im.name, method_name, line, column)
+                    let im_bp = unsafe: read(im.payload)
+                    if ctx.static_member_types.contains(im_bp.name):
+                        check_static_member(ctx, im_bp.name, method_name, line, column)
                         return instance.value
                     return check_typed_method_call(ctx, instance.value, method_name, args, arg_types, any_named, line, column)
                 _:
@@ -8613,8 +8647,9 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
 function unwrap_ref(t: types.Type) -> types.Type:
     match t:
         types.Type.ty_generic as g:
-            if g.name == "ref" and g.args.len >= 1:
-                return unsafe: read(g.args.data + (g.args.len - 1))
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "ref" and g_bp.args.len >= 1:
+                return unsafe: read(g_bp.args.data + (g_bp.args.len - 1))
             return t
         _:
             return t
@@ -8626,7 +8661,8 @@ function unwrap_ref(t: types.Type) -> types.Type:
 function generic_receiver_has_method(ctx: ref[Context], t: types.Type, method_name: str) -> bool:
     match t:
         types.Type.ty_generic as g:
-            match find_method_anywhere(ctx, g.name, method_name):
+            let g_bp = unsafe: read(g.payload)
+            match find_method_anywhere(ctx, g_bp.name, method_name):
                 Option.some:
                     return true
                 Option.none:
@@ -8642,12 +8678,13 @@ function generic_receiver_has_method(ctx: ref[Context], t: types.Type, method_na
 public function project_pointer_receiver(t: types.Type) -> types.Type:
     match t:
         types.Type.ty_generic as g:
-            if g.name == "ref" and g.args.len >= 1:
-                return unsafe: read(g.args.data + (g.args.len - 1))
-            if (g.name == "ptr" or g.name == "own" or g.name == "const_ptr") and g.args.len >= 1:
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "ref" and g_bp.args.len >= 1:
+                return unsafe: read(g_bp.args.data + (g_bp.args.len - 1))
+            if (g_bp.name == "ptr" or g_bp.name == "own" or g_bp.name == "const_ptr") and g_bp.args.len >= 1:
                 var element: types.Type
                 unsafe:
-                    element = read(g.args.data + 0)
+                    element = read(g_bp.args.data + 0)
                 if not types.is_error(element):
                     return element
             return t
@@ -8695,14 +8732,15 @@ function check_typed_method_call(ctx: ref[Context], receiver_type: types.Type, m
             # (`Option[int].unwrap()` -> `int`, `Vec[int].first()` -> `ptr[int]`).
             match receiver_type:
                 types.Type.ty_generic as g:
-                    match receiver_type_param_names(ctx, g.name):
+                    let g_bp = unsafe: read(g.payload)
+                    match receiver_type_param_names(ctx, g_bp.name):
                         Option.some as pnames:
                             var subs = map_mod.Map[str, types.Type].create()
                             defer: subs.release()
                             var pi: ptr_uint = 0
-                            while pi < pnames.value.len and pi < g.args.len:
+                            while pi < pnames.value.len and pi < g_bp.args.len:
                                 unsafe:
-                                    subs.set(read(pnames.value.data + pi), read(g.args.data + pi))
+                                    subs.set(read(pnames.value.data + pi), read(g_bp.args.data + pi))
                                 pi += 1
                             return substitute_type(sig.value.return_type, ref_of(subs))
                         Option.none:
@@ -8827,11 +8865,7 @@ function static_struct_receiver_type(ctx: ref[Context], scope: ref[sscope.Scope]
                         let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
                             return Option[types.Type].none
                         if read(binding_ptr).structs.contains(inner.member_name):
-                            return Option[types.Type].some(value = types.Type.ty_imported(
-                                    module_name = read(module_name_ptr),
-                                    name = inner.member_name,
-                                    args = span[types.Type](),
-                                ))
+                            return Option[types.Type].some(value = types.imported_type(module_name = read(module_name_ptr), name = inner.member_name, args = span[types.Type]()))
                         return Option[types.Type].none
                     _:
                         return Option[types.Type].none
@@ -8867,12 +8901,13 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
             # current module.
             return find_method_anywhere(ctx, n_np.name, method_name)
         types.Type.ty_imported as im:
-            let bp = find_binding(ctx, im.module_name)
+            let im_bp = unsafe: read(im.payload)
+            let bp = find_binding(ctx, im_bp.module_name)
             if bp != null:
-                let sp = unsafe: read(bp).method_sigs.get(method_key(im.name, method_name))
+                let sp = unsafe: read(bp).method_sigs.get(method_key(im_bp.name, method_name))
                 if sp != null:
                     return Option[FnSig].some(value = unsafe: read(sp))
-            let sp = ctx.method_sigs.get(method_key(im.name, method_name))
+            let sp = ctx.method_sigs.get(method_key(im_bp.name, method_name))
             if sp != null:
                 return Option[FnSig].some(value = unsafe: read(sp))
             return Option[FnSig].none
@@ -8893,16 +8928,17 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
             return find_method_anywhere(ctx, p.name, method_name)
         # str_buffer[N], atomic[T] and ptr[T] builtin methods.
         types.Type.ty_generic as g:
-            if g.name == "str_buffer":
-                return str_buffer_method_sig(g.args, method_name)
-            if g.name == "atomic":
-                return atomic_method_sig(g.args, method_name)
-            if g.name == "ptr":
-                return ptr_method_sig(g.args, method_name)
-            let sig_ptr = ctx.method_sigs.get(method_key(g.name, method_name))
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "str_buffer":
+                return str_buffer_method_sig(g_bp.args, method_name)
+            if g_bp.name == "atomic":
+                return atomic_method_sig(g_bp.args, method_name)
+            if g_bp.name == "ptr":
+                return ptr_method_sig(g_bp.args, method_name)
+            let sig_ptr = ctx.method_sigs.get(method_key(g_bp.name, method_name))
             if sig_ptr != null:
                 return Option[FnSig].some(value = unsafe: read(sig_ptr))
-            let prelude_ptr = ctx.prelude_method_sigs.get(method_key(g.name, method_name))
+            let prelude_ptr = ctx.prelude_method_sigs.get(method_key(g_bp.name, method_name))
             if prelude_ptr != null:
                 return Option[FnSig].some(value = unsafe: read(prelude_ptr))
             return Option[FnSig].none
@@ -9160,7 +9196,7 @@ function try_imported_type(ctx: ref[Context], scope: ref[sscope.Scope], receiver
                 if alias_type != null:
                     return Option[types.Type].some(value = read(ptr[types.Type]<-alias_type))
                 if binding.structs.contains(member) or binding.type_aliases.contains(member) or binding.static_member_types.contains(member) or binding.interfaces.contains(member) or binding.types.contains(member):
-                    return Option[types.Type].some(value = types.Type.ty_imported(module_name = read(module_name_ptr), name = member, args = span[types.Type]()))
+                    return Option[types.Type].some(value = types.imported_type(module_name = read(module_name_ptr), name = member, args = span[types.Type]()))
                 return Option[types.Type].none
             _:
                 return Option[types.Type].none
@@ -9184,11 +9220,7 @@ function specialization_imported_receiver(ctx: ref[Context], scope: ref[sscope.S
                                     return Option[types.Type].none
                                 if not read(binding_ptr).structs.contains(ma.member_name) and not read(binding_ptr).types.contains(ma.member_name):
                                     return Option[types.Type].none
-                                return Option[types.Type].some(value = types.Type.ty_imported(
-                                    module_name = read(module_name_ptr),
-                                    name = ma.member_name,
-                                    args = resolve_type_arguments(ctx, spec.arguments),
-                                ))
+                                return Option[types.Type].some(value = types.imported_type(module_name = read(module_name_ptr), name = ma.member_name, args = resolve_type_arguments(ctx, spec.arguments)))
                             _:
                                 return Option[types.Type].none
                     _:
@@ -9223,11 +9255,7 @@ function type_instance_receiver(ctx: ref[Context], scope: ref[sscope.Scope], rec
                             return Option[types.Type].none
                         if not ctx.structs.contains(id.name) and not ctx.static_member_types.contains(id.name):
                             return Option[types.Type].none
-                        return Option[types.Type].some(value = types.Type.ty_imported(
-                            module_name = type_owner_module(ctx, id.name),
-                            name = id.name,
-                            args = resolve_type_arguments(ctx, spec.arguments),
-                        ))
+                        return Option[types.Type].some(value = types.imported_type(module_name = type_owner_module(ctx, id.name), name = id.name, args = resolve_type_arguments(ctx, spec.arguments)))
                     _:
                         return Option[types.Type].none
             _:
@@ -9277,7 +9305,7 @@ function event_method_call_type(ctx: ref[Context], method_name: str, event_name:
         var results = vec.Vec[types.Type].create()
         results.push(types.named_type(name = "Subscription", module_name = "", linkage_name = Option[str].none))
         results.push(types.named_type(name = "EventError", module_name = "", linkage_name = Option[str].none))
-        return types.Type.ty_generic(name = "Result", args = results.as_span())
+        return types.generic_type(name = "Result", args = results.as_span())
     if method_name == "unsubscribe":
         return types.primitive("bool")
     if method_name == "wait":
@@ -9292,10 +9320,10 @@ function event_method_call_type(ctx: ref[Context], method_name: str, event_name:
         var results = vec.Vec[types.Type].create()
         results.push(payload_ty)
         results.push(types.named_type(name = "EventError", module_name = "", linkage_name = Option[str].none))
-        var result_ty = types.Type.ty_generic(name = "Result", args = results.as_span())
+        var result_ty = types.generic_type(name = "Result", args = results.as_span())
         var task_args = vec.Vec[types.Type].create()
         task_args.push(result_ty)
-        return types.Type.ty_generic(name = "Task", args = task_args.as_span())
+        return types.generic_type(name = "Task", args = task_args.as_span())
     return types.primitive("void")
 
 
@@ -9411,8 +9439,9 @@ function imported_method_call_type(
 ) -> Option[types.Type]:
     match recv:
         types.Type.ty_imported as imported:
-            let own = find_binding(ctx, imported.module_name)
-            let sig_ptr = imported_method_signature(ctx, own, imported.name, member) else:
+            let imported_bp = unsafe: read(imported.payload)
+            let own = find_binding(ctx, imported_bp.module_name)
+            let sig_ptr = imported_method_signature(ctx, own, imported_bp.name, member) else:
                 return Option[types.Type].none
             let sig = unsafe: read(sig_ptr)
             check_signature_call(ctx, member, sig, args, arg_types, any_named, line, column)
@@ -9442,15 +9471,16 @@ function imported_method_return_type(ctx: ref[Context], recv: types.Type, member
             pass
     match recv:
         types.Type.ty_imported as imported:
-            let own = find_binding(ctx, imported.module_name)
-            let sig_ptr = imported_method_signature(ctx, own, imported.name, member) else:
+            let imported_bp = unsafe: read(imported.payload)
+            let own = find_binding(ctx, imported_bp.module_name)
+            let sig_ptr = imported_method_signature(ctx, own, imported_bp.name, member) else:
                 return Option[types.Type].none
 
             var subs = imported_type_substitution(
                 ctx,
-                binding_declaring_type(ctx, own, imported.name),
-                imported.name,
-                imported.args,
+                binding_declaring_type(ctx, own, imported_bp.name),
+                imported_bp.name,
+                imported_bp.args,
             )
             defer: subs.release()
 
@@ -9492,8 +9522,9 @@ function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], rece
         Option.some as instance:
             match instance.value:
                 types.Type.ty_imported as im:
-                    if ctx.static_member_types.contains(im.name):
-                        check_static_member(ctx, im.name, member, line, column)
+                    let im_bp = unsafe: read(im.payload)
+                    if ctx.static_member_types.contains(im_bp.name):
+                        check_static_member(ctx, im_bp.name, member, line, column)
                         return instance.value
                 _:
                     pass
@@ -9581,7 +9612,7 @@ function imported_static_member(ctx: ref[Context], scope: ref[sscope.Scope], rec
                             return Option[types.Type].none
                         if not binding_has_member(read(binding_ptr), inner.member_name, member):
                             report(ctx, line, column, unknown_member_message("member", inner.member_name, member))
-                        return Option[types.Type].some(value = types.Type.ty_imported(module_name = read(module_name_ptr), name = inner.member_name, args = span[types.Type]()))
+                        return Option[types.Type].some(value = types.imported_type(module_name = read(module_name_ptr), name = inner.member_name, args = span[types.Type]()))
                     _:
                         return Option[types.Type].none
             _:
@@ -9717,7 +9748,8 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
             let n_np = unsafe: read(n.payload)
             return check_named_member(ctx, n_np.module_name, n_np.name, member, is_method_call, line, column)
         types.Type.ty_imported as im:
-            return check_imported_receiver_member(ctx, im.module_name, im.name, im.args, member, is_method_call, line, column)
+            let im_bp = unsafe: read(im.payload)
+            return check_imported_receiver_member(ctx, im_bp.module_name, im_bp.name, im_bp.args, member, is_method_call, line, column)
         types.Type.ty_variant_arm_payload as ap:
             # A bound match arm (`Option.some as p`) is the arm's payload struct
             # — the host's `Types::VariantArmPayload` — so `p.value` reads the
@@ -9737,19 +9769,21 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
             # `len: ptr_uint`.  Every other member (an `extending str:` method)
             # stays on the permissive path.
             if member.equal("data"):
-                return types.Type.ty_generic(name = "ptr", args = alloc_one_type_arg(types.primitive("char")))
+                return types.generic_type(name = "ptr", args = alloc_one_type_arg(types.primitive("char")))
             if member.equal("len"):
                 return types.primitive("ptr_uint")
             return types.Type.ty_error
         types.Type.ty_primitive as p:
             return check_primitive_member(p.name, member)
         types.Type.ty_generic as g:
-            return check_generic_member(ctx, g.name, g.args, member, is_method_call, line, column)
+            let g_bp = unsafe: read(g.payload)
+            return check_generic_member(ctx, g_bp.name, g_bp.args, member, is_method_call, line, column)
         types.Type.ty_tuple as tp:
+            let tp_bp = unsafe: read(tp.payload)
             # A positional tuple reads `._0`/`._1`; a named tuple's elements read
             # by name (the host's `Tuple#field`, whose positional names are `_N`).
             var index: int = -1
-            match tp.field_names:
+            match tp_bp.field_names:
                 Option.some as names:
                     var ni: ptr_uint = 0
                     while ni < names.value.len and index < 0:
@@ -9758,8 +9792,8 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
                         ni += 1
                 Option.none:
                     index = positional_tuple_index(member)
-            if index >= 0 and ptr_uint<-index < tp.elements.len:
-                return unsafe: read(tp.elements.data + ptr_uint<-index)
+            if index >= 0 and ptr_uint<-index < tp_bp.elements.len:
+                return unsafe: read(tp_bp.elements.data + ptr_uint<-index)
             return types.Type.ty_error
         _:
             return types.Type.ty_error
@@ -9896,7 +9930,7 @@ function check_generic_member(ctx: ref[Context], name: str, args: span[types.Typ
     if name == "span":
         # The host's `Span#fields`: the element pointer and the length.
         if member == "data" and args.len >= 1:
-            return types.Type.ty_generic(name = "ptr", args = alloc_one_type_arg(unsafe: read(args.data + 0)))
+            return types.generic_type(name = "ptr", args = alloc_one_type_arg(unsafe: read(args.data + 0)))
         if member == "len":
             return types.primitive("ptr_uint")
     if name == "ptr":
@@ -10117,7 +10151,8 @@ function alias_binding_has_member(ctx: ref[Context], module_name: str, type_name
                 let alias_entry = alias_entries.current()
                 match read(alias_entry.value):
                     types.Type.ty_imported as im:
-                        if im.module_name == module_name and im.name == type_name:
+                        let im_bp = unsafe: read(im.payload)
+                        if im_bp.module_name == module_name and im_bp.name == type_name:
                             if binding_has_member(candidate, read(alias_entry.key), member):
                                 return true
                     _:
@@ -10138,9 +10173,10 @@ function follow_type_alias(ctx: ref[Context], binding_ptr: ptr[ModuleBinding], t
             return Option[AliasSource].none
         match read(resolved_ptr):
             types.Type.ty_imported as im:
-                if im.module_name == "":
+                let im_bp = unsafe: read(im.payload)
+                if im_bp.module_name == "":
                     return Option[AliasSource].none
-                return Option[AliasSource].some(value = AliasSource(module_name = im.module_name, type_name = im.name))
+                return Option[AliasSource].some(value = AliasSource(module_name = im_bp.module_name, type_name = im_bp.name))
             _:
                 return Option[AliasSource].none
 
@@ -10186,7 +10222,7 @@ function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_na
         if callee_name == "ptr_of":
             at = unwrap_ref(at)
         let kind = if callee_name == "ptr_of": "ptr" else: if callee_name == "ref_of": "ref" else: "const_ptr"
-        return Option[types.Type].some(value = types.Type.ty_generic(name = string.String.from_str(kind).as_str(), args = alloc_one_type_arg(at)))
+        return Option[types.Type].some(value = types.generic_type(name = string.String.from_str(kind).as_str(), args = alloc_one_type_arg(at)))
     if callee_name == "size_of" or callee_name == "align_of":
         if args.len != 1:
             return Option[types.Type].none
@@ -10202,7 +10238,7 @@ function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_na
             return Option[types.Type].none
         # The host's `check_get_call`: a nullable raw pointer to the element.
         return Option[types.Type].some(value = types.Type.ty_nullable(
-            base = types.alloc_type(types.Type.ty_generic(name = "ptr", args = alloc_one_type_arg(element)))
+            base = types.alloc_type(types.generic_type(name = "ptr", args = alloc_one_type_arg(element)))
         ))
     if callee_name == "fatal":
         return Option[types.Type].some(value = types.Type.ty_error)
@@ -10240,7 +10276,7 @@ function alloc_one_type_arg(ty: types.Type) -> span[types.Type]:
 
 ## The host's `Types::Task` field types (`types.rb:590-632`).
 function task_frame_field_type() -> types.Type:
-    return types.Type.ty_generic(name = "ptr", args = alloc_one_type_arg(types.primitive("void")))
+    return types.generic_type(name = "ptr", args = alloc_one_type_arg(types.primitive("void")))
 
 
 function task_ready_field_type() -> types.Type:
@@ -10393,14 +10429,16 @@ function record_mutable_lvalue_argument_sites(ctx: ref[Context], sig: FnSig, arg
 function mutable_lvalue_span_argument(expected: types.Type, actual: types.Type) -> bool:
     match expected:
         types.Type.ty_generic as eg:
-            if not eg.name.equal("span") or eg.args.len < 1:
+            let eg_bp = unsafe: read(eg.payload)
+            if not eg_bp.name.equal("span") or eg_bp.args.len < 1:
                 return false
-            let elem = unsafe: read(eg.args.data + 0)
+            let elem = unsafe: read(eg_bp.args.data + 0)
             match actual:
                 types.Type.ty_generic as ag:
-                    if ag.name.equal("array") and ag.args.len >= 1:
-                        return types.type_equals(unsafe: read(ag.args.data + 0), elem)
-                    if ag.name.equal("str_buffer"):
+                    let ag_bp = unsafe: read(ag.payload)
+                    if ag_bp.name.equal("array") and ag_bp.args.len >= 1:
+                        return types.type_equals(unsafe: read(ag_bp.args.data + 0), elem)
+                    if ag_bp.name.equal("str_buffer"):
                         return types.is_char_type(elem)
                 _:
                     pass
@@ -10655,7 +10693,7 @@ function reserved_value_message(kind_label: str, name: str) -> str:
 function make_task_type(inner: types.Type) -> types.Type:
     var args = vec.Vec[types.Type].create()
     args.push(inner)
-    return types.Type.ty_generic(name = "Task", args = args.as_span())
+    return types.generic_type(name = "Task", args = args.as_span())
 
 
 function register_task_methods(ctx: ref[Context]) -> void:

@@ -1914,12 +1914,14 @@ function resolve_type_method_hover(
 function receiver_type_name(ty: types.Type) -> str:
     match ty:
         types.Type.ty_imported as im:
-            return im.name
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.name
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
             return n_np.name
         types.Type.ty_generic as g:
-            return g.name
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name
         types.Type.ty_primitive as p:
             # A builtin receiver (`vec3`, `mat4`) names no module, but its
             # methods still live in an `extending` block.
@@ -3468,8 +3470,9 @@ public struct ImportedTypeRef:
 public function imported_type_reference(ty: types.Type) -> Option[ImportedTypeRef]:
     match ty:
         types.Type.ty_imported as im:
-            if im.module_name.len > 0:
-                return Option[ImportedTypeRef].some(value = ImportedTypeRef(module_name = im.module_name, name = im.name))
+            let im_bp = unsafe: read(im.payload)
+            if im_bp.module_name.len > 0:
+                return Option[ImportedTypeRef].some(value = ImportedTypeRef(module_name = im_bp.module_name, name = im_bp.name))
             return Option[ImportedTypeRef].none
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
@@ -3486,10 +3489,11 @@ public function imported_type_reference(ty: types.Type) -> Option[ImportedTypeRe
 public function project_value_receiver_type(ty: types.Type) -> types.Type:
     match ty:
         types.Type.ty_generic as g:
-            if g.name.equal("ref") and g.args.len >= 1:
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name.equal("ref") and g_bp.args.len >= 1:
                 return types.pointer_element(ty)
-            if (g.name.equal("ptr") or g.name.equal("const_ptr")) and g.args.len == 1:
-                return unsafe: read(g.args.data + 0)
+            if (g_bp.name.equal("ptr") or g_bp.name.equal("const_ptr")) and g_bp.args.len == 1:
+                return unsafe: read(g_bp.args.data + 0)
             return ty
         _:
             return ty
@@ -3499,14 +3503,17 @@ public function project_value_receiver_type(ty: types.Type) -> types.Type:
 public function type_to_key_name(t: types.Type) -> str:
     match t:
         types.Type.ty_generic as g:
-            return g.name
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
             return n_np.name
         types.Type.ty_imported as im:
-            return im.name
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.name
         types.Type.ty_opaque as op:
-            return op.name
+            let op_bp = unsafe: read(op.payload)
+            return op_bp.name
         types.Type.ty_primitive as p:
             return p.name
         types.Type.ty_str:
@@ -4265,7 +4272,8 @@ function resolve_imported_variant_arm(
                 let n_np = unsafe: read(n.payload)
                 module_name = n_np.module_name
             types.Type.ty_imported as im:
-                module_name = im.module_name
+                let im_bp = unsafe: read(im.payload)
+                module_name = im_bp.module_name
             _:
                 # A generic/primitive receiver (`Vec[T].create`, `mat4.identity`)
                 # is a static method, not an imported variant arm.

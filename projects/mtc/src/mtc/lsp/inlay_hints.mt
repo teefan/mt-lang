@@ -622,14 +622,17 @@ function receiver_method_sig_for(
 function receiver_key_name(ty: types.Type) -> str:
     match ty:
         types.Type.ty_generic as g:
-            return g.name
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
             return n_np.name
         types.Type.ty_imported as im:
-            return im.name
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.name
         types.Type.ty_opaque as op:
-            return op.name
+            let op_bp = unsafe: read(op.payload)
+            return op_bp.name
         types.Type.ty_nullable:
             return receiver_key_name(types.unwrap_nullable(ty))
         _:

@@ -57,7 +57,7 @@ function async_param_field_type(receiver_ty_opt: Option[types.Type], receiver_ed
     match async_param_pointer(receiver_ty_opt, receiver_editable, pname):
         Option.some as ptr_flag:
             if ptr_flag.value:
-                return types.Type.ty_generic(name = "ptr", args = lowering.single_ty_span(pty))
+                return types.generic_type(name = "ptr", args = lowering.single_ty_span(pty))
         Option.none:
             pass
     return pty
@@ -226,7 +226,7 @@ public function lower_async_fn(ctx: ref[lowering.LoweringContext], name: str, li
     let frame_index = ctx.pending_synthetic_structs.len()
     let ptr_ty = ptr_uint_type()
     let frame_ty = types.named_type(name = frame_c, module_name = "", linkage_name = Option[str].none)
-    let frame_ptr_ty = types.Type.ty_generic(name = "ptr", args = lowering.single_ty_span(frame_ty))
+    let frame_ptr_ty = types.generic_type(name = "ptr", args = lowering.single_ty_span(frame_ty))
 
     # Common vtable param: void* __mt_frame_raw
     var waiter_fn_ty = types.function_type(name = "", params = lowering.single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = lowering.sp_str("frame"))
@@ -1446,7 +1446,8 @@ public function lower_async_await_into(ctx: ref[lowering.LoweringContext], outpu
 public function normalize_awaited_task_type(t: types.Type) -> types.Type:
     match t:
         types.Type.ty_generic as g:
-            if g.name == "Task":
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "Task":
                 return t
         _:
             pass
@@ -1566,12 +1567,12 @@ public function build_async_main_entrypoint(ctx: ref[lowering.LoweringContext], 
 
     let int_ty = types.primitive("int")
     let void_ty = ctx.void_ty
-    let void_ptr = types.Type.ty_generic(name = "ptr", args = lowering.sp_type(void_ty))
+    let void_ptr = types.generic_type(name = "ptr", args = lowering.sp_type(void_ty))
     let str_ty = types.Type.ty_str
     let char_ty = types.primitive("char")
     let cstr_ty = types.primitive("cstr")
-    let ptr_char_ty = types.Type.ty_generic(name = "ptr", args = lowering.sp_type(char_ty))
-    let raw_argv_ty = types.Type.ty_generic(name = "ptr", args = lowering.sp_type(ptr_char_ty))
+    let ptr_char_ty = types.generic_type(name = "ptr", args = lowering.sp_type(char_ty))
+    let raw_argv_ty = types.generic_type(name = "ptr", args = lowering.sp_type(ptr_char_ty))
     var params = span[analyzer.ParamEntry]()
     match sig:
         Option.some as s:
@@ -1594,14 +1595,14 @@ public function build_async_main_entrypoint(ctx: ref[lowering.LoweringContext], 
             let p0 = unsafe: read(params.data + 0).ty
             if not (lowering.is_span_type(p0) and types.type_equals(lowering.generic_first_arg(p0), str_ty)):
                 return Option[ir.Function].none
-            let items_ty = types.Type.ty_generic(name = "ptr", args = lowering.sp_type(str_ty))
+            let items_ty = types.generic_type(name = "ptr", args = lowering.sp_type(str_ty))
             let items_ref = lowering.alloc_expr(ir.Expr.expr_name(name = "__mt_args_items", ty = items_ty, pointer = Option[bool].some(value = false)))
             setup.push(ir.Stmt.stmt_local(name = "__mt_args_items", linkage_name = "__mt_args_items", ty = items_ty, value = lowering.alloc_expr(ir.Expr.expr_null_literal(ty = items_ty)), line = 0, source_path = ""))
             var bridge_args = vec.Vec[ir.Expr].create()
             unsafe:
                 bridge_args.push(read(argc_expr))
                 bridge_args.push(read(argv_expr))
-                bridge_args.push(read(lowering.alloc_expr(ir.Expr.expr_address_of(expression = items_ref, ty = types.Type.ty_generic(name = "ptr", args = lowering.sp_type(items_ty))))))
+                bridge_args.push(read(lowering.alloc_expr(ir.Expr.expr_address_of(expression = items_ref, ty = types.generic_type(name = "ptr", args = lowering.sp_type(items_ty))))))
             let args_ty = p0
             let args_ref = lowering.alloc_expr(ir.Expr.expr_name(name = "__mt_args", ty = args_ty, pointer = Option[bool].some(value = false)))
             setup.push(ir.Stmt.stmt_local(name = "__mt_args", linkage_name = "__mt_args", ty = args_ty, value = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_entry_argv_to_span_str", arguments = bridge_args.as_span(), ty = args_ty)), line = 0, source_path = ""))
@@ -1611,7 +1612,7 @@ public function build_async_main_entrypoint(ctx: ref[lowering.LoweringContext], 
             let p1 = unsafe: read(params.data + 1).ty
             call_args.push(argc_expr)
             if types.is_raw_pointer(p1) and types.type_equals(types.pointer_element(p1), cstr_ty):
-                let cstr_ptr_ty = types.Type.ty_generic(name = "ptr", args = lowering.sp_type(cstr_ty))
+                let cstr_ptr_ty = types.generic_type(name = "ptr", args = lowering.sp_type(cstr_ty))
                 call_args.push(lowering.alloc_expr(ir.Expr.expr_cast(target_type = cstr_ptr_ty, expression = argv_expr, ty = cstr_ptr_ty)))
             else if types.is_raw_pointer(p1) and types.type_equals(types.pointer_element(p1), ptr_char_ty):
                 call_args.push(argv_expr)
@@ -1778,7 +1779,7 @@ function ptr_uint_type() -> types.Type:
 
 ## ptr[void] type — used for frame pointer in async CPS.
 function ptr_void_type() -> types.Type:
-    return types.Type.ty_generic(name = "ptr", args = lowering.single_ty_span(types.primitive("void")))
+    return types.generic_type(name = "ptr", args = lowering.single_ty_span(types.primitive("void")))
 
 
 ## True when `name` is one of the function-pointer fields on the Task[T] struct
@@ -1793,8 +1794,9 @@ public function is_task_fn_field(name: str) -> bool:
 public function extract_task_element_type(ctx: ref[lowering.LoweringContext], t: types.Type) -> types.Type:
     match t:
         types.Type.ty_generic as tg:
-            if tg.name == "Task" and tg.args.len >= 1:
-                return unsafe: read(tg.args.data + 0)
+            let tg_bp = unsafe: read(tg.payload)
+            if tg_bp.name == "Task" and tg_bp.args.len >= 1:
+                return unsafe: read(tg_bp.args.data + 0)
         types.Type.ty_named as tn:
             let tn_np = unsafe: read(tn.payload)
             if tn_np.name.starts_with("mt_task_"):

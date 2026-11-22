@@ -1583,9 +1583,11 @@ function contains_error_type(ty: types.Type) -> bool:
         types.Type.ty_error:
             return true
         types.Type.ty_imported as imported:
-            return type_args_contain_error(imported.args)
+            let imported_bp = unsafe: read(imported.payload)
+            return type_args_contain_error(imported_bp.args)
         types.Type.ty_generic as generic:
-            return type_args_contain_error(generic.args)
+            let generic_bp = unsafe: read(generic.payload)
+            return type_args_contain_error(generic_bp.args)
         types.Type.ty_nullable as nullable:
             return contains_error_type(unsafe: read(nullable.base))
         types.Type.ty_function as fn_type:

@@ -177,7 +177,8 @@ function render_type(t: types.Type) -> str:
 function is_ptr_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name == "ptr" and g.args.len == 1
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name == "ptr" and g_bp.args.len == 1
         _:
             return false
 

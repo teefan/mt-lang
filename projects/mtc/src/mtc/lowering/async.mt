@@ -274,7 +274,7 @@ function count_await_in_expr(ep: ptr[ast.Expr]?, count: ref[int]) -> void:
 public function build_async_frame(module_name: str, name: str, has_await: bool, result_type: types.Type) -> ir.StructDecl:
     let bool_ty = types.primitive("bool")
     let int_ty = types.primitive("int")
-    let ptr_void = types.Type.ty_generic(name = "ptr", args = utils.sp_type(types.primitive("void")))
+    let ptr_void = types.generic_type(name = "ptr", args = utils.sp_type(types.primitive("void")))
     let frame_c = naming.qualified_c_name(module_name, strings.join_two(name, "_frame"))
 
     var fields = vec.Vec[ir.Field].create()
@@ -310,13 +310,13 @@ public function is_void_type(t: types.Type) -> bool:
 
 
 public function ptr_void_type() -> types.Type:
-    return types.Type.ty_generic(name = "ptr", args = utils.sp_type(types.primitive("void")))
+    return types.generic_type(name = "ptr", args = utils.sp_type(types.primitive("void")))
 
 
 public function task_type(inner: types.Type) -> types.Type:
     var args = vec.Vec[types.Type].create()
     args.push(inner)
-    return types.Type.ty_generic(name = "Task", args = args.as_span())
+    return types.generic_type(name = "Task", args = args.as_span())
 
 
 public function bool_type() -> types.Type:

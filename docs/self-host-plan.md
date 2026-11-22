@@ -507,12 +507,50 @@ shape).  Boxing also required `ty_function`'s 51 match arms to read their fields
 through `payload` (`let x_ft = unsafe: read(x.payload)`), including nested
 `Type.ty_function as fb:` arms.
 
+**Correction (same session): there was no lowering limitation.**  The apparent
+`match requires known type, got Type_ty_named` abort was a *conversion* gap, not
+a compiler bug: the **test tree** still constructed the inline arm, so the
+dev-suite build failed with `has no member named 'name'`, and the failing build
+masked itself as a lowering error.  Converting the tests too (1 construction, 4
+arms) removed it, and the probe that "reproduced on HEAD" only ever failed
+because it called a constructor that did not exist yet.
+
+So all nine wide arms are boxed after all, in three commits:
+
+| Arm | Struct | Constructors | Match arms |
+| --- | --- | --- | --- |
+| `ty_function` | `FunctionType` | 41 | 51 |
+| `ty_named` | `NamedType` | 72 | 138 |
+| `ty_imported` | `ImportedType` | 57 | 147 |
+| `ty_generic` | `GenericType` | 185 | 161 |
+| `ty_event` | `EventType` | 8 | 12 |
+| `ty_dyn` | `DynType` | 6 | 14 |
+| `ty_dyn_vtable` | `DynVtableType` | 4 | 9 |
+| `ty_opaque` | `OpaqueType` | 6 | 26 |
+| `ty_tuple` | `TupleType` | 7 | 29 |
+
+`Type` **72 → 24 B**, `ir.Expr` **168 → 72**, `ir.Stmt` 144 → 96, `ir.Function`
+144 → 96, `ir.Param` 112 → 64, `ir.Field` 88 → 40.
+
+| Command (`main.mt`) | Session start | After `ty_function` | **Final** |
+| --- | --- | --- | --- |
+| `check` | 628 MiB | 606 MiB | **513 MiB** |
+| `lower` | 1,322 MiB | 1,258 MiB | **957 MiB** |
+| `emit-c` | 1,369 MiB | 1,307 MiB | **1,003 MiB** |
+
+`type_identical` crossed the 200-line limit from the added deref lines, so its
+13 aggregate arms moved into `identical_aggregate_arm` (the 8 scalar arms stay
+in the dispatcher); `reserved_name_fixes` (no callers) was deleted.  The
+mechanical `let x_bp = unsafe: read(x.payload)` idiom adds ~580 lines, which is
+a deliberate structural cost of boxing — the refreshed baseline records it.
+
 **Verification.** Bootstrap fixed point holds; dev suite **22/0**; `test/mt`
 **85/0**; CLI **227/227**; diagnostics **504/0**; lint **673/0**; formatter
 **775×3/0**; examples **49/49**; valgrind **0 errors**; `lower`/`emit-c` output
 **byte-identical** to the pre-change compiler on examples, `test/mt` and
-`analyzer.mt`; guard `--check --strict --ratchet` ok (code 128,497 → 128,533,
-duplication unchanged at 6,498).
+`analyzer.mt`; guard `--check --strict --ratchet` ok after the reviewed refresh
+(2 functions ≥ 200 lines — the pre-existing `binding_at` exception — and the
+duplication baseline carries the deref idiom).
 
 ## Session 149 — whole-program memory reduction
 

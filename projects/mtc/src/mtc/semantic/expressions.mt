@@ -93,7 +93,8 @@ function nullable_candidate_type(ty: types.Type) -> bool:
         types.Type.ty_nullable:
             return true
         types.Type.ty_generic as g:
-            return g.name != "ref" and g.name != "atomic"
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name != "ref" and g_bp.name != "atomic"
         _:
             return false
     return false

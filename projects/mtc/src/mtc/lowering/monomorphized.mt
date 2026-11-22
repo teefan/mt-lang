@@ -120,17 +120,18 @@ public function substitute_type_params(ctx: ref[lowering.LoweringContext], ty: t
                 return unsafe: read(concrete)
             return ty
         types.Type.ty_imported as im:
-            let concrete = sub.get(im.name)
+            let im_bp = unsafe: read(im.payload)
+            let concrete = sub.get(im_bp.name)
             if concrete != null:
                 return unsafe: read(concrete)
-            if im.args.len > 0:
+            if im_bp.args.len > 0:
                 var args = vec.Vec[types.Type].create()
                 var i: ptr_uint = 0
-                while i < im.args.len:
+                while i < im_bp.args.len:
                     unsafe:
-                        args.push(substitute_type_params(ctx, read(im.args.data + i), sub))
+                        args.push(substitute_type_params(ctx, read(im_bp.args.data + i), sub))
                     i += 1
-                return types.Type.ty_imported(module_name = im.module_name, name = im.name, args = args.as_span())
+                return types.imported_type(module_name = im_bp.module_name, name = im_bp.name, args = args.as_span())
             return ty
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
@@ -139,13 +140,14 @@ public function substitute_type_params(ctx: ref[lowering.LoweringContext], ty: t
                 return unsafe: read(concrete)
             return ty
         types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
             var args = vec.Vec[types.Type].create()
             var i: ptr_uint = 0
-            while i < g.args.len:
+            while i < g_bp.args.len:
                 unsafe:
-                    args.push(substitute_type_params(ctx, read(g.args.data + i), sub))
+                    args.push(substitute_type_params(ctx, read(g_bp.args.data + i), sub))
                 i += 1
-            return types.Type.ty_generic(name = g.name, args = args.as_span())
+            return types.generic_type(name = g_bp.name, args = args.as_span())
         types.Type.ty_nullable as nl:
             return types.Type.ty_nullable(base = types.alloc_type(substitute_type_params(ctx, unsafe: read(nl.base), sub)))
         types.Type.ty_function as fnt:
@@ -269,7 +271,7 @@ function create_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[
         loop_defer_depth = 0,
         bool_ty = types.primitive("bool"),
         void_ty = types.primitive("void"),
-        ptr_void_ty = types.Type.ty_generic(name = "ptr", args = lowering.sp_type(types.primitive("void"))),
+        ptr_void_ty = types.generic_type(name = "ptr", args = lowering.sp_type(types.primitive("void"))),
         opaque_keys = collect_opaque_keys(prog_analyses),
         types = type_store,
     )
@@ -293,7 +295,7 @@ function collect_opaque_keys(prog_analyses: span[analyzer.Analysis]) -> map_mod.
                 d = read(analysis.source_file.declarations.data + di)
             match d:
                 ast.Decl.decl_opaque as op:
-                    keys.set(naming.type_c_key(types.Type.ty_imported(module_name = analysis.module_name, name = op.name, args = span[types.Type]())), true)
+                    keys.set(naming.type_c_key(types.imported_type(module_name = analysis.module_name, name = op.name, args = span[types.Type]())), true)
                 _:
                     pass
             di += 1
@@ -383,37 +385,39 @@ public function spec_arg_type_to_s(t: types.Type) -> str:
                 return strings.join_three(n_np.module_name, ".", n_np.name)
             return n_np.name
         types.Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
             var buf = string.String.create()
-            if im.module_name.len > 0:
-                buf.append(im.module_name)
+            if im_bp.module_name.len > 0:
+                buf.append(im_bp.module_name)
                 buf.append(".")
-            buf.append(im.name)
-            if im.args.len > 0:
+            buf.append(im_bp.name)
+            if im_bp.args.len > 0:
                 buf.append("[")
                 var i: ptr_uint = 0
-                while i < im.args.len:
+                while i < im_bp.args.len:
                     if i > 0:
                         buf.append(", ")
                     unsafe:
-                        buf.append(spec_arg_type_to_s(read(im.args.data + i)))
+                        buf.append(spec_arg_type_to_s(read(im_bp.args.data + i)))
                     i += 1
                 buf.append("]")
             return buf.as_str()
         types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
             var buf = string.String.create()
-            if g.name == "Option":
+            if g_bp.name == "Option":
                 buf.append("std.option.")
-            else if g.name == "Result":
+            else if g_bp.name == "Result":
                 buf.append("std.result.")
-            buf.append(g.name)
-            if g.args.len > 0:
+            buf.append(g_bp.name)
+            if g_bp.args.len > 0:
                 buf.append("[")
                 var i: ptr_uint = 0
-                while i < g.args.len:
+                while i < g_bp.args.len:
                     if i > 0:
                         buf.append(", ")
                     unsafe:
-                        buf.append(spec_arg_type_to_s(read(g.args.data + i)))
+                        buf.append(spec_arg_type_to_s(read(g_bp.args.data + i)))
                     i += 1
                 buf.append("]")
             return buf.as_str()
@@ -424,14 +428,15 @@ public function spec_arg_type_to_s(t: types.Type) -> str:
             buf.append("?")
             return buf.as_str()
         types.Type.ty_tuple as tup:
+            let tup_bp = unsafe: read(tup.payload)
             var buf = string.String.create()
             buf.append("(")
             var i: ptr_uint = 0
-            while i < tup.elements.len:
+            while i < tup_bp.elements.len:
                 if i > 0:
                     buf.append(", ")
                 unsafe:
-                    buf.append(spec_arg_type_to_s(read(tup.elements.data + i)))
+                    buf.append(spec_arg_type_to_s(read(tup_bp.elements.data + i)))
                 i += 1
             buf.append(")")
             return buf.as_str()
@@ -457,9 +462,10 @@ public function spec_arg_type_to_s(t: types.Type) -> str:
         types.Type.ty_var as v:
             return v.name
         types.Type.ty_opaque as o:
-            if o.module_name.len > 0:
-                return strings.join_three(o.module_name, ".", o.name)
-            return o.name
+            let o_bp = unsafe: read(o.payload)
+            if o_bp.module_name.len > 0:
+                return strings.join_three(o_bp.module_name, ".", o_bp.name)
+            return o_bp.name
         _:
             return types.type_to_string(t)
 
@@ -1305,12 +1311,7 @@ function lower_module_event_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl
             var ev_payload: ptr[types.Type]? = null
             if info.has_payload:
                 ev_payload = types.alloc_type(info.payload_type)
-            let ev_ty = types.Type.ty_event(
-                name = ev.name,
-                capacity = info.capacity,
-                payload_type = ev_payload,
-                linkage_name = info.event_c_name,
-            )
+            let ev_ty = types.event_type(name = ev.name, capacity = info.capacity, payload_type = ev_payload, linkage_name = info.event_c_name)
             let ev_zero = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = ev_ty))
             globals.push(ir.Global(name = ev.name, linkage_name = naming.qualified_c_name(ctx.module_name, ev.name), ty = ev_ty, value = ev_zero))
         _:

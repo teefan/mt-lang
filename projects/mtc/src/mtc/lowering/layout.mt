@@ -42,7 +42,8 @@ function layout_pointer_like(base: types.Type) -> bool:
         types.Type.ty_primitive as tp:
             return tp.name == "cstr"
         types.Type.ty_generic as g:
-            return g.name == "ptr" or g.name == "const_ptr" or g.name == "own" or g.name == "ref"
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name == "ptr" or g_bp.name == "const_ptr" or g_bp.name == "own" or g_bp.name == "ref"
         _:
             return false
 
@@ -80,15 +81,16 @@ function layout_info(ctx: ref[lowering.LoweringContext], ty: types.Type) -> Opti
                 alignment = overall,
             ))
         types.Type.ty_generic as g:
-            if g.name == "ptr" or g.name == "const_ptr" or g.name == "own" or g.name == "ref":
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "ptr" or g_bp.name == "const_ptr" or g_bp.name == "own" or g_bp.name == "ref":
                 return Option[LayoutInfo].some(value = LayoutInfo(size = 8, alignment = 8))
-            if g.name == "span" and g.args.len == 1:
+            if g_bp.name == "span" and g_bp.args.len == 1:
                 # `Types::Span`: { ptr[T] data; ptr_uint len; }
                 return Option[LayoutInfo].some(value = LayoutInfo(size = 16, alignment = 8))
-            if g.name == "array" and g.args.len == 2:
-                let element = unsafe: read(g.args.data + 0)
+            if g_bp.name == "array" and g_bp.args.len == 2:
+                let element = unsafe: read(g_bp.args.data + 0)
                 var count: long = 0
-                match unsafe: read(g.args.data + 1):
+                match unsafe: read(g_bp.args.data + 1):
                     types.Type.ty_literal_int as lit:
                         count = lit.value
                     _:
@@ -99,9 +101,9 @@ function layout_info(ctx: ref[lowering.LoweringContext], ty: types.Type) -> Opti
                     size = element_info.size * count,
                     alignment = element_info.alignment,
                 ))
-            if g.name == "str_buffer" and g.args.len == 1:
+            if g_bp.name == "str_buffer" and g_bp.args.len == 1:
                 var capacity: long = 0
-                match unsafe: read(g.args.data + 0):
+                match unsafe: read(g_bp.args.data + 0):
                     types.Type.ty_literal_int as lit:
                         capacity = lit.value + 1
                     _:
@@ -114,11 +116,12 @@ function layout_info(ctx: ref[lowering.LoweringContext], ty: types.Type) -> Opti
                 return Option[LayoutInfo].some(value = LayoutInfo(size = layout_align_up(offset, 8), alignment = 8))
             return Option[LayoutInfo].none
         types.Type.ty_imported as im:
-            if im.args.len > 0:
+            let im_bp = unsafe: read(im.payload)
+            if im_bp.args.len > 0:
                 return Option[LayoutInfo].none
-            match layout_struct_fields(ctx, im.module_name, im.name):
+            match layout_struct_fields(ctx, im_bp.module_name, im_bp.name):
                 Option.some as fields:
-                    let meta = layout_struct_meta(ctx, im.module_name, im.name)
+                    let meta = layout_struct_meta(ctx, im_bp.module_name, im_bp.name)
                     return layout_aggregate_info(ctx, fields.value, meta.packed, meta.alignment)
                 Option.none:
                     return Option[LayoutInfo].none
@@ -225,15 +228,16 @@ public function layout_alignment(ctx: ref[lowering.LoweringContext], ty: types.T
 public function layout_offset_of(ctx: ref[lowering.LoweringContext], ty: types.Type, field: str) -> Option[long]:
     match ty:
         types.Type.ty_generic as g:
-            if g.name == "span" and g.args.len == 1:
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "span" and g_bp.args.len == 1:
                 if field == "data":
                     return Option[long].some(value = 0)
                 if field == "len":
                     return Option[long].some(value = 8)
                 return Option[long].none
-            if g.name == "str_buffer" and g.args.len == 1:
+            if g_bp.name == "str_buffer" and g_bp.args.len == 1:
                 var capacity: long = 0
-                match unsafe: read(g.args.data + 0):
+                match unsafe: read(g_bp.args.data + 0):
                     types.Type.ty_literal_int as lit:
                         capacity = lit.value + 1
                     _:
@@ -248,11 +252,12 @@ public function layout_offset_of(ctx: ref[lowering.LoweringContext], ty: types.T
                 return Option[long].none
             return Option[long].none
         types.Type.ty_imported as im:
-            if im.args.len > 0:
+            let im_bp = unsafe: read(im.payload)
+            if im_bp.args.len > 0:
                 return Option[long].none
-            match layout_struct_fields(ctx, im.module_name, im.name):
+            match layout_struct_fields(ctx, im_bp.module_name, im_bp.name):
                 Option.some as fields:
-                    let meta = layout_struct_meta(ctx, im.module_name, im.name)
+                    let meta = layout_struct_meta(ctx, im_bp.module_name, im_bp.name)
                     return layout_struct_field_offset(ctx, fields.value, meta.packed, field)
                 Option.none:
                     return Option[long].none

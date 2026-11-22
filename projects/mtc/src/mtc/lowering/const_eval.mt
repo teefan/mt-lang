@@ -37,8 +37,9 @@ function enum_member_value_of_expr(ctx: ref[lowering.LoweringContext], ep: ptr[a
                 var enum_module = ""
                 match operand_ty:
                     types.Type.ty_imported as im:
-                        enum_name = im.name
-                        enum_module = if im.module_name.len > 0: im.module_name else: ctx.module_name
+                        let im_bp = unsafe: read(im.payload)
+                        enum_name = im_bp.name
+                        enum_module = if im_bp.module_name.len > 0: im_bp.module_name else: ctx.module_name
                     types.Type.ty_named as nm:
                         let nm_np = unsafe: read(nm.payload)
                         enum_name = nm_np.name
@@ -457,8 +458,9 @@ public function coerce_const_value(ctx: ref[lowering.LoweringContext], v: ir.Exp
                 _:
                     pass
         types.Type.ty_generic as tg:
-            if tg.name == "array" and tg.args.len == 2:
-                let element_ty = unsafe: read(tg.args.data + 0)
+            let tg_bp = unsafe: read(tg.payload)
+            if tg_bp.name == "array" and tg_bp.args.len == 2:
+                let element_ty = unsafe: read(tg_bp.args.data + 0)
                 match v:
                     ir.Expr.expr_array_literal as al:
                         var elements = vec.Vec[ir.Expr].create()
@@ -507,8 +509,9 @@ public function try_const_typed_value_ir(ctx: ref[lowering.LoweringContext], ep:
                     _:
                         pass
         types.Type.ty_generic as tg:
-            if tg.name == "array" and tg.args.len == 2:
-                let element_ty = unsafe: read(tg.args.data + 0)
+            let tg_bp = unsafe: read(tg.payload)
+            if tg_bp.name == "array" and tg_bp.args.len == 2:
+                let element_ty = unsafe: read(tg_bp.args.data + 0)
                 unsafe:
                     match read(ep):
                         ast.Expr.expr_expression_list as els:
@@ -548,7 +551,7 @@ function try_const_tuple_ir(ctx: ref[lowering.LoweringContext], elements: span[a
             return Option[ptr[ir.Expr]].none
         fields.push(ir.AggregateField(name = lowering.tuple_field_name(fi), value = vp))
         fi += 1
-    let tup_ty = types.Type.ty_tuple(elements = tys.as_span(), field_names = Option[span[str]].none)
+    let tup_ty = types.tuple_type(elements = tys.as_span(), field_names = Option[span[str]].none)
     return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = tup_ty, fields = fields.as_span())))
 
 
@@ -809,7 +812,7 @@ function try_const_array_literal_ir(ctx: ref[lowering.LoweringContext], type_arg
     unsafe:
         array_args.push(element_ty)
         array_args.push(lowering.resolve_array_length_type(ctx, read(type_args.data + 1).value))
-    let array_ty = types.Type.ty_generic(name = "array", args = array_args.as_span())
+    let array_ty = types.generic_type(name = "array", args = array_args.as_span())
     var elements = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -980,8 +983,9 @@ function try_const_struct_literal_ir(ctx: ref[lowering.LoweringContext], target:
             struct_name = nm_np.name
             field_module = nm_np.module_name
         types.Type.ty_imported as im:
-            struct_name = im.name
-            field_module = im.module_name
+            let im_bp = unsafe: read(im.payload)
+            struct_name = im_bp.name
+            field_module = im_bp.module_name
         _:
             return Option[ptr[ir.Expr]].none
     var fields = vec.Vec[ir.AggregateField].create()

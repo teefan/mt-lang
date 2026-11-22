@@ -477,8 +477,9 @@ public function const_value_ir_representable(ctx: ref[lowering.LoweringContext],
                 _:
                     return false
         types.Type.ty_generic as g:
-            if g.name == "array" and g.args.len == 2:
-                let element_ty = unsafe: read(g.args.data + 0)
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "array" and g_bp.args.len == 2:
+                let element_ty = unsafe: read(g_bp.args.data + 0)
                 match v:
                     ir.Expr.expr_array_literal as al:
                         var i: ptr_uint = 0
@@ -670,7 +671,8 @@ public function const_receiver_struct_name(value: ptr[ir.Expr]) -> Option[str]:
             let n_np = unsafe: read(n.payload)
             return Option[str].some(value = n_np.name)
         types.Type.ty_imported as im:
-            return Option[str].some(value = im.name)
+            let im_bp = unsafe: read(im.payload)
+            return Option[str].some(value = im_bp.name)
         _:
             return Option[str].none
     return Option[str].none
@@ -727,7 +729,7 @@ public function const_aggregate_target_type(ctx: ref[lowering.LoweringContext], 
             if owner.value.structs.contains(name):
                 if owner_module == ctx.module_name:
                     return Option[types.Type].some(value = types.named_type(name = name, module_name = ctx.module_name, linkage_name = Option[str].none))
-                return Option[types.Type].some(value = types.Type.ty_imported(module_name = owner_module, name = name, args = span[types.Type]()))
+                return Option[types.Type].some(value = types.imported_type(module_name = owner_module, name = name, args = span[types.Type]()))
             let alias_ptr = owner.value.type_alias_types.get(name)
             if alias_ptr != null:
                 var base = unsafe: read(alias_ptr)
@@ -762,9 +764,10 @@ function const_struct_alias_target(ctx: ref[lowering.LoweringContext], t: types.
                     pass
             return Option[types.Type].none
         types.Type.ty_imported as im:
-            match lowering.find_imported_analysis(ctx, im.module_name):
+            let im_bp = unsafe: read(im.payload)
+            match lowering.find_imported_analysis(ctx, im_bp.module_name):
                 Option.some as owner:
-                    if owner.value.structs.contains(im.name):
+                    if owner.value.structs.contains(im_bp.name):
                         return Option[types.Type].some(value = t)
                 Option.none:
                     pass
@@ -789,8 +792,9 @@ public function const_value_to_field_type(value: ptr[ir.Expr], field_ty: types.T
     # `array[ubyte, 4](0, 0, 0, 0)` field keeps ubyte elements.
     match target:
         types.Type.ty_generic as ag:
-            if ag.name == "array" and ag.args.len == 2:
-                let element_ty = unsafe: read(ag.args.data + 0)
+            let ag_bp = unsafe: read(ag.payload)
+            if ag_bp.name == "array" and ag_bp.args.len == 2:
+                let element_ty = unsafe: read(ag_bp.args.data + 0)
                 unsafe:
                     match read(value):
                         ir.Expr.expr_array_literal as al:

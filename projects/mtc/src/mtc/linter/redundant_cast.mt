@@ -159,14 +159,17 @@ function type_name_of(t: types.Type) -> str:
         types.Type.ty_str:
             return "str"
         types.Type.ty_generic as g:
-            return g.name
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name
         types.Type.ty_imported as im:
-            return im.name
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.name
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
             return n_np.name
         types.Type.ty_opaque as o:
-            return o.name
+            let o_bp = unsafe: read(o.payload)
+            return o_bp.name
         _:
             return ""
 
@@ -182,16 +185,18 @@ function same_type(left: types.Type, right: types.Type) -> bool:
             let named_np = unsafe: read(named.payload)
             match right:
                 types.Type.ty_imported as imported:
+                    let imported_bp = unsafe: read(imported.payload)
                     if named_np.module_name.len > 0:
-                        return named_np.name.equal(imported.name) and named_np.module_name.equal(imported.module_name)
+                        return named_np.name.equal(imported_bp.name) and named_np.module_name.equal(imported_bp.module_name)
                 _:
                     pass
         types.Type.ty_imported as imported:
+            let imported_bp = unsafe: read(imported.payload)
             match right:
                 types.Type.ty_named as named:
                     let named_np = unsafe: read(named.payload)
                     if named_np.module_name.len > 0:
-                        return named_np.name.equal(imported.name) and named_np.module_name.equal(imported.module_name)
+                        return named_np.name.equal(imported_bp.name) and named_np.module_name.equal(imported_bp.module_name)
                 _:
                     pass
         _:
@@ -216,19 +221,23 @@ function same_type(left: types.Type, right: types.Type) -> bool:
                 _:
                     return false
         types.Type.ty_generic as lg:
+            let lg_bp = unsafe: read(lg.payload)
             match right:
                 types.Type.ty_generic as rg:
-                    if not lg.name.equal(rg.name):
+                    let rg_bp = unsafe: read(rg.payload)
+                    if not lg_bp.name.equal(rg_bp.name):
                         return false
-                    return same_type_span(lg.args, rg.args)
+                    return same_type_span(lg_bp.args, rg_bp.args)
                 _:
                     return false
         types.Type.ty_imported as li:
+            let li_bp = unsafe: read(li.payload)
             match right:
                 types.Type.ty_imported as ri:
-                    if not li.name.equal(ri.name) or not li.module_name.equal(ri.module_name):
+                    let ri_bp = unsafe: read(ri.payload)
+                    if not li_bp.name.equal(ri_bp.name) or not li_bp.module_name.equal(ri_bp.module_name):
                         return false
-                    return same_type_span(li.args, ri.args)
+                    return same_type_span(li_bp.args, ri_bp.args)
                 _:
                     return false
         types.Type.ty_named as lna:
@@ -240,15 +249,19 @@ function same_type(left: types.Type, right: types.Type) -> bool:
                 _:
                     return false
         types.Type.ty_opaque as lo:
+            let lo_bp = unsafe: read(lo.payload)
             match right:
                 types.Type.ty_opaque as ro:
-                    return lo.name.equal(ro.name)
+                    let ro_bp = unsafe: read(ro.payload)
+                    return lo_bp.name.equal(ro_bp.name)
                 _:
                     return false
         types.Type.ty_dyn as ld:
+            let ld_bp = unsafe: read(ld.payload)
             match right:
                 types.Type.ty_dyn as rd:
-                    return ld.iface.equal(rd.iface)
+                    let rd_bp = unsafe: read(rd.payload)
+                    return ld_bp.iface.equal(rd_bp.iface)
                 _:
                     return false
         _:
@@ -271,15 +284,17 @@ function same_type_span(left: span[types.Type], right: span[types.Type]) -> bool
 function own_to_pointer_redundant(inner: types.Type, cast: types.Type) -> bool:
     match inner:
         types.Type.ty_generic as ig:
-            if not ig.name.equal("own") or ig.args.len != 1:
+            let ig_bp = unsafe: read(ig.payload)
+            if not ig_bp.name.equal("own") or ig_bp.args.len != 1:
                 return false
             match cast:
                 types.Type.ty_generic as cg:
-                    if not cg.name.equal("ptr") and not cg.name.equal("const_ptr"):
+                    let cg_bp = unsafe: read(cg.payload)
+                    if not cg_bp.name.equal("ptr") and not cg_bp.name.equal("const_ptr"):
                         return false
-                    if cg.args.len != 1:
+                    if cg_bp.args.len != 1:
                         return false
-                    return same_type(unsafe: read(ig.args.data), unsafe: read(cg.args.data))
+                    return same_type(unsafe: read(ig_bp.args.data), unsafe: read(cg_bp.args.data))
                 _:
                     return false
         _:
@@ -594,17 +609,18 @@ function check_literal_operand(ctx: ref[Context], op: str, operand: ptr[ast.Expr
                         if not is_enum:
                             return
                     types.Type.ty_imported as im:
+                        let im_bp = unsafe: read(im.payload)
                         # Unlike the host's `EnumBase`, the self's imported
                         # types do not carry their declaration kind; only an
                         # imported enum has static members.
                         let analysis = ctx.analysis else:
                             return
-                        var is_enum = unsafe: read(analysis).static_member_types.contains(im.name)
-                        if not is_enum and im.module_name.len > 0:
+                        var is_enum = unsafe: read(analysis).static_member_types.contains(im_bp.name)
+                        if not is_enum and im_bp.module_name.len > 0:
                             var key = string.String.create()
-                            key.append(im.module_name)
+                            key.append(im_bp.module_name)
                             key.append(".")
-                            key.append(im.name)
+                            key.append(im_bp.name)
                             is_enum = unsafe: read(analysis).static_member_types.contains(key.as_str())
                             key.release()
                         if not is_enum:

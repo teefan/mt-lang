@@ -322,13 +322,15 @@ public function types_compatible_with_consts(
     # 7  ptr[T]  →  const_ptr[T]   (mutable-to-const pointer coercion).
     match actual:
         types.Type.ty_generic as ag:
-            if ag.name == "ptr":
+            let ag_bp = unsafe: read(ag.payload)
+            if ag_bp.name == "ptr":
                 match expected:
                     types.Type.ty_generic as eg:
-                        if eg.name == "const_ptr" and eg.args.len >= 1 and ag.args.len >= 1:
+                        let eg_bp = unsafe: read(eg.payload)
+                        if eg_bp.name == "const_ptr" and eg_bp.args.len >= 1 and ag_bp.args.len >= 1:
                             return types_compatible_with_consts(
-                                unsafe: read(eg.args.data + 0),
-                                unsafe: read(ag.args.data + 0),
+                                unsafe: read(eg_bp.args.data + 0),
+                                unsafe: read(ag_bp.args.data + 0),
                                 null,
                                 const_values,
                             )
@@ -340,13 +342,15 @@ public function types_compatible_with_consts(
     # 8  own[T]  →  ptr[T] / const_ptr[T]   (owning-to-raw pointer coercion).
     match actual:
         types.Type.ty_generic as ag:
-            if ag.name == "own":
+            let ag_bp = unsafe: read(ag.payload)
+            if ag_bp.name == "own":
                 match expected:
                     types.Type.ty_generic as eg:
-                        if (eg.name == "ptr" or eg.name == "const_ptr") and eg.args.len >= 1 and ag.args.len >= 1:
+                        let eg_bp = unsafe: read(eg.payload)
+                        if (eg_bp.name == "ptr" or eg_bp.name == "const_ptr") and eg_bp.args.len >= 1 and ag_bp.args.len >= 1:
                             return types_compatible_with_consts(
-                                unsafe: read(eg.args.data + 0),
-                                unsafe: read(ag.args.data + 0),
+                                unsafe: read(eg_bp.args.data + 0),
+                                unsafe: read(ag_bp.args.data + 0),
                                 null,
                                 const_values,
                             )
@@ -358,13 +362,15 @@ public function types_compatible_with_consts(
     # 9  array[T, N]  →  span[T]   (fixed array coerces to slice).
     match actual:
         types.Type.ty_generic as ag2:
-            if ag2.name == "array":
+            let ag2_bp = unsafe: read(ag2.payload)
+            if ag2_bp.name == "array":
                 match expected:
                     types.Type.ty_generic as eg2:
-                        if eg2.name == "span" and eg2.args.len >= 1 and ag2.args.len >= 1:
+                        let eg2_bp = unsafe: read(eg2.payload)
+                        if eg2_bp.name == "span" and eg2_bp.args.len >= 1 and ag2_bp.args.len >= 1:
                             return types_compatible_with_consts(
-                                unsafe: read(eg2.args.data + 0),
-                                unsafe: read(ag2.args.data + 0),
+                                unsafe: read(eg2_bp.args.data + 0),
+                                unsafe: read(ag2_bp.args.data + 0),
                                 null,
                                 const_values,
                             )
@@ -453,10 +459,12 @@ function external_void_pointer_argument_compatible(expected: types.Type, actual:
         return false
     match actual:
         types.Type.ty_generic as ag:
-            if ag.name == "const_ptr":
+            let ag_bp = unsafe: read(ag.payload)
+            if ag_bp.name == "const_ptr":
                 match expected:
                     types.Type.ty_generic as eg:
-                        if eg.name == "ptr":
+                        let eg_bp = unsafe: read(eg.payload)
+                        if eg_bp.name == "ptr":
                             return false
                     _:
                         pass
@@ -478,21 +486,24 @@ function nullable_base_pointer_compatible(expected_base: types.Type, actual_base
     unsafe:
         match actual_base:
             types.Type.ty_generic as ag:
-                if ag.args.len < 1:
+                let ag_bp = unsafe: read(ag.payload)
+                if ag_bp.args.len < 1:
                     return false
-                let actual_element = read(ag.args.data + 0)
-                if ag.name == "ptr":
+                let actual_element = read(ag_bp.args.data + 0)
+                if ag_bp.name == "ptr":
                     match expected_base:
                         types.Type.ty_generic as eg:
-                            if eg.name == "const_ptr" and eg.args.len >= 1:
-                                return types_compatible_with_consts(read(eg.args.data + 0), actual_element, null, null)
+                            let eg_bp = unsafe: read(eg.payload)
+                            if eg_bp.name == "const_ptr" and eg_bp.args.len >= 1:
+                                return types_compatible_with_consts(read(eg_bp.args.data + 0), actual_element, null, null)
                         _:
                             pass
-                if ag.name == "own":
+                if ag_bp.name == "own":
                     match expected_base:
                         types.Type.ty_generic as eg2:
-                            if (eg2.name == "ptr" or eg2.name == "const_ptr") and eg2.args.len >= 1:
-                                return types_compatible_with_consts(read(eg2.args.data + 0), actual_element, null, null)
+                            let eg2_bp = unsafe: read(eg2.payload)
+                            if (eg2_bp.name == "ptr" or eg2_bp.name == "const_ptr") and eg2_bp.args.len >= 1:
+                                return types_compatible_with_consts(read(eg2_bp.args.data + 0), actual_element, null, null)
                         _:
                             pass
             _:

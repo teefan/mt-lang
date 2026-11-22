@@ -65,27 +65,31 @@ public function short_name(ty: types.Type) -> string.String:
             let n_np = unsafe: read(n.payload)
             append_own_name(ref_of(buf), n_np.name)
         types.Type.ty_opaque as o:
-            append_own_name(ref_of(buf), o.name)
+            let o_bp = unsafe: read(o.payload)
+            append_own_name(ref_of(buf), o_bp.name)
         types.Type.ty_imported as im:
-            append_own_name(ref_of(buf), im.name)
-            append_short_args(ref_of(buf), im.args)
+            let im_bp = unsafe: read(im.payload)
+            append_own_name(ref_of(buf), im_bp.name)
+            append_short_args(ref_of(buf), im_bp.args)
         types.Type.ty_generic as g:
-            buf.append(g.name)
-            append_short_args(ref_of(buf), g.args)
+            let g_bp = unsafe: read(g.payload)
+            buf.append(g_bp.name)
+            append_short_args(ref_of(buf), g_bp.args)
         types.Type.ty_tuple as tp:
+            let tp_bp = unsafe: read(tp.payload)
             buf.append("(")
             var i: ptr_uint = 0
-            while i < tp.elements.len:
+            while i < tp_bp.elements.len:
                 if i > 0:
                     buf.append(", ")
-                match tp.field_names:
+                match tp_bp.field_names:
                     Option.some as names:
                         if i < names.value.len:
                             buf.append(unsafe: read(names.value.data + i))
                             buf.append(": ")
                     Option.none:
                         pass
-                var rendered = short_name(unsafe: read(tp.elements.data + i))
+                var rendered = short_name(unsafe: read(tp_bp.elements.data + i))
                 buf.append(rendered.as_str())
                 rendered.release()
                 i += 1
@@ -131,24 +135,27 @@ public function qualified_name(ty: types.Type, current_module: str) -> string.St
                 append_module_prefix(ref_of(buf), owner, current_module)
                 buf.append(n_np.name)
         types.Type.ty_opaque as o:
-            append_module_prefix(ref_of(buf), o.module_name, current_module)
-            buf.append(o.name)
+            let o_bp = unsafe: read(o.payload)
+            append_module_prefix(ref_of(buf), o_bp.module_name, current_module)
+            buf.append(o_bp.name)
         types.Type.ty_imported as im:
-            if im.module_name.len > 0:
-                buf.append(im.module_name)
+            let im_bp = unsafe: read(im.payload)
+            if im_bp.module_name.len > 0:
+                buf.append(im_bp.module_name)
                 buf.append(".")
-            buf.append(im.name)
-            append_qualified_args(ref_of(buf), im.args, current_module)
+            buf.append(im_bp.name)
+            append_qualified_args(ref_of(buf), im_bp.args, current_module)
         types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
             # A generic instance carries no module of its own: only the prelude
             # names acquire one (`std.option.Option[int]`), so that a signature
             # mentioning them shortens to the host's `Option[int]` plus its
             # `*From std.option*` line.
-            let prelude_module = prelude_type_module(g.name)
+            let prelude_module = prelude_type_module(g_bp.name)
             if prelude_module.len > 0:
                 append_module_prefix(ref_of(buf), prelude_module, current_module)
-            buf.append(g.name)
-            append_qualified_args(ref_of(buf), g.args, current_module)
+            buf.append(g_bp.name)
+            append_qualified_args(ref_of(buf), g_bp.args, current_module)
         types.Type.ty_nullable as nl:
             var base = qualified_name(unsafe: read(nl.base), current_module)
             buf.append(base.as_str())

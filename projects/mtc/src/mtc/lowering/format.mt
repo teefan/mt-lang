@@ -538,7 +538,8 @@ function is_std_string_type(t: types.Type) -> bool:
             let n_np = unsafe: read(n.payload)
             return n_np.name == "String" and n_np.module_name == "std.string"
         types.Type.ty_imported as im:
-            return im.name == "String" and im.module_name == "std.string"
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.name == "String" and im_bp.module_name == "std.string"
         _:
             return false
 
@@ -559,7 +560,7 @@ function is_std_string_sink_method(ctx: ref[lowering.LoweringContext], receiver_
 
 ## The `data` member's type: the host's `str_buffer_storage_capacity` is `N + 1`.
 public function str_buffer_data_member_type(cap: long) -> types.Type:
-    return types.Type.ty_generic(name = "array", args = lowering.sp_type2(types.primitive("char"), types.literal_int(cap + 1)))
+    return types.generic_type(name = "array", args = lowering.sp_type2(types.primitive("char"), types.literal_int(cap + 1)))
 
 
 struct FormatSinkInfo:
@@ -658,9 +659,9 @@ function lower_format_sink_target(ctx: ref[lowering.LoweringContext], info: Form
     let char_ty = types.primitive("char")
     let ptr_uint_ty = types.primitive("ptr_uint")
     let bool_ty = ctx.bool_ty
-    let char_ptr_ty = types.Type.ty_generic(name = "ptr", args = lowering.sp_type(char_ty))
-    let len_ptr_ty = types.Type.ty_generic(name = "ptr", args = lowering.sp_type(ptr_uint_ty))
-    let dirty_ptr_ty = types.Type.ty_generic(name = "ptr", args = lowering.sp_type(bool_ty))
+    let char_ptr_ty = types.generic_type(name = "ptr", args = lowering.sp_type(char_ty))
+    let len_ptr_ty = types.generic_type(name = "ptr", args = lowering.sp_type(ptr_uint_ty))
+    let dirty_ptr_ty = types.generic_type(name = "ptr", args = lowering.sp_type(bool_ty))
     if info.is_buffer:
         let recv = lowering.lower_expr(ctx, info.sink_ep)
         let recv_ty = lowering.ir_expr_type(recv)
@@ -912,11 +913,11 @@ function format_sink_buffer_part_stmts(
         # `view.data + offset`, call `<Type>.append_format(value, &out)`, verify
         # the hook wrote exactly the expected length, advance the offset and
         # NUL-terminate.
-        let string_ty = types.Type.ty_imported(module_name = "std.string", name = "String", args = span[types.Type]())
-        let ref_string_ty = types.Type.ty_generic(name = "ref", args = lowering.sp_type(string_ty))
-        let ubyte_ptr_ty = types.Type.ty_generic(name = "ptr", args = lowering.sp_type(types.primitive("ubyte")))
+        let string_ty = types.imported_type(module_name = "std.string", name = "String", args = span[types.Type]())
+        let ref_string_ty = types.generic_type(name = "ref", args = lowering.sp_type(string_ty))
+        let ubyte_ptr_ty = types.generic_type(name = "ptr", args = lowering.sp_type(types.primitive("ubyte")))
         let data_field_ty = types.Type.ty_nullable(base = types.alloc_type(ubyte_ptr_ty))
-        let char_ptr_ty = types.Type.ty_generic(name = "ptr", args = lowering.sp_type(char_ty))
+        let char_ptr_ty = types.generic_type(name = "ptr", args = lowering.sp_type(char_ty))
         let view_data = lowering.alloc_expr(ir.Expr.expr_member(receiver = view, member = "data", ty = char_ptr_ty))
         let slice_sum = lowering.alloc_expr(ir.Expr.expr_binary(operator = "+", left = view_data, right = offset_ref, ty = char_ptr_ty))
         let slice_data = lowering.alloc_expr(ir.Expr.expr_cast(target_type = data_field_ty, expression = slice_sum, ty = data_field_ty))

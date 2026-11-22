@@ -1149,11 +1149,14 @@ function type_leaf_name(ty: types.Type) -> str:
             let n_np = unsafe: read(n.payload)
             return n_np.name
         types.Type.ty_imported as im:
-            return im.name
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.name
         types.Type.ty_generic as g:
-            return g.name
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name
         types.Type.ty_opaque as op:
-            return op.name
+            let op_bp = unsafe: read(op.payload)
+            return op_bp.name
         types.Type.ty_var as v:
             return v.name
         types.Type.ty_nullable as nb:
@@ -1168,8 +1171,10 @@ function type_module_name(ty: types.Type) -> str:
             let n_np = unsafe: read(n.payload)
             return n_np.module_name
         types.Type.ty_imported as im:
-            return im.module_name
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.module_name
         types.Type.ty_opaque as op:
-            return op.module_name
+            let op_bp = unsafe: read(op.payload)
+            return op_bp.module_name
         _:
             return ""

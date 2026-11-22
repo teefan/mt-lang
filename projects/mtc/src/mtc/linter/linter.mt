@@ -4104,13 +4104,14 @@ function prefer_struct_with_fields(analysis: ref[analyzer.Analysis], ty: types.T
                 return Option[span[analyzer.FieldEntry]].none
             return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(fp))
         types.Type.ty_imported as im:
-            if im.args.len > 0:
+            let im_bp = unsafe: read(im.payload)
+            if im_bp.args.len > 0:
                 return Option[span[analyzer.FieldEntry]].none
             var key = string.String.create()
             defer: key.release()
-            key.append(im.module_name)
+            key.append(im_bp.module_name)
             key.append(".")
-            key.append(im.name)
+            key.append(im_bp.name)
             let mp = unsafe: read(analysis).imported_type_members.get(key.as_str()) else:
                 return Option[span[analyzer.FieldEntry]].none
             return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(mp).fields)
@@ -4132,22 +4133,25 @@ function prefer_struct_with_same_type(a: types.Type, b: types.Type) -> bool:
                     let nb_np = unsafe: read(nb.payload)
                     return named_modules_match(na_np.name, na_np.module_name, nb_np.name, nb_np.module_name)
                 types.Type.ty_imported as ib:
-                    if ib.args.len > 0:
+                    let ib_bp = unsafe: read(ib.payload)
+                    if ib_bp.args.len > 0:
                         return false
-                    return named_modules_match(na_np.name, na_np.module_name, ib.name, ib.module_name)
+                    return named_modules_match(na_np.name, na_np.module_name, ib_bp.name, ib_bp.module_name)
                 _:
                     return false
         types.Type.ty_imported as ia:
-            if ia.args.len > 0:
+            let ia_bp = unsafe: read(ia.payload)
+            if ia_bp.args.len > 0:
                 return false
             match b:
                 types.Type.ty_imported as ib:
-                    if ib.args.len > 0:
+                    let ib_bp = unsafe: read(ib.payload)
+                    if ib_bp.args.len > 0:
                         return false
-                    return named_modules_match(ia.name, ia.module_name, ib.name, ib.module_name)
+                    return named_modules_match(ia_bp.name, ia_bp.module_name, ib_bp.name, ib_bp.module_name)
                 types.Type.ty_named as nb:
                     let nb_np = unsafe: read(nb.payload)
-                    return named_modules_match(ia.name, ia.module_name, nb_np.name, nb_np.module_name)
+                    return named_modules_match(ia_bp.name, ia_bp.module_name, nb_np.name, nb_np.module_name)
                 _:
                     return false
         _:
@@ -4555,10 +4559,12 @@ function own_local_type(value: ptr[ast.Expr]?) -> Option[str]:
     unsafe:
         match read(ep):
             types.Type.ty_generic as g:
-                if g.name.equal("own"):
+                let g_bp = unsafe: read(g.payload)
+                if g_bp.name.equal("own"):
                     return Option[str].some(value = types.type_to_string(read(ep)))
             types.Type.ty_imported as im:
-                if im.name.equal("own"):
+                let im_bp = unsafe: read(im.payload)
+                if im_bp.name.equal("own"):
                     return Option[str].some(value = types.type_to_string(read(ep)))
             _:
                 pass
@@ -6367,13 +6373,6 @@ function reserved_record_use(index: ptr_uint, line: ptr_uint, column: ptr_uint) 
     let fix = unsafe: read(fp)
     unsafe:
         read(fp).sites.push(ReservedNameSite(line = line, column = column, length = fix.original_name.len))
-
-
-## The fixes the most recent lint pass collected.
-public function reserved_name_fixes() -> vec.Vec[ReservedNameFix]:
-    let fixes_ptr = lint_reserved_fixes else:
-        return vec.Vec[ReservedNameFix].create()
-    return unsafe: read(fixes_ptr)
 
 
 ## Collect the reserved-primitive-name rename fixes for `source` — the host's

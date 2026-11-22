@@ -58,6 +58,51 @@ public struct NamedType:
     linkage_name: Option[str]
 
 
+## The payload of `ty_event`.
+public struct EventType:
+    name: str
+    capacity: ptr_uint
+    payload_type: ptr[Type]?
+    linkage_name: str
+
+
+## The payload of `ty_imported`.
+public struct ImportedType:
+    module_name: str
+    name: str
+    args: span[Type]
+
+
+## The payload of `ty_dyn`.
+public struct DynType:
+    iface: str
+    args: span[Type]
+
+
+## The payload of `ty_dyn_vtable`.
+public struct DynVtableType:
+    interface_name: str
+    linkage_name: str
+
+
+## The payload of `ty_opaque`.
+public struct OpaqueType:
+    module_name: str
+    name: str
+
+
+## The payload of `ty_generic`.
+public struct GenericType:
+    name: str
+    args: span[Type]
+
+
+## The payload of `ty_tuple`.
+public struct TupleType:
+    elements: span[Type]
+    field_names: Option[span[str]]
+
+
 public variant Type:
     ty_primitive(name: str)
     ty_str
@@ -72,7 +117,7 @@ public variant Type:
     ty_handle
     ty_nullable(base: ptr[Type])
     ty_null(target: ptr[Type]?)
-    ty_event(name: str, capacity: ptr_uint, payload_type: ptr[Type]?, linkage_name: str)
+    ty_event(payload: ptr[EventType])
     # A nominal type declared in this module.  `linkage_name` carries the C
     # linkage when it differs from `<module>_<name>` — a nested struct's type is
     # named by its short name (`Edge`) but linked through its parents
@@ -85,7 +130,7 @@ public variant Type:
     # `Types::VariantArmPayload`, which the sexpr dumper tags distinctly but
     # whose fields it renders like a `Types::Struct` (`:name`, `:module_name`).
     ty_variant_arm_payload(payload: ptr[VariantArmPayload])
-    ty_imported(module_name: str, name: str, args: span[Type])
+    ty_imported(payload: ptr[ImportedType])
     ty_var(name: str)
     # An explicit lifetime argument on a `ref` type (`ref[@a, T]`).  The host
     # keeps the raw lifetime name (`"@a"`) as the first generic argument; it
@@ -93,20 +138,20 @@ public variant Type:
     ty_lifetime(name: str)
     # A `dyn[Iface[args]]` fat pointer.  The host's `Types::Dyn` carries the
     # interface's own type arguments as well as its name.
-    ty_dyn(iface: str, args: span[Type])
+    ty_dyn(payload: ptr[DynType])
     # A `dyn` interface vtable type.  Mirrors Ruby's `Types::DynVtable`
     # (`interface_name` + generated `mt_vtable_<Iface>` linkage name); its field
     # map is not rendered by the sexpr dumper.
-    ty_dyn_vtable(interface_name: str, linkage_name: str)
-    ty_opaque(module_name: str, name: str)
-    ty_generic(name: str, args: span[Type])
+    ty_dyn_vtable(payload: ptr[DynVtableType])
+    ty_opaque(payload: ptr[OpaqueType])
+    ty_generic(payload: ptr[GenericType])
     # `name` is the host's `Types::Function#name`: the declared name when the
     # type came from a function *value* (`fn add`), empty for an anonymous
     # `fn(…)` annotation.  `to_s` renders `fn <name>` (the host's shape), so a
     # struct field's `fn(int) -> bool` renders `fn `.
     ty_function(payload: ptr[FunctionType])
     ty_literal_int(value: long)
-    ty_tuple(elements: span[Type], field_names: Option[span[str]])
+    ty_tuple(payload: ptr[TupleType])
 
 
 public function alloc_type(value: Type) -> ptr[Type]:
@@ -121,6 +166,55 @@ public function named_type(name: str, module_name: str, linkage_name: Option[str
     unsafe:
         read(payload) = NamedType(name = name, module_name = module_name, linkage_name = linkage_name)
     return Type.ty_named(payload = payload)
+
+
+public function event_type(name: str, capacity: ptr_uint, payload_type: ptr[Type]?, linkage_name: str) -> Type:
+    let payload = heap.must_alloc[EventType](1)
+    unsafe:
+        read(payload) = EventType(name = name, capacity = capacity, payload_type = payload_type, linkage_name = linkage_name)
+    return Type.ty_event(payload = payload)
+
+
+public function imported_type(module_name: str, name: str, args: span[Type]) -> Type:
+    let payload = heap.must_alloc[ImportedType](1)
+    unsafe:
+        read(payload) = ImportedType(module_name = module_name, name = name, args = args)
+    return Type.ty_imported(payload = payload)
+
+
+public function dyn_type(iface: str, args: span[Type]) -> Type:
+    let payload = heap.must_alloc[DynType](1)
+    unsafe:
+        read(payload) = DynType(iface = iface, args = args)
+    return Type.ty_dyn(payload = payload)
+
+
+public function dyn_vtable_type(interface_name: str, linkage_name: str) -> Type:
+    let payload = heap.must_alloc[DynVtableType](1)
+    unsafe:
+        read(payload) = DynVtableType(interface_name = interface_name, linkage_name = linkage_name)
+    return Type.ty_dyn_vtable(payload = payload)
+
+
+public function opaque_type(module_name: str, name: str) -> Type:
+    let payload = heap.must_alloc[OpaqueType](1)
+    unsafe:
+        read(payload) = OpaqueType(module_name = module_name, name = name)
+    return Type.ty_opaque(payload = payload)
+
+
+public function generic_type(name: str, args: span[Type]) -> Type:
+    let payload = heap.must_alloc[GenericType](1)
+    unsafe:
+        read(payload) = GenericType(name = name, args = args)
+    return Type.ty_generic(payload = payload)
+
+
+public function tuple_type(elements: span[Type], field_names: Option[span[str]]) -> Type:
+    let payload = heap.must_alloc[TupleType](1)
+    unsafe:
+        read(payload) = TupleType(elements = elements, field_names = field_names)
+    return Type.ty_tuple(payload = payload)
 
 
 ## The one constructor for `ty_function`.  The arm's fields live in a boxed
@@ -249,16 +343,19 @@ public function contains_error(t: Type) -> bool:
         Type.ty_nullable as n:
             return contains_error(unsafe: read(n.base))
         Type.ty_generic as g:
-            return any_contains_error(g.args)
+            let g_bp = unsafe: read(g.payload)
+            return any_contains_error(g_bp.args)
         Type.ty_imported as im:
-            return any_contains_error(im.args)
+            let im_bp = unsafe: read(im.payload)
+            return any_contains_error(im_bp.args)
         Type.ty_function as f:
             let f_ft = unsafe: read(f.payload)
             if contains_error(unsafe: read(f_ft.return_type)):
                 return true
             return any_contains_error(f_ft.params)
         Type.ty_tuple as tp:
-            return any_contains_error(tp.elements)
+            let tp_bp = unsafe: read(tp.payload)
+            return any_contains_error(tp_bp.elements)
         _:
             return false
 
@@ -283,16 +380,19 @@ public function contains_type_var(t: Type) -> bool:
         Type.ty_nullable as n:
             return contains_type_var(unsafe: read(n.base))
         Type.ty_generic as g:
-            return any_contains_var(g.args)
+            let g_bp = unsafe: read(g.payload)
+            return any_contains_var(g_bp.args)
         Type.ty_imported as im:
-            return any_contains_var(im.args)
+            let im_bp = unsafe: read(im.payload)
+            return any_contains_var(im_bp.args)
         Type.ty_function as f:
             let f_ft = unsafe: read(f.payload)
             if contains_type_var(unsafe: read(f_ft.return_type)):
                 return true
             return any_contains_var(f_ft.params)
         Type.ty_tuple as tp:
-            return any_contains_var(tp.elements)
+            let tp_bp = unsafe: read(tp.payload)
+            return any_contains_var(tp_bp.elements)
         _:
             return false
 
@@ -368,27 +468,29 @@ public function type_to_diagnostic_string(t: Type) -> str:
                 return b.as_str()
             return n_np.name
         Type.ty_opaque as o:
-            if o.module_name.len > 0:
+            let o_bp = unsafe: read(o.payload)
+            if o_bp.module_name.len > 0:
                 var b = string.String.create()
-                b.append(o.module_name)
+                b.append(o_bp.module_name)
                 b.append(".")
-                b.append(o.name)
+                b.append(o_bp.name)
                 return b.as_str()
-            return o.name
+            return o_bp.name
         Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
             var b = string.String.create()
-            if im.module_name.len > 0:
-                b.append(im.module_name)
+            if im_bp.module_name.len > 0:
+                b.append(im_bp.module_name)
                 b.append(".")
-            b.append(im.name)
-            if im.args.len > 0:
+            b.append(im_bp.name)
+            if im_bp.args.len > 0:
                 b.append("[")
                 var i: ptr_uint = 0
-                while i < im.args.len:
+                while i < im_bp.args.len:
                     if i > 0:
                         b.append(", ")
                     unsafe:
-                        b.append(type_to_diagnostic_string(read(im.args.data + i)))
+                        b.append(type_to_diagnostic_string(read(im_bp.args.data + i)))
                     i += 1
                 b.append("]")
             return b.as_str()
@@ -414,27 +516,29 @@ public function type_to_qualified_string(t: Type) -> str:
                 return b.as_str()
             return n_np.name
         Type.ty_opaque as o:
-            if o.module_name.len > 0:
+            let o_bp = unsafe: read(o.payload)
+            if o_bp.module_name.len > 0:
                 var b = string.String.create()
-                b.append(o.module_name)
+                b.append(o_bp.module_name)
                 b.append(".")
-                b.append(o.name)
+                b.append(o_bp.name)
                 return b.as_str()
-            return o.name
+            return o_bp.name
         Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
             var b = string.String.create()
-            if im.module_name.len > 0:
-                b.append(im.module_name)
+            if im_bp.module_name.len > 0:
+                b.append(im_bp.module_name)
                 b.append(".")
-            b.append(im.name)
-            if im.args.len > 0:
+            b.append(im_bp.name)
+            if im_bp.args.len > 0:
                 b.append("[")
                 var i: ptr_uint = 0
-                while i < im.args.len:
+                while i < im_bp.args.len:
                     if i > 0:
                         b.append(", ")
                     unsafe:
-                        b.append(type_to_qualified_string(read(im.args.data + i)))
+                        b.append(type_to_qualified_string(read(im_bp.args.data + i)))
                     i += 1
                 b.append("]")
             return b.as_str()
@@ -445,15 +549,16 @@ public function type_to_qualified_string(t: Type) -> str:
             b.append("?")
             return b.as_str()
         Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
             var b = string.String.create()
-            b.append(g.name)
+            b.append(g_bp.name)
             b.append("[")
             var i: ptr_uint = 0
-            while i < g.args.len:
+            while i < g_bp.args.len:
                 if i > 0:
                     b.append(", ")
                 unsafe:
-                    b.append(type_to_qualified_string(read(g.args.data + i)))
+                    b.append(type_to_qualified_string(read(g_bp.args.data + i)))
                 i += 1
             b.append("]")
             return b.as_str()
@@ -487,37 +592,41 @@ public function type_to_string(t: Type) -> str:
                 return payload.display_name
             return payload.name
         Type.ty_imported as im:
-            if im.args.len == 0:
-                return im.name
-            return type_to_string(Type.ty_generic(name = im.name, args = im.args))
+            let im_bp = unsafe: read(im.payload)
+            if im_bp.args.len == 0:
+                return im_bp.name
+            return type_to_string(generic_type(name = im_bp.name, args = im_bp.args))
         Type.ty_var as v:
             return v.name
         Type.ty_lifetime as lt:
             return lt.name
         Type.ty_dyn as d:
-            if d.args.len == 0:
+            let d_bp = unsafe: read(d.payload)
+            if d_bp.args.len == 0:
                 var dbuf = string.String.create()
                 dbuf.append("dyn[")
-                dbuf.append(d.iface)
+                dbuf.append(d_bp.iface)
                 dbuf.append("]")
                 return dbuf.as_str()
             var dbuf = string.String.create()
             dbuf.append("dyn[")
-            dbuf.append(d.iface)
+            dbuf.append(d_bp.iface)
             dbuf.append("[")
             var di: ptr_uint = 0
-            while di < d.args.len:
+            while di < d_bp.args.len:
                 if di > 0:
                     dbuf.append(", ")
                 unsafe:
-                    dbuf.append(type_to_string(read(d.args.data + di)))
+                    dbuf.append(type_to_string(read(d_bp.args.data + di)))
                 di += 1
             dbuf.append("]]")
             return dbuf.as_str()
         Type.ty_dyn_vtable as dv:
-            return dv.linkage_name
+            let dv_bp = unsafe: read(dv.payload)
+            return dv_bp.linkage_name
         Type.ty_opaque as o:
-            return o.name
+            let o_bp = unsafe: read(o.payload)
+            return o_bp.name
         Type.ty_nullable as nl:
             var buf = string.String.create()
             unsafe:
@@ -534,17 +643,19 @@ public function type_to_string(t: Type) -> str:
             buf.append("]")
             return buf.as_str()
         Type.ty_event as ev:
-            return ev.name
+            let ev_bp = unsafe: read(ev.payload)
+            return ev_bp.name
         Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
             var buf = string.String.create()
-            buf.append(g.name)
+            buf.append(g_bp.name)
             buf.append("[")
             var i: ptr_uint = 0
-            while i < g.args.len:
+            while i < g_bp.args.len:
                 if i > 0:
                     buf.append(", ")
                 unsafe:
-                    buf.append(type_to_string(read(g.args.data + i)))
+                    buf.append(type_to_string(read(g_bp.args.data + i)))
                 i += 1
             buf.append("]")
             return buf.as_str()
@@ -579,14 +690,15 @@ public function type_to_string(t: Type) -> str:
             fmt.append_long(ref_of(buf), lit.value)
             return buf.as_str()
         Type.ty_tuple as tup:
+            let tup_bp = unsafe: read(tup.payload)
             var buf = string.String.create()
             buf.append("(")
             var i: ptr_uint = 0
-            while i < tup.elements.len:
+            while i < tup_bp.elements.len:
                 if i > 0:
                     buf.append(", ")
                 unsafe:
-                    buf.append(type_to_string(read(tup.elements.data + i)))
+                    buf.append(type_to_string(read(tup_bp.elements.data + i)))
                 i += 1
             buf.append(")")
             return buf.as_str()
@@ -761,12 +873,14 @@ public function type_equals(a: Type, b: Type) -> bool:
                 _:
                     return false
         Type.ty_event as ea:
+            let ea_bp = unsafe: read(ea.payload)
             match b:
                 Type.ty_event as eb:
-                    if ea.name != eb.name or ea.capacity != eb.capacity or ea.linkage_name != eb.linkage_name:
+                    let eb_bp = unsafe: read(eb.payload)
+                    if ea_bp.name != eb_bp.name or ea_bp.capacity != eb_bp.capacity or ea_bp.linkage_name != eb_bp.linkage_name:
                         return false
-                    let pa = ea.payload_type
-                    let pb = eb.payload_type
+                    let pa = ea_bp.payload_type
+                    let pb = eb_bp.payload_type
                     if pa == null:
                         return pb == null
                     if pb == null:
@@ -781,7 +895,8 @@ public function type_equals(a: Type, b: Type) -> bool:
                     let nb_np = unsafe: read(nb.payload)
                     return na_np.name == nb_np.name
                 Type.ty_imported as ib:
-                    return na_np.name == ib.name
+                    let ib_bp = unsafe: read(ib.payload)
+                    return na_np.name == ib_bp.name
                 _:
                     return false
         Type.ty_variant_arm_payload as apa:
@@ -791,7 +906,8 @@ public function type_equals(a: Type, b: Type) -> bool:
                 _:
                     return false
         Type.ty_imported as ia:
-            return imported_type_matches(ia.module_name, ia.name, ia.args, b)
+            let ia_bp = unsafe: read(ia.payload)
+            return imported_type_matches(ia_bp.module_name, ia_bp.name, ia_bp.args, b)
         Type.ty_var as va:
             match b:
                 Type.ty_var as vb:
@@ -805,33 +921,40 @@ public function type_equals(a: Type, b: Type) -> bool:
                 _:
                     return false
         Type.ty_dyn as da:
+            let da_bp = unsafe: read(da.payload)
             match b:
                 Type.ty_dyn as db:
-                    if da.iface != db.iface or da.args.len != db.args.len:
+                    let db_bp = unsafe: read(db.payload)
+                    if da_bp.iface != db_bp.iface or da_bp.args.len != db_bp.args.len:
                         return false
                     var di: ptr_uint = 0
-                    while di < da.args.len:
+                    while di < da_bp.args.len:
                         unsafe:
-                            if not type_equals(read(da.args.data + di), read(db.args.data + di)):
+                            if not type_equals(read(da_bp.args.data + di), read(db_bp.args.data + di)):
                                 return false
                         di += 1
                     return true
                 _:
                     return false
         Type.ty_dyn_vtable as dva:
+            let dva_bp = unsafe: read(dva.payload)
             match b:
                 Type.ty_dyn_vtable as dvb:
-                    return dva.linkage_name == dvb.linkage_name
+                    let dvb_bp = unsafe: read(dvb.payload)
+                    return dva_bp.linkage_name == dvb_bp.linkage_name
                 _:
                     return false
         Type.ty_opaque as oa:
+            let oa_bp = unsafe: read(oa.payload)
             match b:
                 Type.ty_opaque as ob:
-                    return oa.module_name == ob.module_name and oa.name == ob.name
+                    let ob_bp = unsafe: read(ob.payload)
+                    return oa_bp.module_name == ob_bp.module_name and oa_bp.name == ob_bp.name
                 _:
                     return false
         Type.ty_generic as ga:
-            return generic_type_matches(ga.name, ga.args, b)
+            let ga_bp = unsafe: read(ga.payload)
+            return generic_type_matches(ga_bp.name, ga_bp.args, b)
         Type.ty_function as fa:
             let fa_ft = unsafe: read(fa.payload)
             match b:
@@ -859,14 +982,16 @@ public function type_equals(a: Type, b: Type) -> bool:
                 _:
                     return false
         Type.ty_tuple as ta:
+            let ta_bp = unsafe: read(ta.payload)
             match b:
                 Type.ty_tuple as tb:
-                    if ta.elements.len != tb.elements.len:
+                    let tb_bp = unsafe: read(tb.payload)
+                    if ta_bp.elements.len != tb_bp.elements.len:
                         return false
                     var i: ptr_uint = 0
-                    while i < ta.elements.len:
+                    while i < ta_bp.elements.len:
                         unsafe:
-                            if not type_equals(read(ta.elements.data + i), read(tb.elements.data + i)):
+                            if not type_equals(read(ta_bp.elements.data + i), read(tb_bp.elements.data + i)):
                                 return false
                         i += 1
                     return true
@@ -879,14 +1004,15 @@ public function type_equals(a: Type, b: Type) -> bool:
 function imported_type_matches(module_name: str, name: str, args: span[Type], b: Type) -> bool:
     match b:
         Type.ty_imported as ib:
-            if not module_name == ib.module_name or not name == ib.name:
+            let ib_bp = unsafe: read(ib.payload)
+            if not module_name == ib_bp.module_name or not name == ib_bp.name:
                 return false
-            if args.len != ib.args.len:
+            if args.len != ib_bp.args.len:
                 return false
             var i: ptr_uint = 0
             while i < args.len:
                 unsafe:
-                    if not type_equals(read(args.data + i), read(ib.args.data + i)):
+                    if not type_equals(read(args.data + i), read(ib_bp.args.data + i)):
                         return false
                 i += 1
             return true
@@ -894,7 +1020,8 @@ function imported_type_matches(module_name: str, name: str, args: span[Type], b:
             let nb_np = unsafe: read(nb.payload)
             return name == nb_np.name and args.len == 0
         Type.ty_generic as gb:
-            if not name == gb.name or args.len != gb.args.len:
+            let gb_bp = unsafe: read(gb.payload)
+            if not name == gb_bp.name or args.len != gb_bp.args.len:
                 return false
             let prelude = (name == "Option" and module_name == "std.option") or (name == "Result" and module_name == "std.result")
             if not prelude:
@@ -902,7 +1029,7 @@ function imported_type_matches(module_name: str, name: str, args: span[Type], b:
             var i3: ptr_uint = 0
             while i3 < args.len:
                 unsafe:
-                    if not type_equals(read(args.data + i3), read(gb.args.data + i3)):
+                    if not type_equals(read(args.data + i3), read(gb_bp.args.data + i3)):
                         return false
                 i3 += 1
             return true
@@ -915,30 +1042,32 @@ function imported_type_matches(module_name: str, name: str, args: span[Type], b:
 function generic_type_matches(name: str, args: span[Type], b: Type) -> bool:
     match b:
         Type.ty_generic as gb:
-            if not name == gb.name:
+            let gb_bp = unsafe: read(gb.payload)
+            if not name == gb_bp.name:
                 return false
-            if args.len != gb.args.len:
+            if args.len != gb_bp.args.len:
                 return false
             var i: ptr_uint = 0
             while i < args.len:
                 unsafe:
-                    if not type_equals(read(args.data + i), read(gb.args.data + i)):
+                    if not type_equals(read(args.data + i), read(gb_bp.args.data + i)):
                         return false
                 i += 1
             return true
         Type.ty_imported as ib:
+            let ib_bp = unsafe: read(ib.payload)
             # The prelude variants appear both as the bare generic
             # (`Option[T]`/`Result[T, E]`) and as their imported definition
             # (`std.option.Option`/`std.result.Result`).
-            if not name == ib.name or args.len != ib.args.len:
+            if not name == ib_bp.name or args.len != ib_bp.args.len:
                 return false
-            let prelude = (name == "Option" and ib.module_name == "std.option") or (name == "Result" and ib.module_name == "std.result")
+            let prelude = (name == "Option" and ib_bp.module_name == "std.option") or (name == "Result" and ib_bp.module_name == "std.result")
             if not prelude:
                 return false
             var i2: ptr_uint = 0
             while i2 < args.len:
                 unsafe:
-                    if not type_equals(read(args.data + i2), read(ib.args.data + i2)):
+                    if not type_equals(read(args.data + i2), read(ib_bp.args.data + i2)):
                         return false
                 i2 += 1
             return true
@@ -951,7 +1080,8 @@ function generic_type_matches(name: str, args: span[Type], b: Type) -> bool:
 public function is_raw_pointer(t: Type) -> bool:
     match t:
         Type.ty_generic as g:
-            return g.name == "ptr" or g.name == "const_ptr"
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name == "ptr" or g_bp.name == "const_ptr"
         Type.ty_nullable as nl:
             return is_raw_pointer(unsafe: read(nl.base))
         _:
@@ -965,7 +1095,8 @@ public function is_raw_pointer(t: Type) -> bool:
 public function is_own_type(t: Type) -> bool:
     match t:
         Type.ty_generic as g:
-            return g.name == "own"
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name == "own"
         Type.ty_nullable as nl:
             return is_own_type(unsafe: read(nl.base))
         _:
@@ -978,7 +1109,8 @@ public function is_own_type(t: Type) -> bool:
 public function is_pointer_type(t: Type) -> bool:
     match t:
         Type.ty_generic as g:
-            return g.name == "ptr" or g.name == "const_ptr" or g.name == "own"
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name == "ptr" or g_bp.name == "const_ptr" or g_bp.name == "own"
         _:
             return false
 
@@ -1041,10 +1173,11 @@ public function cast_numeric_type(t: Type) -> Option[Type]:
 public function pointer_element(t: Type) -> Type:
     match t:
         Type.ty_generic as g:
-            if g.args.len >= 1:
-                if g.name == "ref":
-                    return unsafe: read(g.args.data + (g.args.len - 1))
-                return unsafe: read(g.args.data + 0)
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.args.len >= 1:
+                if g_bp.name == "ref":
+                    return unsafe: read(g_bp.args.data + (g_bp.args.len - 1))
+                return unsafe: read(g_bp.args.data + 0)
             return Type.ty_error
         _:
             return Type.ty_error
@@ -1054,7 +1187,8 @@ public function pointer_element(t: Type) -> Type:
 public function is_ref_type(t: Type) -> bool:
     match t:
         Type.ty_generic as g:
-            return g.name == "ref"
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name == "ref"
         _:
             return false
 
@@ -1063,7 +1197,8 @@ public function is_ref_type(t: Type) -> bool:
 public function is_simd_type(t: Type) -> bool:
     match t:
         Type.ty_generic as g:
-            return g.name == "simd" and g.args.len == 2
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name == "simd" and g_bp.args.len == 2
         _:
             return false
 
@@ -1072,8 +1207,9 @@ public function is_simd_type(t: Type) -> bool:
 public function simd_element_type(t: Type) -> Type:
     match t:
         Type.ty_generic as g:
-            if g.name == "simd" and g.args.len >= 1:
-                return unsafe: read(g.args.data + 0)
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "simd" and g_bp.args.len >= 1:
+                return unsafe: read(g_bp.args.data + 0)
             return Type.ty_error
         _:
             return Type.ty_error
@@ -1083,8 +1219,9 @@ public function simd_element_type(t: Type) -> Type:
 public function simd_lane_count(t: Type) -> long:
     match t:
         Type.ty_generic as g:
-            if g.name == "simd" and g.args.len >= 2:
-                match unsafe: read(g.args.data + 1):
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "simd" and g_bp.args.len >= 2:
+                match unsafe: read(g_bp.args.data + 1):
                     Type.ty_literal_int as lit:
                         return lit.value
                     _:
@@ -1202,10 +1339,11 @@ public function nominal_key(t: Type) -> str:
             let n_np = unsafe: read(n.payload)
             return n_np.name
         Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
             var buf = string.String.create()
-            buf.append(im.module_name)
+            buf.append(im_bp.module_name)
             buf.append(".")
-            buf.append(im.name)
+            buf.append(im_bp.name)
             return buf.as_str()
         _:
             return ""
@@ -1218,7 +1356,8 @@ public function nominal_name(t: Type) -> str:
             let n_np = unsafe: read(n.payload)
             return n_np.name
         Type.ty_imported as im:
-            return im.name
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.name
         _:
             return ""
 
@@ -1230,7 +1369,8 @@ public function nominal_module(t: Type) -> str:
             let n_np = unsafe: read(n.payload)
             return n_np.module_name
         Type.ty_imported as im:
-            return im.module_name
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.module_name
         _:
             return ""
 
@@ -1302,19 +1442,21 @@ function scalar_definitely_different(a: Type, b: Type) -> bool:
 function generic_definitely_different(a: Type, b: Type) -> bool:
     match a:
         Type.ty_generic as ga:
+            let ga_bp = unsafe: read(ga.payload)
             match b:
                 Type.ty_generic as gb:
+                    let gb_bp = unsafe: read(gb.payload)
                     # Different constructors stay permissive: mutable→const
                     # pointer and array→span coercions are legal, so a bare
                     # name mismatch is not proof of incompatibility.
-                    if not ga.name == gb.name:
+                    if not ga_bp.name == gb_bp.name:
                         return false
-                    if ga.args.len != gb.args.len:
+                    if ga_bp.args.len != gb_bp.args.len:
                         return false
                     var i: ptr_uint = 0
-                    while i < ga.args.len:
+                    while i < ga_bp.args.len:
                         unsafe:
-                            if definitely_different(read(ga.args.data + i), read(gb.args.data + i)):
+                            if definitely_different(read(ga_bp.args.data + i), read(gb_bp.args.data + i)):
                                 return true
                         i += 1
                     return false
@@ -1559,10 +1701,11 @@ public function type_hash(t: Type) -> uint:
                 return h
             return hash_word(h, ulong<-type_hash(unsafe: read(target)))
         Type.ty_event as e:
-            h = hash_str(h, e.name)
-            h = hash_word(h, ulong<-e.capacity)
-            h = hash_str(h, e.linkage_name)
-            let payload_type = e.payload_type
+            let e_bp = unsafe: read(e.payload)
+            h = hash_str(h, e_bp.name)
+            h = hash_word(h, ulong<-e_bp.capacity)
+            h = hash_str(h, e_bp.linkage_name)
+            let payload_type = e_bp.payload_type
             if payload_type == null:
                 return h
             return hash_word(h, ulong<-type_hash(unsafe: read(payload_type)))
@@ -1594,24 +1737,29 @@ public function type_hash(t: Type) -> uint:
                 fi += 1
             return h
         Type.ty_imported as i:
-            h = hash_str(h, i.module_name)
-            h = hash_str(h, i.name)
-            return hash_types(h, i.args)
+            let i_bp = unsafe: read(i.payload)
+            h = hash_str(h, i_bp.module_name)
+            h = hash_str(h, i_bp.name)
+            return hash_types(h, i_bp.args)
         Type.ty_var as v:
             return hash_str(h, v.name)
         Type.ty_lifetime as l:
             return hash_str(h, l.name)
         Type.ty_dyn as d:
-            h = hash_str(h, d.iface)
-            return hash_types(h, d.args)
+            let d_bp = unsafe: read(d.payload)
+            h = hash_str(h, d_bp.iface)
+            return hash_types(h, d_bp.args)
         Type.ty_dyn_vtable as d:
-            return hash_str(h, d.linkage_name)
+            let d_bp = unsafe: read(d.payload)
+            return hash_str(h, d_bp.linkage_name)
         Type.ty_opaque as o:
-            h = hash_str(h, o.module_name)
-            return hash_str(h, o.name)
+            let o_bp = unsafe: read(o.payload)
+            h = hash_str(h, o_bp.module_name)
+            return hash_str(h, o_bp.name)
         Type.ty_generic as g:
-            h = hash_str(h, g.name)
-            return hash_types(h, g.args)
+            let g_bp = unsafe: read(g.payload)
+            h = hash_str(h, g_bp.name)
+            return hash_types(h, g_bp.args)
         Type.ty_function as f:
             let f_ft = unsafe: read(f.payload)
             h = hash_str(h, f_ft.name)
@@ -1636,8 +1784,9 @@ public function type_hash(t: Type) -> uint:
         Type.ty_literal_int as l:
             return hash_word(h, ulong<-l.value)
         Type.ty_tuple as tp:
-            h = hash_types(h, tp.elements)
-            match tp.field_names:
+            let tp_bp = unsafe: read(tp.payload)
+            h = hash_types(h, tp_bp.elements)
+            match tp_bp.field_names:
                 Option.some as names:
                     h = hash_byte(h, ubyte<-1)
                     var ni: ptr_uint = 0
@@ -1705,13 +1854,24 @@ public function type_identical(a: Type, b: Type) -> bool:
                     return type_identical(unsafe: read(ta), unsafe: read(tb))
                 _:
                     return false
+        _:
+            return identical_aggregate_arm(a, b)
+
+## The aggregate `Type` arms of `type_identical`: every arm whose fields
+## live behind a boxed payload.  Split out so the dispatcher stays within
+## the function-size limit; the caller has already established that both
+## values carry the same variant tag.
+function identical_aggregate_arm(a: Type, b: Type) -> bool:
+    match a:
         Type.ty_event as ea:
+            let ea_bp = unsafe: read(ea.payload)
             match b:
                 Type.ty_event as eb:
-                    if ea.name != eb.name or ea.capacity != eb.capacity or ea.linkage_name != eb.linkage_name:
+                    let eb_bp = unsafe: read(eb.payload)
+                    if ea_bp.name != eb_bp.name or ea_bp.capacity != eb_bp.capacity or ea_bp.linkage_name != eb_bp.linkage_name:
                         return false
-                    let pa = ea.payload_type
-                    let pb = eb.payload_type
+                    let pa = ea_bp.payload_type
+                    let pb = eb_bp.payload_type
                     if pa == null:
                         return pb == null
                     if pb == null:
@@ -1766,9 +1926,11 @@ public function type_identical(a: Type, b: Type) -> bool:
                 _:
                     return false
         Type.ty_imported as ia:
+            let ia_bp = unsafe: read(ia.payload)
             match b:
                 Type.ty_imported as ib:
-                    return ia.module_name == ib.module_name and ia.name == ib.name and types_identical(ia.args, ib.args)
+                    let ib_bp = unsafe: read(ib.payload)
+                    return ia_bp.module_name == ib_bp.module_name and ia_bp.name == ib_bp.name and types_identical(ia_bp.args, ib_bp.args)
                 _:
                     return false
         Type.ty_var as va:
@@ -1784,27 +1946,35 @@ public function type_identical(a: Type, b: Type) -> bool:
                 _:
                     return false
         Type.ty_dyn as da:
+            let da_bp = unsafe: read(da.payload)
             match b:
                 Type.ty_dyn as db:
-                    return da.iface == db.iface and types_identical(da.args, db.args)
+                    let db_bp = unsafe: read(db.payload)
+                    return da_bp.iface == db_bp.iface and types_identical(da_bp.args, db_bp.args)
                 _:
                     return false
         Type.ty_dyn_vtable as da:
+            let da_bp = unsafe: read(da.payload)
             match b:
                 Type.ty_dyn_vtable as db:
-                    return da.linkage_name == db.linkage_name
+                    let db_bp = unsafe: read(db.payload)
+                    return da_bp.linkage_name == db_bp.linkage_name
                 _:
                     return false
         Type.ty_opaque as oa:
+            let oa_bp = unsafe: read(oa.payload)
             match b:
                 Type.ty_opaque as ob:
-                    return oa.module_name == ob.module_name and oa.name == ob.name
+                    let ob_bp = unsafe: read(ob.payload)
+                    return oa_bp.module_name == ob_bp.module_name and oa_bp.name == ob_bp.name
                 _:
                     return false
         Type.ty_generic as ga:
+            let ga_bp = unsafe: read(ga.payload)
             match b:
                 Type.ty_generic as gb:
-                    return ga.name == gb.name and types_identical(ga.args, gb.args)
+                    let gb_bp = unsafe: read(gb.payload)
+                    return ga_bp.name == gb_bp.name and types_identical(ga_bp.args, gb_bp.args)
                 _:
                     return false
         Type.ty_function as fa:
@@ -1836,13 +2006,15 @@ public function type_identical(a: Type, b: Type) -> bool:
                 _:
                     return false
         Type.ty_tuple as ta:
+            let ta_bp = unsafe: read(ta.payload)
             match b:
                 Type.ty_tuple as tb:
-                    if not types_identical(ta.elements, tb.elements):
+                    let tb_bp = unsafe: read(tb.payload)
+                    if not types_identical(ta_bp.elements, tb_bp.elements):
                         return false
-                    match ta.field_names:
+                    match ta_bp.field_names:
                         Option.some as na:
-                            match tb.field_names:
+                            match tb_bp.field_names:
                                 Option.some as nb:
                                     if na.value.len != nb.value.len:
                                         return false
@@ -1856,14 +2028,15 @@ public function type_identical(a: Type, b: Type) -> bool:
                                 Option.none:
                                     return false
                         Option.none:
-                            match tb.field_names:
+                            match tb_bp.field_names:
                                 Option.some:
                                     return false
                                 Option.none:
                                     return true
                 _:
                     return false
-
+        _:
+            return false
 
 ## Identity of two type sequences.
 function types_identical(a: span[Type], b: span[Type]) -> bool:

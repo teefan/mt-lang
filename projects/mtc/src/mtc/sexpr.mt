@@ -535,10 +535,11 @@ function types_value(ctx: ref[SexprContext], t: types.Type) -> SexprValue:
                 nt_fields.push(field_value("target_type", types_value(ctx, unsafe: read(target))))
             return node("Types::Null", nt_fields.as_span())
         types.Type.ty_event as ev:
+            let ev_bp = unsafe: read(ev.payload)
             var ev_fields = vec.Vec[SexprField].create()
-            ev_fields.push(field_str("name", ev.name))
-            ev_fields.push(field_int("capacity", long<-ev.capacity))
-            let ev_payload = ev.payload_type
+            ev_fields.push(field_str("name", ev_bp.name))
+            ev_fields.push(field_int("capacity", long<-ev_bp.capacity))
+            let ev_payload = ev_bp.payload_type
             if ev_payload == null:
                 ev_fields.push(field_nil("payload_type"))
             else:
@@ -571,54 +572,56 @@ function types_value(ctx: ref[SexprContext], t: types.Type) -> SexprValue:
             apf.push(field_module_name("module_name", payload.module_name))
             return node("Types::VariantArmPayload", apf.as_span())
         types.Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
             var imf = vec.Vec[SexprField].create()
-            imf.push(field_str("name", im.name))
-            imf.push(field_str("module_name", im.module_name))
+            imf.push(field_str("name", im_bp.name))
+            imf.push(field_str("module_name", im_bp.module_name))
             # The host dumper matches `Types::Struct`/`Types::Variant` before the
             # instance subclasses, so instance arguments are never printed.
-            if im.args.len > 0:
+            if im_bp.args.len > 0:
                 # The host's instance subclass follows the declaration kind: a
                 # generic variant (Option/Result or a user variant such as
                 # engine.types.Outcome) is a VariantInstance, a generic struct a
                 # StructInstance.
-                let kind = imported_type_class(ctx, im.module_name, im.name)
-                let cls = if kind == "Variant" or im.name == "Option" or im.name == "Result": "VariantInstance" else: "StructInstance"
+                let kind = imported_type_class(ctx, im_bp.module_name, im_bp.name)
+                let cls = if kind == "Variant" or im_bp.name == "Option" or im_bp.name == "Result": "VariantInstance" else: "StructInstance"
                 return node(strings.join_two("Types::", cls), imf.as_span())
-            return node(strings.join_two("Types::", imported_type_class(ctx, im.module_name, im.name)), imf.as_span())
+            return node(strings.join_two("Types::", imported_type_class(ctx, im_bp.module_name, im_bp.name)), imf.as_span())
         types.Type.ty_generic as g:
-            if g.name == "Option" or g.name == "Result":
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "Option" or g_bp.name == "Result":
                 var vf = vec.Vec[SexprField].create()
-                vf.push(field_str("name", g.name))
-                vf.push(field_str("module_name", if g.name == "Option": "std.option" else: "std.result"))
+                vf.push(field_str("name", g_bp.name))
+                vf.push(field_str("module_name", if g_bp.name == "Option": "std.option" else: "std.result"))
                 # Instance arguments are not printed (see the ty_imported case).
                 return node("Types::VariantInstance", vf.as_span())
-            if g.name == "span" and g.args.len == 1:
+            if g_bp.name == "span" and g_bp.args.len == 1:
                 var spf = vec.Vec[SexprField].create()
-                spf.push(field_value("element_type", types_value(ctx, unsafe: read(g.args.data + 0))))
+                spf.push(field_value("element_type", types_value(ctx, unsafe: read(g_bp.args.data + 0))))
                 return node("Types::Span", spf.as_span())
-            if g.name == "Task" and g.args.len == 1:
+            if g_bp.name == "Task" and g_bp.args.len == 1:
                 var tkf = vec.Vec[SexprField].create()
-                tkf.push(field_value("result_type", types_value(ctx, unsafe: read(g.args.data + 0))))
+                tkf.push(field_value("result_type", types_value(ctx, unsafe: read(g_bp.args.data + 0))))
                 return node("Types::Task", tkf.as_span())
-            if g.name == "SoA" and g.args.len == 2:
+            if g_bp.name == "SoA" and g_bp.args.len == 2:
                 var soaf = vec.Vec[SexprField].create()
-                soaf.push(field_value("element_type", types_value(ctx, unsafe: read(g.args.data + 0))))
-                soaf.push(int_arg_field(ctx, "count", unsafe: read(g.args.data + 1)))
+                soaf.push(field_value("element_type", types_value(ctx, unsafe: read(g_bp.args.data + 0))))
+                soaf.push(int_arg_field(ctx, "count", unsafe: read(g_bp.args.data + 1)))
                 return node("Types::SoA", soaf.as_span())
-            if g.name == "simd" and g.args.len == 2:
+            if g_bp.name == "simd" and g_bp.args.len == 2:
                 var simdf = vec.Vec[SexprField].create()
-                simdf.push(field_value("element_type", types_value(ctx, unsafe: read(g.args.data + 0))))
-                simdf.push(int_arg_field(ctx, "lane_count", unsafe: read(g.args.data + 1)))
+                simdf.push(field_value("element_type", types_value(ctx, unsafe: read(g_bp.args.data + 0))))
+                simdf.push(int_arg_field(ctx, "lane_count", unsafe: read(g_bp.args.data + 1)))
                 return node("Types::Simd", simdf.as_span())
-            if is_builtin_generic_name(g.name):
+            if is_builtin_generic_name(g_bp.name):
                 var gf = vec.Vec[SexprField].create()
-                gf.push(field_str("name", g.name))
-                gf.push(field_value("arguments", types_list_value(ctx, g.args)))
+                gf.push(field_str("name", g_bp.name))
+                gf.push(field_value("arguments", types_list_value(ctx, g_bp.args)))
                 return node("Types::Generic", gf.as_span())
             var sf = vec.Vec[SexprField].create()
-            sf.push(field_str("name", g.name))
+            sf.push(field_str("name", g_bp.name))
             sf.push(field_str("module_name", ctx.module_name))
-            sf.push(field_value("arguments", types_list_value(ctx, g.args)))
+            sf.push(field_value("arguments", types_list_value(ctx, g_bp.args)))
             return node("Types::StructInstance", sf.as_span())
         types.Type.ty_function as fnt:
             let fnt_ft = unsafe: read(fnt.payload)
@@ -637,10 +640,11 @@ function types_value(ctx: ref[SexprContext], t: types.Type) -> SexprValue:
             ff.push(field_bool("external", false))
             return node("Types::Function", ff.as_span())
         types.Type.ty_tuple as tup:
+            let tup_bp = unsafe: read(tup.payload)
             var tf = vec.Vec[SexprField].create()
-            tf.push(field_value("element_types", types_list_value(ctx, tup.elements)))
+            tf.push(field_value("element_types", types_list_value(ctx, tup_bp.elements)))
             var nv = vec.Vec[SexprValue].create()
-            match tup.field_names:
+            match tup_bp.field_names:
                 Option.some as names:
                     var ni: ptr_uint = 0
                     while ni < names.value.len:
@@ -651,7 +655,7 @@ function types_value(ctx: ref[SexprContext], t: types.Type) -> SexprValue:
                     # default positional names (`_0`, `_1`, …); the self's
                     # internal model omits them for an anonymous tuple.
                     var di: ptr_uint = 0
-                    while di < tup.elements.len:
+                    while di < tup_bp.elements.len:
                         var dname = string.String.create()
                         dname.append("_")
                         fmt.append_ptr_uint(ref_of(dname), di)
@@ -668,19 +672,22 @@ function types_value(ctx: ref[SexprContext], t: types.Type) -> SexprValue:
             # renders it as a bare quoted string, not a tagged node.
             return SexprValue.sv_str(value = lt.name)
         types.Type.ty_opaque as op:
+            let op_bp = unsafe: read(op.payload)
             var of = vec.Vec[SexprField].create()
-            of.push(field_str("name", op.name))
-            of.push(field_str("module_name", op.module_name))
+            of.push(field_str("name", op_bp.name))
+            of.push(field_str("module_name", op_bp.module_name))
             return node("Types::Opaque", of.as_span())
         types.Type.ty_dyn as d:
+            let d_bp = unsafe: read(d.payload)
             var df = vec.Vec[SexprField].create()
-            df.push(field_str("interface_name", d.iface))
-            df.push(field_value("type_arguments", types_list_value(ctx, d.args)))
+            df.push(field_str("interface_name", d_bp.iface))
+            df.push(field_value("type_arguments", types_list_value(ctx, d_bp.args)))
             return node("Types::Dyn", df.as_span())
         types.Type.ty_dyn_vtable as dv:
+            let dv_bp = unsafe: read(dv.payload)
             var dvf = vec.Vec[SexprField].create()
-            dvf.push(field_str("interface_name", dv.interface_name))
-            dvf.push(field_str("linkage_name", dv.linkage_name))
+            dvf.push(field_str("interface_name", dv_bp.interface_name))
+            dvf.push(field_str("linkage_name", dv_bp.linkage_name))
             return node("Types::DynVtable", dvf.as_span())
         _:
             return node("Types::Error", span[SexprField]())

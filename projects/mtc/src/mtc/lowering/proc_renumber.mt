@@ -343,14 +343,12 @@ function rename_type(t: types.Type, mapping: ref[map_mod.Map[str, str]]) -> type
                 return types.Type.ty_null(target = null)
             return types.Type.ty_null(target = types.alloc_type(rename_type(unsafe: read(target), mapping)))
         types.Type.ty_event as ev:
+            let ev_bp = unsafe: read(ev.payload)
             var payload: ptr[types.Type]? = null
-            let pp = ev.payload_type
+            let pp = ev_bp.payload_type
             if pp != null:
                 payload = types.alloc_type(rename_type(unsafe: read(pp), mapping))
-            return types.Type.ty_event(
-                name = rename_proc_str(ev.name, mapping), capacity = ev.capacity,
-                payload_type = payload, linkage_name = rename_proc_str(ev.linkage_name, mapping),
-            )
+            return types.event_type(name = rename_proc_str(ev_bp.name, mapping), capacity = ev_bp.capacity, payload_type = payload, linkage_name = rename_proc_str(ev_bp.linkage_name, mapping))
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
             return types.named_type(name = rename_proc_str(n_np.name, mapping), module_name = n_np.module_name, linkage_name = rename_opt_str(n_np.linkage_name, mapping))
@@ -365,24 +363,26 @@ function rename_type(t: types.Type, mapping: ref[map_mod.Map[str, str]]) -> type
                 fields = rename_payload_fields(payload.fields, mapping),
             )
         types.Type.ty_imported as im:
-            return types.Type.ty_imported(
-                module_name = im.module_name,
-                name = rename_proc_str(im.name, mapping),
-                args = rename_types(im.args, mapping),
-            )
+            let im_bp = unsafe: read(im.payload)
+            return types.imported_type(module_name = im_bp.module_name, name = rename_proc_str(im_bp.name, mapping), args = rename_types(im_bp.args, mapping))
         types.Type.ty_dyn as d:
-            return types.Type.ty_dyn(iface = rename_proc_str(d.iface, mapping), args = rename_types(d.args, mapping))
+            let d_bp = unsafe: read(d.payload)
+            return types.dyn_type(iface = rename_proc_str(d_bp.iface, mapping), args = rename_types(d_bp.args, mapping))
         types.Type.ty_dyn_vtable as dv:
-            return types.Type.ty_dyn_vtable(interface_name = dv.interface_name, linkage_name = rename_proc_str(dv.linkage_name, mapping))
+            let dv_bp = unsafe: read(dv.payload)
+            return types.dyn_vtable_type(interface_name = dv_bp.interface_name, linkage_name = rename_proc_str(dv_bp.linkage_name, mapping))
         types.Type.ty_opaque as op:
-            return types.Type.ty_opaque(module_name = op.module_name, name = op.name)
+            let op_bp = unsafe: read(op.payload)
+            return types.opaque_type(module_name = op_bp.module_name, name = op_bp.name)
         types.Type.ty_generic as g:
-            return types.Type.ty_generic(name = rename_proc_str(g.name, mapping), args = rename_types(g.args, mapping))
+            let g_bp = unsafe: read(g.payload)
+            return types.generic_type(name = rename_proc_str(g_bp.name, mapping), args = rename_types(g_bp.args, mapping))
         types.Type.ty_function as fnt:
             let fnt_ft = unsafe: read(fnt.payload)
             return types.function_type(name = rename_proc_str(fnt_ft.name, mapping), params = rename_types(fnt_ft.params, mapping), return_type = types.alloc_type(rename_type(unsafe: read(fnt_ft.return_type), mapping)), variadic = fnt_ft.variadic, is_proc = fnt_ft.is_proc, param_names = fnt_ft.param_names)
         types.Type.ty_tuple as tup:
-            return types.Type.ty_tuple(elements = rename_types(tup.elements, mapping), field_names = tup.field_names)
+            let tup_bp = unsafe: read(tup.payload)
+            return types.tuple_type(elements = rename_types(tup_bp.elements, mapping), field_names = tup_bp.field_names)
         _:
             return t
 

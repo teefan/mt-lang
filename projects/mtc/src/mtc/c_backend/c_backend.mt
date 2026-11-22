@@ -1278,27 +1278,28 @@ function collect_gv_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]
 function collect_gv_from_type(ty: types.Type, seen: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.VariantDecl]]) -> void:
     match ty:
         types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
             # Recurse into type arguments first so nested generic variants
             # (Option[Result[...]], span[Option[X]], Option[RemovedEntry[K,V]])
             # are collected regardless of the outer constructor.
             var gi: ptr_uint = 0
-            while gi < g.args.len:
+            while gi < g_bp.args.len:
                 unsafe:
-                    collect_gv_from_type(read(g.args.data + gi), seen, result)
+                    collect_gv_from_type(read(g_bp.args.data + gi), seen, result)
                 gi += 1
             # Only emit variant decls for prelude types; user-generic structs
             # are handled by the lowering's `ensure_generic_struct_decl`.
-            if not g.name == "Option" and not g.name == "Result":
+            if not g_bp.name == "Option" and not g_bp.name == "Result":
                 return
             # Skip when type args contain raw type parameters (inside generic bodies).
-            if generic_has_type_param(g.args):
+            if generic_has_type_param(g_bp.args):
                 return
-            let c_name = generic_c_type(g.name, g.args)
+            let c_name = generic_c_type(g_bp.name, g_bp.args)
             if seen.contains(c_name):
                 return
             seen.set(c_name, true)
             var arms = vec.Vec[ir.VariantArm].create()
-            let info = prelude_variant_arm_info(g.name, g.args)
+            let info = prelude_variant_arm_info(g_bp.name, g_bp.args)
             var ai: ptr_uint = 0
             while ai < info.arms.len:
                 var arm = unsafe: read(info.arms.data + ai)
@@ -1335,7 +1336,8 @@ function generic_has_type_param(args: span[types.Type]) -> bool:
                     if is_raw_type_param_name(n_np.name):
                         return true
                 types.Type.ty_generic as g:
-                    if generic_has_type_param(g.args):
+                    let g_bp = unsafe: read(g.payload)
+                    if generic_has_type_param(g_bp.args):
                         return true
                 types.Type.ty_nullable as nl:
                     if generic_has_type_param(sp_elem(unsafe: read(nl.base))):
@@ -1738,18 +1740,21 @@ function c_type(t: types.Type) -> str:
         types.Type.ty_str:
             return "mt_str"
         types.Type.ty_dyn as d:
-            return strings.join_three("mt_dyn_", d.iface, "")
+            let d_bp = unsafe: read(d.payload)
+            return strings.join_three("mt_dyn_", d_bp.iface, "")
         types.Type.ty_dyn_vtable as dv:
-            return dv.linkage_name
+            let dv_bp = unsafe: read(dv.payload)
+            return dv_bp.linkage_name
         types.Type.ty_opaque as op:
-            if op.module_name.starts_with("std.c."):
-                return op.name
+            let op_bp = unsafe: read(op.payload)
+            if op_bp.module_name.starts_with("std.c."):
+                return op_bp.name
             # An opaque value is represented as a pointer to its C backing type
             # (host `Types::Opaque` renders `base*` for values): the resolved
             # backing name when the declaring module has one recorded
             # (`SDL_Window`), else the module-qualified name its forward
             # declaration defines.
-            let type_key = naming.qualified_c_name(op.module_name, op.name)
+            let type_key = naming.qualified_c_name(op_bp.module_name, op_bp.name)
             if opaque_backing_names != null:
                 let backing_map = unsafe: read(ptr[map_mod.Map[str, str]]<-opaque_backing_names)
                 let backing_ptr = backing_map.get(type_key)
@@ -1764,25 +1769,27 @@ function c_type(t: types.Type) -> str:
                 return naming.proc_type_c_name(t)
             return c_fn_ptr_declarator(t, "")
         types.Type.ty_event as ev:
-            return ev.linkage_name
+            let ev_bp = unsafe: read(ev.payload)
+            return ev_bp.linkage_name
         types.Type.ty_imported as im:
-            if im.module_name.starts_with("std.c."):
+            let im_bp = unsafe: read(im.payload)
+            if im_bp.module_name.starts_with("std.c."):
                 if std_c_backing_names != null:
                     let map_val = unsafe: read(ptr[map_mod.Map[str, str]]<-std_c_backing_names)
-                    let backing_ptr = map_val.get(im.name)
+                    let backing_ptr = map_val.get(im_bp.name)
                     if backing_ptr != null:
                         return unsafe: read(backing_ptr)
-                if im.name == "sockaddr" or im.name == "sockaddr_storage" or im.name == "sockaddr_in" or im.name == "sockaddr_in6" or im.name == "tm":
-                    return strings.join_two("struct ", im.name)
-                return im.name
-            var base = naming.qualified_c_name(im.module_name, im.name)
-            if im.args.len == 0:
+                if im_bp.name == "sockaddr" or im_bp.name == "sockaddr_storage" or im_bp.name == "sockaddr_in" or im_bp.name == "sockaddr_in6" or im_bp.name == "tm":
+                    return strings.join_two("struct ", im_bp.name)
+                return im_bp.name
+            var base = naming.qualified_c_name(im_bp.module_name, im_bp.name)
+            if im_bp.args.len == 0:
                 return base
             var buf = string.String.from_str(base)
             var ai: ptr_uint = 0
-            while ai < im.args.len:
+            while ai < im_bp.args.len:
                 buf.push_byte('_')
-                buf.append(naming.type_c_key(unsafe: read(im.args.data + ai)))
+                buf.append(naming.type_c_key(unsafe: read(im_bp.args.data + ai)))
                 ai += 1
             return buf.as_str()
         types.Type.ty_named as n:
@@ -1812,7 +1819,8 @@ function c_type(t: types.Type) -> str:
             # produce a compiler error rather than a Milk Tea crash.
             return v.name
         types.Type.ty_generic as g:
-            return generic_c_type(g.name, g.args)
+            let g_bp = unsafe: read(g.payload)
+            return generic_c_type(g_bp.name, g_bp.args)
         types.Type.ty_tuple:
             return naming.tuple_type_c_name(t)
         types.Type.ty_type_meta:
@@ -1829,10 +1837,11 @@ function c_type(t: types.Type) -> str:
                 if is_pointer_like_for_nullable(base):
                     match base:
                         types.Type.ty_opaque as op:
+                            let op_bp = unsafe: read(op.payload)
                             # A re-exported opaque already renders as a pointer
                             # for values, so nullability adds nothing; a raw
                             # module's opaque C name is the struct itself.
-                            if op.module_name.starts_with("std.c."):
+                            if op_bp.module_name.starts_with("std.c."):
                                 return strings.join_two(c_type(base), "*")
                             return c_type(base)
                         _:
@@ -2157,13 +2166,16 @@ function maybe_add_span(t: types.Type, seen: ref[map_mod.Map[str, bool]], collec
 function add_nested_spans(t: types.Type, seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
     match t:
         types.Type.ty_generic as g:
-            add_span_args(g.args, seen, collected)
+            let g_bp = unsafe: read(g.payload)
+            add_span_args(g_bp.args, seen, collected)
         types.Type.ty_imported as im:
-            add_span_args(im.args, seen, collected)
+            let im_bp = unsafe: read(im.payload)
+            add_span_args(im_bp.args, seen, collected)
         types.Type.ty_nullable as nl:
             maybe_add_span(unsafe: read(nl.base), seen, collected)
         types.Type.ty_tuple as tup:
-            add_span_args(tup.elements, seen, collected)
+            let tup_bp = unsafe: read(tup.payload)
+            add_span_args(tup_bp.elements, seen, collected)
         types.Type.ty_function as fnt:
             let fnt_ft = unsafe: read(fnt.payload)
             add_span_args(fnt_ft.params, seen, collected)
@@ -2506,10 +2518,11 @@ function emit_tuple_type_def(e: ref[Emitter], t: types.Type) -> void:
     emit_line(e, strings.join_three("struct ", name, " {"))
     match t:
         types.Type.ty_tuple as tup:
+            let tup_bp = unsafe: read(tup.payload)
             var i: ptr_uint = 0
-            while i < tup.elements.len:
+            while i < tup_bp.elements.len:
                 var fname = tuple_field_name(i)
-                match tup.field_names:
+                match tup_bp.field_names:
                     Option.some as names:
                         if i < names.value.len:
                             unsafe:
@@ -2517,7 +2530,7 @@ function emit_tuple_type_def(e: ref[Emitter], t: types.Type) -> void:
                     Option.none:
                         pass
                 unsafe:
-                    emit_line(e, strings.join_four("  ", c_decl(read(tup.elements.data + i), fname), ";", ""))
+                    emit_line(e, strings.join_four("  ", c_decl(read(tup_bp.elements.data + i), fname), ";", ""))
                 i += 1
         _:
             pass
@@ -2577,7 +2590,8 @@ function emit_array_call(e: ref[Emitter], ep: ptr[ir.Expr], out_arg: str) -> str
 function is_array_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name == "array" and g.args.len == 2
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name == "array" and g_bp.args.len == 2
         _:
             return false
 
@@ -2585,7 +2599,8 @@ function is_array_type(t: types.Type) -> bool:
 function is_span_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name == "span" and g.args.len == 1
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name == "span" and g_bp.args.len == 1
         _:
             return false
 
@@ -2593,8 +2608,9 @@ function is_span_type(t: types.Type) -> bool:
 function array_element_type(t: types.Type) -> types.Type:
     match t:
         types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
             unsafe:
-                return read(g.args.data + 0)
+                return read(g_bp.args.data + 0)
         _:
             return types.Type.ty_error
 
@@ -2602,8 +2618,9 @@ function array_element_type(t: types.Type) -> types.Type:
 function array_length(t: types.Type) -> long:
     match t:
         types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
             unsafe:
-                match read(g.args.data + 1):
+                match read(g_bp.args.data + 1):
                     types.Type.ty_literal_int as lit:
                         return lit.value
                     _:
@@ -2771,22 +2788,23 @@ function c_decl(t: types.Type, name: str) -> str:
                 _:
                     pass
         types.Type.ty_generic as g:
-            if (g.name == "ptr" or g.name == "own" or g.name == "ref") and g.args.len >= 1:
-                let inner = unsafe: read(g.args.data + (g.args.len - 1))
+            let g_bp = unsafe: read(g.payload)
+            if (g_bp.name == "ptr" or g_bp.name == "own" or g_bp.name == "ref") and g_bp.args.len >= 1:
+                let inner = unsafe: read(g_bp.args.data + (g_bp.args.len - 1))
                 if is_array_type(inner):
                     return c_decl(inner, strings.join_two("*", name))
                 let base = unsafe: c_type(inner)
                 return strings.join_three(base, " *", name)
-            if g.name == "const_ptr" and g.args.len == 1:
-                let inner = unsafe: read(g.args.data + 0)
+            if g_bp.name == "const_ptr" and g_bp.args.len == 1:
+                let inner = unsafe: read(g_bp.args.data + 0)
                 if is_array_type(inner):
                     return c_decl(inner, strings.join_two("*", name))
                 let base = unsafe: c_type(inner)
                 return strings.join_four("const ", base, "*", name)
-            if g.name == "str_buffer" and g.args.len >= 1:
-                let c_name = strings.join_three("mt_str_buffer_", naming.type_c_key(unsafe: read(g.args.data + 0)), "")
+            if g_bp.name == "str_buffer" and g_bp.args.len >= 1:
+                let c_name = strings.join_three("mt_str_buffer_", naming.type_c_key(unsafe: read(g_bp.args.data + 0)), "")
                 return strings.join_three(c_name, " ", name)
-            return strings.join_three(generic_c_type(g.name, g.args), " ", name)
+            return strings.join_three(generic_c_type(g_bp.name, g_bp.args), " ", name)
         _:
             pass
     return strings.join_three(c_type(t), " ", name)
@@ -2964,18 +2982,19 @@ function collect_soa_from_stmts(e: ref[Emitter], body: span[ir.Stmt], seen: ref[
 function collect_soa_from_type(e: ref[Emitter], ty: types.Type, seen: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
     match ty:
         types.Type.ty_generic as g:
-            if g.name == "SoA" and g.args.len >= 2:
-                let elem_ty = unsafe: read(g.args.data + 0)
-                let count_ty = unsafe: read(g.args.data + 1)
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "SoA" and g_bp.args.len >= 2:
+                let elem_ty = unsafe: read(g_bp.args.data + 0)
+                let count_ty = unsafe: read(g_bp.args.data + 1)
                 let elem_c_name = soa_element_c_name(elem_ty)
                 let count_str = naming.type_c_key(count_ty)
                 if elem_c_name.len > 0 and register_soa(e, elem_c_name, count_str, seen):
                     emit_one_soa(e, elem_c_name, count_str, program.structs)
             # Recurse into child types
-            if g.args.len > 0:
+            if g_bp.args.len > 0:
                 var ai: ptr_uint = 0
-                while ai < g.args.len:
-                    collect_soa_from_type(e, unsafe: read(g.args.data + ai), seen, program)
+                while ai < g_bp.args.len:
+                    collect_soa_from_type(e, unsafe: read(g_bp.args.data + ai), seen, program)
                     ai += 1
         types.Type.ty_named:
             pass
@@ -2998,7 +3017,8 @@ function soa_element_c_name(ty: types.Type) -> str:
                 return naming.qualified_c_name(n_np.module_name, n_np.name)
             return n_np.name
         types.Type.ty_imported as im:
-            return naming.qualified_c_name(im.module_name, im.name)
+            let im_bp = unsafe: read(im.payload)
+            return naming.qualified_c_name(im_bp.module_name, im_bp.name)
         _:
             return c_type(ty)
 
@@ -3145,7 +3165,8 @@ function topo_visit_struct(structs: span[ir.StructDecl], index: ptr_uint, by_lin
 function struct_field_linkage(ty: types.Type) -> Option[str]:
     match ty:
         types.Type.ty_imported as im:
-            return Option[str].some(value = naming.qualified_c_name(im.module_name, im.name))
+            let im_bp = unsafe: read(im.payload)
+            return Option[str].some(value = naming.qualified_c_name(im_bp.module_name, im_bp.name))
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
             # A nested struct embeds via its parent-qualified linkage name.
@@ -3198,18 +3219,19 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
                 return Option[str].some(value = naming.qualified_c_name(n_np.module_name, n_np.name))
             return Option[str].some(value = n_np.name)
         types.Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
             # The dependency key must equal the C name `c_type` renders, or a
             # by-value embedder can be ordered before the type it embeds.
-            if im.module_name.starts_with("std.c."):
-                return Option[str].some(value = im.name)
-            var base = naming.qualified_c_name(im.module_name, im.name)
-            if im.args.len == 0:
+            if im_bp.module_name.starts_with("std.c."):
+                return Option[str].some(value = im_bp.name)
+            var base = naming.qualified_c_name(im_bp.module_name, im_bp.name)
+            if im_bp.args.len == 0:
                 return Option[str].some(value = base)
             var buf = string.String.from_str(base)
             var ai: ptr_uint = 0
-            while ai < im.args.len:
+            while ai < im_bp.args.len:
                 buf.push_byte('_')
-                buf.append(naming.type_c_key(unsafe: read(im.args.data + ai)))
+                buf.append(naming.type_c_key(unsafe: read(im_bp.args.data + ai)))
                 ai += 1
             return Option[str].some(value = buf.as_str())
         types.Type.ty_nullable as nl:
@@ -3219,33 +3241,34 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
                     return Option[str].none
                 return Option[str].some(value = strings.join_two("mt_opt_", naming.type_c_key(base)))
         types.Type.ty_generic as g:
-            if g.name == "array" and g.args.len >= 1:
-                return by_value_dep_key(unsafe: read(g.args.data + 0))
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "array" and g_bp.args.len >= 1:
+                return by_value_dep_key(unsafe: read(g_bp.args.data + 0))
             # `str_buffer[N]` is embedded by value (`mt_str_buffer_N field;`), so
             # a struct field of that type depends on the full str_buffer struct
             # definition being ordered first.
-            if g.name == "str_buffer" and g.args.len >= 1:
-                return Option[str].some(value = strings.join_three("mt_str_buffer_", naming.type_c_key(unsafe: read(g.args.data + 0)), ""))
+            if g_bp.name == "str_buffer" and g_bp.args.len >= 1:
+                return Option[str].some(value = strings.join_three("mt_str_buffer_", naming.type_c_key(unsafe: read(g_bp.args.data + 0)), ""))
             # Pointer-like generics need only a forward declaration, not a
             # by-value dependency.
             if (
-                g.name == "ptr" or g.name == "const_ptr" or g.name == "own" or g.name == "ref"
-                or g.name == "span" or g.name == "atomic"
-                or g.name == "SoA"
+                g_bp.name == "ptr" or g_bp.name == "const_ptr" or g_bp.name == "own" or g_bp.name == "ref"
+                or g_bp.name == "span" or g_bp.name == "atomic"
+                or g_bp.name == "SoA"
             ):
                 return Option[str].none
             # Task[T] IS a by-value aggregate — the Task struct embeds `value:
             # T` and other vtable fields, so it must be ordered behind T's
             # definition.  The Task struct itself is also a dependency target
             # for variants that embed Task instances by value.
-            if g.name == "Task" and g.args.len >= 1:
-                return Option[str].some(value = strings.join_three("mt_task_", naming.type_c_key(unsafe: read(g.args.data + 0)), ""))
+            if g_bp.name == "Task" and g_bp.args.len >= 1:
+                return Option[str].some(value = strings.join_three("mt_task_", naming.type_c_key(unsafe: read(g_bp.args.data + 0)), ""))
             # A generic variant instance embedded by value (e.g.
             # `Option[span[str]]` → `Option_span_str`): it depends on the concrete
             # instance's full definition being ordered first.  Uses the same name
             # `generic_c_type` emits so the topo edge matches the emitted type.
-            if g.args.len > 0:
-                return Option[str].some(value = generic_c_type(g.name, g.args))
+            if g_bp.args.len > 0:
+                return Option[str].some(value = generic_c_type(g_bp.name, g_bp.args))
             return Option[str].none
         types.Type.ty_tuple:
             return Option[str].some(value = naming.tuple_type_c_name(ty))
@@ -3253,7 +3276,8 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
         # struct must be ordered behind the runtime definition (`c_type` renders
         # the same linkage name).
         types.Type.ty_event as ev:
-            return Option[str].some(value = ev.linkage_name)
+            let ev_bp = unsafe: read(ev.payload)
+            return Option[str].some(value = ev_bp.linkage_name)
         # A match-arm payload binding (`Result[T, E].success as p`) is typed as
         # the arm-payload struct (`<variant>_success`) and embeds it by value —
         # e.g. an async frame field spilling the binding across an await.  The
@@ -3339,9 +3363,10 @@ function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_varian
             return deps
         match unsafe: read(tuple_ptr):
             types.Type.ty_tuple as tup:
+                let tup_bp = unsafe: read(tup.payload)
                 var ti: ptr_uint = 0
-                while ti < tup.elements.len:
-                    match by_value_dep_key(unsafe: read(tup.elements.data + ti)):
+                while ti < tup_bp.elements.len:
+                    match by_value_dep_key(unsafe: read(tup_bp.elements.data + ti)):
                         Option.some as dep:
                             deps.push(dep.value)
                         Option.none:
@@ -3493,7 +3518,7 @@ function function_params(func: ir.Function) -> str:
             # here.  Mirrors Ruby's
             # `c_decl(param.pointer ? pointer_to(param.type) : param.type, ...)`
             # (a nil `pointer` — the async ctor params — is not a pointer).
-            let pty = if p.pointer.unwrap_or(false): types.Type.ty_generic(name = "ptr", args = sp_elem(p.ty)) else: p.ty
+            let pty = if p.pointer.unwrap_or(false): types.generic_type(name = "ptr", args = sp_elem(p.ty)) else: p.ty
             parts.push(c_decl(pty, p.linkage_name))
         i += 1
     if parts.len() == 0:
@@ -4242,8 +4267,9 @@ function checked_array_index_helper_name(receiver_type: types.Type) -> str:
 function checked_span_index_helper_name(receiver_type: types.Type) -> str:
     match receiver_type:
         types.Type.ty_generic as g:
-            if g.name == "span" and g.args.len > 0:
-                let elem = unsafe: read(g.args.data + 0)
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "span" and g_bp.args.len > 0:
+                let elem = unsafe: read(g_bp.args.data + 0)
                 match elem:
                     types.Type.ty_function:
                         return strings.join_two("mt_checked_span_index_", naming.sanitize_c_identifier(c_decl(elem, "value")))
@@ -4273,8 +4299,9 @@ function nullable_array_index_helper_name(receiver_type: types.Type) -> str:
 function nullable_span_index_helper_name(receiver_type: types.Type) -> str:
     match receiver_type:
         types.Type.ty_generic as g:
-            if g.name == "span" and g.args.len > 0:
-                let elem = unsafe: read(g.args.data + 0)
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "span" and g_bp.args.len > 0:
+                let elem = unsafe: read(g_bp.args.data + 0)
                 match elem:
                     types.Type.ty_function:
                         return strings.join_two("mt_nullable_span_index_", naming.sanitize_c_identifier(c_decl(elem, "value")))
@@ -4755,26 +4782,28 @@ function render_variant_initializer(e: ref[Emitter], ty: types.Type, arm_name: s
     var outer_c: str
     match ty:
         types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
             var buf = string.String.create()
-            if g.name == "Option":
+            if g_bp.name == "Option":
                 buf.append("std_option_")
-            else if g.name == "Result":
+            else if g_bp.name == "Result":
                 buf.append("std_result_")
-            buf.append(g.name)
+            buf.append(g_bp.name)
             var i: ptr_uint = 0
-            while i < g.args.len:
+            while i < g_bp.args.len:
                 buf.append("_")
                 unsafe:
-                    buf.append(naming.type_c_key(read(g.args.data + i)))
+                    buf.append(naming.type_c_key(read(g_bp.args.data + i)))
                 i += 1
             outer_c = buf.as_str()
         types.Type.ty_imported as im:
-            if im.args.len > 0:
+            let im_bp = unsafe: read(im.payload)
+            if im_bp.args.len > 0:
                 # A concrete instance (`Result[int, str]`): the C name carries
                 # the argument suffix.
                 outer_c = c_type(ty)
             else:
-                outer_c = naming.qualified_c_name(im.module_name, im.name)
+                outer_c = naming.qualified_c_name(im_bp.module_name, im_bp.name)
         _:
             outer_c = c_type(ty)
 
@@ -4805,9 +4834,10 @@ function render_zero_initializer(t: types.Type) -> str:
         types.Type.ty_str:
             return "{ 0 }"
         types.Type.ty_opaque as op:
+            let op_bp = unsafe: read(op.payload)
             # A re-exported opaque's value is a pointer (host parity:
             # `ZeroInit` renders `NULL` for a non-external opaque).
-            if op.module_name.starts_with("std.c."):
+            if op_bp.module_name.starts_with("std.c."):
                 return "{ 0 }"
             return "NULL"
         types.Type.ty_primitive as p:
@@ -4828,7 +4858,8 @@ function render_zero_initializer(t: types.Type) -> str:
 function render_zero_expr(t: types.Type) -> str:
     match t:
         types.Type.ty_opaque as op:
-            if op.module_name.starts_with("std.c."):
+            let op_bp = unsafe: read(op.payload)
+            if op_bp.module_name.starts_with("std.c."):
                 return strings.join_four("(", c_decl(t, ""), ") ", render_zero_initializer(t))
             return "NULL"
         types.Type.ty_primitive as p:
@@ -5053,11 +5084,12 @@ function is_ptr_type(t: types.Type) -> bool:
             unsafe:
                 return is_pointer_like_for_nullable(read(nl.base))
         types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
             # A `ref` may carry an explicit lifetime (`ref[@a, T]`), so it is not
             # restricted to one argument (mirrors the host's `ref_type?`).
-            if g.name == "ref":
-                return g.args.len >= 1
-            return (g.name == "ptr" or g.name == "own") and g.args.len == 1
+            if g_bp.name == "ref":
+                return g_bp.args.len >= 1
+            return (g_bp.name == "ptr" or g_bp.name == "own") and g_bp.args.len == 1
         _:
             return false
 
@@ -5670,7 +5702,8 @@ function is_primitive_name_from_str(name: str) -> bool:
 function is_pointer_like_for_nullable(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return g.name == "ptr" or g.name == "const_ptr" or g.name == "own" or g.name == "ref"
+            let g_bp = unsafe: read(g.payload)
+            return g_bp.name == "ptr" or g_bp.name == "const_ptr" or g_bp.name == "own" or g_bp.name == "ref"
         types.Type.ty_primitive as p:
             return p.name == "cstr"
         types.Type.ty_function:
@@ -6595,8 +6628,9 @@ function task_scan_expr(program: ir.Program, ep: ptr[ir.Expr], seen: ref[map_mod
 function collect_task_type(program: ir.Program, seen: ref[map_mod.Map[str, bool]], elements: ref[map_mod.Map[str, types.Type]], t: types.Type) -> void:
     match t:
         types.Type.ty_generic as g:
-            if g.name == "Task" and g.args.len == 1:
-                let elem = unsafe: read(g.args.data + 0)
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "Task" and g_bp.args.len == 1:
+                let elem = unsafe: read(g_bp.args.data + 0)
                 var task_args = vec.Vec[types.Type].create()
                 task_args.push(elem)
                 let c_name = generic_c_type("Task", task_args.as_span())
@@ -6605,8 +6639,8 @@ function collect_task_type(program: ir.Program, seen: ref[map_mod.Map[str, bool]
                     elements.set(c_name, elem)
             # Also scan nested generic args for Task types.
             var ai: ptr_uint = 0
-            while ai < g.args.len:
-                collect_task_type(program, seen, elements, unsafe: read(g.args.data + ai))
+            while ai < g_bp.args.len:
+                collect_task_type(program, seen, elements, unsafe: read(g_bp.args.data + ai))
                 ai += 1
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
@@ -6614,9 +6648,10 @@ function collect_task_type(program: ir.Program, seen: ref[map_mod.Map[str, bool]
                 if not seen.contains(n_np.name):
                     seen.set(n_np.name, true)
         types.Type.ty_imported as im:
-            if im.name.starts_with("mt_task_"):
-                if not seen.contains(im.name):
-                    seen.set(im.name, true)
+            let im_bp = unsafe: read(im.payload)
+            if im_bp.name.starts_with("mt_task_"):
+                if not seen.contains(im_bp.name):
+                    seen.set(im_bp.name, true)
         _:
             pass
 
@@ -6626,10 +6661,11 @@ function task_type_element(t: types.Type) -> Option[types.Type]:
     match t:
 
         types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
 
-            if g.name == "Task" and g.args.len == 1:
+            if g_bp.name == "Task" and g_bp.args.len == 1:
 
-                return Option[types.Type].some(value = unsafe: read(g.args.data + 0))
+                return Option[types.Type].some(value = unsafe: read(g_bp.args.data + 0))
 
             return Option[types.Type].none
 
@@ -6936,7 +6972,8 @@ function emit_builtin_type_defs(e: ref[Emitter], program: ir.Program) -> void:
 function bare_opaque_name(base: types.Type) -> str:
     match base:
         types.Type.ty_imported as im:
-            return im.name
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.name
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
             return n_np.name
@@ -6969,26 +7006,28 @@ function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], opaques: re
                     if not needed.contains(opt_key):
                         needed.set(opt_key, types.Type.ty_nullable(base = types.alloc_type(base)))
         types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
 
             var gi: ptr_uint = 0
 
-            while gi < g.args.len:
+            while gi < g_bp.args.len:
 
                 unsafe:
 
-                    collect_opt_type(needed, opaques, read(g.args.data + gi))
+                    collect_opt_type(needed, opaques, read(g_bp.args.data + gi))
 
                 gi += 1
 
         types.Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
 
             var ai: ptr_uint = 0
 
-            while ai < im.args.len:
+            while ai < im_bp.args.len:
 
                 unsafe:
 
-                    collect_opt_type(needed, opaques, read(im.args.data + ai))
+                    collect_opt_type(needed, opaques, read(im_bp.args.data + ai))
 
                 ai += 1
 
@@ -7010,14 +7049,15 @@ function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], opaques: re
                 collect_opt_type(needed, opaques, read(f_ft.return_type))
 
         types.Type.ty_tuple as tu:
+            let tu_bp = unsafe: read(tu.payload)
 
             var ei: ptr_uint = 0
 
-            while ei < tu.elements.len:
+            while ei < tu_bp.elements.len:
 
                 unsafe:
 
-                    collect_opt_type(needed, opaques, read(tu.elements.data + ei))
+                    collect_opt_type(needed, opaques, read(tu_bp.elements.data + ei))
 
                 ei += 1
 
@@ -7326,26 +7366,28 @@ function collect_builtin_types(needed: ref[map_mod.Map[str, bool]], t: types.Typ
                 collect_builtin_types(needed, read(n.base))
 
         types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
 
             var gi: ptr_uint = 0
 
-            while gi < g.args.len:
+            while gi < g_bp.args.len:
 
                 unsafe:
 
-                    collect_builtin_types(needed, read(g.args.data + gi))
+                    collect_builtin_types(needed, read(g_bp.args.data + gi))
 
                 gi += 1
 
         types.Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
 
             var ai: ptr_uint = 0
 
-            while ai < im.args.len:
+            while ai < im_bp.args.len:
 
                 unsafe:
 
-                    collect_builtin_types(needed, read(im.args.data + ai))
+                    collect_builtin_types(needed, read(im_bp.args.data + ai))
 
                 ai += 1
 
@@ -7367,14 +7409,15 @@ function collect_builtin_types(needed: ref[map_mod.Map[str, bool]], t: types.Typ
                 collect_builtin_types(needed, read(f_ft.return_type))
 
         types.Type.ty_tuple as tu:
+            let tu_bp = unsafe: read(tu.payload)
 
             var ei: ptr_uint = 0
 
-            while ei < tu.elements.len:
+            while ei < tu_bp.elements.len:
 
                 unsafe:
 
-                    collect_builtin_types(needed, read(tu.elements.data + ei))
+                    collect_builtin_types(needed, read(tu_bp.elements.data + ei))
 
                 ei += 1
 
@@ -7465,8 +7508,9 @@ function collect_std_c_backing(program: ir.Program) -> map_mod.Map[str, str]:
             Option.some as cname:
                 match ta.target_type:
                     types.Type.ty_imported as im:
-                        if im.name != cname.value:
-                            m.set(im.name, cname.value)
+                        let im_bp = unsafe: read(im.payload)
+                        if im_bp.name != cname.value:
+                            m.set(im_bp.name, cname.value)
                     _:
                         pass
             Option.none:

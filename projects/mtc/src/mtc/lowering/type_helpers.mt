@@ -140,7 +140,7 @@ function import_qualified_type(ctx: ref[lowering.LoweringContext], ep: ptr[ast.E
                                         Option.some as resolved:
                                             return Option[types.Type].some(value = resolved.value)
                                         Option.none:
-                                            return Option[types.Type].some(value = types.Type.ty_imported(module_name = target_module, name = ma.member_name, args = span[types.Type]()))
+                                            return Option[types.Type].some(value = types.imported_type(module_name = target_module, name = ma.member_name, args = span[types.Type]()))
                             ai += 1
                     _:
                         pass
@@ -244,7 +244,7 @@ public function fallback_type_raw(ctx: ref[lowering.LoweringContext], ep: ptr[as
                             if inner_type_name.len > 0:
                                 let inner_ty = fallback_type_raw(ctx, unsafe: read(call.args.data + 0).arg_value)
                                 if not types.is_error(inner_ty) and not types.is_void(inner_ty):
-                                    return types.Type.ty_generic(name = inner_type_name, args = lowering.sp_type(inner_ty))
+                                    return types.generic_type(name = inner_type_name, args = lowering.sp_type(inner_ty))
                         let foreign_ptr = ctx.foreign_map.get(id.name)
                         if foreign_ptr != null:
                             return read(foreign_ptr).return_ty
@@ -284,7 +284,7 @@ public function fallback_type_raw(ctx: ref[lowering.LoweringContext], ep: ptr[as
             ast.Expr.expr_specialization as spec:
                 match lowering.try_spec_type_name(ep):
                     Option.some as tn:
-                        return types.Type.ty_generic(name = tn.value, args = lowering.sp_type(types.Type.ty_error))
+                        return types.generic_type(name = tn.value, args = lowering.sp_type(types.Type.ty_error))
                     Option.none:
                         return types.Type.ty_error
             # Proc expressions: reconstruct the ty_function(is_proc=true) from the
@@ -527,7 +527,8 @@ public function nominal_type_name(t: types.Type) -> str:
             let n_np = unsafe: read(n.payload)
             return n_np.name
         types.Type.ty_imported as im:
-            return im.name
+            let im_bp = unsafe: read(im.payload)
+            return im_bp.name
         _:
             return ""
 
@@ -618,9 +619,10 @@ public function enum_backing_or_self(ctx: ref[lowering.LoweringContext], t: type
                 Option.none:
                     return t
         types.Type.ty_imported as im:
-            if im.args.len != 0:
+            let im_bp = unsafe: read(im.payload)
+            if im_bp.args.len != 0:
                 return t
-            match find_enum_backing(ctx, im.module_name, im.name):
+            match find_enum_backing(ctx, im_bp.module_name, im_bp.name):
                 Option.some as b:
                     return b.value
                 Option.none:

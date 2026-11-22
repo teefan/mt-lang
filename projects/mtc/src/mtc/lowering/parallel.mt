@@ -43,15 +43,16 @@ function parallel_uid(ctx: ref[lowering.LoweringContext], kind: str) -> str:
 function pfor_element_type(t: types.Type) -> types.Type:
     match t:
         types.Type.ty_generic as g:
-            if g.args.len > 0:
-                return unsafe: read(g.args.data + 0)
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.args.len > 0:
+                return unsafe: read(g_bp.args.data + 0)
             return types.Type.ty_error
         _:
             return types.Type.ty_error
 
 
 function pfor_ptr_type(t: types.Type) -> types.Type:
-    return types.Type.ty_generic(name = "ptr", args = lowering.sp_type(t))
+    return types.generic_type(name = "ptr", args = lowering.sp_type(t))
 
 
 function pfor_capture_name(c: ir.Expr) -> str:
@@ -746,7 +747,7 @@ public function lower_parallel_block(ctx: ref[lowering.LoweringContext], output:
         if not info.captureless:
             call_site.push(ir.Stmt.stmt_local(name = info.cap_local_name, linkage_name = info.cap_local_name, ty = info.cap_ty, value = info.cap_init, line = 0, source_path = ""))
         idx += 1
-    let tasks_arr_ty = types.Type.ty_generic(name = "array", args = lowering.sp_type2(spawn_item_ty, types.literal_int(long<-bodies.len)))
+    let tasks_arr_ty = types.generic_type(name = "array", args = lowering.sp_type2(spawn_item_ty, types.literal_int(long<-bodies.len)))
     var elements = vec.Vec[ir.Expr].create()
     idx = 0
     while idx < infos.len():
@@ -964,7 +965,7 @@ function build_parallel_workers(ctx: ref[lowering.LoweringContext], bodies: span
 
 
 function void_ptr_ty() -> types.Type:
-    return types.Type.ty_generic(name = "ptr", args = lowering.sp_type(types.primitive("void")))
+    return types.generic_type(name = "ptr", args = lowering.sp_type(types.primitive("void")))
 
 
 ## Lower `gather h1, h2, ...`.  Each handle is joined via mt_detach_join; the

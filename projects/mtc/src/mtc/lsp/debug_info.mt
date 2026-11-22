@@ -868,8 +868,9 @@ function facts_param_base(analysis: ref[analyzer.Analysis], node: ptr_uint) -> p
 function facts_body_return(s: analyzer.FnSig) -> types.Type:
     match s.return_type:
         types.Type.ty_generic as g:
-            if s.is_async and g.name.equal("Task") and g.args.len == 1:
-                return unsafe: read(g.args.data + 0)
+            let g_bp = unsafe: read(g.payload)
+            if s.is_async and g_bp.name.equal("Task") and g_bp.args.len == 1:
+                return unsafe: read(g_bp.args.data + 0)
         _:
             pass
     return s.return_type
@@ -1246,18 +1247,19 @@ public function debug_type_repr(t: types.Type) -> str:
                 return buf.as_str()
             return n_np.name
         types.Type.ty_imported as im:
-            if im.module_name.len > 0:
+            let im_bp = unsafe: read(im.payload)
+            if im_bp.module_name.len > 0:
                 var buf = string.String.create()
-                buf.append(im.module_name)
+                buf.append(im_bp.module_name)
                 buf.append(".")
-                buf.append(im.name)
-                if im.args.len > 0:
+                buf.append(im_bp.name)
+                if im_bp.args.len > 0:
                     buf.append("[")
                     var i: ptr_uint = 0
-                    while i < im.args.len:
+                    while i < im_bp.args.len:
                         if i > 0:
                             buf.append(", ")
-                        buf.append(debug_type_repr(unsafe: read(im.args.data + i)))
+                        buf.append(debug_type_repr(unsafe: read(im_bp.args.data + i)))
                         i += 1
                     buf.append("]")
                 return buf.as_str()
@@ -1315,11 +1317,13 @@ function append_binding_type_repr(target: ref[string.String], analysis: ref[anal
             append_binding_type_repr(target, analysis, unsafe: read(nl.base))
             target.append("?")
         types.Type.ty_imported as im:
-            append_binding_type_name(target, analysis, im.module_name, im.name)
-            append_binding_type_args(target, analysis, im.args)
+            let im_bp = unsafe: read(im.payload)
+            append_binding_type_name(target, analysis, im_bp.module_name, im_bp.name)
+            append_binding_type_args(target, analysis, im_bp.args)
         types.Type.ty_generic as g:
-            append_binding_type_name(target, analysis, "", g.name)
-            append_binding_type_args(target, analysis, g.args)
+            let g_bp = unsafe: read(g.payload)
+            append_binding_type_name(target, analysis, "", g_bp.name)
+            append_binding_type_args(target, analysis, g_bp.args)
         _:
             target.append(types.type_to_string(t))
 

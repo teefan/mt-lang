@@ -17,7 +17,7 @@ import mtc.strings
 public function make_task_type(inner: types.Type) -> types.Type:
     var args = vec.Vec[types.Type].create()
     args.push(inner)
-    return types.Type.ty_generic(name = "Task", args = args.as_span())
+    return types.generic_type(name = "Task", args = args.as_span())
 
 
 public function make_task_literal(inner: ptr[ir.Expr]) -> ptr[ir.Expr]:
@@ -50,8 +50,9 @@ public function unwrap_task_value(task_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let task_ty = lowering.ir_expr_type(task_expr)
     match task_ty:
         types.Type.ty_generic as g:
-            if g.name == "Task" and g.args.len == 1:
-                inner_ty = unsafe: read(g.args.data + 0)
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name == "Task" and g_bp.args.len == 1:
+                inner_ty = unsafe: read(g_bp.args.data + 0)
         _:
             pass
     return lowering.alloc_expr(ir.Expr.expr_member(receiver = task_expr, member = "value", ty = inner_ty))
@@ -140,7 +141,7 @@ public function lower_multi_for(ctx: ref[lowering.LoweringContext], output: ref[
         else:
             var ptr_args = vec.Vec[types.Type].create()
             ptr_args.push(elem_ty)
-            let data_ty = types.Type.ty_generic(name = "ptr", args = ptr_args.as_span())
+            let data_ty = types.generic_type(name = "ptr", args = ptr_args.as_span())
             let data_ref = lowering.alloc_expr(ir.Expr.expr_member(receiver = items_ref, member = "data", ty = data_ty))
             item_val = lowering.alloc_expr(ir.Expr.expr_index(receiver = data_ref, index = index_ref, ty = elem_ty))
         loop_body.push(ir.Stmt.stmt_local(name = bname, linkage_name = binding_c, ty = elem_ty, value = item_val, line = 0, source_path = ""))

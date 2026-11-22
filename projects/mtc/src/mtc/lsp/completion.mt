@@ -1480,7 +1480,8 @@ function value_receiver_completions(
                 emit_payload_field_items(ref_of(items_json), unsafe: read(arm.payload).fields, prefix, uri, ref_of(first), ref_of(count))
             # A tuple's positional or named fields.
             types.Type.ty_tuple as tup:
-                emit_tuple_field_items(ref_of(items_json), tup.elements, tup.field_names, prefix, uri, ref_of(first), ref_of(count))
+                let tup_bp = unsafe: read(tup.payload)
+                emit_tuple_field_items(ref_of(items_json), tup_bp.elements, tup_bp.field_names, prefix, uri, ref_of(first), ref_of(count))
             _:
                 if type_name.len > 0:
                     emit_builtin_fields(ref_of(items_json), analysis, field_ty, prefix, uri, ref_of(first), ref_of(count))
@@ -1583,12 +1584,13 @@ function emit_soa_fields(
 ) -> void:
     match receiver_ty:
         types.Type.ty_generic as g:
-            if g.args.len < 2:
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.args.len < 2:
                 return
-            let element_name = navigation.type_to_key_name(unsafe: read(g.args.data + 0))
+            let element_name = navigation.type_to_key_name(unsafe: read(g_bp.args.data + 0))
             let fields_ptr = unsafe: read(analysis).structs.get(element_name) else:
                 return
-            var count_text = type_render.qualified_name(unsafe: read(g.args.data + 1), "")
+            var count_text = type_render.qualified_name(unsafe: read(g_bp.args.data + 1), "")
             defer: count_text.release()
             let fields = unsafe: read(fields_ptr)
             var fi: ptr_uint = 0

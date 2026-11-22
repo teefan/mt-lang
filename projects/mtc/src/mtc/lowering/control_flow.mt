@@ -338,7 +338,7 @@ function lower_collection_for(ctx: ref[lowering.LoweringContext], output: ref[ve
         let items_ref = lowering.alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = Option[bool].some(value = false)))
         var ptr_args = vec.Vec[types.Type].create()
         ptr_args.push(element_type)
-        let data_ty = types.Type.ty_generic(name = "ptr", args = ptr_args.as_span())
+        let data_ty = types.generic_type(name = "ptr", args = ptr_args.as_span())
         let data_ref = lowering.alloc_expr(ir.Expr.expr_member(receiver = items_ref, member = "data", ty = data_ty))
         item_value = lowering.alloc_expr(ir.Expr.expr_index(receiver = data_ref, index = index_ref_item, ty = element_type))
 
@@ -512,9 +512,10 @@ function lower_custom_iter_for(ctx: ref[lowering.LoweringContext], output: ref[v
 public function array_length_of(t: types.Type) -> long:
     match t:
         types.Type.ty_generic as g:
-            if g.args.len == 2:
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.args.len == 2:
                 unsafe:
-                    match read(g.args.data + 1):
+                    match read(g_bp.args.data + 1):
                         types.Type.ty_literal_int as lit:
                             return lit.value
                         _:
@@ -543,11 +544,11 @@ public function lower_array_as_span(ctx: ref[lowering.LoweringContext], receiver
     let elem0 = lowering.alloc_expr(ir.Expr.expr_index(receiver = recv, index = zero_index, ty = elem_ty))
     let data_ptr = lowering.alloc_expr(ir.Expr.expr_address_of(
         expression = elem0,
-        ty = types.Type.ty_generic(name = "ptr", args = lowering.sp_type(elem_ty)),
+        ty = types.generic_type(name = "ptr", args = lowering.sp_type(elem_ty)),
     ))
     let len_expr = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = length, ty = ptr_uint_ty))
     var fields = vec.Vec[ir.AggregateField].create()
     fields.push(ir.AggregateField(name = "data", value = data_ptr))
     fields.push(ir.AggregateField(name = "len", value = len_expr))
-    let span_ty = types.Type.ty_generic(name = "span", args = lowering.sp_type(elem_ty))
+    let span_ty = types.generic_type(name = "span", args = lowering.sp_type(elem_ty))
     return lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = span_ty, fields = fields.as_span()))

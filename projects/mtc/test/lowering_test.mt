@@ -53,8 +53,8 @@ function test_type_store_keeps_render_distinct_spellings_apart() -> void:
     var store = types.create_type_store()
     defer: store.release()
     let int_ty = types.primitive("int")
-    let generic_id = store.intern(types.Type.ty_generic(name = "Option", args = one_type(int_ty)))
-    let imported_id = store.intern(types.Type.ty_imported(module_name = "std.option", name = "Option", args = one_type(int_ty)))
+    let generic_id = store.intern(types.generic_type(name = "Option", args = one_type(int_ty)))
+    let imported_id = store.intern(types.imported_type(module_name = "std.option", name = "Option", args = one_type(int_ty)))
     let named_id = store.intern(types.named_type(name = "Option", module_name = "std.option", linkage_name = Option[str].none))
     expect(generic_id != imported_id)
     expect(imported_id != named_id)
@@ -69,8 +69,8 @@ function test_type_store_is_idempotent_for_nested_types() -> void:
     var store = types.create_type_store()
     defer: store.release()
     let int_ty = types.primitive("int")
-    let inner = types.Type.ty_generic(name = "ptr", args = one_type(int_ty))
-    let outer = types.Type.ty_generic(name = "ptr", args = one_type(inner))
+    let inner = types.generic_type(name = "ptr", args = one_type(int_ty))
+    let outer = types.generic_type(name = "ptr", args = one_type(inner))
     let first = store.intern(outer)
     var i: ptr_uint = 0
     while i < 1000:

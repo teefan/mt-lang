@@ -238,29 +238,33 @@ public function type_c_key(t: types.Type) -> str:
         types.Type.ty_var as v:
             return sanitize_identifier(v.name)
         types.Type.ty_dyn as d:
-            return strings.join_two("dyn_", sanitize_identifier(d.iface))
+            let d_bp = unsafe: read(d.payload)
+            return strings.join_two("dyn_", sanitize_identifier(d_bp.iface))
         types.Type.ty_opaque as op:
-            return qualified_c_name(op.module_name, op.name)
+            let op_bp = unsafe: read(op.payload)
+            return qualified_c_name(op_bp.module_name, op_bp.name)
         types.Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
             var buf = string.String.create()
-            buf.append(qualified_c_name(im.module_name, im.name))
+            buf.append(qualified_c_name(im_bp.module_name, im_bp.name))
             var i: ptr_uint = 0
-            while i < im.args.len:
+            while i < im_bp.args.len:
                 buf.append("_")
-                buf.append(type_c_key(unsafe: read(im.args.data + i)))
+                buf.append(type_c_key(unsafe: read(im_bp.args.data + i)))
                 i += 1
             return buf.as_str()
         types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
             var buf = string.String.create()
-            if g.name == "Option":
+            if g_bp.name == "Option":
                 buf.append("std_option_")
-            else if g.name == "Result":
+            else if g_bp.name == "Result":
                 buf.append("std_result_")
-            buf.append(sanitize_identifier(g.name))
+            buf.append(sanitize_identifier(g_bp.name))
             var i: ptr_uint = 0
-            while i < g.args.len:
+            while i < g_bp.args.len:
                 buf.append("_")
-                buf.append(type_c_key(unsafe: read(g.args.data + i)))
+                buf.append(type_c_key(unsafe: read(g_bp.args.data + i)))
                 i += 1
             return buf.as_str()
         types.Type.ty_nullable as nl:
@@ -270,6 +274,7 @@ public function type_c_key(t: types.Type) -> str:
             fmt.append_long(ref_of(buf), lit.value)
             return buf.as_str()
         types.Type.ty_tuple as tup:
+            let tup_bp = unsafe: read(tup.payload)
             # The host names a generic instance after `sanitize_identifier(
             # type.arguments.join('_'))`, i.e. each argument's `to_s`.  A tuple
             # renders `(int, int)` / `(x: int, y: int)`, whose punctuation
@@ -278,17 +283,17 @@ public function type_c_key(t: types.Type) -> str:
             # tuple value struct's own `mt_tuple_*` name.
             var buf = string.String.create()
             var i: ptr_uint = 0
-            while i < tup.elements.len:
+            while i < tup_bp.elements.len:
                 if i > 0:
                     buf.append("_")
-                match tup.field_names:
+                match tup_bp.field_names:
                     Option.some as names:
                         if i < names.value.len:
                             buf.append(unsafe: read(names.value.data + i))
                             buf.append("_")
                     Option.none:
                         pass
-                buf.append(type_c_key(unsafe: read(tup.elements.data + i)))
+                buf.append(type_c_key(unsafe: read(tup_bp.elements.data + i)))
                 i += 1
             return buf.as_str()
         _:
@@ -308,32 +313,34 @@ public function type_to_s_qualified(t: types.Type) -> str:
                 return strings.join_three(n_np.module_name, ".", n_np.name)
             return n_np.name
         types.Type.ty_imported as im:
-            if im.args.len == 0:
-                return strings.join_three(im.module_name, ".", im.name)
+            let im_bp = unsafe: read(im.payload)
+            if im_bp.args.len == 0:
+                return strings.join_three(im_bp.module_name, ".", im_bp.name)
             var buf = string.String.create()
-            buf.append(im.module_name)
+            buf.append(im_bp.module_name)
             buf.append(".")
-            buf.append(im.name)
+            buf.append(im_bp.name)
             buf.append("[")
             var i: ptr_uint = 0
-            while i < im.args.len:
+            while i < im_bp.args.len:
                 if i > 0:
                     buf.append(", ")
                 unsafe:
-                    buf.append(type_to_s_qualified(read(im.args.data + i)))
+                    buf.append(type_to_s_qualified(read(im_bp.args.data + i)))
                 i += 1
             buf.append("]")
             return buf.as_str()
         types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
             var buf = string.String.create()
-            buf.append(g.name)
+            buf.append(g_bp.name)
             buf.append("[")
             var i: ptr_uint = 0
-            while i < g.args.len:
+            while i < g_bp.args.len:
                 if i > 0:
                     buf.append(", ")
                 unsafe:
-                    buf.append(type_to_s_qualified(read(g.args.data + i)))
+                    buf.append(type_to_s_qualified(read(g_bp.args.data + i)))
                 i += 1
             buf.append("]")
             return buf.as_str()
@@ -344,11 +351,12 @@ public function type_to_s_qualified(t: types.Type) -> str:
             buf.append("?")
             return buf.as_str()
         types.Type.ty_tuple as tup:
+            let tup_bp = unsafe: read(tup.payload)
             var buf = string.String.create()
             # The host's `Types::Tuple#to_s`: default positional names render as
             # `(T1, T2)`, non-default names as `(n1: T1, n2: T2)`.
             var named = false
-            match tup.field_names:
+            match tup_bp.field_names:
                 Option.some as names:
                     if not tuple_names_are_default(names.value):
                         named = true
@@ -356,11 +364,11 @@ public function type_to_s_qualified(t: types.Type) -> str:
                     pass
             buf.append("(")
             var i: ptr_uint = 0
-            while i < tup.elements.len:
+            while i < tup_bp.elements.len:
                 if i > 0:
                     buf.append(", ")
                 if named:
-                    match tup.field_names:
+                    match tup_bp.field_names:
                         Option.some as names:
                             unsafe:
                                 buf.append(read(names.value.data + i))
@@ -368,7 +376,7 @@ public function type_to_s_qualified(t: types.Type) -> str:
                         Option.none:
                             pass
                 unsafe:
-                    buf.append(type_to_s_qualified(read(tup.elements.data + i)))
+                    buf.append(type_to_s_qualified(read(tup_bp.elements.data + i)))
                 i += 1
             buf.append(")")
             return buf.as_str()
@@ -409,13 +417,14 @@ public function tuple_type_c_name(t: types.Type) -> str:
     buf.append("mt_tuple")
     match t:
         types.Type.ty_tuple as tup:
+            let tup_bp = unsafe: read(tup.payload)
             var i: ptr_uint = 0
-            while i < tup.elements.len:
+            while i < tup_bp.elements.len:
                 buf.append("_")
                 unsafe:
-                    buf.append(sanitize_tuple_type_name(type_to_s_qualified(read(tup.elements.data + i))))
+                    buf.append(sanitize_tuple_type_name(type_to_s_qualified(read(tup_bp.elements.data + i))))
                 i += 1
-            match tup.field_names:
+            match tup_bp.field_names:
                 Option.some as names:
                     if not tuple_names_are_default(names.value):
                         var ni: ptr_uint = 0
