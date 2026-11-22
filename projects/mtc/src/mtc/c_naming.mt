@@ -184,7 +184,10 @@ public function dyn_iface_declared_name(use_name: str) -> str:
 ## A module-qualified C name (`en` + `State` -> `en_State`).  Used for function
 ## and type linkage names and for named-type C names in the backend.
 public function qualified_c_name(module_name: str, name: str) -> str:
-    var buf = string.String.create()
+    # `module_c_prefix` never grows a name (it maps non-alnum bytes to `_` and
+    # strips a trailing one), so `module_name.len` bounds it: reserve once
+    # instead of letting three appends abandon their buffers.
+    var buf = string.String.with_capacity(module_name.len + 1 + name.len)
     buf.append(module_c_prefix(module_name))
     buf.append("_")
     buf.append(name)
@@ -194,7 +197,7 @@ public function qualified_c_name(module_name: str, name: str) -> str:
 ## A module-qualified member C name (`en` + `State` + `idle` -> `en_State_idle`).
 ## Used for enum/flags member constants.
 public function qualified_member_c_name(module_name: str, owner: str, member: str) -> str:
-    var buf = string.String.create()
+    var buf = string.String.with_capacity(module_name.len + 2 + owner.len + member.len)
     buf.append(module_c_prefix(module_name))
     buf.append("_")
     buf.append(owner)

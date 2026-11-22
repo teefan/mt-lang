@@ -4336,7 +4336,7 @@ public function qualify_type(ctx: ref[LoweringContext], t: types.Type) -> types.
                         return qualify_type(ctx, unsafe: read(resolved_ptr))
             var resolved_args = span[types.Type]()
             if im_bp.args.len > 0:
-                var args_vec = vec.Vec[types.Type].create()
+                var args_vec = vec.Vec[types.Type].with_capacity_exact(im_bp.args.len)
                 var ai: ptr_uint = 0
                 while ai < im_bp.args.len:
                     unsafe:
@@ -4375,7 +4375,7 @@ public function qualify_type(ctx: ref[LoweringContext], t: types.Type) -> types.
             return t
         types.Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
-            var args = vec.Vec[types.Type].create()
+            var args = vec.Vec[types.Type].with_capacity_exact(g_bp.args.len)
             var gi: ptr_uint = 0
             while gi < g_bp.args.len:
                 unsafe:
@@ -5046,7 +5046,7 @@ function resolve_generic_type_ref(ctx: ref[LoweringContext], t: ast.TypeRef) -> 
         ensure_str_buffer_struct(ctx, sb_ty)
         return sb_ty
     # span / ptr / const_ptr / ref and other generics: resolve each type argument.
-    var args = vec.Vec[types.Type].create()
+    var args = vec.Vec[types.Type].with_capacity_exact(t.arguments.len)
     var i: ptr_uint = 0
     while i < t.arguments.len:
         unsafe:
@@ -5060,8 +5060,8 @@ function resolve_generic_type_ref(ctx: ref[LoweringContext], t: ast.TypeRef) -> 
 ## pointer), so they are lowered to the same `ty_function` variant.
 public function resolve_function_type_ref(ctx: ref[LoweringContext], tp: ptr[ast.TypeRef]) -> types.Type:
     let t = unsafe: read(tp)
-    var param_types = vec.Vec[types.Type].create()
-    var param_names = vec.Vec[str].create()
+    var param_types = vec.Vec[types.Type].with_capacity_exact(t.fn_params.len)
+    var param_names = vec.Vec[str].with_capacity_exact(t.fn_params.len)
     var i: ptr_uint = 0
     while i < t.fn_params.len:
         var p: ast.Param

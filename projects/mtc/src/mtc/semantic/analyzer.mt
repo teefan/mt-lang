@@ -2354,7 +2354,7 @@ function last_dotted_segment(name: str) -> str:
 
 
 public function method_key(type_name: str, member: str) -> str:
-    var buf = string.String.create()
+    var buf = string.String.with_capacity(type_name.len + 1 + member.len)
     buf.append(type_name)
     buf.append(".")
     buf.append(member)
@@ -7054,7 +7054,6 @@ function quiet_explicit_type(ctx: ref[Context], tref: ptr[ast.TypeRef]) -> Optio
 ## callee names a local struct, treat it as a struct construction and validate
 ## named-field references instead.
 function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument]) -> types.Type:
-    var arg_types = vec.Vec[types.Type].create()
     var any_named = false
     let call_pos = callee_position(callee)
     var canonical_args = vec.Vec[ast.Argument].create()
@@ -7065,6 +7064,7 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
         effective_args = canonical_args.as_span()
     var expected = call_argument_expected_types(ctx, scope, callee, effective_args)
     defer: expected.release()
+    var arg_types = vec.Vec[types.Type].with_capacity_exact(effective_args.len)
     let saved_hint = ctx.expected_type_hint
     # The compile-time handle builtins take *names*, not values: the host
     # evaluates them specially and records no callable-value site for their

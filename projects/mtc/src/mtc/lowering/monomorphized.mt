@@ -125,7 +125,7 @@ public function substitute_type_params(ctx: ref[lowering.LoweringContext], ty: t
             if concrete != null:
                 return unsafe: read(concrete)
             if im_bp.args.len > 0:
-                var args = vec.Vec[types.Type].create()
+                var args = vec.Vec[types.Type].with_capacity_exact(im_bp.args.len)
                 var i: ptr_uint = 0
                 while i < im_bp.args.len:
                     unsafe:
@@ -141,7 +141,7 @@ public function substitute_type_params(ctx: ref[lowering.LoweringContext], ty: t
             return ty
         types.Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
-            var args = vec.Vec[types.Type].create()
+            var args = vec.Vec[types.Type].with_capacity_exact(g_bp.args.len)
             var i: ptr_uint = 0
             while i < g_bp.args.len:
                 unsafe:
@@ -152,7 +152,7 @@ public function substitute_type_params(ctx: ref[lowering.LoweringContext], ty: t
             return types.Type.ty_nullable(base = types.alloc_type(substitute_type_params(ctx, unsafe: read(nl.base), sub)))
         types.Type.ty_function as fnt:
             let fnt_ft = unsafe: read(fnt.payload)
-            var fn_params = vec.Vec[types.Type].create()
+            var fn_params = vec.Vec[types.Type].with_capacity_exact(fnt_ft.params.len)
             var pi: ptr_uint = 0
             while pi < fnt_ft.params.len:
                 unsafe:

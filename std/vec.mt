@@ -22,6 +22,15 @@ extending Vec[T]:
         return result
 
 
+    ## Like `with_capacity`, but allocates exactly `capacity` elements (no
+    ## base-4 floor, no doubling).  For a vector whose final length is known
+    ## and which will live as long as its owner's arena.
+    public static function with_capacity_exact(capacity: ptr_uint) -> Vec[T]:
+        var result = Vec[T].create()
+        result.reserve_exact(capacity)
+        return result
+
+
     public function len() -> ptr_uint:
         return this.len
 
@@ -112,6 +121,23 @@ extending Vec[T]:
 
         this.data = resized
         this.capacity = new_capacity
+
+
+    ## Reserve exactly `min_capacity` elements, with no growth floor or
+    ## rounding.  Use when the final length is already known and the vector
+    ## must not over-allocate: `reserve`'s base-4 floor and doubling are right
+    ## for an append-only vector whose length is a running count, but they cost
+    ## up to 4x on the single-element span (`ptr[int]`, `Option[str]`) that
+    ## dominates the compiler's IR type arguments.
+    public editable function reserve_exact(min_capacity: ptr_uint) -> void:
+        if min_capacity <= this.capacity:
+            return
+
+        let resized = heap.resize[T](this.data, min_capacity) else:
+            fatal(c"vec.reserve_exact out of memory")
+
+        this.data = resized
+        this.capacity = min_capacity
 
 
     public editable function shrink_to_fit() -> void:
