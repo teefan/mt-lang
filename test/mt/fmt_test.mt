@@ -160,3 +160,15 @@ function test_fmt_general_format_string_expressions() -> void:
     let text = f"count=#{count}"
     expect(size(f"ok=#{true}") != 0z, "format expr non-empty")
     expect_eq(int<-text.len, 7)
+
+
+@[test]
+function test_fmt_interpolates_format_string_locals() -> void:
+    let hex = f"hex=#{255:x}"
+    let precise = f"precise=#{3.14159:.4}"
+    let combined = f"#{hex} #{precise}"
+    expect_eq(combined, "hex=ff precise=3.1416")
+
+    let plain = f"no interpolation"
+    let wrapped = f"[#{plain}]"
+    expect_eq(wrapped, "[no interpolation]")

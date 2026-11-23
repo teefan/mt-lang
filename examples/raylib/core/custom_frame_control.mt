@@ -12,9 +12,9 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - custom frame control")
 
     var previous_time = rl.get_time()
-    var current_time = 0.0
-    var update_draw_time = 0.0
-    var wait_time = 0.0
+    var current_time: double = 0.0
+    var update_draw_time: double = 0.0
+    var wait_time: double = 0.0
     var delta_time: float = ZERO_FLOAT
 
     var time_counter: float = ZERO_FLOAT
@@ -84,9 +84,9 @@ function main() -> int:
                 current_time = rl.get_time()
                 delta_time = float<-(current_time - previous_time)
             else:
-                delta_time = update_draw_time
+                delta_time = float<-update_draw_time
         else:
-            delta_time = update_draw_time
+            delta_time = float<-update_draw_time
 
         previous_time = current_time
 

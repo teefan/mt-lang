@@ -275,11 +275,12 @@ p + p{margin-top:-.25rem}
   <p class="tagline">A statically typed, indentation-based systems language for games. Safe by default, explicit by design, compiling to <strong>beautiful C</strong>.</p>
   <div class="code-wrap" style="margin-bottom:1rem">
     <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-    <pre><code>$ gem install mt-lang
+    <pre><code>$ tar xzf mtc-&lt;version&gt;-&lt;platform&gt;.tar.gz
+$ export PATH="$PWD/mtc-&lt;version&gt;-&lt;platform&gt;/bin:$PATH"
 $ mtc run hello.mt</code></pre>
   </div>
   <div class="badges">
-    <span class="badge">&#128230; Install: <code>gem install mt-lang</code></span>
+    <span class="badge">&#128230; Install: <code>mtc-&lt;version&gt;-&lt;platform&gt;</code> archive</span>
     <span class="badge ac"><a href="https://marketplace.visualstudio.com/items?itemName=teefan.milk-tea-lang" style="color:inherit;text-decoration:none">&#128187; VS Code Extension</a></span>
   </div>
   <div class="badges" style="margin-top:.5rem">
@@ -376,15 +377,28 @@ extending Vec2:
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>/* Generated C */
-int main_add(int a, int b) {
-    return a + b;
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+#include <stdio.h>
+
+typedef struct main_Vec2 main_Vec2;
+
+struct main_Vec2 {
+  float x;
+  float y;
+};
+
+static int32_t main_add(int32_t a, int32_t b);
+static void main_Vec2_scale(main_Vec2 *this, float factor);
+
+static int32_t main_add(int32_t a, int32_t b) {
+  return a + b;
 }
 
-typedef struct { float x; float y; } main_Vec2;
-
-void main_Vec2_scale(main_Vec2* this, float factor) {
-    this->x *= factor;
-    this->y *= factor;
+static void main_Vec2_scale(main_Vec2 *this, float factor) {
+  this->x *= factor;
+  this->y *= factor;
 }</code></pre>
 </div>
 
@@ -944,7 +958,7 @@ let total = (
     - discount
 )
 
-## Also accepted: operator-led continuation.
+## Also accepted: continuation after a line-ending operator.
 let total = subtotal +
     tax -
     discount
@@ -1011,7 +1025,7 @@ let total = (
       <tr><td>Variadic</td><td><code>...</code></td></tr>
       <tr><td>Word operators</td><td><code>and</code> <code>or</code> <code>not</code></td></tr>
       <tr><td>Pattern test</td><td><code>is</code> &mdash; variant arm membership test, desugars to <code>match</code></td></tr>
-      <tr><td>Parameter modes</td><td><code>in</code> <code>out</code> <code>inout</code> (reserved for <code>foreign function</code>)</td></tr>
+      <tr><td>Parameter modes</td><td><code>in</code> <code>out</code> <code>inout</code> <code>consuming</code> (reserved for <code>foreign function</code>)</td></tr>
     </table>
   </div>
 </section>
@@ -1071,7 +1085,7 @@ let image = load_image(path) else:
     return 1
 
 let config = load_config() else as error:
-    return error
+    return Result[Config, ConfigError].failure(error = error)
 
 let _ = initialize_runtime() else:
     return 1</code></pre>
@@ -1887,7 +1901,7 @@ let sized = name[32]</code></pre>
       <tr><td><code>const_ptr_of(x)</code></td><td>Read-only raw pointer to an addressable lvalue</td></tr>
       <tr><td><code>ptr_of(x)</code></td><td>Writable raw pointer from a mutable addressable lvalue</td></tr>
       <tr><td><code>read(r)</code></td><td>Read through a <code>ref[T]</code> or <code>ptr[T]</code> (requires <code>unsafe</code> for raw)</td></tr>
-      <tr><td><code>T&lt;-value</code></td><td>Explicit numeric cast</td></tr>
+      <tr><td><code>T&lt;-value</code></td><td>Explicit cast (numeric, enum/flags, or pointer; pointer casts require <code>unsafe</code>)</td></tr>
       <tr><td><code>reinterpret[T](value)</code></td><td>Bit reinterpretation (requires <code>unsafe</code>)</td></tr>
       <tr><td><code>zero[T]</code></td><td>Zero-initialized value</td></tr>
       <tr><td><code>default[T]</code></td><td>Semantic default via <code>T.default()</code></td></tr>
@@ -1988,8 +2002,8 @@ let owned = fmt.format(f"count=#{count}")  ## -> string.String (call .release())
       <tr><th>Specifier</th><th>Example</th><th>Applies To</th></tr>
       <tr><td><code>:.N</code></td><td><code>f"pi=#{3.14159:.2}"</code> → <code>"pi=3.14"</code></td><td><code>float</code>, <code>double</code></td></tr>
       <tr><td><code>:x</code> / <code>:X</code></td><td><code>f"addr=#{255:x}"</code> → <code>"addr=ff"</code></td><td>Integers, enums, flags</td></tr>
-      <tr><td><code>:o</code> / <code>:O</code></td><td><code>f"perm=#{8:o}"</code> → <code>"perm=10"</code></td><td>Integers</td></tr>
-      <tr><td><code>:b</code> / <code>:B</code></td><td><code>f"mask=#{5:b}"</code> → <code>"mask=101"</code></td><td>Integers</td></tr>
+      <tr><td><code>:o</code> / <code>:O</code></td><td><code>f"perm=#{8:o}"</code> → <code>"perm=10"</code></td><td>Integers, enums, flags</td></tr>
+      <tr><td><code>:b</code> / <code>:B</code></td><td><code>f"mask=#{5:b}"</code> → <code>"mask=101"</code></td><td>Integers, enums, flags</td></tr>
     </table>
   </div>
 
@@ -2065,7 +2079,7 @@ MSG</code></pre>
     <table class="attr-table">
       <tr><th>Rule</th><th>Description</th></tr>
       <tr><td>Conditions must be <code>bool</code></td><td>No truthy/falsy coercion from integers or pointers</td></tr>
-      <tr><td>Explicit casts for mixed signed/unsigned</td><td>Mixed signed/unsigned arithmetic requires <code>T&lt;-value</code></td></tr>
+      <tr><td>Mixed signed/unsigned arithmetic promotes</td><td>Mixed signed/unsigned arithmetic promotes to the narrowest signed type holding both ranges; mixing with a 64-bit unsigned type (<code>ulong</code>, <code>ptr_uint</code>) requires <code>T&lt;-value</code></td></tr>
       <tr><td>Enum/flags don't auto-coerce</td><td>Outside external-call boundaries, no implicit conversion to backing integers</td></tr>
       <tr><td>Safe indexing is bounds-checked</td><td><code>arr[i]</code> and <code>a[start..stop]</code> call <code>fatal</code> on OOB; string slices additionally require UTF-8 boundaries; use <code>get(arr, i)</code> for recoverable single-element access</td></tr>
       <tr><td>Pointer indexing requires <code>unsafe</code></td><td>Raw pointer dereference, arithmetic, casts, <code>reinterpret</code> all need <code>unsafe</code></td></tr>
@@ -2393,7 +2407,7 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
   <div class="table-wrap">
     <table class="attr-table">
       <tr><th>Command</th><th>Description</th></tr>
-      <tr><td><code>mtc bindgen &lt;header.h&gt;</code></td><td>Generate an external binding module from a C header</td></tr>
+      <tr><td><code>mtc bindgen &lt;module&gt; &lt;header.h&gt;</code></td><td>Generate an external binding module from a C header</td></tr>
       <tr><td><code>mtc snapshot &lt;path&gt;</code></td><td>Render a highlighted HTML snapshot of a source file</td></tr>
       <tr><td><code>mtc lsp</code></td><td>Start the Language Server Protocol server (editor IntelliSense)</td></tr>
       <tr><td><code>mtc dap</code></td><td>Start the Debug Adapter Protocol server (debugging)</td></tr>
@@ -2401,7 +2415,7 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
   </div>
 
   <h3>Build Flags</h3>
-  <p>Build and run commands support: <code>--profile</code>, <code>--platform</code>, <code>--cc</code>, <code>--keep-c</code>, <code>--locked</code>, <code>--frozen</code>, and <code>-I</code> include paths.</p>
+  <p>Build and run commands support: <code>-o</code>/<code>--output</code>, <code>--profile</code>, <code>--platform</code>, <code>--cc</code>, <code>--keep-c C_PATH</code>, <code>--no-cache</code>, <code>--locked</code>, <code>--frozen</code>, and <code>-I</code> include paths.</p>
 
   <h3>Global Options</h3>
   <p>These work with any command (before or after the subcommand, up to a <code>--</code> separator):</p>
@@ -2474,6 +2488,8 @@ ignore:
       <tr><td><code>platform-api-drift</code></td><td>warning</td><td>&mdash;</td><td>Public API differs across platform-specific variants of the same module</td></tr>
       <tr><td><code>prefer-let</code></td><td>hint</td><td>yes</td><td><code>var</code> binding is never mutated; use <code>let</code></td></tr>
       <tr><td><code>prefer-let-else</code></td><td>hint</td><td>yes</td><td>Nullable guard can be rewritten as <code>let ... else:</code></td></tr>
+      <tr><td><code>prefer-conditional-expression</code></td><td>hint</td><td>&mdash;</td><td>Every <code>if</code>/<code>match</code> branch returns a value or assigns the same variable; rewrite as an expression</td></tr>
+      <tr><td><code>prefer-inline-if</code></td><td>hint</td><td>&mdash;</td><td>Block-form <code>if</code>/<code>else</code> with single-statement branches can be written inline</td></tr>
       <tr><td><code>prefer-inline-methods</code></td><td>hint</td><td>yes</td><td>Methods on a struct can be written inline inside the struct declaration</td></tr>
       <tr><td><code>prefer-is-variant</code></td><td>hint</td><td>&mdash;</td><td>A match that maps one variant arm to a boolean can be <code>expr is Arm</code></td></tr>
       <tr><td><code>prefer-own-ptr</code></td><td>hint</td><td>&mdash;</td><td>Pointer binding used only inside <code>unsafe</code> could be <code>own[T]</code> for auto-deref</td></tr>
@@ -2544,14 +2560,14 @@ ignore:
   <h3>Expression Restrictions</h3>
   <ul style="margin-left:1.25rem;margin-bottom:1rem">
     <li>Conditions must be <code>bool</code>; no truthy/falsy coercion</li>
-    <li>Mixed signed/unsigned arithmetic requires explicit cast; non-widening integer conversions (narrowing, signed → unsigned) need explicit <code>T&lt;-value</code></li>
+    <li>Mixed signed/unsigned arithmetic promotes to the narrowest signed type holding both ranges; mixing with 64-bit unsigned types (<code>ulong</code>, <code>ptr_uint</code>) and non-widening integer conversions (narrowing, signed → unsigned) need explicit <code>T&lt;-value</code> except exact compile-time constants that fit the target</li>
     <li>Enum and flags values do not implicitly coerce to backing integers</li>
     <li><code>+</code> concatenates <code>str</code>; <code>cstr</code> and mixed <code>str</code>/<code>cstr</code> are not concatenable</li>
     <li><code>==</code>/<code>!=</code> on structs and variants requires all fields equality-comparable; use <code>equal[T]</code> for non-comparable types</li>
     <li>Range expressions are restricted to <code>for</code>-loop iterables, range-index reads (<code>a[start..stop]</code>), and range-index assignment targets</li>
     <li><code>str</code> views are immutable borrowed text; index and range-index results cannot be assigned through</li>
     <li>A statement cannot begin with a binary operator (including <code>+</code>, <code>-</code>, <code>and</code>, <code>or</code>, <code>is</code>, <code>..</code>); continuation requires ending the previous line with the operator or wrapping in <code>()</code></li>
-    <li>Bare function and method names are not usable as values (cannot be assigned or passed without calling). Use <code>fn(...)</code> function pointer types or <code>proc(...)</code> closures for callable values.</li>
+    <li>A free function name is usable as a callable value only where an expected <code>fn(...)</code> or <code>proc(...)</code> type supplies the coercion (annotated local, argument, return, or field initializer); an unannotated <code>let f = some_function</code> is rejected. Method names and unspecialized generic functions must be called. No-payload variant arms are values; payload arms are constructors and must be called.</li>
   </ul>
 
   <h3>Event Restrictions</h3>

@@ -348,3 +348,25 @@ function test_vec_sort_and_binary_search() -> void:
     words.sort_by(by_text)
     expect_eq(words.at(0), Option[str].some(value = "ast"))
     expect_eq(words.at(2), Option[str].some(value = "parser"))
+
+
+@[test]
+function test_vec_reserve_exact_allocates_exactly() -> void:
+    var exact = vec.Vec[int].with_capacity_exact(1)
+    defer: exact.release()
+    expect(exact.capacity() == 1z, "exact reserve uses the requested capacity")
+    exact.push(41)
+    expect(exact.capacity() == 1z, "push within the reservation does not grow")
+    exact.push(42)
+    expect(exact.capacity() >= 2z, "overflow past an exact reservation grows")
+
+    var grown = vec.Vec[int].create()
+    defer: grown.release()
+    grown.reserve_exact(5)
+    expect(grown.capacity() == 5z, "reserve_exact reaches the requested capacity")
+    grown.push(1)
+    expect(grown.capacity() == 5z, "reserve_exact does not grow on push")
+
+    var floating = vec.Vec[int].with_capacity_exact(3)
+    defer: floating.release()
+    expect(floating.capacity() == 3z, "exact capacity is not rounded to a power of two")

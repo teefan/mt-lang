@@ -71,6 +71,10 @@ public function run_on(runtime: Runtime, task: Task[void]) -> void:
     backend.run_on(runtime, task)
 
 
+public function run_on_proc(runtime: Runtime, root: proc() -> Task[void]) -> void:
+    backend.run_on_proc(runtime, root)
+
+
 public function wait[T](root: proc() -> Task[T]) -> T:
     return backend.wait[T](root)
 

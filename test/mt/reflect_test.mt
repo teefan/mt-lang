@@ -89,3 +89,80 @@ function test_format_value_nested() -> void:
     fmt.format_value[Wrapper](ref_of(s), const_ptr_of(w))
     expect_eq(s.as_str(), "{ tag = 2, pair = { id = 3, name = tea } }")
     s.release()
+
+
+# ── inline for over members_of / attributes_of ───────────────────────────────
+
+enum Palette: ubyte
+    red = 1
+    green = 2
+    blue = 7
+
+
+attribute[field] rename(name: str)
+
+
+@[packed]
+struct Labeled:
+    @[rename("my_field")]
+    value: int
+
+
+@[test]
+function test_members_of_enumerates_names() -> void:
+    var collected = string.String.create()
+    var count: int = 0
+    inline for member in members_of(Palette):
+        collected.append(member.name)
+        collected.append(",")
+        count += 1
+    expect_eq(count, 3)
+    expect_eq(collected.as_str(), "red,green,blue,")
+    collected.release()
+
+
+@[test]
+function test_members_of_exposes_values() -> void:
+    var total: int = 0
+    inline for member in members_of(Palette):
+        total += member.value
+    expect_eq(total, 10)
+
+
+@[test]
+function test_members_of_name_selection_chain() -> void:
+    var total: int = 0
+    inline for member in members_of(Palette):
+        if member.name == "red":
+            total += 1
+        else if member.name == "green":
+            total += 10
+        else:
+            total += 100
+    expect_eq(total, 111)
+
+
+@[test]
+function test_attributes_of_counts_declaration_attributes() -> void:
+    var all: int = 0
+    inline for attr in attributes_of(Labeled):
+        all += 1
+    expect_eq(all, 1)
+
+    var packed_attrs: int = 0
+    inline for attr in attributes_of(Labeled, packed):
+        packed_attrs += 1
+    expect_eq(packed_attrs, 1)
+
+
+@[test]
+function test_attributes_of_field() -> void:
+    var count: int = 0
+    inline for attr in attributes_of(field_of(Labeled, value)):
+        count += 1
+    expect_eq(count, 1)
+
+    var renamed: int = 0
+    inline for attr in attributes_of(field_of(Labeled, value), rename):
+        renamed += 1
+    expect_eq(renamed, 1)

@@ -1,6 +1,11 @@
 import std.bytes as bytes
+import std.fs as fs
 import std.mem.heap as heap
+import std.path as path_ops
 import std.stdio as stdio
+import std.str as str
+import std.string as string
+import std.vec as vec
 
 const MAGIC_M: ubyte = 77
 const MAGIC_T: ubyte = 84
@@ -9,6 +14,8 @@ const MAGIC_P: ubyte = 80
 const VERSION: uint = 1
 const HEADER_FLAGS: uint = 0
 const ENTRY_FLAGS_RAW: uint = 0
+## The host's `AssetPack::HEADER_FORMAT` ("a4vvVQ<Q<"): magic, version u16,
+## flags u16, entry count u32, index size u64, data offset u64.
 const HEADER_SIZE_BYTES: ptr_uint = 28
 const ENTRY_PREFIX_SIZE_BYTES: ptr_uint = 32
 
@@ -27,6 +34,9 @@ public enum Error: int
 public struct Reader:
     file: stdio.File?
     entry_count: uint
+    ## Set by `close`; the closed file handle itself stays in `file` (a
+    ## nullable opaque field cannot be reset to none by the C backend).
+    closed: bool
 
 struct EntryMetadata:
     path_length: ptr_uint
@@ -83,20 +93,24 @@ public function open(path: str) -> Result[Reader, Error]:
         stdio.file_close(file)
         return Result[Reader, Error].failure(error= Error.malformed_header)
 
-    return Result[Reader, Error].success(value= Reader(file = file, entry_count = entry_count))
+    return Result[Reader, Error].success(value= Reader(file = file, entry_count = entry_count, closed = false))
 
 
 extending Reader:
     public editable function close() -> void:
-        if this.file != null:
-            stdio.file_close(this.file)
-
-        this.file = null
+        if this.closed:
+            return
+        let file = this.file else:
+            this.closed = true
+            this.entry_count = 0
+            return
+        stdio.file_close(file)
+        this.closed = true
         this.entry_count = 0
 
 
     public function read_bytes(logical_path: str) -> Result[bytes.Bytes, Error]:
-        if this.file == null:
+        if this.closed or this.file == null:
             return Result[bytes.Bytes, Error].failure(error= Error.closed)
 
         if stdio.file_seek(this.file, HEADER_SIZE_BYTES, stdio.SEEK_SET) != 0:
@@ -265,3 +279,274 @@ function decode_ulong_le(bytes: ptr[ubyte]) -> Result[ptr_uint, Error]:
         index += 1
 
     return Result[ptr_uint, Error].success(value= value)
+
+
+# =============================================================================
+#  Writer — the host's `AssetPack.write` (lib/milk_tea/tooling/asset_pack.rb)
+# =============================================================================
+
+## One source file staged into the pack, with its logical path.
+struct PackSourceEntry:
+    source_path: string.String
+    logical_path: string.String
+    stored_size: ptr_uint
+
+
+function pack_entry_compare(left: ptr[PackSourceEntry], right: ptr[PackSourceEntry]) -> int:
+    return unsafe: read(left).logical_path.as_str().compare(unsafe: read(right).logical_path.as_str())
+
+
+## Write an MTAP pack at `output_path` containing the given files/directories
+## (absolute paths).  Entries use the source basename as their logical root and
+## are sorted by logical path; the format is byte-compatible with the host's
+## AssetPack writer.
+public function write(output_path: str, source_paths: span[string.String]) -> Result[bool, string.String]:
+    var i: ptr_uint = 0
+    while i < source_paths.len:
+        let source_ptr = unsafe: read(source_paths.data + i).as_str()
+        if fs.is_directory(source_ptr):
+            if path_within(output_path, source_ptr):
+                var message = string.String.from_str("asset pack output would be written inside source tree: ")
+                message.append(output_path)
+                return Result[bool, string.String].failure(error = message)
+        else if output_path.equal(source_ptr):
+            var message = string.String.from_str("asset pack output would overwrite source file: ")
+            message.append(output_path)
+            return Result[bool, string.String].failure(error = message)
+        i += 1
+
+    var entries = vec.Vec[PackSourceEntry].create()
+    defer: release_pack_entries(ref_of(entries))
+    i = 0
+    while i < source_paths.len:
+        let source = unsafe: read(source_paths.data + i).as_str()
+        let logical = path_ops.basename(source)
+        if not collect_pack_entries(source, logical, ref_of(entries)):
+            return Result[bool, string.String].failure(
+                error = string.String.from_str("asset pack source not found: ")
+            )
+        i += 1
+    entries.sort_by(pack_entry_compare)
+
+    var index_size: ptr_uint = 0
+    var ei: ptr_uint = 0
+    while ei < entries.len():
+        let entry_ptr = entries.get(ei) else:
+            break
+        index_size += ENTRY_PREFIX_SIZE_BYTES + unsafe: read(entry_ptr).logical_path.len()
+        ei += 1
+    let data_offset = HEADER_SIZE_BYTES + index_size
+
+    let parent = path_ops.dirname(output_path)
+    match fs.create_directories(parent):
+        Result.failure as dir_failure:
+            var dir_error = dir_failure.error
+            let message = string.String.from_str(dir_error.message.as_str())
+            dir_error.release()
+            return Result[bool, string.String].failure(error = message)
+        Result.success:
+            pass
+
+    var temp_owner: string.String
+    match fs.create_temporary_file(parent, "milk-tea-asset-pack", ".bin"):
+        Result.failure as temp_failure:
+            var temp_error = temp_failure.error
+            let message = string.String.from_str(temp_error.message.as_str())
+            temp_error.release()
+            return Result[bool, string.String].failure(error = message)
+        Result.success as temp_payload:
+            temp_owner = temp_payload.value
+    defer: temp_owner.release()
+
+    let file = stdio.file_open(temp_owner.as_str(), "wb") else:
+        return Result[bool, string.String].failure(error = string.String.from_str("asset pack open failed"))
+
+    var header = vec.Vec[ubyte].create()
+    defer: header.release()
+    header.push(77)
+    header.push(84)
+    header.push(65)
+    header.push(80)
+    push_u16_le(ref_of(header), 1)
+    push_u16_le(ref_of(header), HEADER_FLAGS)
+    push_u32_le(ref_of(header), uint<-entries.len())
+    push_u64_le(ref_of(header), ptr_uint<-index_size)
+    push_u64_le(ref_of(header), ptr_uint<-data_offset)
+
+    var next_offset = data_offset
+    ei = 0
+    while ei < entries.len():
+        let entry_ptr = entries.get(ei) else:
+            break
+        let entry = unsafe: read(entry_ptr)
+        push_u32_le(ref_of(header), uint<-entry.logical_path.len())
+        push_u32_le(ref_of(header), ENTRY_FLAGS_RAW)
+        push_u64_le(ref_of(header), ptr_uint<-next_offset)
+        push_u64_le(ref_of(header), ptr_uint<-entry.stored_size)
+        push_u64_le(ref_of(header), ptr_uint<-entry.stored_size)
+        let logical = entry.logical_path.as_str()
+        header.append_span(unsafe: span[ubyte](data = ptr[ubyte]<-logical.data, len = logical.len))
+        next_offset += entry.stored_size
+        ei += 1
+
+    let header_span = header.as_span()
+    if header_span.len > 0:
+        if stdio.file_write_bytes(unsafe: ptr[void]<-header_span.data, 1, header_span.len, file) != header_span.len:
+            stdio.file_close(file)
+            return Result[bool, string.String].failure(error = string.String.from_str("asset pack write failed"))
+
+    ei = 0
+    while ei < entries.len():
+        let entry_ptr = entries.get(ei) else:
+            break
+        let entry = unsafe: read(entry_ptr)
+        let source_file = stdio.file_open(entry.source_path.as_str(), "rb") else:
+            stdio.file_close(file)
+            return Result[bool, string.String].failure(error = string.String.from_str("asset pack source not found: "))
+        var buffer = zero[array[ubyte, 8192]]
+        let buffer_ptr = ptr_of(buffer[0])
+        var copy_ok = true
+        while true:
+            let read_count = stdio.file_read_bytes(unsafe: ptr[void]<-buffer_ptr, 1, 8192, source_file)
+            if read_count == 0:
+                break
+            if stdio.file_write_bytes(unsafe: ptr[void]<-buffer_ptr, 1, read_count, file) != read_count:
+                copy_ok = false
+                break
+        stdio.file_close(source_file)
+        if not copy_ok:
+            stdio.file_close(file)
+            return Result[bool, string.String].failure(error = string.String.from_str("asset pack write failed"))
+        ei += 1
+
+    stdio.file_flush(file)
+    stdio.file_close(file)
+
+    if fs.exists(output_path):
+        match fs.remove(output_path):
+            Result.failure:
+                return Result[bool, string.String].failure(error = string.String.from_str("asset pack output could not be replaced"))
+            Result.success:
+                pass
+    match fs.rename(temp_owner.as_str(), output_path):
+        Result.failure as rename_failure:
+            var rename_error = rename_failure.error
+            let message = string.String.from_str(rename_error.message.as_str())
+            rename_error.release()
+            return Result[bool, string.String].failure(error = message)
+        Result.success:
+            pass
+    return Result[bool, string.String].success(value = true)
+
+
+function collect_pack_entries(source_path: str, logical_path: str, entries: ref[vec.Vec[PackSourceEntry]]) -> bool:
+    match fs.metadata(source_path):
+        Result.failure:
+            return false
+        Result.success as meta_payload:
+            let metadata = meta_payload.value
+            if metadata.is_directory():
+                var names = vec.Vec[string.String].create()
+                defer: release_pack_names(ref_of(names))
+                match fs.list_entries(source_path):
+                    Result.failure:
+                        return false
+                    Result.success as entries_payload:
+                        var listed = entries_payload.value
+                        defer: listed.release()
+                        var list_index: ptr_uint = 0
+                        while list_index < listed.len():
+                            let name = listed.get(list_index) else:
+                                break
+                            names.push(string.String.from_str(name))
+                            list_index += 1
+                var views = vec.Vec[str].create()
+                defer: views.release()
+                var i: ptr_uint = 0
+                while i < names.len():
+                    let name_ptr = names.get(i) else:
+                        break
+                    views.push(unsafe: read(name_ptr).as_str())
+                    i += 1
+                views.sort_by(str_view_compare)
+                i = 0
+                while i < views.len():
+                    let child_ptr = views.get(i) else:
+                        break
+                    let child = unsafe: read(child_ptr)
+                    var child_source = path_ops.join(source_path, child)
+                    var child_logical = string.String.from_str(logical_path)
+                    child_logical.push_byte('/')
+                    child_logical.append(child)
+                    let ok = collect_pack_entries(child_source.as_str(), child_logical.as_str(), entries)
+                    child_source.release()
+                    child_logical.release()
+                    if not ok:
+                        return false
+                    i += 1
+                return true
+            if metadata.is_file():
+                entries.push(PackSourceEntry(
+                    source_path = string.String.from_str(source_path),
+                    logical_path = string.String.from_str(logical_path),
+                    stored_size = metadata.size,
+                ))
+                return true
+            return false
+
+
+function str_view_compare(left: ptr[str], right: ptr[str]) -> int:
+    return unsafe: read(left).compare(unsafe: read(right))
+
+
+function release_pack_names(names: ref[vec.Vec[string.String]]) -> void:
+    var i: ptr_uint = 0
+    while i < names.len():
+        let name = names.get(i) else:
+            break
+        unsafe:
+            read(name).release()
+        i += 1
+    names.release()
+
+
+function release_pack_entries(entries: ref[vec.Vec[PackSourceEntry]]) -> void:
+    var i: ptr_uint = 0
+    while i < entries.len():
+        let entry = entries.get(i) else:
+            break
+        unsafe:
+            var value = read(entry)
+            value.source_path.release()
+            value.logical_path.release()
+        i += 1
+    entries.release()
+
+
+function path_within(path: str, root: str) -> bool:
+    if path.equal(root):
+        return true
+    if path.len <= root.len:
+        return false
+    if not path.slice(0, root.len).equal(root):
+        return false
+    return path.byte_at(root.len) == '/'
+
+
+function push_u16_le(target: ref[vec.Vec[ubyte]], value: uint) -> void:
+    target.push(ubyte<-(value & 255))
+    target.push(ubyte<-((value >> 8) & 255))
+
+
+function push_u32_le(target: ref[vec.Vec[ubyte]], value: uint) -> void:
+    var index: ptr_uint = 0
+    while index < 4:
+        target.push(ubyte<-((value >> (index * 8)) & 255))
+        index += 1
+
+
+function push_u64_le(target: ref[vec.Vec[ubyte]], value: ptr_uint) -> void:
+    var index: ptr_uint = 0
+    while index < 8:
+        target.push(ubyte<-((value >> (index * 8)) & 255))
+        index += 1

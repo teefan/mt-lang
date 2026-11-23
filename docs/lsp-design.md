@@ -1,0 +1,616 @@
+# Self-Host LSP Architecture
+
+Status: **native server implemented — 30 capabilities.**  Host-differential
+measurement ended with the host retirement (session 143); this document's
+`lsp_parity`/`lsp_project_audit`/`lsp_recovery_probe` comparisons are historical,
+and the archived host is at tag `archive/host-ruby-0.4.26`.  The surviving
+instruments are `tools/lsp_parity.rb record --server self`, `tools/lsp_soak.rb`
+and the valgrind gate; `tools/lsp_conformance.rb` is the spec oracle.
+Last updated: 2026-11-23; feature behavior last changed in session 148, and
+session 154 changed only cache ownership (per-document caches evicted on close,
+map keys released by every bulk cache release).
+44 modules, ~33.6k lines, 30 capability keys.  The 3.18 conformance audit and
+phase plan are in `docs/lsp-enhancement-plan.md`; use that as the work list.
+
+> **Historical note:** parity was measured by the self-vs-host harness, not by capability
+> advertisement.**  `tools/lsp_parity.rb` (`record --server host|self`,
+> `compare`, `--stress`) drives an out-of-process corpus of 72 requests — every
+> endpoint plus the `codeLens`/`completionItem`/`documentLink` resolve calls a
+> real editor makes — and 27 adversarial probes, and diffs normalized responses.
+> As of 2026-10-04 (session 33) it reports 30/30 capability keys identical and
+> **5 differing entries** with `--stress` (2 request-level — `milkTea/debugInfo`'s
+> Facts/Bindings remainder and the directory-form module `typeDefinition` — and
+> 3 stress probes), all deliberate and documented (the host hanging on a
+> malformed frame, the host's facts lag, the host's parser recovery, and the
+> self answering where the host gives up) — every differing entry is catalogued
+> by family in the pre-compaction plan record (`git show
+> d8a199c7:docs/self-host-plan.md`, §0k); the per-feature claims below are
+> self-host-side results that the harness now confirms or contradicts entry by
+> entry.  **§0 references throughout this document point into that archived
+> record**, not the current plan; the live status is the current plan's Status
+> at a glance, Handoff and Ledger.
+> **LSP changes must be verified against a real client too**: the 2026-09-26 VS
+> Code startup crash lived only in `codeLens/resolve`, which the corpus did not
+> send.  Run the extension host headlessly with the server under valgrind
+> (`xvfb-run code --extensionDevelopmentPath=bindings/vscode …`) for
+> user-visible changes.
+> The Ruby-server test path went with the host retirement (session 143); LSP
+> coverage is the in-language tests under `projects/mtc/test` plus
+> `tools/lsp_conformance.rb`, which drives the native server directly.
+Hover coverage: measured by the project audit — 1 differing entry of 915 hover
+requests on the SimpleGame corpus (the documented asynchronous `type quat`
+location; the `fn `-typed field closed with the function-type names;
+`self-host-plan.md` §0k).  Session 17 measured the `type quat` entry in both
+states: *in the audit* the host answers the type line plus `Defined at:
+[…/std/linear_algebra.mt:237](…#L237)` (three separate runs), while *in a cold
+probe* — the same workspace opened, no audit history — the **host answers
+`null`** for that position and the self answers the type line.  The self's
+`apply_hover_index_location` already runs on the builtin-type arm, so the gap is
+the definition index's coverage of the `extending quat:` declaration in a std
+module that was never opened; `docs/self-host-plan.md` §0k's session-17 record
+carries the plan.  Session 18 measured the obvious coverage fix — registering
+every loaded dependency file with the index when a document's analysis is built
+(`workspace.mt`'s `analysis_cache` path, `warm_definition_document`) — and it is
+**wrong**: the host's index grows *asynchronously* through its hover-driven warm,
+so eagerly indexing the loader's modules answers locations the host does not
+have yet and adds **153 entries** (declaration/definition 58 each, references 23,
+hover 12, typeDefinition 2, workspace/symbol 1; `tmp/audit-s18-d.json`).  Reverted;
+the entry stays documented until the snapshot/async-index machinery is modelled.
+Document highlight: 915 requests, 1 differing entry (session 17) —
+`docs/language_baseline.mt@704:67`, a cursor on a *named-argument label*.
+Warm, the host resolves the name through its completion snapshots
+(`rename_target_binding_id`'s `resolve_local_hover_binding` fallback) to a
+binding with exactly one identifier occurrence and answers one range
+(`598:15-20`); cold — the same probe with the workspace open — the *host*
+answers the six same-lexeme ranges, **byte-identical to the self's answer** (its
+`unbound_occurrence` filter applies only once a local binding is resolved for
+the cursor, which a named-argument label never is).  Reproducing the warm
+answer would mean modelling the
+host's snapshot carry-forward across frames; the self's bindings are name-keyed
+and cannot express it.  Kept documented (deliberate difference) with both
+measurements.
+References: cross-file via workspace index.
+Definition: local variables supported.
+Signature help: methods and extending-block methods resolved.
+Diagnostic positions: lexer-based token matching, buffer-overflow fix.
+LSP logging: structured stderr with version+revision announcement.
+Snapshot semantic tokens: byte-identical to Ruby on `docs/language_baseline.mt` (session 16: the callable-value record plus the nested-type and callable-field rules closed the last five positions); the audit's `semanticTokens` class is 0.
+Formatting: `textDocument/formatting` + `rangeFormatting` byte-equal (mode from
+the client configuration, `tidy` by default; `rangeFormatting` formats the
+requested segment), backed by `formatter/cst.mt` + `formatter/tidy.mt`.
+
+## 0. Design Principles
+
+The self-host LSP follows these constraints drawn from the existing compiler
+architecture (§self-host-plan) and bootstrap design (§bootstrap-design):
+
+1. **Single-binary delivery.** The LSP is a subcommand (`mtc lsp`), not a
+   separate executable. It lives in `projects/mtc/` and bootstraps through the
+   existing 3-stage pipeline. No duplicate vendored-library builds, no separate
+   release artifacts.
+
+2. **Single-threaded message loop.** The compiler's existing analysis pipeline
+   (lex → parse → check → lint) is single-threaded. The LSP follows the same
+   pattern: one synchronous `read → dispatch → respond` loop. The Ruby LSP's
+   multi-threaded diagnostics workers (§server/diagnostics_scheduling.rb) are
+   an optimization, not a requirement — Milk Tea's full pipeline (including
+   module loading) is fast enough for interactive use, so background workers
+   provide no benefit for tier 1.
+
+3. **Separate-module architecture.** Following the linter's successful pattern
+   (`linter/cfg.mt`, `linter/own_ptr.mt`, `linter/redundant_cast.mt`), each
+   LSP feature lives in its own module under `lsp/`. Thin wrappers in a
+   `lsp/server.mt` dispatch messages. This avoids the large-file codegen issue
+   discovered during linter integration (§self-host-plan §0.5).
+
+4. **Tiered delivery.** Features are delivered in three independently-usable
+   tiers (see §3). Each tier bootstraps separately — tier 1 must compile and
+   run under the held fixed point before tier 2 code is written.
+
+5. **Explicit memory management.** Uses the compiler's existing pattern:
+   `vec.Vec` + `map_mod.Map` with `defer release()`. No GC pressure, no
+   hidden allocations. Workspace state (document content, diagnostics, caches)
+   is owned by a `Workspace` struct that implements `release()`.  Parse and
+   analysis allocations are owned in bulk: a loader module-cache entry and a
+   parse-cache entry each hold growable `heap.Region`s for their AST/analysis
+   internals — `heap.begin_region` routes every allocation the parse/analysis
+   call makes into the region, so a superseded entry frees its whole graph in
+   one `Region.release_all()` instead of following the "one file per run and
+   exits" leak convention.  Superseded regions are **not** freed at
+   replacement: they move to a quarantine list (`ModuleCache.retired_regions`,
+   `Workspace.retired_regions`) and are drained at the request boundary in the
+   server loop, because a request can still hold borrowed views into a region
+   it replaced mid-request.  Containers that outlive a region scope (the
+   workspace symbol index, the workspace's own maps) must never be mutated
+   while a region is active — their storage would become region-owned.
+
+6. **Source-only stdlib.** All stages load the same `std/` tree
+   (§bootstrap-design §4.2). The LSP requires no new stdlib modules beyond
+   what has been verified working: `std.json`, `std.stdio`, `std.fs`, `std.path`,
+   `std.string`, `std.str`.
+
+---
+
+## 1. Entry Point — `mtc lsp`
+
+```
+mtc lsp [--stdio]
+```
+
+The `lsp` subcommand starts a JSON-RPC 2.0 server over stdio. It reads
+LSP messages from stdin, dispatches to registered handlers, and writes
+responses to stdout. Stderr is reserved for logging.
+
+The command is added to the CLI dispatch in `main.mt` alongside the existing
+`lint`, `check`, and `build` commands:
+
+```mt
+if cmd == "lsp":
+    return lsp.run(args)
+```
+
+This follows the existing command pattern exactly — no special bootstrap
+requirements.
+
+---
+
+## 2. Module Structure
+
+```
+projects/mtc/src/mtc/
+  linter/           ← existing
+  loader/           ← existing
+  semantic/         ← existing
+  parser/           ← existing
+
+  lsp/              ← (42 modules, ~29.3k lines)
+    protocol.mt     ← JSON-RPC transport (Content-Length framing, outgoing requests)
+    server.mt       ← message loop, if/else handler dispatch, response routing
+    workspace.mt    ← document state, module roots, lazy symbol-index, diagnostic/semantic
+                       token caches, cancel tracking, config request tracking
+    diagnostics.mt  ← error → LSP diagnostic conversion (push + pull)
+    lifecycle.mt    ← initialize (30 capabilities), shutdown, configure
+    text_docs.mt    ← didOpen, didChange, didClose, didSave
+    uri.mt          ← file:// URI percent-decode
+    cursor.mt       ← shared token-at-position resolution (Phase 0)
+    utils.mt        ← shared text-scanning primitives
+    highlight.mt    ← documentHighlight (Phase 2)
+    folding.mt      ← foldingRange: indent blocks, imports, comments (Phase 2)
+    selection.mt    ← selectionRange: word/line/statement/block (Phase 2)
+    workspace_symbols.mt ← workspace/symbol via persistent index (Phase 2)
+    workspace_index.mt   ← persistent multi-file symbol index
+    inlay_hints.mt  ← parameter-name hints at call sites, alias calls (Phase 3)
+    on_type_formatting.mt ← newline indent assist (Phase 3)
+
+    # Tier 2
+    navigation.mt   ← definition family, hover, scope-aware references
+    formatting.mt   ← format document + range formatting
+    symbols.mt      ← document symbols
+
+    # Tier 3
+    completion.mt   ← keywords + module symbols + alias members + resolve
+    semantic_tokens.mt ← one scanner for full/range/delta: lexer stream +
+                       ScanFacts (file declarations + resolved-import surfaces,
+                       unresolved aliases stay unbound) + the host's
+                       classify_name_semantic order; ~1.7k lines
+    code_actions.mt ← quickfixes via linter fix engine
+    signature_help.mt ← parameter hints
+    rename.mt       ← scope-aware rename + prepareRename
+    scope.mt        ← AST-scope binding tracker for rename/references
+
+    # 24-gap closure session (2026-07-19)
+    execute_command.mt    ← workspace/executeCommand
+    document_context.mt   ← milkTea/documentContext
+    debug_info.mt         ← milkTea/debugInfo
+    document_link.mt      ← textDocument/documentLink + resolve
+    linked_editing_range.mt ← textDocument/linkedEditingRange
+    code_lens.mt          ← textDocument/codeLens + resolve
+    type_hierarchy.mt     ← prepareTypeHierarchy, supertypes, subtypes
+    call_hierarchy.mt     ← prepareCallHierarchy, incomingCalls, outgoingCalls
+    pull_diagnostics.mt   ← textDocument/diagnostic + workspace/diagnostic
+    workspace_notifications.mt ← didChangeConfiguration, didChangeWorkspaceFolders,
+                                  willRenameFiles, didChangeWatchedFiles
+```
+
+### 2.1 Why separate modules?
+
+The linter experience proved that inlining 300+ lines of new code into
+the 3760-line `linter.mt` caused C runtime crashes. The separate-module
+pattern (`linter/own_ptr.mt` at 115 lines, `linter/redundant_cast.mt` at
+110 lines) worked perfectly. The LSP should follow the same pattern from
+the start, with no single file exceeding ~600 lines.
+
+### 2.2 Module dependencies
+
+```
+  main.mt
+    ├── lsp/server.mt
+    │   ├── lsp/protocol.mt     (stdio + JSON)
+    │   ├── lsp/workspace.mt    (document state)
+    │   ├── lsp/diagnostics.mt  (error conversion)
+    │   ├── lsp/lifecycle.mt    (init/shutdown)
+    │   ├── lsp/text_docs.mt    (document sync)
+    │   └── (tier-2/3 modules as added)
+    ├── loader/                 (existing — module resolution)
+    ├── semantic/analyzer.mt    (existing — type checking)
+    ├── parser/                 (existing — parsing)
+    └── linter/                 (existing — lint rules)
+```
+
+No circular imports. Each LSP module depends only on the compiler's
+existing public APIs and `std.*` libraries.
+
+---
+
+## 3. Tiered Delivery Plan
+
+### 3.1 Tier 1 — Diagnostics + Document Sync (~500 lines)
+
+Enough for real-time error feedback in any LSP-capable editor.
+
+| Feature | Module | Lines | What it does |
+|---------|--------|-------|--------------|
+| JSON-RPC transport | `protocol.mt` | ~120 | Content-Length framing, JSON parse/render, method dispatch |
+| Server loop | `server.mt` | ~120 | `read → dispatch → respond` loop, handler registration |
+| Lifecycle | `lifecycle.mt` | ~50 | `initialize` (returns capabilities), `shutdown`, `exit` |
+| Document sync | `text_docs.mt` | ~60 | `didOpen`/`didChange`/`didClose` → update workspace |
+| Diagnostics | `diagnostics.mt` | ~80 | Lex → Parse → Check → Lint → publishDiagnostics |
+| Workspace | `workspace.mt` | ~70 | URI ↔ path, document content storage, module root discovery |
+| **Total** | | **~500** | |
+
+The compiler already has `check_program()` which produces diagnostics
+(module errors, parse errors, semantic errors, lint warnings). The
+diagnostics module just converts these to LSP `Diagnostic` JSON.
+
+### 3.2 Tier 2 — Navigation (~700 lines)
+
+Go-to-definition, hover, references, formatting, document symbols.
+
+| Feature | Lines |
+|---------|-------|
+| `definition.mt` | ~150 |
+| `hover.mt` | ~150 |
+| `references.mt` | ~120 |
+| `formatting.mt` | ~80 |
+| `symbols.mt` | ~100 |
+| **Total (tier 1+2)** | **~1200** |
+
+The compiler's module loader and semantic analyzer already resolve types,
+fields, methods, and imports. The navigation modules query these existing
+structures — no new analysis infrastructure is needed.
+
+### 3.3 Tier 3 — Rich Features (~1200 lines)
+
+Completions, semantic tokens, code actions, signature help, rename.
+
+| Feature | Lines |
+|---------|-------|
+| `completion.mt` | ~350 |
+| `semantic_tokens.mt` | ~300 |
+| `code_actions.mt` | ~200 |
+| `signature_help.mt` | ~150 |
+| `rename.mt` | ~150 |
+| **Total (all tiers)** | **~2350** |
+
+Completions are the heavyweight — they need module member enumeration,
+scope-aware local binding collection, and keyword/snippet generation.
+Semantic tokens reuse the lexer's token stream. Code actions map linter
+warnings to fixes (the linter already has auto-fix logic for some rules).
+
+---
+
+## 4. Key Design Decisions
+
+### 4.1 Transport — stdio JSON-RPC 2.0
+
+Implemented via `stdio.read_char()` (libc-buffered getchar) for input and
+`stdio.print_format("%s", cstr)` + `stdio.file_flush(null)` for output.
+The `stdin`/`stdout` `FILE*` globals are not exposed via bindings, so
+the `fread`-based approach from the original proposal was not feasible.
+
+Response rendering uses raw string formatting rather than `std.json`
+Object trees, because `json.Object.set()` copies Value structs sharing
+heap Object pointers, causing double-frees during cascaded release_value.
+Raw strings avoid the sharing entirely.
+
+### 4.2 Workspace — owned document state
+
+Implemented as proposed.  The `source_for_uri` accessor from the design
+was removed — unused in tiers 1-3.  Map keys use `string.String` (owned).
+
+```mt
+# workspace.mt
+public struct Workspace:
+    root_path: string.String            # workspace root
+    module_roots: vec.Vec[string.String]  # -I paths for module resolution
+    open_docs: map_mod.Map[string.String, string.String]  # uri → source content
+
+extending Workspace:
+    public static function create(root: str) -> Workspace: ...
+    public editable function open(uri: str, text: str) -> void: ...
+    public editable function change(uri: str, text: str) -> void: ...
+    public editable function close(uri: str) -> void: ...
+    public function source_for(uri: str) -> Option[str]: ...
+    public editable function release() -> void: ...
+```
+
+Map keys use `string.String` (owned) rather than `str` (borrowed view).
+This is necessary because URI strings from incoming JSON-RPC messages
+are parsed into temporary `json.Value` buffers that are freed after
+message dispatch. The workspace must own its keys to avoid dangling
+references. `string.String` provides the `hash`/`equal` hooks required
+by `Map` through the `std.string` and `std.hash` imports already present
+in the compiler.
+
+One `Workspace` instance lives for the lifetime of the server. Documents
+are stored by URI (file:// paths). Module roots are discovered from the
+workspace root's `package.toml` or default to the repo root.
+
+No incremental parsing cache needed for tier 1 — the full parse + check
++ lint pipeline takes < 50ms for typical files.
+
+### 4.3 Diagnostics — reuse check_program
+
+The existing `check_program()` function produces diagnostics.  The
+diagnostics module converts them to LSP format and publishes via
+`textDocument/publishDiagnostics` notification.
+
+Note: `LoadDiagnostic` carries a `path` field (not `module_name` as the
+original proposal stated).  Diagnostics are filtered by URI path before
+publishing.
+
+### 4.4 Handler dispatch — if/else chain
+
+An `if/else` chain is used (not the proposed fn-pointer table), matching
+the proven pattern from the linter's `dispatch_cfg_rule`.  §7.2 risk
+resolved: the fn-table approach was bypassed to avoid potential `Map[K,
+fn(...)]` codegen issues (this pattern has zero real-world exercise in
+the codebase).
+
+### 4.5 Code actions — shared fix engine
+
+Quickfix code actions are computed by the linter's fix engine
+(`linter/fix_engine.mt`), the same edit generators behind `mtc lint --fix`:
+`fix_engine.is_fixable(code)` gates the diagnostic, and
+`lsp_edit_for_warning(source, code, line, column)` produces the LSP-space
+TextEdit against the live buffer. One engine, two front ends — CLI batch
+fixes and editor quickfixes cannot drift.
+
+### 4.7 LSP logging and crash diagnostics (2026-07-20)
+
+The LSP server uses `std/log.mt` for structured logging. Levels:
+- `error` — crash-guard OOB violations (start_byte > source.len, etc.)
+- `warn` — unhandled methods, config parse failures
+- `info` — server start/stop, EOF, index building
+- `debug` — per-request tracing (`[DEBUG] lsp: → id method`), didChange buffer length, range_edit byte-offset mapping
+- `trace` — cancelled requests
+
+Crash-guards protect all `str.slice`/`str.byte_at` calls in the incremental sync path:
+- `apply_utf8_range_edit` checks `start_byte <= source.len` and `end_byte <= source.len` before slicing
+- OOB violations are logged at ERROR level and skipped (no `fatal()`)
+- `handle_did_change` logs buffer length before applying edits
+
+Logs display in VSCode via `View → Output → Milk Tea LSP` (channel #1-Milk Tea LSP.log).
+
+The LSP needs no new vendored libraries beyond cJSON (already vendored
+and verified working). The existing compilation pipeline handles `std.json`
+natively. All stdlib dependencies are source-only `.mt` files loaded
+from the `std/` tree at compile time.
+
+---
+
+## 5. Bootstrapping Impact
+
+The LSP code lives in `projects/mtc/src/mtc/lsp/` and is compiled as part
+of the existing `projects/mtc` package. No changes to the bootstrap process.
+
+```
+stage0 (Ruby)  ──build──→  stage1/mtc  (now includes `mtc lsp`)
+stage1         ──build──→  stage2/mtc  (distributable, includes LSP)
+stage2         ──build──→  stage3/mtc  (fixed-point verification)
+```
+
+The fixed-point invariant (`stage2.c == stage3.c`) still holds because
+the LSP code is part of the compiler's source tree. Adding new source
+files to `projects/mtc/src/` is a normal development operation that
+doesn't disturb the bootstrap.
+
+### 5.1 What about the Ruby LSP?
+
+The Ruby LSP continues to serve VS Code users today. The self-host LSP
+targets the same protocol — any editor using the Ruby LSP can switch
+to the self-host LSP by pointing it at the `mtc lsp` binary. The Ruby
+LSP is not deprecated; it remains available until all tier-3 features
+are self-hosted.
+
+---
+
+## 6. Implementation Sequence
+
+| Step | What | Key note |
+|------|------|----------|
+| 1 | `lsp/protocol.mt` — Content-Length framing + JSON read/write | Try `fn` table first; fall back to `if/else` chain if bootstrap fails (§7.2) |
+| 2 | `lsp/lifecycle.mt` — initialize/shutdown handlers | `initialize` returns tier-1 capabilities only |
+| 3 | `lsp/workspace.mt` — document storage + module roots | Use `string.String` keys, not `str` (§7.1) |
+| 4 | `lsp/text_docs.mt` — didOpen/didChange/didClose | `didSave` triggers full check; `didChange` clears diagnostics (§7.4) |
+| 5 | `lsp/diagnostics.mt` — error → LSP diagnostic | Reuses `check_program()` from loader |
+| 6 | `lsp/server.mt` — wire into `main.mt` as `mtc lsp` | Explicit release() in while loop, not defer (§7.6) |
+| 7 | Tier 2 modules (definition, hover, etc.) | |
+| 8 | Tier 3 modules (completion, etc.) | |
+
+Each step preserves the held fixed point (177 compiler tests + fixed-point
+invariant). Steps are self-contained — step N starts only after step N-1
+is committed and verified.
+
+---
+
+## 7. Risk Register
+
+### 7.1 Map key lifetime — RESOLVED
+`string.String` keys used throughout.  No dangling-reference issues found.
+
+### 7.2 `fn` type compatibility — RESOLVED (bypassed)
+`if/else` chain chosen over fn-pointer table.  Risk avoided entirely.
+
+### 7.3 Content-Length header parsing — RESOLVED
+Verified end-to-end via piped fixture tests.  Multi-message sequences
+processed correctly.
+
+### 7.4 Module loading latency — ACCEPTED
+Diagnostics on `didSave` only.  Works correctly; latency acceptable.
+
+### 7.5 std.json render performance — RESOLVED (bypassed)
+Raw-string rendering used for all responses.  std.json.render not used.
+
+### 7.6 `defer` inside infinite loops — RESOLVED
+Explicit `release()` at end of each loop iteration.  Workspace deferred
+on exit.
+
+### 7.7 Self-host C codegen — RESOLVED (2026-07-18)
+Recursive JSON object serialization (`entry.key.as_str()` in unsafe while
+loop) generated incorrect C (`const_ptr_as_str`) and objects rendered as
+`{}`.  Root cause: `concrete_field_type`'s bare-name struct lookup scanned
+all program analyses in dependency order, so `std.map.Entry` (with
+`key: const_ptr[K]`) shadowed `std.json.Entry` (with `key: string.String`)
+whenever std.map preceded std.json in the module closure — which is why
+standalone programs worked but the full mtc build did not.  Fixed by
+resolving the struct in the receiver type's owning module first
+(`ty_imported.module_name`), falling back to the ordered scan only when the
+owner has no such struct.  `append_json_value` now renders objects
+recursively, and `publishDiagnostics` params (previously `{}` over the
+wire) carry full diagnostic payloads.  A second latent bug surfaced by the
+fix — `diagnostic_from_warning` never populated its range positions — was
+fixed the same day.
+
+
+## 8. Comparison: Ruby LSP vs Self-Host LSP (actual)
+
+| Aspect | Ruby LSP | Self-Host LSP |
+|--------|----------|---------------|
+| Lines | ~14.4k (38 files) | ~29.3k (42 modules) |
+| Threads | Worker pool (8 threads) | Single-threaded |
+| Dispatch | 25 mixin modules | if/else chain (55 methods) |
+| JSON | `JSON.parse` / `JSON.dump` | `std.json.parse` / raw-string rendering |
+| Transport | Stdio `Content-Length` framing | Same (getchar loop) |
+| Capabilities | 30 advertised | 30 advertised (parity) |
+| Caches | Multi-layer (tokens, AST, facts, semantic tokens) | Per-document text/version, token, binding and loader-backed analysis caches + per-file diagnostic/semantic-token caches + workspace-symbol index |
+| Module resolution | `ModuleLoader` (shared) | Same `module_loader.mt` |
+| Linter | Ruby `Linter.lint_source` | Same `linter.lint_source` |
+| Outgoing requests | Async callback via `send_request` | Synchronous via `send_request` + response dispatch |
+| Progress | Begin/report/end three-phase | Same via `$/progress` notifications |
+| Configuration | Pull on `initialized` | Same via `workspace/configuration` after `initialized` |
+
+### Known gaps (self-host vs Ruby) — as of 2026-07-22
+
+| Feature | Status |
+|---------|--------|
+| **Live parity status** | **See the pre-compaction plan record (`git show d8a199c7:docs/self-host-plan.md`, §0k); the current authority is `tools/lsp_conformance.rb` (37/37).** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; **88 requests** + 28 stress probes; **6 documented differing entries**) and by the project audit (7075 entries / **8 stable differing entries + the host's first-file `documentSymbol` race**, session 140) |
+| **Position encoding** | **Both directions are converted at the boundary (session 145 phase 1)**: `initialize` reads `capabilities.general.positionEncodings` and advertises `utf-8` when the client offers it (the server's byte columns are then the wire format), otherwise LSP-default UTF-16 and `Workspace.position_encoding_utf16` is set.  Incoming positions route through `utils.position_to_byte_utf16`/`position_to_byte_utf8` for every position- and range-carrying request, including incremental `didChange`; emitted ranges use `utils.byte_to_utf16_column` with the per-document line-start map (`utils.build_line_starts`/`line_at_index`).  The semantic-token cache records its column encoding, so a cached UTF-8 pass is never replayed to a UTF-16 client.  ASCII behavior is unchanged; on astral text the self follows the negotiated spec rather than the host's byte-column echo. |
+| Diagnostics (push + pull) | **DONE (stage 4)** — the editor *buffer* is analysed (not the file on disk); `lex/error`, `parse/error`, `import/load-error`, `sema/error` and lint items carry the host's codes, `data.stage`, token-length ranges (import failures anchor at the module-path text) and MarkupContent for quoted-identifier sema messages; `workspace/diagnostic` reports every open document in didOpen order with `previousResultIds`.  `diagnostic/pull` and `workspace/diagnostic` are byte-equal to the host. |
+| Incremental text sync (change:2) | **DONE** — range-based edits, UTF-8 line/char→byte conversion |
+| Config application | **DONE** — parse workspace/configuration response |
+| Per-request tracing | **DONE** — `[DEBUG] lsp: → <id> <method>` |
+| LSP logging (std/log) | **DONE** — `--log-level trace|debug|info|warn|error` |
+| $/setTrace handler | **DONE** — VSCode trace-level changes at runtime |
+| Semantic token legend | **DONE** — the host's full legend (23 token types / 10 modifiers); token *types* compare by name, never by legend index |
+| Semantic token accuracy | **5 positions from byte-equal** (session 14, 2026-09-30) — four of the SimpleGame corpus's five files match exactly; `docs/language_baseline.mt` differs in 5 of 9509 positions, the residue being three host facts the self lacks (`callable_value_identifier_sites`, `callable_field_member_access?`, `dot_nested_type_member?`).  The scanner's facts are the host's: scope-resolved bindings (the function-level snapshot rule), the static-member table, the type-parameter scopes, the type-position/dot-receiver arms, specialized calls, f-string interpolation parts and multi-line string splitting, and the attribute-name overrides.  The snapshot HTML path matches Ruby on language_baseline.mt (decorator `@[...]` tracking, enum member dot-access via `static_member_types`, parameter-name collision in enum body, struct/union body separation). |
+| Completion depth | **DONE** — prefix filtering, detail, insertText, isIncomplete, proper response format, import completions via filesystem enumeration, scope/local completions via AST binding collection, and (session 17) **member completion on an imported struct receiver** (`var n = node.Node.create(…)` then `n.` lists `name`, `parent`, `static:create` byte-identically to the host, from the loader-backed analysis plus `Analysis.imported_type_members`).  The project audit's 619-entry dot pass reads **2 differing entries**, both documented (session 26 closed 600 → 4 with the registration order, the prelude merge and the receiver families; session 27 closed the last two position entries with the request-boundary conversion): the host's synthesized `ref[@_mt_N, T]` lifetime in a field detail (the self renders the declared `ref[T]`) and the `map_error` arm binding the host's facts never type, where the self answers the field and the host falls back to its method table.  Missing: none of the hosted contexts — attribute, format-string, named-argument, specialization, dot-receiver and value-chain contexts are ported (sessions 131–132).  Session 147 added completion after an incomplete/non-text receiver (`read(p).`, `make().`, `arr[0].`). |
+| Code actions depth | **DONE (session 28)** — the host's per-diagnostic branch set (`code_actions.rb:29-297`) with byte-equal titles (`STATIC_QUICK_FIX_TITLES`, JSON `null` for `unused-import`), the echo of the request's diagnostic on every action, the fix-engine quickfixes (host-shaped whole-line edits), `line-too-long` wrap, the `shadow` annotation-only action, `unused-param` → `_x`, `dead-assignment`, the unsafe wrap, the match-arm stubs, the `Cast expression to <type>` action (doubled indent reproduced) and the `Import <path>` suggestion action; `only_kinds` filtering respected and `source.fixAll` titled `Apply all auto-fixes`.  Residue: `reserved-primitive-name`'s multi-site rewrite (stage 8) and the analyzer's missing "did you mean" suggestions. |
+| Document link resolveProvider | **DONE** — advertised correctly |
+| ENUM SymbolKind | **DONE** — fixed from 10 (Method) to 13 (Enum) |
+| Type alias hierarchy | **DONE** — type_alias_types added |
+| code_lens method support | **DONE** — extending block methods included |
+| Enum/variant member completions | **DONE** — dot-receiver context |
+| Workspace dependency graph (didChangeWatchedFiles) | **DONE** — broad cache invalidation with per-URI clearing for renames |
+| Multi-root workspace reindex (didChangeWorkspaceFolders) | **DONE** — `workspaceFolders` maps into `Workspace.roots`; add/remove re-roots the module and symbol walk roots and the caches (session 145 phase 3) |
+| Workspace index rename (willRenameFiles) | **DONE** — a real request answering a `WorkspaceEdit` with import rewrites (or `null`); the index entry moves and the old path's caches are dropped (session 145 phase 3; index move session 137) |
+| Sporadic SIGSEGV | **NO REPRODUCTIONS** — the 2026-09-26 stress corpus (15 adversarial probes) plus a valgrind run over a full request sweep completed with zero crashes, invalid reads/writes or invalid frees |
+
+## 9. Real-project readiness and recovery (2026-09-28)
+
+The focused plan for making the self-hosted server a daily driver now lives in
+`docs/self-host-plan.md` (the program's LSP track; the pre-compaction record at
+`d8a199c7` carries the measured records).  Its starting evidence is kept below, then the
+recovery result:
+
+- **Recovery was not at parity** when the plan was written.  Driving both servers
+  through the "declare `var n = Sample(…)`, then type `n.`" edit
+  (`tools/lsp_recovery_probe.rb`) showed six divergences for that one edit:
+  parse-error messages missing the host's ` at <uri>:<line>:<col>` suffix;
+  `expected end of statement` extra and mispositioned (host `9:12`, self `9:0`);
+  different recovered ASTs (`unknown name v` vs `unknown field Sample.`); a
+  different lint set (`unused-local` vs `prefer-let`); `missing-return` timing;
+  and one self diagnostic whose `message` was a JSON blob
+  (`{"kind"=>"markdown",…}`) — a serializer bug, not a parity gap.
+- **Recovery is at parity now** (session 9).  The blob was the analyzer's
+  duplicate `missing-return` sema error (the host has only the linter rule); the
+  suffix is emitted by the LSP's diagnostic conversion from the document URI;
+  and the parser unwinds like the host — `ParserState.panic` records the first
+  error's token, later errors in the same unit are ignored, and the recovery
+  point (`recover_statement` / `recover_top_level` / `recover_match_arm`, the
+  local-decl and function rescues) rewinds and synchronizes or substitutes the
+  host's node (an `expr_error` value, a partial `FunctionDef`).  The lints on
+  recovered code followed from the AST rather than being special-cased; the
+  outline keeps the host's token anchoring, so a dropped declaration still
+  appears as a bare symbol.  `tools/lsp_recovery_probe.rb --check` covers the
+  corpus: truncated `n.`/`a.inner.`, unterminated string/block, half-typed
+  `import`, cut-off expression, plus an incremental edit.  Not yet emulated: the
+  host's *nested* declaration rescues (methods, the local-decl `else` variant,
+  the field loops).
+- **Readiness beyond parity** (Track C of the plan): **C1 landed in session 13.**
+  The workspace *symbol* index now walks the workspace root (plus the package's
+  source root) — before, a project outside the compiler tree indexed the whole
+  compiler tree at its first index-needing request — and the cross-file definition
+  index grew the host's candidate registry (`@definition_candidate_uris` /
+  `@definition_names_by_uri`) with the warm placed where the host's is: the hover
+  path's `find_token_at` → `get_tokens` → `get_content`.  `tools/lsp_cold_start.rb`
+  measures spawn → the first `workspace/symbol` response at **2723.5 → 213.3 ms**
+  on `~/Projects/MilkTea/SimpleGame` and **2455.1 → 2.3 ms** on a one-file project
+  (baseline: a binary built from the session-12 tree).  Closed in session 30
+  (2026-10-04): the reference index bounds its retained text (past
+  `MAX_RETAINED_TEXT_BYTES` = 32 MiB the oldest documents are dropped with
+  their hash/stamp entries and re-read on demand) and `note_document_tokens`
+  skips an unchanged closed document by its recorded `(size, mtime)` instead
+  of re-reading and re-hashing it per request (C2/C3); the long-session soak
+  driver (`tools/lsp_soak.rb`) and its `soak` meter gate landed.  C4's RSS
+  ceiling still waits on the per-parse leak convention — see
+  `git show d8a199c7:docs/self-host-plan.md` §0k session 30 ("Soak profile and
+  the long-session blocker").
+- **Non-ASCII doc strings** (session 10).  The host's C backend emitted
+  `String#inspect`'s `\xNN` escapes, and a C hex escape absorbs every following
+  hex digit, so `"4\xC3\x974"` compiled to `4`, `0xC3`, `t` with a stale byte
+  length.  `hover_docs.mt`'s `mat3`/`mat4` docs (`×`, `–`) are the compiler's
+  only non-ASCII literals, so a hover on those builtin types aborted the
+  host-built self binary (`string.as_str text must be valid UTF-8`) and took the
+  server down.  The host now emits non-ASCII bytes raw, byte-identical to the
+  self-host's `c_string_literal`; the headless-Neovim smoke renders the `mat4`
+  hover through a real client.
+- **Deliberate differences — the canonical table** (session 30).  Everything
+  here is *kept*: each row is either a documented harness/audit entry or a
+  deliberate self-host improvement, with the verification tool that pins it.
+
+  | # | Difference | Direction | Pinned by |
+  | --- | --- | --- | --- |
+  | 1 | A malformed frame answers `-32700` and the session keeps serving; the host hangs/exits | self-better | `lsp_parity --stress` (`stress/malformed-frame+parseError`), recovery probe |
+  | 2 | Facts are computed synchronously (no lag); the host's first answer after `didOpen` can trail its content (its facts warm asynchronously) | self-better (host artifact) | `stress/unicode+semanticTokens`, the audit's first-file `documentSymbol` race |
+  | 3 | Faster cold start (the workspace walk/index and first answers) | self-better | `tools/lsp_cold_start.rb` |
+  | 4 | Parser recovery: the self's recovered buffer carries fewer diagnostic items than the host's and the lexer/`parse_param` recovery points differ (host-side artifacts of its rescue layout) | self-better | `stress/unterminated-source+diagnostic`, the recovery probe's cases |
+  | 5 | The host's first-file `documentSymbol` after `didOpen` can carry its pre-facts tree (a race in the host's warm-up) | host artifact | `lsp_project_audit` (±drift row) |
+  | 6 | `documentHighlight` `lb@704:67`: the host answers from its carried-forward warm-facts snapshot; the self resolves the label's binding in scope (byte-equal cold) | host artifact | `lsp_project_audit` |
+  | 7 | `hover` on a builtin/std type (`type quat` `lb@1653:24`; `str` at `ds@140:33`, `colors.mt@12:46` once warm): the host's answer gains the cross-file `Defined at` location only once its definition index warms; the self omits builtin-type locations (an eager fix adds 153 entries — measured and rejected, session 18) | host artifact | `lsp_project_audit` (canonical) |
+  | 8 | `typeDefinition` on a *directory-form* module member (`import mod_alpha` → `mod_alpha/lib.mt`): the host's `module_path_for_name` gives up (`null`); the loader-backed self answers the declaration | self-better | `lsp_parity` (`typeDefinition/imported`) |
+  | 9 | Completion `mst@224:18`: the host leaks a synthesized `ref[@_mt_N, T]` lifetime into a field detail; the self renders the declared `ref[T]` | self-better; **decision closed (session 74)**: not ported — the declared type is the better answer | `lsp_project_audit` |
+  | 10 | Completion `lb@818:17`: the host's facts fail to type a `map_error` arm binding and fall back to the method table; the self answers the field | self-better | `lsp_project_audit` |
+  | 11 | The reference index bounds its retained text (32 MiB): past it the oldest noted documents are evicted with their hash/stamp entries and re-read on demand, so a document re-noted after an eviction answers in a later index position than the host's whole-session order (result *sets* unaffected) | self-better (long sessions) | `lsp_index_test.mt` (the bound), the audit (small workspaces never evict) |
+  | 12 | `milkTea/debugInfo`: the header, token table, AST tree, parse errors and diagnostics are byte-equal (session 33); the host's Facts and Bindings sections embed Ruby `object_id`s and binding ids allocated in the host's analysis order — not ported yet | remainder documented | `lsp_parity` (`milkTea/debugInfo`) |
+  | 13 | Hover on a module-qualified variant arm (`local.Local.one`, `ast.Decl.decl_const`): the host returns null; the self resolves the arm in the imported type's module from the requesting document's loaded program | self-better (session 135) | `lsp_parity` (`hover/imported-variant-arm`) |
+  | 14 | Member resolution through a call/index receiver (`read(p).get_object`, `make_sample().sum()`, `particles[0].y`): the host's chain requires an identifier immediately before the dot and returns null (or a same-named global for definitions); the self reads the analyzer's recorded receiver type | self-better (session 140) | `lsp_parity` (`hover/chained-method`), `lsp_project_audit` (`data_structures@250:17`, canonical) |
+  | 15 | Completion after a non-text receiver (`read(p).`, `make().`, `arr[0].`): a trailing dot is still a parse error, but the parser keeps the receiver as an empty-name member access, the analyzer records its type at the dot, and completion answers its fields/methods; a type receiver keeps the static-member path | self-better (session 147) | `lsp_conformance` (`completion/incomplete-dot-receiver`), `completion_test.mt` |
+  | 16 | Enum-member hover through a type alias (`type BodyType = c.b3BodyType`; `b3.BodyType.b3_dynamicBody`): the receiver name is not the enum, so the direct member path misses it; the self follows the alias's resolved type to the declaring module and renders the member and its owning module | self-better (session 148) | `lsp_conformance` (`hover/aliased-enum-member`), the `examples/box3d/single_box.mt:20` probe |
+
+  The *checklist* for anything not in this table: `tools/lsp_parity.rb
+  compare` must show only its documented entries, `tools/lsp_recovery_probe.rb
+  --check` must pass, and the audit's differing set must match the rows above
+  (run it with `--canonical` when verifying: the warm-up pass pins the request
+  history, so two canonical runs return identical differing sets — the
+  non-canonical ±drift comes from the host's asynchronous warm-up).

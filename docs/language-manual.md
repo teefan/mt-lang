@@ -124,7 +124,7 @@ Supported literals:
 - integer: `42`, `0xff`, `0b1010`, with `_` separators. Integer type suffixes: `42u` (`uint`), `0xFFub` (`ubyte`), `100z` (`ptr_uint`), `7i` (`int`), `-1l` (`long`), etc.
 - float: `3.14`, `1.2e-3`, `1.1920929E-7`, `1.0f` (float suffix), `1.0d` (double suffix)
 - character: `'a'`, `'\n'`, `'\t'`, `'\\'`, `'\''`, `'\0'`, `'\x41'`. Type is `ubyte`. Escape sequences: `\n`, `\r`, `\t`, `\\`, `\'`, `\"`, `\0` (null), `\xNN` (hex byte).
-- string: `"hello"` (`str`). String escapes: `\n`, `\r`, `\t`, `\0`, `\"`, `\'`, `\\`; any other `\x` sequence is taken literally, and hex byte escapes (`\xNN`) are character-literal only. `str + str` concatenates (§5.3); see §12 for text-building details.
+- string: `"hello"` (`str`). String escapes: `\n`, `\r`, `\t`, `\0`, `\"`, `\'`, `\\`; any other escaped character is taken literally (the backslash is dropped), and hex byte escapes (`\xNN`) are character-literal only. `str + str` concatenates (§5.3); see §8 for text-building details.
 - cstring: `c"hello"` (`cstr`)
 - heredoc string: `<<-TAG ... TAG` (`str`)
 - heredoc cstring: `c<<-TAG ... TAG` (`cstr`)
@@ -149,7 +149,7 @@ Word operators:
 
 - `and`, `or`, `not`
 - `is` — variant arm membership test (`expr is Variant.Arm` returns `bool`; desugars to a `match` expression)
-- `in`, `out`, `inout` (reserved for `foreign function` parameter modes; legacy call-site forms are rejected semantically)
+- `in`, `out`, `inout`, `consuming` (reserved for `foreign function` parameter modes; legacy call-site forms are rejected semantically)
 
 ## 3. Declarations
 
@@ -174,7 +174,6 @@ Top-level declarations:
 - `foreign function`
 - `event`
 - `static_assert(...)`
-- `emit` — compile-time code generation inside `const function` or `inline` bodies
 - `when` — compile-time conditional; may appear at module level or inside function bodies
 
 File-kind note:
@@ -208,7 +207,7 @@ const NEXT_POW2 -> int:
     return n
 ```
 
-The block body is evaluated at compile time. Allowed inside the block: literals (character literals fold to their byte value), names of other `const` values, arithmetic, `str` concatenation (`+`), control flow (`if`/`else if`/`else`, `while`, `for`, with `break` and `continue`), `match` expressions, index and range access (`arr[i]`, `s[i]`, `arr[start..stop]`, `s[start..stop]`), struct member access, `let` and `var` declarations (including tuple/struct destructuring and `else:` / `else as error:` guard forms), assignment (including compound assignment to block-local struct fields and array elements), numeric prefix casts (`T<-value`), calls to other compile-time functions and const methods, and calls to whitelisted builtins (`size_of`, `align_of`, `offset_of`, `fields_of`, `members_of`, `attributes_of`).
+The block body is evaluated at compile time. Allowed inside the block: literals (character literals fold to their byte value), names of other `const` values, arithmetic, `str` concatenation (`+`), control flow (`if`/`else if`/`else`, `while`, `for`, with `break` and `continue`), `match` expressions, index and range access (`arr[i]`, `s[i]`, `arr[start..stop]`, `s[start..stop]`), struct member access, `let` and `var` declarations (including tuple/struct destructuring and `else:` / `else as error:` guard forms), assignment (including compound assignment to block-local struct fields and array elements), numeric prefix casts (`T<-value`), calls to other compile-time functions and const methods, and calls to whitelisted builtins (`size_of`, `align_of`, `offset_of`, `field_of`, `callable_of`, `attribute_of`, `has_attribute`, `attribute_arg`, `fields_of`, `members_of`, `attributes_of`).
 
 Rules:
 
@@ -302,7 +301,7 @@ struct Vec2:
     y: float
 ```
 
-`struct` bodies may also contain `function`, `editable function`, and `static function` declarations directly — they desugar to `extending` blocks targeting the enclosing struct. This is pure syntactic sugar and produces identical C code. See §3.6 for the method kind rules.
+`struct` bodies may also contain `function`, `editable function`, `static function`, `const function`, and `static const function` declarations directly — they desugar to `extending` blocks targeting the enclosing struct. This is pure syntactic sugar and produces identical C code. See §3.6 for the method kind rules.
 
 ```mt
 struct Counter:
@@ -371,7 +370,7 @@ Arm constructors:
 - Payload arm: `Token.ident(text = "hello")` — field names with `=`.
 - No-payload arm: `Token.eof` — accessed as a bare member expression.
 
-Declaration attributes use a leading `@[name(...)]` surface. User-defined attributes are declared with explicit targets such as `attribute[field] rename(name: str)` or `attribute[const, event] trace(name: str)`. Built-in `packed` and `align(bytes)` are predefined struct attributes; `deprecated(message: str)` is predefined and targets function, struct, const, enum, flags, union, variant, and event:
+Declaration attributes use a leading `@[name(...)]` surface. User-defined attributes are declared with explicit targets such as `attribute[field] rename(name: str)` or `attribute[const, event] trace(name: str)`. Built-in `packed` and `align(bytes)` are predefined struct attributes; `deprecated(message: str)` is predefined and targets callables (functions and methods), struct, const, enum, flags, union, variant, and event:
 
 ```mt
 @[packed]
@@ -801,7 +800,7 @@ match entity:
 Rules for struct patterns:
 
 - Each field name must appear at most once per arm. `_` may appear any number of times as a positional discard.
-- Guards and equality patterns are refutable: they do not count toward exhaustiveness. Exception: when equality patterns for an enum-typed field gatherively cover every member of the enum, the arm is considered exhaustive. An arm with only bindings and no guards counts as exhaustive.
+- Guards and equality patterns are refutable: they do not count toward exhaustiveness. Exception: when equality patterns for an enum-typed field collectively cover every member of the enum, the arm is considered exhaustive. An arm with only bindings and no guards counts as exhaustive.
 - Struct patterns compose with `as name` bindings: `Entity.player(hp > 0) as p` binds both `hp` (guard-checked) and `p` (the full payload struct).
 - Struct patterns do not apply to enum or integer match scrutinees.
 - When a variant arm has exactly one payload field of struct type, and no pattern argument references that field name, the struct's own fields are transparently destructured. For example, `Entity.positioned(x, y)` where `positioned(loc: Pos)` destructures through `Pos` to bind `x` and `y`.
@@ -827,17 +826,17 @@ Iterator protocol for custom structural iterables:
 - the iterable value must expose `iter()` with no parameters
 - the returned iterator must expose either `next() ->` nullable pointer-like item or `next() -> bool` together with `current()`
 
-Parallel `for` is also supported:
+A lockstep multi-iterable `for` is also supported:
 
 ```mt
 for entity, position, velocity in entities, positions, velocities:
     update(entity, position, velocity)
 ```
 
-Rules for parallel `for`:
+Rules for the lockstep form:
 
 - each iterable must be an `array[T, N]` or `span[T]`
-- ranges are not supported in the parallel form
+- ranges are not supported in the lockstep form
 - iterable counts must match the binding count
 - static array lengths must match; span lengths are checked at runtime
 
@@ -1098,7 +1097,7 @@ Rules:
 11. `+`, `-`
 12. `*`, `/`, `%`
 
-The `+` operator also concatenates two `str` operands into a per-thread scratch buffer, producing a borrowed `str` (no heap allocation) whose validity is bounded by the scratch buffer budget (§2.3). It does not concatenate `cstr` or mixed `str`/`cstr` operands.
+The `+` operator also concatenates two `str` operands into a per-thread scratch buffer, producing a borrowed `str` (no heap allocation) whose validity is bounded by the scratch buffer budget (§8). It does not concatenate `cstr` or mixed `str`/`cstr` operands.
 
 ### 5.4 Assignment operators
 
@@ -1400,8 +1399,9 @@ Custom formatting hook notes:
 
 - conditions must be `bool`
 - no truthy/falsy integer or pointer coercion
-- mixed signed/unsigned integer arithmetic requires an explicit `T<-value` cast
-- non-widening integer conversions (narrowing, signed → unsigned) require an explicit `T<-value` cast; lossless widening is implicit
+- mixed signed and unsigned integer arithmetic promotes to the narrowest signed type that holds both ranges (`ubyte + int` is `int`, `int + uint` is `long`, `byte + ubyte` is `short`); mixing with a 64-bit unsigned type (`ulong`, `ptr_uint`) requires an explicit `T<-value` cast
+- non-widening integer conversions (narrowing, signed → unsigned) require an explicit `T<-value` cast (except exact compile-time constants that fit the target); lossless widening is implicit
+- exact compile-time numeric constants (literals and `const` values) may initialize a different numeric type without a cast when the value fits the target
 - `%` requires integer-compatible operands
 - bitwise operators require matching integer/flags types
 - shift operators require integer operands
@@ -1545,6 +1545,8 @@ The auto-fix column corresponds to `mtc lint --fix`. `unused-import` is intentio
 | `platform-api-drift` | warning | — | Public API differs across sibling platform-specific variants of the same module |
 | `prefer-let` | hint | yes | `var` binding is never mutated; use `let` instead |
 | `prefer-let-else` | hint | yes | Nullable guard can be rewritten as `let ... else:` |
+| `prefer-conditional-expression` | hint | — | Every `if`/`match` branch returns a value or assigns the same variable; rewrite as an expression |
+| `prefer-inline-if` | hint | — | Block-form `if`/`else` with single-statement branches can be written inline |
 | `prefer-inline-methods` | hint | yes | Methods on a struct can be written inline inside the struct declaration |
 | `prefer-is-variant` | hint | — | A match that maps one variant arm to a boolean can be `expr is Arm` |
 | `prefer-own-ptr` | hint | — | Pointer binding used only inside `unsafe` could be `own[T]` for auto-deref |
@@ -1671,7 +1673,7 @@ The compiler intentionally rejects the following patterns. These are design cons
 - `==`/`!=` on structs and variants requires all fields equality-comparable; use `equal[T]` otherwise (§3.4b)
 - range expressions are restricted to `for`-loop iterables, range-index reads (`a[start..stop]`), and range-index assignment targets
 - `str` views are immutable borrowed text; index and range-index results cannot be assigned through
-- functions, methods, generic functions, and variant arms must be called — they are not usable as bare values
+- a free function name is only usable as a callable value where an expected `fn(...)` or `proc(...)` type supplies the coercion (annotated local, argument, return, or field initializer); an unannotated `let f = some_function` is rejected. Method names and unspecialized generic functions must be called. No-payload variant arms are values; payload arms are constructors and must be called.
 - `read(...)` of a raw pointer requires `unsafe`
 
 ### 13.8 Control flow restrictions
@@ -1703,7 +1705,7 @@ The compiler intentionally rejects the following patterns. These are design cons
 - user-defined `attribute` declarations target `struct`, `field`, `callable`, `const`, `event`, `enum`, `flags`, `union`, or `variant`
 - `@[...]` attribute applications are only accepted on the above declaration kinds
 - attribute declarations are not allowed in external files
-- only built-in `packed` and `align(...)` struct attributes are allowed in external files
+- only built-in `packed`, `align(...)`, and `deprecated(...)` attributes are allowed in external files, subject to each attribute's target kinds
 
 ## 14. Example
 

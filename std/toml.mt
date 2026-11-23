@@ -869,11 +869,14 @@ function parse_inline_object(parser: ref[Parser]) -> Result[ptr[Object]?, ParseE
                     Result.success as value_payload:
                         let key_text = key.as_str()
                         if read(object_ptr).contains(key_text):
+                            var message = string.String.from_str("Cannot overwrite value with key ")
+                            message.append(key_text)
+                            let duplicate_error = ParseError(line = parser.line, column = parser.column, message = message)
                             key.release()
                             release_value(value_payload.value)
                             read(object_ptr).release()
                             heap.release(object_ptr)
-                            return Result[ptr[Object]?, ParseError].failure(error= parse_error(parser, "duplicate key"))
+                            return Result[ptr[Object]?, ParseError].failure(error= duplicate_error)
 
                         read(object_ptr).entries.push(Entry(key = key, value = value_payload.value))
 
@@ -1015,9 +1018,12 @@ function parse_assignment(document: ref[Document], cursor: Cursor, parser: ref[P
                 Result.success as value_payload:
                     let key_text = key.as_str()
                     if current_object_contains(document, cursor, key_text):
+                        var message = string.String.from_str("Cannot overwrite value with key ")
+                        message.append(key_text)
+                        let duplicate_error = ParseError(line = parser.line, column = parser.column, message = message)
                         key.release()
                         release_value(value_payload.value)
-                        return Result[bool, ParseError].failure(error= parse_error(parser, "duplicate key"))
+                        return Result[bool, ParseError].failure(error= duplicate_error)
 
                     current_object_push(document, cursor, Entry(key = key, value = value_payload.value))
                     return Result[bool, ParseError].success(value= true)
@@ -1081,15 +1087,23 @@ function parse_header(document: ref[Document], cursor: ref[Cursor], parser: ref[
 
             match document_find_table_index(document, name.as_str()):
                 Option.some:
+                    var message = string.String.from_str("Key ")
+                    message.append(name.as_str())
+                    message.append(" is already used")
+                    let duplicate_error = ParseError(line = parser.line, column = parser.column, message = message)
                     name.release()
-                    return Result[bool, ParseError].failure(error= parse_error(parser, "duplicate table"))
+                    return Result[bool, ParseError].failure(error= duplicate_error)
                 Option.none:
                     pass
 
             match document_find_array_table_index(document, name.as_str()):
                 Option.some:
+                    var message = string.String.from_str("Key ")
+                    message.append(name.as_str())
+                    message.append(" is already used")
+                    let duplicate_error = ParseError(line = parser.line, column = parser.column, message = message)
                     name.release()
-                    return Result[bool, ParseError].failure(error= parse_error(parser, "duplicate table"))
+                    return Result[bool, ParseError].failure(error= duplicate_error)
                 Option.none:
                     pass
 

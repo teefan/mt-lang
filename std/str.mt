@@ -87,6 +87,24 @@ extending str:
         return true
 
 
+    ## True when `prefix` appears at byte `offset`.  Byte-wise, so `offset` may
+    ## be any position — including inside a multi-byte code point, where a
+    ## length-based `slice` would abort.  Used by scanners that compare a name
+    ## against text at a line or token offset.
+    public function starts_with_at(offset: ptr_uint, prefix: str) -> bool:
+        if offset > this.len:
+            return false
+        if prefix.len > this.len - offset:
+            return false
+
+        var index: ptr_uint = 0
+        while index < prefix.len:
+            if this.byte_at(offset + index) != prefix.byte_at(index):
+                return false
+            index += 1
+        return true
+
+
     public function ends_with(suffix: str) -> bool:
         if suffix.len > this.len:
             return false

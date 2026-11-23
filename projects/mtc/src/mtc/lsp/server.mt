@@ -1,0 +1,683 @@
+## LSP server — message loop, handler dispatch, and the `lsp` subcommand entry
+## point.  Dispatches incoming JSON-RPC messages to the appropriate handler
+## modules, manages the workspace lifetime, and coordinates per-message cleanup.
+
+import std.json as json
+import std.str
+import std.string as string
+import std.time as time
+import std.vec as vec
+import std.cjson as cjson
+import std.mem.arena as arena
+import std.log as log
+
+
+import mtc.lsp.call_hierarchy as call_hier
+import mtc.lsp.code_actions as code_actions
+import mtc.lsp.code_lens as code_lens
+import mtc.lsp.completion as completion
+import mtc.lsp.debug_info as debug_info
+import mtc.lsp.diagnostics as diag
+import mtc.lsp.document_context as doc_ctx
+import mtc.lsp.document_link as doc_link
+import mtc.lsp.execute_command as exec_cmd
+import mtc.lsp.folding as folding
+import mtc.lsp.formatting as formatting
+import mtc.lsp.highlight as highlight
+import mtc.lsp.inlay_hints as inlay
+import mtc.lsp.lifecycle as lifecycle
+import mtc.lsp.linked_editing_range as linked_range
+import mtc.lsp.navigation as navigation
+import mtc.lsp.on_type_formatting as on_type
+import mtc.lsp.protocol as proto
+import mtc.lsp.references as refs
+import mtc.lsp.pull_diagnostics as pull_diag
+import mtc.lsp.rename as rename_mod
+import mtc.lsp.selection as selection
+import mtc.lsp.semantic_tokens as semtok
+import mtc.lsp.signature_help as sighelp
+import mtc.lsp.symbols as symbols
+import mtc.lsp.text_docs as text_docs
+import mtc.lsp.type_hierarchy as type_hier
+import mtc.lsp.workspace as workspace
+import mtc.lsp.workspace_notifications as ws_notif
+import mtc.lsp.workspace_symbols as wsym
+
+
+## Start the LSP server on stdio.  Blocks until shutdown or EOF.
+public function run(args: span[str]) -> int:
+    parse_log_level(args)
+
+    let root = workspace_root_from_args(args)
+    var ws = workspace.Workspace.create(root)
+    defer: ws.release()
+
+    var running = true
+    var exit_code = 0
+    while running:
+        var read_status: ptr_uint = proto.READ_OK
+        var msg_opt = proto.read_message_status(ref_of(read_status))
+        match msg_opt:
+            Option.some as msg_payload:
+                var msg = msg_payload.value
+                defer: msg.release()
+                if msg.is_response:
+                    handle_incoming_response(ws, msg)
+                else:
+                    let method = msg.method.as_str()
+                    let is_request = not msg.id.is_null()
+                    if method == "exit":
+                        log.debug("lsp: → exit")
+                        running = false
+                        # The spec's exit code: 0 only after a shutdown request.
+                        if not ws.shutdown_received:
+                            exit_code = 1
+                    else if method == "initialize" and ws.initialize_received:
+                        if is_request:
+                            proto.write_error(msg.id, -32600, "Invalid Request")
+                    else if not ws.initialize_received and method != "initialize":
+                        if is_request:
+                            proto.write_error(msg.id, -32002, "Server not initialized")
+                    else if ws.shutdown_received:
+                        if is_request:
+                            proto.write_error(msg.id, -32600, "Invalid Request")
+                    else if method == "$/cancelRequest":
+                        # The loop is synchronous: an in-flight request cannot be
+                        # cancelled, so cancellation is deliberately ignored
+                        # rather than kept in a stale id set.
+                        pass
+                    else if method.len > 0:
+                        running = dispatch_method(ws, method, msg)
+            Option.none:
+                # Only a real EOF ends the session: a malformed frame is
+                # reported (JSON-RPC ParseError, id null) and the loop goes on,
+                # so one bad message never takes the server down.
+                if read_status == proto.READ_EOF:
+                    running = false
+                else:
+                    log.warn("lsp: malformed message ignored")
+                    proto.write_error(json.null_value(), -32700, "Parse error")
+        # A handled request's borrowed views die with it: the regions that
+        # superseded parses and analyses retired can be freed at this boundary.
+        ws.drain_retired_regions()
+
+    return exit_code
+
+
+## Milliseconds since a `monotonic_ms()` sample.
+function elapsed_since_ms(started_ms: double) -> double:
+    return monotonic_ms() - started_ms
+
+
+## A monotonic clock reading in milliseconds.
+function monotonic_ms() -> double:
+    var ts = zero[time.TimeSpec]
+    let rc = time.monotonic(ref_of(ts))
+    if rc != 0:
+        return 0.0
+    return double<-ts.tv_sec * 1000.0 + double<-ts.tv_nsec / 1000000.0
+
+
+function parse_log_level(args: span[str]) -> void:
+    # The host's CLI default is `warn` (its help says so); the extension may
+    # raise it via the CLI flag or the trace setting.
+    log.set_level(log.Level.warn)
+    var i: ptr_uint = 1
+    while i < args.len:
+        if args[i] == "--log-level":
+            if i + 1 < args.len:
+                let level_str = args[i + 1]
+                if level_str == "trace":
+                    log.set_level(log.Level.trace)
+                else if level_str == "debug":
+                    log.set_level(log.Level.debug)
+                else if level_str == "info":
+                    log.set_level(log.Level.info)
+                else if level_str == "warn":
+                    log.set_level(log.Level.warn)
+                else if level_str == "error":
+                    log.set_level(log.Level.error)
+                return
+        i += 1
+
+
+function apply_trace_level(params: json.Value) -> void:
+    let level_str = unsafe: params.as_string()
+    if level_str.is_some():
+        let level = level_str.unwrap()
+        if level == "verbose" or level == "messages":
+            log.set_level(log.Level.trace)
+        else if level == "off":
+            log.set_level(log.Level.warn)
+        else:
+            log.set_level(log.Level.info)
+
+
+## Dispatch handler for a known method.  Returns false when the server
+## should exit (e.g. after a restart command).
+function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.Message) -> bool:
+    let req_id = extract_request_id(msg.id)
+    let started_ms = monotonic_ms()
+    var trace_msg = string.String.create()
+    if req_id > 0:
+        trace_msg.append_format(f"lsp: -> #{req_id} #{method}")
+    else:
+        trace_msg.append_format(f"lsp: -> #{method}")
+    log.debug(trace_msg.as_str())
+    trace_msg.release()
+    defer:
+        # The host's per-request line (`[LSP perf] req <method> <ms>`), so a slow
+        # request is visible in the extension's output channel without a profiler.
+        var perf = string.String.create()
+        perf.append_format(f"[LSP perf] req #{method} #{elapsed_since_ms(started_ms)}ms")
+        log.info(perf.as_str())
+        perf.release()
+    # Lifecycle
+    let outcome = dispatch_known_method(ws, method, msg, req_id)
+    match outcome:
+        Option.some as should_continue:
+            return should_continue.value
+        Option.none:
+            var msg_text = string.String.create()
+            msg_text.append("lsp: unhandled method ")
+            msg_text.append(method)
+            log.warn(msg_text.as_str())
+            msg_text.release()
+            if not msg.id.is_null():
+                proto.write_error(msg.id, -32601, "Method not found")
+    return true
+
+
+## Dispatch a known method.  Some(true) continues, Some(false) exits, and None
+## means the method is unhandled.
+function dispatch_known_method(ws: ref[workspace.Workspace], method: str, msg: proto.Message, req_id: ptr_uint) -> Option[bool]:
+    if method == "initialize":
+        lifecycle.handle_initialize(msg.id, msg.params, ws)
+    else if method == "initialized":
+        lifecycle.handle_initialized(ws)
+        schedule_config_request(ws)
+        schedule_watched_files_registration(ws)
+    else if method == "shutdown":
+        ws.shutdown_received = true
+        var result = json.null_value()
+        proto.write_response(msg.id, result)
+    else if method == "exit":
+        return Option[bool].some(value = false)
+
+    # Text document sync
+    else if method == "textDocument/didOpen":
+        text_docs.handle_did_open(ws, msg.params)
+    else if method == "textDocument/didChange":
+        text_docs.handle_did_change(ws, msg.params)
+    else if method == "textDocument/didClose":
+        text_docs.handle_did_close(ws, msg.params)
+    else if method == "textDocument/didSave":
+        text_docs.handle_did_save(ws, msg.params)
+
+    # Formatting (Tier 2)
+    else if method == "textDocument/formatting":
+        formatting.handle_formatting(ws, msg.params, msg.id)
+    else if method == "textDocument/rangeFormatting":
+        formatting.handle_range_formatting(ws, msg.params, msg.id)
+    else if method == "textDocument/rangesFormatting":
+        formatting.handle_ranges_formatting(ws, msg.params, msg.id)
+    else if method == "textDocument/willSaveWaitUntil":
+        formatting.handle_will_save_wait_until(ws, msg.params, msg.id)
+
+    # Document symbols (Tier 2)
+    else if method == "textDocument/documentSymbol":
+        let uri = extract_text_doc_uri(msg.params)
+        symbols.handle_document_symbols(ws, uri, msg.id)
+
+    # Navigation (Tier 2)
+    else if method == "textDocument/definition" or method == "textDocument/declaration":
+        var pos = position_params(ws, msg.params)
+        navigation.handle_definition(ws, pos.uri, pos.line, pos.character, msg.id)
+    else if method == "textDocument/typeDefinition":
+        var pos = position_params(ws, msg.params)
+        navigation.handle_type_definition(ws, pos.uri, pos.line, pos.character, msg.id)
+    else if method == "textDocument/implementation":
+        var pos = position_params(ws, msg.params)
+        navigation.handle_implementation(ws, pos.uri, pos.line, pos.character, msg.id)
+    else if method == "textDocument/hover":
+        var pos = position_params(ws, msg.params)
+        if not pos.valid:
+            proto.write_response(msg.id, json.null_value())
+        else:
+            navigation.handle_hover(ws, pos.uri, pos.line, pos.character, msg.id)
+    else if method == "textDocument/references":
+        var pos = position_params(ws, msg.params)
+        refs.handle_references(ws, pos.uri, pos.line, pos.character, refs.include_declaration_param(msg.params), msg.id)
+    else if method == "textDocument/documentHighlight":
+        var pos = position_params(ws, msg.params)
+        highlight.handle_document_highlight(ws, pos.uri, pos.line, pos.character, msg.id)
+    else if method == "textDocument/foldingRange":
+        let uri = extract_text_doc_uri(msg.params)
+        folding.handle_folding_range(ws, uri, msg.id)
+    else if method == "textDocument/selectionRange":
+        let uri = extract_text_doc_uri(msg.params)
+        var positions = extract_selection_positions(ws, uri, msg.params)
+        selection.handle_selection_range(ws, uri, positions.as_span(), msg.id)
+        positions.release()
+    else if method == "workspace/symbol":
+        wsym.handle_workspace_symbol(ws, extract_query(msg.params), msg.params, msg.id)
+
+    # Code lens
+    else if method == "textDocument/codeLens":
+        let uri = extract_text_doc_uri(msg.params)
+        code_lens.handle_code_lens(ws, uri, msg.id)
+    else if method == "codeLens/resolve":
+        code_lens.handle_code_lens_resolve(ws, msg.params, msg.id)
+
+    # Type hierarchy
+    else if method == "textDocument/prepareTypeHierarchy":
+        var pos = position_params(ws, msg.params)
+        type_hier.handle_prepare_type_hierarchy(ws, pos.uri, pos.line, pos.character, msg.id)
+    else if method == "typeHierarchy/supertypes":
+        type_hier.handle_supertypes(ws, msg.params, msg.id)
+    else if method == "typeHierarchy/subtypes":
+        type_hier.handle_subtypes(ws, msg.params, msg.id)
+
+    # Call hierarchy
+    else if method == "textDocument/prepareCallHierarchy":
+        var pos = position_params(ws, msg.params)
+        call_hier.handle_prepare_call_hierarchy(ws, pos.uri, pos.line, pos.character, msg.id)
+    else if method == "callHierarchy/incomingCalls":
+        call_hier.handle_incoming_calls(ws, msg.params, msg.id)
+    else if method == "callHierarchy/outgoingCalls":
+        call_hier.handle_outgoing_calls(ws, msg.params, msg.id)
+
+    # Document links
+    else if method == "textDocument/documentLink":
+        doc_link.handle_document_link(ws, msg.params, msg.id)
+    else if method == "documentLink/resolve":
+        doc_link.handle_document_link_resolve(msg.params, msg.id)
+
+    # Linked editing range
+    else if method == "textDocument/linkedEditingRange":
+        var pos = position_params(ws, msg.params)
+        linked_range.handle_linked_editing_range(ws, pos.uri, pos.line, pos.character, msg.id)
+
+    # Execute command
+    else if method == "workspace/executeCommand":
+        exec_cmd.handle_execute_command(msg.params, msg.id)
+        # The restart command tells us to exit.
+        let command_name = extract_command_name(msg.params)
+        if command_name.equal("mtc.restartServer"):
+            return Option[bool].some(value = false)
+
+    # Milk Tea custom extensions
+    else if method == "milkTea/documentContext":
+        doc_ctx.handle_document_context(ws, msg.params, msg.id, req_id)
+    else if method == "milkTea/debugInfo":
+        debug_info.handle_debug_info(ws, msg.params, msg.id)
+
+    # Pull diagnostics
+    else if method == "textDocument/diagnostic":
+        pull_diag.handle_document_diagnostic(ws, msg.params, msg.id)
+    else if method == "workspace/diagnostic":
+        pull_diag.handle_workspace_diagnostic(ws, msg.params, msg.id)
+
+    # Workspace notifications
+    else if method == "workspace/didChangeConfiguration":
+        ws_notif.handle_did_change_configuration(ws, msg.params)
+    else if method == "workspace/didChangeWorkspaceFolders":
+        ws_notif.handle_did_change_workspace_folders(ws, msg.params)
+    else if method == "workspace/willRenameFiles":
+        ws_notif.handle_will_rename_files(ws, msg.params, msg.id)
+    else if method == "workspace/didChangeWatchedFiles":
+        ws_notif.handle_did_change_watched_files(ws, msg.params)
+
+    # Tier 3
+    else if method == "textDocument/completion":
+        var pos = position_params(ws, msg.params)
+        completion.handle_completion(ws, pos.uri, pos.line, pos.character, msg.id)
+    else if method == "completionItem/resolve":
+        completion.handle_completion_resolve(ws, msg.params, msg.id)
+    else if method == "textDocument/semanticTokens/full":
+        let uri = extract_text_doc_uri(msg.params)
+        semtok.handle_semantic_tokens(ws, uri, msg.id)
+    else if method == "textDocument/semanticTokens/range":
+        let uri = extract_text_doc_uri(msg.params)
+        var range = extract_range_lines(msg.params)
+        semtok.handle_semantic_tokens_range(ws, uri, range.start_line, range.end_line, msg.id)
+    else if method == "textDocument/semanticTokens/full/delta":
+        let uri = extract_text_doc_uri(msg.params)
+        semtok.handle_semantic_tokens_delta(ws, uri, msg.id)
+    else if method == "textDocument/signatureHelp":
+        var pos = position_params(ws, msg.params)
+        sighelp.handle_signature_help(ws, pos.uri, pos.line, pos.character, msg.id)
+    else if method == "textDocument/prepareRename":
+        var pos = position_params(ws, msg.params)
+        rename_mod.handle_prepare_rename(ws, pos.uri, pos.line, pos.character, msg.id)
+    else if method == "textDocument/rename":
+        var pos = position_params(ws, msg.params)
+        let new_name_ptr = extract_new_name(msg.params)
+        rename_mod.handle_rename(ws, pos.uri, pos.line, pos.character, new_name_ptr, msg.id)
+    else if method == "textDocument/codeAction":
+        let uri = extract_text_doc_uri(msg.params)
+        code_actions.handle_code_actions(ws, uri, msg.params, msg.id)
+    else if method == "textDocument/inlayHint":
+        let uri = extract_text_doc_uri(msg.params)
+        var range = extract_range_lines(msg.params)
+        let start_char = ws.position_byte_offset(uri, range.start_line, range.start_char)
+        let end_char = ws.position_byte_offset(uri, range.end_line, range.end_char)
+        inlay.handle_inlay_hint(ws, uri, range.start_line, start_char, range.end_line, end_char, msg.id)
+    else if method == "textDocument/onTypeFormatting":
+        var pos = position_params(ws, msg.params)
+        on_type.handle_on_type_formatting(ws, pos.uri, pos.line, extract_trigger_character(msg.params), msg.id)
+
+    else if method == "$/setTrace":
+        apply_trace_level(msg.params)
+        return Option[bool].some(value = true)
+
+    else:
+        return Option[bool].none
+    return Option[bool].some(value = true)
+
+
+## Extract the textDocument.uri from a generic params object.
+function extract_text_doc_uri(params: json.Value) -> str:
+    return proto.extract_text_doc_uri(params)
+
+
+struct PositionParams:
+    uri: str
+    line: ptr_uint
+    character: ptr_uint
+    ## False when the request carries no usable `position` object; the host's
+    ## handlers raise on such input and answer null.
+    valid: bool
+
+
+## Extract textDocument position params and convert the character column from
+## the client's UTF-16 code units to the byte offset the scanners use, against
+## the document's current text.
+function position_params(ws: ref[workspace.Workspace], params: json.Value) -> PositionParams:
+    let p = extract_position_params(params)
+    if not p.valid:
+        return p
+    return PositionParams(
+        uri = p.uri,
+        line = p.line,
+        character = ws.position_byte_offset(p.uri, p.line, p.character),
+        valid = true,
+    )
+
+
+## Extract textDocument position params.  `valid` is false when the request
+## carries no usable position object; the host's handlers raise on such
+## input and answer null.
+function extract_position_params(params: json.Value) -> PositionParams:
+    let obj_ptr = params.as_object()
+    if obj_ptr == null:
+        return PositionParams(uri = "", line = 0z, character = 0z, valid = false)
+
+    var uri: str = ""
+    var line: ptr_uint = 0
+    var character: ptr_uint = 0
+    unsafe:
+        let text_doc_ptr = read(obj_ptr).get("textDocument")
+        if text_doc_ptr != null:
+            let td_obj_ptr = read(text_doc_ptr).as_object()
+            if td_obj_ptr != null:
+                let uri_val = read(td_obj_ptr).get("uri")
+                if uri_val != null:
+                    let s = read(uri_val).as_string() else:
+                        return PositionParams(uri = "", line = 0z, character = 0z, valid = false)
+                    uri = s
+
+        let pos_ptr = read(obj_ptr).get("position")
+        if pos_ptr == null:
+            return PositionParams(uri = uri, line = 0z, character = 0z, valid = false)
+        let pos_obj_ptr = read(pos_ptr).as_object()
+        if pos_obj_ptr == null:
+            return PositionParams(uri = uri, line = 0z, character = 0z, valid = false)
+
+        let line_val = read(pos_obj_ptr).get("line")
+        if line_val == null:
+            return PositionParams(uri = uri, line = 0z, character = 0z, valid = false)
+        let n = read(line_val).as_number() else:
+            return PositionParams(uri = "", line = 0z, character = 0z, valid = false)
+        line = ptr_uint<-int<-n
+
+        let char_val = read(pos_obj_ptr).get("character")
+        if char_val == null:
+            return PositionParams(uri = uri, line = 0z, character = 0z, valid = false)
+        let c = read(char_val).as_number() else:
+            return PositionParams(uri = "", line = 0z, character = 0z, valid = false)
+        character = ptr_uint<-int<-c
+
+    return PositionParams(uri = uri, line = line, character = character, valid = true)
+
+
+## Determine the workspace root from CLI arguments or the current directory.
+## The workspace root to start with, before the client's `initialize` rootUri
+## arrives: an explicit non-flag argument (`mtc lsp <root>`), else the current
+## directory.  `args[0]` is the command name (`lsp`), never a root.
+function workspace_root_from_args(args: span[str]) -> str:
+    var i: ptr_uint = 1
+    while i < args.len:
+        let arg = unsafe: read(args.data + i)
+        if not arg.starts_with("-"):
+            return arg
+        i += 1
+    return "."
+
+
+## Extract the newName field from a rename request params.
+function extract_new_name(params: json.Value) -> str:
+    let obj_ptr = params.as_object()
+    if obj_ptr == null: return ""
+    unsafe:
+        let name_ptr = read(obj_ptr).get("newName")
+        if name_ptr == null: return ""
+        let name_str = read(name_ptr).as_string() else:
+            return ""
+        return name_str
+
+
+## Extract the query string from workspace/symbol params.
+function extract_query(params: json.Value) -> str:
+    let obj_ptr = params.as_object()
+    if obj_ptr == null: return ""
+    unsafe:
+        let query_ptr = read(obj_ptr).get("query")
+        if query_ptr == null: return ""
+        let query_str = read(query_ptr).as_string() else:
+            return ""
+        return query_str
+
+
+## Extract selectionRange positions as a flat (line, character, ...) list,
+## each character converted from the client's UTF-16 code units to a byte
+## offset in the document.
+function extract_selection_positions(ws: ref[workspace.Workspace], uri: str, params: json.Value) -> vec.Vec[ptr_uint]:
+    var result = vec.Vec[ptr_uint].create()
+    let obj_ptr = params.as_object()
+    if obj_ptr == null:
+        return result
+    unsafe:
+        let positions_ptr = read(obj_ptr).get("positions")
+        if positions_ptr == null:
+            return result
+        let array_ptr = read(positions_ptr).as_array()
+        if array_ptr == null:
+            return result
+        var i: ptr_uint = 0
+        while i < read(array_ptr).len():
+            let pos_ptr = read(array_ptr).get(i) else:
+                break
+            let pos_obj = read(pos_ptr).as_object()
+            if pos_obj != null:
+                let line = number_field(pos_obj, "line")
+                let character = number_field(pos_obj, "character")
+                result.push(line)
+                result.push(ws.position_byte_offset(uri, line, character))
+            i += 1
+    return result
+
+
+## Extract the start/end line pair from a range-carrying request params.
+struct RangeLines:
+    start_line: ptr_uint
+    start_char: ptr_uint
+    end_line: ptr_uint
+    end_char: ptr_uint
+
+
+function extract_range_lines(params: json.Value) -> RangeLines:
+    var result = RangeLines(start_line = 0, start_char = 0, end_line = 0, end_char = 0)
+    let obj_ptr = params.as_object()
+    if obj_ptr == null:
+        return result
+    unsafe:
+        let range_ptr = read(obj_ptr).get("range")
+        if range_ptr == null:
+            return result
+        let range_obj = read(range_ptr).as_object()
+        if range_obj == null:
+            return result
+        let start_ptr = read(range_obj).get("start")
+        if start_ptr != null:
+            let start_obj = read(start_ptr).as_object()
+            if start_obj != null:
+                result.start_line = number_field(start_obj, "line")
+                result.start_char = number_field(start_obj, "character")
+        let end_ptr = read(range_obj).get("end")
+        if end_ptr != null:
+            let end_obj = read(end_ptr).as_object()
+            if end_obj != null:
+                result.end_line = number_field(end_obj, "line")
+                result.end_char = number_field(end_obj, "character")
+    return result
+
+
+## A non-negative numeric field of a JSON object, or 0 when absent.
+function number_field(obj: ptr[json.Object], name: str) -> ptr_uint:
+    unsafe:
+        let field_ptr = read(obj).get(name)
+        if field_ptr == null:
+            return 0
+        let value = read(field_ptr).as_number() else:
+            return 0
+        if value < 0.0:
+            return 0
+        return ptr_uint<-int<-value
+
+
+## Extract the onTypeFormatting trigger character ("ch" field).
+function extract_trigger_character(params: json.Value) -> str:
+    let obj_ptr = params.as_object()
+    if obj_ptr == null: return ""
+    unsafe:
+        let ch_ptr = read(obj_ptr).get("ch")
+        if ch_ptr == null: return ""
+        let ch_str = read(ch_ptr).as_string() else:
+            return ""
+        return ch_str
+
+
+## Extract the "command" field from executeCommand params.
+function extract_command_name(params: json.Value) -> str:
+    let obj_ptr = params.as_object()
+    if obj_ptr == null: return ""
+    unsafe:
+        let cmd_ptr = read(obj_ptr).get("command")
+        if cmd_ptr == null: return ""
+        let cmd_str = read(cmd_ptr).as_string() else:
+            return ""
+        return cmd_str
+
+
+## Extract the numeric request id from a json.Value id field, or 0.
+function extract_request_id(id: json.Value) -> ptr_uint:
+    if id.is_null(): return 0
+    let n = id.as_number() else:
+        return 0
+    return ptr_uint<-int<-n
+
+
+## Send a workspace/configuration request to the client to pull user
+## settings.  The response is handled asynchronously in
+## handle_incoming_response.
+function schedule_config_request(ws: ref[workspace.Workspace]) -> void:
+    let id = proto.send_request("workspace/configuration", "[{\"section\":\"milkTea.format.mode\"},{\"section\":\"milkTea.lsp.dependencyResolution\"},{\"section\":\"milkTea.lsp.platform\"},{\"section\":\"milkTea.lsp.strictCurrentRootDiagnostics\"}]")
+    ws.set_pending_config_request(id)
+
+
+## Register `workspace/didChangeWatchedFiles` when the client supports dynamic
+## registration.  The response is not needed; the handler's cache/index
+## invalidation is what keeps an external edit visible.
+function schedule_watched_files_registration(ws: ref[workspace.Workspace]) -> void:
+    if not ws.client_watched_files_dynamic or ws.watched_files_registered:
+        return
+    ws.watched_files_registered = true
+    proto.send_request("client/registerCapability", "{\"registrations\":[{\"id\":\"mtc-watched-files\",\"method\":\"workspace/didChangeWatchedFiles\",\"registerOptions\":{\"watchers\":[{\"globPattern\":\"**/*.mt\"}]}}]}")
+
+
+## Handle an incoming JSON-RPC response.  Dispatches based on the response
+## id to the appropriate pending request handler.
+function handle_incoming_response(ws: ref[workspace.Workspace], msg: proto.Message) -> void:
+    let req_id = extract_request_id(msg.id)
+    if req_id == 0:
+        return
+
+    if ws.config_request_id == req_id:
+        apply_config_response(ws, msg)
+
+
+## Apply the workspace/configuration response.  Reads the result array
+## and stores settings in the workspace.
+function apply_config_response(ws: ref[workspace.Workspace], msg: proto.Message) -> void:
+    ws.clear_pending_config_request()
+    if msg.error_msg.is_null():
+        parse_and_apply_config(ws, msg.raw_body.as_str())
+
+
+function parse_and_apply_config(ws: ref[workspace.Workspace], raw: str) -> void:
+    var storage = arena.create(raw.len + 1)
+    defer: storage.release()
+    let root = cjson.parse(storage.to_cstr(raw)) else:
+        ws.config_received = true
+        return
+    defer: cjson.delete(root)
+    let result_obj = cjson.get_object_item(root, c"result") else:
+        ws.config_received = true
+        return
+    let count = cjson.get_array_size(result_obj)
+    if count < 4:
+        ws.config_received = true
+        return
+    # Item 0: format mode
+    let item0 = cjson.get_array_item(result_obj, 0)
+    if item0 != null:
+        let s = cjson.get_string_value(unsafe: item0)
+        if s != null:
+            let val = str.nullable_cstr_as_str(s)
+            if val.is_some():
+                ws.format_mode.clear()
+                ws.format_mode.append(val.unwrap())
+    # Item 1: dependency resolution mode
+    let item1 = cjson.get_array_item(result_obj, 1)
+    if item1 != null:
+        let s = cjson.get_string_value(unsafe: item1)
+        if s != null:
+            let val = str.nullable_cstr_as_str(s)
+            if val.is_some():
+                ws.dependency_resolution_mode.clear()
+                ws.dependency_resolution_mode.append(val.unwrap())
+    # Item 2: platform override
+    let item2 = cjson.get_array_item(result_obj, 2)
+    if item2 != null:
+        let s = cjson.get_string_value(unsafe: item2)
+        if s != null:
+            let val = str.nullable_cstr_as_str(s)
+            if val.is_some():
+                ws.platform_override.clear()
+                ws.platform_override.append(val.unwrap())
+    # Item 3: strict root diagnostics
+    let item3 = cjson.get_array_item(result_obj, 3)
+    if item3 != null:
+        ws.strict_current_root_diagnostics = cjson.is_true(unsafe: item3) != 0
+    ws.config_received = true

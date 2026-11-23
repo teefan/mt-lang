@@ -94,6 +94,7 @@
 
 # Executables
 *.exe             binary
+vendor/bootstrap/**/mtc binary
 
 # RC files
 *.*rc             text

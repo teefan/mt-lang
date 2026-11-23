@@ -238,6 +238,7 @@ function test_binary_reader_reports_end_of_buffer() -> void:
 
     match reader.read_ubyte():
         Result.failure:
+            pass
         Result.success:
             expect(false, "read past end should fail")
 
@@ -251,6 +252,7 @@ function test_binary_reader_reports_invalid_bool() -> void:
 
     match reader.read_bool():
         Result.failure:
+            pass
         Result.success:
             expect(false, "invalid bool byte should fail")
 

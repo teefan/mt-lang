@@ -350,6 +350,13 @@ function read_fd_internal(fd: int, timeout_ms: int) -> Result[ReadResult, Proces
     return Result[ReadResult, ProcessError].success(value= take_read_result(raw_result))
 
 
+## Read from an arbitrary file descriptor.  `timeout_ms` 0 returns immediately
+## (`ready` false when nothing is buffered, `closed` true at EOF); the DAP
+## server's event loop polls its descriptors before calling this.
+public function read_fd(fd: int, timeout_ms: int) -> Result[ReadResult, ProcessError]:
+    return read_fd_internal(fd, timeout_ms)
+
+
 function write_fd_internal(fd: int, value: str) -> Result[ptr_uint, ProcessError]:
     if fd < 0:
         return Result[ptr_uint, ProcessError].failure(error= simple_process_error("process stream is closed"))

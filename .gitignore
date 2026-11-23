@@ -84,3 +84,7 @@ __mt_test_*
 /bin/tracy-profiler
 build/
 bindings/vscode/themes/current-snapshot.json
+vgcore.*
+core
+core.*
+.commandcode/

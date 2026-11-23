@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Cache vendored sources
+        uses: actions/cache@v4
+        with:
+          path: third_party
+          key: third-party-${{ runner.os }}-${{ hashFiles('projects/mtc/src/mtc/toolchain_cli.mt', 'config/upstream_versions.yml') }}
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            build-essential cmake ninja-build zlib1g-dev libssl-dev ruby curl tar
+
+      - name: Fetch vendored sources
+        run: vendor/bootstrap/linux-x86_64/mtc toolchain bootstrap
+
+      - name: Bootstrap (fixed point + self-tests)
+        run: tools/bootstrap.sh -j 4
+
+      - name: In-language tests
+        run: build/stage2/mtc test test/mt -I .
+
+      - name: Recorded oracles
+        run: |
+          # Five CLI cases are host-toolchain artifacts: bindgen output is
+          # recorded with clang 23 (the runner has 18), build-wasm needs emcc,
+          # and toolchain-doctor reports host-only curl/enet headers.  The other
+          # 222 cases are environment-independent and are the CI oracle.
+          ruby tools/cli_parity.rb --expect tools/golden/cli.json -q \
+            --filter '^(?!(bindgen-(include|link|stdout)|build-wasm|toolchain-doctor)$)'
+          ruby tools/diag_parity.rb check std examples --expect tools/golden/diag.json -q
+          ruby tools/lint_parity.rb --expect tools/golden/lint.json -q
+          ruby tools/format_parity.rb all -j 4 --expect tools/golden/format.json -q
+
+      - name: LSP conformance
+        run: ruby tools/lsp_conformance.rb --bin build/stage2/mtc
+
+      - name: Examples
+        run: tools/gates.sh --areas examples --run
+
+      - name: Imported bindings
+        run: build/stage2/mtc imported-bindings --all --check
+
+      - name: Docs smoke
+        run: ruby tools/docs_smoke.rb --self build/stage2/mtc
+
+      - name: Release build and determinism
+        run: |
+          tools/release.sh -j 4
+          first="$(sha256sum dist/mtc-*-linux-x86_64.tar.gz | cut -d' ' -f1)"
+          tools/release.sh --skip-build -j 4 >/dev/null
+          second="$(sha256sum dist/mtc-*-linux-x86_64.tar.gz | cut -d' ' -f1)"
+          test "$first" = "$second"
+          echo "release checksum: $first"
+
+      - name: Clean-container runtime smoke
+        env:
+          REQUIRE_CONTAINER: "1"
+        run: tools/release_container_smoke.sh dist/mtc-*-linux-x86_64.tar.gz
