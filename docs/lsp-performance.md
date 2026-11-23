@@ -5,8 +5,9 @@
 > Self-host LSP measurements — the
 > `[LSP perf]` per-request log, the edit-cycle numbers and the remaining
 > per-module caching step — live in
-> [self-host-plan.md](./self-host-plan.md) (§0g "Editor responsiveness" and the
-> handoff section).
+> [self-host-plan.md](./self-host-plan.md) (Status at a glance, Handoff and
+> Ledger); the pre-compaction §0g "Editor responsiveness" record is at
+> `git show d8a199c7:docs/self-host-plan.md`.
 
 Research into how to drastically improve Milk Tea LSP performance, especially
 `textDocument/completion`, grounded in the profile from

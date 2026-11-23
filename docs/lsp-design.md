@@ -5,9 +5,11 @@ measurement ended with the host retirement (session 143); this document's
 `lsp_parity`/`lsp_project_audit`/`lsp_recovery_probe` comparisons are historical,
 and the archived host is at tag `archive/host-ruby-0.4.26`.  The surviving
 instruments are `tools/lsp_parity.rb record --server self`, `tools/lsp_soak.rb`
-and the valgrind gate.
-Last updated: 2026-11-21 (session-144 audit; behavior unchanged).
-43 modules, ~31.9k lines, 30 capability keys.  The 3.18 conformance audit and
+and the valgrind gate; `tools/lsp_conformance.rb` is the spec oracle.
+Last updated: 2026-11-23; feature behavior last changed in session 148, and
+session 154 changed only cache ownership (per-document caches evicted on close,
+map keys released by every bulk cache release).
+44 modules, ~33.6k lines, 30 capability keys.  The 3.18 conformance audit and
 phase plan are in `docs/lsp-enhancement-plan.md`; use that as the work list.
 
 > **Historical note:** parity was measured by the self-vs-host harness, not by capability
@@ -21,18 +23,20 @@ phase plan are in `docs/lsp-enhancement-plan.md`; use that as the work list.
 > 3 stress probes), all deliberate and documented (the host hanging on a
 > malformed frame, the host's facts lag, the host's parser recovery, and the
 > self answering where the host gives up) — every differing entry is catalogued
-> by family in
-> [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure),
-> which is the live status; the per-feature claims below are self-host-side
-> results that the harness now confirms or contradicts entry by entry.
+> by family in the pre-compaction plan record (`git show
+> d8a199c7:docs/self-host-plan.md`, §0k); the per-feature claims below are
+> self-host-side results that the harness now confirms or contradicts entry by
+> entry.  **§0 references throughout this document point into that archived
+> record**, not the current plan; the live status is the current plan's Status
+> at a glance, Handoff and Ledger.
 > **LSP changes must be verified against a real client too**: the 2026-09-26 VS
 > Code startup crash lived only in `codeLens/resolve`, which the corpus did not
 > send.  Run the extension host headlessly with the server under valgrind
 > (`xvfb-run code --extensionDevelopmentPath=bindings/vscode …`) for
 > user-visible changes.
-> The LSP test suite (`test/tooling/lsp/server/*`) still spawns the *Ruby* server
-> (`RbConfig.ruby -I lib -e "require 'milk_tea'; MilkTea::LSP::Server.new.run"`),
-> so CI alone does not exercise `build/stage2/mtc lsp`.
+> The Ruby-server test path went with the host retirement (session 143); LSP
+> coverage is the in-language tests under `projects/mtc/test` plus
+> `tools/lsp_conformance.rb`, which drives the native server directly.
 Hover coverage: measured by the project audit — 1 differing entry of 915 hover
 requests on the SimpleGame corpus (the documented asynchronous `type quat`
 location; the `fn `-typed field closed with the function-type names;
@@ -500,8 +504,8 @@ fixed the same day.
 
 | Feature | Status |
 |---------|--------|
-| **Live parity status** | **See [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure)** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; **88 requests** + 28 stress probes; **6 documented differing entries**) and by the project audit (7075 entries / **8 stable differing entries + the host's first-file `documentSymbol` race**, session 140) |
-| **Position encoding** | **Request positions are converted at the boundary** (session 27): the client's `character` counts UTF-16 code units, and `Workspace.position_byte_offset` maps it to the byte offset the token scanners use, against the current buffer, for every position- and range-carrying request (`position_params`, `selectionRange` positions, `rangeFormatting`).  Out-of-range positions keep the raw column, so the bounds behavior is unchanged.  **Emitted positions stay byte-based**, as the Ruby host's are (its lexer runs on the binary line); a client's UTF-16 cursor lands correctly, while a *response range* after a multi-byte character on the same line can be one column off — the same value the host emits.  The host's own decoding of `character` is a plain copy (`decode_client_char` is a no-op under utf-16), so it resolves slice-based paths by *characters*; on text with astral characters the self would follow the spec instead (not exercised by the corpus). |
+| **Live parity status** | **See the pre-compaction plan record (`git show d8a199c7:docs/self-host-plan.md`, §0k); the current authority is `tools/lsp_conformance.rb` (37/37).** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; **88 requests** + 28 stress probes; **6 documented differing entries**) and by the project audit (7075 entries / **8 stable differing entries + the host's first-file `documentSymbol` race**, session 140) |
+| **Position encoding** | **Both directions are converted at the boundary (session 145 phase 1)**: `initialize` reads `capabilities.general.positionEncodings` and advertises `utf-8` when the client offers it (the server's byte columns are then the wire format), otherwise LSP-default UTF-16 and `Workspace.position_encoding_utf16` is set.  Incoming positions route through `utils.position_to_byte_utf16`/`position_to_byte_utf8` for every position- and range-carrying request, including incremental `didChange`; emitted ranges use `utils.byte_to_utf16_column` with the per-document line-start map (`utils.build_line_starts`/`line_at_index`).  The semantic-token cache records its column encoding, so a cached UTF-8 pass is never replayed to a UTF-16 client.  ASCII behavior is unchanged; on astral text the self follows the negotiated spec rather than the host's byte-column echo. |
 | Diagnostics (push + pull) | **DONE (stage 4)** — the editor *buffer* is analysed (not the file on disk); `lex/error`, `parse/error`, `import/load-error`, `sema/error` and lint items carry the host's codes, `data.stage`, token-length ranges (import failures anchor at the module-path text) and MarkupContent for quoted-identifier sema messages; `workspace/diagnostic` reports every open document in didOpen order with `previousResultIds`.  `diagnostic/pull` and `workspace/diagnostic` are byte-equal to the host. |
 | Incremental text sync (change:2) | **DONE** — range-based edits, UTF-8 line/char→byte conversion |
 | Config application | **DONE** — parse workspace/configuration response |
@@ -518,15 +522,15 @@ fixed the same day.
 | code_lens method support | **DONE** — extending block methods included |
 | Enum/variant member completions | **DONE** — dot-receiver context |
 | Workspace dependency graph (didChangeWatchedFiles) | **DONE** — broad cache invalidation with per-URI clearing for renames |
-| Multi-root workspace reindex (didChangeWorkspaceFolders) | **DONE** — cache clear + index stale flag |
-| Workspace index rename (willRenameFiles) | **DONE** — per-oldUri cache clearing + index stale flag |
+| Multi-root workspace reindex (didChangeWorkspaceFolders) | **DONE** — `workspaceFolders` maps into `Workspace.roots`; add/remove re-roots the module and symbol walk roots and the caches (session 145 phase 3) |
+| Workspace index rename (willRenameFiles) | **DONE** — a real request answering a `WorkspaceEdit` with import rewrites (or `null`); the index entry moves and the old path's caches are dropped (session 145 phase 3; index move session 137) |
 | Sporadic SIGSEGV | **NO REPRODUCTIONS** — the 2026-09-26 stress corpus (15 adversarial probes) plus a valgrind run over a full request sweep completed with zero crashes, invalid reads/writes or invalid frees |
 
 ## 9. Real-project readiness and recovery (2026-09-28)
 
 The focused plan for making the self-hosted server a daily driver now lives in
-`docs/self-host-plan.md` (the program's LSP track; §0k carries the measured
-records).  Its starting evidence is kept below, then the
+`docs/self-host-plan.md` (the program's LSP track; the pre-compaction record at
+`d8a199c7` carries the measured records).  Its starting evidence is kept below, then the
 recovery result:
 
 - **Recovery was not at parity** when the plan was written.  Driving both servers
@@ -570,8 +574,8 @@ recovery result:
   of re-reading and re-hashing it per request (C2/C3); the long-session soak
   driver (`tools/lsp_soak.rb`) and its `soak` meter gate landed.  C4's RSS
   ceiling still waits on the per-parse leak convention — see
-  `docs/self-host-plan.md` §0k session 30 ("Soak profile and the long-session
-  blocker").
+  `git show d8a199c7:docs/self-host-plan.md` §0k session 30 ("Soak profile and
+  the long-session blocker").
 - **Non-ASCII doc strings** (session 10).  The host's C backend emitted
   `String#inspect`'s `\xNN` escapes, and a C hex escape absorbs every following
   hex digit, so `"4\xC3\x974"` compiled to `4`, `0xC3`, `t` with a stale byte

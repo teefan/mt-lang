@@ -3,16 +3,18 @@
 Status: **audit complete (session 144); phases 0–5 landed (session 145); the
 non-text receiver completion extension landed in session 147 and the aliased
 enum-member hover in session 148.  The enhancement program, including the
-optional phase-5 subset, is complete.**
+optional phase-5 subset, is complete.**  Session 154 is maintenance only:
+`didClose` evicts every per-document cache and every bulk cache release frees
+its map keys.
 Baseline: **LSP 3.18.0** (2026-06-04); 3.19 is upcoming.
-Implementation: `projects/mtc/src/mtc/lsp` — 43 `.mt` files, ~31.9k lines,
+Implementation: `projects/mtc/src/mtc/lsp` — 44 `.mt` files, ~33.6k lines,
 entry point `mtc lsp` (`projects/mtc/src/mtc/lsp/server.mt`).
 Audit method: 3.18 meta-model diff, targeted code review, and live probes
 against `build/stage2/mtc` (0.4.26, release) on 2026-11-21.
 
 This is the plan of record for LSP work.  `docs/self-host-plan.md` remains the
 project ledger; this document carries the LSP-specific state, findings and
-phase gates.  The audit was targeted, not a line-by-line review of all 31.9k
+phase gates.  The audit was targeted, not a line-by-line review of all 33.6k
 lines: **the conformance harness (`tools/lsp_conformance.rb`) is the authority.**
 
 ## 1. Current state
@@ -24,17 +26,17 @@ an oracle.  The existing instruments are:
 
 - `tools/lsp_parity.rb record --server self --out FILE [--stress]` /
   `compare` — corpus recording, no host.
-- `tools/lsp_soak.rb --quiet` — RSS slope (session-143: 73.8 KB/cycle raw /
-  19.0 LS at 200 cycles; raw in the 70–80 band).
+- `tools/lsp_soak.rb --quiet` — RSS slope (session-148: 74.9 KB/cycle raw /
+  7.9 LS at 200 cycles; raw in the 70–80 band).
 - `tools/gates.sh --areas lsp --only valgrind_lsp,soak --run` — valgrind
-  (`0 errors` in session 143) and soak.
+  (`0 errors` in session 148) and soak.
 - `projects/mtc/test/{completion,cursor,lsp_index,lsp_utils}_test.mt` — unit
   coverage for helpers, not protocol conformance.
 - `tools/lsp_conformance.rb` — the spec oracle (phases 0–5, the session-147
   completion extension and the session-148 aliased hover): 37 cases from §5
   with explicit assertions, a standalone stdio client, `--bin`, `--only`,
   `--timeout` and `--json`.  It is the `lsp_conformance` hard tier-2 gate and
-  is **green 37/37** at the session-148 commit.  `--bin` accepts a wrapper, so
+  is **green 37/37** (replayed in session 154).  `--bin` accepts a wrapper, so
   the same cases can be driven under valgrind; the existing `valgrind_lsp`
   corpus drive remains the memory instrument because cold valgrind server
   startups are not a better use of tier-2 time.

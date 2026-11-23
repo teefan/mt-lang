@@ -79,7 +79,7 @@ sharing one alias in a file.  `packages.source` is the single override
 (`pkg_source`) because both `source` and `package_source` are common
 locals/parameters in the files that use it.
 
-Current state: **168 modules, 0 alias violations**.
+Current state: **169 modules, 0 alias violations**.
 
 ### Operation vocabulary
 
@@ -100,31 +100,33 @@ textual counting cannot see aliasing or dynamic dispatch, and names are matched
 globally (two modules exporting the same name can mask each other). Existing
 candidates are frozen; a **new** one fails `--strict`.
 
-Current baseline: **32 unused, 6 test-only**. Examples worth triaging:
+Current baseline: **30 unused, 7 test-only**. Examples worth triaging:
 `c_backend.CBackendError`, `lowering.LoweringError`, `lowering/async.mt` type
 helpers, `lsp/navigation.mt analysis_for_document`/`ast_for_document`,
-`packages/*` helpers, and `version_info.GIT_REVISION`.
+`ir.TypeId`, and the `packages/*` helpers.
 
 ### Duplication
 
 Normalized 12-line windows (comments/blanks stripped, literals replaced with
 `S`/`N`) hashed across all functions. Overlapping windows make the cluster count
 large; `duplicated_lines` is the ratcheted metric. Current baseline:
-**6,470 duplicated lines in 896 window clusters**.  Session 125 fixed the
+**6,525 duplicated lines in 885 window clusters**.  Session 125 fixed the
 function-end scan for multi-line signatures, so this baseline includes bodies
 the earlier metric skipped; session 126's splits also shifted a few window
 boundaries, session 131's completion/diagnostic feature growth added two
 windows, and session 132's format-string context added one shared
-parameter-loop window.  None is a duplication regression.  Use the clusters as
-pointers to repeated emission/frame boilerplate, not as an absolute quality
-score.
+parameter-loop window.  Sessions 149–154's memory and cache work added the
+boxed `Type`-payload deref idiom (`let x_bp = unsafe: read(x.payload)`) and the
+LSP cache-release helpers (+55 duplicated lines, −11 clusters).  None is a
+duplication regression.  Use the clusters as pointers to repeated
+emission/frame boilerplate, not as an absolute quality score.
 
 ### Size, markers, tests
 
-- **127,929 code lines**; **1 function ≥ 200 lines**; **11 files ≥ 2,000 code
-  lines**. The ratchet counts these, so a refactor cannot trade one long
-  function for another.  Session 130 closed the rest: only `binding_at` (385,
-  excluded) remains.
+- **129,436 code lines**; **2 functions ≥ 200 lines** (`binding_at` 385,
+  excluded, and `resolve_cursor` 200, exactly at the boundary); **11 files
+  ≥ 2,000 code lines**. The ratchet counts these, so a refactor cannot trade one
+  long function for another.
 - **0 marker comments** (`TODO`/`FIXME`/`XXX`/`HACK`); any new one fails.
 - Test trees: **22** files in `projects/mtc/test`, **85** in `test/mt`. The
   ratchet fails if either count drops (silent-skip protection).
@@ -195,21 +197,30 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 148, 2026-11-21)
+## 6. Current baseline (session 154, 2026-11-22)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 161,118 / 127,929 |
+| source files / lines / code lines | 169 / 163,034 / 129,436 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
-| alias violations | 0 (168 modules) |
-| dead exports (unused / test-only) | 32 / 6 |
-| duplication (windows / duplicated lines) | 896 / 6,470 (window 12) |
-| functions ≥ 200 lines | 1 |
+| alias violations | 0 (169 modules) |
+| dead exports (unused / test-only) | 30 / 7 |
+| duplication (windows / duplicated lines) | 885 / 6,525 (window 12) |
+| functions ≥ 200 lines | 2 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 22 / 85 |
+
+Session 154 refreshed the baseline for the LSP per-document cache eviction and
+the map-key release (+56 code lines).  Session 153 added the `generate_c`
+emitter release (+43).  Session 152 added the per-file region gate and
+`reserve_exact` (129,337 code lines).  Sessions 149–151 added the memory
+program's boxing (`Type` 72 → 24 B; the `payload` deref idiom accounts for most
+of the growth) and the IR formatter's append-only emitters (session 151, +273).
+The long-function count is 2: `binding_at` (385, excluded) and `resolve_cursor`
+(200, exactly at the boundary); the baseline tolerates both.
 
 Session 148 refreshed the baseline for the aliased enum-member hover (+108
 code lines: the alias target resolution, the program-analysis lookup, the
