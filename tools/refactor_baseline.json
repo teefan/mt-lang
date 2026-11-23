@@ -372,7 +372,7 @@
   "duplication": {
     "window": 12,
     "windows": 885,
-    "duplicated_lines": 6525,
+    "duplicated_lines": 6515,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -1262,7 +1262,7 @@
     ]
   },
   "sizes": {
-    "total_code": 129436,
+    "total_code": 129462,
     "functions_over_limit": 2,
     "files_over_limit": 11,
     "files": {
@@ -1309,10 +1309,10 @@
         "max_function": 18
       },
       "projects/mtc/src/mtc/build.mt": {
-        "lines": 2027,
-        "code": 1646,
+        "lines": 2061,
+        "code": 1672,
         "max_line": 122,
-        "max_function": 180
+        "max_function": 182
       },
       "projects/mtc/src/mtc/build_cache.mt": {
         "lines": 431,
@@ -1321,7 +1321,7 @@
         "max_function": 49
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 8205,
+        "lines": 8204,
         "code": 6263,
         "max_line": 436,
         "max_function": 198
@@ -1339,7 +1339,7 @@
         "max_function": 84
       },
       "projects/mtc/src/mtc/cli_help.mt": {
-        "lines": 524,
+        "lines": 518,
         "code": 483,
         "max_line": 276,
         "max_function": 85

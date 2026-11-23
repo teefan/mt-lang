@@ -124,7 +124,9 @@ public function build(
     # Link libraries declared via `link "..."` directives in external modules
     # (e.g. `link "uv"` in std.c.fs → `-luv`) and the vendored static-library
     # search paths plus their system dependencies.  Collected once for both the
-    # wasm and native command shapes; released after the compiler runs.
+    # wasm and native command shapes; released after the compiler runs.  The
+    # vendored `-L` flags must precede the `-l` flags so a vendored static
+    # archive wins over a same-named system shared library.
     var link_flags = collect_link_flags(program)
     defer: release_owned_strings(ref_of(link_flags))
     var vendored_flags = collect_vendored_link_flags(program, roots)
@@ -436,8 +438,8 @@ function push_compile_arguments(
         read(command).push(shell_path)
         read(command).push("-sINCOMING_MODULE_JS_API=canvas,print,printErr")
         push_wasm_preloads(command, owned_args, assets)
-        push_owned_flags(command, link_flags)
         push_owned_flags(command, vendored_flags)
+        push_owned_flags(command, link_flags)
     else:
         read(command).push("-D_GNU_SOURCE")
         if sanitize:
@@ -469,8 +471,8 @@ function push_compile_arguments(
             read(command).push("-o")
             read(command).push(output_path)
             read(command).push(c_path)
-            push_owned_flags(command, link_flags)
             push_owned_flags(command, vendored_flags)
+            push_owned_flags(command, link_flags)
 
 
 function env_or_default(name: str, fallback: str) -> str:
@@ -1778,6 +1780,36 @@ function prepare_vendored_steamworks(roots: span[str]) -> Result[bool, string.St
     return Result[bool, string.String].success(value = true)
 
 
+## A shared libuv left in the prefix by an older build shadows the static
+## archive on the `-L` search path and silently restores the runtime dependency
+## on a system `libuv.so`.  The vendored contract is a static archive, so remove
+## any such leftovers.
+function remove_stale_shared_libuv(prefix: str) -> void:
+    var lib_dir = path_ops.join(prefix, "lib")
+    defer: lib_dir.release()
+    match fs.list_entries(lib_dir.as_str()):
+        Result.failure as failure:
+            var err = failure.error
+            err.release()
+        Result.success as entries_payload:
+            var entries = entries_payload.value
+            defer: entries.release()
+            var i: ptr_uint = 0
+            while i < entries.len():
+                let entry = entries.get(i) else:
+                    break
+                if entry.starts_with("libuv.so"):
+                    var path = path_ops.join(lib_dir.as_str(), entry)
+                    match fs.remove(path.as_str()):
+                        Result.failure as failure:
+                            var err = failure.error
+                            err.release()
+                        Result.success:
+                            pass
+                    path.release()
+                i += 1
+
+
 ## Build the vendored libuv static library from third_party/libuv-upstream via
 ## CMake + Ninja.  Produces tmp/vendored-libuv-prefix/lib/libuv.a.
 function prepare_vendored_libuv(roots: span[str]) -> Result[bool, string.String]:
@@ -1791,6 +1823,7 @@ function prepare_vendored_libuv(roots: span[str]) -> Result[bool, string.String]
     var archive = path_ops.join(prefix.as_str(), "lib/libuv.a")
     defer: archive.release()
     if fs.is_file(archive.as_str()):
+        remove_stale_shared_libuv(prefix.as_str())
         return Result[bool, string.String].success(value = true)
 
     var source_dir = path_ops.join(root, "third_party/libuv-upstream")
@@ -1840,6 +1873,7 @@ function prepare_vendored_libuv(roots: span[str]) -> Result[bool, string.String]
             "vendored libuv build did not produce lib/libuv.a"
         ))
 
+    remove_stale_shared_libuv(prefix.as_str())
     return Result[bool, string.String].success(value = true)
 
 

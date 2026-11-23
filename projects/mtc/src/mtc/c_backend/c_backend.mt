@@ -331,9 +331,8 @@ function emit_preamble(
     slice_has_str_concat: bool,
     simd_types: vec.Vec[types.Type],
 ) -> void:
-    # Feature-test macros required by the fs/tls support headers and the
-    # parallel/detach runtime (mirrors Ruby's _GNU_SOURCE / _POSIX_C_SOURCE
-    # preamble block).
+    # Feature-test macros required by the fs/process/tls support headers and
+    # the parallel/detach runtime (execvpe, posix_openpt, environ, ...).
     if includes_need_feature_macros(program) or uses_parallel_runtime(program):
         emit_line(e, "#ifndef _GNU_SOURCE")
         emit_line(e, "#define _GNU_SOURCE")
