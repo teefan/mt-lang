@@ -4344,9 +4344,9 @@ the complete tree to `~/.local/opt/mtc/<version>`, points
 replaces an existing version or a non-symlink link, `--dry-run` previews, and
 `--uninstall` removes the version and its links.  It verifies the archive's and
 the copied compiler's version, installs through a temporary directory + rename,
-and never edits shell startup files.  `tools/release_smoke.sh` installs the
-archive to a temporary prefix and runs the remaining checks through the
-installed binary.
+refuses a symlink `--prefix`, and never edits shell startup files.
+`tools/release_smoke.sh` installs the archive to a temporary prefix and runs
+the remaining checks through the installed binary.
 
 **CI and clean-container smoke.** `.github/workflows/ci.yml` runs the vendored
 fetch, bootstrap, `test/mt`, the four oracles, LSP conformance, examples,
@@ -6021,7 +6021,7 @@ historical record.
 | multi-file memory | the per-file region is gated on **file count**: used only while ≥2 files follow the one compiling (`should_scope_file`), so the last two files of a run are unregioned.  `check M + a 60-byte file` **422 MiB** (was 936 always-regioned), 40 small files **372 MiB** (1,333 never-regioned), `check projects/mtc` (191 files) **943 MiB** (991 MiB on the pre-session-152 compiler), `lower`/`emit-c` 8 heaviest **1,456 / 1,694 MiB** (2-3% above always-regioning).  Session 150's always-on row (`check` 191 files 1,019 MiB, 32 files 231 MiB, 16 linted 256 MiB, 8 lowered 346 MiB) used small files and understated the heavy case; see *RAM audit* and *Region gate* | session 152 | `python3 tools/peak_rss.py -- build/stage2/mtc check <files...> -I .` |
 | struct sizes | `Type` **24 B**, `ir.Expr` **72**, `ir.Stmt` **96**, `ir.Function` **96**, `ir.Param` **64**, `ir.Field` **40** (was 72 / 168 / 144 / 144 / 112 / 88 at session start) | session 150 | probe: `size_of` in a scratch program importing `mtc.ir` + `mtc.semantic.types` |
 | release archive | ~3.5 MiB deterministic `mtc-0.5.0-linux-x86_64.tar.gz`, checksummed; includes `install.sh`; clean-path smoke and clean-container (Ubuntu 24.04) smoke green; two packagings identical | session 155 | `tools/release.sh`; `tools/release_smoke.sh`; `tools/release_container_smoke.sh` |
-| installer | `install.sh` in the archive: versioned prefix, `current` symlink, `BIN_DIR/mtc`; `--prefix`/`--bin-dir`/`--force`/`--dry-run`/`--uninstall`; verifies both compiler copies; no shell-config edits; the release smoke installs to a temp prefix and uses the installed binary | session 155 | `tools/install.sh --help`; `tools/release_smoke.sh` |
+| installer | `install.sh` in the archive: versioned prefix, `current` symlink, `BIN_DIR/mtc`; `--prefix`/`--bin-dir`/`--force`/`--dry-run`/`--uninstall`; verifies both compiler copies; refuses a symlink prefix; no shell-config edits; the release smoke installs to a temp prefix and uses the installed binary | session 155 | `tools/install.sh --help`; `tools/release_smoke.sh` |
 | release runtime | glibc **≥ 2.38**, zlib, OpenSSL 3; libuv static; the seed has the same requirements | session 155 | `ldd dist/mtc-0.5.0-linux-x86_64/bin/mtc`; `tools/release_container_smoke.sh` |
 | CI | `.github/workflows/ci.yml`: vendored fetch, bootstrap, `test/mt`, four oracles, LSP conformance, examples, bindings, docs smoke, deterministic release, container smoke | session 155 (added; not yet run on GitHub) | `cat .github/workflows/ci.yml` |
 | refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files / 163,061 lines / 129,462 code lines); 30 unused / 7 test-only exports; 6,515 duplicated lines / 885 clusters; 2 functions ≥ 200 lines (`binding_at` 385, `resolve_cursor` 200); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 155 (baseline refreshed for the static-libuv link fix and the 0.5.0 version/help text) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |

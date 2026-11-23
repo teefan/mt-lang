@@ -16,6 +16,7 @@
 #
 # The compiler resolves std/ and docs/ from its own executable path, so the
 # whole archive is installed and only the binary is symlinked into BIN_DIR.
+# A symlink PREFIX is refused so a manual layout is never nested into.
 # Shell startup files are never edited; when BIN_DIR is not on PATH the script
 # prints the line to add.
 set -euo pipefail
@@ -110,6 +111,10 @@ VERSION="$(cat "$SCRIPT_DIR/VERSION")"
 REPORTED="$("$SCRIPT_DIR/bin/mtc" version)"
 [ "$REPORTED" = "mtc $VERSION" ] || fail "archive compiler reports '$REPORTED', expected 'mtc $VERSION'"
 
+if [ -L "$PREFIX" ]; then
+    fail "$PREFIX is a symlink; refusing to install through it. Choose a real directory or remove the old layout first."
+fi
+
 INSTALL_DIR="$PREFIX/$VERSION"
 CURRENT="$PREFIX/current"
 BIN_LINK="$BIN_DIR/mtc"
@@ -138,7 +143,7 @@ fi
 
 if [ -e "$BIN_LINK" ] && [ ! -L "$BIN_LINK" ]; then
     [ "$FORCE" = 1 ] || fail "refusing to overwrite $BIN_LINK (not a symlink); use --force"
-    run rm -f "$BIN_LINK"
+    run rm -rf "$BIN_LINK"
 fi
 if [ -e "$CURRENT" ] && [ ! -L "$CURRENT" ]; then
     [ "$FORCE" = 1 ] || fail "refusing to overwrite $CURRENT (not a symlink); use --force"

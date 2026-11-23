@@ -569,7 +569,8 @@ It installs the complete archive to `~/.local/opt/mtc/<version>`, points
 `--force` replaces an existing version or a non-symlink at the link paths;
 `--dry-run` previews; `--uninstall` removes this archive's version and its
 links.  The installer prints a PATH line when needed and never edits shell
-startup files.
+startup files; it refuses a symlink `--prefix` so an existing manual layout is
+not nested into.
 
 The whole tree must stay together: the compiler locates `std/` and the docs
 root from the binary's own path (`/proc/self/exe`), so the archive can live
