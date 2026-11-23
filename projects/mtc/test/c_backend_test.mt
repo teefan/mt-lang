@@ -744,3 +744,27 @@ function test_array_calls_materialize_in_value_positions_only() -> void:
     expect_contains(text, "uint8_t local[4];")
     expect_contains(text, "main_make(&local);")
     expect_contains(text, "main_make(&(assigned));")
+
+
+@[test]
+function test_repeated_generation_is_identical() -> void:
+    # `generate_c` releases its per-generation tables and collected sets before
+    # returning, so a second call must rebuild them from scratch.  This pins
+    # that rebuilding is complete: nothing the first pass populated may be
+    # assumed to survive into the second (an emitted name, a collected type, a
+    # backing-name map).  Memory reclamation itself is measured, not asserted —
+    # see the `--keep-c` row in the self-host plan.
+    var source = <<-SRC
+        struct Point:
+            x: int
+            y: int
+
+        function main() -> int:
+            let p = Point(x = 1, y = 2)
+            return p.x + p.y
+    SRC
+    var first = compile_to_c(source)
+    defer: first.release()
+    var second = compile_to_c(source)
+    defer: second.release()
+    expect(first.as_str().equal(second.as_str()))

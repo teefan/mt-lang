@@ -296,7 +296,23 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     var trimmed = string.String.with_capacity(end + 1)
     trimmed.append(text.slice(0, end))
     trimmed.push_byte('\n')
+    # Everything the emitter accumulated is dead once `trimmed` is built: the
+    # output buffer, the per-generation lookup tables, the collected type/func
+    # sets and the two module-level backing-name maps.  They used to be left to
+    # process exit, which cost ~80 MB per call (`--keep-c` emits twice, `mtc test`
+    # once per fixture).
     e.buffer.release()
+    release_emitter_tables(ref_of(e))
+    emitted.release()
+    gen_variants.release()
+    str_lits.release()
+    checked_index_types.release()
+    checked_span_index_types.release()
+    tuple_types.release()
+    release_opt_struct_entries(ref_of(opt_structs))
+    opaques.release()
+    simd_types.release()
+    span_types.release()
     return trimmed
 
 
@@ -693,11 +709,70 @@ function emit_line(e: ref[Emitter], text: str) -> void:
     e.buffer.append("\n")
 
 
-function indent_c(level: ptr_uint) -> str:
-    var buf = string.String.create()
+## Emit `indent + text + newline` without materializing the joined line.  The
+## joined form (`emit_line(e, join_two(indent, text))`) allocated one `String`
+## per statement; both appends land in the output buffer either way.
+function emit_indented(e: ref[Emitter], indent: str, text: str) -> void:
+    e.buffer.append(indent)
+    e.buffer.append(text)
+    e.buffer.append("\n")
+
+
+## Free the per-generation lookup tables and the module-level backing-name maps.
+## Their keys and values borrow IR and analysis text (the `str` entries are views,
+## not owners), so only the table storage itself is freed here.
+function release_emitter_tables(e: ref[Emitter]) -> void:
+    e.str_lit_map.release()
+    e.used_labels.release()
+    e.variant_eq_set.release()
+    e.variant_decl_by_name.release()
+    e.struct_eq_set.release()
+    e.external_eq_fields.release()
+    e.opt_type_set.release()
+    e.std_c_backing.release()
+    e.array_call_temps.release()
+    let std_c_map = std_c_backing_names
+    if std_c_map != null:
+        var owned = unsafe: read(std_c_map)
+        owned.release()
+        heap.release(std_c_map)
+        std_c_backing_names = null
+    let opaque_map = opaque_backing_names
+    if opaque_map != null:
+        var owned = unsafe: read(opaque_map)
+        owned.release()
+        heap.release(opaque_map)
+        opaque_backing_names = null
+
+
+## Free an option-struct list: each entry owns the `field_store` vector its
+## `StructDecl.field` span points into.
+function release_opt_struct_entries(entries: ref[vec.Vec[OptionStructEntry]]) -> void:
     var i: ptr_uint = 0
-    while i < level:
-        buf.append("  ")
+    while i < entries.len():
+        let entry = entries.get(i) else:
+            break
+        unsafe:
+            read(entry).field_store.release()
+        i += 1
+    entries.release()
+
+
+## An indentation view — `level * 2` spaces cut from a static run.  `indent_c`
+## used to build a `String` and return `as_str()`, i.e. one heap allocation per
+## indented line (~30k on `main.mt`); the emitted text is identical.  A level
+## wider than the static run falls back to building the text, so deep nesting
+## keeps its exact indentation.
+const INDENT_SPACES: str = "                                                                "
+
+function indent_c(level: ptr_uint) -> str:
+    let width = level * 2
+    if width <= INDENT_SPACES.len:
+        return INDENT_SPACES.slice(0, width)
+    var buf = string.String.with_capacity(width)
+    var i: ptr_uint = 0
+    while i < width:
+        buf.push_byte(32)
         i += 1
     return buf.as_str()
 
@@ -3506,9 +3581,12 @@ function function_signature(func: ir.Function, export_public: bool) -> str:
 
 
 function function_params(func: ir.Function) -> str:
-    var parts = vec.Vec[str].create()
+    # Both the array out-param and the ordinary parameters are just declaration
+    # text, so they go straight into one buffer: the intermediate `Vec[str]` was
+    # never released and cost an allocation per function per emission.
+    var buf = string.String.create()
     if is_array_type(func.return_type):
-        parts.push(array_out_param_decl(func.return_type, "__mt_out"))
+        buf.append(array_out_param_decl(func.return_type, "__mt_out"))
     var i: ptr_uint = 0
     while i < func.params.len:
         unsafe:
@@ -3518,20 +3596,13 @@ function function_params(func: ir.Function) -> str:
             # here.  Mirrors Ruby's
             # `c_decl(param.pointer ? pointer_to(param.type) : param.type, ...)`
             # (a nil `pointer` — the async ctor params — is not a pointer).
+            if buf.len > 0:
+                buf.append(", ")
             let pty = if p.pointer.unwrap_or(false): types.generic_type(name = "ptr", args = sp_elem(p.ty)) else: p.ty
-            parts.push(c_decl(pty, p.linkage_name))
+            buf.append(c_decl(pty, p.linkage_name))
         i += 1
-    if parts.len() == 0:
+    if buf.len == 0:
         return "void"
-    var buf = string.String.create()
-    var pi: ptr_uint = 0
-    while pi < parts.len():
-        if pi > 0:
-            buf.append(", ")
-        let sp = parts.get(pi) else:
-            break
-        buf.append(unsafe: read(sp))
-        pi += 1
     return buf.as_str()
 
 
@@ -3539,7 +3610,6 @@ function function_params(func: ir.Function) -> str:
 ## synthetic `__mt_out` first parameter of an array-returning function.
 function array_out_param_decl(t: types.Type, name: str) -> str:
     return c_decl(t, strings.join_three("(*", name, ")"))
-
 
 function emit_function(e: ref[Emitter], func: ir.Function, export_public: bool) -> void:
     e.used_labels.clear()
@@ -3749,7 +3819,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
     unsafe:
         match read(sp):
             ir.Stmt.stmt_static_assert as sa:
-                emit_line(e, strings.join_two(indent, render_static_assert(e, sa.condition, sa.message)))
+                emit_indented(e, indent, render_static_assert(e, sa.condition, sa.message))
                 return
             _:
                 pass
@@ -3757,7 +3827,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
         match read(sp):
             ir.Stmt.stmt_return as r:
                 let value = r.value else:
-                    emit_line(e, strings.join_two(indent, "return;"))
+                    emit_indented(e, indent, "return;")
                     return
                 # Array-returning function: write into `*__mt_out` (either by
                 # calling the array-returning callee with `__mt_out`, or by
@@ -3765,20 +3835,20 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 if is_array_type(e.current_fn_return_type):
                     if expr_is_array_call(e, value):
                         emit_line(e, strings.join_three(indent, emit_array_call(e, value, "__mt_out"), ";"))
-                        emit_line(e, strings.join_two(indent, "return;"))
+                        emit_indented(e, indent, "return;")
                     else if array_direct_initializer(value):
                         # `return {a, b, ...}`: an array literal can't be memcpy'd
                         # from a bare initializer list, so bind it to a temp array
                         # first, then copy into the out-param.
-                        emit_line(e, strings.join_two(indent, "{"))
+                        emit_indented(e, indent, "{")
                         let inner = indent_c(level + 1)
                         emit_line(e, strings.join_five(inner, c_decl(e.current_fn_return_type, "__mt_ret"), " = ", render_initializer(e, value), ";"))
-                        emit_line(e, strings.join_two(inner, "memcpy(*__mt_out, __mt_ret, sizeof(*__mt_out));"))
-                        emit_line(e, strings.join_two(inner, "return;"))
-                        emit_line(e, strings.join_two(indent, "}"))
+                        emit_indented(e, inner, "memcpy(*__mt_out, __mt_ret, sizeof(*__mt_out));")
+                        emit_indented(e, inner, "return;")
+                        emit_indented(e, indent, "}")
                     else:
                         emit_line(e, strings.join_six(indent, "memcpy(*__mt_out, ", render_expr(e, value), ", sizeof(*__mt_out)", ");", ""))
-                        emit_line(e, strings.join_two(indent, "return;"))
+                        emit_indented(e, indent, "return;")
                     return
                 emit_line(e, strings.join_four(indent, "return ", render_expr(e, value), ";"))
             ir.Stmt.stmt_local as loc:
@@ -3813,11 +3883,11 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 if asg.operator == "=" and is_array_type(expr_result_type(asg.target)) and array_direct_initializer(asg.value):
                     let target_c = render_expr(e, asg.target)
                     let arr_ty = expr_result_type(asg.target)
-                    emit_line(e, strings.join_two(indent, "{"))
+                    emit_indented(e, indent, "{")
                     let inner = indent_c(level + 1)
                     emit_line(e, strings.join_five(inner, c_decl(arr_ty, "__mt_arr_tmp"), " = ", render_initializer(e, asg.value), ";"))
                     emit_line(e, strings.join_six(inner, "memcpy(", target_c, ", __mt_arr_tmp, sizeof(__mt_arr_tmp)", ");", ""))
-                    emit_line(e, strings.join_two(indent, "}"))
+                    emit_indented(e, indent, "}")
                     return
                 # `arr = other_arr` — C forbids assigning one array to another;
                 # emit a memcpy of the whole array instead.
@@ -3830,9 +3900,9 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 emit_line(e, strings.join_three(indent, render_expr(e, ex.expression), ";"))
             ir.Stmt.stmt_block as blk:
                 if block_requires_scope(blk.body):
-                    emit_line(e, strings.join_two(indent, "{"))
+                    emit_indented(e, indent, "{")
                     emit_stmts(e, blk.body, level + 1)
-                    emit_line(e, strings.join_two(indent, "}"))
+                    emit_indented(e, indent, "}")
                 else:
                     emit_stmts(e, blk.body, level)
             ir.Stmt.stmt_if as iff:
@@ -3844,12 +3914,12 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     emit_line(e, strings.join_four(indent, "while (", render_expr(e, w.condition), ") {"))
                     emit_loop_guard(e, guard_name, level + 1)
                     emit_stmts(e, w.body, level + 1)
-                    emit_line(e, strings.join_two(indent, "}"))
-                    emit_line(e, strings.join_two(indent, "}"))
+                    emit_indented(e, indent, "}")
+                    emit_indented(e, indent, "}")
                 else:
                     emit_line(e, strings.join_four(indent, "while (", render_expr(e, w.condition), ") {"))
                     emit_stmts(e, w.body, level + 1)
-                    emit_line(e, strings.join_two(indent, "}"))
+                    emit_indented(e, indent, "}")
             ir.Stmt.stmt_for as f:
                 if e.debug_guards:
                     let guard_name = next_loop_guard_name(e)
@@ -3866,8 +3936,8 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     emit_line(e, for_header.as_str())
                     emit_loop_guard(e, guard_name, level + 1)
                     emit_stmts(e, f.body, level + 1)
-                    emit_line(e, strings.join_two(indent, "}"))
-                    emit_line(e, strings.join_two(indent, "}"))
+                    emit_indented(e, indent, "}")
+                    emit_indented(e, indent, "}")
                 else:
                     var header = string.String.create()
                     header.append(indent)
@@ -3880,7 +3950,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     header.append(") {")
                     emit_line(e, header.as_str())
                     emit_stmts(e, f.body, level + 1)
-                    emit_line(e, strings.join_two(indent, "}"))
+                    emit_indented(e, indent, "}")
             ir.Stmt.stmt_switch as sw:
                 emit_switch(e, sw.expression, sw.cases, sw.exhaustive, level)
             ir.Stmt.stmt_goto as g:
@@ -3889,9 +3959,9 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 if e.used_labels.contains(lbl.name):
                     emit_line(e, strings.join_three(indent, lbl.name, ":;"))
             ir.Stmt.stmt_break:
-                emit_line(e, strings.join_two(indent, "break;"))
+                emit_indented(e, indent, "break;")
             ir.Stmt.stmt_continue:
-                emit_line(e, strings.join_two(indent, "continue;"))
+                emit_indented(e, indent, "continue;")
             _:
                 fatal(c"c_backend: unsupported statement")
 
@@ -3911,7 +3981,7 @@ function emit_switch(e: ref[Emitter], expression: ptr[ir.Expr], cases: span[ir.S
             let sc = read(cases.data + i)
             if sc.is_default:
                 has_default = true
-                emit_line(e, strings.join_two(case_indent, "default: {"))
+                emit_indented(e, case_indent, "default: {")
             else:
                 let value = sc.value else:
                     fatal(c"c_backend: non-default switch case missing value")
@@ -3919,11 +3989,11 @@ function emit_switch(e: ref[Emitter], expression: ptr[ir.Expr], cases: span[ir.S
             emit_stmts(e, sc.body, level + 2)
             if not body_terminates(sc.body):
                 emit_line(e, strings.join_two(indent_c(level + 2), "break;"))
-            emit_line(e, strings.join_two(case_indent, "}"))
+            emit_indented(e, case_indent, "}")
         i += 1
     if exhaustive and not has_default:
-        emit_line(e, strings.join_two(case_indent, "default: __builtin_unreachable();"))
-    emit_line(e, strings.join_two(indent, "}"))
+        emit_indented(e, case_indent, "default: __builtin_unreachable();")
+    emit_indented(e, indent, "}")
 
 
 ## True when a statement sequence always transfers control (mirrors
@@ -4003,11 +4073,11 @@ function emit_else(e: ref[Emitter], else_body: span[ir.Stmt], level: ptr_uint) -
                 _:
                     pass
     if else_body.len > 0:
-        emit_line(e, strings.join_two(indent, "} else {"))
+        emit_indented(e, indent, "} else {")
         emit_stmts(e, else_body, level + 1)
-        emit_line(e, strings.join_two(indent, "}"))
+        emit_indented(e, indent, "}")
     else:
-        emit_line(e, strings.join_two(indent, "}"))
+        emit_indented(e, indent, "}")
 
 
 ## Render a `for` init/post clause (no indent, no trailing `;`) — mirrors

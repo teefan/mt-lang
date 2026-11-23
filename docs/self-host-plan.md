@@ -15,10 +15,11 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-152-2026-11-22)
+- [Status at a glance](#status-at-a-glance-session-153-2026-11-22)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
-- [Session 152 — the per-file region gate](#session-152--the-per-file-region-gate)
+- [Session 153 — the codegen scratch release; phase release measured and retargeted](#session-153--the-codegen-scratch-release-phase-release-measured-and-retargeted)
+- [Session 152 — the per-file region gate; exact-capacity vectors](#session-152--the-per-file-region-gate-exact-capacity-vectors)
 - [Session 151 — streaming IR dump; the analysis' import-table lifetime](#session-151--streaming-ir-dump-the-analysis-import-table-lifetime)
 - [Session 150 — IR type handles, arena ownership, phase release](#session-150--ir-type-handles-arena-ownership-phase-release)
 - [Session 149 — whole-program memory reduction](#session-149--whole-program-memory-reduction)
@@ -99,16 +100,16 @@ history.
 - [Session 74 — decisions closed](#session-74--decisions-closed)
 - [Session 73 — the `mtc test` CLI matrix](#session-73--the-mtc-test-cli-matrix)
 - [Session 72 — the `check`/analyzer surface](#session-72--the-checkanalyzer-surface)
-- [Handoff](#handoff-session-152)
+- [Handoff](#handoff-session-153)
 - [How to start a work session](#how-to-start-a-work-session)
 - [The program — tracks and stopping rules (all tracks closed)](#the-program--tracks-and-stopping-rules-all-tracks-closed)
-- [Deliberate differences (do not chase)](#deliberate-differences-do-not-chase)
+- [Deliberate differences (archived-host record)](#deliberate-differences-archived-host-record)
 - [Ledger](#ledger)
 - [Porting notes](#porting-notes)
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 152, 2026-11-22)
+## Status at a glance (session 153, 2026-11-22)
 
 | Area | State |
 | --- | --- |
@@ -116,7 +117,7 @@ history.
 | Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** (session 145, stage0 = the committed seed, a `ruby` shim that exits 127 never invoked) |
 | Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`b29241f4…`, release); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
 | Release archive | **3.52 MiB deterministic tar.gz** (`mtc-0.4.26-linux-x86_64`), checksummed beside the archive; identical across two packagings of the same inputs; clean-path smoke (std build/run, LSP initialize, docs page/CSS/JS/404) green; the version is the authored `cli_help.VERSION` |
-| Analyzer/IR memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB / 10.5 s**; `emit-c main.mt` **869 MiB / 11.5 s**; `build projects/mtc` **903 MiB / 25.9 s** (session 152; `peak_rss.py` reports **KiB** — the MiB figures are that value ÷ 1024).  Path: `Type` boxed 72 → 24 B (session 150), the analyzer's tooling-only `imported_type_members` gated behind `tooling_facts` (−20% on `check`), the IR dump streamed and written straight into one buffer (−66 MiB on `lower`, session 151), then `reserve_exact` for known-length vectors and string builders (−42 MiB on `lower`/`emit-c`, session 152).  The old analyzer const blow-up (**9,228 MiB** on `main.mt`, session 142) and the cross-module async rescan (682 MB of the lower peak, session 149) are gone.  `lowering.mt` check **197 MiB** (session 151 audit).  All tooling fan-out is capped at **4**. |
+| Analyzer/IR memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB / 10.5 s**; `emit-c main.mt` **860 MiB / 12.3 s**; `build projects/mtc` **903 MiB / 25.9 s** (session 152; `peak_rss.py` reports **KiB** — the MiB figures are that value ÷ 1024).  Path: `Type` boxed 72 → 24 B (session 150), the analyzer's tooling-only `imported_type_members` gated behind `tooling_facts` (−20% on `check`), the IR dump streamed and written straight into one buffer (−66 MiB on `lower`, session 151), `reserve_exact` for known-length vectors and string builders (−42 MiB on `lower`/`emit-c`, session 152), then the emitter's per-generation tables and scratch released at the end of `generate_c` (−9 MiB on `emit-c`, −21 MiB on `build --keep-c`, and ~94 → ~82 MiB per repeated emission; session 153).  The old analyzer const blow-up (**9,228 MiB** on `main.mt`, session 142) and the cross-module async rescan (682 MB of the lower peak, session 149) are gone.  `lowering.mt` check **197 MiB** (session 151 audit).  All tooling fan-out is capped at **4**. |
 | Multi-file commands | **Flat in the file count, and no longer ~2× a heavy file's peak** (session 152).  The per-file heap region is a bump allocator: it frees everything at once and cannot reuse anything released inside it, so an abandoned temporary lands in the peak.  It buys release of every file *after* the one compiling, so it is now gated on the **file count** (`should_scope_file`, `remaining_after >= 2`): the last two files of a run compile unregioned.  Measured: `check main.mt` + a 60-byte file **422 MiB** (was 958,616 KiB always-regioned; 432,068 never-regioned), 40 small files **372 MiB** (1,367,120 never-regioned), `check projects/mtc` (191 files) **997 MiB** (11,398,120 never-regioned).  The `lower`/`emit-c` 8-heaviest sets pay 2–3% (**1,456 / 1,694 MiB**) because their last two files are heavy.  The old session-151 row (same file twice 946 MiB, `main.mt` + `sexpr.mt` 1,407 MiB) was the ungated region; see *Region gate (session 152)*. |
 | `test/mt` | **85 files / 0 failed** (62 in-language tests + 23 compile-fail diagnostics fixtures; session 151 audited); peak RSS **100 MiB** |
 | Examples | **49/49 build** under the self-only `emit-c` gate (15 top-level + `examples/sdl3` 34/34; session 143; was host-compared 49/49 in session 141) |
@@ -4221,6 +4222,134 @@ and they are all heavy); every other shape improves or is unchanged.  Output is
 byte-identical (`lower`/`check` on `main.mt`), dev suite **22/0**, diagnostics
 **504/0**.
 
+## Session 153 — the codegen scratch release; phase release measured and retargeted
+
+Session 152's handoff named phase release (wire an arena into `lower`, free the IR
+at the phase boundary) as the largest remaining lever.  Measured first, that
+premise turned out to be wrong in both directions: the step cannot move the peak,
+and the actual defect was elsewhere.
+
+### The peak is at the end of `generate_c`, not the end of lowering
+
+A phase probe over `emit-c main.mt` (VmRSS after each stage) read **523 MiB**
+after `check_program`, **874 MiB** after `lower`, and **977 MiB** after
+`generate_c` — the peak sits *after* codegen.  Freeing the IR before `cc` leaves
+the peak untouched, because AST, analysis, IR and the C source are all resident
+by then.
+
+Two direct experiments confirm the arena cannot help, and one shows why:
+
+- **Region around `lower`, freed with `ir.release` afterwards:** 979 vs 1,003 MiB
+  on the probe.  The gain is the region's free-at-once, and it is not free: a
+  bump region cannot reuse anything released inside it, so the *during-lowering*
+  peak rises.  This is the session-152 region-gate result again.
+- **Region around `generate_c`:** 1,124 MiB and SIGABRT, against 1,003 MiB plain.
+  Codegen scratch is not region-safe (the returned `String` views a buffer the
+  region would own).
+- **Free the AST/analysis before codegen** — the only change that could lower the
+  peak: **SIGSEGV**.  The IR borrows analysis storage (`ctx.analysis.source_path`
+  is copied into every `ir.Stmt`, `type_table` borrows boxed type payloads); this
+  is what `ir.mt`'s `release` contract already says.  So "release at the phase
+  boundary" is blocked by the IR's ownership model, not by missing plumbing.
+
+### What is real: `generate_c` retained ~80 MB per call
+
+`generate_c` allocated its nine `Emitter` maps, two module-level backing-name
+maps, and eight collected type/function/set vectors on every call and released
+**none** of them.  Valgrind on a 4-call probe: **284 MB** definitely lost at one
+call, **466 MB** at four — **~60 MB/call** in the leak checker and **~94 MiB/call**
+in RSS.  It compounds wherever emission repeats in one process:
+
+| Case | Before | After |
+| --- | --- | --- |
+| `emit-c main.mt` | 890,484 KiB | **881,076** |
+| `build --keep-c` (emits twice) | 1,016,072 KiB | **994,816** |
+| `generate_c` × 6, RSS/call | ~94 MiB | **~82 MiB** |
+
+The fix is the session-151 pattern applied to the emitter: release everything at
+the end of `generate_c` (`release_emitter_tables`, `release_opt_struct_entries`,
+plus the collected vectors), and stop materializing throwaway text —
+`emit_indented` appends `indent + text + newline` straight into the output buffer
+instead of building a joined `String` per statement (26 sites), `indent_c` returns
+a view of a static space run instead of allocating (it ran per indented line), and
+`function_params` builds one buffer instead of an unreleased `Vec[str]` per
+function per emission.
+
+**Output is byte-identical** on unchanged inputs (`examples/language_baseline`,
+`memory_stress_test`, `std/vec`, `std/string`, `std/map`, `test/mt/vec_test`), and
+the `--keep-c` C is byte-identical between the parent and the fixed compiler.
+
+### Correction to the memory program's shape
+
+The remaining ~82 MB/call is *not* in codegen.  Repeating the whole pipeline
+(`check_program` → `lower` → `generate_c`, releasing each `Program`) grows
+**~960 MB per iteration**, and the same growth is present on the parent commit:
+`check_program` retains its AST and analysis per call even after
+`Program.release()` (which frees the vectors but has no `Analysis` release — the
+session-151 `FileRegion` gate exists for exactly this, and it is used by the
+multi-file commands and `mtc test`).  So the residual is a *pipeline* lifetime
+question, not an IR-arena one; `ir.Program.arena` stays inert deliberately.
+
+**Verification.**  Bootstrap fixed point (`stage2.c == stage3.c`) + **22/0**;
+`test/mt` **85/0**; CLI **227/227**; diagnostics **503 files / 0 differ**
+(`changed=1`); lint **666 / 0 differ** (`changed=7`); formatter **766 × 3 / 0
+differ**; examples **49/49**; LSP conformance **37/37**; valgrind **0 errors**;
+guard `--check --strict --ratchet` ok after the reviewed refresh (+43 code lines
+for the release helpers and `emit_indented`).  A new
+`test_repeated_generation_is_identical` pins that the second pass rebuilds every
+table from scratch.
+
+
+## Handoff (session 153)
+
+**Next session:** no open defect is scheduled.  This session corrected the
+memory program's direction and fixed the one real leak it found; the tree is
+clean and `build/stage2/mtc` is the fixed-point binary from
+`tools/bootstrap.sh -j 4`.
+
+**Baseline to preserve (`tools/peak_rss.py`, which prints KiB; the MiB below are
+that value ÷ 1024).**  Single file `main.mt`: `check` **413 MiB / 4.9 s**,
+`lower` **756 MiB / 10.5 s**, `emit-c` **860 MiB / 12.3 s**; `build projects/mtc`
+**903 MiB / 25.9 s**; `build --keep-c` **972 MiB**; whole-tree `check
+projects/mtc` **943 MiB**.  Sizes unchanged: `Type` **24 B**, `ir.Expr` **72 B**,
+`ir.Stmt` **96 B**, `ir.Function` **96 B**, `ir.Param` **64 B**, `ir.Field`
+**40 B**.
+
+**What this session established (measure before choosing the next lever).**
+
+1. **Phase release cannot lower the peak**, and the session-152 handoff said it
+   could.  The peak lands at the end of `generate_c` (977 MiB) not the end of
+   `lower` (874 MiB), a region around either phase is a regression (lower:
+   979 → during-lowering higher; codegen: SIGABRT), and freeing the AST/analysis
+   before codegen **segfaults** because the IR borrows analysis storage.  Details
+   and the three probes: *Session 153*.
+2. **`generate_c` retained ~80 MB per call** and now releases its tables, its
+   collected sets and its scratch.  `emit-c` −9 MiB, `build --keep-c` −21 MiB,
+   per-call growth ~94 → ~82 MiB, output byte-identical.
+3. **The largest remaining item is the pipeline lifetime, not codegen.**  A probe
+   that repeats `check_program` → `lower` → `generate_c` and releases each
+   `Program` still grows **~960 MB per iteration**, and the parent commit shows
+   the same: `Program.release()` frees the vectors, but the AST and analysis are
+   retained because an `Analysis` has no release.  `mtc test` and the multi-file
+   commands already bound this with `FileRegion`; a single-file `check`/`lower`
+   does not.  **That is the next real target**, and it is a lifetime question
+   (`FileRegion`-style scoping or an `Analysis.release`), not an IR arena.
+
+**Do not re-open:** the `TypeId` handle (~40 MB for ~3,000 edits) and
+`ir.Program.arena` (inert by design — see item 1).
+
+**Verification this session.**  Bootstrap fixed point (`stage2.c == stage3.c`) +
+**22/0**; `test/mt` **85/0**; CLI **227/227**; diagnostics **503/0**; lint
+**666/0**; formatter **766×3/0**; examples **49/49**; LSP conformance **37/37**;
+valgrind **0 errors**; guard `--check --strict --ratchet` ok after the reviewed
+refresh (+43 code lines).
+
+**Operational.**  At most **4** compiler instances; one LSP probe server set at a
+time; never `-j 16`; `-j 4 --mem-mb 8000` for heavy sweeps.  Massif runs on
+`main.mt` take ~100 s of instrumented time and are worth backgrounding; profile
+without `--pages-as-heap`.  A valgrind `--leak-check` run over `main.mt` takes
+~8 minutes — background it too.
+
 ## Handoff (session 152)
 
 **Next session:** the memory program's cheap wins are exhausted.  This session
@@ -4252,16 +4381,18 @@ audit: *RAM audit (session 151)*, gate reasoning: *Region gate*, capacity work:
    `substitute_type_params`, `infer_and_check_call`) plus two known-length
    string builders.  `lower` 798 → **756 MiB**, `emit-c` 911 → **869**.
 
-**The next lever is phase release, and it is a real defect, not a tuning
-choice.**  `lower` passes `arena = null` and nothing ever assigns it, so
-`ir.Program.arena` is null on every real compile and `ir.release` (already
-written, already idempotent) is a no-op.  The IR, the loader `Program`, every
-analysis and — under `emit-c` — the whole C source all live to process exit, and
-the live peak lands at the *end* of lowering with all of them resident.  Wiring
-an arena into `lower` and releasing at the phase boundary is the largest
-remaining item; it is the plan's session-149 step 2.
+**Phase release was the named next lever and it is now retargeted — see
+[Session 153](#session-153--the-codegen-scratch-release-phase-release-measured-and-retargeted).**
+The measurement there shows the peak lands at the end of `generate_c`, not the
+end of lowering, so freeing the IR before `cc` cannot move it; a region around
+either phase is a regression or a crash, and freeing the AST/analysis before
+codegen segfaults because the IR borrows it.  `lower` passes `arena = null` on
+purpose and `ir.release` stays inert.  The real defect the note pointed at was
+`generate_c` retaining ~80 MB per call, which session 153 fixed.
 
-**Ranked targets after that.**  All flat now; pick one deliberately.
+**Ranked targets.**  All flat; pick one deliberately.  The largest remaining
+item is the *pipeline* lifetime (~960 MB retained per `check_program` even after
+`Program.release()`, the same on the parent commit), not codegen.
 
 | Target | Live at `lower` peak | Shape |
 | --- | --- | --- |
@@ -5669,7 +5800,8 @@ historical record.
 | DAP | self-only smoke: every probe answers; real lldb-dap reaches the `add` breakpoint and terminates; async launch-order probe green | session 143 (adapted) | `ruby tools/dap_smoke.rb`; `ruby tools/dap_async_probe.rb` |
 | imported bindings | **29 verified / 0 changed of 29** (native check; the host parity report is retired) | session 72 (native) | `build/stage2/mtc imported-bindings --all --check` |
 | throughput | `emit-c main.mt` **11.5 s**, full `build projects/mtc` **25.9 s**, `bootstrap --fast` ~2.6 min (session 152; the session-72 row read 17.1 s / 32.7 s, before the session-149/152 memory work, and the archived host measured 54.3 s / 76.3 s) | session 152 | `time build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .` |
-| analyzer memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB**; `emit-c` **869 MiB**; `build projects/mtc` **903 MiB**; fan-out capped at 4.  `lower` was 885,460 KiB before session 151 replaced the IR formatter's per-line scratch with direct appends, and 817,668 KiB before session 152's `reserve_exact`.  Worst case overall: `emit-c` over the 8 heaviest sources **1,694 MiB** (see *RAM audit*) | session 152 | `python3 tools/peak_rss.py -- build/stage2/mtc check projects/mtc/src/mtc/main.mt -I .` |
+| analyzer memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB**; `emit-c` **860 MiB**; `build projects/mtc` **903 MiB**; `build --keep-c` **972 MiB** (two emissions); fan-out capped at 4.  `lower` was 885,460 KiB before session 151 replaced the IR formatter's per-line scratch with direct appends, and 817,668 KiB before session 152's `reserve_exact`; session 153 released the emitter's per-generation tables and scratch (A/B on the same tree: `emit-c` 890,484 → 881,076 KiB, `--keep-c` 1,016,072 → 994,816 KiB, byte-identical output).  Worst case overall: `emit-c` over the 8 heaviest sources **1,694 MiB** (see *RAM audit*) | session 153 | `python3 tools/peak_rss.py -- build/stage2/mtc check projects/mtc/src/mtc/main.mt -I .` |
+| repeated emission | `generate_c` releases its nine `Emitter` maps, both backing-name maps and eight collected sets before returning, so a second emission does not retain them: per-call RSS growth **~94 → ~82 MiB** across 6 calls, and valgrind's definite-loss growth **~60 MB/call**.  The second pass rebuilds every table (pinned by `test_repeated_generation_is_identical`) | session 153 | `./tmp/cg_n 6` (probe: `lower` once, `generate_c` N times); `valgrind --leak-check=full ./tmp/cg_n 4` |
 | multi-file memory | the per-file region is gated on **file count**: used only while ≥2 files follow the one compiling (`should_scope_file`), so the last two files of a run are unregioned.  `check M + a 60-byte file` **422 MiB** (was 936 always-regioned), 40 small files **372 MiB** (1,333 never-regioned), `check projects/mtc` (191 files) **943 MiB** (991 MiB on the pre-session-152 compiler), `lower`/`emit-c` 8 heaviest **1,456 / 1,694 MiB** (2-3% above always-regioning).  Session 150's always-on row (`check` 191 files 1,019 MiB, 32 files 231 MiB, 16 linted 256 MiB, 8 lowered 346 MiB) used small files and understated the heavy case; see *RAM audit* and *Region gate* | session 152 | `python3 tools/peak_rss.py -- build/stage2/mtc check <files...> -I .` |
 | struct sizes | `Type` **24 B**, `ir.Expr` **72**, `ir.Stmt` **96**, `ir.Function` **96**, `ir.Param` **64**, `ir.Field` **40** (was 72 / 168 / 144 / 144 / 112 / 88 at session start) | session 150 | probe: `size_of` in a scratch program importing `mtc.ir` + `mtc.semantic.types` |
 | release archive | 3.52 MiB deterministic `mtc-0.4.26-linux-x86_64.tar.gz`, checksummed; clean-path smoke green | session 142 | `tools/release.sh --skip-build`; `tools/release_smoke.sh` |
