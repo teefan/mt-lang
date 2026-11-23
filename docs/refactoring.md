@@ -124,7 +124,7 @@ emission/frame boilerplate, not as an absolute quality score.
 
 ### Size, markers, tests
 
-- **129,462 code lines**; **2 functions ≥ 200 lines** (`binding_at` 385,
+- **129,472 code lines**; **2 functions ≥ 200 lines** (`binding_at` 385,
   excluded, and `resolve_cursor` 200, exactly at the boundary); **11 files
   ≥ 2,000 code lines**. The ratchet counts these, so a refactor cannot trade one
   long function for another.
@@ -202,7 +202,7 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 163,061 / 129,462 |
+| source files / lines / code lines | 169 / 163,077 / 129,472 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
@@ -216,8 +216,10 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 Session 155 refreshed the baseline for the static-libuv link-order fix and
 stale-prefix cleanup (+26 code lines) and the 0.5.0 version/help text; the
-comment churn left the duplication scan ten lines shorter.  The version move
-does not change the layering, alias or vocabulary invariants.
+later libuv support-path fix (the fs/process/sync test-runner include and link
+paths) added 10 more.  The comment churn left the duplication scan ten lines
+shorter.  The version move does not change the layering, alias or vocabulary
+invariants.
 
 Session 154 refreshed the baseline for the LSP per-document cache eviction and
 the map-key release (+56 code lines).  Session 153 added the `generate_c`

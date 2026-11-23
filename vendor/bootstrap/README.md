@@ -20,7 +20,7 @@ hard error that names the expected path.
 ## Provenance
 
 The checked-in `linux-x86_64` seed is the release build of the `0.5.0` tree,
-sha256 `d0d8068188c0cc74ef60bac79822b4249f51d6341bd6e9482014ac209bfff5da`,
+sha256 `4bec791992da7bb6988fcf1e0ed4844700aab013794047fadd58dcfcb7b3b4dd`,
 refreshed with:
 
 ```sh

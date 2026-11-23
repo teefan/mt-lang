@@ -826,7 +826,7 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
             uses_pcre2 = true
         if analysis.module_name == "std.c.steamworks":
             uses_steamworks = true
-        if analysis.module_name == "std.c.libuv":
+        if is_libuv_support_module(analysis.module_name):
             uses_libuv = true
         mi += 1
 
@@ -1002,6 +1002,22 @@ function uses_binding_module(program: loader.Program, name: str) -> bool:
     return false
 
 
+## The raw libuv module and the fs/process/sync support headers all include
+## <uv.h> and link libuv, so each one needs the vendored include and archive.
+function is_libuv_support_module(name: str) -> bool:
+    return name == "std.c.libuv" or name == "std.c.fs" or name == "std.c.process" or name == "std.c.sync"
+
+
+function uses_libuv_support(program: loader.Program) -> bool:
+    if uses_binding_module(program, "std.c.libuv"):
+        return true
+    if uses_binding_module(program, "std.c.fs"):
+        return true
+    if uses_binding_module(program, "std.c.process"):
+        return true
+    return uses_binding_module(program, "std.c.sync")
+
+
 ## Build the vendored static libraries required by the program's raw bindings
 ## when their archives are not already present.  The vendored sources are pinned
 ## trees, so an existing archive is reused as-is.  Supported libraries:
@@ -1079,7 +1095,7 @@ function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -
             Result.success:
                 pass
 
-    if uses_binding_module(program, "std.c.libuv"):
+    if uses_libuv_support(program):
         match prepare_vendored_libuv(roots):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)
@@ -2022,7 +2038,7 @@ function collect_vendored_link_flags(program: loader.Program, roots: span[str]) 
             Option.none:
                 pass
 
-    if uses_binding_module(program, "std.c.libuv"):
+    if uses_libuv_support(program):
         match vendored_source_root(roots, "libuv-upstream"):
             Option.some as uv_root:
                 var lib_dir = path_ops.join(uv_root.value, "tmp/vendored-libuv-prefix/lib")
