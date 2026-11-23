@@ -6,6 +6,8 @@
 # Extracts the archive outside the repository and checks, with no repository on
 # the compiler's ancestor path and no MILK_TEA_*_ROOT overrides:
 #
+#   0. `install.sh` installs the archive to a temporary prefix, and the
+#      installed binary is used for the remaining checks;
 #   1. `mtc version` reports the expected version;
 #   2. a program importing `std.stdio` builds and runs (std resolution);
 #   3. `mtc lsp --stdio` answers an initialize handshake;
@@ -42,6 +44,25 @@ fail() {
 REPORTED="$(env -u MILK_TEA_MODULE_ROOT -u MILK_TEA_STD_ROOT "$MTC" version)"
 if [ -n "$VERSION" ] && [ "$REPORTED" != "mtc $VERSION" ]; then
     fail "version reports '$REPORTED', expected 'mtc $VERSION'"
+fi
+
+# ── 0. installer ─────────────────────────────────────────────────────────────
+
+if [ ! -x "$PKG/install.sh" ]; then
+    fail "archive has no executable install.sh"
+fi
+INSTALL_PREFIX="$WORK/prefix"
+INSTALL_BIN="$WORK/install-bin"
+if ! "$PKG/install.sh" --prefix "$INSTALL_PREFIX" --bin-dir "$INSTALL_BIN" \
+    >"$WORK/install.log" 2>&1; then
+    cat "$WORK/install.log" >&2
+    fail "install.sh"
+fi
+MTC="$INSTALL_BIN/mtc"
+ARCHIVE_VERSION="$(cat "$PKG/VERSION")"
+INSTALLED="$(env -u MILK_TEA_MODULE_ROOT -u MILK_TEA_STD_ROOT "$MTC" version)"
+if [ "$INSTALLED" != "mtc $ARCHIVE_VERSION" ]; then
+    fail "installed compiler reports '$INSTALLED', expected 'mtc $ARCHIVE_VERSION'"
 fi
 
 # ── 1. std resolution and a real program ────────────────────────────────────

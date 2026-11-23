@@ -118,7 +118,7 @@ history.
 | Compiler | **native self-host only**; the release is **0.5.0** (tag `v0.5.0`); the Ruby host is archived at tag `archive/host-ruby-0.4.26`, and `lib/`, the Ruby `test/**` suite, `milk_tea.gemspec`, `Rakefile`, `Gemfile` and `bin/mtc` are removed (session 143) |
 | Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** (session 155, from the 0.5.0 seed; the shim proof is session 145, a `ruby` shim that exits 127 never invoked) |
 | Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`d0d80681…`, release 0.5.0); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
-| Release archive | **~3.5 MiB deterministic tar.gz** (`mtc-0.5.0-linux-x86_64`), checksummed beside the archive; identical across two packagings; clean-path and clean-container (Ubuntu 24.04) smokes green; tagged `v0.5.0`; the version is the authored `cli_help.VERSION` |
+| Release archive | **~3.5 MiB deterministic tar.gz** (`mtc-0.5.0-linux-x86_64`), checksummed beside the archive; identical across two packagings; clean-path and clean-container (Ubuntu 24.04) smokes green; includes `install.sh` (versioned prefix + `current` symlink); tagged `v0.5.0`; the version is the authored `cli_help.VERSION` |
 | Release runtime | Linux x86_64: **glibc ≥ 2.38, zlib, OpenSSL 3**; libuv is linked statically; `tools/release_container_smoke.sh` verifies the archive in a clean Ubuntu 24.04 image; the seed has the same requirements |
 | Analyzer/IR memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB / 10.5 s**; `emit-c main.mt` **860 MiB / 12.3 s**; `build projects/mtc` **903 MiB / 25.9 s** (session 152; `peak_rss.py` reports **KiB** — the MiB figures are that value ÷ 1024).  Path: `Type` boxed 72 → 24 B (session 150), the analyzer's tooling-only `imported_type_members` gated behind `tooling_facts` (−20% on `check`), the IR dump streamed and written straight into one buffer (−66 MiB on `lower`, session 151), `reserve_exact` for known-length vectors and string builders (−42 MiB on `lower`/`emit-c`, session 152), then the emitter's per-generation tables and scratch released at the end of `generate_c` (−9 MiB on `emit-c`, −21 MiB on `build --keep-c`, and ~94 → ~82 MiB per repeated emission; session 153).  The old analyzer const blow-up (**9,228 MiB** on `main.mt`, session 142) and the cross-module async rescan (682 MB of the lower peak, session 149) are gone.  `lowering.mt` check **197 MiB** (session 151 audit).  The release profile has the same peaks with `check` **1.3 s**, `lower` **4.1 s**, `emit-c` **4.6 s**, `build` **20.0 s** (session 155).  All tooling fan-out is capped at **4**. |
 | Multi-file commands | **Flat in the file count, and no longer ~2× a heavy file's peak** (session 152).  The per-file heap region is a bump allocator: it frees everything at once and cannot reuse anything released inside it, so an abandoned temporary lands in the peak.  It buys release of every file *after* the one compiling, so it is now gated on the **file count** (`should_scope_file`, `remaining_after >= 2`): the last two files of a run compile unregioned.  Measured: `check main.mt` + a 60-byte file **422 MiB** (was 958,616 KiB always-regioned; 432,068 never-regioned), 40 small files **372 MiB** (1,367,120 never-regioned), `check projects/mtc` (191 files) **997 MiB** (11,398,120 never-regioned).  The `lower`/`emit-c` 8-heaviest sets pay 2–3% (**1,456 / 1,694 MiB**) because their last two files are heavy.  The old session-151 row (same file twice 946 MiB, `main.mt` + `sexpr.mt` 1,407 MiB) was the ungated region; see *Region gate (session 152)*. |
@@ -4337,6 +4337,17 @@ are now authored text.  `tools/release.sh --refresh-seed` replaced the seed
 **22/0**.  The CLI golden was re-recorded (9 version-only rows).  The release is
 tagged `v0.5.0`.
 
+**Installer.** The archive now carries `install.sh` at its root.  It installs
+the complete tree to `~/.local/opt/mtc/<version>`, points
+`~/.local/opt/mtc/current` at it and links `~/.local/bin/mtc` to
+`current/bin/mtc`; `--prefix`/`--bin-dir` override the defaults, `--force`
+replaces an existing version or a non-symlink link, `--dry-run` previews, and
+`--uninstall` removes the version and its links.  It verifies the archive's and
+the copied compiler's version, installs through a temporary directory + rename,
+and never edits shell startup files.  `tools/release_smoke.sh` installs the
+archive to a temporary prefix and runs the remaining checks through the
+installed binary.
+
 **CI and clean-container smoke.** `.github/workflows/ci.yml` runs the vendored
 fetch, bootstrap, `test/mt`, the four oracles, LSP conformance, examples,
 bindings, docs smoke, the deterministic release (two packagings compared) and
@@ -4447,7 +4458,10 @@ clean and `build/stage2/mtc` is the fixed-point binary from the 0.5.0 seed.
 
 **Release state.** `dist/mtc-0.5.0-linux-x86_64.tar.gz` is deterministic and
 checksummed; the archive links libuv statically and needs **glibc ≥ 2.38,
-zlib, OpenSSL 3** at runtime.  Seed sha256 `d0d80681…`; tag `v0.5.0`; version
+zlib, OpenSSL 3** at runtime.  It includes `install.sh` (versioned prefix +
+`current` symlink; `--prefix`/`--bin-dir`/`--uninstall`), and the release smoke
+installs it to a temp prefix and runs the remaining checks through the
+installed binary.  Seed sha256 `d0d80681…`; tag `v0.5.0`; version
 `cli_help.VERSION` = 0.5.0.  `tools/release.sh --refresh-seed` is the seed
 refresh path; `tools/release_container_smoke.sh` is the clean-image check.
 
@@ -6006,7 +6020,8 @@ historical record.
 | repeated emission | `generate_c` releases its nine `Emitter` maps, both backing-name maps and eight collected sets before returning, so a second emission does not retain them: per-call RSS growth **~94 → ~82 MiB** across 6 calls, and valgrind's definite-loss growth **~60 MB/call**.  The second pass rebuilds every table (pinned by `test_repeated_generation_is_identical`) | session 153 | `./tmp/cg_n 6` (probe: `lower` once, `generate_c` N times); `valgrind --leak-check=full ./tmp/cg_n 4` |
 | multi-file memory | the per-file region is gated on **file count**: used only while ≥2 files follow the one compiling (`should_scope_file`), so the last two files of a run are unregioned.  `check M + a 60-byte file` **422 MiB** (was 936 always-regioned), 40 small files **372 MiB** (1,333 never-regioned), `check projects/mtc` (191 files) **943 MiB** (991 MiB on the pre-session-152 compiler), `lower`/`emit-c` 8 heaviest **1,456 / 1,694 MiB** (2-3% above always-regioning).  Session 150's always-on row (`check` 191 files 1,019 MiB, 32 files 231 MiB, 16 linted 256 MiB, 8 lowered 346 MiB) used small files and understated the heavy case; see *RAM audit* and *Region gate* | session 152 | `python3 tools/peak_rss.py -- build/stage2/mtc check <files...> -I .` |
 | struct sizes | `Type` **24 B**, `ir.Expr` **72**, `ir.Stmt` **96**, `ir.Function` **96**, `ir.Param` **64**, `ir.Field` **40** (was 72 / 168 / 144 / 144 / 112 / 88 at session start) | session 150 | probe: `size_of` in a scratch program importing `mtc.ir` + `mtc.semantic.types` |
-| release archive | ~3.5 MiB deterministic `mtc-0.5.0-linux-x86_64.tar.gz`, checksummed; clean-path smoke and clean-container (Ubuntu 24.04) smoke green; two packagings identical | session 155 | `tools/release.sh`; `tools/release_smoke.sh`; `tools/release_container_smoke.sh` |
+| release archive | ~3.5 MiB deterministic `mtc-0.5.0-linux-x86_64.tar.gz`, checksummed; includes `install.sh`; clean-path smoke and clean-container (Ubuntu 24.04) smoke green; two packagings identical | session 155 | `tools/release.sh`; `tools/release_smoke.sh`; `tools/release_container_smoke.sh` |
+| installer | `install.sh` in the archive: versioned prefix, `current` symlink, `BIN_DIR/mtc`; `--prefix`/`--bin-dir`/`--force`/`--dry-run`/`--uninstall`; verifies both compiler copies; no shell-config edits; the release smoke installs to a temp prefix and uses the installed binary | session 155 | `tools/install.sh --help`; `tools/release_smoke.sh` |
 | release runtime | glibc **≥ 2.38**, zlib, OpenSSL 3; libuv static; the seed has the same requirements | session 155 | `ldd dist/mtc-0.5.0-linux-x86_64/bin/mtc`; `tools/release_container_smoke.sh` |
 | CI | `.github/workflows/ci.yml`: vendored fetch, bootstrap, `test/mt`, four oracles, LSP conformance, examples, bindings, docs smoke, deterministic release, container smoke | session 155 (added; not yet run on GitHub) | `cat .github/workflows/ci.yml` |
 | refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files / 163,061 lines / 129,462 code lines); 30 unused / 7 test-only exports; 6,515 duplicated lines / 885 clusters; 2 functions ≥ 200 lines (`binding_at` 385, `resolve_cursor` 200); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 155 (baseline refreshed for the static-libuv link fix and the 0.5.0 version/help text) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |

@@ -106,6 +106,8 @@ cp -R std "$STAGE/std"
 cp -R docs "$STAGE/docs"
 cp -R projects/mtc/src/mtc/docs_public "$STAGE/docs_public"
 cp README.md LICENSE "$STAGE/"
+cp "$ROOT/tools/install.sh" "$STAGE/install.sh"
+chmod +x "$STAGE/install.sh"
 printf '%s\n' "$VERSION" > "$STAGE/VERSION"
 
 # Reproducible metadata: sorted entries, fixed owner and mtime, and gzip -n so

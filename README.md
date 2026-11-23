@@ -5,7 +5,7 @@ Compiles to readable C. Safe by default, explicit by design.
 
 ```bash
 tar xzf mtc-<version>-linux-x86_64.tar.gz
-export PATH="$PWD/mtc-<version>-linux-x86_64/bin:$PATH"
+./mtc-<version>-linux-x86_64/install.sh
 mtc run hello.mt
 ```
 
@@ -14,6 +14,11 @@ A C compiler (`cc`) with libc headers is required to compile programs; the
 compiler itself needs glibc 2.38+, zlib, and OpenSSL 3 (the archive links libuv
 statically). Building the toolchain from source needs the same libraries — see
 [docs/build-guide.md](docs/build-guide.md#10-toolchain-installation-and-bootstrapping).
+
+`install.sh` installs the complete archive under `~/.local/opt/mtc/<version>`,
+points `~/.local/opt/mtc/current` at it, and links `~/.local/bin/mtc`. Use
+`--prefix`/`--bin-dir` to change the locations and `--uninstall` to remove the
+version; it prints a PATH line when needed and never edits shell startup files.
 The `mt-lang` gem is retired; the native archives are the only distribution.
 
 [VS Code extension](https://marketplace.visualstudio.com/items?itemName=teefan.milk-tea-lang) &mdash; syntax highlighting, IntelliSense, debugging

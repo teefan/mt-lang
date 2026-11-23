@@ -552,14 +552,30 @@ mtc-<version>-<platform>/
   std/             the standard library
   docs/            the reference site served by `mtc docs`
   docs_public/     stylesheet and script assets
+  install.sh       installs the archive and links mtc
   VERSION, README.md, LICENSE
 ```
 
-Extract it anywhere and put `bin/` on `PATH`. The compiler locates `std/` and
-the docs root from the binary's own path (`/proc/self/exe`), so the archive can
-live outside any checkout. `MILK_TEA_MODULE_ROOT` and `MILK_TEA_STD_ROOT`
-(PATH-separated) add extra module roots; a root naming `std` itself is
-normalized to its parent.
+Extract it and run the bundled installer:
+
+```sh
+tar xzf mtc-<version>-linux-x86_64.tar.gz
+./mtc-<version>-linux-x86_64/install.sh
+```
+
+It installs the complete archive to `~/.local/opt/mtc/<version>`, points
+`~/.local/opt/mtc/current` at that version, and links `~/.local/bin/mtc` to
+`current/bin/mtc`.  `--prefix DIR` and `--bin-dir DIR` change the locations;
+`--force` replaces an existing version or a non-symlink at the link paths;
+`--dry-run` previews; `--uninstall` removes this archive's version and its
+links.  The installer prints a PATH line when needed and never edits shell
+startup files.
+
+The whole tree must stay together: the compiler locates `std/` and the docs
+root from the binary's own path (`/proc/self/exe`), so the archive can live
+outside any checkout (a `bin/mtc` symlink is fine). `MILK_TEA_MODULE_ROOT` and
+`MILK_TEA_STD_ROOT` (PATH-separated) add extra module roots; a root naming
+`std` itself is normalized to its parent.
 
 The compiler links the vendored libuv statically.  At runtime it needs glibc
 2.38 or newer, zlib (`libz.so.1`), and OpenSSL 3 (`libssl.so.3`,
@@ -582,8 +598,9 @@ The version is an authored constant in `projects/mtc/src/mtc/cli_help.mt`
 (`VERSION`, plus the help banner), never derived from git. The archive is
 built deterministically (sorted entries, fixed owner and mtime, `gzip -n`), so
 two packagings of the same binary produce the same checksum. `tools/release.sh`
-runs `tools/release_smoke.sh` on the packed archive: a std-importing program
-builds and runs from an unrelated directory, `mtc lsp` completes an initialize
+runs `tools/release_smoke.sh` on the packed archive: `install.sh` installs it to
+a temporary prefix, a std-importing program builds and runs from an unrelated
+directory through the installed binary, `mtc lsp` completes an initialize
 handshake, and `mtc docs` serves the reference page, its CSS/JS assets, and a
 404.
 
