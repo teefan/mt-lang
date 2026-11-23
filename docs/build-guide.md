@@ -499,21 +499,21 @@ The template path is resolved relative to the package root and must point to an 
 
 The template must contain each placeholder exactly once:
 
-```html
+{% raw %}```html
 {{{ MILK_TEA_CANVAS }}}
 {{{ MILK_TEA_OUTPUT }}}
 {{{ MILK_TEA_BOOTSTRAP }}}
 {{{ SCRIPT }}}
-```
+```{% endraw %}
 
 Placeholder contract:
 
-- `{{{ MILK_TEA_CANVAS }}}`: where the app canvas is inserted.
+{% raw %}- `{{{ MILK_TEA_CANVAS }}}`: where the app canvas is inserted.
 - `{{{ MILK_TEA_OUTPUT }}}`: where stdout and stderr output is rendered.
 - `{{{ MILK_TEA_BOOTSTRAP }}}`: Milk Tea bootstrap code that wires `Module.canvas`, `print`, and `printErr`.
 - `{{{ SCRIPT }}}`: the Emscripten loader script placeholder.
 
-`{{{ SCRIPT }}}` is not a Milk Tea placeholder. It is required by Emscripten and must remain in the template.
+`{{{ SCRIPT }}}` is not a Milk Tea placeholder. It is required by Emscripten and must remain in the template.{% endraw %}
 
 If `build.html_template` is omitted, Milk Tea uses the default template in `lib/milk_tea/tooling/templates/wasm_shell.html`.
 

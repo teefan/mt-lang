@@ -276,10 +276,10 @@ continue probe matches the host's stream; valgrind on the loop reads 0 errors.
 
 Fixed on 2026-09-27 (found by this audit):
 
-- **Malformed `exited` body.**  `wire.write_event(..., f"{{"exitCode":#{code}}}")`
+{% raw %}- **Malformed `exited` body.**  `wire.write_event(..., f"{{"exitCode":#{code}}}")`
   emitted `"body":{{"exitCode":0}}`: `{{` is not an f-string escape in Milk Tea
   (both compilers treat it as two literal braces), so every client failed to
-  parse that frame.  The body is now built explicitly.
+  parse that frame.  The body is now built explicitly.{% endraw %}
 - **No `process` event.**  The host announces the launched process
   (`launch.rb:75`); the adapter now does too.
 - **`dataBreakpointInfo` / `setExpression` were not dispatched** ("unsupported
