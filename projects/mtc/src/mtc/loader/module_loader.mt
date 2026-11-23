@@ -343,12 +343,37 @@ public function invalidate_module_cache(cache: ref[ModuleCache]) -> void:
     cache.generation += 1
 
 
+## Drop one module's cached entry and forget it, so a document that is edited
+## once and then abandoned (`didClose`) does not retain its AST, analysis and
+## bindings for the life of the process.  The entry's own strings and vectors are
+## freed immediately; its parse and analysis regions are *retired* to the cache's
+## quarantine, because a request still inside the current boundary may hold views
+## into them and they are drained at that boundary.
+##
+## The generation bump is what makes any `Program` that snapshotted this entry
+## rebuild rather than read the freed module.
+public function evict_module_cache_entry(cache: ref[ModuleCache], path: str) -> void:
+    var lookup = string.String.from_str(path)
+    defer: lookup.release()
+    let removed = cache.entries.remove_entry(lookup)
+    match removed:
+        Option.some as entry:
+            var owned = entry.value
+            owned.key.release()
+            var old_entry = owned.value
+            release_module_cache_entry(ref_of(old_entry), ptr_of(cache))
+            cache.generation += 1
+        Option.none:
+            pass
+
+
 public function release_module_cache(cache: ref[ModuleCache]) -> void:
     drain_retired_regions(cache)
     var entries_iter = cache.entries.entries()
     while entries_iter.next():
         let entry = entries_iter.current()
         unsafe:
+            read(entry.key).release()
             var entry_value = read(entry.value)
             release_module_cache_entry(ref_of(entry_value), null)
     cache.entries.release()

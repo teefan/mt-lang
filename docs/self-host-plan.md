@@ -15,9 +15,10 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-153-2026-11-22)
+- [Status at a glance](#status-at-a-glance-session-154-2026-11-22)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
+- [Session 154 — LSP cache eviction and the map-key release; the pipeline "leak" is bounded](#session-154--lsp-cache-eviction-and-the-map-key-release-the-pipeline-leak-is-bounded)
 - [Session 153 — the codegen scratch release; phase release measured and retargeted](#session-153--the-codegen-scratch-release-phase-release-measured-and-retargeted)
 - [Session 152 — the per-file region gate; exact-capacity vectors](#session-152--the-per-file-region-gate-exact-capacity-vectors)
 - [Session 151 — streaming IR dump; the analysis' import-table lifetime](#session-151--streaming-ir-dump-the-analysis-import-table-lifetime)
@@ -100,7 +101,7 @@ history.
 - [Session 74 — decisions closed](#session-74--decisions-closed)
 - [Session 73 — the `mtc test` CLI matrix](#session-73--the-mtc-test-cli-matrix)
 - [Session 72 — the `check`/analyzer surface](#session-72--the-checkanalyzer-surface)
-- [Handoff](#handoff-session-153)
+- [Handoff](#handoff-session-154)
 - [How to start a work session](#how-to-start-a-work-session)
 - [The program — tracks and stopping rules (all tracks closed)](#the-program--tracks-and-stopping-rules-all-tracks-closed)
 - [Deliberate differences (archived-host record)](#deliberate-differences-archived-host-record)
@@ -109,7 +110,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 153, 2026-11-22)
+## Status at a glance (session 154, 2026-11-22)
 
 | Area | State |
 | --- | --- |
@@ -4300,12 +4301,112 @@ for the release helpers and `emit_indented`).  A new
 table from scratch.
 
 
-## Handoff (session 153)
+## Session 154 — LSP cache eviction and the map-key release; the pipeline "leak" is bounded
 
-**Next session:** no open defect is scheduled.  This session corrected the
-memory program's direction and fixed the one real leak it found; the tree is
-clean and `build/stage2/mtc` is the fixed-point binary from
+Session 153's handoff named the pipeline lifetime (~960 MB retained per
+`check_program`) as the next real target.  Measuring it showed the number is
+real but **no command can reach it**, and that the two things worth fixing were
+smaller and concrete.
+
+### The pipeline retention is real and already bounded
+
+Valgrind on one `check_program` reports **125 MB definitely + 326 MB indirectly
+lost** — the analyzer's maps, the AST nodes and the bindings table, matching the
+"~960 MB per iteration" RSS figure.  But every command that loads more than one
+file already scopes each compile in a `FileRegion`, so the retention is bounded
+before it can accumulate:
+
+| Command | Peak | Behaviour |
+| --- | --- | --- |
+| `check` one file | 423 MiB | process exits; the retention is one compile's |
+| `check` two heavy files | 460 MiB | `FileRegion` releases file 1 before file 2 |
+| `check projects/mtc` (191 files) | 943 MiB | flat in the file count |
+| `mtc test test/mt` (85 fixtures) | 100 MiB | region-scoped per fixture |
+| LSP soak, 200 cycles | 35 MB final | module-cache regions, slope is noise |
+
+Adding an `Analysis.release` would only pay off for a long-lived process that
+compiles many *independent* programs — which is what the LSP does, and which the
+module cache already handles with per-entry regions.  So the recorded target is
+**demoted, not fixed**: the cost is one compile's analysis, held until process
+exit, and every consumer is already scoped.  Recorded here so it is not
+re-opened as the "largest remaining item".
+
+### What was fixed: LSP caches never evicted on close, and map keys leaked
+
+Two concrete defects surfaced while testing that claim.
+
+1. **`didClose` retained every per-document cache.** `Workspace.close` forgot the
+   document's text, definition and reference entries but not its `parse_cache`
+   entry (which owns a source copy and a heap region), its `analysis_cache` entry
+   (which owns a whole `Program`) or its `diagnostic_cache` / `semantic_token_cache`
+   entries.  They were removed only when the same path was re-analysed.  New
+   `forget_parse_cache` / `forget_analysis_cache`, `loader.evict_module_cache_entry`
+   (the loader's module cache had the same shape: entries were replaced, never
+   dropped), and the two existing per-file clears are now called from `close`.
+   The parse and analysis regions are *retired* to the cache's quarantine and
+   freed at the message boundary, as every other replacement does, so no request
+   can observe a borrowed view of freed memory.
+
+2. **Map keys were never freed.** A `Map[K, V]` stores `K` and `V` by value, and
+   `clear()` / `release()` free only the nodes — the documented contract is that
+   the *caller* frees an owned key and value it no longer needs.  Every bulk
+   cache-release function freed the value's fields and not the string key, so a
+   map keyed by `string.String` leaked one buffer per entry at teardown.
+   `release_text_cache`, `release_parse_cache`, `release_analysis_cache`,
+   `release_diagnostic_cache` and `release_module_cache` now release the key too;
+   `release_semantic_token_cache` already did, which is what identified the
+   pattern.  Proven with a standalone probe: freeing key + value then `release()`
+   reports *"All heap blocks were freed"*, while the old shape leaks the key.
+
+Also fixed: `diagnostic_cache_clear` / `_clear_all` used `remove` / `clear`,
+which drop entries without releasing their `result_id` / `diagnostics_json`
+strings.  They now go through `remove_entry` and `release_diagnostic_cache`.
+Both are called by routine notifications (`workspace/didChangeConfiguration`,
+`workspace/didChangeWatchedFiles`), so this ran on ordinary editor use.
+
+**On the RSS symptom.** Opening and closing documents still grows RSS linearly
+(~3 MB/document) — but Massif's live-heap graph is **flat** across the same cycles
+(it oscillates 45–53 MB and drops), and valgrind reports only ~130 KB lost at
+shutdown.  The growth is allocator high-water from per-request scratch, not
+retention.  Do not chase it as a leak; a `malloc_trim`-style fix would be masking
+allocator behaviour, not fixing ownership.
+
+**Verification.**  Bootstrap fixed point (`stage2.c == stage3.c`) + **22/0**;
+`test/mt` **85/0**; LSP conformance **37/37**; guard `--check --strict` ok after
+the reviewed baseline refresh (+56 code lines).
+
+
+## Handoff (session 154)
+
+**Next session:** no open defect.  Session 154 closed the LSP's per-document
+cache retention and the map-key release defect, and demoted the recorded
+"pipeline leak" target after measuring that no command can reach it.  The tree
+is clean and `build/stage2/mtc` is the fixed-point binary from
 `tools/bootstrap.sh -j 4`.
+
+**What to know before picking work.**
+
+1. **`Map` does not own its keys.** A bulk release must free each entry's key as
+   well as its value's fields.  Five cache-release functions did not; the
+   semantic-token one did, which is what identified the pattern.  Check this in
+   any new cache.
+2. **The pipeline retention is real but unreachable.** One `check_program` leaks
+   125 MB definitely + 326 MB indirectly, but `FileRegion` already scopes every
+   multi-file command and `mtc test`, so it is bounded to one compile.  Not a
+   defect — do not re-open it as "the largest remaining item".
+3. **LSP RSS growth across many open/close documents is allocator high-water,
+   not retention.** Massif's live heap is flat and valgrind reports ~130 KB lost.
+   Do not chase it.
+4. **Do not re-open:** the `TypeId` handle (~40 MB for ~3,000 edits) and
+   `ir.Program.arena` (inert by design — the IR borrows analysis storage, so the
+   AST cannot be freed before codegen).
+
+**Verification this session.**  Bootstrap fixed point + **22/0**; `test/mt`
+**85/0**; LSP conformance **37/37**; guard `--check --strict` ok after the
+reviewed baseline refresh (+56 code lines).
+
+
+## Handoff (session 153)
 
 **Baseline to preserve (`tools/peak_rss.py`, which prints KiB; the MiB below are
 that value ÷ 1024).**  Single file `main.mt`: `check` **413 MiB / 4.9 s**,
@@ -4326,14 +4427,14 @@ projects/mtc` **943 MiB**.  Sizes unchanged: `Type` **24 B**, `ir.Expr` **72 B**
 2. **`generate_c` retained ~80 MB per call** and now releases its tables, its
    collected sets and its scratch.  `emit-c` −9 MiB, `build --keep-c` −21 MiB,
    per-call growth ~94 → ~82 MiB, output byte-identical.
-3. **The largest remaining item is the pipeline lifetime, not codegen.**  A probe
-   that repeats `check_program` → `lower` → `generate_c` and releases each
-   `Program` still grows **~960 MB per iteration**, and the parent commit shows
-   the same: `Program.release()` frees the vectors, but the AST and analysis are
-   retained because an `Analysis` has no release.  `mtc test` and the multi-file
-   commands already bound this with `FileRegion`; a single-file `check`/`lower`
-   does not.  **That is the next real target**, and it is a lifetime question
-   (`FileRegion`-style scoping or an `Analysis.release`), not an IR arena.
+3. **The pipeline lifetime was recorded as the next target and session 154
+   demoted it.**  A probe that repeats `check_program` → `lower` → `generate_c`
+   and releases each `Program` grows ~960 MB per iteration (valgrind: 125 MB
+   definitely + 326 MB indirectly lost per `check_program`).  But every command
+   that loads more than one file already scopes each compile in a `FileRegion`,
+   so the cost is bounded to one compile and never accumulates — see *Session
+   154*.  It is not an IR arena and not an `Analysis.release`; there is no
+   reachable defect.
 
 **Do not re-open:** the `TypeId` handle (~40 MB for ~3,000 edits) and
 `ir.Program.arena` (inert by design — see item 1).

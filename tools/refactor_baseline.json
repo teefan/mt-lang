@@ -1262,7 +1262,7 @@
     ]
   },
   "sizes": {
-    "total_code": 129380,
+    "total_code": 129436,
     "functions_over_limit": 2,
     "files_over_limit": 11,
     "files": {
@@ -1597,8 +1597,8 @@
         "max_function": 5
       },
       "projects/mtc/src/mtc/loader/module_loader.mt": {
-        "lines": 1835,
-        "code": 1362,
+        "lines": 1860,
+        "code": 1376,
         "max_line": 297,
         "max_function": 198
       },
@@ -1963,8 +1963,8 @@
         "max_function": 30
       },
       "projects/mtc/src/mtc/lsp/workspace.mt": {
-        "lines": 1599,
-        "code": 1135,
+        "lines": 1662,
+        "code": 1177,
         "max_line": 169,
         "max_function": 52
       },

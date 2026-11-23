@@ -400,7 +400,21 @@ extending Workspace:
                 this.untrack_open_path(path_payload.value.as_str())
                 this.open_docs.remove(path_payload.value)
                 this.forget_document_text(path_payload.value.as_str())
+                # A closed document's cached AST/analysis is keyed by its path, so
+                # without this it is retained for the life of the session (the
+                # cache only ever replaced an entry, never dropped one).  Both
+                # entries own their storage — the parse cache its source copy and
+                # region, the analysis cache its `Program` — and nothing outside
+                # a request may borrow them.
+                this.forget_parse_cache(path_payload.value.as_str())
+                this.forget_analysis_cache(path_payload.value.as_str())
+                loader.evict_module_cache_entry(ref_of(this.module_cache), path_payload.value.as_str())
                 loader.invalidate_module_cache(ref_of(this.module_cache))
+                # The per-file result caches are path-keyed as well; closing is
+                # the only point at which a file stops being a candidate for its
+                # cached diagnostics and tokens.
+                this.diagnostic_cache_clear(path_payload.value.as_str())
+                this.semantic_token_cache_remove(path_payload.value.as_str())
                 defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
                 refidx.forget(ref_of(this.reference_index), path_payload.value.as_str())
                 # The buffer is gone: re-read the file (its saved content).
@@ -411,6 +425,41 @@ extending Workspace:
                         saved.value.release()
                     Option.none:
                         pass
+            Option.none:
+                pass
+
+
+    ## Drop one document's cached parse, releasing its source copy and the
+    ## region that owns the AST and single-file analysis.  `didClose` calls this;
+    ## any other eviction must too.  `remove_entry` hands back the map-owned key
+    ## as well, so it is released here.
+    public editable function forget_parse_cache(path: str) -> void:
+        var key = string.String.from_str(path)
+        defer: key.release()
+        let removed = this.parse_cache.remove_entry(key)
+        match removed:
+            Option.some as old:
+                var entry = old.value
+                entry.key.release()
+                entry.value.source.release()
+                entry.value.region.release_all()
+            Option.none:
+                pass
+
+
+    ## Drop one document's cached loader-backed analysis, releasing its owned
+    ## path and the `Program` (whose region-owned AST/analysis the module cache
+    ## has already released or retired).
+    public editable function forget_analysis_cache(path: str) -> void:
+        var key = string.String.from_str(path)
+        defer: key.release()
+        let removed = this.analysis_cache.remove_entry(key)
+        match removed:
+            Option.some as old:
+                var entry = old.value
+                entry.key.release()
+                entry.value.path.release()
+                entry.value.program.release()
             Option.none:
                 pass
 
@@ -1042,16 +1091,26 @@ extending Workspace:
         this.diagnostic_cache.entries.set(key, entry)
 
 
-    ## Clear the diagnostic cache entry for a single file.
+    ## Clear the diagnostic cache entry for a single file, releasing the cached
+    ## result id and JSON (`remove` drops the entry without freeing its fields).
     public editable function diagnostic_cache_clear(path: str) -> void:
         var key = string.String.from_str(path)
         defer: key.release()
-        this.diagnostic_cache.entries.remove(key)
+        let removed = this.diagnostic_cache.entries.remove_entry(key)
+        match removed:
+            Option.some as old:
+                var entry = old.value
+                entry.key.release()
+                entry.value.result_id.release()
+                entry.value.diagnostics_json.release()
+            Option.none:
+                pass
 
 
-    ## Clear the entire diagnostic cache.
+    ## Clear the entire diagnostic cache, releasing every entry's strings.
     public editable function diagnostic_cache_clear_all() -> void:
-        this.diagnostic_cache.entries.clear()
+        release_diagnostic_cache(ref_of(this.diagnostic_cache))
+        this.diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create())
 
 
     ## Look up a cached semantic token entry for a file path.
@@ -1233,6 +1292,7 @@ function release_text_cache(cache: ref[map_mod.Map[string.String, TextCacheEntry
     while entries_iter.next():
         let entry = entries_iter.current()
         unsafe:
+            read(entry.key).release()
             var entry_value = read(entry.value)
             entry_value.source.release()
             entry_value.line_starts.release()
@@ -1244,6 +1304,7 @@ function release_parse_cache(cache: ref[map_mod.Map[string.String, ParseCacheEnt
     while entries_iter.next():
         let entry = entries_iter.current()
         unsafe:
+            read(entry.key).release()
             var entry_value = read(entry.value)
             entry_value.source.release()
             entry_value.region.release_all()
@@ -1255,6 +1316,7 @@ function release_analysis_cache(cache: ref[map_mod.Map[string.String, AnalysisCa
     while entries_iter.next():
         let entry = entries_iter.current()
         unsafe:
+            read(entry.key).release()
             var entry_value = read(entry.value)
             entry_value.path.release()
             entry_value.program.release()
@@ -1581,6 +1643,7 @@ function release_diagnostic_cache(cache: ref[DiagnosticCache]) -> void:
     while entries_iter.next():
         let entry = entries_iter.current()
         unsafe:
+            read(entry.key).release()
             var entry_value = read(entry.value)
             entry_value.result_id.release()
             entry_value.diagnostics_json.release()
