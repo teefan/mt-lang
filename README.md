@@ -9,9 +9,10 @@ export PATH="$PWD/mtc-<version>-linux-x86_64/bin:$PATH"
 mtc run hello.mt
 ```
 
-The release archive ships the compiler, the standard library, and the docs site;
-a C compiler (`cc`) is required to compile programs. Building the toolchain from
-source also needs only a C compiler — see
+The release archive ships the compiler, the standard library, and the docs site.
+A C compiler (`cc`) with libc headers is required to compile programs; the
+compiler itself needs glibc 2.38+, zlib, and OpenSSL 3 (the archive links libuv
+statically). Building the toolchain from source needs the same libraries — see
 [docs/build-guide.md](docs/build-guide.md#10-toolchain-installation-and-bootstrapping).
 The `mt-lang` gem is retired; the native archives are the only distribution.
 

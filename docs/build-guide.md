@@ -561,8 +561,15 @@ live outside any checkout. `MILK_TEA_MODULE_ROOT` and `MILK_TEA_STD_ROOT`
 (PATH-separated) add extra module roots; a root naming `std` itself is
 normalized to its parent.
 
-A C compiler (`cc`) must be on `PATH` to compile programs; the compiler itself
-is a native binary with no other runtime dependency.
+The compiler links the vendored libuv statically.  At runtime it needs glibc
+2.38 or newer, zlib (`libz.so.1`), and OpenSSL 3 (`libssl.so.3`,
+`libcrypto.so.3`, used by package-registry HTTPS).  A C compiler (`cc`, with its
+libc headers) must be on `PATH` to compile programs.
+
+`tools/release_container_smoke.sh PACKAGE.tar.gz VERSION` extracts the archive
+in a clean Ubuntu 24.04 container, installs only those runtime libraries plus
+`gcc`/`libc6-dev`, and checks `mtc version`, a `std.stdio` build/run, and
+`mtc check`.
 
 Build the archive with:
 
@@ -583,7 +590,8 @@ handshake, and `mtc docs` serves the reference page, its CSS/JS assets, and a
 ### Building from source
 
 The repository ships a checksummed bootstrap compiler, so a fresh clone builds
-with only a C compiler.  The compiler's own imports also need the vendored
+with a C compiler and the runtime libraries above (the seed is the same native
+compiler).  The compiler's own imports also need the vendored
 `third_party/` sources (cJSON, libuv, pcre2, ...): fetch them once with the seed
 (network required) or copy them from another checkout.
 

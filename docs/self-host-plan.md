@@ -15,9 +15,10 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-154-2026-11-22)
+- [Status at a glance](#status-at-a-glance-session-155-2026-11-23)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
+- [Session 155 — 0.5.0 release: static libuv, version/tag, CI and container smoke](#session-155--050-release-static-libuv-versiontag-ci-and-container-smoke)
 - [Session 154 — LSP cache eviction and the map-key release; the pipeline "leak" is bounded](#session-154--lsp-cache-eviction-and-the-map-key-release-the-pipeline-leak-is-bounded)
 - [Session 153 — the codegen scratch release; phase release measured and retargeted](#session-153--the-codegen-scratch-release-phase-release-measured-and-retargeted)
 - [Session 152 — the per-file region gate; exact-capacity vectors](#session-152--the-per-file-region-gate-exact-capacity-vectors)
@@ -101,7 +102,7 @@ history.
 - [Session 74 — decisions closed](#session-74--decisions-closed)
 - [Session 73 — the `mtc test` CLI matrix](#session-73--the-mtc-test-cli-matrix)
 - [Session 72 — the `check`/analyzer surface](#session-72--the-checkanalyzer-surface)
-- [Handoff](#handoff-session-154)
+- [Handoff](#handoff-session-155)
 - [How to start a work session](#how-to-start-a-work-session)
 - [The program — tracks and stopping rules (all tracks closed)](#the-program--tracks-and-stopping-rules-all-tracks-closed)
 - [Deliberate differences (archived-host record)](#deliberate-differences-archived-host-record)
@@ -110,30 +111,31 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 154, 2026-11-22)
+## Status at a glance (session 155, 2026-11-23)
 
 | Area | State |
 | --- | --- |
-| Compiler | **native self-host only**; the Ruby host is archived at tag `archive/host-ruby-0.4.26`, and `lib/`, the Ruby `test/**` suite, `milk_tea.gemspec`, `Rakefile`, `Gemfile` and `bin/mtc` are removed (session 143) |
-| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** (session 154, replayed; the shim proof is session 145, stage0 = the committed seed, a `ruby` shim that exits 127 never invoked) |
-| Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`b29241f4…`, release); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
-| Release archive | **3.52 MiB deterministic tar.gz** (`mtc-0.4.26-linux-x86_64`), checksummed beside the archive; identical across two packagings of the same inputs; clean-path smoke (std build/run, LSP initialize, docs page/CSS/JS/404) green; the version is the authored `cli_help.VERSION` |
-| Analyzer/IR memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB / 10.5 s**; `emit-c main.mt` **860 MiB / 12.3 s**; `build projects/mtc` **903 MiB / 25.9 s** (session 152; `peak_rss.py` reports **KiB** — the MiB figures are that value ÷ 1024).  Path: `Type` boxed 72 → 24 B (session 150), the analyzer's tooling-only `imported_type_members` gated behind `tooling_facts` (−20% on `check`), the IR dump streamed and written straight into one buffer (−66 MiB on `lower`, session 151), `reserve_exact` for known-length vectors and string builders (−42 MiB on `lower`/`emit-c`, session 152), then the emitter's per-generation tables and scratch released at the end of `generate_c` (−9 MiB on `emit-c`, −21 MiB on `build --keep-c`, and ~94 → ~82 MiB per repeated emission; session 153).  The old analyzer const blow-up (**9,228 MiB** on `main.mt`, session 142) and the cross-module async rescan (682 MB of the lower peak, session 149) are gone.  `lowering.mt` check **197 MiB** (session 151 audit).  All tooling fan-out is capped at **4**. |
+| Compiler | **native self-host only**; the release is **0.5.0** (tag `v0.5.0`); the Ruby host is archived at tag `archive/host-ruby-0.4.26`, and `lib/`, the Ruby `test/**` suite, `milk_tea.gemspec`, `Rakefile`, `Gemfile` and `bin/mtc` are removed (session 143) |
+| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** (session 155, from the 0.5.0 seed; the shim proof is session 145, a `ruby` shim that exits 127 never invoked) |
+| Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`d0d80681…`, release 0.5.0); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
+| Release archive | **~3.5 MiB deterministic tar.gz** (`mtc-0.5.0-linux-x86_64`), checksummed beside the archive; identical across two packagings; clean-path and clean-container (Ubuntu 24.04) smokes green; tagged `v0.5.0`; the version is the authored `cli_help.VERSION` |
+| Release runtime | Linux x86_64: **glibc ≥ 2.38, zlib, OpenSSL 3**; libuv is linked statically; `tools/release_container_smoke.sh` verifies the archive in a clean Ubuntu 24.04 image; the seed has the same requirements |
+| Analyzer/IR memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB / 10.5 s**; `emit-c main.mt` **860 MiB / 12.3 s**; `build projects/mtc` **903 MiB / 25.9 s** (session 152; `peak_rss.py` reports **KiB** — the MiB figures are that value ÷ 1024).  Path: `Type` boxed 72 → 24 B (session 150), the analyzer's tooling-only `imported_type_members` gated behind `tooling_facts` (−20% on `check`), the IR dump streamed and written straight into one buffer (−66 MiB on `lower`, session 151), `reserve_exact` for known-length vectors and string builders (−42 MiB on `lower`/`emit-c`, session 152), then the emitter's per-generation tables and scratch released at the end of `generate_c` (−9 MiB on `emit-c`, −21 MiB on `build --keep-c`, and ~94 → ~82 MiB per repeated emission; session 153).  The old analyzer const blow-up (**9,228 MiB** on `main.mt`, session 142) and the cross-module async rescan (682 MB of the lower peak, session 149) are gone.  `lowering.mt` check **197 MiB** (session 151 audit).  The release profile has the same peaks with `check` **1.3 s**, `lower` **4.1 s**, `emit-c` **4.6 s**, `build` **20.0 s** (session 155).  All tooling fan-out is capped at **4**. |
 | Multi-file commands | **Flat in the file count, and no longer ~2× a heavy file's peak** (session 152).  The per-file heap region is a bump allocator: it frees everything at once and cannot reuse anything released inside it, so an abandoned temporary lands in the peak.  It buys release of every file *after* the one compiling, so it is now gated on the **file count** (`should_scope_file`, `remaining_after >= 2`): the last two files of a run compile unregioned.  Measured: `check main.mt` + a 60-byte file **422 MiB** (was 958,616 KiB always-regioned; 432,068 never-regioned), 40 small files **372 MiB** (1,367,120 never-regioned), `check projects/mtc` (191 files) **997 MiB** (11,398,120 never-regioned).  The `lower`/`emit-c` 8-heaviest sets pay 2–3% (**1,456 / 1,694 MiB**) because their last two files are heavy.  The old session-151 row (same file twice 946 MiB, `main.mt` + `sexpr.mt` 1,407 MiB) was the ungated region; see *Region gate (session 152)*. |
-| `test/mt` | **85 files / 0 failed** (62 in-language tests + 23 compile-fail diagnostics fixtures; session 154, replayed; peak RSS **100 MiB**, measured session 151) |
-| Examples | **49/49 build** under the self-only `emit-c` gate (15 top-level + `examples/sdl3` 34/34; session 143; was host-compared 49/49 in session 141) |
-| Recorded oracles | **CLI 227/227 cases; diagnostics 504 files / 0 differ; lint 673 files / 0 differ; formatter 775 files × 3 modes / 0 differ** — digest-keyed and replayed green with no host source present (session 146 refreshed the CLI and diagnostic fixtures for the output-diagnostic fixes and stale session-145 rows; session 151 re-recorded lint and formatter for the imported-members fix) |
+| `test/mt` | **85 files / 0 failed** (62 in-language tests + 23 compile-fail diagnostics fixtures; session 155, replayed; peak RSS **100 MiB**, measured session 151) |
+| Examples | **49/49 build** under the self-only `emit-c` gate (15 top-level + `examples/sdl3` 34/34; session 155 re-ran; was host-compared 49/49 in session 141) |
+| Recorded oracles | **CLI 227/227 (0.5.0); diagnostics 503 of 504 compared / 0 differ (1 changed); lint 662 of 673 / 0 (11 changed); formatter 762 of 775 × 3 modes / 0 (13 changed)** — digest-keyed and replayed green with no host source present (session 155; the CLI golden was re-recorded for the 0.5.0 banner) |
 | `check` diagnostics | the 504-file diagnostic oracle is the gate; the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field anchor is a reviewed difference, not a residual (session 146). |
 | Linter | **43/43 rules, 13/13 fixers**; the 673-file lint oracle is the corpus gate (the live host-diff corpus is retired).  The historical residue (3 self-only `std` files, the host-timeout rows) is recorded in *Deliberate differences*. |
 | LSP | self-only instruments: valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class on `analyzer.mt`; soak **74.9 KB/cycle raw / 7.9 LS at 200 cycles** (session 148, the last full instrument run; no positive slope); `milkTea/debugInfo` byte-equal on the recorded fixtures.  Completion after a non-text receiver (`read(p).`, `make().`, `arr[0].`) landed in session 147; enum-member hover through a type alias in session 148.  Session 154 evicted the per-document caches on close and released map keys in every bulk cache release, and measured the remaining open/close RSS growth as allocator high-water, not retention.  The host-differential harness/audit/recovery probes are retired with the host; `lsp_parity record --server self` and `lsp_soak` remain |
-| LSP conformance | **phases 0–5 + the session-147/148 extensions**: `tools/lsp_conformance.rb`, **37 spec cases, 37 pass / 0 fail** (replayed in session 154); the `lsp_conformance` tier-2 gate is green.  Coverage 43/54 requests, 30 capability keys; rangesFormatting, refresh endpoints, progress/partial results, non-text receiver completion and aliased enum-member hover are implemented; only the deliberately skipped editor features remain out of scope.  Plan and evidence: `docs/lsp-enhancement-plan.md` |
-| DAP | self-only `dap_smoke`: all probes answer, the real lldb-dap breakpoint session reaches `add` and terminates; `dap_async_probe` proves the VS Code launch ordering; desktop F5 smoke passed session 74 |
-| Formatter | **775 files × 3 modes** (`:canonical`, `:preserve`, `:tidy`) replay from the digest-keyed oracle; counts drift with the tree |
-| Imported bindings | **29/29 verified** by the native `imported-bindings --all --check` (the host parity report is retired) |
+| LSP conformance | **phases 0–5 + the session-147/148 extensions**: `tools/lsp_conformance.rb`, **37 spec cases, 37 pass / 0 fail** (replayed in session 155); the `lsp_conformance` tier-2 gate is green.  Coverage 43/54 requests, 30 capability keys; rangesFormatting, refresh endpoints, progress/partial results, non-text receiver completion and aliased enum-member hover are implemented; only the deliberately skipped editor features remain out of scope.  Plan and evidence: `docs/lsp-enhancement-plan.md` |
+| DAP | self-only `dap_smoke`: all probes answer, the real lldb-dap breakpoint session reaches `add` and terminates; `dap_async_probe` proves the VS Code launch ordering; desktop F5 smoke passed session 74; re-ran session 155 |
+| Formatter | **775 files × 3 modes** (`:canonical`, `:preserve`, `:tidy`) replay from the digest-keyed oracle (762 compared / 13 changed, 0 differ in session 155); counts drift with the tree |
+| Imported bindings | **29/29 verified** by the native `imported-bindings --all --check` (session 155 re-ran; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; the host reproducibility harness is retired |
-| Compiler throughput | **`emit-c` 11.5 s** and full `build` 25.9 s (session 152, after the session-149/152 memory work; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 169 files / 163,034 lines / 129,436 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **30 unused + 7 test-only** public declarations; 6,525 duplicated lines / 885 clusters; **2 functions ≥ 200 lines** (the excluded `binding_at` at 385 and `resolve_cursor` at 200); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 154 for the emitter release and the LSP cache eviction) |
+| Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
+| **Refactoring safety** | structural guard: 169 files / 163,061 lines / 129,462 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **30 unused + 7 test-only** public declarations; 6,515 duplicated lines / 885 clusters; **2 functions ≥ 200 lines** (the excluded `binding_at` at 385 and `resolve_cursor` at 200); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 155 for the static-libuv link fix and the 0.5.0 version/help text) |
 
 Rough completion against the per-track Definition of Done: **~100%**, now
 against the archived host record rather than a live reference.  The
@@ -152,8 +154,12 @@ warnings and the unreachable expression anchor were fixed in session 146.  The
 constructor-field anchor keeps the construction column by design (the host's
 declaration anchor is less precise).  Session 147 landed the non-text receiver
 completion extension and the extension activation event; no open compiler or
-LSP item remains.  The desktop F5 click-through is an optional manual step, not
-a tracked defect.
+LSP item remains.  Session 155 cut the 0.5.0 release: vendored libuv is linked
+statically, the seed is refreshed, the CLI oracle carries the new banner,
+`.github/workflows/ci.yml` runs the bootstrap/gates/release, and
+`tools/release_container_smoke.sh` checks the archive in a clean Ubuntu 24.04
+container.  The desktop F5 click-through is an optional manual step, not a
+tracked defect.
 
 ## Host retirement program
 
@@ -4301,6 +4307,63 @@ for the release helpers and `emit_indented`).  A new
 table from scratch.
 
 
+## Session 155 — 0.5.0 release: static libuv, version/tag, CI and container smoke
+
+Turned the session-154 production audit's findings into a release.
+
+**Static libuv.** `build.mt` emitted `-luv` before the vendored `-L` paths, so
+the linker chose the system `libuv.so.1` and the vendored static archive was
+never used.  The native and wasm argument builders now push `vendored_flags`
+before `link_flags`, and `prepare_vendored_libuv` removes stale `libuv.so*`
+from the prefix (an older shared build in `tmp/` could shadow the archive even
+with the right order).  The 0.5.0 binary no longer has a `libuv.so` dependency;
+`libssl`, `libcrypto` and `libz` remain (the package registry's HTTPS client
+and `std.tar`'s gzip use them).
+
+**glibc floor.** The binary requires **glibc 2.38**.  The C23
+`__isoc23_{sscanf,fscanf,strtol}` aliases are referenced by the vendored
+`libuv.a`/`libcjson.a` archives built on this host, not only by the generated
+C; a generated-C `#undef`/asm-wrapper experiment lowered the generated code's
+symbols but not the archives', so the floor stayed 2.38.  Widening it needs the
+vendored archives rebuilt against an older glibc sysroot, not a C-preamble
+tweak.  The release and seed are documented at glibc 2.38+ (Ubuntu 24.04,
+Fedora 39+, Arch); Debian 12 (2.36) and Ubuntu 22.04 (2.35) are below it.
+
+**Version, seed and tag.** `cli_help.VERSION` and the help banner are **0.5.0**
+(the last release tag, `v0.4.26`, was 478 commits stale); the help file's
+stale "generated by gen_cli_help.rb / host 0.4.26" header and host references
+are now authored text.  `tools/release.sh --refresh-seed` replaced the seed
+(sha256 `d0d80681…`); bootstrap from that seed reaches the fixed point and
+**22/0**.  The CLI golden was re-recorded (9 version-only rows).  The release is
+tagged `v0.5.0`.
+
+**CI and clean-container smoke.** `.github/workflows/ci.yml` runs the vendored
+fetch, bootstrap, `test/mt`, the four oracles, LSP conformance, examples,
+bindings, docs smoke, the deterministic release (two packagings compared) and
+the container smoke.  `tools/release_container_smoke.sh` extracts the archive
+in a clean Ubuntu 24.04 image with only glibc/zlib/OpenSSL/gcc and checks
+`mtc version`, a `std.stdio` build/run and `mtc check`; it is green locally.
+
+**Memory and performance re-check.** Debug stage2: `check` **413.2 MiB /
+5.3 s**, `lower` **758.7 MiB / 11.6 s**, `emit-c` **862.2 MiB / 12.4 s**,
+`build projects/mtc` **899.1 MiB / 27.5 s**; release stage2: **414.3 / 1.3**,
+**759.1 / 4.1**, **862.9 / 4.6**, **901.1 MiB / 20.0 s**.  Whole-tree `check`
+(191 files) **899.6 MiB**; Massif on `emit-c` peaks at **851 MiB live**
+(727 useful + 125 allocator) with no allocation site above ~9%; the 200-cycle
+LSP soak ends at **35.4 MiB** (68.7 KB/cycle raw, 2.4 KB/cycle LS).  The
+release profile is 2.7–4× faster at the same memory; the session-152/153
+baseline holds within 0.3%.
+
+**Verification.** Bootstrap from the 0.5.0 seed: fixed point + **22/0**.
+`test/mt` **85/0**; CLI **227/227**; diagnostics **503/504 compared, 0
+differ** (1 changed); lint **662/673, 0 differ** (11 changed); formatter
+**762/775 × 3, 0 differ** (13 changed); examples **49/49**; LSP conformance
+**37/37**; imported bindings **29/29**; DAP, wasm and docs smokes green;
+release archive deterministic and the container smoke green.  Structural
+baseline refreshed: 169 files / 163,061 lines / 129,462 code lines; 6,515
+duplicated / 885 clusters; 30 unused + 7 test-only; 2 long functions; tests
+22/85.
+
 ## Session 154 — LSP cache eviction and the map-key release; the pipeline "leak" is bounded
 
 Session 153's handoff named the pipeline lifetime (~960 MB retained per
@@ -4375,6 +4438,38 @@ allocator behaviour, not fixing ownership.
 `test/mt` **85/0**; LSP conformance **37/37**; guard `--check --strict` ok after
 the reviewed baseline refresh (+56 code lines).
 
+
+## Handoff (session 155)
+
+**Next session:** no open defect.  The 0.5.0 release is tagged, the seed is
+refreshed, and CI plus the clean-container smoke are in place.  The tree is
+clean and `build/stage2/mtc` is the fixed-point binary from the 0.5.0 seed.
+
+**Release state.** `dist/mtc-0.5.0-linux-x86_64.tar.gz` is deterministic and
+checksummed; the archive links libuv statically and needs **glibc ≥ 2.38,
+zlib, OpenSSL 3** at runtime.  Seed sha256 `d0d80681…`; tag `v0.5.0`; version
+`cli_help.VERSION` = 0.5.0.  `tools/release.sh --refresh-seed` is the seed
+refresh path; `tools/release_container_smoke.sh` is the clean-image check.
+
+**Do not re-open:** the `TypeId` handle (~40 MB for ~3,000 edits),
+`ir.Program.arena`/phase release (the IR borrows analysis storage),
+per-compile analyzer retention (bounded by `FileRegion`/`mtc test`), LSP
+open/close RSS growth (allocator high-water), and the **glibc 2.38 floor**
+via a generated-C `#undef`/wrapper shim — the vendored cJSON/libuv archives
+carry the C23 aliases; widening the floor means rebuilding them against an
+older sysroot.
+
+**Operational.** At most **4** compiler instances; one LSP probe server set at
+a time; never `-j 16`; `-j 4 --mem-mb 8000` for heavy sweeps.  Massif runs on
+`main.mt` take ~100 s instrumented (background them); profile without
+`--pages-as-heap`.  CI is `.github/workflows/ci.yml` and has not yet run on
+GitHub; run it once after the first push.
+
+**Verification this session.** Bootstrap from the 0.5.0 seed: fixed point +
+**22/0**; `test/mt` **85/0**; CLI **227/227**; diagnostics/lint/formatter
+**0 differ** (changed rows skipped); LSP **37/37**; examples **49/49**;
+bindings **29/29**; DAP/wasm/docs green; release + container smoke green;
+guard `--check --strict --ratchet` ok.
 
 ## Handoff (session 154)
 
@@ -5104,7 +5199,8 @@ their historical record is the archived tag `archive/host-ruby-0.4.26`.
 | Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check`; `build/stage2/mtc bindings ...` |
 | LSP | Track E; `docs/lsp-enhancement-plan.md`, `docs/lsp-design.md`, `docs/lsp-performance.md` | `ruby tools/lsp_conformance.rb --bin build/stage2/mtc` (the spec gate); `ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json`; `tools/gates.sh --areas lsp --only valgrind_lsp,soak --run` |
 | DAP | Track F; `docs/dap-design.md` | `ruby tools/dap_smoke.rb`; `ruby tools/dap_async_probe.rb` |
-| Bootstrap / release | `docs/bootstrap-design.md`; `vendor/bootstrap/README.md` | `tools/bootstrap.sh -j 4`; `tools/release.sh --skip-build` |
+| Bootstrap / release | `docs/bootstrap-design.md`; `vendor/bootstrap/README.md`; `docs/build-guide.md` §10 | `tools/bootstrap.sh -j 4`; `tools/release.sh`; `tools/release_container_smoke.sh dist/...` |
+| CI | `.github/workflows/ci.yml` | GitHub Actions: bootstrap, oracles, LSP, examples, bindings, release, container smoke |
 | In-language tests | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` (85/0) |
 | Refactoring pass | `docs/refactoring.md` | `tools/gates.sh --areas refactor --run`; `ruby tools/refactor_guard.rb --check --strict --ratchet` |
 | Example builds | Track H | `tools/gates.sh --areas examples --run` (49/49) |
@@ -5202,6 +5298,10 @@ Iterate cheap, prove once:
 7. **Host retirement — DONE (session 143)**: phases 0–4 complete; the Ruby host
    is archived at `archive/host-ruby-0.4.26`, and the tree builds/tests/replays
    with only the native seed.
+8. **Release 0.5.0 — DONE (session 155)**: libuv links statically, the seed is
+   refreshed, the CLI oracle carries the 0.5.0 banner, CI covers
+   bootstrap/gates/release, and the clean-container smoke is green.  Runtime
+   floor: glibc 2.38+, zlib, OpenSSL 3.
 
 LSP, DAP and the formatter are **closed**; their remaining residues (ref-lifetime
 modelling; the optional desktop F5 click-through) are unchanged.
@@ -5246,23 +5346,26 @@ recorded oracles (tools/golden/{cli,diag,lint,format}.json). New work lands in
 projects/mtc and std/ only, and correctness is the language manual + the
 suite, not host byte-identity.
 
-Start from this file's Handoff (session 154), Status at a glance and Ledger.
+Start from this file's Handoff (session 155), Status at a glance and Ledger.
 There is no open defect and no planned work: every track is closed at its
-documented residue.  Session 154 closed the last LSP retention items (the
-per-document caches are evicted on close and every bulk cache release frees its
-map keys) and made the remaining open/close RSS growth a measured allocator
-high-water, not retention.  The measured baseline on
-`projects/mtc/src/mtc/main.mt` is check **413 MiB / 4.9 s**, lower **756 MiB /
-10.5 s**, emit-c **860 MiB / 12.3 s**, build projects/mtc **903 MiB / 25.9 s**
-(`tools/peak_rss.py` prints KiB; convert before quoting MiB).  Preserve it and
-measure each step.  A multi-file run costs one heavy file's peak; `emit-c` over
-the eight heaviest sources is the worst case at **1,694 MiB** - see *RAM audit*.
+documented residue, and the 0.5.0 release is tagged with a refreshed seed, CI
+and a clean-container smoke.  The release links libuv statically and needs
+glibc 2.38+, zlib and OpenSSL 3 at runtime.  The measured baseline on
+`projects/mtc/src/mtc/main.mt` (debug bootstrap compiler) is check
+**413 MiB / 5.3 s**, lower **759 MiB / 11.6 s**, emit-c **862 MiB / 12.4 s**,
+build projects/mtc **899 MiB / 27.5 s**; the release-profile compiler has the
+same peaks with **1.3 / 4.1 / 4.6 / 20.0 s** (`tools/peak_rss.py` prints KiB;
+convert before quoting MiB).  Preserve it and measure each step.  A multi-file
+run costs one heavy file's peak; `emit-c` over the eight heaviest sources is the
+worst case at **1,694 MiB** - see *RAM audit*.
 Do not re-open: the `TypeId` handle (re-profiled: ~40 MB of the peak for ~3,000
 edits), `ir.Program.arena` and phase release (the IR borrows analysis storage,
 so freeing the AST before codegen segfaults, and a region around either phase
 regresses the peak), the per-compile analyzer retention (real but bounded by
-`FileRegion` in every multi-file command and by `mtc test`), and LSP open/close
-RSS growth (Massif's live heap is flat).
+`FileRegion` in every multi-file command and by `mtc test`), LSP open/close
+RSS growth (Massif's live heap is flat), and the glibc 2.38 floor via a
+generated-C `#undef`/wrapper shim (the vendored cJSON/libuv archives carry the
+C23 aliases; widening it needs an older sysroot rebuild).
 Work in tiers:
 build the dev compiler with the seed
 ("$(tools/bootstrap.sh --print-stage0)" build projects/mtc -I . --no-cache -o
@@ -5882,29 +5985,31 @@ historical record.
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
 | host tree | **removed**; `lib/`, Ruby `test/**`, gemspec, Rakefile, Gemfile and `bin/mtc` are gone; archived tag `archive/host-ruby-0.4.26` | session 143 | `git show archive/host-ruby-0.4.26:path` |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed**; a `ruby` shim that exits 127 is never invoked | session 154 (replayed) | `tools/bootstrap.sh -j 4` |
-| bootstrap seed | `vendor/bootstrap/linux-x86_64/mtc`, release stage2, 6,289,144 B, sha256 `b29241f4…`; the only stage0 | session 142 | `tools/bootstrap.sh --print-stage0` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed**; a `ruby` shim that exits 127 is never invoked | session 155 (from the 0.5.0 seed) | `tools/bootstrap.sh -j 4` |
+| bootstrap seed | `vendor/bootstrap/linux-x86_64/mtc`, release stage2 0.5.0, 6,069,624 B, sha256 `d0d80681…`; the only stage0 | session 155 | `tools/bootstrap.sh --print-stage0` |
 | fresh-clone gate | a `git clone` + `third_party/` (no `build/`, `tmp/`, `lib/`): a `ruby` shim that exits 127 is never invoked; fixed point + 22/0; `test/mt` 85/0; goldens 227 / 504 / 672 / 774×3 | session 143 | `git clone`, symlink/copy `third_party/`, `tools/bootstrap.sh -j 4` |
-| `test/mt` | **85 files / 0 failed** (62 in-language + 23 compile-fail diagnostics fixtures); peak RSS **100 MiB** | session 154 (replayed; peak measured session 151) | `build/stage2/mtc test test/mt -I .` |
+| `test/mt` | **85 files / 0 failed** (62 in-language + 23 compile-fail diagnostics fixtures); peak RSS **100 MiB** | session 155 (replayed; peak measured session 151) | `build/stage2/mtc test test/mt -I .` |
 | output diagnostics | caret `^` + `~` per `length`; five linter anchors (duplicate condition, `else`, loop, null-check condition span, unreachable expression fallback) pinned by in-language spans | session 146 | `tmp/mtc-dev test projects/mtc -I . --timeout 120`; `ruby tools/refactor_guard.rb --check --strict --ratchet` |
-| examples | **49/49 build** under the self-only `emit-c` gate (15 top-level + 34 sdl3) | session 143 | `tools/gates.sh --areas examples --run` |
-| recorded CLI oracle | **227/227 cases**, host-free | session 146 (replayed) | `ruby tools/cli_parity.rb --expect tools/golden/cli.json -q` |
-| recorded diagnostics oracle | **504 files / 0 differ** (`changed=0`, `unrecorded=0`); the two `loop-single-iteration` anchors are now column 16 | session 146 (replayed) | `ruby tools/diag_parity.rb check std examples --expect tools/golden/diag.json -q` |
-| recorded lint oracle | **673 files / 0 differ** (`changed=0`, `unrecorded=0`); 43/43 rules, 13/13 fixers | session 151 (re-recorded) | `ruby tools/lint_parity.rb --expect tools/golden/lint.json -q` |
-| recorded formatter oracle | **775 files × 3 modes / 0 differ** (`changed=0`, `unrecorded=0`) | session 151 (re-recorded) | `ruby tools/format_parity.rb all -j 4 --expect tools/golden/format.json -q` |
-| wasm preview | self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 71 (tool now self-only) | `ruby tools/wasm_smoke.rb --self build/stage2/mtc` |
-| docs server | self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 71 (tool now self-only) | `ruby tools/docs_smoke.rb --self build/stage2/mtc` |
+| examples | **49/49 build** under the self-only `emit-c` gate (15 top-level + 34 sdl3) | session 155 | `tools/gates.sh --areas examples --run` |
+| recorded CLI oracle | **227/227 cases**, host-free, 0.5.0 banner (re-recorded) | session 155 | `ruby tools/cli_parity.rb --expect tools/golden/cli.json -q` |
+| recorded diagnostics oracle | **503 of 504 files compared / 0 differ** (`changed=1`, `unrecorded=0`); the changed input is a source file edited this session | session 155 (replayed) | `ruby tools/diag_parity.rb check std examples --expect tools/golden/diag.json -q` |
+| recorded lint oracle | **662 of 673 files compared / 0 differ** (`changed=11`, `unrecorded=0`); 43/43 rules, 13/13 fixers | session 155 (replayed) | `ruby tools/lint_parity.rb --expect tools/golden/lint.json -q` |
+| recorded formatter oracle | **762 of 775 files × 3 modes compared / 0 differ** (`changed=13`, `unrecorded=0`) | session 155 (replayed) | `ruby tools/format_parity.rb all -j 4 --expect tools/golden/format.json -q` |
+| wasm preview | self=ok: entry/JS/WASM/HEAD/404/405, COOP/COEP, SIGTERM rc 0 | session 155 re-ran (tool self-only) | `ruby tools/wasm_smoke.rb --self build/stage2/mtc` |
+| docs server | self=ok: reference/stdlib/source/highlight/search/assets/404, SIGINT rc 0 | session 155 re-ran (tool self-only) | `ruby tools/docs_smoke.rb --self build/stage2/mtc` |
 | LSP instruments | valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class; soak **74.9 KB/cycle raw / 7.9 LS** at 200 cycles (session 148, the last full instrument run; no positive slope); `debugInfo` byte-equal.  Session 154 evicts the per-document caches on close and releases map keys; open/close RSS growth is allocator high-water, not retention | sessions 135/140/145/148 (self-only); cache release session 154 | `tools/gates.sh --areas lsp --only valgrind_lsp,soak --run`; `ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json` |
-| LSP spec conformance | **phases 0–5 + completion + aliased hover: 37 cases, 37 pass / 0 fail**; gate green; all protocol, workspace, pull-diagnostic, formatting-range, refresh, progress/partial, non-text receiver completion and aliased enum-member hover cases green; coverage 43/54 requests, 30 capability keys; plan in `docs/lsp-enhancement-plan.md` | session 154 (replayed) | `ruby tools/lsp_conformance.rb --bin build/stage2/mtc` |
-| DAP | self-only smoke: every probe answers; real lldb-dap reaches the `add` breakpoint and terminates; async launch-order probe green | session 143 (adapted) | `ruby tools/dap_smoke.rb`; `ruby tools/dap_async_probe.rb` |
-| imported bindings | **29 verified / 0 changed of 29** (native check; the host parity report is retired) | session 72 (native) | `build/stage2/mtc imported-bindings --all --check` |
-| throughput | `emit-c main.mt` **11.5 s**, full `build projects/mtc` **25.9 s**, `bootstrap --fast` ~2.6 min (session 152; the session-72 row read 17.1 s / 32.7 s, before the session-149/152 memory work, and the archived host measured 54.3 s / 76.3 s) | session 152 | `time build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .` |
+| LSP spec conformance | **phases 0–5 + completion + aliased hover: 37 cases, 37 pass / 0 fail**; gate green; all protocol, workspace, pull-diagnostic, formatting-range, refresh, progress/partial, non-text receiver completion and aliased enum-member hover cases green; coverage 43/54 requests, 30 capability keys; plan in `docs/lsp-enhancement-plan.md` | session 155 (replayed) | `ruby tools/lsp_conformance.rb --bin build/stage2/mtc` |
+| DAP | self-only smoke: every probe answers; real lldb-dap reaches the `add` breakpoint and terminates; async launch-order probe green | session 155 re-ran | `ruby tools/dap_smoke.rb`; `ruby tools/dap_async_probe.rb` |
+| imported bindings | **29 verified / 0 changed of 29** (native check; the host parity report is retired) | session 155 re-ran | `build/stage2/mtc imported-bindings --all --check` |
+| throughput | release profile: `emit-c main.mt` **4.6 s**, full `build projects/mtc` **20.0 s**; debug profile: **11.5 s / 25.9 s**; `bootstrap --fast` ~2.6 min (session 155; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s) | session 155 | `time build/stage2/mtc emit-c projects/mtc/src/mtc/main.mt -I .` |
 | analyzer memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB**; `emit-c` **860 MiB**; `build projects/mtc` **903 MiB**; `build --keep-c` **972 MiB** (two emissions); fan-out capped at 4.  `lower` was 885,460 KiB before session 151 replaced the IR formatter's per-line scratch with direct appends, and 817,668 KiB before session 152's `reserve_exact`; session 153 released the emitter's per-generation tables and scratch (A/B on the same tree: `emit-c` 890,484 → 881,076 KiB, `--keep-c` 1,016,072 → 994,816 KiB, byte-identical output).  Worst case overall: `emit-c` over the 8 heaviest sources **1,694 MiB** (see *RAM audit*) | session 153 | `python3 tools/peak_rss.py -- build/stage2/mtc check projects/mtc/src/mtc/main.mt -I .` |
 | repeated emission | `generate_c` releases its nine `Emitter` maps, both backing-name maps and eight collected sets before returning, so a second emission does not retain them: per-call RSS growth **~94 → ~82 MiB** across 6 calls, and valgrind's definite-loss growth **~60 MB/call**.  The second pass rebuilds every table (pinned by `test_repeated_generation_is_identical`) | session 153 | `./tmp/cg_n 6` (probe: `lower` once, `generate_c` N times); `valgrind --leak-check=full ./tmp/cg_n 4` |
 | multi-file memory | the per-file region is gated on **file count**: used only while ≥2 files follow the one compiling (`should_scope_file`), so the last two files of a run are unregioned.  `check M + a 60-byte file` **422 MiB** (was 936 always-regioned), 40 small files **372 MiB** (1,333 never-regioned), `check projects/mtc` (191 files) **943 MiB** (991 MiB on the pre-session-152 compiler), `lower`/`emit-c` 8 heaviest **1,456 / 1,694 MiB** (2-3% above always-regioning).  Session 150's always-on row (`check` 191 files 1,019 MiB, 32 files 231 MiB, 16 linted 256 MiB, 8 lowered 346 MiB) used small files and understated the heavy case; see *RAM audit* and *Region gate* | session 152 | `python3 tools/peak_rss.py -- build/stage2/mtc check <files...> -I .` |
 | struct sizes | `Type` **24 B**, `ir.Expr` **72**, `ir.Stmt` **96**, `ir.Function` **96**, `ir.Param` **64**, `ir.Field` **40** (was 72 / 168 / 144 / 144 / 112 / 88 at session start) | session 150 | probe: `size_of` in a scratch program importing `mtc.ir` + `mtc.semantic.types` |
-| release archive | 3.52 MiB deterministic `mtc-0.4.26-linux-x86_64.tar.gz`, checksummed; clean-path smoke green | session 142 | `tools/release.sh --skip-build`; `tools/release_smoke.sh` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files / 163,034 lines / 129,436 code lines); 30 unused / 7 test-only exports; 6,525 duplicated lines / 885 clusters; 2 functions ≥ 200 lines (`binding_at` 385, `resolve_cursor` 200); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 154 (baseline refreshed for the emitter release and the LSP cache eviction) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| release archive | ~3.5 MiB deterministic `mtc-0.5.0-linux-x86_64.tar.gz`, checksummed; clean-path smoke and clean-container (Ubuntu 24.04) smoke green; two packagings identical | session 155 | `tools/release.sh`; `tools/release_smoke.sh`; `tools/release_container_smoke.sh` |
+| release runtime | glibc **≥ 2.38**, zlib, OpenSSL 3; libuv static; the seed has the same requirements | session 155 | `ldd dist/mtc-0.5.0-linux-x86_64/bin/mtc`; `tools/release_container_smoke.sh` |
+| CI | `.github/workflows/ci.yml`: vendored fetch, bootstrap, `test/mt`, four oracles, LSP conformance, examples, bindings, docs smoke, deterministic release, container smoke | session 155 (added; not yet run on GitHub) | `cat .github/workflows/ci.yml` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files / 163,061 lines / 129,462 code lines); 30 unused / 7 test-only exports; 6,515 duplicated lines / 885 clusters; 2 functions ≥ 200 lines (`binding_at` 385, `resolve_cursor` 200); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 155 (baseline refreshed for the static-libuv link fix and the 0.5.0 version/help text) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 | extension activation | `bindings/vscode/package.json` activates on `onLanguage:milk-tea` and `onDebug:milk-tea`; `dist/` and `.vsix` are local artifacts | session 147 | `git show HEAD:bindings/vscode/package.json` |
 
 ## Porting notes

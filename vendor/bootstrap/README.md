@@ -19,7 +19,8 @@ hard error that names the expected path.
 
 ## Provenance
 
-The checked-in `linux-x86_64` seed is the release build of the `0.4.26` tree,
+The checked-in `linux-x86_64` seed is the release build of the `0.5.0` tree,
+sha256 `d0d8068188c0cc74ef60bac79822b4249f51d6341bd6e9482014ac209bfff5da`,
 refreshed with:
 
 ```sh
@@ -29,7 +30,9 @@ tools/release.sh --refresh-seed
 It is a **stage2** compiler whose code generation comes from Milk Tea; the
 native bootstrap that produced it never invoked the archived Ruby host.  The
 verification run (`tools/bootstrap.sh -j 4`) then proves the seed reaches a
-fixed point and passes the self-tests.
+fixed point and passes the self-tests.  The seed has the same runtime
+requirements as the release: glibc 2.38+, zlib, and OpenSSL 3; libuv is linked
+statically.
 
 ## Replacement policy
 
