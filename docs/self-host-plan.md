@@ -15,6 +15,7 @@ history.
 ## Contents
 
 - [Status at a glance](#status-at-a-glance-session-158-2026-11-24)
+- [Handoff](#handoff-session-158)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
 - [Session 158 — Box2D 3.2.0 migration](#session-158--box2d-320-migration)
@@ -103,7 +104,6 @@ history.
 - [Session 74 — decisions closed](#session-74--decisions-closed)
 - [Session 73 — the `mtc test` CLI matrix](#session-73--the-mtc-test-cli-matrix)
 - [Session 72 — the `check`/analyzer surface](#session-72--the-checkanalyzer-surface)
-- [Handoff](#handoff-session-155)
 - [How to start a work session](#how-to-start-a-work-session)
 - [The program — tracks and stopping rules (all tracks closed)](#the-program--tracks-and-stopping-rules-all-tracks-closed)
 - [Deliberate differences (archived-host record)](#deliberate-differences-archived-host-record)
@@ -467,6 +467,91 @@ exports 2).
 
 **Next.**  The remaining ranked targets are unchanged and re-quantified in the
 Handoff: `String` buffers elsewhere, then `Vec[Type]` growth in `qualify_type`.
+
+### RAM audit (session 151) — every known case, measured
+
+All figures are peak **VmHWM**, via `tools/peak_rss.py` (which prints KiB) or
+`/proc/<pid>/status`, serialized to keep ≤ 4 compiler instances.  Re-run with the
+commands given; `M=projects/mtc/src/mtc/main.mt`.
+
+**Single file — the compiler itself** (`main.mt`, a whole-program compile):
+
+| Command | Peak | Wall |
+| --- | --- | --- |
+| `check main.mt` | **421 MiB** | 5.4 s |
+| `lint main.mt` | **421 MiB** | 5.0 s |
+| `lower main.mt` | **798 MiB** | 11.1 s |
+| `emit-c main.mt` | **911 MiB** | 12.1 s |
+| `build projects/mtc` | **950 MiB** | 28.5 s |
+
+**Single file — heavy individual sources** (not whole-program: these compile in
+isolation, so their peaks are much lower than `main.mt`'s graph):
+
+| Source | `check` | `lower` |
+| --- | --- | --- |
+| `lowering/lowering.mt` (1.0 MB) | **197 MiB** / 13.9 s | **286 MiB** / 3.5 s |
+| `semantic/analyzer.mt` (492 KB) | **65 MiB** / 2.1 s | **81 MiB** / 0.6 s |
+| `c_backend/c_backend.mt` (334 KB) | **56 MiB** / 1.3 s | **60 MiB** / 0.5 s |
+| `lsp/navigation.mt` (252 KB) | — | **198 MiB** / 1.8 s |
+| `lsp/completion.mt` | — | **211 MiB** / 1.9 s |
+| `sexpr.mt` (96 KB) | — | **94 MiB** / 0.7 s |
+
+**Multi-file — the region costs ~2× a heavy file.**  *These figures predate the
+session-152 file-count gate and are kept as the record the gate was derived
+from; the shipped numbers are in [Region gate](#region-gate--the-follow-up-measured-and-fixed)
+below.*  The per-file heap region
+(bump allocator, freed all at once) cannot reuse released memory, so it inflates
+the peak instead of only bounding retention:
+
+| Case | Peak | vs single file |
+| --- | --- | --- |
+| `check M M` (same file twice) | **946 MiB** | **2.24×** of 421 MiB |
+| `lower M projects/mtc/src/mtc/sexpr.mt` | **1,407 MiB** | **1.76×** of 798 MiB |
+| `check projects/mtc` (191 files) | **961 MiB** | — (whole tree) |
+| `lint` 16 heaviest files | **949 MiB** | — |
+| `lower` 8 heaviest files | **1,412 MiB** | worst measured case |
+| `emit-c` 8 heaviest files | **1,655 MiB** | **worst measured case overall** |
+| `check` 32 alphabetically-first files | **223 MiB** | small files only |
+
+**Test suites** (in-process compiler per file):
+
+| Suite | Peak | Wall |
+| --- | --- | --- |
+| `test test/mt` (85 files) | **100 MiB** | 9.2 s |
+| `test projects/mtc` (22 files) | **963 MiB** | 76.1 s |
+
+**LSP** (one server, `initialize` → `didOpen` → `semanticTokens/full`):
+
+| Document | Peak |
+| --- | --- |
+| idle after `initialize` | **8 MiB** |
+| `semantic/analyzer.mt` | **99 MiB** |
+| `lowering/lowering.mt` | **385 MiB** |
+| `+ lsp/completion.mt` in the same session | **480 MiB** |
+
+`tools/lsp_soak.rb` reports 30–38 MiB across 200 cycles because its fixture is
+small; on a compiler-sized document the same server reaches 385 MiB.  The soak's
+value is the *slope* (15.0 KB/cycle least-squares at 200 cycles, no positive
+trend), not its absolute RSS.
+
+**Why the worst cases are not in the Ledger's old rows.**  Session 150 measured
+`check projects/mtc` and `lower`/`emit-c` on alphabetically-early files, which
+are the compiler's small modules.  The flatness conclusion was right; the
+absolute numbers understated the heavy-file case by ~4×.  The practical rule:
+**`emit-c` over a handful of the heaviest sources is the memory worst case
+(1.6 GiB), not a whole-tree `check` (0.96 GiB)**.  Note that "heaviest" means the
+largest *compile*, which tracks the import graph, not the source bytes: `main.mt`
+is 158 KB and peaks at 798 MiB while the 1 MB `lowering.mt` peaks at 286 MiB.
+
+**Open follow-up (not done).**  The region is gated on `source_files.len() > 1`
+(`main.mt:1322`, `:2239`; `lower_one_path`/`emit_c_one_path` take
+`multiple and not sexpr`), so listing a heavy file twice costs 2.24× even though
+the second pass reuses nothing.  The retention it buys is real (~34 MB/file), but
+on a heavy file the *inflation* (up to +600 MiB) exceeds what it reclaims.  A
+size-aware gate — region only for files below some threshold, or a per-file
+`release_all()` between files instead of one region per file — would keep the
+flatness without paying 2× on the few files that dominate the peak.  **CLOSED —
+see *Region gate (session 152)* below.**
 
 ## Session 150 — IR type handles, arena ownership, phase release
 
@@ -3962,168 +4047,6 @@ Verification: bootstrap fixed point, 22/0 self-tests, `test/mt` 60/0, lower
 501/0/0/3 of 504, lint corpus 501/3 of 504 on `std`+`examples` (the documented
 rows), formatter 739/739 in all three modes.
 
-## Handoff (session 151)
-
-**Next session:** the memory program.  The tree is clean and `build/stage2/mtc`
-is the fixed-point binary from `tools/bootstrap.sh -j 4` (stage2.c == stage3.c,
-suite 22/0).
-
-**Baseline to preserve (measured at HEAD, `tools/peak_rss.py`, which prints KiB;
-the MiB below are that value ÷ 1024).**  Single file `main.mt`: `check`
-**421 MiB / 5.4 s**, `lower` **798 MiB / 11.1 s**, `emit-c` **911 MiB / 12.1 s**;
-`build projects/mtc` **950 MiB**.  Sizes: `Type` **24 B**, `ir.Expr` **72 B**,
-`ir.Stmt` **96 B**, `ir.Function` **96 B**, `ir.Param` **64 B**, `ir.Field`
-**40 B**.  Multi-file: the per-file region is gated on **file count** (session
-152), so a heavy file paired with a trivial one costs its single-file peak
-(`check main.mt` + a 60-byte file **422 MiB**, was 936) while a whole-tree run
-still stays flat.  The full audit with every class is in *RAM audit (session
-151)* and the gate's reasoning in *Region gate (session 152)*.
-
-**What this session did (verification: see the session record).**
-
-1. **The IR dump no longer builds a string tree.**  `pretty_printer/ir_formatter.mt`
-   writes every line and every expression straight into one buffer
-   (`begin_line`/`end_line`, append-only emitters, `open_group`/`close_group` for
-   precedence), and `write_program` streams it to stdout in 64 KiB chunks.
-   `semantic/types.mt` gained `append_qualified_type`; `type_to_qualified_string`
-   was deleted (the formatter was its only caller).  `lower` 885,460 KiB →
-   **817,668 KiB** (798 MiB); output byte-identical.
-2. **Fixed a latent use-after-free in `Analysis.imported_modules`.**  It held a
-   by-value copy of the loader's bindings map, i.e. a snapshot of a bucket
-   pointer that `Map.set` frees when the table grows.  The loader now
-   heap-allocates the table once (`create_shared_bindings`) and every analysis
-   keeps that pointer.  This also fixed a **pre-existing `check` regression**
-   from session 150: gating `imported_type_members` silently disabled
-   `prefer-struct-with` on imported structs, and `diag.json` had not been
-   re-recorded (27 rows red at HEAD, now 504/0).  The rule resolves imported
-   fields through the binding table, so it no longer depends on `tooling_facts`.
-
-**Next, ranked by measured live heap** (Massif *without* `--pages-as-heap`; the
-flag counts reserved pages and over-reports badly — it read 1,034 MB where the
-live peak is 834.6 MB):
-
-| Target | Live at `lower` peak |
-| --- | --- |
-| `String` buffers outside the formatter | see below |
-| `Vec[Type]` growth | 82.3 MB (9.9%) |
-| `ir.Expr` nodes | 50.6 MB (6.1%) |
-| `ir.Stmt` growth | 47.9 MB (5.7%) |
-| `resolved_expr_types` map | 37.5 MB (4.5%) |
-
-- **`String` buffers.**  The formatter's share is gone; the remaining growth is
-  elsewhere (`qualified_c_name` 13.7 MB, `analyzer.method_key` 13.7 MB at the
-  peak, each "in 34/54 places").  Re-profile before choosing: the measured
-  profile now has no single dominant `String` site.
-- **`Vec[Type]` growth.**  `lowering.qualify_type` allocates a fresh `Vec[Type]`
-  recursively for every generic type with **no memoization**, and it is called
-  from 93 sites.  It has side effects (it registers generic instances via
-  `ensure_generic_*` / `monomorphized.generic_instance_set`), so a cache needs to
-  keep those.
-- **`resolved_expr_types`** is read by lowering (`type_helpers.expr_type`) as
-  well as the linter/LSP, so it cannot be gated the way
-  `imported_type_members` was.
-
-**Do not start `TypeId`.**  Re-profiled in session 150 it saves ~40 MB of 834 MB
-(4.8%) for ~3,000 call-site edits.  The `TypeStore` / `type_hash` /
-`type_identical` machinery and `ir.Program.type_table`/`arena` from commit
-`e0ab80c4` remain in place and inert.
-
-**Verification.**  Bootstrap fixed point (`stage2.c == stage3.c`) + **22/0**;
-`test/mt` **85/0**; CLI **227/227**, diagnostics **504/0**, lint **673/0**,
-formatter **775×3/0**, examples **49/49**; valgrind **0 errors** on the formerly
-crashing lint input; guard `--check --strict --ratchet` ok after the reviewed
-refresh (129,335 code lines).  `lower`/`emit-c` output is byte-identical to the
-pre-change compiler.
-
-**Operational.**  At most **4** compiler instances; one LSP probe server set at a
-time; never `-j 16`; `-j 4 --mem-mb 8000` for heavy sweeps.  Massif runs on
-`main.mt` take ~100 s of instrumented time and are worth backgrounding.
-
-### RAM audit (session 151) — every known case, measured
-
-All figures are peak **VmHWM**, via `tools/peak_rss.py` (which prints KiB) or
-`/proc/<pid>/status`, serialized to keep ≤ 4 compiler instances.  Re-run with the
-commands given; `M=projects/mtc/src/mtc/main.mt`.
-
-**Single file — the compiler itself** (`main.mt`, a whole-program compile):
-
-| Command | Peak | Wall |
-| --- | --- | --- |
-| `check main.mt` | **421 MiB** | 5.4 s |
-| `lint main.mt` | **421 MiB** | 5.0 s |
-| `lower main.mt` | **798 MiB** | 11.1 s |
-| `emit-c main.mt` | **911 MiB** | 12.1 s |
-| `build projects/mtc` | **950 MiB** | 28.5 s |
-
-**Single file — heavy individual sources** (not whole-program: these compile in
-isolation, so their peaks are much lower than `main.mt`'s graph):
-
-| Source | `check` | `lower` |
-| --- | --- | --- |
-| `lowering/lowering.mt` (1.0 MB) | **197 MiB** / 13.9 s | **286 MiB** / 3.5 s |
-| `semantic/analyzer.mt` (492 KB) | **65 MiB** / 2.1 s | **81 MiB** / 0.6 s |
-| `c_backend/c_backend.mt` (334 KB) | **56 MiB** / 1.3 s | **60 MiB** / 0.5 s |
-| `lsp/navigation.mt` (252 KB) | — | **198 MiB** / 1.8 s |
-| `lsp/completion.mt` | — | **211 MiB** / 1.9 s |
-| `sexpr.mt` (96 KB) | — | **94 MiB** / 0.7 s |
-
-**Multi-file — the region costs ~2× a heavy file.**  *These figures predate the
-session-152 file-count gate and are kept as the record the gate was derived
-from; the shipped numbers are in [Region gate](#region-gate--the-follow-up-measured-and-fixed)
-below.*  The per-file heap region
-(bump allocator, freed all at once) cannot reuse released memory, so it inflates
-the peak instead of only bounding retention:
-
-| Case | Peak | vs single file |
-| --- | --- | --- |
-| `check M M` (same file twice) | **946 MiB** | **2.24×** of 421 MiB |
-| `lower M projects/mtc/src/mtc/sexpr.mt` | **1,407 MiB** | **1.76×** of 798 MiB |
-| `check projects/mtc` (191 files) | **961 MiB** | — (whole tree) |
-| `lint` 16 heaviest files | **949 MiB** | — |
-| `lower` 8 heaviest files | **1,412 MiB** | worst measured case |
-| `emit-c` 8 heaviest files | **1,655 MiB** | **worst measured case overall** |
-| `check` 32 alphabetically-first files | **223 MiB** | small files only |
-
-**Test suites** (in-process compiler per file):
-
-| Suite | Peak | Wall |
-| --- | --- | --- |
-| `test test/mt` (85 files) | **100 MiB** | 9.2 s |
-| `test projects/mtc` (22 files) | **963 MiB** | 76.1 s |
-
-**LSP** (one server, `initialize` → `didOpen` → `semanticTokens/full`):
-
-| Document | Peak |
-| --- | --- |
-| idle after `initialize` | **8 MiB** |
-| `semantic/analyzer.mt` | **99 MiB** |
-| `lowering/lowering.mt` | **385 MiB** |
-| `+ lsp/completion.mt` in the same session | **480 MiB** |
-
-`tools/lsp_soak.rb` reports 30–38 MiB across 200 cycles because its fixture is
-small; on a compiler-sized document the same server reaches 385 MiB.  The soak's
-value is the *slope* (15.0 KB/cycle least-squares at 200 cycles, no positive
-trend), not its absolute RSS.
-
-**Why the worst cases are not in the Ledger's old rows.**  Session 150 measured
-`check projects/mtc` and `lower`/`emit-c` on alphabetically-early files, which
-are the compiler's small modules.  The flatness conclusion was right; the
-absolute numbers understated the heavy-file case by ~4×.  The practical rule:
-**`emit-c` over a handful of the heaviest sources is the memory worst case
-(1.6 GiB), not a whole-tree `check` (0.96 GiB)**.  Note that "heaviest" means the
-largest *compile*, which tracks the import graph, not the source bytes: `main.mt`
-is 158 KB and peaks at 798 MiB while the 1 MB `lowering.mt` peaks at 286 MiB.
-
-**Open follow-up (not done).**  The region is gated on `source_files.len() > 1`
-(`main.mt:1322`, `:2239`; `lower_one_path`/`emit_c_one_path` take
-`multiple and not sexpr`), so listing a heavy file twice costs 2.24× even though
-the second pass reuses nothing.  The retention it buys is real (~34 MB/file), but
-on a heavy file the *inflation* (up to +600 MiB) exceeds what it reclaims.  A
-size-aware gate — region only for files below some threshold, or a per-file
-`release_all()` between files instead of one region per file — would keep the
-flatness without paying 2× on the few files that dominate the peak.  **CLOSED —
-see *Region gate (session 152)* below.**
-
 ## Session 152 — the per-file region gate; exact-capacity vectors
 
 Continued the memory program's multi-file item: session 151 left the per-file
@@ -4635,6 +4558,13 @@ reviewed refresh (**129,455** code lines; 3 functions ≥200; 6,499 duplicated /
 **No release.** v0.5.2 remains the released compiler and its archive/seed still
 pin Box2D 3.1.1; the next release refreshes both to 3.2.0.
 
+**Documentation audit (same session).** Removed the obsolete host-side LSP
+performance research and superseded handoff snapshots; trimmed the historical
+LSP/DAP host-comparison sections; corrected the bootstrap guide's unimplemented
+download/cache claims, options and cache location; and fixed the public docs
+version, the VS Code install path, the wasm template reference and the current
+oracle/test counts across the operational docs.
+
 ## Handoff (session 158)
 
 **Next session:** no open defect.  Box2D is pinned at 3.2.0 and the 28 ports
@@ -4646,767 +4576,10 @@ still carries Box2D 3.1.1.  The next release should use
 **Binding workflow:** unchanged; use `bindings/README.md` and
 `tools/rebind_binding.rb`, and clear the matching `tmp/vendored-*` prefix before
 rebuilding a changed source.
-
-## Handoff (session 157)
-
-**Next session:** no open defect.  The 0.5.2 release is cut from this state,
-the seed and archive are verified, and the binding metadata is checked in.
-**Deferred:** the Box2D 3.2.0 sample migration (shared local-frame joint defs,
-mouse-joint removal, joint/query API changes); the pin stays at 3.1.1.
-(Completed in session 158.)
-**Binding workflow:** use `bindings/README.md` and
-`tools/rebind_binding.rb`; clear the matching `tmp/vendored-*` prefix before
-rebuilding a changed source.
-
-## Handoff (session 156)
-
-**Next session:** no open defect.  The 0.5.1 release is published on GitHub
-with the archive and checksum attached, `main` is the merged self-host branch,
-and CI runs on `main` pushes and pull requests.
-
-## Handoff (session 155)
-
-**Next session:** no open defect.  The 0.5.0 release is tagged, the seed is
-refreshed, and CI plus the clean-container smoke are in place.  The tree is
-clean and `build/stage2/mtc` is the fixed-point binary from the 0.5.0 seed.
-
-**Release state.** `dist/mtc-0.5.0-linux-x86_64.tar.gz` is deterministic and
-checksummed; the archive links libuv statically and needs **glibc ≥ 2.38,
-zlib, OpenSSL 3** at runtime.  It includes `install.sh` (versioned prefix +
-`current` symlink; `--prefix`/`--bin-dir`/`--uninstall`), and the release smoke
-installs it to a temp prefix and runs the remaining checks through the
-installed binary.  Seed sha256 `4bec7919…`; tag `v0.5.0`; version
-`cli_help.VERSION` = 0.5.0.  `tools/release.sh --refresh-seed` is the seed
-refresh path; `tools/release_container_smoke.sh` is the clean-image check.
-
-**Do not re-open:** the `TypeId` handle (~40 MB for ~3,000 edits),
-`ir.Program.arena`/phase release (the IR borrows analysis storage),
-per-compile analyzer retention (bounded by `FileRegion`/`mtc test`), LSP
-open/close RSS growth (allocator high-water), and the **glibc 2.38 floor**
-via a generated-C `#undef`/wrapper shim — the vendored cJSON/libuv archives
-carry the C23 aliases; widening the floor means rebuilding them against an
-older sysroot.
-
-**Operational.** At most **4** compiler instances; one LSP probe server set at
-a time; never `-j 16`; `-j 4 --mem-mb 8000` for heavy sweeps.  Massif runs on
-`main.mt` take ~100 s instrumented (background them); profile without
-`--pages-as-heap`.  CI is `.github/workflows/ci.yml`; its first runs drove the
-Steamworks pin and libuv support-path fixes, and the PR re-run is the merge
-gate.  It runs pushes only on `main`; PRs run once.
-
-**Verification this session.** Bootstrap from the fixed 0.5.0 seed
-(`4bec7919…`): fixed point + **22/0**; the fixed release binary: `test/mt`
-**85/0**, CLI **227/227**, bindings **29/29**, container smoke green;
-diagnostics/lint/formatter **0 differ** (changed rows skipped); LSP **37/37**;
-examples **49/49**; DAP/wasm/docs green; guard `--check --strict --ratchet`
-ok.
-
-## Handoff (session 154)
-
-**Next session:** no open defect.  Session 154 closed the LSP's per-document
-cache retention and the map-key release defect, and demoted the recorded
-"pipeline leak" target after measuring that no command can reach it.  The tree
-is clean and `build/stage2/mtc` is the fixed-point binary from
-`tools/bootstrap.sh -j 4`.
-
-**What to know before picking work.**
-
-1. **`Map` does not own its keys.** A bulk release must free each entry's key as
-   well as its value's fields.  Five cache-release functions did not; the
-   semantic-token one did, which is what identified the pattern.  Check this in
-   any new cache.
-2. **The pipeline retention is real but unreachable.** One `check_program` leaks
-   125 MB definitely + 326 MB indirectly, but `FileRegion` already scopes every
-   multi-file command and `mtc test`, so it is bounded to one compile.  Not a
-   defect — do not re-open it as "the largest remaining item".
-3. **LSP RSS growth across many open/close documents is allocator high-water,
-   not retention.** Massif's live heap is flat and valgrind reports ~130 KB lost.
-   Do not chase it.
-4. **Do not re-open:** the `TypeId` handle (~40 MB for ~3,000 edits) and
-   `ir.Program.arena` (inert by design — the IR borrows analysis storage, so the
-   AST cannot be freed before codegen).
-
-**Verification this session.**  Bootstrap fixed point + **22/0**; `test/mt`
-**85/0**; LSP conformance **37/37**; guard `--check --strict` ok after the
-reviewed baseline refresh (+56 code lines).
-
-
-## Handoff (session 153)
-
-**Baseline to preserve (`tools/peak_rss.py`, which prints KiB; the MiB below are
-that value ÷ 1024).**  Single file `main.mt`: `check` **413 MiB / 4.9 s**,
-`lower` **756 MiB / 10.5 s**, `emit-c` **860 MiB / 12.3 s**; `build projects/mtc`
-**903 MiB / 25.9 s**; `build --keep-c` **972 MiB**; whole-tree `check
-projects/mtc` **943 MiB**.  Sizes unchanged: `Type` **24 B**, `ir.Expr` **72 B**,
-`ir.Stmt` **96 B**, `ir.Function` **96 B**, `ir.Param` **64 B**, `ir.Field`
-**40 B**.
-
-**What this session established (measure before choosing the next lever).**
-
-1. **Phase release cannot lower the peak**, and the session-152 handoff said it
-   could.  The peak lands at the end of `generate_c` (977 MiB) not the end of
-   `lower` (874 MiB), a region around either phase is a regression (lower:
-   979 → during-lowering higher; codegen: SIGABRT), and freeing the AST/analysis
-   before codegen **segfaults** because the IR borrows analysis storage.  Details
-   and the three probes: *Session 153*.
-2. **`generate_c` retained ~80 MB per call** and now releases its tables, its
-   collected sets and its scratch.  `emit-c` −9 MiB, `build --keep-c` −21 MiB,
-   per-call growth ~94 → ~82 MiB, output byte-identical.
-3. **The pipeline lifetime was recorded as the next target and session 154
-   demoted it.**  A probe that repeats `check_program` → `lower` → `generate_c`
-   and releases each `Program` grows ~960 MB per iteration (valgrind: 125 MB
-   definitely + 326 MB indirectly lost per `check_program`).  But every command
-   that loads more than one file already scopes each compile in a `FileRegion`,
-   so the cost is bounded to one compile and never accumulates — see *Session
-   154*.  It is not an IR arena and not an `Analysis.release`; there is no
-   reachable defect.
-
-**Do not re-open:** the `TypeId` handle (~40 MB for ~3,000 edits) and
-`ir.Program.arena` (inert by design — see item 1).
-
-**Verification this session.**  Bootstrap fixed point (`stage2.c == stage3.c`) +
-**22/0**; `test/mt` **85/0**; CLI **227/227**; diagnostics **503/0**; lint
-**666/0**; formatter **766×3/0**; examples **49/49**; LSP conformance **37/37**;
-valgrind **0 errors**; guard `--check --strict --ratchet` ok after the reviewed
-refresh (+43 code lines).
-
-**Operational.**  At most **4** compiler instances; one LSP probe server set at a
-time; never `-j 16`; `-j 4 --mem-mb 8000` for heavy sweeps.  Massif runs on
-`main.mt` take ~100 s of instrumented time and are worth backgrounding; profile
-without `--pages-as-heap`.  A valgrind `--leak-check` run over `main.mt` takes
-~8 minutes — background it too.
-
-## Handoff (session 152)
-
-**Next session:** the memory program's cheap wins are exhausted.  This session
-closed the region gate and the capacity slack; a re-profile at the new peak is
-flat, so the remaining targets are structural, not site-level.  The tree is
-clean and `build/stage2/mtc` is the fixed-point binary from
-`tools/bootstrap.sh -j 4`.
-
-**Baseline to preserve (`tools/peak_rss.py`, which prints KiB; the MiB below are
-that value ÷ 1024).**  Single file `main.mt`: `check` **413 MiB / 4.9 s**,
-`lower` **756 MiB / 10.5 s**, `emit-c` **869 MiB / 11.5 s**; `build projects/mtc`
-**903 MiB / 25.9 s**; whole-tree `check projects/mtc` **943 MiB**.  Sizes:
-`Type` **24 B**, `ir.Expr` **72 B**, `ir.Stmt` **96 B**, `ir.Function` **96 B**,
-`ir.Param` **64 B**, `ir.Field` **40 B**.  Multi-file costs **one** heavy file's
-peak (`check main.mt` + a 60-byte file **422 MiB**).  Every figure here is an
-A/B against a compiler built from the parent commit on the same tree; full
-audit: *RAM audit (session 151)*, gate reasoning: *Region gate*, capacity work:
-*Exact-capacity vectors* above.
-
-**What this session did.**
-
-1. **The per-file region is gated on the file count** (`should_scope_file`,
-   `remaining_after >= 2`).  It buys release of every file *after* the one
-   compiling, so the last two files of a run compile unregioned; two files
-   previously cost 2.24× one (`check main.mt` twice 946 → 432 MiB).
-2. **`Vec.reserve_exact` / `with_capacity_exact`** for a vector whose final
-   length is known: no base-4 floor, no doubling.  Applied at the six measured
-   hot sites (`qualify_type`, `resolve_type_ref`, `resolve_function_type_ref`,
-   `substitute_type_params`, `infer_and_check_call`) plus two known-length
-   string builders.  `lower` 798 → **756 MiB**, `emit-c` 911 → **869**.
-
-**Phase release was the named next lever and it is now retargeted — see
-[Session 153](#session-153--the-codegen-scratch-release-phase-release-measured-and-retargeted).**
-The measurement there shows the peak lands at the end of `generate_c`, not the
-end of lowering, so freeing the IR before `cc` cannot move it; a region around
-either phase is a regression or a crash, and freeing the AST/analysis before
-codegen segfaults because the IR borrows it.  `lower` passes `arena = null` on
-purpose and `ir.release` stays inert.  The real defect the note pointed at was
-`generate_c` retaining ~80 MB per call, which session 153 fixed.
-
-**Ranked targets.**  All flat; pick one deliberately.  The largest remaining
-item is the *pipeline* lifetime (~960 MB retained per `check_program` even after
-`Program.release()`, the same on the parent commit), not codegen.
-
-| Target | Live at `lower` peak | Shape |
-| --- | --- | --- |
-| `ir.Expr` nodes | 50.1 MB (6.2%) | one node per expression, structural |
-| `ir.Stmt` growth | 36 MB over 91 sites | no dominating site |
-| string appends | 29 MB over 67 sites | retained names, not slack |
-| `Vec[Type]` growth | 24 MB over 59 sites | the counts are running, not known |
-
-- **Do not start `TypeId`.**  Re-profiled in session 150 it saves ~40 MB of
-  834 MB (4.8%) for ~3,000 call-site edits.  The `TypeStore` / `type_hash` /
-  `type_identical` machinery and `ir.Program.type_table`/`arena` remain inert.
-
-**Structural.**  Guard green: 169 files, 111 edges, 0 layering/alias/naming/
-vocabulary violations, 30 unused + 7 test-only exports, 2 functions ≥ 200 lines
-(`binding_at` 385, `resolve_cursor` 200), 11 files ≥ 2,000 code lines.
-
-**Verification this session.**  Bootstrap fixed point (`stage2.c == stage3.c`) +
-**22/0**; `test/mt` **85/0** (a new `test_vec_reserve_exact_allocates_exactly`
-pins the capacity contract); CLI **227/227**; diagnostics **504/0**; lint
-**667/0**; formatter **769×3/0**; guard ratchet ok, guard tests 15/15; `lower` /
-`emit-c` byte-identical to the previous compiler on the same tree.
-
-**Operational.**  At most **4** compiler instances; one LSP probe server set at a
-time; never `-j 16`; `-j 4 --mem-mb 8000` for heavy sweeps.  Massif runs on
-`main.mt` take ~100 s of instrumented time and are worth backgrounding; profile
-without `--pages-as-heap`.
-
-
-## Handoff (session 150)
-
-**Next session:** the memory program.  Five commits landed this session
-(`c0089d4d`, `40dd0e5d`, `011452ae`, `a3a6fffc`, `55081ce9`); the tree is clean
-and `build/stage2/mtc` is the fixed-point binary from `tools/bootstrap.sh --fast
--j 4`.
-
-**Baseline to preserve (measured at HEAD, `tools/peak_rss.py`).** Single file
-`main.mt`: `check` **421,764 KiB / 5.3 s**, `lower` **885,004 KiB / 11.7 s**,
-`emit-c` **931,980 KiB / 12.6 s**; `build projects/mtc` **972,920 KiB**.  Sizes:
-`Type` **24 B**, `ir.Expr` **72 B**, `ir.Stmt` **96 B**, `ir.Function` **96 B**,
-`ir.Param` **64 B**, `ir.Field` **40 B**.  Multi-file: `check projects/mtc` (191
-files) cited as "1,019 MiB", 32 files "231 MiB" — those were **KiB** values
-written as MiB, and measured on small files; see the session-151 RAM audit for
-the corrected figures (961 MiB and 223 MiB respectively).
-
-**What this session did (all verified byte-identical output).**
-
-1. **Fixed a 15.2 GB multi-file peak.**  `check`/`lint`/`lower`/`emit-c` built a
-   whole `loader.Program` per file and `Program.release()` frees only the `Vec`
-   buffers — an `Analysis` has no `release`, so ~34 MB per file was retained
-   until exit (the reported 25 GB was a full-tree `check`).  The fix is the
-   `FileRegion` helper in `main.mt`: a per-file heap region, **gated on the file
-   count**.  Two traps when extending it:
-   - `begin_file_region` writes through a `ref` and must keep doing so — the
-     allocator's active-region registry holds `&state.region`, so returning the
-     struct by value leaves it pointing at a dead temporary (`heap.must_alloc
-     out of memory`, observed).
-   - Anything outliving the file (the lint `--timings` profile and its entries,
-     the compile-fail verdict text, the caller's root vectors) must be allocated
-     *before* `begin_file_region` or *after* `end_file_region`.
-2. **Boxed nine `Type` arms**: `Type` 72 → **24 B**, which shrank `ir.Expr`
-   168 → 72 and `ir.Stmt` 144 → 96.  Every arm wider than a `str` carries a
-   payload pointer (`NamedType`, `ImportedType`, `GenericType`, `EventType`,
-   `DynType`, `DynVtableType`, `OpaqueType`, `TupleType`, `FunctionType`) with
-   one constructor each (`types.named_type(...)` etc.); match arms read through
-   `payload` via the `let x_bp = unsafe: read(x.payload)` idiom.
-3. **Gated `imported_type_members` behind `tooling_facts`** — it was collected on
-   every compile but only the linter and LSP read it (`check` −20%).
-
-**Next, ranked by measured live heap** (Massif *without* `--pages-as-heap`; the
-flag counts reserved pages and over-reports badly — it read 1,034 MB where the
-live peak is 834.6 MB):
-
-| Target | Live at `lower` peak |
-| --- | --- |
-| `String` buffers (`ubyte` growth) | 109.5 MB (13.1%) |
-| `Vec[Type]` growth | 82.3 MB (9.9%) |
-| `ir.Expr` nodes | 50.6 MB (6.1%) |
-| `ir.Stmt` growth | 47.9 MB (5.7%) |
-| `resolved_expr_types` map | 37.5 MB (4.5%) |
-
-- **`String` buffers.** The IR formatter (`pretty_printer/ir_formatter.mt`)
-  builds the whole dump in one `String` (~17 MB live, realloc history much
-  larger) and then `main.mt` prints it.  Only 5 `buffer.append` sites and one
-  caller, so a streaming sink is a contained change — but `format_program` must
-  keep producing a `String` for any other consumer.
-- **`Vec[Type]` growth.** `lowering.qualify_type` allocates a fresh `Vec[Type]`
-  recursively for every generic type with **no memoization**, and it is called
-  from 93 sites.  It has side effects (it registers generic instances via
-  `ensure_generic_*` / `monomorphized.generic_instance_set`), so a cache needs to
-  keep those.
-- **`resolved_expr_types`** is read by lowering (`type_helpers.expr_type`) as
-  well as the linter/LSP, so it cannot be gated the way
-  `imported_type_members` was.
-
-**Do not start `TypeId`.**  The plan's step 1 (interned IR type handles) was
-re-profiled and is no longer worth it: with `Type` at 24 B it would save ~40 MB
-of 834 MB (**4.8%**) for ~3,000 call-site edits.  The `TypeStore` /
-`type_hash` / `type_identical` machinery and `ir.Program.type_table`/`arena`
-from commit `e0ab80c4` remain in place and inert.
-
-**Verification.**  Bootstrap fixed point (`stage2.c == stage3.c`) + **22/0**;
-`test/mt` **85/0**; CLI **227/227**, diagnostics **504/0**, lint **673/0**,
-formatter **775×3/0**, examples **49/49**; LSP conformance **37/37** and
-`lsp_parity` **88 requests** / 0 timeouts; valgrind **0 errors**; guard
-`--check --strict --ratchet` ok.  Single- and multi-file
-`check`/`lint`/`lower`/`emit-c` output is byte-identical to the pre-change
-compiler.
-
-**Operational.**  At most **4** compiler instances; one LSP probe server set at a
-time; never `-j 16`; `-j 4 --mem-mb 8000` for heavy sweeps.  Massif runs on
-`main.mt` take ~100 s of instrumented time and are worth backgrounding.
-
-## Handoff (session 149)
-
-**Next session:** start the IR type-handle/arena refactor.  The memory batch is
-committed at `01a5408`; the tree is clean, and `build/stage2/mtc` is the
-fixed-point binary produced by `tools/bootstrap.sh --fast -j 4`.
-
-**Baseline to preserve.**  `check main.mt` **611 MiB / 6 s**, `lower main.mt`
-**1,277 MiB / 12 s**, `emit-c main.mt` **1,331 MiB / 13 s**; `Type` **72 B**,
-`ir.Expr` **168 B**, `ir.Stmt` **144 B**.  Self tests **22/22**, `test/mt`
-**85/85**, LSP conformance **37/37**, guard `--check` ok.  Re-measure with
-`VmHWM`/Massif on one process before and after each step.
-
-**Order of work.**
-1. **TypeId interning.**  Introduce a per-compilation type table and an
-   interned handle; change the IR type fields first (the remaining ~1.28 GiB is
-   spread, with `Vec[types.Type]` growth ~259 MB), then the analyzer maps.
-   `ir.Expr` should approach ~48–64 B; map values 72 B → 4/8 B.  Rust
-   `Ty<'tcx>`/`CtxtInterners` and Zig's InternPool are the reference designs.
-2. **IR arena/ownership.**  Allocate IR nodes from an arena, make
-   `ir.Program` own its storage, and add `release()`; phase release (C source
-   after write, debug map before `cc`, IR/Program before `cc`).
-3. **Streaming per module/function.**  A global signature/type pass, then
-   lower/emit and free one unit at a time (rustc codegen units, Zig AIR per
-   function, Odin direct LLVM).
-4. **Re-profile.**  The remaining peak is `Vec[types.Type]` growth (~259 MB),
-   `String` appends (~89 MB), IR `Stmt` vectors (~78 MB), lexer tokens
-   (~75 MB); TypeId/arena targets the first and fifth.
-
-**Operational.**  At most **4** compiler instances; one LSP probe server set at
-a time; probe servers under a memory cap and orphan sweep; never `-j 16`; use
-`-j 4 --mem-mb 8000` for heavy sweeps.  The seven-process OOM was the pre-fix
-`sexpr lower -j 16` fan-out, not an LSP leak (the LSP measured 94–660 MB).
-
-## Handoff (session 148)
-
-**Next session:** no open compiler or LSP item remains.  Session 148 closed the
-aliased enum-member hover (`b3.BodyType.b3_dynamicBody`) by following the type
-alias through its declaring module.  Reopen only for a real defect; the
-documented host-difference residuals are re-adjudicated on merit.
-
-**Baseline:** dev suite **22/0**; bootstrap fixed point + **22/0**; `test/mt`
-**85/0**; LSP conformance **37/37**; valgrind **0 errors**; soak **74.9
-KB/cycle raw / 7.9 LS**; goldens CLI **227/227**, diagnostics **504/0**, lint
-**673/0**, formatter **775×3/0**; guard **127,929** code lines.
-
-## Handoff (session 147)
-
-**Next session:** no open compiler or LSP item remains.  The host is retired,
-the four recorded oracles and the LSP conformance gate are green, and the two
-optional session-146 items (non-text receiver completion and the extension
-activation event) are closed.  Reopen only for a real defect: the documented
-host-difference residuals are re-adjudicated on merit, and the desktop F5
-click-through is an optional manual smoke.
-
-**Baseline:** dev suite **22/0**; bootstrap fixed point + **22/0**; `test/mt`
-**85/0**; LSP conformance **36/36**; valgrind **0 errors**; soak **76.0
-KB/cycle raw / 42.7 LS**; goldens CLI **227/227**, diagnostics **504/0**, lint
-**673/0**, formatter **775×3/0**; guard **127,821** code lines.
-
-**Session 147's instruments:** `ruby tools/lsp_conformance.rb --bin
-build/stage2/mtc` (36 cases) is the spec gate; `tools/gates.sh --areas lsp
---run` covers it with valgrind and soak.  The parser recovery is covered by
-`test/mt` and the CLI parse-error rows.
-
-## Handoff (session 146)
-
-**Next session:** the output-diagnostic batch is closed.  The CLI caret now
-honors the diagnostic length, and the five positionless linter rules carry real
-anchors with in-language position tests.  The constructor-field anchor is a
-reviewed decision, not a pending fix (see *Deliberate differences*).  The
-remaining optional items are completion after a non-text receiver and the
-extension-repo `activationEvents` fix; neither is compiler work.
-
-**Baseline:** dev suite **22/0**; bootstrap fixed point + **22/0**; `test/mt`
-**85/0**; diagnostics **504/0**; CLI **227/227**; lint **673/0**; formatter
-**775×3/0**.  The tier-2 set for a diagnostics/linter change is
-`tools/gates.sh --areas linter,cli,oracles --run`.
-
-**Fixtures refreshed this session:** diagnostics (two loop anchors), CLI (one
-parse caret), lint (29 stale/changed rows plus the unrecorded `refresh.mt`) and
-formatter (32 stale rows plus `refresh.mt`).  Every other row is byte-identical;
-re-record only for a reviewed change.
-
-## Handoff (session 145)
-
-**Next session:** the LSP enhancement program is complete (phases 0–5);
-`lsp_conformance` is **green 35/35**.  No active LSP work remains:
-
-- rangesFormatting, workspace refresh requests, and work-done/partial-result
-  streaming are implemented.
-- `inlineCompletion`, `textDocumentContent`, `moniker`, `inlineValue`,
-  `documentColor` and notebooks are intentionally unadvertised; revisit only
-  if the language gains a matching feature.
-- The workspace diagnostic scan is bounded to 500 indexed files; a larger
-  workspace can still pull individual documents.
-
-**Baseline:** conformance 35/35 (gate green); bootstrap fixed point + self-tests
-22/0; `test/mt` 85/0; valgrind 0; soak 68.9 KB/cycle raw / 5.7 LS; release
-archive and clean-path smoke green.  ASCII endpoint replay has seven intended
-differences (phase 2–3 set plus the range-formatting capability) and no others.
-The tier-2 set for an LSP change is `tools/gates.sh --areas lsp --run`.
-
-## Handoff (session 144)
-
-**Next session:** start the **LSP enhancement program**.  Read
-`docs/lsp-enhancement-plan.md` — it is the plan of record, with the 3.18
-coverage matrix, the verified defects and file locations, the phase plan, the
-conformance cases and the kickoff prompt.  No code changed in the audit
-session; the tree starts at the host-retirement state.
-
-The audit found the server covers 42/54 client→server requests and 30
-capability keys, but has four P0 conformance defects:
-
-1. **UTF-16 positions** are byte columns on output and scalars on incremental
-   input (only ASCII is correct); fix the encoding at one boundary, preferably
-   by negotiating `utf-8` and falling back to a cached byte↔unit conversion.
-2. **`quickFix`** must be `quickfix` in the capability and every action.
-3. **`workspace/willRenameFiles`** must answer (it is a request) with a
-   `WorkspaceEdit` that rewrites imports, or `null`.
-4. **Completion resolve** must find docs from `data.uri`/`data.name` and echo
-   the full item with `documentation` added.
-
-Then P1: multi-root, watched-file registration, pull-diagnostic scope/refresh,
-lifecycle, and safe `$/cancelRequest` handling.  **First action: phase 0**, the
-new `tools/lsp_conformance.rb` (the existing harness is host-parity-shaped and
-masks the rename and UTF-16 defects); wire it into `tools/gates.sh` and make
-the cases fail before fixing them.
-
-**Build state:** unchanged from session 143 — seed `b29241f4…`, seed dev build
-~25 s, `test/mt` 85/0, dev suite 22/0, valgrind 0, soak in the 70–80 raw band.
-Do not use the archived Ruby host as an oracle for LSP behavior.
-
-## Handoff (session 143)
-
-**Next session:** the host-retirement program is complete.  There is one
-compiler; work lands in `projects/mtc` and `std/` only.  The archived host is
-read-only (`archive/host-ruby-0.4.26`) and is not a build or test dependency.
-
-Open defects, in priority order:
-
-1. **Output diagnostics.**  The CLI caret length (`print_program_diagnostics`
-   ignores `rd.length`), the zero-column linter warnings (`redundant-else`,
-   `unreachable-code`, `redundant-null-check`, `loop-single-iteration`,
-   `duplicate-if-condition`), and the constructor-field column in a `let`
-   initializer.  These are accuracy defects, not parity gaps.
-2. **Optional LSP extension.**  Completion after a non-text receiver
-   (`read(p).|`) is not extended (no member token to key the analyzer fact on).
-3. **Extension packaging (separate repo).**  `activationEvents:
-   ["onDebug:milk-tea"]` is ignored by VS Code 1.146; add `onLanguage:milk-tea`
-   so the extension activates on a `.mt` file.
-
-Then the normal protocols: read *Status at a glance*, the Ledger, and
-`docs/refactoring.md` before structural work.  `tools/gates.sh` now selects
-only self-contained gates: seed dev build, bootstrap, `test/mt`, the four
-recorded oracles, examples, bindings, DAP, wasm/docs smoke, LSP valgrind/soak,
-and the structural guard.
-
-**Recorded gates.**  `--expect` replays `tools/golden/{cli,diag,lint,format}.json`;
-diagnostics/lint/format rows are digest-keyed, so changed inputs are skipped
-(`changed=N`).  Re-record only for a reviewed behavior change.  The archived
-host tree is at tag `archive/host-ruby-0.4.26` for historical inspection
-(`git show archive/host-ruby-0.4.26:lib/...`), and the pre-compaction plan is at
-`d8a199c7`.
-
-**Build prerequisite.**  A literal clone has no `third_party/`; fetch it once
-with the seed (`vendor/bootstrap/<platform>/mtc toolchain bootstrap`, network)
-or copy an existing checkout's `third_party/`.  The bootstrap error names the
-missing source.  Ruby is not needed anywhere in the build or test path.
-
-**Build state.**  `vendor/bootstrap/linux-x86_64/mtc` is the seed
-(`b29241f4…`, release, 6,289,144 B).  A seed dev build is ~25 s; a full
-bootstrap ~3 min (`--fast`) / ~12 min (full).  The release artifact is
-`mtc-0.4.26-linux-x86_64.tar.gz` (3.52 MiB, deterministic, checksummed).
-
-## Handoff (session 142)
-
-**Next session:** host retirement **phase 4 — retire the host tree**.  Phases
-0–3 are done: the seed bootstraps a fresh clone, the guard lives in
-`tools/lib/`, the recorded gates replay without the host, and
-`tools/release.sh` produces a deterministic archive with a clean-path smoke.
-
-- Move `lib/milk_tea`, the Ruby `test/**` suite and `milk_tea.gemspec` to an
-  archive tag.  Keep only Rakefile tasks that are vendored-library tooling and
-  do not load the compiler; `tools/lib/refactor_guard.rb` already stands alone.
-- Remove the host-coupled tools: `gen_cli_help.rb` (its output `cli_help.mt` is
-  now authored), `bindgen_parity.rb` and `imported_bindings_parity.rb` (the self
-  owns `imported-bindings --all --check`), and the host side of
-  `cli_parity`/`format_parity`/`diag_parity`/`lint_parity` (the `--expect` path
-  is the survivor).
-- Swap the gates: use `golden_*` in the analyzer/cli/linter/formatter area sets
-  and drop the live parity twins.  Remove `--allow-ruby-host` once the frozen
-  host is gone.
-- Phase 4's gate: a fresh clone with only a C compiler builds, passes
-  `test/mt`, and replays every golden.
-
-**Recorded gates now.**  `--expect` replays against
-`tools/golden/{cli,diag,lint,format}.json`; diagnostics/lint/format rows are
-digest-keyed, so changed inputs are skipped (`changed=N`) instead of failing.
-`tools/gates.sh --areas oracles --run` runs the set.  They are deliberately not
-yet in the analyzer/cli/linter/formatter area sets — the live parity gates still
-cover those areas, and running both would double tier-2 cost.  Phase 4 swaps
-them in.
-
-**Build state.**  `vendor/bootstrap/linux-x86_64/mtc` is the seed
-(`b29241f4…`, release, 6,289,144 B), refreshed from the release build.  The
-release artifact is `mtc-0.4.26-linux-x86_64.tar.gz` (3.52 MiB, deterministic,
-checksummed beside the archive).  The guard's numbers are **126,602 code lines**,
-6,345 duplicated / 884 windows, tests **22/85**; the baseline was refreshed for
-the phase-2 semantic fixes and the phase-3 source removals.
-
-## Handoff (session 141)
-
-**Next session:** semantic conformance is closed; the remaining work is the
-output-parity batch found by the session-140 audit.  The 57-file probe matrix
-(`tmp/audit`, scratch) is 36 agree / 0 verdict / 20 message / 1 position; the
-verdicts now all match.
-
-- **Type qualification.**  `cannot assign`, `argument`, `condition` and
-  construction-typed `return`/`match` messages use the display renderer
-  (`type_to_string`, module dropped) instead of the host's qualified `to_s`;
-  `try_construction` returns `ty_named(module_name = "")`, and the qualified
-  renderer does not recurse through `ty_generic` (`ptr[S]`).  Use one recursive
-  diagnostic renderer and set the construction module.
-- **`check`/`build` rendering.**  Module errors print a full block instead of
-  the host's bare `module not found: …`; `static_assert` uses a block where the
-  host prints bare; `print_program_diagnostics` ignores `rd.length` (the CLI
-  caret is a lone `^` where the host renders `^~~~~`); linter warnings with
-  column 0 (`redundant-else`, `unreachable-code`, `redundant-null-check`,
-  `loop-single-iteration`, `duplicate-if-condition`) need their real columns,
-  while `owning-release-double` should stay positionless.  `lint` on an
-  unresolved import is the host-CLI-facts artifact class (host reports
-  `unused-import`, self suppresses) — document or match.
-- **Remaining position.**  Constructor-field errors in a `let` initializer
-  report the construction column instead of the bound name's column.
-- **Optional LSP extension.**  Completion after a non-text receiver
-  (`read(p).|`) is not extended (no member token to key the analyzer fact on).
-
-**Build state:** `build/stage2/mtc` is current; the refactor baseline was
-refreshed for the semantic port (126,536 code lines; 6,345 duplicated / 884
-windows; tests 22/62).  The host method-lowering fix is in
-`lib/milk_tea/core/lowering/calls.rb`; `test/mt/named_arguments_test.mt` pins
-the runtime order/default cases in both compilers.  The 57 audit probes under
-`tmp/audit` are scratch; recreate any cited one from the session record.
-
-## Handoff (session 140)
-
-**Next session:** no functional parity item is open.  Session 139 closed the
-**call-argument compatibility port**, and session 140 closed the **LSP
-hover-latency** item (32–36 → 2.0–7.7 ms median on `analyzer.mt`, now faster
-than the host's 10–18 ms floor) while extending member resolution to
-call/index receivers (`read(p).get_object`, `make().sum()`, `particles[0].y`),
-a self-better extension over the host's identifier-only receiver chain.
-Residuals: completion after a non-text receiver is not extended (no member
-token to key the analyzer fact); the narrow session-139 divergences (named call
-arguments, imported/method explicit specialization checks, extern/foreign
-argument checks, nullable numeric parameters, constructor field columns) stay
-documented.  The LSP audit's canonical set is now 10 (8 documented rows + 2
-warm artifacts); the four new `data_structures@250:17` rows are the
-index-receiver resolution and stay.
-
-**Match-scrutinee dispatch (fixed in session 140):** a `match` on a variant-arm
-payload value (nested match through `Outer.some as x`) is rejected by the host
-with `match requires an enum, variant, or integer scrutinee, got Outer.some
-payload`; the self used to accept it and abort in the lowering (`match requires
-known type, got Outer_some`).  `check_match_stmt`/`infer_match_expr_type` now
-run the host's dispatch (enum, variant, integer, `str`, tuple) and report the
-host's message/position before the arms; structs, flags, floats, bools, chars
-and nullables are covered too.  The check exposed a wrong event type — `wait()`
-was `void`, now `Task[Result[payload|void, EventError]]` — so the event example
-stays valid.  The CLI sema block still renders a lone caret (the diagnostic
-carries the `match` token length for the LSP; the block printer is a pre-existing
-gap).
-
-**Watch the host compile time.**  Binding an `Option[types.Type]` payload with
-`let ... else:` in the compiler sources makes the host analyzer ~4.5x slower on
-that module (69 s → 297 s for `mtc check .../main.mt`, GC-dominated); the
-equivalent `match` is flat.  Session 139 hit this in
-`try_quiet_type_substitutions` and kept the `match` form.
-
-**Memory.**  Keep heavy sweeps memory-capped: `-j 4 --mem-mb 8000` for
-`sexpr lower`.  Each compiler-sized closure peaks 3.4–3.8 GiB, and the seven
-`main*.mt` loop-guard artifacts together exhausted this 31 GiB workstation at
-`-j 16` (session 140: the kernel killed an unrelated 12.9 GiB Python process;
-the `mtc lsp` server was 94 MB).  `sexpr_parity` now defaults lower to 4 jobs,
-warns when no cap is passed, and records a signal-killed self process as
-`128 + signal` (the loop-guard aborts are self-fail, not empty-output differ).
-
-**Current tree (session 140):** `lsp/workspace.mt` (the per-document text
-cache, `document_text`/`document_hash_for`, stat-stamped closed documents),
-`lsp/navigation.mt` (the text-view hand-off, the receiver fallback),
-`lsp/cursor.mt` (`member_dot_at`), `semantic/analyzer.mt`
-(`member_receiver_types`, `receiver_is_text_chain`, the
-`check_member_call`/`resolve_member_access` recording, the match-scrutinee
-dispatch and its type text, and the event `wait()` result type), the three
-tests in `test/semantic_test.mt` (two receiver facts + the match diagnostic),
-the `hover/chained-method` case (88 requests), the `sexpr_parity` signal/cap
-handling, and the refreshed `tools/refactor_baseline.json`.  The previous tree
-is the session-140 LSP commit (`6843cdf9`); the session-139 call-argument port
-is `1ca2b78f` and session 138 (`f7661b52`) below it.
-
-**First actions:** rebuild and smoke the tree before measuring —
-`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`
-(~105 s host-side), `tmp/mtc-dev test projects/mtc -I . --timeout 120`,
-`ruby tools/refactor_guard.rb --check`.  The analyzer gates are
-`ruby tools/diag_parity.rb check -j 8 std examples`,
-`ruby tools/check_parity.rb`, `ruby tools/cli_parity.rb -q`,
-`tools/bootstrap.sh -j 16`, `build/stage2/mtc test test/mt -I .`, and
-`ruby tools/sexpr_parity.rb lower -q -j 4 --mem-mb 8000 --host-cache
-tmp/sexpr-host-cache`.  Re-record the LSP harness (self and host; **88
-requests**; expect the documented `typeDefinition/imported` row, the
-self-better `imported-variant-arm` and `chained-method` rows, and the 3 stress
-rows), run `tools/lsp_recovery_probe.rb --check`, and use `-j 2`–`4` for the
-project audit.  The hover probe is `tmp/lsp_hover_perf.rb` (transient); the
-class medians to expect are listed in the session-140 record.  The formatter
-sweep is `ruby tools/format_parity.rb all -j 16` (778/778) and the CLI matrix is
-**227 cases**.
-
-
-**Read this first, then *Status at a glance* and the Ledger.**  The parity
-program stays closed, and session 73 closed the last *measurement* gaps: the
-`mtc test` CLI surface, then a command-surface sweep over every remaining
-command.  The matrix is now **227/227**, and the fixes it forced are in the
-commands themselves (see the session-73 section).
-
-Sessions 75–130 added the refactoring safety suite (structural guard, gate
-wiring, committed baseline), its first pass (naming violations, the shared
-`mtc.strings` leaf, alias and type canonicalization), import-cycle support in
-the loader, the lowering splits (`comptime.mt`, `const_eval.mt`,
-`inline.mt`, `layout.mt`, `tasks.mt`, `format.mt`, `async_cps.mt`,
-`type_helpers.mt`, `parallel.mt`, `match.mt`, `include_scan.mt`,
-`monomorphized.mt`, `control_flow.mt`), the `lower_stmt` / `lower_call` /
-`lower_expr` / parallel-worker / `lower_module` declaration-arm /
-`lower_identifier_member` decompositions (the long-function count is now 1, the
-excluded `binding_at`),
-the c_backend/main splits
-(`c_backend/reachability.mt`, the `generate_c` type/body phases,
-`main/std_cli.mt`, `main/bindings_cli.mt`, `main/format_cli.mt`,
-`main/test_cli.mt`, `main/snapshot_debug_cli.mt`, `main/build_cli.mt`), the
-linter rule modules (`linter/rules_doc_tag.mt`,
-`linter/rules_trailing_comma.mt`, `linter/rules_redundant_else.mt`), the
-bindgen modules (`bindgen/nullable_policy.mt`, `bindgen/emitter.mt`,
-`bindgen/macro_probes.mt`, `bindgen/options_json.mt`,
-`bindgen/nullable_report.mt`), the parser modules
-(`parser/statements.mt`, `parser/expressions.mt`,
-`parser/declarations.mt`, `parser/decl_forms.mt`,
-`parser/specialization.mt`, `parser/expression_forms.mt`,
-`parser/call_args.mt`), the analyzer
-`infer_expr_inner`, `check_member`, `check_stmt_inner`, `infer_binary`,
-`resolve_named` and `check_module_opts` decompositions, and the
-`lower_async_fn` vtable/cancel/constructor phases.  Session 125 added the
-shared `build`/`run` options parser and phase helpers, the lint
-option/scan split, the generated help-family helpers, and `parser/call_args.mt`.
-Sessions 126–130 decomposed the next 29 long functions and region-scoped
-`mtc test` runner builds (the old cross-file AST/analysis/IR accumulation is
-gone; `test/mt` peaks at 135 MB).  The analyzer's largest
-function is 109 lines; `lower_async_fn` is 141 and `generate_c` is 180;
-session 130 closed the remaining nine, so every other function is below 200.
-The lowering submodules now form one import SCC; keep `import std.str` in
-cyclic modules that use `Map[str, …]` keys, and expose a constructor from
-lowering instead of referencing a variant arm across the cycle.  Parser
-submodules call the `pstate` state helpers directly and the parser-local token
-wrappers through the `parser` alias.  Statement expressions go through
-`expressions`, type refs/blocks through `declarations`, declaration forms
-through `decl_forms`, specialization targets through `specialization`, and
-if/match/proc/unsafe/prefix-cast through `expression_forms`; rename any local
-named `declarations` when adding to the parser cycle.  Analyzer sections all
-take the private `Context`, so prefer in-file decomposition until that state is
-deliberately opened.
-
-Session 129 decomposed `dispatch_method`, `emit_decl`,
-`stmts_structural_equal`, and `expr_value`; session 130 decomposed the
-remaining nine (`std_registry_lookup`, `generate_internal`,
-`emit_format_string_helpers`, `load_context`, `bindgen_command`,
-`build_manifest`, `dump_ir_with_analyses`, `resolve_name_in_analysis`, and
-`choose_registry_version`).  No decomposition targets remain.
-`binding_at` (385) stays excluded — the attempted split raised duplication and
-was reverted; do not reintroduce per-command constant tables there or in the
-generated help.  Verify the current shape with
-`ruby tools/refactor_guard.rb --json tmp/refactor.json`.
-
-Use `tools/gates.sh --areas refactor --run` and read `docs/refactoring.md`
-before changing the self-host's shape.
-
-Session 73's changes landed as `747050f6`:
-
-| Area | What |
-| --- | --- |
-| `tools/cli_parity.rb` | 43 `test` cases, four test fixture trees, and a second batch (global extraction, resolution flags, operand models, missing/empty operands, completions/std/snapshot/cache/lsp/dap/bindgen/deps) — 224 cases; `normalize` collapses the synthesized runner path. |
-| `projects/mtc/src/mtc/main.mt` | Test-command fixes (runner roots, machine buffering, build-error channels, `expect_fatal`, `--frozen`/`--locked`, requested platform) plus the second batch: host-shaped global extraction, resolution flags on parse/lower/emit-c/check/lint/debug, host operand models, empty/missing-file messages, build/run/run-module errors, completions, std, snapshot, cache, lsp/dap validation. |
-| `projects/mtc/src/mtc/lsp/server.mt`, `lsp/semantic_tokens.mt` | LSP default level `warn` and no CLI lifecycle logs; the snapshot semantic overlay now reuses the LSP token pass (`snapshot_entries_for`); the old standalone snapshot scanner was removed. |
-| `projects/mtc/src/mtc/dap/server.mt` | Non-pollable stdin exits 0 instead of aborting on `uv_poll_init failed`; the unsupported-backend fallback logs at debug. |
-| `projects/mtc/src/mtc/bindgen.mt`, `packages/manager_cli.mt` | bindgen maps a spawn ENOENT to `clang not found`; deps `fetch`/add/remove/update follow the host's flag/help semantics. |
-| `tools/gates.sh` | `cli_parity` label 92 -> 224. |
-
-### Verified numbers (session 73)
-
-`cli:parity` **224 match / 0 differ / 0 pending**; dev self-tests **22 files /
-0 failed**; `test/mt` **60/0**; bootstrap fixed point holds; bindgen
-**33 match / 0 differ / 0 error / 1 custom of 34**; DAP **zero differing rows**;
-LSP harness **30/30 + 4 documented entries**, recovery **6/6**; lint corpus
-**631 agree / 4 differ of 635** (the four documented rows, including the
-pre-existing `std/fs.windows.mt` host-facts loss).
-
-### How to start
-
-Build the dev compiler with the seed
-(`"$(tools/bootstrap.sh --print-stage0)" build projects/mtc -I . --no-cache -o tmp/mtc-dev`,
-~25 s), run `tmp/mtc-dev test projects/mtc -I . --timeout 120`, and measure only
-the class the change can move (`tools/gates.sh --only <gate> --run`).  Run the
-tier-2 proofs once on frozen sources: `tools/gates.sh --areas cli --run`
-(bootstrap, `test/mt`, `golden_cli`; logs under `tmp/gates/`).  **Do not replay
-the ledger's baselines unless the tree moved.**
-
-### Open items, in priority order
-
-1. **LSP enhancement — CLOSED (sessions 145/147: phases 0–5 + completion).**
-   The audit found 42/54 client→server requests and 30 capability keys
-   implemented.  Phases 1–5 closed the UTF-16 position defect, `quickfix`
-   spelling, completion resolve, lifecycle/cancel, publish version,
-   `willRenameFiles`, multi-root, watched-file registration,
-   workspace-diagnostic scope/refresh, rangesFormatting, refresh requests and
-   progress/partial results.  Session 147 added non-text receiver completion
-   (`read(p).`, `make().`, `arr[0].`), bringing the coverage to 43/54; session
-   148 extended enum-member hover through a type alias
-   (`b3.BodyType.b3_dynamicBody`).  The `lsp_conformance` spec gate is
-   **37/37 green**.
-   Only the deliberately skipped editor features remain out of scope; the plan
-   is in `docs/lsp-enhancement-plan.md`.
-2. **Host retirement — CLOSED (session 143).**  Phases 0–4 are done: the seed
-   is the only stage0, the guard lives in `tools/lib/`, the recorded oracles
-   replay with no host source present, the release path is deterministic, and
-   `lib/`, the Ruby suite, the gemspec and the host-coupled harnesses are
-   removed.  The archived tag is `archive/host-ruby-0.4.26`.
-3. **Output-diagnostic defects — CLOSED (session 146).**  The CLI caret length,
-   the five zero-column linter warnings and the unreachable expression anchor
-   are fixed and position-tested.  The constructor-field anchor is
-   re-adjudicated: the self keeps the construction expression's column, which
-   identifies the offending construction more precisely than the archived
-   host's declaration anchor (see *Deliberate differences*).
-4. **Call-argument compatibility and conditions — CLOSED (sessions 139/141).**
-   The session-138 table matches the archived host in both directions;
-   session 141 closed named arguments, imported/method explicit specialization
-   checks, extern/foreign arity/types, and nullable numeric targets, and made
-   `if`/`while`/`static_assert`/if-expression conditions strictly bool.
-5. **Earlier LSP follow-ups (sessions 134–140) — CLOSED.**  Hover latency is
-   2.0–7.7 ms on `analyzer.mt`, call/index receivers resolve, and the earlier
-   hover/completion/rename gaps are fixed.  Completion after a non-text
-   receiver (`read(p).|`) was the last open follow-up and landed in session 147
-   (call, index and trailing-dot receivers; type receivers keep the static
-   path).
-6. **Track G follow-ups are recorded, not pending.**  The post-fix profile is
-   flat; `String.as_str()`'s per-call UTF-8 revalidation (~7%) is a documented
-   invariant, and the ~2% scans are over small collections.  Reopen only with a
-   fresh `perf record` showing a hotspot.
-7. **No manual items remain.**  The desktop F5 click-through passed (session
-   74).  Its extension-packaging defect — `activationEvents:
-   ["onDebug:milk-tea"]` alone is not enough for VS Code 1.146 — is fixed in
-   session 147 by adding `onLanguage:milk-tea` to
-   `bindings/vscode/package.json` (the extension source is in this repo; the
-   `.vsix` is a local build artifact).  The LSP ref-lifetime and
-   imported-member-location decisions are closed.
-
-**Do not chase** the archived host differences — the `lower` artifacts, the old
-`check`/linter rows, the old LSP audit rows, the DAP frame0 row or the
-test-runner binary directory.  They are historical records with the reason each
-was a host artifact, not gates.  Fix only the real defects listed above; the
-LSP program uses the 3.18 spec, not the archived host, as its reference.
-
-### Session records (historical)
-
-The per-session batch logs (sessions 51–71) are not kept in this file; none is
-pending work.  The full text is recoverable from git history (`git log -p --
-docs/self-host-plan.md`), and the pre-compaction snapshot through session 50 is
-at `git show d8a199c7:docs/self-host-plan.md`.  Current state lives in *Status
-at a glance* and the Ledger; the causes that still matter are in the track
-sections and *Deliberate differences*.
+**Do not re-open:** the `TypeId` handle, `ir.Program.arena`/phase release, the
+per-compile analyzer retention (bounded by `FileRegion`), LSP open/close RSS
+growth (allocator high-water), and the glibc 2.38 floor; see *Risks and notes*
+and the session kickoff prompt.
 
 ## How to start a work session
 
@@ -5421,14 +4594,14 @@ their historical record is the archived tag `archive/host-ruby-0.4.26`.
 | Workstream | Read | Verify with |
 | --- | --- | --- |
 | CLI behavior | Track B; `tools/golden/README.md` | `ruby tools/cli_parity.rb --expect tools/golden/cli.json -q` (227 cases) |
-| Analyzer / `check` diagnostics | the session-72/139/141 records | `ruby tools/diag_parity.rb check std examples --expect tools/golden/diag.json -q` (504 files) |
-| Linter | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb --expect tools/golden/lint.json -q` (673 files) |
+| Analyzer / `check` diagnostics | the session-72/139/141 records | `ruby tools/diag_parity.rb check std examples --expect tools/golden/diag.json -q` (505 files) |
+| Linter | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb --expect tools/golden/lint.json -q` (674 files) |
 | Formatter (`:tidy`, `:preserve`, `:canonical`) | Track E/formatter history at `d8a199c7` §7 | `ruby tools/format_parity.rb all -j 4 --expect tools/golden/format.json -q` |
 | Wasm build/preview | Track B item 1; `wasm_preview.mt` | `ruby tools/wasm_smoke.rb --self build/stage2/mtc` |
 | Docs server | Track B item 2; `docs_app.mt` | `ruby tools/docs_smoke.rb --self build/stage2/mtc` |
 | Imported bindings / bindgen | Track D; `docs/bootstrap-design.md` | `build/stage2/mtc imported-bindings --all --check`; `build/stage2/mtc bindings ...`; `tools/rebind_binding.rb --all --check` |
 | Box2D samples | `bindings/README.md` | `tools/gates.sh --areas examples --run` (78/78 + `box2d_smoke`); build the 28 ports with `mtc build` before a release |
-| LSP | Track E; `docs/lsp-enhancement-plan.md`, `docs/lsp-design.md`, `docs/lsp-performance.md` | `ruby tools/lsp_conformance.rb --bin build/stage2/mtc` (the spec gate); `ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json`; `tools/gates.sh --areas lsp --only valgrind_lsp,soak --run` |
+| LSP | Track E; `docs/lsp-enhancement-plan.md`, `docs/lsp-design.md` | `ruby tools/lsp_conformance.rb --bin build/stage2/mtc` (the spec gate); `ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json`; `tools/gates.sh --areas lsp --only valgrind_lsp,soak --run` |
 | DAP | Track F; `docs/dap-design.md` | `ruby tools/dap_smoke.rb`; `ruby tools/dap_async_probe.rb` |
 | Bootstrap / release | `docs/bootstrap-design.md`; `vendor/bootstrap/README.md`; `docs/build-guide.md` §10 | `tools/bootstrap.sh -j 4`; `tools/release.sh`; `tools/release_container_smoke.sh dist/...` |
 | CI | `.github/workflows/ci.yml` | GitHub Actions: bootstrap, oracles, LSP, examples, bindings, release, container smoke |
@@ -5648,9 +4821,10 @@ call-argument compatibility port, session 141 closed the remaining semantic
 verdict residuals (named arguments, imported/method specializations,
 extern/foreign calls, nullable numeric, conditions), and session 140 closed the
 LSP hover-latency item and extended member resolution to call/index receivers.
-Any remaining differences are the documented residuals; the output-diagnostic
-batch and the constructor-field position are the only open compiler items; the
-track sections below are the stopping rules to preserve.**
+Any remaining differences are the documented residuals; session 146 closed the
+output-diagnostic batch and re-adjudicated the constructor-field anchor, so no
+open compiler item remains.  The track sections below are the stopping rules to
+preserve.**
 
 Confirmed scope decision: **all** unported CLI subsystems are in scope (`deps`,
 `docs`, wasm/emcc + preview, `--bundle`/`--archive`, `--jobs`, toolchain
@@ -5959,7 +5133,7 @@ section:
   `alias.Enum.member` the self resolves the member text and deliberately drops
   the location (matching the host's classifier miss).
 - **Documented rows stay documented** unless their machinery is built for
-  another reason (see *Deliberate differences* and `docs/lsp-design.md` §8).
+  another reason (see *Deliberate differences* and `docs/lsp-design.md` §9).
 
 ### Track F — DAP (closed)
 
@@ -6051,7 +5225,7 @@ These rows record where the self deliberately differed from the **archived Ruby
 host** (`archive/host-ruby-0.4.26`).  They are history: the host is not a gate
 and the host-differential tools are removed.  Do not reintroduce a host
 dependency to "fix" one; if a row describes a real defect, fix the defect on
-its own merit.  The canonical LSP table is `docs/lsp-design.md` §8; the main
+its own merit.  The canonical LSP table is `docs/lsp-design.md` §9; the main
 ones:
 
 - **LSP harness (6 documented entries):** the host's parser recovery; the host
@@ -6283,19 +5457,18 @@ Gotchas that cost rebuild cycles; apply them before writing code.
   artifacts).  A lowering-adjacent change can still move first differences
   deeper; re-run the sweep and keep the stopping rule (0 real differ, or a
   documented host artifact with a reproduction).
-- **`deps`** is the largest single CLI subsystem (~3,000 lines); keep the port
-  mechanical (module-per-file mirroring the Ruby layout) and use the host's
-  `test/packages/*` as the spec.
-- **emcc** may not be installed here; reproduce the host's detection/error text
-  and verify the wasm path where emcc is available.
+- **`deps`** is the largest single CLI subsystem (~3,000 lines); keep changes
+  module-per-file and use `projects/mtc/test/packages_test.mt` as the spec.
+- **emcc** may not be installed here; preserve the documented detection/error
+  text and verify the wasm path where emcc is available.
 - **Throughput is closed** (session 72): the self beats the host on `emit-c`
   and on a full build, so gates no longer pay a self-host penalty.  Re-profile
   before reopening Track G.
-- **History:** the per-session records are not kept in this file.  The snapshot
-  through session 50 (including §0a–§0k, §1–§7 and the Appendix) is at
-  `d8a199c7`; the session 51–71 batch logs live in this file's git history
-  (`git log -p -- docs/self-host-plan.md`).  Keep the file operational — add
-  causes to the track sections, not a growing session narrative.
+- **History:** the pre-compaction snapshot (including §0a–§0k, §1–§7 and the
+  Appendix) is at `d8a199c7`; session records after that stay in this file.
+  Superseded handoff snapshots were removed in session 158 and remain in git
+  history (`git log -p -- docs/self-host-plan.md`).  Keep new entries causal
+  and operational; add causes to the track sections, not a growing narrative.
 
 ## Provenance
 

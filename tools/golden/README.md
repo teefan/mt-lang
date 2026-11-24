@@ -31,10 +31,9 @@ of every file they cover. On replay:
 - an input with no row is reported as `unrecorded=N` and not compared.
 
 This keeps a source edit from turning the gate red while still catching
-behavior regressions on untouched files. It also means a behavior change is
-only reviewed when it shows up against unchanged inputs; a change that only
-affects newly-written code is covered by the in-language suite and the live
-parity gates until the host is retired.
+behavior regressions on untouched files. A change that only affects
+newly-written code is covered by the in-language suite; re-record the affected
+rows when the behavior change is reviewed.
 
 The CLI fixture is hermetic (its cases materialize their own inputs), so it has
 no digest column. Cases that read checked-in sources (for example `std show`)

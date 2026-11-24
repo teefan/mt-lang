@@ -1,15 +1,13 @@
 # Self-Host DAP Architecture
 
-Status: **complete against the host.**  The process backend and the lldb-dap
-bridge (the VS Code extension's default) are implemented and audited per
-request: `tools/dap_smoke.rb` reports **zero differing rows** across the
-process sessions and the lldb sessions (the embedded fake adapter and a real
-`/usr/bin/lldb-dap`), with one documented self-better row — the debug-map frame
-name maps on the self where the host loses its map on a program-cache hit.
-The VS Code F5 launch ordering was fixed in session 71 (see §9/§10); a real
-async-order probe proves launch → breakpoint → frame/locals → evaluate.  The
+Status: **complete; self-only smoke green.**  The process backend and the
+lldb-dap bridge (the VS Code extension's default) are implemented and audited
+per request.  `tools/dap_smoke.rb` answers every probe and drives a real
+`/usr/bin/lldb-dap` through breakpoint → frame/locals → evaluate; the
+`dap_async_probe` proves the VS Code launch ordering.  The debug-map frame name
+maps on cached builds (a cache-hit host build would skip its map).  The
 extension's argv order is fixed (`dap` first, then `--backend`/`--adapter-path`).
-Last updated: 2026-11-13 (session 71 — the configurationDone/launch ordering fix).
+Last reviewed: session 158 (host comparison retained as historical record).
 9 modules, ~4,540 lines plus the shared `mtc/debug_map.mt` (829) — 26 commands
 dispatched.
 
@@ -211,7 +209,9 @@ of the existing `projects/mtc` package.  No changes to `tools/bootstrap.sh`.
 
 ---
 
-## 8. Comparison: Ruby DAP vs Self-Host DAP
+## 8. Historical: Ruby DAP vs Self-Host DAP
+
+The archived host is not a gate; this table is implementation history.
 
 | Aspect | Ruby DAP | Self-Host DAP |
 |--------|----------|---------------|
@@ -248,11 +248,10 @@ extension's default `lldb-dap` needs no configuration.
 
 ---
 
-## 10. DAP gap audit (2026-09-27)
+## 10. DAP gap audit (2026-09-27; all rows landed)
 
-`tools/dap_smoke.rb` drives both adapters through one session and prints what
-each answers; run it after any DAP change (`ruby tools/dap_smoke.rb`,
-`--server host|self`, `--json OUT`).
+`tools/dap_smoke.rb` drives the native adapter through one session; run it
+after any DAP change (`ruby tools/dap_smoke.rb [--self-bin PATH] [--json OUT]`).
 
 Identical for the process backend (measured): `initialize` (same capability
 set), `launch(binary)`, `threads`, `stackTrace` (1 frame), `scopes` (1),
@@ -297,8 +296,8 @@ Remaining gaps, in the order they affect the VS Code experience:
 | 4 | **Pause diagnostics / `modules`-driven map loading** — **landed** (session 34, 2026-10-04) | On a pause-requested stop the bridge issues the 8-level `stackTrace` and emits the host's console `output` summary (informative-frame selection and frame formatting ported from `pause_diagnostics.rb`); the SIGSTOP-exception stop is rewritten to `reason: "pause"`. The `modules` fallback loads a sidecar from the adapter's module list when a stackTrace arrives without one |
 | 5 | **Real lldb-dap end-to-end / VS Code** — **landed** (session 34, 2026-10-04; F5 ordering fixed session 71, 2026-11-13) | the smoke's real section builds the `.mt` source with each server (so each side's own map is exercised) and drives breakpoint → `stopped(breakpoint)` → `stackTrace` (`frame0 name` = `add`, source `main.mt`) → scopes/variables (`a,b,total`) → evaluate → next → continue → `exited`/`terminated`. Every row matches except `lldb-real frame0 name` (self `add`, host `main_add` — the host's program-cache hit skips its map; documented self-better difference). Session 71 removed the `configurationDone` deferral on the launch response: an async-order probe (launch, then `configurationDone` without waiting, matching VS Code) gets launch success → entry stop → breakpoint stop → frame `main` → locals `x=3` → evaluate `3` from the real `lldb-dap`. A desktop F5 click-through is an optional manual smoke, not a known gap |
 
-Verification: `ruby tools/dap_smoke.rb [--self-bin PATH]` must show zero
-differing rows except the documented one, and a real VS Code session
+Verification: `ruby tools/dap_smoke.rb [--self-bin PATH]` must answer every
+probe and complete the real lldb-dap session, and a real VS Code session
 (`bindings/vscode`, `backend: lldb-dap`) must stop on a breakpoint and show
 locals — the same end-to-end check `docs/lsp-design.md` requires for
 user-visible LSP changes.  The session-71 async-order probe

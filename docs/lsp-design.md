@@ -6,69 +6,21 @@ measurement ended with the host retirement (session 143); this document's
 and the archived host is at tag `archive/host-ruby-0.4.26`.  The surviving
 instruments are `tools/lsp_parity.rb record --server self`, `tools/lsp_soak.rb`
 and the valgrind gate; `tools/lsp_conformance.rb` is the spec oracle.
-Last updated: 2026-11-23; feature behavior last changed in session 148, and
+Last updated: 2026-11-24; feature behavior last changed in session 148, and
 session 154 changed only cache ownership (per-document caches evicted on close,
 map keys released by every bulk cache release).
 44 modules, ~33.6k lines, 30 capability keys.  The 3.18 conformance audit and
 phase plan are in `docs/lsp-enhancement-plan.md`; use that as the work list.
 
-> **Historical note:** parity was measured by the self-vs-host harness, not by capability
-> advertisement.**  `tools/lsp_parity.rb` (`record --server host|self`,
-> `compare`, `--stress`) drives an out-of-process corpus of 72 requests — every
-> endpoint plus the `codeLens`/`completionItem`/`documentLink` resolve calls a
-> real editor makes — and 27 adversarial probes, and diffs normalized responses.
-> As of 2026-10-04 (session 33) it reports 30/30 capability keys identical and
-> **5 differing entries** with `--stress` (2 request-level — `milkTea/debugInfo`'s
-> Facts/Bindings remainder and the directory-form module `typeDefinition` — and
-> 3 stress probes), all deliberate and documented (the host hanging on a
-> malformed frame, the host's facts lag, the host's parser recovery, and the
-> self answering where the host gives up) — every differing entry is catalogued
-> by family in the pre-compaction plan record (`git show
-> d8a199c7:docs/self-host-plan.md`, §0k); the per-feature claims below are
-> self-host-side results that the harness now confirms or contradicts entry by
-> entry.  **§0 references throughout this document point into that archived
-> record**, not the current plan; the live status is the current plan's Status
-> at a glance, Handoff and Ledger.
-> **LSP changes must be verified against a real client too**: the 2026-09-26 VS
-> Code startup crash lived only in `codeLens/resolve`, which the corpus did not
-> send.  Run the extension host headlessly with the server under valgrind
-> (`xvfb-run code --extensionDevelopmentPath=bindings/vscode …`) for
-> user-visible changes.
-> The Ruby-server test path went with the host retirement (session 143); LSP
-> coverage is the in-language tests under `projects/mtc/test` plus
-> `tools/lsp_conformance.rb`, which drives the native server directly.
-Hover coverage: measured by the project audit — 1 differing entry of 915 hover
-requests on the SimpleGame corpus (the documented asynchronous `type quat`
-location; the `fn `-typed field closed with the function-type names;
-`self-host-plan.md` §0k).  Session 17 measured the `type quat` entry in both
-states: *in the audit* the host answers the type line plus `Defined at:
-[…/std/linear_algebra.mt:237](…#L237)` (three separate runs), while *in a cold
-probe* — the same workspace opened, no audit history — the **host answers
-`null`** for that position and the self answers the type line.  The self's
-`apply_hover_index_location` already runs on the builtin-type arm, so the gap is
-the definition index's coverage of the `extending quat:` declaration in a std
-module that was never opened; `docs/self-host-plan.md` §0k's session-17 record
-carries the plan.  Session 18 measured the obvious coverage fix — registering
-every loaded dependency file with the index when a document's analysis is built
-(`workspace.mt`'s `analysis_cache` path, `warm_definition_document`) — and it is
-**wrong**: the host's index grows *asynchronously* through its hover-driven warm,
-so eagerly indexing the loader's modules answers locations the host does not
-have yet and adds **153 entries** (declaration/definition 58 each, references 23,
-hover 12, typeDefinition 2, workspace/symbol 1; `tmp/audit-s18-d.json`).  Reverted;
-the entry stays documented until the snapshot/async-index machinery is modelled.
-Document highlight: 915 requests, 1 differing entry (session 17) —
-`docs/language_baseline.mt@704:67`, a cursor on a *named-argument label*.
-Warm, the host resolves the name through its completion snapshots
-(`rename_target_binding_id`'s `resolve_local_hover_binding` fallback) to a
-binding with exactly one identifier occurrence and answers one range
-(`598:15-20`); cold — the same probe with the workspace open — the *host*
-answers the six same-lexeme ranges, **byte-identical to the self's answer** (its
-`unbound_occurrence` filter applies only once a local binding is resolved for
-the cursor, which a named-argument label never is).  Reproducing the warm
-answer would mean modelling the
-host's snapshot carry-forward across frames; the self's bindings are name-keyed
-and cannot express it.  Kept documented (deliberate difference) with both
-measurements.
+> **Historical note:** the host-differential harness, audit and recovery
+> probes were retired with the host (session 143).  The current authority is
+> `tools/lsp_conformance.rb`; the archived pre-compaction parity record is at
+> `git show d8a199c7:docs/self-host-plan.md` §0k.  The historical comparison
+> and readiness sections were removed in session 158.
+
+Current feature coverage is pinned by `tools/lsp_conformance.rb` (38/38) and the
+project ledger; the host-audit hover and document-highlight measurements were
+removed with the host comparison (session 158).
 References: cross-file via workspace index.
 Definition: local variables supported.
 Signature help: methods and extending-block methods resolved.
@@ -483,137 +435,40 @@ fix — `diagnostic_from_warning` never populated its range positions — was
 fixed the same day.
 
 
-## 8. Comparison: Ruby LSP vs Self-Host LSP (actual)
+## 8. Current status
 
-| Aspect | Ruby LSP | Self-Host LSP |
-|--------|----------|---------------|
-| Lines | ~14.4k (38 files) | ~29.3k (42 modules) |
-| Threads | Worker pool (8 threads) | Single-threaded |
-| Dispatch | 25 mixin modules | if/else chain (55 methods) |
-| JSON | `JSON.parse` / `JSON.dump` | `std.json.parse` / raw-string rendering |
-| Transport | Stdio `Content-Length` framing | Same (getchar loop) |
-| Capabilities | 30 advertised | 30 advertised (parity) |
-| Caches | Multi-layer (tokens, AST, facts, semantic tokens) | Per-document text/version, token, binding and loader-backed analysis caches + per-file diagnostic/semantic-token caches + workspace-symbol index |
-| Module resolution | `ModuleLoader` (shared) | Same `module_loader.mt` |
-| Linter | Ruby `Linter.lint_source` | Same `linter.lint_source` |
-| Outgoing requests | Async callback via `send_request` | Synchronous via `send_request` + response dispatch |
-| Progress | Begin/report/end three-phase | Same via `$/progress` notifications |
-| Configuration | Pull on `initialized` | Same via `workspace/configuration` after `initialized` |
+The native server is self-only.  `tools/lsp_conformance.rb` (38/38) is the
+spec authority; the architecture, capability set and deliberately skipped
+editor features are in `docs/lsp-enhancement-plan.md`.  Historical host
+measurements and recovery probes were retired with the host (session 143).
 
-### Known gaps (self-host vs Ruby) — as of 2026-07-22
+## 9. Deliberate LSP differences (archived-host record)
 
-| Feature | Status |
-|---------|--------|
-| **Live parity status** | **See the pre-compaction plan record (`git show d8a199c7:docs/self-host-plan.md`, §0k); the current authority is `tools/lsp_conformance.rb` (38/38).** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; **88 requests** + 28 stress probes; **6 documented differing entries**) and by the project audit (7075 entries / **8 stable differing entries + the host's first-file `documentSymbol` race**, session 140) |
-| **Position encoding** | **Both directions are converted at the boundary (session 145 phase 1)**: `initialize` reads `capabilities.general.positionEncodings` and advertises `utf-8` when the client offers it (the server's byte columns are then the wire format), otherwise LSP-default UTF-16 and `Workspace.position_encoding_utf16` is set.  Incoming positions route through `utils.position_to_byte_utf16`/`position_to_byte_utf8` for every position- and range-carrying request, including incremental `didChange`; emitted ranges use `utils.byte_to_utf16_column` with the per-document line-start map (`utils.build_line_starts`/`line_at_index`).  The semantic-token cache records its column encoding, so a cached UTF-8 pass is never replayed to a UTF-16 client.  ASCII behavior is unchanged; on astral text the self follows the negotiated spec rather than the host's byte-column echo. |
-| Diagnostics (push + pull) | **DONE (stage 4)** — the editor *buffer* is analysed (not the file on disk); `lex/error`, `parse/error`, `import/load-error`, `sema/error` and lint items carry the host's codes, `data.stage`, token-length ranges (import failures anchor at the module-path text) and MarkupContent for quoted-identifier sema messages; `workspace/diagnostic` reports every open document in didOpen order with `previousResultIds`.  `diagnostic/pull` and `workspace/diagnostic` are byte-equal to the host. |
-| Incremental text sync (change:2) | **DONE** — range-based edits, UTF-8 line/char→byte conversion |
-| Config application | **DONE** — parse workspace/configuration response |
-| Per-request tracing | **DONE** — `[DEBUG] lsp: → <id> <method>` |
-| LSP logging (std/log) | **DONE** — `--log-level trace|debug|info|warn|error` |
-| $/setTrace handler | **DONE** — VSCode trace-level changes at runtime |
-| Semantic token legend | **DONE** — the host's full legend (23 token types / 10 modifiers); token *types* compare by name, never by legend index |
-| Semantic token accuracy | **5 positions from byte-equal** (session 14, 2026-09-30) — four of the SimpleGame corpus's five files match exactly; `docs/language_baseline.mt` differs in 5 of 9509 positions, the residue being three host facts the self lacks (`callable_value_identifier_sites`, `callable_field_member_access?`, `dot_nested_type_member?`).  The scanner's facts are the host's: scope-resolved bindings (the function-level snapshot rule), the static-member table, the type-parameter scopes, the type-position/dot-receiver arms, specialized calls, f-string interpolation parts and multi-line string splitting, and the attribute-name overrides.  The snapshot HTML path matches Ruby on language_baseline.mt (decorator `@[...]` tracking, enum member dot-access via `static_member_types`, parameter-name collision in enum body, struct/union body separation). |
-| Completion depth | **DONE** — prefix filtering, detail, insertText, isIncomplete, proper response format, import completions via filesystem enumeration, scope/local completions via AST binding collection, and (session 17) **member completion on an imported struct receiver** (`var n = node.Node.create(…)` then `n.` lists `name`, `parent`, `static:create` byte-identically to the host, from the loader-backed analysis plus `Analysis.imported_type_members`).  The project audit's 619-entry dot pass reads **2 differing entries**, both documented (session 26 closed 600 → 4 with the registration order, the prelude merge and the receiver families; session 27 closed the last two position entries with the request-boundary conversion): the host's synthesized `ref[@_mt_N, T]` lifetime in a field detail (the self renders the declared `ref[T]`) and the `map_error` arm binding the host's facts never type, where the self answers the field and the host falls back to its method table.  Missing: none of the hosted contexts — attribute, format-string, named-argument, specialization, dot-receiver and value-chain contexts are ported (sessions 131–132).  Session 147 added completion after an incomplete/non-text receiver (`read(p).`, `make().`, `arr[0].`). |
-| Code actions depth | **DONE (session 28)** — the host's per-diagnostic branch set (`code_actions.rb:29-297`) with byte-equal titles (`STATIC_QUICK_FIX_TITLES`, JSON `null` for `unused-import`), the echo of the request's diagnostic on every action, the fix-engine quickfixes (host-shaped whole-line edits), `line-too-long` wrap, the `shadow` annotation-only action, `unused-param` → `_x`, `dead-assignment`, the unsafe wrap, the match-arm stubs, the `Cast expression to <type>` action (doubled indent reproduced) and the `Import <path>` suggestion action; `only_kinds` filtering respected and `source.fixAll` titled `Apply all auto-fixes`.  Residue: `reserved-primitive-name`'s multi-site rewrite (stage 8) and the analyzer's missing "did you mean" suggestions. |
-| Document link resolveProvider | **DONE** — advertised correctly |
-| ENUM SymbolKind | **DONE** — fixed from 10 (Method) to 13 (Enum) |
-| Type alias hierarchy | **DONE** — type_alias_types added |
-| code_lens method support | **DONE** — extending block methods included |
-| Enum/variant member completions | **DONE** — dot-receiver context |
-| Workspace dependency graph (didChangeWatchedFiles) | **DONE** — broad cache invalidation with per-URI clearing for renames |
-| Multi-root workspace reindex (didChangeWorkspaceFolders) | **DONE** — `workspaceFolders` maps into `Workspace.roots`; add/remove re-roots the module and symbol walk roots and the caches (session 145 phase 3) |
-| Workspace index rename (willRenameFiles) | **DONE** — a real request answering a `WorkspaceEdit` with import rewrites (or `null`); the index entry moves and the old path's caches are dropped (session 145 phase 3; index move session 137) |
-| Sporadic SIGSEGV | **NO REPRODUCTIONS** — the 2026-09-26 stress corpus (15 adversarial probes) plus a valgrind run over a full request sweep completed with zero crashes, invalid reads/writes or invalid frees |
+These rows record where the self deliberately differed from the archived Ruby
+host.  They are history, not open work: the current self-only gates are
+`tools/lsp_conformance.rb`, `tools/lsp_parity.rb record --server self`, and
+the in-language tests.  The "pinned by" column names the historical harness.
 
-## 9. Real-project readiness and recovery (2026-09-28)
+| # | Difference | Direction | Pinned by |
+| --- | --- | --- | --- |
+| 1 | A malformed frame answers `-32700` and the session keeps serving; the host hangs/exits | self-better | `lsp_parity --stress` (`stress/malformed-frame+parseError`), recovery probe |
+| 2 | Facts are computed synchronously (no lag); the host's first answer after `didOpen` can trail its content (its facts warm asynchronously) | self-better (host artifact) | `stress/unicode+semanticTokens`, the audit's first-file `documentSymbol` race |
+| 3 | Faster cold start (the workspace walk/index and first answers) | self-better | `tools/lsp_cold_start.rb` |
+| 4 | Parser recovery: the self's recovered buffer carries fewer diagnostic items than the host's and the lexer/`parse_param` recovery points differ (host-side artifacts of its rescue layout) | self-better | `stress/unterminated-source+diagnostic`, the recovery probe's cases |
+| 5 | The host's first-file `documentSymbol` after `didOpen` can carry its pre-facts tree (a race in the host's warm-up) | host artifact | `lsp_project_audit` (±drift row) |
+| 6 | `documentHighlight` `lb@704:67`: the host answers from its carried-forward warm-facts snapshot; the self resolves the label's binding in scope (byte-equal cold) | host artifact | `lsp_project_audit` |
+| 7 | `hover` on a builtin/std type (`type quat` `lb@1653:24`; `str` at `ds@140:33`, `colors.mt@12:46` once warm): the host's answer gains the cross-file `Defined at` location only once its definition index warms; the self omits builtin-type locations (an eager fix adds 153 entries — measured and rejected, session 18) | host artifact | `lsp_project_audit` (canonical) |
+| 8 | `typeDefinition` on a *directory-form* module member (`import mod_alpha` → `mod_alpha/lib.mt`): the host's `module_path_for_name` gives up (`null`); the loader-backed self answers the declaration | self-better | `lsp_parity` (`typeDefinition/imported`) |
+| 9 | Completion `mst@224:18`: the host leaks a synthesized `ref[@_mt_N, T]` lifetime into a field detail; the self renders the declared `ref[T]` | self-better; **decision closed (session 74)**: not ported — the declared type is the better answer | `lsp_project_audit` |
+| 10 | Completion `lb@818:17`: the host's facts fail to type a `map_error` arm binding and fall back to the method table; the self answers the field | self-better | `lsp_project_audit` |
+| 11 | The reference index bounds its retained text (32 MiB): past it the oldest noted documents are evicted with their hash/stamp entries and re-read on demand, so a document re-noted after an eviction answers in a later index position than the host's whole-session order (result *sets* unaffected) | self-better (long sessions) | `lsp_index_test.mt` (the bound), the audit (small workspaces never evict) |
+| 12 | `milkTea/debugInfo`: the header, token table, AST tree, parse errors and diagnostics are byte-equal (session 33); the host's Facts and Bindings sections embed Ruby `object_id`s and binding ids allocated in the host's analysis order — not ported yet | remainder documented | `lsp_parity` (`milkTea/debugInfo`) |
+| 13 | Hover on a module-qualified variant arm (`local.Local.one`, `ast.Decl.decl_const`): the host returns null; the self resolves the arm in the imported type's module from the requesting document's loaded program | self-better (session 135) | `lsp_parity` (`hover/imported-variant-arm`) |
+| 14 | Member resolution through a call/index receiver (`read(p).get_object`, `make_sample().sum()`, `particles[0].y`): the host's chain requires an identifier immediately before the dot and returns null (or a same-named global for definitions); the self reads the analyzer's recorded receiver type | self-better (session 140) | `lsp_parity` (`hover/chained-method`), `lsp_project_audit` (`data_structures@250:17`, canonical) |
+| 15 | Completion after a non-text receiver (`read(p).`, `make().`, `arr[0].`): a trailing dot is still a parse error, but the parser keeps the receiver as an empty-name member access, the analyzer records its type at the dot, and completion answers its fields/methods; a type receiver keeps the static-member path | self-better (session 147) | `lsp_conformance` (`completion/incomplete-dot-receiver`), `completion_test.mt` |
+| 16 | Enum-member hover through a type alias (`type BodyType = c.b3BodyType`; `b3.BodyType.b3_dynamicBody`): the receiver name is not the enum, so the direct member path misses it; the self follows the alias's resolved type to the declaring module and renders the member and its owning module | self-better (session 148) | `lsp_conformance` (`hover/aliased-enum-member`), the `examples/box3d/single_box.mt:20` probe |
+| 17 | `documentSymbol` omits generic parameters from the outline tree; the host listed each type parameter as a `TypeParameter` (kind 26) child of its declaration.  The parameters remain in the declaration's `detail` (`Pair :: "[A, B]"`), which is where rust-analyzer, clangd, gopls and TypeScript put them — none of them emit type-parameter symbols | deliberate deviation (session 156) | `lsp_conformance` (`outline/generic-parameters-are-not-symbols`) |
 
-The focused plan for making the self-hosted server a daily driver now lives in
-`docs/self-host-plan.md` (the program's LSP track; the pre-compaction record at
-`d8a199c7` carries the measured records).  Its starting evidence is kept below, then the
-recovery result:
-
-- **Recovery was not at parity** when the plan was written.  Driving both servers
-  through the "declare `var n = Sample(…)`, then type `n.`" edit
-  (`tools/lsp_recovery_probe.rb`) showed six divergences for that one edit:
-  parse-error messages missing the host's ` at <uri>:<line>:<col>` suffix;
-  `expected end of statement` extra and mispositioned (host `9:12`, self `9:0`);
-  different recovered ASTs (`unknown name v` vs `unknown field Sample.`); a
-  different lint set (`unused-local` vs `prefer-let`); `missing-return` timing;
-  and one self diagnostic whose `message` was a JSON blob
-  (`{"kind"=>"markdown",…}`) — a serializer bug, not a parity gap.
-- **Recovery is at parity now** (session 9).  The blob was the analyzer's
-  duplicate `missing-return` sema error (the host has only the linter rule); the
-  suffix is emitted by the LSP's diagnostic conversion from the document URI;
-  and the parser unwinds like the host — `ParserState.panic` records the first
-  error's token, later errors in the same unit are ignored, and the recovery
-  point (`recover_statement` / `recover_top_level` / `recover_match_arm`, the
-  local-decl and function rescues) rewinds and synchronizes or substitutes the
-  host's node (an `expr_error` value, a partial `FunctionDef`).  The lints on
-  recovered code followed from the AST rather than being special-cased; the
-  outline keeps the host's token anchoring, so a dropped declaration still
-  appears as a bare symbol.  The outline itself no longer copies the host's
-  type-parameter children (row 17): generics stay in the declaration's `detail`
-  and the tree carries members only.  `tools/lsp_recovery_probe.rb --check` covers the
-  corpus: truncated `n.`/`a.inner.`, unterminated string/block, half-typed
-  `import`, cut-off expression, plus an incremental edit.  Not yet emulated: the
-  host's *nested* declaration rescues (methods, the local-decl `else` variant,
-  the field loops).
-- **Readiness beyond parity** (Track C of the plan): **C1 landed in session 13.**
-  The workspace *symbol* index now walks the workspace root (plus the package's
-  source root) — before, a project outside the compiler tree indexed the whole
-  compiler tree at its first index-needing request — and the cross-file definition
-  index grew the host's candidate registry (`@definition_candidate_uris` /
-  `@definition_names_by_uri`) with the warm placed where the host's is: the hover
-  path's `find_token_at` → `get_tokens` → `get_content`.  `tools/lsp_cold_start.rb`
-  measures spawn → the first `workspace/symbol` response at **2723.5 → 213.3 ms**
-  on `~/Projects/MilkTea/SimpleGame` and **2455.1 → 2.3 ms** on a one-file project
-  (baseline: a binary built from the session-12 tree).  Closed in session 30
-  (2026-10-04): the reference index bounds its retained text (past
-  `MAX_RETAINED_TEXT_BYTES` = 32 MiB the oldest documents are dropped with
-  their hash/stamp entries and re-read on demand) and `note_document_tokens`
-  skips an unchanged closed document by its recorded `(size, mtime)` instead
-  of re-reading and re-hashing it per request (C2/C3); the long-session soak
-  driver (`tools/lsp_soak.rb`) and its `soak` meter gate landed.  C4's RSS
-  ceiling still waits on the per-parse leak convention — see
-  `git show d8a199c7:docs/self-host-plan.md` §0k session 30 ("Soak profile and
-  the long-session blocker").
-- **Non-ASCII doc strings** (session 10).  The host's C backend emitted
-  `String#inspect`'s `\xNN` escapes, and a C hex escape absorbs every following
-  hex digit, so `"4\xC3\x974"` compiled to `4`, `0xC3`, `t` with a stale byte
-  length.  `hover_docs.mt`'s `mat3`/`mat4` docs (`×`, `–`) are the compiler's
-  only non-ASCII literals, so a hover on those builtin types aborted the
-  host-built self binary (`string.as_str text must be valid UTF-8`) and took the
-  server down.  The host now emits non-ASCII bytes raw, byte-identical to the
-  self-host's `c_string_literal`; the headless-Neovim smoke renders the `mat4`
-  hover through a real client.
-- **Deliberate differences — the canonical table** (session 30).  Everything
-  here is *kept*: each row is either a documented harness/audit entry or a
-  deliberate self-host improvement, with the verification tool that pins it.
-
-  | # | Difference | Direction | Pinned by |
-  | --- | --- | --- | --- |
-  | 1 | A malformed frame answers `-32700` and the session keeps serving; the host hangs/exits | self-better | `lsp_parity --stress` (`stress/malformed-frame+parseError`), recovery probe |
-  | 2 | Facts are computed synchronously (no lag); the host's first answer after `didOpen` can trail its content (its facts warm asynchronously) | self-better (host artifact) | `stress/unicode+semanticTokens`, the audit's first-file `documentSymbol` race |
-  | 3 | Faster cold start (the workspace walk/index and first answers) | self-better | `tools/lsp_cold_start.rb` |
-  | 4 | Parser recovery: the self's recovered buffer carries fewer diagnostic items than the host's and the lexer/`parse_param` recovery points differ (host-side artifacts of its rescue layout) | self-better | `stress/unterminated-source+diagnostic`, the recovery probe's cases |
-  | 5 | The host's first-file `documentSymbol` after `didOpen` can carry its pre-facts tree (a race in the host's warm-up) | host artifact | `lsp_project_audit` (±drift row) |
-  | 6 | `documentHighlight` `lb@704:67`: the host answers from its carried-forward warm-facts snapshot; the self resolves the label's binding in scope (byte-equal cold) | host artifact | `lsp_project_audit` |
-  | 7 | `hover` on a builtin/std type (`type quat` `lb@1653:24`; `str` at `ds@140:33`, `colors.mt@12:46` once warm): the host's answer gains the cross-file `Defined at` location only once its definition index warms; the self omits builtin-type locations (an eager fix adds 153 entries — measured and rejected, session 18) | host artifact | `lsp_project_audit` (canonical) |
-  | 8 | `typeDefinition` on a *directory-form* module member (`import mod_alpha` → `mod_alpha/lib.mt`): the host's `module_path_for_name` gives up (`null`); the loader-backed self answers the declaration | self-better | `lsp_parity` (`typeDefinition/imported`) |
-  | 9 | Completion `mst@224:18`: the host leaks a synthesized `ref[@_mt_N, T]` lifetime into a field detail; the self renders the declared `ref[T]` | self-better; **decision closed (session 74)**: not ported — the declared type is the better answer | `lsp_project_audit` |
-  | 10 | Completion `lb@818:17`: the host's facts fail to type a `map_error` arm binding and fall back to the method table; the self answers the field | self-better | `lsp_project_audit` |
-  | 11 | The reference index bounds its retained text (32 MiB): past it the oldest noted documents are evicted with their hash/stamp entries and re-read on demand, so a document re-noted after an eviction answers in a later index position than the host's whole-session order (result *sets* unaffected) | self-better (long sessions) | `lsp_index_test.mt` (the bound), the audit (small workspaces never evict) |
-  | 12 | `milkTea/debugInfo`: the header, token table, AST tree, parse errors and diagnostics are byte-equal (session 33); the host's Facts and Bindings sections embed Ruby `object_id`s and binding ids allocated in the host's analysis order — not ported yet | remainder documented | `lsp_parity` (`milkTea/debugInfo`) |
-  | 13 | Hover on a module-qualified variant arm (`local.Local.one`, `ast.Decl.decl_const`): the host returns null; the self resolves the arm in the imported type's module from the requesting document's loaded program | self-better (session 135) | `lsp_parity` (`hover/imported-variant-arm`) |
-  | 14 | Member resolution through a call/index receiver (`read(p).get_object`, `make_sample().sum()`, `particles[0].y`): the host's chain requires an identifier immediately before the dot and returns null (or a same-named global for definitions); the self reads the analyzer's recorded receiver type | self-better (session 140) | `lsp_parity` (`hover/chained-method`), `lsp_project_audit` (`data_structures@250:17`, canonical) |
-  | 15 | Completion after a non-text receiver (`read(p).`, `make().`, `arr[0].`): a trailing dot is still a parse error, but the parser keeps the receiver as an empty-name member access, the analyzer records its type at the dot, and completion answers its fields/methods; a type receiver keeps the static-member path | self-better (session 147) | `lsp_conformance` (`completion/incomplete-dot-receiver`), `completion_test.mt` |
-  | 16 | Enum-member hover through a type alias (`type BodyType = c.b3BodyType`; `b3.BodyType.b3_dynamicBody`): the receiver name is not the enum, so the direct member path misses it; the self follows the alias's resolved type to the declaring module and renders the member and its owning module | self-better (session 148) | `lsp_conformance` (`hover/aliased-enum-member`), the `examples/box3d/single_box.mt:20` probe |
-  | 17 | `documentSymbol` omits generic parameters from the outline tree; the host listed each type parameter as a `TypeParameter` (kind 26) child of its declaration.  The parameters remain in the declaration's `detail` (`Pair :: "[A, B]"`), which is where rust-analyzer, clangd, gopls and TypeScript put them — none of them emit type-parameter symbols | deliberate deviation (session 156) | `lsp_conformance` (`outline/generic-parameters-are-not-symbols`) |
-
-  The *checklist* for anything not in this table: `tools/lsp_parity.rb
-  compare` must show only its documented entries, `tools/lsp_recovery_probe.rb
-  --check` must pass, and the audit's differing set must match the rows above
-  (run it with `--canonical` when verifying: the warm-up pass pins the request
-  history, so two canonical runs return identical differing sets — the
-  non-canonical ±drift comes from the host's asynchronous warm-up).
+Current verification: `tools/lsp_conformance.rb` (38/38),
+`tools/lsp_parity.rb record --server self`, and the in-language LSP tests.
+Do not restore a host to re-measure a row.

@@ -1,16 +1,16 @@
 # Refactoring the Self-Host Compiler
 
-`projects/mtc` is ~168 files / ~156k lines. The parity harnesses prove observable
-behavior; they say nothing about shape. This document is the refactoring safety
-suite: what is locked, what is ratcheted, and the protocol for changing the
-self-host without changing what it does.
+`projects/mtc` is ~169 files / ~163k lines. The recorded oracles and the
+in-language suites prove observable behavior; they say nothing about shape.
+This document is the refactoring safety suite: what is locked, what is
+ratcheted, and the protocol for changing the self-host without changing what it
+does.
 
 The suite has two layers:
 
-1. **Behavior lock** — every host-vs-self oracle plus the in-language suites, run
-   from one gate set. Exact-parity gates (`cli_parity`, `sexpr lex/parse`,
-   `diag_parity`, `format`, `unused_import`) are **hard**: a diff stops the run.
-   `sexpr lower` stays a meter for its two documented artifacts.
+1. **Behavior lock** — the recorded oracles plus the in-language suites.  The
+   `golden_cli`/`golden_diag`/`golden_lint`/`golden_format` replays and
+   `test/mt` are hard: a diff stops the run.
 2. **Structure ratchet** — `tools/refactor_guard.rb` measures layering, naming,
    dead exports, duplication, size, markers, and test-tree counts, with a
    committed baseline and growth checks.
@@ -22,8 +22,9 @@ tools/gates.sh --areas refactor --run
 ```
 
 Tier 1 (fast, per edit): dev build, the 22-file self-host suite, the structural
-guard. Tier 2 (once per commit, on frozen sources): `test/mt` under stage2, the
-224-case CLI matrix, and the parity scoreboard. Logs land in `tmp/gates/`.
+guard. Tier 2 (once per commit, on frozen sources): `test/mt` under stage2 and
+the 227-case CLI golden. Logs land in `tmp/gates/`.  The other recorded oracles
+are in the `oracles` area; run them when the shared compiler code moves.
 
 Print the set without running it with `tools/gates.sh --areas refactor`.
 Source-area diffs now automatically include `dev_tests` and `refactor_guard`.
@@ -199,21 +200,29 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 157, 2026-11-24)
+## 6. Current baseline (session 158, 2026-11-24)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 163,046 / 129,442 |
+| source files / lines / code lines | 169 / 163,067 / 129,455 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (169 modules) |
 | dead exports (unused / test-only) | 30 / 7 |
 | duplication (windows / duplicated lines) | 882 / 6,499 (window 12) |
-| functions ≥ 200 lines | 2 |
+| functions ≥ 200 lines | 3 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 22 / 85 |
+
+Session 158 refreshed the baseline for the Box2D migration's compiler fixes:
+C keywords used as struct/union/SoA/variant fields are escaped in declarations,
+member accesses, aggregate designators and equality guards; aggregate equality
+registers the external layout for either operand (checked-index element and
+parameter forms); and the equality pre-scan now descends blocks, `for` init/post
+and `static_assert`.  The change added 13 code lines and raised the long-function
+count to 3 (`binding_at` 385, `collect_binding_flags` 211, `resolve_cursor` 200).
 
 Session 156 removed the `documentSymbol` type-parameter children and their
 two helpers (−74 code lines, −16 duplicated lines, −3 clusters), then added the
@@ -234,8 +243,9 @@ emitter release (+43).  Session 152 added the per-file region gate and
 `reserve_exact` (129,337 code lines).  Sessions 149–151 added the memory
 program's boxing (`Type` 72 → 24 B; the `payload` deref idiom accounts for most
 of the growth) and the IR formatter's append-only emitters (session 151, +273).
-The long-function count is 2: `binding_at` (385, excluded) and `resolve_cursor`
-(200, exactly at the boundary); the baseline tolerates both.
+The long-function count was 2 at session 154: `binding_at` (385, excluded) and
+`resolve_cursor` (200, exactly at the boundary); session 158 added
+`collect_binding_flags` (211).  The baseline records all three.
 
 Session 148 refreshed the baseline for the aliased enum-member hover (+108
 code lines: the alias target resolution, the program-analysis lookup, the

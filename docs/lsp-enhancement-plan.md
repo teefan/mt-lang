@@ -5,12 +5,13 @@ non-text receiver completion extension landed in session 147 and the aliased
 enum-member hover in session 148.  The enhancement program, including the
 optional phase-5 subset, is complete.**  Session 154 is maintenance only:
 `didClose` evicts every per-document cache and every bulk cache release frees
-its map keys.
+its map keys.  Session 158 replayed the conformance gate at 38/38.
 Baseline: **LSP 3.18.0** (2026-06-04); 3.19 is upcoming.
 Implementation: `projects/mtc/src/mtc/lsp` — 44 `.mt` files, ~33.6k lines,
 entry point `mtc lsp` (`projects/mtc/src/mtc/lsp/server.mt`).
 Audit method: 3.18 meta-model diff, targeted code review, and live probes
-against `build/stage2/mtc` (0.4.26, release) on 2026-11-21.
+against the then-current `build/stage2/mtc` (0.4.26, release) on 2026-11-21.
+The current release is 0.5.2; the conformance harness is the authority.
 
 This is the plan of record for LSP work.  `docs/self-host-plan.md` remains the
 project ledger; this document carries the LSP-specific state, findings and
@@ -36,7 +37,7 @@ an oracle.  The existing instruments are:
   completion extension, the session-148 aliased hover and the session-156
   outline case): 38 cases from §5 with explicit assertions, a standalone stdio
   client, `--bin`, `--only`, `--timeout` and `--json`.  It is the
-  `lsp_conformance` hard tier-2 gate and is **green 38/38** (session 156).
+  `lsp_conformance` hard tier-2 gate and is **green 38/38** (session 158).
   `--bin` accepts a wrapper, so the same cases can be driven under valgrind;
   the existing `valgrind_lsp` corpus drive remains the memory instrument
   because cold valgrind server startups are not a better use of tier-2 time.
@@ -83,6 +84,10 @@ Optional resolve requests are not advertised (`codeAction/resolve`,
 resolved, so that is consistent.
 
 ## 3. Verified defects
+
+> Historical audit record: every defect below was fixed in phases 1–5 and is
+> covered by the conformance suite.  The section is kept as evidence for the
+> fixes, not as an open-work list.
 
 ### P0 — correctness / user-visible
 
@@ -453,26 +458,6 @@ smoke; the extension packaging fixes are a separate repo.
   `https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/`
 - 3.18 meta-model:
   `https://raw.githubusercontent.com/microsoft/language-server-protocol/gh-pages/_specifications/lsp/3.18/metaModel/metaModel.json`
-- Current design/history: `docs/lsp-design.md`, `docs/lsp-performance.md`.
+- Current design: `docs/lsp-design.md`; historical host performance research is
+  in git history (`git show d8a199c7:docs/self-host-plan.md`).
 - Live project state: `docs/self-host-plan.md` (status, handoff, ledger).
-
-## 9. Session kickoff prompt
-
-```
-Start the LSP enhancement program in /home/teefan/Projects/Ruby/mt-lang
-(branch `main`). Read docs/lsp-enhancement-plan.md first: it carries the
-3.18 coverage matrix, the verified defects, the phase plan and the conformance
-cases. The compiler is the native self-host; the Ruby host is archived and
-must not be used as an oracle.
-
-Phases 0–5 are done and the session-147/148/156 extensions are landed: the
-conformance gate is green 38/38, and the program is complete.  Only the
-deliberately skipped editor features (3.18 additions, moniker, inlineValue,
-documentColor, notebooks) remain out of scope.
-Work the red cases with `ruby tools/lsp_conformance.rb --bin tmp/mtc-dev
---only <class>`; close each phase by making its cases pass and then run the
-whole suite. Work in tiers: seed dev build (~25 s), tmp/mtc-dev test
-projects/mtc (22/0), then bootstrap/test/mt and the LSP gates on frozen
-sources. Sync docs/self-host-plan.md and this plan's status/ledger in the same
-commit; commit trailer: Co-authored-by: CommandCodeBot <noreply@commandcode.ai>.
-```

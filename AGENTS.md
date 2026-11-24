@@ -119,9 +119,10 @@ byte-identity.
     `tools/bootstrap.sh -j 4` (fixed point + 22 files / 0 failed) and
     `build/stage2/mtc test test/mt -I .` (85/0) are the hard proofs; then the
     recorded oracles (`tools/gates.sh --areas oracles --run`):
-    `golden_cli` 227 cases, `golden_diag` 504 files, `golden_lint` 672 files,
-    `golden_format` 774 files × 3 modes.  Area sweeps: `examples` 49/49,
-    `bindings` 29/29, DAP, wasm/docs smoke, LSP valgrind/soak, refactor guard.
+    `golden_cli` 227 cases, `golden_diag` 505 files, `golden_lint` 674 files,
+    `golden_format` 776 files × 3 modes.  Area sweeps: `examples` 78/78 plus the
+    headless `box2d_smoke` gate, `bindings` 29/29, DAP, wasm/docs smoke, LSP
+    valgrind/soak, refactor guard.
   - `tools/golden/*.json` is the post-retirement oracle: `--record` refreshes
     it, `--expect` replays it.  Diagnostics/lint/formatter rows are digest-keyed,
     so an input whose text changed is skipped (`changed=N`), not failed.
@@ -148,7 +149,7 @@ byte-identity.
   coverage matrix, the verified defects, the phase plan and the conformance cases.  The
   host-differential harness/audit/recovery probes are retired; the surviving instruments
   are `tools/lsp_parity.rb record --server self`, `tools/lsp_soak.rb`, and the valgrind
-  gate.  `tools/lsp_conformance.rb` (phase 0 of the plan) is the spec oracle once added.
+  gate.  `tools/lsp_conformance.rb` is the spec oracle (38/38).
 
 ## C Binary Testing Safety
 
@@ -162,7 +163,7 @@ byte-identity.
 
 ### Build Cache and Guard Flags
 
-The build cache persists compiled C and binaries across invocations. When iterating on the Ruby compiler or the generated C backend, the cache may serve stale output. Use these flags to avoid false results:
+The build cache persists compiled C and binaries across invocations. When iterating on the native compiler or the generated C backend, the cache may serve stale output. Use these flags to avoid false results:
 
 - **`--no-cache`** — always rebuild from source; use when you change `CBackend`, `Lowering`, or any compiler pipeline code. Without it, `[cached]` builds may reuse a previous C/binary that does not reflect your latest changes.
 - **`--keep-c`** — save the generated C file to disk for inspection. Combine with `--no-cache` to ensure the saved C matches the actually compiled binary.

@@ -1,8 +1,6 @@
-## The wasm HTML shell, mirroring the host's
-## `lib/milk_tea/tooling/templates/wasm_shell.html` and the three
-## fragments `Build#render_wasm_shell_template` substitutes into it.
-## The default template is embedded so a self-hosted compiler does not
-## depend on the host tree's template file.
+## The embedded wasm HTML shell.  The three fragments the archived host's
+## `Build#render_wasm_shell_template` substituted into its template are
+## preserved here, so the self-hosted compiler needs no external template file.
 
 import std.str
 import std.string as string

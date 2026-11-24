@@ -515,7 +515,7 @@ Placeholder contract:
 
 `{{{ SCRIPT }}}` is not a Milk Tea placeholder. It is required by Emscripten and must remain in the template.{% endraw %}
 
-If `build.html_template` is omitted, Milk Tea uses the default template in `lib/milk_tea/tooling/templates/wasm_shell.html`.
+If `build.html_template` is omitted, Milk Tea uses the default template embedded in `projects/mtc/src/mtc/wasm_shell.mt`.
 
 ## 8. Running wasm Targets
 

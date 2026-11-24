@@ -1,11 +1,10 @@
 # Milk Tea Bootstrap & Release Design
 
-Status: **Phases 1–2 implemented, host retired**: `tools/bootstrap.sh`
-(3-stage build, fixed-point verification, self-tests) with the committed native
-seed, and `tools/release.sh` (deterministic archive, checksums, clean-path
-smoke, seed refresh). The Ruby host was retired in session 143; the seed is the
-only stage0. Phase 3 (developer tooling) remains a proposal. Last updated:
-2026-11-20.
+Status: **complete, host retired**: `tools/bootstrap.sh` (3-stage build,
+fixed-point verification, self-tests) with the committed native seed, and
+`tools/release.sh` (deterministic archive, checksums, clean-path smoke, seed
+refresh).  The Ruby host was retired in session 143; the seed is the only
+stage0.  Bootstrap and release are CI-gated.  Last updated: 2026-11-24.
 
 ## 0. Motivation
 
@@ -42,9 +41,7 @@ stage2  ──build──→ build/stage3/mtc   (verification only)
 
 Stage 1/2/3 binaries, their generated C (`--keep-c`) and the fixed-point diff
 all live under `$MTC_BUILD_DIR` (default `build/`), so a bootstrap run leaves
-the artifacts behind for inspection.  The snapshot download
-(`$MTC_BOOTSTRAP_URL`) is not wired up; the committed seed covers the primary
-host instead.
+the artifacts behind for inspection.  The committed seed is the only stage0.
 
 ### 1.2 Target model (mirrors Rust/Go)
 
@@ -108,17 +105,13 @@ forces a refresh.
 
 This supersedes the earlier "never commit binaries" recommendation:
 
-- The repository has no CI and no artifact host, so download-on-demand would
-  leave a fresh clone unable to build without Ruby — the exact dependency the
-  seed exists to remove.
+- CI runs on GitHub and releases are published there, but a committed seed
+  keeps a fresh clone buildable offline and without a release lookup — the
+  exact dependency the seed exists to remove.
 - One ~6 MB release binary per platform is bounded; it is replaced when a
   release is cut, not accumulated.
 - `.gitattributes` marks `vendor/bootstrap/**` as binary so line-ending
   normalization cannot corrupt it.
-
-Download-on-demand (`$MTC_BOOTSTRAP_URL` into `$XDG_CACHE_HOME`) remains the
-plan for platforms without a committed seed and for consuming published
-releases; it is not implemented.
 
 ### 2.3 Stage0 resolution order
 
@@ -144,9 +137,9 @@ mtc-<version>-<platform>/
 `tools/release.sh` builds it deterministically, writes
 `mtc-<version>-<platform>.tar.gz` plus a `.sha256`, and `--refresh-seed` copies
 the release binary into `vendor/bootstrap/<platform>/mtc` with a fresh
-checksum.  The repository ships the minimum (one seed per platform,
-`linux-x86-64` today); download-on-demand for other platforms remains future
-work.
+checksum.  The repository ships one seed per supported platform
+(`linux-x86_64` today); adding a platform means committing its seed and
+checksum.
 
 ---
 
@@ -165,10 +158,10 @@ Options:
   --stage {1,2,3}      Build target stage (default: 3)
   --no-verify          Skip stage3 fixed-point check
   --fast               Fixed point only (implies --keep-c; skips the suite)
+  --profile PROFILE    Build profile: debug or release (default: debug)
   --keep-c             Save generated C files alongside binaries
-  --profile {debug,release}  Build profile (default: debug)
   --print-stage0       Resolve and verify stage0, print its path, and exit
-  -j N                 Parallel jobs for C compilation (default: nproc)
+  -j N                 Parallel compiler jobs (default: 4, hard-capped)
 ```
 
 ### 3.2 Build flow
@@ -177,7 +170,7 @@ Options:
 set -euo pipefail
 
 BUILD_DIR="${MTC_BUILD_DIR:-build}"
-PROFILE="${MTC_PROFILE:-release}"
+PROFILE="debug"
 BOOTSTRAP="${MTC_BOOTSTRAP:-}"
 
 # Resolve stage0 (see §2.3)
@@ -229,8 +222,8 @@ Notes on the flags:
 # Dev build: just stage1, no verification
 tools/bootstrap.sh --stage 1 --no-verify
 
-# Verify-only: assumes stage2 already built
-tools/bootstrap.sh --verify-only
+# Fixed point only (implies --keep-c; skips the self-test suite)
+tools/bootstrap.sh --fast -j 4
 ```
 
 ---
@@ -260,11 +253,12 @@ files use, those std files cannot be built by an older compiler.  In practice
 this is handled naturally — a snapshot binary from the prior release can still
 bootstrap the current source because both read the same in-tree std sources.
 
-### 4.3 Potential future concern
+### 4.3 Vendored C components
 
-If stdlib ever grows pre-compiled C components (e.g., a bundled libuv, pcre2,
-or similar native library), those would need to be shipped as part of the
-release package. Today this is not needed.
+The stdlib's C-backed modules (raylib, libuv, pcre2, Box2D, …) are not shipped
+as pre-compiled artifacts.  `mtc toolchain bootstrap` fetches the pinned
+`third_party/` sources, and the compiler builds the static libraries on demand;
+the release archive therefore stays source-only.
 
 ---
 
@@ -273,8 +267,9 @@ release package. Today this is not needed.
 ### 5.1 Current state
 
 Milk Tea has a build cache. Consecutive `mtc build` invocations reuse compiled C
-and binaries when source files haven't changed.  The cache is local to the build
-directory and is not shared across stages.
+and binaries when source files haven't changed.  The cache lives under
+`$XDG_CACHE_HOME/milk_tea/mtc-cache` (falling back to `~/.cache`) and is not
+shared across stages.
 
 ### 5.2 Cache during bootstrapping
 
@@ -285,9 +280,7 @@ reused by stage1, which would defeat the purpose of stage isolation.
 ### 5.3 Cache location
 
 ```
-$XDG_CACHE_HOME/milk_tea/
-  bootstrap/           ← downloaded snapshot binaries
-  build-cache/         ← existing .mt → C → binary cache (normal builds)
+$XDG_CACHE_HOME/milk_tea/mtc-cache/   ← .mt → C → binary cache (normal builds)
 ```
 
 ---
@@ -297,8 +290,8 @@ $XDG_CACHE_HOME/milk_tea/
 ### Phase 1: Bootstrap script — DONE (`tools/bootstrap.sh`)
 
 - [x] `tools/bootstrap.sh`
-- [x] Support `$MTC_BOOTSTRAP`, `--bootstrap` (snapshot download not
-      implemented — `$MTC_BOOTSTRAP_URL` is unused)
+- [x] Support `$MTC_BOOTSTRAP` and `--bootstrap` (committed seed; no download
+      path)
 - [x] Committed sha256-verified seed (`vendor/bootstrap/<platform>/`) as the
       only stage0; a fresh clone bootstraps with only a C compiler
 - [x] 3-stage build + fixed-point verification via `diff`
@@ -320,14 +313,8 @@ $XDG_CACHE_HOME/milk_tea/
 - [x] `tools/release_smoke.sh`: extracts the archive outside the checkout,
       builds/runs a std-importing program, completes an LSP initialize
       handshake, and checks the docs page/assets/404 routes
-- [ ] Windows/MinGW packaging and download-on-demand publication (future)
-
-### Phase 3: Developer tooling (future)
-
-- `make bootstrap` / `make dev` targets
-- Pre-commit hook: verify fixed point before allowing commits to `projects/mtc/`
-- `mtc bootstrap` self-hosted subcommand (the bootstrap script itself written
-  in Milk Tea)
+- [x] CI (`.github/workflows/ci.yml`) runs the bootstrap, gates, release and
+      clean-container smoke; only `linux-x86_64` is packaged
 
 ---
 
@@ -336,10 +323,9 @@ $XDG_CACHE_HOME/milk_tea/
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `$MTC_BOOTSTRAP` | Path to stage0 mtc binary | auto-detect |
-| `$MTC_BOOTSTRAP_URL` | URL to download snapshot from | **not implemented (Phase 2)** |
 | `$CC` | C compiler for native builds | `cc` |
 | `$MTC_BUILD_DIR` | Build output directory | `build/` |
-| `$XDG_CACHE_HOME` | Cache root (bootstrap downloads) | **not implemented (Phase 2)** |
+| `$XDG_CACHE_HOME` | Build-cache root (`milk_tea/mtc-cache`) | `~/.cache` |
 
 ---
 

@@ -13,10 +13,12 @@ Syntax highlighting, IntelliSense, and debugging for the [Milk Tea](https://teef
 
 Install the extension, then open any `.mt` file. The language server starts automatically.
 
-Requires the `mtc` compiler on your `$PATH`:
+Requires the `mtc` compiler on your `$PATH`. Install it from the latest native
+release archive (or build it from source; see the repository `README.md`):
 
 ```bash
-gem install mt-lang
+tar xzf mtc-<version>-linux-x86_64.tar.gz
+./mtc-<version>-linux-x86_64/install.sh
 ```
 
 ## Settings
