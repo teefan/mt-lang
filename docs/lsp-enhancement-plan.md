@@ -33,13 +33,13 @@ an oracle.  The existing instruments are:
 - `projects/mtc/test/{completion,cursor,lsp_index,lsp_utils}_test.mt` — unit
   coverage for helpers, not protocol conformance.
 - `tools/lsp_conformance.rb` — the spec oracle (phases 0–5, the session-147
-  completion extension and the session-148 aliased hover): 37 cases from §5
-  with explicit assertions, a standalone stdio client, `--bin`, `--only`,
-  `--timeout` and `--json`.  It is the `lsp_conformance` hard tier-2 gate and
-  is **green 37/37** (replayed in session 154).  `--bin` accepts a wrapper, so
-  the same cases can be driven under valgrind; the existing `valgrind_lsp`
-  corpus drive remains the memory instrument because cold valgrind server
-  startups are not a better use of tier-2 time.
+  completion extension, the session-148 aliased hover and the session-156
+  outline case): 38 cases from §5 with explicit assertions, a standalone stdio
+  client, `--bin`, `--only`, `--timeout` and `--json`.  It is the
+  `lsp_conformance` hard tier-2 gate and is **green 38/38** (session 156).
+  `--bin` accepts a wrapper, so the same cases can be driven under valgrind;
+  the existing `valgrind_lsp` corpus drive remains the memory instrument
+  because cold valgrind server startups are not a better use of tier-2 time.
 
 `tools/lsp_parity.rb` remains host-parity-shaped: it sends
 `workspace/willRenameFiles` as a **notification**
@@ -420,7 +420,7 @@ ruby tools/lsp_soak.rb --quiet                           # raw slope in the 70�
 ```
 
 `lsp_conformance` is in the `lsp` area and `tools_check` covers its syntax.
-At the session-148 commit the suite is **37/37** and the gate is green.  Run only
+The suite is **38/38** and the gate is green.  Run only
 the class being fixed (`--only utf16`, `--only lifecycle`, …) while iterating,
 then the whole suite once per phase.  The 3.18 additions and the editor
 features with no matching language construct remain intentionally
@@ -465,8 +465,8 @@ Start the LSP enhancement program in /home/teefan/Projects/Ruby/mt-lang
 cases. The compiler is the native self-host; the Ruby host is archived and
 must not be used as an oracle.
 
-Phases 0–5 are done and the session-147/148 extensions are landed: the
-conformance gate is green 37/37, and the program is complete.  Only the
+Phases 0–5 are done and the session-147/148/156 extensions are landed: the
+conformance gate is green 38/38, and the program is complete.  Only the
 deliberately skipped editor features (3.18 additions, moniker, inlineValue,
 documentColor, notebooks) remain out of scope.
 Work the red cases with `ruby tools/lsp_conformance.rb --bin tmp/mtc-dev

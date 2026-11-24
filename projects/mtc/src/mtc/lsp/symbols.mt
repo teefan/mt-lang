@@ -45,7 +45,6 @@ const SYMBOLKIND_METHOD:      int = 6
 const SYMBOLKIND_FIELD:       int = 8
 const SYMBOLKIND_ENUM_MEMBER: int = 22
 const SYMBOLKIND_CLASS:       int = 5
-const SYMBOLKIND_TYPE_PARAMETER: int = 26
 
 
 public function handle_document_symbols(ws: ref[workspace.Workspace], uri: str, id: json.Value) -> void:
@@ -490,7 +489,7 @@ function emit_declaration_symbol(
             emit_symbol(json_out, v.name, SYMBOLKIND_VARIABLE, v.line, v.column, detail.as_str(), ref_of(no_children), false, first)
             detail.release()
         ast.Decl.decl_struct as s:
-            var children = collect_type_member_children_with_params(analysis, s.name, s.struct_fields, s.struct_events, s.nested_types, s.type_params)
+            var children = collect_type_member_children(analysis, s.name, s.struct_fields, s.struct_events, s.nested_types)
             var detail = string.String.create()
             # A struct whose methods are declared inline carries them as
             # children and the host's `implementation` detail; the inline block
@@ -527,14 +526,12 @@ function emit_declaration_symbol(
             detail.release()
         ast.Decl.decl_variant as vr:
             var children = collect_variant_children(vr.variant_arms, vr.line)
-            prepend_type_parameters(ref_of(children), vr.type_params)
             var detail = string.String.create()
             append_type_decl_detail(ref_of(detail), span[ast.QualifiedName](), null, span[str](), vr.type_params)
             emit_symbol(json_out, vr.name, SYMBOLKIND_STRUCT, vr.line, vr.column, detail.as_str(), ref_of(children), false, first)
             detail.release()
         ast.Decl.decl_interface as iface:
             var children = collect_interface_children(iface.interface_methods)
-            prepend_type_parameters(ref_of(children), iface.type_params)
             var detail = string.String.create()
             if iface.type_params.len > 0:
                 # The host's `generic_signature_detail`: the interface's own
@@ -749,34 +746,6 @@ function render_local_symbol(
     append_span(ref_of(result), lz, cz, cz + name.len)
     result.append(",\"selectionRange\":")
     append_span(ref_of(result), lz, cz, cz + name.len)
-    result.append("}")
-    return result
-
-
-## Emit one symbol whose range and selectionRange are both the name-token
-## span (top-level declarations and locals).
-function render_name_span_symbol(
-    name: str,
-    kind: int,
-    line: ptr_uint,
-    column: ptr_uint,
-    detail: str,
-) -> string.String:
-    var result = string.String.create()
-    let lz = if line > 0: line - 1 else: 0z
-    let cz = if column > 0: column - 1 else: 0z
-    result.append("{\"name\":\"")
-    proto.append_escaped(ref_of(result), name)
-    result.append("\",\"kind\":")
-    result.append_format(f"#{kind}")
-    result.append(",\"range\":")
-    append_span(ref_of(result), lz, cz, cz + name.len)
-    result.append(",\"selectionRange\":")
-    append_span(ref_of(result), lz, cz, cz + name.len)
-    if detail.len > 0:
-        result.append(",\"detail\":\"")
-        proto.append_escaped(ref_of(result), detail)
-        result.append("\"")
     result.append("}")
     return result
 
@@ -1166,70 +1135,18 @@ function field_detail_type(analysis: ref[analyzer.Analysis], owner_name: str, fi
 
 
 ## The members of a struct: fields, nested types and events, in the host's
-## child order (fields first).
+## child order (fields first).  Generic parameters are not outline entries:
+## they are already in the declaration's `detail` (`Pair :: "[A, B]"`), and the
+## mainstream servers (rust-analyzer, clangd, gopls, TypeScript) keep the
+## outline tree to members.
 function collect_type_member_children(
-    analysis: ref[analyzer.Analysis],
-    fields: span[ast.Field],
-    events: span[ast.Decl],
-    nested: span[ast.Decl],
-) -> vec.Vec[string.String]:
-    return collect_type_member_children_with_params(analysis, "", fields, events, nested, span[ast.TypeParam]())
-
-
-## Put a declaration's type parameters ahead of its other children (the host
-## lists them first, each on its own token).
-function prepend_type_parameters(children: ref[vec.Vec[string.String]], type_params: span[ast.TypeParam]) -> void:
-    if type_params.len == 0:
-        return
-    var params = vec.Vec[string.String].create()
-    var tp: ptr_uint = 0
-    while tp < type_params.len:
-        var param: ast.TypeParam
-        unsafe:
-            param = read(type_params.data + tp)
-        if param.name.len > 0 and not param.is_lifetime and not param.is_value:
-            var no_detail = string.String.create()
-            params.push(render_name_span_symbol(param.name, SYMBOLKIND_TYPE_PARAMETER, param.line, param.column, no_detail.as_str()))
-            no_detail.release()
-        tp += 1
-    var i: ptr_uint = 0
-    while i < children.len():
-        let existing = children.get(i) else:
-            break
-        params.push(unsafe: read(existing))
-        i += 1
-    children.clear()
-    var j: ptr_uint = 0
-    while j < params.len():
-        let p = params.get(j) else:
-            break
-        children.push(unsafe: read(p))
-        j += 1
-    params.release()
-
-
-## The same, preceded by the declaration's type parameters: the host lists each
-## one as a `TypeParameter` (kind 26) child on the parameter's own token, with no
-## detail (`Pair :: "[A, B]"` then `A :: nil`, `B :: nil`, then the fields).
-function collect_type_member_children_with_params(
     analysis: ref[analyzer.Analysis],
     owner_name: str,
     fields: span[ast.Field],
     events: span[ast.Decl],
     nested: span[ast.Decl],
-    type_params: span[ast.TypeParam],
 ) -> vec.Vec[string.String]:
     var children = vec.Vec[string.String].create()
-    var tp: ptr_uint = 0
-    while tp < type_params.len:
-        var param: ast.TypeParam
-        unsafe:
-            param = read(type_params.data + tp)
-        if param.name.len > 0 and not param.is_lifetime and not param.is_value:
-            var no_detail = string.String.create()
-            children.push(render_name_span_symbol(param.name, SYMBOLKIND_TYPE_PARAMETER, param.line, param.column, no_detail.as_str()))
-            no_detail.release()
-        tp += 1
     var field_children = collect_field_children_of(analysis, owner_name, fields)
     var fc: ptr_uint = 0
     while fc < field_children.len():
@@ -1263,7 +1180,7 @@ function collect_type_member_children_with_params(
             nd = read(nested.data + ni)
         match nd:
             ast.Decl.decl_struct as s:
-                children.push(render_nested_type_child(analysis, s.name, s.line, s.column, s.struct_fields, s.struct_events, s.nested_types, s.type_params))
+                children.push(render_nested_type_child(analysis, s.name, s.line, s.column, s.struct_fields, s.struct_events, s.nested_types))
             _:
                 pass
         ni += 1
@@ -1282,9 +1199,8 @@ function render_nested_type_child(
     fields: span[ast.Field],
     events: span[ast.Decl],
     nested: span[ast.Decl],
-    type_params: span[ast.TypeParam],
 ) -> string.String:
-    var grandchildren = collect_type_member_children_with_params(analysis, name, fields, events, nested, type_params)
+    var grandchildren = collect_type_member_children(analysis, name, fields, events, nested)
     var result = string.String.create()
     let lz = if line > 0: line - 1 else: 0z
     let cz = if column > 0: column - 1 else: 0z
