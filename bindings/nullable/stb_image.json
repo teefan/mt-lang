@@ -1,0 +1,20 @@
+{
+  "return_types": {
+    "stbi_load_from_memory": "ptr[stbi_uc]?",
+    "stbi_load_from_callbacks": "ptr[stbi_uc]?",
+    "stbi_load": "ptr[stbi_uc]?",
+    "stbi_load_gif_from_memory": "ptr[stbi_uc]?",
+    "stbi_load_16_from_memory": "ptr[stbi_us]?",
+    "stbi_load_16_from_callbacks": "ptr[stbi_us]?",
+    "stbi_load_16": "ptr[stbi_us]?",
+    "stbi_loadf_from_memory": "ptr[float]?",
+    "stbi_loadf_from_callbacks": "ptr[float]?",
+    "stbi_loadf": "ptr[float]?",
+    "stbi_failure_reason": "cstr?",
+    "stbi_zlib_decode_malloc_guesssize": "ptr[char]?",
+    "stbi_zlib_decode_malloc_guesssize_headerflag": "ptr[char]?",
+    "stbi_zlib_decode_malloc": "ptr[char]?",
+    "stbi_zlib_decode_noheader_malloc": "ptr[char]?"
+  },
+  "parameters": {}
+}

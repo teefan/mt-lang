@@ -1,0 +1,14 @@
+{
+  "return_types": {
+    "localtime": "ptr[tm]?",
+    "gmtime": "ptr[tm]?"
+  },
+  "parameters": {
+    "time": {
+      "timer": "ptr[time_t]?"
+    },
+    "nanosleep": {
+      "remaining": "ptr[timespec]?"
+    }
+  }
+}

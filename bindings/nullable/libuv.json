@@ -1,0 +1,171 @@
+{
+  "return_types": {
+    "uv_default_loop": "ptr[uv_loop_t]?",
+    "uv_loop_new": "ptr[uv_loop_t]?",
+    "uv_handle_get_data": "ptr[void]?",
+    "uv_req_get_data": "ptr[void]?",
+    "uv_dlerror": "cstr?",
+    "uv_key_get": "ptr[void]?",
+    "uv_loop_get_data": "ptr[void]?"
+  },
+  "parameters": {
+    "uv_udp_send": {
+      "addr": "const_ptr[sockaddr]?"
+    },
+    "uv_udp_try_send": {
+      "addr": "const_ptr[sockaddr]?"
+    },
+    "uv_getaddrinfo": {
+      "node": "cstr?",
+      "service": "cstr?",
+      "hints": "const_ptr[addrinfo]?"
+    },
+    "uv_freeaddrinfo": {
+      "ai": "ptr[addrinfo]?"
+    },
+    "uv_fs_close": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_open": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_read": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_unlink": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_write": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_copyfile": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_mkdir": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_mkdtemp": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_mkstemp": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_rmdir": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_scandir": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_opendir": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_readdir": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_closedir": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_stat": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_fstat": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_rename": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_fsync": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_fdatasync": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_ftruncate": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_sendfile": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_access": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_chmod": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_utime": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_futime": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_lutime": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_lstat": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_link": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_symlink": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_readlink": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_realpath": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_fchmod": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_chown": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_fchown": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_lchown": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    },
+    "uv_fs_statfs": {
+      "loop": "ptr[uv_loop_t]?",
+      "cb": "uv_fs_cb?"
+    }
+  }
+}

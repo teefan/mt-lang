@@ -1,0 +1,44 @@
+{
+  "return_types": {
+    "malloc": "ptr[void]?",
+    "calloc": "ptr[void]?",
+    "realloc": "ptr[void]?",
+    "reallocarray": "ptr[void]?",
+    "aligned_alloc": "ptr[void]?"
+  },
+  "parameters": {
+    "strtod": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "strtof": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "strtol": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "strtoul": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "strtoq": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "strtouq": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "strtoll": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "strtoull": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "realloc": {
+      "__ptr": "ptr[void]?"
+    },
+    "free": {
+      "__ptr": "ptr[void]?"
+    },
+    "reallocarray": {
+      "__ptr": "ptr[void]?"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "return_types": {},
+  "parameters": {
+    "mt_tls_client_create": {
+      "out out_client": "ptr[mt_tls_client]?"
+    },
+    "mt_tls_client_write": {
+      "data": "ptr[ubyte]?"
+    },
+    "mt_tls_client_read": {
+      "buffer": "ptr[ubyte]?"
+    },
+    "mt_tls_client_release": {
+      "client": "ptr[mt_tls_client]?"
+    },
+    "mt_tls_exchange": {
+      "request_data": "ptr[ubyte]?"
+    }
+  }
+}

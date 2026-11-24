@@ -1,0 +1,23 @@
+{
+  "return_types": {
+    "rlGetProcAddress": "ptr[void]?"
+  },
+  "parameters": {
+    "rlSetRenderBatchActive": {
+      "batch": "ptr[rlRenderBatch]?"
+    },
+    "rlLoadTexture": {
+      "data": "const_ptr[void]?"
+    },
+    "rlLoadTextureCubemap": {
+      "data": "const_ptr[void]?"
+    },
+    "rlLoadShaderProgram": {
+      "vsCode": "cstr?",
+      "fsCode": "cstr?"
+    },
+    "rlLoadShaderBuffer": {
+      "data": "const_ptr[void]?"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "return_types": {
+    "mt_process_environ_accessor": "ptr[ptr[ptr[char]]]?"
+  },
+  "parameters": {
+    "mt_process_capture": {
+      "env": "ptr[ptr[char]]?",
+      "cwd": "cstr?"
+    },
+    "mt_process_spawn_detached": {
+      "env": "ptr[ptr[char]]?",
+      "cwd": "cstr?"
+    },
+    "mt_process_spawn_interactive": {
+      "env": "ptr[ptr[char]]?",
+      "cwd": "cstr?"
+    },
+    "mt_process_spawn_pty": {
+      "env": "ptr[ptr[char]]?",
+      "cwd": "cstr?"
+    },
+    "mt_process_write_fd": {
+      "data": "const_ptr[char]?"
+    }
+  }
+}

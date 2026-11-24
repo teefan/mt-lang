@@ -1,0 +1,632 @@
+{
+  "return_types": {
+    "SDL_malloc": "ptr[void]?",
+    "SDL_calloc": "ptr[void]?",
+    "SDL_realloc": "ptr[void]?",
+    "SDL_aligned_alloc": "ptr[void]?",
+    "SDL_GetEnvironment": "ptr[SDL_Environment]?",
+    "SDL_CreateEnvironment": "ptr[SDL_Environment]?",
+    "SDL_GetEnvironmentVariable": "cstr?",
+    "SDL_GetEnvironmentVariables": "ptr[ptr[char]]?",
+    "SDL_getenv": "cstr?",
+    "SDL_getenv_unsafe": "cstr?",
+    "SDL_bsearch": "ptr[void]?",
+    "SDL_bsearch_r": "ptr[void]?",
+    "SDL_wcsstr": "ptr[int]?",
+    "SDL_wcsnstr": "ptr[int]?",
+    "SDL_strdup": "ptr[char]?",
+    "SDL_strchr": "ptr[char]?",
+    "SDL_strrchr": "ptr[char]?",
+    "SDL_strstr": "ptr[char]?",
+    "SDL_strnstr": "ptr[char]?",
+    "SDL_strcasestr": "ptr[char]?",
+    "SDL_strtok_r": "ptr[char]?",
+    "SDL_iconv_string": "ptr[char]?",
+    "SDL_GetAssertionReport": "const_ptr[SDL_AssertData]?",
+    "SDL_AsyncIOFromFile": "ptr[SDL_AsyncIO]?",
+    "SDL_CreateAsyncIOQueue": "ptr[SDL_AsyncIOQueue]?",
+    "SDL_CreateThreadRuntime": "ptr[SDL_Thread]?",
+    "SDL_CreateThreadWithPropertiesRuntime": "ptr[SDL_Thread]?",
+    "SDL_GetTLS": "ptr[void]?",
+    "SDL_CreateMutex": "ptr[SDL_Mutex]?",
+    "SDL_CreateRWLock": "ptr[SDL_RWLock]?",
+    "SDL_CreateSemaphore": "ptr[SDL_Semaphore]?",
+    "SDL_CreateCondition": "ptr[SDL_Condition]?",
+    "SDL_IOFromFile": "ptr[SDL_IOStream]?",
+    "SDL_IOFromMem": "ptr[SDL_IOStream]?",
+    "SDL_IOFromConstMem": "ptr[SDL_IOStream]?",
+    "SDL_IOFromDynamicMem": "ptr[SDL_IOStream]?",
+    "SDL_OpenIO": "ptr[SDL_IOStream]?",
+    "SDL_LoadFile_IO": "ptr[void]?",
+    "SDL_LoadFile": "ptr[void]?",
+    "SDL_GetAudioDriver": "cstr?",
+    "SDL_GetCurrentAudioDriver": "cstr?",
+    "SDL_GetAudioPlaybackDevices": "ptr[SDL_AudioDeviceID]?",
+    "SDL_GetAudioRecordingDevices": "ptr[SDL_AudioDeviceID]?",
+    "SDL_GetAudioDeviceName": "cstr?",
+    "SDL_CreateAudioStream": "ptr[SDL_AudioStream]?",
+    "SDL_OpenAudioDeviceStream": "ptr[SDL_AudioStream]?",
+    "SDL_GetPixelFormatDetails": "const_ptr[SDL_PixelFormatDetails]?",
+    "SDL_CreatePalette": "ptr[SDL_Palette]?",
+    "SDL_CreateSurface": "ptr[SDL_Surface]?",
+    "SDL_CreateSurfaceFrom": "ptr[SDL_Surface]?",
+    "SDL_CreateSurfacePalette": "ptr[SDL_Palette]?",
+    "SDL_GetSurfacePalette": "ptr[SDL_Palette]?",
+    "SDL_GetSurfaceImages": "ptr[ptr[SDL_Surface]]?",
+    "SDL_LoadSurface_IO": "ptr[SDL_Surface]?",
+    "SDL_LoadSurface": "ptr[SDL_Surface]?",
+    "SDL_LoadBMP_IO": "ptr[SDL_Surface]?",
+    "SDL_LoadBMP": "ptr[SDL_Surface]?",
+    "SDL_LoadPNG_IO": "ptr[SDL_Surface]?",
+    "SDL_LoadPNG": "ptr[SDL_Surface]?",
+    "SDL_RotateSurface": "ptr[SDL_Surface]?",
+    "SDL_DuplicateSurface": "ptr[SDL_Surface]?",
+    "SDL_ScaleSurface": "ptr[SDL_Surface]?",
+    "SDL_ConvertSurface": "ptr[SDL_Surface]?",
+    "SDL_ConvertSurfaceAndColorspace": "ptr[SDL_Surface]?",
+    "SDL_GetCameraDriver": "cstr?",
+    "SDL_GetCurrentCameraDriver": "cstr?",
+    "SDL_GetCameras": "ptr[SDL_CameraID]?",
+    "SDL_GetCameraSupportedFormats": "ptr[ptr[SDL_CameraSpec]]?",
+    "SDL_GetCameraName": "cstr?",
+    "SDL_OpenCamera": "ptr[SDL_Camera]?",
+    "SDL_AcquireCameraFrame": "ptr[SDL_Surface]?",
+    "SDL_GetClipboardText": "ptr[char]?",
+    "SDL_GetPrimarySelectionText": "ptr[char]?",
+    "SDL_GetClipboardData": "ptr[void]?",
+    "SDL_GetClipboardMimeTypes": "ptr[ptr[char]]?",
+    "SDL_GetVideoDriver": "cstr?",
+    "SDL_GetCurrentVideoDriver": "cstr?",
+    "SDL_GetDisplays": "ptr[SDL_DisplayID]?",
+    "SDL_GetDisplayName": "cstr?",
+    "SDL_GetFullscreenDisplayModes": "ptr[ptr[SDL_DisplayMode]]?",
+    "SDL_GetDesktopDisplayMode": "const_ptr[SDL_DisplayMode]?",
+    "SDL_GetCurrentDisplayMode": "const_ptr[SDL_DisplayMode]?",
+    "SDL_GetWindowFullscreenMode": "const_ptr[SDL_DisplayMode]?",
+    "SDL_GetWindowICCProfile": "ptr[void]?",
+    "SDL_GetWindows": "ptr[ptr[SDL_Window]]?",
+    "SDL_CreateWindow": "ptr[SDL_Window]?",
+    "SDL_CreatePopupWindow": "ptr[SDL_Window]?",
+    "SDL_CreateWindowWithProperties": "ptr[SDL_Window]?",
+    "SDL_GetWindowFromID": "ptr[SDL_Window]?",
+    "SDL_GetWindowParent": "ptr[SDL_Window]?",
+    "SDL_GetWindowSurface": "ptr[SDL_Surface]?",
+    "SDL_GetGrabbedWindow": "ptr[SDL_Window]?",
+    "SDL_GetWindowMouseRect": "const_ptr[SDL_Rect]?",
+    "SDL_GL_GetProcAddress": "SDL_FunctionPointer?",
+    "SDL_EGL_GetProcAddress": "SDL_FunctionPointer?",
+    "SDL_GL_CreateContext": "SDL_GLContext?",
+    "SDL_GL_GetCurrentWindow": "ptr[SDL_Window]?",
+    "SDL_GL_GetCurrentContext": "SDL_GLContext?",
+    "SDL_EGL_GetCurrentDisplay": "SDL_EGLDisplay?",
+    "SDL_EGL_GetCurrentConfig": "SDL_EGLConfig?",
+    "SDL_EGL_GetWindowSurface": "SDL_EGLSurface?",
+    "SDL_GetSensors": "ptr[SDL_SensorID]?",
+    "SDL_GetSensorNameForID": "cstr?",
+    "SDL_OpenSensor": "ptr[SDL_Sensor]?",
+    "SDL_GetSensorFromID": "ptr[SDL_Sensor]?",
+    "SDL_GetSensorName": "cstr?",
+    "SDL_GetJoysticks": "ptr[SDL_JoystickID]?",
+    "SDL_GetJoystickNameForID": "cstr?",
+    "SDL_GetJoystickPathForID": "cstr?",
+    "SDL_OpenJoystick": "ptr[SDL_Joystick]?",
+    "SDL_GetJoystickFromID": "ptr[SDL_Joystick]?",
+    "SDL_GetJoystickFromPlayerIndex": "ptr[SDL_Joystick]?",
+    "SDL_GetJoystickName": "cstr?",
+    "SDL_GetJoystickPath": "cstr?",
+    "SDL_GetJoystickSerial": "cstr?",
+    "SDL_GetGamepadMappings": "ptr[ptr[char]]?",
+    "SDL_GetGamepadMappingForGUID": "ptr[char]?",
+    "SDL_GetGamepadMapping": "ptr[char]?",
+    "SDL_GetGamepads": "ptr[SDL_JoystickID]?",
+    "SDL_GetGamepadNameForID": "cstr?",
+    "SDL_GetGamepadPathForID": "cstr?",
+    "SDL_GetGamepadMappingForID": "ptr[char]?",
+    "SDL_OpenGamepad": "ptr[SDL_Gamepad]?",
+    "SDL_GetGamepadFromID": "ptr[SDL_Gamepad]?",
+    "SDL_GetGamepadName": "cstr?",
+    "SDL_GetGamepadPath": "cstr?",
+    "SDL_GetGamepadSerial": "cstr?",
+    "SDL_GetGamepadJoystick": "ptr[SDL_Joystick]?",
+    "SDL_GetGamepadBindings": "ptr[ptr[SDL_GamepadBinding]]?",
+    "SDL_GetGamepadStringForType": "cstr?",
+    "SDL_GetGamepadStringForAxis": "cstr?",
+    "SDL_GetGamepadStringForButton": "cstr?",
+    "SDL_GetGamepadAppleSFSymbolsNameForButton": "cstr?",
+    "SDL_GetGamepadAppleSFSymbolsNameForAxis": "cstr?",
+    "SDL_GetKeyboards": "ptr[SDL_KeyboardID]?",
+    "SDL_GetKeyboardNameForID": "cstr?",
+    "SDL_GetMice": "ptr[SDL_MouseID]?",
+    "SDL_GetMouseNameForID": "cstr?",
+    "SDL_CreateCursor": "ptr[SDL_Cursor]?",
+    "SDL_CreateColorCursor": "ptr[SDL_Cursor]?",
+    "SDL_CreateSystemCursor": "ptr[SDL_Cursor]?",
+    "SDL_GetCursor": "ptr[SDL_Cursor]?",
+    "SDL_GetDefaultCursor": "ptr[SDL_Cursor]?",
+    "SDL_GetTouchDevices": "ptr[SDL_TouchID]?",
+    "SDL_GetTouchDeviceName": "cstr?",
+    "SDL_GetTouchFingers": "ptr[ptr[SDL_Finger]]?",
+    "SDL_GetWindowFromEvent": "ptr[SDL_Window]?",
+    "SDL_GetBasePath": "cstr?",
+    "SDL_GlobDirectory": "ptr[ptr[char]]?",
+    "SDL_CreateGPUDevice": "ptr[SDL_GPUDevice]?",
+    "SDL_CreateGPUDeviceWithProperties": "ptr[SDL_GPUDevice]?",
+    "SDL_GetGPUDeviceDriver": "cstr?",
+    "SDL_CreateGPUComputePipeline": "ptr[SDL_GPUComputePipeline]?",
+    "SDL_CreateGPUGraphicsPipeline": "ptr[SDL_GPUGraphicsPipeline]?",
+    "SDL_CreateGPUSampler": "ptr[SDL_GPUSampler]?",
+    "SDL_CreateGPUShader": "ptr[SDL_GPUShader]?",
+    "SDL_CreateGPUTexture": "ptr[SDL_GPUTexture]?",
+    "SDL_CreateGPUBuffer": "ptr[SDL_GPUBuffer]?",
+    "SDL_CreateGPUTransferBuffer": "ptr[SDL_GPUTransferBuffer]?",
+    "SDL_AcquireGPUCommandBuffer": "ptr[SDL_GPUCommandBuffer]?",
+    "SDL_MapGPUTransferBuffer": "ptr[void]?",
+    "SDL_SubmitGPUCommandBufferAndAcquireFence": "ptr[SDL_GPUFence]?",
+    "SDL_GetHaptics": "ptr[SDL_HapticID]?",
+    "SDL_GetHapticNameForID": "cstr?",
+    "SDL_OpenHaptic": "ptr[SDL_Haptic]?",
+    "SDL_GetHapticFromID": "ptr[SDL_Haptic]?",
+    "SDL_GetHapticName": "cstr?",
+    "SDL_OpenHapticFromMouse": "ptr[SDL_Haptic]?",
+    "SDL_OpenHapticFromJoystick": "ptr[SDL_Haptic]?",
+    "SDL_hid_open": "ptr[SDL_hid_device]?",
+    "SDL_hid_open_path": "ptr[SDL_hid_device]?",
+    "SDL_hid_get_device_info": "ptr[SDL_hid_device_info]?",
+    "SDL_GetHint": "cstr?",
+    "SDL_LoadObject": "ptr[SDL_SharedObject]?",
+    "SDL_LoadFunction": "SDL_FunctionPointer?",
+    "SDL_GetPreferredLocales": "ptr[ptr[SDL_Locale]]?",
+    "SDL_CreateProcess": "ptr[SDL_Process]?",
+    "SDL_CreateProcessWithProperties": "ptr[SDL_Process]?",
+    "SDL_ReadProcess": "ptr[void]?",
+    "SDL_GetProcessInput": "ptr[SDL_IOStream]?",
+    "SDL_GetProcessOutput": "ptr[SDL_IOStream]?",
+    "SDL_GetRenderDriver": "cstr?",
+    "SDL_CreateRenderer": "ptr[SDL_Renderer]?",
+    "SDL_CreateRendererWithProperties": "ptr[SDL_Renderer]?",
+    "SDL_CreateGPURenderer": "ptr[SDL_Renderer]?",
+    "SDL_GetGPURendererDevice": "ptr[SDL_GPUDevice]?",
+    "SDL_CreateSoftwareRenderer": "ptr[SDL_Renderer]?",
+    "SDL_GetRenderer": "ptr[SDL_Renderer]?",
+    "SDL_GetRenderWindow": "ptr[SDL_Window]?",
+    "SDL_GetRendererName": "cstr?",
+    "SDL_CreateTexture": "ptr[SDL_Texture]?",
+    "SDL_CreateTextureFromSurface": "ptr[SDL_Texture]?",
+    "SDL_CreateTextureWithProperties": "ptr[SDL_Texture]?",
+    "SDL_GetRendererFromTexture": "ptr[SDL_Renderer]?",
+    "SDL_GetTexturePalette": "ptr[SDL_Palette]?",
+    "SDL_GetRenderTarget": "ptr[SDL_Texture]?",
+    "SDL_RenderReadPixels": "ptr[SDL_Surface]?",
+    "SDL_GetRenderMetalLayer": "ptr[void]?",
+    "SDL_GetRenderMetalCommandEncoder": "ptr[void]?",
+    "SDL_CreateGPURenderState": "ptr[SDL_GPURenderState]?",
+    "SDL_OpenTitleStorage": "ptr[SDL_Storage]?",
+    "SDL_OpenUserStorage": "ptr[SDL_Storage]?",
+    "SDL_OpenFileStorage": "ptr[SDL_Storage]?",
+    "SDL_OpenStorage": "ptr[SDL_Storage]?",
+    "SDL_GlobStorageDirectory": "ptr[ptr[char]]?",
+    "SDL_GetTrayEntries": "ptr[const_ptr[SDL_TrayEntry]]?",
+    "SDL_InsertTrayEntryAt": "ptr[SDL_TrayEntry]?",
+    "SDL_GetTrayMenuParentEntry": "ptr[SDL_TrayEntry]?",
+    "SDL_GetTrayMenuParentTray": "ptr[SDL_Tray]?"
+  },
+  "parameters": {
+    "SDL_realloc": {
+      "mem": "ptr[void]?"
+    },
+    "SDL_free": {
+      "mem": "ptr[void]?"
+    },
+    "SDL_aligned_free": {
+      "mem": "ptr[void]?"
+    },
+    "SDL_strtok_r": {
+      "str_": "ptr[char]?"
+    },
+    "SDL_StepUTF8": {
+      "pslen": "ptr[ptr_uint]?"
+    },
+    "SDL_SetAssertionHandler": {
+      "handler": "SDL_AssertionHandler?"
+    },
+    "SDL_SetPointerPropertyWithCleanup": {
+      "value": "ptr[void]?"
+    },
+    "SDL_SetPointerProperty": {
+      "value": "ptr[void]?"
+    },
+    "SDL_SetStringProperty": {
+      "value": "cstr?"
+    },
+    "SDL_WaitThread": {
+      "status": "ptr[int]?"
+    },
+    "SDL_LoadFile_IO": {
+      "datasize": "ptr[ptr_uint]?"
+    },
+    "SDL_SaveFile_IO": {
+      "data": "const_ptr[void]?"
+    },
+    "SDL_SaveFile": {
+      "data": "const_ptr[void]?"
+    },
+    "SDL_GetAudioPlaybackDevices": {
+      "count": "ptr[int]?"
+    },
+    "SDL_GetAudioRecordingDevices": {
+      "count": "ptr[int]?"
+    },
+    "SDL_OpenAudioDevice": {
+      "spec": "const_ptr[SDL_AudioSpec]?"
+    },
+    "SDL_CreateAudioStream": {
+      "dst_spec": "const_ptr[SDL_AudioSpec]?"
+    },
+    "SDL_OpenAudioDeviceStream": {
+      "userdata": "ptr[void]?"
+    },
+    "SDL_MapRGB": {
+      "palette": "const_ptr[SDL_Palette]?"
+    },
+    "SDL_MapRGBA": {
+      "palette": "const_ptr[SDL_Palette]?"
+    },
+    "SDL_GetRGB": {
+      "palette": "const_ptr[SDL_Palette]?",
+      "r": "ptr[Uint8]?",
+      "g": "ptr[Uint8]?",
+      "b": "ptr[Uint8]?"
+    },
+    "SDL_GetRGBA": {
+      "palette": "const_ptr[SDL_Palette]?",
+      "r": "ptr[Uint8]?",
+      "g": "ptr[Uint8]?",
+      "b": "ptr[Uint8]?",
+      "a": "ptr[Uint8]?"
+    },
+    "SDL_GetRectEnclosingPoints": {
+      "clip": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_GetRectEnclosingPointsFloat": {
+      "clip": "const_ptr[SDL_FRect]?"
+    },
+    "SDL_GetSurfaceImages": {
+      "count": "ptr[int]?"
+    },
+    "SDL_SetSurfaceClipRect": {
+      "rect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_ConvertSurfaceAndColorspace": {
+      "palette": "ptr[SDL_Palette]?"
+    },
+    "SDL_FillSurfaceRect": {
+      "rect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_BlitSurface": {
+      "srcrect": "const_ptr[SDL_Rect]?",
+      "dstrect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_BlitSurfaceScaled": {
+      "srcrect": "const_ptr[SDL_Rect]?",
+      "dstrect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_StretchSurface": {
+      "srcrect": "const_ptr[SDL_Rect]?",
+      "dstrect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_BlitSurfaceTiled": {
+      "srcrect": "const_ptr[SDL_Rect]?",
+      "dstrect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_BlitSurfaceTiledWithScale": {
+      "srcrect": "const_ptr[SDL_Rect]?",
+      "dstrect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_BlitSurface9Grid": {
+      "srcrect": "const_ptr[SDL_Rect]?",
+      "dstrect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_ReadSurfacePixel": {
+      "r": "ptr[ubyte]?",
+      "g": "ptr[ubyte]?",
+      "b": "ptr[ubyte]?",
+      "a": "ptr[ubyte]?"
+    },
+    "SDL_ReadSurfacePixelFloat": {
+      "r": "ptr[float]?",
+      "g": "ptr[float]?",
+      "b": "ptr[float]?",
+      "a": "ptr[float]?"
+    },
+    "SDL_GetCameras": {
+      "count": "ptr[int]?"
+    },
+    "SDL_GetCameraSupportedFormats": {
+      "count": "ptr[int]?"
+    },
+    "SDL_OpenCamera": {
+      "spec": "const_ptr[SDL_CameraSpec]?"
+    },
+    "SDL_GetClipboardMimeTypes": {
+      "num_mime_types": "ptr[ptr_uint]?"
+    },
+    "SDL_GetDisplays": {
+      "count": "ptr[int]?"
+    },
+    "SDL_GetFullscreenDisplayModes": {
+      "count": "ptr[int]?"
+    },
+    "SDL_GetWindows": {
+      "count": "ptr[int]?"
+    },
+    "SDL_GetWindowPosition": {
+      "x": "ptr[int]?",
+      "y": "ptr[int]?"
+    },
+    "SDL_GetWindowSize": {
+      "w": "ptr[int]?",
+      "h": "ptr[int]?"
+    },
+    "SDL_GetWindowAspectRatio": {
+      "min_aspect": "ptr[float]?",
+      "max_aspect": "ptr[float]?"
+    },
+    "SDL_GetWindowBordersSize": {
+      "top": "ptr[int]?",
+      "left": "ptr[int]?",
+      "bottom": "ptr[int]?",
+      "right": "ptr[int]?"
+    },
+    "SDL_GetWindowSizeInPixels": {
+      "w": "ptr[int]?",
+      "h": "ptr[int]?"
+    },
+    "SDL_GetWindowMinimumSize": {
+      "w": "ptr[int]?",
+      "h": "ptr[int]?"
+    },
+    "SDL_GetWindowMaximumSize": {
+      "w": "ptr[int]?",
+      "h": "ptr[int]?"
+    },
+    "SDL_SetWindowMouseRect": {
+      "rect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_SetWindowShape": {
+      "shape": "ptr[SDL_Surface]?"
+    },
+    "SDL_GL_LoadLibrary": {
+      "path": "cstr?"
+    },
+    "SDL_ShowOpenFileDialog": {
+      "window": "ptr[SDL_Window]?",
+      "filters": "const_ptr[SDL_DialogFileFilter]?",
+      "default_location": "cstr?"
+    },
+    "SDL_ShowSaveFileDialog": {
+      "window": "ptr[SDL_Window]?",
+      "filters": "const_ptr[SDL_DialogFileFilter]?",
+      "default_location": "cstr?"
+    },
+    "SDL_ShowOpenFolderDialog": {
+      "window": "ptr[SDL_Window]?",
+      "default_location": "cstr?"
+    },
+    "SDL_GetPowerInfo": {
+      "seconds": "ptr[int]?",
+      "percent": "ptr[int]?"
+    },
+    "SDL_GetSensors": {
+      "count": "ptr[int]?"
+    },
+    "SDL_GetJoysticks": {
+      "count": "ptr[int]?"
+    },
+    "SDL_GetJoystickPowerInfo": {
+      "percent": "ptr[int]?"
+    },
+    "SDL_SetGamepadMapping": {
+      "mapping": "cstr?"
+    },
+    "SDL_GetGamepads": {
+      "count": "ptr[int]?"
+    },
+    "SDL_GetGamepadPowerInfo": {
+      "percent": "ptr[int]?"
+    },
+    "SDL_GetGamepadTouchpadFinger": {
+      "down": "ptr[bool]?",
+      "x": "ptr[float]?",
+      "y": "ptr[float]?",
+      "pressure": "ptr[float]?"
+    },
+    "SDL_GetKeyboards": {
+      "count": "ptr[int]?"
+    },
+    "SDL_GetScancodeFromKey": {
+      "modstate": "ptr[SDL_Keymod]?"
+    },
+    "SDL_SetTextInputArea": {
+      "rect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_GetTextInputArea": {
+      "rect": "ptr[SDL_Rect]?",
+      "cursor": "ptr[int]?"
+    },
+    "SDL_GetMice": {
+      "count": "ptr[int]?"
+    },
+    "SDL_WarpMouseInWindow": {
+      "window": "ptr[SDL_Window]?"
+    },
+    "SDL_SetRelativeMouseTransform": {
+      "callback": "SDL_MouseMotionTransformCallback?"
+    },
+    "SDL_GetTouchDevices": {
+      "count": "ptr[int]?"
+    },
+    "SDL_PeepEvents": {
+      "events": "ptr[SDL_Event]?"
+    },
+    "SDL_PollEvent": {
+      "event_": "ptr[SDL_Event]?"
+    },
+    "SDL_WaitEvent": {
+      "event_": "ptr[SDL_Event]?"
+    },
+    "SDL_WaitEventTimeout": {
+      "event_": "ptr[SDL_Event]?"
+    },
+    "SDL_GetPathInfo": {
+      "info": "ptr[SDL_PathInfo]?"
+    },
+    "SDL_GPUSupportsShaderFormats": {
+      "name": "cstr?"
+    },
+    "SDL_CreateGPUDevice": {
+      "name": "cstr?"
+    },
+    "SDL_BeginGPURenderPass": {
+      "depth_stencil_target_info": "const_ptr[SDL_GPUDepthStencilTargetInfo]?"
+    },
+    "SDL_AcquireGPUSwapchainTexture": {
+      "swapchain_texture_width": "ptr[uint]?",
+      "swapchain_texture_height": "ptr[uint]?"
+    },
+    "SDL_WaitAndAcquireGPUSwapchainTexture": {
+      "swapchain_texture_width": "ptr[uint]?",
+      "swapchain_texture_height": "ptr[uint]?"
+    },
+    "SDL_GetHaptics": {
+      "count": "ptr[int]?"
+    },
+    "SDL_SetAppMetadataProperty": {
+      "value": "cstr?"
+    },
+    "SDL_GetPreferredLocales": {
+      "count": "ptr[int]?"
+    },
+    "SDL_SetLogPriorityPrefix": {
+      "prefix": "cstr?"
+    },
+    "SDL_ShowSimpleMessageBox": {
+      "window": "ptr[SDL_Window]?"
+    },
+    "SDL_ReadProcess": {
+      "datasize": "ptr[ptr_uint]?",
+      "exitcode": "ptr[int]?"
+    },
+    "SDL_WaitProcess": {
+      "exitcode": "ptr[int]?"
+    },
+    "SDL_CreateWindowAndRenderer": {
+      "window": "ptr[ptr[SDL_Window]]?",
+      "renderer": "ptr[ptr[SDL_Renderer]]?"
+    },
+    "SDL_CreateRenderer": {
+      "name": "cstr?"
+    },
+    "SDL_CreateGPURenderer": {
+      "device": "ptr[SDL_GPUDevice]?",
+      "window": "ptr[SDL_Window]?"
+    },
+    "SDL_UpdateTexture": {
+      "rect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_UpdateYUVTexture": {
+      "rect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_UpdateNVTexture": {
+      "rect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_LockTextureToSurface": {
+      "rect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_SetRenderTarget": {
+      "texture": "ptr[SDL_Texture]?"
+    },
+    "SDL_GetRenderLogicalPresentationRect": {
+      "rect": "ptr[SDL_FRect]?"
+    },
+    "SDL_SetRenderViewport": {
+      "rect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_SetRenderClipRect": {
+      "rect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_RenderRect": {
+      "rect": "const_ptr[SDL_FRect]?"
+    },
+    "SDL_RenderFillRect": {
+      "rect": "const_ptr[SDL_FRect]?"
+    },
+    "SDL_RenderTexture": {
+      "srcrect": "const_ptr[SDL_FRect]?",
+      "dstrect": "const_ptr[SDL_FRect]?"
+    },
+    "SDL_RenderTextureRotated": {
+      "srcrect": "const_ptr[SDL_FRect]?",
+      "dstrect": "const_ptr[SDL_FRect]?",
+      "center": "const_ptr[SDL_FPoint]?"
+    },
+    "SDL_RenderTextureAffine": {
+      "srcrect": "const_ptr[SDL_FRect]?",
+      "origin": "const_ptr[SDL_FPoint]?",
+      "right": "const_ptr[SDL_FPoint]?",
+      "down": "const_ptr[SDL_FPoint]?"
+    },
+    "SDL_RenderTextureTiled": {
+      "srcrect": "const_ptr[SDL_FRect]?",
+      "dstrect": "const_ptr[SDL_FRect]?"
+    },
+    "SDL_RenderTexture9Grid": {
+      "srcrect": "const_ptr[SDL_FRect]?",
+      "dstrect": "const_ptr[SDL_FRect]?"
+    },
+    "SDL_RenderTexture9GridTiled": {
+      "srcrect": "const_ptr[SDL_FRect]?",
+      "dstrect": "const_ptr[SDL_FRect]?"
+    },
+    "SDL_RenderGeometry": {
+      "texture": "ptr[SDL_Texture]?",
+      "indices": "const_ptr[int]?"
+    },
+    "SDL_RenderGeometryRaw": {
+      "indices": "const_ptr[void]?"
+    },
+    "SDL_GetRenderTextureAddressMode": {
+      "u_mode": "ptr[SDL_TextureAddressMode]?",
+      "v_mode": "ptr[SDL_TextureAddressMode]?"
+    },
+    "SDL_RenderReadPixels": {
+      "rect": "const_ptr[SDL_Rect]?"
+    },
+    "SDL_SetGPURenderState": {
+      "state": "ptr[SDL_GPURenderState]?"
+    },
+    "SDL_OpenFileStorage": {
+      "path": "cstr?"
+    },
+    "SDL_EnumerateStorageDirectory": {
+      "path": "cstr?"
+    },
+    "SDL_GetStoragePathInfo": {
+      "info": "ptr[SDL_PathInfo]?"
+    },
+    "SDL_GlobStorageDirectory": {
+      "path": "cstr?",
+      "pattern": "cstr?"
+    },
+    "SDL_GetDateTimeLocalePreferences": {
+      "dateFormat": "ptr[SDL_DateFormat]?",
+      "timeFormat": "ptr[SDL_TimeFormat]?"
+    },
+    "SDL_InsertTrayEntryAt": {
+      "label": "cstr?"
+    },
+    "SDL_RunApp": {
+      "argv": "ptr[ptr[char]]?",
+      "reserved": "ptr[void]?"
+    }
+  }
+}

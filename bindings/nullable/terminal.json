@@ -1,0 +1,14 @@
+{
+  "return_types": {},
+  "parameters": {
+    "mt_terminal_write_stdout": {
+      "buffer": "const_ptr[ubyte]?"
+    },
+    "mt_terminal_write_stderr": {
+      "buffer": "const_ptr[ubyte]?"
+    },
+    "mt_terminal_read_stdin": {
+      "buffer": "ptr[ubyte]?"
+    }
+  }
+}

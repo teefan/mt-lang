@@ -1,0 +1,12 @@
+{
+  "return_types": {},
+  "parameters": {
+    "mt_sha256": {
+      "data": "ptr[ubyte]?"
+    },
+    "mt_hmac_sha256": {
+      "key": "ptr[ubyte]?",
+      "data": "ptr[ubyte]?"
+    }
+  }
+}

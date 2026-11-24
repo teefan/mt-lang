@@ -1,0 +1,67 @@
+{
+  "module_name": "std.c.raygui",
+  "header_path": "$ROOT/third_party/raygui-upstream/src/raygui.h",
+  "link_libraries": [
+    "raylib",
+    "m"
+  ],
+  "include_directives": [
+    "raygui.h"
+  ],
+  "bindgen_defines": [],
+  "bindgen_include_directives": [],
+  "module_imports": [],
+  "clang": "clang",
+  "clang_args": [],
+  "type_name_overrides": {},
+  "type_overrides": {},
+  "function_param_type_overrides": {
+    "LoadAutomationEventList": {
+      "fileName": "cstr?"
+    },
+    "LoadFontEx": {
+      "codepoints": "ptr[int]?"
+    },
+    "LoadFontFromMemory": {
+      "codepoints": "ptr[int]?"
+    },
+    "LoadFontData": {
+      "codepoints": "ptr[int]?"
+    },
+    "LoadShader": {
+      "vsFileName": "cstr?",
+      "fsFileName": "cstr?"
+    },
+    "LoadShaderFromMemory": {
+      "vsCode": "cstr?",
+      "fsCode": "cstr?"
+    }
+  },
+  "function_return_type_overrides": {
+    "LoadRandomSequence": "ptr[int]?",
+    "MemAlloc": "ptr[void]?",
+    "MemRealloc": "ptr[void]?",
+    "LoadFileData": "ptr[ubyte]?",
+    "LoadFileText": "ptr[char]?",
+    "CompressData": "ptr[ubyte]?",
+    "DecompressData": "ptr[ubyte]?",
+    "EncodeDataBase64": "ptr[char]?",
+    "DecodeDataBase64": "ptr[ubyte]?",
+    "ExportImageToMemory": "ptr[ubyte]?",
+    "LoadImageColors": "ptr[Color]?",
+    "LoadImagePalette": "ptr[Color]?",
+    "LoadUTF8": "ptr[char]?",
+    "LoadCodepoints": "ptr[int]?",
+    "LoadMaterials": "ptr[Material]?",
+    "LoadModelAnimations": "ptr[ModelAnimation]?",
+    "LoadWaveSamples": "ptr[float]?",
+    "GuiLoadIcons": "ptr[ptr[char]]?"
+  },
+  "field_type_overrides": {},
+  "tracked_header_paths": [],
+  "tracked_header_prefixes": [],
+  "declaration_name_prefixes": [],
+  "excluded_declaration_names": [],
+  "allow_static_inline_functions": false,
+  "strip_leading_underscores": false
+}

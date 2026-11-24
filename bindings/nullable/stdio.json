@@ -1,0 +1,88 @@
+{
+  "return_types": {
+    "fopen": "FILE?",
+    "freopen": "FILE?",
+    "tmpfile": "FILE?",
+    "fgets": "ptr[char]?"
+  },
+  "parameters": {
+    "freopen": {
+      "stream": "FILE?"
+    },
+    "fclose": {
+      "stream": "FILE?"
+    },
+    "fflush": {
+      "stream": "FILE?"
+    },
+    "setbuf": {
+      "stream": "FILE?"
+    },
+    "setvbuf": {
+      "stream": "FILE?"
+    },
+    "fprintf": {
+      "stream": "FILE?"
+    },
+    "vfprintf": {
+      "stream": "FILE?"
+    },
+    "fscanf": {
+      "stream": "FILE?"
+    },
+    "vfscanf": {
+      "stream": "FILE?"
+    },
+    "fgetc": {
+      "stream": "FILE?"
+    },
+    "fgets": {
+      "stream": "FILE?"
+    },
+    "fputc": {
+      "stream": "FILE?"
+    },
+    "fputs": {
+      "stream": "FILE?"
+    },
+    "getc": {
+      "stream": "FILE?"
+    },
+    "putc": {
+      "stream": "FILE?"
+    },
+    "ungetc": {
+      "stream": "FILE?"
+    },
+    "fread": {
+      "stream": "FILE?"
+    },
+    "fwrite": {
+      "stream": "FILE?"
+    },
+    "fgetpos": {
+      "stream": "FILE?"
+    },
+    "fseek": {
+      "stream": "FILE?"
+    },
+    "fsetpos": {
+      "stream": "FILE?"
+    },
+    "ftell": {
+      "stream": "FILE?"
+    },
+    "rewind": {
+      "stream": "FILE?"
+    },
+    "clearerr": {
+      "stream": "FILE?"
+    },
+    "feof": {
+      "stream": "FILE?"
+    },
+    "ferror": {
+      "stream": "FILE?"
+    }
+  }
+}

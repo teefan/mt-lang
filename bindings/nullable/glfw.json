@@ -1,0 +1,128 @@
+{
+  "return_types": {
+    "glfwSetErrorCallback": "GLFWerrorfun?",
+    "glfwGetMonitors": "ptr[ptr[GLFWmonitor]]?",
+    "glfwGetPrimaryMonitor": "ptr[GLFWmonitor]?",
+    "glfwGetMonitorName": "cstr?",
+    "glfwGetMonitorUserPointer": "ptr[void]?",
+    "glfwSetMonitorCallback": "GLFWmonitorfun?",
+    "glfwGetVideoModes": "const_ptr[GLFWvidmode]?",
+    "glfwGetVideoMode": "const_ptr[GLFWvidmode]?",
+    "glfwGetGammaRamp": "const_ptr[GLFWgammaramp]?",
+    "glfwCreateWindow": "ptr[GLFWwindow]?",
+    "glfwGetWindowTitle": "cstr?",
+    "glfwGetWindowMonitor": "ptr[GLFWmonitor]?",
+    "glfwGetWindowUserPointer": "ptr[void]?",
+    "glfwSetWindowPosCallback": "GLFWwindowposfun?",
+    "glfwSetWindowSizeCallback": "GLFWwindowsizefun?",
+    "glfwSetWindowCloseCallback": "GLFWwindowclosefun?",
+    "glfwSetWindowRefreshCallback": "GLFWwindowrefreshfun?",
+    "glfwSetWindowFocusCallback": "GLFWwindowfocusfun?",
+    "glfwSetWindowIconifyCallback": "GLFWwindowiconifyfun?",
+    "glfwSetWindowMaximizeCallback": "GLFWwindowmaximizefun?",
+    "glfwSetFramebufferSizeCallback": "GLFWframebuffersizefun?",
+    "glfwSetWindowContentScaleCallback": "GLFWwindowcontentscalefun?",
+    "glfwGetKeyName": "cstr?",
+    "glfwCreateCursor": "ptr[GLFWcursor]?",
+    "glfwCreateStandardCursor": "ptr[GLFWcursor]?",
+    "glfwSetKeyCallback": "GLFWkeyfun?",
+    "glfwSetCharCallback": "GLFWcharfun?",
+    "glfwSetCharModsCallback": "GLFWcharmodsfun?",
+    "glfwSetMouseButtonCallback": "GLFWmousebuttonfun?",
+    "glfwSetCursorPosCallback": "GLFWcursorposfun?",
+    "glfwSetCursorEnterCallback": "GLFWcursorenterfun?",
+    "glfwSetScrollCallback": "GLFWscrollfun?",
+    "glfwSetDropCallback": "GLFWdropfun?",
+    "glfwGetJoystickAxes": "const_ptr[float]?",
+    "glfwGetJoystickButtons": "const_ptr[ubyte]?",
+    "glfwGetJoystickHats": "const_ptr[ubyte]?",
+    "glfwGetJoystickName": "cstr?",
+    "glfwGetJoystickGUID": "cstr?",
+    "glfwGetJoystickUserPointer": "ptr[void]?",
+    "glfwSetJoystickCallback": "GLFWjoystickfun?",
+    "glfwGetGamepadName": "cstr?",
+    "glfwGetClipboardString": "cstr?",
+    "glfwGetCurrentContext": "ptr[GLFWwindow]?",
+    "glfwGetProcAddress": "GLFWglproc?",
+    "glfwGetRequiredInstanceExtensions": "ptr[cstr]?"
+  },
+  "parameters": {
+    "glfwGetError": {
+      "description": "ptr[cstr]?"
+    },
+    "glfwSetErrorCallback": {
+      "callback": "GLFWerrorfun?"
+    },
+    "glfwSetMonitorCallback": {
+      "callback": "GLFWmonitorfun?"
+    },
+    "glfwCreateWindow": {
+      "monitor": "ptr[GLFWmonitor]?",
+      "share": "ptr[GLFWwindow]?"
+    },
+    "glfwSetWindowPosCallback": {
+      "callback": "GLFWwindowposfun?"
+    },
+    "glfwSetWindowSizeCallback": {
+      "callback": "GLFWwindowsizefun?"
+    },
+    "glfwSetWindowCloseCallback": {
+      "callback": "GLFWwindowclosefun?"
+    },
+    "glfwSetWindowRefreshCallback": {
+      "callback": "GLFWwindowrefreshfun?"
+    },
+    "glfwSetWindowFocusCallback": {
+      "callback": "GLFWwindowfocusfun?"
+    },
+    "glfwSetWindowIconifyCallback": {
+      "callback": "GLFWwindowiconifyfun?"
+    },
+    "glfwSetWindowMaximizeCallback": {
+      "callback": "GLFWwindowmaximizefun?"
+    },
+    "glfwSetFramebufferSizeCallback": {
+      "callback": "GLFWframebuffersizefun?"
+    },
+    "glfwSetWindowContentScaleCallback": {
+      "callback": "GLFWwindowcontentscalefun?"
+    },
+    "glfwGetCursorPos": {
+      "xpos": "ptr[double]?",
+      "ypos": "ptr[double]?"
+    },
+    "glfwSetCursor": {
+      "cursor": "ptr[GLFWcursor]?"
+    },
+    "glfwSetKeyCallback": {
+      "callback": "GLFWkeyfun?"
+    },
+    "glfwSetCharCallback": {
+      "callback": "GLFWcharfun?"
+    },
+    "glfwSetCharModsCallback": {
+      "callback": "GLFWcharmodsfun?"
+    },
+    "glfwSetMouseButtonCallback": {
+      "callback": "GLFWmousebuttonfun?"
+    },
+    "glfwSetCursorPosCallback": {
+      "callback": "GLFWcursorposfun?"
+    },
+    "glfwSetCursorEnterCallback": {
+      "callback": "GLFWcursorenterfun?"
+    },
+    "glfwSetScrollCallback": {
+      "callback": "GLFWscrollfun?"
+    },
+    "glfwSetDropCallback": {
+      "callback": "GLFWdropfun?"
+    },
+    "glfwSetJoystickCallback": {
+      "callback": "GLFWjoystickfun?"
+    },
+    "glfwMakeContextCurrent": {
+      "window": "ptr[GLFWwindow]?"
+    }
+  }
+}

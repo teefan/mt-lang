@@ -1,0 +1,43 @@
+{
+  "module_name": "std.c.stb_image",
+  "header_path": "$ROOT/third_party/stb-upstream/stb_image.h",
+  "link_libraries": [],
+  "include_directives": [
+    "stb_image.h"
+  ],
+  "bindgen_defines": [],
+  "bindgen_include_directives": [],
+  "module_imports": [],
+  "clang": "clang",
+  "clang_args": [],
+  "type_name_overrides": {},
+  "type_overrides": {},
+  "function_param_type_overrides": {},
+  "function_return_type_overrides": {
+    "stbi_failure_reason": "cstr?",
+    "stbi_load": "ptr[stbi_uc]?",
+    "stbi_load_16": "ptr[stbi_us]?",
+    "stbi_load_16_from_callbacks": "ptr[stbi_us]?",
+    "stbi_load_16_from_memory": "ptr[stbi_us]?",
+    "stbi_load_from_callbacks": "ptr[stbi_uc]?",
+    "stbi_load_from_memory": "ptr[stbi_uc]?",
+    "stbi_load_gif_from_memory": "ptr[stbi_uc]?",
+    "stbi_loadf": "ptr[float]?",
+    "stbi_loadf_from_callbacks": "ptr[float]?",
+    "stbi_loadf_from_memory": "ptr[float]?",
+    "stbi_zlib_decode_malloc": "ptr[char]?",
+    "stbi_zlib_decode_malloc_guesssize": "ptr[char]?",
+    "stbi_zlib_decode_malloc_guesssize_headerflag": "ptr[char]?",
+    "stbi_zlib_decode_noheader_malloc": "ptr[char]?"
+  },
+  "field_type_overrides": {},
+  "tracked_header_paths": [],
+  "tracked_header_prefixes": [],
+  "declaration_name_prefixes": [
+    "stbi_",
+    "STBI_"
+  ],
+  "excluded_declaration_names": [],
+  "allow_static_inline_functions": false,
+  "strip_leading_underscores": false
+}

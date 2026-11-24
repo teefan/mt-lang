@@ -1,0 +1,17 @@
+{
+  "return_types": {},
+  "parameters": {
+    "tracy_emit_zone_begin": {
+      "srcloc": "const_ptr[TracyCSourceLocation]?"
+    },
+    "tracy_emit_zone_begin_callstack": {
+      "srcloc": "const_ptr[TracyCSourceLocation]?"
+    },
+    "tracy_emit_gpu_zone_begin": {
+      "srcloc": "const_ptr[TracyCSourceLocation]?"
+    },
+    "tracy_emit_gpu_zone_begin_callstack": {
+      "srcloc": "const_ptr[TracyCSourceLocation]?"
+    }
+  }
+}

@@ -110,6 +110,7 @@ mkdir -p "$STAGE/bin"
 
 cp "$BIN" "$STAGE/bin/mtc"
 cp -R std "$STAGE/std"
+cp -R config "$STAGE/config"
 cp -R docs "$STAGE/docs"
 cp -R projects/mtc/src/mtc/docs_public "$STAGE/docs_public"
 cp README.md LICENSE "$STAGE/"
