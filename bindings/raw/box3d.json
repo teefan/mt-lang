@@ -1,0 +1,35 @@
+{
+  "module_name": "std.c.box3d",
+  "header_path": "third_party/box3d-upstream/include/box3d/box3d.h",
+  "link_libraries": [
+    "box3d"
+  ],
+  "include_directives": [
+    "box3d/box3d.h"
+  ],
+  "bindgen_defines": [],
+  "bindgen_include_directives": [],
+  "module_imports": [],
+  "clang": "clang",
+  "clang_args": [
+    "-I$ROOT/third_party/box3d-upstream/include"
+  ],
+  "type_name_overrides": {},
+  "type_overrides": {},
+  "function_param_type_overrides": {},
+  "function_return_type_overrides": {},
+  "field_type_overrides": {},
+  "tracked_header_paths": [
+    "$ROOT/third_party/box3d-upstream/include/box3d/box3d.h"
+  ],
+  "tracked_header_prefixes": [
+    "$ROOT/third_party/box3d-upstream/include/box3d"
+  ],
+  "declaration_name_prefixes": [
+    "b3",
+    "B3_"
+  ],
+  "excluded_declaration_names": [],
+  "allow_static_inline_functions": false,
+  "strip_leading_underscores": false
+}

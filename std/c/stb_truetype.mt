@@ -50,7 +50,7 @@ external function stbtt_PackFontRange(spc: ptr[stbtt_pack_context], fontdata: co
 struct stbtt_pack_range:
     font_size: float
     first_unicode_codepoint_in_range: int
-    array_of_unicode_codepoints: ptr[int]
+    array_of_unicode_codepoints: const_ptr[int]
     num_chars: int
     chardata_for_range: ptr[stbtt_packedchar]
     h_oversample: ubyte
@@ -87,6 +87,8 @@ struct stbtt_fontinfo:
     glyf: int
     hhea: int
     hmtx: int
+    vhea: int
+    vmtx: int
     kern: int
     gpos: int
     svg: int
@@ -102,14 +104,18 @@ struct stbtt_fontinfo:
 external function stbtt_InitFont(info: ptr[stbtt_fontinfo], data: const_ptr[ubyte], offset: int) -> int
 external function stbtt_FindGlyphIndex(info: const_ptr[stbtt_fontinfo], unicode_codepoint: int) -> int
 external function stbtt_ScaleForPixelHeight(info: const_ptr[stbtt_fontinfo], pixels: float) -> float
+external function stbtt_ScaleForPixelWidth(info: const_ptr[stbtt_fontinfo], pixels: float) -> float
 external function stbtt_ScaleForMappingEmToPixels(info: const_ptr[stbtt_fontinfo], pixels: float) -> float
 external function stbtt_GetFontVMetrics(info: const_ptr[stbtt_fontinfo], ascent: ptr[int], descent: ptr[int], lineGap: ptr[int]) -> void
+external function stbtt_GetFontHMetrics(info: const_ptr[stbtt_fontinfo], vertTypoAscender: ptr[int], vertTypoDescender: ptr[int], vertTypoLineGap: ptr[int]) -> void
 external function stbtt_GetFontVMetricsOS2(info: const_ptr[stbtt_fontinfo], typoAscent: ptr[int], typoDescent: ptr[int], typoLineGap: ptr[int]) -> int
 external function stbtt_GetFontBoundingBox(info: const_ptr[stbtt_fontinfo], x0: ptr[int], y0: ptr[int], x1: ptr[int], y1: ptr[int]) -> void
+external function stbtt_GetFontUnderlineMetrics(info: const_ptr[stbtt_fontinfo], position: ptr[int], thickness: ptr[int]) -> int
 external function stbtt_GetCodepointHMetrics(info: const_ptr[stbtt_fontinfo], codepoint: int, advanceWidth: ptr[int], leftSideBearing: ptr[int]) -> void
 external function stbtt_GetCodepointKernAdvance(info: const_ptr[stbtt_fontinfo], ch1: int, ch2: int) -> int
 external function stbtt_GetCodepointBox(info: const_ptr[stbtt_fontinfo], codepoint: int, x0: ptr[int], y0: ptr[int], x1: ptr[int], y1: ptr[int]) -> int
 external function stbtt_GetGlyphHMetrics(info: const_ptr[stbtt_fontinfo], glyph_index: int, advanceWidth: ptr[int], leftSideBearing: ptr[int]) -> void
+external function stbtt_GetGlyphVMetrics(info: const_ptr[stbtt_fontinfo], glyph_index: int, advanceHeight: ptr[int], topSideBearing: ptr[int]) -> void
 external function stbtt_GetGlyphKernAdvance(info: const_ptr[stbtt_fontinfo], glyph1: int, glyph2: int) -> int
 external function stbtt_GetGlyphBox(info: const_ptr[stbtt_fontinfo], glyph_index: int, x0: ptr[int], y0: ptr[int], x1: ptr[int], y1: ptr[int]) -> int
 
@@ -167,6 +173,7 @@ external function stbtt_GetCodepointSDF(info: const_ptr[stbtt_fontinfo], scale: 
 external function stbtt_FindMatchingFont(fontdata: const_ptr[ubyte], name: cstr, flags_: int) -> int
 external function stbtt_CompareUTF8toUTF16_bigendian(s1: cstr, len1: int, s2: cstr, len2: int) -> int
 external function stbtt_GetFontNameString(font: const_ptr[stbtt_fontinfo], length: ptr[int], platformID: int, encodingID: int, languageID: int, nameID: int) -> cstr
+external function stbtt_GetFontNameDefault(font: const_ptr[stbtt_fontinfo], output_buffer: ptr[char], output_buffer_len: int) -> int
 
 const STBTT_MACSTYLE_DONTCARE: int = 0
 const STBTT_MACSTYLE_BOLD: int = 1

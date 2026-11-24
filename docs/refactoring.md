@@ -125,7 +125,7 @@ emission/frame boilerplate, not as an absolute quality score.
 
 ### Size, markers, tests
 
-- **129,402 code lines**; **2 functions ≥ 200 lines** (`binding_at` 385,
+- **129,442 code lines**; **2 functions ≥ 200 lines** (`binding_at` 385,
   excluded, and `resolve_cursor` 200, exactly at the boundary); **11 files
   ≥ 2,000 code lines**. The ratchet counts these, so a refactor cannot trade one
   long function for another.
@@ -199,11 +199,11 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 156, 2026-11-24)
+## 6. Current baseline (session 157, 2026-11-24)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 163,007 / 129,402 |
+| source files / lines / code lines | 169 / 163,046 / 129,442 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |

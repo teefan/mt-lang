@@ -23,13 +23,13 @@ public foreign function resize_float_linear(input_pixels: const_ptr[float], inpu
 public foreign function resize(input_pixels: const_ptr[void], input_w: int, input_h: int, input_stride_in_bytes: int, output_pixels: ptr[void], output_w: int, output_h: int, output_stride_in_bytes: int, pixel_layout: pixel_layout, data_type: datatype, edge: edge, filter: filter) -> ptr[void] = c.stbir_resize
 public foreign function resize_init(resize: ptr[STBIR_RESIZE], input_pixels: const_ptr[void], input_w: int, input_h: int, input_stride_in_bytes: int, output_pixels: ptr[void], output_w: int, output_h: int, output_stride_in_bytes: int, pixel_layout: pixel_layout, data_type: datatype) -> void = c.stbir_resize_init
 public foreign function set_datatypes(resize: ptr[STBIR_RESIZE], input_type: datatype, output_type: datatype) -> void = c.stbir_set_datatypes
-public foreign function set_pixel_callbacks(resize: ptr[STBIR_RESIZE], input_cb: ptr[input_callback], output_cb: ptr[output_callback]) -> void = c.stbir_set_pixel_callbacks
+public foreign function set_pixel_callbacks(resize: ptr[STBIR_RESIZE], input_cb: input_callback, output_cb: output_callback) -> void = c.stbir_set_pixel_callbacks
 public foreign function set_user_data(resize: ptr[STBIR_RESIZE], user_data: ptr[void]) -> void = c.stbir_set_user_data
 public foreign function set_buffer_ptrs(resize: ptr[STBIR_RESIZE], input_pixels: const_ptr[void], input_stride_in_bytes: int, output_pixels: ptr[void], output_stride_in_bytes: int) -> void = c.stbir_set_buffer_ptrs
 public foreign function set_pixel_layouts(resize: ptr[STBIR_RESIZE], input_pixel_layout: pixel_layout, output_pixel_layout: pixel_layout) -> int = c.stbir_set_pixel_layouts
 public foreign function set_edgemodes(resize: ptr[STBIR_RESIZE], horizontal_edge: edge, vertical_edge: edge) -> int = c.stbir_set_edgemodes
 public foreign function set_filters(resize: ptr[STBIR_RESIZE], horizontal_filter: filter, vertical_filter: filter) -> int = c.stbir_set_filters
-public foreign function set_filter_callbacks(resize: ptr[STBIR_RESIZE], horizontal_filter: ptr[_kernel_callback], horizontal_support: ptr[_support_callback], vertical_filter: ptr[_kernel_callback], vertical_support: ptr[_support_callback]) -> int = c.stbir_set_filter_callbacks
+public foreign function set_filter_callbacks(resize: ptr[STBIR_RESIZE], horizontal_filter: _kernel_callback, horizontal_support: _support_callback, vertical_filter: _kernel_callback, vertical_support: _support_callback) -> int = c.stbir_set_filter_callbacks
 public foreign function set_pixel_subrect(resize: ptr[STBIR_RESIZE], subx: int, suby: int, subw: int, subh: int) -> int = c.stbir_set_pixel_subrect
 public foreign function set_input_subrect(resize: ptr[STBIR_RESIZE], s0: double, t0: double, s1: double, t1: double) -> int = c.stbir_set_input_subrect
 public foreign function set_output_pixel_subrect(resize: ptr[STBIR_RESIZE], subx: int, suby: int, subw: int, subh: int) -> int = c.stbir_set_output_pixel_subrect

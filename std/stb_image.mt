@@ -5,6 +5,7 @@ import std.c.stb_image as c
 public type uc = c.stbi_uc
 public type us = c.stbi_us
 public type io_callbacks = c.stbi_io_callbacks
+public type info_res = c.stbi_info_res
 
 public const VERSION: int = c.STBI_VERSION
 
@@ -27,6 +28,9 @@ public foreign function is_hdr_from_memory(buffer: const_ptr[uc], len: int) -> i
 public foreign function is_hdr(filename: str as cstr) -> int = c.stbi_is_hdr
 public foreign function failure_reason() -> cstr? = c.stbi_failure_reason
 public foreign function image_free(retval_from_stbi_load: ptr[void]) -> void = c.stbi_image_free
+public foreign function info2_from_memory(buffer: const_ptr[uc], len: int) -> info_res = c.stbi_info2_from_memory
+public foreign function info2_from_callbacks(clbk: const_ptr[io_callbacks], user: ptr[void]) -> info_res = c.stbi_info2_from_callbacks
+public foreign function info2(filename: str as cstr) -> info_res = c.stbi_info2
 public foreign function info_from_memory(buffer: const_ptr[uc], len: int, x: ptr[int], y: ptr[int], comp: ptr[int]) -> int = c.stbi_info_from_memory
 public foreign function info_from_callbacks(clbk: const_ptr[io_callbacks], user: ptr[void], x: ptr[int], y: ptr[int], comp: ptr[int]) -> int = c.stbi_info_from_callbacks
 public foreign function is_16_bit_from_memory(buffer: const_ptr[uc], len: int) -> int = c.stbi_is_16_bit_from_memory

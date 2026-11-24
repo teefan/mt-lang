@@ -3,17 +3,25 @@ external
 
 include "stb_image_write.h"
 
-external function stbi_write_png(filename: cstr, w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: int) -> int
+external function stbi_write_png(filename: cstr, w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int) -> int
 external function stbi_write_bmp(filename: cstr, w: int, h: int, comp: int, data: const_ptr[void]) -> int
 external function stbi_write_tga(filename: cstr, w: int, h: int, comp: int, data: const_ptr[void]) -> int
 external function stbi_write_hdr(filename: cstr, w: int, h: int, comp: int, data: const_ptr[float]) -> int
 external function stbi_write_jpg(filename: cstr, x: int, y: int, comp: int, data: const_ptr[void], quality: int) -> int
+external function stbi_write_bmp_strided(filename: cstr, w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int) -> int
+external function stbi_write_tga_strided(filename: cstr, w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int) -> int
+external function stbi_write_hdr_strided(filename: cstr, w: int, h: int, comp: int, data: const_ptr[float], stride_in_bytes: ptr_int) -> int
+external function stbi_write_jpg_strided(filename: cstr, x: int, y: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int, quality: int) -> int
 
 type stbi_write_func = fn(arg0: ptr[void], arg1: ptr[void], arg2: int) -> void
 
-external function stbi_write_png_to_func(func: ptr[stbi_write_func], context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: int) -> int
-external function stbi_write_bmp_to_func(func: ptr[stbi_write_func], context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void]) -> int
-external function stbi_write_tga_to_func(func: ptr[stbi_write_func], context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void]) -> int
-external function stbi_write_hdr_to_func(func: ptr[stbi_write_func], context: ptr[void], w: int, h: int, comp: int, data: const_ptr[float]) -> int
-external function stbi_write_jpg_to_func(func: ptr[stbi_write_func], context: ptr[void], x: int, y: int, comp: int, data: const_ptr[void], quality: int) -> int
+external function stbi_write_png_to_func(func: stbi_write_func, context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int) -> int
+external function stbi_write_bmp_to_func(func: stbi_write_func, context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void]) -> int
+external function stbi_write_tga_to_func(func: stbi_write_func, context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void]) -> int
+external function stbi_write_hdr_to_func(func: stbi_write_func, context: ptr[void], w: int, h: int, comp: int, data: const_ptr[float]) -> int
+external function stbi_write_jpg_to_func(func: stbi_write_func, context: ptr[void], x: int, y: int, comp: int, data: const_ptr[void], quality: int) -> int
+external function stbi_write_bmp_strided_to_func(func: stbi_write_func, context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int) -> int
+external function stbi_write_tga_strided_to_func(func: stbi_write_func, context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int) -> int
+external function stbi_write_hdr_strided_to_func(func: stbi_write_func, context: ptr[void], w: int, h: int, comp: int, data: const_ptr[float], stride_in_bytes: ptr_int) -> int
+external function stbi_write_jpg_strided_to_func(func: stbi_write_func, context: ptr[void], x: int, y: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int, quality: int) -> int
 external function stbi_flip_vertically_on_write(flip_boolean: int) -> void

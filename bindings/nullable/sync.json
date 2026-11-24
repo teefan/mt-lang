@@ -1,0 +1,32 @@
+{
+  "return_types": {},
+  "parameters": {
+    "mt_mutex_create": {
+      "out out_mutex": "ptr[mt_mutex]?"
+    },
+    "mt_mutex_create_recursive": {
+      "out out_mutex": "ptr[mt_mutex]?"
+    },
+    "mt_mutex_destroy": {
+      "handle": "ptr[mt_mutex]?"
+    },
+    "mt_condition_create": {
+      "out out_condition": "ptr[mt_condition]?"
+    },
+    "mt_condition_destroy": {
+      "handle": "ptr[mt_condition]?"
+    },
+    "mt_semaphore_create": {
+      "out out_semaphore": "ptr[mt_semaphore]?"
+    },
+    "mt_semaphore_destroy": {
+      "handle": "ptr[mt_semaphore]?"
+    },
+    "mt_atomic_uint_create": {
+      "out out_atomic": "ptr[mt_atomic_uint]?"
+    },
+    "mt_atomic_uint_destroy": {
+      "handle": "ptr[mt_atomic_uint]?"
+    }
+  }
+}

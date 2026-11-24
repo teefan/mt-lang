@@ -160,7 +160,7 @@ struct BoneInfo:
     parent: int
 
 struct ModelSkeleton:
-    boneCount: int
+    boneCount: uint
     bones: ptr[BoneInfo]
     bindPose: ptr[Transform]
 
@@ -177,7 +177,7 @@ struct Model:
 
 struct ModelAnimation:
     name: array[char, 32]
-    boneCount: int
+    boneCount: uint
     keyframeCount: int
     keyframePoses: ptr[ModelAnimPose]
 
@@ -606,7 +606,7 @@ flags NPatchLayout: int
 
 type TraceLogCallback = fn(arg0: int, arg1: cstr, arg2: va_list) -> void
 type LoadFileDataCallback = fn(arg0: cstr, arg1: ptr[int]) -> ptr[ubyte]
-type SaveFileDataCallback = fn(arg0: cstr, arg1: ptr[void], arg2: int) -> bool
+type SaveFileDataCallback = fn(arg0: cstr, arg1: const_ptr[void], arg2: int) -> bool
 type LoadFileTextCallback = fn(arg0: cstr) -> ptr[char]
 type SaveFileTextCallback = fn(arg0: cstr, arg1: cstr) -> bool
 
@@ -715,7 +715,7 @@ external function UnloadFileData(data: ptr[ubyte]) -> void
 external function LoadFileText(fileName: cstr) -> ptr[char]?
 external function UnloadFileText(text: ptr[char]) -> void
 external function SetLoadFileDataCallback(callback: fn(arg0: cstr, arg1: ptr[int]) -> ptr[ubyte]) -> void
-external function SetSaveFileDataCallback(callback: fn(arg0: cstr, arg1: ptr[void], arg2: int) -> bool) -> void
+external function SetSaveFileDataCallback(callback: fn(arg0: cstr, arg1: const_ptr[void], arg2: int) -> bool) -> void
 external function SetLoadFileTextCallback(callback: fn(arg0: cstr) -> ptr[char]) -> void
 external function SetSaveFileTextCallback(callback: fn(arg0: cstr, arg1: cstr) -> bool) -> void
 external function FileRename(fileName: cstr, fileRename: cstr) -> int
@@ -734,6 +734,7 @@ external function GetPrevDirectoryPath(dirPath: cstr) -> cstr
 external function GetWorkingDirectory() -> cstr
 external function GetApplicationDirectory() -> cstr
 external function MakeDirectory(dirPath: cstr) -> int
+external function ChangeDirectory(dirPath: cstr) -> int
 external function LoadDirectoryFiles(dirPath: cstr) -> FilePathList
 external function LoadDirectoryFilesEx(basePath: cstr, filter: cstr, scanSubdirs: bool) -> FilePathList
 external function UnloadDirectoryFiles(files: FilePathList) -> void
@@ -745,10 +746,10 @@ external function CompressData(data: const_ptr[ubyte], dataSize: int, compDataSi
 external function DecompressData(compData: const_ptr[ubyte], compDataSize: int, dataSize: ptr[int]) -> ptr[ubyte]?
 external function EncodeDataBase64(data: const_ptr[ubyte], dataSize: int, outputSize: ptr[int]) -> ptr[char]?
 external function DecodeDataBase64(text: cstr, outputSize: ptr[int]) -> ptr[ubyte]?
-external function ComputeCRC32(data: ptr[ubyte], dataSize: int) -> uint
-external function ComputeMD5(data: ptr[ubyte], dataSize: int) -> ptr[uint]
-external function ComputeSHA1(data: ptr[ubyte], dataSize: int) -> ptr[uint]
-external function ComputeSHA256(data: ptr[ubyte], dataSize: int) -> ptr[uint]
+external function ComputeCRC32(data: const_ptr[ubyte], dataSize: int) -> uint
+external function ComputeMD5(data: const_ptr[ubyte], dataSize: int) -> ptr[uint]
+external function ComputeSHA1(data: const_ptr[ubyte], dataSize: int) -> ptr[uint]
+external function ComputeSHA256(data: const_ptr[ubyte], dataSize: int) -> ptr[uint]
 external function LoadAutomationEventList(fileName: cstr?) -> AutomationEventList
 external function UnloadAutomationEventList(list: AutomationEventList) -> void
 external function SetAutomationEventList(list: ptr[AutomationEventList]) -> void
@@ -790,7 +791,7 @@ external function GetGesturePinchVector() -> Vector2
 external function GetGesturePinchAngle() -> float
 external function UpdateCamera(camera: ptr[Camera], mode: int) -> void
 external function UpdateCameraPro(camera: ptr[Camera], movement: Vector3, rotation: Vector3, zoom: float) -> void
-external function SetShapesTexture(texture: Texture, source: Rectangle) -> void
+external function SetShapesTexture(texture: Texture, rec: Rectangle) -> void
 external function GetShapesTexture() -> Texture2D
 external function GetShapesTextureRectangle() -> Rectangle
 external function DrawPixel(posX: int, posY: int, color: Color) -> void
@@ -801,38 +802,44 @@ external function DrawLineEx(startPos: Vector2, endPos: Vector2, thick: float, c
 external function DrawLineStrip(points: const_ptr[Vector2], pointCount: int, color: Color) -> void
 external function DrawLineBezier(startPos: Vector2, endPos: Vector2, thick: float, color: Color) -> void
 external function DrawLineDashed(startPos: Vector2, endPos: Vector2, dashSize: int, spaceSize: int, color: Color) -> void
-external function DrawCircle(centerX: int, centerY: int, radius: float, color: Color) -> void
-external function DrawCircleV(center: Vector2, radius: float, color: Color) -> void
-external function DrawCircleGradient(center: Vector2, radius: float, inner: Color, outer: Color) -> void
-external function DrawCircleSector(center: Vector2, radius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
-external function DrawCircleSectorLines(center: Vector2, radius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
-external function DrawCircleLines(centerX: int, centerY: int, radius: float, color: Color) -> void
-external function DrawCircleLinesV(center: Vector2, radius: float, color: Color) -> void
-external function DrawEllipse(centerX: int, centerY: int, radiusH: float, radiusV: float, color: Color) -> void
-external function DrawEllipseV(center: Vector2, radiusH: float, radiusV: float, color: Color) -> void
-external function DrawEllipseLines(centerX: int, centerY: int, radiusH: float, radiusV: float, color: Color) -> void
-external function DrawEllipseLinesV(center: Vector2, radiusH: float, radiusV: float, color: Color) -> void
-external function DrawRing(center: Vector2, innerRadius: float, outerRadius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
-external function DrawRingLines(center: Vector2, innerRadius: float, outerRadius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
+external function DrawTriangle(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
+external function DrawTriangleGradient(v1: Vector2, v2: Vector2, v3: Vector2, c1: Color, c2: Color, c3: Color) -> void
+external function DrawTriangleLines(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
+external function DrawTriangleLinesEx(v1: Vector2, v2: Vector2, v3: Vector2, thick: float, color: Color) -> void
+external function DrawTriangleFan(points: const_ptr[Vector2], pointCount: int, color: Color) -> void
+external function DrawTriangleStrip(points: const_ptr[Vector2], pointCount: int, color: Color) -> void
 external function DrawRectangle(posX: int, posY: int, width: int, height: int, color: Color) -> void
 external function DrawRectangleV(position: Vector2, size: Vector2, color: Color) -> void
 external function DrawRectangleRec(rec: Rectangle, color: Color) -> void
 external function DrawRectanglePro(rec: Rectangle, origin: Vector2, rotation: float, color: Color) -> void
 external function DrawRectangleGradientV(posX: int, posY: int, width: int, height: int, top: Color, bottom: Color) -> void
 external function DrawRectangleGradientH(posX: int, posY: int, width: int, height: int, left: Color, right: Color) -> void
-external function DrawRectangleGradientEx(rec: Rectangle, topLeft: Color, bottomLeft: Color, bottomRight: Color, topRight: Color) -> void
+external function DrawRectangleGradientEx(rec: Rectangle, col1: Color, col2: Color, col3: Color, col4: Color) -> void
 external function DrawRectangleLines(posX: int, posY: int, width: int, height: int, color: Color) -> void
-external function DrawRectangleLinesEx(rec: Rectangle, lineThick: float, color: Color) -> void
+external function DrawRectangleLinesEx(rec: Rectangle, thick: float, color: Color) -> void
 external function DrawRectangleRounded(rec: Rectangle, roundness: float, segments: int, color: Color) -> void
 external function DrawRectangleRoundedLines(rec: Rectangle, roundness: float, segments: int, color: Color) -> void
-external function DrawRectangleRoundedLinesEx(rec: Rectangle, roundness: float, segments: int, lineThick: float, color: Color) -> void
-external function DrawTriangle(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
-external function DrawTriangleLines(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
-external function DrawTriangleFan(points: const_ptr[Vector2], pointCount: int, color: Color) -> void
-external function DrawTriangleStrip(points: const_ptr[Vector2], pointCount: int, color: Color) -> void
+external function DrawRectangleRoundedLinesEx(rec: Rectangle, roundness: float, segments: int, thick: float, color: Color) -> void
 external function DrawPoly(center: Vector2, sides: int, radius: float, rotation: float, color: Color) -> void
 external function DrawPolyLines(center: Vector2, sides: int, radius: float, rotation: float, color: Color) -> void
-external function DrawPolyLinesEx(center: Vector2, sides: int, radius: float, rotation: float, lineThick: float, color: Color) -> void
+external function DrawPolyLinesEx(center: Vector2, sides: int, radius: float, rotation: float, thick: float, color: Color) -> void
+external function DrawCircle(centerX: int, centerY: int, radius: float, color: Color) -> void
+external function DrawCircleV(center: Vector2, radius: float, color: Color) -> void
+external function DrawCircleGradient(center: Vector2, radius: float, inner: Color, outer: Color) -> void
+external function DrawCircleSector(center: Vector2, radius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
+external function DrawCircleSectorLines(center: Vector2, radius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
+external function DrawCircleSectorLinesEx(center: Vector2, radius: float, startAngle: float, endAngle: float, segments: int, thick: float, color: Color) -> void
+external function DrawCircleLines(centerX: int, centerY: int, radius: float, color: Color) -> void
+external function DrawCircleLinesV(center: Vector2, radius: float, color: Color) -> void
+external function DrawCircleLinesEx(center: Vector2, radius: float, thick: float, color: Color) -> void
+external function DrawEllipse(centerX: int, centerY: int, radiusH: float, radiusV: float, color: Color) -> void
+external function DrawEllipseV(center: Vector2, radiusH: float, radiusV: float, color: Color) -> void
+external function DrawEllipseLines(centerX: int, centerY: int, radiusH: float, radiusV: float, color: Color) -> void
+external function DrawEllipseLinesV(center: Vector2, radiusH: float, radiusV: float, color: Color) -> void
+external function DrawEllipseLinesEx(center: Vector2, radiusH: float, radiusV: float, thick: float, color: Color) -> void
+external function DrawRing(center: Vector2, innerRadius: float, outerRadius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
+external function DrawRingLines(center: Vector2, innerRadius: float, outerRadius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
+external function DrawRingLinesEx(center: Vector2, innerRadius: float, outerRadius: float, startAngle: float, endAngle: float, segments: int, thick: float, color: Color) -> void
 external function DrawSplineLinear(points: const_ptr[Vector2], pointCount: int, thick: float, color: Color) -> void
 external function DrawSplineBasis(points: const_ptr[Vector2], pointCount: int, thick: float, color: Color) -> void
 external function DrawSplineCatmullRom(points: const_ptr[Vector2], pointCount: int, thick: float, color: Color) -> void
@@ -846,7 +853,7 @@ external function DrawSplineSegmentBezierCubic(p1: Vector2, c2: Vector2, c3: Vec
 external function GetSplinePointLinear(startPos: Vector2, endPos: Vector2, t: float) -> Vector2
 external function GetSplinePointBasis(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, t: float) -> Vector2
 external function GetSplinePointCatmullRom(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, t: float) -> Vector2
-external function GetSplinePointBezierQuad(p1: Vector2, c2: Vector2, p3: Vector2, t: float) -> Vector2
+external function GetSplinePointBezierQuadratic(p1: Vector2, c2: Vector2, p3: Vector2, t: float) -> Vector2
 external function GetSplinePointBezierCubic(p1: Vector2, c2: Vector2, c3: Vector2, p4: Vector2, t: float) -> Vector2
 external function GetCollisionRec(rec1: Rectangle, rec2: Rectangle) -> Rectangle
 external function LoadImage(fileName: cstr) -> Image
@@ -894,7 +901,7 @@ external function ImageRotateCCW(image: ptr[Image]) -> void
 external function ImageColorTint(image: ptr[Image], color: Color) -> void
 external function ImageColorInvert(image: ptr[Image]) -> void
 external function ImageColorGrayscale(image: ptr[Image]) -> void
-external function ImageColorContrast(image: ptr[Image], contrast: float) -> void
+external function ImageColorContrast(image: ptr[Image], contrast: int) -> void
 external function ImageColorBrightness(image: ptr[Image], brightness: int) -> void
 external function ImageColorReplace(image: ptr[Image], color: Color, replace: Color) -> void
 external function LoadImageColors(image: Image) -> ptr[Color]?
@@ -909,26 +916,36 @@ external function ImageDrawPixelV(dst: ptr[Image], position: Vector2, color: Col
 external function ImageDrawLine(dst: ptr[Image], startPosX: int, startPosY: int, endPosX: int, endPosY: int, color: Color) -> void
 external function ImageDrawLineV(dst: ptr[Image], start: Vector2, end: Vector2, color: Color) -> void
 external function ImageDrawLineEx(dst: ptr[Image], start: Vector2, end: Vector2, thick: int, color: Color) -> void
+external function ImageDrawLineStrip(dst: ptr[Image], points: const_ptr[Vector2], pointCount: int, color: Color) -> void
+external function ImageDrawTriangle(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
+external function ImageDrawTriangleGradient(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, c1: Color, c2: Color, c3: Color) -> void
+external function ImageDrawTriangleLines(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
+external function ImageDrawTriangleFan(dst: ptr[Image], points: const_ptr[Vector2], pointCount: int, color: Color) -> void
+external function ImageDrawTriangleStrip(dst: ptr[Image], points: const_ptr[Vector2], pointCount: int, color: Color) -> void
+external function ImageDrawRectangle(dst: ptr[Image], posX: int, posY: int, width: int, height: int, color: Color) -> void
+external function ImageDrawRectangleV(dst: ptr[Image], position: Vector2, size: Vector2, color: Color) -> void
+external function ImageDrawRectangleRec(dst: ptr[Image], rec: Rectangle, color: Color) -> void
+external function ImageDrawRectanglePro(dst: ptr[Image], rec: Rectangle, origin: Vector2, rotation: float, color: Color) -> void
+external function ImageDrawRectangleLines(dst: ptr[Image], posX: int, posY: int, width: int, height: int, color: Color) -> void
+external function ImageDrawRectangleLinesEx(dst: ptr[Image], rec: Rectangle, thick: int, color: Color) -> void
+external function ImageDrawRectangleGradientEx(dst: ptr[Image], rec: Rectangle, col1: Color, col2: Color, col3: Color, col4: Color) -> void
 external function ImageDrawCircle(dst: ptr[Image], centerX: int, centerY: int, radius: int, color: Color) -> void
 external function ImageDrawCircleV(dst: ptr[Image], center: Vector2, radius: int, color: Color) -> void
 external function ImageDrawCircleLines(dst: ptr[Image], centerX: int, centerY: int, radius: int, color: Color) -> void
 external function ImageDrawCircleLinesV(dst: ptr[Image], center: Vector2, radius: int, color: Color) -> void
-external function ImageDrawRectangle(dst: ptr[Image], posX: int, posY: int, width: int, height: int, color: Color) -> void
-external function ImageDrawRectangleV(dst: ptr[Image], position: Vector2, size: Vector2, color: Color) -> void
-external function ImageDrawRectangleRec(dst: ptr[Image], rec: Rectangle, color: Color) -> void
-external function ImageDrawRectangleLines(dst: ptr[Image], rec: Rectangle, thick: int, color: Color) -> void
-external function ImageDrawTriangle(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
-external function ImageDrawTriangleEx(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, c1: Color, c2: Color, c3: Color) -> void
-external function ImageDrawTriangleLines(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
-external function ImageDrawTriangleFan(dst: ptr[Image], points: const_ptr[Vector2], pointCount: int, color: Color) -> void
-external function ImageDrawTriangleStrip(dst: ptr[Image], points: const_ptr[Vector2], pointCount: int, color: Color) -> void
-external function ImageDraw(dst: ptr[Image], src: Image, srcRec: Rectangle, dstRec: Rectangle, tint: Color) -> void
+external function ImageDrawCircleGradient(dst: ptr[Image], center: Vector2, radius: float, inner: Color, outer: Color) -> void
+external function ImageDrawImage(dst: ptr[Image], src: Image, posX: int, posY: int, tint: Color) -> void
+external function ImageDrawImageEx(dst: ptr[Image], src: Image, position: Vector2, rotation: float, scale: float, tint: Color) -> void
+external function ImageDrawImageRec(dst: ptr[Image], src: Image, srcRec: Rectangle, position: Vector2, tint: Color) -> void
+external function ImageDrawImagePro(dst: ptr[Image], src: Image, srcRec: Rectangle, dstRec: Rectangle, origin: Vector2, rotation: float, tint: Color) -> void
 external function ImageDrawText(dst: ptr[Image], text: cstr, posX: int, posY: int, fontSize: int, color: Color) -> void
 external function ImageDrawTextEx(dst: ptr[Image], font: Font, text: cstr, position: Vector2, fontSize: float, spacing: float, tint: Color) -> void
+external function ImageDrawTextPro(dst: ptr[Image], font: Font, text: cstr, position: Vector2, origin: Vector2, rotation: float, fontSize: float, spacing: float, tint: Color) -> void
 external function LoadTexture(fileName: cstr) -> Texture2D
 external function LoadTextureFromImage(image: Image) -> Texture2D
 external function LoadTextureCubemap(image: Image, layout: int) -> TextureCubemap
 external function LoadRenderTexture(width: int, height: int) -> RenderTexture2D
+external function LoadRenderTextureEx(width: int, height: int, format: int) -> RenderTexture2D
 external function UnloadTexture(texture: Texture) -> void
 external function UnloadRenderTexture(target: RenderTexture) -> void
 external function UpdateTexture(texture: Texture, pixels: const_ptr[void]) -> void
@@ -939,9 +956,9 @@ external function SetTextureWrap(texture: Texture, wrap: int) -> void
 external function DrawTexture(texture: Texture, posX: int, posY: int, tint: Color) -> void
 external function DrawTextureV(texture: Texture, position: Vector2, tint: Color) -> void
 external function DrawTextureEx(texture: Texture, position: Vector2, rotation: float, scale: float, tint: Color) -> void
-external function DrawTextureRec(texture: Texture, source: Rectangle, position: Vector2, tint: Color) -> void
-external function DrawTexturePro(texture: Texture, source: Rectangle, dest: Rectangle, origin: Vector2, rotation: float, tint: Color) -> void
-external function DrawTextureNPatch(texture: Texture, nPatchInfo: NPatchInfo, dest: Rectangle, origin: Vector2, rotation: float, tint: Color) -> void
+external function DrawTextureRec(texture: Texture, rec: Rectangle, position: Vector2, tint: Color) -> void
+external function DrawTexturePro(texture: Texture, srcrec: Rectangle, dstrec: Rectangle, origin: Vector2, rotation: float, tint: Color) -> void
+external function DrawTextureNPatch(texture: Texture, nPatchInfo: NPatchInfo, dstrec: Rectangle, origin: Vector2, rotation: float, tint: Color) -> void
 external function Fade(color: Color, alpha: float) -> Color
 external function ColorToInt(color: Color) -> int
 external function ColorNormalize(color: Color) -> Vector4
@@ -955,7 +972,7 @@ external function ColorAlpha(color: Color, alpha: float) -> Color
 external function ColorAlphaBlend(dst: Color, src: Color, tint: Color) -> Color
 external function ColorLerp(color1: Color, color2: Color, factor: float) -> Color
 external function GetColor(hexValue: uint) -> Color
-external function GetPixelColor(srcPtr: ptr[void], format: int) -> Color
+external function GetPixelColor(srcPtr: const_ptr[void], format: int) -> Color
 external function SetPixelColor(dstPtr: ptr[void], color: Color, format: int) -> void
 external function GetPixelDataSize(width: int, height: int, format: int) -> int
 external function GetFontDefault() -> Font
@@ -1026,12 +1043,12 @@ external function DrawCubeWiresV(position: Vector3, size: Vector3, color: Color)
 external function DrawSphere(centerPos: Vector3, radius: float, color: Color) -> void
 external function DrawSphereEx(centerPos: Vector3, radius: float, rings: int, slices: int, color: Color) -> void
 external function DrawSphereWires(centerPos: Vector3, radius: float, rings: int, slices: int, color: Color) -> void
-external function DrawCylinder(position: Vector3, radiusTop: float, radiusBottom: float, height: float, slices: int, color: Color) -> void
+external function DrawCylinder(position: Vector3, radiusTop: float, radiusBottom: float, height: float, sides: int, color: Color) -> void
 external function DrawCylinderEx(startPos: Vector3, endPos: Vector3, startRadius: float, endRadius: float, sides: int, color: Color) -> void
-external function DrawCylinderWires(position: Vector3, radiusTop: float, radiusBottom: float, height: float, slices: int, color: Color) -> void
+external function DrawCylinderWires(position: Vector3, radiusTop: float, radiusBottom: float, height: float, sides: int, color: Color) -> void
 external function DrawCylinderWiresEx(startPos: Vector3, endPos: Vector3, startRadius: float, endRadius: float, sides: int, color: Color) -> void
-external function DrawCapsule(startPos: Vector3, endPos: Vector3, radius: float, slices: int, rings: int, color: Color) -> void
-external function DrawCapsuleWires(startPos: Vector3, endPos: Vector3, radius: float, slices: int, rings: int, color: Color) -> void
+external function DrawCapsule(startPos: Vector3, endPos: Vector3, radius: float, rings: int, slices: int, color: Color) -> void
+external function DrawCapsuleWires(startPos: Vector3, endPos: Vector3, radius: float, rings: int, slices: int, color: Color) -> void
 external function DrawPlane(centerPos: Vector3, size: Vector2, color: Color) -> void
 external function DrawRay(ray: Ray, color: Color) -> void
 external function DrawGrid(slices: int, spacing: float) -> void
@@ -1045,8 +1062,8 @@ external function DrawModelWires(model: Model, position: Vector3, scale: float, 
 external function DrawModelWiresEx(model: Model, position: Vector3, rotationAxis: Vector3, rotationAngle: float, scale: Vector3, tint: Color) -> void
 external function DrawBoundingBox(box: BoundingBox, color: Color) -> void
 external function DrawBillboard(camera: Camera3D, texture: Texture, position: Vector3, scale: float, tint: Color) -> void
-external function DrawBillboardRec(camera: Camera3D, texture: Texture, source: Rectangle, position: Vector3, size: Vector2, tint: Color) -> void
-external function DrawBillboardPro(camera: Camera3D, texture: Texture, source: Rectangle, position: Vector3, up: Vector3, size: Vector2, origin: Vector2, rotation: float, tint: Color) -> void
+external function DrawBillboardRec(camera: Camera3D, texture: Texture, rec: Rectangle, position: Vector3, size: Vector2, tint: Color) -> void
+external function DrawBillboardPro(camera: Camera3D, texture: Texture, rec: Rectangle, position: Vector3, up: Vector3, size: Vector2, origin: Vector2, rotation: float, tint: Color) -> void
 external function UploadMesh(mesh: ptr[Mesh], dynamic: bool) -> void
 external function UpdateMeshBuffer(mesh: Mesh, index: int, data: const_ptr[void], dataSize: int, offset: int) -> void
 external function UnloadMesh(mesh: Mesh) -> void
@@ -1091,7 +1108,7 @@ external function LoadWaveFromMemory(fileType: cstr, fileData: const_ptr[ubyte],
 external function LoadSound(fileName: cstr) -> Sound
 external function LoadSoundFromWave(wave: Wave) -> Sound
 external function LoadSoundAlias(source: Sound) -> Sound
-external function UpdateSound(sound: Sound, data: const_ptr[void], sampleCount: int) -> void
+external function UpdateSound(sound: Sound, data: const_ptr[void], frameCount: int) -> void
 external function UnloadWave(wave: Wave) -> void
 external function UnloadSound(sound: Sound) -> void
 external function UnloadSoundAlias(alias: Sound) -> void

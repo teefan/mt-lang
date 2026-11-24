@@ -1,0 +1,11 @@
+{
+  "return_types": {},
+  "parameters": {
+    "mt_gzip_compress": {
+      "data": "ptr[ubyte]?"
+    },
+    "mt_gzip_decompress": {
+      "data": "ptr[ubyte]?"
+    }
+  }
+}

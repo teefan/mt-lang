@@ -1,0 +1,39 @@
+{
+  "module_name": "std.c.flecs",
+  "header_path": "third_party/flecs-upstream/distr/flecs.h",
+  "link_libraries": [
+    "flecs"
+  ],
+  "include_directives": [
+    "flecs.h"
+  ],
+  "bindgen_defines": [],
+  "bindgen_include_directives": [],
+  "module_imports": [],
+  "clang": "clang",
+  "clang_args": [
+    "-I$ROOT/third_party/flecs-upstream/distr"
+  ],
+  "type_name_overrides": {},
+  "type_overrides": {
+    "FILE": "ptr[void]"
+  },
+  "function_param_type_overrides": {},
+  "function_return_type_overrides": {},
+  "field_type_overrides": {},
+  "tracked_header_paths": [
+    "$ROOT/third_party/flecs-upstream/distr/flecs.h"
+  ],
+  "tracked_header_prefixes": [
+    "$ROOT/third_party/flecs-upstream/distr"
+  ],
+  "declaration_name_prefixes": [
+    "ecs_",
+    "Ecs",
+    "ECS_",
+    "FLECS_"
+  ],
+  "excluded_declaration_names": [],
+  "allow_static_inline_functions": false,
+  "strip_leading_underscores": false
+}

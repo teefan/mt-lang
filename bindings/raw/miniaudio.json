@@ -1,0 +1,34 @@
+{
+  "module_name": "std.c.miniaudio",
+  "header_path": "$ROOT/third_party/miniaudio-upstream/miniaudio.h",
+  "link_libraries": [
+    "dl",
+    "pthread",
+    "m"
+  ],
+  "include_directives": [
+    "miniaudio.h"
+  ],
+  "bindgen_defines": [
+    "MA_NO_FLAC",
+    "MA_NO_MP3"
+  ],
+  "bindgen_include_directives": [],
+  "module_imports": [],
+  "clang": "clang",
+  "clang_args": [],
+  "type_name_overrides": {},
+  "type_overrides": {},
+  "function_param_type_overrides": {},
+  "function_return_type_overrides": {},
+  "field_type_overrides": {},
+  "tracked_header_paths": [],
+  "tracked_header_prefixes": [],
+  "declaration_name_prefixes": [
+    "ma_",
+    "MA_"
+  ],
+  "excluded_declaration_names": [],
+  "allow_static_inline_functions": false,
+  "strip_leading_underscores": false
+}

@@ -1,0 +1,30 @@
+{
+  "module_name": "std.c.gl",
+  "header_path": "std/c/gl_registry_helpers.h",
+  "link_libraries": [],
+  "include_directives": [
+    "gl_registry_helpers.h"
+  ],
+  "bindgen_defines": [],
+  "bindgen_include_directives": [],
+  "module_imports": [],
+  "clang": "clang",
+  "clang_args": [],
+  "type_name_overrides": {},
+  "type_overrides": {},
+  "function_param_type_overrides": {},
+  "function_return_type_overrides": {},
+  "field_type_overrides": {},
+  "tracked_header_paths": [
+    "$ROOT/std/c/gl_registry_helpers.h"
+  ],
+  "tracked_header_prefixes": [],
+  "declaration_name_prefixes": [
+    "GL",
+    "gl",
+    "mt_gl_"
+  ],
+  "excluded_declaration_names": [],
+  "allow_static_inline_functions": false,
+  "strip_leading_underscores": false
+}

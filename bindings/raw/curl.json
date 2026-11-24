@@ -1,0 +1,45 @@
+{
+  "module_name": "std.c.curl",
+  "header_path": "/usr/include/curl/curl.h",
+  "link_libraries": [
+    "curl"
+  ],
+  "include_directives": [
+    "curl/curl.h"
+  ],
+  "bindgen_defines": [],
+  "bindgen_include_directives": [],
+  "module_imports": [],
+  "clang": "clang",
+  "clang_args": [],
+  "type_name_overrides": {},
+  "type_overrides": {
+    "curlfiletype": "int",
+    "curl_easytype": "int",
+    "CURLUcode": "int"
+  },
+  "function_param_type_overrides": {},
+  "function_return_type_overrides": {},
+  "field_type_overrides": {
+    "curl_fileinfo": {
+      "filetype": "int"
+    },
+    "curl_easyoption": {
+      "type": "int"
+    }
+  },
+  "tracked_header_paths": [],
+  "tracked_header_prefixes": [],
+  "declaration_name_prefixes": [
+    "curl_",
+    "curlfiletype",
+    "CURL",
+    "CURLOPT_",
+    "CURLINFO_",
+    "CURLM",
+    "CURLSH"
+  ],
+  "excluded_declaration_names": [],
+  "allow_static_inline_functions": false,
+  "strip_leading_underscores": false
+}

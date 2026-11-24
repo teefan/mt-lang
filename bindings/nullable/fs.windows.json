@@ -1,0 +1,11 @@
+{
+  "return_types": {},
+  "parameters": {
+    "mt_fs_write_text": {
+      "data": "ptr[char]?"
+    },
+    "mt_fs_write_bytes": {
+      "data": "ptr[ubyte]?"
+    }
+  }
+}

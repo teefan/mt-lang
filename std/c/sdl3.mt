@@ -1510,7 +1510,8 @@ enum SDL_GamepadType: int
     SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT = 9
     SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR = 10
     SDL_GAMEPAD_TYPE_GAMECUBE = 11
-    SDL_GAMEPAD_TYPE_COUNT = 12
+    SDL_GAMEPAD_TYPE_STEAM = 12
+    SDL_GAMEPAD_TYPE_COUNT = 13
 
 enum SDL_GamepadButton: int
     SDL_GAMEPAD_BUTTON_INVALID = -1
@@ -1809,6 +1810,7 @@ enum SDL_Scancode: int
     SDL_SCANCODE_CLEARAGAIN = 162
     SDL_SCANCODE_CRSEL = 163
     SDL_SCANCODE_EXSEL = 164
+    SDL_SCANCODE_FRONT = 165
     SDL_SCANCODE_KP_00 = 176
     SDL_SCANCODE_KP_000 = 177
     SDL_SCANCODE_THOUSANDSSEPARATOR = 178
@@ -2445,6 +2447,8 @@ struct SDL_PenProximityEvent:
     timestamp: ptr_uint
     windowID: uint
     which: uint
+    pen_state: uint
+    device_type: SDL_PenDeviceType
 
 struct SDL_PenMotionEvent:
     type: SDL_EventType
@@ -2455,6 +2459,7 @@ struct SDL_PenMotionEvent:
     pen_state: uint
     x: float
     y: float
+    device_type: SDL_PenDeviceType
 
 struct SDL_PenTouchEvent:
     type: SDL_EventType
@@ -2467,6 +2472,7 @@ struct SDL_PenTouchEvent:
     y: float
     eraser: bool
     down: bool
+    device_type: SDL_PenDeviceType
 
 struct SDL_PenButtonEvent:
     type: SDL_EventType
@@ -2479,6 +2485,7 @@ struct SDL_PenButtonEvent:
     y: float
     button: ubyte
     down: bool
+    device_type: SDL_PenDeviceType
 
 struct SDL_PenAxisEvent:
     type: SDL_EventType
@@ -2491,6 +2498,7 @@ struct SDL_PenAxisEvent:
     y: float
     axis: SDL_PenAxis
     value: float
+    device_type: SDL_PenDeviceType
 
 struct SDL_DropEvent:
     type: SDL_EventType
@@ -4129,4 +4137,4 @@ const SDL_TRAYENTRY_DISABLED: uint = 2147483648
 const SDL_TRAYENTRY_CHECKED: uint = 1073741824
 const SDL_MAJOR_VERSION: int = 3
 const SDL_MINOR_VERSION: int = 4
-const SDL_MICRO_VERSION: int = 12
+const SDL_MICRO_VERSION: int = 20

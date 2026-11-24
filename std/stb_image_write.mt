@@ -4,14 +4,22 @@ import std.c.stb_image_write as c
 
 public type stbi_write_func = c.stbi_write_func
 
-public foreign function write_png(filename: str as cstr, w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: int) -> int = c.stbi_write_png
+public foreign function write_png(filename: str as cstr, w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int) -> int = c.stbi_write_png
 public foreign function write_bmp(filename: str as cstr, w: int, h: int, comp: int, data: const_ptr[void]) -> int = c.stbi_write_bmp
 public foreign function write_tga(filename: str as cstr, w: int, h: int, comp: int, data: const_ptr[void]) -> int = c.stbi_write_tga
 public foreign function write_hdr(filename: str as cstr, w: int, h: int, comp: int, data: const_ptr[float]) -> int = c.stbi_write_hdr
 public foreign function write_jpg(filename: str as cstr, x: int, y: int, comp: int, data: const_ptr[void], quality: int) -> int = c.stbi_write_jpg
-public foreign function write_png_to_func(func: ptr[stbi_write_func], context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: int) -> int = c.stbi_write_png_to_func
-public foreign function write_bmp_to_func(func: ptr[stbi_write_func], context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void]) -> int = c.stbi_write_bmp_to_func
-public foreign function write_tga_to_func(func: ptr[stbi_write_func], context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void]) -> int = c.stbi_write_tga_to_func
-public foreign function write_hdr_to_func(func: ptr[stbi_write_func], context: ptr[void], w: int, h: int, comp: int, data: const_ptr[float]) -> int = c.stbi_write_hdr_to_func
-public foreign function write_jpg_to_func(func: ptr[stbi_write_func], context: ptr[void], x: int, y: int, comp: int, data: const_ptr[void], quality: int) -> int = c.stbi_write_jpg_to_func
+public foreign function write_bmp_strided(filename: str as cstr, w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int) -> int = c.stbi_write_bmp_strided
+public foreign function write_tga_strided(filename: str as cstr, w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int) -> int = c.stbi_write_tga_strided
+public foreign function write_hdr_strided(filename: str as cstr, w: int, h: int, comp: int, data: const_ptr[float], stride_in_bytes: ptr_int) -> int = c.stbi_write_hdr_strided
+public foreign function write_jpg_strided(filename: str as cstr, x: int, y: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int, quality: int) -> int = c.stbi_write_jpg_strided
+public foreign function write_png_to_func(func: stbi_write_func, context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int) -> int = c.stbi_write_png_to_func
+public foreign function write_bmp_to_func(func: stbi_write_func, context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void]) -> int = c.stbi_write_bmp_to_func
+public foreign function write_tga_to_func(func: stbi_write_func, context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void]) -> int = c.stbi_write_tga_to_func
+public foreign function write_hdr_to_func(func: stbi_write_func, context: ptr[void], w: int, h: int, comp: int, data: const_ptr[float]) -> int = c.stbi_write_hdr_to_func
+public foreign function write_jpg_to_func(func: stbi_write_func, context: ptr[void], x: int, y: int, comp: int, data: const_ptr[void], quality: int) -> int = c.stbi_write_jpg_to_func
+public foreign function write_bmp_strided_to_func(func: stbi_write_func, context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int) -> int = c.stbi_write_bmp_strided_to_func
+public foreign function write_tga_strided_to_func(func: stbi_write_func, context: ptr[void], w: int, h: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int) -> int = c.stbi_write_tga_strided_to_func
+public foreign function write_hdr_strided_to_func(func: stbi_write_func, context: ptr[void], w: int, h: int, comp: int, data: const_ptr[float], stride_in_bytes: ptr_int) -> int = c.stbi_write_hdr_strided_to_func
+public foreign function write_jpg_strided_to_func(func: stbi_write_func, context: ptr[void], x: int, y: int, comp: int, data: const_ptr[void], stride_in_bytes: ptr_int, quality: int) -> int = c.stbi_write_jpg_strided_to_func
 public foreign function flip_vertically_on_write(flip_boolean: int) -> void = c.stbi_flip_vertically_on_write

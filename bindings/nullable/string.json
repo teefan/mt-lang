@@ -1,0 +1,9 @@
+{
+  "return_types": {
+    "mt_string_memchr": "ptr[void]?",
+    "mt_string_strchr": "ptr[char]?",
+    "mt_string_strrchr": "ptr[char]?",
+    "mt_string_strstr": "ptr[char]?"
+  },
+  "parameters": {}
+}

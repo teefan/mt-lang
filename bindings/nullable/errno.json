@@ -1,0 +1,6 @@
+{
+  "return_types": {
+    "mt_errno_strerror": "cstr?"
+  },
+  "parameters": {}
+}

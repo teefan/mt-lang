@@ -21,8 +21,8 @@ union uv_udp_s_u:
     reserved: array[ptr[void], 4]
 
 union uv_udp_send_s_u:
-    addr: sockaddr
-    storage: sockaddr_storage
+    reserved2: array[ptr[void], 1]
+    write_extra: uv__req_write_extra_s
 
 union uv_tty_s_u:
     fd: int
@@ -192,6 +192,9 @@ struct uv_lib_t:
     handle: ptr[void]
     errmsg: ptr[char]
 
+struct uv__req_write_extra_s = c"struct uv__req_write_extra_s":
+    nwritten: ptr_uint
+
 enum uv_errno_t: int
     UV_E2BIG = -7
     UV_EACCES = -13
@@ -272,7 +275,7 @@ enum uv_errno_t: int
     UV_EHOSTDOWN = -112
     UV_EREMOTEIO = -121
     UV_ENOTTY = -25
-    UV_EFTYPE = -4028
+    UV_EFTYPE = -134
     UV_EILSEQ = -84
     UV_ESOCKTNOSUPPORT = -94
     UV_ENODATA = -61
@@ -467,14 +470,18 @@ external function uv_err_name_r(err: int, buf: ptr[char], buflen: ptr_uint) -> p
 struct uv_req_s = c"uv_req_t":
     data: ptr[void]
     type: uv_req_type
-    reserved: array[ptr[void], 6]
+    reserved: array[ptr[void], 5]
+    reserved2: array[ptr[void], 1]
+    write_extra: uv__req_write_extra_s
 
 external function uv_shutdown(req: ptr[uv_shutdown_t], handle: ptr[uv_stream_t], cb: fn(arg0: ptr[uv_shutdown_t], arg1: int) -> void) -> int
 
 struct uv_shutdown_s = c"uv_shutdown_t":
     data: ptr[void]
     type: uv_req_type
-    reserved: array[ptr[void], 6]
+    reserved: array[ptr[void], 5]
+    reserved2: array[ptr[void], 1]
+    write_extra: uv__req_write_extra_s
     handle: ptr[uv_stream_t]
     cb: fn(arg0: ptr[uv_shutdown_t], arg1: int) -> void
 
@@ -540,11 +547,14 @@ external function uv_write(req: ptr[uv_write_t], handle: ptr[uv_stream_t], bufs:
 external function uv_write2(req: ptr[uv_write_t], handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: uint, send_handle: ptr[uv_stream_t], cb: fn(arg0: ptr[uv_write_t], arg1: int) -> void) -> int
 external function uv_try_write(handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: uint) -> int
 external function uv_try_write2(handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: uint, send_handle: ptr[uv_stream_t]) -> int
+external function uv_write_nwritten(req: const_ptr[uv_write_t]) -> ptr_uint
 
 struct uv_write_s = c"uv_write_t":
     data: ptr[void]
     type: uv_req_type
-    reserved: array[ptr[void], 6]
+    reserved: array[ptr[void], 5]
+    reserved2: array[ptr[void], 1]
+    write_extra: uv__req_write_extra_s
     cb: fn(arg0: ptr[uv_write_t], arg1: int) -> void
     send_handle: ptr[uv_stream_t]
     handle: ptr[uv_stream_t]
@@ -603,7 +613,9 @@ external function uv_tcp_connect(req: ptr[uv_connect_t], handle: ptr[uv_tcp_t], 
 struct uv_connect_s = c"uv_connect_t":
     data: ptr[void]
     type: uv_req_type
-    reserved: array[ptr[void], 6]
+    reserved: array[ptr[void], 5]
+    reserved2: array[ptr[void], 1]
+    write_extra: uv__req_write_extra_s
     cb: fn(arg0: ptr[uv_connect_t], arg1: int) -> void
     handle: ptr[uv_stream_t]
     queue: uv__queue
@@ -641,7 +653,9 @@ struct uv_udp_s = c"uv_udp_t":
 struct uv_udp_send_s = c"uv_udp_send_t":
     data: ptr[void]
     type: uv_req_type
-    reserved: array[ptr[void], 6]
+    reserved: array[ptr[void], 5]
+    reserved2: array[ptr[void], 1]
+    write_extra: uv__req_write_extra_s
     handle: ptr[uv_udp_t]
     cb: fn(arg0: ptr[uv_udp_send_t], arg1: int) -> void
     queue: uv__queue
@@ -868,7 +882,9 @@ external function uv_timer_get_due_in(handle: const_ptr[uv_timer_t]) -> ulong
 struct uv_getaddrinfo_s = c"uv_getaddrinfo_t":
     data: ptr[void]
     type: uv_req_type
-    reserved: array[ptr[void], 6]
+    reserved: array[ptr[void], 5]
+    reserved2: array[ptr[void], 1]
+    write_extra: uv__req_write_extra_s
     loop: ptr[uv_loop_t]
     work_req: uv__work
     cb: fn(arg0: ptr[uv_getaddrinfo_t], arg1: int, arg2: ptr[addrinfo]) -> void
@@ -884,7 +900,9 @@ external function uv_freeaddrinfo(ai: ptr[addrinfo]?) -> void
 struct uv_getnameinfo_s = c"uv_getnameinfo_t":
     data: ptr[void]
     type: uv_req_type
-    reserved: array[ptr[void], 6]
+    reserved: array[ptr[void], 5]
+    reserved2: array[ptr[void], 1]
+    write_extra: uv__req_write_extra_s
     loop: ptr[uv_loop_t]
     work_req: uv__work
     getnameinfo_cb: fn(arg0: ptr[uv_getnameinfo_t], arg1: int, arg2: cstr, arg3: cstr) -> void
@@ -954,7 +972,9 @@ external function uv_process_get_pid(arg0: const_ptr[uv_process_t]) -> uv_pid_t
 struct uv_work_s = c"uv_work_t":
     data: ptr[void]
     type: uv_req_type
-    reserved: array[ptr[void], 6]
+    reserved: array[ptr[void], 5]
+    reserved2: array[ptr[void], 1]
+    write_extra: uv__req_write_extra_s
     loop: ptr[uv_loop_t]
     work_cb: fn(arg0: ptr[uv_work_t]) -> void
     after_work_cb: fn(arg0: ptr[uv_work_t], arg1: int) -> void
@@ -1143,7 +1163,9 @@ struct uv_dir_s = c"uv_dir_t":
 struct uv_fs_s = c"uv_fs_t":
     data: ptr[void]
     type: uv_req_type
-    reserved: array[ptr[void], 6]
+    reserved: array[ptr[void], 5]
+    reserved2: array[ptr[void], 1]
+    write_extra: uv__req_write_extra_s
     fs_type: uv_fs_type
     loop: ptr[uv_loop_t]?
     cb: uv_fs_cb?
@@ -1285,7 +1307,9 @@ external function uv_inet_pton(af: int, src: cstr, dst: ptr[void]) -> int
 struct uv_random_s = c"uv_random_t":
     data: ptr[void]
     type: uv_req_type
-    reserved: array[ptr[void], 6]
+    reserved: array[ptr[void], 5]
+    reserved2: array[ptr[void], 1]
+    write_extra: uv__req_write_extra_s
     loop: ptr[uv_loop_t]
     status: int
     buf: ptr[void]
@@ -1464,10 +1488,9 @@ const UV__EAI_PROTOCOL: int = -3014
 external function UV__ERR() -> int
 
 const UV__ECHARSET: int = -4080
-const UV__EFTYPE: int = -4028
 const UV_VERSION_MAJOR: int = 1
-const UV_VERSION_MINOR: int = 52
-const UV_VERSION_PATCH: int = 1
+const UV_VERSION_MINOR: int = 53
+const UV_VERSION_PATCH: int = 0
 const UV_VERSION_IS_RELEASE: int = 1
 const UV_FS_O_DIRECT: int = 16384
 const UV_FS_O_EXLOCK: int = 0

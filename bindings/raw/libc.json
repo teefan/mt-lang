@@ -1,0 +1,64 @@
+{
+  "module_name": "std.c.libc",
+  "header_path": "/usr/include/stdlib.h",
+  "link_libraries": [],
+  "include_directives": [
+    "stdlib.h"
+  ],
+  "bindgen_defines": [],
+  "bindgen_include_directives": [],
+  "module_imports": [],
+  "clang": "clang",
+  "clang_args": [],
+  "type_name_overrides": {},
+  "type_overrides": {},
+  "function_param_type_overrides": {
+    "strtod": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "strtof": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "strtol": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "strtoul": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "strtoq": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "strtouq": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "strtoll": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "strtoull": {
+      "__endptr": "ptr[ptr[char]]?"
+    },
+    "realloc": {
+      "__ptr": "ptr[void]?"
+    },
+    "reallocarray": {
+      "__ptr": "ptr[void]?"
+    },
+    "free": {
+      "__ptr": "ptr[void]?"
+    }
+  },
+  "function_return_type_overrides": {
+    "malloc": "ptr[void]?",
+    "calloc": "ptr[void]?",
+    "realloc": "ptr[void]?",
+    "reallocarray": "ptr[void]?",
+    "aligned_alloc": "ptr[void]?"
+  },
+  "field_type_overrides": {},
+  "tracked_header_paths": [],
+  "tracked_header_prefixes": [],
+  "declaration_name_prefixes": [],
+  "excluded_declaration_names": [],
+  "allow_static_inline_functions": false,
+  "strip_leading_underscores": false
+}

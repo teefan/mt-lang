@@ -1259,8 +1259,8 @@
     ]
   },
   "sizes": {
-    "total_code": 129402,
-    "functions_over_limit": 2,
+    "total_code": 129442,
+    "functions_over_limit": 3,
     "files_over_limit": 11,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
@@ -1306,10 +1306,10 @@
         "max_function": 18
       },
       "projects/mtc/src/mtc/build.mt": {
-        "lines": 2083,
-        "code": 1686,
-        "max_line": 122,
-        "max_function": 182
+        "lines": 2130,
+        "code": 1726,
+        "max_line": 300,
+        "max_function": 211
       },
       "projects/mtc/src/mtc/build_cache.mt": {
         "lines": 431,
@@ -2256,7 +2256,7 @@
       "projects/mtc/src/mtc/toolchain_bindings.mt": {
         "lines": 410,
         "code": 396,
-        "max_line": 101,
+        "max_line": 102,
         "max_function": 385
       },
       "projects/mtc/src/mtc/toolchain_cli.mt": {

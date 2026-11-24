@@ -19,8 +19,8 @@ hard error that names the expected path.
 
 ## Provenance
 
-The checked-in `linux-x86_64` seed is the release build of the `0.5.1` tree,
-sha256 `37add2b3ee460454651861dc69003daa1d8779d9cd52702b7975ad13e277d9ab`,
+The checked-in `linux-x86_64` seed is the release build of the `0.5.2` tree,
+sha256 `62c113a0ee460454651861dc69003daa1d8779d9cd52702b7975ad13e277d9ab`,
 refreshed with:
 
 ```sh

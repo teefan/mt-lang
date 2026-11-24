@@ -1,0 +1,43 @@
+{
+  "return_types": {
+    "LoadRandomSequence": "ptr[int]?",
+    "MemAlloc": "ptr[void]?",
+    "MemRealloc": "ptr[void]?",
+    "LoadFileData": "ptr[ubyte]?",
+    "LoadFileText": "ptr[char]?",
+    "CompressData": "ptr[ubyte]?",
+    "DecompressData": "ptr[ubyte]?",
+    "EncodeDataBase64": "ptr[char]?",
+    "DecodeDataBase64": "ptr[ubyte]?",
+    "ExportImageToMemory": "ptr[ubyte]?",
+    "LoadImageColors": "ptr[Color]?",
+    "LoadImagePalette": "ptr[Color]?",
+    "LoadUTF8": "ptr[char]?",
+    "LoadCodepoints": "ptr[int]?",
+    "LoadMaterials": "ptr[Material]?",
+    "LoadModelAnimations": "ptr[ModelAnimation]?",
+    "LoadWaveSamples": "ptr[float]?"
+  },
+  "parameters": {
+    "LoadShader": {
+      "vsFileName": "cstr?",
+      "fsFileName": "cstr?"
+    },
+    "LoadShaderFromMemory": {
+      "vsCode": "cstr?",
+      "fsCode": "cstr?"
+    },
+    "LoadAutomationEventList": {
+      "fileName": "cstr?"
+    },
+    "LoadFontEx": {
+      "codepoints": "ptr[int]?"
+    },
+    "LoadFontFromMemory": {
+      "codepoints": "ptr[int]?"
+    },
+    "LoadFontData": {
+      "codepoints": "ptr[int]?"
+    }
+  }
+}
