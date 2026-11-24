@@ -371,8 +371,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 885,
-    "duplicated_lines": 6515,
+    "windows": 882,
+    "duplicated_lines": 6499,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -533,10 +533,8 @@
       "3202eabdb3af5c5f9a5468555f2cc3f2ce912844",
       "3333cefca436fce0eef086f62e8dd68f4d600d1a",
       "3345a32d07242db81db5b0fcd770098a9c7678d4",
-      "337f4cd0f5fe01ba4d865bee158d077a7b00ebfc",
       "339babfaeaf988381997eb2202308bb455ac6e27",
       "33b3397788019bb6825ca0dea5f2fa412ca97dc4",
-      "34122d1e8eea1ae54762f128e7492e1ff5efce35",
       "3439ea07dd1e4d4670ac39afc56bffa007130a1d",
       "3480f45f4844709315d95ec1b5e597c2ed7898d2",
       "34e3717d8db317c8775acba338e26637e678030b",
@@ -1169,7 +1167,6 @@
       "e450106026f2bd102e767f746506af573e83609f",
       "e51a702945e70c409f7afbb48ab4c239ec143baf",
       "e51f5e2f80ac680e27158c60937806fe49836b91",
-      "e5714e873f5aad7e1615364833feb2f0699442a5",
       "e59617fb0e8459719c544f9f94d93d2691b39011",
       "e64f8c3a9247d6b83fb215767dcf654394177ec1",
       "e6890e9b3ea548e097218acf915c18ab1583e41e",
@@ -1262,7 +1259,7 @@
     ]
   },
   "sizes": {
-    "total_code": 129472,
+    "total_code": 129398,
     "functions_over_limit": 2,
     "files_over_limit": 11,
     "files": {
@@ -1927,10 +1924,10 @@
         "max_function": 70
       },
       "projects/mtc/src/mtc/lsp/symbols.mt": {
-        "lines": 1608,
-        "code": 1322,
+        "lines": 1524,
+        "code": 1248,
         "max_line": 182,
-        "max_function": 156
+        "max_function": 154
       },
       "projects/mtc/src/mtc/lsp/text_docs.mt": {
         "lines": 280,

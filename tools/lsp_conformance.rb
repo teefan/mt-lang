@@ -512,6 +512,25 @@ ERROR_SOURCE = <<~MT
       return missing_name
 MT
 
+GENERIC_OUTLINE_SOURCE = <<~MT
+  public variant MyOption[T]:
+      some(value: T)
+      none
+
+  public struct Pair[A, B]:
+      first: A
+      second: B
+
+  public interface Holder[K]:
+      function get(key: K) -> int
+
+  public struct Nested[C]:
+      inner: C
+
+      public struct Leaf[D]:
+          value: D
+MT
+
 
 # ── cases ───────────────────────────────────────────────────────────────────
 
@@ -528,6 +547,45 @@ add_case("capabilities/code-action-kinds") do |ctx, client|
   ctx.eq(caps.dig("codeActionProvider", "codeActionKinds"),
          %w[quickfix source.fixAll],
          "codeActionProvider.codeActionKinds")
+end
+
+
+add_case("outline/generic-parameters-are-not-symbols") do |ctx, client|
+  init!(client, ctx.root)
+  path = write_fixture(ctx.root, "main.mt", GENERIC_OUTLINE_SOURCE)
+  open!(client, path)
+  result = client.request("textDocument/documentSymbol",
+                          { "textDocument" => { "uri" => path_to_uri(path) } })["result"]
+  symbols = Array(result).flatten
+
+  by_name = symbols.each_with_object({}) { |s, h| h[s["name"]] = s }
+  ctx.eq(by_name.dig("MyOption", "detail"), "[T]", "variant keeps its generics in detail")
+  ctx.eq(by_name.dig("Pair", "detail"), "[A, B]", "struct keeps its generics in detail")
+  ctx.eq(by_name.dig("Holder", "detail"), "[K]", "interface keeps its generics in detail")
+
+  # Type parameters live in `detail`; the tree holds members only, as in
+  # rust-analyzer, clangd, gopls and TypeScript.
+  type_parameters = []
+  walk = lambda do |list|
+    Array(list).each do |s|
+      type_parameters << s["name"] if s["kind"] == 26
+      walk.call(s["children"])
+    end
+  end
+  walk.call(result)
+  ctx.eq(type_parameters, [], "outline must not contain TypeParameter symbols")
+
+  ctx.eq(Array(by_name.dig("MyOption", "children")).map { |c| c["name"] }, %w[some none],
+         "variant arms")
+  ctx.eq(Array(by_name.dig("Pair", "children")).map { |c| c["name"] }, %w[first second],
+         "struct fields")
+  ctx.eq(Array(by_name.dig("Holder", "children")).map { |c| c["name"] }, %w[get],
+         "interface methods")
+
+  nested = Array(by_name.dig("Nested", "children")).find { |c| c["name"] == "Leaf" }
+  ctx.check(nested, "nested struct Leaf missing from the outline")
+  ctx.eq(Array(nested && nested["children"]).map { |c| c["name"] }, %w[value],
+         "nested struct field, with its own type parameter omitted")
 end
 
 

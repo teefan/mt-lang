@@ -504,7 +504,7 @@ fixed the same day.
 
 | Feature | Status |
 |---------|--------|
-| **Live parity status** | **See the pre-compaction plan record (`git show d8a199c7:docs/self-host-plan.md`, §0k); the current authority is `tools/lsp_conformance.rb` (37/37).** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; **88 requests** + 28 stress probes; **6 documented differing entries**) and by the project audit (7075 entries / **8 stable differing entries + the host's first-file `documentSymbol` race**, session 140) |
+| **Live parity status** | **See the pre-compaction plan record (`git show d8a199c7:docs/self-host-plan.md`, §0k); the current authority is `tools/lsp_conformance.rb` (38/38).** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; **88 requests** + 28 stress probes; **6 documented differing entries**) and by the project audit (7075 entries / **8 stable differing entries + the host's first-file `documentSymbol` race**, session 140) |
 | **Position encoding** | **Both directions are converted at the boundary (session 145 phase 1)**: `initialize` reads `capabilities.general.positionEncodings` and advertises `utf-8` when the client offers it (the server's byte columns are then the wire format), otherwise LSP-default UTF-16 and `Workspace.position_encoding_utf16` is set.  Incoming positions route through `utils.position_to_byte_utf16`/`position_to_byte_utf8` for every position- and range-carrying request, including incremental `didChange`; emitted ranges use `utils.byte_to_utf16_column` with the per-document line-start map (`utils.build_line_starts`/`line_at_index`).  The semantic-token cache records its column encoding, so a cached UTF-8 pass is never replayed to a UTF-16 client.  ASCII behavior is unchanged; on astral text the self follows the negotiated spec rather than the host's byte-column echo. |
 | Diagnostics (push + pull) | **DONE (stage 4)** — the editor *buffer* is analysed (not the file on disk); `lex/error`, `parse/error`, `import/load-error`, `sema/error` and lint items carry the host's codes, `data.stage`, token-length ranges (import failures anchor at the module-path text) and MarkupContent for quoted-identifier sema messages; `workspace/diagnostic` reports every open document in didOpen order with `previousResultIds`.  `diagnostic/pull` and `workspace/diagnostic` are byte-equal to the host. |
 | Incremental text sync (change:2) | **DONE** — range-based edits, UTF-8 line/char→byte conversion |
@@ -552,7 +552,9 @@ recovery result:
   host's node (an `expr_error` value, a partial `FunctionDef`).  The lints on
   recovered code followed from the AST rather than being special-cased; the
   outline keeps the host's token anchoring, so a dropped declaration still
-  appears as a bare symbol.  `tools/lsp_recovery_probe.rb --check` covers the
+  appears as a bare symbol.  The outline itself no longer copies the host's
+  type-parameter children (row 17): generics stay in the declaration's `detail`
+  and the tree carries members only.  `tools/lsp_recovery_probe.rb --check` covers the
   corpus: truncated `n.`/`a.inner.`, unterminated string/block, half-typed
   `import`, cut-off expression, plus an incremental edit.  Not yet emulated: the
   host's *nested* declaration rescues (methods, the local-decl `else` variant,
@@ -607,6 +609,7 @@ recovery result:
   | 14 | Member resolution through a call/index receiver (`read(p).get_object`, `make_sample().sum()`, `particles[0].y`): the host's chain requires an identifier immediately before the dot and returns null (or a same-named global for definitions); the self reads the analyzer's recorded receiver type | self-better (session 140) | `lsp_parity` (`hover/chained-method`), `lsp_project_audit` (`data_structures@250:17`, canonical) |
   | 15 | Completion after a non-text receiver (`read(p).`, `make().`, `arr[0].`): a trailing dot is still a parse error, but the parser keeps the receiver as an empty-name member access, the analyzer records its type at the dot, and completion answers its fields/methods; a type receiver keeps the static-member path | self-better (session 147) | `lsp_conformance` (`completion/incomplete-dot-receiver`), `completion_test.mt` |
   | 16 | Enum-member hover through a type alias (`type BodyType = c.b3BodyType`; `b3.BodyType.b3_dynamicBody`): the receiver name is not the enum, so the direct member path misses it; the self follows the alias's resolved type to the declaring module and renders the member and its owning module | self-better (session 148) | `lsp_conformance` (`hover/aliased-enum-member`), the `examples/box3d/single_box.mt:20` probe |
+  | 17 | `documentSymbol` omits generic parameters from the outline tree; the host listed each type parameter as a `TypeParameter` (kind 26) child of its declaration.  The parameters remain in the declaration's `detail` (`Pair :: "[A, B]"`), which is where rust-analyzer, clangd, gopls and TypeScript put them — none of them emit type-parameter symbols | deliberate deviation (session 156) | `lsp_conformance` (`outline/generic-parameters-are-not-symbols`) |
 
   The *checklist* for anything not in this table: `tools/lsp_parity.rb
   compare` must show only its documented entries, `tools/lsp_recovery_probe.rb

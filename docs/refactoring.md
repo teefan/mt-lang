@@ -110,7 +110,7 @@ helpers, `lsp/navigation.mt analysis_for_document`/`ast_for_document`,
 Normalized 12-line windows (comments/blanks stripped, literals replaced with
 `S`/`N`) hashed across all functions. Overlapping windows make the cluster count
 large; `duplicated_lines` is the ratcheted metric. Current baseline:
-**6,515 duplicated lines in 885 window clusters**.  Session 125 fixed the
+**6,499 duplicated lines in 882 window clusters**.  Session 125 fixed the
 function-end scan for multi-line signatures, so this baseline includes bodies
 the earlier metric skipped; session 126's splits also shifted a few window
 boundaries, session 131's completion/diagnostic feature growth added two
@@ -118,13 +118,14 @@ windows, and session 132's format-string context added one shared
 parameter-loop window.  Sessions 149–154's memory and cache work added the
 boxed `Type`-payload deref idiom (`let x_bp = unsafe: read(x.payload)`) and the
 LSP cache-release helpers (+55 duplicated lines, −11 clusters).  Session 155's
-static-libuv and version/help work removed ten duplicated lines.  None is a
-duplication regression.  Use the clusters as pointers to repeated
+static-libuv and version/help work removed ten duplicated lines, and session
+156's outline change removed the duplicated type-parameter emission (16 more
+lines, 3 clusters).  None is a duplication regression.  Use the clusters as pointers to repeated
 emission/frame boilerplate, not as an absolute quality score.
 
 ### Size, markers, tests
 
-- **129,472 code lines**; **2 functions ≥ 200 lines** (`binding_at` 385,
+- **129,398 code lines**; **2 functions ≥ 200 lines** (`binding_at` 385,
   excluded, and `resolve_cursor` 200, exactly at the boundary); **11 files
   ≥ 2,000 code lines**. The ratchet counts these, so a refactor cannot trade one
   long function for another.
@@ -198,21 +199,25 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 155, 2026-11-23)
+## 6. Current baseline (session 156, 2026-11-24)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 163,077 / 129,472 |
+| source files / lines / code lines | 169 / 163,003 / 129,398 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (169 modules) |
 | dead exports (unused / test-only) | 30 / 7 |
-| duplication (windows / duplicated lines) | 885 / 6,515 (window 12) |
+| duplication (windows / duplicated lines) | 882 / 6,499 (window 12) |
 | functions ≥ 200 lines | 2 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 22 / 85 |
+
+Session 156 removed the `documentSymbol` type-parameter children and their
+two helpers (−74 code lines, −16 duplicated lines, −3 clusters); no layering,
+alias or vocabulary invariant moved.
 
 Session 155 refreshed the baseline for the static-libuv link-order fix and
 stale-prefix cleanup (+26 code lines) and the 0.5.0 version/help text; the

@@ -129,13 +129,13 @@ history.
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field anchor is a reviewed difference, not a residual (session 146). |
 | Linter | **43/43 rules, 13/13 fixers**; the 673-file lint oracle is the corpus gate (the live host-diff corpus is retired).  The historical residue (3 self-only `std` files, the host-timeout rows) is recorded in *Deliberate differences*. |
 | LSP | self-only instruments: valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class on `analyzer.mt`; soak **74.9 KB/cycle raw / 7.9 LS at 200 cycles** (session 148, the last full instrument run; no positive slope); `milkTea/debugInfo` byte-equal on the recorded fixtures.  Completion after a non-text receiver (`read(p).`, `make().`, `arr[0].`) landed in session 147; enum-member hover through a type alias in session 148.  Session 154 evicted the per-document caches on close and released map keys in every bulk cache release, and measured the remaining open/close RSS growth as allocator high-water, not retention.  The host-differential harness/audit/recovery probes are retired with the host; `lsp_parity record --server self` and `lsp_soak` remain |
-| LSP conformance | **phases 0–5 + the session-147/148 extensions**: `tools/lsp_conformance.rb`, **37 spec cases, 37 pass / 0 fail** (replayed in session 155); the `lsp_conformance` tier-2 gate is green.  Coverage 43/54 requests, 30 capability keys; rangesFormatting, refresh endpoints, progress/partial results, non-text receiver completion and aliased enum-member hover are implemented; only the deliberately skipped editor features remain out of scope.  Plan and evidence: `docs/lsp-enhancement-plan.md` |
+| LSP conformance | **phases 0–5 + the session-147/148/156 extensions**: `tools/lsp_conformance.rb`, **38 spec cases, 38 pass / 0 fail** (session 156); the `lsp_conformance` tier-2 gate is green.  Coverage 43/54 requests, 30 capability keys; rangesFormatting, refresh endpoints, progress/partial results, non-text receiver completion, aliased enum-member hover and the outline's generic-parameter shape are implemented; only the deliberately skipped editor features remain out of scope.  Plan and evidence: `docs/lsp-enhancement-plan.md` |
 | DAP | self-only `dap_smoke`: all probes answer, the real lldb-dap breakpoint session reaches `add` and terminates; `dap_async_probe` proves the VS Code launch ordering; desktop F5 smoke passed session 74; re-ran session 155 |
 | Formatter | **775 files × 3 modes** (`:canonical`, `:preserve`, `:tidy`) replay from the digest-keyed oracle (762 compared / 13 changed, 0 differ in session 155); counts drift with the tree |
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check` (session 155 re-ran; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 169 files / 163,077 lines / 129,472 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **30 unused + 7 test-only** public declarations; 6,515 duplicated lines / 885 clusters; **2 functions ≥ 200 lines** (the excluded `binding_at` at 385 and `resolve_cursor` at 200); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 155 for the static-libuv link fix, the version/help text and the libuv support-path fix) |
+| **Refactoring safety** | structural guard: 169 files / 163,003 lines / 129,398 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **30 unused + 7 test-only** public declarations; 6,499 duplicated lines / 882 clusters; **2 functions ≥ 200 lines** (the excluded `binding_at` at 385 and `resolve_cursor` at 200); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 156 for the outline type-parameter removal) |
 
 Rough completion against the per-track Definition of Done: **~100%**, now
 against the archived host record rather than a live reference.  The
@@ -4386,7 +4386,7 @@ point + **22/0**.  The fixed release binary: `test/mt` **85/0**; CLI
 changed); examples **49/49**; LSP conformance **37/37**; imported bindings
 **29/29**; DAP, wasm and docs smokes green; release archive deterministic and
 the container smoke green.  Structural baseline refreshed: 169 files /
-163,077 lines / 129,472 code lines; 6,515 duplicated / 885 clusters; 30 unused
+163,003 lines / 129,398 code lines; 6,499 duplicated / 882 clusters; 30 unused
 + 7 test-only; 2 long functions; tests 22/85.
 
 ## Session 154 — LSP cache eviction and the map-key release; the pipeline "leak" is bounded
@@ -4463,6 +4463,51 @@ allocator behaviour, not fixing ownership.
 `test/mt` **85/0**; LSP conformance **37/37**; guard `--check --strict` ok after
 the reviewed baseline refresh (+56 code lines).
 
+
+## Session 156 — the outline stops listing generic parameters
+
+**The defect.** `textDocument/documentSymbol` listed each generic parameter as
+a `TypeParameter` (kind 26) child of its declaration, so
+`examples/language_baseline.mt` showed `MyOption → T, some, none` and
+`Pair → A, B, first, second`.  The port copied the archived host, which did the
+same, but no mainstream server does: rust-analyzer (`file_structure.rs`) routes
+structs/enums through `decl(it, SymbolKind::Struct)` and only uses
+`generic_param_list` inside a function's detail string; clangd
+(`FindSymbolsTests.cpp`, `DocumentSymbols.TempSpecs`) answers one
+`Foo`/`Class`/`"template class"` symbol for a template class; gopls
+(`symbols.go`) sets children to fields or methods; TypeScript
+(`navigationBar.ts`) never makes a type parameter a nav item.
+
+**The change.** `projects/mtc/src/mtc/lsp/symbols.mt` no longer emits them:
+`prepend_type_parameters` is gone, `collect_type_member_children_with_params`
+became `collect_type_member_children` (the type-parameter loop and its
+`type_params` parameter removed), and the now-unused
+`SYMBOLKIND_TYPE_PARAMETER`/`render_name_span_symbol` were deleted.  Generics
+stay where they were already reported: in `detail` (`MyOption :: "[T]"`,
+`Pair :: "[A, B]"`).  Measured outline: `MyOption → some, none`;
+`Pair → first, second`.
+
+**Pinned.** New conformance case
+`outline/generic-parameters-are-not-symbols` walks the whole result and
+requires zero kind-26 symbols, checks the three `detail` strings, and covers
+variant arms, struct fields, interface methods and a nested generic struct.
+The suite is **38/38**.  Recorded as deliberate difference 17 in
+`docs/lsp-design.md`.
+
+**Verification.** `tools/gates.sh --areas lsp --run`: dev build, dev tests
+**22/0**, structural guard, bootstrap fixed point, conformance **38/38**,
+valgrind **0 errors**, Neovim smoke, soak (77.7 KB/cycle, 27.2 LS — no positive
+slope).  Baseline refreshed: 129,398 code lines (−74), 6,499 duplicated lines
+(−16), 882 clusters (−3); layering/alias/vocabulary unchanged; ratchet ok.
+The seed is unchanged: the policy refreshes it only for a release or a
+language change, and the 0.5.0 seed still builds this tree and reaches the
+fixed point.
+
+## Handoff (session 156)
+
+**Next session:** no open defect.  The 0.5.0 release is published on GitHub
+with the archive and checksum attached, `main` is the merged self-host branch,
+and CI runs on `main` pushes and pull requests.
 
 ## Handoff (session 155)
 
@@ -6040,7 +6085,7 @@ historical record.
 | installer | `install.sh` in the archive: versioned prefix, `current` symlink, `BIN_DIR/mtc`; `--prefix`/`--bin-dir`/`--force`/`--dry-run`/`--uninstall`; verifies both compiler copies; refuses a symlink prefix; no shell-config edits; the release smoke installs to a temp prefix and uses the installed binary | session 155 | `tools/install.sh --help`; `tools/release_smoke.sh` |
 | release runtime | glibc **≥ 2.38**, zlib, OpenSSL 3; libuv static; the seed has the same requirements | session 155 | `ldd dist/mtc-0.5.0-linux-x86_64/bin/mtc`; `tools/release_container_smoke.sh` |
 | CI | `.github/workflows/ci.yml`: vendored fetch, bootstrap, `test/mt`, four oracles, LSP conformance, examples, bindings, docs smoke, deterministic release, container smoke | session 155 (added; first runs drove the Steamworks pin and libuv support-path fixes; the PR re-run is the merge gate) | `cat .github/workflows/ci.yml` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files / 163,077 lines / 129,472 code lines); 30 unused / 7 test-only exports; 6,515 duplicated lines / 885 clusters; 2 functions ≥ 200 lines (`binding_at` 385, `resolve_cursor` 200); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 155 (baseline refreshed for the static-libuv link fix, the 0.5.0 version/help text and the libuv support-path fix) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files / 163,003 lines / 129,398 code lines); 30 unused / 7 test-only exports; 6,499 duplicated lines / 882 clusters; 2 functions ≥ 200 lines (`binding_at` 385, `resolve_cursor` 200); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 156 (baseline refreshed for the outline type-parameter removal) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 | extension activation | `bindings/vscode/package.json` activates on `onLanguage:milk-tea` and `onDebug:milk-tea`; `dist/` and `.vsix` are local artifacts | session 147 | `git show HEAD:bindings/vscode/package.json` |
 
 ## Porting notes
