@@ -22,7 +22,7 @@
         ]
       },
       "examples/box2d/body_move.mt": {
-        "digest": "623bb6185eb5d65de9621ca9d0e13e67743aad9a780c7e22b9123a6273ddad1f",
+        "digest": "77efe6bca121c5f773782505b711fda9068469bb9b43a0a69cedea8172c62d52",
         "rc": 0,
         "diags": [
           [
@@ -34,19 +34,19 @@
         ]
       },
       "examples/box2d/body_type.mt": {
-        "digest": "afe9f1bcb02074736ed7a62526f5d41435465315754a63bec0530ae5d3f89dd7",
+        "digest": "9a98b3b42b27d6798e6b4f939a4fbacb57df305299f92a2c329f17da1096ae9f",
         "rc": 0,
         "diags": [
           [
             "prefer-inline-methods",
             "methods on 'BodyType' can be written inline inside the struct declaration",
-            154,
+            153,
             11
           ]
         ]
       },
       "examples/box2d/bounce_house.mt": {
-        "digest": "16b9aab22ee4430c5a6fe48a3ba8ae87c53ea3849c7d3dc68e4a43556d05d944",
+        "digest": "492ef31b49220250641147eef7cc8f084c1eff1ccc259b078c5c5009b2c167a4",
         "rc": 0,
         "diags": [
           [
@@ -58,7 +58,7 @@
         ]
       },
       "examples/box2d/bridge.mt": {
-        "digest": "057c20c90bd5404b6c3f8590bd8205a35cf70c5a30f6625b13b8e6b43a8a4498",
+        "digest": "312fe9b954bebbbabe9446527a181512a70658eca7734c94c412ab8eec75aa3d",
         "rc": 0,
         "diags": [
           [
@@ -70,7 +70,7 @@
         ]
       },
       "examples/box2d/chain_shape.mt": {
-        "digest": "0827c429454500bf24fd9e59d68a35917aee8550fbfbfd6d67d5b75226bfa21a",
+        "digest": "da0161496c13bdb491eb67871f8f3b1ee2c72a3dd317b754ba6b4434082b8cb6",
         "rc": 0,
         "diags": [
           [
@@ -82,7 +82,7 @@
         ]
       },
       "examples/box2d/circle_stack.mt": {
-        "digest": "1a3b601ea525df6effba375ab42a7604831568c5cbd9bc3e56033f6e1f78f7ea",
+        "digest": "d0e44be422fe8c085135304a1dfaa8227d56d2a94b1c80a06b82a3d9d8c35151",
         "rc": 0,
         "diags": [
           [
@@ -94,19 +94,19 @@
         ]
       },
       "examples/box2d/common.mt": {
-        "digest": "ca5fb627ff30a2cd8a752372bb07f1a0a3f25ca65decdf7ed05653c76891f057",
+        "digest": "51f22bbf1518cc79dc7ad53069cde2c55534dce11222f6ff9472857b26193118",
         "rc": 0,
         "diags": [
           [
             "prefer-inline-methods",
             "methods on 'Camera' can be written inline inside the struct declaration",
-            159,
+            168,
             11
           ]
         ]
       },
       "examples/box2d/compound_shapes.mt": {
-        "digest": "170afe0854b9dc5cea3130d8cee7ed37a1e9af98f8b4f97b85981482a8f16dd0",
+        "digest": "6331c7ab2210ed33695c3a51949d3f8304cf00966db1f670c96e814f422dadb5",
         "rc": 0,
         "diags": [
           [
@@ -118,7 +118,7 @@
         ]
       },
       "examples/box2d/confined.mt": {
-        "digest": "e115589e1028dd8d2a19de9df69e48db8309409767cd63d9b7489ece8f2b23e1",
+        "digest": "dfbb2210025e66b13a333cd59c1aecbec67cdf831cfeed7f1ffb4c307312ed90",
         "rc": 0,
         "diags": [
           [
@@ -130,19 +130,19 @@
         ]
       },
       "examples/box2d/contact.mt": {
-        "digest": "2f51131e0ac8525bc252db272091eadf7b970623658a30dde9b532272de8cae3",
+        "digest": "27e32c157340e28193b5ff554f7d5b14c42ed6a64cf7a05ed913e1ef07995311",
         "rc": 0,
         "diags": [
           [
             "prefer-inline-methods",
             "methods on 'ContactEvent' can be written inline inside the struct declaration",
-            72,
+            71,
             11
           ]
         ]
       },
       "examples/box2d/convex_hull.mt": {
-        "digest": "ac11e8b56a0a87540056b0daa2ddfbd3d82bfff19b54f3bbbc120db83fdca8e3",
+        "digest": "1d279fc29a829886c733047724ff0fbf2cbf551d11d04024256adf0db558df08",
         "rc": 0,
         "diags": [
           [
@@ -154,31 +154,31 @@
         ]
       },
       "examples/box2d/drop.mt": {
-        "digest": "0e89a7674a8c17e8261ab0b468ce30ab9bd9f0cd10b68933a80c9bdcbd4a96a1",
+        "digest": "288a0fd45baa099891d2bf9fb037da275dff2228d7907f19040f81c759d916c0",
         "rc": 0,
         "diags": [
           [
             "prefer-inline-methods",
             "methods on 'Drop' can be written inline inside the struct declaration",
-            54,
+            50,
             11
           ]
         ]
       },
       "examples/box2d/explosion.mt": {
-        "digest": "f0bc6a7350c9c69390ec704f5c9d1107047ba42e117cd9ef3c1668495b1fefbb",
+        "digest": "23cc314fd8a1d637807965500897539d5c687b35acc7632e7e13f14b58f61d5e",
         "rc": 0,
         "diags": [
           [
             "prefer-inline-methods",
             "methods on 'Explosion' can be written inline inside the struct declaration",
-            77,
+            76,
             11
           ]
         ]
       },
       "examples/box2d/falling_hinges.mt": {
-        "digest": "7f48bf6f23f6d43200baa46818b94219541df50f8aa6f464fb3c6a9027d91b9b",
+        "digest": "a3bc995f3d124224041f986824c2e908f38558a87ffc8ab4d0924c65680d37f2",
         "rc": 0,
         "diags": [
           [
@@ -190,12 +190,12 @@
         ]
       },
       "examples/box2d/human.mt": {
-        "digest": "5fafae60027e6d434168e7c3851f5dff8bb200cd3f240400a145d32179ddf543",
+        "digest": "161cbd8cdfa05b06536777c1918a010dbf5acde4ebf52e9d1ec0893064ba23cf",
         "rc": 0,
         "diags": []
       },
       "examples/box2d/kinematic.mt": {
-        "digest": "2c12601e91585cab64d43c54ed1d320979747cd94ee9eaeb5120d7975b43b925",
+        "digest": "3719cf64b881beef222f8856a2c7b1fb3a6eee73f8976b20fa1e8aa96653fbbf",
         "rc": 0,
         "diags": [
           [
@@ -207,7 +207,7 @@
         ]
       },
       "examples/box2d/mover.mt": {
-        "digest": "8d49404d3d8ad5bc11da2e162b9d768d1bd7920dbbfe43454dc8ade01d081034",
+        "digest": "de6bf2bdb471956081db8b86d96bdce89286e2539f6151d312d0985d0dac126e",
         "rc": 0,
         "diags": [
           [
@@ -219,7 +219,7 @@
         ]
       },
       "examples/box2d/prismatic.mt": {
-        "digest": "b9a71139fe8a6f9f85b9352cbeb439fb27ea06673192ff8269c4da992ca60cbe",
+        "digest": "5e12d26adfb2bffcde982b476c3e9fd5157fc1901b26331b559e1089583c1915",
         "rc": 0,
         "diags": [
           [
@@ -231,7 +231,7 @@
         ]
       },
       "examples/box2d/ragdoll.mt": {
-        "digest": "ba728876d9716012f1be9e1e47963df1ca5468434e08feb5229e0ea3ce094c8f",
+        "digest": "e5d9801fc5ee9a89d8231d867661c5d888fadf895a319ba20a13fee094ef91df",
         "rc": 0,
         "diags": [
           [
@@ -243,7 +243,7 @@
         ]
       },
       "examples/box2d/ray_cast.mt": {
-        "digest": "65409e9a82032ab8d9b4c849fcadefd611282b429c065692dc68e01064a3904b",
+        "digest": "dfc2bbd5d8c74269963437000cbd10ebc06cd3336ea54d40fcc030966cc0c770",
         "rc": 0,
         "diags": [
           [
@@ -255,19 +255,19 @@
         ]
       },
       "examples/box2d/revolute.mt": {
-        "digest": "796d8514e8568cfedfa404b72441a16aefb110b7248637138ea2e231f8548ece",
+        "digest": "c8746528baff56e2019764de4e458fe076daab4781430cf044d6f5850c9d6bbf",
         "rc": 0,
         "diags": [
           [
             "prefer-inline-methods",
             "methods on 'RevoluteJoint' can be written inline inside the struct declaration",
-            116,
+            115,
             11
           ]
         ]
       },
       "examples/box2d/rounded.mt": {
-        "digest": "4e71e3941c510931db82606a435c5ce5112918a74ffb8a8294e5de78b849ac95",
+        "digest": "f11d752549781b43af1044c5c3b206a82ce128e9f048680903a30f7f61ca58cf",
         "rc": 0,
         "diags": [
           [
@@ -279,7 +279,7 @@
         ]
       },
       "examples/box2d/sensor_funnel.mt": {
-        "digest": "530f70120b082891a91ad8cae4e49736e9e05157183cd169ec400ba540050726",
+        "digest": "11779ad5c34ecd0a0c1b2bcd95aa6d3ab2ada6288863540390e4be9aa285eb27",
         "rc": 0,
         "diags": [
           [
@@ -291,7 +291,7 @@
         ]
       },
       "examples/box2d/shape_cast.mt": {
-        "digest": "0be83a7dc26ed45333c15d0515b4cb7b79207203ec7b72d8dcedc10c51567894",
+        "digest": "27a8eec11e566da10ce2393aed9c771089300f20ccd63f5bcadd39f35ba6ce76",
         "rc": 0,
         "diags": [
           [
@@ -303,7 +303,7 @@
         ]
       },
       "examples/box2d/shape_distance.mt": {
-        "digest": "cf41b42a6c91be7986b34b138f6f38a8e8cdfc18c6c9ee1b867b3c072630205c",
+        "digest": "eebb3bbfef65e790c07bb73d007f84c40244f43da8ed8fe0cd71c4864a2f1051",
         "rc": 0,
         "diags": [
           [
@@ -315,7 +315,7 @@
         ]
       },
       "examples/box2d/skinny_box.mt": {
-        "digest": "b2da49d47506488a69c08ab4aefc5ae2ad225feb254a80961d7eeff00ea5630a",
+        "digest": "530478052a9c48f0b80179521d0da50802482cf216a687b544a50753aa0ae1ad",
         "rc": 0,
         "diags": [
           [
@@ -327,7 +327,7 @@
         ]
       },
       "examples/box2d/sleep.mt": {
-        "digest": "7b609b398ea89b592e8feee107842ffec1e5409f39ee31a635b78b50f7337805",
+        "digest": "216417dca01661c5450d10f1eafe35d6159da5e00f9e4281b1fd65912665147d",
         "rc": 0,
         "diags": [
           [
@@ -339,7 +339,7 @@
         ]
       },
       "examples/box2d/tiny_pyramid.mt": {
-        "digest": "af7dfdc2c41c3af92b0e6c08417f262cba94cae8308d23e8d3a538b147a60398",
+        "digest": "a44d5750423face57a1c0a1a23d842ee288851bb9889beb4cbf2f237470a31cc",
         "rc": 0,
         "diags": [
           [
@@ -351,7 +351,7 @@
         ]
       },
       "examples/box2d/vertical_stack.mt": {
-        "digest": "f91187ffc20500356fba2ac3dbdceb651cc6facb7f1b41fd2d8e93a1fa328031",
+        "digest": "b594f7b11a9346f9c4736eec14f734fac48659592c43d19aa8eee2c92b218b4e",
         "rc": 0,
         "diags": [
           [
@@ -363,7 +363,7 @@
         ]
       },
       "examples/box2d/wheel.mt": {
-        "digest": "62e0c27b7c2d5badfd07a989e0daf0cf8f95a23c4277181a8280f6983038a692",
+        "digest": "d1842b7214d267ea22cfb42db12f3e05537fa8b13f9485e64946ac06b3151ec4",
         "rc": 0,
         "diags": [
           [
@@ -371,6 +371,48 @@
             "methods on 'WheelJoint' can be written inline inside the struct declaration",
             76,
             11
+          ]
+        ]
+      },
+      "examples/box2d_api_smoke.mt": {
+        "digest": "8f65bba0a3296d50f671873174fa17e54160e5c8d3f872f24dd9f8c1c5f87b7d",
+        "rc": 0,
+        "diags": [
+          [
+            "prefer-let",
+            "variable 'chain_points' is never reassigned, prefer 'let'",
+            132,
+            9
+          ],
+          [
+            "unused-param",
+            "unused parameter 'normal'",
+            31,
+            5
+          ],
+          [
+            "unused-param",
+            "unused parameter 'point'",
+            30,
+            5
+          ],
+          [
+            "unused-param",
+            "unused parameter 'shape_id'",
+            24,
+            27
+          ],
+          [
+            "unused-param",
+            "unused parameter 'shape_id'",
+            29,
+            5
+          ],
+          [
+            "unused-param",
+            "unused parameter 'shape_id'",
+            39,
+            5
           ]
         ]
       },
@@ -423,25 +465,25 @@
         ]
       },
       "examples/box3d/capsule_stack.mt": {
-        "digest": "0b5e6392469badb3ed67651df15f97920854428a5dbfbaca8619e27f315be45c",
+        "digest": "ca88136d779380b52bf817cb8c59293ba33777895512876c73add14e868865c7",
         "rc": 0,
         "diags": [
           [
             "line-too-long",
             "line exceeds max length of 120 columns (127); wrap the expression",
-            49,
+            46,
             121
           ],
           [
             "line-too-long",
             "line exceeds max length of 120 columns (138); wrap the expression",
-            26,
+            23,
             121
           ],
           [
             "prefer-inline-methods",
             "methods on 'CapsuleStack' can be written inline inside the struct declaration",
-            39,
+            36,
             11
           ]
         ]
@@ -651,7 +693,7 @@
         ]
       },
       "examples/box3d/sensor.mt": {
-        "digest": "7be8e0ad47c3fb7012a968c551914eedfc5cf28771c20bf4260282a70010e68f",
+        "digest": "0adb733fe40b415baad3b05de9e114b1d2025a0fb23442e671f3bab4fa65f39d",
         "rc": 0,
         "diags": [
           [
@@ -4610,12 +4652,12 @@
         "diags": []
       },
       "std/box2d.mt": {
-        "digest": "bda481d7fbb6ecfea3f72b520041eef933b111c68edd802d1e833e8cc8473615",
+        "digest": "d36343937060fc1b5b882d3c2028747bddc7a52e71fff7ce4eb0fd7f6d859995",
         "rc": 0,
         "diags": []
       },
       "std/box3d.mt": {
-        "digest": "7d4d9bbc77e7b2e356c933543f6285a8b56b35646caa1e9d4fe7c3cca32b4d6e",
+        "digest": "2a107d76e315cb40d7f8a206eaada81ed23201614ce64d4a3d9dc49c6356d6c4",
         "rc": 0,
         "diags": []
       },
@@ -4632,37 +4674,37 @@
         ]
       },
       "std/c/box2d.mt": {
-        "digest": "def32dbfa8ec7831831884999e16ba3ac87748354e28875e3749834d9e64f0fa",
+        "digest": "9218fb45c3f5e083826e930f8857481ed72949795a3244319dea6e4190f3029d",
         "rc": 0,
         "diags": [
           [
             "line-too-long",
-            "line exceeds max length of 120 columns (121)",
-            322,
-            121
-          ],
-          [
-            "line-too-long",
             "line exceeds max length of 120 columns (122)",
-            385,
+            807,
             121
           ],
           [
             "line-too-long",
-            "line exceeds max length of 120 columns (138)",
-            911,
+            "line exceeds max length of 120 columns (125)",
+            962,
+            121
+          ],
+          [
+            "line-too-long",
+            "line exceeds max length of 120 columns (143)",
+            963,
             121
           ]
         ]
       },
       "std/c/box3d.mt": {
-        "digest": "414000b77a3f5895db68a2737f6a2d6eeb0656ae98f88e110e390461ce367551",
+        "digest": "c236e6e9e0b3d83f2ab24efba859368799370759d0e86ad0dfda73031dbc12a5",
         "rc": 0,
         "diags": [
           [
             "line-too-long",
             "line exceeds max length of 120 columns (143)",
-            179,
+            204,
             121
           ]
         ]
@@ -4760,73 +4802,127 @@
         "diags": []
       },
       "std/c/flecs.mt": {
-        "digest": "e8f9123bae2c2f4492264dd27e1350ff80b6eb3392172616e1aafc28a5027c5f",
+        "digest": "4e4b90593f5f4098a1293b405e2f4751812595aa7aad4963562b2d6109b5558d",
         "rc": 0,
         "diags": [
           [
             "line-too-long",
             "line exceeds max length of 120 columns (121)",
-            442,
+            445,
             121
           ],
           [
             "line-too-long",
             "line exceeds max length of 120 columns (124)",
-            440,
+            443,
             121
           ],
           [
             "line-too-long",
             "line exceeds max length of 120 columns (124)",
-            1294,
+            1298,
             121
           ],
           [
             "line-too-long",
             "line exceeds max length of 120 columns (126)",
-            1832,
+            2100,
             121
           ],
           [
             "line-too-long",
             "line exceeds max length of 120 columns (126)",
-            1916,
+            2222,
             121
           ],
           [
             "line-too-long",
             "line exceeds max length of 120 columns (131)",
-            1908,
+            2214,
             121
           ],
           [
             "line-too-long",
             "line exceeds max length of 120 columns (132)",
-            1909,
+            2215,
+            121
+          ],
+          [
+            "line-too-long",
+            "line exceeds max length of 120 columns (134)",
+            2081,
+            121
+          ],
+          [
+            "line-too-long",
+            "line exceeds max length of 120 columns (140)",
+            2101,
             121
           ],
           [
             "line-too-long",
             "line exceeds max length of 120 columns (143)",
-            1818,
+            2005,
+            121
+          ],
+          [
+            "line-too-long",
+            "line exceeds max length of 120 columns (146)",
+            1833,
+            121
+          ],
+          [
+            "line-too-long",
+            "line exceeds max length of 120 columns (147)",
+            1832,
+            121
+          ],
+          [
+            "line-too-long",
+            "line exceeds max length of 120 columns (148)",
+            1834,
+            121
+          ],
+          [
+            "line-too-long",
+            "line exceeds max length of 120 columns (157)",
+            2027,
             121
           ],
           [
             "line-too-long",
             "line exceeds max length of 120 columns (161)",
-            1819,
+            1829,
+            121
+          ],
+          [
+            "line-too-long",
+            "line exceeds max length of 120 columns (161)",
+            2006,
+            121
+          ],
+          [
+            "line-too-long",
+            "line exceeds max length of 120 columns (162)",
+            1827,
+            121
+          ],
+          [
+            "line-too-long",
+            "line exceeds max length of 120 columns (163)",
+            1828,
             121
           ],
           [
             "line-too-long",
             "line exceeds max length of 120 columns (191)",
-            801,
+            814,
             121
           ],
           [
             "line-too-long",
             "line exceeds max length of 120 columns (193)",
-            441,
+            444,
             121
           ]
         ]
@@ -4872,7 +4968,7 @@
         ]
       },
       "std/c/glfw.mt": {
-        "digest": "6be3c8f5d80f6975dca3e041464ae96b071dd39dd3375cd24f40c268257282ab",
+        "digest": "3dfd26cc4368fd7c0ac0fe3f8e2e7e0b26e4e8d966a68634f40348396fc1ea08",
         "rc": 0,
         "diags": []
       },
@@ -4882,25 +4978,25 @@
         "diags": []
       },
       "std/c/libuv.mt": {
-        "digest": "f8baf00c22621a67a2937b8e74f28606f1062bef4583b0d9fb1a76ad67eaf71a",
+        "digest": "ba59428bc162eaa719e6f1214072b2d5f59a63d2fd202524223ce45232bcd4c5",
         "rc": 0,
         "diags": [
           [
             "line-too-long",
             "line exceeds max length of 120 columns (123)",
-            454,
+            457,
             121
           ],
           [
             "line-too-long",
             "line exceeds max length of 120 columns (125)",
-            636,
+            648,
             121
           ],
           [
             "line-too-long",
             "line exceeds max length of 120 columns (134)",
-            622,
+            634,
             121
           ]
         ]
@@ -4911,7 +5007,7 @@
         "diags": []
       },
       "std/c/miniaudio.mt": {
-        "digest": "5e82cff604e4604715a2087711a66cbc6499b0fd9f55df6e1b7b6cc223264c07",
+        "digest": "1bfac39c9fbbd2ab9a11a7fc1a1feb1a4253301a97a512d498922c839fc6b090",
         "rc": 0,
         "diags": [
           [
@@ -5031,7 +5127,7 @@
         ]
       },
       "std/c/pcre2.mt": {
-        "digest": "e08e05b80edf41bf8fbd34e35c39d3c08904f50b396e369457be7229333c3577",
+        "digest": "ff4a50c8b3143eb6f7078cebb6d3700082d720d739b49fa2d6e248aeb773d883",
         "rc": 0,
         "diags": []
       },
@@ -5041,12 +5137,12 @@
         "diags": []
       },
       "std/c/raygui.mt": {
-        "digest": "e43df45aeca0206465245c46242b5ce2902613def16315ce537af5948dbdd57b",
+        "digest": "2697b323fbe30cde0d2a3476ed5a2e14c214b3e5c3bd2b87138be47c44e8ad0b",
         "rc": 0,
         "diags": []
       },
       "std/c/raylib.mt": {
-        "digest": "33b8db4ab54770a643cecbf89c8a05409701bcfe553c519d3a9165fdfd5a5461",
+        "digest": "91c09d59d742d3d366ba70d450e5429e21fa4ab2dca6bae41197e64fd473bc21",
         "rc": 0,
         "diags": []
       },
@@ -5071,13 +5167,13 @@
         "diags": []
       },
       "std/c/sdl3.mt": {
-        "digest": "644772fc698ca5c696ea13a21919eef127d158a409f575edc3a93dbe49f52b9c",
+        "digest": "85472a62b3762ae399fdb981d718c975515052f8a0a76955f4eaf572657e96ec",
         "rc": 0,
         "diags": [
           [
             "line-too-long",
             "line exceeds max length of 120 columns (159)",
-            1986,
+            1988,
             121
           ]
         ]
@@ -5107,12 +5203,12 @@
         ]
       },
       "std/c/stb_image.mt": {
-        "digest": "abae2607b8b298308821aef28dec16707213ea491d1f9f9fd59fd398f88c3294",
+        "digest": "776142fc7fc71b516425d7cb93ca1516e56fbb5af5b03d78224c76c0179725b6",
         "rc": 0,
         "diags": []
       },
       "std/c/stb_image_resize2.mt": {
-        "digest": "04f3a627f50ac986956c6d9ebbe12a736fd5718ce4e8726b679a26690f5a22ef",
+        "digest": "174f2579e17a13f3e06297570e826cbd0b24d6414ff1158595c2ff7eae224815",
         "rc": 0,
         "diags": [
           [
@@ -5124,7 +5220,7 @@
         ]
       },
       "std/c/stb_image_write.mt": {
-        "digest": "bd8a528070193e204b68e11e4558cc19c273e6d7be9ca8712e55d58fb64b45db",
+        "digest": "3da4db7e58ccb3fbf103f9f299cfc5a72dfca903bba531ba0857587cea42c5d4",
         "rc": 0,
         "diags": []
       },
@@ -5134,12 +5230,12 @@
         "diags": []
       },
       "std/c/stb_truetype.mt": {
-        "digest": "d86d380e086043c91f23527e0de745f9db0111091a4ebf85b2cc211495f12450",
+        "digest": "6a983d8427d272bb4be6241a174b9b19c02cbfc98589292d27a6b5a9728e3bea",
         "rc": 0,
         "diags": []
       },
       "std/c/stb_vorbis.mt": {
-        "digest": "9c3cf7afdbcca173ad777dcab47432997270d7a08299598f9e6fa5966a3317df",
+        "digest": "ead0432effbe20909139b02565193661a2e038f7c68da864b60cd951e5eded5e",
         "rc": 0,
         "diags": []
       },
@@ -5350,7 +5446,7 @@
         "diags": []
       },
       "std/flecs.mt": {
-        "digest": "3514b66f83decf04227694928e4e94090d1dd71f8a0d608345833e03dc4c4f2e",
+        "digest": "eb926997f27c480a9b7984f1630a4d185ed17105e58388007ac749c4cd1fb879",
         "rc": 0,
         "diags": []
       },
@@ -5399,7 +5495,7 @@
         "diags": []
       },
       "std/glfw.mt": {
-        "digest": "b7b382fd6f53b17a2af12e2c0817e987d9dfe3eb62034e10014a16bc7cd2f57d",
+        "digest": "1a4f0e3a255e4f92da8abb56b9715ba24be8b6ce20237c4b5ced6457866a1242",
         "rc": 0,
         "diags": []
       },
@@ -5645,7 +5741,7 @@
         "diags": []
       },
       "std/libuv.mt": {
-        "digest": "4e412b6ed4cdee67956b307f3cfdda934a5dfac75f4dcdfe9b35c32fbb5bf28d",
+        "digest": "bc05401c66921ea56bf2694060ba6a93bac8a9002a500b7bc460b611bfba040d",
         "rc": 0,
         "diags": []
       },
@@ -6449,7 +6545,7 @@
         "diags": []
       },
       "std/raylib.mt": {
-        "digest": "b46d9bd8b2cd2abf5b1b166e5770ae3bb6a540b54cc184ae044267a2c491bdfb",
+        "digest": "6f99c120bc5d601b9b489fd56910816ee5720e8cde92f99f3fe72fc2849076b2",
         "rc": 0,
         "diags": []
       },
@@ -6476,7 +6572,7 @@
         ]
       },
       "std/raylib/runtime.mt": {
-        "digest": "4ee72f15a2699299f8c882b357fa61726e934d152102b9c87e6bb2c0cf6fbf6c",
+        "digest": "a18a03b02a6c421f8f7fdb996e21375474e6d1d802588b1c3922c3eed2e5a1f9",
         "rc": 0,
         "diags": []
       },
@@ -6573,17 +6669,17 @@
         "diags": []
       },
       "std/stb_image.mt": {
-        "digest": "a776c5199f47af8d7a438ae48cb805d6286ea692581215445248bea471a38ce7",
+        "digest": "0a47c81e3e4b5871d75092afb0f9c6d4587d2f3f8a81ff6d690a93a3649d1ead",
         "rc": 0,
         "diags": []
       },
       "std/stb_image_resize2.mt": {
-        "digest": "7c82bd65d5ee37682364359e6713f091698a1011ab6e951a28b43877e4fefcb5",
+        "digest": "f719cc38fbbbaa4ba63aaf39602abbbd384fedd67c2fcb801c7c062c5c1d3054",
         "rc": 0,
         "diags": []
       },
       "std/stb_image_write.mt": {
-        "digest": "95453d2c32fa77bdc37c8aa60ae76aa34ae63f7e435b3ee394777deababe8559",
+        "digest": "71317df7322c421300c0893ed6599024aa56d8313b5bcd040ca231f3223d4a3d",
         "rc": 0,
         "diags": []
       },
@@ -6593,12 +6689,12 @@
         "diags": []
       },
       "std/stb_truetype.mt": {
-        "digest": "5dfbf50ed751cdfebd9c14212018d5148dd1798a7daace0646f6051f4c78df5c",
+        "digest": "e2a3c7a20fe8ab2709fc1c8461c6f7f01caa7fb4418636dc1b8e5ecbc7debe3b",
         "rc": 0,
         "diags": []
       },
       "std/stb_vorbis.mt": {
-        "digest": "f956c89178982653cd9359ffac0866dd6038a7f4ff4ecbfc0d7a6f7b9216ccae",
+        "digest": "3e6c66292d7061a7d69741f0fa434c2cd038ece3420baf304d5ba00c076e7fc8",
         "rc": 0,
         "diags": []
       },
@@ -6913,7 +7009,7 @@
         "diags": []
       },
       "std/vec.mt": {
-        "digest": "398c1fd53843f3ec8f0a7a128f3576e0d265f2289e6db005e252dcb2abe28c51",
+        "digest": "5a5c7d583e4099742f82a79d9c0099fa723ddae7c4b6d456a9093c9584565e3f",
         "rc": 0,
         "diags": []
       },

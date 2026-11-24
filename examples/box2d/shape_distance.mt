@@ -75,7 +75,7 @@ function compute_witness(s: b2.Simplex) -> (b2.Vec2, b2.Vec2):
     return (a, a)
 
 function shape_distance_create(world_id: b2.WorldId) -> ShapeDistance:
-    common.enable_mouse_joint(false)
+    common.enable_mouse_grab(false)
     let triangle_points: array[b2.Vec2, 3] = array[b2.Vec2, 3](
         b2.Vec2(x = -0.5, y = 0.0),
         b2.Vec2(x = 0.5, y = 0.0),
@@ -252,13 +252,12 @@ extending ShapeDistance:
         let input = b2.DistanceInput(
             proxyA = this.proxy_a,
             proxyB = this.proxy_b,
-            transformA = b2.b2Transform_identity,
-            transformB = this.transform,
+            transform = this.transform,
             useRadii = true
         )
         if not this.use_cache:
             this.cache.count = 0
-        this.distance_output = b2.shape_distance(
+        this.distance_output = b2.compute_shape_distance(
             const_ptr_of(input),
             ptr_of(this.cache),
             ptr_of(this.simplexes[0]),

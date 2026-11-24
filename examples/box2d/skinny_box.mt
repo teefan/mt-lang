@@ -5,7 +5,7 @@
 ##   C             toggle capsule / box shape
 ##   Space         launch
 ##   A             toggle auto test (relaunch every 60 steps)
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2

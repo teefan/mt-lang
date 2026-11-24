@@ -46,7 +46,7 @@ struct ShapeCast implements common.Sample:
     encroach: bool
 
 function shape_cast_create(world_id: b2.WorldId) -> ShapeCast:
-    common.enable_mouse_joint(false)
+    common.enable_mouse_grab(false)
     let triangle_points: array[b2.Vec2, 3] = array[b2.Vec2, 3](
         b2.Vec2(x = -0.5, y = 0.0),
         b2.Vec2(x = 0.5, y = 0.0),
@@ -216,13 +216,12 @@ extending ShapeCast:
         let input = b2.ShapeCastPairInput(
             proxyA = this.proxy_a,
             proxyB = this.proxy_b,
-            transformA = b2.b2Transform_identity,
-            transformB = this.transform,
+            transform = this.transform,
             translationB = this.translation,
             maxFraction = 1.0,
             canEncroach = this.encroach
         )
-        let output = b2.shape_cast(const_ptr_of(input))
+        let output = b2.cast_shape(const_ptr_of(input))
 
         let hit_transform = b2.Transform(
             p = this.transform.p.add(this.translation.scale(output.fraction)),
@@ -232,8 +231,7 @@ extending ShapeCast:
         let distance_input = b2.DistanceInput(
             proxyA = this.proxy_a,
             proxyB = this.proxy_b,
-            transformA = b2.b2Transform_identity,
-            transformB = hit_transform,
+            transform = hit_transform,
             useRadii = false
         )
         var distance_cache = b2.b2_emptySimplexCache
@@ -246,7 +244,7 @@ extending ShapeCast:
             indexB = 0
         )
         var dummy_simplex = b2.Simplex(v1 = dummy_vertex, v2 = dummy_vertex, v3 = dummy_vertex, count = 0)
-        let distance_output = b2.shape_distance(
+        let distance_output = b2.compute_shape_distance(
             const_ptr_of(distance_input), ptr_of(distance_cache), ptr_of(dummy_simplex), 0
         )
 

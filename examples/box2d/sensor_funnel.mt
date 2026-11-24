@@ -3,7 +3,7 @@
 ## Humans are dropped into a funnel of rotating paddles; when one touches the
 ## bottom sensor it is destroyed. Sensor events are deferred so destruction
 ## never invalidates the event shape ids.
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2
@@ -50,7 +50,7 @@ function sensor_funnel_create(world_id: b2.WorldId) -> SensorFunnel:
     material.friction = 0.2
     var chain_def = b2.default_chain_def()
     chain_def.points = const_ptr_of(FUNNEL_POINTS[0])
-    chain_def.count = FUNNEL_COUNT
+    chain_def.pointCount = FUNNEL_COUNT
     chain_def.isLoop = true
     chain_def.materials = const_ptr_of(material)
     chain_def.materialCount = 1
@@ -72,10 +72,10 @@ function sensor_funnel_create(world_id: b2.WorldId) -> SensorFunnel:
         let body = b2.create_body(world_id, body_def)
         b2.create_polygon_shape(body, paddle_shape, paddle_box)
         var revolute = b2.default_revolute_joint_def()
-        revolute.bodyIdA = ground
-        revolute.bodyIdB = body
-        revolute.localAnchorA = body_def.position
-        revolute.localAnchorB = b2.b2Vec2_zero
+        revolute.base.bodyIdA = ground
+        revolute.base.bodyIdB = body
+        revolute.base.localFrameA = common.local_frame_at(ground, body_def.position, 0.0)
+        revolute.base.localFrameB = common.local_frame(b2.b2Vec2_zero, 0.0)
         revolute.maxMotorTorque = 200.0
         revolute.motorSpeed = 2.0 * sign
         revolute.enableMotor = true

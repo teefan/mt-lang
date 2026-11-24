@@ -5698,6 +5698,20 @@ function lower_identifier_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr], nam
             return alloc_expr(ir.Expr.expr_name(name = name, ty = type_helpers.expr_type(ctx, ep), pointer = Option[bool].some(value = false)))
 
 
+## Register the external-struct layout for either operand of an `==` / `!=`
+## comparison.  The two operands may carry different IR forms of the same C
+## struct (e.g. a checked-index element with a linkage name and a parameter):
+## try both and let the first form that can supply the field layout win.
+function register_equality_operands(ctx: ref[LoweringContext], left: ptr[ir.Expr], right: ptr[ir.Expr]) -> bool:
+    let left_ty = ir_expr_type(left)
+    if is_equality_struct_type(ctx, left_ty) and register_external_struct_layout(ctx, left_ty):
+        return true
+    let right_ty = ir_expr_type(right)
+    if is_equality_struct_type(ctx, right_ty) and register_external_struct_layout(ctx, right_ty):
+        return true
+    return false
+
+
 function lower_binary_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr], operator: str, left_ast: ptr[ast.Expr], right_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
     if (operator == "and" or operator == "or") and ctx.hoist_mode != HoistMode.hm_off:
         return lower_short_circuit_binary(ctx, operator, left_ast, right_ast, ep)
@@ -5724,10 +5738,8 @@ function lower_binary_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr], operato
     # backend synthesizes the `mt_struct_eq_<T>` helper from the
     # type's fields.  Raw modules lower no declarations, so register
     # the type's layout for the backend's helper synthesis.
-    if operator == "==" or operator == "!=":
-        let eq_ty = ir_expr_type(left)
-        if is_equality_struct_type(ctx, eq_ty) and types.type_equals(eq_ty, ir_expr_type(right)) and register_external_struct_layout(ctx, eq_ty):
-            return alloc_expr(ir.Expr.expr_binary(operator = operator, left = left, right = right, ty = ctx.bool_ty))
+    if (operator == "==" or operator == "!=") and register_equality_operands(ctx, left, right):
+        return alloc_expr(ir.Expr.expr_binary(operator = operator, left = left, right = right, ty = ctx.bool_ty))
     # `str + str` concatenates into a thread-local scratch buffer.
     if operator == "+" and type_helpers.is_str_typed(ir_expr_type(left)) and type_helpers.is_str_typed(ir_expr_type(right)):
         var concat_args = vec.Vec[ir.Expr].create()

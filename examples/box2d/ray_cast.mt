@@ -33,7 +33,7 @@ struct RayCast implements common.Sample:
     show_fraction: bool
 
 function ray_cast_create(world_id: b2.WorldId) -> RayCast:
-    common.enable_mouse_joint(false)
+    common.enable_mouse_grab(false)
     let triangle_points: array[b2.Vec2, 3] = array[b2.Vec2, 3](
         b2.Vec2(x = -2.0, y = 0.0),
         b2.Vec2(x = 2.0, y = 0.0),
@@ -148,7 +148,7 @@ extending RayCast:
             translation = t.q.mul_vector_inv(this.ray_end.sub(this.ray_start)),
             maxFraction = max_fraction
         )
-        var local_output = b2.ray_cast_circle(const_ptr_of(input), const_ptr_of(this.circle))
+        var local_output = b2.cast_ray_circle(const_ptr_of(this.circle), const_ptr_of(input))
         if local_output.hit:
             output = local_output
             output.point = t.mul_point(local_output.point)
@@ -166,7 +166,7 @@ extending RayCast:
             translation = t.q.mul_vector_inv(this.ray_end.sub(this.ray_start)),
             maxFraction = max_fraction
         )
-        local_output = b2.ray_cast_capsule(const_ptr_of(input), const_ptr_of(this.capsule))
+        local_output = b2.cast_ray_capsule(const_ptr_of(this.capsule), const_ptr_of(input))
         if local_output.hit:
             output = local_output
             output.point = t.mul_point(local_output.point)
@@ -182,7 +182,7 @@ extending RayCast:
             translation = t.q.mul_vector_inv(this.ray_end.sub(this.ray_start)),
             maxFraction = max_fraction
         )
-        local_output = b2.ray_cast_polygon(const_ptr_of(input), const_ptr_of(this.box))
+        local_output = b2.cast_ray_polygon(const_ptr_of(this.box), const_ptr_of(input))
         if local_output.hit:
             output = local_output
             output.point = t.mul_point(local_output.point)
@@ -198,7 +198,7 @@ extending RayCast:
             translation = t.q.mul_vector_inv(this.ray_end.sub(this.ray_start)),
             maxFraction = max_fraction
         )
-        local_output = b2.ray_cast_polygon(const_ptr_of(input), const_ptr_of(this.triangle))
+        local_output = b2.cast_ray_polygon(const_ptr_of(this.triangle), const_ptr_of(input))
         if local_output.hit:
             output = local_output
             output.point = t.mul_point(local_output.point)
@@ -216,7 +216,7 @@ extending RayCast:
             translation = t.q.mul_vector_inv(this.ray_end.sub(this.ray_start)),
             maxFraction = max_fraction
         )
-        local_output = b2.ray_cast_segment(const_ptr_of(input), const_ptr_of(this.segment), false)
+        local_output = b2.cast_ray_segment(const_ptr_of(this.segment), const_ptr_of(input), false)
         if local_output.hit:
             output = local_output
             output.point = t.mul_point(local_output.point)

@@ -6,7 +6,7 @@
 ##   , / .         pendulum sleep velocity
 ##   - / =         pendulum angular damping
 ##   C             create / destroy the static invoker body
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2
@@ -115,10 +115,10 @@ function sleep_create(world_id: b2.WorldId) -> Sleep:
     b2.create_capsule_shape(sample.pendulum_id, sensor_shape_def, pendulum_capsule)
     let pendulum_pivot = body_def.position
     var joint_def = b2.default_revolute_joint_def()
-    joint_def.bodyIdA = ground
-    joint_def.bodyIdB = sample.pendulum_id
-    joint_def.localAnchorA = b2.body_get_local_point(ground, pendulum_pivot)
-    joint_def.localAnchorB = b2.body_get_local_point(sample.pendulum_id, pendulum_pivot)
+    joint_def.base.bodyIdA = ground
+    joint_def.base.bodyIdB = sample.pendulum_id
+    joint_def.base.localFrameA = common.local_frame_at(ground, pendulum_pivot, 0.0)
+    joint_def.base.localFrameB = common.local_frame_at(sample.pendulum_id, pendulum_pivot, 0.0)
     b2.create_revolute_joint(world_id, joint_def)
 
     # sleeping body to test waking on contact destroyed

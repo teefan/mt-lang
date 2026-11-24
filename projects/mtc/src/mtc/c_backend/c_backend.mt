@@ -2922,7 +2922,7 @@ function emit_struct(e: ref[Emitter], s: ir.StructDecl) -> void:
     while i < s.fields.len:
         unsafe:
             let f = read(s.fields.data + i)
-            emit_line(e, strings.join_four("  ", c_field_decl(f.ty, f.name), ";", ""))
+            emit_line(e, strings.join_four("  ", c_field_decl(f.ty, c_safe_field_name(f.name)), ";", ""))
         i += 1
     emit_line(e, struct_closer(s.packed, s.alignment))
 
@@ -2948,7 +2948,7 @@ function emit_union(e: ref[Emitter], u: ir.UnionDecl) -> void:
     while i < u.fields.len:
         unsafe:
             let f = read(u.fields.data + i)
-            emit_line(e, strings.join_four("  ", c_decl(f.ty, f.name), ";", ""))
+            emit_line(e, strings.join_four("  ", c_decl(f.ty, c_safe_field_name(f.name)), ";", ""))
         i += 1
     emit_line(e, "};")
 
@@ -2992,7 +2992,7 @@ function emit_one_soa(e: ref[Emitter], elem_struct_name: str, count_str: str, st
                     decl_buf.append("  ")
                     decl_buf.append(c_type(f.ty))
                     decl_buf.append(" ")
-                    decl_buf.append(f.name)
+                    decl_buf.append(c_safe_field_name(f.name))
                     decl_buf.append("[")
                     decl_buf.append(count_str)
                     decl_buf.append("];")
@@ -3155,9 +3155,9 @@ function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
                 while fi < arm.fields.len:
                     let f = read(arm.fields.data + fi)
                     if not is_void_type(f.ty) and c_type(f.ty) == outer_c:
-                        emit_line(e, strings.join_four("  ", c_decl(f.ty, strings.join_two("*", f.name)), ";", ""))
+                        emit_line(e, strings.join_four("  ", c_decl(f.ty, strings.join_two("*", c_safe_field_name(f.name))), ";", ""))
                     else:
-                        emit_line(e, strings.join_four("  ", c_field_decl(f.ty, f.name), ";", ""))
+                        emit_line(e, strings.join_four("  ", c_field_decl(f.ty, c_safe_field_name(f.name)), ";", ""))
                     fi += 1
                 emit_line(e, "};")
                 emit_line(e, strings.join_three("typedef struct ", arm.linkage_name, strings.join_two(" ", strings.join_two(arm.linkage_name, ";"))))
@@ -4167,7 +4167,7 @@ function render_expr(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                         _:
                             pass
                 let operator = if pointer_member_receiver(member.receiver): "->" else: "."
-                return strings.join_three(wrap_member_receiver(e, member.receiver), operator, member.member)
+                return strings.join_three(wrap_member_receiver(e, member.receiver), operator, c_safe_field_name(member.member))
             ir.Expr.expr_aggregate_literal as agg:
                 return render_aggregate_literal(e, agg.ty, agg.fields)
             ir.Expr.expr_variant_literal as vl:
@@ -4977,7 +4977,7 @@ function render_aggregate_initializer(e: ref[Emitter], fields: span[ir.Aggregate
             let f = read(fields.data + i)
             if not is_positional:
                 buf.append(".")
-                buf.append(f.name)
+                buf.append(c_safe_field_name(f.name))
                 buf.append(" = ")
             let rendered = render_initializer(e, f.value)
             if is_void_value_expr(f.value):
@@ -5035,7 +5035,7 @@ function render_aggregate_omitting_array_calls(e: ref[Emitter], fields: span[ir.
                     buf.append(", ")
                 first = false
                 buf.append(".")
-                buf.append(f.name)
+                buf.append(c_safe_field_name(f.name))
                 buf.append(" = ")
                 buf.append(render_initializer(e, f.value))
         i += 1
@@ -5055,7 +5055,7 @@ function emit_aggregate_with_array_call_fields(e: ref[Emitter], indent: str, dec
         unsafe:
             let f = read(fields.data + i)
             if expr_is_array_call(e, f.value):
-                emit_line(e, strings.join_three(indent, emit_array_call(e, f.value, strings.join_four("&", target_ref, ".", f.name)), ";"))
+                emit_line(e, strings.join_three(indent, emit_array_call(e, f.value, strings.join_four("&", target_ref, ".", c_safe_field_name(f.name))), ";"))
         i += 1
 
 
@@ -5286,43 +5286,51 @@ function scan_stmts_for_variant_eq(e: ref[Emitter], body: span[ir.Stmt], program
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
-            let stmt_ptr = body.data + i
-            match read(stmt_ptr):
-                ir.Stmt.stmt_local as loc:
-                    scan_expr_for_variant_eq(e, loc.value, program)
-                ir.Stmt.stmt_expression as es:
-                    scan_expr_for_variant_eq(e, es.expression, program)
-                ir.Stmt.stmt_assignment as a:
-                    scan_expr_for_variant_eq(e, a.target, program)
-                    scan_expr_for_variant_eq(e, a.value, program)
-                ir.Stmt.stmt_return as r:
-                    let v = r.value else:
-                        i += 1
-                        continue
-                    scan_expr_for_variant_eq(e, v, program)
-                ir.Stmt.stmt_if as ifs:
-                    scan_expr_for_variant_eq(e, ifs.condition, program)
-                    scan_stmts_for_variant_eq(e, ifs.then_body, program)
-                    let eb = else_stmts_or_empty(ifs.else_body)
-                    if eb.len > 0:
-                        scan_stmts_for_variant_eq(e, eb, program)
-                ir.Stmt.stmt_switch as sw:
-                    scan_expr_for_variant_eq(e, sw.expression, program)
-                    var ci: ptr_uint = 0
-                    while ci < sw.cases.len:
-                        scan_stmts_for_variant_eq(e, unsafe: read(sw.cases.data + ci).body, program)
-                        ci += 1
-                ir.Stmt.stmt_while as w:
-                    scan_expr_for_variant_eq(e, w.condition, program)
-                    scan_stmts_for_variant_eq(e, w.body, program)
-                ir.Stmt.stmt_for as fs:
-                    scan_expr_for_variant_eq(e, fs.condition, program)
-                    scan_stmts_for_variant_eq(e, fs.body, program)
-                ir.Stmt.stmt_label:
-                    pass
-                _:
-                    pass
+            scan_stmt_for_variant_eq(e, body.data + i, program)
         i += 1
+
+
+function scan_stmt_for_variant_eq(e: ref[Emitter], stmt_ptr: ptr[ir.Stmt], program: ir.Program) -> void:
+    unsafe:
+        match read(stmt_ptr):
+            ir.Stmt.stmt_local as loc:
+                scan_expr_for_variant_eq(e, loc.value, program)
+            ir.Stmt.stmt_expression as es:
+                scan_expr_for_variant_eq(e, es.expression, program)
+            ir.Stmt.stmt_assignment as a:
+                scan_expr_for_variant_eq(e, a.target, program)
+                scan_expr_for_variant_eq(e, a.value, program)
+            ir.Stmt.stmt_block as block:
+                scan_stmts_for_variant_eq(e, block.body, program)
+            ir.Stmt.stmt_return as r:
+                let v = r.value else:
+                    return
+                scan_expr_for_variant_eq(e, v, program)
+            ir.Stmt.stmt_if as ifs:
+                scan_expr_for_variant_eq(e, ifs.condition, program)
+                scan_stmts_for_variant_eq(e, ifs.then_body, program)
+                let eb = else_stmts_or_empty(ifs.else_body)
+                if eb.len > 0:
+                    scan_stmts_for_variant_eq(e, eb, program)
+            ir.Stmt.stmt_switch as sw:
+                scan_expr_for_variant_eq(e, sw.expression, program)
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    scan_stmts_for_variant_eq(e, read(sw.cases.data + ci).body, program)
+                    ci += 1
+            ir.Stmt.stmt_while as w:
+                scan_expr_for_variant_eq(e, w.condition, program)
+                scan_stmts_for_variant_eq(e, w.body, program)
+            ir.Stmt.stmt_for as fs:
+                scan_stmt_for_variant_eq(e, fs.init, program)
+                scan_expr_for_variant_eq(e, fs.condition, program)
+                scan_stmt_for_variant_eq(e, fs.post, program)
+                scan_stmts_for_variant_eq(e, fs.body, program)
+            ir.Stmt.stmt_static_assert as sa:
+                scan_expr_for_variant_eq(e, sa.condition, program)
+                scan_expr_for_variant_eq(e, sa.message, program)
+            _:
+                pass
 
 
 function scan_expr_for_variant_eq(e: ref[Emitter], ep: ptr[ir.Expr], program: ir.Program) -> void:
@@ -5335,6 +5343,7 @@ function scan_expr_for_variant_eq(e: ref[Emitter], ep: ptr[ir.Expr], program: ir
                 # uncompilable) equality helper.
                 if (bin.operator == "==" or bin.operator == "!=") and not is_null_literal_expr(bin.left) and not is_null_literal_expr(bin.right):
                     register_equality_type(e, expr_result_type(bin.left), program)
+                    register_equality_type(e, expr_result_type(bin.right), program)
                 scan_expr_for_variant_eq(e, bin.left, program)
                 scan_expr_for_variant_eq(e, bin.right, program)
             ir.Expr.expr_unary as un:
@@ -5438,8 +5447,8 @@ function emit_variant_eq_helper(e: ref[Emitter], vd: ir.VariantDecl) -> void:
                 var field: ir.Field
                 unsafe:
                     field = read(arm.fields.data + fi)
-                let left_expr = strings.join_five("left.data.", arm.name, ".", field.name, "")
-                let right_expr = strings.join_five("right.data.", arm.name, ".", field.name, "")
+                let left_expr = strings.join_five("left.data.", arm.name, ".", c_safe_field_name(field.name), "")
+                let right_expr = strings.join_five("right.data.", arm.name, ".", c_safe_field_name(field.name), "")
                 emit_variant_field_compare(e, left_expr, right_expr, field.ty)
                 fi += 1
             e.buffer.append("      }")
@@ -5682,7 +5691,7 @@ function emit_struct_eq_helper(e: ref[Emitter], outer_c: str, fields: span[ir.Fi
         unsafe:
             field = read(fields.data + fi)
         if not is_void_type(field.ty):
-            emit_eq_field_guard(e, strings.join_three("left.", field.name, ""), strings.join_three("right.", field.name, ""), field.ty, 1)
+            emit_eq_field_guard(e, strings.join_three("left.", c_safe_field_name(field.name), ""), strings.join_three("right.", c_safe_field_name(field.name), ""), field.ty, 1)
         fi += 1
     e.buffer.append("  return true;")
     e.buffer.push_byte(10)

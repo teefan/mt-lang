@@ -30,11 +30,34 @@ two known diffs: `curl`/`sqlite3` follow this host's system headers.  Regenerate
 each with its next header bump and review the diff; do not treat those two as
 generator regressions.
 
+## Upgraded: box2d 3.2.0
+
+`box2d` is pinned at **3.2.0** (`178495ba35695aefe9c321e569d2277f06db3b90`,
+tag `v3.2.0`).  The migration covered the 28 sample ports and the shared
+`common.mt`/`human.mt` helpers:
+
+- Joint definitions share `b2JointDef base` and use `localFrameA/B` instead of
+  anchors, axes and reference angles.  The wheel joint's axis is frame A's
+  x-axis, so a vertical suspension uses `q = b2MakeRot(0.5 * B2_PI)`.
+- The mouse joint is gone.  The samples grab with a kinematic body plus a motor
+  joint (`linearHertz`/`linearDampingRatio`/`maxSpringForce`), matching the 3.2
+  samples.
+- Chains are segment based: `count` is `pointCount`, and friction/restitution
+  runtime updates go through `b2Chain_SetAllSurfaceMaterials`.
+- Contact events carry `b2ContactId`; the manifold point is reconstructed from
+  `anchorA` plus `b2Body_GetWorldCenter`.  World queries take a `b2Pos origin`,
+  and the collision functions are verb-first (`b2CastRay*`, `b2CastShape*`,
+  `b2ComputeShapeDistance`).
+- The IDs were already structs in 3.1.1; 3.2 adds `b2ContactId` and inline
+  store/load helpers.  They are not a changed representation.
+
+`examples/box2d_api_smoke.mt` is the headless binding smoke; the
+`box2d_smoke` gate builds and runs it, and the `examples` gate now emits C for
+the 28 ports.
+
 ## Held upgrades
 
-`box2d` is held at 3.1.1.  Version 3.2.0 makes IDs structs, removes the mouse
-joint, and changes the joint and query APIs; the sample suite needs a separate
-migration before the pin can move.
+None.
 
 ## Upgrade a vendored library
 
@@ -64,7 +87,8 @@ migration before the pin can move.
    ```sh
    tools/gates.sh --areas bindings --run
    tools/gates.sh --areas examples --run
-   tools/gates.sh --areas release --run
+   tools/release.sh -j 4
+   tools/release_smoke.sh dist/mtc-*-linux-x86_64.tar.gz
    ```
    Then build and run the library's examples (and `mtc run .` in a real
    project) before committing the pin.

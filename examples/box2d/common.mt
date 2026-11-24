@@ -5,7 +5,7 @@
 ##   - a raylib-backed b2DebugDraw implementation
 ##   - a world-to-screen camera (box2d +Y up, matching upstream orientation)
 ##   - a single-threaded world factory
-##   - mouse-joint picking via overlap query
+##   - motor-joint grabbing via overlap query
 ##   - deterministic XorShift32 randomness (RAND_SEED = 12345)
 ##   - a Sample interface plus a run() driver that owns the window/step/draw loop
 
@@ -73,6 +73,15 @@ extending b2.Transform:
 public function make_rot(angle: float) -> b2.Rot:
     let cs = b2.compute_cos_sin(angle)
     return b2.Rot(c = cs.cosine, s = cs.sine)
+
+public function local_frame_at(body_id: b2.BodyId, world_point: b2.Vec2, angle: float) -> b2.Transform:
+    return b2.Transform(p = b2.body_get_local_point(body_id, world_point), q = make_rot(angle))
+
+public function local_frame(point: b2.Vec2, angle: float) -> b2.Transform:
+    return b2.Transform(p = point, q = make_rot(angle))
+
+public function axis_angle(axis: b2.Vec2) -> float:
+    return float<-math.atan2(double<-axis.y, double<-axis.x)
 
 public function min_float(a: float, b: float) -> float:
     return if a < b: a else: b
@@ -197,11 +206,11 @@ var s_dummy_context: int = 0
 var s_paused: bool = false
 var s_single_step: bool = false
 var s_stepped: bool = false
-var s_mouse_joint_enabled: bool = true
+var s_mouse_grab_enabled: bool = true
 var s_mouse_world: b2.Vec2
 
-public function enable_mouse_joint(enable: bool) -> void:
-    s_mouse_joint_enabled = enable
+public function enable_mouse_grab(enable: bool) -> void:
+    s_mouse_grab_enabled = enable
 
 public function mouse_world_point() -> b2.Vec2:
     return s_mouse_world
@@ -285,6 +294,7 @@ public function draw_world_solid_polygon(
     rl.draw_triangle_fan_ptr(const_ptr_of(s_poly_points[0]), vertex_count, hex_to_color(color))
 
 function debug_draw_polygon(
+    transform: b2.Transform,
     vertices: const_ptr[b2.Vec2],
     vertex_count: int,
     color: b2.HexColor,
@@ -293,10 +303,10 @@ function debug_draw_polygon(
     if vertex_count < 2:
         return
     unsafe:
-        var last = read(vertices + ptr_uint<-(vertex_count - 1))
+        var last = transform.mul_point(read(vertices + ptr_uint<-(vertex_count - 1)))
         var index = 0
         while index < vertex_count:
-            let current = read(vertices + ptr_uint<-index)
+            let current = transform.mul_point(read(vertices + ptr_uint<-index))
             draw_world_segment(last, current, color)
             last = current
             index += 1
@@ -316,11 +326,12 @@ function debug_draw_circle(center: b2.Vec2, radius: float, color: b2.HexColor, _
 
 function debug_draw_solid_circle(
     transform: b2.Transform,
+    center: b2.Vec2,
     radius: float,
     color: b2.HexColor,
     _context: ptr[void]
 ) -> void:
-    let screen = s_camera.convert_world_to_screen(transform.p)
+    let screen = s_camera.convert_world_to_screen(transform.mul_point(center))
     let pixel_radius = radius * s_camera.pixels_per_world_unit()
     rl.draw_circle_v(screen, pixel_radius, hex_to_color(color))
 
@@ -333,8 +344,11 @@ function debug_draw_solid_capsule(
 ) -> void:
     draw_world_solid_capsule(p1, p2, radius, color)
 
-function debug_draw_segment(p1: b2.Vec2, p2: b2.Vec2, color: b2.HexColor, _context: ptr[void]) -> void:
+function debug_draw_line(p1: b2.Vec2, p2: b2.Vec2, color: b2.HexColor, _context: ptr[void]) -> void:
     draw_world_segment(p1, p2, color)
+
+function debug_draw_bounds(aabb: b2.AABB, color: b2.HexColor, _context: ptr[void]) -> void:
+    draw_world_aabb(aabb, color)
 
 function debug_draw_transform(transform: b2.Transform, _context: ptr[void]) -> void:
     draw_world_transform(transform)
@@ -357,13 +371,14 @@ function setup_debug_draw() -> void:
     s_debug_draw.DrawCircleFcn = debug_draw_circle
     s_debug_draw.DrawSolidCircleFcn = debug_draw_solid_circle
     s_debug_draw.DrawSolidCapsuleFcn = debug_draw_solid_capsule
-    s_debug_draw.DrawSegmentFcn = debug_draw_segment
+    s_debug_draw.DrawLineFcn = debug_draw_line
     s_debug_draw.DrawTransformFcn = debug_draw_transform
     s_debug_draw.DrawPointFcn = debug_draw_point
     s_debug_draw.DrawStringFcn = debug_draw_string
+    s_debug_draw.DrawBoundsFcn = debug_draw_bounds
 
 # =============================================================================
-# World creation and mouse-joint picking
+# World creation and motor-joint grabbing
 # =============================================================================
 
 public function create_world() -> b2.WorldId:
@@ -373,8 +388,8 @@ public function create_world() -> b2.WorldId:
 
 var s_query_point: b2.Vec2
 var s_query_result: b2.BodyId = b2.b2_nullBodyId
-var s_mouse_joint: b2.JointId = b2.b2_nullJointId
-var s_mouse_ground_body: b2.BodyId = b2.b2_nullBodyId
+var s_mouse_grab_joint: b2.JointId = b2.b2_nullJointId
+var s_mouse_grab_body: b2.BodyId = b2.b2_nullBodyId
 
 function overlap_query_callback(shape_id: b2.ShapeId, _context: ptr[void]) -> bool:
     let body = b2.shape_get_body(shape_id)
@@ -388,48 +403,66 @@ function overlap_query_callback(shape_id: b2.ShapeId, _context: ptr[void]) -> bo
 public function null_context() -> ptr[void]:
     return unsafe: reinterpret[ptr[void]](ptr_of(s_dummy_context))
 
+function destroy_mouse_grab() -> void:
+    if b2.joint_is_valid(s_mouse_grab_joint):
+        b2.destroy_joint(s_mouse_grab_joint)
+    s_mouse_grab_joint = b2.b2_nullJointId
+    if s_mouse_grab_body != b2.b2_nullBodyId:
+        b2.destroy_body(s_mouse_grab_body)
+        s_mouse_grab_body = b2.b2_nullBodyId
+
 function mouse_down(world_point: b2.Vec2) -> void:
-    if s_mouse_joint != b2.b2_nullJointId:
+    if s_mouse_grab_joint != b2.b2_nullJointId:
         return
     let d = b2.Vec2(x = 0.001, y = 0.001)
-    let box = b2.AABB(lowerBound = world_point.sub(d), upperBound = world_point.add(d))
+    let box = b2.AABB(lowerBound = d.neg(), upperBound = d)
     s_query_point = world_point
     s_query_result = b2.b2_nullBodyId
     let filter = b2.default_query_filter()
-    let _stats = b2.world_overlap_aabb(s_world_id, box, filter, overlap_query_callback, null_context())
-    if s_query_result != b2.b2_nullBodyId:
-        let body_def = b2.default_body_def()
-        s_mouse_ground_body = b2.create_body(s_world_id, body_def)
-        var mouse_def = b2.default_mouse_joint_def()
-        mouse_def.bodyIdA = s_mouse_ground_body
-        mouse_def.bodyIdB = s_query_result
-        mouse_def.target = world_point
-        mouse_def.hertz = 10.0
-        mouse_def.dampingRatio = 0.7
-        let gravity = b2.world_get_gravity(s_world_id)
-        mouse_def.maxForce = 1000.0 * b2.body_get_mass(s_query_result) * gravity.length()
-        s_mouse_joint = b2.create_mouse_joint(s_world_id, const_ptr_of(mouse_def))
-        b2.body_set_awake(s_query_result, true)
+    let _stats = b2.world_overlap_aabb(
+        s_world_id, world_point, box, filter, overlap_query_callback, null_context()
+    )
+    if s_query_result == b2.b2_nullBodyId:
+        return
+
+    var body_def = b2.default_body_def()
+    body_def.type = b2.BodyType.b2_kinematicBody
+    body_def.position = world_point
+    body_def.enableSleep = false
+    s_mouse_grab_body = b2.create_body(s_world_id, body_def)
+
+    var joint_def = b2.default_motor_joint_def()
+    joint_def.base.bodyIdA = s_mouse_grab_body
+    joint_def.base.bodyIdB = s_query_result
+    joint_def.base.localFrameB.p = b2.body_get_local_point(s_query_result, world_point)
+    joint_def.linearHertz = 7.5
+    joint_def.linearDampingRatio = 1.0
+    let mass_data = b2.body_get_mass_data(s_query_result)
+    let mg = mass_data.mass * b2.world_get_gravity(s_world_id).length()
+    joint_def.maxSpringForce = 100.0 * mg
+    if mass_data.mass > 0.0:
+        let lever = float<-math.sqrt(double<-(mass_data.rotationalInertia / mass_data.mass))
+        joint_def.maxVelocityTorque = 0.25 * lever * mg
+    s_mouse_grab_joint = b2.create_motor_joint(s_world_id, joint_def)
+    b2.body_set_awake(s_query_result, true)
 
 function mouse_move(world_point: b2.Vec2) -> void:
-    if s_mouse_joint == b2.b2_nullJointId:
-        return
-    if not b2.joint_is_valid(s_mouse_joint):
-        s_mouse_joint = b2.b2_nullJointId
-        return
-    b2.mouse_joint_set_target(s_mouse_joint, world_point)
-    let body_b = b2.joint_get_body_b(s_mouse_joint)
-    b2.body_set_awake(body_b, true)
+    s_mouse_world = world_point
 
 function mouse_up(_world_point: b2.Vec2) -> void:
-    if not b2.joint_is_valid(s_mouse_joint):
-        s_mouse_joint = b2.b2_nullJointId
-    if s_mouse_joint != b2.b2_nullJointId:
-        b2.destroy_joint(s_mouse_joint)
-        s_mouse_joint = b2.b2_nullJointId
-        if s_mouse_ground_body != b2.b2_nullBodyId:
-            b2.destroy_body(s_mouse_ground_body)
-            s_mouse_ground_body = b2.b2_nullBodyId
+    destroy_mouse_grab()
+
+function update_mouse_grab(time_step: float) -> void:
+    if s_mouse_grab_joint != b2.b2_nullJointId and not b2.joint_is_valid(s_mouse_grab_joint):
+        destroy_mouse_grab()
+    if s_mouse_grab_joint == b2.b2_nullJointId or time_step <= 0.0:
+        return
+    b2.body_set_target_transform(
+        s_mouse_grab_body,
+        b2.Transform(p = s_mouse_world, q = b2.b2Rot_identity),
+        time_step,
+        true
+    )
 
 # =============================================================================
 # Deterministic randomness (mirrors shared/random.h)
@@ -510,7 +543,7 @@ public function run(sample: dyn[Sample], title: str, center: b2.Vec2, zoom: floa
         let mouse = rl.get_mouse_position()
         let world_point = s_camera.convert_screen_to_world(mouse)
         s_mouse_world = world_point
-        if s_mouse_joint_enabled:
+        if s_mouse_grab_enabled:
             if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
                 mouse_down(world_point)
             if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT):
@@ -529,6 +562,7 @@ public function run(sample: dyn[Sample], title: str, center: b2.Vec2, zoom: floa
         if s_paused:
             if s_single_step: s_single_step = false else: time_step = 0.0
 
+        update_mouse_grab(time_step)
         s_stepped = time_step > 0.0
         b2.world_step(s_world_id, time_step, SUB_STEP_COUNT)
 

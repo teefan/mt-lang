@@ -4,7 +4,7 @@
 ## kinematic, and dynamic at runtime, showing how each interacts.
 ##   1 / 2 / 3     static / kinematic / dynamic
 ##   E             toggle bodies enabled
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2
@@ -81,25 +81,24 @@ function body_type_create(world_id: b2.WorldId) -> BodyType:
     revolute.maxMotorTorque = 50.0
     revolute.enableMotor = true
     let pivot1 = b2.Vec2(x = -2.0, y = 5.0)
-    revolute.bodyIdA = sample.attachment_id
-    revolute.bodyIdB = sample.platform_id
-    revolute.localAnchorA = b2.body_get_local_point(sample.attachment_id, pivot1)
-    revolute.localAnchorB = b2.body_get_local_point(sample.platform_id, pivot1)
+    revolute.base.bodyIdA = sample.attachment_id
+    revolute.base.bodyIdB = sample.platform_id
+    revolute.base.localFrameA = common.local_frame_at(sample.attachment_id, pivot1, 0.0)
+    revolute.base.localFrameB = common.local_frame_at(sample.platform_id, pivot1, 0.0)
     b2.create_revolute_joint(world_id, revolute)
     let pivot2 = b2.Vec2(x = 3.0, y = 5.0)
-    revolute.bodyIdA = sample.second_attachment_id
-    revolute.bodyIdB = sample.platform_id
-    revolute.localAnchorA = b2.body_get_local_point(sample.second_attachment_id, pivot2)
-    revolute.localAnchorB = b2.body_get_local_point(sample.platform_id, pivot2)
+    revolute.base.bodyIdA = sample.second_attachment_id
+    revolute.base.bodyIdB = sample.platform_id
+    revolute.base.localFrameA = common.local_frame_at(sample.second_attachment_id, pivot2, 0.0)
+    revolute.base.localFrameB = common.local_frame_at(sample.platform_id, pivot2, 0.0)
     b2.create_revolute_joint(world_id, revolute)
 
     var prismatic = b2.default_prismatic_joint_def()
-    prismatic.bodyIdA = ground
-    prismatic.bodyIdB = sample.platform_id
+    prismatic.base.bodyIdA = ground
+    prismatic.base.bodyIdB = sample.platform_id
     let anchor = b2.Vec2(x = 0.0, y = 5.0)
-    prismatic.localAnchorA = b2.body_get_local_point(ground, anchor)
-    prismatic.localAnchorB = b2.body_get_local_point(sample.platform_id, anchor)
-    prismatic.localAxisA = b2.Vec2(x = 1.0, y = 0.0)
+    prismatic.base.localFrameA = common.local_frame_at(ground, anchor, 0.0)
+    prismatic.base.localFrameB = common.local_frame_at(sample.platform_id, anchor, 0.0)
     prismatic.maxMotorForce = 1000.0
     prismatic.motorSpeed = 0.0
     prismatic.enableMotor = true

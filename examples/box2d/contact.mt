@@ -5,7 +5,7 @@
 ## destroyed. Contact begin events also reveal the contact manifold and
 ## impulse data, which is drawn on screen.
 ##   W / A / S / D     apply force to move the player
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2
@@ -13,7 +13,6 @@ import std.raylib as rl
 import examples.box2d.common as common
 
 const DEBRIS_COUNT: int = 20
-const CONTACT_CAPACITY: int = 8
 const MAX_IMPULSE: int = 32
 
 struct ImpulseSegment:
@@ -39,7 +38,7 @@ function contact_event_create(world_id: b2.WorldId) -> ContactEvent:
         b2.Vec2(x = 40.0, y = 40.0)
     )
     var chain_def = b2.default_chain_def()
-    chain_def.count = 4
+    chain_def.pointCount = 4
     chain_def.points = const_ptr_of(wall_points[0])
     chain_def.isLoop = true
     b2.create_chain(ground, chain_def)
@@ -172,7 +171,6 @@ extending ContactEvent:
         var attach_count = 0
         var shapes_to_destroy: array[b2.ShapeId, DEBRIS_COUNT] = zero[array[b2.ShapeId, DEBRIS_COUNT]]
         var destroy_count = 0
-        var contact_buffer: array[b2.ContactData, CONTACT_CAPACITY] = zero[array[b2.ContactData, CONTACT_CAPACITY]]
 
         this.impulse_count = 0
         let contact_events = b2.world_get_contact_events(this.world)
@@ -182,28 +180,8 @@ extending ContactEvent:
                 let touch_event = read(contact_events.beginEvents + ptr_uint<-index)
                 let body_a = b2.shape_get_body(touch_event.shapeIdA)
                 let body_b = b2.shape_get_body(touch_event.shapeIdB)
-                let capacity_a = b2.shape_get_contact_capacity(touch_event.shapeIdA)
-                let capacity_b = b2.shape_get_contact_capacity(touch_event.shapeIdB)
-                if capacity_a < capacity_b:
-                    let data_count = b2.shape_get_contact_data(
-                        touch_event.shapeIdA, ptr_of(contact_buffer[0]), CONTACT_CAPACITY
-                    )
-                    var j = 0
-                    while j < data_count:
-                        let data = contact_buffer[j]
-                        if data.shapeIdA == touch_event.shapeIdB or data.shapeIdB == touch_event.shapeIdB:
-                            this.collect_impulses(data)
-                        j += 1
-                else:
-                    let data_count = b2.shape_get_contact_data(
-                        touch_event.shapeIdB, ptr_of(contact_buffer[0]), CONTACT_CAPACITY
-                    )
-                    var j = 0
-                    while j < data_count:
-                        let data = contact_buffer[j]
-                        if data.shapeIdA == touch_event.shapeIdA or data.shapeIdB == touch_event.shapeIdA:
-                            this.collect_impulses(data)
-                        j += 1
+                if b2.contact_is_valid(touch_event.contactId):
+                    this.collect_impulses(b2.contact_get_data(touch_event.contactId))
                 if body_a == this.player_id:
                     let debris_index = this.find_debris_index(body_b)
                     if debris_index >= 0:
@@ -235,7 +213,7 @@ extending ContactEvent:
             b2.destroy_shape(shapes_to_destroy[i], false)
             i += 1
         if destroy_count > 0:
-            b2.body_apply_mass_from_shapes(this.player_id)
+            b2.body_update_mass_from_shapes(this.player_id)
 
         this.wait -= 1.0 / common.HERTZ
         if this.wait < 0.0:
@@ -252,13 +230,15 @@ extending ContactEvent:
 
     editable function collect_impulses(data: b2.ContactData) -> void:
         let normal = data.manifold.normal
+        let center_a = b2.body_get_world_center(b2.shape_get_body(data.shapeIdA))
         var k = 0
         while k < data.manifold.pointCount:
             if this.impulse_count < MAX_IMPULSE:
                 let point = data.manifold.points[k]
+                let p1 = b2.Vec2(x = center_a.x + point.anchorA.x, y = center_a.y + point.anchorA.y)
                 this.impulse_segments[this.impulse_count] = ImpulseSegment(
-                    p1 = point.point,
-                    p2 = point.point.add(normal.scale(point.totalNormalImpulse))
+                    p1 = p1,
+                    p2 = p1.add(normal.scale(point.totalNormalImpulse))
                 )
                 this.impulse_count += 1
             k += 1

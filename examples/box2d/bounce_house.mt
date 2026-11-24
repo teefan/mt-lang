@@ -6,7 +6,7 @@
 ##   1 / 2 / 3     circle / capsule / box
 ##   H             toggle hit events
 ##   Space         relaunch the body
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2

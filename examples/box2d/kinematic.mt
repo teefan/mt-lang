@@ -2,7 +2,7 @@
 ##
 ## A kinematic body is driven to follow a Lissajous target transform each step,
 ## demonstrating b2Body_SetTargetTransform.
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2
@@ -45,7 +45,7 @@ extending Kinematic:
             common.draw_world_segment(point.sub(axis.scale(0.5)), point.add(axis.scale(0.5)), b2.HexColor.b2_colorPlum)
             common.draw_world_point(point, 10.0, b2.HexColor.b2_colorPlum)
             let target = b2.Transform(p = point, q = rotation)
-            b2.body_set_target_transform(this.body_id, target, 1.0 / common.HERTZ)
+            b2.body_set_target_transform(this.body_id, target, 1.0 / common.HERTZ, true)
             this.time += 1.0 / common.HERTZ
 
     function draw_overlay() -> void:

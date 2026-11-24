@@ -9,7 +9,7 @@
 ##   [ / ]         max motor force (when motor enabled)
 ##   , / .         spring hertz (when spring enabled)
 ##   - / =         spring target translation (when spring enabled)
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2
@@ -54,11 +54,11 @@ function prismatic_joint_create(world_id: b2.WorldId) -> PrismaticJoint:
     let pivot = b2.Vec2(x = 0.0, y = 9.0)
     let axis = b2.Vec2(x = 1.0, y = 1.0).normalize()
     var joint_def = b2.default_prismatic_joint_def()
-    joint_def.bodyIdA = ground
-    joint_def.bodyIdB = body
-    joint_def.localAxisA = b2.body_get_local_vector(ground, axis)
-    joint_def.localAnchorA = b2.body_get_local_point(ground, pivot)
-    joint_def.localAnchorB = b2.body_get_local_point(body, pivot)
+    let local_axis = b2.body_get_local_vector(ground, axis)
+    joint_def.base.bodyIdA = ground
+    joint_def.base.bodyIdB = body
+    joint_def.base.localFrameA = common.local_frame_at(ground, pivot, common.axis_angle(local_axis))
+    joint_def.base.localFrameB = common.local_frame_at(body, pivot, 0.0)
     joint_def.motorSpeed = sample.motor_speed
     joint_def.maxMotorForce = sample.motor_force
     joint_def.enableMotor = sample.enable_motor
@@ -88,11 +88,11 @@ extending PrismaticJoint:
             b2.joint_wake_bodies(this.joint_id)
         if rl.is_key_pressed(rl.KeyboardKey.KEY_UP):
             this.motor_speed = common.min_float(this.motor_speed + 1.0, 40.0)
-            b2.prismatic_joint_set_motor_speed(this.joint_id, this.motor_speed)
+            b2.prismatic_joint_set_target_motor_speed(this.joint_id, this.motor_speed)
             b2.joint_wake_bodies(this.joint_id)
         if rl.is_key_pressed(rl.KeyboardKey.KEY_DOWN):
             this.motor_speed = common.max_float(this.motor_speed - 1.0, -40.0)
-            b2.prismatic_joint_set_motor_speed(this.joint_id, this.motor_speed)
+            b2.prismatic_joint_set_target_motor_speed(this.joint_id, this.motor_speed)
             b2.joint_wake_bodies(this.joint_id)
         if rl.is_key_pressed(rl.KeyboardKey.KEY_LEFT_BRACKET):
             this.motor_force = common.max_float(this.motor_force - 5.0, 0.0)
@@ -120,9 +120,9 @@ extending PrismaticJoint:
             b2.joint_wake_bodies(this.joint_id)
 
     function draw_overlay() -> void:
-        let force = b2.prismatic_joint_get_motor_force(this.joint_id)
-        let translation = b2.prismatic_joint_get_translation(this.joint_id)
-        let speed = b2.prismatic_joint_get_speed(this.joint_id)
+        let force = b2.prismatic_joint_get_current_motor_force(this.joint_id)
+        let translation = b2.prismatic_joint_get_current_translation(this.joint_id)
+        let speed = b2.prismatic_joint_get_current_speed(this.joint_id)
         common.draw_text_line(f"motor force = #{force:.2} translation = #{translation:.2}")
         common.draw_text_line(f"speed = #{speed:.4}  L limit  M motor  S spring")
         common.draw_text_line("Up/Dn speed  [] force  ,/. hertz  -/= target")

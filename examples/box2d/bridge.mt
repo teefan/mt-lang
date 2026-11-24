@@ -7,7 +7,7 @@
 ##   - / =         spring damping ratio
 ##   ; / '         constraint hertz
 ##   / / \         constraint damping ratio
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2
@@ -65,19 +65,19 @@ function bridge_create(world_id: b2.WorldId) -> Bridge:
         b2.create_polygon_shape(sample.body_ids[index], shape_def, plank_box)
 
         let pivot = b2.Vec2(x = xbase + index, y = 20.0)
-        joint_def.bodyIdA = prev_body
-        joint_def.bodyIdB = sample.body_ids[index]
-        joint_def.localAnchorA = b2.body_get_local_point(prev_body, pivot)
-        joint_def.localAnchorB = b2.body_get_local_point(sample.body_ids[index], pivot)
+        joint_def.base.bodyIdA = prev_body
+        joint_def.base.bodyIdB = sample.body_ids[index]
+        joint_def.base.localFrameA = common.local_frame_at(prev_body, pivot, 0.0)
+        joint_def.base.localFrameB = common.local_frame_at(sample.body_ids[index], pivot, 0.0)
         sample.joint_ids[index] = b2.create_revolute_joint(world_id, joint_def)
         prev_body = sample.body_ids[index]
         index += 1
 
     let end_pivot = b2.Vec2(x = xbase + PLANK_COUNT, y = 20.0)
-    joint_def.bodyIdA = prev_body
-    joint_def.bodyIdB = ground
-    joint_def.localAnchorA = b2.body_get_local_point(prev_body, end_pivot)
-    joint_def.localAnchorB = b2.body_get_local_point(ground, end_pivot)
+    joint_def.base.bodyIdA = prev_body
+    joint_def.base.bodyIdB = ground
+    joint_def.base.localFrameA = common.local_frame_at(prev_body, end_pivot, 0.0)
+    joint_def.base.localFrameB = common.local_frame_at(ground, end_pivot, 0.0)
     sample.joint_ids[PLANK_COUNT] = b2.create_revolute_joint(world_id, joint_def)
 
     let triangle_points: array[b2.Vec2, 3] = array[b2.Vec2, 3](

@@ -5,7 +5,7 @@
 ## compound shapes handle being hit. Body AABBs can be toggled.
 ##   I             drop obstructions onto the structures
 ##   A             toggle body AABB display
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2
@@ -144,10 +144,10 @@ extending CompoundShapes:
 
     function draw_overlay() -> void:
         if this.draw_body_aabbs:
-            common.draw_world_aabb(b2.body_compute_aabb(this.table1_id), b2.HexColor.b2_colorYellow)
-            common.draw_world_aabb(b2.body_compute_aabb(this.table2_id), b2.HexColor.b2_colorYellow)
-            common.draw_world_aabb(b2.body_compute_aabb(this.ship1_id), b2.HexColor.b2_colorYellow)
-            common.draw_world_aabb(b2.body_compute_aabb(this.ship2_id), b2.HexColor.b2_colorYellow)
+            common.draw_world_aabb(b2.body_compute_bounds(this.table1_id), b2.HexColor.b2_colorYellow)
+            common.draw_world_aabb(b2.body_compute_bounds(this.table2_id), b2.HexColor.b2_colorYellow)
+            common.draw_world_aabb(b2.body_compute_bounds(this.ship1_id), b2.HexColor.b2_colorYellow)
+            common.draw_world_aabb(b2.body_compute_bounds(this.ship2_id), b2.HexColor.b2_colorYellow)
         common.draw_text_line("I: intrude  A: toggle body AABBs")
 
 function main() -> int:

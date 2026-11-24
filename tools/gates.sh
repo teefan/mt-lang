@@ -98,6 +98,7 @@ infer_area() {
         examples/*)                               echo examples ;;
         docs/*)                                   echo docs ;;
         tools/refactor_guard.rb|tools/refactor_baseline.json|tools/test/refactor_guard_test.rb) echo refactor_tools ;;
+        config/upstream_versions.yml)              echo bindings; echo examples ;;
         tools/*)                                  echo tools ;;
         *)                                        echo other ;;
     esac
@@ -119,7 +120,7 @@ fi
 
 gate_kind() {
     case "$1" in
-        bootstrap|test_mt|dev_build|dev_tests|dap|tools_check|bindings|wasm_smoke|docs_smoke|refactor_guard|guard_tests|golden_cli|golden_diag|golden_lint|golden_format|examples|lsp_conformance) echo hard ;;
+        bootstrap|test_mt|dev_build|dev_tests|dap|tools_check|bindings|wasm_smoke|docs_smoke|refactor_guard|guard_tests|golden_cli|golden_diag|golden_lint|golden_format|examples|box2d_smoke|lsp_conformance) echo hard ;;
         *) echo meter ;;
     esac
 }
@@ -145,7 +146,8 @@ gate_label() {
         docs_smoke)     echo "docs server end-to-end (routes/SIGINT smoke)" ;;
         refactor_guard) echo "structural guard: layering/naming/markers (fast)" ;;
         guard_tests)    echo "refactor guard unit tests" ;;
-        examples)       echo "example emit-c sweep: examples/*.mt + examples/sdl3" ;;
+        examples)       echo "example emit-c sweep: examples/*.mt + examples/box2d + examples/sdl3" ;;
+        box2d_smoke)    echo "box2d 3.2 headless binding smoke (build + run)" ;;
         lsp_conformance) echo "LSP 3.18 spec conformance (explicit assertions)" ;;
         valgrind_lsp)   echo "valgrind over an LSP drive (0 errors)" ;;
         neovim)         echo "headless-Neovim smoke (when tmp/ has the script)" ;;
@@ -168,6 +170,7 @@ gate_cmd() {
         golden_lint)   echo "ruby tools/lint_parity.rb --expect tools/golden/lint.json -q" ;;
         golden_format) echo "ruby tools/format_parity.rb all -j 4 --expect tools/golden/format.json -q" ;;
         examples)      echo "gates_examples" ;;
+        box2d_smoke)   echo "gates_box2d_smoke" ;;
         lsp_conformance) echo "ruby tools/lsp_conformance.rb --bin build/stage2/mtc" ;;
         valgrind_lsp)  echo "command -v valgrind >/dev/null && gates_valgrind || echo 'skipped: valgrind not installed'" ;;
         neovim)        echo "gates_neovim" ;;
@@ -191,6 +194,7 @@ gate_summary() {
         golden_lint)    echo "^files=" ;;
         golden_format)  echo "^modes=" ;;
         examples)       echo "^examples ok=" ;;
+        box2d_smoke)    echo "^box2d smoke:" ;;
         lsp_conformance) echo "^lsp conformance:" ;;
         valgrind_lsp)   echo "ERROR SUMMARY|skipped" ;;
         neovim)         echo "HOVER|Error|skipped" ;;
@@ -249,8 +253,11 @@ gates_dev_tests() {
 # comparison is gone with the host; a compile failure is a hard gate failure.
 gates_examples() {
     local rc=0 ok=0 failed=0 f out first
-    for f in examples/*.mt examples/sdl3/*/*.mt; do
+    for f in examples/*.mt examples/box2d/*.mt examples/sdl3/*/*.mt; do
         [ -e "$f" ] || continue
+        case "$f" in
+            examples/box2d/common.mt|examples/box2d/human.mt) continue ;;
+        esac
         out="$(timeout 120 build/stage2/mtc emit-c "$f" 2>&1 >/dev/null)"
         if [ $? -ne 0 ]; then
             rc=1; failed=$((failed + 1))
@@ -262,6 +269,14 @@ gates_examples() {
     done
     echo "examples ok=$ok failed=$failed"
     return $rc
+}
+
+# Headless Box2D 3.2 binding smoke: builds and links libbox2d, then runs the
+# API surface check.  No window or display is needed.
+gates_box2d_smoke() {
+    local bin="tmp/box2d-smoke"
+    timeout 180 build/stage2/mtc build examples/box2d_api_smoke.mt -I . -o "$bin" || return 1
+    timeout 30 bash -c "ulimit -v 20000000; ./$bin"
 }
 
 gates_neovim() {
@@ -300,10 +315,10 @@ gates_for_area() {
         loader)    echo "dev_tests refactor_guard bootstrap test_mt golden_cli examples" ;;
         cli)       echo "dev_tests refactor_guard bootstrap test_mt golden_cli" ;;
         formatter) echo "dev_tests refactor_guard bootstrap golden_format" ;;
-        bindings)  echo "dev_tests refactor_guard bootstrap bindings" ;;
+        bindings)  echo "dev_tests refactor_guard bootstrap bindings box2d_smoke" ;;
         dap)       echo "dev_tests refactor_guard bootstrap dap" ;;
-        std)       echo "examples golden_lint" ;;
-        examples)  echo "examples" ;;
+        std)       echo "examples golden_lint box2d_smoke" ;;
+        examples)  echo "examples box2d_smoke" ;;
         tests)     echo "dev_build dev_tests refactor_guard" ;;
         wasm)      echo "dev_tests refactor_guard bootstrap test_mt golden_cli wasm_smoke" ;;
         docs_cli)  echo "dev_tests refactor_guard bootstrap test_mt golden_cli docs_smoke" ;;

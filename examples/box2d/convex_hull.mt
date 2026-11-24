@@ -4,7 +4,7 @@
 ##   G             generate a new point set
 ##   A             toggle auto-generate each step
 ##   B             toggle bulk defect-hunting mode
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2

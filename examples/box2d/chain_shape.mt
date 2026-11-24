@@ -7,7 +7,7 @@
 ##   Space         relaunch the body
 ##   [ / ]         decrease / increase friction
 ##   - / =         decrease / increase restitution
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2
@@ -81,7 +81,7 @@ extending ChainShape:
 
         var chain_def = b2.default_chain_def()
         chain_def.points = const_ptr_of(CHAIN_POINTS[0])
-        chain_def.count = CHAIN_COUNT
+        chain_def.pointCount = CHAIN_COUNT
         chain_def.materials = const_ptr_of(material)
         chain_def.materialCount = 1
         chain_def.isLoop = true
@@ -134,11 +134,15 @@ extending ChainShape:
         if rl.is_key_pressed(rl.KeyboardKey.KEY_LEFT_BRACKET):
             this.friction = common.max_float(this.friction - 0.1, 0.0)
             b2.shape_set_friction(this.shape_id, this.friction)
-            b2.chain_set_friction(this.chain_id, this.friction)
+            var left_material = b2.chain_get_surface_material(this.chain_id, 0)
+            left_material.friction = this.friction
+            b2.chain_set_all_surface_materials(this.chain_id, left_material)
         if rl.is_key_pressed(rl.KeyboardKey.KEY_RIGHT_BRACKET):
             this.friction = common.min_float(this.friction + 0.1, 1.0)
             b2.shape_set_friction(this.shape_id, this.friction)
-            b2.chain_set_friction(this.chain_id, this.friction)
+            var right_material = b2.chain_get_surface_material(this.chain_id, 0)
+            right_material.friction = this.friction
+            b2.chain_set_all_surface_materials(this.chain_id, right_material)
         if rl.is_key_pressed(rl.KeyboardKey.KEY_MINUS):
             this.restitution = common.max_float(this.restitution - 0.1, 0.0)
             b2.shape_set_restitution(this.shape_id, this.restitution)

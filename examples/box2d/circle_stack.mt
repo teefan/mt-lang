@@ -3,7 +3,7 @@
 ## A stack of ten circles with increasing density that falls onto a ground
 ## segment. Contact hit events are collected each step and drawn as white
 ## points with the pair of shape indices listed as overlay text.
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2

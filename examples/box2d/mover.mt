@@ -108,13 +108,13 @@ function cast_callback(
 function kick_callback(shape_id: b2.ShapeId, _context: ptr[void]) -> bool:
     let body_id = b2.shape_get_body(shape_id)
     if b2.body_get_type(body_id) == b2.BodyType.b2_dynamicBody:
-        let center = b2.body_get_world_center_of_mass(body_id)
+        let center = b2.body_get_world_center(body_id)
         let direction = center.sub(s_mover_position).normalize()
         b2.body_apply_linear_impulse_to_center(body_id, b2.Vec2(x = 2.0 * direction.x, y = 2.0), true)
     return true
 
 function mover_create(world_id: b2.WorldId) -> Mover:
-    common.enable_mouse_joint(false)
+    common.enable_mouse_grab(false)
     let body_def = b2.default_body_def()
 
     # ground 1: sloped course
@@ -168,18 +168,18 @@ function mover_create(world_id: b2.WorldId) -> Mover:
         let plank = b2.create_body(world_id, plank_def)
         b2.create_polygon_shape(plank, bridge_shape, plank_box)
         let pivot = b2.Vec2(x = x_base + (index), y = y_base)
-        joint_def.bodyIdA = prev_body
-        joint_def.bodyIdB = plank
-        joint_def.localAnchorA = b2.body_get_local_point(prev_body, pivot)
-        joint_def.localAnchorB = b2.body_get_local_point(plank, pivot)
+        joint_def.base.bodyIdA = prev_body
+        joint_def.base.bodyIdB = plank
+        joint_def.base.localFrameA = common.local_frame_at(prev_body, pivot, 0.0)
+        joint_def.base.localFrameB = common.local_frame_at(plank, pivot, 0.0)
         b2.create_revolute_joint(world_id, joint_def)
         prev_body = plank
         index += 1
     let end_pivot = b2.Vec2(x = x_base + (PLANK_COUNT), y = y_base)
-    joint_def.bodyIdA = prev_body
-    joint_def.bodyIdB = ground2
-    joint_def.localAnchorA = b2.body_get_local_point(prev_body, end_pivot)
-    joint_def.localAnchorB = b2.body_get_local_point(ground2, end_pivot)
+    joint_def.base.bodyIdA = prev_body
+    joint_def.base.bodyIdB = ground2
+    joint_def.base.localFrameA = common.local_frame_at(prev_body, end_pivot, 0.0)
+    joint_def.base.localFrameB = common.local_frame_at(ground2, end_pivot, 0.0)
     b2.create_revolute_joint(world_id, joint_def)
 
     # friendly capsule on the course
@@ -317,6 +317,7 @@ extending Mover:
             translation = b2.Vec2(x = 0.0, y = -ray_length)
         let _stats = b2.world_cast_shape(
             this.world,
+            b2.b2Vec2_zero,
             const_ptr_of(proxy),
             translation,
             pogo_filter,
@@ -360,6 +361,7 @@ extending Mover:
             )
             b2.world_collide_mover(
                 this.world,
+                b2.b2Vec2_zero,
                 const_ptr_of(mover),
                 collide_filter,
                 plane_result_callback,
@@ -367,8 +369,10 @@ extending Mover:
             )
             let solve = b2.solve_planes(target.sub(this.transform.p), ptr_of(s_planes[0]), s_plane_count)
             this.total_iterations += solve.iterationCount
-            let fraction = b2.world_cast_mover(this.world, const_ptr_of(mover), solve.translation, cast_filter)
-            let delta = solve.translation.scale(fraction)
+            let fraction = b2.world_cast_mover(
+                this.world, b2.b2Vec2_zero, const_ptr_of(mover), solve.delta, cast_filter
+            )
+            let delta = solve.delta.scale(fraction)
             this.transform.p = this.transform.p.add(delta)
             if delta.length_sq() < tolerance * tolerance:
                 break
@@ -383,6 +387,7 @@ extending Mover:
         s_mover_position = this.transform.p
         let _stats = b2.world_overlap_shape(
             this.world,
+            b2.b2Vec2_zero,
             const_ptr_of(proxy),
             filter,
             kick_callback,
@@ -394,7 +399,7 @@ extending Mover:
             let cs = b2.compute_cos_sin(this.time + b2.B2_PI)
             let point = b2.Vec2(x = 112.0, y = 4.0 * cs.cosine + 10.0)
             b2.body_set_target_transform(
-                this.elevator_id, b2.Transform(p = point, q = b2.b2Rot_identity), 1.0 / common.HERTZ
+                this.elevator_id, b2.Transform(p = point, q = b2.b2Rot_identity), 1.0 / common.HERTZ, true
             )
             this.time += 1.0 / common.HERTZ
 

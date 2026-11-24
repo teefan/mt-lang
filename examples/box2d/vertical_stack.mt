@@ -11,7 +11,7 @@
 ##   R            reset stack
 ##   D            destroy the lowest body of each column
 ##   P            pause, Space single-step
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 
 import std.box2d as b2
 import std.raylib as rl

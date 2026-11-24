@@ -9,7 +9,7 @@
 ##   [ / ]         max motor torque (when motor enabled)
 ##   , / .         spring hertz (when spring enabled)
 ##   - / =         spring damping ratio (when spring enabled)
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2
@@ -56,11 +56,11 @@ function wheel_joint_create(world_id: b2.WorldId) -> WheelJoint:
     let pivot = b2.Vec2(x = 0.0, y = 10.0)
     let axis = b2.Vec2(x = 1.0, y = 1.0).normalize()
     var joint_def = b2.default_wheel_joint_def()
-    joint_def.bodyIdA = ground
-    joint_def.bodyIdB = body
-    joint_def.localAxisA = b2.body_get_local_vector(ground, axis)
-    joint_def.localAnchorA = b2.body_get_local_point(ground, pivot)
-    joint_def.localAnchorB = b2.body_get_local_point(body, pivot)
+    let local_axis = b2.body_get_local_vector(ground, axis)
+    joint_def.base.bodyIdA = ground
+    joint_def.base.bodyIdB = body
+    joint_def.base.localFrameA = common.local_frame_at(ground, pivot, common.axis_angle(local_axis))
+    joint_def.base.localFrameB = common.local_frame_at(body, pivot, 0.0)
     joint_def.motorSpeed = sample.motor_speed
     joint_def.maxMotorTorque = sample.motor_torque
     joint_def.enableMotor = sample.enable_motor
@@ -86,10 +86,10 @@ extending WheelJoint:
             b2.wheel_joint_enable_spring(this.joint_id, this.enable_spring)
         if rl.is_key_pressed(rl.KeyboardKey.KEY_UP):
             this.motor_speed = common.min_float(this.motor_speed + 1.0, 20.0)
-            b2.wheel_joint_set_motor_speed(this.joint_id, this.motor_speed)
+            b2.wheel_joint_set_target_motor_speed(this.joint_id, this.motor_speed)
         if rl.is_key_pressed(rl.KeyboardKey.KEY_DOWN):
             this.motor_speed = common.max_float(this.motor_speed - 1.0, -20.0)
-            b2.wheel_joint_set_motor_speed(this.joint_id, this.motor_speed)
+            b2.wheel_joint_set_target_motor_speed(this.joint_id, this.motor_speed)
         if rl.is_key_pressed(rl.KeyboardKey.KEY_LEFT_BRACKET):
             this.motor_torque = common.max_float(this.motor_torque - 1.0, 0.0)
             b2.wheel_joint_set_max_motor_torque(this.joint_id, this.motor_torque)
@@ -110,7 +110,7 @@ extending WheelJoint:
             b2.wheel_joint_set_spring_damping_ratio(this.joint_id, this.damping_ratio)
 
     function draw_overlay() -> void:
-        let torque = b2.wheel_joint_get_motor_torque(this.joint_id)
+        let torque = b2.wheel_joint_get_current_motor_torque(this.joint_id)
         common.draw_text_line(f"motor torque = #{torque:.2}  L limit  M motor  S spring")
         common.draw_text_line("Up/Dn speed  [] torque  ,/. hertz  -/= damping")
 

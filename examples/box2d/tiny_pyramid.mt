@@ -2,7 +2,7 @@
 ##
 ## A pyramid of 465 tiny squares (5 cm across) stacked to stress solver
 ## robustness with very small shapes.
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2

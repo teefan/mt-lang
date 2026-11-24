@@ -44,10 +44,10 @@ function create_joint(
     draw_size: float
 ) -> b2.JointId:
     var joint_def = b2.default_revolute_joint_def()
-    joint_def.bodyIdA = body_a
-    joint_def.bodyIdB = body_b
-    joint_def.localAnchorA = b2.body_get_local_point(body_a, pivot)
-    joint_def.localAnchorB = b2.body_get_local_point(body_b, pivot)
+    joint_def.base.bodyIdA = body_a
+    joint_def.base.bodyIdB = body_b
+    joint_def.base.localFrameA = common.local_frame_at(body_a, pivot, 0.0)
+    joint_def.base.localFrameB = common.local_frame_at(body_b, pivot, 0.0)
     joint_def.enableLimit = true
     joint_def.lowerAngle = lower_angle
     joint_def.upperAngle = upper_angle
@@ -56,7 +56,7 @@ function create_joint(
     joint_def.enableSpring = hertz > 0.0
     joint_def.hertz = hertz
     joint_def.dampingRatio = damping_ratio
-    joint_def.drawSize = draw_size
+    joint_def.base.drawScale = draw_size
     return b2.create_revolute_joint(world_id, joint_def)
 
 public function create_human(
@@ -264,8 +264,10 @@ public function create_human(
         lower_arm_pivot, -0.2 * b2.B2_PI, 0.3 * b2.B2_PI,
         human.bones[BONE_LOWER_LEFT_ARM].friction_scale * max_torque, hertz, damping_ratio, draw_size
     )
-    # reference angle 0.25*PI applied via setter below
-    b2.joint_set_reference_angle(human.bones[BONE_LOWER_LEFT_ARM].joint_id, 0.25 * b2.B2_PI)
+    # reference angle 0.25*PI applied via the local frame below
+    var left_arm_frame = b2.joint_get_local_frame_a(human.bones[BONE_LOWER_LEFT_ARM].joint_id)
+    left_arm_frame.q = common.make_rot(0.25 * b2.B2_PI)
+    b2.joint_set_local_frame_a(human.bones[BONE_LOWER_LEFT_ARM].joint_id, left_arm_frame)
 
     # upper right arm
     human.bones[BONE_UPPER_RIGHT_ARM].parent_index = BONE_TORSO
@@ -294,7 +296,9 @@ public function create_human(
         lower_right_arm_pivot, -0.2 * b2.B2_PI, 0.3 * b2.B2_PI,
         human.bones[BONE_LOWER_RIGHT_ARM].friction_scale * max_torque, hertz, damping_ratio, draw_size
     )
-    b2.joint_set_reference_angle(human.bones[BONE_LOWER_RIGHT_ARM].joint_id, 0.25 * b2.B2_PI)
+    var right_arm_frame = b2.joint_get_local_frame_a(human.bones[BONE_LOWER_RIGHT_ARM].joint_id)
+    right_arm_frame.q = common.make_rot(0.25 * b2.B2_PI)
+    b2.joint_set_local_frame_a(human.bones[BONE_LOWER_RIGHT_ARM].joint_id, right_arm_frame)
 
     human.spawned = true
     return human

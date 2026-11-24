@@ -2,7 +2,7 @@
 ##
 ## A large grid of zero-gravity circles is spawned inside a capsule-walled box.
 ## With gravity disabled the circles jostle purely from spawn overlap.
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2

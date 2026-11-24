@@ -3,7 +3,7 @@
 ## A zero-gravity wheel of twelve box segments welded to a static hub, slowly
 ## spinning. Pressing Space triggers b2World_Explode at the hub.
 ##   Space         explode
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2
@@ -48,13 +48,12 @@ function explosion_create(world_id: b2.WorldId) -> Explosion:
     let shape_def = b2.default_shape_def()
 
     var weld_def = b2.default_weld_joint_def()
-    weld_def.referenceAngle = 0.0
     weld_def.angularHertz = 0.5
     weld_def.angularDampingRatio = 0.7
     weld_def.linearHertz = 0.5
     weld_def.linearDampingRatio = 0.7
-    weld_def.bodyIdA = ground
-    weld_def.localAnchorB = b2.Vec2(x = 0.0, y = 0.0)
+    weld_def.base.bodyIdA = ground
+    weld_def.base.localFrameB = common.local_frame(b2.Vec2(x = 0.0, y = 0.0), 0.0)
 
     let box = b2.make_box(1.0, 0.1)
     let r = 8.0
@@ -67,8 +66,8 @@ function explosion_create(world_id: b2.WorldId) -> Explosion:
         spoke_def.position = position
         let body = b2.create_body(world_id, spoke_def)
         b2.create_polygon_shape(body, shape_def, box)
-        weld_def.localAnchorA = position
-        weld_def.bodyIdB = body
+        weld_def.base.localFrameA = common.local_frame_at(ground, position, 0.0)
+        weld_def.base.bodyIdB = body
         sample.joint_ids[index] = b2.create_weld_joint(world_id, weld_def)
         index += 1
 
@@ -89,7 +88,9 @@ extending Explosion:
             this.reference_angle = unwind_angle(this.reference_angle)
             var index = 0
             while index < SPOKE_COUNT:
-                b2.joint_set_reference_angle(this.joint_ids[index], this.reference_angle)
+                var frame = b2.joint_get_local_frame_a(this.joint_ids[index])
+                frame.q = common.make_rot(this.reference_angle)
+                b2.joint_set_local_frame_a(this.joint_ids[index], frame)
                 index += 1
 
     function draw_overlay() -> void:

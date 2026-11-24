@@ -5,7 +5,7 @@
 ## bodies are tracked.
 ##   Space         explode
 ##   - / =         adjust explosion magnitude
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2

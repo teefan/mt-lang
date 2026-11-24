@@ -6,7 +6,7 @@
 ##   [ / ]         joint friction torque
 ##   - / =         joint spring hertz
 ##   , / .         joint spring damping ratio
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2

@@ -3,7 +3,7 @@
 ## A 4-column by 30-row array of rounded boxes connected pairwise by revolute
 ## joints. Once every body sleeps, the step counter and a transform hash are
 ## shown, matching the cross-platform determinism unit test scenario.
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2
@@ -54,9 +54,9 @@ function falling_hinges_create(world_id: b2.WorldId) -> FallingHinges:
     joint_def.enableSpring = true
     joint_def.hertz = 0.5
     joint_def.dampingRatio = 0.5
-    joint_def.localAnchorA = b2.Vec2(x = h, y = h)
-    joint_def.localAnchorB = b2.Vec2(x = offset, y = -h)
-    joint_def.drawSize = 0.1
+    joint_def.base.localFrameA = common.local_frame(b2.Vec2(x = h, y = h), 0.0)
+    joint_def.base.localFrameB = common.local_frame(b2.Vec2(x = offset, y = -h), 0.0)
+    joint_def.base.drawScale = 0.1
 
     var body_index = 0
     var column = 0
@@ -73,8 +73,8 @@ function falling_hinges_create(world_id: b2.WorldId) -> FallingHinges:
             if row % 2 == 0:
                 prev_body = body
             else:
-                joint_def.bodyIdA = prev_body
-                joint_def.bodyIdB = body
+                joint_def.base.bodyIdA = prev_body
+                joint_def.base.bodyIdB = body
                 b2.create_revolute_joint(world_id, joint_def)
                 prev_body = b2.b2_nullBodyId
             b2.create_polygon_shape(body, shape_def, box)

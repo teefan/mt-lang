@@ -509,6 +509,10 @@ function test_external_struct_equality_helper_is_synthesized() -> void:
         struct Part:
             index: int
             generation: uint
+
+        struct Slot:
+            id: int
+            tag: uint
     SRC
     match fs.write_text(raw_path.as_str(), raw_source):
         Result.failure as f:
@@ -521,8 +525,26 @@ function test_external_struct_equality_helper_is_synthesized() -> void:
     var source = <<-SRC
         import std.c.raw.lib as raw
 
+        struct KeywordFields:
+            auto: bool
+            count: int
+
+        function keyword_field(k: KeywordFields) -> bool:
+            return k.auto
+
+        function make_keyword_fields() -> KeywordFields:
+            return KeywordFields(auto = true, count = 1)
+
         function differs(a: raw.Part, b: raw.Part) -> bool:
             return a != b
+
+        function same_slot(slots: array[raw.Slot, 2], index: int, value: raw.Slot) -> bool:
+            var i = 0
+            while i < 2:
+                if slots[i] == value:
+                    return true
+                i += 1
+            return false
     SRC
     if not write_main_file(root.as_str(), source):
         return
@@ -542,6 +564,16 @@ function test_external_struct_equality_helper_is_synthesized() -> void:
     expect_contains(text, "if (left.index != right.index) return false;")
     expect_contains(text, "if (left.generation != right.generation) return false;")
     expect_contains(text, "!mt_struct_eq_Part(a, b)")
+    # A C keyword used as a struct field is escaped in the declaration, the
+    # aggregate designator and the member access.
+    expect_contains(text, "bool auto_;")
+    expect_contains(text, ".auto_ =")
+    expect_contains(text, "k.auto_")
+    # A raw-module struct compared through a bounds-checked index inside a
+    # nested block still synthesizes the equality helper (the statement scan
+    # must descend into blocks).
+    expect_contains(text, "static bool mt_struct_eq_Slot(struct Slot left, struct Slot right);")
+    expect_contains(text, "mt_struct_eq_Slot((*mt_checked_index")
 
 
 

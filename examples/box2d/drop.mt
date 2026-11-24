@@ -7,8 +7,7 @@
 ##   Scene 4: a fast bullet into a stack of boxes against a wall
 ##   1 / 2 / 3 / 4     switch scene
 ##   C                 toggle continuous collision
-##   V                 toggle speculative collision
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2
@@ -27,7 +26,6 @@ struct Drop implements common.Sample:
     body_count: int
     person: human.Human
     continuous: bool
-    speculative: bool
 
 function drop_create(world_id: b2.WorldId) -> Drop:
     var sample = Drop(
@@ -42,12 +40,10 @@ function drop_create(world_id: b2.WorldId) -> Drop:
             scale = 0.0,
             spawned = false
         ),
-        continuous = true,
-        speculative = true
+        continuous = true
     )
     b2.world_enable_sleeping(world_id, false)
     b2.world_enable_continuous(world_id, true)
-    b2.world_enable_speculative(world_id, true)
     sample.scene1()
     return sample
 
@@ -189,13 +185,10 @@ extending Drop:
         if rl.is_key_pressed(rl.KeyboardKey.KEY_C):
             this.continuous = not this.continuous
             b2.world_enable_continuous(this.world, this.continuous)
-        if rl.is_key_pressed(rl.KeyboardKey.KEY_V):
-            this.speculative = not this.speculative
-            b2.world_enable_speculative(this.world, this.speculative)
 
     function draw_overlay() -> void:
-        common.draw_text_line(f"continuous = #{this.continuous} speculative = #{this.speculative}")
-        common.draw_text_line("1/2/3/4: scene  C: continuous  V: speculative")
+        common.draw_text_line(f"continuous = #{this.continuous}")
+        common.draw_text_line("1/2/3/4: scene  C: continuous")
 
 function main() -> int:
     let world_id = common.create_world()

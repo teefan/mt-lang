@@ -9,7 +9,7 @@
 ##   [ / ]         max motor torque (when motor enabled)
 ##   - / =         target angle degrees (when spring enabled)
 ##   , / .         spring hertz (when spring enabled)
-##   Left mouse    drag bodies (mouse joint)
+##   Left mouse    drag bodies
 ##   P             pause, Space single-step
 
 import std.box2d as b2
@@ -65,10 +65,10 @@ function revolute_joint_create(world_id: b2.WorldId) -> RevoluteJoint:
     b2.create_capsule_shape(body1, shape_def, capsule)
     let pivot1 = b2.Vec2(x = -10.0, y = 20.5)
     var joint1 = b2.default_revolute_joint_def()
-    joint1.bodyIdA = ground
-    joint1.bodyIdB = body1
-    joint1.localAnchorA = b2.body_get_local_point(ground, pivot1)
-    joint1.localAnchorB = b2.body_get_local_point(body1, pivot1)
+    joint1.base.bodyIdA = ground
+    joint1.base.bodyIdB = body1
+    joint1.base.localFrameA = common.local_frame_at(ground, pivot1, 0.5 * b2.B2_PI)
+    joint1.base.localFrameB = common.local_frame_at(body1, pivot1, 0.0)
     joint1.targetAngle = b2.B2_PI * 45.0 / 180.0
     joint1.enableSpring = false
     joint1.hertz = 2.0
@@ -76,7 +76,6 @@ function revolute_joint_create(world_id: b2.WorldId) -> RevoluteJoint:
     joint1.motorSpeed = 1.0
     joint1.maxMotorTorque = 1000.0
     joint1.enableMotor = false
-    joint1.referenceAngle = 0.5 * b2.B2_PI
     joint1.lowerAngle = -0.5 * b2.B2_PI
     joint1.upperAngle = 0.75 * b2.B2_PI
     joint1.enableLimit = true
@@ -99,10 +98,10 @@ function revolute_joint_create(world_id: b2.WorldId) -> RevoluteJoint:
     b2.create_polygon_shape(lever, shape_def, lever_box)
     let pivot2 = b2.Vec2(x = 19.0, y = 10.0)
     var joint2 = b2.default_revolute_joint_def()
-    joint2.bodyIdA = ground
-    joint2.bodyIdB = lever
-    joint2.localAnchorA = b2.body_get_local_point(ground, pivot2)
-    joint2.localAnchorB = b2.body_get_local_point(lever, pivot2)
+    joint2.base.bodyIdA = ground
+    joint2.base.bodyIdB = lever
+    joint2.base.localFrameA = common.local_frame_at(ground, pivot2, 0.0)
+    joint2.base.localFrameB = common.local_frame_at(lever, pivot2, 0.0)
     joint2.lowerAngle = -0.25 * b2.B2_PI
     joint2.upperAngle = 0.1 * b2.B2_PI
     joint2.enableLimit = true
@@ -129,11 +128,11 @@ extending RevoluteJoint:
             b2.joint_wake_bodies(this.joint_id1)
         if rl.is_key_pressed(rl.KeyboardKey.KEY_UP):
             this.motor_speed = common.min_float(this.motor_speed + 1.0, 20.0)
-            b2.revolute_joint_set_motor_speed(this.joint_id1, this.motor_speed)
+            b2.revolute_joint_set_target_motor_speed(this.joint_id1, this.motor_speed)
             b2.joint_wake_bodies(this.joint_id1)
         if rl.is_key_pressed(rl.KeyboardKey.KEY_DOWN):
             this.motor_speed = common.max_float(this.motor_speed - 1.0, -20.0)
-            b2.revolute_joint_set_motor_speed(this.joint_id1, this.motor_speed)
+            b2.revolute_joint_set_target_motor_speed(this.joint_id1, this.motor_speed)
             b2.joint_wake_bodies(this.joint_id1)
         if rl.is_key_pressed(rl.KeyboardKey.KEY_LEFT_BRACKET):
             this.motor_torque = common.max_float(this.motor_torque - 100.0, 0.0)
@@ -161,9 +160,9 @@ extending RevoluteJoint:
             b2.joint_wake_bodies(this.joint_id1)
 
     function draw_overlay() -> void:
-        let angle1 = b2.revolute_joint_get_angle(this.joint_id1)
-        let torque1 = b2.revolute_joint_get_motor_torque(this.joint_id1)
-        let torque2 = b2.revolute_joint_get_motor_torque(this.joint_id2)
+        let angle1 = b2.revolute_joint_get_current_angle(this.joint_id1)
+        let torque1 = b2.revolute_joint_get_current_motor_torque(this.joint_id1)
+        let torque2 = b2.revolute_joint_get_current_motor_torque(this.joint_id2)
         common.draw_text_line(f"angle = #{angle1:.2} motor torque 1 = #{torque1:.2}")
         common.draw_text_line(f"motor torque 2 = #{torque2:.2}  L limit  M motor  S spring")
         common.draw_text_line("Up/Dn speed  [] torque  -/= target  ,/. hertz")
