@@ -25,11 +25,10 @@ iterating.  The tool expands `$ROOT`, writes a temporary options JSON, applies
 `bindings/nullable/<name>.json` when present, and invokes `mtc bindgen
 --options-json`.
 
-The current baseline (`--all --check`) is 29/33 identical, `tracy` custom, and
-four known diffs: `curl`/`sqlite3` follow this host's system headers, while
-`libuv`/`raygui` predate the headers currently checked out.  Regenerate each
-with its next header bump and review the diff; do not treat those four as
-generator regressions.
+The current baseline (`--all --check`) is 30/33 identical, `tracy` custom, and
+three known diffs: `curl`/`sqlite3` follow this host's system headers, while
+`libuv` predates the checked-out header.  Regenerate each with its next header
+bump and review the diff; do not treat those three as generator regressions.
 
 ## Upgrade a vendored library
 
@@ -43,7 +42,10 @@ generator regressions.
    mtc toolchain doctor
    ```
    Run this from the repo checkout, not through the installed compiler's
-   `third_party` symlink.
+   `third_party` symlink.  Also remove the matching `tmp/vendored-*` archive
+   or prefix (`tmp/vendored-raylib-opengl43`, `tmp/vendored-glfw*`,
+   `tmp/vendored-sdl3*`, …): `prepare_vendored_*` reuses an existing archive,
+   so a source upgrade is otherwise silently ignored.
 3. Rebind the raw module(s), then the imported wrapper:
    ```sh
    tools/rebind_binding.rb <name> --write
