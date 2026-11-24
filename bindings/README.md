@@ -25,11 +25,11 @@ iterating.  The tool expands `$ROOT`, writes a temporary options JSON, applies
 `bindings/nullable/<name>.json` when present, and invokes `mtc bindgen
 --options-json`.
 
-The current baseline (`--all --check`) is 27/33 identical, `tracy` custom, and
-six known stale snapshots: `curl`/`sqlite3` follow this host's system headers,
-while `libuv`, `raygui`, `stb_image_resize2` and `stb_image_write` predate the
-headers currently checked out.  Regenerate each with its next header bump and
-review the diff; do not treat those six as generator regressions.
+The current baseline (`--all --check`) is 29/33 identical, `tracy` custom, and
+four known diffs: `curl`/`sqlite3` follow this host's system headers, while
+`libuv`/`raygui` predate the headers currently checked out.  Regenerate each
+with its next header bump and review the diff; do not treat those four as
+generator regressions.
 
 ## Upgrade a vendored library
 

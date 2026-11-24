@@ -30,6 +30,19 @@ external function stbi_is_hdr_from_memory(buffer: const_ptr[stbi_uc], len: int) 
 external function stbi_is_hdr(filename: cstr) -> int
 external function stbi_failure_reason() -> cstr?
 external function stbi_image_free(retval_from_stbi_load: ptr[void]) -> void
+
+struct stbi_info_res:
+    type: int
+    x: int
+    y: int
+    comp: int
+    is_16_bit: int
+    is_hdr: int
+    is_iphone_png: int
+
+external function stbi_info2_from_memory(buffer: const_ptr[stbi_uc], len: int) -> stbi_info_res
+external function stbi_info2_from_callbacks(clbk: const_ptr[stbi_io_callbacks], user: ptr[void]) -> stbi_info_res
+external function stbi_info2(filename: cstr) -> stbi_info_res
 external function stbi_info_from_memory(buffer: const_ptr[stbi_uc], len: int, x: ptr[int], y: ptr[int], comp: ptr[int]) -> int
 external function stbi_info_from_callbacks(clbk: const_ptr[stbi_io_callbacks], user: ptr[void], x: ptr[int], y: ptr[int], comp: ptr[int]) -> int
 external function stbi_is_16_bit_from_memory(buffer: const_ptr[stbi_uc], len: int) -> int

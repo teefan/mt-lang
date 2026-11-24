@@ -360,7 +360,7 @@ public function binding_at(index: ptr_uint) -> RawBinding:
             module_name = "std.c.stb_image_resize2",
             env_var = "",
             header_label = "stb_image_resize2.h",
-            candidates = array[str, 2]("third_party/stb-upstream/stb_image_resize2.h", ""),
+            candidates = array[str, 2]("third_party/stb-upstream/deprecated/stb_image_resize2.h", ""),
             candidate_count = 1,
             candidates_from_root = true,
             prepare_source = 16,

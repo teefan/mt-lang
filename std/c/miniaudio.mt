@@ -3094,6 +3094,7 @@ struct ma_engine_node:
     panner: ma_panner
     volumeGainer: ma_gainer
     volume: ma_atomic_float
+    oldVolume: float
     pitch: float
     oldPitch: float
     oldDopplerPitch: float
@@ -3390,7 +3391,7 @@ external function ma_sound_group_get_time_in_pcm_frames(pGroup: const_ptr[ma_sou
 
 const MA_VERSION_MAJOR: int = 0
 const MA_VERSION_MINOR: int = 11
-const MA_VERSION_REVISION: int = 25
+const MA_VERSION_REVISION: int = 26
 const MA_SIZEOF_PTR: int = 8
 const MA_TRUE: int = 1
 const MA_FALSE: int = 0

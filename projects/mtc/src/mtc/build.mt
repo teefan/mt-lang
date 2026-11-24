@@ -799,6 +799,11 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
     var uses_pcre2 = false
     var uses_steamworks = false
     var uses_libuv = false
+    var uses_stb = false
+    var uses_miniaudio = false
+    var uses_rres = false
+    var uses_rpng = false
+    var uses_cgltf = false
     var mi: ptr_uint = 0
     while mi < program.analyses.len():
         let a_ptr = program.analyses.get(mi) else:
@@ -832,6 +837,16 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
             uses_pcre2 = true
         if analysis.module_name == "std.c.steamworks":
             uses_steamworks = true
+        if analysis.module_name == "std.c.stb_image" or analysis.module_name == "std.c.stb_truetype" or analysis.module_name == "std.c.stb_image_write" or analysis.module_name == "std.c.stb_image_resize2" or analysis.module_name == "std.c.stb_rect_pack" or analysis.module_name == "std.c.stb_vorbis":
+            uses_stb = true
+        if analysis.module_name == "std.c.miniaudio":
+            uses_miniaudio = true
+        if analysis.module_name == "std.c.rres":
+            uses_rres = true
+        if analysis.module_name == "std.c.rpng":
+            uses_rpng = true
+        if analysis.module_name == "std.c.cgltf":
+            uses_cgltf = true
         if is_libuv_support_module(analysis.module_name):
             uses_libuv = true
         mi += 1
@@ -944,6 +959,38 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
         defer: uv_include.release()
         if uv_include.len() > 0:
             result.push(string.String.from_str(strings.join_two("-I", uv_include.as_str())))
+
+    # Header-only bindings: declarations include the vendored header directly
+    # and need its directory on the C include path.
+    if uses_stb:
+        var stb_include = vendored_tree_path(roots, "stb-upstream")
+        defer: stb_include.release()
+        if stb_include.len() > 0:
+            result.push(string.String.from_str(strings.join_two("-I", stb_include.as_str())))
+
+    if uses_miniaudio:
+        var miniaudio_include = vendored_tree_path(roots, "miniaudio-upstream")
+        defer: miniaudio_include.release()
+        if miniaudio_include.len() > 0:
+            result.push(string.String.from_str(strings.join_two("-I", miniaudio_include.as_str())))
+
+    if uses_rres:
+        var rres_include = vendored_tree_path(roots, "rres-upstream/src")
+        defer: rres_include.release()
+        if rres_include.len() > 0:
+            result.push(string.String.from_str(strings.join_two("-I", rres_include.as_str())))
+
+    if uses_rpng:
+        var rpng_include = vendored_tree_path(roots, "rpng-upstream/src")
+        defer: rpng_include.release()
+        if rpng_include.len() > 0:
+            result.push(string.String.from_str(strings.join_two("-I", rpng_include.as_str())))
+
+    if uses_cgltf:
+        var cgltf_include = vendored_tree_path(roots, "cgltf-upstream")
+        defer: cgltf_include.release()
+        if cgltf_include.len() > 0:
+            result.push(string.String.from_str(strings.join_two("-I", cgltf_include.as_str())))
 
     return result
 

@@ -1,7 +1,9 @@
 {
   "module_name": "std.c.stb_vorbis",
   "header_path": "$ROOT/third_party/stb-upstream/stb_vorbis.c",
-  "link_libraries": [],
+  "link_libraries": [
+    "m"
+  ],
   "include_directives": [
     "stb_vorbis.c"
   ],

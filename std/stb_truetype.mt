@@ -34,14 +34,18 @@ public foreign function get_font_offset_for_index(data: const_ptr[ubyte], index:
 public foreign function init_font(info: ptr[fontinfo], data: const_ptr[ubyte], offset: int) -> int = c.stbtt_InitFont
 public foreign function find_glyph_index(info: const_ptr[fontinfo], unicode_codepoint: int) -> int = c.stbtt_FindGlyphIndex
 public foreign function scale_for_pixel_height(info: const_ptr[fontinfo], pixels: float) -> float = c.stbtt_ScaleForPixelHeight
+public foreign function scale_for_pixel_width(info: const_ptr[fontinfo], pixels: float) -> float = c.stbtt_ScaleForPixelWidth
 public foreign function scale_for_mapping_em_to_pixels(info: const_ptr[fontinfo], pixels: float) -> float = c.stbtt_ScaleForMappingEmToPixels
 public foreign function get_font_v_metrics(info: const_ptr[fontinfo], ascent: ptr[int], descent: ptr[int], line_gap: ptr[int]) -> void = c.stbtt_GetFontVMetrics
+public foreign function get_font_h_metrics(info: const_ptr[fontinfo], vert_typo_ascender: ptr[int], vert_typo_descender: ptr[int], vert_typo_line_gap: ptr[int]) -> void = c.stbtt_GetFontHMetrics
 public foreign function get_font_v_metrics_os2(info: const_ptr[fontinfo], typo_ascent: ptr[int], typo_descent: ptr[int], typo_line_gap: ptr[int]) -> int = c.stbtt_GetFontVMetricsOS2
 public foreign function get_font_bounding_box(info: const_ptr[fontinfo], x0: ptr[int], y0: ptr[int], x1: ptr[int], y1: ptr[int]) -> void = c.stbtt_GetFontBoundingBox
+public foreign function get_font_underline_metrics(info: const_ptr[fontinfo], position: ptr[int], thickness: ptr[int]) -> int = c.stbtt_GetFontUnderlineMetrics
 public foreign function get_codepoint_h_metrics(info: const_ptr[fontinfo], codepoint: int, advance_width: ptr[int], left_side_bearing: ptr[int]) -> void = c.stbtt_GetCodepointHMetrics
 public foreign function get_codepoint_kern_advance(info: const_ptr[fontinfo], ch1: int, ch2: int) -> int = c.stbtt_GetCodepointKernAdvance
 public foreign function get_codepoint_box(info: const_ptr[fontinfo], codepoint: int, x0: ptr[int], y0: ptr[int], x1: ptr[int], y1: ptr[int]) -> int = c.stbtt_GetCodepointBox
 public foreign function get_glyph_h_metrics(info: const_ptr[fontinfo], glyph_index: int, advance_width: ptr[int], left_side_bearing: ptr[int]) -> void = c.stbtt_GetGlyphHMetrics
+public foreign function get_glyph_v_metrics(info: const_ptr[fontinfo], glyph_index: int, advance_height: ptr[int], top_side_bearing: ptr[int]) -> void = c.stbtt_GetGlyphVMetrics
 public foreign function get_glyph_kern_advance(info: const_ptr[fontinfo], glyph1: int, glyph2: int) -> int = c.stbtt_GetGlyphKernAdvance
 public foreign function get_glyph_box(info: const_ptr[fontinfo], glyph_index: int, x0: ptr[int], y0: ptr[int], x1: ptr[int], y1: ptr[int]) -> int = c.stbtt_GetGlyphBox
 public foreign function get_kerning_table_length(info: const_ptr[fontinfo]) -> int = c.stbtt_GetKerningTableLength
@@ -75,3 +79,4 @@ public foreign function get_codepoint_sdf(info: const_ptr[fontinfo], scale: floa
 public foreign function find_matching_font(fontdata: const_ptr[ubyte], name: str as cstr, flags_: int) -> int = c.stbtt_FindMatchingFont
 public foreign function compare_utf8to_utf16_bigendian(s1: str as cstr, len1: int, s2: str as cstr, len2: int) -> int = c.stbtt_CompareUTF8toUTF16_bigendian
 public foreign function get_font_name_string(font: const_ptr[fontinfo], length: ptr[int], platform_id: int, encoding_id: int, language_id: int, name_id: int) -> cstr = c.stbtt_GetFontNameString
+public foreign function get_font_name_default(font: const_ptr[fontinfo], output_buffer: ptr[char], output_buffer_len: int) -> int = c.stbtt_GetFontNameDefault

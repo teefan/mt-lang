@@ -1,9 +1,9 @@
 {
   "module_name": "std.c.stb_image_resize2",
-  "header_path": "$ROOT/third_party/stb-upstream/stb_image_resize2.h",
+  "header_path": "$ROOT/third_party/stb-upstream/deprecated/stb_image_resize2.h",
   "link_libraries": [],
   "include_directives": [
-    "stb_image_resize2.h"
+    "deprecated/stb_image_resize2.h"
   ],
   "bindgen_defines": [],
   "bindgen_include_directives": [],

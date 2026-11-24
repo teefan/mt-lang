@@ -16,13 +16,13 @@ struct b3MeshNode_data_asLeaf:
     type: uint
     triangleCount: uint
 
-type b3AllocFcn = fn(arg0: int, arg1: int) -> ptr[void]
-type b3FreeFcn = fn(arg0: ptr[void]) -> void
+type b3AllocFcn = fn(arg0: ptr_uint, arg1: int) -> ptr[void]
+type b3FreeFcn = fn(arg0: ptr[void], arg1: ptr_uint) -> void
 type b3AssertFcn = fn(arg0: cstr, arg1: cstr, arg2: int) -> int
 type b3LogFcn = fn(arg0: cstr) -> void
 
 external function b3SetAllocator(allocFcn: b3AllocFcn, freeFcn: b3FreeFcn) -> void
-external function b3GetByteCount() -> int
+external function b3GetByteCount() -> long
 external function b3SetAssertFcn(assertFcn: b3AssertFcn) -> void
 external function b3InternalAssert(condition: cstr, fileName: cstr, lineNumber: int) -> int
 external function b3SetLogFcn(logFcn: b3LogFcn) -> void
@@ -34,6 +34,8 @@ struct b3Version:
 
 external function b3GetVersion() -> b3Version
 external function b3IsDoublePrecision() -> bool
+external function b3GetMaxManifoldPoints() -> int
+external function b3IsAVX2Available() -> bool
 external function b3GetTicks() -> ulong
 external function b3GetMilliseconds(ticks: ptr_uint) -> float
 external function b3GetMillisecondsAndReset(ticks: ptr[ulong]) -> float
@@ -104,7 +106,6 @@ const b3WorldTransform_identity: b3Transform = b3Transform(
     q = b3Quat(v = b3Vec3(x = 0.0, y = 0.0, z = 0.0), s = 1.0)
 )
 
-external function b3Atan2(y: float, x: float) -> float
 external function b3ComputeCosSin(radians: float) -> b3CosSin
 external function b3MakeQuatFromMatrix(m: const_ptr[b3Matrix3]) -> b3Quat
 external function b3ComputeQuatBetweenUnitVectors(v1: b3Vec3, v2: b3Vec3) -> b3Quat
@@ -132,8 +133,6 @@ external function b3IsValidPosition(p: b3Vec3) -> bool
 external function b3IsValidWorldTransform(t: b3Transform) -> bool
 external function b3SetLengthUnitsPerMeter(lengthUnits: float) -> void
 external function b3GetLengthUnitsPerMeter() -> float
-external function b3SetStallThreshold(seconds: float) -> void
-external function b3GetStallThreshold() -> float
 
 struct b3WorldId:
     index1: ushort
@@ -166,9 +165,35 @@ const b3_nullShapeId: b3ShapeId = b3ShapeId(index1 = 0, world0 = 0, generation =
 const b3_nullJointId: b3JointId = b3JointId(index1 = 0, world0 = 0, generation = 0)
 const b3_nullContactId: b3ContactId = b3ContactId(index1 = 0, world0 = 0, padding = 0, generation = 0)
 
+enum b3TaskType: int
+    b3_taskPairs = 0
+    b3_taskCollide = 1
+    b3_taskTreeRebuild = 2
+    b3_taskIslandSplit = 3
+    b3_taskSolver = 4
+    b3_taskFinalize = 5
+    b3_taskContinuous = 6
+    b3_taskSensors = 7
+    b3_taskTypeCount = 8
+
+external function b3GetTaskTypeName(type_: b3TaskType) -> cstr
+
 type b3TaskCallback = fn(arg0: ptr[void]) -> void
-type b3EnqueueTaskCallback = fn(arg0: b3TaskCallback, arg1: ptr[void], arg2: ptr[void], arg3: cstr) -> ptr[void]
+type b3EnqueueTaskCallback = fn(arg0: b3TaskCallback, arg1: ptr[void], arg2: ptr[void], arg3: b3TaskType) -> ptr[void]
 type b3FinishTaskCallback = fn(arg0: ptr[void], arg1: ptr[void]) -> void
+
+struct b3Task:
+    fcn: b3TaskCallback
+    context: ptr[void]
+    type: b3TaskType
+    deferred: bool
+
+struct b3TaskBatch:
+    tasks: const_ptr[b3Task]
+    count: int
+    joinTasks: const_ptr[b3Task]
+    joinCount: int
+
 type b3CreateDebugShapeCallback = fn(arg0: const_ptr[b3DebugShape], arg1: ptr[void]) -> ptr[void]
 type b3DestroyDebugShapeCallback = fn(arg0: ptr[void], arg1: ptr[void]) -> void
 type b3FrictionCallback = fn(arg0: float, arg1: ulong, arg2: float, arg3: ulong) -> float
@@ -188,11 +213,14 @@ struct b3Capacity:
 struct b3WorldDef:
     gravity: b3Vec3
     restitutionThreshold: float
+    restitutionIterations: int
+    enableRestitutionPropagation: bool
     hitEventThreshold: float
     contactHertz: float
     contactDampingRatio: float
     contactSpeed: float
     maximumLinearSpeed: float
+    isotropicInertiaTolerance: float
     frictionCallback: b3FrictionCallback
     restitutionCallback: b3RestitutionCallback
     enableSleep: bool
@@ -216,14 +244,6 @@ enum b3BodyType: int
     b3_dynamicBody = 2
     b3_bodyTypeCount = 3
 
-struct b3MotionLocks:
-    linearX: bool
-    linearY: bool
-    linearZ: bool
-    angularX: bool
-    angularY: bool
-    angularZ: bool
-
 struct b3BodyDef:
     type: b3BodyType
     position: b3Vec3
@@ -234,9 +254,10 @@ struct b3BodyDef:
     angularDamping: float
     gravityScale: float
     sleepThreshold: float
+    safetyFactor: float
     name: cstr
     userData: ptr[void]
-    motionLocks: b3MotionLocks
+    fixedRotation: bool
     enableSleep: bool
     isAwake: bool
     isBullet: bool
@@ -309,7 +330,7 @@ struct b3Profile:
     solveImpulses: float
     integratePositions: float
     relaxImpulses: float
-    applyRestitution: float
+    restitution: float
     storeImpulses: float
     splitIslands: float
     transforms: float
@@ -322,6 +343,7 @@ struct b3Profile:
     sensors: float
 
 struct b3Counters:
+    byteCount: ptr_int
     bodyCount: int
     shapeCount: int
     contactCount: int
@@ -333,8 +355,8 @@ struct b3Counters:
     treeHeight: int
     satCallCount: int
     satCacheHitCount: int
-    byteCount: int
     taskCount: int
+    enqueueCount: int
     colorCounts: array[int, 24]
     manifoldCounts: array[int, 8]
     awakeContactCount: int
@@ -353,6 +375,9 @@ enum b3JointType: int
     b3_sphericalJoint = 6
     b3_weldJoint = 7
     b3_wheelJoint = 8
+    b3_moverJoint = 9
+    b3_pogoJoint = 10
+    b3_motionLockJoint = 11
 
 struct b3JointDef:
     userData: ptr[void]
@@ -400,6 +425,26 @@ struct b3MotorJointDef:
 
 external function b3DefaultMotorJointDef() -> b3MotorJointDef
 
+struct b3MoverJointDef:
+    base: b3JointDef
+    linearVelocity: b3Vec3
+    maxForce: float
+
+external function b3DefaultMoverJointDef() -> b3MoverJointDef
+
+struct b3PogoJointDef:
+    base: b3JointDef
+    normal: b3Vec3
+    hertz: float
+    dampingRatio: float
+    restLength: float
+    maxTensionForce: float
+    maxCompressionForce: float
+    impulse: float
+    velocity: float
+
+external function b3DefaultPogoJointDef() -> b3PogoJointDef
+
 struct b3FilterJointDef:
     base: b3JointDef
 
@@ -412,6 +457,15 @@ struct b3ParallelJointDef:
     maxTorque: float
 
 external function b3DefaultParallelJointDef() -> b3ParallelJointDef
+
+struct b3MotionLockJointDef:
+    base: b3JointDef
+    lockLinearX: bool
+    lockLinearY: bool
+    lockLinearZ: bool
+    lockAngularXY: bool
+
+external function b3DefaultMotionLockJointDef() -> b3MotionLockJointDef
 
 struct b3PrismaticJointDef:
     base: b3JointDef
@@ -709,38 +763,37 @@ struct b3TOIOutput:
     rootIterations: int
     usedFallback: bool
 
-flags b3TreeNodeFlags: int
-    b3_allocatedNode = 1
-    b3_enlargedNode = 2
-    b3_leafNode = 4
-
-struct b3TreeNodeChildren:
-    child1: int
-    child2: int
-
 struct b3TreeNode:
     aabb: b3AABB
-    categoryBits: ptr_uint
-    children: b3TreeNodeChildren
+    flagIndex: uint
+    height: int
+    shapeIndex: int
+
+struct b3TreeProxy:
     userData: ptr_uint
-    parent: int
+    categoryBits: ptr_uint
+    node: int
     next: int
-    height: ushort
-    flags: ushort
 
 struct b3DynamicTree:
     version: ptr_uint
     nodes: ptr[b3TreeNode]
-    root: int
-    nodeCount: int
+    parents: ptr[int]
+    proxies: ptr[b3TreeProxy]
+    nodeEnd: int
     nodeCapacity: int
+    pairFreeList: int
     proxyCount: int
-    freeList: int
+    proxyCapacity: int
+    proxyFreeList: int
+    swapNodes: ptr[b3TreeNode]
     leafIndices: ptr[int]
+    leafNodes: ptr[b3TreeNode]
     leafBoxes: ptr[b3AABB]
     leafCenters: ptr[b3Vec3]
     binIndices: ptr[int]
     rebuildCapacity: int
+    dfsOrdered: bool
 
 struct b3TreeStats:
     nodeVisits: int
@@ -754,6 +807,9 @@ type b3TreeRayCastCallbackFcn = fn(arg0: const_ptr[b3RayCastInput], arg1: int, a
 struct b3PlaneResult:
     plane: b3Plane
     point: b3Vec3
+    triangleIndex: int
+    childIndex: int
+    materialIndex: int
 
 struct b3CollisionPlane:
     plane: b3Plane
@@ -768,6 +824,12 @@ struct b3PlaneSolverResult:
 struct b3BodyPlaneResult:
     shapeId: b3ShapeId
     result: b3PlaneResult
+
+struct b3BodyTOIResult:
+    point: b3Vec3
+    normal: b3Vec3
+    fraction: float
+    shapeId: b3ShapeId
 
 type b3PlaneResultFcn = fn(arg0: b3ShapeId, arg1: const_ptr[b3PlaneResult], arg2: int, arg3: ptr[void]) -> bool
 type b3MoverFilterFcn = fn(arg0: b3ShapeId, arg1: ptr[void]) -> bool
@@ -817,7 +879,9 @@ struct b3HullData:
     faceOffset: int
     soaVertexOffset: int
     soaNormalOffset: int
+    edgeCosineOffset: int
     byteCount: int
+    padding: int
 
 struct b3BoxHull:
     base: b3HullData
@@ -833,9 +897,11 @@ struct b3BoxHull:
     nx: array[float, 8]
     ny: array[float, 8]
     nz: array[float, 8]
+    edgeCosines: array[float, 12]
 
 struct b3MeshDef:
     vertices: ptr[b3Vec3]
+    stride: ptr_uint
     indices: ptr[int]
     materialIndices: ptr[ubyte]
     weldTolerance: float
@@ -844,6 +910,7 @@ struct b3MeshDef:
     weldVertices: bool
     useMedianSplit: bool
     identifyEdges: bool
+    clockWiseWinding: bool
 
 enum b3MeshEdgeFlags: int
     b3_concaveEdge1 = 1
@@ -862,6 +929,10 @@ struct b3MeshTriangle:
     index1: int
     index2: int
     index3: int
+
+flags b3MeshVertexFlags: int
+    b3_flatVertex = 1
+    b3_concaveVertex = 2
 
 struct b3MeshNode:
     lowerBound: b3Vec3
@@ -886,7 +957,9 @@ struct b3MeshData:
     materialOffset: int
     materialCount: int
     flagsOffset: int
-    padding: int
+    edgeAngleOffset: int
+    vertexFlagOffset: int
+    vertexRingOffset: int
 
 struct b3Mesh:
     data: const_ptr[b3MeshData]
@@ -916,8 +989,9 @@ struct b3HeightFieldData:
     heightsOffset: int
     materialOffset: int
     flagsOffset: int
+    vertexFlagOffset: int
     clockwise: ubyte
-    padding: array[ubyte, 7]
+    padding: array[ubyte, 3]
 
 struct b3CompoundCapsuleDef:
     capsule: b3Capsule
@@ -952,8 +1026,10 @@ struct b3CompoundDef:
 struct b3CompoundData:
     version: ptr_uint
     byteCount: int
+    bounds: b3AABB
+    treeHeight: int
     nodeOffset: int
-    tree: b3DynamicTree
+    nodeCount: int
     materialOffset: int
     materialCount: int
     capsuleOffset: int
@@ -969,22 +1045,26 @@ struct b3CompoundData:
 
 struct b3CompoundCapsule:
     capsule: b3Capsule
-    materialIndex: int
+    materialIndex: ushort
+    padding: ushort
 
 struct b3CompoundHull:
     hull: const_ptr[b3HullData]
     transform: b3Transform
-    materialIndex: int
+    materialIndex: ushort
+    padding: ushort
 
 struct b3CompoundMesh:
     meshData: const_ptr[b3MeshData]
     transform: b3Transform
     scale: b3Vec3
-    materialIndices: array[int, 4]
+    materialIndices: const_ptr[ushort]
+    materialCount: int
 
 struct b3CompoundSphere:
     sphere: b3Sphere
-    materialIndex: int
+    materialIndex: ushort
+    padding: ushort
 
 struct b3ChildShape:
     capsule: b3Capsule
@@ -992,7 +1072,8 @@ struct b3ChildShape:
     mesh: b3Mesh
     sphere: b3Sphere
     transform: b3Transform
-    materialIndices: array[int, 4]
+    materialIndices: const_ptr[ushort]
+    materialCount: int
     type: b3ShapeType
 
 type b3CompoundQueryFcn = fn(arg0: const_ptr[b3CompoundData], arg1: int, arg2: ptr[void]) -> bool
@@ -1001,13 +1082,15 @@ struct b3ManifoldPoint:
     anchorA: b3Vec3
     anchorB: b3Vec3
     separation: float
-    baseSeparation: float
     normalImpulse: float
     totalNormalImpulse: float
     normalVelocity: float
+    baseSeparation: float
     featureId: uint
     triangleIndex: int
     persisted: bool
+    triangleFeature: ubyte
+    meshFlags: ubyte
 
 struct b3Manifold:
     points: array[b3ManifoldPoint, 4]
@@ -1039,6 +1122,11 @@ enum b3TriangleFeature: int
     b3_featureVertex2 = 7
     b3_featureVertex3 = 8
 
+flags b3MeshContactFlags: int
+    b3_meshContactHullFace = 1
+    b3_meshContactSnapped = 2
+    b3_meshContactDeep = 4
+
 struct b3SATCache:
     separation: float
     type: ubyte
@@ -1057,6 +1145,8 @@ struct b3LocalManifoldPoint:
     separation: float
     pair: b3FeaturePair
     triangleIndex: int
+    triangleFeature: ubyte
+    meshFlags: ubyte
 
 struct b3LocalManifold:
     normal: b3Vec3
@@ -1064,12 +1154,7 @@ struct b3LocalManifold:
     points: ptr[b3LocalManifoldPoint]
     pointCount: int
     triangleIndex: int
-    i1: int
-    i2: int
-    i3: int
-    squaredDistance: float
     feature: b3TriangleFeature
-    triangleFlags: int
 
 enum b3HexColor: int
     b3_colorAliceBlue = 15792383
@@ -1287,12 +1372,13 @@ external function b3DynamicTree_GetProxyCount(tree: const_ptr[b3DynamicTree]) ->
 external function b3DynamicTree_Rebuild(tree: ptr[b3DynamicTree], fullBuild: bool) -> int
 external function b3DynamicTree_GetByteCount(tree: const_ptr[b3DynamicTree]) -> int
 external function b3DynamicTree_Validate(tree: const_ptr[b3DynamicTree]) -> void
-external function b3DynamicTree_ValidateNoEnlarged(tree: const_ptr[b3DynamicTree]) -> void
+external function b3DynamicTree_ValidateNoMoved(tree: const_ptr[b3DynamicTree]) -> void
 external function b3DynamicTree_Save(tree: const_ptr[b3DynamicTree], fileName: cstr) -> void
 external function b3DynamicTree_Load(fileName: cstr, scale: float) -> b3DynamicTree
 external function b3CreateCylinder(height: float, radius: float, yOffset: float, sides: int) -> ptr[b3HullData]
 external function b3CreateCone(height: float, radius1: float, radius2: float, slices: int) -> ptr[b3HullData]
 external function b3CreateRock(radius: float) -> ptr[b3HullData]
+external function b3CreateComplexHull(radius: float) -> ptr[b3HullData]
 external function b3CreateHull(points: const_ptr[b3Vec3], pointCount: int, maxVertexCount: int) -> ptr[b3HullData]
 external function b3CloneHull(hull: const_ptr[b3HullData]) -> ptr[b3HullData]
 external function b3CloneAndTransformHull(original: const_ptr[b3HullData], transform: b3Transform, scale: b3Vec3) -> ptr[b3HullData]
@@ -1327,8 +1413,7 @@ external function b3GetCompoundSphere(compound: const_ptr[b3CompoundData], index
 external function b3GetCompoundMaterials(compound: const_ptr[b3CompoundData]) -> const_ptr[b3SurfaceMaterial]
 external function b3CreateCompound(def: const_ptr[b3CompoundDef]) -> ptr[b3CompoundData]
 external function b3DestroyCompound(compound: ptr[b3CompoundData]) -> void
-external function b3ConvertCompoundToBytes(compound: ptr[b3CompoundData]) -> ptr[ubyte]
-external function b3ConvertBytesToCompound(bytes: ptr[ubyte], byteCount: int) -> ptr[b3CompoundData]
+external function b3ValidateCompound(bytes: const_ptr[ubyte], byteCount: int) -> const_ptr[b3CompoundData]
 external function b3ComputeSphereMass(shape: const_ptr[b3Sphere], density: float) -> b3MassData
 external function b3ComputeCapsuleMass(shape: const_ptr[b3Capsule], density: float) -> b3MassData
 external function b3ComputeHullMass(shape: const_ptr[b3HullData], density: float) -> b3MassData
@@ -1374,8 +1459,23 @@ external function b3CollideCapsules(manifold: ptr[b3LocalManifold], capacity: in
 external function b3CollideHullAndCapsule(manifold: ptr[b3LocalManifold], capacity: int, hullA: const_ptr[b3HullData], capsuleB: const_ptr[b3Capsule], transformBtoA: b3Transform, cache: ptr[b3SimplexCache]) -> void
 external function b3CollideHulls(manifold: ptr[b3LocalManifold], capacity: int, hullA: const_ptr[b3HullData], hullB: const_ptr[b3HullData], transformBtoA: b3Transform, cache: ptr[b3SATCache]) -> void
 external function b3CollideTriangleAndCapsule(manifold: ptr[b3LocalManifold], capacity: int, triangleA: const_ptr[b3Vec3], capsuleB: const_ptr[b3Capsule], cache: ptr[b3SimplexCache]) -> void
-external function b3CollideTriangleAndHull(manifold: ptr[b3LocalManifold], capacity: int, v1: b3Vec3, v2: b3Vec3, v3: b3Vec3, triangleFlags: int, hullB: const_ptr[b3HullData], cache: ptr[b3SATCache], enableSpeculative: bool) -> void
+external function b3CollideTriangleAndHull(manifold: ptr[b3LocalManifold], capacity: int, v1: b3Vec3, v2: b3Vec3, v3: b3Vec3, hullB: const_ptr[b3HullData], cache: ptr[b3SATCache], enableSpeculative: bool) -> void
 external function b3CollideTriangleAndSphere(manifold: ptr[b3LocalManifold], capacity: int, triangleA: const_ptr[b3Vec3], sphereB: const_ptr[b3Sphere]) -> void
+external function b3CollideMeshAndHull(manifolds: ptr[b3Manifold], capacity: int, mesh: const_ptr[b3Mesh], hull: const_ptr[b3HullData], transformBtoA: b3Transform, enableSpeculative: bool, handleGhosts: bool) -> int
+external function b3CollideMeshAndSphere(manifolds: ptr[b3Manifold], capacity: int, mesh: const_ptr[b3Mesh], sphere: const_ptr[b3Sphere], transformBtoA: b3Transform, enableSpeculative: bool, handleGhosts: bool) -> int
+
+struct b3Point2D:
+    p: b3Vec2
+    separation: float
+    originalIndex: int
+
+flags b3Hull2DFlags: int
+    b3_hull2DKeepCollinear = 1
+    b3_hull2DExactMerge = 2
+    b3_hull2DIndexOrder = 4
+
+external function b3Hull2D(pts: ptr[b3Point2D], count: int, hull: ptr[b3Point2D], flags_: int) -> int
+external function b3SimplifyHull2D(hull: ptr[b3Point2D], count: int, target: int) -> int
 external function b3SolvePlanes(targetDelta: b3Vec3, planes: ptr[b3CollisionPlane], count: int) -> b3PlaneSolverResult
 external function b3ClipVector(vector: b3Vec3, planes: const_ptr[b3CollisionPlane], count: int) -> b3Vec3
 external function b3CreateWorld(def: const_ptr[b3WorldDef]) -> b3WorldId
@@ -1384,6 +1484,8 @@ external function b3GetWorldCount() -> int
 external function b3GetMaxWorldCount() -> int
 external function b3World_IsValid(id: b3WorldId) -> bool
 external function b3World_Step(worldId: b3WorldId, timeStep: float, subStepCount: int) -> void
+external function b3World_BeginStep(worldId: b3WorldId, timeStep: float, subStepCount: int) -> b3TaskBatch
+external function b3World_ContinueStep(worldId: b3WorldId) -> b3TaskBatch
 external function b3World_Draw(worldId: b3WorldId, draw: ptr[b3DebugDraw], maskBits: ptr_uint) -> void
 external function b3World_GetBounds(worldId: b3WorldId) -> b3AABB
 external function b3World_GetBodyEvents(worldId: b3WorldId) -> b3BodyEvents
@@ -1395,6 +1497,10 @@ external function b3World_OverlapShape(worldId: b3WorldId, origin: b3Vec3, proxy
 external function b3World_CastRay(worldId: b3WorldId, origin: b3Vec3, translation: b3Vec3, filter: b3QueryFilter, fcn: b3CastResultFcn, context: ptr[void]) -> b3TreeStats
 external function b3World_CastRayClosest(worldId: b3WorldId, origin: b3Vec3, translation: b3Vec3, filter: b3QueryFilter) -> b3RayResult
 external function b3World_CastShape(worldId: b3WorldId, origin: b3Vec3, proxy: const_ptr[b3ShapeProxy], translation: b3Vec3, filter: b3QueryFilter, fcn: b3CastResultFcn, context: ptr[void]) -> b3TreeStats
+external function b3World_OverlapAABB_Static(worldId: b3WorldId, aabb: b3AABB, filter: b3QueryFilter, fcn: b3OverlapResultFcn, context: ptr[void]) -> b3TreeStats
+external function b3World_OverlapShape_Static(worldId: b3WorldId, origin: b3Vec3, proxy: const_ptr[b3ShapeProxy], filter: b3QueryFilter, fcn: b3OverlapResultFcn, context: ptr[void]) -> b3TreeStats
+external function b3World_CastRay_Static(worldId: b3WorldId, origin: b3Vec3, translation: b3Vec3, filter: b3QueryFilter, fcn: b3CastResultFcn, context: ptr[void]) -> b3TreeStats
+external function b3World_CastShape_Static(worldId: b3WorldId, origin: b3Vec3, proxy: const_ptr[b3ShapeProxy], translation: b3Vec3, filter: b3QueryFilter, fcn: b3CastResultFcn, context: ptr[void]) -> b3TreeStats
 external function b3World_CastMover(worldId: b3WorldId, origin: b3Vec3, mover: const_ptr[b3Capsule], translation: b3Vec3, filter: b3QueryFilter, fcn: b3MoverFilterFcn, context: ptr[void]) -> float
 external function b3World_CollideMover(worldId: b3WorldId, origin: b3Vec3, mover: const_ptr[b3Capsule], filter: b3QueryFilter, fcn: b3PlaneResultFcn, context: ptr[void]) -> void
 external function b3World_EnableSleeping(worldId: b3WorldId, flag: bool) -> void
@@ -1403,6 +1509,10 @@ external function b3World_EnableContinuous(worldId: b3WorldId, flag: bool) -> vo
 external function b3World_IsContinuousEnabled(worldId: b3WorldId) -> bool
 external function b3World_SetRestitutionThreshold(worldId: b3WorldId, value: float) -> void
 external function b3World_GetRestitutionThreshold(worldId: b3WorldId) -> float
+external function b3World_SetRestitutionIterations(worldId: b3WorldId, iterations: int) -> void
+external function b3World_GetRestitutionIterations(worldId: b3WorldId) -> int
+external function b3World_EnableRestitutionPropagation(worldId: b3WorldId, flag: bool) -> void
+external function b3World_IsRestitutionPropagationEnabled(worldId: b3WorldId) -> bool
 external function b3World_SetHitEventThreshold(worldId: b3WorldId, value: float) -> void
 external function b3World_GetHitEventThreshold(worldId: b3WorldId) -> float
 external function b3World_SetCustomFilterCallback(worldId: b3WorldId, fcn: b3CustomFilterFcn, context: ptr[void]) -> void
@@ -1415,8 +1525,11 @@ external function b3World_SetContactRecycleDistance(worldId: b3WorldId, recycleD
 external function b3World_GetContactRecycleDistance(worldId: b3WorldId) -> float
 external function b3World_SetMaximumLinearSpeed(worldId: b3WorldId, maximumLinearSpeed: float) -> void
 external function b3World_GetMaximumLinearSpeed(worldId: b3WorldId) -> float
+external function b3World_SetIsotropicInertiaTolerance(worldId: b3WorldId, tolerance: float) -> void
+external function b3World_GetIsotropicInertiaTolerance(worldId: b3WorldId) -> float
 external function b3World_EnableWarmStarting(worldId: b3WorldId, flag: bool) -> void
 external function b3World_IsWarmStartingEnabled(worldId: b3WorldId) -> bool
+external function b3World_EnableSSE2Fallback(worldId: b3WorldId, flag: bool) -> void
 external function b3World_GetAwakeBodyCount(worldId: b3WorldId) -> int
 external function b3World_GetProfile(worldId: b3WorldId) -> b3Profile
 external function b3World_GetCounters(worldId: b3WorldId) -> b3Counters
@@ -1429,7 +1542,6 @@ external function b3World_SetWorkerCount(worldId: b3WorldId, count: int) -> void
 external function b3World_GetWorkerCount(worldId: b3WorldId) -> int
 external function b3World_DumpMemoryStats(worldId: b3WorldId) -> void
 external function b3World_DumpShapeBounds(worldId: b3WorldId, type_: b3BodyType) -> void
-external function b3World_RebuildStaticTree(worldId: b3WorldId) -> void
 external function b3World_EnableSpeculative(worldId: b3WorldId, flag: bool) -> void
 
 opaque b3Recording = c"b3Recording"
@@ -1559,11 +1671,13 @@ external function b3Body_EnableSleep(bodyId: b3BodyId, enableSleep: bool) -> voi
 external function b3Body_IsSleepEnabled(bodyId: b3BodyId) -> bool
 external function b3Body_SetSleepThreshold(bodyId: b3BodyId, sleepThreshold: float) -> void
 external function b3Body_GetSleepThreshold(bodyId: b3BodyId) -> float
+external function b3Body_SetSafetyFactor(bodyId: b3BodyId, safetyFactor: float) -> void
+external function b3Body_GetSafetyFactor(bodyId: b3BodyId) -> float
 external function b3Body_IsEnabled(bodyId: b3BodyId) -> bool
 external function b3Body_Disable(bodyId: b3BodyId) -> void
 external function b3Body_Enable(bodyId: b3BodyId) -> void
-external function b3Body_SetMotionLocks(bodyId: b3BodyId, locks: b3MotionLocks) -> void
-external function b3Body_GetMotionLocks(bodyId: b3BodyId) -> b3MotionLocks
+external function b3Body_SetFixedRotation(bodyId: b3BodyId, flag: bool) -> void
+external function b3Body_IsFixedRotation(bodyId: b3BodyId) -> bool
 external function b3Body_SetBullet(bodyId: b3BodyId, flag: bool) -> void
 external function b3Body_IsBullet(bodyId: b3BodyId) -> bool
 external function b3Body_AllowFastRotation(bodyId: b3BodyId, flag: bool) -> void
@@ -1579,11 +1693,15 @@ external function b3Body_GetJoints(bodyId: b3BodyId, jointArray: ptr[b3JointId],
 external function b3Body_GetContactCapacity(bodyId: b3BodyId) -> int
 external function b3Body_GetContactData(bodyId: b3BodyId, contactData: ptr[b3ContactData], capacity: int) -> int
 external function b3Body_ComputeAABB(bodyId: b3BodyId) -> b3AABB
+external function b3Body_GetMinExtent(bodyId: b3BodyId) -> float
+external function b3Body_GetMaxExtent(bodyId: b3BodyId) -> b3Vec3
+external function b3Body_GetMaxExtentOrigin(bodyId: b3BodyId) -> b3Vec3
 external function b3Body_GetClosestPoint(bodyId: b3BodyId, result: ptr[b3Vec3], target: b3Vec3) -> float
 external function b3Body_CastRay(bodyId: b3BodyId, origin: b3Vec3, translation: b3Vec3, filter: b3QueryFilter, maxFraction: float, bodyTransform: b3Transform) -> b3BodyCastResult
 external function b3Body_CastShape(bodyId: b3BodyId, origin: b3Vec3, proxy: const_ptr[b3ShapeProxy], translation: b3Vec3, filter: b3QueryFilter, maxFraction: float, canEncroach: bool, bodyTransform: b3Transform) -> b3BodyCastResult
 external function b3Body_OverlapShape(bodyId: b3BodyId, origin: b3Vec3, proxy: const_ptr[b3ShapeProxy], filter: b3QueryFilter, bodyTransform: b3Transform) -> bool
 external function b3Body_CollideMover(bodyId: b3BodyId, bodyPlanes: ptr[b3BodyPlaneResult], planeCapacity: int, origin: b3Vec3, mover: const_ptr[b3Capsule], filter: b3QueryFilter, bodyTransform: b3Transform) -> int
+external function b3Body_TimeOfImpactMover(bodyId: b3BodyId, origin: b3Vec3, mover: const_ptr[b3Capsule], moverTranslation: b3Vec3, filter: b3QueryFilter, bodyTransform1: b3Transform, bodyTransform2: b3Transform) -> b3BodyTOIResult
 external function b3CreateSphereShape(bodyId: b3BodyId, def: const_ptr[b3ShapeDef], sphere: const_ptr[b3Sphere]) -> b3ShapeId
 external function b3CreateCapsuleShape(bodyId: b3BodyId, def: const_ptr[b3ShapeDef], capsule: const_ptr[b3Capsule]) -> b3ShapeId
 external function b3CreateHullShape(bodyId: b3BodyId, def: const_ptr[b3ShapeDef], hull: const_ptr[b3HullData]) -> b3ShapeId
@@ -1628,6 +1746,7 @@ external function b3Shape_GetCapsule(shapeId: b3ShapeId) -> b3Capsule
 external function b3Shape_GetHull(shapeId: b3ShapeId) -> const_ptr[b3HullData]
 external function b3Shape_GetMesh(shapeId: b3ShapeId) -> b3Mesh
 external function b3Shape_GetHeightField(shapeId: b3ShapeId) -> const_ptr[b3HeightFieldData]
+external function b3Shape_GetCompound(shapeId: b3ShapeId) -> const_ptr[b3CompoundData]
 external function b3Shape_SetSphere(shapeId: b3ShapeId, sphere: const_ptr[b3Sphere]) -> void
 external function b3Shape_SetCapsule(shapeId: b3ShapeId, capsule: const_ptr[b3Capsule]) -> void
 external function b3Shape_SetHull(shapeId: b3ShapeId, hull: const_ptr[b3HullData]) -> void
@@ -1655,6 +1774,7 @@ external function b3Joint_GetCollideConnected(jointId: b3JointId) -> bool
 external function b3Joint_SetUserData(jointId: b3JointId, userData: ptr[void]) -> void
 external function b3Joint_GetUserData(jointId: b3JointId) -> ptr[void]
 external function b3Joint_WakeBodies(jointId: b3JointId) -> void
+external function b3Joint_IsAwake(jointId: b3JointId) -> bool
 external function b3Joint_GetConstraintForce(jointId: b3JointId) -> b3Vec3
 external function b3Joint_GetConstraintTorque(jointId: b3JointId) -> b3Vec3
 external function b3Joint_GetLinearSeparation(jointId: b3JointId) -> float
@@ -1672,6 +1792,11 @@ external function b3ParallelJoint_GetSpringHertz(jointId: b3JointId) -> float
 external function b3ParallelJoint_GetSpringDampingRatio(jointId: b3JointId) -> float
 external function b3ParallelJoint_SetMaxTorque(jointId: b3JointId, force: float) -> void
 external function b3ParallelJoint_GetMaxTorque(jointId: b3JointId) -> float
+external function b3CreateMotionLockJoint(worldId: b3WorldId, def: const_ptr[b3MotionLockJointDef]) -> b3JointId
+external function b3MotionLockJoint_EnableLinearLock(jointId: b3JointId, axis: int, flag: bool) -> void
+external function b3MotionLockJoint_IsLinearLockEnabled(jointId: b3JointId, axis: int) -> bool
+external function b3MotionLockJoint_EnableAngularLock(jointId: b3JointId, flag: bool) -> void
+external function b3MotionLockJoint_IsAngularLockEnabled(jointId: b3JointId) -> bool
 external function b3CreateDistanceJoint(worldId: b3WorldId, def: const_ptr[b3DistanceJointDef]) -> b3JointId
 external function b3DistanceJoint_SetLength(jointId: b3JointId, length: float) -> void
 external function b3DistanceJoint_GetLength(jointId: b3JointId) -> float
@@ -1717,6 +1842,27 @@ external function b3MotorJoint_SetMaxSpringForce(jointId: b3JointId, maxForce: f
 external function b3MotorJoint_GetMaxSpringForce(jointId: b3JointId) -> float
 external function b3MotorJoint_SetMaxSpringTorque(jointId: b3JointId, maxTorque: float) -> void
 external function b3MotorJoint_GetMaxSpringTorque(jointId: b3JointId) -> float
+external function b3CreateMoverJoint(worldId: b3WorldId, def: const_ptr[b3MoverJointDef]) -> b3JointId
+external function b3MoverJoint_SetLinearVelocity(jointId: b3JointId, velocity: b3Vec3) -> void
+external function b3MoverJoint_GetLinearVelocity(jointId: b3JointId) -> b3Vec3
+external function b3MoverJoint_SetMaxVelocityForce(jointId: b3JointId, maxForce: float) -> void
+external function b3MoverJoint_GetMaxVelocityForce(jointId: b3JointId) -> float
+external function b3CreatePogoJoint(worldId: b3WorldId, def: const_ptr[b3PogoJointDef]) -> b3JointId
+external function b3PogoJoint_SetRestLength(jointId: b3JointId, length: float) -> void
+external function b3PogoJoint_GetRestLength(jointId: b3JointId) -> float
+external function b3PogoJoint_SetSpringHertz(jointId: b3JointId, hertz: float) -> void
+external function b3PogoJoint_GetSpringHertz(jointId: b3JointId) -> float
+external function b3PogoJoint_SetSpringDampingRatio(jointId: b3JointId, dampingRatio: float) -> void
+external function b3PogoJoint_GetSpringDampingRatio(jointId: b3JointId) -> float
+external function b3PogoJoint_SetMaxTensionForce(jointId: b3JointId, force: float) -> void
+external function b3PogoJoint_GetMaxTensionForce(jointId: b3JointId) -> float
+external function b3PogoJoint_SetMaxCompressionForce(jointId: b3JointId, force: float) -> void
+external function b3PogoJoint_GetMaxCompressionForce(jointId: b3JointId) -> float
+external function b3PogoJoint_SetNormal(jointId: b3JointId, normal: b3Vec3) -> void
+external function b3PogoJoint_GetNormal(jointId: b3JointId) -> b3Vec3
+external function b3PogoJoint_GetCurrentLength(jointId: b3JointId) -> float
+external function b3PogoJoint_GetCurrentSpeed(jointId: b3JointId) -> float
+external function b3PogoJoint_GetImpulse(jointId: b3JointId) -> float
 external function b3CreateFilterJoint(worldId: b3WorldId, def: const_ptr[b3FilterJointDef]) -> b3JointId
 external function b3CreatePrismaticJoint(worldId: b3WorldId, def: const_ptr[b3PrismaticJointDef]) -> b3JointId
 external function b3PrismaticJoint_EnableSpring(jointId: b3JointId, enableSpring: bool) -> void
@@ -1849,12 +1995,13 @@ const B3_MIN_SCALE: float = 0.00999999977
 const B3_MAX_WORKERS: int = 32
 const B3_MAX_TASKS: int = 256
 const B3_GRAPH_COLOR_COUNT: int = 24
-const B3_CONTACT_MANIFOLD_COUNT_BUCKETS: int = 8
 const B3_MIN_FRICTION_WEIGHT: float = 1.00000001E-10
 const B3_MAX_WORLDS: int = 128
 const B3_CONTACT_RECYCLE_ANGULAR_DISTANCE: float = 0.992403864
 const B3_AABB_MARGIN_FRACTION: float = 0.125
 const B3_TIME_TO_SLEEP: float = 0.5
+const B3_MAX_RESTITUTION_ITERATIONS: int = 63
+const B3_MAX_MANIFOLDS: int = 8
 const B3_MAX_MANIFOLD_POINTS: int = 4
 const B3_GYROSCOPIC_ITERATIONS: int = 1
 const B3_MAX_HULL_VERTICES: int = 128
@@ -1862,10 +2009,9 @@ const B3_MAX_HULL_FACES: int = 128
 const B3_MAX_HULL_EDGES: int = 128
 const B3_PARALLEL_EDGE_TOL: float = 0.00499999989
 const B3_SHAPE_POWER: int = 22
-const B3_RESTITUTION_ITERATIONS: int = 1
-const B3_DYNAMIC_TREE_VERSION: ulong = 10659368894387653450
-const B3_HULL_VERSION: ulong = 5353818467820062812
-const B3_MESH_VERSION: ulong = 12298092536310311671
+const B3_DYNAMIC_TREE_VERSION: ulong = 2120997694728572561
+const B3_HULL_VERSION: ulong = 7718670396882167283
+const B3_MESH_VERSION: ulong = 2641937288073990173
+const B3_BOUNDARY_EDGE_ANGLE: int = -128
 const B3_HEIGHT_FIELD_HOLE: int = 255
-const B3_HEIGHT_FIELD_VERSION: ulong = 10250727093210466552
-const B3_MAX_COMPOUND_MESH_MATERIALS: int = 4
+const B3_HEIGHT_FIELD_VERSION: ulong = 6514917109010325965
