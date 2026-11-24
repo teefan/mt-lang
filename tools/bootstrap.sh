@@ -185,6 +185,11 @@ FLAGS=(-I . --no-cache)
 if [[ "$PROFILE" == "release" ]]; then
     FLAGS+=(--profile release)
 fi
+# The native build takes its compiler from --cc, not $CC; forward it so a
+# release wrapper (tools/cc-openssl3.sh) applies to every stage.
+if [[ -n "${CC:-}" ]]; then
+    FLAGS+=(--cc "$CC")
+fi
 
 # ── stage 1 ──────────────────────────────────────────────────────────────────
 

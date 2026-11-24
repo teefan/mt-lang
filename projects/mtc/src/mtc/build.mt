@@ -12,7 +12,6 @@ import std.path as path_ops
 import std.process as process
 import std.string as string
 import std.str
-import std.time as time
 import std.vec as vec
 
 import mtc.debug_map as debug_map
@@ -314,14 +313,21 @@ function generate_build_c_source(
     return Result[string.String, string.String].success(value = c_source)
 
 
-## Write the compiled source to a unique temporary path.  A unique path keeps
-## concurrent builds (e.g. a parallel example sweep) from clobbering each
-## other; a fixed `/tmp/mtc_build.c` made one process compile another's C.
+## Write the compiled source to a temporary path derived from its content.  A
+## content hash keeps concurrent builds from clobbering each other without
+## embedding a build timestamp in the binary: the C compiler records the source
+## path in the object's `STT_FILE` symbol, so a time-based name made independent
+## rebuilds differ.
 function write_temp_c_source(output_path: str, c_source: str) -> Result[string.String, string.String]:
     var c_path = string.String.from_str("/tmp/mtc_build_")
     c_path.append(path_ops.basename(output_path))
     c_path.push_byte('_')
-    fmt.append_long(ref_of(c_path), long<-time.now())
+    var hash_value: uint = 0x811C9DC5
+    var hi: ptr_uint = 0
+    while hi < c_source.len:
+        hash_value = (hash_value ^ uint<-c_source.byte_at(hi)) * 0x01000193
+        hi += 1
+    fmt.append_long_hex(ref_of(c_path), long<-hash_value)
     c_path.append(".c")
     match fs.write_text(c_path.as_str(), c_source):
         Result.success:

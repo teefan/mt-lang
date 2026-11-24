@@ -19,8 +19,8 @@ hard error that names the expected path.
 
 ## Provenance
 
-The checked-in `linux-x86_64` seed is the release build of the `0.5.0` tree,
-sha256 `4bec791992da7bb6988fcf1e0ed4844700aab013794047fadd58dcfcb7b3b4dd`,
+The checked-in `linux-x86_64` seed is the release build of the `0.5.1` tree,
+sha256 `37add2b3ee460454651861dc69003daa1d8779d9cd52702b7975ad13e277d9ab`,
 refreshed with:
 
 ```sh
@@ -31,8 +31,9 @@ It is a **stage2** compiler whose code generation comes from Milk Tea; the
 native bootstrap that produced it never invoked the archived Ruby host.  The
 verification run (`tools/bootstrap.sh -j 4`) then proves the seed reaches a
 fixed point and passes the self-tests.  The seed has the same runtime
-requirements as the release: glibc 2.38+, zlib, and OpenSSL 3; libuv is linked
-statically.
+requirements as the release: glibc 2.38+, zlib, and OpenSSL 3 (`libssl.so.3`);
+libuv is linked statically.  The release build links against the OpenSSL 3 ABI
+even on hosts whose default is OpenSSL 4 (`tools/cc-openssl3.sh`).
 
 ## Replacement policy
 
