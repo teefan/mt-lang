@@ -1253,7 +1253,7 @@
     ]
   },
   "sizes": {
-    "total_code": 128970,
+    "total_code": 129000,
     "functions_over_limit": 3,
     "files_over_limit": 11,
     "files": {
@@ -2254,10 +2254,10 @@
         "max_function": 385
       },
       "projects/mtc/src/mtc/toolchain_cli.mt": {
-        "lines": 1220,
-        "code": 1044,
+        "lines": 1273,
+        "code": 1074,
         "max_line": 173,
-        "max_function": 169
+        "max_function": 174
       },
       "projects/mtc/src/mtc/wasm_preview.mt": {
         "lines": 239,

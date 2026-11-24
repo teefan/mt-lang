@@ -83,7 +83,12 @@ public function source_at(index: ptr_uint) -> UpstreamSource:
             dir = "third_party/box2d-upstream",
             url = "https://github.com/erincatto/box2d.git",
             revision = "ddfd9df727a06940af34b5bc2ef79bcaba287d50",
-            sentinels = array[str, 6]("include/box2d/box2d.h", "", "", "", "", ""),
+            # `math_types.h` is the discriminator, not just any header: it
+            # appeared in 3.2.0 when `core.h`/`geometry.h` were dropped.  The
+            # old sentinel (`box2d.h`) exists in *every* version, so a cached
+            # 3.1.1 checkout satisfied it and was silently reused after the pin
+            # moved to 3.2.0 — the CI failure this replaces.
+            sentinels = array[str, 6]("include/box2d/math_types.h", "", "", "", "", ""),
             sentinel_count = 1,
         )
     if index == 5:
@@ -353,7 +358,8 @@ function bootstrap_command(quiet: bool) -> int:
         let src = source_at(i)
         var checkout = path_ops.join(data_root.as_str(), src.dir)
         defer: checkout.release()
-        let complete = source_complete(checkout.as_str(), src, ref_of(overrides))
+        let pinned = revision_for(src, ref_of(overrides))
+        let complete = checkout_is_current(checkout.as_str(), src, pinned, ref_of(overrides))
         if complete:
             var present = string.String.create()
             defer: present.release()
@@ -423,6 +429,47 @@ function bootstrap_command(quiet: bool) -> int:
     if failed > 0:
         return 1
     return 0
+
+
+## The file a checkout records its own revision in.  Sentinels alone cannot
+## detect a *version* change: every box2d release ships `include/box2d/box2d.h`,
+## so a cached 3.1.1 tree satisfied the 3.2.0 pin's sentinel and was silently
+## reused (the CI failure this guards).  The stamp makes a pin change visible.
+const REVISION_STAMP: str = ".mt-source-revision"
+
+
+## True when `checkout` records exactly `revision` in its stamp.
+function revision_stamp_matches(checkout: str, revision: str) -> bool:
+    var path = path_ops.join(checkout, REVISION_STAMP)
+    defer: path.release()
+    match fs.read_text(path.as_str()):
+        Result.failure:
+            return false
+        Result.success as payload:
+            var text = payload.value
+            defer: text.release()
+            return text.as_str().trim_ascii_whitespace().equal(revision)
+
+
+## Record `revision` in the checkout's stamp.  Failure is reported because a
+## silent failure would reintroduce the stale-checkout bug it prevents.
+function write_revision_stamp(checkout: str, revision: str) -> bool:
+    var path = path_ops.join(checkout, REVISION_STAMP)
+    defer: path.release()
+    match fs.write_text(path.as_str(), revision):
+        Result.failure as failure:
+            var error = failure.error
+            error.release()
+            return false
+        Result.success:
+            return true
+
+
+## A checkout is usable only when the stamp matches the pinned revision *and*
+## the sentinel files are present.  The revision is passed separately because
+## it may come from `config/upstream_versions.yml`.
+function checkout_is_current(checkout: str, src: UpstreamSource, revision: str, overrides: ref[vec.Vec[SourceOverride]]) -> bool:
+    return revision_stamp_matches(checkout, revision) and source_complete(checkout, src, overrides)
 
 
 ## True when the checkout directory and every sentinel exist.
@@ -528,6 +575,12 @@ function bootstrap_source(checkout: str, url: str, revision: str, src: UpstreamS
         failure_message.assign("bootstrapped ")
         failure_message.append(src.name)
         failure_message.append(" but required files are still missing under ")
+        failure_message.append(checkout)
+        return false
+    if not write_revision_stamp(checkout, revision):
+        failure_message.assign("bootstrapped ")
+        failure_message.append(src.name)
+        failure_message.append(" but could not record its revision under ")
         failure_message.append(checkout)
         return false
     return true
@@ -1170,12 +1223,12 @@ function prepare_binding_source(
     var checkout = path_ops.join(data_root, src.dir)
     defer: checkout.release()
 
-    if source_complete(checkout.as_str(), src, overrides):
+    let revision = revision_for(src, overrides)
+    if checkout_is_current(checkout.as_str(), src, revision, overrides):
         return true
 
     var failure_message = string.String.create()
     defer: failure_message.release()
-    let revision = revision_for(src, overrides)
     return bootstrap_source(
         checkout.as_str(), src.url, revision, src, overrides, ref_of(failure_message)
     )

@@ -418,6 +418,11 @@ for g in $ordered; do
     printf '%-14s rc=%-3s %s\n' "$g" "$rc" "$summary"
     if [ "$(gate_kind "$g")" = "hard" ] && [ "$rc" != 0 ]; then
         echo "gates.sh: HARD gate failed: $g (log: tmp/gates/$g.log)" >&2
+        # The log is captured, so a CI failure with no summary used to show
+        # nothing at all.  Print the tail: it is the only diagnosis a remote
+        # run gives.
+        echo "── $g log (last 40 lines) ──" >&2
+        tail -40 "tmp/gates/$g.log" >&2
         overall=1
         break
     fi
