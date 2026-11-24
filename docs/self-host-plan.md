@@ -116,16 +116,16 @@ history.
 
 | Area | State |
 | --- | --- |
-| Compiler | **native self-host only**; the release is **0.5.2** (tag `v0.5.2`); the Ruby host is archived at tag `archive/host-ruby-0.4.26`, and `lib/`, the Ruby `test/**` suite, `milk_tea.gemspec`, `Rakefile`, `Gemfile` and `bin/mtc` are removed (session 143).  The source tree pins **Box2D 3.2.0** (session 158); the v0.5.2 archive and seed still carry 3.1.1 |
-| Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** (session 158, from the 0.5.2 seed; the shim proof is session 145, a `ruby` shim that exits 127 never invoked) |
-| Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`62c113a0…`, release 0.5.2); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
-| Release archive | **~3.5 MiB deterministic tar.gz** (`mtc-0.5.2-linux-x86_64`), checksummed beside the archive; identical across two packagings; clean-path and clean-container (Ubuntu 24.04) smokes green; includes `install.sh` (versioned prefix + `current` symlink) and `config/`; tagged `v0.5.2`; the version is the authored `cli_help.VERSION`.  The archive and seed still pin Box2D 3.1.1; the next release refreshes them to 3.2.0 |
+| Compiler | **native self-host only**; the release is **0.6.0** (tag `v0.6.0`); the Ruby host is archived at tag `archive/host-ruby-0.4.26`, and `lib/`, the Ruby `test/**` suite, `milk_tea.gemspec`, `Rakefile`, `Gemfile` and `bin/mtc` are removed (session 143).  The source tree pins **Box2D 3.2.0** (session 158), and the 0.6.0 archive and seed now carry it too (session 162) |
+| Bootstrap fixed point | **holds** from the **0.6.0** seed (`stage2.c == stage3.c`; session 162); self-test suite **22 files / 0 failed**; the shim proof is session 145 (a `ruby` shim that exits 127 is never invoked) |
+| Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`de605a15…`, release 0.6.0); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
+| Release archive | **3.5 MiB deterministic tar.gz** (`mtc-0.6.0-linux-x86_64`, `e8b1d1e3…`), checksummed beside the archive; identical across two packagings; clean-path and clean-container (Ubuntu 24.04) smokes green; includes `install.sh` (versioned prefix + `current` symlink) and `config/`; tagged `v0.6.0`; the version is the authored `cli_help.VERSION`.  The archive and seed carry Box2D 3.2.0 |
 | Release runtime | Linux x86_64: **glibc ≥ 2.38, zlib, OpenSSL 3**; libuv is linked statically; `tools/release_container_smoke.sh` verifies the archive in a clean Ubuntu 24.04 image; the seed has the same requirements |
 | Analyzer/IR memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB / 10.5 s**; `emit-c main.mt` **860 MiB / 12.3 s**; `build projects/mtc` **903 MiB / 25.9 s** (session 152; `peak_rss.py` reports **KiB** — the MiB figures are that value ÷ 1024).  Path: `Type` boxed 72 → 24 B (session 150), the analyzer's tooling-only `imported_type_members` gated behind `tooling_facts` (−20% on `check`), the IR dump streamed and written straight into one buffer (−66 MiB on `lower`, session 151), `reserve_exact` for known-length vectors and string builders (−42 MiB on `lower`/`emit-c`, session 152), then the emitter's per-generation tables and scratch released at the end of `generate_c` (−9 MiB on `emit-c`, −21 MiB on `build --keep-c`, and ~94 → ~82 MiB per repeated emission; session 153).  The old analyzer const blow-up (**9,228 MiB** on `main.mt`, session 142) and the cross-module async rescan (682 MB of the lower peak, session 149) are gone.  `lowering.mt` check **197 MiB** (session 151 audit).  The release profile has the same peaks with `check` **1.3 s**, `lower` **4.1 s**, `emit-c` **4.6 s**, `build` **20.0 s** (session 155).  All tooling fan-out is capped at **4**. |
 | Multi-file commands | **Flat in the file count, and no longer ~2× a heavy file's peak** (session 152).  The per-file heap region is a bump allocator: it frees everything at once and cannot reuse anything released inside it, so an abandoned temporary lands in the peak.  It buys release of every file *after* the one compiling, so it is now gated on the **file count** (`should_scope_file`, `remaining_after >= 2`): the last two files of a run compile unregioned.  Measured: `check main.mt` + a 60-byte file **422 MiB** (was 958,616 KiB always-regioned; 432,068 never-regioned), 40 small files **372 MiB** (1,367,120 never-regioned), `check projects/mtc` (191 files) **997 MiB** (11,398,120 never-regioned).  The `lower`/`emit-c` 8-heaviest sets pay 2–3% (**1,456 / 1,694 MiB**) because their last two files are heavy.  The old session-151 row (same file twice 946 MiB, `main.mt` + `sexpr.mt` 1,407 MiB) was the ungated region; see *Region gate (session 152)*. |
 | `test/mt` | **86 files / 0 failed** (62 in-language tests + 24 compile-fail diagnostics fixtures; session 160 added `imported_module_member.mt`; peak RSS **100 MiB**, measured session 151) |
 | Examples | **311/311** under the self-only `emit-c`/`check` sweep — session 161 extended it from 78 to **every** `examples/**/*.mt`, adding `examples/raylib` (219) and `examples/box3d` (14); a first line of `external` selects `check` instead of `emit-c` (one raw binding module).  That gap is how a call to a nonexistent `rl.image_draw` survived (session 160).  Plus the headless **`box2d_smoke`** build/run gate |
-| Recorded oracles | **CLI 227/227 (0.5.2); diagnostics 505/505 compared / 0 differ; lint 674/674 / 0; formatter 776 × 3 modes / 0** — digest-keyed, changed=0 after the session-158 re-record, and replayed green with no host source present |
+| Recorded oracles | **CLI 227/227 (0.6.0); diagnostics 504 compared / 0 differ; lint 647 / 0; formatter 747 × 3 modes / 0** — digest-keyed, re-recorded for the 0.6.0 version rows (9 rows, version-only), and replayed green with no host source present |
 | `check` diagnostics | the 505-file diagnostic oracle is the gate (the extra row is `box2d_api_smoke`); the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field anchor is a reviewed difference, not a residual (session 146). |
 | Linter | **43/43 rules, 13/13 fixers**; the 674-file lint oracle is the corpus gate (the live host-diff corpus is retired).  The historical residue (3 self-only `std` files, the host-timeout rows) is recorded in *Deliberate differences*. |
@@ -4505,6 +4505,63 @@ version-only rows, verified by normalizing 0.5.2 -> 0.5.1).  Seed refreshed to
 The release archive is `mtc-0.5.2-linux-x86_64.tar.gz`; the release binary
 passes `test/mt` 85/0, CLI 227/227, LSP 38/38, and the clean-container smoke.
 The archive is rebuilt after the documentation sync and tagged `v0.5.2`.
+
+## Session 162 — release 0.6.0
+
+Cut the first release since 0.5.2.  A minor bump, not a patch: two changes break
+programs that 0.5.2 accepted.
+
+- **`std.box2d` is 3.2.0** (session 158).  Against the 0.5.2 module: 101 symbols
+  removed outright (`body_is_fixed_rotation`, `body_compute_aabb`,
+  `body_get_local_center_of_mass`, …) and 147 renamed.
+- **Unknown members on imported modules are errors** (session 160).  Code that
+  silently linked against a missing `alias.member` in 0.5.2 is now rejected.
+
+Also included: the linter's dynamic scope store (no abort past 32 nested scopes,
+no fabricated `unused local ''` past 128 bindings), reproducible `emit-c`, the
+LSP `platform` setting actually taking effect, no debug-map sidecar leak from
+`mtc test`, the examples gate at 311 files, and the removed inert interning
+layer.
+
+**Sample ports verified.**  The 3.2.0 migration rewrote all 28 `examples/box2d`
+ports but no gate had ever *built* them (the examples sweep only emitted C).
+All 28 now build, link, and run: `mtc build` each, then a 6 s sandboxed launch
+per binary — 28/28 build and 28/28 run without a fault (a `124` there is the
+timeout killing a window that is working, not a crash).
+
+**Version plumbing.**  `cli_help.VERSION` and the general-help banner both move
+to `0.6.0`; `release.sh` cross-checks them and refuses a mismatch, so the two
+cannot drift.  The CLI golden was re-recorded: **9 rows** differ, and
+normalizing the version token in the diff makes expected and actual
+byte-identical, so the change is provably version-only.
+`docs/lsp-enhancement-plan.md`'s "current release" line follows.
+
+**Release.**  `tools/release.sh --version 0.6.0` builds a release-profile stage2
+and packs `mtc-0.6.0-linux-x86_64.tar.gz` (**3,680,757 B**, sha256
+`e8b1d1e3…`).  Re-packing with `--skip-build` reproduces the same checksum, so
+the archive is deterministic.  The clean-path smoke passes, and so does the
+clean-container smoke on Ubuntu 24.04 (`REQUIRE_CONTAINER=1`, docker) —
+`mtc 0.6.0`, build and run a program, check it against the packaged std.
+
+**Seed refreshed.**  `--refresh-seed` replaced
+`vendor/bootstrap/linux-x86_64/mtc` with the release binary (sha256
+`de605a15…`, was `62c113a0…`), which is what finally moves the bootstrap seed
+off Box2D 3.1.1.  A full bootstrap from the *new* seed holds the fixed point
+(`stage2.c == stage3.c`), and both suites pass from it (`test/mt` **86/0**,
+`projects/mtc` **22/0**).  The archive's own `std/box2d.mt` carries 506
+functions including the 3.2-only `contact_get_data`.
+
+**Verified on the release build.** CLI **227/227**; diagnostics **504 / 0
+differ**; lint **647 / 0 differ**; formatter **747 × 3 / 0 differ**; examples
+**311/311**; all 28 box2d ports build and run; fixed point holds from the
+refreshed seed.
+
+**Carried forward.**  The god-objects remain the whole structural backlog
+(`LoweringContext` 93 fields, `Context` 85, `Analysis` 64, `ModuleBinding` 31) —
+a design session, not a cleanup pass.  `ir.Program.arena` still has no producer.
+And the two invalid-input discoveries (sessions 160–161) still suggest that
+runtime-generated fixtures should be type-checked once at harness startup rather
+than measured as-is.
 
 ## Session 161 — gate coverage, deduplication, and the inert interning layer
 
