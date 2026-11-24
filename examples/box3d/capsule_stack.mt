@@ -18,10 +18,7 @@ function capsule_stack_create(world_id: b3.WorldId) -> CapsuleStack:
     common.add_ground_box(40.0)
     var body_def = b3.default_body_def()
     body_def.type = b3.BodyType.b3_dynamicBody
-    body_def.motionLocks.linearZ = true
-    body_def.motionLocks.angularX = true
-    body_def.motionLocks.angularY = true
-    body_def.motionLocks.angularZ = true
+    body_def.fixedRotation = true
     let radius = 0.5
     let capsule = b3.Capsule(center1 = b3.Vec3(x = -1.0, y = 0.0, z = 0.0), center2 = b3.Vec3(x = 1.0, y = 0.0, z = 0.0), radius = radius)
     let shape_def = b3.default_shape_def()

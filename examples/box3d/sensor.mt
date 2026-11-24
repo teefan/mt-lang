@@ -50,7 +50,7 @@ extending Sensor:
         while index < events.beginCount:
             unsafe:
                 let sensor_event = read(events.beginEvents + ptr_uint<-index)
-                if sensor_event.sensorShapeId == this.sensor_shape:
+                if same_shape(sensor_event.sensorShapeId, this.sensor_shape):
                     let visitor_body = b3.shape_get_body(sensor_event.visitorShapeId)
                     if b3.body_is_valid(visitor_body):
                         b3.destroy_body(visitor_body)
@@ -62,6 +62,10 @@ extending Sensor:
             common.draw_text_line("visitor destroyed on sensor touch")
         else:
             common.draw_text_line("sensor: visitor drops through the box")
+
+function same_shape(a: b3.ShapeId, b: b3.ShapeId) -> bool:
+    return a.index1 == b.index1 and a.world0 == b.world0 and a.generation == b.generation
+
 
 function main() -> int:
     let world_id = common.create_world()

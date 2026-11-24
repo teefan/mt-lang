@@ -390,7 +390,7 @@ external function pcre2_maketables_32(arg0: ptr[pcre2_general_context_32]) -> co
 external function pcre2_maketables_free_32(arg0: ptr[pcre2_general_context_32], arg1: const_ptr[ubyte]) -> void
 
 const PCRE2_MAJOR: int = 10
-const PCRE2_MINOR: int = 47
+const PCRE2_MINOR: int = 49
 const PCRE2_ANCHORED: uint = 2147483648
 const PCRE2_NO_UTF_CHECK: uint = 1073741824
 const PCRE2_ENDANCHORED: uint = 536870912
@@ -674,6 +674,7 @@ const PCRE2_ERROR_DIFFSUBSSUBJECT: int = -72
 const PCRE2_ERROR_DIFFSUBSOFFSET: int = -73
 const PCRE2_ERROR_DIFFSUBSOPTIONS: int = -74
 const PCRE2_ERROR_BAD_BACKSLASH_K: int = -75
+const PCRE2_ERROR_PARTIALSUBS: int = -76
 const PCRE2_INFO_ALLOPTIONS: int = 0
 const PCRE2_INFO_ARGOPTIONS: int = 1
 const PCRE2_INFO_BACKREFMAX: int = 2

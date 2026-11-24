@@ -25,10 +25,16 @@ iterating.  The tool expands `$ROOT`, writes a temporary options JSON, applies
 `bindings/nullable/<name>.json` when present, and invokes `mtc bindgen
 --options-json`.
 
-The current baseline (`--all --check`) is 30/33 identical, `tracy` custom, and
-three known diffs: `curl`/`sqlite3` follow this host's system headers, while
-`libuv` predates the checked-out header.  Regenerate each with its next header
-bump and review the diff; do not treat those three as generator regressions.
+The current baseline (`--all --check`) is 31/33 identical, `tracy` custom, and
+two known diffs: `curl`/`sqlite3` follow this host's system headers.  Regenerate
+each with its next header bump and review the diff; do not treat those two as
+generator regressions.
+
+## Held upgrades
+
+`box2d` is held at 3.1.1.  Version 3.2.0 makes IDs structs, removes the mouse
+joint, and changes the joint and query APIs; the sample suite needs a separate
+migration before the pin can move.
 
 ## Upgrade a vendored library
 
