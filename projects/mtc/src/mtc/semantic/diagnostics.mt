@@ -181,6 +181,18 @@ public function unknown_member_message(kind: str, type_name: str, member: str) -
     return buf.as_str()
 
 
+## `alias.member` where the alias resolves to a module that exports nothing
+## named `member`.  The message outlives the analysis like every other builder
+## here (one compilation per process).
+public function unknown_module_member_message(alias: str, member: str) -> str:
+    var buf = string.String.create()
+    buf.append("unknown member ")
+    buf.append(member)
+    buf.append(" on module ")
+    buf.append(alias)
+    return buf.as_str()
+
+
 public function missing_method_message(type_name: str, iface_name: str, method: str) -> str:
     var buf = string.String.create()
     buf.append(type_name)

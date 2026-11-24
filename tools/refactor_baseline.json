@@ -1260,7 +1260,7 @@
     ]
   },
   "sizes": {
-    "total_code": 129509,
+    "total_code": 129547,
     "functions_over_limit": 3,
     "files_over_limit": 11,
     "files": {
@@ -2177,8 +2177,8 @@
         "max_function": 39
       },
       "projects/mtc/src/mtc/semantic/analyzer.mt": {
-        "lines": 10700,
-        "code": 8004,
+        "lines": 10751,
+        "code": 8035,
         "max_line": 342,
         "max_function": 119
       },
@@ -2201,8 +2201,8 @@
         "max_function": 41
       },
       "projects/mtc/src/mtc/semantic/diagnostics.mt": {
-        "lines": 336,
-        "code": 246,
+        "lines": 348,
+        "code": 253,
         "max_line": 120,
         "max_function": 16
       },
@@ -2283,6 +2283,6 @@
   "markers": [],
   "tests": {
     "projects": 22,
-    "test_mt": 85
+    "test_mt": 86
   }
 }

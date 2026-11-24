@@ -8494,11 +8494,57 @@ function try_imported_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: 
                                 _:
                                     pass
 
-                        return Option[types.Type].none
+                        # The module resolved but exports nothing named
+                        # `member`: report it instead of falling through to the
+                        # permissive path, which silently accepted `a.NOPE()`.
+                        report_module_member(ctx, id.name, read(module_name_ptr), ma.member_name, ma.line, ma.column)
+                        return Option[types.Type].some(value = types.Type.ty_error)
                     _:
                         return Option[types.Type].none
             _:
                 return Option[types.Type].none
+
+
+## True when the binding exports `member` as a type-like declaration (a struct,
+## union, enum/flags/variant name, alias or interface) rather than a value.  The
+## value path uses it so a type reference is left to the type paths instead of
+## being reported as an unknown value.
+function module_exports_type(binding: ModuleBinding, member: str) -> bool:
+    return (
+        binding.structs.contains(member) or binding.unions.contains(member)
+        or binding.types.contains(member) or binding.type_aliases.contains(member)
+        or binding.type_alias_types.contains(member) or binding.interfaces.contains(member)
+        or binding.static_member_types.contains(member) or binding.variant_arm_fields.contains(member)
+        or binding.private_structs.contains(member) or binding.private_unions.contains(member)
+        or binding.private_type_aliases.contains(member)
+    )
+
+
+## Report `alias.member` when the alias resolves to a module binding that
+## exports nothing named `member`.  Every export surface is consulted, so a
+## declaration this binding does not model (a prelude/`std.c` re-export) stays
+## silent rather than drawing a false diagnostic.  The alias may also *be* a
+## type name (`str.order(...)` — the alias and the builtin `str` coincide), so a
+## member key on that type counts as a hit.
+function report_module_member(ctx: ref[Context], alias: str, module_name: str, member: str, line: ptr_uint, column: ptr_uint) -> void:
+    let binding_ptr = find_binding(ctx, module_name) else:
+        return
+    let binding = unsafe: read(binding_ptr)
+    if (
+        binding.functions.contains(member) or binding.structs.contains(member)
+        or binding.unions.contains(member) or binding.value_types.contains(member)
+        or binding.const_values.contains(member) or binding.type_aliases.contains(member)
+        or binding.type_alias_types.contains(member) or binding.static_member_types.contains(member)
+        or binding.types.contains(member) or binding.member_names.contains(member)
+        or binding.match_case_names.contains(member) or binding.variant_arm_fields.contains(member)
+        or binding.interfaces.contains(member) or binding.private_functions.contains(member)
+        or binding.private_structs.contains(member) or binding.private_unions.contains(member)
+        or binding.private_value_types.contains(member) or binding.private_type_aliases.contains(member)
+        or binding.private_static_member_types.contains(member)
+        or binding.member_keys.contains(method_key(alias, member))
+    ):
+        return
+    report(ctx, line, column, diag.unknown_module_member_message(alias, member))
 
 
 ## Resolve `alias.member` where `alias` is an imported module and `member` is one
@@ -8516,7 +8562,12 @@ function try_imported_member(ctx: ref[Context], scope: ref[sscope.Scope], receiv
                 let value_ptr = read(binding_ptr).value_types.get(member)
                 if value_ptr != null:
                     return Option[types.Type].some(value = read(value_ptr))
-                return Option[types.Type].none
+                # An imported name that is a type/enum/variant, a static method
+                # on a same-named type (`str.order`), or another modelled export
+                # belongs to another path; anything else is a genuine miss.
+                if not module_exports_type(read(binding_ptr), member) and not read(binding_ptr).member_keys.contains(method_key(id.name, member)):
+                    report_module_member(ctx, id.name, read(module_name_ptr), member, id.line, id.column)
+                return Option[types.Type].some(value = types.Type.ty_error)
             _:
                 return Option[types.Type].none
 

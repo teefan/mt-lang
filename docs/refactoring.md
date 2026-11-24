@@ -136,12 +136,12 @@ affected the local loop only.
 
 ### Size, markers, tests
 
-- **129,509 code lines**; **3 functions ≥ 200 lines** (`binding_at` 385,
+- **129,547 code lines**; **3 functions ≥ 200 lines** (`binding_at` 385,
   excluded, `collect_binding_flags` 211, and `resolve_cursor` 200, exactly at
   the boundary); **11 files ≥ 2,000 code lines**. The ratchet counts these, so a
   refactor cannot trade one long function for another.
 - **0 marker comments** (`TODO`/`FIXME`/`XXX`/`HACK`); any new one fails.
-- Test trees: **22** files in `projects/mtc/test`, **85** in `test/mt`. The
+- Test trees: **22** files in `projects/mtc/test`, **86** in `test/mt`. The
   ratchet fails if either count drops (silent-skip protection).
 
 ## 3. The refactor protocol
@@ -210,11 +210,11 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 159, 2026-11-24)
+## 6. Current baseline (session 160, 2026-11-24)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 163,121 / 129,509 |
+| source files / lines / code lines | 169 / 163,159 / 129,547 |
 | layering edges / violations | 112 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
@@ -224,7 +224,11 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 | functions ≥ 200 lines | 3 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
-| test files (projects/mtc / test/mt) | 22 / 85 |
+| test files (projects/mtc / test/mt) | 22 / 86 |
+
+Session 160 refreshed the baseline for the imported-module member check (+38
+code lines: `report_module_member`, `module_exports_type`, the two call sites
+and the message builder), plus the new compile-fail fixture (test/mt 85 → 86).
 
 Session 159 refreshed the baseline for the audit fixes (+54 code lines): the
 dynamic scope store in `linter/scope_tracking.mt` (the fixed 32×128 window is

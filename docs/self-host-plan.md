@@ -112,7 +112,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 159, 2026-11-24)
+## Status at a glance (session 160, 2026-11-24)
 
 | Area | State |
 | --- | --- |
@@ -123,7 +123,7 @@ history.
 | Release runtime | Linux x86_64: **glibc ≥ 2.38, zlib, OpenSSL 3**; libuv is linked statically; `tools/release_container_smoke.sh` verifies the archive in a clean Ubuntu 24.04 image; the seed has the same requirements |
 | Analyzer/IR memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB / 10.5 s**; `emit-c main.mt` **860 MiB / 12.3 s**; `build projects/mtc` **903 MiB / 25.9 s** (session 152; `peak_rss.py` reports **KiB** — the MiB figures are that value ÷ 1024).  Path: `Type` boxed 72 → 24 B (session 150), the analyzer's tooling-only `imported_type_members` gated behind `tooling_facts` (−20% on `check`), the IR dump streamed and written straight into one buffer (−66 MiB on `lower`, session 151), `reserve_exact` for known-length vectors and string builders (−42 MiB on `lower`/`emit-c`, session 152), then the emitter's per-generation tables and scratch released at the end of `generate_c` (−9 MiB on `emit-c`, −21 MiB on `build --keep-c`, and ~94 → ~82 MiB per repeated emission; session 153).  The old analyzer const blow-up (**9,228 MiB** on `main.mt`, session 142) and the cross-module async rescan (682 MB of the lower peak, session 149) are gone.  `lowering.mt` check **197 MiB** (session 151 audit).  The release profile has the same peaks with `check` **1.3 s**, `lower` **4.1 s**, `emit-c` **4.6 s**, `build` **20.0 s** (session 155).  All tooling fan-out is capped at **4**. |
 | Multi-file commands | **Flat in the file count, and no longer ~2× a heavy file's peak** (session 152).  The per-file heap region is a bump allocator: it frees everything at once and cannot reuse anything released inside it, so an abandoned temporary lands in the peak.  It buys release of every file *after* the one compiling, so it is now gated on the **file count** (`should_scope_file`, `remaining_after >= 2`): the last two files of a run compile unregioned.  Measured: `check main.mt` + a 60-byte file **422 MiB** (was 958,616 KiB always-regioned; 432,068 never-regioned), 40 small files **372 MiB** (1,367,120 never-regioned), `check projects/mtc` (191 files) **997 MiB** (11,398,120 never-regioned).  The `lower`/`emit-c` 8-heaviest sets pay 2–3% (**1,456 / 1,694 MiB**) because their last two files are heavy.  The old session-151 row (same file twice 946 MiB, `main.mt` + `sexpr.mt` 1,407 MiB) was the ungated region; see *Region gate (session 152)*. |
-| `test/mt` | **85 files / 0 failed** (62 in-language tests + 23 compile-fail diagnostics fixtures; session 158, replayed; peak RSS **100 MiB**, measured session 151) |
+| `test/mt` | **86 files / 0 failed** (62 in-language tests + 24 compile-fail diagnostics fixtures; session 160 added `imported_module_member.mt`; peak RSS **100 MiB**, measured session 151) |
 | Examples | **78/78 build** under the self-only `emit-c` gate (16 top-level including `box2d_api_smoke`, 28 `examples/box2d`, `examples/sdl3` 34) plus the headless **`box2d_smoke`** build/run gate (session 158) |
 | Recorded oracles | **CLI 227/227 (0.5.2); diagnostics 505/505 compared / 0 differ; lint 674/674 / 0; formatter 776 × 3 modes / 0** — digest-keyed, changed=0 after the session-158 re-record, and replayed green with no host source present |
 | `check` diagnostics | the 505-file diagnostic oracle is the gate (the extra row is `box2d_api_smoke`); the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
@@ -136,7 +136,7 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check`; **Box2D is 3.2.0** (`178495ba…`, tag `v3.2.0`) and the raw module is reproducible (session 158; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; `bindings/raw/<name>.json` holds the option tables, `bindings/nullable/<name>.json` the `?` policies, and `tools/rebind_binding.rb` reproduces a raw module; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 169 files / 163,121 lines / 129,509 code lines; 112 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **30 unused + 7 test-only** public declarations; 6,499 duplicated lines / 882 clusters; **3 functions ≥ 200 lines** (`binding_at` 385, `collect_binding_flags` 211, `resolve_cursor` 200); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85 (855 + 362 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 159 for the dynamic scope store, the LSP platform plumbing and the runner cleanup; the new `main -> debug_map` edge is a legal downward import) |
+| **Refactoring safety** | structural guard: 169 files / 163,159 lines / 129,547 code lines; 112 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **30 unused + 7 test-only** public declarations; 6,499 duplicated lines / 882 clusters; **3 functions ≥ 200 lines** (`binding_at` 385, `collect_binding_flags` 211, `resolve_cursor` 200); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/86 (855 + 362 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 160 for the imported-module member check; the new `main -> debug_map` edge is a legal downward import) |
 | Gate planning | `tools/gates.sh` area inference covers `lexer/` (→ `parser`), `main/` (→ `cli`), `bindgen/` (→ `bindings`) and every other `projects/mtc/src/mtc/` path (→ `compiler_core`, the full behaviour set).  An unclassified path is a hard error naming the file; previously it planned **zero** gates and exited 0 (session 159) |
 | Bootstrap `-j` | **removed** (session 159).  The flag was parsed, capped and warned about but never passed to a build command — a stage build is one whole-program `mtc build`.  `release.sh -j` removed with it; `bootstrap.sh -j 4` now errors |
 
@@ -367,9 +367,9 @@ remains the internal fold cache.  Measured after: `check main.mt`
 **712 MiB in 6.6 s** (was 9,228 MiB / ~58 s), `lowering.mt` **274 MiB** (was
 2,322 MiB), and lint matches check.  The recorded lint sweep drops from
 **3:44 with 7 files timing out** to **39 s with 0 timeouts** (672 files).  The
-host rejects a transitive `a.C`, which matches the narrowed export; the self
-still accepts *unknown* members on an imported module (`a.NOPE`), a separate
-pre-existing gap.
+host rejects a transitive `a.C`, which matches the narrowed export.  The
+separate pre-existing gap — the self accepted *unknown* members on an imported
+module (`a.NOPE`) — was closed in session 160.
 
 ### Parallelism cap
 
@@ -806,7 +806,7 @@ new ~1.28 GiB peak has no single hotspot: `Vec[types.Type]` growth ~259 MB,
 `String` appends ~89 MB, IR `Stmt` vectors ~78 MB, lexer tokens ~75 MB.
 
 **Verification.**  Self tests **22/22**; `test/mt` **85/85**; bootstrap fixed
-point (`stage2.c == stage3.c`, `tools/bootstrap.sh --fast -j 4`); LSP
+point (`stage2.c == stage3.c`, `tools/bootstrap.sh --fast`); LSP
 conformance **37/37**; refactor guard `--check` ok; `git diff --check` clean.
 
 **Next.**  The planned structural step is an interned type handle (`TypeId`) for
@@ -4506,6 +4506,58 @@ The release archive is `mtc-0.5.2-linux-x86_64.tar.gz`; the release binary
 passes `test/mt` 85/0, CLI 227/227, LSP 38/38, and the clean-container smoke.
 The archive is rebuilt after the documentation sync and tagged `v0.5.2`.
 
+## Session 160 — imported-module member checking
+
+Closed the last documented analyzer gap: the self accepted *unknown* members on
+an imported module.  `a.NOPE()` and `a.MISSING_CONST` checked clean while
+`a.Widget(...)` field access was caught, because `try_imported_member` /
+`try_imported_call` returned `none` for an unresolved name and the caller fell
+through to the permissive default (any unresolvable pair is compatible).
+
+**The check.** `report_module_member` consults every export surface on the
+`ModuleBinding` — `functions`, `structs`, `unions`, `value_types`,
+`const_values`, `type_aliases`, `type_alias_types`, `static_member_types`,
+`types`, `member_names`, `match_case_names`, `variant_arm_fields`, `interfaces`
+and their `private_*` twins — plus `member_keys` for the case the alias *is* a
+type name.  A name absent from all of them is reported as
+`unknown member <name> on module <alias>` (the builder is
+`diag.unknown_module_member_message`, next to the other message constructors).
+
+**Two false positives the gates caught, both real:**
+
+- `str.order(left, right)` — `str` is both a builtin type name and an import
+  alias, so the member is a *static method* on the type, not a module export.
+  The `member_keys.contains(method_key(alias, member))` test covers it.
+- `examples/raylib/textures/image_drawing.mt` called `rl.image_draw(...)`, which
+  **does not exist** — raylib 5.x has no bare `ImageDraw`, only
+  `ImageDrawImage`/`...ImageEx`/`...ImageRec`/`...ImagePro`.  The example had
+  never been compiled by any gate (`examples/raylib/**` is outside the
+  `examples` sweep), so the broken call survived unnoticed.  Fixed to
+  `image_draw_image_pro`, and the whole `examples/raylib` tree now checks clean.
+
+The diagnostic's buffer must outlive the analysis: `report` stores a borrowed
+`str`, so a local `defer: release()` frees the bytes before the message is
+rendered (`string.as_str text must be valid UTF-8` on freed memory).  The
+message is built in `diagnostics.mt` beside the other constructors, where the
+one-compilation-per-process lifetime is already the convention.
+
+**Verified.** Fixed point holds; dev suite **22/0**; `test/mt` **86/0** (one new
+compile-fail fixture, `test/mt/diagnostics/imported_module_member.mt`); CLI
+**227/227**; diagnostics **504 / 0 differ** (the 1 changed row is the edited
+example); lint **662 / 0 differ**; formatter **762 × 3 / 0 differ**; examples
+**78/78**; box2d smoke **3.2.0 ok**; `check projects/mtc` clean (the compiler
+checks itself with no false positive); `check examples/raylib` clean; guard
+`--check --strict --ratchet` ok after a reviewed refresh (**129,547** code
+lines, +38; test/mt 86).
+
+**Carried forward.** The structural backlog from session 159 is unchanged and
+still the largest available work: `LoweringContext` (93 fields), `Context` (85)
+and `Analysis` (64) as god-objects; `ir.Program.release` reachable only from
+tests because `lower()` returns `arena = null`; `TypeId` built but unused by any
+IR node; and the duplicated primitives (`fnv1a_hash` ×4, `absolute_path` ×6,
+`split_lines` ×8).  The `examples/raylib` and `examples/box3d` trees remain
+outside every *build* gate — only `check` covers them now.
+
 ## Session 159 — architecture audit: three defects, the gate hole, and the dead flag
 
 A read-and-measure audit of the self-host (no behaviour was in doubt — the
@@ -4708,7 +4760,7 @@ their historical record is the archived tag `archive/host-ruby-0.4.26`.
 | Box2D samples | `bindings/README.md` | `tools/gates.sh --areas examples --run` (78/78 + `box2d_smoke`); build the 28 ports with `mtc build` before a release |
 | LSP | Track E; `docs/lsp-enhancement-plan.md`, `docs/lsp-design.md` | `ruby tools/lsp_conformance.rb --bin build/stage2/mtc` (the spec gate); `ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json`; `tools/gates.sh --areas lsp --only valgrind_lsp,soak --run` |
 | DAP | Track F; `docs/dap-design.md` | `ruby tools/dap_smoke.rb`; `ruby tools/dap_async_probe.rb` |
-| Bootstrap / release | `docs/bootstrap-design.md`; `vendor/bootstrap/README.md`; `docs/build-guide.md` §10 | `tools/bootstrap.sh -j 4`; `tools/release.sh`; `tools/release_container_smoke.sh dist/...` |
+| Bootstrap / release | `docs/bootstrap-design.md`; `vendor/bootstrap/README.md`; `docs/build-guide.md` §10 | `tools/bootstrap.sh`; `tools/release.sh`; `tools/release_container_smoke.sh dist/...` |
 | CI | `.github/workflows/ci.yml` | GitHub Actions: bootstrap, oracles, LSP, examples, bindings, release, container smoke |
 | In-language tests | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` (85/0) |
 | Refactoring pass | `docs/refactoring.md` | `tools/gates.sh --areas refactor --run`; `ruby tools/refactor_guard.rb --check --strict --ratchet` |
@@ -5306,7 +5358,7 @@ Nothing further is worth pursuing without a fresh profile showing a hotspot.
 
 ### Track H — final verification (PASSED, session 71)
 
-On a clean tree: `tools/bootstrap.sh -j 16` (stage2 == stage3, 22/0),
+On a clean tree: `tools/bootstrap.sh` (stage2 == stage3, 22/0),
 `build/stage2/mtc test test/mt -I .` (60/0), the 15 top-level examples, sdl3
 34/34, the raylib sample, the vendored families, `sexpr_parity` lex/parse/lower,
 `cli:parity`, both LSP harnesses + valgrind + a Neovim and a VS Code session,
@@ -5503,9 +5555,9 @@ historical record.
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
 | host tree | **removed**; `lib/`, Ruby `test/**`, gemspec, Rakefile, Gemfile and `bin/mtc` are gone; archived tag `archive/host-ruby-0.4.26` | session 143 | `git show archive/host-ruby-0.4.26:path` |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed**; a `ruby` shim that exits 127 is never invoked | session 158 (from the 0.5.2 seed) | `tools/bootstrap.sh -j 4` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed**; a `ruby` shim that exits 127 is never invoked | session 158 (from the 0.5.2 seed) | `tools/bootstrap.sh` |
 | bootstrap seed | `vendor/bootstrap/linux-x86_64/mtc`, release stage2 0.5.2, 6,079,096 B, sha256 `62c113a0…`; the only stage0 | session 157 | `tools/bootstrap.sh --print-stage0` |
-| fresh-clone gate | a `git clone` + `third_party/` (no `build/`, `tmp/`, `lib/`): a `ruby` shim that exits 127 is never invoked; fixed point + 22/0; `test/mt` 85/0; goldens 227 / 504 / 672 / 774×3 | session 143 | `git clone`, symlink/copy `third_party/`, `tools/bootstrap.sh -j 4` |
+| fresh-clone gate | a `git clone` + `third_party/` (no `build/`, `tmp/`, `lib/`): a `ruby` shim that exits 127 is never invoked; fixed point + 22/0; `test/mt` 85/0; goldens 227 / 504 / 672 / 774×3 | session 143 | `git clone`, symlink/copy `third_party/`, `tools/bootstrap.sh` |
 | `test/mt` | **85 files / 0 failed** (62 in-language + 23 compile-fail diagnostics fixtures); peak RSS **100 MiB** | session 158 (replayed; peak measured session 151) | `build/stage2/mtc test test/mt -I .` |
 | output diagnostics | caret `^` + `~` per `length`; five linter anchors (duplicate condition, `else`, loop, null-check condition span, unreachable expression fallback) pinned by in-language spans | session 146 | `tmp/mtc-dev test projects/mtc -I . --timeout 120`; `ruby tools/refactor_guard.rb --check --strict --ratchet` |
 | examples | **78/78 build** under the self-only `emit-c` gate (16 top-level including `box2d_api_smoke`, 28 `examples/box2d`, 34 sdl3) | session 158 | `tools/gates.sh --areas examples --run` |

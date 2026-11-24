@@ -20,11 +20,13 @@ function main() -> int:
     var parrots = rl.load_image("parrots.png")
     defer: rl.unload_image(parrots)
 
-    rl.image_draw(
-        parrots,
+    rl.image_draw_image_pro(
+        ptr_of(parrots),
         cat,
         rl.Rectangle(x = 0.0, y = 0.0, width = float<-cat.width, height = float<-cat.height),
         rl.Rectangle(x = 30.0, y = 40.0, width = cat.width * 1.5, height = cat.height * 1.5),
+        rl.Vector2(x = 0.0, y = 0.0),
+        0.0,
         rl.WHITE
     )
     rl.image_crop(
