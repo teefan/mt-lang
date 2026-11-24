@@ -17,13 +17,13 @@ public function enter_asset_directory(directory_name: str) -> bool:
     let working_dir = rl.get_working_directory()
     let application_dir = rl.get_application_directory()
 
-    if rl.change_directory(application_dir):
-        if rl.change_directory(directory_name):
+    if rl.change_directory(application_dir) == 0:
+        if rl.change_directory(directory_name) == 0:
             return true
 
-        rl.change_directory(working_dir)
+        let _ = rl.change_directory(working_dir)
 
-    return rl.change_directory(directory_name)
+    return rl.change_directory(directory_name) == 0
 
 
 public function enter_assets_directory() -> bool:
