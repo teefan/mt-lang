@@ -595,6 +595,18 @@ tools/release.sh --version <version>   # reads cli_help.VERSION and verifies it
 tools/release.sh --refresh-seed        # also refresh vendor/bootstrap/<platform>/
 ```
 
+`tools/release.sh` sets `CC=$PWD/tools/cc-openssl3.sh` when `CC` is unset.  The
+wrapper adds `-I/usr/include/openssl-3 -L/usr/lib/openssl-3` when the host ships
+the OpenSSL 3 package (Arch's `openssl-3`), so a host whose default is OpenSSL 4
+still produces an archive with the documented `libssl.so.3` dependency.  Set
+`CC` explicitly to override.
+
+The bootstrap forwards `$CC` to every stage as `--cc`; an empty `CC` leaves the
+compiler default.  The generated C file is named from a content hash
+(`/tmp/mtc_build_<output>_<hash>.c`) rather than a timestamp, so two independent
+builds of the same tree are byte-identical — the C compiler records that path in
+the object's file symbol.
+
 The version is an authored constant in `projects/mtc/src/mtc/cli_help.mt`
 (`VERSION`, plus the help banner), never derived from git. The archive is
 built deterministically (sorted entries, fixed owner and mtime, `gzip -n`), so

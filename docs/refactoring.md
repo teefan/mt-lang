@@ -125,7 +125,7 @@ emission/frame boilerplate, not as an absolute quality score.
 
 ### Size, markers, tests
 
-- **129,398 code lines**; **2 functions ≥ 200 lines** (`binding_at` 385,
+- **129,402 code lines**; **2 functions ≥ 200 lines** (`binding_at` 385,
   excluded, and `resolve_cursor` 200, exactly at the boundary); **11 files
   ≥ 2,000 code lines**. The ratchet counts these, so a refactor cannot trade one
   long function for another.
@@ -203,7 +203,7 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 163,003 / 129,398 |
+| source files / lines / code lines | 169 / 163,007 / 129,402 |
 | layering edges / violations | 111 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
@@ -216,8 +216,10 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 | test files (projects/mtc / test/mt) | 22 / 85 |
 
 Session 156 removed the `documentSymbol` type-parameter children and their
-two helpers (−74 code lines, −16 duplicated lines, −3 clusters); no layering,
-alias or vocabulary invariant moved.
+two helpers (−74 code lines, −16 duplicated lines, −3 clusters), then added the
+reproducible temp-C naming, the OpenSSL 3 wrapper and the `$CC` forwarding in
+the bootstrap (+78 code lines); no layering, alias or vocabulary invariant
+moved.
 
 Session 155 refreshed the baseline for the static-libuv link-order fix and
 stale-prefix cleanup (+26 code lines) and the 0.5.0 version/help text; the

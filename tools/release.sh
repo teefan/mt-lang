@@ -64,6 +64,13 @@ if [ "$JOBS" -gt 4 ]; then
     JOBS=4
 fi
 
+# The release contract is the OpenSSL 3 ABI (libssl.so.3).  On hosts whose
+# default is OpenSSL 4, build through the wrapper so the archive still runs on
+# the documented OpenSSL 3 systems; an explicit CC overrides this.
+if [ -z "${CC:-}" ] && [ -x "$SCRIPT_DIR/cc-openssl3.sh" ]; then
+    export CC="$SCRIPT_DIR/cc-openssl3.sh"
+fi
+
 SOURCE_VERSION="$(sed -n 's/^public const VERSION: str = "\([^"]*\)"$/\1/p' projects/mtc/src/mtc/cli_help.mt)"
 if [ -z "$SOURCE_VERSION" ]; then
     echo "error: cannot read cli_help.VERSION" >&2

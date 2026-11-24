@@ -115,10 +115,10 @@ history.
 
 | Area | State |
 | --- | --- |
-| Compiler | **native self-host only**; the release is **0.5.0** (tag `v0.5.0`); the Ruby host is archived at tag `archive/host-ruby-0.4.26`, and `lib/`, the Ruby `test/**` suite, `milk_tea.gemspec`, `Rakefile`, `Gemfile` and `bin/mtc` are removed (session 143) |
+| Compiler | **native self-host only**; the release is **0.5.1** (tag `v0.5.1`); the Ruby host is archived at tag `archive/host-ruby-0.4.26`, and `lib/`, the Ruby `test/**` suite, `milk_tea.gemspec`, `Rakefile`, `Gemfile` and `bin/mtc` are removed (session 143) |
 | Bootstrap fixed point | **holds** (`stage2.c == stage3.c`); self-test suite **22 files / 0 failed** (session 155, from the 0.5.0 seed; the shim proof is session 145, a `ruby` shim that exits 127 never invoked) |
-| Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`4bec7919…`, release 0.5.0); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
-| Release archive | **~3.5 MiB deterministic tar.gz** (`mtc-0.5.0-linux-x86_64`), checksummed beside the archive; identical across two packagings; clean-path and clean-container (Ubuntu 24.04) smokes green; includes `install.sh` (versioned prefix + `current` symlink); tagged `v0.5.0`; the version is the authored `cli_help.VERSION` |
+| Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`37add2b3…`, release 0.5.1); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
+| Release archive | **~3.5 MiB deterministic tar.gz** (`mtc-0.5.1-linux-x86_64`), checksummed beside the archive; identical across two packagings; clean-path and clean-container (Ubuntu 24.04) smokes green; includes `install.sh` (versioned prefix + `current` symlink); tagged `v0.5.1`; the version is the authored `cli_help.VERSION` |
 | Release runtime | Linux x86_64: **glibc ≥ 2.38, zlib, OpenSSL 3**; libuv is linked statically; `tools/release_container_smoke.sh` verifies the archive in a clean Ubuntu 24.04 image; the seed has the same requirements |
 | Analyzer/IR memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB / 10.5 s**; `emit-c main.mt` **860 MiB / 12.3 s**; `build projects/mtc` **903 MiB / 25.9 s** (session 152; `peak_rss.py` reports **KiB** — the MiB figures are that value ÷ 1024).  Path: `Type` boxed 72 → 24 B (session 150), the analyzer's tooling-only `imported_type_members` gated behind `tooling_facts` (−20% on `check`), the IR dump streamed and written straight into one buffer (−66 MiB on `lower`, session 151), `reserve_exact` for known-length vectors and string builders (−42 MiB on `lower`/`emit-c`, session 152), then the emitter's per-generation tables and scratch released at the end of `generate_c` (−9 MiB on `emit-c`, −21 MiB on `build --keep-c`, and ~94 → ~82 MiB per repeated emission; session 153).  The old analyzer const blow-up (**9,228 MiB** on `main.mt`, session 142) and the cross-module async rescan (682 MB of the lower peak, session 149) are gone.  `lowering.mt` check **197 MiB** (session 151 audit).  The release profile has the same peaks with `check` **1.3 s**, `lower` **4.1 s**, `emit-c` **4.6 s**, `build` **20.0 s** (session 155).  All tooling fan-out is capped at **4**. |
 | Multi-file commands | **Flat in the file count, and no longer ~2× a heavy file's peak** (session 152).  The per-file heap region is a bump allocator: it frees everything at once and cannot reuse anything released inside it, so an abandoned temporary lands in the peak.  It buys release of every file *after* the one compiling, so it is now gated on the **file count** (`should_scope_file`, `remaining_after >= 2`): the last two files of a run compile unregioned.  Measured: `check main.mt` + a 60-byte file **422 MiB** (was 958,616 KiB always-regioned; 432,068 never-regioned), 40 small files **372 MiB** (1,367,120 never-regioned), `check projects/mtc` (191 files) **997 MiB** (11,398,120 never-regioned).  The `lower`/`emit-c` 8-heaviest sets pay 2–3% (**1,456 / 1,694 MiB**) because their last two files are heavy.  The old session-151 row (same file twice 946 MiB, `main.mt` + `sexpr.mt` 1,407 MiB) was the ungated region; see *Region gate (session 152)*. |
@@ -135,7 +135,7 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check` (session 155 re-ran; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 169 files / 163,003 lines / 129,398 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **30 unused + 7 test-only** public declarations; 6,499 duplicated lines / 882 clusters; **2 functions ≥ 200 lines** (the excluded `binding_at` at 385 and `resolve_cursor` at 200); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 156 for the outline type-parameter removal) |
+| **Refactoring safety** | structural guard: 169 files / 163,007 lines / 129,402 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **30 unused + 7 test-only** public declarations; 6,499 duplicated lines / 882 clusters; **2 functions ≥ 200 lines** (the excluded `binding_at` at 385 and `resolve_cursor` at 200); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 156 for the outline type-parameter removal and the release-path fixes) |
 
 Rough completion against the per-track Definition of Done: **~100%**, now
 against the archived host record rather than a live reference.  The
@@ -4499,13 +4499,44 @@ The suite is **38/38**.  Recorded as deliberate difference 17 in
 valgrind **0 errors**, Neovim smoke, soak (77.7 KB/cycle, 27.2 LS — no positive
 slope).  Baseline refreshed: 129,398 code lines (−74), 6,499 duplicated lines
 (−16), 882 clusters (−3); layering/alias/vocabulary unchanged; ratchet ok.
-The seed is unchanged: the policy refreshes it only for a release or a
-language change, and the 0.5.0 seed still builds this tree and reaches the
-fixed point.
+The seed is unchanged by the outline work: the policy refreshes it only for a
+release or a language change, and the 0.5.0 seed still builds this tree and
+reaches the fixed point.
+
+**0.5.1 (same session).** Cutting the release exposed two defects in the
+release path, both fixed here:
+
+- **OpenSSL 4 crept into the archive.** This host's default `-lssl` is OpenSSL
+  4.1, so the binary required `OPENSSL_4.0.0`/`libssl.so.4` and died in the
+  clean Ubuntu 24.04 container (`libssl.so.4: cannot open shared object
+  file`).  The release contract is `libssl.so.3`.  `tools/cc-openssl3.sh` adds
+  `-I/usr/include/openssl-3 -L/usr/lib/openssl-3` when that package exists, and
+  `tools/release.sh` sets it as `CC` when `CC` is unset.  The native build takes
+  its compiler from `--cc` (only wasm reads `$CC`), so `tools/bootstrap.sh` now
+  forwards `$CC` to every stage.  The rebuilt archive links `libssl.so.3` and
+  the container smoke is green again.
+- **Independent builds were not byte-identical.** `write_temp_c_source` named
+  the generated C file `/tmp/mtc_build_<output>_<time.now()>.c`, and the C
+  compiler records that path in the object's file symbol, so two builds of the
+  same tree differed in four bytes.  The name is now
+  `<output>_<fnv1a(c_source)>.c`; two independent release builds produce the
+  same binary and the same archive hash.
+
+Version is 0.5.1 (`cli_help.VERSION` and the banner); the CLI golden was
+re-recorded (9 version-only rows, verified equal after normalizing 0.5.1 →
+0.5.0).  Seed refreshed to `37add2b3…` (6,069,472 B).
+
+**Verification (0.5.1).** Bootstrap from the new seed: fixed point **22/0**.
+The archive binary: `test/mt` **85/0**, CLI **227/227**, LSP conformance
+**38/38**; the container smoke is green and the archive hash is identical
+across two independent `tools/release.sh` runs.  The CLI golden is replayed
+against the release binary; `toolchain-doctor` and the `snapshot` cases need the
+checkout (vendored sources and the VS Code script), which is why CI runs the
+222 environment-independent cases.
 
 ## Handoff (session 156)
 
-**Next session:** no open defect.  The 0.5.0 release is published on GitHub
+**Next session:** no open defect.  The 0.5.1 release is published on GitHub
 with the archive and checksum attached, `main` is the merged self-host branch,
 and CI runs on `main` pushes and pull requests.
 
@@ -6060,8 +6091,8 @@ historical record.
 | Gate | Live | Measured | Command |
 | --- | --- | --- | --- |
 | host tree | **removed**; `lib/`, Ruby `test/**`, gemspec, Rakefile, Gemfile and `bin/mtc` are gone; archived tag `archive/host-ruby-0.4.26` | session 143 | `git show archive/host-ruby-0.4.26:path` |
-| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed**; a `ruby` shim that exits 127 is never invoked | session 155 (from the 0.5.0 seed) | `tools/bootstrap.sh -j 4` |
-| bootstrap seed | `vendor/bootstrap/linux-x86_64/mtc`, release stage2 0.5.0, 6,073,776 B, sha256 `4bec7919…`; the only stage0 | session 155 | `tools/bootstrap.sh --print-stage0` |
+| bootstrap fixed point | holds (`stage2.c == stage3.c`); **22 files / 0 failed**; a `ruby` shim that exits 127 is never invoked | session 156 (from the 0.5.1 seed) | `tools/bootstrap.sh -j 4` |
+| bootstrap seed | `vendor/bootstrap/linux-x86_64/mtc`, release stage2 0.5.1, 6,069,472 B, sha256 `37add2b3…`; the only stage0 | session 156 | `tools/bootstrap.sh --print-stage0` |
 | fresh-clone gate | a `git clone` + `third_party/` (no `build/`, `tmp/`, `lib/`): a `ruby` shim that exits 127 is never invoked; fixed point + 22/0; `test/mt` 85/0; goldens 227 / 504 / 672 / 774×3 | session 143 | `git clone`, symlink/copy `third_party/`, `tools/bootstrap.sh -j 4` |
 | `test/mt` | **85 files / 0 failed** (62 in-language + 23 compile-fail diagnostics fixtures); peak RSS **100 MiB** | session 155 (replayed; peak measured session 151) | `build/stage2/mtc test test/mt -I .` |
 | output diagnostics | caret `^` + `~` per `length`; five linter anchors (duplicate condition, `else`, loop, null-check condition span, unreachable expression fallback) pinned by in-language spans | session 146 | `tmp/mtc-dev test projects/mtc -I . --timeout 120`; `ruby tools/refactor_guard.rb --check --strict --ratchet` |
@@ -6085,7 +6116,7 @@ historical record.
 | installer | `install.sh` in the archive: versioned prefix, `current` symlink, `BIN_DIR/mtc`; `--prefix`/`--bin-dir`/`--force`/`--dry-run`/`--uninstall`; verifies both compiler copies; refuses a symlink prefix; no shell-config edits; the release smoke installs to a temp prefix and uses the installed binary | session 155 | `tools/install.sh --help`; `tools/release_smoke.sh` |
 | release runtime | glibc **≥ 2.38**, zlib, OpenSSL 3; libuv static; the seed has the same requirements | session 155 | `ldd dist/mtc-0.5.0-linux-x86_64/bin/mtc`; `tools/release_container_smoke.sh` |
 | CI | `.github/workflows/ci.yml`: vendored fetch, bootstrap, `test/mt`, four oracles, LSP conformance, examples, bindings, docs smoke, deterministic release, container smoke | session 155 (added; first runs drove the Steamworks pin and libuv support-path fixes; the PR re-run is the merge gate) | `cat .github/workflows/ci.yml` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files / 163,003 lines / 129,398 code lines); 30 unused / 7 test-only exports; 6,499 duplicated lines / 882 clusters; 2 functions ≥ 200 lines (`binding_at` 385, `resolve_cursor` 200); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 156 (baseline refreshed for the outline type-parameter removal) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files / 163,007 lines / 129,402 code lines); 30 unused / 7 test-only exports; 6,499 duplicated lines / 882 clusters; 2 functions ≥ 200 lines (`binding_at` 385, `resolve_cursor` 200); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 156 (baseline refreshed for the outline type-parameter removal and the release-path fixes) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 | extension activation | `bindings/vscode/package.json` activates on `onLanguage:milk-tea` and `onDebug:milk-tea`; `dist/` and `.vsix` are local artifacts | session 147 | `git show HEAD:bindings/vscode/package.json` |
 
 ## Porting notes
