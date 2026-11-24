@@ -444,8 +444,7 @@ function push_compile_arguments(
         read(command).push(shell_path)
         read(command).push("-sINCOMING_MODULE_JS_API=canvas,print,printErr")
         push_wasm_preloads(command, owned_args, assets)
-        push_owned_flags(command, vendored_flags)
-        push_owned_flags(command, link_flags)
+        push_link_line(command, vendored_flags, link_flags)
     else:
         read(command).push("-D_GNU_SOURCE")
         if sanitize:
@@ -477,8 +476,7 @@ function push_compile_arguments(
             read(command).push("-o")
             read(command).push(output_path)
             read(command).push(c_path)
-            push_owned_flags(command, vendored_flags)
-            push_owned_flags(command, link_flags)
+            push_link_line(command, vendored_flags, link_flags)
 
 
 function env_or_default(name: str, fallback: str) -> str:
@@ -594,6 +592,38 @@ function is_emscripten_compiler(compiler: str) -> bool:
             start = index + 1
         index += 1
     return false
+
+
+## Append the link line in static-link order: `-L` search paths, then the
+## libraries the program names (`-lbox2d` from its `link` directive), then the
+## vendored libraries' own dependencies (`-lm` and friends).
+##
+## Order matters: a static archive must be named before the libraries that
+## satisfy its symbols, or the linker drops them.  `vendored_flags` mixes both
+## kinds, so emitting it as one block put `-lm` *before* `-lbox2d` — which GNU
+## ld tolerates on Arch (its libm.so is a linker script that pulls libmvec) and
+## rejects on Ubuntu 24.04, where `box2d_smoke` failed with `undefined
+## reference to sqrtf`.
+function push_link_line(command: ref[vec.Vec[str]], vendored_flags: ref[vec.Vec[string.String]], link_flags: ref[vec.Vec[string.String]]) -> void:
+    push_owned_flags_where(command, vendored_flags, "-L", true)
+    push_owned_flags(command, link_flags)
+    push_owned_flags_where(command, vendored_flags, "-L", false)
+
+
+## Append the owned flags whose `-L`-prefix test equals `want_search_path`.
+## `-L` names a search directory, not a library, so it belongs before the
+## archive that needs it; everything else in `vendored_flags` is a dependency
+## of those archives and belongs after.
+function push_owned_flags_where(command: ref[vec.Vec[str]], values: ref[vec.Vec[string.String]], prefix: str, want_search_path: bool) -> void:
+    var index: ptr_uint = 0
+    while index < values.len():
+        let value = values.get(index) else:
+            break
+        unsafe:
+            let text = read(value).as_str()
+            if text.starts_with(prefix) == want_search_path:
+                command.push(text)
+        index += 1
 
 
 function push_owned_flags(command: ref[vec.Vec[str]], values: ref[vec.Vec[string.String]]) -> void:
