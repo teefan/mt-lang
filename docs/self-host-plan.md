@@ -118,8 +118,8 @@ history.
 | --- | --- |
 | Compiler | **native self-host only**; the release is **0.6.0** (tag `v0.6.0`); the Ruby host is archived at tag `archive/host-ruby-0.4.26`, and `lib/`, the Ruby `test/**` suite, `milk_tea.gemspec`, `Rakefile`, `Gemfile` and `bin/mtc` are removed (session 143).  The source tree pins **Box2D 3.2.0** (session 158), and the 0.6.0 archive and seed now carry it too (session 162) |
 | Bootstrap fixed point | **holds** from the **0.6.0** seed (`stage2.c == stage3.c`; session 162); self-test suite **22 files / 0 failed**; the shim proof is session 145 (a `ruby` shim that exits 127 is never invoked) |
-| Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`de605a15…`, release 0.6.0); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
-| Release archive | **3.5 MiB deterministic tar.gz** (`mtc-0.6.0-linux-x86_64`, `e8b1d1e3…`), checksummed beside the archive; identical across two packagings; clean-path and clean-container (Ubuntu 24.04) smokes green; includes `install.sh` (versioned prefix + `current` symlink) and `config/`; tagged `v0.6.0`; the version is the authored `cli_help.VERSION`.  The archive and seed carry Box2D 3.2.0 |
+| Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`496db762…`, release 0.6.0); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
+| Release archive | **3.5 MiB deterministic tar.gz** (`mtc-0.6.0-linux-x86_64`, `fd466c84…`), checksummed beside the archive; identical across two packagings; clean-path and clean-container (Ubuntu 24.04) smokes green; includes `install.sh` (versioned prefix + `current` symlink) and `config/`; tagged `v0.6.0`; the version is the authored `cli_help.VERSION`.  The archive and seed carry Box2D 3.2.0 |
 | Release runtime | Linux x86_64: **glibc ≥ 2.38, zlib, OpenSSL 3**; libuv is linked statically; `tools/release_container_smoke.sh` verifies the archive in a clean Ubuntu 24.04 image; the seed has the same requirements |
 | Analyzer/IR memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB / 10.5 s**; `emit-c main.mt` **860 MiB / 12.3 s**; `build projects/mtc` **903 MiB / 25.9 s** (session 152; `peak_rss.py` reports **KiB** — the MiB figures are that value ÷ 1024).  Path: `Type` boxed 72 → 24 B (session 150), the analyzer's tooling-only `imported_type_members` gated behind `tooling_facts` (−20% on `check`), the IR dump streamed and written straight into one buffer (−66 MiB on `lower`, session 151), `reserve_exact` for known-length vectors and string builders (−42 MiB on `lower`/`emit-c`, session 152), then the emitter's per-generation tables and scratch released at the end of `generate_c` (−9 MiB on `emit-c`, −21 MiB on `build --keep-c`, and ~94 → ~82 MiB per repeated emission; session 153).  The old analyzer const blow-up (**9,228 MiB** on `main.mt`, session 142) and the cross-module async rescan (682 MB of the lower peak, session 149) are gone.  `lowering.mt` check **197 MiB** (session 151 audit).  The release profile has the same peaks with `check` **1.3 s**, `lower` **4.1 s**, `emit-c` **4.6 s**, `build` **20.0 s** (session 155).  All tooling fan-out is capped at **4**. |
 | Multi-file commands | **Flat in the file count, and no longer ~2× a heavy file's peak** (session 152).  The per-file heap region is a bump allocator: it frees everything at once and cannot reuse anything released inside it, so an abandoned temporary lands in the peak.  It buys release of every file *after* the one compiling, so it is now gated on the **file count** (`should_scope_file`, `remaining_after >= 2`): the last two files of a run compile unregioned.  Measured: `check main.mt` + a 60-byte file **422 MiB** (was 958,616 KiB always-regioned; 432,068 never-regioned), 40 small files **372 MiB** (1,367,120 never-regioned), `check projects/mtc` (191 files) **997 MiB** (11,398,120 never-regioned).  The `lower`/`emit-c` 8-heaviest sets pay 2–3% (**1,456 / 1,694 MiB**) because their last two files are heavy.  The old session-151 row (same file twice 946 MiB, `main.mt` + `sexpr.mt` 1,407 MiB) was the ungated region; see *Region gate (session 152)*. |
@@ -4537,15 +4537,14 @@ byte-identical, so the change is provably version-only.
 `docs/lsp-enhancement-plan.md`'s "current release" line follows.
 
 **Release.**  `tools/release.sh --version 0.6.0` builds a release-profile stage2
-and packs `mtc-0.6.0-linux-x86_64.tar.gz` (**3,680,757 B**, sha256
-`e8b1d1e3…`).  Re-packing with `--skip-build` reproduces the same checksum, so
+and packs `mtc-0.6.0-linux-x86_64.tar.gz` (sha256 `fd466c84…`).  Re-packing with `--skip-build` reproduces the same checksum, so
 the archive is deterministic.  The clean-path smoke passes, and so does the
 clean-container smoke on Ubuntu 24.04 (`REQUIRE_CONTAINER=1`, docker) —
 `mtc 0.6.0`, build and run a program, check it against the packaged std.
 
 **Seed refreshed.**  `--refresh-seed` replaced
 `vendor/bootstrap/linux-x86_64/mtc` with the release binary (sha256
-`de605a15…`, was `62c113a0…`), which is what finally moves the bootstrap seed
+`496db762…`, was `62c113a0…`), which is what finally moves the bootstrap seed
 off Box2D 3.1.1.  A full bootstrap from the *new* seed holds the fixed point
 (`stage2.c == stage3.c`), and both suites pass from it (`test/mt` **86/0**,
 `projects/mtc` **22/0**).  The archive's own `std/box2d.mt` carries 506
@@ -4555,6 +4554,58 @@ functions including the 3.2-only `contact_get_data`.
 differ**; lint **647 / 0 differ**; formatter **747 × 3 / 0 differ**; examples
 **311/311**; all 28 box2d ports build and run; fixed point holds from the
 refreshed seed.
+
+### Release follow-up — the link order the release shipped with
+
+The 0.6.0 tag was cut, pushed, and **CI failed at `box2d_smoke`**.  Diagnosing
+it found two defects, and the second invalidated the release itself.
+
+**1. A stale vendored checkout was invisible.**  `source_complete` judged a
+checkout by sentinel files alone, and box2d's only sentinel was
+`include/box2d/box2d.h` — a header every release ships.  CI's cached
+`third_party/box2d-upstream` was 3.1.1, satisfied the 3.2.0 pin's sentinel, and
+was reused.  Checkouts now record the fetched revision in
+`<checkout>/.mt-source-revision` and `checkout_is_current` requires it to match,
+so any pin change refetches.  box2d's sentinel also moved to
+`include/box2d/math_types.h`, a 3.2.0 file (3.1.1 shipped `core.h`/`geometry.h`).
+
+**2. The link line ordered libraries wrongly — and this one shipped.**  With a
+fresh 3.2.0 tree the gate *still* failed:
+`undefined reference to sqrtf` with `libbox2d.a`.  `vendored_flags` mixes `-L`
+search paths with the vendored libraries' own dependencies, and the build
+emitted it as one block *before* the program's own `link` libraries:
+
+```
+cc -o out out.c -L.../lib -lm -lbox2d        # -lm before the archive
+```
+
+A static archive must precede the libraries that satisfy its symbols, so `-lm`
+came too early and was discarded.  **GNU ld on Arch tolerates this** because
+`/usr/lib/libm.so` is a linker script that pulls `libmvec`; Ubuntu's is a plain
+archive, so CI — the only Ubuntu environment — failed.  `push_link_line` now
+emits `-L` flags, then `-lbox2d`, then the remaining dependencies
+(`push_owned_flags_where` splits them).  Proven in an `ubuntu:24.04` container
+with a real box2d program: **the old order gives 4 undefined references, the
+new order gives 0.**
+
+The first 0.6.0 archive carried the bug: its `mtc build` linked box2d fine on
+Arch and failed on Ubuntu, which would have broken **45 examples** that link a
+vendored library (box2d, box3d, raylib, glfw, pcre2 all add `-lm` the same
+way).  So the release was re-cut rather than patched later:
+`dist/mtc-0.6.0-linux-x86_64.tar.gz` is now **`fd466c84…`**, the seed is
+**`496db762…`**, and an `ubuntu:24.04` container builds a box2d program against
+the extracted archive (`built /tmp/t.mt -> /tmp/t`).
+
+**3. The failure was undiagnosable.**  Every gate's output goes to
+`tmp/gates/<id>.log` and only a one-line summary is printed, so `box2d_smoke`
+(which prints nothing on success) failed with an empty summary and no cause.
+`gates.sh` now prints the last 40 lines of a failed hard gate's log — which is
+what produced the `sqrtf` diagnosis.
+
+Note that CI's release checksum differs from a local one (`e1da54c0…` on the
+runner): the tarball metadata is fixed, but the compiler binary is built by each
+host's `cc`, so cross-host byte-identity was never a guarantee.  Re-packing on
+the *same* host is deterministic, which is what the CI step asserts.
 
 **Carried forward.**  The god-objects remain the whole structural backlog
 (`LoweringContext` 93 fields, `Context` 85, `Analysis` 64, `ModuleBinding` 31) —
