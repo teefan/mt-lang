@@ -460,7 +460,7 @@ smoke; the extension packaging fixes are a separate repo.
 
 ```
 Start the LSP enhancement program in /home/teefan/Projects/Ruby/mt-lang
-(branch `selfhost`). Read docs/lsp-enhancement-plan.md first: it carries the
+(branch `main`). Read docs/lsp-enhancement-plan.md first: it carries the
 3.18 coverage matrix, the verified defects, the phase plan and the conformance
 cases. The compiler is the native self-host; the Ruby host is archived and
 must not be used as an oracle.

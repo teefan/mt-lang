@@ -1,7 +1,6 @@
 # Self-Host Plan
 
-Single planning document for the Milk Tea compiler (`projects/mtc`, branch
-`selfhost`).  The native self-host is the implementation; the Ruby host that
+Single planning document for the Milk Tea compiler (`projects/mtc`, branch `main`).  The native self-host is the implementation; the Ruby host that
 originally implemented the language is archived at `archive/host-ruby-0.4.26`.
 In the historical records below, "parity" means byte-identical against that
 archived reference and "better" a documented deliberate extension.
@@ -5499,7 +5498,7 @@ modelling; the optional desktop F5 click-through) are unchanged.
 
 ```
 Continue the Milk Tea compiler work in /home/teefan/Projects/Ruby/mt-lang
-(branch `selfhost`). The host-retirement program is complete (session 143):
+(branch `main`). The host-retirement program is complete (session 143):
 the native self-host is the only compiler, the Ruby host is archived at tag
 archive/host-ruby-0.4.26, and the regression surface is test/mt plus the four
 recorded oracles (tools/golden/{cli,diag,lint,format}.json). New work lands in
