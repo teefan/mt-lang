@@ -107,6 +107,7 @@
       "main -> c_backend",
       "main -> cli_help",
       "main -> dap",
+      "main -> debug_map",
       "main -> docs_app",
       "main -> float_text",
       "main -> formatter",
@@ -485,6 +486,7 @@
       "22dd2a032a32f76b0024dd08df1250674aa24f85",
       "22e5df191ee98ab7a451cbffbcf79dc5dde34493",
       "2333018a2844019c5560192160130e55bc36fe3d",
+      "235d23c318e169e0a082a8ffa802588d029be3d3",
       "237a9fa92d381aedb6ff07e3321b80a7c2f731f9",
       "23af4ca84d69c1498d515362ced274df0bfe845b",
       "23c83879da308bdc940245b925c16e846f8a05fc",
@@ -560,7 +562,6 @@
       "39f7cad91a06035881903fd4fe75dff9884e2365",
       "3a138f1d9976d4e691b4617f78b131ff910d1729",
       "3ace845224e4353a62b3164ccdc77629ba657c6e",
-      "3b185b292938cb2feb3c8e7957466ed699b445ab",
       "3b259e125e3ea3965f2d83817861e07f86a7374a",
       "3b2fd76c7af3a4c612d5891bf98f58c575b347eb",
       "3b35e506562774bf148dcacd1dbf421758ac5278",
@@ -596,6 +597,7 @@
       "444108fd893e26a7dd9d0ee4b5ff3523d497390c",
       "44622985e4cf2f353bd89505aa3bcf9b334c9964",
       "44c4ef207ccdb0c5ae77918057e0efc86aee50bc",
+      "44d8ef6f8cd547dd429d441d398059bb7324db38",
       "459513aac8992d2755100f75300278cb2b0bdb6b",
       "45f09c8595593faf3e5ca99f0ebb4c02de534854",
       "46cf4145a781717e1ac87abdd9055f3baf1a50b3",
@@ -634,7 +636,6 @@
       "501323fc64a5531c07a9665e461d59469a59eaea",
       "506059cffae116fec8b3eb84fbcf04d24f088d1e",
       "51352a07d80f4213ed13a5b1cccbcb165d9e79f5",
-      "51391a9967b240646d3131e8e7935e091361c930",
       "5159fb93eea8eb4128300c217d1df984732933cd",
       "516884a71e43fd57d20bdb223fb765157f0ec113",
       "524e681b97745420d8c2de0787e2a8ded6ec9d12",
@@ -979,6 +980,7 @@
       "af026aab3fe3e9326731bae238a2a13280591203",
       "af3256761048c8ae1c5169059577fcfb7b032245",
       "af648c2a01f0f41cc5740ae34c62db9adc66c17f",
+      "af6c6f4b3d0e63de3f194956a3085bde04e486cd",
       "af85fddf5159f8255ffe95089c503e7f8dac4c1f",
       "b00635244b5846d8c1a17466c86287456b57c3e6",
       "b00d5fdd7ccab38e62f38f9211a21ebd4218630f",
@@ -1017,7 +1019,6 @@
       "b9f646f8e977710a00f5cd79ca114c9bd0bf00ca",
       "b9fe967bb68170361a9e291803d97dce752a3e2a",
       "ba1537ceb8983e36108cac667b6b2e976b0ebbb5",
-      "ba172d9d57c50c22cc6d7d2c39de41cdf8d7feaf",
       "ba24935f5ad6d02ed67e3721d0691d0bb6ac2fb9",
       "baade93991c1d73e1857861c2e44609d8a72ac07",
       "baadeb7ad0a62274c6591fef11b23bf5cec11646",
@@ -1168,7 +1169,6 @@
       "e51a702945e70c409f7afbb48ab4c239ec143baf",
       "e51f5e2f80ac680e27158c60937806fe49836b91",
       "e59617fb0e8459719c544f9f94d93d2691b39011",
-      "e64f8c3a9247d6b83fb215767dcf654394177ec1",
       "e6890e9b3ea548e097218acf915c18ab1583e41e",
       "e69a10b2988f8242c5349e99d34bcb49efd3cc0a",
       "e6c6921029fb2952f6c8dcd43d6735cdc7a2cb16",
@@ -1244,6 +1244,7 @@
       "fb61ef25846c1a281234b021184aca2fdbe9b26f",
       "fbfd414b82171f6b2ebdb3bd6f4ad0ab2bd79eb1",
       "fc074b1b240bb3b684c6f3fd7ab716c67bdf3ff6",
+      "fc0e9c8f5a9d0fa540ca1ec63adaa242ceeee8a2",
       "fc285d17d1b3f3ee9bce31024a8acfe5b18dad70",
       "fca0f003dfa8a93b4cd38b9fd1af0c00516b228a",
       "fcbe991d33aebe6fcadd5a2e162ae3c5190f95bb",
@@ -1259,7 +1260,7 @@
     ]
   },
   "sizes": {
-    "total_code": 129455,
+    "total_code": 129509,
     "functions_over_limit": 3,
     "files_over_limit": 11,
     "files": {
@@ -1528,8 +1529,8 @@
         "max_function": 91
       },
       "projects/mtc/src/mtc/linter/linter.mt": {
-        "lines": 7072,
-        "code": 5668,
+        "lines": 7071,
+        "code": 5665,
         "max_line": 276,
         "max_function": 185
       },
@@ -1576,9 +1577,9 @@
         "max_function": 75
       },
       "projects/mtc/src/mtc/linter/scope_tracking.mt": {
-        "lines": 1180,
-        "code": 925,
-        "max_line": 198,
+        "lines": 1230,
+        "code": 959,
+        "max_line": 203,
         "max_function": 92
       },
       "projects/mtc/src/mtc/loader/binder.mt": {
@@ -1606,8 +1607,8 @@
         "max_function": 193
       },
       "projects/mtc/src/mtc/loader/path_resolver.mt": {
-        "lines": 252,
-        "code": 171,
+        "lines": 263,
+        "code": 179,
         "max_line": 91,
         "max_function": 23
       },
@@ -1672,8 +1673,8 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 18643,
-        "code": 13737,
+        "lines": 18644,
+        "code": 13738,
         "max_line": 522,
         "max_function": 196
       },
@@ -1690,8 +1691,8 @@
         "max_function": 196
       },
       "projects/mtc/src/mtc/lowering/parallel.mt": {
-        "lines": 1033,
-        "code": 925,
+        "lines": 1042,
+        "code": 927,
         "max_line": 199,
         "max_function": 181
       },
@@ -1912,8 +1913,8 @@
         "max_function": 149
       },
       "projects/mtc/src/mtc/lsp/server.mt": {
-        "lines": 683,
-        "code": 527,
+        "lines": 693,
+        "code": 534,
         "max_line": 250,
         "max_function": 184
       },
@@ -1960,7 +1961,7 @@
         "max_function": 30
       },
       "projects/mtc/src/mtc/lsp/workspace.mt": {
-        "lines": 1662,
+        "lines": 1665,
         "code": 1177,
         "max_line": 169,
         "max_function": 52
@@ -2020,8 +2021,8 @@
         "max_function": 50
       },
       "projects/mtc/src/mtc/main/test_cli.mt": {
-        "lines": 1466,
-        "code": 1196,
+        "lines": 1476,
+        "code": 1201,
         "max_line": 193,
         "max_function": 115
       },
@@ -2272,7 +2273,7 @@
         "max_function": 64
       },
       "projects/mtc/src/mtc/wasm_shell.mt": {
-        "lines": 85,
+        "lines": 83,
         "code": 62,
         "max_line": 1045,
         "max_function": 28

@@ -91,7 +91,7 @@ behavior is needed).  There is no second compiler: new work lands in
 `docs/language-manual.md`, `test/mt`, and the recorded oracles — not by host
 byte-identity.
 
-- **Build**: `tools/bootstrap.sh -j 4` (seed → stage1 → stage2 → stage3, fixed
+- **Build**: `tools/bootstrap.sh` (seed → stage1 → stage2 → stage3, fixed
   point, in-language suite).  Stage0 is `vendor/bootstrap/<platform>/mtc`
   (sha256-verified); `--bootstrap PATH` and `$MTC_BOOTSTRAP` override it.
   `tools/bootstrap.sh --print-stage0` prints the resolved path.  A missing or
@@ -116,7 +116,7 @@ byte-identity.
     the class you touched: `tools/gates.sh --only golden_diag --run`, or one
     file's recorded row.
   - **Tier 2 — once per commit, on frozen sources, backgrounded**:
-    `tools/bootstrap.sh -j 4` (fixed point + 22 files / 0 failed) and
+    `tools/bootstrap.sh` (fixed point + 22 files / 0 failed) and
     `build/stage2/mtc test test/mt -I .` (85/0) are the hard proofs; then the
     recorded oracles (`tools/gates.sh --areas oracles --run`):
     `golden_cli` 227 cases, `golden_diag` 505 files, `golden_lint` 674 files,

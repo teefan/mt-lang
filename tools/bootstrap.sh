@@ -15,7 +15,10 @@
 #   --profile PROFILE    Build profile: debug or release (default: debug)
 #   --keep-c             Save generated C files alongside binaries
 #   --print-stage0       Resolve and verify stage0, print its path, and exit.
-#   -j N                 Parallel compiler jobs (default: 4, hard-capped)
+#
+# A stage build is one whole-program `mtc build` invocation, so there is no
+# parallel fan-out to control here; per-file fan-out belongs to the test and
+# sweep harnesses (tools/lib/jobs.rb).
 #
 # Stage0 resolution order:
 #   1. --bootstrap PATH (explicit)
@@ -45,8 +48,6 @@ FAST=0
 PROFILE="debug"
 KEEP_C=0
 PRINT_STAGE0=0
-JOBS="$(nproc 2>/dev/null || echo 1)"
-[ "$JOBS" -gt 4 ] && JOBS=4
 BUILD_DIR="${MTC_BUILD_DIR:-build}"
 
 # ── argument parsing ─────────────────────────────────────────────────────────
@@ -82,22 +83,12 @@ while [[ $# -gt 0 ]]; do
             PRINT_STAGE0=1
             shift
             ;;
-        -j)
-            JOBS="$2"
-            shift 2
-            ;;
         *)
             echo "unknown option: $1" >&2
             exit 1
             ;;
     esac
 done
-
-# Parallel compiler fan-out is memory-bound: keep it at or below 4.
-if [ "$JOBS" -gt 4 ]; then
-    echo "warning: -j $JOBS capped at 4 (parallel compiler fan-out is memory-bound)" >&2
-    JOBS=4
-fi
 
 # ── validate ─────────────────────────────────────────────────────────────────
 

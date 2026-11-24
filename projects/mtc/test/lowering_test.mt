@@ -5906,3 +5906,19 @@ function test_await_reuses_the_spilled_local_field() -> void:
     expect(text.contains_substring("local_waited"))
     expect(text.contains_substring("await_0"))
     expect(not text.contains_substring("await_1"))
+
+
+@[test]
+function test_parallel_counter_resets_between_compilations() -> void:
+    ## `parallel_cnt` names `_pfor_`/`_spawn_`/`_detach_` symbols.  It is
+    ## process state, so a compile must reset it: otherwise a second
+    ## compilation in the same process numbers its constructs from where the
+    ## first left off, and `emit-c a.mt a.mt` disagrees with `emit-c a.mt`.
+    ## Lowering the same source twice must produce identical IR.
+    let source = "function main() -> int:\n    parallel for i in 0..4:\n        pass\n    return 0\n"
+    var first = lower_source(source)
+    defer: first.release()
+    var second = lower_source(source)
+    defer: second.release()
+    expect(first.as_str().equal(second.as_str()))
+    expect(first.as_str().find_substring("_pfor_1") != Option[ptr_uint].none)

@@ -247,17 +247,14 @@ public function lint_source_with(
     defer: redundant_cast.ctx_release(ref_of(cast_ctx))
     lint_cast_ctx = ptr_of(cast_ctx)
 
-    # The scope state the declaration walk drives.  Its entries live in this
-    # frame's buffer (see scope_tracking's header); the walk emits the scope
-    # warnings where the host's visitor does — `shadow` at each declaration,
+    # The scope state the declaration walk drives.  Its entries live in a
+    # growable store owned by the scope context, so nesting depth and the
+    # per-scope binding count are unbounded; the walk emits the scope warnings
+    # where the host's visitor does — `shadow` at each declaration,
     # `unused-local`/`unused-param`/`prefer-let`/`prefer-own-ptr` at each pop.
-    var scope_entries: array[scope_tracking.ScopeEntry, scope_tracking.SCOPE_WINDOW_TOTAL]
-    var scope: scope_tracking.ScopeContext
-    scope_tracking.ctx_init(ref_of(scope), ptr_of(scope_entries[0]))
-    unsafe:
-        read(ref_of(scope)).editable_sites = options.editable_sites
-        read(ref_of(scope)).mutating_sites = options.mutating_sites
-        read(ref_of(scope)).mutable_lvalue_sites = options.mutable_lvalue_sites
+    var scope = scope_tracking.ctx_create()
+    defer: scope_tracking.ctx_release(ref_of(scope))
+    scope_tracking.ctx_set_sites(ref_of(scope), options.editable_sites, options.mutating_sites, options.mutable_lvalue_sites)
     lint_directional_sites = options.directional_ffi_sites
     lint_scope_ctx = ptr_of(scope)
     var ptr_state = own_ptr.PtrState.create()
@@ -1582,7 +1579,7 @@ function scope_pop(path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     let c = lint_scope_ctx else:
         return
     let ctx = unsafe: ref_of(read(c))
-    let idx = scope_tracking.ctx_pop_scope(ctx)
+    let idx = scope_tracking.ctx_scope_top(ctx)
     if idx == scope_tracking.SCOPE_NONE:
         return
     let start = scope_tracking.ctx_scope_start(ctx, idx)
@@ -1613,6 +1610,8 @@ function scope_pop(path: str, warnings: ref[vec.Vec[Warning]]) -> void:
                 buf.append("' is only used inside unsafe — consider converting its type from ptr to own for auto-deref")
                 push_warning_at(warnings, path, bd.line, bd.column, bd.name.len, "prefer-own-ptr", buf.as_str(), "hint")
         i += 1
+    # Reclaim the scope's entries now that they are reported.
+    scope_tracking.ctx_drop_scope(ctx, idx)
 
 
 function ptr_state_fires(name: str, is_param: bool) -> bool:

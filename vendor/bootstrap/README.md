@@ -29,7 +29,7 @@ tools/release.sh --refresh-seed
 
 It is a **stage2** compiler whose code generation comes from Milk Tea; the
 native bootstrap that produced it never invoked the archived Ruby host.  The
-verification run (`tools/bootstrap.sh -j 4`) then proves the seed reaches a
+verification run (`tools/bootstrap.sh`) then proves the seed reaches a
 fixed point and passes the self-tests.  The seed has the same runtime
 requirements as the release: glibc 2.38+, zlib, and OpenSSL 3 (`libssl.so.3`);
 libuv is linked statically.  The release build links against the OpenSSL 3 ABI

@@ -12,6 +12,9 @@ import std.mem.arena as arena
 import std.log as log
 
 
+import mtc.loader.module_loader as loader
+import mtc.loader.path_resolver as resolver
+
 import mtc.lsp.call_hierarchy as call_hier
 import mtc.lsp.code_actions as code_actions
 import mtc.lsp.code_lens as code_lens
@@ -674,8 +677,15 @@ function parse_and_apply_config(ws: ref[workspace.Workspace], raw: str) -> void:
         if s != null:
             let val = str.nullable_cstr_as_str(s)
             if val.is_some():
-                ws.platform_override.clear()
-                ws.platform_override.append(val.unwrap())
+                match resolver.platform_from_label(val.unwrap()):
+                    Option.some as resolved_platform:
+                        if resolved_platform.value != ws.platform:
+                            ws.platform = resolved_platform.value
+                            # Platform-suffixed modules resolve differently, so
+                            # every cached analysis is stale.
+                            loader.invalidate_module_cache(ref_of(ws.module_cache))
+                    Option.none:
+                        pass
     # Item 3: strict root diagnostics
     let item3 = cjson.get_array_item(result_obj, 3)
     if item3 != null:

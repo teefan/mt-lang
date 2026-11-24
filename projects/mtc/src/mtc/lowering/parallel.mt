@@ -27,7 +27,16 @@ import mtc.strings
 ## (`_detach_`), incremented once per construct (not per worker).  The
 ## generated identifiers are `<module_prefix>_<kind>_<N>` with the construct
 ## prefix in front (`mt_pfor_cap_`, `mt_pfor_work_`, ...).
+##
+## `lower` resets this per compilation, exactly as it resets `proc_counter` and
+## `async_binding_cnt`: the counter is process state, so without the reset a
+## second compilation in the same process numbers its constructs from where the
+## first left off, and `emit-c a.mt a.mt` would disagree with `emit-c a.mt`.
 var parallel_cnt: ptr_uint = 0
+
+
+public function reset_parallel_counter() -> void:
+    parallel_cnt = 0
 
 
 function parallel_uid(ctx: ref[lowering.LoweringContext], kind: str) -> str:

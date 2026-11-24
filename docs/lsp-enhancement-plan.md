@@ -417,7 +417,7 @@ ruby tools/lsp_conformance.rb --bin tmp/mtc-dev
 Tier 2 (once per commit, frozen sources):
 
 ```sh
-tools/bootstrap.sh -j 4                                  # fixed point + 22/0
+tools/bootstrap.sh                                        # fixed point + 22/0
 build/stage2/mtc test test/mt -I .                       # 85/0
 tools/gates.sh --areas lsp --run                         # conformance, valgrind, soak
 ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json --stress

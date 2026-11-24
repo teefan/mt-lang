@@ -80,25 +80,31 @@ infer_area() {
         projects/mtc/src/mtc/lsp/*)               echo lsp ;;
         projects/mtc/src/mtc/lowering/*|projects/mtc/src/mtc/c_backend/*|projects/mtc/src/mtc/c_naming.mt|projects/mtc/src/mtc/pretty_printer/*) echo codegen ;;
         projects/mtc/src/mtc/parser/*)            echo parser ;;
+        projects/mtc/src/mtc/lexer/*)             echo parser ;;
         projects/mtc/src/mtc/loader/*)            echo loader ;;
         projects/mtc/src/mtc/formatter/*)         echo formatter ;;
         projects/mtc/src/mtc/dap/*)               echo dap ;;
-        projects/mtc/src/mtc/imported_bindings/*|projects/mtc/src/mtc/bindgen.mt|bindings/*|lib/milk_tea/bindings/*) echo bindings ;;
+        projects/mtc/src/mtc/imported_bindings/*|projects/mtc/src/mtc/bindgen.mt|projects/mtc/src/mtc/bindgen/*|bindings/*|lib/milk_tea/bindings/*) echo bindings ;;
         projects/mtc/src/mtc/packages/*)          echo packages ;;
-        projects/mtc/src/mtc/docs_cli.mt|projects/mtc/src/mtc/docs_app.mt) echo docs_cli ;;
+        projects/mtc/src/mtc/docs_cli.mt|projects/mtc/src/mtc/docs_app.mt|projects/mtc/src/mtc/docs_public/*) echo docs_cli ;;
         projects/mtc/src/mtc/wasm*.mt|projects/mtc/src/mtc/wasm/*) echo wasm ;;
         projects/mtc/src/mtc/toolchain_cli.mt)    echo toolchain ;;
         projects/mtc/src/mtc/main.mt|projects/mtc/src/mtc/build*.mt|projects/mtc/src/mtc/build_cache.mt) echo cli ;;
+        projects/mtc/src/mtc/main/*)              echo cli ;;
+        projects/mtc/src/mtc/*)                   echo compiler_core ;;
         projects/mtc/test/*|test/mt/*)            echo tests ;;
-        test/diagnostics/*)                       echo oracles ;;
         tools/golden/*|tools/lib/golden.rb)       echo oracles ;;
         tools/cli_parity.rb|tools/diag_parity.rb|tools/lint_parity.rb|tools/format_parity.rb) echo oracles ;;
         tools/lib/refactor_guard.rb)               echo refactor_tools ;;
         std/*)                                    echo std ;;
         examples/*)                               echo examples ;;
         docs/*)                                   echo docs ;;
+        ## Top-level prose needs no gate run; `other` stays reserved for a path
+        ## nobody classified, which the area check now rejects.
+        *.md|LICENSE|AUTHORS|.gitattributes|.gitignore) echo docs ;;
         tools/refactor_guard.rb|tools/refactor_baseline.json|tools/test/refactor_guard_test.rb) echo refactor_tools ;;
         config/upstream_versions.yml)              echo bindings; echo examples ;;
+        .github/workflows/*)                       echo tools ;;
         tools/*)                                  echo tools ;;
         *)                                        echo other ;;
     esac
@@ -114,6 +120,18 @@ else
         exit 2
     fi
     AREAS="$(printf '%s\n' "$changed" | while read -r f; do [ -n "$f" ] && infer_area "$f"; done | sort -u | tr '\n' ' ')"
+    # An unclassified path used to fall through to `other`, whose gate list is
+    # empty: a compiler change could plan no build, no test and no oracle.  Say
+    # so instead of reporting success.
+    case " $AREAS " in
+        *" other "*)
+            echo "gates.sh: unclassified path(s) in the diff; add a case to infer_area:" >&2
+            printf '%s\n' "$changed" | while read -r f; do
+                [ -n "$f" ] && [ "$(infer_area "$f")" = "other" ] && echo "  $f" >&2
+            done
+            exit 2
+            ;;
+    esac
 fi
 
 # ── gate catalog ────────────────────────────────────────────────────────────
@@ -163,7 +181,7 @@ gate_cmd() {
     case "$1" in
         dev_build)     echo "\"$(tools/bootstrap.sh --print-stage0)\" build projects/mtc -I . --no-cache -o tmp/mtc-dev" ;;
         dev_tests)     echo "gates_dev_tests" ;;
-        bootstrap)     echo "tools/bootstrap.sh -j 4 --fast" ;;
+        bootstrap)     echo "tools/bootstrap.sh --fast" ;;
         test_mt)       echo "build/stage2/mtc test test/mt -I ." ;;
         golden_cli)    echo "ruby tools/cli_parity.rb --expect tools/golden/cli.json -q" ;;
         golden_diag)   echo "ruby tools/diag_parity.rb check std examples --expect tools/golden/diag.json -q" ;;
@@ -314,6 +332,10 @@ gates_for_area() {
         parser)    echo "dev_tests refactor_guard bootstrap golden_cli golden_diag" ;;
         loader)    echo "dev_tests refactor_guard bootstrap test_mt golden_cli examples" ;;
         cli)       echo "dev_tests refactor_guard bootstrap test_mt golden_cli" ;;
+        ## A top-level compiler file with no narrower home (`ir.mt`, `strings.mt`,
+        ## `debug_map.mt`, `sexpr.mt`, …) feeds every stage, so it earns the full
+        ## behaviour set rather than silently planning nothing.
+        compiler_core) echo "dev_tests refactor_guard bootstrap test_mt golden_cli golden_diag golden_lint examples" ;;
         formatter) echo "dev_tests refactor_guard bootstrap golden_format" ;;
         bindings)  echo "dev_tests refactor_guard bootstrap bindings box2d_smoke" ;;
         dap)       echo "dev_tests refactor_guard bootstrap dap" ;;

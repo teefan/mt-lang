@@ -23,6 +23,17 @@ public enum Platform: ubyte
     wasm    = 2
 
 
+## The platform a configuration label names (`linux`/`windows`/`wasm`).
+public function platform_from_label(label: str) -> Option[Platform]:
+    if label.equal("linux"):
+        return Option[Platform].some(value = Platform.linux)
+    if label.equal("windows"):
+        return Option[Platform].some(value = Platform.windows)
+    if label.equal("wasm"):
+        return Option[Platform].some(value = Platform.wasm)
+    return Option[Platform].none
+
+
 public function platform_suffix(platform: Platform) -> str:
     match platform:
         Platform.linux:

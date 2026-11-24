@@ -87,7 +87,7 @@ None.
    ```sh
    tools/gates.sh --areas bindings --run
    tools/gates.sh --areas examples --run
-   tools/release.sh -j 4
+   tools/release.sh
    tools/release_smoke.sh dist/mtc-*-linux-x86_64.tar.gz
    ```
    Then build and run the library's examples (and `mtc run .` in a real

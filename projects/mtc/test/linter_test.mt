@@ -3,6 +3,7 @@
 
 import std.vec as vec
 import std.str
+import std.string as string
 
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
@@ -1688,3 +1689,91 @@ function test_fast_tier_keeps_the_always_on_rules() -> void:
     var warns = lint_with_options(TIER_LONG_LINE_SOURCE, options)
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "line-too-long")), 1)
+
+
+# =============================================================================
+#  Scope-stack capacity (the fixed-window store's two failure modes)
+# =============================================================================
+
+## Build `depth` nested `while` blocks, each opening a scope with one local.
+## The old fixed store allowed 32 scopes and `fatal`ed past that; the dynamic
+## store must accept any depth.
+function nested_scope_source(depth: int) -> string.String:
+    var buf = string.String.create()
+    buf.append("function main() -> int:\n    var x: int = 0\n")
+    var indent: int = 4
+    var i: int = 0
+    while i < depth:
+        var level: int = 0
+        while level < indent:
+            buf.push_byte(32)
+            level += 1
+        buf.append("while x < ")
+        buf.append(f"#{i + 1}")
+        buf.append(":\n")
+        indent += 4
+        level = 0
+        while level < indent:
+            buf.push_byte(32)
+            level += 1
+        buf.append("let local_")
+        buf.append(f"#{i}")
+        buf.append(": int = ")
+        buf.append(f"#{i}")
+        buf.append("\n")
+        i += 1
+    var close: int = 0
+    while close < indent:
+        buf.push_byte(32)
+        close += 1
+    buf.append("x += 1\n    return x\n")
+    return buf
+
+
+## Build one scope holding `count` locals.  The old store capped a scope at 128
+## entries, dropped the rest, and still incremented the count, so the pop loop
+## read unwritten slots and emitted `unused local ''` at line 0.
+function many_local_source(count: int) -> string.String:
+    var buf = string.String.create()
+    buf.append("function main() -> int:\n")
+    var i: int = 0
+    while i < count:
+        buf.append("    let v")
+        buf.append(f"#{i}")
+        buf.append(": int = ")
+        buf.append(f"#{i}")
+        buf.append("\n")
+        i += 1
+    buf.append("    return v0\n")
+    return buf
+
+
+@[test]
+function test_scope_stack_accepts_deep_nesting() -> void:
+    var source = nested_scope_source(60)
+    defer: source.release()
+    var warns = lint_text(source.as_str())
+    defer: warns.release()
+    # Every nested local is reported exactly once; the depth itself is no error.
+    expect_eq(int<-(count_code(ref_of(warns), "unused-local")), 60)
+
+
+@[test]
+function test_scope_stack_keeps_every_binding_past_128() -> void:
+    var source = many_local_source(140)
+    defer: source.release()
+    var warns = lint_text(source.as_str())
+    defer: warns.release()
+    # 139 unused locals (v0 is returned) — and none of the phantom
+    # empty-name warnings the truncated window produced.
+    expect_eq(int<-(count_code(ref_of(warns), "unused-local")), 139)
+    var i: ptr_uint = 0
+    while i < warns.len():
+        let wp = warns.get(i) else:
+            break
+        unsafe:
+            let w = read(wp)
+            if w.code.equal("unused-local"):
+                expect_ne(w.message, "unused local ''")
+                expect(w.line > 0, "an unused-local warning must carry its line")
+        i += 1

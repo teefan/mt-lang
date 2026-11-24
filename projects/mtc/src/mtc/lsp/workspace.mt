@@ -192,7 +192,10 @@ public struct Workspace:
     reference_index: refidx.ReferenceIndex
     format_mode: string.String
     dependency_resolution_mode: string.String
-    platform_override: string.String
+    ## The target platform the analyzer resolves platform-suffixed modules
+    ## against (`foo.windows.mt`).  Defaults to linux; `milkTea.platform` sets
+    ## it, and `analysis_entry_for` passes it to the loader.
+    platform: resolver.Platform
     strict_current_root_diagnostics: bool
     ## True when the client advertised pull diagnostics (`textDocument.diagnostic`);
     ## the server then suppresses `publishDiagnostics`, as the host does, so the
@@ -293,7 +296,7 @@ extending Workspace:
             reference_index = refidx.create(),
             format_mode = string.String.create(),
             dependency_resolution_mode = string.String.create(),
-            platform_override = string.String.create(),
+            platform = resolver.Platform.linux,
             strict_current_root_diagnostics = false,
             pull_diagnostics_active = false,
             position_encoding_utf16 = true,
@@ -1496,7 +1499,7 @@ public function analysis_entry_for(ws: ref[Workspace], path: str) -> Option[ptr[
 
     var roots = ws.effective_module_roots_for(path)
     defer: roots.release()
-    var program = loader.check_program_with_source(path, roots.as_span(), resolver.Platform.linux, text.text, true, ptr_of(ws.module_cache), ptr_of(ws.open_docs))
+    var program = loader.check_program_with_source(path, roots.as_span(), ws.platform, text.text, true, ptr_of(ws.module_cache), ptr_of(ws.open_docs))
 
     if program.analyses.len() == 0:
         program.release()

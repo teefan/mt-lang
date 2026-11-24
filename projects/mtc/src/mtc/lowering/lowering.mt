@@ -712,6 +712,7 @@ public function lower(program: loader.Program) -> ir.Program:
     # Per-compile counters (the host resets these in `Lowering#initialize`).
     async_binding_cnt = 0
     proc_counter = 0
+    parallel_mod.reset_parallel_counter()
 
     # Shared cross-module function return types, keyed by C linkage name, so a
     # `mod.func(...)` call in one module can resolve the result type of a

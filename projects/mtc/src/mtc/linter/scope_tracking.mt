@@ -7,11 +7,12 @@
 ## declarations also drive the rules that read bindings (`unused-import`
 ## credits, `prefer-let`'s mutation tracking).
 ##
-## IMPORTANT: all scope entries are stored in a raw byte buffer owned by the
-## linter's `lint_source_with`, accessed exclusively through unsafe pointer
-## arithmetic.  This avoids the self-host C-backend bug where
-## `array[T,N]` inside a struct passed through a `ref[ScopeContext]` is
-## lowered as a zero-length array.
+## Scope storage is dynamic: `entries` holds every binding in declaration order
+## and `starts`/`counts` index it per open scope.  The earlier design used a
+## fixed `array[ScopeEntry, 32 * 128]` buffer owned by the linter's frame, which
+## capped nesting at 32 scopes (a `fatal`) and silently dropped bindings past
+## 128 per scope while still counting them — the pop loop then read unwritten
+## slots and emitted `unused local ''` warnings at line 0.
 
 import std.vec as vec
 import std.string as string
@@ -36,10 +37,6 @@ public struct ScopeWarning:
 
 public const BINDING_LOCAL: ptr_uint = 0
 public const BINDING_PARAM: ptr_uint = 1
-const MAX_SCOPES: ptr_uint = 32
-const MAX_ENTRIES: ptr_uint = 128
-## One MAX_ENTRIES window per scope, for the 32 scopes the ctx supports.
-public const SCOPE_WINDOW_TOTAL: ptr_uint = 32 * MAX_ENTRIES
 
 public struct Binding:
     name: str
@@ -58,12 +55,13 @@ public struct ScopeEntry:
     name: str
     binding: Binding
 
-## Minimal struct.  All scope data lives in the external byte buffer;
-## the ctx only stores counters and a pointer to that buffer.
+## The open-scope stack.  `entries` is the flat binding store; scope `i` owns
+## `entries[starts[i] .. starts[i] + counts[i])`.  Both vectors grow as needed,
+## so nesting depth and per-scope binding count are unbounded.
 public struct ScopeContext:
-    buf: ptr[ScopeEntry]
-    scope_starts: array[ptr_uint, MAX_SCOPES]
-    scope_counts: array[ptr_uint, MAX_SCOPES]
+    entries: vec.Vec[ScopeEntry]
+    starts: vec.Vec[ptr_uint]
+    counts: vec.Vec[ptr_uint]
     scope_count: ptr_uint
     generic_function_depth: ptr_uint
     match_arm_depth: ptr_uint
@@ -97,16 +95,24 @@ function warn_unused_import(warnings: ref[vec.Vec[ScopeWarning]], path: str, nam
 
 
 # =============================================================================
-#  Scope helpers — all access through ctx.buf + pointer arithmetic
+#  Scope helpers
 # =============================================================================
 
-public function ctx_init(ctx: ref[ScopeContext], buf: ptr[ScopeEntry]) -> void:
-    read(ctx).buf = buf
-    read(ctx).scope_count = 0
-    read(ctx).generic_function_depth = 0
-    read(ctx).editable_sites = span[analyzer.EditableSite]()
-    read(ctx).mutating_sites = span[analyzer.EditableSite]()
-    read(ctx).mutable_lvalue_sites = span[analyzer.EditableSite]()
+public function ctx_create() -> ScopeContext:
+    return ScopeContext(
+        entries = vec.Vec[ScopeEntry].create(),
+        starts = vec.Vec[ptr_uint].create(),
+        counts = vec.Vec[ptr_uint].create(),
+        scope_count = 0,
+        generic_function_depth = 0,
+        match_arm_depth = 0,
+    )
+
+
+public function ctx_release(ctx: ref[ScopeContext]) -> void:
+    read(ctx).entries.release()
+    read(ctx).starts.release()
+    read(ctx).counts.release()
 
 
 public function ctx_set_generic_depth(ctx: ref[ScopeContext], depth: ptr_uint) -> void:
@@ -117,30 +123,49 @@ public function ctx_set_match_arm_depth(ctx: ref[ScopeContext], depth: ptr_uint)
     read(ctx).match_arm_depth = depth
 
 
+## The analyzer-recorded mutation sites the walk consults.  Set once per lint
+## pass; the spans borrow the analysis, which outlives the walk.
+public function ctx_set_sites(ctx: ref[ScopeContext], editable_sites: span[analyzer.EditableSite], mutating_sites: span[analyzer.EditableSite], mutable_lvalue_sites: span[analyzer.EditableSite]) -> void:
+    read(ctx).editable_sites = editable_sites
+    read(ctx).mutating_sites = mutating_sites
+    read(ctx).mutable_lvalue_sites = mutable_lvalue_sites
+
+
+## Open a scope.  Its entry window starts at the current end of `entries`, and
+## a scope's own declarations are therefore always contiguous — the property
+## that lets `[start, start+count)` name exactly its bindings.
 public function ctx_push_scope(ctx: ref[ScopeContext]) -> void:
-    let c = unsafe: read(ctx)
-    if c.scope_count >= MAX_SCOPES:
-        fatal(c"scope tracking overflow in lint pass")
-    # Every scope owns a MAX_ENTRIES-wide window: a scope holding more than a
-    # dozen locals must not spill into the next scope's window (that made a
-    # sibling block's bindings look like outer ones and reported `shadow`).
-    let si = c.scope_count
-    read(ctx).scope_starts[si] = si * MAX_ENTRIES
-    read(ctx).scope_counts[si] = 0
-    read(ctx).scope_count = si + 1
+    read(ctx).starts.push(read(ctx).entries.len())
+    read(ctx).counts.push(0)
+    read(ctx).scope_count += 1
 
 
-## Drop the innermost scope and return its index (the caller emits its
-## warnings), or `SCOPE_NONE` when no scope is open.
+## The index of the innermost open scope, or `SCOPE_NONE` when none is open.
+## Separate from `ctx_drop_scope` because the caller emits that scope's warnings
+## from its entries before they are reclaimed.
 public const SCOPE_NONE: ptr_uint = 4294967295
 
-public function ctx_pop_scope(ctx: ref[ScopeContext]) -> ptr_uint:
-    let c = unsafe: read(ctx)
-    if c.scope_count == 0:
+public function ctx_scope_top(ctx: ref[ScopeContext]) -> ptr_uint:
+    let count = read(ctx).scope_count
+    if count == 0:
         return SCOPE_NONE
-    let idx = c.scope_count - 1
+    return count - 1
+
+
+## Close scope `idx` and reclaim its entries.  The entries must be reclaimed,
+## not merely forgotten: a scope can declare more locals after a nested block
+## closes, and a stale child window would then sit inside the parent's range.
+public function ctx_drop_scope(ctx: ref[ScopeContext], idx: ptr_uint) -> void:
+    if idx + 1 != read(ctx).scope_count:
+        return
+    let start = read(ctx).starts.get(idx) else:
+        return
+    let start_index = unsafe: read(start)
+    while read(ctx).entries.len() > start_index:
+        let _dropped = read(ctx).entries.pop()
+    let _starts = read(ctx).starts.pop()
+    let _counts = read(ctx).counts.pop()
     read(ctx).scope_count = idx
-    return idx
 
 
 ## The host's `declare_local` shadow check: any *outer* scope (not the
@@ -154,9 +179,12 @@ public function ctx_shadows_outer(ctx: ref[ScopeContext], name: str) -> bool:
         return false
     var si: ptr_uint = 0
     while si < c.scope_count - 1:
-        unsafe:
-            if scope_has_name_buf(c.buf, c.scope_starts[si], c.scope_counts[si], name):
-                return true
+        let start = c.starts.get(si) else:
+            break
+        let count = c.counts.get(si) else:
+            break
+        if scope_has_name(c.entries, unsafe: read(start), unsafe: read(count), name):
+            return true
         si += 1
     return false
 
@@ -164,15 +192,21 @@ public function ctx_shadows_outer(ctx: ref[ScopeContext], name: str) -> bool:
 ## The scope's entries, for the caller's warning emission (the host's
 ## `emit_scope_warnings` loop over `scope.each_value`).
 public function ctx_scope_start(ctx: ref[ScopeContext], idx: ptr_uint) -> ptr_uint:
-    return unsafe: read(ctx).scope_starts[idx]
+    let start = read(ctx).starts.get(idx) else:
+        return 0
+    return unsafe: read(start)
 
 
 public function ctx_scope_count(ctx: ref[ScopeContext], idx: ptr_uint) -> ptr_uint:
-    return unsafe: read(ctx).scope_counts[idx]
+    let count = read(ctx).counts.get(idx) else:
+        return 0
+    return unsafe: read(count)
 
 
 public function ctx_entry(ctx: ref[ScopeContext], start: ptr_uint, offset: ptr_uint) -> Binding:
-    return unsafe: read(read(ctx).buf + start + offset).binding
+    let entry = read(ctx).entries.get(start + offset) else:
+        return Binding()
+    return unsafe: read(entry).binding
 
 
 ## The host's `prefer_var_else_binding_mutated?`: the innermost open scope's
@@ -184,14 +218,17 @@ public function ctx_binding_mutated(ctx: ref[ScopeContext], name: str) -> bool:
     if c.scope_count == 0:
         return false
     let si = c.scope_count - 1
-    let start = c.scope_starts[si]
-    let count = c.scope_counts[si]
+    let start = c.starts.get(si) else:
+        return false
+    let count = c.counts.get(si) else:
+        return false
     var i: ptr_uint = 0
-    while i < count:
+    while i < unsafe: read(count):
+        let entry = c.entries.get(unsafe: read(start) + i) else:
+            break
         unsafe:
-            let entry = read(c.buf + start + i)
-            if entry.name.equal(name):
-                return entry.binding.mutated
+            if read(entry).name.equal(name):
+                return read(entry).binding.mutated
         i += 1
     return false
 
@@ -206,9 +243,8 @@ public function ctx_declare_local(ctx: ref[ScopeContext], name: str, line: ptr_u
         return
     let allow = is_var and c.generic_function_depth == 0
     let bd = Binding(name = name, line = line, column = col, used = false, binding_kind = BINDING_LOCAL, allow_prefer_let = allow, mutated = false, reserved_fix = reserved_fix)
-    unsafe:
-        scope_add_entry_buf(c.buf, c.scope_starts[c.scope_count - 1], c.scope_counts[c.scope_count - 1], name, bd)
-    read(ctx).scope_counts[c.scope_count - 1] = c.scope_counts[c.scope_count - 1] + 1
+    read(ctx).entries.push(ScopeEntry(name = name, binding = bd))
+    add_scope_count(ctx)
 
 
 public function ctx_declare_param(ctx: ref[ScopeContext], name: str, line: ptr_uint, col: ptr_uint, reserved_fix: ptr_uint) -> void:
@@ -216,9 +252,18 @@ public function ctx_declare_param(ctx: ref[ScopeContext], name: str, line: ptr_u
         return
     let c = unsafe: read(ctx)
     let bd = Binding(name = name, line = line, column = col, used = false, binding_kind = BINDING_PARAM, allow_prefer_let = false, mutated = false, reserved_fix = reserved_fix)
-    unsafe:
-        scope_add_entry_buf(c.buf, c.scope_starts[c.scope_count - 1], c.scope_counts[c.scope_count - 1], name, bd)
-    read(ctx).scope_counts[c.scope_count - 1] = c.scope_counts[c.scope_count - 1] + 1
+    read(ctx).entries.push(ScopeEntry(name = name, binding = bd))
+    add_scope_count(ctx)
+
+
+## Bump the innermost scope's entry count after an `entries` push.
+function add_scope_count(ctx: ref[ScopeContext]) -> void:
+    let count = read(ctx).scope_count
+    if count == 0:
+        return
+    let cur = read(ctx).counts.get(count - 1) else:
+        return
+    unsafe: read(cur) += 1
 
 
 ## Mark the innermost binding named `name` used and return 0 when no local
@@ -229,16 +274,20 @@ public function ctx_mark_used(ctx: ref[ScopeContext], name: str) -> ptr_uint:
     var si = c.scope_count
     while si > 0:
         si -= 1
+        let start = c.starts.get(si) else:
+            break
+        let count = c.counts.get(si) else:
+            break
+        let found = find_entry(c.entries, unsafe: read(start), unsafe: read(count), name) else:
+            continue
+        let entry = c.entries.get(found) else:
+            continue
         unsafe:
-            match scope_find_entry_buf(c.buf, c.scope_starts[si], c.scope_counts[si], name):
-                Option.some as idx:
-                    read(c.buf + c.scope_starts[si] + idx.value).binding.used = true
-                    let reserved_fix = read(c.buf + c.scope_starts[si] + idx.value).binding.reserved_fix
-                    if reserved_fix == 0:
-                        return 1
-                    return reserved_fix + 1
-                Option.none:
-                    pass
+            read(entry).binding.used = true
+            let reserved_fix = read(entry).binding.reserved_fix
+            if reserved_fix == 0:
+                return 1
+            return reserved_fix + 1
     return 0
 
 
@@ -264,16 +313,20 @@ public function ctx_mark_mutated(ctx: ref[ScopeContext], target: ptr[ast.Expr]) 
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
-                var c = read(ctx)
+                let c = read(ctx)
                 var si = c.scope_count
                 while si > 0:
                     si -= 1
-                    match scope_find_entry_buf(c.buf, c.scope_starts[si], c.scope_counts[si], id.name):
-                        Option.some as idx:
-                            read(c.buf + c.scope_starts[si] + idx.value).binding.mutated = true
-                            return
-                        Option.none:
-                            pass
+                    let start = c.starts.get(si) else:
+                        break
+                    let count = c.counts.get(si) else:
+                        break
+                    let found = find_entry(c.entries, read(start), read(count), id.name) else:
+                        continue
+                    let entry = c.entries.get(found) else:
+                        continue
+                    read(entry).binding.mutated = true
+                    return
             ast.Expr.expr_index_access as ia:
                 ctx_mark_mutated(ctx, ia.receiver)
             ast.Expr.expr_member_access as ma:
@@ -402,29 +455,26 @@ public function ctx_mark_alias_source(call: ptr[ast.Expr], ctx: ref[ScopeContext
                 pass
 
 
-function scope_add_entry_buf(buf: ptr[ScopeEntry], start: ptr_uint, count: ptr_uint, name: str, bd: Binding) -> void:
-    if count >= MAX_ENTRIES:
-        return
-    unsafe:
-        read(buf + start + count) = ScopeEntry(name = name, binding = bd)
-
-
-function scope_find_entry_buf(buf: ptr[ScopeEntry], start: ptr_uint, count: ptr_uint, name: str) -> Option[ptr_uint]:
+## The index of the entry named `name` within `entries[start .. start+count)`,
+## if any.  First match wins, as the pre-vector scan did.
+function find_entry(entries: vec.Vec[ScopeEntry], start: ptr_uint, count: ptr_uint, name: str) -> Option[ptr_uint]:
     var i: ptr_uint = 0
     while i < count:
-        unsafe:
-            if read(buf + start + i).name.equal(name):
-                return Option[ptr_uint].some(value = i)
+        let ep = entries.get(start + i) else:
+            break
+        if unsafe: read(ep).name.equal(name):
+            return Option[ptr_uint].some(value = start + i)
         i += 1
     return Option[ptr_uint].none
 
 
-function scope_has_name_buf(buf: ptr[ScopeEntry], start: ptr_uint, count: ptr_uint, name: str) -> bool:
+function scope_has_name(entries: vec.Vec[ScopeEntry], start: ptr_uint, count: ptr_uint, name: str) -> bool:
     var i: ptr_uint = 0
     while i < count:
-        unsafe:
-            if read(buf + start + i).name.equal(name):
-                return true
+        let ep = entries.get(start + i) else:
+            break
+        if unsafe: read(ep).name.equal(name):
+            return true
         i += 1
     return false
 

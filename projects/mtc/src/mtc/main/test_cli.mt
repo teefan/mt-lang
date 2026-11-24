@@ -12,6 +12,7 @@ import std.stdio as stdio
 import std.vec as vec
 
 import mtc.build as build_driver
+import mtc.debug_map as debug_map
 import mtc.loader.module_loader as loader
 import mtc.loader.path_resolver as resolver
 import mtc.parser.ast as ast
@@ -1237,6 +1238,17 @@ function test_runner_path(dirname: str, suffix: str) -> string.String:
     return path
 
 
+## Remove a runner's source, binary and debug-map sidecar.  The build writes a
+## `<binary>.mtdbg.json` next to the binary; without removing it every test file
+## left one behind (they piled up untracked in the source tree).
+function remove_test_runner(runner_source: str, runner_binary: str) -> void:
+    let _source = fs.remove(runner_source)
+    let _binary = fs.remove(runner_binary)
+    var sidecar = debug_map.sidecar_path_for(runner_binary)
+    defer: sidecar.release()
+    let _map = fs.remove(sidecar.as_str())
+
+
 ## The first non-blank line of `text`, trimmed (the host's `first_fail_message`).
 ## The `timeout` wrapper's core-dump notice is not the child's output and is
 ## skipped: this coreutils ships no `--quiet`, and the host's direct spawn has
@@ -1324,7 +1336,7 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
             var message = build_err.error
             report_runner_build_error(file_path, message.as_str(), options, directory, results)
             message.release()
-            let _rb = fs.remove(runner_path_str.as_str())
+            remove_test_runner(runner_path_str.as_str(), runner_bin_str.as_str())
             return TestFileOutcome.build_error
         Result.success:
             pass
@@ -1383,8 +1395,7 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
                     stdio.print_format(c"FAIL - %.*s: runner crashed\n", int<-(tn.len), tn.data)
         ti2 += 1
 
-    let _r1 = fs.remove(runner_path_str.as_str())
-    let _r2 = fs.remove(runner_bin_str.as_str())
+    remove_test_runner(runner_path_str.as_str(), runner_bin_str.as_str())
     if any_failed:
         return TestFileOutcome.test_failed
     return TestFileOutcome.ok
@@ -1420,7 +1431,7 @@ function run_death_test(file_path: str, source_text: str, test_name: str, option
             var message = build_err.error
             report_runner_build_error(file_path, message.as_str(), options, directory, results)
             message.release()
-            let _rb = fs.remove(runner_path_str.as_str())
+            remove_test_runner(runner_path_str.as_str(), runner_bin_str.as_str())
             return TestFileOutcome.build_error
         Result.success:
             pass
@@ -1441,8 +1452,7 @@ function run_death_test(file_path: str, source_text: str, test_name: str, option
         Result.failure:
             reason = "runner crashed"
 
-    let _r1 = fs.remove(runner_path_str.as_str())
-    let _r2 = fs.remove(runner_bin_str.as_str())
+    remove_test_runner(runner_path_str.as_str(), runner_bin_str.as_str())
 
     let machine = options.format != OutputFormat.human
     if machine:

@@ -161,7 +161,6 @@ Options:
   --profile PROFILE    Build profile: debug or release (default: debug)
   --keep-c             Save generated C files alongside binaries
   --print-stage0       Resolve and verify stage0, print its path, and exit
-  -j N                 Parallel compiler jobs (default: 4, hard-capped)
 ```
 
 ### 3.2 Build flow
@@ -223,7 +222,7 @@ Notes on the flags:
 tools/bootstrap.sh --stage 1 --no-verify
 
 # Fixed point only (implies --keep-c; skips the self-test suite)
-tools/bootstrap.sh --fast -j 4
+tools/bootstrap.sh --fast
 ```
 
 ---
@@ -297,7 +296,10 @@ $XDG_CACHE_HOME/milk_tea/mtc-cache/   ← .mt → C → binary cache (normal bui
 - [x] 3-stage build + fixed-point verification via `diff`
 - [x] `--stage 1` fast path for development (`--stage 2` stops after stage2)
 - [x] `--no-verify` to skip stage3
-- [x] `--profile debug|release`, `--keep-c`, `-j N`, `$MTC_BUILD_DIR`
+- [x] `--profile debug|release`, `--keep-c`, `$MTC_BUILD_DIR`
+      (a stage build is one whole-program `mtc build`, so there is no `-j`:
+      the flag existed, was capped and warned about, and was never passed to a
+      build command.  Per-file fan-out lives in `tools/lib/jobs.rb`.)
 - [x] version is the authored `cli_help.VERSION` constant (the old git-revision
       stamp produced an ignored generated file and was removed)
 - [x] `build/stage2/mtc test projects/mtc` self-test step

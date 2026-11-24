@@ -3,7 +3,7 @@
 #
 # Usage:
 #   tools/release.sh [--version X.Y.Z] [--out DIR] [--refresh-seed]
-#                    [--skip-build] [-j N]
+#                    [--skip-build]
 #
 #   --version X.Y.Z   Expected version; must match cli_help.VERSION.  The
 #                     version is an authored source constant, never derived
@@ -13,7 +13,6 @@
 #                     and regenerate mtc.sha256.  Commit the result to make it
 #                     the seed for the next release cycle.
 #   --skip-build      Package the existing build/stage2/mtc.
-#   -j N              Parallel compiler jobs (default: 4, hard-capped).
 #
 # The package layout is the runtime contract:
 #
@@ -36,8 +35,6 @@ VERSION=""
 OUT="$ROOT/dist"
 REFRESH_SEED=0
 SKIP_BUILD=0
-JOBS="$(nproc 2>/dev/null || echo 1)"
-[ "$JOBS" -gt 4 ] && JOBS=4
 PLATFORM="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
 
 while [ $# -gt 0 ]; do
@@ -46,7 +43,6 @@ while [ $# -gt 0 ]; do
         --out)          OUT="${2:-}"; shift 2 ;;
         --refresh-seed) REFRESH_SEED=1; shift ;;
         --skip-build)   SKIP_BUILD=1; shift ;;
-        -j)             JOBS="${2:-}"; shift 2 ;;
         -h|--help)
             sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
@@ -57,12 +53,6 @@ while [ $# -gt 0 ]; do
             ;;
     esac
 done
-
-# Parallel compiler fan-out is memory-bound: keep it at or below 4.
-if [ "$JOBS" -gt 4 ]; then
-    echo "warning: -j $JOBS capped at 4 (parallel compiler fan-out is memory-bound)" >&2
-    JOBS=4
-fi
 
 # The release contract is the OpenSSL 3 ABI (libssl.so.3).  On hosts whose
 # default is OpenSSL 4, build through the wrapper so the archive still runs on
@@ -88,7 +78,7 @@ fi
 
 if [ "$SKIP_BUILD" -eq 0 ]; then
     echo "── building release compiler (stage2, profile release)"
-    tools/bootstrap.sh --stage 2 --profile release -j "$JOBS"
+    tools/bootstrap.sh --stage 2 --profile release
 fi
 
 BIN="$ROOT/build/stage2/mtc"

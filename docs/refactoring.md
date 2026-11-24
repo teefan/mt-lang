@@ -124,12 +124,22 @@ static-libuv and version/help work removed ten duplicated lines, and session
 lines, 3 clusters).  None is a duplication regression.  Use the clusters as pointers to repeated
 emission/frame boilerplate, not as an absolute quality score.
 
+### Area inference
+
+`tools/gates.sh` infers areas from `git diff` and maps each to a gate set.  A
+path with no case used to land in `other`, whose gate list is empty — a change
+to `lexer/`, `main/`, `bindgen/` or a top-level file such as `ir.mt` planned
+**zero** gates and exited 0.  Those now map to `parser`, `cli`, `bindings` and
+`compiler_core` respectively, and an unclassified path is a hard error naming
+the file.  CI does not use area inference (it runs a fixed list), so this hole
+affected the local loop only.
+
 ### Size, markers, tests
 
-- **129,442 code lines**; **2 functions ≥ 200 lines** (`binding_at` 385,
-  excluded, and `resolve_cursor` 200, exactly at the boundary); **11 files
-  ≥ 2,000 code lines**. The ratchet counts these, so a refactor cannot trade one
-  long function for another.
+- **129,509 code lines**; **3 functions ≥ 200 lines** (`binding_at` 385,
+  excluded, `collect_binding_flags` 211, and `resolve_cursor` 200, exactly at
+  the boundary); **11 files ≥ 2,000 code lines**. The ratchet counts these, so a
+  refactor cannot trade one long function for another.
 - **0 marker comments** (`TODO`/`FIXME`/`XXX`/`HACK`); any new one fails.
 - Test trees: **22** files in `projects/mtc/test`, **85** in `test/mt`. The
   ratchet fails if either count drops (silent-skip protection).
@@ -200,12 +210,12 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 158, 2026-11-24)
+## 6. Current baseline (session 159, 2026-11-24)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 163,067 / 129,455 |
-| layering edges / violations | 111 / 0 |
+| source files / lines / code lines | 169 / 163,121 / 129,509 |
+| layering edges / violations | 112 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (169 modules) |
@@ -215,6 +225,13 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 22 / 85 |
+
+Session 159 refreshed the baseline for the audit fixes (+54 code lines): the
+dynamic scope store in `linter/scope_tracking.mt` (the fixed 32×128 window is
+gone), the LSP platform plumbing (`Workspace.platform` plus
+`resolver.platform_from_label`, one new `main -> debug_map` edge, a legal
+downward import), and `mtc test`'s debug-map sidecar cleanup.  Duplication,
+function/file sizes and test counts are unchanged.
 
 Session 158 refreshed the baseline for the Box2D migration's compiler fixes:
 C keywords used as struct/union/SoA/variant fields are escaped in declarations,

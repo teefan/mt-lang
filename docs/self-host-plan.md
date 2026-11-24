@@ -112,7 +112,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 158, 2026-11-24)
+## Status at a glance (session 159, 2026-11-24)
 
 | Area | State |
 | --- | --- |
@@ -136,7 +136,9 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check`; **Box2D is 3.2.0** (`178495ba…`, tag `v3.2.0`) and the raw module is reproducible (session 158; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; `bindings/raw/<name>.json` holds the option tables, `bindings/nullable/<name>.json` the `?` policies, and `tools/rebind_binding.rb` reproduces a raw module; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 169 files / 163,067 lines / 129,455 code lines; 111 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **30 unused + 7 test-only** public declarations; 6,499 duplicated lines / 882 clusters; **3 functions ≥ 200 lines** (`binding_at` 385, `collect_binding_flags` 211, `resolve_cursor` 200); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85.  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 158 for the C-field/keyword and aggregate-equality fixes) |
+| **Refactoring safety** | structural guard: 169 files / 163,121 lines / 129,509 code lines; 112 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **30 unused + 7 test-only** public declarations; 6,499 duplicated lines / 882 clusters; **3 functions ≥ 200 lines** (`binding_at` 385, `collect_binding_flags` 211, `resolve_cursor` 200); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/85 (855 + 362 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 159 for the dynamic scope store, the LSP platform plumbing and the runner cleanup; the new `main -> debug_map` edge is a legal downward import) |
+| Gate planning | `tools/gates.sh` area inference covers `lexer/` (→ `parser`), `main/` (→ `cli`), `bindgen/` (→ `bindings`) and every other `projects/mtc/src/mtc/` path (→ `compiler_core`, the full behaviour set).  An unclassified path is a hard error naming the file; previously it planned **zero** gates and exited 0 (session 159) |
+| Bootstrap `-j` | **removed** (session 159).  The flag was parsed, capped and warned about but never passed to a build command — a stage build is one whole-program `mtc build`.  `release.sh -j` removed with it; `bootstrap.sh -j 4` now errors |
 
 Rough completion against the per-track Definition of Done: **~100%**, now
 against the archived host record rather than a live reference.  The
@@ -4503,6 +4505,109 @@ version-only rows, verified by normalizing 0.5.2 -> 0.5.1).  Seed refreshed to
 The release archive is `mtc-0.5.2-linux-x86_64.tar.gz`; the release binary
 passes `test/mt` 85/0, CLI 227/227, LSP 38/38, and the clean-container smoke.
 The archive is rebuilt after the documentation sync and tagged `v0.5.2`.
+
+## Session 159 — architecture audit: three defects, the gate hole, and the dead flag
+
+A read-and-measure audit of the self-host (no behaviour was in doubt — the
+oracles were green before the session) found three real defects, one coverage
+hole, and two pieces of fictional tooling.  Each defect was reproduced first,
+fixed, and pinned by a test that fails on the old code.
+
+**1. Scope tracking crashed the compiler and fabricated diagnostics.**
+`linter/scope_tracking.mt` kept its bindings in a fixed
+`array[ScopeEntry, 32 * 128]` window owned by `lint_source_with`'s frame: 32
+scopes of 128 entries.  Exceeding 32 scopes called `fatal` — 60 nested `while`
+blocks **aborted the compiler** (rc 134) with `scope tracking overflow in lint
+pass`.  Exceeding 128 entries in one scope was worse: `scope_add_entry_buf`
+silently returned, but `ctx_declare_local` still incremented the count, so the
+pop loop read unwritten slots and emitted 12 phantom `unused local ''` warnings
+with line 0 while the 128 real ones vanished.
+
+The shape is now dynamic: `entries` (a flat `Vec[ScopeEntry]`) plus one
+`starts`/`counts` pair per open scope, so depth and per-scope count are
+unbounded.  The first attempt kept entries append-only and was wrong — a
+popped child's entries stayed interleaved in the parent's range, and the
+diagnostics oracle caught it (`box2d_api_smoke.mt` jumped 6 → 41 warnings,
+`box3d/sensor.mt` duplicated every `unused-local`).  The protocol is now
+`ctx_push_scope` / `ctx_scope_top` / `ctx_drop_scope`, where the drop truncates
+`entries` back to the scope's start.  The oracle is the reason that bug never
+reached a commit.
+
+The header comment claiming this raw-buffer design dodged a self-host C-backend
+bug (`array[T,N]` in a struct through `ref[...]` lowering as a zero-length
+array) **does not reproduce** on the current tree: a struct holding
+`array[ptr_uint, MAX_SCOPES]` read and written through `ref[Ctx]` behaves
+correctly.  The comment is replaced with the real rationale (it was a fixed
+budget), not the phantom one.
+
+**2. `parallel_cnt` was never reset, so `emit-c` was not reproducible.**
+`lower()` reset `proc_counter` and `async_binding_cnt` per compilation but not
+`lowering/parallel.mt`'s `parallel_cnt`.  Measured:
+`emit-c examples/language_baseline.mt` produced `..._pfor_1`, while
+`emit-c examples/multithreading_test.mt examples/language_baseline.mt` produced
+`..._pfor_5` for the same file.  A file's generated C depended on what had been
+compiled earlier in the process.  `parallel.reset_parallel_counter()` is now
+called beside the other two, and both copies of a doubled file are byte-equal.
+
+**3. The LSP's `platform` setting was write-only.** `milkTea.platform` was
+parsed into `Workspace.platform_override` and never read; `analysis_entry_for`
+hard-coded `resolver.Platform.linux`, so configuring the platform silently did
+nothing.  The field is now a resolved `resolver.Platform` (with
+`platform_from_label` in `path_resolver.mt`), passed to
+`check_program_with_source`, and a change invalidates the module cache because
+platform-suffixed modules resolve differently.
+
+**4. `tools/gates.sh` could plan zero gates.** `infer_area` had no case for
+`lexer/`, `bindgen/`, `main/`, or most top-level compiler files, so they fell
+through to `other`, whose gate list is empty — a lexer-only change planned no
+build, no test and no oracle and exited 0.  `lexer/` now maps to `parser`,
+`main/` to `cli`, `bindgen/` to `bindings`, and any other path under
+`projects/mtc/src/mtc/` to a new `compiler_core` area with the full behaviour
+set.  An unclassified path is now a hard error naming the file.  The dead
+`test/diagnostics/*` case (that directory does not exist) is gone, `.md`/
+`LICENSE` map to `docs` (no gates, no warning), and `.github/workflows/*` maps
+to `tools` so a CI edit is syntax-checked.  CI does not use area inference, so
+this hole hurt the local loop only.
+
+**5. `bootstrap.sh -j N` was inert and `release.sh -j N` became so.** `-j` was
+parsed, capped at 4, warned about — and never passed to any build command,
+because a stage build is one whole-program `mtc build` with no file fan-out to
+control.  Both flags are removed; `bootstrap.sh -j 4` now fails with
+`unknown option: -j` instead of silently building serially.  Every caller
+(`gates.sh`, `release.sh`, CI, `cli_parity.rb`, `format_parity.rb`,
+`bindings/README.md`, `vendor/bootstrap/README.md`, `AGENTS.md`,
+`docs/bootstrap-design.md`, `docs/lsp-enhancement-plan.md`) is updated.
+
+**6. `mtc test` leaked a debug-map sidecar per file.** The runner removed its
+synthesized `.mt` and binary but not the `<binary>.mtdbg.json` the build
+writes, so 159+ untracked sidecars had accumulated in `test/mt` and 253 in
+`projects/mtc/test`.  `remove_test_runner` now removes all three at every exit
+path (normal, death test, and build failure).
+
+**Verified.** Bootstrap fixed point holds (`stage2.c == stage3.c`); dev suite
+**22 files / 0 failed**; `test/mt` **85/0**; CLI **227/227**; diagnostics
+**505 / 0 differ**; lint **665 / 0 differ** (9 changed rows are this session's
+edited files, skipped by design); formatter **765 × 3 modes / 0 differ**;
+LSP conformance **38/38**; valgrind **0 errors**; examples **78/78**; box2d
+smoke **3.2.0 ok**; imported bindings **29/29**; guard tests 15 runs / 52
+assertions; guard `--check --strict --ratchet` ok after a reviewed baseline
+refresh (129,509 code lines, +54: the dynamic scope store, the platform
+plumbing, and the runner cleanup; the new `main -> debug_map` edge is a legal
+downward import).  Three regression tests were added and each was confirmed to
+fail against the pre-fix code: `test_scope_stack_accepts_deep_nesting`,
+`test_scope_stack_keeps_every_binding_past_128`, and
+`test_parallel_counter_resets_between_compilations`.
+
+**Carried forward (not done).** The audit's larger structural findings stand:
+`LoweringContext` (93 fields), `Context` (85), `Analysis` (64) and
+`ModuleBinding` (31) are god-objects passed to hundreds of free functions;
+`ir.Program.release` still has no call site and `lower()` still returns
+`arena = null`, so the per-file `FileRegion` remains the only ownership
+mechanism; `TypeId`/`TypeStore` are built but no IR node carries an id; and
+`fnv1a_hash` ×4, `absolute_path` ×6, `split_lines` ×8 remain duplicated.  The
+`unused-import` arm in `fix_engine.mt`, which the audit suspected was dead, is
+**live** — the LSP offers it as a quickfix through
+`is_engine_quickfix_code` — so it was left alone.
 
 ## Session 158 — Box2D 3.2.0 migration
 

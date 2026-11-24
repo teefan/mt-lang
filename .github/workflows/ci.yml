@@ -34,7 +34,7 @@ jobs:
         run: vendor/bootstrap/linux-x86_64/mtc toolchain bootstrap
 
       - name: Bootstrap (fixed point + self-tests)
-        run: tools/bootstrap.sh -j 4
+        run: tools/bootstrap.sh
 
       - name: In-language tests
         run: build/stage2/mtc test test/mt -I .
@@ -65,9 +65,9 @@ jobs:
 
       - name: Release build and determinism
         run: |
-          tools/release.sh -j 4
+          tools/release.sh
           first="$(sha256sum dist/mtc-*-linux-x86_64.tar.gz | cut -d' ' -f1)"
-          tools/release.sh --skip-build -j 4 >/dev/null
+          tools/release.sh --skip-build >/dev/null
           second="$(sha256sum dist/mtc-*-linux-x86_64.tar.gz | cut -d' ' -f1)"
           test "$first" = "$second"
           echo "release checksum: $first"

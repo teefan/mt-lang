@@ -95,7 +95,7 @@ self_bin ||= File.join(ROOT, "build", "stage2", "mtc")
 self_bin = File.expand_path(self_bin)
 unless File.executable?(self_bin)
   warn "error: compiler not found or not executable: #{self_bin}"
-  warn "       build it with tools/bootstrap.sh -j 4"
+  warn "       build it with tools/bootstrap.sh"
   exit 1
 end
 
