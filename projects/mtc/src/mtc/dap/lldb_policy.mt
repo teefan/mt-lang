@@ -17,6 +17,7 @@ import mtc.debug_map as debug_map
 import mtc.dap.lldb_backend as lldb
 import mtc.dap.protocol as proto
 import mtc.dap.session as session
+import mtc.dap.utilities as util
 import mtc.dap.wire as wire
 
 
@@ -1731,7 +1732,7 @@ function load_debug_map_from_modules(ses: ref[session.Session], body: json.Value
                                 Option.none:
                                     pass
                     if candidate.len > 0:
-                        var absolute = absolute_path(candidate)
+                        var absolute = util.absolute_path(candidate)
                         defer: absolute.release()
                         match debug_map.load_for_binary(absolute.as_str()):
                             Option.some as loaded:
@@ -2238,22 +2239,6 @@ function capability_flag(backend: ref[lldb.Backend], key: str) -> bool:
 
 
 ## Syntactic absolute path (`File.expand_path`).
-function absolute_path(path_text: str) -> string.String:
-    if path_ops.is_absolute(path_text):
-        return path_ops.normalize_separators(path_text)
-    var cwd = string.String.create()
-    defer: cwd.release()
-    match fs_mod.current_directory():
-        Result.success as found:
-            cwd.assign(found.value.as_str())
-            found.value.release()
-        Result.failure as failure:
-            var error = failure.error
-            error.release()
-            cwd.assign(".")
-    return path_ops.join(cwd.as_str(), path_text)
-
-
 # =============================================================================
 #  Small JSON accessors (the handlers module's helpers are module-private)
 # =============================================================================

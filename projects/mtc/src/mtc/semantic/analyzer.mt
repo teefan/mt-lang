@@ -8524,8 +8524,9 @@ function module_exports_type(binding: ModuleBinding, member: str) -> bool:
 ## exports nothing named `member`.  Every export surface is consulted, so a
 ## declaration this binding does not model (a prelude/`std.c` re-export) stays
 ## silent rather than drawing a false diagnostic.  The alias may also *be* a
-## type name (`str.order(...)` — the alias and the builtin `str` coincide), so a
-## member key on that type counts as a hit.
+## type name (`import std.str as str` plus `str.order(...)`), so a `member_keys`
+## entry for `"<alias>.<member>"` counts as a hit: those keys carry the imported
+## module's `extending`/static methods.
 function report_module_member(ctx: ref[Context], alias: str, module_name: str, member: str, line: ptr_uint, column: ptr_uint) -> void:
     let binding_ptr = find_binding(ctx, module_name) else:
         return

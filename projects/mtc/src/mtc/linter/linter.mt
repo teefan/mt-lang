@@ -4260,21 +4260,7 @@ function prefer_struct_with_source_name(expr: ptr[ast.Expr]) -> str:
 
 
 function uint_to_str(n: ptr_uint) -> str:
-    if n == 0:
-        return "0"
-    var result = string.String.create()
-    defer: result.release()
-    var v = n
-    while v > 0:
-        result.push_byte(ubyte<-(48 + (v % 10)))
-        v = v / 10
-    var output_str = string.String.create()
-    let rs = result.as_str()
-    var i = rs.len
-    while i > 0:
-        output_str.push_byte(rs.byte_at(i - 1))
-        i -= 1
-    return output_str.as_str()
+    return analyzer.uint_to_str(n)
 
 
 # =============================================================================

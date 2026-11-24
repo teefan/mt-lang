@@ -12,6 +12,7 @@ import std.str
 import std.string as string
 import std.vec as vec
 
+import mtc.strings as strings
 import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
@@ -30,8 +31,6 @@ import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
 
-const FNV_OFFSET: uint = 0x811C9DC5
-const FNV_PRIME:  uint = 0x01000193
 
 
 ## Legend indices, mirroring the host's advertised legend exactly (see
@@ -109,7 +108,7 @@ public function handle_semantic_tokens_delta(
     defer: content.release()
 
     let source = content.as_str()
-    let current_hash = fnv1a_hash(source)
+    let current_hash = strings.fnv1a_hash(source)
 
     # Check cache.
     let cached_ptr = ws.semantic_token_cache_get(file_path.as_str())
@@ -1939,7 +1938,7 @@ function compute_token_data(
         if cached_ptr != null:
             unsafe:
                 let cached = read(cached_ptr)
-                if cached.source_hash == fnv1a_hash(source) and cached.data.len() > 0 and cached.utf16 == utf16:
+                if cached.source_hash == strings.fnv1a_hash(source) and cached.data.len() > 0 and cached.utf16 == utf16:
                     var reused = vec.Vec[uint].create()
                     var ri: ptr_uint = 0
                     while ri < cached.data.len():
@@ -2475,16 +2474,6 @@ public function semantic_class_at(entries: ref[vec.Vec[SemanticClass]], line: pt
 
 
 ## FNV-1a hash of source text for result ID generation.
-function fnv1a_hash(text: str) -> uint:
-    var h = FNV_OFFSET
-    var i: ptr_uint = 0
-    while i < text.len:
-        let b = uint<-text.byte_at(i)
-        h = (h ^ b) * FNV_PRIME
-        i += 1
-    return h
-
-
 function emit_semantic_tokens(
     ws: ref[workspace.Workspace],
     uri: str,
@@ -2517,8 +2506,8 @@ function emit_semantic_tokens(
             cached_copy.push(unsafe: read(cp))
             ci += 1
         var result_id = string.String.create()
-        result_id.append_format(f"#{fnv1a_hash(content.as_str()):x}")
-        ws.semantic_token_cache_set(file_path.as_str(), fnv1a_hash(content.as_str()), result_id, data.len() / 5, cached_copy, ws.position_encoding_utf16)
+        result_id.append_format(f"#{strings.fnv1a_hash(content.as_str()):x}")
+        ws.semantic_token_cache_set(file_path.as_str(), strings.fnv1a_hash(content.as_str()), result_id, data.len() / 5, cached_copy, ws.position_encoding_utf16)
 
     var json_text = build_tokens_json(ref_of(data))
     proto.write_response_raw(id, json_text.as_str())

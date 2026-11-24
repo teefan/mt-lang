@@ -60,11 +60,17 @@ def generate_workspace(workspace)
   File.write(File.join(workspace, "lib_a.mt"), lib_a)
   File.write(File.join(workspace, "lib_b.mt"), lib_b)
 
+  # 220 call sites against 120 helpers: reuse a declared index rather than
+  # emitting calls to helpers 120..219, which do not exist.  A fixture with 100
+  # unknown-imported-member diagnostics makes the soak measure diagnostic
+  # emission instead of steady-state serving, and it inflated the recorded
+  # slope 4x until the session-160 check started reporting them.
   main = +"import lib_a\nimport lib_b\n\n"
   220.times do |n|
+    helper = n % 120
     main << "function use_#{n}(p: lib_a.Point, v: int) -> int:\n"
-    main << "    let a = lib_a.helper_#{n}(p)\n"
-    main << "    let b = lib_b.scale_#{n}(v)\n"
+    main << "    let a = lib_a.helper_#{helper}(p)\n"
+    main << "    let b = lib_b.scale_#{helper}(v)\n"
     main << "    return a + b\n\n"
   end
   main << "function main() -> int:\n"

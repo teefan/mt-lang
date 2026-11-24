@@ -136,7 +136,7 @@ affected the local loop only.
 
 ### Size, markers, tests
 
-- **129,547 code lines**; **3 functions ≥ 200 lines** (`binding_at` 385,
+- **128,970 code lines**; **3 functions ≥ 200 lines** (`binding_at` 385,
   excluded, `collect_binding_flags` 211, and `resolve_cursor` 200, exactly at
   the boundary); **11 files ≥ 2,000 code lines**. The ratchet counts these, so a
   refactor cannot trade one long function for another.
@@ -210,21 +210,29 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 160, 2026-11-24)
+## 6. Current baseline (session 161, 2026-11-24)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 163,159 / 129,547 |
-| layering edges / violations | 112 / 0 |
+| source files / lines / code lines | 169 / 163,004 / 128,970 |
+| layering edges / violations | 117 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (169 modules) |
-| dead exports (unused / test-only) | 30 / 7 |
-| duplication (windows / duplicated lines) | 882 / 6,499 (window 12) |
+| dead exports (unused / test-only) | 29 / 7 |
+| duplication (windows / duplicated lines) | 871 / 6,389 (window 12) |
 | functions ≥ 200 lines | 3 |
 | files ≥ 2,000 code lines | 11 |
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 22 / 86 |
+
+Session 161 **shrank** the baseline: the inert interning layer (`TypeStore`,
+`type_hash`/`type_identical`/`types_identical`, `TypeId`, `ir.Program.type_table`
+and the `type_store` threading through five lowering signatures) is removed
+(−577 code lines, −110 duplicated lines), and the duplicated `fnv1a_hash`,
+`split_lines`, `uint_to_str` and DAP `absolute_path` are collapsed onto
+`mtc.strings`/`utilities` (dead exports 30 → 29).  Four new edges are all
+downward.  The `examples` gate also grew from 78 to 311 files.
 
 Session 160 refreshed the baseline for the imported-module member check (+38
 code lines: `report_module_member`, `module_exports_type`, the two call sites

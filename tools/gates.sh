@@ -164,7 +164,7 @@ gate_label() {
         docs_smoke)     echo "docs server end-to-end (routes/SIGINT smoke)" ;;
         refactor_guard) echo "structural guard: layering/naming/markers (fast)" ;;
         guard_tests)    echo "refactor guard unit tests" ;;
-        examples)       echo "example emit-c sweep: examples/*.mt + examples/box2d + examples/sdl3" ;;
+        examples)       echo "example emit-c/check sweep: every examples/**/*.mt (311)" ;;
         box2d_smoke)    echo "box2d 3.2 headless binding smoke (build + run)" ;;
         lsp_conformance) echo "LSP 3.18 spec conformance (explicit assertions)" ;;
         valgrind_lsp)   echo "valgrind over an LSP drive (0 errors)" ;;
@@ -269,13 +269,29 @@ gates_dev_tests() {
 
 # Inline example sweep: every example must emit C successfully.  The host
 # comparison is gone with the host; a compile failure is a hard gate failure.
+#
+# `examples/raylib/**` and `examples/box3d/**` are included: they were outside
+# every build gate, and that is exactly where a call to a nonexistent raylib
+# symbol (`rl.image_draw`) survived unnoticed until the imported-member check
+# found it (session 160).  A file whose first line is `external` is a raw
+# binding module, not a program, so it is checked rather than emitted.
 gates_examples() {
     local rc=0 ok=0 failed=0 f out first
-    for f in examples/*.mt examples/box2d/*.mt examples/sdl3/*/*.mt; do
+    local find_list
+    find_list="$(find examples -name '*.mt' -not -path 'examples/box2d/common.mt' -not -path 'examples/box2d/human.mt' | sort)"
+    for f in $find_list; do
         [ -e "$f" ] || continue
-        case "$f" in
-            examples/box2d/common.mt|examples/box2d/human.mt) continue ;;
-        esac
+        if [ "$(head -1 "$f")" = "external" ]; then
+            # Raw ABI module: validate it, there is no program to emit.
+            out="$(timeout 120 build/stage2/mtc check "$f" 2>&1 >/dev/null)"
+            if [ $? -ne 0 ]; then
+                rc=1; failed=$((failed + 1))
+                echo "FAIL $f: $(printf '%s\n' "$out" | head -1)"
+            else
+                ok=$((ok + 1))
+            fi
+            continue
+        fi
         out="$(timeout 120 build/stage2/mtc emit-c "$f" 2>&1 >/dev/null)"
         if [ $? -ne 0 ]; then
             rc=1; failed=$((failed + 1))

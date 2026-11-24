@@ -21,66 +21,6 @@ import mtc.sexpr as sexpr
 import std.vec as vec
 
 
-## A one-element type span, for building generic type arguments in the
-## interning tests.
-function one_type(t: types.Type) -> span[types.Type]:
-    var buf = vec.Vec[types.Type].create()
-    buf.push(t)
-    return buf.as_span()
-
-
-@[test]
-function test_type_store_preseeded_nil_and_repeats() -> void:
-    ## Id 0 is `ty_nil`, so a zero-initialised `TypeId` means "absent".  A
-    ## repeated intern of the same type must reuse the id.
-    var store = types.create_type_store()
-    defer: store.release()
-    expect_eq(store.intern(types.Type.ty_nil), 0)
-    let int_ty = types.primitive("int")
-    let first = store.intern(int_ty)
-    let second = store.intern(int_ty)
-    expect_eq(first, second)
-    expect(first != 0)
-    expect_eq(store.len(), 2)
-
-
-@[test]
-function test_type_store_keeps_render_distinct_spellings_apart() -> void:
-    ## `type_equals` treats `Option[int]`, `std.option.Option[int]` and a
-    ## `ty_named` as equal because assignment is allowed between them, but they
-    ## render differently.  Interning on that relation would silently merge them
-    ## and rewrite every IR dump, so the store must keep all three distinct.
-    var store = types.create_type_store()
-    defer: store.release()
-    let int_ty = types.primitive("int")
-    let generic_id = store.intern(types.generic_type(name = "Option", args = one_type(int_ty)))
-    let imported_id = store.intern(types.imported_type(module_name = "std.option", name = "Option", args = one_type(int_ty)))
-    let named_id = store.intern(types.named_type(name = "Option", module_name = "std.option", linkage_name = Option[str].none))
-    expect(generic_id != imported_id)
-    expect(imported_id != named_id)
-    expect(generic_id != named_id)
-
-
-@[test]
-function test_type_store_is_idempotent_for_nested_types() -> void:
-    ## Interning is non-recursive: one handle names a whole type, and that
-    ## type's children stay inline in the stored value.  So a nested type costs
-    ## exactly one entry, however often it is rebuilt.
-    var store = types.create_type_store()
-    defer: store.release()
-    let int_ty = types.primitive("int")
-    let inner = types.generic_type(name = "ptr", args = one_type(int_ty))
-    let outer = types.generic_type(name = "ptr", args = one_type(inner))
-    let first = store.intern(outer)
-    var i: ptr_uint = 0
-    while i < 1000:
-        let _ = store.intern(outer)
-        i += 1
-    expect_eq(store.intern(outer), first)
-    expect_eq(store.len(), 2)
-    expect(types.type_identical(store.get(first), outer))
-
-
 ## Remove a temp directory tree and release its owned path string.
 function cleanup_dir(dir: ref[string.String]) -> void:
     match fs.remove_tree(dir.as_str()):

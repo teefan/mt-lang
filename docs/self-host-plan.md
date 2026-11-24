@@ -112,7 +112,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 160, 2026-11-24)
+## Status at a glance (session 161, 2026-11-24)
 
 | Area | State |
 | --- | --- |
@@ -124,7 +124,7 @@ history.
 | Analyzer/IR memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB / 10.5 s**; `emit-c main.mt` **860 MiB / 12.3 s**; `build projects/mtc` **903 MiB / 25.9 s** (session 152; `peak_rss.py` reports **KiB** — the MiB figures are that value ÷ 1024).  Path: `Type` boxed 72 → 24 B (session 150), the analyzer's tooling-only `imported_type_members` gated behind `tooling_facts` (−20% on `check`), the IR dump streamed and written straight into one buffer (−66 MiB on `lower`, session 151), `reserve_exact` for known-length vectors and string builders (−42 MiB on `lower`/`emit-c`, session 152), then the emitter's per-generation tables and scratch released at the end of `generate_c` (−9 MiB on `emit-c`, −21 MiB on `build --keep-c`, and ~94 → ~82 MiB per repeated emission; session 153).  The old analyzer const blow-up (**9,228 MiB** on `main.mt`, session 142) and the cross-module async rescan (682 MB of the lower peak, session 149) are gone.  `lowering.mt` check **197 MiB** (session 151 audit).  The release profile has the same peaks with `check` **1.3 s**, `lower` **4.1 s**, `emit-c` **4.6 s**, `build` **20.0 s** (session 155).  All tooling fan-out is capped at **4**. |
 | Multi-file commands | **Flat in the file count, and no longer ~2× a heavy file's peak** (session 152).  The per-file heap region is a bump allocator: it frees everything at once and cannot reuse anything released inside it, so an abandoned temporary lands in the peak.  It buys release of every file *after* the one compiling, so it is now gated on the **file count** (`should_scope_file`, `remaining_after >= 2`): the last two files of a run compile unregioned.  Measured: `check main.mt` + a 60-byte file **422 MiB** (was 958,616 KiB always-regioned; 432,068 never-regioned), 40 small files **372 MiB** (1,367,120 never-regioned), `check projects/mtc` (191 files) **997 MiB** (11,398,120 never-regioned).  The `lower`/`emit-c` 8-heaviest sets pay 2–3% (**1,456 / 1,694 MiB**) because their last two files are heavy.  The old session-151 row (same file twice 946 MiB, `main.mt` + `sexpr.mt` 1,407 MiB) was the ungated region; see *Region gate (session 152)*. |
 | `test/mt` | **86 files / 0 failed** (62 in-language tests + 24 compile-fail diagnostics fixtures; session 160 added `imported_module_member.mt`; peak RSS **100 MiB**, measured session 151) |
-| Examples | **78/78 build** under the self-only `emit-c` gate (16 top-level including `box2d_api_smoke`, 28 `examples/box2d`, `examples/sdl3` 34) plus the headless **`box2d_smoke`** build/run gate (session 158) |
+| Examples | **311/311** under the self-only `emit-c`/`check` sweep — session 161 extended it from 78 to **every** `examples/**/*.mt`, adding `examples/raylib` (219) and `examples/box3d` (14); a first line of `external` selects `check` instead of `emit-c` (one raw binding module).  That gap is how a call to a nonexistent `rl.image_draw` survived (session 160).  Plus the headless **`box2d_smoke`** build/run gate |
 | Recorded oracles | **CLI 227/227 (0.5.2); diagnostics 505/505 compared / 0 differ; lint 674/674 / 0; formatter 776 × 3 modes / 0** — digest-keyed, changed=0 after the session-158 re-record, and replayed green with no host source present |
 | `check` diagnostics | the 505-file diagnostic oracle is the gate (the extra row is `box2d_api_smoke`); the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field anchor is a reviewed difference, not a residual (session 146). |
@@ -136,7 +136,7 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check`; **Box2D is 3.2.0** (`178495ba…`, tag `v3.2.0`) and the raw module is reproducible (session 158; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; `bindings/raw/<name>.json` holds the option tables, `bindings/nullable/<name>.json` the `?` policies, and `tools/rebind_binding.rb` reproduces a raw module; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 169 files / 163,159 lines / 129,547 code lines; 112 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **30 unused + 7 test-only** public declarations; 6,499 duplicated lines / 882 clusters; **3 functions ≥ 200 lines** (`binding_at` 385, `collect_binding_flags` 211, `resolve_cursor` 200); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/86 (855 + 362 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 160 for the imported-module member check; the new `main -> debug_map` edge is a legal downward import) |
+| **Refactoring safety** | structural guard: 169 files / 163,004 lines / 128,970 code lines; 117 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **29 unused + 7 test-only** public declarations; 6,389 duplicated lines / 871 clusters; **3 functions ≥ 200 lines** (`binding_at` 385, `collect_binding_flags` 211, `resolve_cursor` 200); **11 files ≥ 2,000 code lines**; 0 markers; tests 22/86 (855 + 362 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 161 for the deduplication and the removed inert interning layer; all new edges are legal downward imports) |
 | Gate planning | `tools/gates.sh` area inference covers `lexer/` (→ `parser`), `main/` (→ `cli`), `bindgen/` (→ `bindings`) and every other `projects/mtc/src/mtc/` path (→ `compiler_core`, the full behaviour set).  An unclassified path is a hard error naming the file; previously it planned **zero** gates and exited 0 (session 159) |
 | Bootstrap `-j` | **removed** (session 159).  The flag was parsed, capped and warned about but never passed to a build command — a stage build is one whole-program `mtc build`.  `release.sh -j` removed with it; `bootstrap.sh -j 4` now errors |
 
@@ -4506,6 +4506,100 @@ The release archive is `mtc-0.5.2-linux-x86_64.tar.gz`; the release binary
 passes `test/mt` 85/0, CLI 227/227, LSP 38/38, and the clean-container smoke.
 The archive is rebuilt after the documentation sync and tagged `v0.5.2`.
 
+## Session 161 — gate coverage, deduplication, and the inert interning layer
+
+Took the session-160 carried-forward list.  Three items, one of which removed
+more code than all the others combined.
+
+**1. `examples/raylib` and `examples/box3d` are gated.**  They were outside
+every *build* gate — the `examples` sweep listed three literal globs — which is
+exactly how `rl.image_draw` (a symbol raylib does not have) survived in
+`examples/raylib/textures/image_drawing.mt` until the imported-member check
+found it.  The sweep now walks `find examples -name '*.mt'`: **311 files**
+instead of 78, in ~29 s.  A file whose first line is `external` is a raw ABI
+module with no program to emit, so it is `check`ed rather than emitted.
+Verified by injecting a call to a nonexistent raylib symbol into
+`examples/raylib/core/2d_camera.mt`: the gate fails with
+`examples ok=310 failed=1` and names the file, then passes again on restore.
+
+**2. Duplicated primitives collapsed.**  Three copies of `fnv1a_hash` (four
+including the loader's differently-spelled one) moved to `mtc.strings`, which
+is rank 0 and therefore reachable downward from `loader` (4) and `lsp` (9); the
+two constants were spelled two ways (`2166136261`/`16777619` vs
+`FNV_OFFSET`/`FNV_PRIME`) and are now one pair.  The byte-identical
+`split_lines` in `linter/redundant_cast.mt` and `linter/platform_drift.mt`
+likewise moved to `strings`.  `uint_to_str` had four bodies (the analyzer's was
+already a delegate); `fmt.append_ptr_uint` owns the conversion, so `strings`
+wraps it and the other three delegate.  The two DAP `absolute_path` copies were
+identical apart from one binding name; `utilities.absolute_path` is now public
+and `lldb_policy` calls it.
+
+Two variants were deliberately **not** merged: the five `absolute_path`
+implementations differ behaviorally (`packages/paths.mt` resolves `..`
+segments, `bindgen.mt` does not normalize separators, `debug_map.mt` takes an
+explicit cwd), and the four remaining `split_lines` differ in empty-input and
+trailing-newline handling.  Unifying those would change behaviour, not remove
+duplication.
+
+**3. The inert interning layer is gone.**  `TypeStore`, `create_type_store`,
+`type_hash`, `type_identical`, `types_identical`, the `TypeId` alias and
+`ir.Program.type_table` were built in session 150 and never consumed: no IR
+node ever carried a `TypeId`, no code ever read `type_table`, and
+`LoweringContext.types` was never dereferenced.  The table was *written* in four
+places (`lower`, `proc_renumber`, `c_backend`, `empty_program`) and read in
+none, and `TypeStore` was threaded as a parameter through five lowering
+signatures purely to reach those writes.  Removed, with the three tests that
+covered only it.  This is the project's own rule — no speculative machinery —
+applied to the last piece of it.
+
+**4. The soak fixture was invalid, and the new check proved it.**  The
+`lsp_soak` slope jumped from ~75 to ~320 KB/cycle after session 160.  That is a
+4x regression in a meter, so it was bisected properly: `8bbac767` 77.9,
+session 159 79.9, session 160 323.  The cause was **the fixture, not the
+compiler**: `generate_workspace` declares 120 helpers (`helper_0`..`helper_119`)
+but emits 220 call sites, so calls 120..219 referenced functions that do not
+exist.  From session 150 until session 160 nothing reported them (the analyzer
+returned `none` and fell through); once imported members were checked, each
+cycle produced 100 diagnostics, and the slope measured diagnostic emission
+instead of steady-state serving.  The generator now reuses a declared index
+(`n % 120`), and the slope returns to **80.6 KB/cycle / LS 27.7** at 38 MB.
+This is the second time a gate caught a real defect that predated it (the first
+was `rl.image_draw`), and both were *invalid inputs the compiler had been
+silently accepting*.
+
+**5. `str.order` must not be reported.**  `import std.str as str` makes the
+alias and the builtin type `str` collide, so `str.order(left, right)` resolves
+as a static method on the type.  `report_module_member` already carried a
+`member_keys.contains(method_key(alias, member))` test for exactly this — those
+keys hold the imported module's `extending`/static methods — and an attempt to
+make the guard "cheaper" by testing `static_member_types`/`type_names` instead
+broke it (7 false `unknown member order on module str` errors when the compiler
+checked itself, caught by `check projects/mtc`).  The `member_keys` test is
+required and is documented as the alias-as-type case.
+
+**Verified.** Fixed point holds; dev suite **22/0**; `test/mt` **86/0**; CLI
+**227/227**; diagnostics **504 / 0 differ**; lint **648 / 0 differ**; formatter
+**748 × 3 / 0 differ**; examples **311/311**; box2d smoke **3.2.0 ok**; imported
+bindings **29/29**; LSP conformance **38/38**; DAP smoke green; valgrind **0
+errors**; soak **80.6 KB/cycle**; guard `--check --strict --ratchet` ok after a
+reviewed refresh — **128,970** code lines (**−577**), duplication **6,389 / 871**
+clusters (was 6,499 / 882), dead exports 29 (was 30), 117 edges all downward.
+
+**Carried forward.** The god-objects are now the whole remaining structural
+list: `LoweringContext` (93 fields), `Context` (85), `Analysis` (64) and
+`ModuleBinding` (31), each passed as `ref[...]` to hundreds of free functions.
+They are cohesive state machines, not accidental bags, so splitting them means
+defining new interfaces rather than moving fields — a design session, not a
+cleanup pass.  `ir.Program.arena` still has no producer (`lower` returns null),
+so `FileRegion` remains the only ownership mechanism for IR nodes.
+
+The two invalid-input discoveries suggest a third item: **the tree's own
+fixtures and examples were never systematically type-checked**, only compiled.
+`test/mt` and the four oracles now cover both example trees, but the soak
+fixture was generated at runtime and unvalidated for ten sessions.  A cheap
+guard would be to `check` every generated fixture once at harness startup rather
+than measuring whatever it happens to contain.
+
 ## Session 160 — imported-module member checking
 
 Closed the last documented analyzer gap: the self accepted *unknown* members on
@@ -5581,7 +5675,7 @@ historical record.
 | installer | `install.sh` in the archive: versioned prefix, `current` symlink, `BIN_DIR/mtc`; `--prefix`/`--bin-dir`/`--force`/`--dry-run`/`--uninstall`; verifies both compiler copies; refuses a symlink prefix; no shell-config edits; the release smoke installs to a temp prefix and uses the installed binary | session 155 | `tools/install.sh --help`; `tools/release_smoke.sh` |
 | release runtime | glibc **≥ 2.38**, zlib, OpenSSL 3; libuv static; the seed has the same requirements | session 157 | `ldd dist/mtc-0.5.2-linux-x86_64/bin/mtc`; `tools/release_container_smoke.sh` |
 | CI | `.github/workflows/ci.yml`: vendored fetch, bootstrap, `test/mt`, four oracles, LSP conformance, examples (now the 28 box2d ports + `box2d_smoke`), bindings, docs smoke, deterministic release, container smoke | session 158 (examples gate extended; the YAML is unchanged; the PR re-run is the merge gate) | `cat .github/workflows/ci.yml` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files / 163,067 lines / 129,455 code lines); 30 unused / 7 test-only exports; 6,499 duplicated lines / 882 clusters; 3 functions ≥ 200 lines (`binding_at` 385, `collect_binding_flags` 211, `resolve_cursor` 200); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 158 (baseline refreshed for the reviewed C-field and aggregate-equality fixes) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (111 edges, 169 files / 163,067 lines / 129,455 code lines); 30 unused / 7 test-only exports; 6,389 duplicated lines / 871 clusters; 3 functions ≥ 200 lines (`binding_at` 385, `collect_binding_flags` 211, `resolve_cursor` 200); 11 files ≥ 2,000 code lines; 0 markers; tests 22/85; `--check --strict --ratchet` ok | session 158 (baseline refreshed for the reviewed C-field and aggregate-equality fixes) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 | extension activation | `bindings/vscode/package.json` activates on `onLanguage:milk-tea` and `onDebug:milk-tea`; `dist/` and `.vsix` are local artifacts | session 147 | `git show HEAD:bindings/vscode/package.json` |
 
 ## Porting notes

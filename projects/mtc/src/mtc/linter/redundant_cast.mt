@@ -17,6 +17,7 @@ import std.str
 import std.string as string
 import std.vec as vec
 
+import mtc.strings as strings
 import mtc.parser.ast as ast
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
@@ -323,7 +324,7 @@ public struct Context:
 
 
 public function ctx_create(source: str, analysis: ptr[analyzer.Analysis]?) -> Context:
-    return Context(diags = vec.Vec[Diag].create(), lines = split_lines(source), analysis = analysis, generic_body = false)
+    return Context(diags = vec.Vec[Diag].create(), lines = strings.split_lines(source), analysis = analysis, generic_body = false)
 
 
 ## The linter's walk marks the generic-body state before draining a hook's
@@ -375,18 +376,6 @@ public function check_binary_operands(ctx: ref[Context], op: str, left: ptr[ast.
     check_binary_operand(ctx, op, right, left)
     check_literal_operand(ctx, op, left, right)
     check_literal_operand(ctx, op, right, left)
-
-
-function split_lines(source: str) -> vec.Vec[str]:
-    var lines = vec.Vec[str].create()
-    var start: ptr_uint = 0
-    var i: ptr_uint = 0
-    while i <= source.len:
-        if i == source.len or source.byte_at(i) == 10:
-            lines.push(source.slice(start, i - start))
-            start = i + 1
-        i += 1
-    return lines
 
 
 function emit_diag(ctx: ref[Context], line: ptr_uint, column: ptr_uint, reason: str, target_name: str) -> void:

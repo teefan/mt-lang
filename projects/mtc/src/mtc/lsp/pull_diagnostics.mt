@@ -10,14 +10,13 @@ import std.str
 import std.string as string
 import std.vec as vec
 
+import mtc.strings as strings
 import mtc.lsp.diagnostics as diag
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
 
-const FNV_OFFSET: uint = 0x811C9DC5
-const FNV_PRIME:  uint = 0x01000193
 
 ## The workspace report is bounded: indexed files in workspace order, plus any
 ## open document the index has not seen yet.  A larger workspace gets the first
@@ -48,7 +47,7 @@ public function handle_document_diagnostic(
     defer: content.release()
 
     let source = content.as_str()
-    let current_hash = fnv1a_hash(source)
+    let current_hash = strings.fnv1a_hash(source)
     let previous_id = extract_previous_result_id(params)
 
     # Check cache hit.
@@ -218,7 +217,7 @@ function append_workspace_document_report(
     if source.len == 0:
         return
 
-    let current_hash = fnv1a_hash(source)
+    let current_hash = strings.fnv1a_hash(source)
     let previous_id = previous_result_id_for(params, path)
     var hit = false
     var cached_id = string.String.create()
@@ -321,16 +320,6 @@ function uri_matches_path(uri: str, path: str) -> bool:
 
 ## Compute an FNV-1a hash of a source string.  Used as the diagnostic
 ## fingerprint so identical source text always produces the same resultId.
-function fnv1a_hash(text: str) -> uint:
-    var h = FNV_OFFSET
-    var i: ptr_uint = 0
-    while i < text.len:
-        let b = uint<-text.byte_at(i)
-        h = (h ^ b) * FNV_PRIME
-        i += 1
-    return h
-
-
 ## Extract the previousResultId field from pull diagnostic params.
 function extract_previous_result_id(params: json.Value) -> str:
     let obj_ptr = params.as_object()

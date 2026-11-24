@@ -824,6 +824,5 @@ public function renumber_program_procs(program: ir.Program, module_fn_count: ptr
         monomorphized_variants = program.monomorphized_variants,
         external_structs = program.external_structs,
         str_buffer_structs = program.str_buffer_structs,
-        type_table = program.type_table,
         arena = program.arena,
     )

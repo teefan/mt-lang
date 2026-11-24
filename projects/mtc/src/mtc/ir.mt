@@ -13,11 +13,6 @@ import mtc.semantic.types as types
 import std.mem.heap as heap
 
 
-## An interned type handle: an index into `Program.type_table`.  Now that type
-## nodes are 4 bytes instead of 72, the recursive IR variants stay small.
-public type TypeId = uint
-
-
 # =============================================================================
 #  Leaf value types
 # =============================================================================
@@ -267,12 +262,6 @@ public struct Program:
     ## collects them from the type universe and the C backend emits them, so
     ## they ride here rather than in `:structs`.  The dumper ignores the field.
     str_buffer_structs: span[StructDecl]
-    ## The compilation's interned type table: `TypeId` indexes it.  The nodes in
-    ## this program that carry a `TypeId` are only meaningful together with this
-    ## table.  The table's `Type` values borrow the analysis storage they were
-    ## built from (boxed interiors and spans), so the IR must be released no
-    ## later than that storage.
-    type_table: span[types.Type]
     ## The region that owns this program's IR nodes; `release` frees it.  Null
     ## on a program assembled without one (an empty or test-built program).
     ## Every copy of a `Program` shares the same region, so `release` is
@@ -311,7 +300,6 @@ public function empty_program(module_name: str, source_path: str) -> Program:
         monomorphized_variants = span[VariantDecl](),
         external_structs = span[ExternalStructLayout](),
         str_buffer_structs = span[StructDecl](),
-        type_table = span[types.Type](),
         arena = null,
     )
 

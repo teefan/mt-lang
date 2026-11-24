@@ -6,6 +6,7 @@ import std.string as string
 import std.str
 
 import mtc.semantic.types as types
+import mtc.strings as strings
 
 
 public function return_mismatch_message(expected: types.Type, got: types.Type) -> str:
@@ -248,21 +249,7 @@ public function argument_message(param_name: str, fn_name: str, expected: types.
 
 
 public function uint_to_str(value: ptr_uint) -> str:
-    if value == 0:
-        return "0"
-    var digits = string.String.create()
-    var n = value
-    while n > 0:
-        let d = n % 10
-        digits.push_byte(ubyte<-(int<-d + 48))
-        n = n / 10
-    var rev = string.String.create()
-    let raw = digits.as_str()
-    var i = raw.len
-    while i > 0:
-        i -= 1
-        rev.push_byte(raw.byte_at(i))
-    return rev.as_str()
+    return strings.uint_to_str(value)
 
 
 public function named_args_required_message(struct_name: str) -> str:

@@ -41,6 +41,7 @@
     "edges": [
       "bindgen -> bindgen",
       "bindgen -> formatter",
+      "bindgen -> strings",
       "build -> c_backend",
       "build -> debug_map",
       "build -> ir",
@@ -80,10 +81,12 @@
       "linter -> parser",
       "linter -> profile",
       "linter -> semantic",
+      "linter -> strings",
       "loader -> lexer",
       "loader -> loader",
       "loader -> parser",
       "loader -> semantic",
+      "loader -> strings",
       "lowering -> c_naming",
       "lowering -> ir",
       "lowering -> loader",
@@ -101,6 +104,7 @@
       "lsp -> parser",
       "lsp -> pretty_printer",
       "lsp -> semantic",
+      "lsp -> strings",
       "main -> bindgen",
       "main -> build",
       "main -> build_cache",
@@ -141,6 +145,7 @@
       "semantic -> c_naming",
       "semantic -> parser",
       "semantic -> semantic",
+      "semantic -> strings",
       "sexpr -> c_naming",
       "sexpr -> ir",
       "sexpr -> lexer",
@@ -334,7 +339,6 @@
       "projects/mtc/src/mtc/dap/lldb_backend.mt:28:const:KIND_SYNC_FUNCTIONS",
       "projects/mtc/src/mtc/dap/lldb_backend.mt:29:const:KIND_SYNC_EXCEPTIONS",
       "projects/mtc/src/mtc/imported_bindings/naming.mt:361:function:apply_rename_rules",
-      "projects/mtc/src/mtc/ir.mt:18:type:TypeId",
       "projects/mtc/src/mtc/lowering/async.mt:162:function:count_async_states",
       "projects/mtc/src/mtc/lowering/async.mt:274:function:build_async_frame",
       "projects/mtc/src/mtc/lowering/async.mt:316:function:task_type",
@@ -348,8 +352,8 @@
       "projects/mtc/src/mtc/lsp/protocol.mt:378:function:write_progress_begin",
       "projects/mtc/src/mtc/lsp/protocol.mt:386:function:write_progress_report",
       "projects/mtc/src/mtc/lsp/protocol.mt:402:function:write_progress_end",
-      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2544:function:classify_identifier",
-      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2570:function:collect_param_names",
+      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2533:function:classify_identifier",
+      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2559:function:collect_param_names",
       "projects/mtc/src/mtc/packages/graph.mt:263:function:node_at",
       "projects/mtc/src/mtc/packages/graph.mt:267:function:root_node",
       "projects/mtc/src/mtc/packages/graph.mt:334:function:package_for_path",
@@ -372,8 +376,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 882,
-    "duplicated_lines": 6499,
+    "windows": 871,
+    "duplicated_lines": 6389,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -497,13 +501,11 @@
       "264964b59b393f956d42aebeb35cc76e458f6c89",
       "2670816a7b552b2f0b90e45da9cb4bd4c8a1d0f1",
       "26d4c8269440d1bf73f3ecc4579ef131fcba1564",
-      "26edafd68a328805d7ef68f44aa77e6549712dcd",
       "270182983466177ce981e1017c30e357069aee70",
       "271f1d4a12b6aa004a85b2302ee41709ace3b040",
       "2724491a52618b96c60ee27d5b89dd49edb9db40",
       "2733459400241fbb40657501df4ba9a7dc7b82fc",
       "277ea64588f15c382d641bdc007b8deef3ec3dcc",
-      "27e7e1825a3560180f1374c838b958ad1ce55170",
       "280f56f57f5e03eaf8194e06bf25af50ece8b161",
       "285a1b9b7fdd9ff8d806f5d58b2e4f32c66d2a79",
       "28773dcc3bacfca8065d9ac8611573f9203f5953",
@@ -549,7 +551,6 @@
       "36cf94dd6e150ed2b1fd0a6ee2518a17c949dfd6",
       "371804494056ff8e2c25e067eb1efed95e15dd96",
       "372881a0b7be9c3b8d22997ebd237578953bc2bb",
-      "3762a940baf2e64841706e4e19a78d836d30141a",
       "379e3edae0cfba061bd678cf125761fde5bccdc4",
       "37eac9e18da41afdd40cbbc8857d5155d73ca6ee",
       "38474187dcd6816595e41edf9cc99360b9cc439f",
@@ -739,7 +740,6 @@
       "6d8c83b887757354698af24ec39571b5ceafda72",
       "6da637bb8304fe5f01860df6ba638787ddb789dc",
       "6da7d2f123a73c7afad77d50c113f290a0a2fdef",
-      "6da914b0567a09ff786287edf6ff5a471b097cfb",
       "6e2ac85204d856d8aaef8f747a64396a5247d362",
       "6e3f40ae3cedffde4c4930c4a68412a6aedfa5b8",
       "6e4edf46e18df9a4a8ea339c45aa6648b6a2883a",
@@ -783,7 +783,6 @@
       "76b5f136415e0fa1af68c92cbf45ecfc64ae8fb3",
       "76b77054a69575382cb5aa7f7c6357e096e36035",
       "76fad99b1a807636e7fc8de2bf00e1708d2eac80",
-      "7711d65a49f0fcd811ab90f8834dd9329e39a135",
       "7763ca34f583476b7fddde0eaefa2cfe455adac6",
       "779a2947bc81dfa72265dd8e39f3535f0355681a",
       "779cae848c3c131faab84f5614853d4b443fe282",
@@ -811,7 +810,6 @@
       "7c3ff4136bab2c125ab60096bb39941e5f28aae5",
       "7c4c025edd500a63ffb173458d34064f8de68283",
       "7c5fedf03b1d7d76f26091fd0045d5511751c68f",
-      "7c713599885d7aa7164f490c75b572f111dd0a70",
       "7cf9af373e9d2a92c2358a1088238e905aa80690",
       "7d271f7ab0e91e830d3573867585212c5ec67d04",
       "7d543e83f135d203b1f51e8290ace392b9c0b5c4",
@@ -935,7 +933,6 @@
       "a45f416240c00c974b3148d3dc71371460c628ec",
       "a4ac2b36e827720a7897a53490b25e667cc96753",
       "a5a3cdc3b4d56551278d15d32d611f284826ecf1",
-      "a5aa70bc60aa7f9c8e5c87fbf176eae2139d59f6",
       "a5bb00240fbd94bd1441184472c9e99b08179c9c",
       "a5c004e6faf0143a500a5f383915c21d969835ff",
       "a5fbe3582894134cff2e71b95aa8f99b5d97bc53",
@@ -944,7 +941,6 @@
       "a676b5b2dc09cf85ff8ef08428bcfb5d780b6ce7",
       "a68542aa73ad9198b027bb01877b7ee8f4882cf8",
       "a6a314d81a3253eca333eb72ec00cf164b8aa8a4",
-      "a6ab8ae568607d086923824739f16f64d1c449b6",
       "a6ad4bac0e38e3bb8bc948519eb9961c4e0b24c8",
       "a71aff78296f259cacc6d635f25051a772e9b134",
       "a751ec67f298c78021610db6cd5f896d713ae714",
@@ -1007,7 +1003,6 @@
       "b4de14a949b99aef2e90373cd4b493294aa73a03",
       "b554ca9e5b1b0bb9f11673d6cf788d4efb2b059d",
       "b6aaa5c021799b982c4f209062abc692da9c55eb",
-      "b6c073e64a6a4141311e3f40beb815a10af142ad",
       "b71b73ca766d36c44a3b7c107b522b9b429c0fd0",
       "b726103405e8d41392e6be2dd91013ab5b3f9f84",
       "b72b07c8211f599677a4030d6de753c62b309496",
@@ -1190,7 +1185,6 @@
       "ebeed7c324dc3fc312164a7ea64b26fffe3303c3",
       "ec7587103947ac752b7d316e3bdab19a4888471a",
       "ecd023209de52ffdfce67017d209b2b5a3b3b15a",
-      "ecec44ae163d95d76f4ae2993ca68fe7660fd32b",
       "ecff96b80c92c13c77c97b83339aa4f029dd68df",
       "ed0b49d24d9e0ed736e018b7927094bfc1fc4e75",
       "ed21d42fe604f94e9121d295a31ed27a223a9e06",
@@ -1247,7 +1241,6 @@
       "fc0e9c8f5a9d0fa540ca1ec63adaa242ceeee8a2",
       "fc285d17d1b3f3ee9bce31024a8acfe5b18dad70",
       "fca0f003dfa8a93b4cd38b9fd1af0c00516b228a",
-      "fcbe991d33aebe6fcadd5a2e162ae3c5190f95bb",
       "fd234ba0427bb49fb81d14285178ed01edc7ee50",
       "fd48ecfb935ca266593dc823cc2f8b03fa0059de",
       "fdccfac0a625bf2295368c5c71748345d7100cff",
@@ -1260,13 +1253,13 @@
     ]
   },
   "sizes": {
-    "total_code": 129547,
+    "total_code": 128970,
     "functions_over_limit": 3,
     "files_over_limit": 11,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
-        "lines": 3236,
-        "code": 2754,
+        "lines": 3222,
+        "code": 2740,
         "max_line": 1984,
         "max_function": 103
       },
@@ -1319,10 +1312,10 @@
         "max_function": 49
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 8213,
-        "code": 6270,
+        "lines": 8212,
+        "code": 6269,
         "max_line": 436,
-        "max_function": 198
+        "max_function": 197
       },
       "projects/mtc/src/mtc/c_backend/reachability.mt": {
         "lines": 393,
@@ -1355,8 +1348,8 @@
         "max_function": 40
       },
       "projects/mtc/src/mtc/dap/lldb_policy.mt": {
-        "lines": 2303,
-        "code": 1979,
+        "lines": 2288,
+        "code": 1966,
         "max_line": 161,
         "max_function": 166
       },
@@ -1475,10 +1468,10 @@
         "max_function": 0
       },
       "projects/mtc/src/mtc/ir.mt": {
-        "lines": 348,
-        "code": 196,
+        "lines": 336,
+        "code": 193,
         "max_line": 114,
-        "max_function": 21
+        "max_function": 20
       },
       "projects/mtc/src/mtc/lexer/keywords.mt": {
         "lines": 81,
@@ -1529,8 +1522,8 @@
         "max_function": 91
       },
       "projects/mtc/src/mtc/linter/linter.mt": {
-        "lines": 7071,
-        "code": 5665,
+        "lines": 7057,
+        "code": 5651,
         "max_line": 276,
         "max_function": 185
       },
@@ -1547,14 +1540,14 @@
         "max_function": 13
       },
       "projects/mtc/src/mtc/linter/platform_drift.mt": {
-        "lines": 1005,
-        "code": 862,
+        "lines": 994,
+        "code": 853,
         "max_line": 186,
         "max_function": 70
       },
       "projects/mtc/src/mtc/linter/redundant_cast.mt": {
-        "lines": 748,
-        "code": 561,
+        "lines": 737,
+        "code": 552,
         "max_line": 159,
         "max_function": 87
       },
@@ -1595,8 +1588,8 @@
         "max_function": 5
       },
       "projects/mtc/src/mtc/loader/module_loader.mt": {
-        "lines": 1860,
-        "code": 1376,
+        "lines": 1852,
+        "code": 1370,
         "max_line": 297,
         "max_function": 198
       },
@@ -1673,9 +1666,9 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 18644,
-        "code": 13738,
-        "max_line": 522,
+        "lines": 18635,
+        "code": 13734,
+        "max_line": 506,
         "max_function": 196
       },
       "projects/mtc/src/mtc/lowering/match.mt": {
@@ -1685,10 +1678,10 @@
         "max_function": 104
       },
       "projects/mtc/src/mtc/lowering/monomorphized.mt": {
-        "lines": 1402,
-        "code": 1115,
-        "max_line": 920,
-        "max_function": 196
+        "lines": 1400,
+        "code": 1113,
+        "max_line": 886,
+        "max_function": 195
       },
       "projects/mtc/src/mtc/lowering/parallel.mt": {
         "lines": 1042,
@@ -1697,8 +1690,8 @@
         "max_function": 181
       },
       "projects/mtc/src/mtc/lowering/proc_renumber.mt": {
-        "lines": 829,
-        "code": 733,
+        "lines": 828,
+        "code": 732,
         "max_line": 307,
         "max_function": 139
       },
@@ -1865,8 +1858,8 @@
         "max_function": 133
       },
       "projects/mtc/src/mtc/lsp/pull_diagnostics.mt": {
-        "lines": 412,
-        "code": 329,
+        "lines": 401,
+        "code": 320,
         "max_line": 129,
         "max_function": 68
       },
@@ -1907,8 +1900,8 @@
         "max_function": 55
       },
       "projects/mtc/src/mtc/lsp/semantic_tokens.mt": {
-        "lines": 2971,
-        "code": 2289,
+        "lines": 2960,
+        "code": 2280,
         "max_line": 303,
         "max_function": 149
       },
@@ -1961,8 +1954,8 @@
         "max_function": 30
       },
       "projects/mtc/src/mtc/lsp/workspace.mt": {
-        "lines": 1665,
-        "code": 1177,
+        "lines": 1656,
+        "code": 1171,
         "max_line": 169,
         "max_function": 52
       },
@@ -2177,7 +2170,7 @@
         "max_function": 39
       },
       "projects/mtc/src/mtc/semantic/analyzer.mt": {
-        "lines": 10751,
+        "lines": 10752,
         "code": 8035,
         "max_line": 342,
         "max_function": 119
@@ -2201,10 +2194,10 @@
         "max_function": 41
       },
       "projects/mtc/src/mtc/semantic/diagnostics.mt": {
-        "lines": 348,
-        "code": 253,
+        "lines": 335,
+        "code": 240,
         "max_line": 120,
-        "max_function": 16
+        "max_function": 11
       },
       "projects/mtc/src/mtc/semantic/emit_expansion.mt": {
         "lines": 109,
@@ -2231,8 +2224,8 @@
         "max_function": 197
       },
       "projects/mtc/src/mtc/semantic/types.mt": {
-        "lines": 2135,
-        "code": 1650,
+        "lines": 1578,
+        "code": 1161,
         "max_line": 161,
         "max_function": 181
       },
@@ -2249,10 +2242,10 @@
         "max_function": 120
       },
       "projects/mtc/src/mtc/strings.mt": {
-        "lines": 57,
-        "code": 36,
+        "lines": 105,
+        "code": 61,
         "max_line": 80,
-        "max_function": 9
+        "max_function": 10
       },
       "projects/mtc/src/mtc/toolchain_bindings.mt": {
         "lines": 410,

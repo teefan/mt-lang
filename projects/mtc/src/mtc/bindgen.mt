@@ -10,6 +10,7 @@ import std.json as json
 import std.process as process
 import std.fs as fs
 
+import mtc.strings as strings
 import mtc.formatter.tidy as tidy
 import mtc.bindgen.nullable_policy as nullable_policy
 import mtc.bindgen.emitter as emitter
@@ -173,22 +174,7 @@ function top_level_const_qualified(text: str) -> bool:
 
 
 public function uint_to_str(n: ptr_uint) -> str:
-    var buf = string.String.create()
-    if n == 0:
-        buf.push_byte('0')
-        return buf.as_str()
-    var digits: array[ubyte, 20]
-    var di: ptr_uint = 0
-    var rem = n
-    while rem > 0:
-        digits[di] = '0' + ubyte<-(rem % 10)
-        rem = rem / 10
-        di += 1
-    var ri = di
-    while ri > 0:
-        ri -= 1
-        buf.push_byte(digits[ri])
-    return buf.as_str()
+    return strings.uint_to_str(n)
 
 
 function parse_long(s: str) -> long:

@@ -149,7 +149,7 @@ function cleanup_dir(dir: ref[string.String]) -> void:
 
 
 ## Syntactic absolute path (the host's `File.expand_path`).
-function absolute_path(path_text: str) -> string.String:
+public function absolute_path(path_text: str) -> string.String:
     if path_ops.is_absolute(path_text):
         return path_ops.normalize_separators(path_text)
     var cwd = string.String.create()

@@ -20,6 +20,7 @@ import std.str
 import std.string as string
 import std.vec as vec
 
+import mtc.strings as strings
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
@@ -60,7 +61,7 @@ public function check_platform_api_drift(file: ast.SourceFile, path: str, source
     if siblings.len() == 0:
         return result
 
-    var lines = split_lines(source)
+    var lines = strings.split_lines(source)
     defer: lines.release()
     var current_sites = surface_sites(file, ref_of(lines))
     defer: sites_release(ref_of(current_sites))
@@ -177,7 +178,7 @@ function load_sibling_sites(path: str, lines: ref[vec.Vec[str]]) -> map_mod.Map[
             defer: errors.release()
             let sibling = parser.parse_source(text, ref_of(errors))
             if errors.len() == 0:
-                var text_lines = split_lines(text)
+                var text_lines = strings.split_lines(text)
                 defer: text_lines.release()
                 sites_release(ref_of(sites))
                 sites = surface_sites(sibling, ref_of(text_lines))
@@ -907,18 +908,6 @@ function summarize_surface_entries(entries: ref[vec.Vec[str]]) -> str:
 # =============================================================================
 #  Small helpers
 # =============================================================================
-
-function split_lines(source: str) -> vec.Vec[str]:
-    var lines = vec.Vec[str].create()
-    var start: ptr_uint = 0
-    var i: ptr_uint = 0
-    while i <= source.len:
-        if i == source.len or source.byte_at(i) == 10:
-            lines.push(source.slice(start, i - start))
-            start = i + 1
-        i += 1
-    return lines
-
 
 function map_keys(map: ref[map_mod.Map[str, Anchor]]) -> vec.Vec[str]:
     var keys = vec.Vec[str].create()

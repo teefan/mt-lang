@@ -13,6 +13,7 @@ import std.string as string
 import std.vec as vec
 import std.log as log
 
+import mtc.strings as strings
 import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.loader.module_loader as loader
@@ -561,7 +562,7 @@ extending Workspace:
         if open_ptr != null:
             unsafe:
                 let validated = read(open_ptr).as_str()
-                let hash = fnv1a_hash(validated)
+                let hash = strings.fnv1a_hash(validated)
                 this.put_text_cache(path, string.String.create(), validated, hash, true, 0, 0, 0)
                 return Option[DocumentText].some(value = DocumentText(text = validated, hash = hash))
 
@@ -582,7 +583,7 @@ extending Workspace:
             Result.success as content:
                 var source = content.value
                 let validated = source.as_str()
-                let hash = fnv1a_hash(validated)
+                let hash = strings.fnv1a_hash(validated)
                 this.put_text_cache(path, source, validated, hash, false, size, modified_seconds, modified_nanoseconds)
                 return Option[DocumentText].some(value = DocumentText(text = validated, hash = hash))
             Result.failure as failure_payload:
@@ -604,7 +605,7 @@ extending Workspace:
                 let cached = read(cached_ptr)
                 if cached.text.len == source.len and cached.text.data == source.data:
                     return cached.hash
-        return fnv1a_hash(source)
+        return strings.fnv1a_hash(source)
 
 
     ## Drop a document's text cache entry (open/change/close).
@@ -1260,16 +1261,6 @@ function module_root_view_contains(views: ref[vec.Vec[str]], candidate: str) -> 
     return false
 
 
-## A content fingerprint for the analysis cache.
-function fnv1a_hash(text: str) -> uint:
-    var hash: uint = 2166136261
-    var i: ptr_uint = 0
-    while i < text.len:
-        hash = (hash ^ uint<-text.byte_at(i)) * 16777619
-        i += 1
-    return hash
-
-
 function release_dirty_paths(paths: ref[vec.Vec[string.String]]) -> void:
     var i: ptr_uint = 0
     while i < paths.len():
@@ -1329,7 +1320,7 @@ function release_analysis_cache(cache: ref[map_mod.Map[string.String, AnalysisCa
 ## The parse and single-file analysis of `source` (which must be the document's
 ## current text), cached by content fingerprint.
 public function parsed_analysis_for(ws: ref[Workspace], path: str, source: str) -> Option[ParseCacheEntry]:
-    let current_hash = fnv1a_hash(source)
+    let current_hash = strings.fnv1a_hash(source)
     var cache_key = string.String.from_str(path)
     defer: cache_key.release()
 

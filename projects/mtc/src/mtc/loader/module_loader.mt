@@ -17,6 +17,7 @@ import std.str as text
 import std.string as string
 import std.vec as vec
 
+import mtc.strings as strings
 import mtc.lexer.token as token_mod
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
@@ -609,15 +610,6 @@ function release_paths_vec(paths: vec.Vec[string.String]) -> void:
 
 
 ## A content fingerprint for the module cache.
-function fnv1a_hash(content: str) -> uint:
-    var hash: uint = 2166136261
-    var i: ptr_uint = 0
-    while i < content.len:
-        hash = (hash ^ uint<-content.byte_at(i)) * 16777619
-        i += 1
-    return hash
-
-
 ## True when two resolved-import-path lists are element-wise equal.
 function import_paths_equal(left: span[string.String], right: span[string.String]) -> bool:
     if left.len != right.len:
@@ -1600,7 +1592,7 @@ function parse_all(
         if entry_ptr != null:
             var reused = false
             unsafe:
-                reused = read(entry_ptr).content_hash == fnv1a_hash(source.as_str())
+                reused = read(entry_ptr).content_hash == strings.fnv1a_hash(source.as_str())
             if reused:
                 source.release()
                 owned_path.release()
@@ -1647,7 +1639,7 @@ function parse_all(
     modules.push(loaded)
     let index = modules.len() - 1
     if run.cache != null:
-        module_cache_store_module(run.cache, key, fnv1a_hash(source.as_str()), loaded, parse_region)
+        module_cache_store_module(run.cache, key, strings.fnv1a_hash(source.as_str()), loaded, parse_region)
     run.dep_paths.push(vec.Vec[string.String].create())
 
     recurse_imports(source_file, key, index, roots, platform, root_key, root_source, modules, visited, on_stack, order, diagnostics, unresolved_import_paths, run)
