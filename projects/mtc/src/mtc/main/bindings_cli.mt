@@ -20,7 +20,6 @@ import mtc.cli_help as cli_help
 import mtc.main as main
 import mtc.main.std_cli as std_cli
 
-
 struct BindgenCliArgs:
     output: Option[str]
     nullable_report: Option[str]
@@ -30,7 +29,6 @@ struct BindgenCliArgs:
     includes: vec.Vec[str]
     clang_args: vec.Vec[str]
     clang_str: str
-
 
 struct BindgenCliError:
     message: string.String
@@ -144,49 +142,103 @@ function parse_bindgen_args(args: span[str]) -> Result[BindgenCliArgs, BindgenCl
         if arg == "-o" or arg == "--output":
             ai += 1
             if ai >= args.len:
-                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "missing value for -o", true)
+                return bindgen_cli_failure(
+                    ref_of(link_libs),
+                    ref_of(includes),
+                    ref_of(clang_args),
+                    "missing value for -o",
+                    true
+                )
             output = Option[str].some(value = args[ai])
         else if arg == "--link":
             ai += 1
             if ai >= args.len:
-                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "missing value for --link", true)
+                return bindgen_cli_failure(
+                    ref_of(link_libs),
+                    ref_of(includes),
+                    ref_of(clang_args),
+                    "missing value for --link",
+                    true
+                )
             link_libs.push(args[ai])
         else if arg == "--include":
             ai += 1
             if ai >= args.len:
-                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "missing value for --include", true)
+                return bindgen_cli_failure(
+                    ref_of(link_libs),
+                    ref_of(includes),
+                    ref_of(clang_args),
+                    "missing value for --include",
+                    true
+                )
             includes.push(args[ai])
         else if arg == "--clang":
             ai += 1
             if ai >= args.len:
-                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "missing value for --clang", true)
+                return bindgen_cli_failure(
+                    ref_of(link_libs),
+                    ref_of(includes),
+                    ref_of(clang_args),
+                    "missing value for --clang",
+                    true
+                )
             clang_str = args[ai]
         else if arg == "--clang-arg":
             ai += 1
             if ai >= args.len:
-                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "missing value for --clang-arg", true)
+                return bindgen_cli_failure(
+                    ref_of(link_libs),
+                    ref_of(includes),
+                    ref_of(clang_args),
+                    "missing value for --clang-arg",
+                    true
+                )
             clang_args.push(args[ai])
         else if arg == "--nullable-report":
             ai += 1
             if ai >= args.len:
-                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "missing value for --nullable-report", true)
+                return bindgen_cli_failure(
+                    ref_of(link_libs),
+                    ref_of(includes),
+                    ref_of(clang_args),
+                    "missing value for --nullable-report",
+                    true
+                )
             nullable_report = Option[str].some(value = args[ai])
         else if arg == "--nullable-policy":
             ai += 1
             if ai >= args.len:
-                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "missing value for --nullable-policy", true)
+                return bindgen_cli_failure(
+                    ref_of(link_libs),
+                    ref_of(includes),
+                    ref_of(clang_args),
+                    "missing value for --nullable-policy",
+                    true
+                )
             nullable_policy_path = Option[str].some(value = args[ai])
         else if arg == "--options-json":
             ai += 1
             if ai >= args.len:
-                return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), "bindgen: --options-json requires a path", false)
+                return bindgen_cli_failure(
+                    ref_of(link_libs),
+                    ref_of(includes),
+                    ref_of(clang_args),
+                    "bindgen: --options-json requires a path",
+                    false
+                )
             options_json_path = Option[str].some(value = args[ai])
         else:
             var unknown_opt = string.String.create()
             defer: unknown_opt.release()
             unknown_opt.append("unknown bindgen option ")
             unknown_opt.append(arg)
-            return bindgen_cli_failure(ref_of(link_libs), ref_of(includes), ref_of(clang_args), unknown_opt.as_str(), true)
+            return bindgen_cli_failure(
+                ref_of(link_libs),
+                ref_of(includes),
+                ref_of(clang_args),
+                unknown_opt.as_str(),
+                true
+            )
         ai += 1
 
     return Result[BindgenCliArgs, BindgenCliError].success(
@@ -335,7 +387,6 @@ function write_nullable_report(path: str, report: str) -> bool:
             return false
         Result.success:
             return true
-
 
 const IB_MODE_WRITE: int = 0
 const IB_MODE_CHECK: int = 1
@@ -631,7 +682,11 @@ function regenerate_one(policy_path: str, output_path: str, raw_module_name: str
 
             match fs.write_text(output_path, p.value.as_str()):
                 Result.failure:
-                    stdio.print_format(c"imported-bindings: could not write %.*s\n", int<-(output_path.len), output_path.data)
+                    stdio.print_format(
+                        c"imported-bindings: could not write %.*s\n",
+                        int<-(output_path.len),
+                        output_path.data
+                    )
                     p.value.release()
                     raw_buf.release()
                     return IbOutcome(status = IB_FAILED, first_diff_offset = 0, first_diff_line = 0)

@@ -15,7 +15,11 @@ import mtc.parser.declarations as declarations
 import mtc.parser.expressions as expressions
 
 
-public function parse_struct_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
+public function parse_struct_decl(
+    s: ref[pstate.ParserState],
+    attrs: span[ast.AttributeApplication],
+    visibility: bool
+) -> ptr[ast.Decl]:
     let tok = pstate.peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -113,7 +117,11 @@ public function drain_pending_decls(s: ref[pstate.ParserState], out_decls: ref[v
 ## `@[packed]` sets `packed`; `@[align(N)]` with an integer-literal argument
 ## sets `alignment`.  Other attributes are user-defined and stay in the generic
 ## attribute list.
-function extract_layout_attributes(attrs: span[ast.AttributeApplication], packed: ref[bool], alignment: ref[int]) -> void:
+function extract_layout_attributes(
+    attrs: span[ast.AttributeApplication],
+    packed: ref[bool],
+    alignment: ref[int]
+) -> void:
     var i: ptr_uint = 0
     while i < attrs.len:
         var applied: ast.AttributeApplication
@@ -218,7 +226,12 @@ function make_named_type_ref(s: ref[pstate.ParserState], name: str, ln: ptr_uint
     var node = heap_mod.must_alloc[ast.TypeRef](1)
     unsafe:
         read(node) = ast.TypeRef(
-            name = ast.QualifiedName(parts = parts.as_span(), type_arguments = span[ast.TypeRef](), line = ln, column = cn),
+            name = ast.QualifiedName(
+                parts = parts.as_span(),
+                type_arguments = span[ast.TypeRef](),
+                line = ln,
+                column = cn
+            ),
             arguments = span[ast.TypeRef](), nullable = false,
             lifetime = Option[str].none, line = ln, column = cn,
             fn_params = span[ast.Param](), fn_return = null,
@@ -283,7 +296,12 @@ function int_to_dec(value: int) -> str:
     return rev.as_str()
 
 
-public function parse_enum_decl(s: ref[pstate.ParserState], is_flags: bool, attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
+public function parse_enum_decl(
+    s: ref[pstate.ParserState],
+    is_flags: bool,
+    attrs: span[ast.AttributeApplication],
+    visibility: bool
+) -> ptr[ast.Decl]:
     let tok = pstate.peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -326,7 +344,13 @@ public function parse_enum_decl(s: ref[pstate.ParserState], is_flags: bool, attr
             mvalue = make_int_literal(s, auto_value)
             auto_value += 1
         parser.consume_end_of_statement(s)
-        members.push(ast.EnumMember(name = mname, value = mvalue, line = mln, column = mcn, value_explicit = value_explicit))
+        members.push(ast.EnumMember(
+            name = mname,
+            value = mvalue,
+            line = mln,
+            column = mcn,
+            value_explicit = value_explicit
+        ))
         parser.skip_newlines(s)
     pstate.consume(s, tk.TokenKind.dedent, c"expected end of enum body")
     var node = parser.alloc_decl(s)
@@ -341,7 +365,11 @@ public function parse_enum_decl(s: ref[pstate.ParserState], is_flags: bool, attr
     return node
 
 
-public function parse_variant_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
+public function parse_variant_decl(
+    s: ref[pstate.ParserState],
+    attrs: span[ast.AttributeApplication],
+    visibility: bool
+) -> ptr[ast.Decl]:
     let tok = pstate.peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -551,7 +579,11 @@ function struct_member_is_method(s: ref[pstate.ParserState]) -> bool:
 
 ## Parse a method declaration after its attributes and visibility modifier.
 ## Shared by `extending` blocks and inline struct-body methods.
-function parse_method_def(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ast.Method:
+function parse_method_def(
+    s: ref[pstate.ParserState],
+    attrs: span[ast.AttributeApplication],
+    visibility: bool
+) -> ast.Method:
     var is_async = pstate.match_kind(s, tk.TokenKind.tk_async)
     var kind = ast.MethodKind.mk_plain
     if pstate.match_kind(s, tk.TokenKind.tk_editable):
@@ -634,7 +666,11 @@ public function parse_extern_decl(s: ref[pstate.ParserState], attrs: span[ast.At
     return node
 
 
-public function parse_foreign_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
+public function parse_foreign_decl(
+    s: ref[pstate.ParserState],
+    attrs: span[ast.AttributeApplication],
+    visibility: bool
+) -> ptr[ast.Decl]:
     let tok = pstate.peek(s)
     var ln: ptr_uint = 0
     if tok != null:
@@ -724,7 +760,11 @@ public function parse_static_assert(s: ref[pstate.ParserState]) -> ptr[ast.Decl]
     return node
 
 
-public function parse_event_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
+public function parse_event_decl(
+    s: ref[pstate.ParserState],
+    attrs: span[ast.AttributeApplication],
+    visibility: bool
+) -> ptr[ast.Decl]:
     let tok = pstate.peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0

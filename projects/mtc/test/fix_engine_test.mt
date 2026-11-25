@@ -23,10 +23,10 @@ function expect_fixed(source: str, expected: str) -> void:
     defer: fixed.release()
     expect_eq(fixed.as_str(), expected)
 
-
 # =============================================================================
 #  prefer-let
 # =============================================================================
+
 
 @[test]
 function test_fix_prefer_let() -> void:
@@ -53,10 +53,10 @@ function test_fix_prefer_let_keeps_reassigned_var() -> void:
     SRC
     expect_fixed(source, source)
 
-
 # =============================================================================
 #  redundant-return
 # =============================================================================
+
 
 @[test]
 function test_fix_redundant_return() -> void:
@@ -71,10 +71,10 @@ function test_fix_redundant_return() -> void:
     SRC
     expect_fixed(source, expected)
 
-
 # =============================================================================
 #  redundant-else
 # =============================================================================
+
 
 @[test]
 function test_fix_redundant_else() -> void:
@@ -93,10 +93,10 @@ function test_fix_redundant_else() -> void:
     SRC
     expect_fixed(source, expected)
 
-
 # =============================================================================
 #  trailing-list-comma
 # =============================================================================
+
 
 @[test]
 function test_fix_trailing_comma() -> void:
@@ -116,10 +116,10 @@ function test_fix_trailing_comma() -> void:
     SRC
     expect_fixed(source, expected)
 
-
 # =============================================================================
 #  redundant-cast
 # =============================================================================
+
 
 @[test]
 function test_fix_redundant_cast() -> void:
@@ -155,10 +155,10 @@ function test_fix_redundant_cast_unwraps_unsafe() -> void:
     SRC
     expect_fixed(source, expected)
 
-
 # =============================================================================
 #  redundant-bool-compare
 # =============================================================================
+
 
 @[test]
 function test_fix_bool_compare_true() -> void:
@@ -204,10 +204,10 @@ function test_fix_bool_compare_literal_first_untouched() -> void:
     SRC
     expect_fixed(source, source)
 
-
 # =============================================================================
 #  redundant-type-annotation
 # =============================================================================
+
 
 @[test]
 function test_fix_redundant_type_annotation() -> void:
@@ -223,10 +223,10 @@ function test_fix_redundant_type_annotation() -> void:
     SRC
     expect_fixed(source, expected)
 
-
 # =============================================================================
 #  unused-import must never be auto-fixed
 # =============================================================================
+
 
 @[test]
 function test_fix_keeps_unused_import() -> void:
@@ -238,10 +238,10 @@ function test_fix_keeps_unused_import() -> void:
     SRC
     expect_fixed(source, source)
 
-
 # =============================================================================
 #  select / ignore filters
 # =============================================================================
+
 
 @[test]
 function test_fix_respects_ignore() -> void:
@@ -282,10 +282,10 @@ function test_fix_respects_select() -> void:
     defer: fixed.release()
     expect_eq(fixed.as_str(), expected)
 
-
 # =============================================================================
 #  is_fixable
 # =============================================================================
+
 
 @[test]
 function test_is_fixable_codes() -> void:
@@ -295,10 +295,10 @@ function test_is_fixable_codes() -> void:
         expect(false)
     expect(fix_engine.is_fixable("trailing-list-comma"))
 
-
 # =============================================================================
 #  .mt-lint.yml parsing
 # =============================================================================
+
 
 @[test]
 function test_config_block_lists() -> void:
@@ -345,7 +345,6 @@ function test_config_empty_when_missing_keys() -> void:
     if cfg.has_select or cfg.has_ignore:
         expect(false)
     expect_eq(int<-(cfg.max_line_length), 0)
-
 
 # =============================================================================
 #  prefer-inline-methods
@@ -407,10 +406,10 @@ function test_fix_prefer_inline_methods_non_adjacent_is_untouched() -> void:
     SRC
     expect_fixed_select(source, source, "prefer-inline-methods")
 
-
 # =============================================================================
 #  reserved-primitive-name
 # =============================================================================
+
 
 @[test]
 function test_fix_reserved_name_renames_every_use() -> void:

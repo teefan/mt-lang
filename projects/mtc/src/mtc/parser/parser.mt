@@ -25,7 +25,6 @@ import mtc.parser.expressions as expressions
 import mtc.parser.declarations as declarations
 import mtc.parser.decl_forms as decl_forms
 
-
 ## Diagnostic with position info — re-exported from parser/state.mt.
 
 # =============================================================================
@@ -35,31 +34,47 @@ import mtc.parser.decl_forms as decl_forms
 function step(s: ref[pstate.ParserState]) -> void:
     pstate.step(s)
 
+
 function peek(s: ref[pstate.ParserState]) -> ptr[token_mod.Token]?:
     return pstate.peek(s)
+
 
 function advance(s: ref[pstate.ParserState]) -> void:
     pstate.advance(s)
 
+
 function previous(s: ref[pstate.ParserState]) -> ptr[token_mod.Token]?:
     return pstate.previous(s)
+
 
 function previous_token(s: ref[pstate.ParserState]) -> ptr[token_mod.Token]:
     return pstate.previous_token(s)
 
+
 function check(s: ref[pstate.ParserState], kind: tk.TokenKind) -> bool:
     return pstate.check(s, kind)
+
 
 function match_kind(s: ref[pstate.ParserState], kind: tk.TokenKind) -> bool:
     return pstate.match_kind(s, kind)
 
+
 function consume(s: ref[pstate.ParserState], kind: tk.TokenKind, msg: cstr) -> void:
     pstate.consume(s, kind, msg)
+
 
 function parser_error_naked(s: ref[pstate.ParserState], msg: cstr) -> void:
     pstate.parser_error_naked(s, msg)
 
-function parser_error_at(s: ref[pstate.ParserState], msg: cstr, line: ptr_uint, col: ptr_uint, lexeme: str, kind: str) -> void:
+
+function parser_error_at(
+    s: ref[pstate.ParserState],
+    msg: cstr,
+    line: ptr_uint,
+    col: ptr_uint,
+    lexeme: str,
+    kind: str
+) -> void:
     pstate.parser_error_at(s, msg, line, col, lexeme, kind)
 
 
@@ -178,6 +193,7 @@ function synchronize_to_top_level_boundary(s: ref[pstate.ParserState]) -> void:
                     return
         advance(s)
 
+
 ## Rewind to the first error's token and clear the panic — the host's exception
 ## unwinding, emulated: the recovery points below then synchronize from the
 ## error's own position, exactly as `synchronize_to_*_boundary` would after a
@@ -192,7 +208,11 @@ function rewind_to_panic(s: ref[pstate.ParserState]) -> void:
 public function panic_error_expr(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var node = alloc_expr(s)
     unsafe:
-        read(node) = ast.Expr.expr_error(line = s.panic_line, column = s.panic_column, message = str.cstr_as_str(s.panic_message))
+        read(node) = ast.Expr.expr_error(
+            line = s.panic_line,
+            column = s.panic_column,
+            message = str.cstr_as_str(s.panic_message)
+        )
     return node
 
 
@@ -233,20 +253,25 @@ function is_declaration_start(s: ref[pstate.ParserState]) -> bool:
         or check(s, tk.TokenKind.tk_static)
     )
 
+
 public function eof(s: ref[pstate.ParserState]) -> bool:
     return ts.eof(ref_of(s.stream))
+
 
 public function skip_newlines(s: ref[pstate.ParserState]) -> void:
     ts.skip_newlines(ref_of(s.stream))
 
+
 public function check_name(s: ref[pstate.ParserState]) -> bool:
     return check(s, tk.TokenKind.identifier)
+
 
 public function match_name(s: ref[pstate.ParserState]) -> bool:
     if check_name(s):
         advance(s)
         return true
     return false
+
 
 public function consume_name(s: ref[pstate.ParserState], msg: cstr) -> void:
     let tok = peek(s) else:
@@ -261,6 +286,7 @@ public function consume_name(s: ref[pstate.ParserState], msg: cstr) -> void:
             advance(s)
             return
     advance(s)
+
 
 public function consume_name_allowing_keywords(s: ref[pstate.ParserState], msg: cstr) -> void:
     if check_name(s):
@@ -282,6 +308,7 @@ public function consume_name_allowing_keywords(s: ref[pstate.ParserState], msg: 
         parser_error_at(s, msg, t.line, t.column, lexeme, kn)
         skip_to_sync_point(s)
 
+
 public function consume_end_of_statement(s: ref[pstate.ParserState]) -> void:
     if s.in_inline_block_body:
         return
@@ -290,10 +317,12 @@ public function consume_end_of_statement(s: ref[pstate.ParserState]) -> void:
         return
     advance(s)
 
+
 public function is_keyword_token(tok: token_mod.Token) -> bool:
     # Keyword token kinds all have the tk_ prefix (values 51-122).
     # Tokens that are truly identifiers have TokenKind.identifier.
     return tok.kind >= tk.TokenKind.tk_align_of
+
 
 public function previous_lexeme(s: ref[pstate.ParserState]) -> str:
     let tok = previous(s) else:
@@ -301,7 +330,6 @@ public function previous_lexeme(s: ref[pstate.ParserState]) -> str:
     unsafe:
         let t = read(tok)
         return token_mod.token_lexeme(t, s.source)
-
 
 # =============================================================================
 #  Name disambiguation infrastructure
@@ -317,6 +345,7 @@ const BUILTIN_TYPE_NAMES: array[str, 46] = array[str, 46](
     "struct_handle", "field_handle", "callable_handle", "attribute_handle",
     "member_handle", "type", "EventError", "Subscription"
 )
+
 
 function builtin_type_names() -> span[str]:
     return BUILTIN_TYPE_NAMES.as_span()
@@ -391,7 +420,6 @@ public function matching_rbracket_index(s: ref[pstate.ParserState], start_index:
         index += 1
     return Option[ptr_uint].none
 
-
 # =============================================================================
 #  Name seeding — pre-scans tokens to populate known-name maps
 # =============================================================================
@@ -439,8 +467,14 @@ function seed_known_names(s: ref[pstate.ParserState]) -> void:
                         let name_opt = s.stream.tokens.get(index + 2)
                         let tp_opt = s.stream.tokens.get(index + 3)
                         if name_opt != null and tp_opt != null:
-                            if read(name_opt).kind == tk.TokenKind.identifier and read(tp_opt).kind == tk.TokenKind.lbracket:
-                                s.known_generic_callable_names.set(token_mod.token_lexeme(read(name_opt), s.source), true)
+                            if (
+                                read(name_opt).kind == tk.TokenKind.identifier
+                                and read(tp_opt).kind == tk.TokenKind.lbracket
+                            ):
+                                s.known_generic_callable_names.set(
+                                    token_mod.token_lexeme(read(name_opt), s.source),
+                                    true
+                                )
                                 index += 3
                                 continue
         else if kind == tk.TokenKind.tk_foreign and depth == 0:
@@ -451,8 +485,14 @@ function seed_known_names(s: ref[pstate.ParserState]) -> void:
                         let name_opt = s.stream.tokens.get(index + 2)
                         let tp_opt = s.stream.tokens.get(index + 3)
                         if name_opt != null and tp_opt != null:
-                            if read(name_opt).kind == tk.TokenKind.identifier and read(tp_opt).kind == tk.TokenKind.lbracket:
-                                s.known_generic_callable_names.set(token_mod.token_lexeme(read(name_opt), s.source), true)
+                            if (
+                                read(name_opt).kind == tk.TokenKind.identifier
+                                and read(tp_opt).kind == tk.TokenKind.lbracket
+                            ):
+                                s.known_generic_callable_names.set(
+                                    token_mod.token_lexeme(read(name_opt), s.source),
+                                    true
+                                )
                                 index += 3
                                 continue
         else if depth == 0 and (
@@ -497,7 +537,6 @@ function seed_import_alias(s: ref[pstate.ParserState], start_index: ptr_uint) ->
         Option.none:
             pass
     return cursor
-
 
 # =============================================================================
 #  Generic comma-separated list helper
@@ -551,7 +590,12 @@ function normalize_format_heredoc(lexeme: str) -> str:
 ## `expr_format_string` with alternating text and interpolation parts.  Mirrors
 ## the Ruby lexer's part-splitting (which the self-host token model cannot carry)
 ## plus the parser's re-parse of each `#{expr}` and format spec.
-public function parse_format_string_expr(s: ref[pstate.ParserState], lexeme: str, line: ptr_uint, column: ptr_uint) -> own[ast.Expr]:
+public function parse_format_string_expr(
+    s: ref[pstate.ParserState],
+    lexeme: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> own[ast.Expr]:
     var content: str = ""
     var decode_escapes = true
     if is_format_heredoc(lexeme):
@@ -715,7 +759,6 @@ function fmt_parse_spec(spec: str) -> ptr[ast.FormatSpec]?:
         read(p) = fs
     return p
 
-
 ## Re-lex and parse the source text of an interpolation as a single expression,
 ## in a sub-parser that shares the parent's known-name context so type-name
 ## disambiguation inside the interpolation matches the surrounding module.
@@ -742,7 +785,12 @@ function fmt_content_position(content: str, j: ptr_uint, base_line: ptr_uint, ba
 ## Parse an interpolation's source with positions offset to the format string's
 ## location: pad the sub-source with the leading newlines/spaces the lexer needs
 ## to report absolute line/column, then drop the synthetic indentation tokens.
-function parse_embedded_expr(s: ref[pstate.ParserState], source: str, line: ptr_uint, column: ptr_uint) -> ptr[ast.Expr]:
+function parse_embedded_expr(
+    s: ref[pstate.ParserState],
+    source: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> ptr[ast.Expr]:
     var padded = string.String.create()
     var n: ptr_uint = 0
     while n + 1 < line:
@@ -765,7 +813,10 @@ function parse_embedded_expr(s: ref[pstate.ParserState], source: str, line: ptr_
             break
         unsafe:
             let kind = read(t).kind
-            if skipping and (kind == tk.TokenKind.indent or kind == tk.TokenKind.newline or kind == tk.TokenKind.dedent):
+            if (
+                skipping
+                and (kind == tk.TokenKind.indent or kind == tk.TokenKind.newline or kind == tk.TokenKind.dedent)
+            ):
                 ti += 1
                 continue
             skipping = false
@@ -802,7 +853,6 @@ function parse_embedded_expr(s: ref[pstate.ParserState], source: str, line: ptr_
 function append_escaped_byte(buf: ref[string.String], ch: ubyte) -> void:
     lparse.append_escaped_byte(buf, ch)
 
-
 # =============================================================================
 #  AST node allocation
 # =============================================================================
@@ -810,8 +860,10 @@ function append_escaped_byte(buf: ref[string.String], ch: ubyte) -> void:
 public function alloc_expr(s: ref[pstate.ParserState]) -> own[ast.Expr]:
     return heap_mod.must_alloc[ast.Expr](1)
 
+
 public function alloc_stmt(s: ref[pstate.ParserState]) -> own[ast.Stmt]:
     return heap_mod.must_alloc[ast.Stmt](1)
+
 
 public function alloc_decl(s: ref[pstate.ParserState]) -> own[ast.Decl]:
     return heap_mod.must_alloc[ast.Decl](1)
@@ -829,7 +881,6 @@ function release_parser_scratch(s: ref[pstate.ParserState]) -> void:
     s.known_generic_callable_names.release()
     s.current_type_param_names.release()
     s.pending_decls.release()
-
 
 # =============================================================================
 #  Public API
@@ -947,7 +998,6 @@ public function parse_source_reporting(
 function source_file_decl_count(file: ast.SourceFile) -> ptr_uint:
     return file.imports.len + file.directives.len + file.declarations.len
 
-
 # =============================================================================
 #  Source file
 # =============================================================================
@@ -1011,7 +1061,10 @@ function parse_raw_module_body(s: ref[pstate.ParserState], module_line: ptr_uint
             unsafe:
                 imports.push(read(imp))
         skip_newlines(s)
-    while check(s, tk.TokenKind.tk_link) or check(s, tk.TokenKind.tk_include) or check(s, tk.TokenKind.tk_compiler_flag):
+    while check(s, tk.TokenKind.tk_link) or check(s, tk.TokenKind.tk_include) or check(
+        s,
+        tk.TokenKind.tk_compiler_flag
+    ):
         let directive = parse_raw_module_directive(s)
         unsafe:
             directives.push(read(directive))
@@ -1074,7 +1127,6 @@ function decl_error_sentinel(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
     read(node) = ast.Decl.decl_static_assert(condition = err, message = null, line = 0)
     return node
 
-
 # =============================================================================
 #  Import
 # =============================================================================
@@ -1098,7 +1150,13 @@ function parse_import(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
     let local_len = previous_lexeme(s).len
     consume_end_of_statement(s)
     var node = alloc_decl(s)
-    read(node) = ast.Decl.decl_import(path = path, alias_name = alias_name, line = ln, column = local_cn, length = local_len)
+    read(node) = ast.Decl.decl_import(
+        path = path,
+        alias_name = alias_name,
+        line = ln,
+        column = local_cn,
+        length = local_len
+    )
     return node
 
 
@@ -1117,7 +1175,6 @@ function parse_qualified_name(s: ref[pstate.ParserState]) -> ast.QualifiedName:
         consume_name_allowing_keywords(s, c"expected identifier after '.'")
         parts.push(previous_lexeme(s))
     return ast.QualifiedName(parts = parts.as_span(), type_arguments = span[ast.TypeRef](), line = ln, column = cn)
-
 
 # =============================================================================
 #  Declaration dispatch
@@ -1168,7 +1225,6 @@ public function skip_attribute_content(s: ref[pstate.ParserState]) -> void:
                 advance(s)
         else:
             advance(s)
-
 
 # =============================================================================
 #  External file support
@@ -1263,7 +1319,11 @@ public function parse_decl(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
         return decl_error_sentinel(s)
 
 
-function parse_union_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
+function parse_union_decl(
+    s: ref[pstate.ParserState],
+    attrs: span[ast.AttributeApplication],
+    visibility: bool
+) -> ptr[ast.Decl]:
     let tok = peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0

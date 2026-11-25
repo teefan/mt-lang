@@ -11,7 +11,6 @@ import std.vec as vec
 
 import mtc.semantic.types as types
 
-
 public struct Scope:
     frames: vec.Vec[map_mod.Map[str, types.Type]]
     let_bindings: vec.Vec[map_mod.Map[str, bool]]

@@ -15,7 +15,6 @@ import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
-
 struct LineRange:
     start_line: ptr_uint
     end_line: ptr_uint
@@ -142,7 +141,6 @@ function append_range_open(
     json_text.append(",\"character\":")
     json_text.append_format(f"#{end_char}")
     json_text.append("}}")
-
 
 struct WordBounds:
     start_char: ptr_uint

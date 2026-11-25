@@ -24,7 +24,6 @@ import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
-
 ## The outline's document view for the current request.  The symbol builders
 ## are pure string functions; this request-scoped context (the same pattern the
 ## linter uses) lets their shared `append_span` convert byte columns without
@@ -32,19 +31,18 @@ import mtc.lsp.workspace as workspace
 var symbol_source: str = ""
 var symbol_utf16: bool = false
 
-
 ## LSP SymbolKind values, matching the host's numbering.
-const SYMBOLKIND_FUNCTION:    int = 12
-const SYMBOLKIND_STRUCT:      int = 23
-const SYMBOLKIND_ENUM:        int = 10
-const SYMBOLKIND_VARIABLE:    int = 13
-const SYMBOLKIND_CONST:       int = 14
-const SYMBOLKIND_INTERFACE:   int = 11
-const SYMBOLKIND_EVENT:       int = 24
-const SYMBOLKIND_METHOD:      int = 6
-const SYMBOLKIND_FIELD:       int = 8
+const SYMBOLKIND_FUNCTION: int = 12
+const SYMBOLKIND_STRUCT: int = 23
+const SYMBOLKIND_ENUM: int = 10
+const SYMBOLKIND_VARIABLE: int = 13
+const SYMBOLKIND_CONST: int = 14
+const SYMBOLKIND_INTERFACE: int = 11
+const SYMBOLKIND_EVENT: int = 24
+const SYMBOLKIND_METHOD: int = 6
+const SYMBOLKIND_FIELD: int = 8
 const SYMBOLKIND_ENUM_MEMBER: int = 22
-const SYMBOLKIND_CLASS:       int = 5
+const SYMBOLKIND_CLASS: int = 5
 
 
 public function handle_document_symbols(ws: ref[workspace.Workspace], uri: str, id: json.Value) -> void:
@@ -98,7 +96,15 @@ public function handle_document_symbols(ws: ref[workspace.Workspace], uri: str, 
         var decl: ast.Decl
         unsafe:
             decl = read(ast_file.declarations.data + di)
-        emit_declaration_symbol(ref_of(symbols_text), ref_of(deferred_text), ref_of(deferred_first), ref_of(analysis), source, decl, ref_of(first))
+        emit_declaration_symbol(
+            ref_of(symbols_text),
+            ref_of(deferred_text),
+            ref_of(deferred_first),
+            ref_of(analysis),
+            source,
+            decl,
+            ref_of(first)
+        )
         di += 1
     append_missing_token_anchors(ref_of(symbols_text), source, ast_file, ref_of(first))
     if deferred_text.len() > 0:
@@ -129,11 +135,17 @@ function outline_module_name(path: str) -> Option[string.String]:
         Option.some as source_root:
             let root = source_root.value.as_str()
             if path_starts_with_dir(path, root):
-                relative = Option[string.String].some(value = string.String.from_str(path.slice(root.len + 1, path.len - root.len - 1)))
+                relative = Option[string.String].some(value = string.String.from_str(path.slice(
+                    root.len + 1,
+                    path.len - root.len - 1
+                )))
             else:
                 let package_dir = path_ops.dirname(root)
                 if path_starts_with_dir(path, package_dir):
-                    relative = Option[string.String].some(value = string.String.from_str(path.slice(package_dir.len + 1, path.len - package_dir.len - 1)))
+                    relative = Option[string.String].some(value = string.String.from_str(path.slice(
+                        package_dir.len + 1,
+                        path.len - package_dir.len - 1
+                    )))
         Option.none:
             pass
     match relative:
@@ -282,7 +294,17 @@ function append_missing_token_anchors(
             if name.len > 0 and not anchor_covered(file, name, idt.line):
                 var no_detail = string.String.create()
                 var no_children = vec.Vec[string.String].create()
-                emit_symbol(json_out, name, kind, idt.line, idt.column, no_detail.as_str(), ref_of(no_children), false, first)
+                emit_symbol(
+                    json_out,
+                    name,
+                    kind,
+                    idt.line,
+                    idt.column,
+                    no_detail.as_str(),
+                    ref_of(no_children),
+                    false,
+                    first
+                )
                 no_detail.release()
         ti += 1
 
@@ -396,7 +418,15 @@ function append_emit_declaration_symbols(
     unsafe:
         match read(b):
             ast.Stmt.stmt_block as blk:
-                append_emit_declaration_stmts(json_out, deferred_out, deferred_first, analysis, source, blk.statements, first)
+                append_emit_declaration_stmts(
+                    json_out,
+                    deferred_out,
+                    deferred_first,
+                    analysis,
+                    source,
+                    blk.statements,
+                    first
+                )
             _:
                 append_emit_declaration_stmt(json_out, deferred_out, deferred_first, analysis, source, b, first)
 
@@ -413,7 +443,15 @@ function append_emit_declaration_stmts(
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:
-            append_emit_declaration_stmt(json_out, deferred_out, deferred_first, analysis, source, stmts.data + i, first)
+            append_emit_declaration_stmt(
+                json_out,
+                deferred_out,
+                deferred_first,
+                analysis,
+                source,
+                stmts.data + i,
+                first
+            )
         i += 1
 
 
@@ -434,23 +472,63 @@ function append_emit_declaration_stmt(
                 emit_declaration_symbol(json_out, deferred_out, deferred_first, analysis, source, read(decl_ptr), first)
             ast.Stmt.stmt_for as f:
                 if f.is_inline:
-                    append_emit_declaration_symbols(json_out, deferred_out, deferred_first, analysis, source, f.body, first)
+                    append_emit_declaration_symbols(
+                        json_out,
+                        deferred_out,
+                        deferred_first,
+                        analysis,
+                        source,
+                        f.body,
+                        first
+                    )
             ast.Stmt.stmt_while as w:
                 if w.is_inline:
-                    append_emit_declaration_symbols(json_out, deferred_out, deferred_first, analysis, source, w.body, first)
+                    append_emit_declaration_symbols(
+                        json_out,
+                        deferred_out,
+                        deferred_first,
+                        analysis,
+                        source,
+                        w.body,
+                        first
+                    )
             ast.Stmt.stmt_if as iff:
                 if iff.is_inline:
                     var bi: ptr_uint = 0
                     while bi < iff.branches.len:
-                        append_emit_declaration_symbols(json_out, deferred_out, deferred_first, analysis, source, ptr[ast.Stmt]<-read(iff.branches.data + bi).body, first)
+                        append_emit_declaration_symbols(
+                            json_out,
+                            deferred_out,
+                            deferred_first,
+                            analysis,
+                            source,
+                            ptr[ast.Stmt]<-read(iff.branches.data + bi).body,
+                            first
+                        )
                         bi += 1
                     if iff.else_body != null:
-                        append_emit_declaration_symbols(json_out, deferred_out, deferred_first, analysis, source, iff.else_body, first)
+                        append_emit_declaration_symbols(
+                            json_out,
+                            deferred_out,
+                            deferred_first,
+                            analysis,
+                            source,
+                            iff.else_body,
+                            first
+                        )
             ast.Stmt.stmt_match as m:
                 if m.is_inline:
                     var ai: ptr_uint = 0
                     while ai < m.arms.len:
-                        append_emit_declaration_symbols(json_out, deferred_out, deferred_first, analysis, source, read(m.arms.data + ai).body, first)
+                        append_emit_declaration_symbols(
+                            json_out,
+                            deferred_out,
+                            deferred_first,
+                            analysis,
+                            source,
+                            read(m.arms.data + ai).body,
+                            first
+                        )
                         ai += 1
             _:
                 pass
@@ -471,7 +549,17 @@ function emit_declaration_symbol(
             var detail = string.String.create()
             append_callable_detail(ref_of(detail), fun.is_const, fun.is_async, fun.return_type)
             var body_locals = collect_body_locals(analysis, fun.body, fun.type_params.len > 0)
-            emit_symbol(json_out, fun.name, SYMBOLKIND_FUNCTION, fun.line, fun.column, detail.as_str(), ref_of(body_locals.symbols), body_locals.has_declarations, first)
+            emit_symbol(
+                json_out,
+                fun.name,
+                SYMBOLKIND_FUNCTION,
+                fun.line,
+                fun.column,
+                detail.as_str(),
+                ref_of(body_locals.symbols),
+                body_locals.has_declarations,
+                first
+            )
             detail.release()
             append_emit_declaration_symbols(json_out, deferred_out, deferred_first, analysis, source, fun.body, first)
         ast.Decl.decl_const as c:
@@ -480,16 +568,42 @@ function emit_declaration_symbol(
                 body_locals = collect_body_locals(analysis, c.block_body, false)
             var detail = string.String.create()
             append_ast_type(ref_of(detail), c.const_type, "")
-            emit_symbol(json_out, c.name, SYMBOLKIND_CONST, c.line, c.column, detail.as_str(), ref_of(body_locals.symbols), body_locals.has_declarations, first)
+            emit_symbol(
+                json_out,
+                c.name,
+                SYMBOLKIND_CONST,
+                c.line,
+                c.column,
+                detail.as_str(),
+                ref_of(body_locals.symbols),
+                body_locals.has_declarations,
+                first
+            )
             detail.release()
         ast.Decl.decl_var as v:
             var detail = string.String.create()
             append_ast_type(ref_of(detail), v.var_type, "")
             var no_children = vec.Vec[string.String].create()
-            emit_symbol(json_out, v.name, SYMBOLKIND_VARIABLE, v.line, v.column, detail.as_str(), ref_of(no_children), false, first)
+            emit_symbol(
+                json_out,
+                v.name,
+                SYMBOLKIND_VARIABLE,
+                v.line,
+                v.column,
+                detail.as_str(),
+                ref_of(no_children),
+                false,
+                first
+            )
             detail.release()
         ast.Decl.decl_struct as s:
-            var children = collect_type_member_children(analysis, s.name, s.struct_fields, s.struct_events, s.nested_types)
+            var children = collect_type_member_children(
+                analysis,
+                s.name,
+                s.struct_fields,
+                s.struct_events,
+                s.nested_types
+            )
             var detail = string.String.create()
             # A struct whose methods are declared inline carries them as
             # children and the host's `implementation` detail; the inline block
@@ -501,7 +615,17 @@ function emit_declaration_symbol(
                 detail.release()
                 return
             append_type_decl_detail(ref_of(detail), s.impl_list, null, s.lifetime_params, s.type_params)
-            emit_symbol(json_out, s.name, SYMBOLKIND_STRUCT, s.line, s.column, detail.as_str(), ref_of(children), false, first)
+            emit_symbol(
+                json_out,
+                s.name,
+                SYMBOLKIND_STRUCT,
+                s.line,
+                s.column,
+                detail.as_str(),
+                ref_of(children),
+                false,
+                first
+            )
             detail.release()
         ast.Decl.decl_union as u:
             # The host reports a union's symbol with no children at all.
@@ -510,25 +634,77 @@ function emit_declaration_symbol(
             var no_impls = span[ast.QualifiedName]()
             var no_params = span[ast.TypeParam]()
             append_type_decl_detail(ref_of(detail), no_impls, null, span[str](), no_params)
-            emit_symbol(json_out, u.name, SYMBOLKIND_STRUCT, u.line, u.column, detail.as_str(), ref_of(children), false, first)
+            emit_symbol(
+                json_out,
+                u.name,
+                SYMBOLKIND_STRUCT,
+                u.line,
+                u.column,
+                detail.as_str(),
+                ref_of(children),
+                false,
+                first
+            )
             detail.release()
         ast.Decl.decl_enum as e:
             var children = collect_enum_children(e.enum_members)
             var detail = string.String.create()
-            append_type_decl_detail(ref_of(detail), span[ast.QualifiedName](), e.backing_type, span[str](), span[ast.TypeParam]())
-            emit_symbol(json_out, e.name, SYMBOLKIND_ENUM, e.line, e.column, detail.as_str(), ref_of(children), false, first)
+            append_type_decl_detail(
+                ref_of(detail),
+                span[ast.QualifiedName](),
+                e.backing_type,
+                span[str](),
+                span[ast.TypeParam]()
+            )
+            emit_symbol(
+                json_out,
+                e.name,
+                SYMBOLKIND_ENUM,
+                e.line,
+                e.column,
+                detail.as_str(),
+                ref_of(children),
+                false,
+                first
+            )
             detail.release()
         ast.Decl.decl_flags as fl:
             var children = collect_enum_children(fl.flags_members)
             var detail = string.String.create()
-            append_type_decl_detail(ref_of(detail), span[ast.QualifiedName](), fl.backing_type, span[str](), span[ast.TypeParam]())
-            emit_symbol(json_out, fl.name, SYMBOLKIND_ENUM, fl.line, fl.column, detail.as_str(), ref_of(children), false, first)
+            append_type_decl_detail(
+                ref_of(detail),
+                span[ast.QualifiedName](),
+                fl.backing_type,
+                span[str](),
+                span[ast.TypeParam]()
+            )
+            emit_symbol(
+                json_out,
+                fl.name,
+                SYMBOLKIND_ENUM,
+                fl.line,
+                fl.column,
+                detail.as_str(),
+                ref_of(children),
+                false,
+                first
+            )
             detail.release()
         ast.Decl.decl_variant as vr:
             var children = collect_variant_children(vr.variant_arms, vr.line)
             var detail = string.String.create()
             append_type_decl_detail(ref_of(detail), span[ast.QualifiedName](), null, span[str](), vr.type_params)
-            emit_symbol(json_out, vr.name, SYMBOLKIND_STRUCT, vr.line, vr.column, detail.as_str(), ref_of(children), false, first)
+            emit_symbol(
+                json_out,
+                vr.name,
+                SYMBOLKIND_STRUCT,
+                vr.line,
+                vr.column,
+                detail.as_str(),
+                ref_of(children),
+                false,
+                first
+            )
             detail.release()
         ast.Decl.decl_interface as iface:
             var children = collect_interface_children(iface.interface_methods)
@@ -544,7 +720,17 @@ function emit_declaration_symbol(
                     detail.append(unsafe: read(iface.type_params.data + tpi).name)
                     tpi += 1
                 detail.append("]")
-            emit_symbol(json_out, iface.name, SYMBOLKIND_INTERFACE, iface.line, iface.column, detail.as_str(), ref_of(children), false, first)
+            emit_symbol(
+                json_out,
+                iface.name,
+                SYMBOLKIND_INTERFACE,
+                iface.line,
+                iface.column,
+                detail.as_str(),
+                ref_of(children),
+                false,
+                first
+            )
             detail.release()
         ast.Decl.decl_when as w:
             # Every branch's declarations stay in the outline, in source order —
@@ -555,7 +741,15 @@ function emit_declaration_symbol(
                 let branch = unsafe: read(w.branches.data + bi)
                 var bdi: ptr_uint = 0
                 while bdi < branch.body.len:
-                    emit_declaration_symbol(json_out, deferred_out, deferred_first, analysis, source, unsafe: read(branch.body.data + bdi), first)
+                    emit_declaration_symbol(
+                        json_out,
+                        deferred_out,
+                        deferred_first,
+                        analysis,
+                        source,
+                        unsafe: read(branch.body.data + bdi),
+                        first
+                    )
                     bdi += 1
                 bi += 1
         ast.Decl.decl_extending_block as ext:
@@ -564,22 +758,60 @@ function emit_declaration_symbol(
             let as_written = joined_type_name(ext.type_name)
             let first_part = first_name_part(ext.type_name)
             if as_written.equal(first_part):
-                var children = collect_extending_children(analysis, ext.methods, unsafe: read(ext.type_name).arguments.len > 0)
-                emit_symbol(json_out, first_part, SYMBOLKIND_STRUCT, ext.line, type_column(source, ext.line, first_part), "implementation", ref_of(children), false, first)
+                var children = collect_extending_children(
+                    analysis,
+                    ext.methods,
+                    unsafe: read(ext.type_name).arguments.len > 0
+                )
+                emit_symbol(
+                    json_out,
+                    first_part,
+                    SYMBOLKIND_STRUCT,
+                    ext.line,
+                    type_column(source, ext.line, first_part),
+                    "implementation",
+                    ref_of(children),
+                    false,
+                    first
+                )
                 return
             # A qualified receiver: the host's flat token symbol names its first
             # identifier (`rl`) and keeps source order, while the enriched symbol
             # (named as written, `rl.Color`) joins the deferred list.
             var no_children = vec.Vec[string.String].create()
-            emit_symbol(json_out, first_part, SYMBOLKIND_STRUCT, ext.line, type_column(source, ext.line, first_part), "", ref_of(no_children), false, first)
-            var children = collect_extending_children(analysis, ext.methods, unsafe: read(ext.type_name).arguments.len > 0)
+            emit_symbol(
+                json_out,
+                first_part,
+                SYMBOLKIND_STRUCT,
+                ext.line,
+                type_column(source, ext.line, first_part),
+                "",
+                ref_of(no_children),
+                false,
+                first
+            )
+            var children = collect_extending_children(
+                analysis,
+                ext.methods,
+                unsafe: read(ext.type_name).arguments.len > 0
+            )
             emit_synthesized_extending_symbol(deferred_out, as_written, ext.line, ref_of(children), deferred_first)
         ast.Decl.decl_type_alias as ta:
             var detail = string.String.create()
             detail.append("= ")
             append_ast_type(ref_of(detail), ta.target, "")
             var no_children = vec.Vec[string.String].create()
-            emit_symbol(json_out, ta.name, SYMBOLKIND_CLASS, ta.line, ta.column, detail.as_str(), ref_of(no_children), false, first)
+            emit_symbol(
+                json_out,
+                ta.name,
+                SYMBOLKIND_CLASS,
+                ta.line,
+                ta.column,
+                detail.as_str(),
+                ref_of(no_children),
+                false,
+                first
+            )
             detail.release()
         ast.Decl.decl_opaque as op:
             var no_children = vec.Vec[string.String].create()
@@ -592,14 +824,34 @@ function emit_declaration_symbol(
                 append_ast_type(ref_of(detail), ev.payload_type, "")
                 detail.append(")")
             var no_children = vec.Vec[string.String].create()
-            emit_symbol(json_out, ev.name, SYMBOLKIND_EVENT, ev.line, ev.column, detail.as_str(), ref_of(no_children), false, first)
+            emit_symbol(
+                json_out,
+                ev.name,
+                SYMBOLKIND_EVENT,
+                ev.line,
+                ev.column,
+                detail.as_str(),
+                ref_of(no_children),
+                false,
+                first
+            )
             detail.release()
         ast.Decl.decl_extern_function as ef:
             var detail = string.String.create()
             append_callable_detail(ref_of(detail), false, false, ef.return_type)
             var no_children = vec.Vec[string.String].create()
             let column = token_column(source, ef.line, ef.name)
-            emit_symbol(json_out, ef.name, SYMBOLKIND_FUNCTION, ef.line, column, detail.as_str(), ref_of(no_children), false, first)
+            emit_symbol(
+                json_out,
+                ef.name,
+                SYMBOLKIND_FUNCTION,
+                ef.line,
+                column,
+                detail.as_str(),
+                ref_of(no_children),
+                false,
+                first
+            )
             detail.release()
         ast.Decl.decl_foreign_function as ff:
             var detail = string.String.create()
@@ -607,7 +859,17 @@ function emit_declaration_symbol(
             append_ast_type(ref_of(detail), ff.return_type, "void")
             var no_children = vec.Vec[string.String].create()
             let column = token_column(source, ff.line, ff.name)
-            emit_symbol(json_out, ff.name, SYMBOLKIND_FUNCTION, ff.line, column, detail.as_str(), ref_of(no_children), false, first)
+            emit_symbol(
+                json_out,
+                ff.name,
+                SYMBOLKIND_FUNCTION,
+                ff.line,
+                column,
+                detail.as_str(),
+                ref_of(no_children),
+                false,
+                first
+            )
             detail.release()
         _:
             pass
@@ -934,7 +1196,13 @@ function last_name_part(type_name: ptr[ast.TypeRef]?) -> str:
 ## (`name`, `kind`, `detail`, `range`, `selectionRange`, `children`), the range
 ## spans the whole declaration line and the selection range starts at column 0
 ## with the name's length.
-function emit_synthesized_extending_symbol(json_out: ref[string.String], name: str, line: ptr_uint, children: ref[vec.Vec[string.String]], first: ref[bool]) -> void:
+function emit_synthesized_extending_symbol(
+    json_out: ref[string.String],
+    name: str,
+    line: ptr_uint,
+    children: ref[vec.Vec[string.String]],
+    first: ref[bool]
+) -> void:
     if not unsafe: read(first):
         json_out.append(",")
     unsafe: read(first) = false
@@ -1068,7 +1336,12 @@ function emit_merged_struct_symbol(
 
 ## Append a struct's inline methods as child symbols (the host's
 ## `child_method_symbol` order: fields, then methods).
-function append_method_children(children: ref[vec.Vec[string.String]], analysis: ref[analyzer.Analysis], methods: span[ast.Method], generic_block: bool) -> void:
+function append_method_children(
+    children: ref[vec.Vec[string.String]],
+    analysis: ref[analyzer.Analysis],
+    methods: span[ast.Method],
+    generic_block: bool
+) -> void:
     var method_children = collect_extending_children(analysis, methods, generic_block)
     var mi: ptr_uint = 0
     while mi < method_children.len():
@@ -1180,7 +1453,15 @@ function collect_type_member_children(
             nd = read(nested.data + ni)
         match nd:
             ast.Decl.decl_struct as s:
-                children.push(render_nested_type_child(analysis, s.name, s.line, s.column, s.struct_fields, s.struct_events, s.nested_types))
+                children.push(render_nested_type_child(
+                    analysis,
+                    s.name,
+                    s.line,
+                    s.column,
+                    s.struct_fields,
+                    s.struct_events,
+                    s.nested_types
+                ))
             _:
                 pass
         ni += 1
@@ -1283,7 +1564,11 @@ function collect_interface_children(methods: span[ast.InterfaceMethod]) -> vec.V
 ## Extending-block method children (kind 6), each carrying its own locals.
 ## `generic_block` marks an `extending T[A]:` receiver (or a generic struct's
 ## inline methods), whose bodies the host records no inferred types for.
-function collect_extending_children(analysis: ref[analyzer.Analysis], methods: span[ast.Method], generic_block: bool) -> vec.Vec[string.String]:
+function collect_extending_children(
+    analysis: ref[analyzer.Analysis],
+    methods: span[ast.Method],
+    generic_block: bool
+) -> vec.Vec[string.String]:
     var children = vec.Vec[string.String].create()
     var mi: ptr_uint = 0
     while mi < methods.len:
@@ -1355,7 +1640,11 @@ struct BodyLocals:
 ## `generic_context` marks a body inside a generic function or a generic
 ## `extending` block: the host records no inferred types there (only the source
 ## annotation shows), so a local's *initializer* detail is suppressed.
-function collect_body_locals(analysis: ref[analyzer.Analysis], body: ptr[ast.Stmt]?, generic_context: bool) -> BodyLocals:
+function collect_body_locals(
+    analysis: ref[analyzer.Analysis],
+    body: ptr[ast.Stmt]?,
+    generic_context: bool
+) -> BodyLocals:
     var children = vec.Vec[string.String].create()
     var declared = false
     let b = body else:
@@ -1364,18 +1653,37 @@ function collect_body_locals(analysis: ref[analyzer.Analysis], body: ptr[ast.Stm
     return BodyLocals(symbols = children, has_declarations = declared)
 
 
-function collect_stmt_locals(analysis: ref[analyzer.Analysis], stmt: ast.Stmt, children: ref[vec.Vec[string.String]], declared: ref[bool], generic_context: bool) -> void:
+function collect_stmt_locals(
+    analysis: ref[analyzer.Analysis],
+    stmt: ast.Stmt,
+    children: ref[vec.Vec[string.String]],
+    declared: ref[bool],
+    generic_context: bool
+) -> void:
     match stmt:
         ast.Stmt.stmt_block as blk:
             var si: ptr_uint = 0
             while si < blk.statements.len:
-                collect_stmt_locals(analysis, unsafe: read(blk.statements.data + si), children, declared, generic_context)
+                collect_stmt_locals(
+                    analysis,
+                    unsafe: read(blk.statements.data + si),
+                    children,
+                    declared,
+                    generic_context
+                )
                 si += 1
         ast.Stmt.stmt_local as loc:
             unsafe: read(declared) = true
             if loc.name.len > 0 and loc.name != "_":
                 var detail = string.String.create()
-                append_local_type(ref_of(detail), analysis, loc.stmt_type, loc.value, loc.else_body != null or loc.else_binding.is_some(), generic_context)
+                append_local_type(
+                    ref_of(detail),
+                    analysis,
+                    loc.stmt_type,
+                    loc.value,
+                    loc.else_body != null or loc.else_binding.is_some(),
+                    generic_context
+                )
                 children.push(render_local_symbol(loc.name, loc.line, loc.column, detail.as_str()))
                 detail.release()
         ast.Stmt.stmt_if as iff:
@@ -1385,7 +1693,13 @@ function collect_stmt_locals(analysis: ref[analyzer.Analysis], stmt: ast.Stmt, c
                 collect_stmt_locals(analysis, unsafe: read(branch.body), children, declared, generic_context)
                 ib += 1
             if iff.else_body != null:
-                collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-iff.else_body), children, declared, generic_context)
+                collect_stmt_locals(
+                    analysis,
+                    unsafe: read(ptr[ast.Stmt]<-iff.else_body),
+                    children,
+                    declared,
+                    generic_context
+                )
         ast.Stmt.stmt_while as w:
             if w.body != null:
                 collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-w.body), children, declared, generic_context)
@@ -1397,21 +1711,51 @@ function collect_stmt_locals(analysis: ref[analyzer.Analysis], stmt: ast.Stmt, c
             while ai < m.arms.len:
                 let arm = unsafe: read(m.arms.data + ai)
                 if arm.body != null:
-                    collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-arm.body), children, declared, generic_context)
+                    collect_stmt_locals(
+                        analysis,
+                        unsafe: read(ptr[ast.Stmt]<-arm.body),
+                        children,
+                        declared,
+                        generic_context
+                    )
                 ai += 1
         ast.Stmt.stmt_unsafe as uns:
             if uns.body != null:
-                collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-uns.body), children, declared, generic_context)
+                collect_stmt_locals(
+                    analysis,
+                    unsafe: read(ptr[ast.Stmt]<-uns.body),
+                    children,
+                    declared,
+                    generic_context
+                )
         ast.Stmt.stmt_defer as dfr:
             if dfr.body != null:
-                collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-dfr.body), children, declared, generic_context)
+                collect_stmt_locals(
+                    analysis,
+                    unsafe: read(ptr[ast.Stmt]<-dfr.body),
+                    children,
+                    declared,
+                    generic_context
+                )
         ast.Stmt.stmt_when as whn:
             var wi: ptr_uint = 0
             while wi < whn.branches.len:
-                collect_stmt_span_locals(analysis, unsafe: read(whn.branches.data + wi).body, children, declared, generic_context)
+                collect_stmt_span_locals(
+                    analysis,
+                    unsafe: read(whn.branches.data + wi).body,
+                    children,
+                    declared,
+                    generic_context
+                )
                 wi += 1
             if whn.else_body != null:
-                collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-whn.else_body), children, declared, generic_context)
+                collect_stmt_locals(
+                    analysis,
+                    unsafe: read(ptr[ast.Stmt]<-whn.else_body),
+                    children,
+                    declared,
+                    generic_context
+                )
         ast.Stmt.stmt_parallel_block as pb:
             collect_stmt_span_locals(analysis, pb.bodies, children, declared, generic_context)
         ast.Stmt.stmt_error_block as eb:
@@ -1420,7 +1764,13 @@ function collect_stmt_locals(analysis: ref[analyzer.Analysis], stmt: ast.Stmt, c
             pass
 
 
-function collect_stmt_span_locals(analysis: ref[analyzer.Analysis], stmts: span[ast.Stmt], children: ref[vec.Vec[string.String]], declared: ref[bool], generic_context: bool) -> void:
+function collect_stmt_span_locals(
+    analysis: ref[analyzer.Analysis],
+    stmts: span[ast.Stmt],
+    children: ref[vec.Vec[string.String]],
+    declared: ref[bool],
+    generic_context: bool
+) -> void:
     var si: ptr_uint = 0
     while si < stmts.len:
         collect_stmt_locals(analysis, unsafe: read(stmts.data + si), children, declared, generic_context)

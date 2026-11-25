@@ -27,7 +27,6 @@ import mtc.parser.state as pstate
 import mtc.lexer.token as token_mod
 import mtc.loader.path_resolver as resolver
 
-
 public struct DriftWarning:
     line: ptr_uint
     column: ptr_uint
@@ -37,14 +36,12 @@ public struct DriftWarning:
     severity: str
     symbol_name: str
 
-
 ## A declaration's warning anchor (the host's `declaration_anchor` hash).
 public struct Anchor:
     line: ptr_uint
     column: ptr_uint
     length: ptr_uint
     symbol_name: str
-
 
 # =============================================================================
 #  Entry point
@@ -113,7 +110,6 @@ public function check_platform_api_drift(file: ast.SourceFile, path: str, source
             symbol_name = anchor.symbol_name,
         ))
     return result
-
 
 # =============================================================================
 #  Sibling discovery
@@ -187,7 +183,6 @@ function load_sibling_sites(path: str, lines: ref[vec.Vec[str]]) -> map_mod.Map[
             pass
     return sites
 
-
 # =============================================================================
 #  Exported surface
 # =============================================================================
@@ -206,51 +201,100 @@ function surface_sites(file: ast.SourceFile, lines: ref[vec.Vec[str]]) -> map_mo
             match decl:
                 ast.Decl.decl_const as d:
                     if raw or d.visibility:
-                        sites.set(render_value_surface("const", d.name, d.const_type), anchor_of(d.line, d.column, d.name, lines))
+                        sites.set(
+                            render_value_surface("const", d.name, d.const_type),
+                            anchor_of(d.line, d.column, d.name, lines)
+                        )
                 ast.Decl.decl_var as d:
                     if raw or d.visibility:
                         if d.var_type != null:
                             let tr_ptr = d.var_type else:
                                 continue
-                            sites.set(render_value_surface("var", d.name, tr_ptr), anchor_of(d.line, d.column, d.name, lines))
+                            sites.set(
+                                render_value_surface("var", d.name, tr_ptr),
+                                anchor_of(d.line, d.column, d.name, lines)
+                            )
                         else:
                             sites.set(render_var_surface(d.name), anchor_of(d.line, d.column, d.name, lines))
                 ast.Decl.decl_event as d:
                     if raw or d.visibility:
-                        sites.set(render_event_surface(d.name, d.capacity, d.payload_type), anchor_of(d.line, d.column, d.name, lines))
+                        sites.set(
+                            render_event_surface(d.name, d.capacity, d.payload_type),
+                            anchor_of(d.line, d.column, d.name, lines)
+                        )
                 ast.Decl.decl_type_alias as d:
                     if raw or d.visibility:
-                        sites.set(render_type_alias_surface(d.name, d.target), anchor_of(d.line, d.column, d.name, lines))
+                        sites.set(
+                            render_type_alias_surface(d.name, d.target),
+                            anchor_of(d.line, d.column, d.name, lines)
+                        )
                 ast.Decl.decl_struct as d:
                     if raw or d.visibility:
-                        sites.set(render_struct_surface(d.name, d.struct_attrs, d.type_params, d.impl_list, d.struct_fields, d.struct_events), anchor_of(d.line, d.column, d.name, lines))
+                        sites.set(
+                            render_struct_surface(
+                                d.name,
+                                d.struct_attrs,
+                                d.type_params,
+                                d.impl_list,
+                                d.struct_fields,
+                                d.struct_events
+                            ),
+                            anchor_of(d.line, d.column, d.name, lines)
+                        )
                 ast.Decl.decl_union as d:
                     if raw or d.visibility:
-                        sites.set(render_union_surface(d.name, d.union_fields), anchor_of(d.line, d.column, d.name, lines))
+                        sites.set(
+                            render_union_surface(d.name, d.union_fields),
+                            anchor_of(d.line, d.column, d.name, lines)
+                        )
                 ast.Decl.decl_enum as d:
                     if raw or d.visibility:
-                        sites.set(render_enum_body("enum", d.name, d.backing_type, d.enum_members), anchor_of(d.line, d.column, d.name, lines))
+                        sites.set(
+                            render_enum_body("enum", d.name, d.backing_type, d.enum_members),
+                            anchor_of(d.line, d.column, d.name, lines)
+                        )
                 ast.Decl.decl_flags as d:
                     if raw or d.visibility:
-                        sites.set(render_enum_body("flags", d.name, d.backing_type, d.flags_members), anchor_of(d.line, d.column, d.name, lines))
+                        sites.set(
+                            render_enum_body("flags", d.name, d.backing_type, d.flags_members),
+                            anchor_of(d.line, d.column, d.name, lines)
+                        )
                 ast.Decl.decl_opaque as d:
                     if raw or d.visibility:
-                        sites.set(render_opaque_surface(d.name, d.opaque_implements), anchor_of(d.line, d.column, d.name, lines))
+                        sites.set(
+                            render_opaque_surface(d.name, d.opaque_implements),
+                            anchor_of(d.line, d.column, d.name, lines)
+                        )
                 ast.Decl.decl_interface as d:
                     if raw or d.visibility:
-                        sites.set(render_interface_surface(d.name, d.interface_methods), anchor_of(d.line, d.column, d.name, lines))
+                        sites.set(
+                            render_interface_surface(d.name, d.interface_methods),
+                            anchor_of(d.line, d.column, d.name, lines)
+                        )
                 ast.Decl.decl_variant as d:
                     if raw or d.visibility:
-                        sites.set(render_variant_surface(d.name, d.type_params, d.variant_arms), anchor_of(d.line, d.column, d.name, lines))
+                        sites.set(
+                            render_variant_surface(d.name, d.type_params, d.variant_arms),
+                            anchor_of(d.line, d.column, d.name, lines)
+                        )
                 ast.Decl.decl_function as d:
                     if raw or d.visibility:
-                        sites.set(render_function_surface(d.name, d.type_params, d.method_params, d.return_type, d.is_async), anchor_of(d.line, d.column, d.name, lines))
+                        sites.set(
+                            render_function_surface(d.name, d.type_params, d.method_params, d.return_type, d.is_async),
+                            anchor_of(d.line, d.column, d.name, lines)
+                        )
                 ast.Decl.decl_extern_function as d:
                     if raw:
-                        sites.set(render_external_surface(d.name, d.type_params, d.extern_params, d.return_type, d.variadic), anchor_of(d.line, 0, d.name, lines))
+                        sites.set(
+                            render_external_surface(d.name, d.type_params, d.extern_params, d.return_type, d.variadic),
+                            anchor_of(d.line, 0, d.name, lines)
+                        )
                 ast.Decl.decl_foreign_function as d:
                     if raw or d.visibility:
-                        sites.set(render_foreign_surface(d.name, d.type_params, d.foreign_params, d.return_type, d.variadic), anchor_of(d.line, 0, d.name, lines))
+                        sites.set(
+                            render_foreign_surface(d.name, d.type_params, d.foreign_params, d.return_type, d.variadic),
+                            anchor_of(d.line, 0, d.name, lines)
+                        )
                 ast.Decl.decl_extending_block as d:
                     let receiver = render_type_ref(d.type_name)
                     if exported_types.contains(receiver):
@@ -259,7 +303,10 @@ function surface_sites(file: ast.SourceFile, lines: ref[vec.Vec[str]]) -> map_mo
                             let method = read(d.methods.data + mi)
                             mi += 1
                             if method.visibility:
-                                sites.set(render_method_surface(receiver, method), anchor_of(method.line, method.column, method.name, lines))
+                                sites.set(
+                                    render_method_surface(receiver, method),
+                                    anchor_of(method.line, method.column, method.name, lines)
+                                )
                 _:
                     pass
     return sites
@@ -301,7 +348,6 @@ function exported_type_names(file: ast.SourceFile) -> map_mod.Map[str, bool]:
                 _:
                     pass
     return names
-
 
 # =============================================================================
 #  Declaration renderers (the host's `render_*_surface`)
@@ -392,6 +438,7 @@ function render_struct_surface(
     buf.append(" }")
     return buf.as_str()
 
+
 function render_union_surface(name: str, fields: span[ast.Field]) -> str:
     var buf = string.String.create()
     buf.append("union ")
@@ -400,7 +447,6 @@ function render_union_surface(name: str, fields: span[ast.Field]) -> str:
     append_fields(buf, fields)
     buf.append(" }")
     return buf.as_str()
-
 
 
 function render_enum_body(kind: str, name: str, backing: ptr[ast.TypeRef]?, members: span[ast.EnumMember]) -> str:
@@ -430,6 +476,7 @@ function render_opaque_surface(name: str, impl_list: span[ast.QualifiedName]) ->
     append_implements(buf, impl_list)
     return buf.as_str()
 
+
 function render_interface_surface(name: str, methods: span[ast.InterfaceMethod]) -> str:
     var rendered = vec.Vec[str].create()
     defer: rendered.release()
@@ -456,6 +503,7 @@ function render_interface_surface(name: str, methods: span[ast.InterfaceMethod])
         buf.append(unsafe: read(mp))
     buf.append(" }")
     return buf.as_str()
+
 
 function render_variant_surface(name: str, type_params: span[ast.TypeParam], arms: span[ast.VariantArm]) -> str:
     var buf = string.String.create()
@@ -484,23 +532,57 @@ function render_variant_surface(name: str, type_params: span[ast.TypeParam], arm
     buf.append(" }")
     return buf.as_str()
 
-function render_function_surface(name: str, type_params: span[ast.TypeParam], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, is_async: bool) -> str:
+
+function render_function_surface(
+    name: str,
+    type_params: span[ast.TypeParam],
+    params: span[ast.Param],
+    return_type: ptr[ast.TypeRef]?,
+    is_async: bool
+) -> str:
     var prefix = string.String.create()
     prefix.append("function ")
     prefix.append(name)
     return render_callable_surface(prefix.as_str(), type_params, render_params(params), return_type, is_async)
 
-function render_external_surface(name: str, type_params: span[ast.TypeParam], params: span[ast.ForeignParam], return_type: ptr[ast.TypeRef]?, variadic: bool) -> str:
+
+function render_external_surface(
+    name: str,
+    type_params: span[ast.TypeParam],
+    params: span[ast.ForeignParam],
+    return_type: ptr[ast.TypeRef]?,
+    variadic: bool
+) -> str:
     var prefix = string.String.create()
     prefix.append("external function ")
     prefix.append(name)
-    return render_callable_surface(prefix.as_str(), type_params, render_foreign_params(params, variadic), return_type, false)
+    return render_callable_surface(
+        prefix.as_str(),
+        type_params,
+        render_foreign_params(params, variadic),
+        return_type,
+        false
+    )
 
-function render_foreign_surface(name: str, type_params: span[ast.TypeParam], params: span[ast.ForeignParam], return_type: ptr[ast.TypeRef]?, variadic: bool) -> str:
+
+function render_foreign_surface(
+    name: str,
+    type_params: span[ast.TypeParam],
+    params: span[ast.ForeignParam],
+    return_type: ptr[ast.TypeRef]?,
+    variadic: bool
+) -> str:
     var prefix = string.String.create()
     prefix.append("foreign function ")
     prefix.append(name)
-    return render_callable_surface(prefix.as_str(), type_params, render_foreign_params(params, variadic), return_type, false)
+    return render_callable_surface(
+        prefix.as_str(),
+        type_params,
+        render_foreign_params(params, variadic),
+        return_type,
+        false
+    )
+
 
 function render_method_surface(receiver_name: str, method: ast.Method) -> str:
     var prefix = string.String.create()
@@ -511,7 +593,13 @@ function render_method_surface(receiver_name: str, method: ast.Method) -> str:
     prefix.append(receiver_name)
     prefix.append(".")
     prefix.append(method.name)
-    return render_callable_surface(prefix.as_str(), method.type_params, render_params(method.method_params), method.return_type, method.is_async)
+    return render_callable_surface(
+        prefix.as_str(),
+        method.type_params,
+        render_params(method.method_params),
+        method.return_type,
+        method.is_async
+    )
 
 
 function render_interface_method_surface(interface_name: str, method: ast.InterfaceMethod) -> str:
@@ -520,10 +608,22 @@ function render_interface_method_surface(interface_name: str, method: ast.Interf
     prefix.append(interface_name)
     prefix.append(".")
     prefix.append(method.name)
-    return render_callable_surface(prefix.as_str(), span[ast.TypeParam](), render_params(method.method_params), method.return_type, method.is_async)
+    return render_callable_surface(
+        prefix.as_str(),
+        span[ast.TypeParam](),
+        render_params(method.method_params),
+        method.return_type,
+        method.is_async
+    )
 
 
-function render_callable_surface(prefix: str, type_params: span[ast.TypeParam], params: str, return_type: ptr[ast.TypeRef]?, is_async: bool) -> str:
+function render_callable_surface(
+    prefix: str,
+    type_params: span[ast.TypeParam],
+    params: str,
+    return_type: ptr[ast.TypeRef]?,
+    is_async: bool
+) -> str:
     var buf = string.String.create()
     if is_async:
         buf.append("async ")
@@ -697,7 +797,6 @@ function render_attribute_argument(expr: ptr[ast.Expr]) -> str:
             _:
                 return "..."
 
-
 # =============================================================================
 #  Type rendering (the host's `render_type_surface`)
 # =============================================================================
@@ -756,7 +855,6 @@ function qualified_name_text(name: ast.QualifiedName) -> str:
             i += 1
     return buf.as_str()
 
-
 # =============================================================================
 #  Anchors and message helpers
 # =============================================================================
@@ -796,7 +894,11 @@ function find_from(text: str, needle: str, from: ptr_uint) -> Option[ptr_uint]:
     return Option[ptr_uint].none
 
 
-function platform_drift_anchor(file: ast.SourceFile, sites: ref[map_mod.Map[str, Anchor]], extra: ref[vec.Vec[str]]) -> Anchor:
+function platform_drift_anchor(
+    file: ast.SourceFile,
+    sites: ref[map_mod.Map[str, Anchor]],
+    extra: ref[vec.Vec[str]]
+) -> Anchor:
     var i: ptr_uint = 0
     while i < extra.len():
         let ep = extra.get(i) else:
@@ -845,40 +947,100 @@ function first_declaration_anchor(file: ast.SourceFile) -> Option[Anchor]:
             match decl:
                 ast.Decl.decl_const as d:
                     if d.line > 0:
-                        return Option[Anchor].some(value = Anchor(line = d.line, column = if d.column > 0: d.column else: 1, length = d.name.len, symbol_name = d.name))
+                        return Option[Anchor].some(value = Anchor(
+                            line = d.line,
+                            column = if d.column > 0: d.column else: 1,
+                            length = d.name.len,
+                            symbol_name = d.name
+                        ))
                 ast.Decl.decl_var as d:
                     if d.line > 0:
-                        return Option[Anchor].some(value = Anchor(line = d.line, column = if d.column > 0: d.column else: 1, length = d.name.len, symbol_name = d.name))
+                        return Option[Anchor].some(value = Anchor(
+                            line = d.line,
+                            column = if d.column > 0: d.column else: 1,
+                            length = d.name.len,
+                            symbol_name = d.name
+                        ))
                 ast.Decl.decl_function as d:
                     if d.line > 0:
-                        return Option[Anchor].some(value = Anchor(line = d.line, column = if d.column > 0: d.column else: 1, length = d.name.len, symbol_name = d.name))
+                        return Option[Anchor].some(value = Anchor(
+                            line = d.line,
+                            column = if d.column > 0: d.column else: 1,
+                            length = d.name.len,
+                            symbol_name = d.name
+                        ))
                 ast.Decl.decl_struct as d:
                     if d.line > 0:
-                        return Option[Anchor].some(value = Anchor(line = d.line, column = if d.column > 0: d.column else: 1, length = d.name.len, symbol_name = d.name))
+                        return Option[Anchor].some(value = Anchor(
+                            line = d.line,
+                            column = if d.column > 0: d.column else: 1,
+                            length = d.name.len,
+                            symbol_name = d.name
+                        ))
                 ast.Decl.decl_union as d:
                     if d.line > 0:
-                        return Option[Anchor].some(value = Anchor(line = d.line, column = if d.column > 0: d.column else: 1, length = d.name.len, symbol_name = d.name))
+                        return Option[Anchor].some(value = Anchor(
+                            line = d.line,
+                            column = if d.column > 0: d.column else: 1,
+                            length = d.name.len,
+                            symbol_name = d.name
+                        ))
                 ast.Decl.decl_enum as d:
                     if d.line > 0:
-                        return Option[Anchor].some(value = Anchor(line = d.line, column = if d.column > 0: d.column else: 1, length = d.name.len, symbol_name = d.name))
+                        return Option[Anchor].some(value = Anchor(
+                            line = d.line,
+                            column = if d.column > 0: d.column else: 1,
+                            length = d.name.len,
+                            symbol_name = d.name
+                        ))
                 ast.Decl.decl_flags as d:
                     if d.line > 0:
-                        return Option[Anchor].some(value = Anchor(line = d.line, column = if d.column > 0: d.column else: 1, length = d.name.len, symbol_name = d.name))
+                        return Option[Anchor].some(value = Anchor(
+                            line = d.line,
+                            column = if d.column > 0: d.column else: 1,
+                            length = d.name.len,
+                            symbol_name = d.name
+                        ))
                 ast.Decl.decl_opaque as d:
                     if d.line > 0:
-                        return Option[Anchor].some(value = Anchor(line = d.line, column = if d.column > 0: d.column else: 1, length = d.name.len, symbol_name = d.name))
+                        return Option[Anchor].some(value = Anchor(
+                            line = d.line,
+                            column = if d.column > 0: d.column else: 1,
+                            length = d.name.len,
+                            symbol_name = d.name
+                        ))
                 ast.Decl.decl_interface as d:
                     if d.line > 0:
-                        return Option[Anchor].some(value = Anchor(line = d.line, column = if d.column > 0: d.column else: 1, length = d.name.len, symbol_name = d.name))
+                        return Option[Anchor].some(value = Anchor(
+                            line = d.line,
+                            column = if d.column > 0: d.column else: 1,
+                            length = d.name.len,
+                            symbol_name = d.name
+                        ))
                 ast.Decl.decl_variant as d:
                     if d.line > 0:
-                        return Option[Anchor].some(value = Anchor(line = d.line, column = if d.column > 0: d.column else: 1, length = d.name.len, symbol_name = d.name))
+                        return Option[Anchor].some(value = Anchor(
+                            line = d.line,
+                            column = if d.column > 0: d.column else: 1,
+                            length = d.name.len,
+                            symbol_name = d.name
+                        ))
                 ast.Decl.decl_type_alias as d:
                     if d.line > 0:
-                        return Option[Anchor].some(value = Anchor(line = d.line, column = if d.column > 0: d.column else: 1, length = d.name.len, symbol_name = d.name))
+                        return Option[Anchor].some(value = Anchor(
+                            line = d.line,
+                            column = if d.column > 0: d.column else: 1,
+                            length = d.name.len,
+                            symbol_name = d.name
+                        ))
                 ast.Decl.decl_event as d:
                     if d.line > 0:
-                        return Option[Anchor].some(value = Anchor(line = d.line, column = if d.column > 0: d.column else: 1, length = d.name.len, symbol_name = d.name))
+                        return Option[Anchor].some(value = Anchor(
+                            line = d.line,
+                            column = if d.column > 0: d.column else: 1,
+                            length = d.name.len,
+                            symbol_name = d.name
+                        ))
                 _:
                     pass
     return Option[Anchor].none
@@ -903,7 +1065,6 @@ function summarize_surface_entries(entries: ref[vec.Vec[str]]) -> str:
         buf.append(uint_to_dec(entries.len() - shown))
         buf.append(" more)")
     return buf.as_str()
-
 
 # =============================================================================
 #  Small helpers

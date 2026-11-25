@@ -7,7 +7,6 @@ import std.str
 import std.string as string
 import std.vec as vec
 
-
 ## Result of resolving a launch `program`: the runnable executable and the
 ## temporary build directory that must be cleaned up (empty when the program
 ## was already built).
@@ -170,6 +169,7 @@ public function release_launch_resolved(resolved: ref[LaunchResolved]) -> void:
     resolved.runnable_path.release()
     resolved.tmp_dir.release()
     resolved.error.release()
+
 
 ## Dereference a ptr[ptr_uint] to a ptr_uint value.  The caller must
 ## ensure lp is non-null before calling.

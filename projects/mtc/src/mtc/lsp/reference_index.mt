@@ -42,14 +42,12 @@ struct IndexedDocument:
     identifiers: vec.Vec[IdentifierToken]
     imports: vec.Vec[str]
 
-
 ## A reference hit: the document (by path) and the identifier token.
 public struct ReferenceEntry:
     path: str
     line: ptr_uint
     column: ptr_uint
     length: ptr_uint
-
 
 ## A document's last-observed disk state, so an unchanged closed document is
 ## neither re-read nor re-lexed on the next lookup.  (The host re-reads through
@@ -59,14 +57,12 @@ public struct DocumentStamp:
     modified_seconds: ptr_int
     modified_nanoseconds: ptr_int
 
-
 ## The retained-text budget for indexed documents.  Past this many bytes the
 ## oldest documents are dropped and re-indexed on demand — the host keeps every
 ## noted document's text forever, so this is a deliberate self-host bound for
 ## long sessions (documents evicted and re-noted answer in a later index
 ## position than the host would).
 public const MAX_RETAINED_TEXT_BYTES: ptr_uint = 33554432
-
 
 public struct ReferenceIndex:
     ## Documents in tokenization order.  A re-indexed document moves to the end,
@@ -109,7 +105,13 @@ public function release(index: ref[ReferenceIndex]) -> void:
 
 ## True when the recorded disk stamp for `path` equals the observed one, so the
 ## document's text need not be re-read.
-public function matches_stamp(index: ref[ReferenceIndex], path: str, size: ptr_uint, modified_seconds: ptr_int, modified_nanoseconds: ptr_int) -> bool:
+public function matches_stamp(
+    index: ref[ReferenceIndex],
+    path: str,
+    size: ptr_uint,
+    modified_seconds: ptr_int,
+    modified_nanoseconds: ptr_int
+) -> bool:
     var key = string_mod.String.from_str(path)
     defer: key.release()
     let stamp_ptr = index.stamps.get(key)
@@ -120,7 +122,13 @@ public function matches_stamp(index: ref[ReferenceIndex], path: str, size: ptr_u
 
 
 ## Record the disk state `path` was last read at.
-public function record_stamp(index: ref[ReferenceIndex], path: str, size: ptr_uint, modified_seconds: ptr_int, modified_nanoseconds: ptr_int) -> void:
+public function record_stamp(
+    index: ref[ReferenceIndex],
+    path: str,
+    size: ptr_uint,
+    modified_seconds: ptr_int,
+    modified_nanoseconds: ptr_int
+) -> void:
     var key = string_mod.String.from_str(path)
     defer: key.release()
     let stamp_ptr = index.stamps.get(key)
@@ -350,7 +358,11 @@ function release_document(document: ptr[IndexedDocument]) -> void:
 ## The indexed documents whose imports name `module_name`, in index order — the
 ## host's `@reverse_import_dependents` lookup
 ## (`ensure_full_reverse_import_index` over its indexed and open documents).
-public function documents_importing(index: ref[ReferenceIndex], module_name: str, results: ref[vec.Vec[string_mod.String]]) -> void:
+public function documents_importing(
+    index: ref[ReferenceIndex],
+    module_name: str,
+    results: ref[vec.Vec[string_mod.String]]
+) -> void:
     var di: ptr_uint = 0
     while di < index.documents.len():
         let dp = index.documents.get(di) else:
@@ -376,7 +388,11 @@ public function documents_importing(index: ref[ReferenceIndex], module_name: str
 
 ## Every identifier token of `source` in source order, as views into it, plus
 ## its import module names (the dotted path after each `import`, before `as`).
-function collect_document_metadata(source: str, identifiers: ref[vec.Vec[IdentifierToken]], imports: ref[vec.Vec[str]]) -> void:
+function collect_document_metadata(
+    source: str,
+    identifiers: ref[vec.Vec[IdentifierToken]],
+    imports: ref[vec.Vec[str]]
+) -> void:
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: lex_diags.release()
     var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
@@ -402,7 +418,12 @@ function collect_document_metadata(source: str, identifiers: ref[vec.Vec[Identif
 
 ## The dotted module name of the `import` at token index `import_index`
 ## (`import std.vec as vec` -> `std.vec`).
-function collect_import_name(source: str, tokens: ref[vec.Vec[token_mod.Token]], import_index: ptr_uint, imports: ref[vec.Vec[str]]) -> void:
+function collect_import_name(
+    source: str,
+    tokens: ref[vec.Vec[token_mod.Token]],
+    import_index: ptr_uint,
+    imports: ref[vec.Vec[str]]
+) -> void:
     var start: ptr_uint = 0
     var end: ptr_uint = 0
     var found = false

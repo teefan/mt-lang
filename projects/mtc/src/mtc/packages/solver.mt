@@ -19,31 +19,25 @@ import mtc.packages.registry as registry
 import mtc.packages.source as pkg_source
 import mtc.packages.version as version
 
-
 public struct Solution:
     registry_versions: vec.Vec[pkg_source.ResolvedVersion]
-
 
 struct SeenManifest:
     path: string.String
     package_name: string.String
-
 
 struct SelectedVersion:
     key: string.String
     package_name: string.String
     version: string.String
 
-
 struct SolverState:
     seen: vec.Vec[SeenManifest]
     selected: vec.Vec[SelectedVersion]
     stack: vec.Vec[string.String]
 
-
 type StateList = vec.Vec[SolverState]
 type VersionEntryList = vec.Vec[PackageVersionEntry]
-
 
 struct PackageVersionEntry:
     text: string.String
@@ -153,7 +147,10 @@ function stack_contains(state: ref[SolverState], path: str) -> bool:
     return false
 
 
-public function solve(package: manifest.PackageManifest, resolver: ref[pkg_source.SourceResolver]) -> Result[Solution, string.String]:
+public function solve(
+    package: manifest.PackageManifest,
+    resolver: ref[pkg_source.SourceResolver]
+) -> Result[Solution, string.String]:
     var state = empty_state()
     var parent_source = pkg_source.source_for_manifest(resolver, package)
     defer: parent_source.release()
@@ -611,7 +608,10 @@ function locked_registry_version(
     return by_name
 
 
-function manifest_for_registry(package_name: str, package_version: str) -> Result[manifest.PackageManifest, string.String]:
+function manifest_for_registry(
+    package_name: str,
+    package_version: str
+) -> Result[manifest.PackageManifest, string.String]:
     var root: string.String
     match registry.published_root_default(package_name, package_version, true):
         Result.failure as root_failure:

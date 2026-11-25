@@ -14,12 +14,10 @@ import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
-
 struct FoldRange:
     start_line: ptr_uint
     end_line: ptr_uint
     kind: str
-
 
 struct BlockStart:
     line: ptr_uint
@@ -267,6 +265,5 @@ function lstrip(line: str) -> str:
     while start < line.len and (line.byte_at(start) == ' ' or line.byte_at(start) == '\t'):
         start += 1
     return line.slice(start, line.len - start)
-
 
 ## Split source into line views (no newline characters included).

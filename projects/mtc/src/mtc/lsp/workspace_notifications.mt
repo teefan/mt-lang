@@ -220,7 +220,11 @@ function release_rename_pairs(pairs: ref[vec.Vec[RenamePair]]) -> void:
 
 
 ## Parse the request's `files` array into rename pairs with module names.
-function collect_rename_pairs(ws: ref[workspace.Workspace], params: json.Value, pairs: ref[vec.Vec[RenamePair]]) -> void:
+function collect_rename_pairs(
+    ws: ref[workspace.Workspace],
+    params: json.Value,
+    pairs: ref[vec.Vec[RenamePair]]
+) -> void:
     let obj_ptr = params.as_object() else:
         return
     unsafe:

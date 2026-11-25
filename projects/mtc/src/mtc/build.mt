@@ -24,7 +24,6 @@ import mtc.parser.ast as ast
 import mtc.strings
 import mtc.wasm_shell as wasm_shell
 
-
 ## What the build produces: an executable (the default), a static archive
 ## (`ar rcs`), or a shared object (`cc -shared`).  Mirrors the host's
 ## `Build` kind option; the host's own static/shared paths call a missing
@@ -605,7 +604,11 @@ function is_emscripten_compiler(compiler: str) -> bool:
 ## ld tolerates on Arch (its libm.so is a linker script that pulls libmvec) and
 ## rejects on Ubuntu 24.04, where `box2d_smoke` failed with `undefined
 ## reference to sqrtf`.
-function push_link_line(command: ref[vec.Vec[str]], vendored_flags: ref[vec.Vec[string.String]], link_flags: ref[vec.Vec[string.String]]) -> void:
+function push_link_line(
+    command: ref[vec.Vec[str]],
+    vendored_flags: ref[vec.Vec[string.String]],
+    link_flags: ref[vec.Vec[string.String]]
+) -> void:
     push_owned_flags_where(command, vendored_flags, "-L", true)
     push_owned_flags(command, link_flags)
     push_owned_flags_where(command, vendored_flags, "-L", false)
@@ -615,7 +618,12 @@ function push_link_line(command: ref[vec.Vec[str]], vendored_flags: ref[vec.Vec[
 ## `-L` names a search directory, not a library, so it belongs before the
 ## archive that needs it; everything else in `vendored_flags` is a dependency
 ## of those archives and belongs after.
-function push_owned_flags_where(command: ref[vec.Vec[str]], values: ref[vec.Vec[string.String]], prefix: str, want_search_path: bool) -> void:
+function push_owned_flags_where(
+    command: ref[vec.Vec[str]],
+    values: ref[vec.Vec[string.String]],
+    prefix: str,
+    want_search_path: bool
+) -> void:
     var index: ptr_uint = 0
     while index < values.len():
         let value = values.get(index) else:
@@ -868,7 +876,14 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
             uses_pcre2 = true
         if analysis.module_name == "std.c.steamworks":
             uses_steamworks = true
-        if analysis.module_name == "std.c.stb_image" or analysis.module_name == "std.c.stb_truetype" or analysis.module_name == "std.c.stb_image_write" or analysis.module_name == "std.c.stb_image_resize2" or analysis.module_name == "std.c.stb_rect_pack" or analysis.module_name == "std.c.stb_vorbis":
+        if (
+            analysis.module_name == "std.c.stb_image"
+            or analysis.module_name == "std.c.stb_truetype"
+            or analysis.module_name == "std.c.stb_image_write"
+            or analysis.module_name == "std.c.stb_image_resize2"
+            or analysis.module_name == "std.c.stb_rect_pack"
+            or analysis.module_name == "std.c.stb_vorbis"
+        ):
             uses_stb = true
         if analysis.module_name == "std.c.miniaudio":
             uses_miniaudio = true
@@ -1352,7 +1367,10 @@ function prepare_vendored_raylib(roots: span[str]) -> Result[bool, string.String
     while si < 6:
         let source_name = sources[si]
         let source_file = strings.join_two(src_dir.as_str(), strings.join_two("/", source_name))
-        let object_file = strings.join_two(build_dir.as_str(), strings.join_two("/", strings.join_two(source_name, ".o")))
+        let object_file = strings.join_two(
+            build_dir.as_str(),
+            strings.join_two("/", strings.join_two(source_name, ".o"))
+        )
 
         var compile = vec.Vec[str].create()
         defer: compile.release()
@@ -2267,6 +2285,5 @@ function run_build_tool(command: span[str], label: str) -> Result[bool, string.S
             var message = string.String.from_str("could not launch ")
             message.append(label)
             return Result[bool, string.String].failure(error = message)
-
 
 ## Multi-string join helper (mirrors c_backend j2).

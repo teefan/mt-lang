@@ -18,15 +18,12 @@ public struct QualifiedName:
     line: ptr_uint
     column: ptr_uint
 
-
 public struct TypeParamConstraint:
     kind: TypeParamConstraintKind
     interface_ref: QualifiedName
 
-
 public enum TypeParamConstraintKind: ubyte
     implement = 0
-
 
 public struct TypeParam:
     name: str
@@ -37,17 +34,14 @@ public struct TypeParam:
     line: ptr_uint
     column: ptr_uint
 
-
 public struct ValueTypeParam:
     name: str
     value_type: TypeRef
     line: ptr_uint
     column: ptr_uint
 
-
 public struct TypeArgument:
     value: ptr[TypeRef]
-
 
 public struct TypeRef:
     name: QualifiedName
@@ -69,28 +63,23 @@ public struct TypeRef:
     is_dyn: bool
     is_tuple: bool
 
-
 public struct FunctionType:
     params: span[Param]
     return_type: TypeRef
-
 
 public struct ProcType:
     params: span[Param]
     return_type: TypeRef
 
-
 public struct TupleType:
     element_types: span[TypeRef]
     nullable: bool
-
 
 public struct DynType:
     interface_name: QualifiedName
     nullable: bool
     line: ptr_uint
     column: ptr_uint
-
 
 # =============================================================================
 #  Parameter types (value types)
@@ -105,21 +94,18 @@ public struct Param:
     ## Inlined at every call site that omits the argument.
     default_value: ptr[Expr]?
 
-
 public struct ForeignParam:
     name: str
     param_type: TypeRef
     param_mode: ForeignParamMode
     boundary_type: Option[TypeRef]
 
-
 public enum ForeignParamMode: ubyte
-    fmode_plain     = 0
-    fmode_out       = 1
-    fmode_in        = 2
-    fmode_inout     = 3
+    fmode_plain = 0
+    fmode_out = 1
+    fmode_in = 2
+    fmode_inout = 3
     fmode_consuming = 4
-
 
 # =============================================================================
 #  Field and member types (value types)
@@ -132,7 +118,6 @@ public struct Field:
     line: ptr_uint
     column: ptr_uint
 
-
 public struct EnumMember:
     name: str
     value: ptr[Expr]?
@@ -141,11 +126,9 @@ public struct EnumMember:
     ## False when the value was synthesized (implicit auto-increment).
     value_explicit: bool
 
-
 public struct VariantArm:
     name: str
     arm_fields: span[Field]
-
 
 public struct InterfaceMethod:
     name: str
@@ -156,7 +139,6 @@ public struct InterfaceMethod:
     attributes: span[AttributeApplication]
     line: ptr_uint
     column: ptr_uint
-
 
 public struct Method:
     name: str
@@ -172,12 +154,10 @@ public struct Method:
     line: ptr_uint
     column: ptr_uint
 
-
 public enum MethodKind: ubyte
-    mk_plain    = 0
+    mk_plain = 0
     mk_editable = 1
-    mk_static   = 2
-
+    mk_static = 2
 
 # =============================================================================
 #  Attribute types (value types)
@@ -188,7 +168,6 @@ public struct AttributeApplication:
     arguments: span[Argument]
     line: ptr_uint
     column: ptr_uint
-
 
 # =============================================================================
 #  Match / pattern types (value types)
@@ -204,7 +183,6 @@ public struct MatchArm:
     wildcard_line: ptr_uint
     wildcard_column: ptr_uint
 
-
 public struct MatchExprArm:
     pattern: ptr[Expr]?
     binding_name: Option[str]
@@ -215,14 +193,12 @@ public struct MatchExprArm:
     wildcard_line: ptr_uint
     wildcard_column: ptr_uint
 
-
 public struct WhenBranch:
     pattern: ptr[Expr]
     binding_name: Option[str]
     binding_line: ptr_uint
     binding_column: ptr_uint
     body: span[Stmt]
-
 
 ## Declaration-bodied `when` branch (module-level `when`); its body holds
 ## declarations rather than statements.
@@ -233,7 +209,6 @@ public struct WhenDeclBranch:
     binding_column: ptr_uint
     body: span[Decl]
 
-
 # =============================================================================
 #  For loop binding
 # =============================================================================
@@ -242,7 +217,6 @@ public struct ForBinding:
     name: str
     line: ptr_uint
     column: ptr_uint
-
 
 # =============================================================================
 #  If branch
@@ -255,7 +229,6 @@ public struct IfBranch:
     column: ptr_uint
     length: ptr_uint
 
-
 # =============================================================================
 #  Call argument
 # =============================================================================
@@ -263,7 +236,6 @@ public struct IfBranch:
 public struct Argument:
     arg_name: Option[str]
     arg_value: ptr[Expr]
-
 
 # =============================================================================
 #  Format string parts
@@ -273,19 +245,16 @@ public variant FormatStringPart:
     fmt_text(value: str)
     fmt_expr(expression: ptr[Expr], format_spec: ptr[FormatSpec]?)
 
-
 public struct FormatSpec:
     spec_kind: FormatSpecKind
     value: int
     uppercase: bool
 
-
 public enum FormatSpecKind: ubyte
     precision = 0
-    hex       = 1
-    octal     = 2
-    binary    = 3
-
+    hex = 1
+    octal = 2
+    binary = 3
 
 # =============================================================================
 #  Expressions (recursive — heap-allocated via ptr[Expr])
@@ -339,7 +308,6 @@ public variant Expr:
     # Error recovery
     expr_error(line: ptr_uint, column: ptr_uint, message: str)
 
-
 # =============================================================================
 #  Statements (recursive — heap-allocated via ptr[Stmt])
 # =============================================================================
@@ -376,7 +344,6 @@ public variant Stmt:
     stmt_gather(handles: span[Expr], line: ptr_uint, column: ptr_uint)
     stmt_error(line: ptr_uint, column: ptr_uint, message: str)
     stmt_error_block(body: ptr[Stmt], line: ptr_uint, column: ptr_uint, message: str)
-
 
 # =============================================================================
 #  Declarations (recursive — heap-allocated via ptr[Decl])
@@ -442,15 +409,13 @@ public variant Decl:
     decl_include(value: str, line: ptr_uint, column: ptr_uint)
     decl_compiler_flag(value: str, line: ptr_uint, column: ptr_uint)
 
-
 # =============================================================================
 #  Source file root
 # =============================================================================
 
 public enum ModuleKind: ubyte
     module_ordinary = 0
-    module_raw      = 1
-
+    module_raw = 1
 
 ## Root AST node produced by the parser.  Mirrors Ruby AST::SourceFile:
 ## imports and directives are held separately from ordinary declarations so

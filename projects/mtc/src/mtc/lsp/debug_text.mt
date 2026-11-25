@@ -17,15 +17,15 @@ public function ruby_inspect_n(lexeme: str, limit: ptr_uint) -> string.String:
     while i < limit and i < lexeme.len:
         let code_byte = unsafe: read(lexeme.data + i)
         let code = ptr_uint<-code_byte
-        if code == 92z:          # backslash
+        if code == 92z: # backslash
             text.append("\\\\")
-        else if code == 34z:     # double quote
+        else if code == 34z: # double quote
             text.append("\\\"")
-        else if code == 10z:     # newline
+        else if code == 10z: # newline
             text.append("\\n")
-        else if code == 9z:      # tab
+        else if code == 9z: # tab
             text.append("\\t")
-        else if code == 13z:     # carriage return
+        else if code == 13z: # carriage return
             text.append("\\r")
         else if code < 32z or code == 127z:
             text.append("\\x")

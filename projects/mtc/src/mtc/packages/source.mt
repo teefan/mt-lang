@@ -15,18 +15,15 @@ import mtc.packages.manifest as manifest
 import mtc.packages.paths as paths
 import mtc.packages.registry as registry
 
-
 public enum ResolutionMode: ubyte
     reject = 0
     cache = 1
     materialize = 2
 
-
 public enum SourceKind: ubyte
     path_ = 0
     registry_ = 1
     git_ = 2
-
 
 public struct SourceIdentity:
     kind: SourceKind
@@ -37,16 +34,13 @@ public struct SourceIdentity:
     git_rev: string.String
     git_subdir: Option[string.String]
 
-
 public struct LockAttribute:
     key: string.String
     value: string.String
 
-
 public struct Source:
     identity: SourceIdentity
     local_root: string.String
-
 
 public struct ResolvedVersion:
     ## The canonical parent-source/dependency key, and the package name used
@@ -55,17 +49,14 @@ public struct ResolvedVersion:
     package_name: string.String
     version: string.String
 
-
 public struct SourceResolver:
     cache_root: string.String
     mode: ResolutionMode
     resolved_versions: vec.Vec[ResolvedVersion]
 
-
 public struct ResolvedPackage:
     manifest: manifest.PackageManifest
     source: Source
-
 
 public struct FetchResult:
     package_name: string.String
@@ -90,6 +81,7 @@ extending SourceIdentity:
             SourceKind.git_:
                 return "git"
         return "path"
+
 
     public function cache_key() -> Option[string.String]:
         match this.kind:
@@ -122,8 +114,10 @@ extending SourceIdentity:
                 return Option[string.String].none
         return Option[string.String].none
 
+
     public function cacheable() -> bool:
         return not this.cache_key().is_none()
+
 
     public editable function release() -> void:
         this.path.release()
@@ -143,6 +137,7 @@ extending Source:
     public function kind_name() -> str:
         return this.identity.kind_name()
 
+
     public editable function release() -> void:
         this.identity.release()
         this.local_root.release()
@@ -158,6 +153,7 @@ extending ResolvedVersion:
 extending SourceResolver:
     public function supports_dependency_solving() -> bool:
         return this.mode != ResolutionMode.reject
+
 
     public editable function release() -> void:
         this.cache_root.release()
@@ -183,7 +179,6 @@ function identity_error(message: string.String) -> Result[SourceIdentity, string
 
 function source_error(message: str) -> string.String:
     return string.String.from_str(message)
-
 
 # =============================================================================
 #  Identity construction
@@ -307,7 +302,12 @@ function normalize_git_subdir(value: str) -> Result[Option[string.String], strin
         return Result[Option[string.String], string.String].failure(
             error = source_error("git source subdir cannot be absolute")
         )
-    if text.len >= 3 and is_ascii_alpha(text.byte_at(0)) and text.byte_at(1) == 58 and (text.byte_at(2) == 92 or text.byte_at(2) == 47):
+    if (
+        text.len >= 3
+        and is_ascii_alpha(text.byte_at(0))
+        and text.byte_at(1) == 58
+        and (text.byte_at(2) == 92 or text.byte_at(2) == 47)
+    ):
         return Result[Option[string.String], string.String].failure(
             error = source_error("git source subdir cannot be absolute")
         )
@@ -361,7 +361,6 @@ public function clone_source(source: Source) -> Source:
         local_root = string.String.from_str(source.local_root.as_str()),
     )
 
-
 # =============================================================================
 #  Lock attributes and source keys
 # =============================================================================
@@ -414,7 +413,10 @@ public function release_lock_attributes(attributes: ref[vec.Vec[LockAttribute]])
 
 
 public function sort_lock_attributes(attributes: ref[vec.Vec[LockAttribute]]) -> void:
-    attributes.sort_by(proc(left: ptr[LockAttribute], right: ptr[LockAttribute]) -> int: unsafe: read(left).key.as_str().compare(unsafe: read(right).key.as_str()))
+    attributes.sort_by(proc(
+        left: ptr[LockAttribute],
+        right: ptr[LockAttribute]
+    ) -> int: unsafe: read(left).key.as_str().compare(unsafe: read(right).key.as_str()))
 
 
 public function source_key_for_identity(identity: SourceIdentity) -> Result[string.String, string.String]:
@@ -451,7 +453,6 @@ public function registry_dependency_key(parent_source_key: str, dependency_name:
     key.push_byte(31)
     key.append(dependency_name)
     return key
-
 
 # =============================================================================
 #  Source cache
@@ -504,7 +505,10 @@ public function cache_path_for(cache_root: str, identity: SourceIdentity) -> Res
     return Result[string.String, string.String].failure(error = source_error("invalid cache key"))
 
 
-public function cache_materialized_root(cache_root: str, identity: SourceIdentity) -> Result[string.String, string.String]:
+public function cache_materialized_root(
+    cache_root: str,
+    identity: SourceIdentity
+) -> Result[string.String, string.String]:
     var base: string.String
     match cache_path_for(cache_root, identity):
         Result.failure as failure_payload:
@@ -533,7 +537,10 @@ public function cache_materialized_root(cache_root: str, identity: SourceIdentit
                 i += 1
             var expanded = paths.absolute_path(materialized.as_str())
             materialized.release()
-            if not expanded.as_str().equal(base.as_str()) and not paths.path_within_root(expanded.as_str(), base.as_str()):
+            if not expanded.as_str().equal(base.as_str()) and not paths.path_within_root(
+                expanded.as_str(),
+                base.as_str()
+            ):
                 var message = string.String.from_str("git source subdir escapes the materialized package root: \"")
                 message.append(subdir.value.as_str())
                 message.append("\"")
@@ -568,7 +575,6 @@ public function cache_materialized(cache_root: str, identity: SourceIdentity) ->
             var path = path_payload.value
             defer: path.release()
             return fs.is_file(path.as_str())
-
 
 # =============================================================================
 #  Resolver
@@ -619,7 +625,10 @@ public function clone_resolved_versions(versions: ref[vec.Vec[ResolvedVersion]])
     return copy
 
 
-public function with_resolved_versions(resolver: ref[SourceResolver], versions: ref[vec.Vec[ResolvedVersion]]) -> SourceResolver:
+public function with_resolved_versions(
+    resolver: ref[SourceResolver],
+    versions: ref[vec.Vec[ResolvedVersion]]
+) -> SourceResolver:
     return SourceResolver(
         cache_root = string.String.from_str(resolver.cache_root.as_str()),
         mode = resolver.mode,
@@ -687,7 +696,12 @@ public function resolve(
                             Result.failure as identity_failure:
                                 return Result[ResolvedPackage, string.String].failure(error = identity_failure.error)
                             Result.success as identity_payload:
-                                return resolve_cache_backed(resolver, identity_payload.value, dependency, parent_manifest)
+                                return resolve_cache_backed(
+                                    resolver,
+                                    identity_payload.value,
+                                    dependency,
+                                    parent_manifest
+                                )
                     Option.none:
                         pass
             Option.none:
@@ -732,7 +746,10 @@ function resolve_registry_dependency(
                     break
                 unsafe:
                     let value = read(entry)
-                    if value.key.as_str().equal(dependency_key.as_str()) or value.package_name.as_str().equal(dependency.name.as_str()):
+                    if (
+                        value.key.as_str().equal(dependency_key.as_str())
+                        or value.package_name.as_str().equal(dependency.name.as_str())
+                    ):
                         if value.key.as_str().equal(dependency_key.as_str()):
                             resolved_version = Option[string.String].some(value = string.String.from_str(value.version.as_str()))
                             break
@@ -973,7 +990,6 @@ public function source_from_identity(
         value = Source(identity = clone_identity(identity_value), local_root = local_root)
     )
 
-
 # =============================================================================
 #  Fetcher
 # =============================================================================
@@ -1137,7 +1153,10 @@ function fetch_git_package(
         Result.success as manifest_payload:
             expected_manifest = manifest_payload.value
 
-    if git_checkout_current(checkout_root.as_str(), identity.git_rev.as_str()) and fs.is_file(expected_manifest.as_str()):
+    if git_checkout_current(
+        checkout_root.as_str(),
+        identity.git_rev.as_str()
+    ) and fs.is_file(expected_manifest.as_str()):
         expected_manifest.release()
         checkout_root.release()
         return Result[FetchResult, string.String].success(

@@ -11,7 +11,6 @@ import std.cjson as cjson
 import std.mem.arena as arena
 import std.log as log
 
-
 import mtc.loader.module_loader as loader
 import mtc.loader.path_resolver as resolver
 
@@ -193,7 +192,12 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
 
 ## Dispatch a known method.  Some(true) continues, Some(false) exits, and None
 ## means the method is unhandled.
-function dispatch_known_method(ws: ref[workspace.Workspace], method: str, msg: proto.Message, req_id: ptr_uint) -> Option[bool]:
+function dispatch_known_method(
+    ws: ref[workspace.Workspace],
+    method: str,
+    msg: proto.Message,
+    req_id: ptr_uint
+) -> Option[bool]:
     if method == "initialize":
         lifecycle.handle_initialize(msg.id, msg.params, ws)
     else if method == "initialized":
@@ -382,7 +386,6 @@ function dispatch_known_method(ws: ref[workspace.Workspace], method: str, msg: p
 ## Extract the textDocument.uri from a generic params object.
 function extract_text_doc_uri(params: json.Value) -> str:
     return proto.extract_text_doc_uri(params)
-
 
 struct PositionParams:
     uri: str
@@ -605,7 +608,10 @@ function extract_request_id(id: json.Value) -> ptr_uint:
 ## settings.  The response is handled asynchronously in
 ## handle_incoming_response.
 function schedule_config_request(ws: ref[workspace.Workspace]) -> void:
-    let id = proto.send_request("workspace/configuration", "[{\"section\":\"milkTea.format.mode\"},{\"section\":\"milkTea.lsp.dependencyResolution\"},{\"section\":\"milkTea.lsp.platform\"},{\"section\":\"milkTea.lsp.strictCurrentRootDiagnostics\"}]")
+    let id = proto.send_request(
+        "workspace/configuration",
+        "[{\"section\":\"milkTea.format.mode\"},{\"section\":\"milkTea.lsp.dependencyResolution\"},{\"section\":\"milkTea.lsp.platform\"},{\"section\":\"milkTea.lsp.strictCurrentRootDiagnostics\"}]"
+    )
     ws.set_pending_config_request(id)
 
 
@@ -616,7 +622,10 @@ function schedule_watched_files_registration(ws: ref[workspace.Workspace]) -> vo
     if not ws.client_watched_files_dynamic or ws.watched_files_registered:
         return
     ws.watched_files_registered = true
-    proto.send_request("client/registerCapability", "{\"registrations\":[{\"id\":\"mtc-watched-files\",\"method\":\"workspace/didChangeWatchedFiles\",\"registerOptions\":{\"watchers\":[{\"globPattern\":\"**/*.mt\"}]}}]}")
+    proto.send_request(
+        "client/registerCapability",
+        "{\"registrations\":[{\"id\":\"mtc-watched-files\",\"method\":\"workspace/didChangeWatchedFiles\",\"registerOptions\":{\"watchers\":[{\"globPattern\":\"**/*.mt\"}]}}]}"
+    )
 
 
 ## Handle an incoming JSON-RPC response.  Dispatches based on the response

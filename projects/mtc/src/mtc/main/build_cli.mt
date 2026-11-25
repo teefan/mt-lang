@@ -247,10 +247,21 @@ public function build_command(args: span[str]) -> int:
         args, BuildCommandMode.build, "build", ref_of(filtered), ref_of(program_args)
     ) else:
         return 1
-    let path = main.parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(options.platform)) else:
+    let path = main.parse_source_operand(
+        filtered.as_span(),
+        ref_of(roots),
+        ref_of(owned_roots),
+        ref_of(options.platform)
+    ) else:
         return 1
 
-    if main.apply_package_resolution(path, options.locked_flag, options.frozen_flag, ref_of(roots), ref_of(owned_roots)) != 0:
+    if main.apply_package_resolution(
+        path,
+        options.locked_flag,
+        options.frozen_flag,
+        ref_of(roots),
+        ref_of(owned_roots)
+    ) != 0:
         return 1
 
     var entry_path_owner = string.String.create()
@@ -669,7 +680,10 @@ function resolve_build_output(
     match package_opt:
         Option.some as package_ref:
             let pkg = package_ref.value
-            if pkg.kind == package_manifest.PackageKind.library and read(options).kind == build_driver.BuildKind.executable:
+            if (
+                pkg.kind == package_manifest.PackageKind.library
+                and read(options).kind == build_driver.BuildKind.executable
+            ):
                 var message = string.String.create()
                 defer: message.release()
                 message.append("cannot build library package ")
@@ -728,7 +742,10 @@ function resolve_build_output(
                             Option.none:
                                 var computed = path_ops.join(pkg.root_dir.as_str(), "build/bin")
                                 defer: computed.release()
-                                var with_platform = path_ops.join(computed.as_str(), main.platform_label(read(options).platform))
+                                var with_platform = path_ops.join(
+                                    computed.as_str(),
+                                    main.platform_label(read(options).platform)
+                                )
                                 defer: with_platform.release()
                                 var with_profile = path_ops.join(with_platform.as_str(), read(options).profile_name)
                                 defer: with_profile.release()
@@ -935,7 +952,10 @@ function resolve_run_output(
                                 read(output_path).release()
                                 var computed = path_ops.join(pkg.root_dir.as_str(), "build/bin")
                                 defer: computed.release()
-                                var with_platform = path_ops.join(computed.as_str(), main.platform_label(options.platform))
+                                var with_platform = path_ops.join(
+                                    computed.as_str(),
+                                    main.platform_label(options.platform)
+                                )
                                 defer: with_platform.release()
                                 var with_profile = path_ops.join(with_platform.as_str(), options.profile_name)
                                 defer: with_profile.release()
@@ -1026,15 +1046,31 @@ public function run_command(args: span[str]) -> int:
         args, BuildCommandMode.run, "run", ref_of(filtered), ref_of(program_args)
     ) else:
         return 1
-    let path = main.parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(options.platform)) else:
+    let path = main.parse_source_operand(
+        filtered.as_span(),
+        ref_of(roots),
+        ref_of(owned_roots),
+        ref_of(options.platform)
+    ) else:
         return 1
-    if main.apply_package_resolution(path, options.locked_flag, options.frozen_flag, ref_of(roots), ref_of(owned_roots)) != 0:
+    if main.apply_package_resolution(
+        path,
+        options.locked_flag,
+        options.frozen_flag,
+        ref_of(roots),
+        ref_of(owned_roots)
+    ) != 0:
         return 1
     var entry_path_owner = string.String.create()
     defer: entry_path_owner.release()
     var source_root_owner = string.String.create()
     defer: source_root_owner.release()
-    let effective = main.effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+    let effective = main.effective_source_path(
+        path,
+        ref_of(roots),
+        ref_of(entry_path_owner),
+        ref_of(source_root_owner)
+    ) else:
         return 1
     if not fs.exists(effective):
         var missing_abs = loader.absolute_path(path)
@@ -1239,7 +1275,14 @@ public function run_module_command(args: span[str]) -> int:
             roots.push(args[ai + 1])
             ai += 2
             continue
-        if arg == "-o" or arg == "--output" or arg == "--cc" or arg == "--profile" or arg == "--platform" or arg == "--keep-c":
+        if (
+            arg == "-o"
+            or arg == "--output"
+            or arg == "--cc"
+            or arg == "--profile"
+            or arg == "--platform"
+            or arg == "--keep-c"
+        ):
             if ai + 1 >= args.len:
                 test_cli.eprint_missing_option_value(arg)
                 return 1
@@ -1261,7 +1304,16 @@ public function run_module_command(args: span[str]) -> int:
                 return 1
             ai += 2
             continue
-        if arg == "--bundle" or arg == "--archive" or arg == "--locked" or arg == "--frozen" or arg == "--no-cache" or arg == "--timings" or arg == "--debug-guards" or arg == "--no-debug-guards":
+        if (
+            arg == "--bundle"
+            or arg == "--archive"
+            or arg == "--locked"
+            or arg == "--frozen"
+            or arg == "--no-cache"
+            or arg == "--timings"
+            or arg == "--debug-guards"
+            or arg == "--no-debug-guards"
+        ):
             ai += 1
             continue
         if arg.starts_with("-"):

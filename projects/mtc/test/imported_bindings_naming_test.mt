@@ -7,11 +7,9 @@ import std.vec as vec
 import mtc.imported_bindings.naming as naming
 import mtc.imported_bindings.raw_scanner as raw
 
-
 struct OglVector:
     raw: str
     expected: str
-
 
 const OPENGL_VECTORS: array[OglVector, 37] = array[OglVector, 37](
     OglVector(raw = "glBlendEquation", expected = "blend_equation"),

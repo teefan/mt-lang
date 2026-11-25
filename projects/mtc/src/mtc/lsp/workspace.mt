@@ -31,7 +31,6 @@ import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
 import mtc.lsp.workspace_index as idx
 
-
 ## One document's parse and single-file analysis, cached by content
 ## fingerprint.  Five features need exactly this pair for the same edit, and
 ## re-parsing plus re-checking a large file per request dominates their cost;
@@ -50,7 +49,6 @@ public struct ParseCacheEntry:
     ## (nodes, vectors, strings); freed when the entry is replaced.
     region: heap.Region
 
-
 ## A loader-backed analysis of one document: the whole import closure is
 ## loaded and bound, which the single-file `analyzer.check_source_file` path
 ## cannot do (imported generics and their members stay unresolved there).
@@ -64,19 +62,16 @@ public struct AnalysisCacheEntry:
     program: loader.Program
     analysis: analyzer.Analysis
 
-
 struct DiagnosticCacheEntry:
     source_hash: uint
     result_id: string.String
     diagnostics_json: string.String
-
 
 ## Workspace state for pull diagnostics.  Caches the last computed
 ## diagnostics per file so subsequent pulls with an unchanged source can
 ## return `kind: "unchanged"` without recomputing.
 public struct DiagnosticCache:
     entries: map_mod.Map[string.String, DiagnosticCacheEntry]
-
 
 ## The one-document lex cache.  Every position lookup (identifier at, token at,
 ## interpolation at, the keyword/builtin arms, the import path scan) needs the
@@ -89,7 +84,6 @@ public struct TokenCacheEntry:
     content_hash: uint
     tokens: vec.Vec[token_mod.Token]
 
-
 ## The one-document scope-binding cache.  `collect_bindings` walks the whole
 ## AST and every declaration's source lines; hover resolves a local through it
 ## on every request, so the walk is cached beside its owning source copy (the
@@ -99,7 +93,6 @@ public struct BindingCacheEntry:
     content_hash: uint
     source: string.String
     bindings: vec.Vec[scope_mod.Binding]
-
 
 ## A document's current text and content fingerprint.  The `str` view is
 ## produced by one `String.as_str` validation per document version, so the many
@@ -133,7 +126,6 @@ struct TextCacheEntry:
     ## Byte offset of every line start, for O(line) byte→UTF-16 conversion.
     line_starts: vec.Vec[ptr_uint]
 
-
 public struct SemanticTokenCacheEntry:
     source_hash: uint
     result_id: string.String
@@ -145,7 +137,6 @@ public struct SemanticTokenCacheEntry:
     ## The data's column encoding; a cached UTF-8 pass must not be replayed to a
     ## UTF-16 client.
     utf16: bool
-
 
 public struct Workspace:
     ## The primary root (the first workspace folder); path labels are rendered
@@ -220,7 +211,6 @@ public struct Workspace:
     ## Regions of replaced parse-cache entries, kept alive until the request
     ## boundary (see `drain_retired_regions`).
     retired_regions: vec.Vec[heap.Region]
-
 
 ## The effective module roots for one source file: borrowed workspace roots in
 ## `views` plus the per-file roots computed from the path, whose owning strings
@@ -310,7 +300,6 @@ extending Workspace:
             retired_regions = vec.Vec[heap.Region].create(),
         )
 
-
     ## Re-root the workspace from the client's workspace folders.  Every folder
     ## is a module root (imports resolve relative to each), and the first is the
     ## primary used for path labels.  The index and all per-file caches are
@@ -335,11 +324,9 @@ extending Workspace:
             i += 1
         this.reset_after_reroot()
 
-
     ## Single-root convenience path (and the pre-multi-root API).
     public editable function set_root(path: str) -> void:
         this.set_roots(array[str, 1](path).as_span())
-
 
     ## Drop every cache and index after a root change.
     public editable function reset_after_reroot() -> void:
@@ -432,7 +419,6 @@ extending Workspace:
             Option.none:
                 pass
 
-
     ## Drop one document's cached parse, releasing its source copy and the
     ## region that owns the AST and single-file analysis.  `didClose` calls this;
     ## any other eviction must too.  `remove_entry` hands back the map-owned key
@@ -450,7 +436,6 @@ extending Workspace:
             Option.none:
                 pass
 
-
     ## Drop one document's cached loader-backed analysis, releasing its owned
     ## path and the `Program` (whose region-owned AST/analysis the module cache
     ## has already released or retired).
@@ -467,7 +452,6 @@ extending Workspace:
             Option.none:
                 pass
 
-
     ## Store a document's text, releasing the buffer it replaces (`set` returns
     ## the previous value on an existing key and drops it otherwise).
     public editable function set_open_doc(path: string.String, text: str) -> void:
@@ -480,12 +464,10 @@ extending Workspace:
             Option.none:
                 pass
 
-
     ## Register a document's declaration names for the host's cross-file
     ## definition lookup (`warm_definition_candidates_for_uri`).
     public editable function warm_definition_names(path: str, source: str) -> void:
         defidx.warm_names(ref_of(this.definition_index), path, source)
-
 
     ## Record `path` in didOpen order, once.
     public editable function track_open_path(path: str) -> void:
@@ -497,7 +479,6 @@ extending Workspace:
                 return
             i += 1
         this.open_doc_order.push(string.String.from_str(path))
-
 
     ## Drop `path` from the didOpen-order list.
     public editable function untrack_open_path(path: str) -> void:
@@ -514,7 +495,6 @@ extending Workspace:
                         pass
                 return
             i += 1
-
 
     ## Source text for a file: the open editor buffer when present, else disk.
     ## Returns an owned copy the caller must release.
@@ -534,7 +514,6 @@ extending Workspace:
                 err.release()
                 return Option[string.String].none
 
-
     ## The document's current text and content hash, validated once per document
     ## version.  The returned `str` is borrowed: an open document's buffer lives
     ## in `open_docs` until the next open/change/close, a closed one's in its
@@ -552,8 +531,15 @@ extending Workspace:
                 match fs_mod.metadata(path):
                     Result.success as meta:
                         let stamp = meta.value
-                        if cached.size == stamp.size and cached.modified_seconds == stamp.modified_seconds and cached.modified_nanoseconds == stamp.modified_nanoseconds:
-                            return Option[DocumentText].some(value = DocumentText(text = cached.text, hash = cached.hash))
+                        if (
+                            cached.size == stamp.size
+                            and cached.modified_seconds == stamp.modified_seconds
+                            and cached.modified_nanoseconds == stamp.modified_nanoseconds
+                        ):
+                            return Option[DocumentText].some(value = DocumentText(
+                                text = cached.text,
+                                hash = cached.hash
+                            ))
                     Result.failure as failure_payload:
                         var err = failure_payload.error
                         err.release()
@@ -591,7 +577,6 @@ extending Workspace:
                 err.release()
                 return Option[DocumentText].none
 
-
     ## The content hash of `source` when it is the cached text of `path` (the
     ## common case: every helper in one request passes the same validated view),
     ## else a fresh hash.  This keeps the token/binding caches' version check
@@ -607,7 +592,6 @@ extending Workspace:
                     return cached.hash
         return strings.fnv1a_hash(source)
 
-
     ## Drop a document's text cache entry (open/change/close).
     public editable function forget_document_text(path: str) -> void:
         var key = string.String.from_str(path)
@@ -620,7 +604,6 @@ extending Workspace:
                 entry.line_starts.release()
             Option.none:
                 pass
-
 
     ## Replace a document's text cache entry, releasing the buffer it owned.
     editable function put_text_cache(
@@ -654,7 +637,6 @@ extending Workspace:
             line_starts = utils.build_line_starts(text),
         ))
 
-
     ## The token stream of `path`'s current `source`, from the one-document lex
     ## cache.  The span points into the cache (valid until the next call for a
     ## different document), so a request takes it per lookup and never holds it
@@ -675,7 +657,6 @@ extending Workspace:
         )
         return this.token_cache.tokens.as_span()
 
-
     ## Drop the cached token stream (re-rooting the workspace).
     public editable function release_token_cache() -> void:
         var previous = this.token_cache
@@ -687,11 +668,14 @@ extending Workspace:
             tokens = vec.Vec[token_mod.Token].create(),
         )
 
-
     ## The scope bindings of `path`'s current `source`, cached with the source
     ## copy their name views point into.  The span is valid until the next call
     ## for a different document (the same one-entry rule as `document_tokens`).
-    public editable function document_bindings(path: str, source: str, ast_file: ast.SourceFile) -> span[scope_mod.Binding]:
+    public editable function document_bindings(
+        path: str,
+        source: str,
+        ast_file: ast.SourceFile
+    ) -> span[scope_mod.Binding]:
         let current_hash = this.document_hash_for(path, source)
         if this.binding_cache.path.as_str().equal(path) and this.binding_cache.content_hash == current_hash:
             return this.binding_cache.bindings.as_span()
@@ -721,7 +705,6 @@ extending Workspace:
             bindings = vec.Vec[scope_mod.Binding].create(),
         )
 
-
     ## The byte offset of an incoming LSP position (0-based line, character in
     ## UTF-16 code units) in the document's current text.  Positions are
     ## converted once at the request boundary so the byte-based scanners see
@@ -735,7 +718,6 @@ extending Workspace:
             return character
         return this.position_byte_offset_in(source.text, line, character)
 
-
     ## The byte offset of an incoming position in `source` under the negotiated
     ## encoding.  `didChange` applies edits against its own in-progress buffer,
     ## so it converts against that text rather than the cached document.
@@ -744,7 +726,6 @@ extending Workspace:
             return utils.position_to_byte_utf16(source, line, character)
         return utils.position_to_byte_utf8(source, line, character)
 
-
     ## The outgoing character column for an internal byte column at `line` in
     ## `source` (a validated view of the document).  Emitters that hold the
     ## document text use this; the UTF-8 path is the identity.
@@ -752,7 +733,6 @@ extending Workspace:
         if not this.position_encoding_utf16:
             return byte_col
         return utils.byte_to_utf16_column(utils.source_line(source, line + 1), byte_col)
-
 
     ## The outgoing character column for `path`'s current text.  For a result
     ## whose document the handler did not read (cross-file navigation), this
@@ -772,11 +752,9 @@ extending Workspace:
                 return utils.byte_to_utf16_column(line_text, byte_col)
         return this.output_character_in(source.text, line, byte_col)
 
-
     ## Select the position encoding `initialize` negotiated.
     public editable function set_position_encoding(utf16: bool) -> void:
         this.position_encoding_utf16 = utf16
-
 
     ## The roots the workspace *symbol* index walks: the host's `index_workspace`
     ## covers the workspace root (and the enclosing package's source root) only.
@@ -798,7 +776,6 @@ extending Workspace:
                 Option.none:
                     pass
         return result
-
 
     ## Resolve a source file path to the effective module roots for dependency
     ## loading: the workspace roots plus the roots the host's
@@ -839,7 +816,6 @@ extending Workspace:
 
         return EffectiveModuleRoots(owned = owned, views = views)
 
-
     ## Index the document's identifier tokens from the text the caller already
     ## has — the host's `index_identifier_tokens` reached through
     ## `lex_document`.
@@ -872,19 +848,30 @@ extending Workspace:
         match fs_mod.metadata(path):
             Result.success as meta:
                 let stamp = meta.value
-                if refidx.matches_stamp(ref_of(this.reference_index), path, stamp.size, stamp.modified_seconds, stamp.modified_nanoseconds):
+                if refidx.matches_stamp(
+                    ref_of(this.reference_index),
+                    path,
+                    stamp.size,
+                    stamp.modified_seconds,
+                    stamp.modified_nanoseconds
+                ):
                     return
                 match fs_mod.read_text(path):
                     Result.success as content:
                         var source = content.value
                         defer: source.release()
                         refidx.note(ref_of(this.reference_index), path, source.as_str())
-                        refidx.record_stamp(ref_of(this.reference_index), path, stamp.size, stamp.modified_seconds, stamp.modified_nanoseconds)
+                        refidx.record_stamp(
+                            ref_of(this.reference_index),
+                            path,
+                            stamp.size,
+                            stamp.modified_seconds,
+                            stamp.modified_nanoseconds
+                        )
                     Result.failure:
                         pass
             Result.failure:
                 pass
-
 
     ## Admit a document to the cross-file definition index: the host's
     ## `hover_definition_entry_from_location` reads a hover's definition file
@@ -897,7 +884,6 @@ extending Workspace:
             return
         defer: content.release()
         defidx.warm_names(ref_of(this.definition_index), path, content.as_str())
-
 
     ## True when `path` is an open document.
     public function is_open_path(path: str) -> bool:
@@ -917,7 +903,6 @@ extending Workspace:
                 return
             i += 1
         this.index_dirty.push(string.String.from_str(path))
-
 
     ## Build the index once, then keep the changed files current: re-indexing one
     ## file is milliseconds, while re-walking the tree is seconds.
@@ -945,17 +930,26 @@ extending Workspace:
             # and parsing it.
             match document_raw_ast(this, path):
                 Option.some as ast_payload:
-                    idx.collect_file_symbols_from_ast(path, ref_of(this.index), ref_of(this.module_roots), ast_payload.value)
+                    idx.collect_file_symbols_from_ast(
+                        path,
+                        ref_of(this.index),
+                        ref_of(this.module_roots),
+                        ast_payload.value
+                    )
                 Option.none:
                     match this.document_source(path):
                         Option.some as content:
-                            idx.collect_file_symbols_with_source(path, ref_of(this.index), ref_of(this.module_roots), content.value.as_str())
+                            idx.collect_file_symbols_with_source(
+                                path,
+                                ref_of(this.index),
+                                ref_of(this.module_roots),
+                                content.value.as_str()
+                            )
                             content.value.release()
                         Option.none:
                             pass
             di += 1
         release_dirty_paths(ref_of(this.index_dirty))
-
 
     ## Warm every indexed file's declaration names — the host's `index_workspace`
     ## warms each file it indexes, which is what makes an unopened workspace
@@ -975,11 +969,9 @@ extending Workspace:
                         pass
             fi += 1
 
-
     ## Number of currently open documents.
     public function open_document_count() -> ptr_uint:
         return this.open_docs.len()
-
 
     ## Keys (file paths) of all currently open documents.  The caller must
     ## release each key and the returned Vec.
@@ -993,17 +985,14 @@ extending Workspace:
                 result.push(string.String.from_str(read(kp).as_str()))
         return result
 
-
     ## Open document paths in didOpen order (the client's open order, which
     ## `open_document_keys` cannot express).  Borrowed from the workspace.
     public function open_paths_in_order() -> span[string.String]:
         return this.open_doc_order.as_span()
 
-
     ## Number of entries in the workspace symbol index.
     public function index_entries() -> ptr_uint:
         return this.index.entries.len()
-
 
     ## Store the document context type (foreground / background) for a URI.
     public editable function set_document_context(uri: str, context: str) -> void:
@@ -1013,7 +1002,6 @@ extending Workspace:
                 this.document_contexts.set(path_payload.value, string.String.from_str(context))
             Option.none:
                 pass
-
 
     ## Record the client's version for an open document.
     public editable function set_document_version(path: str, version: ptr_int) -> void:
@@ -1030,7 +1018,6 @@ extending Workspace:
             version = version,
         ))
 
-
     ## The client's last version for `path`, or none when it is not open.
     public function document_version(path: str) -> Option[ptr_int]:
         var i: ptr_uint = 0
@@ -1041,7 +1028,6 @@ extending Workspace:
                 return Option[ptr_int].some(value = unsafe: read(entry).version)
             i += 1
         return Option[ptr_int].none
-
 
     ## Drop a closed document's version.
     public editable function forget_document_version(path: str) -> void:
@@ -1060,14 +1046,12 @@ extending Workspace:
                 return
             i += 1
 
-
     ## Look up a cached diagnostic entry for a file path.  Returns the
     ## cache entry pointer when present, or null on miss.
     public function diagnostic_cache_get(path: str) -> ptr[DiagnosticCacheEntry]?:
         var key = string.String.from_str(path)
         defer: key.release()
         return this.diagnostic_cache.entries.get(key)
-
 
     ## Store or replace a cached diagnostic entry for a file path.
     public editable function diagnostic_cache_set(
@@ -1094,7 +1078,6 @@ extending Workspace:
         )
         this.diagnostic_cache.entries.set(key, entry)
 
-
     ## Clear the diagnostic cache entry for a single file, releasing the cached
     ## result id and JSON (`remove` drops the entry without freeing its fields).
     public editable function diagnostic_cache_clear(path: str) -> void:
@@ -1110,19 +1093,16 @@ extending Workspace:
             Option.none:
                 pass
 
-
     ## Clear the entire diagnostic cache, releasing every entry's strings.
     public editable function diagnostic_cache_clear_all() -> void:
         release_diagnostic_cache(ref_of(this.diagnostic_cache))
         this.diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create())
-
 
     ## Look up a cached semantic token entry for a file path.
     public function semantic_token_cache_get(path: str) -> ptr[SemanticTokenCacheEntry]?:
         var key = string.String.from_str(path)
         defer: key.release()
         return this.semantic_token_cache.get(key)
-
 
     ## Store a cached semantic token entry.
     public editable function semantic_token_cache_set(
@@ -1157,7 +1137,6 @@ extending Workspace:
             utf16 = utf16,
         ))
 
-
     ## Remove a specific cached semantic token entry.
     public editable function semantic_token_cache_remove(path: str) -> void:
         var key = string.String.from_str(path)
@@ -1173,12 +1152,10 @@ extending Workspace:
             Option.none:
                 pass
 
-
     ## Clear all cached semantic token entries.
     public editable function semantic_token_cache_remove_all() -> void:
         release_semantic_token_cache(ref_of(this.semantic_token_cache))
         this.semantic_token_cache = map_mod.Map[string.String, SemanticTokenCacheEntry].create()
-
 
     ## Force a full workspace symbol index rebuild on the next query.
     public editable function force_reindex() -> void:
@@ -1187,21 +1164,17 @@ extending Workspace:
             this.index = idx.Index(entries = vec.Vec[idx.Entry].create())
             this.index_built = false
 
-
     ## Record the outgoing config pull request id.
     public editable function set_pending_config_request(id: ptr_uint) -> void:
         this.config_request_id = id
-
 
     ## Request a configuration pull from the client.
     public editable function request_configuration() -> void:
         this.config_received = false
 
-
     ## Clear the pending config request tracking.
     public editable function clear_pending_config_request() -> void:
         this.config_request_id = 0
-
 
     ## Free the regions superseded parses/analyses retired since the last call.
     ## Called at the request boundary (the server loop) and on teardown, when no
@@ -1368,7 +1341,6 @@ public function parsed_analysis_for(ws: ref[Workspace], path: str, source: str) 
     ws.parse_cache.set(string.String.from_str(path), entry)
     return Option[ParseCacheEntry].some(value = entry)
 
-
 ## The AST and analysis for a document's current text, from one tree:
 ## the loader-backed pair when the file loads (imports bound, shared with every
 ## other request and cached per content version), else the single-file
@@ -1490,7 +1462,15 @@ public function analysis_entry_for(ws: ref[Workspace], path: str) -> Option[ptr[
 
     var roots = ws.effective_module_roots_for(path)
     defer: roots.release()
-    var program = loader.check_program_with_source(path, roots.as_span(), ws.platform, text.text, true, ptr_of(ws.module_cache), ptr_of(ws.open_docs))
+    var program = loader.check_program_with_source(
+        path,
+        roots.as_span(),
+        ws.platform,
+        text.text,
+        true,
+        ptr_of(ws.module_cache),
+        ptr_of(ws.open_docs)
+    )
 
     if program.analyses.len() == 0:
         program.release()

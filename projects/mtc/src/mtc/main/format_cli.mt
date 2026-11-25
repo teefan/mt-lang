@@ -39,7 +39,14 @@ function report_format_failure(path: str, source: str) -> int:
         let parsed_ptr = parse_diags.get(0) else:
             return 1
         let parsed = unsafe: read(parsed_ptr)
-        main.print_diagnostic_block(path, source, parsed.line, parsed.column, "parse/error", str.cstr_as_str(parsed.message))
+        main.print_diagnostic_block(
+            path,
+            source,
+            parsed.line,
+            parsed.column,
+            "parse/error",
+            str.cstr_as_str(parsed.message)
+        )
         return 1
     return 1
 
@@ -72,7 +79,13 @@ function format_one_path(
             let source_text = source.as_str()
 
             let started_ms = monotonic_ms()
-            var formatted = tidy.format_source_profiled(source_text, path, mode, explicit_max_line_length, profile_ptr) else:
+            var formatted = tidy.format_source_profiled(
+                source_text,
+                path,
+                mode,
+                explicit_max_line_length,
+                profile_ptr
+            ) else:
                 return report_format_failure(path, source_text)
             defer: formatted.release()
             let fmt_text = formatted.as_str()

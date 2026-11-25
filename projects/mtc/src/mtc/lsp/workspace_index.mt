@@ -17,7 +17,6 @@ import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 
-
 public struct Entry:
     name: string_mod.String
     kind: int
@@ -25,14 +24,12 @@ public struct Entry:
     line: ptr_uint
     column: ptr_uint
 
-
 ## One indexed file's imports, resolved to the files they name: the host scopes
 ## cross-file references to a declaration's import dependents
 ## (`reverse_import_dependents_for`), which needs this graph.
 public struct FileImports:
     path: string_mod.String
     imports: vec.Vec[string_mod.String]
-
 
 public struct Index:
     entries: vec.Vec[Entry]
@@ -292,7 +289,11 @@ public function collect_file_symbols_from_ast(
 ## Resolve each import of `ast_file` to the file it names, so the reference
 ## walk can find a declaration's dependents without re-parsing every file.
 ## `extra_root` is the file's enclosing package source root, when it has one.
-function collect_resolved_imports(ast_file: ast.SourceFile, roots: ref[vec.Vec[string_mod.String]], extra_root: str) -> vec.Vec[string_mod.String]:
+function collect_resolved_imports(
+    ast_file: ast.SourceFile,
+    roots: ref[vec.Vec[string_mod.String]],
+    extra_root: str
+) -> vec.Vec[string_mod.String]:
     var resolved_paths = vec.Vec[string_mod.String].create()
     var root_views = vec.Vec[str].create()
     defer: root_views.release()
@@ -373,7 +374,6 @@ function decl_symbol_kind(d: ast.Decl) -> int:
             return 13
         _:
             return -1
-
 
 struct DeclInfo:
     name: str

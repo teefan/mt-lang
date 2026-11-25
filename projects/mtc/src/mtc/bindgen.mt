@@ -93,6 +93,7 @@ function has_cv_token(text: str, qualifier: str) -> bool:
             return true
     return false
 
+
 ## A trailing const/volatile/restrict qualifier (possibly attached to a `*`).
 struct TrailingQualifier:
     name: str
@@ -1112,11 +1113,14 @@ public struct GenState:
 var bindgen_state: ptr[GenState]? = null
 var bindgen_map_failed: bool = false
 
+
 public function bindgen_state_ptr() -> ptr[GenState]?:
     return bindgen_state
 
+
 public function bindgen_map_failed_flag() -> bool:
     return bindgen_map_failed
+
 
 public function set_bindgen_map_failed(value: bool) -> void:
     bindgen_map_failed = value
@@ -2761,7 +2765,6 @@ function find_enum_value(ec_node: ptr[json.Object], name: str) -> str:
             i += 1
     return ""
 
-
 ## Extract `#define` macro constants from the header in source order (the
 ## host's `each_macro_definition` + `macro_constant_candidate?`: uppercase
 ## names, allowed by the declaration prefixes, non-function, integer bodies).
@@ -2804,8 +2807,6 @@ public function release_macro_names(items: ref[vec.Vec[string.String]]) -> void:
 
 public function is_ident_byte(b: ubyte) -> bool:
     return (b >= 'A' and b <= 'Z') or (b >= 'a' and b <= 'z') or (b >= '0' and b <= '9') or b == '_'
-
-
 
 # =============================================================================
 #  Main entry point
@@ -2983,12 +2984,12 @@ function generate_internal(opts: ref[BindgenOptions], want_report: bool) -> Resu
                 error = clang_failure_message(fail.error.code, fail.error.message, clang)
             )
 
-
 # A translation unit that includes the header, like the host's Tempfile:
 # clang prints `includedFrom` for declarations whose own loc omits a file,
 # which is how the provenance filter keeps header declarations.  The macro
 # probes land at the end of the TU, so the AST also gives the host's
 # constant order.
+
 function create_translation_unit(
     opts: ref[BindgenOptions],
     header: str,
@@ -3114,12 +3115,12 @@ function clang_failure_message(code: int, message: string.String, clang: str) ->
     owned.release()
     return m
 
-
 # The host parses stdout first: clang can report a diagnostic and
 # still emit a usable AST (the macro probes trigger warnings).
 # `as_str` would validate every UTF-8 byte of a multi-hundred-MB
 # AST (the host does not validate either, and the C backend's debug
 # loop guard counts the scan); view the captured text directly.
+
 function generate_from_clang_result(
     stdout: ref[string.String],
     stderr: ref[string.String],

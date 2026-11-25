@@ -15,11 +15,11 @@ import std.vec as vec
 
 public enum RawDeclKind: ubyte
     raw_type_alias = 0
-    raw_struct     = 1
-    raw_union      = 2
-    raw_enum       = 3
-    raw_flags      = 4
-    raw_opaque     = 5
+    raw_struct = 1
+    raw_union = 2
+    raw_enum = 3
+    raw_flags = 4
+    raw_opaque = 5
 
 public struct RawTypeInfo:
     kind: RawDeclKind
@@ -54,7 +54,6 @@ public struct RawModuleInfo:
     func_order: vec.Vec[string.String]
     imports: vec.Vec[RawImportInfo]
     is_external: bool
-
 
 # =============================================================================
 #  Release helpers
@@ -161,7 +160,6 @@ function release_string_vec(v: ref[vec.Vec[string.String]]) -> void:
             unsafe: read(p).release()
         i += 1
     v.release()
-
 
 # =============================================================================
 #  Line-level scanning
@@ -353,7 +351,12 @@ function parse_func_params_from_line(line: str, kw: str) -> vec.Vec[RawFuncParam
                 break
             # Extract param name
             let name_start = pos
-            while pos < params_text.len and params_text.byte_at(pos) != ':' and params_text.byte_at(pos) != ' ' and params_text.byte_at(pos) != ',':
+            while (
+                pos < params_text.len
+                and params_text.byte_at(pos) != ':'
+                and params_text.byte_at(pos) != ' '
+                and params_text.byte_at(pos) != ','
+            ):
                 pos += 1
             if pos <= name_start:
                 break
@@ -390,7 +393,6 @@ function parse_func_params_from_line(line: str, kw: str) -> vec.Vec[RawFuncParam
                 pos += 1
     return params
 
-
 # =============================================================================
 #  Main scanner
 # =============================================================================
@@ -412,14 +414,34 @@ public function scan_raw_module(source: str) -> RawModuleInfo:
     while pos < source.len:
         if source.byte_at(pos) == '\n':
             let line = source.slice(line_start, pos - line_start)
-            scan_line(line, ref_of(types), ref_of(type_order), ref_of(consts), ref_of(const_order), ref_of(functions), ref_of(func_order), ref_of(imports), ref_of(is_external))
+            scan_line(
+                line,
+                ref_of(types),
+                ref_of(type_order),
+                ref_of(consts),
+                ref_of(const_order),
+                ref_of(functions),
+                ref_of(func_order),
+                ref_of(imports),
+                ref_of(is_external)
+            )
             line_start = pos + 1
         pos += 1
 
     # Handle last line if no trailing newline
     if line_start < source.len:
         let line = source.slice(line_start, source.len - line_start)
-        scan_line(line, ref_of(types), ref_of(type_order), ref_of(consts), ref_of(const_order), ref_of(functions), ref_of(func_order), ref_of(imports), ref_of(is_external))
+        scan_line(
+            line,
+            ref_of(types),
+            ref_of(type_order),
+            ref_of(consts),
+            ref_of(const_order),
+            ref_of(functions),
+            ref_of(func_order),
+            ref_of(imports),
+            ref_of(is_external)
+        )
 
     return RawModuleInfo(
         types = types,
@@ -484,7 +506,10 @@ function scan_line(
 
     # Type alias: public type Name = c.X
     if starts_with_keyword(line, "public type ") or starts_with_keyword(line, "type "):
-        var name = extract_identifier_after(line, if starts_with_keyword(line, "public type "): "public type " else: "type ")
+        var name = extract_identifier_after(
+            line,
+            if starts_with_keyword(line, "public type "): "public type " else: "type "
+        )
         if name.len() > 0:
             let name_str = name.as_str()
             types.push(RawTypeInfo(
@@ -499,7 +524,10 @@ function scan_line(
 
     # Opaque: public opaque Name = c"RawName"
     if starts_with_keyword(line, "public opaque ") or starts_with_keyword(line, "opaque "):
-        var name = extract_identifier_after(line, if starts_with_keyword(line, "public opaque "): "public opaque " else: "opaque ")
+        var name = extract_identifier_after(
+            line,
+            if starts_with_keyword(line, "public opaque "): "public opaque " else: "opaque "
+        )
         if name.len() > 0:
             let c_name = extract_c_name(line)
             types.push(RawTypeInfo(
@@ -575,14 +603,20 @@ function scan_line(
         var name = extract_identifier_after(line, kw)
         if name.len() > 0:
             let ctype = extract_const_type(line, kw, name.as_str())
-            consts.push(RawConstInfo(name = string.String.from_str(name.as_str()), const_type = string.String.from_str(ctype)))
+            consts.push(RawConstInfo(
+                name = string.String.from_str(name.as_str()),
+                const_type = string.String.from_str(ctype)
+            ))
             const_order.push(string.String.from_str(name.as_str()))
         name.release()
         return
 
     # External functions
     if starts_with_keyword(line, "public external function ") or starts_with_keyword(line, "external function "):
-        let kw = if starts_with_keyword(line, "public external function "): "public external function " else: "external function "
+        let kw = if starts_with_keyword(
+            line,
+            "public external function "
+        ): "public external function " else: "external function "
         var name = extract_identifier_after(line, kw)
         if name.len() > 0:
             let (params_vec, return_type) = extract_func_sig(line, kw, name.as_str())

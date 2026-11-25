@@ -53,12 +53,10 @@ public struct ImportSpec:
     module_name: string.String
     alias: string.String
 
-
 public struct RenameRule:
     kind: string.String
     pattern: string.String
     replace_with: string.String
-
 
 public struct TypeOverride:
     raw: string.String
@@ -67,13 +65,11 @@ public struct TypeOverride:
     override_kind: string.String
     const_type: string.String
 
-
 public struct FunctionParamOverride:
     name: string.String
     param_type: string.String
     mode: string.String
     boundary_type: string.String
-
 
 public struct FunctionOverride:
     raw: string.String
@@ -83,11 +79,9 @@ public struct FunctionOverride:
     return_type: string.String
     mapping: string.String
 
-
 public enum IncludeKind: ubyte
     include_all = 0
     include_list = 1
-
 
 public struct AliasSpec:
     include_kind: IncludeKind
@@ -98,7 +92,6 @@ public struct AliasSpec:
     rename_rules: vec.Vec[RenameRule]
     strip_prefix: string.String
 
-
 public struct FunctionSpec:
     include_kind: IncludeKind
     include_list: vec.Vec[string.String]
@@ -107,7 +100,6 @@ public struct FunctionSpec:
     overrides: vec.Vec[FunctionOverride]
     rename_rules: vec.Vec[RenameRule]
     strip_prefix: string.String
-
 
 public struct MethodSpec:
     receiver_type: string.String
@@ -121,7 +113,6 @@ public struct MethodSpec:
     module_name: string.String
     module_import_alias: string.String
 
-
 public struct BindingPolicy:
     module_name: string.String
     raw_module_name: string.String
@@ -131,7 +122,6 @@ public struct BindingPolicy:
     functions: FunctionSpec
     methods: vec.Vec[MethodSpec]
     imports: vec.Vec[ImportSpec]
-
 
 # =============================================================================
 #  Release helpers
@@ -287,7 +277,6 @@ extending BindingPolicy:
         release_method_specs(ref_of(this.methods))
         release_imports(ref_of(this.imports))
 
-
 # =============================================================================
 #  JSON helpers
 # =============================================================================
@@ -325,7 +314,6 @@ function parse_obj_list(obj: ptr[json.Object], key: str) -> vec.Vec[ptr[json.Obj
             r.push(objp)
         i += 1
     return r
-
 
 # =============================================================================
 #  Section parsers
@@ -421,7 +409,13 @@ function parse_function_overrides(obj: ptr[json.Object], key: str) -> vec.Vec[Fu
     return r
 
 
-function resolve_include(obj: ptr[json.Object], section_key: str, has_prefixes: bool, out_kind: ref[IncludeKind], out_list: ref[vec.Vec[string.String]]) -> void:
+function resolve_include(
+    obj: ptr[json.Object],
+    section_key: str,
+    has_prefixes: bool,
+    out_kind: ref[IncludeKind],
+    out_list: ref[vec.Vec[string.String]]
+) -> void:
     let value_ptr = obj_get(obj, "include") else:
         if has_prefixes:
             read(out_kind) = IncludeKind.include_list
@@ -552,7 +546,6 @@ function parse_import_specs(root_obj: ptr[json.Object], key: str) -> vec.Vec[Imp
         i += 1
     objs.release()
     return r
-
 
 # =============================================================================
 #  Public API

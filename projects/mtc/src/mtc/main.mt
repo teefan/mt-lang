@@ -74,7 +74,6 @@ import mtc.packages.source as pkg_source
 import mtc.wasm_preview as wasm_preview
 import mtc.cli_help as cli_help
 
-
 ## Global CLI flags parsed by `dispatch_cli` (mirror Ruby's `-v`/`-q`/`--color`).
 ## `cli_quiet` suppresses informational output; `cli_verbose` prints per-file
 ## action lines in lint/format; `cli_color` is accepted for compatibility.
@@ -687,7 +686,11 @@ function parse_module_name(file_path: str) -> string.String:
 ## Expand PATH|DIR operands the way the host's `expand_source_paths` does:
 ## each directory contributes its sorted `*.mt` files, every path appears once,
 ## and `paths` holds borrowed views kept alive by `owner` (or by the argv span).
-public function expand_source_operands(inputs: span[str], paths: ref[vec.Vec[str]], owner: ref[vec.Vec[string.String]]) -> void:
+public function expand_source_operands(
+    inputs: span[str],
+    paths: ref[vec.Vec[str]],
+    owner: ref[vec.Vec[string.String]]
+) -> void:
     var ii: ptr_uint = 0
     while ii < inputs.len:
         let input = inputs[ii]
@@ -837,7 +840,12 @@ function ensure_current_lockfile_at(path: str) -> int:
 
 ## The host's per-file package-graph resolution for a locked run: load the
 ## locked graph, add its source roots, and report `package lock not found ...`.
-function apply_locked_resolution(path: str, resolution: ResolutionFlags, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]]) -> int:
+function apply_locked_resolution(
+    path: str,
+    resolution: ResolutionFlags,
+    roots: ref[vec.Vec[str]],
+    owned: ref[vec.Vec[string.String]]
+) -> int:
     if not resolution.locked:
         return 0
     match apply_package_resolution_result(path, true, false, roots, owned):
@@ -1096,7 +1104,12 @@ function check_one_file(
     defer: entry_path_owner.release()
     var source_root_owner = string.String.create()
     defer: source_root_owner.release()
-    let effective = effective_source_path(source_path, ref_of(file_roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+    let effective = effective_source_path(
+        source_path,
+        ref_of(file_roots),
+        ref_of(entry_path_owner),
+        ref_of(source_root_owner)
+    ) else:
         return Option[CheckFileResult].none
 
     # The host's diagnostics loop re-reads the file with `read_source_file`,
@@ -1575,7 +1588,14 @@ function append_rendered_source_line(target: ref[string.String], source_line: st
 
 ## `error[<code>]: <message> -- <path>:<line>:<col>` plus the source line and
 ## caret, the host ErrorFormatter's block.
-public function print_diagnostic_block(path: str, source: str, line: ptr_uint, column: ptr_uint, code: str, message: str) -> void:
+public function print_diagnostic_block(
+    path: str,
+    source: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    code: str,
+    message: str
+) -> void:
     var block = string.String.create()
     defer: block.release()
     block.append("error[")
@@ -2209,7 +2229,13 @@ function lint_command(args: span[str]) -> int:
         return 1
 
     if lint_flags.init_mode:
-        if input_paths.len() > 0 or select_set.len() > 0 or ignore_set.len() > 0 or lint_flags.fix_mode or lint_flags.locked_flag:
+        if (
+            input_paths.len() > 0
+            or select_set.len() > 0
+            or ignore_set.len() > 0
+            or lint_flags.fix_mode
+            or lint_flags.locked_flag
+        ):
             eprint_line("--init does not accept source paths or lint options")
             return 1
         return init_lint_config()
@@ -2355,7 +2381,12 @@ public function platform_label(platform: resolver.Platform) -> str:
 ## the lower, emit-c, and build commands.  Fills `roots` (defaulting to the source
 ## directory when none is given), sets `platform` to the parsed platform (defaults
 ## to linux), and returns the source path, or none after printing an error / usage.
-public function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]], owned_roots: ref[vec.Vec[string.String]], platform: ref[resolver.Platform]) -> Option[str]:
+public function parse_source_operand(
+    args: span[str],
+    roots: ref[vec.Vec[str]],
+    owned_roots: ref[vec.Vec[string.String]],
+    platform: ref[resolver.Platform]
+) -> Option[str]:
     var file_path: Option[str] = Option[str].none
     var i: ptr_uint = 1
     while i < args.len:
@@ -2504,7 +2535,15 @@ function lower_command(args: span[str]) -> int:
         defer: file_owned.release()
         if apply_locked_resolution(path, resolution, ref_of(file_roots), ref_of(file_owned)) != 0:
             return 1
-        let rc = lower_one_path(path, ref_of(file_roots), ref_of(file_owned), platform, sexpr, multiple and not sexpr, paths.len() - (pi + 1))
+        let rc = lower_one_path(
+            path,
+            ref_of(file_roots),
+            ref_of(file_owned),
+            platform,
+            sexpr,
+            multiple and not sexpr,
+            paths.len() - (pi + 1)
+        )
         if rc != 0:
             return rc
         pi += 1
@@ -2514,7 +2553,15 @@ function lower_command(args: span[str]) -> int:
 ## Lower one source file and print the rendered IR (or its `--sexpr` dump).
 ## The header is printed after a successful check, matching the host's loop
 ## (`check_program` raises before the header on an invalid file).
-function lower_one_path(path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]], platform: resolver.Platform, sexpr: bool, header: bool, remaining_files: ptr_uint) -> int:
+function lower_one_path(
+    path: str,
+    roots: ref[vec.Vec[str]],
+    owned: ref[vec.Vec[string.String]],
+    platform: resolver.Platform,
+    sexpr: bool,
+    header: bool,
+    remaining_files: ptr_uint
+) -> int:
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
     let effective = effective_source_path(path, roots, ref_of(entry_path_owner), ref_of(source_root_owner)) else:
@@ -2656,7 +2703,13 @@ function resolve_emit_c_operand(
 
 
 ## Compile one checked program to C and print it.
-function emit_c_one_path(path: str, roots: ref[vec.Vec[str]], owned_roots: ref[vec.Vec[string.String]], platform: resolver.Platform, remaining_files: ptr_uint) -> int:
+function emit_c_one_path(
+    path: str,
+    roots: ref[vec.Vec[str]],
+    owned_roots: ref[vec.Vec[string.String]],
+    platform: resolver.Platform,
+    remaining_files: ptr_uint
+) -> int:
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
     let effective = effective_source_path(path, roots, ref_of(entry_path_owner), ref_of(source_root_owner)) else:
@@ -2734,7 +2787,13 @@ function emit_c_command(args: span[str]) -> int:
         let raw_ptr = inputs.get(ii) else:
             break
         let raw = unsafe: read(raw_ptr)
-        if not resolve_emit_c_operand(raw, ref_of(roots), ref_of(owned_roots), ref_of(program_paths), ref_of(resolved_owner)):
+        if not resolve_emit_c_operand(
+            raw,
+            ref_of(roots),
+            ref_of(owned_roots),
+            ref_of(program_paths),
+            ref_of(resolved_owner)
+        ):
             return 1
         ii += 1
 
@@ -2882,7 +2941,12 @@ function trim_right(source: str, start: ptr_uint, end: ptr_uint) -> ptr_uint:
 ## `<dir>/package.toml`, extracts `build.entry` (defaulting to `src/main.mt`),
 ## and adds `<dir>/<source_root>` to `roots`.  The returned string borrows from
 ## `entry_owner` — keep both alive for the duration of the build.
-function resolve_package_entry(dir: str, roots: ref[vec.Vec[str]], entry_owner: ref[string.String], source_root_owner: ref[string.String]) -> Option[str]:
+function resolve_package_entry(
+    dir: str,
+    roots: ref[vec.Vec[str]],
+    entry_owner: ref[string.String],
+    source_root_owner: ref[string.String]
+) -> Option[str]:
     var manifest_path = path_ops.join(dir, "package.toml")
     defer: manifest_path.release()
     if not fs.is_file(manifest_path.as_str()):
@@ -2959,7 +3023,12 @@ function resolve_package_entry(dir: str, roots: ref[vec.Vec[str]], entry_owner: 
 ## resolved `.mt` file path.  When it is a plain file the path is returned
 ## as-is.  `entry_owner` and `source_root_owner` hold any package-derived
 ## borrows — keep both alive for the duration of the compilation.
-public function effective_source_path(raw_path: str, roots: ref[vec.Vec[str]], entry_owner: ref[string.String], source_root_owner: ref[string.String]) -> Option[str]:
+public function effective_source_path(
+    raw_path: str,
+    roots: ref[vec.Vec[str]],
+    entry_owner: ref[string.String],
+    source_root_owner: ref[string.String]
+) -> Option[str]:
     if fs.is_directory(raw_path):
         return resolve_package_entry(raw_path, roots, entry_owner, source_root_owner)
 
@@ -3003,7 +3072,11 @@ function discover_project_root(source_path: str, roots: ref[vec.Vec[str]], owned
 ## (`$MILK_TEA_MODULE_ROOT` / `$MILK_TEA_STD_ROOT` and the `std/` next to the
 ## running binary).  A project living outside this tree still resolves `std.*`,
 ## and its own modules resolve by their bare names.
-public function add_module_roots(source_path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]]) -> void:
+public function add_module_roots(
+    source_path: str,
+    roots: ref[vec.Vec[str]],
+    owned: ref[vec.Vec[string.String]]
+) -> void:
     discover_project_root(source_path, roots, owned)
 
     var candidates = vec.Vec[string.String].create()
@@ -3315,7 +3388,13 @@ function completions_command(args: span[str]) -> int:
         var zi: ptr_uint = 0
         while zi < command_summary_count():
             let entry = command_summary_at(zi)
-            stdio.print_format(c"    '%.*s:%.*s'\n", int<-(entry.name.len), entry.name.data, int<-(entry.summary.len), entry.summary.data)
+            stdio.print_format(
+                c"    '%.*s:%.*s'\n",
+                int<-(entry.name.len),
+                entry.name.data,
+                int<-(entry.summary.len),
+                entry.summary.data
+            )
             zi += 1
         stdio.print_line("  )")
         stdio.print_line("  if (( CURRENT == 2 )); then")
@@ -3414,7 +3493,6 @@ function cache_command(args: span[str]) -> int:
 function toolchain_command(args: span[str]) -> int:
     return toolchain_cli.run(args)
 
-
 struct CommandSummary:
     name: str
     summary: str
@@ -3511,10 +3589,21 @@ function release_heap_profile(profile: ptr[profile_mod.Profile]) -> void:
 
 
 ## Move one file's profile into the timing entries (a no-op without a profile).
-function push_lint_timing(entries: ref[vec.Vec[LintTimingEntry]], path: str, profile: ptr[profile_mod.Profile]?, total_ms: double, pre_fix: bool) -> void:
+function push_lint_timing(
+    entries: ref[vec.Vec[LintTimingEntry]],
+    path: str,
+    profile: ptr[profile_mod.Profile]?,
+    total_ms: double,
+    pre_fix: bool
+) -> void:
     let p = profile else:
         return
-    entries.push(LintTimingEntry(path = string.String.from_str(path), profile = p, total_ms = total_ms, pre_fix = pre_fix))
+    entries.push(LintTimingEntry(
+        path = string.String.from_str(path),
+        profile = p,
+        total_ms = total_ms,
+        pre_fix = pre_fix
+    ))
 
 
 function release_lint_timing_entries(entries: ref[vec.Vec[LintTimingEntry]]) -> void:

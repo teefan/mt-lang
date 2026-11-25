@@ -1,6 +1,6 @@
 # Refactoring the Self-Host Compiler
 
-`projects/mtc` is ~169 files / ~163k lines. The recorded oracles and the
+`projects/mtc` is ~170 files / ~179k lines. The recorded oracles and the
 in-language suites prove observable behavior; they say nothing about shape.
 This document is the refactoring safety suite: what is locked, what is
 ratcheted, and the protocol for changing the self-host without changing what it
@@ -53,7 +53,7 @@ An unclassified module or import target is a violation, so a new file must be
 classified deliberately. The rank table lives in `LAYER_RANKS`; legitimate
 upward edges would go in `ALLOWED_UPWARD` with a reason.
 
-Current graph: **111 edges, 0 violations**. Notable same-rank peers:
+Current graph: **119 edges, 0 violations**. Notable same-rank peers:
 `semantic`/`c_naming` (type-name mangling), `linter`/`formatter` (fix candidates
 use tidy), `pretty_printer`/`ir` (the IR formatter), and
 `imported_bindings`/`formatter`.  `strings` is the shared rank-0 text leaf; the
@@ -80,7 +80,7 @@ sharing one alias in a file.  `packages.source` is the single override
 (`pkg_source`) because both `source` and `package_source` are common
 locals/parameters in the files that use it.
 
-Current state: **169 modules, 0 alias violations**.
+Current state: **170 modules, 0 alias violations**.
 
 ### Operation vocabulary
 
@@ -101,7 +101,7 @@ textual counting cannot see aliasing or dynamic dispatch, and names are matched
 globally (two modules exporting the same name can mask each other). Existing
 candidates are frozen; a **new** one fails `--strict`.
 
-Current baseline: **30 unused, 7 test-only**. Examples worth triaging:
+Current baseline: **29 unused, 7 test-only**. Examples worth triaging:
 `c_backend.CBackendError`, `lowering.LoweringError`, `lowering/async.mt` type
 helpers, `lsp/navigation.mt analysis_for_document`/`ast_for_document`,
 `ir.TypeId`, and the `packages/*` helpers.
@@ -111,7 +111,10 @@ helpers, `lsp/navigation.mt analysis_for_document`/`ast_for_document`,
 Normalized 12-line windows (comments/blanks stripped, literals replaced with
 `S`/`N`) hashed across all functions. Overlapping windows make the cluster count
 large; `duplicated_lines` is the ratcheted metric. Current baseline:
-**6,499 duplicated lines in 882 window clusters**.  Session 125 fixed the
+**8,272 duplicated lines in 1,253 window clusters**.  The session-165 tidy
+formatting pass mechanically raised this count: wrapped lines repeat the same
+emission/frame windows more often (see §6); it is layout, not a behavior
+regression.  Session 125 fixed the
 function-end scan for multi-line signatures, so this baseline includes bodies
 the earlier metric skipped; session 126's splits also shifted a few window
 boundaries, session 131's completion/diagnostic feature growth added two
@@ -136,10 +139,11 @@ affected the local loop only.
 
 ### Size, markers, tests
 
-- **128,970 code lines**; **3 functions ≥ 200 lines** (`binding_at` 385,
-  excluded, `collect_binding_flags` 211, and `resolve_cursor` 200, exactly at
-  the boundary); **11 files ≥ 2,000 code lines**. The ratchet counts these, so a
-  refactor cannot trade one long function for another.
+- **145,934 code lines**; **36 functions ≥ 200 lines** (the tidy pass wraps
+  long signatures/expressions, so raw spans grew; the three pre-format
+  functions were `binding_at` 385, `collect_binding_flags` 211, and
+  `resolve_cursor` 200); **13 files ≥ 2,000 code lines**. The ratchet counts
+  these, so a refactor cannot trade one long function for another.
 - **0 marker comments** (`TODO`/`FIXME`/`XXX`/`HACK`); any new one fails.
 - Test trees: **22** files in `projects/mtc/test`, **86** in `test/mt`. The
   ratchet fails if either count drops (silent-skip protection).
@@ -210,21 +214,30 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 161, 2026-11-24)
+## 6. Current baseline (session 165, 2026-11-25)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 169 / 163,004 / 128,970 |
-| layering edges / violations | 117 / 0 |
+| source files / lines / code lines | 170 / 178,958 / 145,934 |
+| layering edges / violations | 119 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
-| alias violations | 0 (169 modules) |
+| alias violations | 0 (170 modules) |
 | dead exports (unused / test-only) | 29 / 7 |
-| duplication (windows / duplicated lines) | 871 / 6,389 (window 12) |
-| functions ≥ 200 lines | 3 |
-| files ≥ 2,000 code lines | 11 |
+| duplication (windows / duplicated lines) | 1,253 / 8,272 (window 12) |
+| functions ≥ 200 lines | 36 |
+| files ≥ 2,000 code lines | 13 |
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 22 / 86 |
+
+Session 165 formatted `projects/mtc/src` and `projects/mtc/test` with
+`mtc format --tidy` (192 files, idempotent on a second pass).  The tidy rules
+wrap long signatures/expressions and carry declaration comment blocks, so the
+raw source-line, duplicated-window and ≥200-line-function counts rose
+mechanically (128,970 → 145,934 code lines; 3 → 36 long functions).  This is a
+layout change, not a behavior change; the baseline was refreshed only after the
+full gate run (fixed point, 22/0, `test/mt` 86/0, re-recorded oracles) and is
+the new ratchet floor.
 
 Session 161 **shrank** the baseline: the inert interning layer (`TypeStore`,
 `type_hash`/`type_identical`/`types_identical`, `TypeId`, `ir.Program.type_table`

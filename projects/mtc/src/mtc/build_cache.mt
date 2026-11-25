@@ -144,7 +144,14 @@ function cc_identity(c_compiler: str) -> string.String:
 ## compiler, the C compiler, the configuration, or any module source — produces
 ## a different key.  Module entries embed the source length so concatenation
 ## boundaries are unambiguous.
-public function compute_key(program: ref[loader.Program], c_compiler: str, platform_name: str, profile: str, sanitize: bool, debug_guards: bool) -> string.String:
+public function compute_key(
+    program: ref[loader.Program],
+    c_compiler: str,
+    platform_name: str,
+    profile: str,
+    sanitize: bool,
+    debug_guards: bool
+) -> string.String:
     var key = string.String.create()
     key.append("mtc-exe:")
     var exe_digest = compiler_identity()
@@ -330,7 +337,6 @@ public function purge() -> Result[string.String, string.String]:
         Result.success:
             pass
     return Result[string.String, string.String].success(value = root)
-
 
 struct CacheStatus:
     programs: ptr_uint

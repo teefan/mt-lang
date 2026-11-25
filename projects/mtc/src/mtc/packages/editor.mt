@@ -144,7 +144,6 @@ function edit_dependency(
             pass
     return Result[string.String, string.String].success(value = updated)
 
-
 struct DependencyLine:
     name: string.String
     rendered: string.String
@@ -335,7 +334,6 @@ function append_toml_string(output: ref[string.String], value: str) -> void:
         i += 1
     output.push_byte('"')
 
-
 # =============================================================================
 #  Section replacement — the host's textual algorithm
 # =============================================================================
@@ -369,7 +367,14 @@ function replace_dependencies_section(
                 end_index = j
                 break
             j += 1
-        return rebuild_source(source.as_str(), ref_of(lines), ptr_uint<-start_index, end_index, replacement, has_replacement)
+        return rebuild_source(
+            source.as_str(),
+            ref_of(lines),
+            ptr_uint<-start_index,
+            end_index,
+            replacement,
+            has_replacement
+        )
 
     var unchanged = string.String.from_str(source.as_str())
     if not has_replacement:
@@ -381,7 +386,6 @@ function replace_dependencies_section(
             unchanged.push_byte('\n')
     unchanged.append(replacement.as_str())
     return unchanged
-
 
 struct LineView:
     start: ptr_uint
@@ -402,7 +406,10 @@ function split_lines(source: str, lines: ref[vec.Vec[LineView]]) -> void:
 
 function line_text(source: str, line: LineView) -> str:
     var length = line.len
-    while length > 0 and (source.byte_at(line.start + length - 1) == 10 or source.byte_at(line.start + length - 1) == 13):
+    while (
+        length > 0
+        and (source.byte_at(line.start + length - 1) == 10 or source.byte_at(line.start + length - 1) == 13)
+    ):
         length -= 1
     return source.slice(line.start, length)
 

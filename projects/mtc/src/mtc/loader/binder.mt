@@ -139,7 +139,18 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                 else:
                     private_type_aliases.set(ta.name, true)
             ast.Decl.decl_extending_block as ex:
-                export_methods(ref_of(member_keys), ref_of(method_sigs), ref_of(method_order), ref_of(private_member_keys), ref_of(private_method_sigs), analysis.method_sigs, ex.type_name, ex.methods, exports_all, analysis.extending_canonical_names)
+                export_methods(
+                    ref_of(member_keys),
+                    ref_of(method_sigs),
+                    ref_of(method_order),
+                    ref_of(private_member_keys),
+                    ref_of(private_method_sigs),
+                    analysis.method_sigs,
+                    ex.type_name,
+                    ex.methods,
+                    exports_all,
+                    analysis.extending_canonical_names
+                )
             ast.Decl.decl_interface as iface:
                 if exports_all or iface.visibility:
                     interfaces.set(iface.name, iface.interface_methods)
@@ -297,7 +308,11 @@ function empty_field_span() -> span[analyzer.FieldEntry]:
     return fields.as_span()
 
 
-function export_member_keys(member_keys: ref[map_mod.Map[str, bool]], type_name: str, members: span[ast.EnumMember]) -> void:
+function export_member_keys(
+    member_keys: ref[map_mod.Map[str, bool]],
+    type_name: str,
+    members: span[ast.EnumMember]
+) -> void:
     var i: ptr_uint = 0
     while i < members.len:
         unsafe:
@@ -305,7 +320,11 @@ function export_member_keys(member_keys: ref[map_mod.Map[str, bool]], type_name:
         i += 1
 
 
-function export_case_names(match_case_names: ref[map_mod.Map[str, span[str]]], type_name: str, members: span[ast.EnumMember]) -> void:
+function export_case_names(
+    match_case_names: ref[map_mod.Map[str, span[str]]],
+    type_name: str,
+    members: span[ast.EnumMember]
+) -> void:
     var names = vec.Vec[str].create()
     var i: ptr_uint = 0
     while i < members.len:
@@ -315,7 +334,11 @@ function export_case_names(match_case_names: ref[map_mod.Map[str, span[str]]], t
     match_case_names.set(type_name, names.as_span())
 
 
-function export_arm_case_names(match_case_names: ref[map_mod.Map[str, span[str]]], type_name: str, arms: span[ast.VariantArm]) -> void:
+function export_arm_case_names(
+    match_case_names: ref[map_mod.Map[str, span[str]]],
+    type_name: str,
+    arms: span[ast.VariantArm]
+) -> void:
     var names = vec.Vec[str].create()
     var i: ptr_uint = 0
     while i < arms.len:
@@ -340,7 +363,18 @@ function export_arm_keys(member_keys: ref[map_mod.Map[str, bool]], type_name: st
 ## value), so only method visibility is gated.  `method_order` records the
 ## exported keys in declaration order, because the LSP's completion merge needs
 ## the host's registration order, not a map's bucket order.
-function export_methods(member_keys: ref[map_mod.Map[str, bool]], method_sigs: ref[map_mod.Map[str, analyzer.FnSig]], method_order: ref[vec.Vec[str]], private_member_keys: ref[map_mod.Map[str, bool]], private_method_sigs: ref[map_mod.Map[str, analyzer.FnSig]], source_sigs: map_mod.Map[str, analyzer.FnSig], type_ref: ptr[ast.TypeRef], methods: span[ast.Method], exports_all: bool, canonical_names: map_mod.Map[str, str]) -> void:
+function export_methods(
+    member_keys: ref[map_mod.Map[str, bool]],
+    method_sigs: ref[map_mod.Map[str, analyzer.FnSig]],
+    method_order: ref[vec.Vec[str]],
+    private_member_keys: ref[map_mod.Map[str, bool]],
+    private_method_sigs: ref[map_mod.Map[str, analyzer.FnSig]],
+    source_sigs: map_mod.Map[str, analyzer.FnSig],
+    type_ref: ptr[ast.TypeRef],
+    methods: span[ast.Method],
+    exports_all: bool,
+    canonical_names: map_mod.Map[str, str]
+) -> void:
     let type_name = unsafe: analyzer.qname_to_str(read(type_ref).name)
     # An alias-qualified target (`extending b3.Vec3:`) also exports its methods
     # under the resolved type name, which is what importers' receivers resolve to.

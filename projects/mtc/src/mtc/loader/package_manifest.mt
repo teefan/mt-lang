@@ -13,7 +13,6 @@ import std.string as string
 import std.toml as toml
 import std.vec as vec
 
-
 const DEFAULT_SOURCE_ROOT: str = "src"
 
 
@@ -79,14 +78,12 @@ function source_root_in_manifest(package_dir: str, manifest_path: str) -> Option
             read_error.release()
             return Option[string.String].none
 
-
 ## The package identity and build settings the build CLI consumes — the subset
 ## of the host's `PackageManifest::DataView`
 ## (`lib/milk_tea/packages/manifest.rb`) that `build`/`run`/`test` read.
 public enum PackageKind: ubyte
     application = 0
     library = 1
-
 
 public struct PackageBuild:
     root_dir: string.String
@@ -476,7 +473,11 @@ function finish_package_build(
     )))
 
 
-function collect_assets(build_table: ptr[toml.Table]?, root: str, assets: ref[vec.Vec[string.String]]) -> Result[bool, string.String]:
+function collect_assets(
+    build_table: ptr[toml.Table]?,
+    root: str,
+    assets: ref[vec.Vec[string.String]]
+) -> Result[bool, string.String]:
     var raws = vec.Vec[str].create()
     defer: raws.release()
 

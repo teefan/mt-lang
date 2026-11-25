@@ -13,7 +13,6 @@ import mtc.lexer.token as token_mod
 import mtc.parser.ast as ast
 import mtc.parser.token_stream as ts
 
-
 ## Diagnostic with position info — survives function scope (value type).
 public struct ParseDiagnostic:
     line: ptr_uint
@@ -51,7 +50,6 @@ public struct ParserState:
     ## methods desugar to an extending block).  The enclosing declaration block
     ## drains this into its declaration list after each parse.
     pending_decls: vec.Vec[ast.Decl]
-
 
 # =============================================================================
 #  Loop guard — per-declaration safety net against parser bugs.
@@ -100,7 +98,6 @@ function record_loop_guard_diagnostic(s: ref[ParserState], line: ptr_uint, col: 
         diags.push(diag)
         read(diags_ptr) = diags
 
-
 # =============================================================================
 #  Token access helpers
 # =============================================================================
@@ -108,22 +105,28 @@ function record_loop_guard_diagnostic(s: ref[ParserState], line: ptr_uint, col: 
 public function peek(s: ref[ParserState]) -> ptr[token_mod.Token]?:
     return ts.peek(ref_of(s.stream))
 
+
 public function advance(s: ref[ParserState]) -> void:
     ts.advance(ref_of(s.stream))
 
+
 public function previous(s: ref[ParserState]) -> ptr[token_mod.Token]?:
     return ts.previous(ref_of(s.stream))
+
 
 public function previous_token(s: ref[ParserState]) -> ptr[token_mod.Token]:
     let tok = previous(s) else:
         fatal(c"parser bug: previous token is null")
     return tok
 
+
 public function check(s: ref[ParserState], kind: tk.TokenKind) -> bool:
     return ts.check(ref_of(s.stream), kind)
 
+
 public function match_kind(s: ref[ParserState], kind: tk.TokenKind) -> bool:
     return ts.match_kind(ref_of(s.stream), kind)
+
 
 public function consume(s: ref[ParserState], kind: tk.TokenKind, msg: cstr) -> void:
     if check(s, kind):
@@ -147,7 +150,6 @@ public function consume(s: ref[ParserState], kind: tk.TokenKind, msg: cstr) -> v
         parser_error_at(s, msg, t.line, t.column, lexeme, kn)
     advance(s)
 
-
 # =============================================================================
 #  Error reporting
 # =============================================================================
@@ -163,7 +165,14 @@ public function parser_error_naked(s: ref[ParserState], msg: cstr) -> void:
         parser_error_at(s, msg, t.line, t.column, lexeme, kn)
 
 
-public function parser_error_at(s: ref[ParserState], msg: cstr, line: ptr_uint, col: ptr_uint, lexeme: str, kind: str) -> void:
+public function parser_error_at(
+    s: ref[ParserState],
+    msg: cstr,
+    line: ptr_uint,
+    col: ptr_uint,
+    lexeme: str,
+    kind: str
+) -> void:
     if s.panic:
         return
     if s.suppress_errors:

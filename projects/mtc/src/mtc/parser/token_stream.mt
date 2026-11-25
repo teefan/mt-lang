@@ -18,7 +18,6 @@ import std.vec as vec
 import mtc.lexer.token_kinds as tk
 import mtc.lexer.token as token_mod
 
-
 public struct TokenStream:
     tokens: vec.Vec[token_mod.Token]
     current: ptr_uint

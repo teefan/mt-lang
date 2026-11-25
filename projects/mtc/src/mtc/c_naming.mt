@@ -88,7 +88,13 @@ public function sanitize_event_part(text: str) -> str:
 ## The host's `Types::Event#linkage_name`: `mt_event` + the sanitized module,
 ## owner, name and payload `to_s` parts (empty ones dropped) + the capacity —
 ## `mt_event_<module>_<owner>_<name>[_<payload>]_<capacity>`.
-public function event_linkage_name(module_name: str, owner: str, name: str, payload: Option[str], capacity: long) -> str:
+public function event_linkage_name(
+    module_name: str,
+    owner: str,
+    name: str,
+    payload: Option[str],
+    capacity: long
+) -> str:
     var buf = string.String.create()
     buf.append("mt_event")
     append_event_part(ref_of(buf), module_name)
@@ -172,7 +178,7 @@ public function dyn_iface_declared_name(use_name: str) -> str:
     var has_dot = false
     var i: ptr_uint = 0
     while i < use_name.len:
-        if use_name.byte_at(i) == 46:  # '.'
+        if use_name.byte_at(i) == 46: # '.'
             last_dot = i
             has_dot = true
         i += 1
@@ -456,5 +462,3 @@ function tuple_names_are_default(names: span[str]) -> bool:
                 return false
         i += 1
     return true
-
-

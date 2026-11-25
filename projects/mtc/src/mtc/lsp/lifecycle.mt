@@ -9,7 +9,6 @@ import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
-
 ## The semantic-token legend, mirroring the host's exactly (23 token types,
 ## 10 modifiers).  The indices are positional: `semantic_tokens.mt`'s TOKEN_*
 ## constants must match this order.

@@ -17,7 +17,6 @@ import mtc.lowering.lowering as lowering
 import mtc.lowering.monomorphized as monomorphized
 import mtc.lowering.utils as utils
 
-
 # =============================================================================
 #  Type resolution helpers
 # =============================================================================
@@ -31,7 +30,11 @@ public function find_fn_sig(ctx: ref[lowering.LoweringContext], name: str) -> Op
 
 
 ## Look up a function's FnSig in an imported module's analysis.
-public function find_imported_fn_sig(ctx: ref[lowering.LoweringContext], module_name: str, name: str) -> Option[analyzer.FnSig]:
+public function find_imported_fn_sig(
+    ctx: ref[lowering.LoweringContext],
+    module_name: str,
+    name: str
+) -> Option[analyzer.FnSig]:
     match lowering.find_imported_analysis(ctx, module_name):
         Option.some as imported:
             let sig_ptr = imported.value.functions.get(name)
@@ -65,7 +68,12 @@ public function fn_sig_return_type(sig: Option[analyzer.FnSig]) -> types.Type:
 
 ## A parameter's lowered type: resolved from the AST type ref (so tuple/array/
 ## span params carry full structure), falling back to the analyzer's signature.
-public function resolve_param_type(ctx: ref[lowering.LoweringContext], sig: Option[analyzer.FnSig], index: ptr_uint, param_type: ast.TypeRef) -> types.Type:
+public function resolve_param_type(
+    ctx: ref[lowering.LoweringContext],
+    sig: Option[analyzer.FnSig],
+    index: ptr_uint,
+    param_type: ast.TypeRef
+) -> types.Type:
     var local_tref = param_type
     let resolved = lowering.resolve_type_ref(ctx, ptr_of(local_tref))
     if not types.is_error(resolved):
@@ -75,7 +83,11 @@ public function resolve_param_type(ctx: ref[lowering.LoweringContext], sig: Opti
 
 ## A function's lowered return type: resolved from the AST return type ref (so
 ## tuple/array/span returns carry full structure), falling back to the signature.
-public function resolve_return_type(ctx: ref[lowering.LoweringContext], sig: Option[analyzer.FnSig], return_type: ptr[ast.TypeRef]?) -> types.Type:
+public function resolve_return_type(
+    ctx: ref[lowering.LoweringContext],
+    sig: Option[analyzer.FnSig],
+    return_type: ptr[ast.TypeRef]?
+) -> types.Type:
     let annotation = return_type else:
         return lowering.qualify_type(ctx, fn_sig_return_type(sig))
     let resolved = lowering.resolve_type_ref(ctx, annotation)
@@ -135,12 +147,20 @@ function import_qualified_type(ctx: ref[lowering.LoweringContext], ep: ptr[ast.E
                                     # Follow the type alias chain so re-exported types
                                     # (e.g. `type CameraMode = c.CameraMode`) resolve to
                                     # the originating std.c.* module's type.
-                                    let opt_alias = lowering.resolve_single_imported_type(ctx, target_module, ma.member_name)
+                                    let opt_alias = lowering.resolve_single_imported_type(
+                                        ctx,
+                                        target_module,
+                                        ma.member_name
+                                    )
                                     match opt_alias:
                                         Option.some as resolved:
                                             return Option[types.Type].some(value = resolved.value)
                                         Option.none:
-                                            return Option[types.Type].some(value = types.imported_type(module_name = target_module, name = ma.member_name, args = span[types.Type]()))
+                                            return Option[types.Type].some(value = types.imported_type(
+                                                module_name = target_module,
+                                                name = ma.member_name,
+                                                args = span[types.Type]()
+                                            ))
                             ai += 1
                     _:
                         pass
@@ -154,7 +174,11 @@ function import_qualified_type(ctx: ref[lowering.LoweringContext], ep: ptr[ast.E
 ## module-qualified C name; `std.c.*` external functions are keyed by their bare
 ## C name (matching `collect_program_returns`).  Returns `ty_error` when the
 ## receiver is not an import alias or the function is unknown.
-function imported_call_return_type(ctx: ref[lowering.LoweringContext], receiver: ptr[ast.Expr], func_name: str) -> types.Type:
+function imported_call_return_type(
+    ctx: ref[lowering.LoweringContext],
+    receiver: ptr[ast.Expr],
+    func_name: str
+) -> types.Type:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -222,7 +246,14 @@ public function fallback_type_raw(ctx: ref[lowering.LoweringContext], ep: ptr[as
                                 param_types.push(read(s.value.params.data + pi).ty)
                                 param_names.push(read(s.value.params.data + pi).name)
                             pi += 1
-                        return types.function_type(name = id.name, params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = s.value.is_variadic, is_proc = false, param_names = param_names.as_span())
+                        return types.function_type(
+                            name = id.name,
+                            params = param_types.as_span(),
+                            return_type = types.alloc_type(ret),
+                            variadic = s.value.is_variadic,
+                            is_proc = false,
+                            param_names = param_names.as_span()
+                        )
                     Option.none:
                         pass
                 return types.Type.ty_error
@@ -308,7 +339,14 @@ public function fallback_type_raw(ctx: ref[lowering.LoweringContext], ep: ptr[as
                     # type-param inference (e.g. `map_error[F]`'s F from the proc's
                     # return type).
                     ret = lowering.resolve_field_type_ref(ctx, unsafe: read(rt))
-                return types.function_type(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true, param_names = proc_param_names.as_span())
+                return types.function_type(
+                    name = "",
+                    params = param_types.as_span(),
+                    return_type = types.alloc_type(ret),
+                    variadic = false,
+                    is_proc = true,
+                    param_names = proc_param_names.as_span()
+                )
             _:
                 return types.Type.ty_error
 
@@ -378,7 +416,11 @@ public function is_vec_math_name(name: str) -> bool:
     )
 
 
-public function lower_vec_unary_neg(ctx: ref[lowering.LoweringContext], operand: ptr[ir.Expr], name: str) -> ptr[ir.Expr]:
+public function lower_vec_unary_neg(
+    ctx: ref[lowering.LoweringContext],
+    operand: ptr[ir.Expr],
+    name: str
+) -> ptr[ir.Expr]:
     var field_names = vec.Vec[str].create()
     var field_types = vec.Vec[types.Type].create()
     vec_math_fields(name, ref_of(field_names), ref_of(field_types))
@@ -443,7 +485,14 @@ public function vec_math_fields(name: str, names: ref[vec.Vec[str]], ftypes: ref
 ## Lower a binary arithmetic operator on vector/matrix/quaternion types to a
 ## component-wise aggregate literal.  Mirrors Ruby's lower_vector_binary_op /
 ## lower_aggregate_binary_op.
-public function lower_vec_binary_op(ctx: ref[lowering.LoweringContext], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr], result_ty: types.Type, name: str) -> ptr[ir.Expr]:
+public function lower_vec_binary_op(
+    ctx: ref[lowering.LoweringContext],
+    operator: str,
+    left: ptr[ir.Expr],
+    right: ptr[ir.Expr],
+    result_ty: types.Type,
+    name: str
+) -> ptr[ir.Expr]:
     let left_ty = lowering.ir_expr_type(left)
     let right_ty = lowering.ir_expr_type(right)
     var field_names = vec.Vec[str].create()
@@ -480,7 +529,12 @@ public function lower_vec_binary_op(ctx: ref[lowering.LoweringContext], operator
         if is_vec_math_name(ftype_name):
             field_val = lower_vec_binary_op(ctx, operator, left_field, right_field, ftype, ftype_name)
         else:
-            field_val = lowering.alloc_expr(ir.Expr.expr_binary(operator = operator, left = left_field, right = right_field, ty = ftype))
+            field_val = lowering.alloc_expr(ir.Expr.expr_binary(
+                operator = operator,
+                left = left_field,
+                right = right_field,
+                ty = ftype
+            ))
         fields.push(ir.AggregateField(name = fname, value = field_val))
         i += 1
     return lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = result_ty, fields = fields.as_span()))
@@ -736,7 +790,10 @@ public function visible_local_type(ctx: ref[lowering.LoweringContext], name: str
 
 ## Merge `incoming` into `existing`: a conflicting type deletes the entry (the
 ## host's `merge_refinements`, `utils.rb:593`).
-public function merge_flow_refinements(existing: ref[map_mod.Map[str, types.Type]], incoming: ref[map_mod.Map[str, types.Type]]) -> void:
+public function merge_flow_refinements(
+    existing: ref[map_mod.Map[str, types.Type]],
+    incoming: ref[map_mod.Map[str, types.Type]]
+) -> void:
     var entries = incoming.entries()
     while true:
         if not entries.next():
@@ -757,7 +814,10 @@ public function merge_flow_refinements(existing: ref[map_mod.Map[str, types.Type
 ## the stack length `restore_flow_refinements` restores.  The host's
 ## `env_with_refinements` makes a fresh `FlowScope` layer, so the pushed map is
 ## a copy rather than the caller's.
-public function push_flow_refinements(ctx: ref[lowering.LoweringContext], refinements: ref[map_mod.Map[str, types.Type]]) -> ptr_uint:
+public function push_flow_refinements(
+    ctx: ref[lowering.LoweringContext],
+    refinements: ref[map_mod.Map[str, types.Type]]
+) -> ptr_uint:
     let saved = ctx.flow_scopes.len()
     if refinements.len() == 0:
         return saved
@@ -776,7 +836,11 @@ public function restore_flow_refinements(ctx: ref[lowering.LoweringContext], sav
 ## condition narrows when it is true (`truthy`) or false.  Only null tests
 ## narrow; `not` flips, and `and`/`or` recurse with the host's short-circuit
 ## scopes (the right operand sees the left's refinement).
-public function lowering_flow_refinements(ctx: ref[lowering.LoweringContext], cond: ptr[ast.Expr], truthy: bool) -> map_mod.Map[str, types.Type]:
+public function lowering_flow_refinements(
+    ctx: ref[lowering.LoweringContext],
+    cond: ptr[ast.Expr],
+    truthy: bool
+) -> map_mod.Map[str, types.Type]:
     var result = map_mod.Map[str, types.Type].create()
     unsafe:
         match read(cond):
@@ -817,7 +881,11 @@ public function lowering_flow_refinements(ctx: ref[lowering.LoweringContext], co
 ## narrows to the bare null; the other direction narrows to the nullable's base.
 ## A local's storage type is its binding; a module-level value's is its declared
 ## type (the host seeds module bindings into its env).
-function lowering_null_test_refinements(ctx: ref[lowering.LoweringContext], condp: ptr[ast.Expr], truthy: bool) -> map_mod.Map[str, types.Type]:
+function lowering_null_test_refinements(
+    ctx: ref[lowering.LoweringContext],
+    condp: ptr[ast.Expr],
+    truthy: bool
+) -> map_mod.Map[str, types.Type]:
     var result = map_mod.Map[str, types.Type].create()
     unsafe:
         match read(condp):

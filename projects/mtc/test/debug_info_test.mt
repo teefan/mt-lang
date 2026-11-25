@@ -10,7 +10,11 @@ import mtc.lexer.token_kinds as tk
 import mtc.lsp.debug_info as debug_info
 
 
-function build_entries(entries: ref[vec.Vec[debug_info.HistogramEntry]], kinds: span[tk.TokenKind], counts: span[ptr_uint]) -> void:
+function build_entries(
+    entries: ref[vec.Vec[debug_info.HistogramEntry]],
+    kinds: span[tk.TokenKind],
+    counts: span[ptr_uint]
+) -> void:
     var i: ptr_uint = 0
     while i < kinds.len:
         entries.push(debug_info.HistogramEntry(
@@ -20,7 +24,11 @@ function build_entries(entries: ref[vec.Vec[debug_info.HistogramEntry]], kinds: 
         i += 1
 
 
-function expect_kinds(entries: ref[vec.Vec[debug_info.HistogramEntry]], expected: span[tk.TokenKind], label: str) -> void:
+function expect_kinds(
+    entries: ref[vec.Vec[debug_info.HistogramEntry]],
+    expected: span[tk.TokenKind],
+    label: str
+) -> void:
     if entries.len() != expected.len:
         expect(false, label)
         return

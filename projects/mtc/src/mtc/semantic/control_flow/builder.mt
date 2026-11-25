@@ -21,13 +21,11 @@ import std.vec as vec
 import mtc.parser.ast as ast
 import mtc.semantic.control_flow.graph as flow_graph
 
-
 ## A basic-block node in the CFG.  The graph itself lives in
 ## `control_flow.graph` (`CfgNode` there carries the kind, the statement and the
 ## read/write sites); this struct stays for the linter's binding-ID callers.
 public struct CfgNode:
     id: ptr_uint
-
 
 ## Identifier arguments the semantic analyzer recorded as belonging to a
 ## mutating parameter (the host's `binding_resolution.mutating_argument_identifier_ids`
@@ -39,7 +37,6 @@ public struct MutationSite:
     name: str
     line: ptr_uint
     column: ptr_uint
-
 
 ## Top-level CFG container.  `binding_map` is a name→ID mapping for every local
 ## declaration.  Ids start at 1, so 0 reads as "not a binding of this body"
@@ -88,7 +85,6 @@ public function cfg_release(cfg: ref[Cfg]) -> void:
     cfg.binding_map.release()
     cfg.binding_names.release()
 
-
 ## ---------------------------------------------------------------------------
 ##  Public entry points
 ## ---------------------------------------------------------------------------
@@ -106,7 +102,12 @@ public function build_cfg_into(cfg: ref[Cfg], params: span[ast.Param], body: ptr
 ## names — and `graph` with the host's `ControlFlow::Builder` graph.
 ## `build_cfg_into` keeps its narrower pre-scan for the linter's callers; this
 ## entry point is the analyzer's.
-public function build_graph_into(cfg: ref[Cfg], graph: ref[flow_graph.CfgGraph], params: span[ast.Param], body: ptr[ast.Stmt]) -> void:
+public function build_graph_into(
+    cfg: ref[Cfg],
+    graph: ref[flow_graph.CfgGraph],
+    params: span[ast.Param],
+    body: ptr[ast.Stmt]
+) -> void:
     assign_param_ids(cfg, params)
     collect_binding_ids(body, cfg)
     collect_binding_ids_extra(body, cfg)
@@ -122,7 +123,11 @@ public function build_graph_into(cfg: ref[Cfg], graph: ref[flow_graph.CfgGraph],
 ## "always terminates on its first iteration" exactly when `exit_id` is not
 ## reachable from the entry — `continue` flows to `exit_id`, `break` to
 ## `break_exit`, so a body whose only exits are `return`/`break` qualifies.
-public function build_graph_loop_body_into(cfg: ref[Cfg], graph: ref[flow_graph.CfgGraph], body: ptr[ast.Stmt]?) -> void:
+public function build_graph_loop_body_into(
+    cfg: ref[Cfg],
+    graph: ref[flow_graph.CfgGraph],
+    body: ptr[ast.Stmt]?
+) -> void:
     flow_graph.graph_clear(graph)
     let exit_id = flow_graph.graph_add_node(graph, "exit", 0, 0, 0)
     graph.exit_id = exit_id
@@ -134,13 +139,16 @@ public function build_graph_loop_body_into(cfg: ref[Cfg], graph: ref[flow_graph.
 ## The host's `Builder#build` over a branch body (`Termination`'s fresh graph).
 ## `break`/`continue` fall through to the continuation, exactly as the host's
 ## nil targets do.
-public function build_graph_termination_into(cfg: ref[Cfg], graph: ref[flow_graph.CfgGraph], body: ptr[ast.Stmt]?) -> void:
+public function build_graph_termination_into(
+    cfg: ref[Cfg],
+    graph: ref[flow_graph.CfgGraph],
+    body: ptr[ast.Stmt]?
+) -> void:
     flow_graph.graph_clear(graph)
     let exit_id = flow_graph.graph_add_node(graph, "exit", 0, 0, 0)
     graph.exit_id = exit_id
     let entry_id = build_graph_body(cfg, graph, body, exit_id, 0, 0)
     graph.entry_id = entry_id
-
 
 ## ---------------------------------------------------------------------------
 ##  Parameter registration
@@ -156,7 +164,6 @@ function assign_param_ids(cfg: ref[Cfg], params: span[ast.Param]) -> void:
                 cfg.binding_names.push(p.name)
                 cfg.next_id += 1
             pi += 1
-
 
 ## ---------------------------------------------------------------------------
 ##  Binding-ID collection walks
@@ -321,7 +328,6 @@ function binding_id_of(cfg: ref[Cfg], name: str) -> ptr_uint:
         return 0
     return unsafe: read(found)
 
-
 # =============================================================================
 #  The graph — the host's `ControlFlow::Builder`
 # =============================================================================
@@ -329,7 +335,14 @@ function binding_id_of(cfg: ref[Cfg], name: str) -> ptr_uint:
 ## Build a statement body's nodes, threading the continuation `next_id` the way
 ## the host does (statements are walked backwards, so each one knows the node
 ## control flows into).
-function build_graph_block(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], stmts: span[ast.Stmt], next_id: ptr_uint, break_target: ptr_uint, continue_target: ptr_uint) -> ptr_uint:
+function build_graph_block(
+    cfg: ref[Cfg],
+    g: ref[flow_graph.CfgGraph],
+    stmts: span[ast.Stmt],
+    next_id: ptr_uint,
+    break_target: ptr_uint,
+    continue_target: ptr_uint
+) -> ptr_uint:
     var current_next = next_id
     var i = stmts.len
     unsafe:
@@ -341,7 +354,14 @@ function build_graph_block(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], stmts: sp
 
 ## A body pointer: a block is its statement list, anything else is one
 ## statement.  Transparent wrappers (`unsafe:`) have no node of their own.
-function build_graph_body(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], body: ptr[ast.Stmt]?, next_id: ptr_uint, break_target: ptr_uint, continue_target: ptr_uint) -> ptr_uint:
+function build_graph_body(
+    cfg: ref[Cfg],
+    g: ref[flow_graph.CfgGraph],
+    body: ptr[ast.Stmt]?,
+    next_id: ptr_uint,
+    break_target: ptr_uint,
+    continue_target: ptr_uint
+) -> ptr_uint:
     let b = body else:
         return next_id
     unsafe:
@@ -352,7 +372,14 @@ function build_graph_body(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], body: ptr[
                 return build_graph_statement(cfg, g, b, next_id, break_target, continue_target)
 
 
-function build_graph_statement(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], stmt: ptr[ast.Stmt], next_id: ptr_uint, break_target: ptr_uint, continue_target: ptr_uint) -> ptr_uint:
+function build_graph_statement(
+    cfg: ref[Cfg],
+    g: ref[flow_graph.CfgGraph],
+    stmt: ptr[ast.Stmt],
+    next_id: ptr_uint,
+    break_target: ptr_uint,
+    continue_target: ptr_uint
+) -> ptr_uint:
     let stmt_key = unsafe: reinterpret[ptr_uint](stmt)
     unsafe:
         match read(stmt):
@@ -392,7 +419,14 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], stmt:
                         pass
                 match l.else_binding:
                     Option.some as else_name:
-                        push_write_site(cfg, node, else_name.value, l.else_binding_line, l.else_binding_column, "declaration")
+                        push_write_site(
+                            cfg,
+                            node,
+                            else_name.value,
+                            l.else_binding_line,
+                            l.else_binding_column,
+                            "declaration"
+                        )
                     Option.none:
                         pass
                 flow_graph.graph_add_edge(g, node_id, next_id)
@@ -452,10 +486,23 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], stmt:
                         match arm.binding_name:
                             Option.some as bound:
                                 let bind_line = if arm.binding_line > 0: arm.binding_line else: m.line
-                                let bind_id = flow_graph.graph_add_node(g, "match_binding", arm_key, bind_line, arm.binding_column)
+                                let bind_id = flow_graph.graph_add_node(
+                                    g,
+                                    "match_binding",
+                                    arm_key,
+                                    bind_line,
+                                    arm.binding_column
+                                )
                                 let bind_node = flow_graph.graph_node(g, bind_id) else:
                                     return next_id
-                                push_write_site(cfg, bind_node, bound.value, bind_line, arm.binding_column, "match_binding")
+                                push_write_site(
+                                    cfg,
+                                    bind_node,
+                                    bound.value,
+                                    bind_line,
+                                    arm.binding_column,
+                                    "match_binding"
+                                )
                                 flow_graph.graph_add_edge(g, bind_id, arm_entry)
                                 arm_entry = bind_id
                             Option.none:
@@ -540,17 +587,30 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], stmt:
 
 
 ## A node with no reads or writes, flowing into `next_id`.
-function add_plain_node(g: ref[flow_graph.CfgGraph], kind: str, stmt_key: ptr_uint, line: ptr_uint, column: ptr_uint, next_id: ptr_uint) -> ptr_uint:
+function add_plain_node(
+    g: ref[flow_graph.CfgGraph],
+    kind: str,
+    stmt_key: ptr_uint,
+    line: ptr_uint,
+    column: ptr_uint,
+    next_id: ptr_uint
+) -> ptr_uint:
     let node_id = flow_graph.graph_add_node(g, kind, stmt_key, line, column)
     flow_graph.graph_add_edge(g, node_id, next_id)
     return node_id
-
 
 # =============================================================================
 #  Read and write collection
 # =============================================================================
 
-function push_read_site(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], name: str, line: ptr_uint, column: ptr_uint, length: ptr_uint) -> void:
+function push_read_site(
+    cfg: ref[Cfg],
+    node: ptr[flow_graph.CfgNode],
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    length: ptr_uint
+) -> void:
     let key = binding_id_of(cfg, name)
     if key == 0:
         return
@@ -558,12 +618,25 @@ function push_read_site(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], name: str,
         read(node).read_sites.push(flow_graph.ReadSite(key = key, line = line, column = column, length = length))
 
 
-function push_write_site(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], name: str, line: ptr_uint, column: ptr_uint, origin: str) -> void:
+function push_write_site(
+    cfg: ref[Cfg],
+    node: ptr[flow_graph.CfgNode],
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    origin: str
+) -> void:
     let key = binding_id_of(cfg, name)
     if key == 0:
         return
     unsafe:
-        read(node).write_sites.push(flow_graph.WriteSite(key = key, name = name, line = line, column = column, origin = origin))
+        read(node).write_sites.push(flow_graph.WriteSite(
+            key = key,
+            name = name,
+            line = line,
+            column = column,
+            origin = origin
+        ))
 
 
 ## Is this identifier argument one the analyzer recorded as a mutating
@@ -654,7 +727,13 @@ function collect_read_sites(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], expr: 
 ## A `let`/`var` declaration's own write (the host's `local_decl_write_targets`):
 ## the declared name when the declaration has an initializer, plus whatever the
 ## initializer itself writes through.
-function collect_local_decl_writes(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], name: str, line: ptr_uint, column: ptr_uint) -> void:
+function collect_local_decl_writes(
+    cfg: ref[Cfg],
+    node: ptr[flow_graph.CfgNode],
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     push_write_site(cfg, node, name, line, column, "declaration")
 
 
@@ -684,7 +763,12 @@ function collect_target_side_effect_reads(cfg: ref[Cfg], node: ptr[flow_graph.Cf
 
 ## The host's `write_targets_from_expression`: the bindings an expression
 ## writes through (`out`/`inout` arguments and the `ref_of`/`ptr_of` family).
-function collect_write_sites_from_expr(cfg: ref[Cfg], node: ptr[flow_graph.CfgNode], expr: ptr[ast.Expr]?, line: ptr_uint) -> void:
+function collect_write_sites_from_expr(
+    cfg: ref[Cfg],
+    node: ptr[flow_graph.CfgNode],
+    expr: ptr[ast.Expr]?,
+    line: ptr_uint
+) -> void:
     let e = expr else:
         return
     unsafe:
@@ -827,7 +911,6 @@ function is_fatal_expr(expr: ptr[ast.Expr]?) -> bool:
                 pass
     return false
 
-
 # =============================================================================
 #  Null-test edge refinements — the host's `add_null_test_refinements`
 # =============================================================================
@@ -842,7 +925,14 @@ struct NullPair:
 ## Record the host's `add_null_test_refinements`: for every null test in the
 ## condition, label the true and false edges so the dataflow knows which
 ## binding is known non-null on which path.
-function add_null_test_refinements(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], cond_id: ptr_uint, true_succ: ptr_uint, false_succ: ptr_uint, condition: ptr[ast.Expr]) -> void:
+function add_null_test_refinements(
+    cfg: ref[Cfg],
+    g: ref[flow_graph.CfgGraph],
+    cond_id: ptr_uint,
+    true_succ: ptr_uint,
+    false_succ: ptr_uint,
+    condition: ptr[ast.Expr]
+) -> void:
     var pairs = vec.Vec[NullPair].create()
     defer: pairs.release()
     null_check_pairs(cfg, condition, true, ref_of(pairs))
@@ -862,7 +952,12 @@ function add_null_test_refinements(cfg: ref[Cfg], g: ref[flow_graph.CfgGraph], c
 
 ## The host's `null_check_pairs`: `not` flips the polarity, `and` merges its
 ## operands when true (and the *left* only when false), `or` the mirror image.
-function null_check_pairs(cfg: ref[Cfg], expr: ptr[ast.Expr]?, positive: bool, pairs_out: ref[vec.Vec[NullPair]]) -> void:
+function null_check_pairs(
+    cfg: ref[Cfg],
+    expr: ptr[ast.Expr]?,
+    positive: bool,
+    pairs_out: ref[vec.Vec[NullPair]]
+) -> void:
     let e = expr else:
         return
     unsafe:
@@ -883,7 +978,13 @@ function null_check_pairs(cfg: ref[Cfg], expr: ptr[ast.Expr]?, positive: bool, p
                 pass
 
 
-function merge_operand_pairs(cfg: ref[Cfg], left: ptr[ast.Expr], right: ptr[ast.Expr], positive: bool, pairs_out: ref[vec.Vec[NullPair]]) -> void:
+function merge_operand_pairs(
+    cfg: ref[Cfg],
+    left: ptr[ast.Expr],
+    right: ptr[ast.Expr],
+    positive: bool,
+    pairs_out: ref[vec.Vec[NullPair]]
+) -> void:
     var left_pairs = vec.Vec[NullPair].create()
     defer: left_pairs.release()
     null_check_pairs(cfg, left, positive, ref_of(left_pairs))
@@ -895,7 +996,14 @@ function merge_operand_pairs(cfg: ref[Cfg], left: ptr[ast.Expr], right: ptr[ast.
 
 ## The host's `single_null_pair`: the identifier side of `x == null` /
 ## `x != null`, taking the polarity into account.
-function single_null_pair(cfg: ref[Cfg], left: ptr[ast.Expr], right: ptr[ast.Expr], positive: bool, null_on_true: bool, pairs_out: ref[vec.Vec[NullPair]]) -> void:
+function single_null_pair(
+    cfg: ref[Cfg],
+    left: ptr[ast.Expr],
+    right: ptr[ast.Expr],
+    positive: bool,
+    null_on_true: bool,
+    pairs_out: ref[vec.Vec[NullPair]]
+) -> void:
     var name: str = ""
     var found = false
     unsafe:
@@ -930,7 +1038,11 @@ function single_null_pair(cfg: ref[Cfg], left: ptr[ast.Expr], right: ptr[ast.Exp
 
 ## The host's `merge_null_pairs`: union, dropping any key the two sides
 ## disagree about.
-function merge_null_pairs(left: ref[vec.Vec[NullPair]], right: ref[vec.Vec[NullPair]], pairs_out: ref[vec.Vec[NullPair]]) -> void:
+function merge_null_pairs(
+    left: ref[vec.Vec[NullPair]],
+    right: ref[vec.Vec[NullPair]],
+    pairs_out: ref[vec.Vec[NullPair]]
+) -> void:
     var i: ptr_uint = 0
     while i < left.len():
         let pair = left.get(i) else:

@@ -14,7 +14,6 @@ import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 import mtc.lexer.trivia as triv
 
-
 public struct CstSourceFile:
     source: str
     tokens: vec.Vec[token_mod.Token]
@@ -50,6 +49,13 @@ function reconstruct_with(cst: CstSourceFile, normalize_spaces: bool) -> string.
 
     var trivia_index: ptr_uint = 0
     var token_index: ptr_uint = 0
+    ## End of the source already emitted.  The CST's trivia list omits a
+    ## continuation newline (the lexer swallows it after a binary operator), so
+    ## a pure trivia+token reconstruct joins continuation lines.  Tidy must keep
+    ## those gaps: its own wrap pass inserts continuation newlines, and dropping
+    ## them made a second tidy pass undo the first (not idempotent).  Preserve
+    ## keeps the historical drop.
+    var emitted_end: ptr_uint = 0
 
     while token_index < cst.tokens.len():
         let token_ptr = cst.tokens.get(token_index) else:
@@ -62,11 +68,19 @@ function reconstruct_with(cst: CstSourceFile, normalize_spaces: bool) -> string.
             let entry = unsafe: read(entry_ptr)
             if entry.start_offset > token.start_offset:
                 break
+            if normalize_spaces and entry.start_offset > emitted_end:
+                append_source_segment(ref_of(output), cst.source, emitted_end, entry.start_offset)
             append_trivia_entry(ref_of(output), cst.source, entry, normalize_spaces)
+            if entry.end_offset > emitted_end:
+                emitted_end = entry.end_offset
             trivia_index += 1
 
         if token.kind != tk.TokenKind.eof:
+            if normalize_spaces and token.start_offset > emitted_end:
+                append_source_segment(ref_of(output), cst.source, emitted_end, token.start_offset)
             append_source_segment(ref_of(output), cst.source, token.start_offset, token.end_offset)
+            if token.end_offset > emitted_end:
+                emitted_end = token.end_offset
 
         token_index += 1
 
@@ -74,8 +88,15 @@ function reconstruct_with(cst: CstSourceFile, normalize_spaces: bool) -> string.
         let entry_ptr = cst.trivia.get(trivia_index) else:
             break
         let entry = unsafe: read(entry_ptr)
+        if normalize_spaces and entry.start_offset > emitted_end:
+            append_source_segment(ref_of(output), cst.source, emitted_end, entry.start_offset)
         append_trivia_entry(ref_of(output), cst.source, entry, normalize_spaces)
+        if entry.end_offset > emitted_end:
+            emitted_end = entry.end_offset
         trivia_index += 1
+
+    if normalize_spaces and emitted_end < cst.source.len:
+        append_source_segment(ref_of(output), cst.source, emitted_end, cst.source.len)
 
     return output
 
@@ -93,7 +114,12 @@ function append_trivia_entry(
     append_source_segment(output, source, entry.start_offset, entry.end_offset)
 
 
-function append_source_segment(output: ref[string.String], source: str, start_offset: ptr_uint, end_offset: ptr_uint) -> void:
+function append_source_segment(
+    output: ref[string.String],
+    source: str,
+    start_offset: ptr_uint,
+    end_offset: ptr_uint
+) -> void:
     if end_offset <= start_offset or end_offset > source.len:
         return
     let segment = unsafe: str(data = source.data + start_offset, len = end_offset - start_offset)

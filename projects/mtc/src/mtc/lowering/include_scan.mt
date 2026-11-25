@@ -15,7 +15,6 @@ import mtc.loader.module_loader as loader
 import mtc.lowering.lowering as lowering
 import mtc.strings
 
-
 ## Which built-in the include scan looks for (host scans.rb).
 const SCAN_FATAL: int = 0
 const SCAN_OFFSETOF: int = 1
@@ -116,7 +115,10 @@ function expr_uses_scan(ep: ptr[ast.Expr]?, mode: int) -> bool:
             ast.Expr.expr_range as x:
                 return expr_uses_scan(x.start_expr, mode) or expr_uses_scan(x.end_expr, mode)
             ast.Expr.expr_if as x:
-                return expr_uses_scan(x.condition, mode) or expr_uses_scan(x.then_expr, mode) or expr_uses_scan(x.else_expr, mode)
+                return expr_uses_scan(
+                    x.condition,
+                    mode
+                ) or expr_uses_scan(x.then_expr, mode) or expr_uses_scan(x.else_expr, mode)
             ast.Expr.expr_match as x:
                 return expr_uses_scan(x.scrutinee, mode) or match_expr_arms_use_scan(x.arms, mode)
             ast.Expr.expr_unsafe as x:
@@ -268,11 +270,31 @@ public function collect_includes(program: loader.Program) -> span[ir.Include]:
             while ci < program.cycle_module_names.len():
                 let name_ptr = program.cycle_module_names.get(ci) else:
                     break
-                emit_ordered_raw_includes(ref_of(by_name), ref_of(cycle_set), ref_of(include_visited), ref_of(includes), ref_of(seen), unsafe: read(name_ptr))
+                emit_ordered_raw_includes(
+                    ref_of(by_name),
+                    ref_of(cycle_set),
+                    ref_of(include_visited),
+                    ref_of(includes),
+                    ref_of(seen),
+                    unsafe: read(name_ptr)
+                )
                 ci += 1
-            emit_ordered_raw_includes(ref_of(by_name), ref_of(cycle_set), ref_of(include_visited), ref_of(includes), ref_of(seen), root_name)
+            emit_ordered_raw_includes(
+                ref_of(by_name),
+                ref_of(cycle_set),
+                ref_of(include_visited),
+                ref_of(includes),
+                ref_of(seen),
+                root_name
+            )
         else:
-            emit_raw_module_includes(ref_of(by_name), ref_of(include_visited), ref_of(includes), ref_of(seen), root_name)
+            emit_raw_module_includes(
+                ref_of(by_name),
+                ref_of(include_visited),
+                ref_of(includes),
+                ref_of(seen),
+                root_name
+            )
 
     return includes.as_span()
 
@@ -280,7 +302,13 @@ public function collect_includes(program: loader.Program) -> span[ir.Include]:
 ## Append raw-binding include directives in the host's cache order: recurse
 ## into a module's imports in declaration order first, then emit the module's
 ## own directives when it is a raw module (DFS post-order).
-function emit_raw_module_includes(by_name: ref[map_mod.Map[str, analyzer.Analysis]], visited: ref[map_mod.Map[str, bool]], includes: ref[vec.Vec[ir.Include]], seen: ref[map_mod.Map[str, bool]], name: str) -> void:
+function emit_raw_module_includes(
+    by_name: ref[map_mod.Map[str, analyzer.Analysis]],
+    visited: ref[map_mod.Map[str, bool]],
+    includes: ref[vec.Vec[ir.Include]],
+    seen: ref[map_mod.Map[str, bool]],
+    name: str
+) -> void:
     if visited.contains(name):
         return
     visited.set(name, true)
@@ -305,7 +333,14 @@ function emit_raw_module_includes(by_name: ref[map_mod.Map[str, analyzer.Analysi
 ## skipped on the recursive walk (the host's forward bindings), and each cycle
 ## member's own closure is walked separately before the root's.  `visited` is
 ## the analysis insertion order, not just a dedup set.
-function emit_ordered_raw_includes(by_name: ref[map_mod.Map[str, analyzer.Analysis]], cycle_set: ref[map_mod.Map[str, bool]], visited: ref[map_mod.Map[str, bool]], includes: ref[vec.Vec[ir.Include]], seen: ref[map_mod.Map[str, bool]], name: str) -> void:
+function emit_ordered_raw_includes(
+    by_name: ref[map_mod.Map[str, analyzer.Analysis]],
+    cycle_set: ref[map_mod.Map[str, bool]],
+    visited: ref[map_mod.Map[str, bool]],
+    includes: ref[vec.Vec[ir.Include]],
+    seen: ref[map_mod.Map[str, bool]],
+    name: str
+) -> void:
     if visited.contains(name):
         return
     visited.set(name, true)
@@ -328,7 +363,11 @@ function emit_ordered_raw_includes(by_name: ref[map_mod.Map[str, analyzer.Analys
     emit_raw_directives(analysis, includes, seen)
 
 
-function emit_raw_directives(analysis: analyzer.Analysis, includes: ref[vec.Vec[ir.Include]], seen: ref[map_mod.Map[str, bool]]) -> void:
+function emit_raw_directives(
+    analysis: analyzer.Analysis,
+    includes: ref[vec.Vec[ir.Include]],
+    seen: ref[map_mod.Map[str, bool]]
+) -> void:
     if lowering.is_raw_module(analysis.module_kind):
         var di: ptr_uint = 0
         while di < analysis.directives.len:

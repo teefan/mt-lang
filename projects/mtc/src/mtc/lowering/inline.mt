@@ -19,7 +19,13 @@ import mtc.lowering.utils as utils
 
 ## Lower a `when` statement: evaluate the discriminant at compile time,
 ## find the matching branch, and only emit that branch's body.
-public function lower_when_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?) -> void:
+public function lower_when_stmt(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    discriminant: ptr[ast.Expr],
+    branches: span[ast.WhenBranch],
+    else_body: ptr[ast.Stmt]?
+) -> void:
     match const_eval.try_evaluate_const_expr(ctx, discriminant):
         Option.some as val:
             var i: ptr_uint = 0
@@ -44,7 +50,12 @@ public function lower_when_stmt(ctx: ref[lowering.LoweringContext], output: ref[
 
 ## Lower an `inline if` statement.  Evaluate the condition; if true, emit
 ## the then-branch; otherwise emit the else branch (if present).
-public function lower_inline_if_statement(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> void:
+public function lower_inline_if_statement(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    branches: span[ast.IfBranch],
+    else_body: ptr[ast.Stmt]?
+) -> void:
     if branches.len == 0:
         return
     # Each `else if` is its own branch with its own condition; evaluate them in
@@ -77,7 +88,12 @@ public function lower_inline_if_statement(ctx: ref[lowering.LoweringContext], ou
 
 ## Lower an `inline match` statement.  Evaluate the scrutinee and only emit
 ## the matching arm's body.  If no arm matches, emit the wildcard or nothing.
-public function lower_inline_match_statement(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
+public function lower_inline_match_statement(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    scrutinee: ptr[ast.Expr],
+    arms: span[ast.MatchArm]
+) -> void:
     match const_eval.try_evaluate_const_expr(ctx, scrutinee):
         Option.some as val:
             var i: ptr_uint = 0
@@ -105,13 +121,18 @@ public function lower_inline_match_statement(ctx: ref[lowering.LoweringContext],
         Option.none:
             pass
 
-
 ## Lower an `inline while` statement.  Evaluate the condition at compile time;
 ## if constantly true, unroll the loop body (capped at MAX_INLINE_WHILE_ITERS).
 ## Mirrors Ruby's lower_inline_while_stmt.
 const MAX_INLINE_WHILE_ITERS: ptr_uint = 10000
 
-public function lower_inline_while(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], condition: ptr[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+
+public function lower_inline_while(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    condition: ptr[ast.Expr],
+    body_ptr: ptr[ast.Stmt]?
+) -> void:
     let body = body_ptr else:
         return
     var iter: ptr_uint = 0
@@ -133,7 +154,13 @@ public function lower_inline_while(ctx: ref[lowering.LoweringContext], output: r
 ## Lower an `inline for` statement: evaluate the iterable at compile time and
 ## unroll the loop body once per element, binding the loop variable to each
 ## element in turn.  Mirrors Ruby's lower_inline_for_stmt.
-public function lower_inline_for_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+public function lower_inline_for_stmt(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    bindings: span[ast.ForBinding],
+    iterables: span[ast.Expr],
+    body_ptr: ptr[ast.Stmt]?
+) -> void:
     if bindings.len != 1 or iterables.len != 1:
         return
     var binding_name: str
@@ -163,7 +190,13 @@ public function lower_inline_for_stmt(ctx: ref[lowering.LoweringContext], output
 ## Lower one iteration of an inline for loop.  For struct fields, detect and
 ## handle `size_of(field.type)` and `field.type != X` patterns at comptime.
 ## For enum members and attributes, emit the body with a dummy binding.
-function lower_inline_for_iteration(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], binding_name: str, elem: comptime_types.ComptimeElement, body_ptr: ptr[ast.Stmt]) -> void:
+function lower_inline_for_iteration(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    binding_name: str,
+    elem: comptime_types.ComptimeElement,
+    body_ptr: ptr[ast.Stmt]
+) -> void:
     match elem:
         comptime_types.ComptimeElement.ce_struct_field as f:
             lower_inline_for_field_iter(ctx, output, binding_name, f.name, f.field_type, body_ptr)
@@ -173,7 +206,12 @@ function lower_inline_for_iteration(ctx: ref[lowering.LoweringContext], output: 
             # The host binds the loop variable as a compile-time constant
             # (`const_value` + `substitute_const_value`): no local is declared;
             # member reads (`.name`, `.value`) are substituted.
-            ctx.locals.push(lowering.LocalBinding(name = binding_name, c_name = binding_c, ty = types.primitive("int"), pointer = Option[bool].some(value = false)))
+            ctx.locals.push(lowering.LocalBinding(
+                name = binding_name,
+                c_name = binding_c,
+                ty = types.primitive("int"),
+                pointer = Option[bool].some(value = false)
+            ))
             ctx.inline_for_element = Option[comptime_types.ComptimeElement].some(value = elem)
             lowering.lower_block_stmts(ctx, ref_of(iter_stmts), body_ptr)
             ctx.inline_for_element = Option[comptime_types.ComptimeElement].none
@@ -183,14 +221,29 @@ function lower_inline_for_iteration(ctx: ref[lowering.LoweringContext], output: 
 
 
 ## Lower one inline for iteration over a struct field, handling size_of(field.type).
-function lower_inline_for_field_iter(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], binding_name: str, field_name: str, field_ty: types.Type, body_ptr: ptr[ast.Stmt]) -> void:
-    ctx.inline_for_element = Option[comptime_types.ComptimeElement].some(value = comptime_types.ComptimeElement.ce_struct_field(name = field_name, field_type = field_ty))
+function lower_inline_for_field_iter(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    binding_name: str,
+    field_name: str,
+    field_ty: types.Type,
+    body_ptr: ptr[ast.Stmt]
+) -> void:
+    ctx.inline_for_element = Option[comptime_types.ComptimeElement].some(value = comptime_types.ComptimeElement.ce_struct_field(
+        name = field_name,
+        field_type = field_ty
+    ))
     var iter_stmts = vec.Vec[ir.Stmt].create()
     let binding_c = utils.c_local_name(binding_name)
     # The host binds the field handle as a compile-time constant and declares no
     # local; `field.type` / `field.name` reads are substituted, and a body that
     # folds away entirely contributes no block.
-    ctx.locals.push(lowering.LocalBinding(name = binding_name, c_name = binding_c, ty = field_ty, pointer = Option[bool].some(value = false)))
+    ctx.locals.push(lowering.LocalBinding(
+        name = binding_name,
+        c_name = binding_c,
+        ty = field_ty,
+        pointer = Option[bool].some(value = false)
+    ))
     lower_inline_for_field_body(ctx, ref_of(iter_stmts), body_ptr, field_ty)
     ctx.locals.pop()
     ctx.inline_for_element = Option[comptime_types.ComptimeElement].none
@@ -198,7 +251,12 @@ function lower_inline_for_field_iter(ctx: ref[lowering.LoweringContext], output:
         output.push(ir.Stmt.stmt_block(body = iter_stmts.as_span()))
 
 
-function lower_inline_for_field_body(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], body: ptr[ast.Stmt], field_ty: types.Type) -> void:
+function lower_inline_for_field_body(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    body: ptr[ast.Stmt],
+    field_ty: types.Type
+) -> void:
     var processed = false
     unsafe:
         match read(body):
@@ -212,7 +270,12 @@ function lower_inline_for_field_body(ctx: ref[lowering.LoweringContext], output:
             lowering.lower_stmt(ctx, output, body)
 
 
-function lower_inline_for_field_stmts(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], stmts: span[ast.Stmt], field_ty: types.Type) -> void:
+function lower_inline_for_field_stmts(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    stmts: span[ast.Stmt],
+    field_ty: types.Type
+) -> void:
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:
@@ -221,7 +284,12 @@ function lower_inline_for_field_stmts(ctx: ref[lowering.LoweringContext], output
 
 
 ## Try to lower `if field.type != X: return false` at comptime.
-function lower_inline_field_type_guard(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt], field_ty: types.Type) -> bool:
+function lower_inline_field_type_guard(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    sp: ptr[ast.Stmt],
+    field_ty: types.Type
+) -> bool:
     var br: ast.IfBranch
     var body: ptr[ast.Stmt]?
     unsafe:
@@ -241,7 +309,11 @@ function lower_inline_field_type_guard(ctx: ref[lowering.LoweringContext], outpu
             return false
 
 
-function extract_field_type_compare(ctx: ref[lowering.LoweringContext], cond: ptr[ast.Expr], field_ty: types.Type) -> Option[bool]:
+function extract_field_type_compare(
+    ctx: ref[lowering.LoweringContext],
+    cond: ptr[ast.Expr],
+    field_ty: types.Type
+) -> Option[bool]:
     unsafe:
         match read(cond):
             ast.Expr.expr_binary_op as bin:
@@ -260,7 +332,11 @@ function extract_field_type_compare(ctx: ref[lowering.LoweringContext], cond: pt
 ## While lowering an inline for body, detect member access on the loop variable
 ## (`.value` for enum members, `.type` for struct fields) and substitute the
 ## comptime-known value.
-public function inline_for_member_subst(ctx: ref[lowering.LoweringContext], receiver: ptr[ast.Expr], member: str) -> Option[ptr[ir.Expr]]:
+public function inline_for_member_subst(
+    ctx: ref[lowering.LoweringContext],
+    receiver: ptr[ast.Expr],
+    member: str
+) -> Option[ptr[ir.Expr]]:
     match ctx.inline_for_element:
         Option.some as elem_val:
             match elem_val.value:
@@ -269,9 +345,16 @@ public function inline_for_member_subst(ctx: ref[lowering.LoweringContext], rece
                         match read(receiver):
                             ast.Expr.expr_identifier as id:
                                 if member == "value":
-                                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = m.member_value, ty = types.primitive("int"))))
+                                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                                        value = m.member_value,
+                                        ty = types.primitive("int")
+                                    )))
                                 if member == "name":
-                                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_string_literal(value = m.name, ty = types.Type.ty_str, cstring = false)))
+                                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_string_literal(
+                                        value = m.name,
+                                        ty = types.Type.ty_str,
+                                        cstring = false
+                                    )))
                             _:
                                 pass
                 comptime_types.ComptimeElement.ce_struct_field as f:
@@ -279,9 +362,17 @@ public function inline_for_member_subst(ctx: ref[lowering.LoweringContext], rece
                         match read(receiver):
                             ast.Expr.expr_identifier as id:
                                 if member == "type":
-                                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_name(name = "sizeof_hint", ty = f.field_type, pointer = Option[bool].some(value = false))))
+                                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_name(
+                                        name = "sizeof_hint",
+                                        ty = f.field_type,
+                                        pointer = Option[bool].some(value = false)
+                                    )))
                                 if member == "name":
-                                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_string_literal(value = f.name, ty = types.Type.ty_str, cstring = false)))
+                                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_string_literal(
+                                        value = f.name,
+                                        ty = types.Type.ty_str,
+                                        cstring = false
+                                    )))
                             _:
                                 pass
                 _:
@@ -315,7 +406,10 @@ public function inline_for_type_subst(ctx: ref[lowering.LoweringContext], bindin
 ## type identifier, and the active comptime element's members (`field.name`,
 ## `field.type`, `member.name`, `member.value`).  The host evaluates the same
 ## way through the loop variable's `const_value` substitution.
-function inline_for_eval_const(ctx: ref[lowering.LoweringContext], ep: ptr[ast.Expr]) -> Option[comptime_types.ConstValue]:
+function inline_for_eval_const(
+    ctx: ref[lowering.LoweringContext],
+    ep: ptr[ast.Expr]
+) -> Option[comptime_types.ConstValue]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
@@ -428,7 +522,12 @@ function inline_for_eval_bool(ctx: ref[lowering.LoweringContext], cond: ptr[ast.
 ## Fold an `if` chain inside an inline-for body: a constant-true branch lowers
 ## alone, constant-false branches are dropped, and a runtime condition (none of
 ## the above) falls back to the ordinary chain from that branch.
-public function lower_inline_for_if_fold(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> void:
+public function lower_inline_for_if_fold(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    branches: span[ast.IfBranch],
+    else_body: ptr[ast.Stmt]?
+) -> void:
     var bi: ptr_uint = 0
     while bi < branches.len:
         var br: ast.IfBranch

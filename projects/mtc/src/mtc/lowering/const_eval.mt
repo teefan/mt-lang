@@ -19,7 +19,12 @@ import mtc.lowering.lowering as lowering
 
 ## The value of `type_name.member_name` in the module that declares the enum —
 ## the host's constant evaluation of an enum member (`int<-Kind.A` → 0).
-function enum_member_value_in_module(ctx: ref[lowering.LoweringContext], module_name: str, type_name: str, member_name: str) -> Option[long]:
+function enum_member_value_in_module(
+    ctx: ref[lowering.LoweringContext],
+    module_name: str,
+    type_name: str,
+    member_name: str
+) -> Option[long]:
     let a = lowering.find_imported_analysis(ctx, module_name) else:
         return Option[long].none
     return enum_member_value_in_file(ctx, a.source_file, type_name, member_name)
@@ -65,7 +70,12 @@ function enum_member_value_of_expr(ctx: ref[lowering.LoweringContext], ep: ptr[a
                 return Option[long].none
 
 
-public function enum_member_value_in_file(ctx: ref[lowering.LoweringContext], file: ast.SourceFile, type_name: str, member_name: str) -> Option[long]:
+public function enum_member_value_in_file(
+    ctx: ref[lowering.LoweringContext],
+    file: ast.SourceFile,
+    type_name: str,
+    member_name: str
+) -> Option[long]:
     var di: ptr_uint = 0
     while di < file.declarations.len:
         var d: ast.Decl
@@ -107,19 +117,40 @@ public function enum_member_value_in_file(ctx: ref[lowering.LoweringContext], fi
 ## expression.  Supports literals, module constants, `const function` calls, and
 ## struct/variant/array literals.  Returns none when the expression is not
 ## compile-time known, in which case the initializer is lowered normally.
-public function try_const_value_ir(ctx: ref[lowering.LoweringContext], ep: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+public function try_const_value_ir(
+    ctx: ref[lowering.LoweringContext],
+    ep: ptr[ast.Expr],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]]
+) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
-                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(lowering.integer_literal_expr(lit.lexeme, lit.value, types.primitive("int"))))
+                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(lowering.integer_literal_expr(
+                    lit.lexeme,
+                    lit.value,
+                    types.primitive("int")
+                )))
             ast.Expr.expr_float_literal as lit:
-                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_float_literal(value = lit.value, ty = types.primitive("float"))))
+                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_float_literal(
+                    value = lit.value,
+                    ty = types.primitive("float")
+                )))
             ast.Expr.expr_bool_literal as b:
-                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = b.value, ty = ctx.bool_ty)))
+                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+                    value = b.value,
+                    ty = ctx.bool_ty
+                )))
             ast.Expr.expr_string_literal as s:
-                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_string_literal(value = s.value, ty = types.Type.ty_str, cstring = s.is_cstring)))
+                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_string_literal(
+                    value = s.value,
+                    ty = types.Type.ty_str,
+                    cstring = s.is_cstring
+                )))
             ast.Expr.expr_char_literal as c:
-                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-c.value, ty = types.primitive("ubyte"))))
+                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                    value = long<-c.value,
+                    ty = types.primitive("ubyte")
+                )))
             ast.Expr.expr_null_literal as nl:
                 let tr = nl.target_type
                 if tr != null:
@@ -139,9 +170,15 @@ public function try_const_value_ir(ctx: ref[lowering.LoweringContext], ep: ptr[a
                             pass
                     return try_const_value_ir(ctx, unsafe: ptr[ast.Expr]<-decl_val, env)
                 if id.name == "true":
-                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = ctx.bool_ty)))
+                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+                        value = true,
+                        ty = ctx.bool_ty
+                    )))
                 if id.name == "false":
-                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = ctx.bool_ty)))
+                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+                        value = false,
+                        ty = ctx.bool_ty
+                    )))
                 return Option[ptr[ir.Expr]].none
             ast.Expr.expr_binary_op as bin:
                 match try_const_value_ir(ctx, bin.left, env):
@@ -173,7 +210,10 @@ public function try_const_value_ir(ctx: ref[lowering.LoweringContext], ep: ptr[a
                     Option.none:
                         match enum_member_value_of_expr(ctx, pc.expression):
                             Option.some as mv:
-                                operand_ir = Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = mv.value, ty = types.primitive("int"))))
+                                operand_ir = Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                                    value = mv.value,
+                                    ty = types.primitive("int")
+                                )))
                             Option.none:
                                 pass
                 match operand_ir:
@@ -210,20 +250,33 @@ public function try_const_value_ir(ctx: ref[lowering.LoweringContext], ep: ptr[a
                             if numeric:
                                 if target_name == "bool":
                                     let truth = if is_float_operand: fvalue != 0.0 else: value != 0
-                                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = truth, ty = target)))
+                                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+                                        value = truth,
+                                        ty = target
+                                    )))
                                 let width = comptime.const_integer_width(target_name)
                                 if width > 0:
                                     var iv = if is_float_operand: long<-fvalue else: value
                                     iv = lowering.wrap_int_value(iv, width, types.is_signed_integer_name(target_name))
-                                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = iv, ty = target)))
+                                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                                        value = iv,
+                                        ty = target
+                                    )))
                                 if target_name == "float" or target_name == "double":
                                     var dv = if is_float_operand: fvalue else: double<-value
                                     if target_name == "float":
                                         dv = lowering.float32_round(dv)
-                                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_float_literal(value = dv, ty = target)))
+                                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_float_literal(
+                                        value = dv,
+                                        ty = target
+                                    )))
                                 return Option[ptr[ir.Expr]].none
                             return Option[ptr[ir.Expr]].none
-                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_cast(target_type = target, expression = ov.value, ty = target)))
+                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_cast(
+                            target_type = target,
+                            expression = ov.value,
+                            ty = target
+                        )))
                     Option.none:
                         pass
                 return Option[ptr[ir.Expr]].none
@@ -265,21 +318,30 @@ public function try_const_value_ir(ctx: ref[lowering.LoweringContext], ep: ptr[a
                 let target = lowering.resolve_type_ref(ctx, sz.target_type)
                 match layout_mod.layout_size(ctx, target):
                     Option.some as v:
-                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = v.value, ty = types.primitive("ptr_uint"))))
+                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                            value = v.value,
+                            ty = types.primitive("ptr_uint")
+                        )))
                     Option.none:
                         return Option[ptr[ir.Expr]].none
             ast.Expr.expr_alignof as al:
                 let target = lowering.resolve_type_ref(ctx, al.target_type)
                 match layout_mod.layout_alignment(ctx, target):
                     Option.some as v:
-                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = v.value, ty = types.primitive("ptr_uint"))))
+                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                            value = v.value,
+                            ty = types.primitive("ptr_uint")
+                        )))
                     Option.none:
                         return Option[ptr[ir.Expr]].none
             ast.Expr.expr_offsetof as off:
                 let target = lowering.resolve_type_ref(ctx, off.target_type)
                 match layout_mod.layout_offset_of(ctx, target, off.field):
                     Option.some as v:
-                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = v.value, ty = types.primitive("ptr_uint"))))
+                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                            value = v.value,
+                            ty = types.primitive("ptr_uint")
+                        )))
                     Option.none:
                         return Option[ptr[ir.Expr]].none
             _:
@@ -327,9 +389,18 @@ public function retag_pure_integer_const(v: ir.Expr, target_ty: types.Type) -> i
         ir.Expr.expr_unsigned_integer_literal as lit:
             return ir.Expr.expr_unsigned_integer_literal(value = lit.value, ty = target_ty)
         ir.Expr.expr_unary as u:
-            return ir.Expr.expr_unary(operator = u.operator, operand = lowering.alloc_expr(retag_pure_integer_const(unsafe: read(u.operand), target_ty)), ty = target_ty)
+            return ir.Expr.expr_unary(
+                operator = u.operator,
+                operand = lowering.alloc_expr(retag_pure_integer_const(unsafe: read(u.operand), target_ty)),
+                ty = target_ty
+            )
         ir.Expr.expr_binary as b:
-            return ir.Expr.expr_binary(operator = b.operator, left = lowering.alloc_expr(retag_pure_integer_const(unsafe: read(b.left), target_ty)), right = lowering.alloc_expr(retag_pure_integer_const(unsafe: read(b.right), target_ty)), ty = target_ty)
+            return ir.Expr.expr_binary(
+                operator = b.operator,
+                left = lowering.alloc_expr(retag_pure_integer_const(unsafe: read(b.left), target_ty)),
+                right = lowering.alloc_expr(retag_pure_integer_const(unsafe: read(b.right), target_ty)),
+                ty = target_ty
+            )
         _:
             return v
 
@@ -357,7 +428,11 @@ public function retype_const_literal(v: ir.Expr, target_ty: types.Type) -> ir.Ex
 ## The host's `rewrite_static_storage_initializer` fallback: lower the
 ## referenced imported constant's declaration initializer in its own module
 ## context (used when the folded value cannot be represented literally).
-public function lower_imported_const_initializer(ctx: ref[lowering.LoweringContext], ep: ptr[ast.Expr], expected_ty: types.Type) -> Option[ptr[ir.Expr]]:
+public function lower_imported_const_initializer(
+    ctx: ref[lowering.LoweringContext],
+    ep: ptr[ast.Expr],
+    expected_ty: types.Type
+) -> Option[ptr[ir.Expr]]:
     var target_module = ""
     var const_name = ""
     unsafe:
@@ -478,7 +553,12 @@ public function coerce_const_value(ctx: ref[lowering.LoweringContext], v: ir.Exp
 
 ## Constant-fold an expression whose declared type is known: an expression list
 ## `(a, b, c)` becomes an array literal when the target is `array[T, N]`.
-public function try_const_typed_value_ir(ctx: ref[lowering.LoweringContext], ep: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]], target_ty: types.Type) -> Option[ptr[ir.Expr]]:
+public function try_const_typed_value_ir(
+    ctx: ref[lowering.LoweringContext],
+    ep: ptr[ast.Expr],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    target_ty: types.Type
+) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(ep):
             ast.Expr.expr_null_literal as nl:
@@ -498,14 +578,28 @@ public function try_const_typed_value_ir(ctx: ref[lowering.LoweringContext], ep:
             unsafe:
                 match read(ep):
                     ast.Expr.expr_integer_literal as lit:
-                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(lowering.integer_literal_expr(lit.lexeme, lit.value, target_ty)))
+                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(lowering.integer_literal_expr(
+                            lit.lexeme,
+                            lit.value,
+                            target_ty
+                        )))
                     ast.Expr.expr_float_literal as lit:
-                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_float_literal(value = lit.value, ty = target_ty)))
+                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_float_literal(
+                            value = lit.value,
+                            ty = target_ty
+                        )))
                     ast.Expr.expr_char_literal as ch:
-                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-ch.value, ty = target_ty)))
+                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                            value = long<-ch.value,
+                            ty = target_ty
+                        )))
                     ast.Expr.expr_string_literal as sl:
                         let cs = sl.is_cstring or tp.name == "cstr"
-                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_string_literal(value = sl.value, ty = target_ty, cstring = cs)))
+                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_string_literal(
+                            value = sl.value,
+                            ty = target_ty,
+                            cstring = cs
+                        )))
                     _:
                         pass
         types.Type.ty_generic as tg:
@@ -524,7 +618,10 @@ public function try_const_typed_value_ir(ctx: ref[lowering.LoweringContext], ep:
                                     Option.none:
                                         return Option[ptr[ir.Expr]].none
                                 i += 1
-                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_array_literal(ty = target_ty, elements = elements.as_span())))
+                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_array_literal(
+                                ty = target_ty,
+                                elements = elements.as_span()
+                            )))
                         _:
                             pass
         _:
@@ -532,7 +629,11 @@ public function try_const_typed_value_ir(ctx: ref[lowering.LoweringContext], ep:
     return try_const_value_ir(ctx, ep, env)
 
 
-function try_const_tuple_ir(ctx: ref[lowering.LoweringContext], elements: span[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_tuple_ir(
+    ctx: ref[lowering.LoweringContext],
+    elements: span[ast.Expr],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]]
+) -> Option[ptr[ir.Expr]]:
     var values = vec.Vec[ir.Expr].create()
     var tys = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
@@ -552,11 +653,19 @@ function try_const_tuple_ir(ctx: ref[lowering.LoweringContext], elements: span[a
         fields.push(ir.AggregateField(name = lowering.tuple_field_name(fi), value = vp))
         fi += 1
     let tup_ty = types.tuple_type(elements = tys.as_span(), field_names = Option[span[str]].none)
-    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = tup_ty, fields = fields.as_span())))
+    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_aggregate_literal(
+        ty = tup_ty,
+        fields = fields.as_span()
+    )))
 
 
 ## Constant-fold `arr[i]`, `arr[a..b]`, `str[i]`, and `str[a..b]`.
-function try_const_index_ir(ctx: ref[lowering.LoweringContext], receiver: ptr[ast.Expr], index: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_index_ir(
+    ctx: ref[lowering.LoweringContext],
+    receiver: ptr[ast.Expr],
+    index: ptr[ast.Expr],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]]
+) -> Option[ptr[ir.Expr]]:
     match try_const_value_ir(ctx, receiver, env):
         Option.some as rv:
             unsafe:
@@ -575,14 +684,21 @@ function try_const_index_ir(ctx: ref[lowering.LoweringContext], receiver: ptr[as
                                 while i < e_opt:
                                     elements.push(read(al.elements.data + ptr_uint<-i))
                                     i += 1
-                                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_array_literal(ty = al.ty, elements = elements.as_span())))
+                                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_array_literal(
+                                    ty = al.ty,
+                                    elements = elements.as_span()
+                                )))
                             ir.Expr.expr_string_literal as sl:
                                 if s_opt < 0 or e_opt > long<-sl.value.len or s_opt > e_opt:
                                     return Option[ptr[ir.Expr]].none
                                 let start = ptr_uint<-s_opt
                                 let n = ptr_uint<-(e_opt - s_opt)
                                 let sliced = str(data = sl.value.data + start, len = n)
-                                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_string_literal(value = sliced, ty = types.Type.ty_str, cstring = false)))
+                                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_string_literal(
+                                    value = sliced,
+                                    ty = types.Type.ty_str,
+                                    cstring = false
+                                )))
                             _:
                                 return Option[ptr[ir.Expr]].none
                     _:
@@ -598,7 +714,10 @@ function try_const_index_ir(ctx: ref[lowering.LoweringContext], receiver: ptr[as
                     ir.Expr.expr_string_literal as sl:
                         if idx_opt < 0 or idx_opt >= long<-sl.value.len:
                             return Option[ptr[ir.Expr]].none
-                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-sl.value.byte_at(ptr_uint<-idx_opt), ty = types.primitive("ubyte"))))
+                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                            value = long<-sl.value.byte_at(ptr_uint<-idx_opt),
+                            ty = types.primitive("ubyte")
+                        )))
                     _:
                         return Option[ptr[ir.Expr]].none
         Option.none:
@@ -610,7 +729,12 @@ function try_const_index_ir(ctx: ref[lowering.LoweringContext], receiver: ptr[as
 ## declared in the imported module (e.g. `c.EOF` in `std/stdio.mt`).  The
 ## initializer is evaluated in the imported module's own context, mirroring the
 ## host's cross-module constant resolution.
-function imported_const_value_ir(ctx: ref[lowering.LoweringContext], receiver: ptr[ast.Expr], member: str, env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function imported_const_value_ir(
+    ctx: ref[lowering.LoweringContext],
+    receiver: ptr[ast.Expr],
+    member: str,
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]]
+) -> Option[ptr[ir.Expr]]:
     var alias: str
     unsafe:
         match read(receiver):
@@ -644,7 +768,12 @@ function imported_const_value_ir(ctx: ref[lowering.LoweringContext], receiver: p
 
 ## Constant-fold member access: struct fields, `len` on strings/arrays, and
 ## parenthesized-less variant arms (`Option[int].none`).
-function try_const_member_ir(ctx: ref[lowering.LoweringContext], receiver: ptr[ast.Expr], member: str, env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_member_ir(
+    ctx: ref[lowering.LoweringContext],
+    receiver: ptr[ast.Expr],
+    member: str,
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]]
+) -> Option[ptr[ir.Expr]]:
     match imported_const_value_ir(ctx, receiver, member, env):
         Option.some as imported:
             return Option[ptr[ir.Expr]].some(value = imported.value)
@@ -669,10 +798,16 @@ function try_const_member_ir(ctx: ref[lowering.LoweringContext], receiver: ptr[a
                         return comptime.const_field_value(ag.fields, member)
                     ir.Expr.expr_string_literal as sl:
                         if member == "len":
-                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-sl.value.len, ty = types.primitive("int"))))
+                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                                value = long<-sl.value.len,
+                                ty = types.primitive("int")
+                            )))
                     ir.Expr.expr_array_literal as al:
                         if member == "len":
-                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-al.elements.len, ty = types.primitive("int"))))
+                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                                value = long<-al.elements.len,
+                                ty = types.primitive("int")
+                            )))
                     _:
                         pass
         Option.none:
@@ -682,7 +817,12 @@ function try_const_member_ir(ctx: ref[lowering.LoweringContext], receiver: ptr[a
 
 ## Evaluate a call in constant position: struct literals, variant-arm literals,
 ## `const function` calls, and `const` methods (static and instance).
-function try_const_call_ir(ctx: ref[lowering.LoweringContext], callee: ptr[ast.Expr], args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_call_ir(
+    ctx: ref[lowering.LoweringContext],
+    callee: ptr[ast.Expr],
+    args: span[ast.Argument],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]]
+) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
@@ -710,7 +850,14 @@ function try_const_call_ir(ctx: ref[lowering.LoweringContext], callee: ptr[ast.E
                         if ctx.variants.contains(rid.name):
                             return try_const_variant_literal_ir(ctx, rid.name, ma.member_name, args, env)
                         if ctx.analysis.structs.contains(rid.name):
-                            return try_const_method_value(ctx, env, rid.name, ma.member_name, Option[ptr[ir.Expr]].none, args)
+                            return try_const_method_value(
+                                ctx,
+                                env,
+                                rid.name,
+                                ma.member_name,
+                                Option[ptr[ir.Expr]].none,
+                                args
+                            )
                         # Qualified struct literal through an import alias
                         # (`rl.Color(r = …)`), which the bare-name branch above
                         # already handles for an unqualified `Color(r = …)`.
@@ -742,8 +889,21 @@ function try_const_call_ir(ctx: ref[lowering.LoweringContext], callee: ptr[ast.E
                             ast.Expr.expr_identifier as alias_id:
                                 if ctx.analysis.imports.contains(alias_id.name):
                                     if ctx.variants.contains(inner_ma.member_name):
-                                        return try_const_variant_literal_ir(ctx, inner_ma.member_name, ma.member_name, args, env)
-                                    return try_const_method_value(ctx, env, inner_ma.member_name, ma.member_name, Option[ptr[ir.Expr]].none, args)
+                                        return try_const_variant_literal_ir(
+                                            ctx,
+                                            inner_ma.member_name,
+                                            ma.member_name,
+                                            args,
+                                            env
+                                        )
+                                    return try_const_method_value(
+                                        ctx,
+                                        env,
+                                        inner_ma.member_name,
+                                        ma.member_name,
+                                        Option[ptr[ir.Expr]].none,
+                                        args
+                                    )
                             _:
                                 pass
                     _:
@@ -754,7 +914,14 @@ function try_const_call_ir(ctx: ref[lowering.LoweringContext], callee: ptr[ast.E
                     Option.some as rv:
                         match comptime.const_receiver_struct_name(rv.value):
                             Option.some as sn:
-                                return try_const_method_value(ctx, env, sn.value, ma.member_name, Option[ptr[ir.Expr]].some(value = rv.value), args)
+                                return try_const_method_value(
+                                    ctx,
+                                    env,
+                                    sn.value,
+                                    ma.member_name,
+                                    Option[ptr[ir.Expr]].some(value = rv.value),
+                                    args
+                                )
                             Option.none:
                                 pass
                     Option.none:
@@ -767,7 +934,14 @@ function try_const_call_ir(ctx: ref[lowering.LoweringContext], callee: ptr[ast.E
 
 ## Evaluate a `const` method call by binding `this` (for instance methods) and
 ## the parameters, then interpreting the method body.
-function try_const_method_value(ctx: ref[lowering.LoweringContext], caller_env: ref[map_mod.Map[str, ptr[ir.Expr]]], struct_name: str, method_name: str, receiver: Option[ptr[ir.Expr]], args: span[ast.Argument]) -> Option[ptr[ir.Expr]]:
+function try_const_method_value(
+    ctx: ref[lowering.LoweringContext],
+    caller_env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    struct_name: str,
+    method_name: str,
+    receiver: Option[ptr[ir.Expr]],
+    args: span[ast.Argument]
+) -> Option[ptr[ir.Expr]]:
     let decls = ctx.analysis.source_file.declarations
     var i: ptr_uint = 0
     while i < decls.len:
@@ -804,7 +978,12 @@ function try_const_method_value(ctx: ref[lowering.LoweringContext], caller_env: 
 
 
 ## Evaluate an `array[T, N](a, b, ...)` constructor to an array literal.
-function try_const_array_literal_ir(ctx: ref[lowering.LoweringContext], type_args: span[ast.TypeArgument], args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_array_literal_ir(
+    ctx: ref[lowering.LoweringContext],
+    type_args: span[ast.TypeArgument],
+    args: span[ast.Argument],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]]
+) -> Option[ptr[ir.Expr]]:
     if type_args.len != 2:
         return Option[ptr[ir.Expr]].none
     let element_ty = lowering.resolve_type_ref(ctx, unsafe: read(type_args.data + 0).value)
@@ -826,7 +1005,10 @@ function try_const_array_literal_ir(ctx: ref[lowering.LoweringContext], type_arg
         let arg_ast = unsafe: read(args.data + i).arg_value
         match enum_member_value_of_expr(ctx, arg_ast):
             Option.some as mv:
-                elements.push(unsafe: read(lowering.alloc_expr(ir.Expr.expr_integer_literal(value = mv.value, ty = element_ty))))
+                elements.push(unsafe: read(lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                    value = mv.value,
+                    ty = element_ty
+                ))))
             Option.none:
                 match try_const_value_ir(ctx, arg_ast, env):
                     Option.some as ev:
@@ -837,14 +1019,22 @@ function try_const_array_literal_ir(ctx: ref[lowering.LoweringContext], type_arg
                     Option.none:
                         return Option[ptr[ir.Expr]].none
         i += 1
-    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span())))
+    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_array_literal(
+        ty = array_ty,
+        elements = elements.as_span()
+    )))
 
 
 ## Fold `attribute_arg[T](attribute_of(field_of(Type, field), attr), name)`.  The
 ## attribute application is read from the field's AST and its argument named
 ## `name` is returned.  (The self-host reflection is limited to this pattern,
 ## matching the corpus usage.)
-public function try_const_attribute_arg_ir(ctx: ref[lowering.LoweringContext], type_args: span[ast.TypeArgument], args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+public function try_const_attribute_arg_ir(
+    ctx: ref[lowering.LoweringContext],
+    type_args: span[ast.TypeArgument],
+    args: span[ast.Argument],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]]
+) -> Option[ptr[ir.Expr]]:
     if type_args.len != 1 or args.len != 2:
         return Option[ptr[ir.Expr]].none
     let type_ty = lowering.resolve_type_ref(ctx, unsafe: read(type_args.data + 0).value)
@@ -869,7 +1059,14 @@ public function try_const_attribute_arg_ir(ctx: ref[lowering.LoweringContext], t
 
 ## The IR literal for attribute argument `arg_name` of `@[attr(...)]` applied to
 ## `Type.field`, if present.
-function find_attribute_arg_literal(ctx: ref[lowering.LoweringContext], type_name: str, field_name: str, attr_name: str, arg_name: str, ty: types.Type) -> Option[ptr[ir.Expr]]:
+function find_attribute_arg_literal(
+    ctx: ref[lowering.LoweringContext],
+    type_name: str,
+    field_name: str,
+    attr_name: str,
+    arg_name: str,
+    ty: types.Type
+) -> Option[ptr[ir.Expr]]:
     var di: ptr_uint = 0
     while di < ctx.analysis.source_file.declarations.len:
         var d: ast.Decl
@@ -896,7 +1093,13 @@ function find_attribute_arg_literal(ctx: ref[lowering.LoweringContext], type_nam
 
 ## Search a field's attribute applications for `@[attr_name(...)]` and return the
 ## IR literal for its argument `arg_name`.
-function attribute_apps_arg_literal(ctx: ref[lowering.LoweringContext], apps: span[ast.AttributeApplication], attr_name: str, arg_name: str, ty: types.Type) -> Option[ptr[ir.Expr]]:
+function attribute_apps_arg_literal(
+    ctx: ref[lowering.LoweringContext],
+    apps: span[ast.AttributeApplication],
+    attr_name: str,
+    arg_name: str,
+    ty: types.Type
+) -> Option[ptr[ir.Expr]]:
     var ai: ptr_uint = 0
     while ai < apps.len:
         var app: ast.AttributeApplication
@@ -956,16 +1159,31 @@ function attribute_param_index(ctx: ref[lowering.LoweringContext], attr_name: st
     return Option[ptr_uint].none
 
 
-function attribute_arg_value_to_ir(ctx: ref[lowering.LoweringContext], ep: ptr[ast.Expr], ty: types.Type) -> Option[ptr[ir.Expr]]:
+function attribute_arg_value_to_ir(
+    ctx: ref[lowering.LoweringContext],
+    ep: ptr[ast.Expr],
+    ty: types.Type
+) -> Option[ptr[ir.Expr]]:
     let result_ty = if types.is_error(ty): types.Type.ty_str else: ty
     unsafe:
         match read(ep):
             ast.Expr.expr_string_literal as s:
-                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_string_literal(value = s.value, ty = result_ty, cstring = s.is_cstring)))
+                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_string_literal(
+                    value = s.value,
+                    ty = result_ty,
+                    cstring = s.is_cstring
+                )))
             ast.Expr.expr_integer_literal as lit:
-                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(lowering.integer_literal_expr(lit.lexeme, lit.value, result_ty)))
+                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(lowering.integer_literal_expr(
+                    lit.lexeme,
+                    lit.value,
+                    result_ty
+                )))
             ast.Expr.expr_bool_literal as b:
-                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = b.value, ty = result_ty)))
+                return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+                    value = b.value,
+                    ty = result_ty
+                )))
             _:
                 pass
     return Option[ptr[ir.Expr]].none
@@ -974,7 +1192,12 @@ function attribute_arg_value_to_ir(ctx: ref[lowering.LoweringContext], ep: ptr[a
 ## Fold a struct construction into an aggregate literal of `target`'s type.  The
 ## target is the struct the constructor names, resolved through its alias chain
 ## by `const_aggregate_target_type`, so the fields come from the declaring module.
-function try_const_struct_literal_ir(ctx: ref[lowering.LoweringContext], target: types.Type, args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_struct_literal_ir(
+    ctx: ref[lowering.LoweringContext],
+    target: types.Type,
+    args: span[ast.Argument],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]]
+) -> Option[ptr[ir.Expr]]:
     var struct_name = ""
     var field_module = ctx.module_name
     match target:
@@ -1013,10 +1236,19 @@ function try_const_struct_literal_ir(ctx: ref[lowering.LoweringContext], target:
             Option.none:
                 return Option[ptr[ir.Expr]].none
         i += 1
-    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = target, fields = fields.as_span())))
+    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_aggregate_literal(
+        ty = target,
+        fields = fields.as_span()
+    )))
 
 
-function try_const_variant_literal_ir(ctx: ref[lowering.LoweringContext], variant_name: str, arm_name: str, args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_variant_literal_ir(
+    ctx: ref[lowering.LoweringContext],
+    variant_name: str,
+    arm_name: str,
+    args: span[ast.Argument],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]]
+) -> Option[ptr[ir.Expr]]:
     var fields = vec.Vec[ir.AggregateField].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -1032,12 +1264,21 @@ function try_const_variant_literal_ir(ctx: ref[lowering.LoweringContext], varian
                 return Option[ptr[ir.Expr]].none
         i += 1
     let var_ty = types.named_type(name = variant_name, module_name = ctx.module_name, linkage_name = Option[str].none)
-    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_variant_literal(ty = var_ty, arm_name = arm_name, fields = fields.as_span())))
+    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_variant_literal(
+        ty = var_ty,
+        arm_name = arm_name,
+        fields = fields.as_span()
+    )))
 
 
 ## Evaluate a `const function` call by binding arguments into a fresh
 ## environment and interpreting the body's `let` / `return` statements.
-function try_const_function_value(ctx: ref[lowering.LoweringContext], func_name: str, args: span[ast.Argument], caller_env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+function try_const_function_value(
+    ctx: ref[lowering.LoweringContext],
+    func_name: str,
+    args: span[ast.Argument],
+    caller_env: ref[map_mod.Map[str, ptr[ir.Expr]]]
+) -> Option[ptr[ir.Expr]]:
     let decls = ctx.analysis.source_file.declarations
     var i: ptr_uint = 0
     var func_body: ptr[ast.Stmt]? = null
@@ -1071,7 +1312,11 @@ function try_const_function_value(ctx: ref[lowering.LoweringContext], func_name:
 
 ## Evaluate a const block body to its `return` value.  Returns none when the
 ## body cannot be folded or completes without returning.
-public function try_const_value_body(ctx: ref[lowering.LoweringContext], body: ptr[ast.Stmt]?, env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+public function try_const_value_body(
+    ctx: ref[lowering.LoweringContext],
+    body: ptr[ast.Stmt]?,
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]]
+) -> Option[ptr[ir.Expr]]:
     match comptime.const_flow_body(ctx, env, body):
         comptime_types.ConstFlow.cf_value as v:
             return Option[ptr[ir.Expr]].some(value = v.value)
@@ -1111,7 +1356,11 @@ public function try_const_equality(ctx: ref[lowering.LoweringContext], ep: ptr[a
 ## Resolve an operand expression to its constant form: identifiers naming module
 ## constants resolve to the constant's value expression (recursively); every
 ## other expression is returned as-is.
-public function resolve_const_operand(ctx: ref[lowering.LoweringContext], ep: ptr[ast.Expr], depth: int) -> Option[ptr[ast.Expr]]:
+public function resolve_const_operand(
+    ctx: ref[lowering.LoweringContext],
+    ep: ptr[ast.Expr],
+    depth: int
+) -> Option[ptr[ast.Expr]]:
     if depth > 32:
         return Option[ptr[ast.Expr]].none
     unsafe:
@@ -1250,7 +1499,10 @@ function find_enum_member_value(members: span[ast.EnumMember], name: str) -> lon
 
 ## Try to evaluate an AST expression at compile time, returning the constant
 ## value when the expression can be resolved.
-public function try_evaluate_const_expr(ctx: ref[lowering.LoweringContext], ep: ptr[ast.Expr]) -> Option[comptime_types.ConstValue]:
+public function try_evaluate_const_expr(
+    ctx: ref[lowering.LoweringContext],
+    ep: ptr[ast.Expr]
+) -> Option[comptime_types.ConstValue]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
@@ -1349,7 +1601,11 @@ public function try_evaluate_const_expr(ctx: ref[lowering.LoweringContext], ep: 
 ## cast's target primitive, wrapping integers to the target width/signedness
 ## (`uint<-MoverBit` → 2, `ubyte<-300` → 44).  A non-primitive target or a
 ## non-numeric operand stays unfolded.
-function evaluate_const_prefix_cast(ctx: ref[lowering.LoweringContext], target_type: ptr[ast.TypeRef], expression: ptr[ast.Expr]) -> Option[comptime_types.ConstValue]:
+function evaluate_const_prefix_cast(
+    ctx: ref[lowering.LoweringContext],
+    target_type: ptr[ast.TypeRef],
+    expression: ptr[ast.Expr]
+) -> Option[comptime_types.ConstValue]:
     match try_evaluate_const_expr(ctx, expression):
         Option.some as inner:
             match inner.value:
@@ -1363,7 +1619,11 @@ function evaluate_const_prefix_cast(ctx: ref[lowering.LoweringContext], target_t
                                 let width = types.integer_width(p.name)
                                 if width <= 0:
                                     return Option[comptime_types.ConstValue].none
-                                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = wrap_const_integer(iv.value, width, types.is_signed_integer_name(p.name))))
+                                return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = wrap_const_integer(
+                                    iv.value,
+                                    width,
+                                    types.is_signed_integer_name(p.name)
+                                )))
                             if types.is_float_type(target_ty):
                                 return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = iv.value))
                         _:
@@ -1398,7 +1658,11 @@ function wrap_const_integer(value: long, width: int, signed: bool) -> long:
     return wrapped
 
 
-function evaluate_const_unary(ctx: ref[lowering.LoweringContext], op: str, operand: ptr[ast.Expr]) -> Option[comptime_types.ConstValue]:
+function evaluate_const_unary(
+    ctx: ref[lowering.LoweringContext],
+    op: str,
+    operand: ptr[ast.Expr]
+) -> Option[comptime_types.ConstValue]:
     match try_evaluate_const_expr(ctx, operand):
         Option.some as val:
             match val.value:
@@ -1418,7 +1682,12 @@ function evaluate_const_unary(ctx: ref[lowering.LoweringContext], op: str, opera
             return Option[comptime_types.ConstValue].none
 
 
-function evaluate_const_binary(ctx: ref[lowering.LoweringContext], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[comptime_types.ConstValue]:
+function evaluate_const_binary(
+    ctx: ref[lowering.LoweringContext],
+    op: str,
+    left: ptr[ast.Expr],
+    right: ptr[ast.Expr]
+) -> Option[comptime_types.ConstValue]:
     match try_evaluate_const_expr(ctx, left):
         Option.some as lv:
             match try_evaluate_const_expr(ctx, right):
@@ -1440,7 +1709,12 @@ public function is_const_comparison_op(op: str) -> bool:
 ## statements, if/else control flow, while loops, and for loops over arrays.
 ## Falls back to returning `None` for unrecognised constructs so the regular
 ## call lowering path can take over.
-function try_evaluate_const_function_call(ctx: ref[lowering.LoweringContext], func_name: str, args: span[ast.Argument], caller_vars: ref[map_mod.Map[str, long]]) -> Option[ptr[ir.Expr]]:
+function try_evaluate_const_function_call(
+    ctx: ref[lowering.LoweringContext],
+    func_name: str,
+    args: span[ast.Argument],
+    caller_vars: ref[map_mod.Map[str, long]]
+) -> Option[ptr[ir.Expr]]:
     let decls = ctx.analysis.source_file.declarations
     var i: ptr_uint = 0
     var func_body: ptr[ast.Stmt]? = null
@@ -1482,7 +1756,11 @@ function try_evaluate_const_function_call(ctx: ref[lowering.LoweringContext], fu
 
 ## Evaluate a block body returning an IR expression when the body terminates
 ## with a return statement that evaluates to a constant.
-function try_evaluate_const_body(ctx: ref[lowering.LoweringContext], variables: ref[map_mod.Map[str, long]], body: ptr[ast.Stmt]?) -> Option[ptr[ir.Expr]]:
+function try_evaluate_const_body(
+    ctx: ref[lowering.LoweringContext],
+    variables: ref[map_mod.Map[str, long]],
+    body: ptr[ast.Stmt]?
+) -> Option[ptr[ir.Expr]]:
     let b = body else:
         return Option[ptr[ir.Expr]].none
     unsafe:
@@ -1501,7 +1779,11 @@ function try_evaluate_const_body(ctx: ref[lowering.LoweringContext], variables: 
                 return evaluate_const_stmt(ctx, variables, b)
 
 
-function evaluate_const_stmt(ctx: ref[lowering.LoweringContext], variables: ref[map_mod.Map[str, long]], sp: ptr[ast.Stmt]) -> Option[ptr[ir.Expr]]:
+function evaluate_const_stmt(
+    ctx: ref[lowering.LoweringContext],
+    variables: ref[map_mod.Map[str, long]],
+    sp: ptr[ast.Stmt]
+) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(sp):
             ast.Stmt.stmt_ret as r:
@@ -1616,7 +1898,11 @@ function evaluate_const_iterable(ctx: ref[lowering.LoweringContext], ep: ast.Exp
                 return Option[span[long]].none
 
 
-function evaluate_const_expr_to_long(ctx: ref[lowering.LoweringContext], variables: ref[map_mod.Map[str, long]], ep: ptr[ast.Expr]) -> Option[long]:
+function evaluate_const_expr_to_long(
+    ctx: ref[lowering.LoweringContext],
+    variables: ref[map_mod.Map[str, long]],
+    ep: ptr[ast.Expr]
+) -> Option[long]:
     match evaluate_const_expr_to_ir(ctx, variables, ep):
         Option.some as irv:
             unsafe:
@@ -1687,7 +1973,12 @@ function evaluate_const_expr_to_long_standalone(ctx: ref[lowering.LoweringContex
                 return Option[long].none
 
 
-function evaluate_const_expr_to_long_standalone_bin(ctx: ref[lowering.LoweringContext], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[long]:
+function evaluate_const_expr_to_long_standalone_bin(
+    ctx: ref[lowering.LoweringContext],
+    op: str,
+    left: ptr[ast.Expr],
+    right: ptr[ast.Expr]
+) -> Option[long]:
     match evaluate_const_expr_to_long_standalone(ctx, left):
         Option.some as lv:
             match evaluate_const_expr_to_long_standalone(ctx, right):
@@ -1700,7 +1991,11 @@ function evaluate_const_expr_to_long_standalone_bin(ctx: ref[lowering.LoweringCo
     return Option[long].none
 
 
-function evaluate_const_expr_to_ir(ctx: ref[lowering.LoweringContext], variables: ref[map_mod.Map[str, long]], ep: ptr[ast.Expr]) -> Option[ptr[ir.Expr]]:
+function evaluate_const_expr_to_ir(
+    ctx: ref[lowering.LoweringContext],
+    variables: ref[map_mod.Map[str, long]],
+    ep: ptr[ast.Expr]
+) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
@@ -1734,7 +2029,11 @@ function evaluate_const_expr_to_ir(ctx: ref[lowering.LoweringContext], variables
                     Option.some as left_ir:
                         match evaluate_const_expr_to_ir(ctx, variables, bin.right):
                             Option.some as right_ir:
-                                return evaluate_const_binary_ir(op = bin.operator, left = left_ir.value, right = right_ir.value)
+                                return evaluate_const_binary_ir(
+                                    op = bin.operator,
+                                    left = left_ir.value,
+                                    right = right_ir.value
+                                )
                             Option.none:
                                 pass
                     Option.none:

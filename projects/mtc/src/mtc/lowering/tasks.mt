@@ -28,12 +28,18 @@ public function make_task_literal(inner: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let void_ptr = types.primitive("ptr_uint")
     if not is_void:
         fields.push(ir.AggregateField(name = "value", value = inner))
-    fields.push(ir.AggregateField(name = "frame",       value = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
-    fields.push(ir.AggregateField(name = "ready",       value = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
-    fields.push(ir.AggregateField(name = "set_waiter",  value = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
-    fields.push(ir.AggregateField(name = "release",     value = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
-    fields.push(ir.AggregateField(name = "take_result", value = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
-    fields.push(ir.AggregateField(name = "cancel",      value = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
+    fields.push(ir.AggregateField(name = "frame", value = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
+    fields.push(ir.AggregateField(name = "ready", value = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
+    fields.push(ir.AggregateField(
+        name = "set_waiter",
+        value = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))
+    ))
+    fields.push(ir.AggregateField(name = "release", value = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
+    fields.push(ir.AggregateField(
+        name = "take_result",
+        value = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))
+    ))
+    fields.push(ir.AggregateField(name = "cancel", value = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = void_ptr))))
     return lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = task_ty, fields = fields.as_span()))
 
 
@@ -58,7 +64,12 @@ public function unwrap_task_value(task_expr: ptr[ir.Expr]) -> ptr[ir.Expr]:
     return lowering.alloc_expr(ir.Expr.expr_member(receiver = task_expr, member = "value", ty = inner_ty))
 
 
-public function lower_task_constructor(ctx: ref[lowering.LoweringContext], type_args: span[ast.TypeArgument], call_args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+public function lower_task_constructor(
+    ctx: ref[lowering.LoweringContext],
+    type_args: span[ast.TypeArgument],
+    call_args: span[ast.Argument],
+    call_ep: ptr[ast.Expr]
+) -> ptr[ir.Expr]:
     var task_inner = ctx.void_ty
     if type_args.len >= 1:
         task_inner = lowering.resolve_type_ref(ctx, unsafe: read(type_args.data + 0).value)
@@ -76,7 +87,13 @@ public function lower_task_constructor(ctx: ref[lowering.LoweringContext], type_
     return lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = task_ty, fields = fields.as_span()))
 
 
-public function lower_multi_for(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+public function lower_multi_for(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    bindings: span[ast.ForBinding],
+    iterables: span[ast.Expr],
+    body_ptr: ptr[ast.Stmt]?
+) -> void:
     let len = bindings.len
     if len == 0 or iterables.len == 0:
         return
@@ -116,7 +133,11 @@ public function lower_multi_for(ctx: ref[lowering.LoweringContext], output: ref[
     let saved_loop_depth = ctx.loop_defer_depth
     ctx.loop_defer_depth = ctx.defer_stack.len()
     let body_span = lowering.lower_block(ctx, body_ptr)
-    let index_ref = lowering.alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
+    let index_ref = lowering.alloc_expr(ir.Expr.expr_name(
+        name = index_c,
+        ty = ptr_uint_ty,
+        pointer = Option[bool].some(value = false)
+    ))
 
     var loop_body = vec.Vec[ir.Stmt].create()
     bi = 0
@@ -134,7 +155,11 @@ public function lower_multi_for(ctx: ref[lowering.LoweringContext], output: ref[
         let iterable_ty_ptr = iterable_types.get(bi) else:
             fatal(c"lower_multi_for: missing iterable type")
         let iterable_ty = unsafe: read(iterable_ty_ptr)
-        let items_ref = lowering.alloc_expr(ir.Expr.expr_name(name = items_name, ty = iterable_ty, pointer = Option[bool].some(value = false)))
+        let items_ref = lowering.alloc_expr(ir.Expr.expr_name(
+            name = items_name,
+            ty = iterable_ty,
+            pointer = Option[bool].some(value = false)
+        ))
         var item_val: ptr[ir.Expr]
         if lowering.is_array_type(iterable_ty):
             item_val = lowering.alloc_expr(ir.Expr.expr_index(receiver = items_ref, index = index_ref, ty = elem_ty))
@@ -144,7 +169,14 @@ public function lower_multi_for(ctx: ref[lowering.LoweringContext], output: ref[
             let data_ty = types.generic_type(name = "ptr", args = ptr_args.as_span())
             let data_ref = lowering.alloc_expr(ir.Expr.expr_member(receiver = items_ref, member = "data", ty = data_ty))
             item_val = lowering.alloc_expr(ir.Expr.expr_index(receiver = data_ref, index = index_ref, ty = elem_ty))
-        loop_body.push(ir.Stmt.stmt_local(name = bname, linkage_name = binding_c, ty = elem_ty, value = item_val, line = 0, source_path = ""))
+        loop_body.push(ir.Stmt.stmt_local(
+            name = bname,
+            linkage_name = binding_c,
+            ty = elem_ty,
+            value = item_val,
+            line = 0,
+            source_path = ""
+        ))
         bi += 1
     var si: ptr_uint = 0
     while si < body_span.len:
@@ -169,18 +201,55 @@ public function lower_multi_for(ctx: ref[lowering.LoweringContext], output: ref[
         let ty_ptr = iterable_types.get(bi) else:
             break
         let other_stop = multi_for_stop(unsafe: read(name_ptr), unsafe: read(ty_ptr))
-        let cond = lowering.alloc_expr(ir.Expr.expr_binary(operator = "!=", left = other_stop, right = stop_value, ty = ctx.bool_ty))
-        let msg = lowering.alloc_expr(ir.Expr.expr_string_literal(value = "parallel for iterables must have matching lengths", ty = types.Type.ty_str, cstring = false))
-        let fatal_call = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_fatal_str", arguments = lowering.single_expr_span(msg), ty = ctx.void_ty))
+        let cond = lowering.alloc_expr(ir.Expr.expr_binary(
+            operator = "!=",
+            left = other_stop,
+            right = stop_value,
+            ty = ctx.bool_ty
+        ))
+        let msg = lowering.alloc_expr(ir.Expr.expr_string_literal(
+            value = "parallel for iterables must have matching lengths",
+            ty = types.Type.ty_str,
+            cstring = false
+        ))
+        let fatal_call = lowering.alloc_expr(ir.Expr.expr_call(
+            callee = "mt_fatal_str",
+            arguments = lowering.single_expr_span(msg),
+            ty = ctx.void_ty
+        ))
         var then_body = vec.Vec[ir.Stmt].create()
         then_body.push(ir.Stmt.stmt_expression(expression = fatal_call, line = 0, source_path = ""))
-        length_checks.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].none))
+        length_checks.push(ir.Stmt.stmt_if(
+            condition = cond,
+            then_body = then_body.as_span(),
+            else_body = Option[span[ir.Stmt]].none
+        ))
         bi += 1
 
-    let init = lowering.alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = ptr_uint_ty, value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
-    let condition = lowering.alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = stop_value, ty = ctx.bool_ty))
-    let post_target = lowering.alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
-    let post = lowering.alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
+    let init = lowering.alloc_stmt(ir.Stmt.stmt_local(
+        name = index_c,
+        linkage_name = index_c,
+        ty = ptr_uint_ty,
+        value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)),
+        line = 0,
+        source_path = ""
+    ))
+    let condition = lowering.alloc_expr(ir.Expr.expr_binary(
+        operator = "<",
+        left = index_ref,
+        right = stop_value,
+        ty = ctx.bool_ty
+    ))
+    let post_target = lowering.alloc_expr(ir.Expr.expr_name(
+        name = index_c,
+        ty = ptr_uint_ty,
+        pointer = Option[bool].some(value = false)
+    ))
+    let post = lowering.alloc_stmt(ir.Stmt.stmt_assignment(
+        target = post_target,
+        operator = "+=",
+        value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))
+    ))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = loop_body.as_span())
 
     var block_stmts = vec.Vec[ir.Stmt].create()
@@ -192,7 +261,14 @@ public function lower_multi_for(ctx: ref[lowering.LoweringContext], output: ref[
             break
         let val_ptr = lowered_iterables.get(bi) else:
             break
-        block_stmts.push(ir.Stmt.stmt_local(name = unsafe: read(name_ptr), linkage_name = unsafe: read(name_ptr), ty = unsafe: read(ty_ptr), value = unsafe: read(val_ptr), line = 0, source_path = ""))
+        block_stmts.push(ir.Stmt.stmt_local(
+            name = unsafe: read(name_ptr),
+            linkage_name = unsafe: read(name_ptr),
+            ty = unsafe: read(ty_ptr),
+            value = unsafe: read(val_ptr),
+            line = 0,
+            source_path = ""
+        ))
         bi += 1
     var li: ptr_uint = 0
     while li < length_checks.len():
@@ -217,16 +293,21 @@ public function lower_multi_for(ctx: ref[lowering.LoweringContext], output: ref[
 function multi_for_stop(items_name: str, iterable_type: types.Type) -> ptr[ir.Expr]:
     let ptr_uint_ty = types.primitive("ptr_uint")
     if lowering.is_array_type(iterable_type):
-        return lowering.alloc_expr(ir.Expr.expr_integer_literal(value = control_flow.array_length_of(iterable_type), ty = ptr_uint_ty))
-    let items_ref = lowering.alloc_expr(ir.Expr.expr_name(name = items_name, ty = iterable_type, pointer = Option[bool].some(value = false)))
+        return lowering.alloc_expr(ir.Expr.expr_integer_literal(
+            value = control_flow.array_length_of(iterable_type),
+            ty = ptr_uint_ty
+        ))
+    let items_ref = lowering.alloc_expr(ir.Expr.expr_name(
+        name = items_name,
+        ty = iterable_type,
+        pointer = Option[bool].some(value = false)
+    ))
     return lowering.alloc_expr(ir.Expr.expr_member(receiver = items_ref, member = "len", ty = ptr_uint_ty))
-
 
 ## True when a span of type parameters contains at least one non-lifetime
 ## parameter (i.e. the struct/deferred type requires monomorphization).
 ## Lifetime-only parameters (`@a`) are erased at the C level and the struct
 ## can be emitted directly without specialization.
-
 
 public function has_non_lifetime_type_params(params: span[ast.TypeParam]) -> bool:
     var i: ptr_uint = 0

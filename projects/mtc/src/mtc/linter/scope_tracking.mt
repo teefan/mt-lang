@@ -23,7 +23,6 @@ import mtc.parser.ast as ast
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 
-
 public struct ScopeWarning:
     path: str
     line: ptr_uint
@@ -33,7 +32,6 @@ public struct ScopeWarning:
     code: str
     message: str
     severity: str
-
 
 public const BINDING_LOCAL: ptr_uint = 0
 public const BINDING_PARAM: ptr_uint = 1
@@ -77,22 +75,43 @@ public struct ScopeContext:
     ## write through the alias, so prefer-let must not fire on them either.
     mutable_lvalue_sites: span[analyzer.EditableSite]
 
-
 # =============================================================================
 #  Warning helpers
 # =============================================================================
 
-function push_w(warnings: ref[vec.Vec[ScopeWarning]], path: str, line: ptr_uint, column: ptr_uint, length: ptr_uint, code: str, msg: str, sev: str) -> void:
-    warnings.push(ScopeWarning(path = path, line = line, column = column, length = length, code = code, message = msg, severity = sev))
+function push_w(
+    warnings: ref[vec.Vec[ScopeWarning]],
+    path: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    length: ptr_uint,
+    code: str,
+    msg: str,
+    sev: str
+) -> void:
+    warnings.push(ScopeWarning(
+        path = path,
+        line = line,
+        column = column,
+        length = length,
+        code = code,
+        message = msg,
+        severity = sev
+    ))
 
 
-function warn_unused_import(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
+function warn_unused_import(
+    warnings: ref[vec.Vec[ScopeWarning]],
+    path: str,
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     var buf = string.String.create()
     buf.append("unused import '")
     buf.append(name)
     buf.append("'")
     push_w(warnings, path, line, column, name.len, "unused-import", buf.as_str(), "warning")
-
 
 # =============================================================================
 #  Scope helpers
@@ -125,7 +144,12 @@ public function ctx_set_match_arm_depth(ctx: ref[ScopeContext], depth: ptr_uint)
 
 ## The analyzer-recorded mutation sites the walk consults.  Set once per lint
 ## pass; the spans borrow the analysis, which outlives the walk.
-public function ctx_set_sites(ctx: ref[ScopeContext], editable_sites: span[analyzer.EditableSite], mutating_sites: span[analyzer.EditableSite], mutable_lvalue_sites: span[analyzer.EditableSite]) -> void:
+public function ctx_set_sites(
+    ctx: ref[ScopeContext],
+    editable_sites: span[analyzer.EditableSite],
+    mutating_sites: span[analyzer.EditableSite],
+    mutable_lvalue_sites: span[analyzer.EditableSite]
+) -> void:
     read(ctx).editable_sites = editable_sites
     read(ctx).mutating_sites = mutating_sites
     read(ctx).mutable_lvalue_sites = mutable_lvalue_sites
@@ -139,11 +163,11 @@ public function ctx_push_scope(ctx: ref[ScopeContext]) -> void:
     read(ctx).counts.push(0)
     read(ctx).scope_count += 1
 
-
 ## The index of the innermost open scope, or `SCOPE_NONE` when none is open.
 ## Separate from `ctx_drop_scope` because the caller emits that scope's warnings
 ## from its entries before they are reclaimed.
 public const SCOPE_NONE: ptr_uint = 4294967295
+
 
 public function ctx_scope_top(ctx: ref[ScopeContext]) -> ptr_uint:
     let count = read(ctx).scope_count
@@ -235,23 +259,54 @@ public function ctx_binding_mutated(ctx: ref[ScopeContext], name: str) -> bool:
 
 ## The host's `declare_local`: ignored names (`_`-prefixed) never enter a
 ## scope, so they draw no shadow/unused-local/prefer-let.
-public function ctx_declare_local(ctx: ref[ScopeContext], name: str, line: ptr_uint, col: ptr_uint, is_var: bool, reserved_fix: ptr_uint) -> void:
+public function ctx_declare_local(
+    ctx: ref[ScopeContext],
+    name: str,
+    line: ptr_uint,
+    col: ptr_uint,
+    is_var: bool,
+    reserved_fix: ptr_uint
+) -> void:
     let c = unsafe: read(ctx)
     if c.scope_count == 0 or name.len == 0:
         return
     if name.starts_with("_"):
         return
     let allow = is_var and c.generic_function_depth == 0
-    let bd = Binding(name = name, line = line, column = col, used = false, binding_kind = BINDING_LOCAL, allow_prefer_let = allow, mutated = false, reserved_fix = reserved_fix)
+    let bd = Binding(
+        name = name,
+        line = line,
+        column = col,
+        used = false,
+        binding_kind = BINDING_LOCAL,
+        allow_prefer_let = allow,
+        mutated = false,
+        reserved_fix = reserved_fix
+    )
     read(ctx).entries.push(ScopeEntry(name = name, binding = bd))
     add_scope_count(ctx)
 
 
-public function ctx_declare_param(ctx: ref[ScopeContext], name: str, line: ptr_uint, col: ptr_uint, reserved_fix: ptr_uint) -> void:
+public function ctx_declare_param(
+    ctx: ref[ScopeContext],
+    name: str,
+    line: ptr_uint,
+    col: ptr_uint,
+    reserved_fix: ptr_uint
+) -> void:
     if name.len == 0 or name.starts_with("_"):
         return
     let c = unsafe: read(ctx)
-    let bd = Binding(name = name, line = line, column = col, used = false, binding_kind = BINDING_PARAM, allow_prefer_let = false, mutated = false, reserved_fix = reserved_fix)
+    let bd = Binding(
+        name = name,
+        line = line,
+        column = col,
+        used = false,
+        binding_kind = BINDING_PARAM,
+        allow_prefer_let = false,
+        mutated = false,
+        reserved_fix = reserved_fix
+    )
     read(ctx).entries.push(ScopeEntry(name = name, binding = bd))
     add_scope_count(ctx)
 
@@ -375,7 +430,6 @@ function ctx_mark_editable_member(member_expr: ptr[ast.Expr], ctx: ref[ScopeCont
             _:
                 pass
 
-
 struct RootIdentifier:
     name: str
     line: ptr_uint
@@ -388,7 +442,11 @@ function receiver_root_identifier(receiver: ptr[ast.Expr]) -> Option[RootIdentif
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
-                return Option[RootIdentifier].some(value = RootIdentifier(name = id.name, line = id.line, column = id.column))
+                return Option[RootIdentifier].some(value = RootIdentifier(
+                    name = id.name,
+                    line = id.line,
+                    column = id.column
+                ))
             ast.Expr.expr_member_access as ma:
                 return receiver_root_identifier(ma.receiver)
             ast.Expr.expr_index_access as ix:
@@ -424,7 +482,12 @@ public function ctx_mark_mutating_args(call: ptr[ast.Expr], ctx: ref[ScopeContex
                 pass
 
 
-function ctx_mutating_site_contains(sites: span[analyzer.EditableSite], name: str, line: ptr_uint, column: ptr_uint) -> bool:
+function ctx_mutating_site_contains(
+    sites: span[analyzer.EditableSite],
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> bool:
     var i: ptr_uint = 0
     unsafe:
         while i < sites.len:
@@ -478,7 +541,6 @@ function scope_has_name(entries: vec.Vec[ScopeEntry], start: ptr_uint, count: pt
         i += 1
     return false
 
-
 # =============================================================================
 #  Pass entry point
 # =============================================================================
@@ -497,12 +559,17 @@ public function lint_unused_imports(
     defer: credited.release()
     check_unused_imports(file, path, unresolved_import_paths, credited.as_span(), warnings)
 
-
 # =============================================================================
 #  unused-import
 # =============================================================================
 
-function check_unused_imports(file: ast.SourceFile, path: str, unresolved_import_paths: span[str], credited: span[bool], warnings: ref[vec.Vec[ScopeWarning]]) -> void:
+function check_unused_imports(
+    file: ast.SourceFile,
+    path: str,
+    unresolved_import_paths: span[str],
+    credited: span[bool],
+    warnings: ref[vec.Vec[ScopeWarning]]
+) -> void:
     var i: ptr_uint = 0
     while i < file.imports.len:
         unsafe:
@@ -565,18 +632,238 @@ function import_path_is_unresolved(path: ast.QualifiedName, unresolved_import_pa
     return false
 
 
+## An alias is used in a type position (`vec.Vec[int]`, `pstate.ParseDiagnostic`)
+## by the first part of the qualified name.
+function qualified_name_uses_name(qn: ast.QualifiedName, name: str) -> bool:
+    if qn.parts.len == 0:
+        return false
+    return unsafe: read(qn.parts.data + 0).equal(name)
+
+
+function type_ref_uses_name(type_ref: ptr[ast.TypeRef]?, name: str) -> bool:
+    let trp = type_ref else:
+        return false
+    unsafe:
+        let tr = read(trp)
+        if qualified_name_uses_name(tr.name, name):
+            return true
+        if tr.is_dyn and qualified_name_uses_name(tr.dyn_interface, name):
+            return true
+        var ai: ptr_uint = 0
+        while ai < tr.arguments.len:
+            if type_ref_uses_name(tr.arguments.data + ai, name):
+                return true
+            ai += 1
+        var pi: ptr_uint = 0
+        while pi < tr.fn_params.len:
+            let p = read(tr.fn_params.data + pi)
+            let ptype = ptr_of(p.param_type)
+            if type_ref_uses_name(ptype, name):
+                return true
+            pi += 1
+        return type_ref_uses_name(tr.fn_return, name)
+
+
+function params_use_name(params: span[ast.Param], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < params.len:
+        unsafe:
+            let p = read(params.data + i)
+            if type_ref_uses_name(ptr_of(p.param_type), name):
+                return true
+            if expr_opt_contains_name(p.default_value, name):
+                return true
+        i += 1
+    return false
+
+
+function foreign_params_use_name(params: span[ast.ForeignParam], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < params.len:
+        unsafe:
+            let p = read(params.data + i)
+            if type_ref_uses_name(ptr_of(p.param_type), name):
+                return true
+            match p.boundary_type:
+                Option.some as boundary:
+                    if type_ref_uses_name(ptr_of(boundary.value), name):
+                        return true
+                Option.none:
+                    pass
+        i += 1
+    return false
+
+
+function fields_use_name(fields: span[ast.Field], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < fields.len:
+        unsafe:
+            let f = read(fields.data + i)
+            if type_ref_uses_name(ptr_of(f.field_type), name):
+                return true
+        i += 1
+    return false
+
+
+function methods_use_name(methods: span[ast.Method], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < methods.len:
+        unsafe:
+            let m = read(methods.data + i)
+            if params_use_name(m.method_params, name):
+                return true
+            if type_ref_uses_name(m.return_type, name):
+                return true
+            if body_uses_name(m.body, name):
+                return true
+        i += 1
+    return false
+
+
+function interface_methods_use_name(methods: span[ast.InterfaceMethod], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < methods.len:
+        unsafe:
+            let m = read(methods.data + i)
+            if params_use_name(m.method_params, name):
+                return true
+            if type_ref_uses_name(m.return_type, name):
+                return true
+        i += 1
+    return false
+
+
+function type_params_use_name(params: span[ast.TypeParam], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < params.len:
+        unsafe:
+            let p = read(params.data + i)
+            if type_ref_uses_name(p.value_type, name):
+                return true
+            var ci: ptr_uint = 0
+            while ci < p.constraints.len:
+                if qualified_name_uses_name(read(p.constraints.data + ci).interface_ref, name):
+                    return true
+                ci += 1
+        i += 1
+    return false
+
+
+function qualified_names_use_name(names: span[ast.QualifiedName], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < names.len:
+        if qualified_name_uses_name(unsafe: read(names.data + i), name):
+            return true
+        i += 1
+    return false
+
+
+function decls_use_name(decls: span[ast.Decl], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < decls.len:
+        unsafe:
+            if decl_uses_name(decls.data + i, name):
+                return true
+        i += 1
+    return false
+
+
 function decl_uses_name(decl: ptr[ast.Decl], name: str) -> bool:
     unsafe:
         match read(decl):
+            ast.Decl.decl_const as c:
+                if type_ref_uses_name(c.const_type, name):
+                    return true
+                if expr_opt_contains_name(c.value, name):
+                    return true
+                return body_uses_name(c.block_body, name)
+            ast.Decl.decl_var as v:
+                if type_ref_uses_name(v.var_type, name):
+                    return true
+                return expr_opt_contains_name(v.value, name)
             ast.Decl.decl_function as fun:
+                if type_params_use_name(fun.type_params, name):
+                    return true
+                if params_use_name(fun.method_params, name):
+                    return true
+                if type_ref_uses_name(fun.return_type, name):
+                    return true
                 return body_uses_name(fun.body, name)
-            ast.Decl.decl_extending_block as ex:
-                var j: ptr_uint = 0
-                while j < ex.methods.len:
-                    if body_uses_name(read(ex.methods.data + j).body, name):
+            ast.Decl.decl_struct as st:
+                if type_params_use_name(st.type_params, name):
+                    return true
+                if qualified_names_use_name(st.impl_list, name):
+                    return true
+                if fields_use_name(st.struct_fields, name):
+                    return true
+                if decls_use_name(st.struct_events, name):
+                    return true
+                return decls_use_name(st.nested_types, name)
+            ast.Decl.decl_union as un:
+                return fields_use_name(un.union_fields, name)
+            ast.Decl.decl_enum as en:
+                if type_ref_uses_name(en.backing_type, name):
+                    return true
+                var ei: ptr_uint = 0
+                while ei < en.enum_members.len:
+                    if expr_opt_contains_name(read(en.enum_members.data + ei).value, name):
                         return true
-                    j += 1
+                    ei += 1
                 return false
+            ast.Decl.decl_flags as fl:
+                if type_ref_uses_name(fl.backing_type, name):
+                    return true
+                var fi: ptr_uint = 0
+                while fi < fl.flags_members.len:
+                    if expr_opt_contains_name(read(fl.flags_members.data + fi).value, name):
+                        return true
+                    fi += 1
+                return false
+            ast.Decl.decl_variant as va:
+                if type_params_use_name(va.type_params, name):
+                    return true
+                var ai: ptr_uint = 0
+                while ai < va.variant_arms.len:
+                    if fields_use_name(read(va.variant_arms.data + ai).arm_fields, name):
+                        return true
+                    ai += 1
+                return false
+            ast.Decl.decl_opaque as op:
+                return qualified_names_use_name(op.opaque_implements, name)
+            ast.Decl.decl_type_alias as ta:
+                return type_ref_uses_name(ta.target, name)
+            ast.Decl.decl_interface as it:
+                if type_params_use_name(it.type_params, name):
+                    return true
+                return interface_methods_use_name(it.interface_methods, name)
+            ast.Decl.decl_extending_block as ex:
+                if type_ref_uses_name(ex.type_name, name):
+                    return true
+                return methods_use_name(ex.methods, name)
+            ast.Decl.decl_extern_function as ef:
+                if type_params_use_name(ef.type_params, name):
+                    return true
+                if foreign_params_use_name(ef.extern_params, name):
+                    return true
+                if type_ref_uses_name(ef.return_type, name):
+                    return true
+                return expr_opt_contains_name(ef.mapping, name)
+            ast.Decl.decl_foreign_function as ff:
+                if type_params_use_name(ff.type_params, name):
+                    return true
+                if foreign_params_use_name(ff.foreign_params, name):
+                    return true
+                if type_ref_uses_name(ff.return_type, name):
+                    return true
+                return expr_contains_name(ff.mapping, name)
+            ast.Decl.decl_event as ev:
+                return type_ref_uses_name(ev.payload_type, name)
+            ast.Decl.decl_static_assert as sa:
+                if expr_contains_name(sa.condition, name):
+                    return true
+                return expr_opt_contains_name(sa.message, name)
+            ast.Decl.decl_attribute as at:
+                return params_use_name(at.attr_params, name)
             _:
                 return false
 
@@ -612,12 +899,18 @@ function stmt_contains_name(stmt: ptr[ast.Stmt], name: str) -> bool:
                     return true
                 return expr_contains_name(asgn.value, name)
             ast.Stmt.stmt_local as loc:
-                # A local's initializer names the import too
-                # (`let v = vec.Vec[int].create()`), so an import used only
-                # there is not unused.
+                # An import can be named by the local's annotation
+                # (`var d: vec.Vec[int]`) or by its initializer
+                # (`let v = vec.Vec[int].create()`).
+                if type_ref_uses_name(loc.stmt_type, name):
+                    return true
                 let value = loc.value else:
                     return false
                 return expr_contains_name(value, name)
+            ast.Stmt.stmt_emit as em:
+                let emitted = em.declaration else:
+                    return false
+                return decl_uses_name(emitted, name)
             ast.Stmt.stmt_if as iff:
                 var bi: ptr_uint = 0
                 while bi < iff.branches.len:
@@ -691,7 +984,20 @@ function expr_contains_name(expr: ptr[ast.Expr], name: str) -> bool:
                     return true
                 return expr_contains_name(ix.index, name)
             ast.Expr.expr_specialization as sp:
-                return expr_contains_name(sp.callee, name)
+                if expr_contains_name(sp.callee, name):
+                    return true
+                var si: ptr_uint = 0
+                while si < sp.arguments.len:
+                    if type_ref_uses_name(read(sp.arguments.data + si).value, name):
+                        return true
+                    si += 1
+                return false
+            ast.Expr.expr_proc as pr:
+                if params_use_name(pr.method_params, name):
+                    return true
+                if type_ref_uses_name(pr.return_type, name):
+                    return true
+                return body_uses_name(pr.body, name)
             ast.Expr.expr_if as iff:
                 if expr_contains_name(iff.condition, name):
                     return true
@@ -711,7 +1017,6 @@ function expr_contains_name(expr: ptr[ast.Expr], name: str) -> bool:
             _:
                 return false
 
-
 # =============================================================================
 #  unused-import credit (Ruby's `collect_method_only_import_uses`)
 # =============================================================================
@@ -728,7 +1033,10 @@ public struct ImportMethodProvider:
 ## One provider per entry of `file.imports`, in the same order (so a credit
 ## flag index matches the import index).  The dotted path resolves against the
 ## loaded program's analyses; an unresolved import gets a null analysis.
-public function build_import_method_providers(file: ast.SourceFile, analyses: span[analyzer.Analysis]) -> vec.Vec[ImportMethodProvider]:
+public function build_import_method_providers(
+    file: ast.SourceFile,
+    analyses: span[analyzer.Analysis]
+) -> vec.Vec[ImportMethodProvider]:
     var providers = vec.Vec[ImportMethodProvider].create()
     var i: ptr_uint = 0
     while i < file.imports.len:
@@ -764,7 +1072,11 @@ public function build_import_method_providers(file: ast.SourceFile, analyses: sp
 ## hook builtin credits every import that defines such a method at all, and an
 ## identifier or type-reference segment naming an import's local binding credits
 ## that import (Ruby's `collect_used_names`).  One flag per `providers` entry.
-public function collect_import_credits(file: ast.SourceFile, providers: span[ImportMethodProvider], analysis: ptr[analyzer.Analysis]?) -> vec.Vec[bool]:
+public function collect_import_credits(
+    file: ast.SourceFile,
+    providers: span[ImportMethodProvider],
+    analysis: ptr[analyzer.Analysis]?
+) -> vec.Vec[bool]:
     var credited = vec.Vec[bool].create()
     var i: ptr_uint = 0
     while i < providers.len:
@@ -858,7 +1170,13 @@ function credit_typeref_opt(tr: ptr[ast.TypeRef]?, import_names: span[str], cred
     credit_typeref(unsafe: read(tp), import_names, credit_flags)
 
 
-function credit_walk_decl(decl: ptr[ast.Decl], providers: span[ImportMethodProvider], credit_flags: ptr[bool], analysis: ptr[analyzer.Analysis]?, import_names: span[str]) -> void:
+function credit_walk_decl(
+    decl: ptr[ast.Decl],
+    providers: span[ImportMethodProvider],
+    credit_flags: ptr[bool],
+    analysis: ptr[analyzer.Analysis]?,
+    import_names: span[str]
+) -> void:
     unsafe:
         match read(decl):
             ast.Decl.decl_function as fun:
@@ -952,13 +1270,25 @@ function credit_walk_decl(decl: ptr[ast.Decl], providers: span[ImportMethodProvi
                 pass
 
 
-function credit_walk_stmt_opt(stmt: ptr[ast.Stmt]?, providers: span[ImportMethodProvider], credit_flags: ptr[bool], analysis: ptr[analyzer.Analysis]?, import_names: span[str]) -> void:
+function credit_walk_stmt_opt(
+    stmt: ptr[ast.Stmt]?,
+    providers: span[ImportMethodProvider],
+    credit_flags: ptr[bool],
+    analysis: ptr[analyzer.Analysis]?,
+    import_names: span[str]
+) -> void:
     let sp = stmt else:
         return
     credit_walk_stmt(sp, providers, credit_flags, analysis, import_names)
 
 
-function credit_walk_stmt(stmt: ptr[ast.Stmt], providers: span[ImportMethodProvider], credit_flags: ptr[bool], analysis: ptr[analyzer.Analysis]?, import_names: span[str]) -> void:
+function credit_walk_stmt(
+    stmt: ptr[ast.Stmt],
+    providers: span[ImportMethodProvider],
+    credit_flags: ptr[bool],
+    analysis: ptr[analyzer.Analysis]?,
+    import_names: span[str]
+) -> void:
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_block as blk:
@@ -1027,13 +1357,25 @@ function credit_walk_stmt(stmt: ptr[ast.Stmt], providers: span[ImportMethodProvi
                 pass
 
 
-function credit_walk_expr_opt(expr: ptr[ast.Expr]?, providers: span[ImportMethodProvider], credit_flags: ptr[bool], analysis: ptr[analyzer.Analysis]?, import_names: span[str]) -> void:
+function credit_walk_expr_opt(
+    expr: ptr[ast.Expr]?,
+    providers: span[ImportMethodProvider],
+    credit_flags: ptr[bool],
+    analysis: ptr[analyzer.Analysis]?,
+    import_names: span[str]
+) -> void:
     let ep = expr else:
         return
     credit_walk_expr(ep, providers, credit_flags, analysis, import_names)
 
 
-function credit_walk_expr(expr: ptr[ast.Expr], providers: span[ImportMethodProvider], credit_flags: ptr[bool], analysis: ptr[analyzer.Analysis]?, import_names: span[str]) -> void:
+function credit_walk_expr(
+    expr: ptr[ast.Expr],
+    providers: span[ImportMethodProvider],
+    credit_flags: ptr[bool],
+    analysis: ptr[analyzer.Analysis]?,
+    import_names: span[str]
+) -> void:
     unsafe:
         match read(expr):
             ast.Expr.expr_identifier as id:
@@ -1054,7 +1396,13 @@ function credit_walk_expr(expr: ptr[ast.Expr], providers: span[ImportMethodProvi
                 credit_walk_expr(call.callee, providers, credit_flags, analysis, import_names)
                 var i: ptr_uint = 0
                 while i < call.args.len:
-                    credit_walk_expr(read(call.args.data + i).arg_value, providers, credit_flags, analysis, import_names)
+                    credit_walk_expr(
+                        read(call.args.data + i).arg_value,
+                        providers,
+                        credit_flags,
+                        analysis,
+                        import_names
+                    )
                     i += 1
             ast.Expr.expr_index_access as ix:
                 credit_walk_expr(ix.receiver, providers, credit_flags, analysis, import_names)
@@ -1122,7 +1470,14 @@ function credit_walk_expr(expr: ptr[ast.Expr], providers: span[ImportMethodProvi
 ## Credit the imports that could provide `recv.member(...)`: every provider
 ## whose module declares `member` on the receiver's resolved type name, plus
 ## the import that owns the receiver's type module.
-function credit_member_call(receiver: ptr[ast.Expr], member: str, providers: span[ImportMethodProvider], credit_flags: ptr[bool], analysis: ptr[analyzer.Analysis]?, import_names: span[str]) -> void:
+function credit_member_call(
+    receiver: ptr[ast.Expr],
+    member: str,
+    providers: span[ImportMethodProvider],
+    credit_flags: ptr[bool],
+    analysis: ptr[analyzer.Analysis]?,
+    import_names: span[str]
+) -> void:
     let ap = analysis else:
         return
     let ty_ptr = unsafe: read(ap).resolved_expr_types.get(unsafe: reinterpret[ptr_uint](receiver)) else:
@@ -1158,7 +1513,11 @@ function credit_member_call(receiver: ptr[ast.Expr], member: str, providers: spa
 ## (`Type.hash` / `.equal` / `.order` / `.default`) when a hook builtin is
 ## used: the type argument may be reflective, so the provider cannot be
 ## resolved more precisely.
-function credit_hook_call(callee: ptr[ast.Expr], providers: span[ImportMethodProvider], credit_flags: ptr[bool]) -> void:
+function credit_hook_call(
+    callee: ptr[ast.Expr],
+    providers: span[ImportMethodProvider],
+    credit_flags: ptr[bool]
+) -> void:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:

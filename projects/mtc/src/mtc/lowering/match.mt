@@ -38,13 +38,19 @@ function enum_source_module(ctx: ref[lowering.LoweringContext], ty: types.Type, 
         _:
             return default_module
 
+
 ## The C name a match-arm reference to `Enum.member` uses.  A raw (external)
 ## module's enum is the C header's enum, whose members are the bare enumerators
 ## (the module emits no scoped constants), so the member name is used as-is;
 ## mt-declared enums use the module-scoped constant
 ## (`<module>_<Enum>_<member>`), mirroring Ruby's `imported_value_c_name`
 ## raw-module rule.
-function enum_member_reference_c_name(ctx: ref[lowering.LoweringContext], enum_module: str, enum_name: str, member: str) -> str:
+function enum_member_reference_c_name(
+    ctx: ref[lowering.LoweringContext],
+    enum_module: str,
+    enum_name: str,
+    member: str
+) -> str:
     if enum_module.len > 0 and module_is_raw(ctx, enum_module):
         return member
     return naming.qualified_member_c_name(enum_module, enum_name, member)
@@ -77,7 +83,12 @@ function lower_switch_arm_body(ctx: ref[lowering.LoweringContext], body: ptr[ast
     return result
 
 
-public function lower_match(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
+public function lower_match(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    scrutinee: ptr[ast.Expr],
+    arms: span[ast.MatchArm]
+) -> void:
     # Save/restore locals so match-arm bindings (as name) and arm-body
     # locals don't leak into subsequent code or proc captures.
     let saved_locals = ctx.locals
@@ -195,7 +206,12 @@ function is_str_scrutinee(ty: types.Type) -> bool:
 ## pattern as the case value.  A `_` arm becomes `default` (marked exhaustive,
 ## matching the host; the backend only emits `__builtin_unreachable` when the
 ## switch has no default).
-function lower_scalar_match(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchArm]) -> void:
+function lower_scalar_match(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    scrutinee_expr: ptr[ir.Expr],
+    arms: span[ast.MatchArm]
+) -> void:
     # A range pattern cannot be a `switch` case, so a match containing one is
     # lowered to an if / else-if chain (mirrors Ruby's lower_range_match_stmt).
     var has_range = false
@@ -248,7 +264,12 @@ function lower_scalar_match(ctx: ref[lowering.LoweringContext], output: ref[vec.
 ## Lower an integer match containing range patterns to an if / else-if chain.
 ## A range arm becomes `scrutinee >= start and scrutinee <= stop`; other arms
 ## compare with `==`.  A `_` arm becomes the final else block.
-function lower_scalar_range_match(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchArm]) -> void:
+function lower_scalar_range_match(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    scrutinee_expr: ptr[ir.Expr],
+    arms: span[ast.MatchArm]
+) -> void:
     let scrutinee_ty = lowering.ir_expr_type(scrutinee_expr)
     # The host's match-to-if chains always carry an else body; the innermost
     # `if` falls back to an empty one when there is no wildcard arm.
@@ -279,13 +300,33 @@ function lower_scalar_range_match(ctx: ref[lowering.LoweringContext], output: re
                         var stop = lowering.lower_expr(ctx, rng.end_expr)
                         start = lowering.literal_value_to_context_type(ctx, rng.start_expr, scrutinee_ty, start)
                         stop = lowering.literal_value_to_context_type(ctx, rng.end_expr, scrutinee_ty, stop)
-                        let ge = lowering.alloc_expr(ir.Expr.expr_binary(operator = ">=", left = scrutinee_expr, right = start, ty = ctx.bool_ty))
-                        let le = lowering.alloc_expr(ir.Expr.expr_binary(operator = "<=", left = scrutinee_expr, right = stop, ty = ctx.bool_ty))
-                        cond = lowering.alloc_expr(ir.Expr.expr_binary(operator = "and", left = ge, right = le, ty = ctx.bool_ty))
+                        let ge = lowering.alloc_expr(ir.Expr.expr_binary(
+                            operator = ">=",
+                            left = scrutinee_expr,
+                            right = start,
+                            ty = ctx.bool_ty
+                        ))
+                        let le = lowering.alloc_expr(ir.Expr.expr_binary(
+                            operator = "<=",
+                            left = scrutinee_expr,
+                            right = stop,
+                            ty = ctx.bool_ty
+                        ))
+                        cond = lowering.alloc_expr(ir.Expr.expr_binary(
+                            operator = "and",
+                            left = ge,
+                            right = le,
+                            ty = ctx.bool_ty
+                        ))
                     _:
                         var lit = lowering.lower_expr(ctx, pattern)
                         lit = lowering.literal_value_to_context_type(ctx, pattern, scrutinee_ty, lit)
-                        cond = lowering.alloc_expr(ir.Expr.expr_binary(operator = "==", left = scrutinee_expr, right = lit, ty = ctx.bool_ty))
+                        cond = lowering.alloc_expr(ir.Expr.expr_binary(
+                            operator = "==",
+                            left = scrutinee_expr,
+                            right = lit,
+                            ty = ctx.bool_ty
+                        ))
             var chain = vec.Vec[ir.Stmt].create()
             chain.push(ir.Stmt.stmt_if(condition = cond, then_body = body, else_body = else_body))
             else_body = Option[span[ir.Stmt]].some(value = chain.as_span())
@@ -304,7 +345,12 @@ function lower_scalar_range_match(ctx: ref[lowering.LoweringContext], output: re
 ## each arm's string-literal pattern via `equal` (rendered as `mt_str_equal`).
 ## The host compares the prepared scrutinee IR node directly (no `match_str`
 ## temp).  A `_` arm becomes the final else block.
-function lower_string_match(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchArm]) -> void:
+function lower_string_match(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    scrutinee_expr: ptr[ir.Expr],
+    arms: span[ast.MatchArm]
+) -> void:
     # Collect literal arms and the optional default (wildcard) body.
     var default_body = span[ir.Stmt]()
     var lit_bodies = vec.Vec[span[ir.Stmt]].create()
@@ -371,7 +417,15 @@ function infer_match_arm_type(ctx: ref[lowering.LoweringContext], arms: span[ast
     return types.Type.ty_error
 
 
-public function lower_match_expression_local(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], name: str, declared_type: ptr[ast.TypeRef]?, scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], line: ptr_uint) -> void:
+public function lower_match_expression_local(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    name: str,
+    declared_type: ptr[ast.TypeRef]?,
+    scrutinee: ptr[ast.Expr],
+    arms: span[ast.MatchExprArm],
+    line: ptr_uint
+) -> void:
     let c_name = utils.c_local_name(name)
     var ty = types.Type.ty_error
     let dt = declared_type
@@ -387,15 +441,42 @@ public function lower_match_expression_local(ctx: ref[lowering.LoweringContext],
     # it afterwards.
     let temp = lowering.fresh_c_temp_name(ctx, "match_expr")
     let zero_init = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = ty))
-    output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = ty, value = zero_init, line = 0, source_path = ""))
+    output.push(ir.Stmt.stmt_local(
+        name = temp,
+        linkage_name = temp,
+        ty = ty,
+        value = zero_init,
+        line = 0,
+        source_path = ""
+    ))
 
-    let result_ref = lowering.alloc_expr(ir.Expr.expr_name(name = temp, ty = ty, pointer = Option[bool].some(value = false)))
+    let result_ref = lowering.alloc_expr(ir.Expr.expr_name(
+        name = temp,
+        ty = ty,
+        pointer = Option[bool].some(value = false)
+    ))
     lower_match_expr_to_ref(ctx, output, scrutinee, arms, result_ref)
 
-    let temp_ref = lowering.alloc_expr(ir.Expr.expr_name(name = temp, ty = ty, pointer = Option[bool].some(value = false)))
-    output.push(ir.Stmt.stmt_local(name = name, linkage_name = c_name, ty = ty, value = temp_ref, line = line, source_path = ctx.analysis.source_path))
+    let temp_ref = lowering.alloc_expr(ir.Expr.expr_name(
+        name = temp,
+        ty = ty,
+        pointer = Option[bool].some(value = false)
+    ))
+    output.push(ir.Stmt.stmt_local(
+        name = name,
+        linkage_name = c_name,
+        ty = ty,
+        value = temp_ref,
+        line = line,
+        source_path = ctx.analysis.source_path
+    ))
 
-    ctx.locals.push(lowering.LocalBinding(name = name, c_name = c_name, ty = ty, pointer = Option[bool].some(value = false)))
+    ctx.locals.push(lowering.LocalBinding(
+        name = name,
+        c_name = c_name,
+        ty = ty,
+        pointer = Option[bool].some(value = false)
+    ))
 
 
 ## Lower a match expression so each arm assigns its value to `result_ref`, using
@@ -403,7 +484,13 @@ public function lower_match_expression_local(ctx: ref[lowering.LoweringContext],
 ## enum switch / tuple if-chain).  The scrutinee is hoisted into a temp when it is
 ## not already a name so it is evaluated once.  Shared by `let x = match ...`
 ## (lower_match_expression_local) and the `return match ...` hoist.
-public function lower_match_expr_to_ref(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+public function lower_match_expr_to_ref(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    scrutinee: ptr[ast.Expr],
+    arms: span[ast.MatchExprArm],
+    result_ref: ptr[ir.Expr]
+) -> void:
     var scrutinee_ty = type_helpers.expr_type(ctx, scrutinee)
     var scrutinee_expr = lowering.lower_expr(ctx, scrutinee)
     # Prefer the lowered scrutinee's type (more accurate for prelude/field types).
@@ -435,8 +522,19 @@ public function lower_match_expr_to_ref(ctx: ref[lowering.LoweringContext], outp
                 pass
         if binds_payload and is_variant and not lowering.duplicable_foreign_value(scrutinee_expr):
             let temp = lowering.fresh_c_temp_name(ctx, "match_value")
-            output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = scrutinee_ty, value = scrutinee_expr, line = 0, source_path = ""))
-            scrutinee_expr = lowering.alloc_expr(ir.Expr.expr_name(name = temp, ty = scrutinee_ty, pointer = Option[bool].some(value = false)))
+            output.push(ir.Stmt.stmt_local(
+                name = temp,
+                linkage_name = temp,
+                ty = scrutinee_ty,
+                value = scrutinee_expr,
+                line = 0,
+                source_path = ""
+            ))
+            scrutinee_expr = lowering.alloc_expr(ir.Expr.expr_name(
+                name = temp,
+                ty = scrutinee_ty,
+                pointer = Option[bool].some(value = false)
+            ))
 
     let type_name = lowering.named_type_name(scrutinee_ty)
     if is_str_scrutinee(scrutinee_ty):
@@ -453,7 +551,13 @@ public function lower_match_expr_to_ref(ctx: ref[lowering.LoweringContext], outp
 ## comparing the scrutinee with each arm's string-literal pattern, assigning the
 ## arm's value to `result_ref` on match.  Mirrors `lower_string_match` for the
 ## expression form.
-function lower_str_match_expr(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+function lower_str_match_expr(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    scrutinee_expr: ptr[ir.Expr],
+    arms: span[ast.MatchExprArm],
+    result_ref: ptr[ir.Expr]
+) -> void:
     var has_default = false
     var default_val: ptr[ir.Expr]? = null
     var pattern_lits = vec.Vec[ptr[ir.Expr]].create()
@@ -512,7 +616,14 @@ function lower_str_match_expr(ctx: ref[lowering.LoweringContext], output: ref[ve
 ## tuple element-wise (`scrut._0 == e0 && scrut._1 == e1 && ...`) and assign the
 ## arm value on match.  The host nests the chain into else bodies (the wildcard
 ## arm is the innermost else), so exactly one arm's assignment executes.
-function lower_tuple_match_expr(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], scrutinee_ty: types.Type, arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+function lower_tuple_match_expr(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    scrutinee_expr: ptr[ir.Expr],
+    scrutinee_ty: types.Type,
+    arms: span[ast.MatchExprArm],
+    result_ref: ptr[ir.Expr]
+) -> void:
     # The wildcard arm (built first, as the host does) is the chain's else body.
     var else_body = vec.Vec[ir.Stmt].create()
     var ai: ptr_uint = 0
@@ -536,10 +647,18 @@ function lower_tuple_match_expr(ctx: ref[lowering.LoweringContext], output: ref[
         let pattern = arm.pattern
         if pattern != null:
             var then_body = vec.Vec[ir.Stmt].create()
-            then_body.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = lowering.lower_expr(ctx, arm.value)))
+            then_body.push(ir.Stmt.stmt_assignment(
+                target = result_ref,
+                operator = "=",
+                value = lowering.lower_expr(ctx, arm.value)
+            ))
             let cond = tuple_pattern_condition(ctx, scrutinee_expr, scrutinee_ty, unsafe: read(pattern))
             var chain = vec.Vec[ir.Stmt].create()
-            chain.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = else_body.as_span())))
+            chain.push(ir.Stmt.stmt_if(
+                condition = cond,
+                then_body = then_body.as_span(),
+                else_body = Option[span[ir.Stmt]].some(value = else_body.as_span())
+            ))
             else_body = chain
 
     lowering.append_span_stmts(output, else_body.as_span())
@@ -547,7 +666,13 @@ function lower_tuple_match_expr(ctx: ref[lowering.LoweringContext], output: ref[
 
 ## Lower a tuple-literal match statement to an if / else-if chain of
 ## per-element equality conditions, with the `_` arm as the final else.
-function lower_tuple_match_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
+function lower_tuple_match_stmt(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    scrutinee_expr: ptr[ir.Expr],
+    scrutinee_ty: types.Type,
+    arms: span[ast.MatchArm]
+) -> void:
     # The host's match-to-if chains always carry an else body; the innermost
     # `if` falls back to an empty one when there is no wildcard arm.
     var else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())
@@ -569,7 +694,11 @@ function lower_tuple_match_stmt(ctx: ref[lowering.LoweringContext], output: ref[
         if pattern != null:
             let cond = tuple_pattern_condition(ctx, scrutinee_expr, scrutinee_ty, unsafe: read(pattern))
             var chain = vec.Vec[ir.Stmt].create()
-            chain.push(ir.Stmt.stmt_if(condition = cond, then_body = lowering.lower_block(ctx, arm.body), else_body = else_body))
+            chain.push(ir.Stmt.stmt_if(
+                condition = cond,
+                then_body = lowering.lower_block(ctx, arm.body),
+                else_body = else_body
+            ))
             else_body = Option[span[ir.Stmt]].some(value = chain.as_span())
     match else_body:
         Option.some as eb:
@@ -586,7 +715,12 @@ function lower_tuple_match_stmt(ctx: ref[lowering.LoweringContext], output: ref[
 ## per-element equality tests `scrut._i == elem_i`.  `_` elements are skipped
 ## (they match anything).  Returns a literal `true` when the pattern has no
 ## constraining elements.
-function tuple_pattern_condition(ctx: ref[lowering.LoweringContext], scrutinee_expr: ptr[ir.Expr], scrutinee_ty: types.Type, pattern: ast.Expr) -> ptr[ir.Expr]:
+function tuple_pattern_condition(
+    ctx: ref[lowering.LoweringContext],
+    scrutinee_expr: ptr[ir.Expr],
+    scrutinee_ty: types.Type,
+    pattern: ast.Expr
+) -> ptr[ir.Expr]:
     var cond: ptr[ir.Expr]? = null
     match pattern:
         ast.Expr.expr_expression_list as lst:
@@ -609,14 +743,28 @@ function tuple_pattern_condition(ctx: ref[lowering.LoweringContext], scrutinee_e
                                         pass
                             _:
                                 pass
-                        let field = lowering.alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = member_name, ty = elem_ty))
+                        let field = lowering.alloc_expr(ir.Expr.expr_member(
+                            receiver = scrutinee_expr,
+                            member = member_name,
+                            ty = elem_ty
+                        ))
                         let elem_expr = lowering.lower_expr(ctx, unsafe: ptr[ast.Expr]<-(lst.elements.data + i))
-                        let cmp = lowering.alloc_expr(ir.Expr.expr_binary(operator = "==", left = field, right = elem_expr, ty = ctx.bool_ty))
+                        let cmp = lowering.alloc_expr(ir.Expr.expr_binary(
+                            operator = "==",
+                            left = field,
+                            right = elem_expr,
+                            ty = ctx.bool_ty
+                        ))
                         let existing = cond
                         if existing == null:
                             cond = cmp
                         else:
-                            cond = lowering.alloc_expr(ir.Expr.expr_binary(operator = "and", left = existing, right = cmp, ty = ctx.bool_ty))
+                            cond = lowering.alloc_expr(ir.Expr.expr_binary(
+                                operator = "and",
+                                left = existing,
+                                right = cmp,
+                                ty = ctx.bool_ty
+                            ))
                 i += 1
         _:
             pass
@@ -636,7 +784,14 @@ function expr_is_wildcard(e: ast.Expr) -> bool:
 
 ## Lower a match expression over an enum scrutinee: emit a switch whose cases
 ## assign the result and break, plus a default case for the wildcard arm.
-function lower_enum_match_expr(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], type_name: Option[str], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+function lower_enum_match_expr(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    scrutinee_expr: ptr[ir.Expr],
+    type_name: Option[str],
+    arms: span[ast.MatchExprArm],
+    result_ref: ptr[ir.Expr]
+) -> void:
     var cases = vec.Vec[ir.SwitchCase].create()
     var enum_module = enum_source_module(ctx, lowering.ir_expr_type(scrutinee_expr), ctx.module_name)
     var i: ptr_uint = 0
@@ -656,7 +811,12 @@ function lower_enum_match_expr(ctx: ref[lowering.LoweringContext], output: ref[v
                 # literal takes the scrutinee's type, as `lower_pattern_expression`
                 # does on the host.
                 var lowered_pat = lowering.lower_expr(ctx, pattern)
-                lowered_pat = lowering.literal_value_to_context_type(ctx, pattern, lowering.ir_expr_type(scrutinee_expr), lowered_pat)
+                lowered_pat = lowering.literal_value_to_context_type(
+                    ctx,
+                    pattern,
+                    lowering.ir_expr_type(scrutinee_expr),
+                    lowered_pat
+                )
                 cases.push(ir.SwitchCase(is_default = false, value = lowered_pat, body = body.as_span()))
                 i += 1
                 continue
@@ -677,7 +837,15 @@ function lower_enum_match_expr(ctx: ref[lowering.LoweringContext], output: ref[v
 
 ## Lower a match expression over a variant scrutinee: emit a switch on the variant
 ## kind, with each arm assigning its value to the result reference.
-function lower_variant_match_expr(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
+function lower_variant_match_expr(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    scrutinee_expr: ptr[ir.Expr],
+    variant_name: str,
+    scrutinee_ty: types.Type,
+    arms: span[ast.MatchExprArm],
+    result_ref: ptr[ir.Expr]
+) -> void:
     let info_ptr = ctx.variants.get(variant_registry_key(ctx, variant_name, scrutinee_ty)) else:
         fatal(c"lowering: variant match expr on unknown variant")
     let info = unsafe: read(info_ptr)
@@ -699,15 +867,41 @@ function lower_variant_match_expr(ctx: ref[lowering.LoweringContext], output: re
                     let arm_name = variant_match_arm_name_from_pattern(pattern) else:
                         fatal(c"lowering: unsupported variant match expression pattern")
                     let binding_ty = variant_arm_payload_binding(variant_name, info.module_name, outer_c, arm_name)
-                    register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
-                    let data_member = lowering.alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "data", ty = types.Type.ty_nil))
-                    let arm_data = lowering.alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
+                    register_arm_payload_fields(
+                        ctx,
+                        variant_arm_type_name(outer_c, arm_name),
+                        info,
+                        arm_name,
+                        scrutinee_ty
+                    )
+                    let data_member = lowering.alloc_expr(ir.Expr.expr_member(
+                        receiver = scrutinee_expr,
+                        member = "data",
+                        ty = types.Type.ty_nil
+                    ))
+                    let arm_data = lowering.alloc_expr(ir.Expr.expr_member(
+                        receiver = data_member,
+                        member = arm_name,
+                        ty = binding_ty
+                    ))
                     let bc = utils.c_local_name(bn.value)
                     # The host's plain match-expression lowering (expressions.rb:
                     # 1166-1173) always declares the binding as a C local — its
                     # async path has no frame spill here.
-                    body.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
-                    ctx.locals.push(lowering.LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = Option[bool].some(value = false)))
+                    body.push(ir.Stmt.stmt_local(
+                        name = bn.value,
+                        linkage_name = bc,
+                        ty = binding_ty,
+                        value = arm_data,
+                        line = 0,
+                        source_path = ""
+                    ))
+                    ctx.locals.push(lowering.LocalBinding(
+                        name = bn.value,
+                        c_name = bc,
+                        ty = binding_ty,
+                        pointer = Option[bool].some(value = false)
+                    ))
                 Option.none:
                     pass
         let lowered_val = lowering.lower_expr(ctx, arm.value)
@@ -736,7 +930,14 @@ function lower_variant_match_expr(ctx: ref[lowering.LoweringContext], output: re
 ## Dispatch a variant match to the switch strategy (member / `as name` /
 ## no-payload / wildcard arms) or the if/goto strategy (any struct-pattern arm,
 ## i.e. `Variant.arm(field, ...)`), mirroring Ruby's block.rb decision.
-function lower_variant_match(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
+function lower_variant_match(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    scrutinee_expr: ptr[ir.Expr],
+    variant_name: str,
+    scrutinee_ty: types.Type,
+    arms: span[ast.MatchArm]
+) -> void:
     if arms_have_call_pattern(arms):
         lower_variant_match_goto(ctx, output, scrutinee_expr, variant_name, scrutinee_ty, arms)
     else:
@@ -763,7 +964,14 @@ function arms_have_call_pattern(arms: span[ast.MatchArm]) -> bool:
     return false
 
 
-function lower_variant_match_switch(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
+function lower_variant_match_switch(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    scrutinee_expr: ptr[ir.Expr],
+    variant_name: str,
+    scrutinee_ty: types.Type,
+    arms: span[ast.MatchArm]
+) -> void:
     # If variant_name includes type args (e.g. "Option_span_Field"), strip to
     # the base name (e.g. "Option") to find the variant info.
     var info_ptr = ctx.variants.get(variant_registry_key(ctx, variant_name, scrutinee_ty))
@@ -793,8 +1001,19 @@ function lower_variant_match_switch(ctx: ref[lowering.LoweringContext], output: 
         if binds_payload and not lowering.duplicable_foreign_value(scrut_base):
             let temp = lowering.fresh_c_temp_name(ctx, "match_value")
             let scrut_ty = lowering.ir_expr_type(scrut_base)
-            output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = scrut_ty, value = scrut_base, line = 0, source_path = ""))
-            scrut_base = lowering.alloc_expr(ir.Expr.expr_name(name = temp, ty = scrut_ty, pointer = Option[bool].some(value = false)))
+            output.push(ir.Stmt.stmt_local(
+                name = temp,
+                linkage_name = temp,
+                ty = scrut_ty,
+                value = scrut_base,
+                line = 0,
+                source_path = ""
+            ))
+            scrut_base = lowering.alloc_expr(ir.Expr.expr_name(
+                name = temp,
+                ty = scrut_ty,
+                pointer = Option[bool].some(value = false)
+            ))
 
     let kind_expr = lowering.alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "kind", ty = int_ty))
     var cases = vec.Vec[ir.SwitchCase].create()
@@ -826,9 +1045,23 @@ function lower_variant_match_switch(ctx: ref[lowering.LoweringContext], output: 
             match arm.binding_name:
                 Option.some as bn:
                     let binding_ty = variant_arm_payload_binding(variant_name, info.module_name, outer_c, arm_name)
-                    register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
-                    let data_member = lowering.alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = types.Type.ty_nil))
-                    let arm_data = lowering.alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = binding_ty))
+                    register_arm_payload_fields(
+                        ctx,
+                        variant_arm_type_name(outer_c, arm_name),
+                        info,
+                        arm_name,
+                        scrutinee_ty
+                    )
+                    let data_member = lowering.alloc_expr(ir.Expr.expr_member(
+                        receiver = scrut_base,
+                        member = "data",
+                        ty = types.Type.ty_nil
+                    ))
+                    let arm_data = lowering.alloc_expr(ir.Expr.expr_member(
+                        receiver = data_member,
+                        member = arm_name,
+                        ty = binding_ty
+                    ))
                     let bc = utils.c_local_name(bn.value)
                     if ctx.inside_async:
                         # The host's lowering-pass counter advance
@@ -843,8 +1076,20 @@ function lower_variant_match_switch(ctx: ref[lowering.LoweringContext], output: 
                         if fname_ptr != null:
                             reg_field = unsafe: read(ptr[str]<-fname_ptr)
                             reg_field_ty = binding_ty
-                    stmts.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
-                    ctx.locals.push(lowering.LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = Option[bool].some(value = false)))
+                    stmts.push(ir.Stmt.stmt_local(
+                        name = bn.value,
+                        linkage_name = bc,
+                        ty = binding_ty,
+                        value = arm_data,
+                        line = 0,
+                        source_path = ""
+                    ))
+                    ctx.locals.push(lowering.LocalBinding(
+                        name = bn.value,
+                        c_name = bc,
+                        ty = binding_ty,
+                        pointer = Option[bool].some(value = false)
+                    ))
                 Option.none:
                     pass
             let body = lower_switch_arm_body(ctx, arm.body)
@@ -872,7 +1117,14 @@ function lower_variant_match_switch(ctx: ref[lowering.LoweringContext], output: 
 ## tests `scrut.kind`, jumps to the next arm's label on mismatch, otherwise binds
 ## the payload into a temp, destructures its fields, and falls through to the arm
 ## body then `goto <end>`.  Mirrors Ruby's block.rb struct-pattern match path.
-function lower_variant_match_goto(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], variant_name: str, scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
+function lower_variant_match_goto(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    scrutinee_expr: ptr[ir.Expr],
+    variant_name: str,
+    scrutinee_ty: types.Type,
+    arms: span[ast.MatchArm]
+) -> void:
     let info_ptr = ctx.variants.get(variant_registry_key(ctx, variant_name, scrutinee_ty)) else:
         fatal(c"lowering: variant match on unknown variant")
     let info = unsafe: read(info_ptr)
@@ -884,8 +1136,19 @@ function lower_variant_match_goto(ctx: ref[lowering.LoweringContext], output: re
     if not ir_expr_is_name(scrut_base):
         let temp = lowering.fresh_c_temp_name(ctx, "match_value")
         let scrut_ty = lowering.ir_expr_type(scrut_base)
-        output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = scrut_ty, value = scrut_base, line = 0, source_path = ""))
-        scrut_base = lowering.alloc_expr(ir.Expr.expr_name(name = temp, ty = scrut_ty, pointer = Option[bool].some(value = false)))
+        output.push(ir.Stmt.stmt_local(
+            name = temp,
+            linkage_name = temp,
+            ty = scrut_ty,
+            value = scrut_base,
+            line = 0,
+            source_path = ""
+        ))
+        scrut_base = lowering.alloc_expr(ir.Expr.expr_name(
+            name = temp,
+            ty = scrut_ty,
+            pointer = Option[bool].some(value = false)
+        ))
 
     ctx.match_label_counter += 1
     let m = ctx.match_label_counter
@@ -913,13 +1176,30 @@ function lower_variant_match_goto(ctx: ref[lowering.LoweringContext], output: re
                 fatal(c"lowering: unsupported variant match pattern")
             let goto_label = if arm_index < arms.len - 1: match_arm_label(m, arm_index + 1) else: next_label
 
-            let kind_expr = lowering.alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "kind", ty = int_ty))
-            let tag_value = lowering.alloc_expr(ir.Expr.expr_name(name = variant_kind_const_name(outer_c, arm_name), ty = int_ty, pointer = Option[bool].some(value = false)))
-            let tag_check = lowering.alloc_expr(ir.Expr.expr_binary(operator = "!=", left = kind_expr, right = tag_value, ty = bool_ty))
+            let kind_expr = lowering.alloc_expr(ir.Expr.expr_member(
+                receiver = scrut_base,
+                member = "kind",
+                ty = int_ty
+            ))
+            let tag_value = lowering.alloc_expr(ir.Expr.expr_name(
+                name = variant_kind_const_name(outer_c, arm_name),
+                ty = int_ty,
+                pointer = Option[bool].some(value = false)
+            ))
+            let tag_check = lowering.alloc_expr(ir.Expr.expr_binary(
+                operator = "!=",
+                left = kind_expr,
+                right = tag_value,
+                ty = bool_ty
+            ))
             var then_body = vec.Vec[ir.Stmt].create()
             then_body.push(ir.Stmt.stmt_goto(label = goto_label))
             # The host emits an empty (present) else branch for arm tag checks.
-            output.push(ir.Stmt.stmt_if(condition = tag_check, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())))
+            output.push(ir.Stmt.stmt_if(
+                condition = tag_check,
+                then_body = then_body.as_span(),
+                else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())
+            ))
 
             var blk = vec.Vec[ir.Stmt].create()
             var reg_field = ""
@@ -929,8 +1209,16 @@ function lower_variant_match_goto(ctx: ref[lowering.LoweringContext], output: re
                 Option.some as ai:
                     if ai.value.field_names.len > 0:
                         let payload_c = lowering.fresh_c_temp_name(ctx, "match_payload")
-                        let data_member = lowering.alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = types.Type.ty_nil))
-                        let arm_data = lowering.alloc_expr(ir.Expr.expr_member(receiver = data_member, member = arm_name, ty = payload_ty))
+                        let data_member = lowering.alloc_expr(ir.Expr.expr_member(
+                            receiver = scrut_base,
+                            member = "data",
+                            ty = types.Type.ty_nil
+                        ))
+                        let arm_data = lowering.alloc_expr(ir.Expr.expr_member(
+                            receiver = data_member,
+                            member = arm_name,
+                            ty = payload_ty
+                        ))
                         if ctx.async_cps_active:
                             # Spill the match arm's payload struct to a frame
                             # field so pattern-bindings and `as` binding survive
@@ -938,15 +1226,47 @@ function lower_variant_match_goto(ctx: ref[lowering.LoweringContext], output: re
                             let mfield = strings.join_two("local_", payload_c)
                             let mcname = strings.join_two("__mt_frame->", mfield)
                             async_cps.async_register_local_field(ctx, payload_c, mfield, mcname, payload_ty)
-                            blk.push(ir.Stmt.stmt_assignment(target = lowering.alloc_expr(ir.Expr.expr_name(name = mcname, ty = payload_ty, pointer = Option[bool].some(value = false))), operator = "=", value = arm_data))
+                            blk.push(ir.Stmt.stmt_assignment(
+                                target = lowering.alloc_expr(ir.Expr.expr_name(
+                                    name = mcname,
+                                    ty = payload_ty,
+                                    pointer = Option[bool].some(value = false)
+                                )),
+                                operator = "=",
+                                value = arm_data
+                            ))
                         else:
-                            blk.push(ir.Stmt.stmt_local(name = payload_c, linkage_name = payload_c, ty = payload_ty, value = arm_data, line = 0, source_path = ""))
-                            ctx.locals.push(lowering.LocalBinding(name = payload_c, c_name = payload_c, ty = payload_ty, pointer = Option[bool].some(value = false)))
-                        lower_variant_field_bindings(ctx, ref_of(blk), pattern, ai.value, payload_c, payload_ty, goto_label)
+                            blk.push(ir.Stmt.stmt_local(
+                                name = payload_c,
+                                linkage_name = payload_c,
+                                ty = payload_ty,
+                                value = arm_data,
+                                line = 0,
+                                source_path = ""
+                            ))
+                            ctx.locals.push(lowering.LocalBinding(
+                                name = payload_c,
+                                c_name = payload_c,
+                                ty = payload_ty,
+                                pointer = Option[bool].some(value = false)
+                            ))
+                        lower_variant_field_bindings(
+                            ctx,
+                            ref_of(blk),
+                            pattern,
+                            ai.value,
+                            payload_c,
+                            payload_ty,
+                            goto_label
+                        )
                         match arm.binding_name:
                             Option.some as bn:
                                 let bc = utils.c_local_name(bn.value)
-                                let payload_ref = lowering.alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = Option[bool].some(value = false)))
+                                let payload_ref = lowering.alloc_expr(ir.Expr.expr_name(
+                                    name = payload_c,
+                                    ty = payload_ty,
+                                    pointer = Option[bool].some(value = false)
+                                ))
                                 if ctx.inside_async:
                                     # The host's lowering-pass counter advance for
                                     # the `as` binding (the payload temp above has
@@ -956,8 +1276,20 @@ function lower_variant_match_goto(ctx: ref[lowering.LoweringContext], output: re
                                     let gname_ptr = ctx.async_match_binding_names.get(arm_key)
                                     if gname_ptr != null:
                                         reg_field = unsafe: read(ptr[str]<-gname_ptr)
-                                blk.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = payload_ty, value = payload_ref, line = 0, source_path = ""))
-                                ctx.locals.push(lowering.LocalBinding(name = bn.value, c_name = bc, ty = payload_ty, pointer = Option[bool].some(value = false)))
+                                blk.push(ir.Stmt.stmt_local(
+                                    name = bn.value,
+                                    linkage_name = bc,
+                                    ty = payload_ty,
+                                    value = payload_ref,
+                                    line = 0,
+                                    source_path = ""
+                                ))
+                                ctx.locals.push(lowering.LocalBinding(
+                                    name = bn.value,
+                                    c_name = bc,
+                                    ty = payload_ty,
+                                    pointer = Option[bool].some(value = false)
+                                ))
                             Option.none:
                                 pass
                 Option.none:
@@ -977,7 +1309,15 @@ function lower_variant_match_goto(ctx: ref[lowering.LoweringContext], output: re
 ## identifier in a struct pattern's argument list, skipping `_` discards.
 ## Guards (`field > expr`) and equality patterns (`field = expr`) are emitted
 ## as conditional `goto next_arm_label` checks on failure.
-function lower_variant_field_bindings(ctx: ref[lowering.LoweringContext], blk: ref[vec.Vec[ir.Stmt]], pattern: ptr[ast.Expr], arm_info: lowering.VariantArmInfo, payload_c: str, payload_ty: types.Type, next_arm_label: str) -> void:
+function lower_variant_field_bindings(
+    ctx: ref[lowering.LoweringContext],
+    blk: ref[vec.Vec[ir.Stmt]],
+    pattern: ptr[ast.Expr],
+    arm_info: lowering.VariantArmInfo,
+    payload_c: str,
+    payload_ty: types.Type,
+    next_arm_label: str
+) -> void:
     let bool_ty = ctx.bool_ty
     unsafe:
         match read(pattern):
@@ -991,13 +1331,30 @@ function lower_variant_field_bindings(ctx: ref[lowering.LoweringContext], blk: r
                             # Equality pattern: `field = expr` —
                             # skip arm if payload.field != expr.
                             let field_ty = variant_arm_field_type(arm_info, eq_name.value)
-                            let payload_ref = lowering.alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = Option[bool].some(value = false)))
-                            let left = lowering.alloc_expr(ir.Expr.expr_member(receiver = payload_ref, member = eq_name.value, ty = field_ty))
+                            let payload_ref = lowering.alloc_expr(ir.Expr.expr_name(
+                                name = payload_c,
+                                ty = payload_ty,
+                                pointer = Option[bool].some(value = false)
+                            ))
+                            let left = lowering.alloc_expr(ir.Expr.expr_member(
+                                receiver = payload_ref,
+                                member = eq_name.value,
+                                ty = field_ty
+                            ))
                             let right = lowering.lower_expr(ctx, arg.arg_value)
-                            let cond = lowering.alloc_expr(ir.Expr.expr_binary(operator = "!=", left = left, right = right, ty = bool_ty))
+                            let cond = lowering.alloc_expr(ir.Expr.expr_binary(
+                                operator = "!=",
+                                left = left,
+                                right = right,
+                                ty = bool_ty
+                            ))
                             var guard_body = vec.Vec[ir.Stmt].create()
                             guard_body.push(ir.Stmt.stmt_goto(label = next_arm_label))
-                            blk.push(ir.Stmt.stmt_if(condition = cond, then_body = guard_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())))
+                            blk.push(ir.Stmt.stmt_if(
+                                condition = cond,
+                                then_body = guard_body.as_span(),
+                                else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())
+                            ))
                         Option.none:
                             pass
                     match read(arg.arg_value):
@@ -1005,28 +1362,70 @@ function lower_variant_field_bindings(ctx: ref[lowering.LoweringContext], blk: r
                             if not id.name == "_":
                                 let field_ty = variant_arm_field_type(arm_info, id.name)
                                 let bc = utils.c_local_name(id.name)
-                                let payload_ref = lowering.alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = Option[bool].some(value = false)))
-                                var field_expr = lowering.alloc_expr(ir.Expr.expr_member(receiver = payload_ref, member = id.name, ty = field_ty))
+                                let payload_ref = lowering.alloc_expr(ir.Expr.expr_name(
+                                    name = payload_c,
+                                    ty = payload_ty,
+                                    pointer = Option[bool].some(value = false)
+                                ))
+                                var field_expr = lowering.alloc_expr(ir.Expr.expr_member(
+                                    receiver = payload_ref,
+                                    member = id.name,
+                                    ty = field_ty
+                                ))
                                 # Auto-dereference recursive variant fields.
                                 match payload_ty:
                                     types.Type.ty_named as pn:
                                         let pn_np = unsafe: read(pn.payload)
-                                        if ctx.arm_payload_fields.contains(pn_np.name) and is_recursive_variant_field(payload_ty, field_ty):
-                                            field_expr = lowering.alloc_expr(ir.Expr.expr_unary(operator = "*", operand = field_expr, ty = field_ty))
+                                        if ctx.arm_payload_fields.contains(pn_np.name) and is_recursive_variant_field(
+                                            payload_ty,
+                                            field_ty
+                                        ):
+                                            field_expr = lowering.alloc_expr(ir.Expr.expr_unary(
+                                                operator = "*",
+                                                operand = field_expr,
+                                                ty = field_ty
+                                            ))
                                     types.Type.ty_imported as pi:
                                         let pi_bp = unsafe: read(pi.payload)
-                                        if ctx.arm_payload_fields.contains(naming.qualified_c_name(pi_bp.module_name, pi_bp.name)) and is_recursive_variant_field(payload_ty, field_ty):
-                                            field_expr = lowering.alloc_expr(ir.Expr.expr_unary(operator = "*", operand = field_expr, ty = field_ty))
+                                        if ctx.arm_payload_fields.contains(naming.qualified_c_name(
+                                            pi_bp.module_name,
+                                            pi_bp.name
+                                        )) and is_recursive_variant_field(payload_ty, field_ty):
+                                            field_expr = lowering.alloc_expr(ir.Expr.expr_unary(
+                                                operator = "*",
+                                                operand = field_expr,
+                                                ty = field_ty
+                                            ))
                                     _:
                                         pass
                                 if ctx.async_cps_active:
                                     let vfield = strings.join_four("local_", payload_c, "_", id.name)
                                     let vcname = strings.join_two("__mt_frame->", vfield)
                                     async_cps.async_register_local_field(ctx, id.name, vfield, vcname, field_ty)
-                                    blk.push(ir.Stmt.stmt_assignment(target = lowering.alloc_expr(ir.Expr.expr_name(name = vcname, ty = field_ty, pointer = Option[bool].some(value = false))), operator = "=", value = field_expr))
+                                    blk.push(ir.Stmt.stmt_assignment(
+                                        target = lowering.alloc_expr(ir.Expr.expr_name(
+                                            name = vcname,
+                                            ty = field_ty,
+                                            pointer = Option[bool].some(value = false)
+                                        )),
+                                        operator = "=",
+                                        value = field_expr
+                                    ))
                                 else:
-                                    blk.push(ir.Stmt.stmt_local(name = id.name, linkage_name = bc, ty = field_ty, value = field_expr, line = 0, source_path = ""))
-                                    ctx.locals.push(lowering.LocalBinding(name = id.name, c_name = bc, ty = field_ty, pointer = Option[bool].some(value = false)))
+                                    blk.push(ir.Stmt.stmt_local(
+                                        name = id.name,
+                                        linkage_name = bc,
+                                        ty = field_ty,
+                                        value = field_expr,
+                                        line = 0,
+                                        source_path = ""
+                                    ))
+                                    ctx.locals.push(lowering.LocalBinding(
+                                        name = id.name,
+                                        c_name = bc,
+                                        ty = field_ty,
+                                        pointer = Option[bool].some(value = false)
+                                    ))
                         ast.Expr.expr_binary_op as b:
                             # Guard pattern: `field comparison_op expr` —
                             # skip arm if guard condition is false.
@@ -1041,13 +1440,30 @@ function lower_variant_field_bindings(ctx: ref[lowering.LoweringContext], blk: r
                                         pass
                             if left_name != "":
                                 let field_ty = variant_arm_field_type(arm_info, left_name)
-                                let payload_ref = lowering.alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = Option[bool].some(value = false)))
-                                let left_expr = lowering.alloc_expr(ir.Expr.expr_member(receiver = payload_ref, member = left_name, ty = field_ty))
+                                let payload_ref = lowering.alloc_expr(ir.Expr.expr_name(
+                                    name = payload_c,
+                                    ty = payload_ty,
+                                    pointer = Option[bool].some(value = false)
+                                ))
+                                let left_expr = lowering.alloc_expr(ir.Expr.expr_member(
+                                    receiver = payload_ref,
+                                    member = left_name,
+                                    ty = field_ty
+                                ))
                                 let right_expr = lowering.lower_expr(ctx, b.right)
-                                let cond = lowering.alloc_expr(ir.Expr.expr_binary(operator = b.operator, left = left_expr, right = right_expr, ty = bool_ty))
+                                let cond = lowering.alloc_expr(ir.Expr.expr_binary(
+                                    operator = b.operator,
+                                    left = left_expr,
+                                    right = right_expr,
+                                    ty = bool_ty
+                                ))
                                 var guard_fail = vec.Vec[ir.Stmt].create()
                                 guard_fail.push(ir.Stmt.stmt_goto(label = next_arm_label))
-                                blk.push(ir.Stmt.stmt_if(condition = cond, then_body = span[ir.Stmt](), else_body = Option[span[ir.Stmt]].some(value = guard_fail.as_span())))
+                                blk.push(ir.Stmt.stmt_if(
+                                    condition = cond,
+                                    then_body = span[ir.Stmt](),
+                                    else_body = Option[span[ir.Stmt]].some(value = guard_fail.as_span())
+                                ))
                         _:
                             pass
                     i += 1
@@ -1124,7 +1540,12 @@ function variant_arm_owner_module(variant_name: str, owner_module: str) -> str:
 
 ## The `as name` binding type of a variant match arm, tagged `VariantArmPayload`
 ## (base variant name + module for rendering, payload C name for codegen).
-public function variant_arm_payload_binding(variant_name: str, owner_module: str, outer_c: str, arm_name: str) -> types.Type:
+public function variant_arm_payload_binding(
+    variant_name: str,
+    owner_module: str,
+    outer_c: str,
+    arm_name: str
+) -> types.Type:
     return types.variant_arm_payload(
         variant_name = variant_name,
         module_name = variant_arm_owner_module(variant_name, owner_module),
@@ -1177,7 +1598,13 @@ function variant_registry_key(ctx: ref[lowering.LoweringContext], variant_name: 
 ## `_phantom` placeholder payload type (their VariantInfo is generic); it is
 ## specialized here against the scrutinee's concrete type args so `s.value` /
 ## `f.error` resolve to the real type instead of an undeclared `_phantom` C type.
-public function register_arm_payload_fields(ctx: ref[lowering.LoweringContext], payload_c_name: str, info: lowering.VariantInfo, arm_name: str, scrutinee_ty: types.Type) -> void:
+public function register_arm_payload_fields(
+    ctx: ref[lowering.LoweringContext],
+    payload_c_name: str,
+    info: lowering.VariantInfo,
+    arm_name: str,
+    scrutinee_ty: types.Type
+) -> void:
     # An entry may already be registered by `install_imported_variants`, keyed by
     # the module-qualified payload C name with field types resolved in the OWNER
     # module's context.  That entry is authoritative and must not be overwritten
@@ -1194,7 +1621,10 @@ public function register_arm_payload_fields(ctx: ref[lowering.LoweringContext], 
         unsafe:
             arm_info = read(info.arms.data + i)
         if arm_info.name == arm_name:
-            ctx.arm_payload_fields.set(payload_c_name, specialize_prelude_arm_info(ctx, arm_info, arm_name, payload_c_name, scrutinee_ty))
+            ctx.arm_payload_fields.set(
+                payload_c_name,
+                specialize_prelude_arm_info(ctx, arm_info, arm_name, payload_c_name, scrutinee_ty)
+            )
             return
         i += 1
 
@@ -1208,7 +1638,13 @@ public function register_arm_payload_fields(ctx: ref[lowering.LoweringContext], 
 ## (works even when the scrutinee type has already collapsed to a concrete
 ## `ty_named` with no args), then fall back to the scrutinee's own type args, then
 ## to the placeholder (no worse than before).
-function specialize_prelude_arm_info(ctx: ref[lowering.LoweringContext], arm_info: lowering.VariantArmInfo, arm_name: str, payload_c_name: str, scrutinee_ty: types.Type) -> lowering.VariantArmInfo:
+function specialize_prelude_arm_info(
+    ctx: ref[lowering.LoweringContext],
+    arm_info: lowering.VariantArmInfo,
+    arm_name: str,
+    payload_c_name: str,
+    scrutinee_ty: types.Type
+) -> lowering.VariantArmInfo:
     var changed = false
     var new_types = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
@@ -1230,14 +1666,23 @@ function specialize_prelude_arm_info(ctx: ref[lowering.LoweringContext], arm_inf
     if not changed:
         return arm_info
 
-    return lowering.VariantArmInfo(name = arm_info.name, field_names = arm_info.field_names, field_types = new_types.as_span())
+    return lowering.VariantArmInfo(
+        name = arm_info.name,
+        field_names = arm_info.field_names,
+        field_types = new_types.as_span()
+    )
 
 
 ## Resolve a prelude arm's concrete payload field type.  `payload_c_name` is the
 ## concrete payload struct C name (`Option_std_string_String_some`); its concrete
 ## variant decl in `pending_generic_variants` carries the real field type.  Falls
 ## back to the scrutinee's own type args when the decl is not (yet) recorded.
-public function concrete_prelude_field_type(ctx: ref[lowering.LoweringContext], payload_c_name: str, arm_name: str, scrutinee_ty: types.Type) -> Option[types.Type]:
+public function concrete_prelude_field_type(
+    ctx: ref[lowering.LoweringContext],
+    payload_c_name: str,
+    arm_name: str,
+    scrutinee_ty: types.Type
+) -> Option[types.Type]:
     # Program-wide registry first: the concrete Option/Result decl may have been
     # emitted in a different module's context (e.g. `Result[String, Error]` from
     # `fs.read_text`), so its arm field type is not in this ctx's
@@ -1265,7 +1710,11 @@ public function concrete_prelude_field_type(ctx: ref[lowering.LoweringContext], 
 ## decl recorded in `pending_generic_variants`.  `payload_c_name` is the arm's
 ## concrete payload struct C name (`<outer_c>_<arm>`), which matches an arm's
 ## `linkage_name` in the outer decl.
-function prelude_field_type_from_variants(ctx: ref[lowering.LoweringContext], payload_c_name: str, arm_name: str) -> Option[types.Type]:
+function prelude_field_type_from_variants(
+    ctx: ref[lowering.LoweringContext],
+    payload_c_name: str,
+    arm_name: str
+) -> Option[types.Type]:
     var vi: ptr_uint = 0
     while vi < ctx.pending_generic_variants.len():
         let vp = ctx.pending_generic_variants.get(vi) else:
@@ -1382,7 +1831,12 @@ public function variant_c_type_name(ty: types.Type) -> str:
 
 
 ## Look up the type of a field in a variant arm by name.
-public function variant_field_type_from_arm(ctx: ref[lowering.LoweringContext], variant_ty: types.Type, arm_name: str, field_name: str) -> Option[types.Type]:
+public function variant_field_type_from_arm(
+    ctx: ref[lowering.LoweringContext],
+    variant_ty: types.Type,
+    arm_name: str,
+    field_name: str
+) -> Option[types.Type]:
     var variant_c: str
     match variant_ty:
         types.Type.ty_imported:
@@ -1448,7 +1902,11 @@ public function payload_ty(ctx: ref[lowering.LoweringContext], struct_name: str,
 
 ## The type of 'member' on a variant arm payload binding, looked up from the
 ## registered arm field info.  Returns none for non-arm-payload receivers.
-public function arm_payload_field_type(ctx: ref[lowering.LoweringContext], recv_ty: types.Type, member: str) -> Option[types.Type]:
+public function arm_payload_field_type(
+    ctx: ref[lowering.LoweringContext],
+    recv_ty: types.Type,
+    member: str
+) -> Option[types.Type]:
     var name: str
     match recv_ty:
         types.Type.ty_named as n:
@@ -1529,6 +1987,7 @@ public function generic_variant_name(t: types.Type) -> Option[str]:
         _:
             return Option[str].none
 
+
 function variant_match_allowed(ctx: ref[lowering.LoweringContext], name: str) -> bool:
     if ctx.variants.contains(name):
         return true
@@ -1537,6 +1996,7 @@ function variant_match_allowed(ctx: ref[lowering.LoweringContext], name: str) ->
             return true
         Option.none:
             return false
+
 
 ## Extract the base prelude variant name from a qualified concrete variant name.
 ## "std_map_Option_std_map_RemovedEntry_ptr_uint_bool" → Some("Option").

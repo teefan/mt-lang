@@ -28,7 +28,6 @@ extending MethodParam:
         this.mode.release()
         this.boundary_type.release()
 
-
 public struct MethodFunc:
     public_name: string.String
     raw_name: string.String
@@ -72,7 +71,6 @@ function release_strings(v: ref[vec.Vec[string.String]]) -> void:
             unsafe: read(p).release()
         i += 1
     v.release()
-
 
 # =============================================================================
 #  Generated module scanner
@@ -277,7 +275,6 @@ function starts_at(text: str, start: ptr_uint, pattern: str) -> bool:
         i += 1
     return true
 
-
 # =============================================================================
 #  Type helpers
 # =============================================================================
@@ -380,7 +377,6 @@ function method_public_name(key: str, spec: policy.MethodSpec) -> string.String:
     var snaked = naming.snake_case(sanitized.as_str())
     sanitized.release()
     return snaked
-
 
 # =============================================================================
 #  Method generation entry point

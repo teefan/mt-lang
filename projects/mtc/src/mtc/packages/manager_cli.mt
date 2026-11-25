@@ -67,7 +67,6 @@ public function run(args: span[str]) -> int:
     message.release()
     return 1
 
-
 # =============================================================================
 #  Path and option helpers
 # =============================================================================
@@ -117,7 +116,6 @@ function unknown_option(message_prefix: str, option: str) -> int:
     message.release()
     return result
 
-
 # =============================================================================
 #  tree
 # =============================================================================
@@ -153,7 +151,6 @@ function deps_tree(args: span[str]) -> int:
             defer: tree.release()
             stdio.print_line(tree.as_str())
     return 0
-
 
 # =============================================================================
 #  lock
@@ -226,7 +223,6 @@ function deps_lock(args: span[str]) -> int:
                 return 0
     return 0
 
-
 # =============================================================================
 #  publish
 # =============================================================================
@@ -274,7 +270,6 @@ function deps_publish(args: span[str]) -> int:
             defer: result.release()
             stdio.print_line(f"published #{result.package_name.as_str()}@#{result.version.as_str()} -> #{result.path.as_str()}")
     return 0
-
 
 # =============================================================================
 #  fetch
@@ -364,7 +359,11 @@ function fetch_locked(path: str) -> Result[bool, string.String]:
             message.append(expected_manifest.as_str())
             return Result[bool, string.String].failure(error = message)
 
-        match pkg_source.materialize_identity(resolver.cache_root.as_str(), package.package_name.as_str(), ref_of(package.identity)):
+        match pkg_source.materialize_identity(
+            resolver.cache_root.as_str(),
+            package.package_name.as_str(),
+            ref_of(package.identity)
+        ):
             Result.failure as fetch_failure:
                 return Result[bool, string.String].failure(error = fetch_failure.error)
             Result.success as fetch_payload:
@@ -399,7 +398,6 @@ function release_locked_packages(packages: ref[vec.Vec[package_lock.LockedPackag
         unsafe: read(package).release()
         i += 1
     packages.release()
-
 
 # =============================================================================
 #  add
@@ -544,7 +542,6 @@ function deps_add(args: span[str]) -> int:
     else:
         stdio.print_line(f"added #{name.as_str()} in #{manifest_path.as_str()}")
     return 0
-
 
 struct ParsedDependencyArgument:
     name: string.String
@@ -831,7 +828,6 @@ function rollback(
             if fs.is_file(lock_path):
                 let _ = fs.remove(lock_path)
 
-
 # =============================================================================
 #  remove
 # =============================================================================
@@ -927,7 +923,6 @@ function deps_remove(args: span[str]) -> int:
     release_option(ref_of(original_lock))
     stdio.print_line(f"removed #{name} from #{manifest_path.as_str()}")
     return 0
-
 
 # =============================================================================
 #  update
@@ -1115,7 +1110,10 @@ function selective_update(path: str, names: ref[vec.Vec[string.String]]) -> int:
                             break
                         let dependency = unsafe: read(dependency_entry)
                         if dependency.identity.kind == pkg_source.SourceKind.registry_:
-                            var key = pkg_source.registry_dependency_key(parent_key.as_str(), dependency.package_name.as_str())
+                            var key = pkg_source.registry_dependency_key(
+                                parent_key.as_str(),
+                                dependency.package_name.as_str()
+                            )
                             pinned.push(pkg_source.ResolvedVersion(
                                 key = key,
                                 package_name = string.String.from_str(dependency.package_name.as_str()),

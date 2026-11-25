@@ -10,7 +10,7 @@
         "diags": []
       },
       "examples/async_stress_test.mt": {
-        "digest": "9c950083148810e909c8cc6e344c991ad7fb17fc8721c38cde734aae559b5812",
+        "digest": "41e048bd1b0756b7952635b8557eb7181e7f1033bcde28bfc13cddacdb8393e2",
         "rc": 0,
         "diags": [
           [
@@ -771,12 +771,6 @@
             "unused-import",
             "unused import 'hash'",
             6,
-            12
-          ],
-          [
-            "unused-import",
-            "unused import 'str'",
-            7,
             12
           ],
           [
@@ -3763,7 +3757,7 @@
         "diags": []
       },
       "examples/raylib/textures/image_drawing.mt": {
-        "digest": "f759b302569bb513edc2a69709bdbbb5be1d3e2a1962fa950bb91298410450fc",
+        "digest": "1b159b214490deb8a2cc6befb237548da4767ac94c10c8a9bd077ebf9f019840",
         "rc": 0,
         "diags": []
       },

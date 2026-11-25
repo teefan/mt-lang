@@ -130,7 +130,11 @@ function all_call_args_named(call_args: span[ast.Argument]) -> bool:
 
 ## True when the `name[args]` form (no call) is a genuine type specialization
 ## rather than an index access.
-public function specialization_value_target(s: ref[pstate.ParserState], callee: ptr[ast.Expr], args: span[ast.TypeArgument]) -> bool:
+public function specialization_value_target(
+    s: ref[pstate.ParserState],
+    callee: ptr[ast.Expr],
+    args: span[ast.TypeArgument]
+) -> bool:
     if is_identifier_named(callee, "zero") and all_explicit_specialization_args(s, args):
         return true
     if expressions.specialization_target(callee) and all_definite_type_args(s, args):
@@ -143,8 +147,19 @@ public function specialization_value_target(s: ref[pstate.ParserState], callee: 
 
 
 ## True when the `name[args](call_args)` form is a genuine specialized call.
-public function specialization_call_target(s: ref[pstate.ParserState], callee: ptr[ast.Expr], args: span[ast.TypeArgument], call_args: span[ast.Argument]) -> bool:
-    if (is_identifier_named(callee, "default") or is_identifier_named(callee, "zero")) and not callee_known_type_like(s, callee) and not generic_callable_specialization_target(s, callee):
+public function specialization_call_target(
+    s: ref[pstate.ParserState],
+    callee: ptr[ast.Expr],
+    args: span[ast.TypeArgument],
+    call_args: span[ast.Argument]
+) -> bool:
+    if (is_identifier_named(
+        callee,
+        "default"
+    ) or is_identifier_named(
+        callee,
+        "zero"
+    )) and not callee_known_type_like(s, callee) and not generic_callable_specialization_target(s, callee):
         return false
     if builtin_specialization_target(callee):
         return true
@@ -333,7 +348,11 @@ function parse_keyword_identifier(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var node = parser.alloc_expr(s)
     unsafe:
         let t = read(tok)
-        read(node) = ast.Expr.expr_identifier(name = token_mod.token_lexeme(t, s.source), line = t.line, column = t.column)
+        read(node) = ast.Expr.expr_identifier(
+            name = token_mod.token_lexeme(t, s.source),
+            line = t.line,
+            column = t.column
+        )
     return node
 
 
@@ -346,7 +365,10 @@ function parse_paren_primary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
         ln = start_tok.line
         cn = start_tok.column
     var first_expr: ptr[ast.Expr]
-    if (parser.check_name(s) or parser.keyword_token_check(pstate.peek(s))) and parser.check_next(s, tk.TokenKind.equal):
+    if (parser.check_name(s) or parser.keyword_token_check(pstate.peek(s))) and parser.check_next(
+        s,
+        tk.TokenKind.equal
+    ):
         var name_str: str
         let nt = pstate.peek(s) else:
             fatal(c"unexpected eof in named tuple field")
@@ -368,7 +390,10 @@ function parse_paren_primary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
             pstate.step(s)
             if pstate.check(s, tk.TokenKind.rparen):
                 break
-            if (parser.check_name(s) or parser.keyword_token_check(pstate.peek(s))) and parser.check_next(s, tk.TokenKind.equal):
+            if (parser.check_name(s) or parser.keyword_token_check(pstate.peek(s))) and parser.check_next(
+                s,
+                tk.TokenKind.equal
+            ):
                 var name_str: str
                 let nt2 = pstate.peek(s) else:
                     break

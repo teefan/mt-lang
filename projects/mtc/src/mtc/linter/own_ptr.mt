@@ -14,13 +14,11 @@ import std.vec as vec
 
 import mtc.parser.ast as ast
 
-
 ## One binding's use counts (the host's `@binding_ptr_unsafe_uses[name]`).
 public struct PtrUse:
     name: str
     safe: ptr_uint
     unsafe: ptr_uint
-
 
 ## The host's `@ptr_candidates` + `@binding_ptr_unsafe_uses`: the candidate
 ## names, and one use counter per seen name.
@@ -37,7 +35,6 @@ extending PtrState:
     public editable function release() -> void:
         this.candidates.release()
         this.uses.release()
-
 
     ## `record_ptr_candidate`: only a local declaration with an initializer is
     ## a candidate — an explicit `ptr[...]` annotation or a heap allocation
@@ -63,7 +60,6 @@ extending PtrState:
             i += 1
         this.candidates.push(name)
 
-
     ## `track_binding_unsafe_use`: every identifier use counts, keyed by name.
     public editable function record_use(name: str, unsafe_depth: ptr_uint) -> void:
         var i: ptr_uint = 0
@@ -84,7 +80,6 @@ extending PtrState:
         else:
             entry.safe = 1
         this.uses.push(entry)
-
 
     ## The host's `emit_scope_warnings` gate: `binding_kind != :param &&
     ## uses[:unsafe] > 0 && uses[:safe] == 0 && @ptr_candidates.include?(name)`.

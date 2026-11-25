@@ -30,12 +30,11 @@ import mtc.main as main
 ## Machine-readable test output selection.
 enum OutputFormat: ubyte
     human = 0
-    tap   = 1
+    tap = 1
     junit = 2
 
-
 enum TestStatus: ubyte
-    ok   = 0
+    ok = 0
     skip = 1
     fail = 2
 
@@ -45,7 +44,7 @@ enum TestStatus: ubyte
 ## renders one diagnostic line and emits no machine output, while a directory
 ## run reports the file-level `(build error)` row and continues).
 enum TestFileOutcome: ubyte
-    ok          = 0
+    ok = 0
     test_failed = 1
     build_error = 2
 
@@ -159,7 +158,14 @@ function emit_tap(results: ref[vec.Vec[TestResult]]) -> void:
                 TestStatus.skip:
                     if r.has_detail:
                         let d = r.detail.as_str()
-                        stdio.print_format(c"ok %d - %.*s # SKIP %.*s\n", number, int<-(name.len), name.data, int<-(d.len), d.data)
+                        stdio.print_format(
+                            c"ok %d - %.*s # SKIP %.*s\n",
+                            number,
+                            int<-(name.len),
+                            name.data,
+                            int<-(d.len),
+                            d.data
+                        )
                     else:
                         stdio.print_format(c"ok %d - %.*s # SKIP\n", number, int<-(name.len), name.data)
                 TestStatus.fail:
@@ -191,8 +197,18 @@ function emit_junit(results: ref[vec.Vec[TestResult]]) -> void:
 
     let total = int<-(results.len())
     stdio.print_line("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
-    stdio.print_format(c"<testsuites tests=\"%d\" failures=\"%d\" skipped=\"%d\">\n", total, int<-failures, int<-skipped)
-    stdio.print_format(c"  <testsuite name=\"mtc test\" tests=\"%d\" failures=\"%d\" skipped=\"%d\">\n", total, int<-failures, int<-skipped)
+    stdio.print_format(
+        c"<testsuites tests=\"%d\" failures=\"%d\" skipped=\"%d\">\n",
+        total,
+        int<-failures,
+        int<-skipped
+    )
+    stdio.print_format(
+        c"  <testsuite name=\"mtc test\" tests=\"%d\" failures=\"%d\" skipped=\"%d\">\n",
+        total,
+        int<-failures,
+        int<-skipped
+    )
     var i: ptr_uint = 0
     while i < results.len():
         let rp = results.get(i) else:
@@ -205,7 +221,11 @@ function emit_junit(results: ref[vec.Vec[TestResult]]) -> void:
                 TestStatus.ok:
                     stdio.print_format(c"    <testcase name=\"%.*s\"/>\n", int<-(name.len), name.data)
                 TestStatus.skip:
-                    stdio.print_format(c"    <testcase name=\"%.*s\"><skipped/></testcase>\n", int<-(name.len), name.data)
+                    stdio.print_format(
+                        c"    <testcase name=\"%.*s\"><skipped/></testcase>\n",
+                        int<-(name.len),
+                        name.data
+                    )
                 TestStatus.fail:
                     var detail_escaped = if r.has_detail: xml_escape(r.detail.as_str()) else: string.String.from_str("failed")
                     let detail = detail_escaped.as_str()
@@ -263,7 +283,12 @@ function is_compile_fail_fixture(source: str) -> bool:
 ## Run a compile-fail fixture: type-check the file and verify every
 ## `# expect-error:` substring appears in some error diagnostic.  Returns 0 when
 ## the expectations are satisfied and 1 otherwise.
-function run_compile_fail_file(file_path: str, source_text: str, options: TestRunOptions, results: ref[vec.Vec[TestResult]]) -> int:
+function run_compile_fail_file(
+    file_path: str,
+    source_text: str,
+    options: TestRunOptions,
+    results: ref[vec.Vec[TestResult]]
+) -> int:
     var expected = vec.Vec[str].create()
     defer: expected.release()
     collect_expect_errors(source_text, ref_of(expected))
@@ -284,7 +309,12 @@ function run_compile_fail_file(file_path: str, source_text: str, options: TestRu
     if options.scoped:
         var fixture_region = heap_mod.create_region()
         let previous_region = heap_mod.begin_region(ptr_of(fixture_region))
-        let verdict = check_compile_fail_expectations(file_path, expected.as_span(), eff_roots.as_span(), options.platform)
+        let verdict = check_compile_fail_expectations(
+            file_path,
+            expected.as_span(),
+            eff_roots.as_span(),
+            options.platform
+        )
         heap_mod.end_region(previous_region)
         fixture_region.release_all()
         return report_compile_fail_verdict(file_path, expected.as_span(), verdict, options, results)
@@ -295,7 +325,13 @@ function run_compile_fail_file(file_path: str, source_text: str, options: TestRu
 ## Print or record one compile-fail fixture's verdict.  The reason is rebuilt
 ## here from `unmatched_index`, outside any per-file region, so nothing points
 ## into freed memory.
-function report_compile_fail_verdict(file_path: str, expected: span[str], verdict: CompileFailVerdict, options: TestRunOptions, results: ref[vec.Vec[TestResult]]) -> int:
+function report_compile_fail_verdict(
+    file_path: str,
+    expected: span[str],
+    verdict: CompileFailVerdict,
+    options: TestRunOptions,
+    results: ref[vec.Vec[TestResult]]
+) -> int:
     var passed = verdict.outcome == CompileFailOutcome.passed
     var fail_reason = string.String.create()
     defer: fail_reason.release()
@@ -316,9 +352,19 @@ function report_compile_fail_verdict(file_path: str, expected: span[str], verdic
         var name = string.String.from_str(file_path)
         name.append(" (compile-fail)")
         if passed:
-            results.push(TestResult(name = name, status = TestStatus.ok, detail = string.String.create(), has_detail = false))
+            results.push(TestResult(
+                name = name,
+                status = TestStatus.ok,
+                detail = string.String.create(),
+                has_detail = false
+            ))
         else:
-            results.push(TestResult(name = name, status = TestStatus.fail, detail = string.String.from_str(fail_reason.as_str()), has_detail = true))
+            results.push(TestResult(
+                name = name,
+                status = TestStatus.fail,
+                detail = string.String.from_str(fail_reason.as_str()),
+                has_detail = true
+            ))
     else:
         if passed:
             stdio.print_format(c"ok   - %.*s (compile-fail)\n", int<-(file_path.len), file_path.data)
@@ -343,7 +389,6 @@ enum CompileFailOutcome: ubyte
     compiled_cleanly = 1
     unmatched = 2
 
-
 struct CompileFailVerdict:
     outcome: CompileFailOutcome
     unmatched_index: ptr_uint
@@ -352,7 +397,12 @@ struct CompileFailVerdict:
 ## Type-check one fixture and compare its error diagnostics against the
 ## fixture's `# expect-error:` list.  Runs inside the caller's region, so the
 ## loaded program is reclaimed with it; only the outcome crosses the boundary.
-function check_compile_fail_expectations(file_path: str, expected: span[str], eff_roots: span[str], platform: resolver.Platform) -> CompileFailVerdict:
+function check_compile_fail_expectations(
+    file_path: str,
+    expected: span[str],
+    eff_roots: span[str],
+    platform: resolver.Platform
+) -> CompileFailVerdict:
     var program = loader.check_program(file_path, eff_roots, platform)
     defer: program.release()
 
@@ -555,7 +605,14 @@ function parse_test_build_flags(
                 read(positional).push(unsafe: read(rest_ptr))
                 rest += 1
             break
-        if arg == "-o" or arg == "--output" or arg == "--keep-c" or arg == "--cc" or arg == "--profile" or arg == "--platform":
+        if (
+            arg == "-o"
+            or arg == "--output"
+            or arg == "--keep-c"
+            or arg == "--cc"
+            or arg == "--profile"
+            or arg == "--platform"
+        ):
             if bi + 1 >= read(remaining).len():
                 eprint_missing_option_value(arg)
                 return Option[TestBuildFlags].none
@@ -620,7 +677,14 @@ function parse_test_build_flags(
             parsed.frozen = true
             bi += 1
             continue
-        if arg == "--bundle" or arg == "--archive" or arg == "--no-cache" or arg == "--timings" or arg == "--debug-guards" or arg == "--no-debug-guards":
+        if (
+            arg == "--bundle"
+            or arg == "--archive"
+            or arg == "--no-cache"
+            or arg == "--timings"
+            or arg == "--debug-guards"
+            or arg == "--no-debug-guards"
+        ):
             bi += 1
             continue
         if arg.starts_with("-"):
@@ -841,7 +905,13 @@ function run_test_directory(directory: str, options: TestRunOptions) -> int:
                         if kind == TestFileKind.compile_fail:
                             file_rc = run_compile_fail_file(entry_name, source.as_str(), options, ref_of(results))
                         else:
-                            let outcome = run_tests_from_source(entry_name, source.as_str(), options, true, ref_of(results))
+                            let outcome = run_tests_from_source(
+                                entry_name,
+                                source.as_str(),
+                                options,
+                                true,
+                                ref_of(results)
+                            )
                             file_rc = if outcome == TestFileOutcome.ok: 0 else: 1
                         if file_rc != 0:
                             failed += 1
@@ -947,7 +1017,13 @@ function has_test_attribute(attributes: span[ast.AttributeApplication]) -> bool:
 ## `directory` selects the host's channel/error shape: the directory loop guards
 ## a build failure into the file's `(build error)` row, while a file operand
 ## lets it escape.
-function run_tests_from_source(file_path: str, source: str, options: TestRunOptions, directory: bool, results: ref[vec.Vec[TestResult]]) -> TestFileOutcome:
+function run_tests_from_source(
+    file_path: str,
+    source: str,
+    options: TestRunOptions,
+    directory: bool,
+    results: ref[vec.Vec[TestResult]]
+) -> TestFileOutcome:
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
     let file = parser.parse_source(source, ref_of(parse_diags))
@@ -1121,7 +1197,13 @@ function count_tests_in_file(file_path: str) -> int:
 ## exec "$@"'`, capturing output.  `timeout` reports exit 124 on expiry and the
 ## `ulimit -v` cap bounds virtual memory so a hung/runaway binary cannot stall
 ## or exhaust the host.
-function run_sandboxed(binary_path: str, timeout_seconds: ptr_uint, memory_mb: ptr_uint, sanitize: bool, extra_arg: Option[str]) -> Result[process.CaptureResult, process.ProcessError]:
+function run_sandboxed(
+    binary_path: str,
+    timeout_seconds: ptr_uint,
+    memory_mb: ptr_uint,
+    sanitize: bool,
+    extra_arg: Option[str]
+) -> Result[process.CaptureResult, process.ProcessError]:
     var ulimit_cmd = string.String.create()
     defer: ulimit_cmd.release()
     var run_cmd = vec.Vec[str].create()
@@ -1271,7 +1353,13 @@ function first_nonblank_line(text: str) -> str:
 ## drops the message (the host buffers it); a directory human run prints the
 ## FAILED header and the message on stderr; a file operand always prints the
 ## message on stderr and never emits machine output.
-function report_runner_build_error(file_path: str, message: str, options: TestRunOptions, directory: bool, results: ref[vec.Vec[TestResult]]) -> void:
+function report_runner_build_error(
+    file_path: str,
+    message: str,
+    options: TestRunOptions,
+    directory: bool,
+    results: ref[vec.Vec[TestResult]]
+) -> void:
     let machine = options.format != OutputFormat.human
     if directory and machine:
         var name = string.String.from_str(file_path)
@@ -1297,7 +1385,14 @@ function report_runner_build_error(file_path: str, message: str, options: TestRu
 ## Build one runner binary whose `main(args)` dispatches to a single @[test]
 ## function selected by `args[1]`, then run it once per test in its own process
 ## so an aborting assertion is isolated to that test.
-function run_normal_test_runner(file_path: str, source_text: str, test_names: ref[vec.Vec[str]], options: TestRunOptions, directory: bool, results: ref[vec.Vec[TestResult]]) -> TestFileOutcome:
+function run_normal_test_runner(
+    file_path: str,
+    source_text: str,
+    test_names: ref[vec.Vec[str]],
+    options: TestRunOptions,
+    directory: bool,
+    results: ref[vec.Vec[TestResult]]
+) -> TestFileOutcome:
     var runner_source = string.String.create()
     defer: runner_source.release()
     runner_source.append(source_text)
@@ -1348,13 +1443,24 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
         let tn_ptr = test_names.get(ti2) else:
             break
         let tn = unsafe: read(tn_ptr)
-        match run_sandboxed(runner_bin_str.as_str(), options.timeout_seconds, options.memory_mb, options.sanitize, Option[str].some(value = tn)):
+        match run_sandboxed(
+            runner_bin_str.as_str(),
+            options.timeout_seconds,
+            options.memory_mb,
+            options.sanitize,
+            Option[str].some(value = tn)
+        ):
             Result.success as run_result:
                 var capture_result = run_result.value
                 let code = capture_result.status.normalized_code()
                 if code == 0:
                     if machine:
-                        results.push(TestResult(name = string.String.from_str(tn), status = TestStatus.ok, detail = string.String.create(), has_detail = false))
+                        results.push(TestResult(
+                            name = string.String.from_str(tn),
+                            status = TestStatus.ok,
+                            detail = string.String.create(),
+                            has_detail = false
+                        ))
                     else:
                         stdio.print_format(c"ok   - %.*s\n", int<-(tn.len), tn.data)
                 else:
@@ -1381,16 +1487,32 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
                         if detail.len() == 0:
                             detail.append("test aborted")
                     if machine:
-                        results.push(TestResult(name = string.String.from_str(tn), status = TestStatus.fail, detail = detail, has_detail = true))
+                        results.push(TestResult(
+                            name = string.String.from_str(tn),
+                            status = TestStatus.fail,
+                            detail = detail,
+                            has_detail = true
+                        ))
                     else:
                         let detail_text = detail.as_str()
-                        stdio.print_format(c"FAIL - %.*s: %.*s\n", int<-(tn.len), tn.data, int<-(detail_text.len), detail_text.data)
+                        stdio.print_format(
+                            c"FAIL - %.*s: %.*s\n",
+                            int<-(tn.len),
+                            tn.data,
+                            int<-(detail_text.len),
+                            detail_text.data
+                        )
                         detail.release()
                 capture_result.release()
             Result.failure:
                 any_failed = true
                 if machine:
-                    results.push(TestResult(name = string.String.from_str(tn), status = TestStatus.fail, detail = string.String.from_str("runner crashed"), has_detail = true))
+                    results.push(TestResult(
+                        name = string.String.from_str(tn),
+                        status = TestStatus.fail,
+                        detail = string.String.from_str("runner crashed"),
+                        has_detail = true
+                    ))
                 else:
                     stdio.print_format(c"FAIL - %.*s: runner crashed\n", int<-(tn.len), tn.data)
         ti2 += 1
@@ -1405,7 +1527,14 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
 ## main calls the test and returns 0 on either outcome, exactly as the host's
 ## `death_test_runner_main`; the test passes only if the process aborts (fatal /
 ## failed safety check) instead of returning or timing out.
-function run_death_test(file_path: str, source_text: str, test_name: str, options: TestRunOptions, directory: bool, results: ref[vec.Vec[TestResult]]) -> TestFileOutcome:
+function run_death_test(
+    file_path: str,
+    source_text: str,
+    test_name: str,
+    options: TestRunOptions,
+    directory: bool,
+    results: ref[vec.Vec[TestResult]]
+) -> TestFileOutcome:
     var runner_source = string.String.create()
     defer: runner_source.release()
     runner_source.append(source_text)
@@ -1438,7 +1567,13 @@ function run_death_test(file_path: str, source_text: str, test_name: str, option
 
     var passed = false
     var reason = "expected a fatal abort, but the test returned"
-    match run_sandboxed(runner_bin_str.as_str(), options.timeout_seconds, options.memory_mb, options.sanitize, Option[str].none):
+    match run_sandboxed(
+        runner_bin_str.as_str(),
+        options.timeout_seconds,
+        options.memory_mb,
+        options.sanitize,
+        Option[str].none
+    ):
         Result.success as run_result:
             var capture_result = run_result.value
             defer: capture_result.release()
@@ -1459,9 +1594,19 @@ function run_death_test(file_path: str, source_text: str, test_name: str, option
         var name = string.String.from_str(test_name)
         name.append(" (expect_fatal)")
         if passed:
-            results.push(TestResult(name = name, status = TestStatus.ok, detail = string.String.create(), has_detail = false))
+            results.push(TestResult(
+                name = name,
+                status = TestStatus.ok,
+                detail = string.String.create(),
+                has_detail = false
+            ))
         else:
-            results.push(TestResult(name = name, status = TestStatus.fail, detail = string.String.from_str(reason), has_detail = true))
+            results.push(TestResult(
+                name = name,
+                status = TestStatus.fail,
+                detail = string.String.from_str(reason),
+                has_detail = true
+            ))
     else:
         if passed:
             stdio.print_format(c"ok   - %.*s (expect_fatal)\n", int<-(test_name.len), test_name.data)

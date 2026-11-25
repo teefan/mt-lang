@@ -8,7 +8,6 @@ import std.string as string
 import mtc.parser.ast as ast
 import mtc.linter.linter as linter_mod
 
-
 struct DocLine:
     line: ptr_uint
     column: ptr_uint
@@ -183,7 +182,16 @@ public function names_contains(names: ref[vec.Vec[str]], name: str) -> bool:
 
 ## Parse and validate the doc block above a declaration.  `is_callable` /
 ## `param_names` / `return_type` describe function-like declarations.
-function process_doc_definition(lines: ref[vec.Vec[str]], decl_line: ptr_uint, decl_name: str, is_callable: bool, param_names: ref[vec.Vec[str]], return_type: ptr[ast.TypeRef]?, path: str, warnings: ref[vec.Vec[linter_mod.Warning]]) -> void:
+function process_doc_definition(
+    lines: ref[vec.Vec[str]],
+    decl_line: ptr_uint,
+    decl_name: str,
+    is_callable: bool,
+    param_names: ref[vec.Vec[str]],
+    return_type: ptr[ast.TypeRef]?,
+    path: str,
+    warnings: ref[vec.Vec[linter_mod.Warning]]
+) -> void:
     var docs = collect_doc_block(lines, decl_line)
     defer: docs.release()
     if docs.len() == 0:
@@ -206,13 +214,31 @@ function process_doc_definition(lines: ref[vec.Vec[str]], decl_line: ptr_uint, d
                 let payload = parsed.value.payload
                 if tag.equal("param"):
                     if payload.len == 0:
-                        linter_mod.push_warning_at(warnings, path, dl.line, dl.column, 6, "doc-tag", "doc tag @param requires a parameter name", "hint")
+                        linter_mod.push_warning_at(
+                            warnings,
+                            path,
+                            dl.line,
+                            dl.column,
+                            6,
+                            "doc-tag",
+                            "doc tag @param requires a parameter name",
+                            "hint"
+                        )
                     else:
                         match parse_param_name(payload):
                             Option.some as pn:
                                 param_tags.push(DocParamTag(name = pn.value, line = dl.line, column = dl.column))
                             Option.none:
-                                linter_mod.push_warning_at(warnings, path, dl.line, dl.column, 6, "doc-tag", "doc tag @param has an invalid parameter name", "hint")
+                                linter_mod.push_warning_at(
+                                    warnings,
+                                    path,
+                                    dl.line,
+                                    dl.column,
+                                    6,
+                                    "doc-tag",
+                                    "doc tag @param has an invalid parameter name",
+                                    "hint"
+                                )
                 else if tag.equal("return") or tag.equal("returns"):
                     has_return = true
                     return_line = dl.line
@@ -223,7 +249,16 @@ function process_doc_definition(lines: ref[vec.Vec[str]], decl_line: ptr_uint, d
                     var msg = string.String.create()
                     msg.append("unknown doc tag @")
                     msg.append(tag)
-                    linter_mod.push_warning_at(warnings, path, dl.line, dl.column, tag.len + 1, "doc-tag", msg.as_str(), "hint")
+                    linter_mod.push_warning_at(
+                        warnings,
+                        path,
+                        dl.line,
+                        dl.column,
+                        tag.len + 1,
+                        "doc-tag",
+                        msg.as_str(),
+                        "hint"
+                    )
             Option.none:
                 pass
         i += 1
@@ -234,10 +269,28 @@ function process_doc_definition(lines: ref[vec.Vec[str]], decl_line: ptr_uint, d
             let ptp = param_tags.get(pi) else:
                 break
             let pt = unsafe: read(ptp)
-            linter_mod.push_warning_at(warnings, path, pt.line, pt.column, 1, "doc-tag", "callable doc tags are only valid on function and method declarations", "hint")
+            linter_mod.push_warning_at(
+                warnings,
+                path,
+                pt.line,
+                pt.column,
+                1,
+                "doc-tag",
+                "callable doc tags are only valid on function and method declarations",
+                "hint"
+            )
             pi += 1
         if has_return:
-            linter_mod.push_warning_at(warnings, path, return_line, return_column, 1, "doc-tag", "callable doc tags are only valid on function and method declarations", "hint")
+            linter_mod.push_warning_at(
+                warnings,
+                path,
+                return_line,
+                return_column,
+                1,
+                "doc-tag",
+                "callable doc tags are only valid on function and method declarations",
+                "hint"
+            )
         return
 
     var pi: ptr_uint = 0
@@ -263,7 +316,12 @@ function process_doc_definition(lines: ref[vec.Vec[str]], decl_line: ptr_uint, d
         linter_mod.push_warning_at(warnings, path, return_line, return_column, 7, "doc-tag", msg.as_str(), "hint")
 
 
-public function lint_doc_tags(decls: span[ast.Decl], source: str, path: str, warnings: ref[vec.Vec[linter_mod.Warning]]) -> void:
+public function lint_doc_tags(
+    decls: span[ast.Decl],
+    source: str,
+    path: str,
+    warnings: ref[vec.Vec[linter_mod.Warning]]
+) -> void:
     var lines = split_lines(source)
     defer: lines.release()
     var empty_names = vec.Vec[str].create()
@@ -276,47 +334,191 @@ public function lint_doc_tags(decls: span[ast.Decl], source: str, path: str, war
                 ast.Decl.decl_function as fun:
                     var pn = param_names_of(fun.method_params)
                     defer: pn.release()
-                    process_doc_definition(ref_of(lines), fun.line, fun.name, true, ref_of(pn), fun.return_type, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        fun.line,
+                        fun.name,
+                        true,
+                        ref_of(pn),
+                        fun.return_type,
+                        path,
+                        warnings
+                    )
                 ast.Decl.decl_extending_block as ex:
                     var j: ptr_uint = 0
                     while j < ex.methods.len:
                         let m = read(ex.methods.data + j)
                         var pn = param_names_of(m.method_params)
-                        process_doc_definition(ref_of(lines), m.line, m.name, true, ref_of(pn), m.return_type, path, warnings)
+                        process_doc_definition(
+                            ref_of(lines),
+                            m.line,
+                            m.name,
+                            true,
+                            ref_of(pn),
+                            m.return_type,
+                            path,
+                            warnings
+                        )
                         pn.release()
                         j += 1
                 ast.Decl.decl_extern_function as ef:
                     var pn = param_names_of_foreign(ef.extern_params)
                     defer: pn.release()
-                    process_doc_definition(ref_of(lines), ef.line, ef.name, true, ref_of(pn), ef.return_type, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        ef.line,
+                        ef.name,
+                        true,
+                        ref_of(pn),
+                        ef.return_type,
+                        path,
+                        warnings
+                    )
                 ast.Decl.decl_foreign_function as ff:
                     var pn = param_names_of_foreign(ff.foreign_params)
                     defer: pn.release()
-                    process_doc_definition(ref_of(lines), ff.line, ff.name, true, ref_of(pn), ff.return_type, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        ff.line,
+                        ff.name,
+                        true,
+                        ref_of(pn),
+                        ff.return_type,
+                        path,
+                        warnings
+                    )
                 ast.Decl.decl_const as c:
-                    process_doc_definition(ref_of(lines), c.line, c.name, false, ref_of(empty_names), null, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        c.line,
+                        c.name,
+                        false,
+                        ref_of(empty_names),
+                        null,
+                        path,
+                        warnings
+                    )
                 ast.Decl.decl_var as v:
-                    process_doc_definition(ref_of(lines), v.line, v.name, false, ref_of(empty_names), null, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        v.line,
+                        v.name,
+                        false,
+                        ref_of(empty_names),
+                        null,
+                        path,
+                        warnings
+                    )
                 ast.Decl.decl_struct as s:
-                    process_doc_definition(ref_of(lines), s.line, s.name, false, ref_of(empty_names), null, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        s.line,
+                        s.name,
+                        false,
+                        ref_of(empty_names),
+                        null,
+                        path,
+                        warnings
+                    )
                 ast.Decl.decl_union as u:
-                    process_doc_definition(ref_of(lines), u.line, u.name, false, ref_of(empty_names), null, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        u.line,
+                        u.name,
+                        false,
+                        ref_of(empty_names),
+                        null,
+                        path,
+                        warnings
+                    )
                 ast.Decl.decl_enum as e:
-                    process_doc_definition(ref_of(lines), e.line, e.name, false, ref_of(empty_names), null, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        e.line,
+                        e.name,
+                        false,
+                        ref_of(empty_names),
+                        null,
+                        path,
+                        warnings
+                    )
                 ast.Decl.decl_flags as f:
-                    process_doc_definition(ref_of(lines), f.line, f.name, false, ref_of(empty_names), null, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        f.line,
+                        f.name,
+                        false,
+                        ref_of(empty_names),
+                        null,
+                        path,
+                        warnings
+                    )
                 ast.Decl.decl_variant as va:
-                    process_doc_definition(ref_of(lines), va.line, va.name, false, ref_of(empty_names), null, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        va.line,
+                        va.name,
+                        false,
+                        ref_of(empty_names),
+                        null,
+                        path,
+                        warnings
+                    )
                 ast.Decl.decl_opaque as o:
-                    process_doc_definition(ref_of(lines), o.line, o.name, false, ref_of(empty_names), null, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        o.line,
+                        o.name,
+                        false,
+                        ref_of(empty_names),
+                        null,
+                        path,
+                        warnings
+                    )
                 ast.Decl.decl_type_alias as ta:
-                    process_doc_definition(ref_of(lines), ta.line, ta.name, false, ref_of(empty_names), null, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        ta.line,
+                        ta.name,
+                        false,
+                        ref_of(empty_names),
+                        null,
+                        path,
+                        warnings
+                    )
                 ast.Decl.decl_interface as iface:
-                    process_doc_definition(ref_of(lines), iface.line, iface.name, false, ref_of(empty_names), null, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        iface.line,
+                        iface.name,
+                        false,
+                        ref_of(empty_names),
+                        null,
+                        path,
+                        warnings
+                    )
                 ast.Decl.decl_event as ev:
-                    process_doc_definition(ref_of(lines), ev.line, ev.name, false, ref_of(empty_names), null, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        ev.line,
+                        ev.name,
+                        false,
+                        ref_of(empty_names),
+                        null,
+                        path,
+                        warnings
+                    )
                 ast.Decl.decl_attribute as at:
-                    process_doc_definition(ref_of(lines), at.line, at.name, false, ref_of(empty_names), null, path, warnings)
+                    process_doc_definition(
+                        ref_of(lines),
+                        at.line,
+                        at.name,
+                        false,
+                        ref_of(empty_names),
+                        null,
+                        path,
+                        warnings
+                    )
                 _:
                     pass
         i += 1

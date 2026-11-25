@@ -10,7 +10,6 @@ import std.process as process
 
 import mtc.bindgen as bindgen
 
-
 public const MACRO_PROBE_PREFIX: str = "__mt_bindgen_macro_"
 
 

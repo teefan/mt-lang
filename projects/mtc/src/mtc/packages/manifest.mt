@@ -19,11 +19,9 @@ import std.vec as vec
 import mtc.packages.paths as paths
 import mtc.packages.version as version
 
-
 public enum PackageKind: ubyte
     application = 0
     library = 1
-
 
 public struct PackageDependency:
     name: string.String
@@ -34,7 +32,6 @@ public struct PackageDependency:
     git_rev: Option[string.String]
     git_subdir: Option[string.String]
     path: Option[string.String]
-
 
 public struct PackageManifest:
     root_dir: string.String
@@ -50,7 +47,6 @@ public struct PackageManifest:
     assets_paths: vec.Vec[string.String]
     html_template_path: Option[string.String]
     dependencies: vec.Vec[PackageDependency]
-
 
 struct ManifestLocation:
     manifest_path: string.String
@@ -68,16 +64,20 @@ extending PackageDependency:
     public function path_dependency() -> bool:
         return this.path.is_some()
 
+
     public function git_dependency() -> bool:
         return this.git.is_some()
 
+
     public function registry() -> bool:
         return this.version_req.is_some() and not this.path_dependency() and not this.git_dependency()
+
 
     public function exact_registry_version() -> bool:
         if not this.registry():
             return false
         return this.version.is_some()
+
 
     public editable function release() -> void:
         this.name.release()
@@ -102,6 +102,7 @@ extending PackageManifest:
             PackageKind.library:
                 return "library"
         return "application"
+
 
     public editable function release() -> void:
         this.root_dir.release()
@@ -144,7 +145,6 @@ function failure(message: string.String) -> Result[PackageManifest, string.Strin
 function location_failure(message: string.String) -> Result[ManifestLocation, string.String]:
     return Result[ManifestLocation, string.String].failure(error = message)
 
-
 # =============================================================================
 #  Public loading
 # =============================================================================
@@ -186,7 +186,12 @@ public function load(path: str) -> Result[PackageManifest, string.String]:
             document = parse_payload.value
     defer: document.release()
 
-    return build_manifest(ref_of(document), requested.as_str(), location.root_dir.as_str(), location.manifest_path.as_str())
+    return build_manifest(
+        ref_of(document),
+        requested.as_str(),
+        location.root_dir.as_str(),
+        location.manifest_path.as_str()
+    )
 
 
 public function load_option(path: str) -> Option[PackageManifest]:
@@ -287,7 +292,6 @@ function invalid_manifest_prefix(manifest_path: str) -> string.String:
     message.append(": ")
     return message
 
-
 # =============================================================================
 #  Manifest discovery
 # =============================================================================
@@ -340,7 +344,6 @@ function resolve_manifest_path(path: str) -> Result[ManifestLocation, string.Str
         var next = string.String.from_str(parent)
         current.release()
         current = next
-
 
 # =============================================================================
 #  Manifest construction
@@ -697,7 +700,6 @@ function normalize_platform(value: str) -> Result[str, string.String]:
     message.append("; expected linux|windows|wasm|darwin")
     return Result[str, string.String].failure(error = message)
 
-
 # =============================================================================
 #  TOML value access
 # =============================================================================
@@ -780,7 +782,6 @@ function normalized_optional(value: Option[string.String]) -> Option[string.Stri
         Option.none:
             return Option[string.String].none
 
-
 # =============================================================================
 #  Assets
 # =============================================================================
@@ -852,7 +853,10 @@ function parse_assets(build_table: ptr[toml.Table]?, root_dir: str) -> Result[As
             aj += 1
         ai += 1
     if duplicates.len() > 0:
-        duplicates.sort_by(proc(a: ptr[string.String], b: ptr[string.String]) -> int: unsafe: read(a).as_str().compare(unsafe: read(b).as_str()))
+        duplicates.sort_by(proc(
+            a: ptr[string.String],
+            b: ptr[string.String]
+        ) -> int: unsafe: read(a).as_str().compare(unsafe: read(b).as_str()))
         var message = string.String.from_str("build.assets entries must have unique basenames: ")
         var di: ptr_uint = 0
         while di < duplicates.len():
@@ -888,7 +892,6 @@ function release_asset_paths(values: ref[vec.Vec[string.String]]) -> void:
         unsafe: read(value).release()
         i += 1
     values.release()
-
 
 # =============================================================================
 #  Dependencies
@@ -984,7 +987,11 @@ function parse_dependency(
     return unsupported_dependency(name, manifest_path, value_class_name(value))
 
 
-function unsupported_dependency(name: str, manifest_path: str, class_name: str) -> Result[PackageDependency, string.String]:
+function unsupported_dependency(
+    name: str,
+    manifest_path: str,
+    class_name: str
+) -> Result[PackageDependency, string.String]:
     var message = string.String.from_str("dependency ")
     message.append(name)
     message.append(" in ")
@@ -1121,7 +1128,13 @@ function parse_dependency_object(
     match parse_requirement_owned(name, requirement_text.as_str(), manifest_path):
         Result.failure as req_failure:
             requirement_text.release()
-            release_dependency_parts(ref_of(version_value), ref_of(git_value), ref_of(git_rev_value), ref_of(git_subdir_value), ref_of(path_value))
+            release_dependency_parts(
+                ref_of(version_value),
+                ref_of(git_value),
+                ref_of(git_rev_value),
+                ref_of(git_subdir_value),
+                ref_of(path_value)
+            )
             return Result[PackageDependency, string.String].failure(error = req_failure.error)
         Result.success as req_payload:
             requirement_text.release()

@@ -16,11 +16,10 @@ import std.vec as vec
 
 import mtc.loader.errors as errors
 
-
 public enum Platform: ubyte
-    linux   = 0
+    linux = 0
     windows = 1
-    wasm    = 2
+    wasm = 2
 
 
 ## The platform a configuration label names (`linux`/`windows`/`wasm`).
@@ -128,7 +127,6 @@ public function infer_module_name(path: str, roots: span[str]) -> string.String:
         Option.none:
             return module_name_from_relative(path_ops.basename(path))
 
-
 # =============================================================================
 #  Compiler-provided module roots
 # =============================================================================
@@ -208,7 +206,6 @@ function normalize_root_path(root: str) -> string.String:
     if path_ops.basename(root).equal("std"):
         return string.String.from_str(path_ops.dirname(root))
     return string.String.from_str(root)
-
 
 # =============================================================================
 #  Internal helpers

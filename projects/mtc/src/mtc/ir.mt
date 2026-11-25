@@ -12,7 +12,6 @@
 import mtc.semantic.types as types
 import std.mem.heap as heap
 
-
 # =============================================================================
 #  Leaf value types
 # =============================================================================
@@ -20,11 +19,9 @@ import std.mem.heap as heap
 public struct Include:
     header: str
 
-
 public struct Field:
     name: str
     ty: types.Type
-
 
 public struct Param:
     name: str
@@ -35,23 +32,19 @@ public struct Param:
     # `some(true)` for a pointer-lowered parameter (an editable receiver).
     pointer: Option[bool]
 
-
 public struct EnumMember:
     name: str
     linkage_name: str
     value: ptr[Expr]
 
-
 public struct AggregateField:
     name: str
     value: ptr[Expr]
-
 
 public struct VariantArm:
     name: str
     linkage_name: str
     fields: span[Field]
-
 
 ## One arm of a lowered switch.  `is_default` selects the C `default:` case, in
 ## which `value` is null; ordinary cases carry a literal `value`.
@@ -59,7 +52,6 @@ public struct SwitchCase:
     is_default: bool
     value: ptr[Expr]?
     body: span[Stmt]
-
 
 # =============================================================================
 #  Expressions (recursive — heap-allocated via ptr[Expr])
@@ -73,7 +65,6 @@ public struct ReinterpretExpr:
     source_type: types.Type
     expression: ptr[Expr]
     ty: types.Type
-
 
 public variant Expr:
     expr_name(name: str, ty: types.Type, pointer: Option[bool])
@@ -124,7 +115,6 @@ public variant Expr:
     ## `src` with one lane replaced (emitted as a statement expression).
     expr_simd_lane_with(src: ptr[Expr], index: ptr[Expr], value: ptr[Expr], ty: types.Type)
 
-
 # =============================================================================
 #  Statements (recursive — heap-allocated via ptr[Stmt])
 # =============================================================================
@@ -145,7 +135,6 @@ public variant Stmt:
     stmt_return(value: ptr[Expr]?, line: ptr_uint, source_path: str)
     stmt_expression(expression: ptr[Expr], line: ptr_uint, source_path: str)
 
-
 # =============================================================================
 #  Program-level declarations
 # =============================================================================
@@ -160,20 +149,17 @@ public struct Constant:
     line: ptr_uint
     path: str
 
-
 public struct Global:
     name: str
     linkage_name: str
     ty: types.Type
     value: ptr[Expr]
 
-
 public struct OpaqueDecl:
     name: str
     linkage_name: str
     forward_declarable: bool
     source_module: Option[str]
-
 
 public struct StructDecl:
     name: str
@@ -183,13 +169,11 @@ public struct StructDecl:
     alignment: int
     source_module: Option[str]
 
-
 public struct UnionDecl:
     name: str
     linkage_name: str
     fields: span[Field]
     source_module: Option[str]
-
 
 public struct EnumDecl:
     name: str
@@ -198,18 +182,15 @@ public struct EnumDecl:
     members: span[EnumMember]
     is_flags: bool
 
-
 public struct VariantDecl:
     name: str
     linkage_name: str
     arms: span[VariantArm]
     source_module: Option[str]
 
-
 public struct StaticAssert:
     condition: ptr[Expr]
     message: ptr[Expr]
-
 
 public struct Function:
     name: str
@@ -223,7 +204,6 @@ public struct Function:
     ## building a library (`build --kind static|shared`).
     public_export: bool
     method_receiver_param: bool
-
 
 # =============================================================================
 #  Program root
@@ -268,19 +248,19 @@ public struct Program:
     ## idempotent across copies.
     arena: ptr[heap.Region]?
 
-
 ## One external struct's field layout, keyed by `naming.type_c_key` so the C
 ## backend can find it from the type in an equality comparison.
 public struct ExternalStructLayout:
     key: str
     fields: span[Field]
 
-
 public struct TypeAlias:
     name: str
     qualified_name: str
     target_type: types.Type
     backing_c_name: Option[str]
+
+
 ## result and a convenient base for incremental assembly.
 public function empty_program(module_name: str, source_path: str) -> Program:
     return Program(

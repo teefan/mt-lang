@@ -15,7 +15,12 @@ import mtc.lsp.protocol as proto
 import mtc.lsp.workspace as workspace
 
 
-public function handle_workspace_symbol(ws: ref[workspace.Workspace], query: str, params: json.Value, id: json.Value) -> void:
+public function handle_workspace_symbol(
+    ws: ref[workspace.Workspace],
+    query: str,
+    params: json.Value,
+    id: json.Value
+) -> void:
     let work_token = proto.extract_token(params, "workDoneToken")
     let partial_token = proto.extract_token(params, "partialResultToken")
     match work_token:

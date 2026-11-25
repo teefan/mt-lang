@@ -32,7 +32,6 @@ import mtc.lexer.trivia as triv
 import mtc.parser.ast as ast
 import mtc.strings
 
-
 const IF_EXPRESSION_PRECEDENCE: int = 5
 const POSTFIX_PRECEDENCE: int = 90
 const UNARY_PRECEDENCE: int = 80
@@ -45,7 +44,6 @@ struct CommentEntry:
     line: ptr_uint
     text: str
     consumed: bool
-
 
 struct Formatter:
     buffer: string.String
@@ -89,7 +87,11 @@ public function format_source_file(file: ast.SourceFile) -> string.String:
 ## leading (above the construct) or inline (trailing the header line) comments,
 ## mirroring `PrettyPrinter::ASTFormatter#format(node, trivia:)`.  `mtc parse`
 ## stays trivia-free like the host's.
-public function format_source_file_with_trivia(file: ast.SourceFile, source: str, trivia: span[triv.TriviaEntry]) -> string.String:
+public function format_source_file_with_trivia(
+    file: ast.SourceFile,
+    source: str,
+    trivia: span[triv.TriviaEntry]
+) -> string.String:
     var f = create_formatter(file)
     build_comment_state(ref_of(f), source, trivia)
     emit_source_file(ref_of(f), file)
@@ -98,7 +100,6 @@ public function format_source_file_with_trivia(file: ast.SourceFile, source: str
     if f.buffer.len == 0:
         f.buffer.append("\n")
     return f.buffer
-
 
 # =============================================================================
 #  String helpers
@@ -123,7 +124,6 @@ function indent_str(levels: ptr_uint) -> str:
         buf.append("    ")
         i += 1
     return buf.as_str()
-
 
 # =============================================================================
 #  Line buffer
@@ -151,7 +151,6 @@ function blank_line(f: ref[Formatter]) -> void:
     f.line_starts.push(f.buffer.len())
     f.buffer.append("\n")
     f.last_blank = true
-
 
 # =============================================================================
 #  Comment reattachment (host `ASTFormatter#build_comment_map` and friends)
@@ -290,7 +289,6 @@ function unsafe_inline_comment_conflict(f: ref[Formatter], unsafe_line: ptr_uint
         i += 1
     return false
 
-
 # =============================================================================
 #  AST line accessors (the host reads `node.line` polymorphically)
 # =============================================================================
@@ -388,7 +386,6 @@ function stmt_line(st: ast.Stmt) -> ptr_uint:
         ast.Stmt.stmt_block:
             return 0
 
-
 # =============================================================================
 #  Precedence / wrapping
 # =============================================================================
@@ -421,7 +418,6 @@ function wrap(text: str, parent_precedence: int, current_precedence: int) -> str
     if current_precedence >= parent_precedence:
         return text
     return strings.join_three("(", text, ")")
-
 
 # =============================================================================
 #  Types (single-line)
@@ -559,7 +555,6 @@ function render_foreign_param_list(params: span[ast.ForeignParam], variadic: boo
         buf.append("...")
     return buf.as_str()
 
-
 # =============================================================================
 #  Type parameters
 # =============================================================================
@@ -630,7 +625,6 @@ function render_implements_clause(impls: span[ast.QualifiedName]) -> str:
         i += 1
     return strings.join_two(" implements ", join_strs(names.as_span(), ", "))
 
-
 # =============================================================================
 #  Attributes
 # =============================================================================
@@ -671,7 +665,6 @@ function render_argument(f: ref[Formatter], a: ast.Argument) -> str:
         Option.none:
             return rx(f, a.arg_value, 0)
 
-
 # =============================================================================
 #  Visibility
 # =============================================================================
@@ -682,7 +675,6 @@ function visibility_prefix(f: ref[Formatter], visibility: bool) -> str:
     if visibility:
         return "public "
     return ""
-
 
 # =============================================================================
 #  Source file
@@ -818,7 +810,6 @@ function raw_group(d: ast.Decl) -> int:
         _:
             return 0
 
-
 # =============================================================================
 #  Declarations
 # =============================================================================
@@ -853,7 +844,13 @@ function emit_decl(f: ref[Formatter], d: ast.Decl) -> void:
         ast.Decl.decl_function as fun:
             emit_attribute_applications(f, fun.attributes)
             var async_prefix = if fun.is_async: "async " else: ""
-            var sig = strings.join_five(visibility_prefix(f, fun.visibility), async_prefix, "function ", fun.name, render_type_params(fun.type_params))
+            var sig = strings.join_five(
+                visibility_prefix(f, fun.visibility),
+                async_prefix,
+                "function ",
+                fun.name,
+                render_type_params(fun.type_params)
+            )
             sig = strings.join_four(sig, "(", render_param_list(fun.method_params), ")")
             let frt = fun.return_type
             if frt != null:
@@ -900,9 +897,23 @@ function emit_decl(f: ref[Formatter], d: ast.Decl) -> void:
                     pass
             emit_line(f, text)
         ast.Decl.decl_type_alias as ta:
-            emit_line(f, strings.join_five(visibility_prefix(f, ta.visibility), "type ", ta.name, " = ", render_type_ptr(ta.target)))
+            emit_line(
+                f,
+                strings.join_five(
+                    visibility_prefix(f, ta.visibility),
+                    "type ",
+                    ta.name,
+                    " = ",
+                    render_type_ptr(ta.target)
+                )
+            )
         ast.Decl.decl_interface as it:
-            var header = strings.join_four(visibility_prefix(f, it.visibility), "interface ", it.name, render_type_params(it.type_params))
+            var header = strings.join_four(
+                visibility_prefix(f, it.visibility),
+                "interface ",
+                it.name,
+                render_type_params(it.type_params)
+            )
             emit_line(f, strings.join_two(header, ":"))
             f.indent += 1
             var mi: ptr_uint = 0
@@ -940,14 +951,26 @@ function emit_decl(f: ref[Formatter], d: ast.Decl) -> void:
             emit_line(f, text)
         ast.Decl.decl_foreign_function as ff:
             emit_attribute_applications(f, ff.attrs)
-            var text = strings.join_four(visibility_prefix(f, ff.visibility), "foreign function ", ff.name, render_type_params(ff.type_params))
+            var text = strings.join_four(
+                visibility_prefix(f, ff.visibility),
+                "foreign function ",
+                ff.name,
+                render_type_params(ff.type_params)
+            )
             text = strings.join_four(text, "(", render_foreign_param_list(ff.foreign_params, ff.variadic), ")")
             text = strings.join_three(text, " -> ", render_type_ptr(ff.return_type))
             text = strings.join_three(text, " = ", rx(f, ff.mapping, 0))
             emit_line(f, text)
         ast.Decl.decl_event as ev:
             emit_attribute_applications(f, ev.attrs)
-            var text = strings.join_six(visibility_prefix(f, ev.visibility), "event ", ev.name, "[", int_to_str(ev.capacity), "]")
+            var text = strings.join_six(
+                visibility_prefix(f, ev.visibility),
+                "event ",
+                ev.name,
+                "[",
+                int_to_str(ev.capacity),
+                "]"
+            )
             let pt = ev.payload_type
             if pt != null:
                 text = strings.join_four(text, "(", render_type_ptr(pt), ")")
@@ -955,7 +978,13 @@ function emit_decl(f: ref[Formatter], d: ast.Decl) -> void:
         ast.Decl.decl_static_assert as sa:
             emit_line(f, strings.join_five("static_assert(", rx(f, sa.condition, 0), ", ", rx_opt(f, sa.message), ")"))
         ast.Decl.decl_attribute as at:
-            var text = strings.join_five(visibility_prefix(f, at.visibility), "attribute[", join_strs(at.targets, ", "), "] ", at.name)
+            var text = strings.join_five(
+                visibility_prefix(f, at.visibility),
+                "attribute[",
+                join_strs(at.targets, ", "),
+                "] ",
+                at.name
+            )
             if at.attr_params.len > 0:
                 text = strings.join_four(text, "(", render_param_list(at.attr_params), ")")
             emit_line(f, text)
@@ -978,7 +1007,12 @@ function emit_decl_struct(f: ref[Formatter], d: ast.Decl) -> ptr_uint:
         ast.Decl.decl_struct as st:
             emit_attribute_applications(f, st.struct_attrs)
             let header_idx = f.line_starts.len()
-            var header = strings.join_four(visibility_prefix(f, st.visibility), "struct ", st.name, render_struct_params(st.lifetime_params, st.type_params))
+            var header = strings.join_four(
+                visibility_prefix(f, st.visibility),
+                "struct ",
+                st.name,
+                render_struct_params(st.lifetime_params, st.type_params)
+            )
             header = strings.join_two(header, render_implements_clause(st.impl_list))
             match st.c_name:
                 Option.some as cn:
@@ -1016,7 +1050,12 @@ function emit_decl_variant(f: ref[Formatter], d: ast.Decl) -> void:
     match d:
         ast.Decl.decl_variant as vr:
             emit_attribute_applications(f, vr.variant_attrs)
-            var header = strings.join_four(visibility_prefix(f, vr.visibility), "variant ", vr.name, render_type_params(vr.type_params))
+            var header = strings.join_four(
+                visibility_prefix(f, vr.visibility),
+                "variant ",
+                vr.name,
+                render_type_params(vr.type_params)
+            )
             emit_line(f, strings.join_two(header, ":"))
             f.indent += 1
             var vi: ptr_uint = 0
@@ -1074,7 +1113,14 @@ function emit_decl_when(f: ref[Formatter], d: ast.Decl) -> void:
             pass
 
 
-function emit_enum_like(f: ref[Formatter], kind: str, name: str, backing: ptr[ast.TypeRef]?, members: span[ast.EnumMember], visibility: bool) -> void:
+function emit_enum_like(
+    f: ref[Formatter],
+    kind: str,
+    name: str,
+    backing: ptr[ast.TypeRef]?,
+    members: span[ast.EnumMember],
+    visibility: bool
+) -> void:
     var header = strings.join_four(visibility_prefix(f, visibility), kind, " ", name)
     if backing != null:
         header = strings.join_three(header, ": ", render_type_ptr(backing))
@@ -1140,7 +1186,6 @@ function emit_decl_span(f: ref[Formatter], decls: span[ast.Decl]) -> void:
         unsafe:
             emit_decl(f, read(decls.data + i))
         i += 1
-
 
 # =============================================================================
 #  Statements
@@ -1245,7 +1290,14 @@ function emit_statement(f: ref[Formatter], st: ast.Stmt) -> void:
                 unsafe:
                     names.push(read(fr.bindings.data + fbi).name)
                 fbi += 1
-            let fheader = strings.join_six(fprefix, "for ", join_strs(names.as_span(), ", "), " in ", render_expr_span(f, fr.iterables, ", "), ":")
+            let fheader = strings.join_six(
+                fprefix,
+                "for ",
+                join_strs(names.as_span(), ", "),
+                " in ",
+                render_expr_span(f, fr.iterables, ", "),
+                ":"
+            )
             emit_line(f, fheader)
             f.indent += 1
             emit_stmt_body(f, fr.body)
@@ -1362,7 +1414,13 @@ function unsafe_inline(f: ref[Formatter], unsafe_line: ptr_uint, body: ptr[ast.S
 function render_inline_stmt(f: ref[Formatter], st: ast.Stmt) -> Option[str]:
     match st:
         ast.Stmt.stmt_assignment as a:
-            return Option[str].some(value = strings.join_five(rx(f, a.target, 0), " ", a.operator, " ", rx(f, a.value, 0)))
+            return Option[str].some(value = strings.join_five(
+                rx(f, a.target, 0),
+                " ",
+                a.operator,
+                " ",
+                rx(f, a.value, 0)
+            ))
         ast.Stmt.stmt_expression as e:
             return Option[str].some(value = rx(f, e.expression, 0))
         ast.Stmt.stmt_ret as r:
@@ -1377,7 +1435,13 @@ function render_inline_stmt(f: ref[Formatter], st: ast.Stmt) -> Option[str]:
         ast.Stmt.stmt_continue:
             return Option[str].some(value = "continue")
         ast.Stmt.stmt_static_assert as sa:
-            return Option[str].some(value = strings.join_five("static_assert(", rx(f, sa.condition, 0), ", ", rx_opt(f, sa.message), ")"))
+            return Option[str].some(value = strings.join_five(
+                "static_assert(",
+                rx(f, sa.condition, 0),
+                ", ",
+                rx_opt(f, sa.message),
+                ")"
+            ))
         ast.Stmt.stmt_defer as d:
             let de = d.expression
             if de != null:
@@ -1422,7 +1486,12 @@ function splice_emit_prefix(f: ref[Formatter], start_offset: ptr_uint) -> void:
         i += 1
 
 
-function emit_when_stmt(f: ref[Formatter], discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?) -> void:
+function emit_when_stmt(
+    f: ref[Formatter],
+    discriminant: ptr[ast.Expr],
+    branches: span[ast.WhenBranch],
+    else_body: ptr[ast.Stmt]?
+) -> void:
     emit_line(f, strings.join_three("when ", rx(f, discriminant, 0), ":"))
     f.indent += 1
     var i: ptr_uint = 0
@@ -1457,7 +1526,6 @@ function emit_when_stmt(f: ref[Formatter], discriminant: ptr[ast.Expr], branches
             emit_stmt_body(f, eb)
             f.indent -= 1
     f.indent -= 1
-
 
 # =============================================================================
 #  Expressions
@@ -1521,15 +1589,35 @@ function render_expr(f: ref[Formatter], e: ast.Expr, parent: int) -> str:
                 utext = strings.join_two(x.operator, operand)
             return wrap(utext, parent, UNARY_PRECEDENCE)
         ast.Expr.expr_member_access as x:
-            return wrap(strings.join_three(render_postfix(f, x.receiver), ".", x.member_name), parent, POSTFIX_PRECEDENCE)
+            return wrap(
+                strings.join_three(render_postfix(f, x.receiver), ".", x.member_name),
+                parent,
+                POSTFIX_PRECEDENCE
+            )
         ast.Expr.expr_index_access as x:
-            return wrap(strings.join_four(render_postfix(f, x.receiver), "[", rx(f, x.index, 0), "]"), parent, POSTFIX_PRECEDENCE)
+            return wrap(
+                strings.join_four(render_postfix(f, x.receiver), "[", rx(f, x.index, 0), "]"),
+                parent,
+                POSTFIX_PRECEDENCE
+            )
         ast.Expr.expr_specialization as x:
-            return wrap(strings.join_four(render_postfix(f, x.callee), "[", render_type_argument_list(x.arguments), "]"), parent, POSTFIX_PRECEDENCE)
+            return wrap(
+                strings.join_four(render_postfix(f, x.callee), "[", render_type_argument_list(x.arguments), "]"),
+                parent,
+                POSTFIX_PRECEDENCE
+            )
         ast.Expr.expr_call as x:
-            return wrap(strings.join_four(render_postfix(f, x.callee), "(", render_argument_list(f, x.args), ")"), parent, POSTFIX_PRECEDENCE)
+            return wrap(
+                strings.join_four(render_postfix(f, x.callee), "(", render_argument_list(f, x.args), ")"),
+                parent,
+                POSTFIX_PRECEDENCE
+            )
         ast.Expr.expr_prefix_cast as x:
-            return wrap(strings.join_three(render_type_ptr(x.target_type), "<-", rx(f, x.expression, UNARY_PRECEDENCE)), parent, UNARY_PRECEDENCE)
+            return wrap(
+                strings.join_three(render_type_ptr(x.target_type), "<-", rx(f, x.expression, UNARY_PRECEDENCE)),
+                parent,
+                UNARY_PRECEDENCE
+            )
         ast.Expr.expr_range as x:
             return strings.join_three(rx(f, x.start_expr, 0), "..", rx(f, x.end_expr, 0))
         ast.Expr.expr_expression_list as x:
@@ -1544,13 +1632,21 @@ function render_expr(f: ref[Formatter], e: ast.Expr, parent: int) -> str:
         ast.Expr.expr_match as x:
             return render_match_expr(f, x.scrutinee, x.arms, parent)
         ast.Expr.expr_unsafe as x:
-            return wrap(strings.join_two("unsafe: ", rx(f, x.expression, IF_EXPRESSION_PRECEDENCE)), parent, IF_EXPRESSION_PRECEDENCE)
+            return wrap(
+                strings.join_two("unsafe: ", rx(f, x.expression, IF_EXPRESSION_PRECEDENCE)),
+                parent,
+                IF_EXPRESSION_PRECEDENCE
+            )
         ast.Expr.expr_proc as x:
             let params = render_param_list(x.method_params)
             let ret = render_type_ptr(x.return_type)
             let single = proc_single_return_value(x.body)
             if single != null:
-                return wrap(strings.join_six("proc(", params, ") -> ", ret, ": ", rx(f, single, IF_EXPRESSION_PRECEDENCE)), parent, IF_EXPRESSION_PRECEDENCE)
+                return wrap(
+                    strings.join_six("proc(", params, ") -> ", ret, ": ", rx(f, single, IF_EXPRESSION_PRECEDENCE)),
+                    parent,
+                    IF_EXPRESSION_PRECEDENCE
+                )
             let body_lines = render_block_lines(f, x.body, f.indent + 1)
             return strings.join_six("proc(", params, ") -> ", ret, ":\n", body_lines)
         ast.Expr.expr_await as x:
@@ -1662,7 +1758,12 @@ function render_type_argument_list(args: span[ast.TypeArgument]) -> str:
     return buf.as_str()
 
 
-function render_match_expr(f: ref[Formatter], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], parent: int) -> str:
+function render_match_expr(
+    f: ref[Formatter],
+    scrutinee: ptr[ast.Expr],
+    arms: span[ast.MatchExprArm],
+    parent: int
+) -> str:
     let sugared = render_is_expr(f, scrutinee, arms, parent)
     if sugared.len > 0:
         return sugared
@@ -1731,7 +1832,6 @@ function proc_single_return_value(body: ptr[ast.Stmt]) -> ptr[ast.Expr]?:
             _:
                 return null
 
-
 # =============================================================================
 #  `is` re-sugaring
 # =============================================================================
@@ -1785,7 +1885,6 @@ function is_wildcard_pattern(pattern: ptr[ast.Expr]?) -> bool:
                 return id.name == "_"
             _:
                 return false
-
 
 # =============================================================================
 #  Integer to string

@@ -41,7 +41,6 @@ public function parse_if_expr(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     read(node) = ast.Expr.expr_if(condition = condition, then_expr = then_expr, else_expr = else_expr)
     return node
 
-
 # =============================================================================
 #  Match expression
 # =============================================================================
@@ -59,7 +58,14 @@ public function parse_match_expr(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var arms = parse_match_expr_arms(s)
     pstate.consume(s, tk.TokenKind.dedent, c"expected end of match body")
     var node = parser.alloc_expr(s)
-    read(node) = ast.Expr.expr_match(scrutinee = scrutinee, arms = arms, line = m_ln, column = m_cn, length = 5, desugared_from_is = false)
+    read(node) = ast.Expr.expr_match(
+        scrutinee = scrutinee,
+        arms = arms,
+        line = m_ln,
+        column = m_cn,
+        length = 5,
+        desugared_from_is = false
+    )
     return node
 
 
@@ -115,9 +121,14 @@ public function parse_match_expr_arm_into(s: ref[pstate.ParserState], arms: ref[
         let pp = patterns.get(i) else:
             break
         unsafe:
-            arms.push(ast.MatchExprArm(pattern = read(pp), binding_name = binding_name, binding_line = binding_line, binding_column = binding_column, value = value))
+            arms.push(ast.MatchExprArm(
+                pattern = read(pp),
+                binding_name = binding_name,
+                binding_line = binding_line,
+                binding_column = binding_column,
+                value = value
+            ))
         i += 1
-
 
 # =============================================================================
 #  Proc / fn expression
@@ -156,7 +167,6 @@ function parse_proc_body(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
         read(empty) = ast.Stmt.stmt_block(statements = span[ast.Stmt]())
     return empty
 
-
 # =============================================================================
 #  Unsafe expression
 # =============================================================================
@@ -174,12 +184,18 @@ public function parse_unsafe_expr(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     read(node) = ast.Expr.expr_unsafe(expression = expr_val, line = ln, column = cn)
     return node
 
-
 # =============================================================================
 #  is-operator desugaring
 # =============================================================================
 
-public function is_desugar(s: ref[pstate.ParserState], left: ptr[ast.Expr], pattern: ptr[ast.Expr], is_ln: ptr_uint, is_cn: ptr_uint, pattern_len: ptr_uint) -> ptr[ast.Expr]:
+public function is_desugar(
+    s: ref[pstate.ParserState],
+    left: ptr[ast.Expr],
+    pattern: ptr[ast.Expr],
+    is_ln: ptr_uint,
+    is_cn: ptr_uint,
+    pattern_len: ptr_uint
+) -> ptr[ast.Expr]:
     # expr is Pattern → match expr: Pattern: true; _: false
     var true_expr = parser.alloc_expr(s)
     unsafe:
@@ -210,9 +226,15 @@ public function is_desugar(s: ref[pstate.ParserState], left: ptr[ast.Expr], patt
     arms_vec.push(false_arm)
     var arms_span = arms_vec.as_span()
     var node = parser.alloc_expr(s)
-    read(node) = ast.Expr.expr_match(scrutinee = left, arms = arms_span, line = is_ln, column = is_cn, length = pattern_len, desugared_from_is = true)
+    read(node) = ast.Expr.expr_match(
+        scrutinee = left,
+        arms = arms_span,
+        line = is_ln,
+        column = is_cn,
+        length = pattern_len,
+        desugared_from_is = true
+    )
     return node
-
 
 # =============================================================================
 #  Prefix cast: T<-expr
@@ -253,5 +275,10 @@ public function try_parse_prefix_cast_expr(s: ref[pstate.ParserState]) -> Option
     unsafe:
         cast_line = read(name_tok).line
         cast_column = read(name_tok).column
-    read(node) = ast.Expr.expr_prefix_cast(target_type = target_type, expression = expr_val, line = cast_line, column = cast_column)
+    read(node) = ast.Expr.expr_prefix_cast(
+        target_type = target_type,
+        expression = expr_val,
+        line = cast_line,
+        column = cast_column
+    )
     return Option[ptr[ast.Expr]].some(value = node)

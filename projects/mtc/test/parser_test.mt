@@ -872,10 +872,10 @@ function check_parse_fails(source: str) -> void:
         expect(false, "expected parse errors but got none")
     return
 
-
 # =============================================================================
 #  Statement coverage
 # =============================================================================
+
 
 @[test]
 function test_parses_break() -> void:
@@ -1105,10 +1105,10 @@ function test_parses_while_with_and_condition() -> void:
     SRC
     check_parse(source)
 
-
 # =============================================================================
 #  Error recovery / negative tests
 # =============================================================================
+
 
 @[test]
 function test_errors_on_missing_colon_after_if() -> void:

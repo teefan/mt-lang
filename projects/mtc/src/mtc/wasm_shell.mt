@@ -5,7 +5,6 @@
 import std.str
 import std.string as string
 
-
 public const SCRIPT_PLACEHOLDER: str = "{{{ SCRIPT }}}"
 public const CANVAS_PLACEHOLDER: str = "{{{ MILK_TEA_CANVAS }}}"
 public const OUTPUT_PLACEHOLDER: str = "{{{ MILK_TEA_OUTPUT }}}"

@@ -30,9 +30,6 @@ import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
-
-
-
 ## Legend indices, mirroring the host's advertised legend exactly (see
 ## lifecycle.mt TOKEN_TYPES_JSON): namespace=0, type=1, class=2, enum=3,
 ## interface=4, struct=5, typeParameter=6, parameter=7, variable=8, property=9,
@@ -41,32 +38,33 @@ import mtc.lsp.workspace as workspace
 ## decorator=22.
 ##
 ## Modifier bits match the host too: declaration=1, readonly=4.
-const TOKEN_NAMESPACE:    uint = 0
-const TOKEN_TYPE:         uint = 1
-const TOKEN_CLASS:        uint = 2
-const TOKEN_ENUM:         uint = 3
-const TOKEN_INTERFACE:    uint = 4
-const TOKEN_STRUCT:       uint = 5
-const TOKEN_TYPE_PARAM:   uint = 6
-const TOKEN_PARAMETER:    uint = 7
-const TOKEN_VARIABLE:     uint = 8
-const TOKEN_PROPERTY:     uint = 9
-const TOKEN_ENUM_MEMBER:  uint = 10
-const TOKEN_EVENT:        uint = 11
-const TOKEN_FUNCTION:     uint = 12
-const TOKEN_METHOD:       uint = 13
-const TOKEN_MACRO:        uint = 14
-const TOKEN_KEYWORD:      uint = 15
-const TOKEN_MODIFIER:     uint = 16
-const TOKEN_COMMENT:      uint = 17
-const TOKEN_STRING:       uint = 18
-const TOKEN_NUMBER:       uint = 19
-const TOKEN_REGEXP:       uint = 20
-const TOKEN_OPERATOR:     uint = 21
-const TOKEN_DECORATOR:    uint = 22
+const TOKEN_NAMESPACE: uint = 0
+const TOKEN_TYPE: uint = 1
+const TOKEN_CLASS: uint = 2
+const TOKEN_ENUM: uint = 3
+const TOKEN_INTERFACE: uint = 4
+const TOKEN_STRUCT: uint = 5
+const TOKEN_TYPE_PARAM: uint = 6
+const TOKEN_PARAMETER: uint = 7
+const TOKEN_VARIABLE: uint = 8
+const TOKEN_PROPERTY: uint = 9
+const TOKEN_ENUM_MEMBER: uint = 10
+const TOKEN_EVENT: uint = 11
+const TOKEN_FUNCTION: uint = 12
+const TOKEN_METHOD: uint = 13
+const TOKEN_MACRO: uint = 14
+const TOKEN_KEYWORD: uint = 15
+const TOKEN_MODIFIER: uint = 16
+const TOKEN_COMMENT: uint = 17
+const TOKEN_STRING: uint = 18
+const TOKEN_NUMBER: uint = 19
+const TOKEN_REGEXP: uint = 20
+const TOKEN_OPERATOR: uint = 21
+const TOKEN_DECORATOR: uint = 22
+
 ## The "no entry" sentinel for a token the host's classifier skips (a character
 ## literal, a malformed format-string part).
-const TOKEN_NONE:         uint = 1000
+const TOKEN_NONE: uint = 1000
 
 
 ## Handle textDocument/semanticTokens/full.
@@ -153,7 +151,14 @@ public function handle_semantic_tokens_delta(
             break
         cached_copy.push(unsafe: read(cp))
         ci += 1
-    ws.semantic_token_cache_set(file_path.as_str(), current_hash, string.String.from_str(result_id.as_str()), full_data.len() / 5, cached_copy, ws.position_encoding_utf16)
+    ws.semantic_token_cache_set(
+        file_path.as_str(),
+        current_hash,
+        string.String.from_str(result_id.as_str()),
+        full_data.len() / 5,
+        cached_copy,
+        ws.position_encoding_utf16
+    )
 
     if have_previous:
         var edits = compute_delta_edits(ref_of(old_data), ref_of(full_data))
@@ -215,7 +220,6 @@ public function handle_semantic_tokens_delta(
     result_json.append("]}")
     result_id.release()
     proto.write_response_raw(id, result_json.as_str())
-
 
 struct TokenEdit:
     start: ptr_uint
@@ -283,7 +287,6 @@ function token_equals(old_data: ref[vec.Vec[uint]], a: ptr_uint, new_data: ref[v
                 return false
         i += 1
     return true
-
 
 # =============================================================================
 #  Shared scan classification — one classifier for semanticTokens
@@ -399,7 +402,6 @@ function release_type_param_scopes(scopes: ref[vec.Vec[scope_mod.TypeParamScope]
             names.release()
         si += 1
     scopes.release()
-
 
 struct TokenClass:
     token_type: uint
@@ -698,7 +700,12 @@ function scan_is_named_argument_label(tokens: span[token_mod.Token], index: ptr_
 ## (`span[int](data = ...)`) keeps the parameter shape, and the receiver's
 ## type-argument list is seen through (the host's
 ## `named_argument_label_in_type_constructor?`).
-function scan_named_argument_in_type_constructor(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
+function scan_named_argument_in_type_constructor(
+    facts: ref[ScanFacts],
+    tokens: span[token_mod.Token],
+    index: ptr_uint,
+    source: str
+) -> bool:
     let opener = scan_parameter_list_opener(tokens, index) else:
         return false
     var callee_idx = scan_prev_index(tokens, opener) else:
@@ -808,7 +815,6 @@ function scan_is_import_alias(tokens: span[token_mod.Token], index: ptr_uint) ->
     return scan_kind_at(tokens, prev_idx) == tk.TokenKind.tk_as
 
 
-
 ## The declared attribute names' positions (`attribute[field] name(...)`).
 function collect_attribute_decl_names(file: ast.SourceFile, names: ref[map_mod.Map[ptr_uint, bool]]) -> void:
     var i: ptr_uint = 0
@@ -832,7 +838,12 @@ function attribute_position_key(line: ptr_uint, column: ptr_uint) -> ptr_uint:
 ## attribute's own name (`decorator` + declaration) and the name passed to a
 ## `has_attribute` / `attribute_of` call (the host's
 ## `build_attribute_name_semantic_overrides`).
-function scan_attribute_override(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> Option[TokenClass]:
+function scan_attribute_override(
+    facts: ref[ScanFacts],
+    tokens: span[token_mod.Token],
+    index: ptr_uint,
+    source: str
+) -> Option[TokenClass]:
     let tok = unsafe: read(tokens.data + index)
     if unsafe: read(facts).attribute_decls.contains(attribute_position_key(tok.line, tok.column)):
         return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_DECORATOR, token_mod = 1))
@@ -1049,7 +1060,12 @@ function scan_is_type_parameter_header(kind: tk.TokenKind) -> bool:
 ## True when the token references a type parameter of the enclosing declaration
 ## in a type position — inside a type-argument list, or after `:`/`->` (the
 ## host's `type_parameter_reference_token?`).
-function scan_type_parameter_reference(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
+function scan_type_parameter_reference(
+    facts: ref[ScanFacts],
+    tokens: span[token_mod.Token],
+    index: ptr_uint,
+    source: str
+) -> bool:
     let lexeme = scan_lexeme_at(tokens, index, source)
     let line = unsafe: read(tokens.data + index).line
     if not scan_type_param_in_scope(facts, lexeme, line):
@@ -1520,7 +1536,12 @@ function scan_is_keyword_type_annotation(tokens: span[token_mod.Token], index: p
 
 ## The binding in scope at a token (the host's `local_semantic_value_binding`):
 ## the kind of the innermost function-level binding of the token's name.
-function scan_binding_at(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> Option[ptr_uint]:
+function scan_binding_at(
+    facts: ref[ScanFacts],
+    tokens: span[token_mod.Token],
+    index: ptr_uint,
+    source: str
+) -> Option[ptr_uint]:
     let tok = unsafe: read(tokens.data + index)
     return scope_mod.binding_kind_at(unsafe: read(facts).bindings, scan_lexeme_at(tokens, index, source), tok.line)
 
@@ -1539,7 +1560,13 @@ function scan_binding_class(kind: ptr_uint) -> TokenClass:
 ## (the host's `static_type_member_access?`): the receiver may carry type
 ## arguments (`Option[int].some`) and a module prefix (`rl.Color.hex_digit`),
 ## and the method may come from the scanned file or a resolved import.
-function is_static_member_of(facts: ref[ScanFacts], tokens: span[token_mod.Token], receiver_index: ptr_uint, member: str, source: str) -> bool:
+function is_static_member_of(
+    facts: ref[ScanFacts],
+    tokens: span[token_mod.Token],
+    receiver_index: ptr_uint,
+    member: str,
+    source: str
+) -> bool:
     var key = string.String.create()
     defer: key.release()
     let module_prefix = receiver_module_prefix(tokens, receiver_index, source)
@@ -1590,7 +1617,12 @@ function receiver_base_name(tokens: span[token_mod.Token], receiver_index: ptr_u
 ## True when the receiver before the cursor's dot names a type: a declared type
 ## or interface of this file or of a resolved import (`rl.Color`), a builtin, or
 ## any uppercase identifier (the host's `type_name_receiver_token?`).
-function receiver_is_type_name(facts: ref[ScanFacts], tokens: span[token_mod.Token], receiver_index: ptr_uint, source: str) -> bool:
+function receiver_is_type_name(
+    facts: ref[ScanFacts],
+    tokens: span[token_mod.Token],
+    receiver_index: ptr_uint,
+    source: str
+) -> bool:
     let name = receiver_base_name(tokens, receiver_index, source)
     if name.len == 0:
         return false
@@ -1632,7 +1664,10 @@ function merge_type_keys(source: ref[map_mod.Map[str, types.Type]], target: ref[
             target.set(read(kp), true)
 
 
-function merge_struct_keys(source: ref[map_mod.Map[str, span[analyzer.FieldEntry]]], target: ref[map_mod.Map[str, bool]]) -> void:
+function merge_struct_keys(
+    source: ref[map_mod.Map[str, span[analyzer.FieldEntry]]],
+    target: ref[map_mod.Map[str, bool]]
+) -> void:
     var iter = source.keys()
     while true:
         let kp = iter.next() else:
@@ -1641,7 +1676,10 @@ function merge_struct_keys(source: ref[map_mod.Map[str, span[analyzer.FieldEntry
             target.set(read(kp), true)
 
 
-function merge_interface_keys(source: ref[map_mod.Map[str, span[ast.InterfaceMethod]]], target: ref[map_mod.Map[str, bool]]) -> void:
+function merge_interface_keys(
+    source: ref[map_mod.Map[str, span[ast.InterfaceMethod]]],
+    target: ref[map_mod.Map[str, bool]]
+) -> void:
     var iter = source.keys()
     while true:
         let kp = iter.next() else:
@@ -1672,7 +1710,12 @@ function merge_bool_keys(source: ref[map_mod.Map[str, bool]], target: ref[map_mo
 ## (`""` for the scanned file's own declarations, `"alias."` for an import) —
 ## the host's `static_method_binding_for_receiver`, which is what tells a
 ## static call (`NPC.max_hp()`) apart from a variant arm (`Option.some(...)`).
-function collect_static_members(methods: ref[map_mod.Map[str, analyzer.FnSig]], prefix: str, target: ref[map_mod.Map[str, bool]], storage: ref[vec.Vec[string.String]]) -> void:
+function collect_static_members(
+    methods: ref[map_mod.Map[str, analyzer.FnSig]],
+    prefix: str,
+    target: ref[map_mod.Map[str, bool]],
+    storage: ref[vec.Vec[string.String]]
+) -> void:
     var entries = methods.entries()
     while true:
         if not entries.next():
@@ -1693,7 +1736,12 @@ function collect_static_members(methods: ref[map_mod.Map[str, analyzer.FnSig]], 
 
 
 ## Record a module's exported surface under `alias.` keys.
-function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[analyzer.Analysis], file: ast.SourceFile) -> void:
+function collect_alias_exports(
+    facts: ref[ScanFacts],
+    alias: str,
+    analysis: ref[analyzer.Analysis],
+    file: ast.SourceFile
+) -> void:
     var functions = vec.Vec[str].create()
     defer: functions.release()
     var type_names = vec.Vec[str].create()
@@ -1711,11 +1759,21 @@ function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[
     defer: alias_prefix.release()
     alias_prefix.append(alias)
     alias_prefix.push_byte(46)
-    collect_static_members(ref_of(read(analysis).method_sigs), alias_prefix.as_str(), ref_of(facts.static_members), ref_of(facts.key_storage))
+    collect_static_members(
+        ref_of(read(analysis).method_sigs),
+        alias_prefix.as_str(),
+        ref_of(facts.static_members),
+        ref_of(facts.key_storage)
+    )
     # The host's `methods_for_receiver_type` merges every imported module's
     # methods by the bare type name, so `vec.Vec.create` and a bare
     # `Vec.create` resolve alike.
-    collect_static_members(ref_of(read(analysis).method_sigs), "", ref_of(facts.static_members), ref_of(facts.key_storage))
+    collect_static_members(
+        ref_of(read(analysis).method_sigs),
+        "",
+        ref_of(facts.static_members),
+        ref_of(facts.key_storage)
+    )
     unsafe:
         var fkeys = read(analysis).functions.keys()
         while true:
@@ -1830,14 +1888,18 @@ function register_resolved_import(
 ## Cold fallback: check the import through the shared document cache when
 ## neither the module cache nor the workspace's loader-backed analysis could
 ## serve it.
-function register_import_from_disk(ws: ref[workspace.Workspace], facts: ref[ScanFacts], alias: str, resolved: str) -> void:
+function register_import_from_disk(
+    ws: ref[workspace.Workspace],
+    facts: ref[ScanFacts],
+    alias: str,
+    resolved: str
+) -> void:
     var dep_doc = workspace.document_analysis_for(ws, resolved) else:
         return
     facts.imports.set(alias, true)
     collect_alias_exports(facts, alias, ref_of(dep_doc.analysis), dep_doc.ast_file)
     # The scan keeps only the exported surface; the cached dependency
     # analysis' own diagnostics stay with its cache entry.
-
 
 function dotted_qname(path: ast.QualifiedName) -> string.String:
     var buf = string.String.create()
@@ -1863,7 +1925,13 @@ function scan_import_alias_name(path: ast.QualifiedName, alias_name: Option[str]
 
 
 ## Build the classification tables for one scan.
-function build_scan_facts(ws: ref[workspace.Workspace], file: ast.SourceFile, analysis: ref[analyzer.Analysis], roots: span[str], source: str) -> ScanFacts:
+function build_scan_facts(
+    ws: ref[workspace.Workspace],
+    file: ast.SourceFile,
+    analysis: ref[analyzer.Analysis],
+    roots: span[str],
+    source: str
+) -> ScanFacts:
     var facts = ScanFacts(
         functions = map_mod.Map[str, bool].create(),
         types = map_mod.Map[str, bool].create(),
@@ -1900,11 +1968,23 @@ function build_scan_facts(ws: ref[workspace.Workspace], file: ast.SourceFile, an
         merge_type_keys(ref_of(analysis_value.type_alias_types), ref_of(facts.types))
         merge_interface_keys(ref_of(analysis_value.interfaces), ref_of(facts.interfaces))
         merge_type_keys(ref_of(analysis_value.value_types), ref_of(facts.values))
-        collect_static_members(ref_of(analysis_value.method_sigs), "", ref_of(facts.static_members), ref_of(facts.key_storage))
+        collect_static_members(
+            ref_of(analysis_value.method_sigs),
+            "",
+            ref_of(facts.static_members),
+            ref_of(facts.key_storage)
+        )
     collect_const_names(file, ref_of(facts.readonly_values))
     collect_attribute_decl_names(file, ref_of(facts.attribute_decls))
-    collect_nested_type_keys(file.declarations, "", ref_of(facts.nested_type_keys), ref_of(facts.receiver_structs), ref_of(facts.callable_fields), ref_of(analysis_value), ref_of(facts.key_storage))
-
+    collect_nested_type_keys(
+        file.declarations,
+        "",
+        ref_of(facts.nested_type_keys),
+        ref_of(facts.receiver_structs),
+        ref_of(facts.callable_fields),
+        ref_of(analysis_value),
+        ref_of(facts.key_storage)
+    )
 
     var i: ptr_uint = 0
     while i < file.imports.len:
@@ -2054,19 +2134,59 @@ function compute_token_data(
         if token_type == TOKEN_STRING:
             let lexeme = unsafe: token_mod.token_lexeme(tok, source)
             if kind == tk.TokenKind.fstring and not scan_is_heredoc(lexeme):
-                emit_fstring_entries(ref_of(data), lexeme, line_num, ptr_uint<-col_num, ref_of(prev_line), ref_of(prev_char), ref_of(facts), source, ref_of(lines), utf16)
+                emit_fstring_entries(
+                    ref_of(data),
+                    lexeme,
+                    line_num,
+                    ptr_uint<-col_num,
+                    ref_of(prev_line),
+                    ref_of(prev_char),
+                    ref_of(facts),
+                    source,
+                    ref_of(lines),
+                    utf16
+                )
                 ti += 1
                 continue
             if scan_is_heredoc(lexeme):
                 if not scan_heredoc_embedded_tag(lexeme):
-                    emit_heredoc_lines(ref_of(data), lexeme, line_num, col_num, ref_of(prev_line), ref_of(prev_char), ref_of(lines), utf16)
+                    emit_heredoc_lines(
+                        ref_of(data),
+                        lexeme,
+                        line_num,
+                        col_num,
+                        ref_of(prev_line),
+                        ref_of(prev_char),
+                        ref_of(lines),
+                        utf16
+                    )
                 ti += 1
                 continue
             if scan_lexeme_has_newline(lexeme):
-                emit_heredoc_lines(ref_of(data), lexeme, line_num, col_num, ref_of(prev_line), ref_of(prev_char), ref_of(lines), utf16)
+                emit_heredoc_lines(
+                    ref_of(data),
+                    lexeme,
+                    line_num,
+                    col_num,
+                    ref_of(prev_line),
+                    ref_of(prev_char),
+                    ref_of(lines),
+                    utf16
+                )
                 ti += 1
                 continue
-        emit_span(ref_of(data), line_num, col_num, char_num, token_type, token_mod, ref_of(prev_line), ref_of(prev_char), ref_of(lines), utf16)
+        emit_span(
+            ref_of(data),
+            line_num,
+            col_num,
+            char_num,
+            token_type,
+            token_mod,
+            ref_of(prev_line),
+            ref_of(prev_char),
+            ref_of(lines),
+            utf16
+        )
         ti += 1
 
     return data
@@ -2176,7 +2296,18 @@ function emit_fstring_entries(
             let part = fstring.split_part(lexeme, expr_start, expr_end)
             let hash_col = first_col + part.expr_start - 2
             if hash_col > cursor:
-                emit_span(data, first_line, cursor, hash_col - cursor, TOKEN_STRING, 0, prev_line, prev_char, lines, utf16)
+                emit_span(
+                    data,
+                    first_line,
+                    cursor,
+                    hash_col - cursor,
+                    TOKEN_STRING,
+                    0,
+                    prev_line,
+                    prev_char,
+                    lines,
+                    utf16
+                )
             emit_fstring_expr(data, part, first_line, first_col, facts, prev_line, prev_char, lines, utf16)
             let raw_len = part.source.len + (if part.has_spec: 1 + part.spec.len else: 0)
             cursor = first_col + part.expr_start + raw_len + 1
@@ -2212,7 +2343,17 @@ function emit_fstring_expr(
     let base_col = first_col + part.expr_start
     emit_shifted_sub_tokens(data, part.source, line, base_col, facts, prev_line, prev_char, lines, utf16)
     if part.has_spec and part.spec.len > 0:
-        emit_shifted_sub_tokens(data, part.spec, line, base_col + part.source.len + 1, facts, prev_line, prev_char, lines, utf16)
+        emit_shifted_sub_tokens(
+            data,
+            part.spec,
+            line,
+            base_col + part.source.len + 1,
+            facts,
+            prev_line,
+            prev_char,
+            lines,
+            utf16
+        )
 
 
 function emit_shifted_sub_tokens(
@@ -2256,14 +2397,30 @@ function emit_shifted_sub_tokens(
         if cls.token_type != TOKEN_NONE:
             let col: ptr_uint = tok.column - 1
             let length: ptr_uint = tok.end_offset - tok.start_offset
-            emit_span(data, uint<-tok.line - 1, col, length, cls.token_type, cls.token_mod, prev_line, prev_char, lines, utf16)
+            emit_span(
+                data,
+                uint<-tok.line - 1,
+                col,
+                length,
+                cls.token_type,
+                cls.token_mod,
+                prev_line,
+                prev_char,
+                lines,
+                utf16
+            )
         ti += 1
 
 
 ## The class of one token inside a format-string interpolation — the classifier's
 ## arms for the token kinds an expression can contain (the host classifies the
 ## re-lexed sub-tokens with the same `classify_semantic_token`).
-function scan_sub_token_class(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> TokenClass:
+function scan_sub_token_class(
+    facts: ref[ScanFacts],
+    tokens: span[token_mod.Token],
+    index: ptr_uint,
+    source: str
+) -> TokenClass:
     let kind = scan_kind_at(tokens, index)
     if kind == tk.TokenKind.identifier:
         return classify_scan_identifier(facts, tokens, index, scan_lexeme_at(tokens, index, source), source)
@@ -2320,16 +2477,16 @@ function emit_span(
 ## The host's legend names, indexed by our legend constants.
 public function token_type_name(index: uint) -> str:
     return match index:
-        0u:  "namespace"
-        1u:  "type"
-        2u:  "class"
-        3u:  "enum"
-        4u:  "interface"
-        5u:  "struct"
-        6u:  "typeParameter"
-        7u:  "parameter"
-        8u:  "variable"
-        9u:  "property"
+        0u: "namespace"
+        1u: "type"
+        2u: "class"
+        3u: "enum"
+        4u: "interface"
+        5u: "struct"
+        6u: "typeParameter"
+        7u: "parameter"
+        8u: "variable"
+        9u: "property"
         10u: "enumMember"
         11u: "event"
         12u: "function"
@@ -2343,7 +2500,7 @@ public function token_type_name(index: uint) -> str:
         20u: "regexp"
         21u: "operator"
         22u: "decorator"
-        _:   ""
+        _: ""
 
 
 ## `declaration,readonly,...` for a modifier bitmask.
@@ -2363,18 +2520,17 @@ public function token_modifier_names(bits: uint) -> string.String:
 
 function modifier_name(index: ptr_uint) -> str:
     return match index:
-        0:  "declaration"
-        1:  "definition"
-        2:  "readonly"
-        3:  "static"
-        4:  "deprecated"
-        5:  "abstract"
-        6:  "async"
-        7:  "modification"
-        8:  "documentation"
-        9:  "defaultLibrary"
-        _:  ""
-
+        0: "declaration"
+        1: "definition"
+        2: "readonly"
+        3: "static"
+        4: "deprecated"
+        5: "abstract"
+        6: "async"
+        7: "modification"
+        8: "documentation"
+        9: "defaultLibrary"
+        _: ""
 
 ## One token's semantic class, as the debug dump prints it (`type (declaration)`).
 public struct SemanticClass:
@@ -2492,7 +2648,15 @@ function emit_semantic_tokens(
         return
     defer: content.release()
 
-    var data = compute_token_data(ws, file_path.as_str(), content.as_str(), clip, clip_start_line, clip_end_line, ws.position_encoding_utf16)
+    var data = compute_token_data(
+        ws,
+        file_path.as_str(),
+        content.as_str(),
+        clip,
+        clip_start_line,
+        clip_end_line,
+        ws.position_encoding_utf16
+    )
     defer: data.release()
 
     # Remember the tokens of this version (the response shape stays the host's:
@@ -2507,7 +2671,14 @@ function emit_semantic_tokens(
             ci += 1
         var result_id = string.String.create()
         result_id.append_format(f"#{strings.fnv1a_hash(content.as_str()):x}")
-        ws.semantic_token_cache_set(file_path.as_str(), strings.fnv1a_hash(content.as_str()), result_id, data.len() / 5, cached_copy, ws.position_encoding_utf16)
+        ws.semantic_token_cache_set(
+            file_path.as_str(),
+            strings.fnv1a_hash(content.as_str()),
+            result_id,
+            data.len() / 5,
+            cached_copy,
+            ws.position_encoding_utf16
+        )
 
     var json_text = build_tokens_json(ref_of(data))
     proto.write_response_raw(id, json_text.as_str())
@@ -2724,10 +2895,33 @@ public function snapshot_entries_for(ws: ref[workspace.Workspace], file_path: st
     result.append("]")
     return result
 
-
 ## Token-type names by legend index, for the HTML snapshot's CSS classes.
 ## Mirrors the host's legend order (see lifecycle.mt).
-const SNAPSHOT_TOKEN_NAMES: array[str, 23] = ("namespace", "type", "class", "enum", "interface", "struct", "typeParameter", "parameter", "variable", "property", "enumMember", "event", "function", "method", "macro", "keyword", "modifier", "comment", "string", "number", "regexp", "operator", "decorator")
+const SNAPSHOT_TOKEN_NAMES: array[str, 23] = (
+    "namespace",
+    "type",
+    "class",
+    "enum",
+    "interface",
+    "struct",
+    "typeParameter",
+    "parameter",
+    "variable",
+    "property",
+    "enumMember",
+    "event",
+    "function",
+    "method",
+    "macro",
+    "keyword",
+    "modifier",
+    "comment",
+    "string",
+    "number",
+    "regexp",
+    "operator",
+    "decorator"
+)
 
 
 ## Collect the module-level `const` names: their value bindings are immutable,
@@ -2747,7 +2941,12 @@ function collect_const_names(file: ast.SourceFile, names: ref[map_mod.Map[str, b
 
 ## True when the token is `<Type>.<Nested>` with `<Nested>` declared inside the
 ## receiver's struct — the host's `dot_nested_type_member?`.
-function scan_nested_type_member(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
+function scan_nested_type_member(
+    facts: ref[ScanFacts],
+    tokens: span[token_mod.Token],
+    index: ptr_uint,
+    source: str
+) -> bool:
     let dot = scan_prev_index(tokens, index) else:
         return false
     if scan_kind_at(tokens, dot) != tk.TokenKind.dot:
@@ -2766,7 +2965,12 @@ function scan_nested_type_member(facts: ref[ScanFacts], tokens: span[token_mod.T
 
 ## True when the token is a call through a struct field whose declared type is a
 ## function or proc (`f.check(5)`) — the host's `callable_field_member_access?`.
-function scan_callable_field_call(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
+function scan_callable_field_call(
+    facts: ref[ScanFacts],
+    tokens: span[token_mod.Token],
+    index: ptr_uint,
+    source: str
+) -> bool:
     let dot = scan_prev_index(tokens, index) else:
         return false
     if scan_kind_at(tokens, dot) != tk.TokenKind.dot:
@@ -2827,8 +3031,24 @@ function collect_nested_type_keys(
                         keys.set(key.as_str(), true)
                         storage.push(key)
                     collect_struct_callable_fields(s.name, analysis, callable_fields, storage)
-                    collect_nested_decl_names(s.nested_types, s.name, keys, receivers, callable_fields, analysis, storage)
-                    collect_nested_type_keys(s.nested_types, s.name, keys, receivers, callable_fields, analysis, storage)
+                    collect_nested_decl_names(
+                        s.nested_types,
+                        s.name,
+                        keys,
+                        receivers,
+                        callable_fields,
+                        analysis,
+                        storage
+                    )
+                    collect_nested_type_keys(
+                        s.nested_types,
+                        s.name,
+                        keys,
+                        receivers,
+                        callable_fields,
+                        analysis,
+                        storage
+                    )
                 ast.Decl.decl_function as fun:
                     collect_receiver_struct_names(fun.body, receivers, analysis, storage)
                 ast.Decl.decl_extending_block as ex:
@@ -2876,7 +3096,12 @@ function collect_nested_decl_names(
 
 
 ## `<Struct>.<field>` for every field whose declared type is a function/proc.
-function collect_struct_callable_fields(struct_name: str, analysis: ref[analyzer.Analysis], callable_fields: ref[map_mod.Map[str, bool]], storage: ref[vec.Vec[string.String]]) -> void:
+function collect_struct_callable_fields(
+    struct_name: str,
+    analysis: ref[analyzer.Analysis],
+    callable_fields: ref[map_mod.Map[str, bool]],
+    storage: ref[vec.Vec[string.String]]
+) -> void:
     let fields_ptr = unsafe: read(analysis).structs.get(struct_name) else:
         return
     let fields = unsafe: read(fields_ptr)
@@ -2895,7 +3120,12 @@ function collect_struct_callable_fields(struct_name: str, analysis: ref[analyzer
 
 ## Local binding name -> struct type name for `let x = Struct(...)` declarations
 ## (the receiver shape a callable-field call reads).
-function collect_receiver_struct_names(body: ptr[ast.Stmt]?, receivers: ref[map_mod.Map[str, bool]], analysis: ref[analyzer.Analysis], storage: ref[vec.Vec[string.String]]) -> void:
+function collect_receiver_struct_names(
+    body: ptr[ast.Stmt]?,
+    receivers: ref[map_mod.Map[str, bool]],
+    analysis: ref[analyzer.Analysis],
+    storage: ref[vec.Vec[string.String]]
+) -> void:
     let b = body else:
         return
     unsafe:
@@ -2931,7 +3161,12 @@ function collect_receiver_struct_names(body: ptr[ast.Stmt]?, receivers: ref[map_
 
 
 ## Recurse `collect_receiver_struct_names` into nested bodies.
-function collect_receiver_struct_names_in_stmts(stmts: span[ast.Stmt], receivers: ref[map_mod.Map[str, bool]], analysis: ref[analyzer.Analysis], storage: ref[vec.Vec[string.String]]) -> void:
+function collect_receiver_struct_names_in_stmts(
+    stmts: span[ast.Stmt],
+    receivers: ref[map_mod.Map[str, bool]],
+    analysis: ref[analyzer.Analysis],
+    storage: ref[vec.Vec[string.String]]
+) -> void:
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:

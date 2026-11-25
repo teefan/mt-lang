@@ -258,7 +258,14 @@ public function statement_line(stmt: ptr[ast.Stmt]) -> ptr_uint:
 
 
 ## Every if/else-if branch returns, so the else block is unnecessary nesting.
-public function check_redundant_else(branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?, else_line: ptr_uint, else_column: ptr_uint, path: str, warnings: ref[vec.Vec[linter_mod.Warning]]) -> void:
+public function check_redundant_else(
+    branches: span[ast.IfBranch],
+    else_body: ptr[ast.Stmt]?,
+    else_line: ptr_uint,
+    else_column: ptr_uint,
+    path: str,
+    warnings: ref[vec.Vec[linter_mod.Warning]]
+) -> void:
     if not block_is_nonempty(else_body):
         return
     var bi: ptr_uint = 0
@@ -270,4 +277,13 @@ public function check_redundant_else(branches: span[ast.IfBranch], else_body: pt
     var line = else_line
     if line == 0:
         line = first_block_statement_line(else_body)
-    linter_mod.push_warning_at(warnings, path, line, else_column, 4, "redundant-else", "else block is redundant because all preceding branches return", "warning")
+    linter_mod.push_warning_at(
+        warnings,
+        path,
+        line,
+        else_column,
+        4,
+        "redundant-else",
+        "else block is redundant because all preceding branches return",
+        "warning"
+    )

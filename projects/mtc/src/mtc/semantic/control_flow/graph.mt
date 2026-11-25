@@ -20,7 +20,6 @@ import std.vec as vec
 
 import mtc.parser.ast as ast
 
-
 ## One null-test edge refinement (an entry of the host's
 ## `set_edge_refinement(from, to, refinement)`: taking this edge adds `key` to
 ## the non-null set when `non_null`, removes it otherwise).
@@ -30,7 +29,6 @@ public struct EdgeRefinement:
     key: ptr_uint
     non_null: bool
 
-
 ## An edge's label (`true_branch`, `false_branch`, `non_null`, `null`), the
 ## host's `Graph#edge_label`.
 public struct EdgeLabel:
@@ -38,14 +36,12 @@ public struct EdgeLabel:
     to: ptr_uint
     label: str
 
-
 ## A binding read site — the host's `ReadSite`.
 public struct ReadSite:
     key: ptr_uint
     line: ptr_uint
     column: ptr_uint
     length: ptr_uint
-
 
 ## A binding write site — the host's `writes_info` entry.  `origin` is one of
 ## `declaration`, `assignment`, `for_binding`, `match_binding`,
@@ -56,7 +52,6 @@ public struct WriteSite:
     line: ptr_uint
     column: ptr_uint
     origin: str
-
 
 ## A basic-block node: its kind, the statement it was built from, and the
 ## binding accesses the dataflow passes read.
@@ -70,7 +65,6 @@ public struct CfgNode:
     write_sites: vec.Vec[WriteSite]
     succs: vec.Vec[ptr_uint]
     preds: vec.Vec[ptr_uint]
-
 
 ## The graph: nodes indexed by id - 1, the flat edge tables, and the
 ## statement → node map (`graph_clear` releases every buffer, including the
@@ -88,7 +82,6 @@ public struct CfgGraph:
     entry_id: ptr_uint
     exit_id: ptr_uint
     next_id: ptr_uint
-
 
 ## The non-null set before every node (the host's `NullabilityFlow::Result`): a
 ## flat `node × binding` bool table of in-states.  `row_size` is the binding
@@ -147,12 +140,17 @@ public function graph_release(graph: ref[CfgGraph]) -> void:
     read(graph).by_statement.release()
     read(graph).body_targets.release()
 
-
 # =============================================================================
 #  Nodes and edges
 # =============================================================================
 
-public function graph_add_node(graph: ref[CfgGraph], kind: str, statement: ptr_uint, line: ptr_uint, column: ptr_uint) -> ptr_uint:
+public function graph_add_node(
+    graph: ref[CfgGraph],
+    kind: str,
+    statement: ptr_uint,
+    line: ptr_uint,
+    column: ptr_uint
+) -> ptr_uint:
     let id = read(graph).next_id
     let raw = heap.must_alloc[CfgNode](1)
     let node = unsafe: ptr[CfgNode]<-raw
@@ -218,7 +216,13 @@ public function graph_set_edge_label(graph: ref[CfgGraph], from: ptr_uint, to: p
 ## Record one null-test refinement on the edge (the host's
 ## `set_edge_refinement`).  A later call for the same (edge, key) replaces the
 ## earlier value, as the host's hash assignment does.
-public function graph_set_edge_refinement(graph: ref[CfgGraph], from: ptr_uint, to: ptr_uint, key: ptr_uint, non_null: bool) -> void:
+public function graph_set_edge_refinement(
+    graph: ref[CfgGraph],
+    from: ptr_uint,
+    to: ptr_uint,
+    key: ptr_uint,
+    non_null: bool
+) -> void:
     var i: ptr_uint = 0
     while i < read(graph).edge_refinements.len():
         let r = read(graph).edge_refinements.get(i) else:
@@ -233,7 +237,13 @@ public function graph_set_edge_refinement(graph: ref[CfgGraph], from: ptr_uint, 
 
 ## True when the given edge carries a refinement, and whether it adds `key` to
 ## the non-null set (`nonnull_out`) or removes it.
-public function graph_edge_refinement_of(graph: ref[CfgGraph], from: ptr_uint, to: ptr_uint, key: ptr_uint, nonnull_out: ref[bool]) -> bool:
+public function graph_edge_refinement_of(
+    graph: ref[CfgGraph],
+    from: ptr_uint,
+    to: ptr_uint,
+    key: ptr_uint,
+    nonnull_out: ref[bool]
+) -> bool:
     var i: ptr_uint = 0
     while i < read(graph).edge_refinements.len():
         let r = read(graph).edge_refinements.get(i) else:
@@ -311,7 +321,12 @@ public function graph_rpo_ids(graph: ref[CfgGraph], ids: ref[vec.Vec[ptr_uint]])
         ids.push(unsafe: read(slot))
 
 
-function graph_rpo_visit(graph: ref[CfgGraph], visited: ref[map_mod.Map[ptr_uint, bool]], ids: ref[vec.Vec[ptr_uint]], id: ptr_uint) -> void:
+function graph_rpo_visit(
+    graph: ref[CfgGraph],
+    visited: ref[map_mod.Map[ptr_uint, bool]],
+    ids: ref[vec.Vec[ptr_uint]],
+    id: ptr_uint
+) -> void:
     if id == 0:
         return
     if read(visited).contains(id):
@@ -409,7 +424,6 @@ public function graph_declared_keys(graph: ref[CfgGraph], keys: ref[vec.Vec[ptr_
                         keys.push(read(site).key)
                 wi += 1
         i += 1
-
 
 # =============================================================================
 #  The liveness dataflow — the host's `Liveness.solve`
@@ -562,7 +576,6 @@ function liveness_row_store(table: ptr[bool]?, index: ptr_uint, work: ptr[bool],
             read(base + index + i) = read(work + i)
         i += 1
 
-
 # =============================================================================
 #  The nullability dataflow — the host's `NullabilityFlow.solve`
 # =============================================================================
@@ -659,7 +672,14 @@ public function solve_nullability(graph: ref[CfgGraph], flow: ref[NullabilityFlo
 ## make the result depend on predecessor order.  `has` records that at least
 ## one predecessor contributed, so an empty state is not confused with "no
 ## predecessor".
-function pred_edge_state(graph: ref[CfgGraph], flow: ref[NullabilityFlow], pred: ptr_uint, to: ptr_uint, work: ptr[bool], has: ref[bool]) -> void:
+function pred_edge_state(
+    graph: ref[CfgGraph],
+    flow: ref[NullabilityFlow],
+    pred: ptr_uint,
+    to: ptr_uint,
+    work: ptr[bool],
+    has: ref[bool]
+) -> void:
     let row = read(flow).row_size
     let node = graph_node(graph, pred) else:
         return
@@ -729,7 +749,6 @@ function flow_set(flow: ref[NullabilityFlow], index: ptr_uint, value: bool) -> v
         return
     unsafe:
         read(state + index) = value
-
 
 # =============================================================================
 #  Helpers

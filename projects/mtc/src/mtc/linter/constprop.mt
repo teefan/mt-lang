@@ -18,7 +18,6 @@ import mtc.parser.ast as ast
 import mtc.semantic.control_flow.builder as flow_builder
 import mtc.semantic.control_flow.graph as flow_graph
 
-
 const TAG_UNDEF: ptr_uint = 0
 const TAG_NAC: ptr_uint = 1
 const TAG_INT: ptr_uint = 2
@@ -27,7 +26,6 @@ const TAG_BOOL: ptr_uint = 4
 const TAG_STR: ptr_uint = 5
 const TAG_RANGE: ptr_uint = 6
 const TAG_EXPRS: ptr_uint = 7
-
 
 ## One lattice value.  `i`/`d`/`b`/`s` carry the payload; `lo`/`hi` a range's
 ## half-open bounds; `exprs` an expression list's elements (evaluated on
@@ -41,7 +39,6 @@ public struct Cell:
     lo: long
     hi: long
     exprs: span[ast.Expr]
-
 
 ## The solved per-node in-states (the host's `Result#in_states`): a dense
 ## `node × key` table, `cells[node * key_count + key]`.  A zeroed cell is
@@ -95,7 +92,6 @@ public function bool_cell(value: bool) -> Cell:
 
 public function str_cell(value: str) -> Cell:
     return Cell(tag = TAG_STR, i = 0, d = 0.0, b = false, s = value, lo = 0, hi = 0, exprs = span[ast.Expr]())
-
 
 # =============================================================================
 #  State tables
@@ -183,7 +179,6 @@ function state_lookup(cfg: ref[flow_builder.Cfg], in_base: ptr[Cell], name: str)
         return nac_cell()
     return cell
 
-
 # =============================================================================
 #  The value folder (the host's `CompileTime.evaluate`)
 # =============================================================================
@@ -249,7 +244,13 @@ function eval_unary(op: str, operand: Cell) -> Cell:
     return nac_cell()
 
 
-function eval_binary(cfg: ref[flow_builder.Cfg], in_base: ptr[Cell], operator: str, left_expr: ptr[ast.Expr], right_expr: ptr[ast.Expr]) -> Cell:
+function eval_binary(
+    cfg: ref[flow_builder.Cfg],
+    in_base: ptr[Cell],
+    operator: str,
+    left_expr: ptr[ast.Expr],
+    right_expr: ptr[ast.Expr]
+) -> Cell:
     let left = eval_expr(cfg, in_base, left_expr)
     if operator.equal("and"):
         if left.tag != TAG_BOOL:
@@ -272,7 +273,16 @@ function eval_binary(cfg: ref[flow_builder.Cfg], in_base: ptr[Cell], operator: s
     let right = eval_expr(cfg, in_base, right_expr)
     if operator.equal(".."):
         if left.tag == TAG_INT and right.tag == TAG_INT:
-            return Cell(tag = TAG_RANGE, i = 0, d = 0.0, b = false, s = "", lo = left.i, hi = right.i, exprs = span[ast.Expr]())
+            return Cell(
+                tag = TAG_RANGE,
+                i = 0,
+                d = 0.0,
+                b = false,
+                s = "",
+                lo = left.i,
+                hi = right.i,
+                exprs = span[ast.Expr]()
+            )
         return nac_cell()
     if operator.equal("==") or operator.equal("!="):
         match equality_result(left, right):
@@ -319,7 +329,13 @@ function eval_binary(cfg: ref[flow_builder.Cfg], in_base: ptr[Cell], operator: s
                 return nac_cell()
             return int_cell(left.i % right.i)
         return nac_cell()
-    if operator.equal("<<") or operator.equal(">>") or operator.equal("&") or operator.equal("|") or operator.equal("^"):
+    if (
+        operator.equal("<<")
+        or operator.equal(">>")
+        or operator.equal("&")
+        or operator.equal("|")
+        or operator.equal("^")
+    ):
         if left.tag == TAG_INT and right.tag == TAG_INT:
             if operator.equal("<<"):
                 return int_cell(left.i << right.i)
@@ -399,7 +415,12 @@ function type_last_name(type_ref: ptr[ast.TypeRef]) -> str:
 ## Index access (the host's `evaluate_index_access`): an integer index into a
 ## string is its byte, into a range its element; a range index slices a string
 ## or the range.
-function eval_index_access(receiver: Cell, index: ptr[ast.Expr], cfg: ref[flow_builder.Cfg], in_base: ptr[Cell]) -> Cell:
+function eval_index_access(
+    receiver: Cell,
+    index: ptr[ast.Expr],
+    cfg: ref[flow_builder.Cfg],
+    in_base: ptr[Cell]
+) -> Cell:
     unsafe:
         match read(index):
             ast.Expr.expr_range as rg:
@@ -416,7 +437,16 @@ function eval_index_access(receiver: Cell, index: ptr[ast.Expr], cfg: ref[flow_b
                     let hi = end_i
                     if lo < 0 or hi < lo or hi > receiver.hi - receiver.lo:
                         return nac_cell()
-                    return Cell(tag = TAG_RANGE, i = 0, d = 0.0, b = false, s = "", lo = receiver.lo + lo, hi = receiver.lo + hi, exprs = span[ast.Expr]())
+                    return Cell(
+                        tag = TAG_RANGE,
+                        i = 0,
+                        d = 0.0,
+                        b = false,
+                        s = "",
+                        lo = receiver.lo + lo,
+                        hi = receiver.lo + hi,
+                        exprs = span[ast.Expr]()
+                    )
                 if receiver.tag == TAG_EXPRS:
                     let lo = start_i
                     let hi = end_i
@@ -500,13 +530,21 @@ public function eval_expr(cfg: ref[flow_builder.Cfg], in_base: ptr[Cell], ep: pt
                 let start_cell = eval_expr(cfg, in_base, rg.start_expr)
                 let end_cell = eval_expr(cfg, in_base, rg.end_expr)
                 if start_cell.tag == TAG_INT and end_cell.tag == TAG_INT:
-                    return Cell(tag = TAG_RANGE, i = 0, d = 0.0, b = false, s = "", lo = start_cell.i, hi = end_cell.i, exprs = span[ast.Expr]())
+                    return Cell(
+                        tag = TAG_RANGE,
+                        i = 0,
+                        d = 0.0,
+                        b = false,
+                        s = "",
+                        lo = start_cell.i,
+                        hi = end_cell.i,
+                        exprs = span[ast.Expr]()
+                    )
                 return nac_cell()
             ast.Expr.expr_expression_list as el:
                 return Cell(tag = TAG_EXPRS, i = 0, d = 0.0, b = false, s = "", lo = 0, hi = 0, exprs = el.elements)
             _:
                 return nac_cell()
-
 
 # =============================================================================
 #  The solver
@@ -686,7 +724,6 @@ function node_statement(node: ptr[flow_graph.CfgNode]) -> ptr[ast.Stmt]?:
         return null
     return unsafe: reinterpret[ptr[ast.Stmt]](key)
 
-
 # =============================================================================
 #  The rule's query
 # =============================================================================
@@ -714,7 +751,11 @@ public function node_condition(node: ptr[flow_graph.CfgNode]) -> ptr[ast.Expr]?:
 
 ## True/False when the node's condition folds to a constant boolean (the
 ## host's `constant_value_of` returning true/false).
-public function condition_value_of(cfg: ref[flow_builder.Cfg], states: ref[FlowStates], node: ptr[flow_graph.CfgNode]) -> Option[bool]:
+public function condition_value_of(
+    cfg: ref[flow_builder.Cfg],
+    states: ref[FlowStates],
+    node: ptr[flow_graph.CfgNode]
+) -> Option[bool]:
     let cond = node_condition(node) else:
         return Option[bool].none
     let id = unsafe: read(node).id
@@ -724,7 +765,6 @@ public function condition_value_of(cfg: ref[flow_builder.Cfg], states: ref[FlowS
     if cell.tag == TAG_BOOL:
         return Option[bool].some(value = cell.b)
     return Option[bool].none
-
 
 # =============================================================================
 #  The loop-body skip (the host's `compute_loop_body_nodes`)

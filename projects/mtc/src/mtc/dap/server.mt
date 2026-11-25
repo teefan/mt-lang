@@ -19,7 +19,6 @@ import mtc.dap.protocol as proto
 import mtc.dap.session as session
 import mtc.dap.wire as wire
 
-
 const POLL_STDIN: int = 1
 const POLL_ADAPTER: int = 2
 const TIMER_INTERVAL_MS: ptr_uint = 100
@@ -158,7 +157,12 @@ function create_loop() -> ptr[libuv.uv_loop_t]:
 
 
 ## Register a readable/disconnect poll handle for `fd`.
-function watch_fd(loop: ptr[libuv.uv_loop_t], fd: int, kind: int, state: ptr[LoopState]) -> Option[ptr[libuv.uv_poll_t]]:
+function watch_fd(
+    loop: ptr[libuv.uv_loop_t],
+    fd: int,
+    kind: int,
+    state: ptr[LoopState]
+) -> Option[ptr[libuv.uv_poll_t]]:
     let handle_size = libuv.handle_size(libuv.uv_handle_type.UV_POLL)
     let handle = unsafe: ptr[libuv.uv_poll_t]<-heap.must_alloc_zeroed_bytes(1, handle_size)
     let ctx = heap.must_alloc[PollContext](1)
@@ -228,7 +232,14 @@ function drain_client_messages(
                 if payload.value.msg_type.as_str().equal("response"):
                     lldb_policy.handle_client_response(ses, lldb_backend_ref, payload.value)
                 else if payload.value.command.len() > 0:
-                    handlers.dispatch(ses, lldb_backend_ref, child, has_child, payload.value.command.as_str(), payload.value)
+                    handlers.dispatch(
+                        ses,
+                        lldb_backend_ref,
+                        child,
+                        has_child,
+                        payload.value.command.as_str(),
+                        payload.value
+                    )
                 proto.release_message(ref_of(payload.value))
             Option.none:
                 break

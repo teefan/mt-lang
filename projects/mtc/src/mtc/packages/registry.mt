@@ -24,24 +24,20 @@ import mtc.packages.version as version
 ## Nested generic argument spelled as an alias (see manifest.mt).
 type VersionList = vec.Vec[string.String]
 
-
 public struct RegistryStore:
     root: string.String
     upstream_root: Option[string.String]
-
 
 public struct RegistryResult:
     package_name: string.String
     version: string.String
     path: string.String
 
-
 struct HttpResponse:
     status: int
     reason: string.String
     body: bytes.Bytes
     location: string.String
-
 
 struct HttpOutcome:
     ok: bool
@@ -76,7 +72,6 @@ function result_failure(message: string.String) -> Result[RegistryResult, string
 
 function store_error(store: ref[RegistryStore], message: str) -> string.String:
     return string.String.from_str(message)
-
 
 # =============================================================================
 #  Store construction
@@ -215,16 +210,23 @@ public function publish_default(path: str, target_upstream: bool) -> Result[Regi
     defer: release_store(ref_of(store))
     return publish(ref_of(store), path, target_upstream)
 
-
 # =============================================================================
 #  Paths and publication state
 # =============================================================================
 
-public function package_root_for(store: ref[RegistryStore], package_name: str, package_version: str) -> Result[string.String, string.String]:
+public function package_root_for(
+    store: ref[RegistryStore],
+    package_name: str,
+    package_version: str
+) -> Result[string.String, string.String]:
     return package_root_for_root(read(store).root.as_str(), package_name, package_version)
 
 
-function package_root_for_root(root: str, package_name: str, package_version: str) -> Result[string.String, string.String]:
+function package_root_for_root(
+    root: str,
+    package_name: str,
+    package_version: str
+) -> Result[string.String, string.String]:
     match normalize_component(package_name, "package name"):
         Result.failure as failure_payload:
             return Result[string.String, string.String].failure(error = failure_payload.error)
@@ -247,7 +249,11 @@ function package_root_for_root(root: str, package_name: str, package_version: st
     return Result[string.String, string.String].failure(error = string.String.from_str("invalid package path"))
 
 
-public function manifest_path_for(store: ref[RegistryStore], package_name: str, package_version: str) -> Result[string.String, string.String]:
+public function manifest_path_for(
+    store: ref[RegistryStore],
+    package_name: str,
+    package_version: str
+) -> Result[string.String, string.String]:
     match package_root_for(store, package_name, package_version):
         Result.failure as failure_payload:
             return Result[string.String, string.String].failure(error = failure_payload.error)
@@ -320,7 +326,6 @@ function normalize_component(value: str, label: str) -> Result[string.String, st
         message.append("\"")
         return Result[string.String, string.String].failure(error = message)
     return Result[string.String, string.String].success(value = string.String.from_str(text))
-
 
 # =============================================================================
 #  Version listing
@@ -423,10 +428,18 @@ function package_versions_for_root(root: str, package_name: str) -> Result[Versi
                     while i < entries.len():
                         let entry = entries.get(i) else:
                             break
-                        if entry.len > 0 and not entry.starts_with(".") and not entry.equal("versions.txt") and not entry.ends_with(".tar.gz"):
+                        if (
+                            entry.len > 0
+                            and not entry.starts_with(".")
+                            and not entry.equal("versions.txt")
+                            and not entry.ends_with(".tar.gz")
+                        ):
                             names.push(string.String.from_str(entry))
                         i += 1
-                    names.sort_by(proc(left: ptr[string.String], right: ptr[string.String]) -> int: unsafe: read(left).as_str().compare(unsafe: read(right).as_str()))
+                    names.sort_by(proc(
+                        left: ptr[string.String],
+                        right: ptr[string.String]
+                    ) -> int: unsafe: read(left).as_str().compare(unsafe: read(right).as_str()))
                     var ni: ptr_uint = 0
                     while ni < names.len():
                         let name_entry = names.get(ni) else:
@@ -442,12 +455,15 @@ function package_versions_for_root(root: str, package_name: str) -> Result[Versi
             return Result[VersionList, string.String].success(value = versions)
     return Result[VersionList, string.String].success(value = versions)
 
-
 # =============================================================================
 #  Publish and sync
 # =============================================================================
 
-public function publish(store: ref[RegistryStore], path: str, target_upstream: bool) -> Result[RegistryResult, string.String]:
+public function publish(
+    store: ref[RegistryStore],
+    path: str,
+    target_upstream: bool
+) -> Result[RegistryResult, string.String]:
     var loaded: manifest.PackageManifest
     match manifest.load(path):
         Result.failure as manifest_failure:
@@ -520,7 +536,12 @@ public function publish(store: ref[RegistryStore], path: str, target_upstream: b
         Result.success:
             pass
 
-    match write_artifacts_with_rollback(target_root.as_str(), loaded.package_name.as_str(), package_version.as_str(), package_root.as_str()):
+    match write_artifacts_with_rollback(
+        target_root.as_str(),
+        loaded.package_name.as_str(),
+        package_version.as_str(),
+        package_root.as_str()
+    ):
         Result.failure as write_failure:
             var message = string.String.from_str("failed to publish package to ")
             message.append(target_root.as_str())
@@ -544,7 +565,11 @@ public function publish(store: ref[RegistryStore], path: str, target_upstream: b
     return Result[RegistryResult, string.String].success(value = result)
 
 
-public function sync(store: ref[RegistryStore], package_name: str, package_version: str) -> Result[RegistryResult, string.String]:
+public function sync(
+    store: ref[RegistryStore],
+    package_name: str,
+    package_version: str
+) -> Result[RegistryResult, string.String]:
     if not upstream_configured(store):
         return result_failure(string.String.from_str("registry upstream is not configured"))
 
@@ -601,7 +626,10 @@ public function sync(store: ref[RegistryStore], package_name: str, package_versi
                         upstream_manifest = manifest_payload.value
                 defer: upstream_manifest.release()
 
-                if not upstream_manifest.package_name.as_str().equal(package_name) or not optional_text_equal(upstream_manifest.package_version, package_version):
+                if not upstream_manifest.package_name.as_str().equal(package_name) or not optional_text_equal(
+                    upstream_manifest.package_version,
+                    package_version
+                ):
                     var message = string.String.from_str("upstream registry package at ")
                     message.append(upstream_manifest.manifest_path.as_str())
                     message.append(" resolved to ")
@@ -753,7 +781,11 @@ function sync_from_http(
             return validate_synced_package(local_root, package_name, package_version)
 
 
-function validate_synced_package(local_root: str, package_name: str, package_version: str) -> Result[bool, string.String]:
+function validate_synced_package(
+    local_root: str,
+    package_name: str,
+    package_version: str
+) -> Result[bool, string.String]:
     var loaded: manifest.PackageManifest
     match manifest.load(local_root):
         Result.failure as manifest_failure:
@@ -761,7 +793,10 @@ function validate_synced_package(local_root: str, package_name: str, package_ver
         Result.success as manifest_payload:
             loaded = manifest_payload.value
     defer: loaded.release()
-    if not loaded.package_name.as_str().equal(package_name) or not optional_text_equal(loaded.package_version, package_version):
+    if not loaded.package_name.as_str().equal(package_name) or not optional_text_equal(
+        loaded.package_version,
+        package_version
+    ):
         var message = string.String.from_str("upstream registry package at ")
         message.append(loaded.manifest_path.as_str())
         message.append(" resolved to ")
@@ -818,7 +853,6 @@ function materialize_copy(source_root: str, destination_root: str) -> Result[boo
             pass
     return Result[bool, string.String].success(value = true)
 
-
 # =============================================================================
 #  Registry artifacts
 # =============================================================================
@@ -849,7 +883,12 @@ function write_artifacts_with_rollback(
     return Result[bool, string.String].failure(error = string.String.from_str("registry artifact write failed"))
 
 
-function write_artifacts(root: str, package_name: str, package_version: str, package_root: str) -> Result[bool, string.String]:
+function write_artifacts(
+    root: str,
+    package_name: str,
+    package_version: str,
+    package_root: str
+) -> Result[bool, string.String]:
     var archive_path: string.String
     match archive_path_for_root(root, package_name, package_version):
         Result.failure as archive_failure:
@@ -887,7 +926,11 @@ function write_artifacts(root: str, package_name: str, package_version: str, pac
     return write_versions_index(root, package_name)
 
 
-function archive_path_for_root(root: str, package_name: str, package_version: str) -> Result[string.String, string.String]:
+function archive_path_for_root(
+    root: str,
+    package_name: str,
+    package_version: str
+) -> Result[string.String, string.String]:
     match normalize_component(package_name, "package name"):
         Result.failure as name_failure:
             return Result[string.String, string.String].failure(error = name_failure.error)
@@ -977,7 +1020,6 @@ function write_versions_index(root: str, package_name: str) -> Result[bool, stri
         Result.success:
             pass
     return Result[bool, string.String].success(value = true)
-
 
 # =============================================================================
 #  HTTP upstream

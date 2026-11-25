@@ -28,7 +28,6 @@ import mtc.semantic.emit_expansion as emit_ex
 import mtc.semantic.scope as sscope
 import mtc.c_naming as naming
 
-
 ## When false, the analyzer skips the fact maps that only the LSP consumes
 ## (`flow_types`, `local_decl_types`, `destructure_types`, …).  The compiler
 ## pipeline clears it before analysis; the LSP and the in-language semantic
@@ -39,7 +38,6 @@ var tooling_facts_enabled: bool = true
 public function set_tooling_facts(enabled: bool) -> void:
     tooling_facts_enabled = enabled
 
-
 public struct SemanticDiagnostic:
     line: ptr_uint
     column: ptr_uint
@@ -48,11 +46,9 @@ public struct SemanticDiagnostic:
     length: ptr_uint
     message: str
 
-
 public struct ParamEntry:
     name: str
     ty: types.Type
-
 
 public struct FnSig:
     name: str
@@ -76,11 +72,9 @@ public struct FnSig:
     ## ranges from `required_count` to `params.len`.
     required_count: ptr_uint
 
-
 public struct FieldEntry:
     name: str
     ty: types.Type
-
 
 ## One imported type's members, keyed `<module>.<Type>`: its fields (a struct's or
 ## union's) and its methods.  The analysis carries only the current module's
@@ -98,7 +92,6 @@ public struct ImportedTypeMembers:
     ## extends the type is not a type receiver the host resolves.
     declared: bool
 
-
 ## One name of a destructuring `let (a, b) = …` binding and the type the
 ## binding carries (the host's per-name scope binding): the tuple element at the
 ## name's position, or the struct field at that position.  The declaration line
@@ -109,7 +102,6 @@ public struct DestructureTypeEntry:
     name: str
     ty: types.Type
 
-
 ## A bare function name used as a *value* where a function/proc type is
 ## expected (an argument to a callback parameter): the host's
 ## `callable_value_identifier_sites`, keyed by the identifier's position.  The
@@ -119,7 +111,6 @@ public struct CallableValueSite:
     line: ptr_uint
     column: ptr_uint
 
-
 ## One identifier use resolved to a scope binding: the identifier's node key
 ## and the binding's id, in resolution order (the host's
 ## `binding_resolution.identifier_binding_ids`).
@@ -127,13 +118,11 @@ public struct BindingSite:
     node: ptr_uint
     id: ptr_uint
 
-
 ## One binding id's type, in allocation order (the host's
 ## `binding_resolution.binding_types`).
 public struct BindingTypeEntry:
     id: ptr_uint
     ty: types.Type
-
 
 ## An `as name` variant match-arm binding: the arm's declaration position and
 ## the payload type the binding carries, so the LSP can hover it the way the
@@ -143,14 +132,12 @@ public struct ArmBindingEntry:
     name: str
     ty: types.Type
 
-
 ## The resolved receiver type of one non-static `extending` method — the
 ## implicit `this` binding — keyed by the method's line, so the LSP resolves
 ## `this.`'s members the way the host's scope binding does.
 public struct ThisTypeEntry:
     line: ptr_uint
     ty: types.Type
-
 
 public struct EventInfo:
     name: str
@@ -161,7 +148,6 @@ public struct EventInfo:
     ## `Types::Event#owner_type_name`, which the linkage uses to keep two
     ## same-named events in different structs distinct.
     owner_type_name: str
-
 
 ## The public export surface of a module, consumed by importers for cross-module
 ## name resolution.  Built from an Analysis by the loader's binder
@@ -174,7 +160,6 @@ public struct DirectionalParamInfo:
     mode_label: str
     name: str
 
-
 ## A recorded `directional-ffi-arg` site: the call's *callee* expression
 ## pointer (so the linter emits at the call's visit, in the host's order), the
 ## argument expression pointer (for the warning span), and the message parts.
@@ -184,7 +169,6 @@ public struct DirectionalFfiSite:
     function_name: str
     parameter_name: str
     mode_label: str
-
 
 ## members (member-access validation).
 public struct ModuleBinding:
@@ -241,7 +225,6 @@ public struct ModuleBinding:
     directional_param_modes: map_mod.Map[str, map_mod.Map[ptr_uint, DirectionalParamInfo]]
     private_interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
 
-
 ## One entry of the analyzer's refinement record — the self's analogue of the
 ## host's completion-snapshot bindings: the type a local has at a statement
 ## boundary.  `at` packs the recording statement's position as
@@ -260,7 +243,6 @@ public struct FlowTypeEntry:
 struct FlowName:
     name: str
     ty: types.Type
-
 
 struct Context:
     value_names: map_mod.Map[str, bool]
@@ -458,7 +440,6 @@ struct Context:
     suppress_binding_records: bool
     module_name: str
 
-
 public struct Analysis:
     source_file: ast.SourceFile
     diagnostics: vec.Vec[SemanticDiagnostic]
@@ -590,18 +571,34 @@ public function check_source_file(file: ast.SourceFile) -> Analysis:
 ## Semantically check a module, resolving cross-module references against the
 ## given import bindings (keyed by module name; may be null for single-file
 ## checks).  `imported_modules` is borrowed, not owned.
-public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?, module_name: str, source_path: str) -> Analysis:
+public function check_module(
+    file: ast.SourceFile,
+    imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?,
+    module_name: str,
+    source_path: str
+) -> Analysis:
     return check_module_opts(file, imported_modules, module_name, source_path, false)
 
 
 ## `check_module` with the LSP's unresolved-import handling: aliases whose
 ## module did not resolve are left unbound (the host's `allow_missing_imports`
 ## behaviour), so uses of them are reported as unknown names.
-public function check_module_requiring_resolved_imports(file: ast.SourceFile, imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?, module_name: str, source_path: str) -> Analysis:
+public function check_module_requiring_resolved_imports(
+    file: ast.SourceFile,
+    imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?,
+    module_name: str,
+    source_path: str
+) -> Analysis:
     return check_module_opts(file, imported_modules, module_name, source_path, true)
 
 
-public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?, module_name: str, source_path: str, require_resolved_imports: bool) -> Analysis:
+public function check_module_opts(
+    file: ast.SourceFile,
+    imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?,
+    module_name: str,
+    source_path: str,
+    require_resolved_imports: bool
+) -> Analysis:
     # The caller owns the import table and must keep it address-stable for as
     # long as the analysis lives (the loader heap-allocates it and the fix
     # engine reuses it).  Copying the map here would snapshot its bucket array,
@@ -674,7 +671,10 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         # (completion, inlay hints, navigation) - never by lowering or the C
         # backend - so a plain compile leaves the map empty instead of
         # collecting ~29 MB of records per module graph.
-        imported_type_members = if ctx.tooling_facts: collect_imported_type_members(ref_of(ctx)) else: map_mod.Map[str, ImportedTypeMembers].create(),
+        imported_type_members = if ctx.tooling_facts: collect_imported_type_members(ref_of(ctx)) else: map_mod.Map[
+            str,
+            ImportedTypeMembers
+        ].create(),
         uses_parallel_for = ctx.uses_parallel_for,
         declared_attributes = ctx.declared_attributes,
         imports = ctx.import_aliases,
@@ -710,7 +710,11 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
     )
 
 
-function create_context(module_name: str, imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?, require_resolved_imports: bool) -> Context:
+function create_context(
+    module_name: str,
+    imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?,
+    require_resolved_imports: bool
+) -> Context:
     return Context(
         value_names = map_mod.Map[str, bool].create(),
         type_names = map_mod.Map[str, bool].create(),
@@ -799,7 +803,6 @@ function create_context(module_name: str, imported_modules: ptr[map_mod.Map[str,
         module_name = module_name,
     )
 
-
 # =============================================================================
 #  Binding ids — the host's `@next_binding_id` allocation order and the
 #  identifier/declaration/type records its `binding_resolution` snapshot carries
@@ -873,7 +876,6 @@ public function preassigned_binding_id_for(ctx: ref[Context], key: ptr_uint) -> 
     ctx.preassigned_ids.set(key, id)
     return id
 
-
 # =============================================================================
 #  Binding-id declaration pass and per-body preassignment
 # =============================================================================
@@ -884,7 +886,11 @@ public function preassigned_binding_id_for(ctx: ref[Context], key: ptr_uint) -> 
 ## method).  The host's `declare_top_level_values` → `declare_functions`
 ## `value_binding` calls allocate exactly these ids.  Parameter declaration
 ## sites are recorded here, as the host records them at declare time.
-function allocate_declaration_binding_ids(ctx: ref[Context], declarations: span[ast.Decl], when_extra: span[ast.Decl]) -> void:
+function allocate_declaration_binding_ids(
+    ctx: ref[Context],
+    declarations: span[ast.Decl],
+    when_extra: span[ast.Decl]
+) -> void:
     allocate_value_binding_ids(ctx, declarations)
     allocate_value_binding_ids(ctx, when_extra)
     allocate_callable_binding_ids(ctx, declarations)
@@ -928,11 +934,29 @@ function allocate_callable_binding_ids(ctx: ref[Context], declarations: span[ast
         let node = unsafe: reinterpret[ptr_uint](declarations.data + i)
         match d:
             ast.Decl.decl_function as fun:
-                allocate_param_binding_ids(ctx, node, fun.method_params.data, fun.method_params.len, ctx.functions.get(fun.name))
+                allocate_param_binding_ids(
+                    ctx,
+                    node,
+                    fun.method_params.data,
+                    fun.method_params.len,
+                    ctx.functions.get(fun.name)
+                )
             ast.Decl.decl_extern_function as fun:
-                allocate_foreign_param_binding_ids(ctx, node, fun.extern_params.data, fun.extern_params.len, ctx.functions.get(fun.name))
+                allocate_foreign_param_binding_ids(
+                    ctx,
+                    node,
+                    fun.extern_params.data,
+                    fun.extern_params.len,
+                    ctx.functions.get(fun.name)
+                )
             ast.Decl.decl_foreign_function as fun:
-                allocate_foreign_param_binding_ids(ctx, node, fun.foreign_params.data, fun.foreign_params.len, ctx.functions.get(fun.name))
+                allocate_foreign_param_binding_ids(
+                    ctx,
+                    node,
+                    fun.foreign_params.data,
+                    fun.foreign_params.len,
+                    ctx.functions.get(fun.name)
+                )
             ast.Decl.decl_extending_block as ex:
                 var base: str = ""
                 unsafe:
@@ -954,7 +978,13 @@ function allocate_callable_binding_ids(ctx: ref[Context], declarations: span[ast
 ## key; the first parameter's id is remembered so the body check can give each
 ## parameter the same id.  Each parameter's declaration site is recorded here,
 ## as the host records it at declare time.
-function allocate_param_binding_ids(ctx: ref[Context], node: ptr_uint, params: ptr[ast.Param], count: ptr_uint, sig: ptr[FnSig]?) -> void:
+function allocate_param_binding_ids(
+    ctx: ref[Context],
+    node: ptr_uint,
+    params: ptr[ast.Param],
+    count: ptr_uint,
+    sig: ptr[FnSig]?
+) -> void:
     if count == 0:
         return
     ctx.param_id_base.set(node, ctx.next_binding_id)
@@ -971,7 +1001,13 @@ function allocate_param_binding_ids(ctx: ref[Context], node: ptr_uint, params: p
         i += 1
 
 
-function allocate_foreign_param_binding_ids(ctx: ref[Context], node: ptr_uint, params: ptr[ast.ForeignParam], count: ptr_uint, sig: ptr[FnSig]?) -> void:
+function allocate_foreign_param_binding_ids(
+    ctx: ref[Context],
+    node: ptr_uint,
+    params: ptr[ast.ForeignParam],
+    count: ptr_uint,
+    sig: ptr[FnSig]?
+) -> void:
     if count == 0:
         return
     ctx.param_id_base.set(node, ctx.next_binding_id)
@@ -1295,7 +1331,6 @@ function import_alias_name(path: ast.QualifiedName, alias_name: Option[str]) -> 
             unsafe:
                 return read(path.parts.data + (path.parts.len - 1))
 
-
 # =============================================================================
 #  Structural collection — declare_named_types / declare_values_and_functions
 # =============================================================================
@@ -1309,7 +1344,10 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
         match d:
             ast.Decl.decl_struct as s:
                 declare_type(ctx, s.name, s.line, s.column)
-                ctx.types.set(s.name, types.named_type(name = s.name, module_name = ctx.module_name, linkage_name = Option[str].none))
+                ctx.types.set(
+                    s.name,
+                    types.named_type(name = s.name, module_name = ctx.module_name, linkage_name = Option[str].none)
+                )
                 register_module_type_name(ctx, s.name)
                 ctx.type_param_names.set(s.name, s.type_params)
                 ctx.implemented.set(s.name, s.impl_list)
@@ -1317,24 +1355,39 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
                 register_struct_events(ctx, s.struct_events, s.name)
             ast.Decl.decl_union as u:
                 declare_type(ctx, u.name, u.line, u.column)
-                ctx.types.set(u.name, types.named_type(name = u.name, module_name = ctx.module_name, linkage_name = Option[str].none))
+                ctx.types.set(
+                    u.name,
+                    types.named_type(name = u.name, module_name = ctx.module_name, linkage_name = Option[str].none)
+                )
                 register_module_type_name(ctx, u.name)
             ast.Decl.decl_enum as e:
                 declare_type(ctx, e.name, e.line, e.column)
-                ctx.types.set(e.name, types.named_type(name = e.name, module_name = ctx.module_name, linkage_name = Option[str].none))
+                ctx.types.set(
+                    e.name,
+                    types.named_type(name = e.name, module_name = ctx.module_name, linkage_name = Option[str].none)
+                )
                 register_module_type_name(ctx, e.name)
             ast.Decl.decl_flags as fl:
                 declare_type(ctx, fl.name, fl.line, fl.column)
-                ctx.types.set(fl.name, types.named_type(name = fl.name, module_name = ctx.module_name, linkage_name = Option[str].none))
+                ctx.types.set(
+                    fl.name,
+                    types.named_type(name = fl.name, module_name = ctx.module_name, linkage_name = Option[str].none)
+                )
                 register_module_type_name(ctx, fl.name)
             ast.Decl.decl_variant as vr:
                 declare_type(ctx, vr.name, vr.line, vr.column)
-                ctx.types.set(vr.name, types.named_type(name = vr.name, module_name = ctx.module_name, linkage_name = Option[str].none))
+                ctx.types.set(
+                    vr.name,
+                    types.named_type(name = vr.name, module_name = ctx.module_name, linkage_name = Option[str].none)
+                )
                 register_module_type_name(ctx, vr.name)
                 ctx.type_param_names.set(vr.name, vr.type_params)
             ast.Decl.decl_opaque as op:
                 declare_type(ctx, op.name, op.line, op.column)
-                ctx.types.set(op.name, types.named_type(name = op.name, module_name = ctx.module_name, linkage_name = Option[str].none))
+                ctx.types.set(
+                    op.name,
+                    types.named_type(name = op.name, module_name = ctx.module_name, linkage_name = Option[str].none)
+                )
                 register_module_type_name(ctx, op.name)
                 ctx.implemented.set(op.name, op.opaque_implements)
             ast.Decl.decl_type_alias as ta:
@@ -1346,7 +1399,15 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
                 ctx.type_aliases.set(ta.name, ta.target)
             ast.Decl.decl_event as ev:
                 declare_type(ctx, ev.name, ev.line, ev.column)
-                ctx.event_types.set(ev.name, EventInfo(name = ev.name, capacity = ev.capacity, payload_type = ev.payload_type, owner_type_name = ""))
+                ctx.event_types.set(
+                    ev.name,
+                    EventInfo(
+                        name = ev.name,
+                        capacity = ev.capacity,
+                        payload_type = ev.payload_type,
+                        owner_type_name = ""
+                    )
+                )
             _:
                 pass
         i += 1
@@ -1392,7 +1453,10 @@ function record_import_symbol_count(ctx: ref[Context], module_name: str) -> void
         ctx.import_symbol_counts.set(module_name, 0)
         return
     let binding = unsafe: read(binding_ptr)
-    ctx.import_symbol_counts.set(module_name, binding.structs.len() + binding.types.len() + binding.static_member_types.len() + binding.type_alias_types.len() + binding.functions.len() + binding.value_types.len())
+    ctx.import_symbol_counts.set(
+        module_name,
+        binding.structs.len() + binding.types.len() + binding.static_member_types.len() + binding.type_alias_types.len() + binding.functions.len() + binding.value_types.len()
+    )
 
 
 ## A nested struct's C linkage name: its qualified path flattened under the
@@ -1430,7 +1494,11 @@ function register_nested_struct_types(ctx: ref[Context], nested: span[ast.Decl],
                 # `Types::Struct.new(nested.name, …)`) but links through its
                 # parents (`<module>_Rectangle_Edge`), so a field, parameter or
                 # local of this type emits the declared C name.
-                let nested_ty = types.named_type(name = s.name, module_name = ctx.module_name, linkage_name = Option[str].some(value = nested_struct_linkage(ctx.module_name, qname)))
+                let nested_ty = types.named_type(
+                    name = s.name,
+                    module_name = ctx.module_name,
+                    linkage_name = Option[str].some(value = nested_struct_linkage(ctx.module_name, qname))
+                )
                 ctx.types.set(qname, nested_ty)
                 if not ctx.type_names.contains(s.name):
                     declare_type(ctx, s.name, s.line, s.column)
@@ -1466,7 +1534,15 @@ function register_struct_events(ctx: ref[Context], events: span[ast.Decl], owner
         unsafe:
             match read(events.data + i):
                 ast.Decl.decl_event as ev:
-                    ctx.event_types.set(event_registry_key(owner_key, ev.name), EventInfo(name = ev.name, capacity = ev.capacity, payload_type = ev.payload_type, owner_type_name = owner_key))
+                    ctx.event_types.set(
+                        event_registry_key(owner_key, ev.name),
+                        EventInfo(
+                            name = ev.name,
+                            capacity = ev.capacity,
+                            payload_type = ev.payload_type,
+                            owner_type_name = owner_key
+                        )
+                    )
                 _:
                     pass
         i += 1
@@ -1511,7 +1587,11 @@ function expand_module_when(ctx: ref[Context], file: ast.SourceFile) -> span[ast
 ## represents.  Handles `const_name` (looks up the const's value) and
 ## `EnumType.member` (direct enum member reference).  Returns none when the
 ## discriminant cannot be resolved.
-function evaluate_when_discriminant(ctx: ref[Context], discriminant: ptr[ast.Expr], decls: span[ast.Decl]) -> Option[str]:
+function evaluate_when_discriminant(
+    ctx: ref[Context],
+    discriminant: ptr[ast.Expr],
+    decls: span[ast.Decl]
+) -> Option[str]:
     unsafe:
         match read(discriminant):
             ast.Expr.expr_identifier as id:
@@ -1567,7 +1647,11 @@ function resolve_when_enum_member(receiver: ptr[ast.Expr], member: str) -> Optio
 
 
 ## Copy the chosen when-branch's declarations into the output vector.
-function collect_when_branch_decls(branches: span[ast.WhenDeclBranch], chosen: str, output: ref[vec.Vec[ast.Decl]]) -> void:
+function collect_when_branch_decls(
+    branches: span[ast.WhenDeclBranch],
+    chosen: str,
+    output: ref[vec.Vec[ast.Decl]]
+) -> void:
     var i: ptr_uint = 0
     while i < branches.len:
         var br: ast.WhenDeclBranch
@@ -1638,7 +1722,10 @@ function collect_variant_arm_fields(ctx: ref[Context], decls: span[ast.Decl]) ->
                 var ai: ptr_uint = 0
                 while ai < vr.variant_arms.len:
                     let arm = unsafe: read(vr.variant_arms.data + ai)
-                    ctx.arm_payload_field_types.set(payload_struct_key(vr.name, arm.name), resolve_arm_payload_fields(ctx, arm.arm_fields))
+                    ctx.arm_payload_field_types.set(
+                        payload_struct_key(vr.name, arm.name),
+                        resolve_arm_payload_fields(ctx, arm.arm_fields)
+                    )
                     ai += 1
                 ctx.type_params.clear()
                 ctx.suppressed_type_names.clear()
@@ -1699,7 +1786,17 @@ function declare_values_and_functions_extra(ctx: ref[Context], extra: span[ast.D
             ast.Decl.decl_function as fun:
                 check_reserved_value_name(ctx, "function", fun.name, fun.line, fun.column)
                 if declare_value(ctx, fun.name, fun.line, fun.column):
-                    ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type, ast.MethodKind.mk_plain, fun.is_async))
+                    ctx.functions.set(
+                        fun.name,
+                        build_fn_sig(
+                            ctx,
+                            fun.name,
+                            fun.method_params,
+                            fun.return_type,
+                            ast.MethodKind.mk_plain,
+                            fun.is_async
+                        )
+                    )
             _:
                 pass
         i += 1
@@ -1791,7 +1888,13 @@ function install_prelude_types(ctx: ref[Context]) -> void:
 ## Register one prelude arm's declared payload field under its payload key
 ## (`Option_some` -> `[value: T]`, `Option_none` -> `[]`).  The field's type is
 ## the variant's type parameter as a `ty_var`, substituted at a match site.
-function register_prelude_arm_field(ctx: ref[Context], variant_name: str, arm: str, field_name: str, field_param: str) -> void:
+function register_prelude_arm_field(
+    ctx: ref[Context],
+    variant_name: str,
+    arm: str,
+    field_name: str,
+    field_param: str
+) -> void:
     let key = payload_struct_key(variant_name, arm)
     if field_name.len == 0:
         ctx.arm_payload_field_types.set(key, span[types.PayloadField]())
@@ -1833,7 +1936,6 @@ function register_builtin_types(ctx: ref[Context]) -> void:
     ctx.type_names.set("member_handle", true)
     ctx.types.set("type", types.Type.ty_primitive(name = "type"))
     ctx.type_names.set("type", true)
-
 
 const BUILTIN_TYPE_NAMES: array[str, 26] = array[str, 26](
     "bool", "byte", "ubyte", "char", "short", "ushort",
@@ -1890,7 +1992,10 @@ function merge_prelude_binding_methods(ctx: ref[Context], module_name: str) -> v
 ## Ruby's type_declaration.rb built-in registration.
 function register_builtin_event_types(ctx: ref[Context]) -> void:
     if not ctx.type_names.contains("EventError"):
-        ctx.types.set("EventError", types.named_type(name = "EventError", module_name = "", linkage_name = Option[str].none))
+        ctx.types.set(
+            "EventError",
+            types.named_type(name = "EventError", module_name = "", linkage_name = Option[str].none)
+        )
         ctx.static_member_types.set("EventError", true)
         ctx.match_case_types.set("EventError", true)
         ctx.method_keys.set(method_key("EventError", "full"), true)
@@ -1899,7 +2004,10 @@ function register_builtin_event_types(ctx: ref[Context]) -> void:
         ctx.match_case_names.set("EventError", members.as_span())
         ctx.member_names.set("EventError", members.as_span())
     if not ctx.type_names.contains("Subscription"):
-        ctx.types.set("Subscription", types.named_type(name = "Subscription", module_name = "", linkage_name = Option[str].none))
+        ctx.types.set(
+            "Subscription",
+            types.named_type(name = "Subscription", module_name = "", linkage_name = Option[str].none)
+        )
 
 
 function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: str) -> void:
@@ -1969,7 +2077,17 @@ function register_event_methods(ctx: ref[Context]) -> void:
 
 
 function fn_sig_no_params(type_name: str, method_name: str, return_type: types.Type) -> FnSig:
-    return FnSig(name = method_name, params = span[ParamEntry](), return_type = return_type, has_return_type = true, method_kind = ast.MethodKind.mk_plain, is_async = false, is_variadic = false, is_extern = false, required_count = 0)
+    return FnSig(
+        name = method_name,
+        params = span[ParamEntry](),
+        return_type = return_type,
+        has_return_type = true,
+        method_kind = ast.MethodKind.mk_plain,
+        is_async = false,
+        is_variadic = false,
+        is_extern = false,
+        required_count = 0
+    )
 
 
 ## Register a method signature and record its key in `method_order` (a first
@@ -2019,7 +2137,13 @@ function check_attribute_applications(ctx: ref[Context], file: ast.SourceFile) -
         i += 1
 
 
-function check_attr_span(ctx: ref[Context], attrs: span[ast.AttributeApplication], target: str, line: ptr_uint, column: ptr_uint) -> void:
+function check_attr_span(
+    ctx: ref[Context],
+    attrs: span[ast.AttributeApplication],
+    target: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     var i: ptr_uint = 0
     while i < attrs.len:
         var a: ast.AttributeApplication
@@ -2212,7 +2336,11 @@ function resolve_field_entries(ctx: ref[Context], fields: span[ast.Field]) -> sp
 
 ## Combine regular field entries with event fields from struct_events into a
 ## single span, so the analyzer sees event fields as valid struct members.
-function resolve_field_entries_with_events(ctx: ref[Context], fields: span[ast.Field], struct_events: span[ast.Decl]) -> span[FieldEntry]:
+function resolve_field_entries_with_events(
+    ctx: ref[Context],
+    fields: span[ast.Field],
+    struct_events: span[ast.Decl]
+) -> span[FieldEntry]:
     var entries = resolve_field_entries(ctx, fields)
     var result = vec.Vec[FieldEntry].create()
     var i: ptr_uint = 0
@@ -2225,7 +2353,10 @@ function resolve_field_entries_with_events(ctx: ref[Context], fields: span[ast.F
         unsafe:
             match read(struct_events.data + evi):
                 ast.Decl.decl_event as ev:
-                    result.push(FieldEntry(name = ev.name, ty = types.named_type(name = ev.name, module_name = "", linkage_name = Option[str].none)))
+                    result.push(FieldEntry(
+                        name = ev.name,
+                        ty = types.named_type(name = ev.name, module_name = "", linkage_name = Option[str].none)
+                    ))
                 _:
                     pass
         evi += 1
@@ -2494,7 +2625,17 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                     # in scope, so parameter/return patterns carry ty_var(T) for
                     # call-site unification. Record the constraints for validation.
                     enter_type_params(ctx, fun.type_params)
-                    ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type, ast.MethodKind.mk_plain, fun.is_async))
+                    ctx.functions.set(
+                        fun.name,
+                        build_fn_sig(
+                            ctx,
+                            fun.name,
+                            fun.method_params,
+                            fun.return_type,
+                            ast.MethodKind.mk_plain,
+                            fun.is_async
+                        )
+                    )
                     ctx.type_params.clear()
                     ctx.suppressed_type_names.clear()
                     if fun.type_params.len > 0:
@@ -2521,7 +2662,13 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                 check_reserved_value_name(ctx, "function", ff.name, ff.line, 1)
                 enter_suppressed_type_params(ctx, ff.type_params)
                 enter_type_params(ctx, ff.type_params)
-                let sig = build_foreign_fn_sig(ctx, ff.name, ff.foreign_params, resolve_type(ctx, ff.return_type), ff.variadic)
+                let sig = build_foreign_fn_sig(
+                    ctx,
+                    ff.name,
+                    ff.foreign_params,
+                    resolve_type(ctx, ff.return_type),
+                    ff.variadic
+                )
                 ctx.suppressed_type_names.clear()
                 ctx.type_params.clear()
                 ctx.functions.set(ff.name, sig)
@@ -2532,7 +2679,10 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
             ast.Decl.decl_event as ev:
                 check_reserved_value_name(ctx, "event", ev.name, ev.line, ev.column)
                 if declare_value(ctx, ev.name, ev.line, ev.column):
-                    ctx.value_types.set(ev.name, types.named_type(name = ev.name, module_name = "", linkage_name = Option[str].none))
+                    ctx.value_types.set(
+                        ev.name,
+                        types.named_type(name = ev.name, module_name = "", linkage_name = Option[str].none)
+                    )
             ast.Decl.decl_struct as s:
                 # Register struct events as values so they can be referenced
                 # in expressions like `window.closed.emit()`.  Also recurse
@@ -2545,7 +2695,11 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
 
 ## Register struct-level events as value names, recursing into nested structs
 ## (e.g. `Container.Inner.updated`).
-function declare_struct_event_values(ctx: ref[Context], struct_events: span[ast.Decl], nested_types: span[ast.Decl]) -> void:
+function declare_struct_event_values(
+    ctx: ref[Context],
+    struct_events: span[ast.Decl],
+    nested_types: span[ast.Decl]
+) -> void:
     var evi: ptr_uint = 0
     while evi < struct_events.len:
         unsafe:
@@ -2567,7 +2721,13 @@ function declare_struct_event_values(ctx: ref[Context], struct_events: span[ast.
         ni += 1
 
 
-function check_reserved_value_name(ctx: ref[Context], kind_label: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
+function check_reserved_value_name(
+    ctx: ref[Context],
+    kind_label: str,
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     if is_reserved_value_name(name):
         report(ctx, line, column, diag.reserved_value_message(kind_label, name))
 
@@ -2594,7 +2754,13 @@ function dup_message(kind: str, name: str) -> str:
 ## `build_fn_sig` uses for ordinary Params.  The return type is resolved at the
 ## call site and passed in already, because the two declarations have different
 ## return_type pointer types (`ptr[TypeRef]?` vs `ptr[TypeRef]`).
-function build_foreign_fn_sig(ctx: ref[Context], name: str, params: span[ast.ForeignParam], ret: types.Type, variadic: bool) -> FnSig:
+function build_foreign_fn_sig(
+    ctx: ref[Context],
+    name: str,
+    params: span[ast.ForeignParam],
+    ret: types.Type,
+    variadic: bool
+) -> FnSig:
     var param_entries = vec.Vec[ParamEntry].create()
     var i: ptr_uint = 0
     while i < params.len:
@@ -2609,7 +2775,14 @@ function build_foreign_fn_sig(ctx: ref[Context], name: str, params: span[ast.For
         is_variadic = variadic, is_extern = true, required_count = param_entries.len())
 
 
-function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, method_kind: ast.MethodKind, is_async: bool) -> FnSig:
+function build_fn_sig(
+    ctx: ref[Context],
+    name: str,
+    params: span[ast.Param],
+    return_type: ptr[ast.TypeRef]?,
+    method_kind: ast.MethodKind,
+    is_async: bool
+) -> FnSig:
     var param_entries = vec.Vec[ParamEntry].create()
     var required_count: ptr_uint = 0
     var seen_default = false
@@ -2638,7 +2811,6 @@ function build_fn_sig(ctx: ref[Context], name: str, params: span[ast.Param], ret
     return FnSig(name = name, params = param_entries.as_span(),
         return_type = final_ret, has_return_type = false, method_kind = method_kind, is_async = is_async,
         is_variadic = false, is_extern = false, required_count = required_count)
-
 
 # =============================================================================
 #  Type resolution — ast.TypeRef -> types.Type (mirrors resolve_type)
@@ -2673,11 +2845,21 @@ function resolve_type_at(ctx: ref[Context], t: ast.TypeRef, depth: int) -> types
         if fr != null:
             unsafe:
                 ret = resolve_type_at(ctx, read(fr), depth + 1)
-        let base = types.function_type(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = t.is_proc, param_names = param_names.as_span())
+        let base = types.function_type(
+            name = "",
+            params = param_types.as_span(),
+            return_type = types.alloc_type(ret),
+            variadic = false,
+            is_proc = t.is_proc,
+            param_names = param_names.as_span()
+        )
         return wrap_nullable(base, t.nullable)
 
     if t.is_dyn:
-        return wrap_nullable(types.named_type(name = "dyn", module_name = "", linkage_name = Option[str].none), t.nullable)
+        return wrap_nullable(
+            types.named_type(name = "dyn", module_name = "", linkage_name = Option[str].none),
+            t.nullable
+        )
 
     if t.is_tuple:
         var elems = vec.Vec[types.Type].create()
@@ -2722,14 +2904,29 @@ function resolve_imported_type(ctx: ref[Context], name: ast.QualifiedName) -> Op
             var val_ptr = binding.type_alias_types.get(type_name)
             if val_ptr != null:
                 return Option[types.Type].some(value = unsafe: read(ptr[types.Type]<-val_ptr))
-        if binding.structs.contains(type_name) or binding.type_aliases.contains(type_name) or binding.static_member_types.contains(type_name) or binding.interfaces.contains(type_name) or binding.types.contains(type_name):
-            return Option[types.Type].some(value = types.imported_type(module_name = read(module_name_ptr), name = type_name, args = span[types.Type]()))
+        if (
+            binding.structs.contains(type_name)
+            or binding.type_aliases.contains(type_name)
+            or binding.static_member_types.contains(type_name)
+            or binding.interfaces.contains(type_name)
+            or binding.types.contains(type_name)
+        ):
+            return Option[types.Type].some(value = types.imported_type(
+                module_name = read(module_name_ptr),
+                name = type_name,
+                args = span[types.Type]()
+            ))
     return Option[types.Type].none
 
 
 ## Wrap a resolved imported type with concrete type arguments from the TypeRef.
 ## When the type arguments are empty, the imported type is returned unchanged.
-function imported_type_with_args(ctx: ref[Context], imported: types.Type, arguments: span[ast.TypeRef], depth: int) -> types.Type:
+function imported_type_with_args(
+    ctx: ref[Context],
+    imported: types.Type,
+    arguments: span[ast.TypeRef],
+    depth: int
+) -> types.Type:
     if arguments.len == 0:
         return imported
     match imported:
@@ -2743,7 +2940,11 @@ function imported_type_with_args(ctx: ref[Context], imported: types.Type, argume
                     a = read(arguments.data + i)
                 resolved_args.push(resolve_type_at(ctx, a, depth + 1))
                 i += 1
-            return types.imported_type(module_name = im_bp.module_name, name = im_bp.name, args = resolved_args.as_span())
+            return types.imported_type(
+                module_name = im_bp.module_name,
+                name = im_bp.name,
+                args = resolved_args.as_span()
+            )
         _:
             return imported
 
@@ -2754,7 +2955,15 @@ function wrap_nullable(base: types.Type, nullable: bool) -> types.Type:
     return base
 
 
-function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef], lifetime: Option[str], depth: int, line: ptr_uint, column: ptr_uint) -> types.Type:
+function resolve_named(
+    ctx: ref[Context],
+    name: str,
+    arguments: span[ast.TypeRef],
+    lifetime: Option[str],
+    depth: int,
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     # An in-scope generic type parameter is a type variable, carrying whatever
     # `implements` constraints its declaration gave it.
     if ctx.type_params.contains(name):
@@ -2804,7 +3013,13 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
     return types.Type.ty_error
 
 
-function resolve_generic_type(ctx: ref[Context], name: str, arguments: span[ast.TypeRef], lifetime: Option[str], depth: int) -> types.Type:
+function resolve_generic_type(
+    ctx: ref[Context],
+    name: str,
+    arguments: span[ast.TypeRef],
+    lifetime: Option[str],
+    depth: int
+) -> types.Type:
     var args = vec.Vec[types.Type].create()
     # The host keeps an explicit lifetime as the first `ref` argument
     # (`ref[@a, T]`); the AST stores the name without its sigil, so add it
@@ -2936,10 +3151,9 @@ function is_reserved_name(name: str) -> bool:
 function is_generic_constructor_name(name: str) -> bool:
     return (
         name == "ptr" or name == "const_ptr" or name == "own" or name == "ref" or name == "span"
-        or         name == "array" or name == "str_buffer" or name == "atomic" or name == "Task"
+        or name == "array" or name == "str_buffer" or name == "atomic" or name == "Task"
         or name == "Option" or name == "Result" or name == "SoA" or name == "simd"
     )
-
 
 # =============================================================================
 #  Function body checking
@@ -2953,7 +3167,17 @@ function check_functions(ctx: ref[Context], file: ast.SourceFile) -> void:
             d = read(file.declarations.data + i)
         match d:
             ast.Decl.decl_function as fun:
-                check_function_body(ctx, unsafe: reinterpret[ptr_uint](file.declarations.data + i), fun.name, fun.line, fun.type_params, fun.method_params, fun.return_type, fun.body, fun.is_async)
+                check_function_body(
+                    ctx,
+                    unsafe: reinterpret[ptr_uint](file.declarations.data + i),
+                    fun.name,
+                    fun.line,
+                    fun.type_params,
+                    fun.method_params,
+                    fun.return_type,
+                    fun.body,
+                    fun.is_async
+                )
             _:
                 pass
         i += 1
@@ -2995,13 +3219,18 @@ function check_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> voi
                         # `this` is bound in a non-static method only (see
                         # check_method_body); record it for the LSP.
                         ctx.this_types.push(ThisTypeEntry(line = m.line, ty = this_type))
-                    check_method_body(ctx, this_type, m, ex.type_name, unsafe: reinterpret[ptr_uint](ex.methods.data + j))
+                    check_method_body(
+                        ctx,
+                        this_type,
+                        m,
+                        ex.type_name,
+                        unsafe: reinterpret[ptr_uint](ex.methods.data + j)
+                    )
                     ctx.type_params.clear()
                     j += 1
             _:
                 pass
         i += 1
-
 
 # =============================================================================
 #  Interface conformance — a struct/opaque `implements` list is satisfied when
@@ -3045,7 +3274,13 @@ function check_interface_conformances(ctx: ref[Context], file: ast.SourceFile) -
 ## Verify a type satisfies each interface in its `implements` list.  Interfaces
 ## that cannot be resolved (unknown, or imported without a binding) are skipped
 ## permissively.
-function check_conformance(ctx: ref[Context], type_name: str, impl_list: span[ast.QualifiedName], line: ptr_uint, column: ptr_uint) -> void:
+function check_conformance(
+    ctx: ref[Context],
+    type_name: str,
+    impl_list: span[ast.QualifiedName],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     var i: ptr_uint = 0
     while i < impl_list.len:
         var iface_qname: ast.QualifiedName
@@ -3084,7 +3319,14 @@ function resolve_interface_methods(ctx: ref[Context], qname: ast.QualifiedName) 
     return Option[span[ast.InterfaceMethod]].none
 
 
-function check_conformance_methods(ctx: ref[Context], type_name: str, iface_name: str, methods: span[ast.InterfaceMethod], line: ptr_uint, column: ptr_uint) -> void:
+function check_conformance_methods(
+    ctx: ref[Context],
+    type_name: str,
+    iface_name: str,
+    methods: span[ast.InterfaceMethod],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     var i: ptr_uint = 0
     while i < methods.len:
         var m: ast.InterfaceMethod
@@ -3138,7 +3380,12 @@ function check_extern_and_foreign(ctx: ref[Context], file: ast.SourceFile) -> vo
         i += 1
 
 
-function check_foreign_params(ctx: ref[Context], name: str, params: span[ast.ForeignParam], type_params: span[ast.TypeParam]) -> void:
+function check_foreign_params(
+    ctx: ref[Context],
+    name: str,
+    params: span[ast.ForeignParam],
+    type_params: span[ast.TypeParam]
+) -> void:
     # A foreign/extern signature may carry value params (`create_temp_file[N]`
     # with `str_buffer[N]`); suppress unknown-type reports for them.
     enter_suppressed_type_params(ctx, type_params)
@@ -3191,32 +3438,39 @@ function infer_expr_noscope(ctx: ref[Context], ep: ptr[ast.Expr]) -> types.Type:
     scope_leave(ref_of(empty_scope))
     return result
 
-
 ## Scope management — now in semantic/scope.mt.
 
 function scope_create() -> sscope.Scope:
     return sscope.scope_create()
 
+
 function scope_enter(scope: ref[sscope.Scope]) -> void:
     sscope.scope_enter(scope)
+
 
 function scope_leave(scope: ref[sscope.Scope]) -> void:
     sscope.scope_leave(scope)
 
+
 function scope_set(scope: ref[sscope.Scope], name: str, ty: types.Type) -> void:
     sscope.scope_set(scope, name, ty)
+
 
 function scope_get(scope: ref[sscope.Scope], name: str) -> ptr[types.Type]?:
     return sscope.scope_get(scope, name)
 
+
 function scope_is_let(scope: ref[sscope.Scope], name: str) -> bool:
     return sscope.scope_is_let(scope, name)
+
 
 function scope_set_let(scope: ref[sscope.Scope], name: str) -> void:
     sscope.scope_set_let(scope, name)
 
+
 function scope_is_param(scope: ref[sscope.Scope], name: str) -> bool:
     return sscope.scope_is_param(scope, name)
+
 
 function scope_set_param(scope: ref[sscope.Scope], name: str) -> void:
     sscope.scope_set_param(scope, name)
@@ -3238,7 +3492,13 @@ function scope_get_binding_id(scope: ref[sscope.Scope], name: str) -> ptr_uint:
     return sscope.scope_get_binding_id(scope, name)
 
 
-function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Method, target_type_name: ptr[ast.TypeRef], node: ptr_uint) -> void:
+function check_method_body(
+    ctx: ref[Context],
+    this_type: types.Type,
+    m: ast.Method,
+    target_type_name: ptr[ast.TypeRef],
+    node: ptr_uint
+) -> void:
     var receiver_generic = false
     unsafe:
         receiver_generic = read(target_type_name).arguments.len > 0
@@ -3316,7 +3576,17 @@ function declared_param_id(ctx: ref[Context], node: ptr_uint, index: ptr_uint) -
     return unsafe: read(base) + index
 
 
-function check_function_body(ctx: ref[Context], node: ptr_uint, name: str, line: ptr_uint, type_params: span[ast.TypeParam], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, is_async: bool) -> void:
+function check_function_body(
+    ctx: ref[Context],
+    node: ptr_uint,
+    name: str,
+    line: ptr_uint,
+    type_params: span[ast.TypeParam],
+    params: span[ast.Param],
+    return_type: ptr[ast.TypeRef]?,
+    body: ptr[ast.Stmt]?,
+    is_async: bool
+) -> void:
     let b = body else:
         return
     let is_generic = type_params.len > 0
@@ -3593,7 +3863,6 @@ function is_imported_constant_member(ctx: ref[Context], ep: ptr[ast.Expr]?) -> b
 function incompatible_value(target: types.Type, source_ty: types.Type, source_expr: ptr[ast.Expr]?) -> bool:
     return not compat.types_compatible(target, source_ty, source_expr)
 
-
 struct CheckFlags:
     ret: types.Type
     inside_loop: bool
@@ -3602,7 +3871,12 @@ struct CheckFlags:
 
 
 function check_flags(ret: types.Type, inside_loop: bool, inside_defer: bool, inside_parallel: bool) -> CheckFlags:
-    return CheckFlags(ret = ret, inside_loop = inside_loop, inside_defer = inside_defer, inside_parallel = inside_parallel)
+    return CheckFlags(
+        ret = ret,
+        inside_loop = inside_loop,
+        inside_defer = inside_defer,
+        inside_parallel = inside_parallel
+    )
 
 
 function check_body(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, body: ptr[ast.Stmt]?) -> void:
@@ -3615,7 +3889,14 @@ function check_body(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags
 
 ## When `narrowed_name` is set, wrap the body check with a scope frame that
 ## shadows the variable with its non-nullable type.
-function apply_narrow_by_name(ctx: ref[Context], scope: ref[sscope.Scope], narrowed_name: Option[str], narrowed_ty: types.Type, chk: CheckFlags, body: ptr[ast.Stmt]?) -> void:
+function apply_narrow_by_name(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    narrowed_name: Option[str],
+    narrowed_ty: types.Type,
+    chk: CheckFlags,
+    body: ptr[ast.Stmt]?
+) -> void:
     match narrowed_name:
         Option.some as nnm:
             scope_enter(scope)
@@ -3631,7 +3912,13 @@ function apply_narrow_by_name(ctx: ref[Context], scope: ref[sscope.Scope], narro
 ## incoming path proves (its `apply_nullability_continuation_refinements!`), and
 ## after it the state the statement leaves — recorded so the LSP resolves a
 ## local's type the way the host's completion snapshots do.
-function check_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, sp: ptr[ast.Stmt], next_stmt: ptr[ast.Stmt]?) -> void:
+function check_stmt(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    chk: CheckFlags,
+    sp: ptr[ast.Stmt],
+    next_stmt: ptr[ast.Stmt]?
+) -> void:
     let start_pos = statement_position(sp)
     let saved_statement_line = ctx.statement_line
     let saved_statement_column = ctx.statement_column
@@ -3668,7 +3955,22 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
             ast.Stmt.stmt_ret as r:
                 check_return_stmt(ctx, scope, chk, r.line, r.column, r.value)
             ast.Stmt.stmt_local as l:
-                check_local(ctx, scope, chk, l.is_let, l.name, l.stmt_type, l.value, l.else_binding, l.else_body, l.destructure_bindings, l.line, l.column, l.else_binding_line, l.else_binding_column)
+                check_local(
+                    ctx,
+                    scope,
+                    chk,
+                    l.is_let,
+                    l.name,
+                    l.stmt_type,
+                    l.value,
+                    l.else_binding,
+                    l.else_body,
+                    l.destructure_bindings,
+                    l.line,
+                    l.column,
+                    l.else_binding_line,
+                    l.else_binding_column
+                )
             ast.Stmt.stmt_if as i:
                 check_if_stmt(ctx, scope, chk, i.branches, i.else_body)
             ast.Stmt.stmt_while as w:
@@ -3722,7 +4024,14 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                 pass
 
 
-function check_return_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, line: ptr_uint, column: ptr_uint, value: ptr[ast.Expr]?) -> void:
+function check_return_stmt(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    chk: CheckFlags,
+    line: ptr_uint,
+    column: ptr_uint,
+    value: ptr[ast.Expr]?
+) -> void:
     if chk.inside_defer:
         report(ctx, line, column, "return is not allowed inside a defer block")
     else if chk.inside_parallel:
@@ -3745,7 +4054,13 @@ function check_return_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: Che
                 report(ctx, rl, expr_source_column(rv), return_mismatch_message(chk.ret, vt))
 
 
-function check_if_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> void:
+function check_if_stmt(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    chk: CheckFlags,
+    branches: span[ast.IfBranch],
+    else_body: ptr[ast.Stmt]?
+) -> void:
     unsafe:
         # The host's IfStmt arm: each branch is checked with the previous
         # branches' falsy refinements in scope, and an if whose every
@@ -3784,7 +4099,16 @@ function check_if_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFl
         false_refinements.release()
 
 
-function check_while_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, is_inline: bool, condition: ptr[ast.Expr], body: ptr[ast.Stmt]?, line: ptr_uint, column: ptr_uint) -> void:
+function check_while_stmt(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    chk: CheckFlags,
+    is_inline: bool,
+    condition: ptr[ast.Expr],
+    body: ptr[ast.Stmt]?,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     if is_inline:
         match evaluate_const_expr(ctx, condition):
             Option.none:
@@ -3804,7 +4128,15 @@ function check_while_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
     scope_leave(scope)
 
 
-function check_match_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
+function check_match_stmt(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    chk: CheckFlags,
+    scrutinee: ptr[ast.Expr],
+    arms: span[ast.MatchArm],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     unsafe:
         # The scrutinee's type is computed once, before the arms: an
         # `as name` arm binds the arm's payload type from it, and the
@@ -3824,14 +4156,30 @@ function check_match_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
             var arm: ast.MatchArm
             arm = read(arms.data + ai)
             scope_enter(scope)
-            bind_match_arm_names(ctx, scope, scrutinee_ty, arm.binding_name, arm.pattern, arm.binding_line, arm.binding_column)
+            bind_match_arm_names(
+                ctx,
+                scope,
+                scrutinee_ty,
+                arm.binding_name,
+                arm.pattern,
+                arm.binding_line,
+                arm.binding_column
+            )
             check_body(ctx, scope, chk, arm.body)
             scope_leave(scope)
             ai += 1
         check_match(ctx, scope, scrutinee_ty, arms, line, column)
 
 
-function check_assignment_stmt(ctx: ref[Context], scope: ref[sscope.Scope], target: ptr[ast.Expr], value: ptr[ast.Expr], operator: str, line: ptr_uint, column: ptr_uint) -> void:
+function check_assignment_stmt(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    target: ptr[ast.Expr],
+    value: ptr[ast.Expr],
+    operator: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     let tt = infer_expr(ctx, scope, target)
     let target_ty = assign_target_type(scope, target, tt)
     # The target's type is the value's expected type (the host's
@@ -3862,7 +4210,14 @@ function assign_target_type(scope: ref[sscope.Scope], target: ptr[ast.Expr], inf
     return inferred
 
 
-function check_condition(ctx: ref[Context], scope: ref[sscope.Scope], cond: ptr[ast.Expr], keyword: str, line: ptr_uint, column: ptr_uint) -> void:
+function check_condition(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    cond: ptr[ast.Expr],
+    keyword: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     let ct = infer_expr(ctx, scope, cond)
     if types.contains_error(ct):
         return
@@ -3884,7 +4239,12 @@ function check_condition(ctx: ref[Context], scope: ref[sscope.Scope], cond: ptr[
 ##   * `not cond` — delegates with flipped truthy
 ##   * `a and b` — merges when truthy, left-only when falsy (short-circuit)
 ##   * `a or b` — left-only when truthy, merges when falsy (short-circuit)
-function flow_refinements(ctx: ref[Context], cond: ptr[ast.Expr], truthy: bool, scope: ref[sscope.Scope]) -> map_mod.Map[str, types.Type]:
+function flow_refinements(
+    ctx: ref[Context],
+    cond: ptr[ast.Expr],
+    truthy: bool,
+    scope: ref[sscope.Scope]
+) -> map_mod.Map[str, types.Type]:
     var result = map_mod.Map[str, types.Type].create()
     unsafe:
         match read(cond):
@@ -3922,7 +4282,12 @@ function flow_refinements(ctx: ref[Context], cond: ptr[ast.Expr], truthy: bool, 
 ## Null-test refinements: returns {name -> unwrapped_type} when the condition
 ## is `name != null` (truthy) or `name == null` (falsy), and the variable has
 ## a nullable type.
-function null_test_refinements(ctx: ref[Context], condp: ptr[ast.Expr], truthy: bool, scope: ref[sscope.Scope]) -> map_mod.Map[str, types.Type]:
+function null_test_refinements(
+    ctx: ref[Context],
+    condp: ptr[ast.Expr],
+    truthy: bool,
+    scope: ref[sscope.Scope]
+) -> map_mod.Map[str, types.Type]:
     var result = map_mod.Map[str, types.Type].create()
 
     unsafe:
@@ -4039,7 +4404,13 @@ function record_flow_snapshot(ctx: ref[Context], scope: ref[sscope.Scope], sp: p
 ## with only the statement body's inner records — a branch refinement that has
 ## already gone out of scope (`std/map.mt`'s `previous = node` after the
 ## `if previous == null` arm).
-function record_flow_snapshot_at(ctx: ref[Context], scope: ref[sscope.Scope], position: ptr_uint, skip_clears: bool, replay: bool) -> void:
+function record_flow_snapshot_at(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    position: ptr_uint,
+    skip_clears: bool,
+    replay: bool
+) -> void:
     if not ctx.flow_active:
         return
     if position == 0:
@@ -4083,7 +4454,12 @@ function record_flow_snapshot_at(ctx: ref[Context], scope: ref[sscope.Scope], po
                 if not skip_clears:
                     to_clear.push(name)
                     if ctx.tooling_facts:
-                        ctx.flow_types.push(FlowTypeEntry(at = position, name = name, ty = types.Type.ty_error, cleared = true))
+                        ctx.flow_types.push(FlowTypeEntry(
+                            at = position,
+                            name = name,
+                            ty = types.Type.ty_error,
+                            cleared = true
+                        ))
     var ci: ptr_uint = 0
     while ci < to_clear.len():
         let name_ptr = to_clear.get(ci) else:
@@ -4276,7 +4652,12 @@ function record_flow_barrier(ctx: ref[Context], line: ptr_uint) -> void:
     if line == 0:
         return
     if ctx.tooling_facts:
-        ctx.flow_types.push(FlowTypeEntry(at = (line - 1) * 1000000 + 999999, name = "", ty = types.Type.ty_error, cleared = true))
+        ctx.flow_types.push(FlowTypeEntry(
+            at = (line - 1) * 1000000 + 999999,
+            name = "",
+            ty = types.Type.ty_error,
+            cleared = true
+        ))
 
 
 ## The analyzer's refinement record for a local at a position: the type the
@@ -4295,7 +4676,12 @@ function record_flow_barrier(ctx: ref[Context], line: ptr_uint) -> void:
 ## answers a later position (the same carry-forward a documentHighlight entry
 ## shows).  None when the name has no entry there, so the declaration's own
 ## type stands.
-public function flow_type_at(analysis: ref[Analysis], name: str, line: ptr_uint, character: ptr_uint) -> Option[types.Type]:
+public function flow_type_at(
+    analysis: ref[Analysis],
+    name: str,
+    line: ptr_uint,
+    character: ptr_uint
+) -> Option[types.Type]:
     let at = line * 1000000 + character
     var body_start: ptr_uint = 0
     var start_index: ptr_uint = 0
@@ -4422,7 +4808,10 @@ function flow_scratch_contains(scratch: ref[vec.Vec[FlowName]], name: str) -> bo
 
 ## Copy all entries from `incoming` into `existing`.  When a key is already
 ## present in both and has a different type, it is removed (ambiguous state).
-function merge_refinements_into(existing: ref[map_mod.Map[str, types.Type]], incoming: ref[map_mod.Map[str, types.Type]]) -> void:
+function merge_refinements_into(
+    existing: ref[map_mod.Map[str, types.Type]],
+    incoming: ref[map_mod.Map[str, types.Type]]
+) -> void:
     var entries = incoming.entries()
     while true:
         if not entries.next():
@@ -4441,7 +4830,11 @@ function merge_refinements_into(existing: ref[map_mod.Map[str, types.Type]], inc
 
 ## Apply refinement bindings to the top scope frame, shadowing any existing
 ## bindings with the narrowed types.
-function apply_refinements_to_frame(ctx: ref[Context], scope: ref[sscope.Scope], refinements: ref[map_mod.Map[str, types.Type]]) -> void:
+function apply_refinements_to_frame(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    refinements: ref[map_mod.Map[str, types.Type]]
+) -> void:
     var entries = refinements.entries()
     while true:
         if not entries.next():
@@ -4454,7 +4847,11 @@ function apply_refinements_to_frame(ctx: ref[Context], scope: ref[sscope.Scope],
 
 ## Apply refinements directly to the current scope frame without entering a new
 ## one — for post-if refinements that persist beyond the if/else block.
-function apply_refinements_to_scope_frame(ctx: ref[Context], scope: ref[sscope.Scope], refinements: ref[map_mod.Map[str, types.Type]]) -> void:
+function apply_refinements_to_scope_frame(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    refinements: ref[map_mod.Map[str, types.Type]]
+) -> void:
     var entries = refinements.entries()
     while true:
         if not entries.next():
@@ -4488,7 +4885,14 @@ function note_refinement_storage(ctx: ref[Context], scope: ref[sscope.Scope], na
             scope_set_storage(scope, name, read(declared))
 
 
-function check_when_statement(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?) -> void:
+function check_when_statement(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    chk: CheckFlags,
+    discriminant: ptr[ast.Expr],
+    branches: span[ast.WhenBranch],
+    else_body: ptr[ast.Stmt]?
+) -> void:
     match evaluate_when_discriminant(ctx, discriminant, span[ast.Decl]()):
         Option.some as chosen:
             var i: ptr_uint = 0
@@ -4529,7 +4933,14 @@ function check_stmt_span(ctx: ref[Context], scope: ref[sscope.Scope], chk: Check
 ##  * anything else  -> permissive
 ## Enum/variant checks bail out if any arm is not a plain `Type.case` pattern
 ## (e.g. payload destructuring), so guarded/complex matches never false-positive.
-function check_match(ctx: ref[Context], scope: ref[sscope.Scope], scrutinee_ty: types.Type, arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
+function check_match(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    scrutinee_ty: types.Type,
+    arms: span[ast.MatchArm],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     # The scrutinee's type arrives precomputed (and unrecorded — this is a
     # diagnostic-only pass that must not mutate the `resolved_expr_types` map
     # that lowering later consumes).
@@ -4678,7 +5089,14 @@ function match_scrutinee_message(t: types.Type) -> str:
     return buf.as_str()
 
 
-function check_case_match(ctx: ref[Context], module_name: str, type_name: str, arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
+function check_case_match(
+    ctx: ref[Context],
+    module_name: str,
+    type_name: str,
+    arms: span[ast.MatchArm],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     let namesp = match_case_names_for(ctx, module_name, type_name) else:
         return
     var covered = vec.Vec[str].create()
@@ -4741,7 +5159,14 @@ function span_contains_str(members: span[str], name: str) -> bool:
     return false
 
 
-function check_scalar_match(ctx: ref[Context], arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint, wildcard_message: str, check_duplicate_int: bool) -> void:
+function check_scalar_match(
+    ctx: ref[Context],
+    arms: span[ast.MatchArm],
+    line: ptr_uint,
+    column: ptr_uint,
+    wildcard_message: str,
+    check_duplicate_int: bool
+) -> void:
     var has_wild = false
     var seen = vec.Vec[int].create()
     var i: ptr_uint = 0
@@ -4790,7 +5215,6 @@ function int_literal_value(p: ptr[ast.Expr]) -> Option[int]:
 
 function is_integer_name(name: str) -> bool:
     return types.is_integer_name(name)
-
 
 const INT_SUFFIX_UB: str = "ub"
 const INT_SUFFIX_US: str = "us"
@@ -4859,7 +5283,13 @@ function vec_contains_int(v: ref[vec.Vec[int]], value: int) -> bool:
 ## yields `current()`).  The iterables are inferred here too, so nested
 ## operations are checked and their unsafe requirements recorded; anything the
 ## self cannot resolve stays at the permissive error type.
-function bind_for_binding_types(ctx: ref[Context], scope: ref[sscope.Scope], bindings: span[ast.ForBinding], iterables: span[ast.Expr], threaded: bool) -> void:
+function bind_for_binding_types(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    bindings: span[ast.ForBinding],
+    iterables: span[ast.Expr],
+    threaded: bool
+) -> void:
     var i: ptr_uint = 0
     while i < bindings.len:
         var binding_name: str = ""
@@ -4880,7 +5310,12 @@ function bind_for_binding_types(ctx: ref[Context], scope: ref[sscope.Scope], bin
         i += 1
 
 
-function for_binding_type(ctx: ref[Context], scope: ref[sscope.Scope], iterable: ptr[ast.Expr], threaded: bool) -> types.Type:
+function for_binding_type(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    iterable: ptr[ast.Expr],
+    threaded: bool
+) -> types.Type:
     match range_loop_element_type(ctx, scope, iterable):
         Option.some as range_ty:
             return range_ty.value
@@ -4901,7 +5336,11 @@ function for_binding_type(ctx: ref[Context], scope: ref[sscope.Scope], iterable:
 
 ## A `start..stop` for-loop iterable yields its bounds' (harmonized) integer
 ## type — the host's `check_range_expr_loop`.  None for anything else.
-function range_loop_element_type(ctx: ref[Context], scope: ref[sscope.Scope], iterable: ptr[ast.Expr]) -> Option[types.Type]:
+function range_loop_element_type(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    iterable: ptr[ast.Expr]
+) -> Option[types.Type]:
     unsafe:
         match read(iterable):
             ast.Expr.expr_range as range:
@@ -5128,7 +5567,13 @@ function is_generic_type_named(t: types.Type, name: str) -> bool:
 ## assignable; a `ref[T]` and a mutable raw pointer receiver are assignable; a
 ## `span` *parameter* is assignable; a `const_ptr` is read-only; anything else
 ## bound by `let` (including parameters and non-editable `this`) is immutable.
-function check_lvalue_receiver_immutable(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> void:
+function check_lvalue_receiver_immutable(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -5162,7 +5607,13 @@ function check_lvalue_receiver_immutable(ctx: ref[Context], scope: ref[sscope.Sc
                 pass
 
 
-function check_assign_target_immutable(ctx: ref[Context], scope: ref[sscope.Scope], target: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> void:
+function check_assign_target_immutable(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    target: ptr[ast.Expr],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
@@ -5176,7 +5627,22 @@ function check_assign_target_immutable(ctx: ref[Context], scope: ref[sscope.Scop
                 pass
 
 
-function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, is_let: bool, name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, else_binding: Option[str], else_body: ptr[ast.Stmt]?, destructure_bindings: Option[span[str]], line: ptr_uint, column: ptr_uint, else_line: ptr_uint, else_column: ptr_uint) -> void:
+function check_local(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    chk: CheckFlags,
+    is_let: bool,
+    name: str,
+    stmt_type: ptr[ast.TypeRef]?,
+    value: ptr[ast.Expr]?,
+    else_binding: Option[str],
+    else_body: ptr[ast.Stmt]?,
+    destructure_bindings: Option[span[str]],
+    line: ptr_uint,
+    column: ptr_uint,
+    else_line: ptr_uint,
+    else_column: ptr_uint
+) -> void:
     # The declaration's binding id, consumed even when the binding is discarded
     # (`let _ = …` burns an id): the host's preassigned allocation happens for
     # every LocalDecl.
@@ -5294,7 +5760,16 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlag
 ## else body in a scope that also carries its `else as name` binding (the
 ## initializer's error type, `Result[T, E]`'s `E`).  The `let x = optional else:`
 ## form has no binding.  A body-less guard has nothing to check.
-function check_local_else_body(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, else_binding: Option[str], else_body: ptr[ast.Stmt]?, value_type: types.Type, else_line: ptr_uint, else_column: ptr_uint) -> void:
+function check_local_else_body(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    chk: CheckFlags,
+    else_binding: Option[str],
+    else_body: ptr[ast.Stmt]?,
+    value_type: types.Type,
+    else_line: ptr_uint,
+    else_column: ptr_uint
+) -> void:
     let body = else_body else:
         return
     scope_enter(scope)
@@ -5332,7 +5807,6 @@ function let_else_error_type(value_type: types.Type) -> types.Type:
         _:
             pass
     return types.Type.ty_error
-
 
 # =============================================================================
 #  Expression type inference (conservative)
@@ -5594,7 +6068,15 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 record_call_kind(ctx, ep, call_expr_kind(ctx, call.callee))
                 return ty
             ast.Expr.expr_specialization as spec:
-                let ty = check_specialization_call(ctx, scope, spec.callee, spec.arguments, span[types.Type](), span[ast.Argument](), false)
+                let ty = check_specialization_call(
+                    ctx,
+                    scope,
+                    spec.callee,
+                    spec.arguments,
+                    span[types.Type](),
+                    span[ast.Argument](),
+                    false
+                )
                 record_call_kind(ctx, ep, specialization_kind(ctx, spec.callee, spec.arguments))
                 return ty
             ast.Expr.expr_await as aw:
@@ -5649,7 +6131,10 @@ function infer_integer_literal_type(ctx: ref[Context], lexeme: str, value: long)
             # `char<-N` cast (`let nl: char = 10`), even though
             # `integer_constant_fits` accepts the value for
             # assignability.
-            if hp.name != "char" and types.is_fixed_width_integer_name(hp.name) and types.integer_constant_fits(hp.name, long<-value):
+            if hp.name != "char" and types.is_fixed_width_integer_name(hp.name) and types.integer_constant_fits(
+                hp.name,
+                long<-value
+            ):
                 return hint
         _:
             pass
@@ -5665,7 +6150,13 @@ function infer_integer_literal_type(ctx: ref[Context], lexeme: str, value: long)
         return types.primitive("int")
     return types.primitive("long")
 
-function infer_index_access_type(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], index: ptr[ast.Expr]) -> types.Type:
+
+function infer_index_access_type(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr],
+    index: ptr[ast.Expr]
+) -> types.Type:
     let rt = infer_expr(ctx, scope, receiver)
     # An index is an integer position: the host's `infer_index_access`
     # infers it with no expected type, so the enclosing assignment's
@@ -5706,13 +6197,20 @@ function infer_index_access_type(ctx: ref[Context], scope: ref[sscope.Scope], re
         return elem
     return types.Type.ty_error
 
-function infer_unsafe_type(ctx: ref[Context], scope: ref[sscope.Scope], expression: ptr[ast.Expr], line: ptr_uint) -> types.Type:
+
+function infer_unsafe_type(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    expression: ptr[ast.Expr],
+    line: ptr_uint
+) -> types.Type:
     ctx.unsafe_depth += 1
     ctx.unsafe_statement_lines.push(line)
     let result = infer_expr(ctx, scope, expression)
     ctx.unsafe_depth -= 1
     let _popped_expr = ctx.unsafe_statement_lines.pop()
     return result
+
 
 function infer_await_type(ctx: ref[Context], scope: ref[sscope.Scope], expression: ptr[ast.Expr]) -> types.Type:
     if not ctx.inside_async:
@@ -5729,6 +6227,7 @@ function infer_await_type(ctx: ref[Context], scope: ref[sscope.Scope], expressio
             pass
     return awaited
 
+
 function infer_null_literal_type(ctx: ref[Context], target_type: ptr[ast.TypeRef]?) -> types.Type:
     let target = target_type
     if target != null:
@@ -5740,7 +6239,14 @@ function infer_null_literal_type(ctx: ref[Context], target_type: ptr[ast.TypeRef
     # (`conditional_null_common_type`).
     return types.Type.ty_null(target = null)
 
-function infer_proc_type(ctx: ref[Context], scope: ref[sscope.Scope], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]) -> types.Type:
+
+function infer_proc_type(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    method_params: span[ast.Param],
+    return_type: ptr[ast.TypeRef]?,
+    body: ptr[ast.Stmt]
+) -> types.Type:
     unsafe:
         var param_types = vec.Vec[types.Type].create()
         var pi: ptr_uint = 0
@@ -5755,9 +6261,23 @@ function infer_proc_type(ctx: ref[Context], scope: ref[sscope.Scope], method_par
         if rt != null:
             ret = resolve_type(ctx, rt)
         check_proc_body(ctx, scope, param_types.as_span(), param_names.as_span(), ret, body)
-        return types.function_type(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true, param_names = param_names.as_span())
+        return types.function_type(
+            name = "",
+            params = param_types.as_span(),
+            return_type = types.alloc_type(ret),
+            variadic = false,
+            is_proc = true,
+            param_names = param_names.as_span()
+        )
 
-function infer_if_expr_type(ctx: ref[Context], scope: ref[sscope.Scope], condition: ptr[ast.Expr], then_expr: ptr[ast.Expr], else_expr: ptr[ast.Expr]) -> types.Type:
+
+function infer_if_expr_type(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    condition: ptr[ast.Expr],
+    then_expr: ptr[ast.Expr],
+    else_expr: ptr[ast.Expr]
+) -> types.Type:
     # Each branch is checked with the condition's refinements in
     # scope (`let x = if p != null: read(p) else: …`), the host's
     # `infer_if_expression`.  The host requires a bool condition; its
@@ -5789,11 +6309,24 @@ function infer_if_expr_type(ctx: ref[Context], scope: ref[sscope.Scope], conditi
     # numeric common type would be long.
     let hint_ty = ctx.expected_type_hint
     if not types.is_error(hint_ty):
-        if compat.types_compatible_with_consts(hint_ty, then_ty, then_expr, ptr_of(ctx.const_values)) and compat.types_compatible_with_consts(hint_ty, else_ty, else_expr, ptr_of(ctx.const_values)):
+        if compat.types_compatible_with_consts(
+            hint_ty,
+            then_ty,
+            then_expr,
+            ptr_of(ctx.const_values)
+        ) and compat.types_compatible_with_consts(hint_ty, else_ty, else_expr, ptr_of(ctx.const_values)):
             return hint_ty
     return sem_exprs.conditional_common_type(then_ty, else_ty, then_expr, else_expr)
 
-function infer_match_expr_type(ctx: ref[Context], scope: ref[sscope.Scope], scrutinee: ptr[ast.Expr], arms: span[ast.MatchExprArm], line: ptr_uint, column: ptr_uint) -> types.Type:
+
+function infer_match_expr_type(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    scrutinee: ptr[ast.Expr],
+    arms: span[ast.MatchExprArm],
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     unsafe:
         # An `as name` arm binds the arm's payload type from the
         # scrutinee's type, so it is inferred once, before the arms.
@@ -5811,9 +6344,22 @@ function infer_match_expr_type(ctx: ref[Context], scope: ref[sscope.Scope], scru
         while ai < arms.len:
             var arm: ast.MatchExprArm = read(arms.data + ai)
             scope_enter(scope)
-            bind_match_arm_names(ctx, scope, expr_scrutinee_ty, arm.binding_name, arm.pattern, arm.binding_line, arm.binding_column)
+            bind_match_arm_names(
+                ctx,
+                scope,
+                expr_scrutinee_ty,
+                arm.binding_name,
+                arm.pattern,
+                arm.binding_line,
+                arm.binding_column
+            )
             let arm_ty = infer_expr(ctx, scope, arm.value)
-            if all_fit_hint and not compat.types_compatible_with_consts(match_hint, arm_ty, arm.value, ptr_of(ctx.const_values)):
+            if all_fit_hint and not compat.types_compatible_with_consts(
+                match_hint,
+                arm_ty,
+                arm.value,
+                ptr_of(ctx.const_values)
+            ):
                 all_fit_hint = false
             arm_types.push(arm_ty)
             arm_exprs.push(arm.value)
@@ -5825,7 +6371,13 @@ function infer_match_expr_type(ctx: ref[Context], scope: ref[sscope.Scope], scru
             return match_hint
         return sem_exprs.match_expression_common_type(arm_types.as_span(), arm_exprs.as_span())
 
-function infer_detach_type(ctx: ref[Context], expression: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> types.Type:
+
+function infer_detach_type(
+    ctx: ref[Context],
+    expression: ptr[ast.Expr],
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     unsafe:
         match read(expression):
             ast.Expr.expr_call as call:
@@ -5878,7 +6430,14 @@ function is_known_value_identifier(ctx: ref[Context], name: str) -> bool:
     return false
 
 
-function infer_identifier(ctx: ref[Context], scope: ref[sscope.Scope], node_key: ptr_uint, name: str, line: ptr_uint, column: ptr_uint) -> types.Type:
+function infer_identifier(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    node_key: ptr_uint,
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     let local = scope_get(scope, name)
     if local != null:
         record_identifier_site(ctx, node_key, scope_get_binding_id(scope, name))
@@ -5921,7 +6480,15 @@ function unknown_name_message(name: str) -> str:
 ## type arguments substituted (`Option[(str, str)].some payload`) — so
 ## `p.value` resolves through the normal field path and the LSP can hover it; a
 ## pattern field name stays at the permissive error type.
-function bind_match_arm_names(ctx: ref[Context], scope: ref[sscope.Scope], scrutinee_ty: types.Type, binding_name: Option[str], pattern: ptr[ast.Expr]?, line: ptr_uint, column: ptr_uint) -> void:
+function bind_match_arm_names(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    scrutinee_ty: types.Type,
+    binding_name: Option[str],
+    pattern: ptr[ast.Expr]?,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     match binding_name:
         Option.some as bn:
             var binding_ty: types.Type = types.Type.ty_error
@@ -5961,7 +6528,10 @@ function bind_match_arm_names(ctx: ref[Context], scope: ref[sscope.Scope], scrut
                     match read(arg.arg_value):
                         ast.Expr.expr_identifier as id:
                             if not id.name == "_":
-                                let arg_id = if arg_named: 0 else: preassigned_binding_id_for(ctx, binding_key(id.line, id.column))
+                                let arg_id = if arg_named: 0 else: preassigned_binding_id_for(
+                                    ctx,
+                                    binding_key(id.line, id.column)
+                                )
                                 scope_set(scope, id.name, types.Type.ty_error)
                                 scope_set_storage(scope, id.name, types.Type.ty_error)
                                 if not arg_named:
@@ -6007,7 +6577,11 @@ function prelude_variant_module(variant_name: str) -> str:
 ## substituted (`Option[(str, str)].some payload`).  None for a variant or arm
 ## the analyzer carries no payload fields for (a user variant), which leaves the
 ## binding at the permissive error type.
-function match_arm_payload_type(ctx: ref[Context], scrutinee_ty: types.Type, pattern: ptr[ast.Expr]?) -> Option[types.Type]:
+function match_arm_payload_type(
+    ctx: ref[Context],
+    scrutinee_ty: types.Type,
+    pattern: ptr[ast.Expr]?
+) -> Option[types.Type]:
     let arm_name = pattern_arm_name(pattern)
     if arm_name.len == 0:
         return Option[types.Type].none
@@ -6107,7 +6681,11 @@ function match_arm_payload_type(ctx: ref[Context], scrutinee_ty: types.Type, pat
 ## Infer every interpolation part of a format string (`f"#{read(p)}"`), so the
 ## nested operations are checked and their unsafe requirements recorded — the
 ## host's `check_format_string_literal`.
-function check_format_string_parts(ctx: ref[Context], scope: ref[sscope.Scope], parts: span[ast.FormatStringPart]) -> void:
+function check_format_string_parts(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    parts: span[ast.FormatStringPart]
+) -> void:
     var i: ptr_uint = 0
     while i < parts.len:
         var part: ast.FormatStringPart
@@ -6125,7 +6703,14 @@ function check_format_string_parts(ctx: ref[Context], scope: ref[sscope.Scope], 
 ## declared in a fresh scope and the block is checked with the proc's return
 ## type, so nested operations are inferred and their unsafe requirements
 ## recorded — the host's `infer_proc_expression`.
-function check_proc_body(ctx: ref[Context], scope: ref[sscope.Scope], param_types: span[types.Type], param_names: span[str], ret: types.Type, body: ptr[ast.Stmt]?) -> void:
+function check_proc_body(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    param_types: span[types.Type],
+    param_names: span[str],
+    ret: types.Type,
+    body: ptr[ast.Stmt]?
+) -> void:
     let b = body else:
         return
     scope_enter(scope)
@@ -6144,7 +6729,13 @@ function check_proc_body(ctx: ref[Context], scope: ref[sscope.Scope], param_type
     scope_leave(scope)
 
 
-function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> types.Type:
+function infer_binary(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    op: str,
+    left: ptr[ast.Expr],
+    right: ptr[ast.Expr]
+) -> types.Type:
     # The host's `propagating_expected_type`: an arithmetic binary's numeric
     # expected type reaches both operands, so a literal operand takes it when
     # its value fits (`return 200 + 56` in a `-> ubyte` body).
@@ -6217,7 +6808,14 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
     return types.Type.ty_error
 
 
-function infer_numeric_binary_type(ctx: ref[Context], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr], lt: types.Type, rt: types.Type) -> types.Type:
+function infer_numeric_binary_type(
+    ctx: ref[Context],
+    op: str,
+    left: ptr[ast.Expr],
+    right: ptr[ast.Expr],
+    lt: types.Type,
+    rt: types.Type
+) -> types.Type:
     # The host's `propagating_expected_type`: an arithmetic binary's numeric
     # expected type reaches both operands, so a bare float literal in a
     # float context takes that type (`val / 4294967296.0` in a `next_double`
@@ -6278,7 +6876,14 @@ function infer_simd_binary_type(op: str, lt: types.Type, rt: types.Type) -> type
     return types.Type.ty_error
 
 
-function harmonize_float_binary_operands(ctx: ref[Context], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr], lt: types.Type, rt: types.Type) -> void:
+function harmonize_float_binary_operands(
+    ctx: ref[Context],
+    op: str,
+    left: ptr[ast.Expr],
+    right: ptr[ast.Expr],
+    lt: types.Type,
+    rt: types.Type
+) -> void:
     # The host's `harmonize_binary_float_literal_types` (and the expected-type
     # propagation into both operands): an unsuffixed float-literal operand is
     # *re-inferred* with the peer's float type, so `double<-x * 1000.0`
@@ -6476,7 +7081,12 @@ function infer_unary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, opera
 ## statically known is inferred with no hint, never with the enclosing
 ## expression's hint (a `return f(...)` must not force `f`'s arguments to the
 ## function's return type).  An empty result means "no parameter is known".
-function call_argument_expected_types(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument]) -> vec.Vec[types.Type]:
+function call_argument_expected_types(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    callee: ptr[ast.Expr],
+    args: span[ast.Argument]
+) -> vec.Vec[types.Type]:
     # Named arguments are canonicalized to parameter order in the host; the self
     # infers them in source order, so a positional hint could name the wrong
     # parameter.  Constructors are the named-argument path that matters, and
@@ -6493,7 +7103,10 @@ function call_argument_expected_types(ctx: ref[Context], scope: ref[sscope.Scope
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
-                if is_builtin_call_name(id.name) or is_callable_builtin_name(id.name) or scope_get(scope, id.name) != null:
+                if is_builtin_call_name(id.name) or is_callable_builtin_name(id.name) or scope_get(
+                    scope,
+                    id.name
+                ) != null:
                     return vec.Vec[types.Type].create()
                 let sigp = ctx.functions.get(id.name)
                 if sigp != null:
@@ -6574,9 +7187,18 @@ function call_argument_expected_types(ctx: ref[Context], scope: ref[sscope.Scope
                                         return vec.Vec[types.Type].create()
                                     var subs = map_mod.Map[str, types.Type].create()
                                     defer: subs.release()
-                                    if not try_quiet_type_substitutions(ctx, read(tps_ptr), spec.arguments, ref_of(subs)):
+                                    if not try_quiet_type_substitutions(
+                                        ctx,
+                                        read(tps_ptr),
+                                        spec.arguments,
+                                        ref_of(subs)
+                                    ):
                                         return vec.Vec[types.Type].create()
-                                    return expected_from_substituted_params(read(sig_ptr).params, args.len, ref_of(subs))
+                                    return expected_from_substituted_params(
+                                        read(sig_ptr).params,
+                                        args.len,
+                                        ref_of(subs)
+                                    )
                                 let rtp = scope_get(scope, rid.name) else:
                                     return vec.Vec[types.Type].create()
                                 let recv_ty = unwrap_ref(unsafe: read(rtp))
@@ -6600,7 +7222,13 @@ function call_argument_expected_types(ctx: ref[Context], scope: ref[sscope.Scope
 ## Resolve the parameter list a call's named arguments map onto.  False means
 ## the callee is not a signature-bearing function/method (a builtin, struct or
 ## variant constructor, a callable value, or an unresolved name).
-function call_parameter_info(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], name_out: ref[str], sig_out: ref[FnSig]) -> bool:
+function call_parameter_info(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    callee: ptr[ast.Expr],
+    name_out: ref[str],
+    sig_out: ref[FnSig]
+) -> bool:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
@@ -6613,7 +7241,13 @@ function call_parameter_info(ctx: ref[Context], scope: ref[sscope.Scope], callee
                 return false
 
 
-function identifier_parameter_info(ctx: ref[Context], scope: ref[sscope.Scope], name: str, name_out: ref[str], sig_out: ref[FnSig]) -> bool:
+function identifier_parameter_info(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    name: str,
+    name_out: ref[str],
+    sig_out: ref[FnSig]
+) -> bool:
     if is_builtin_call_name(name) or is_callable_builtin_name(name) or scope_get(scope, name) != null:
         return false
     let sig_ptr = ctx.functions.get(name)
@@ -6629,7 +7263,14 @@ function identifier_parameter_info(ctx: ref[Context], scope: ref[sscope.Scope], 
 ## a static struct method (`Counter.make`) or an instance method on a value.
 ## `with` is the aggregate-copy / simd builtin (named arguments are field names
 ## or rejected), so it never canonicalizes.
-function member_parameter_info(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], member: str, name_out: ref[str], sig_out: ref[FnSig]) -> bool:
+function member_parameter_info(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr],
+    member: str,
+    name_out: ref[str],
+    sig_out: ref[FnSig]
+) -> bool:
     if member == "with":
         return false
     unsafe:
@@ -6696,7 +7337,13 @@ function member_parameter_info(ctx: ref[Context], scope: ref[sscope.Scope], rece
 ## (`ident[int]`, `lib.ident[int]`) or a generic method on a value receiver
 ## (`storage.alloc[ptr[char]]`).  A specialization of a struct/variant/builtin
 ## is a construction and keeps its named fields.
-function specialization_parameter_info(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], name_out: ref[str], sig_out: ref[FnSig]) -> bool:
+function specialization_parameter_info(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    callee: ptr[ast.Expr],
+    name_out: ref[str],
+    sig_out: ref[FnSig]
+) -> bool:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
@@ -6866,7 +7513,10 @@ function canonicalize_call_arguments_for(
                         let slot_ptr = slots.get(pj)
                         if slot_ptr != null:
                             unsafe:
-                                read(ptr[ast.Argument]<-slot_ptr) = ast.Argument(arg_name = Option[str].none, arg_value = arg.arg_value)
+                                read(ptr[ast.Argument]<-slot_ptr) = ast.Argument(
+                                    arg_name = Option[str].none,
+                                    arg_value = arg.arg_value
+                                )
                         let fptr = filled.get(pj)
                         if fptr != null:
                             unsafe:
@@ -6972,7 +7622,12 @@ function expected_from_fields(fields: span[FieldEntry], args: span[ast.Argument]
     return hints
 
 
-function expected_from_method(ctx: ref[Context], receiver_type: types.Type, method_name: str, args: span[ast.Argument]) -> vec.Vec[types.Type]:
+function expected_from_method(
+    ctx: ref[Context],
+    receiver_type: types.Type,
+    method_name: str,
+    args: span[ast.Argument]
+) -> vec.Vec[types.Type]:
     match resolve_method_sig(ctx, receiver_type, method_name):
         Option.some as sig:
             return expected_from_params(sig.value.params, args.len)
@@ -6992,7 +7647,11 @@ function expected_repeated(ty: types.Type, arg_count: ptr_uint) -> vec.Vec[types
 
 ## As `expected_from_params`, with the explicit specialization's substitutions
 ## applied first.
-function expected_from_substituted_params(params: span[ParamEntry], arg_count: ptr_uint, subs: ref[map_mod.Map[str, types.Type]]) -> vec.Vec[types.Type]:
+function expected_from_substituted_params(
+    params: span[ParamEntry],
+    arg_count: ptr_uint,
+    subs: ref[map_mod.Map[str, types.Type]]
+) -> vec.Vec[types.Type]:
     var hints = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
     while i < arg_count:
@@ -7011,7 +7670,12 @@ function expected_from_substituted_params(params: span[ParamEntry], arg_count: p
 ## diagnostics; the hint pre-pass must not report them twice, so it only accepts
 ## a bare name the analyzer already knows (a primitive/installed type or a type
 ## parameter) and gives up on anything that needs full resolution.
-function try_quiet_type_substitutions(ctx: ref[Context], type_params: span[ast.TypeParam], type_args: span[ast.TypeArgument], subs: ref[map_mod.Map[str, types.Type]]) -> bool:
+function try_quiet_type_substitutions(
+    ctx: ref[Context],
+    type_params: span[ast.TypeParam],
+    type_args: span[ast.TypeArgument],
+    subs: ref[map_mod.Map[str, types.Type]]
+) -> bool:
     if type_args.len != type_params.len or not all_plain_type_params(type_params):
         return false
     var i: ptr_uint = 0
@@ -7053,12 +7717,25 @@ function quiet_explicit_type(ctx: ref[Context], tref: ptr[ast.TypeRef]) -> Optio
 ## function, check argument count and (positional) argument types.  When the
 ## callee names a local struct, treat it as a struct construction and validate
 ## named-field references instead.
-function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument]) -> types.Type:
+function infer_and_check_call(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    callee: ptr[ast.Expr],
+    args: span[ast.Argument]
+) -> types.Type:
     var any_named = false
     let call_pos = callee_position(callee)
     var canonical_args = vec.Vec[ast.Argument].create()
     defer: canonical_args.release()
-    let has_canonical = canonicalize_call_arguments(ctx, scope, callee, args, call_pos / 1000000, call_pos % 1000000, ref_of(canonical_args))
+    let has_canonical = canonicalize_call_arguments(
+        ctx,
+        scope,
+        callee,
+        args,
+        call_pos / 1000000,
+        call_pos % 1000000,
+        ref_of(canonical_args)
+    )
     var effective_args = args
     if has_canonical:
         effective_args = canonical_args.as_span()
@@ -7112,9 +7789,27 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
             unsafe:
                 match read(callee):
                     ast.Expr.expr_member_access as ma:
-                        return check_member_call(ctx, scope, ma.receiver, ma.member_name, effective_args, arg_span, any_named, ma.line, ma.column)
+                        return check_member_call(
+                            ctx,
+                            scope,
+                            ma.receiver,
+                            ma.member_name,
+                            effective_args,
+                            arg_span,
+                            any_named,
+                            ma.line,
+                            ma.column
+                        )
                     ast.Expr.expr_specialization as spec:
-                        return check_specialization_call(ctx, scope, spec.callee, spec.arguments, arg_span, effective_args, true)
+                        return check_specialization_call(
+                            ctx,
+                            scope,
+                            spec.callee,
+                            spec.arguments,
+                            arg_span,
+                            effective_args,
+                            true
+                        )
                     ast.Expr.expr_identifier:
                         return check_call(ctx, scope, callee, effective_args, arg_span, any_named)
                     _:
@@ -7126,7 +7821,16 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
 ## the parameter types are substituted from the explicit type arguments, then
 ## the same compatibility rule runs.  Named arguments have already been
 ## canonicalized to parameter order by the caller.
-function check_substituted_arguments(ctx: ref[Context], display_name: str, sig: FnSig, args: span[ast.Argument], arg_types: span[types.Type], subs: ref[map_mod.Map[str, types.Type]], line: ptr_uint, column: ptr_uint) -> void:
+function check_substituted_arguments(
+    ctx: ref[Context],
+    display_name: str,
+    sig: FnSig,
+    args: span[ast.Argument],
+    arg_types: span[types.Type],
+    subs: ref[map_mod.Map[str, types.Type]],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     var any_named = false
     var i: ptr_uint = 0
     while i < args.len:
@@ -7158,8 +7862,16 @@ function check_substituted_arguments(ctx: ref[Context], display_name: str, sig: 
                     arg_expr = read(args.data + i).arg_value
                 var incompatible = false
                 if sig.is_extern:
-                    if not (is_imported_constant_member(ctx, arg_expr) and types.is_numeric(pty) and types.is_numeric(atype)):
-                        incompatible = incompatible_external_value_with_consts(pty, atype, arg_expr, ref_of(ctx.const_values))
+                    if not (is_imported_constant_member(
+                        ctx,
+                        arg_expr
+                    ) and types.is_numeric(pty) and types.is_numeric(atype)):
+                        incompatible = incompatible_external_value_with_consts(
+                            pty,
+                            atype,
+                            arg_expr,
+                            ref_of(ctx.const_values)
+                        )
                 else:
                     incompatible = incompatible_value_with_consts(pty, atype, arg_expr, ref_of(ctx.const_values))
                 if incompatible:
@@ -7172,13 +7884,24 @@ function check_substituted_arguments(ctx: ref[Context], display_name: str, sig: 
 ## is a fully-known local struct, the required hook must exist.  Everything else
 ## (primitives, imported types, type variables, user generic functions) stays
 ## permissive.
-function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], arg_types: span[types.Type], arg_exprs: span[ast.Argument], check_call: bool) -> types.Type:
+function check_specialization_call(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    spec_callee: ptr[ast.Expr],
+    type_args: span[ast.TypeArgument],
+    arg_types: span[types.Type],
+    arg_exprs: span[ast.Argument],
+    check_call: bool
+) -> types.Type:
     unsafe:
         match read(spec_callee):
             ast.Expr.expr_identifier as id:
                 if id.name == "zero" and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
                     return check_zero_call(ctx, type_args, id.line, id.column)
-                if id.name == "reinterpret" and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
+                if id.name == "reinterpret" and not ctx.functions.contains(id.name) and scope_get(
+                    scope,
+                    id.name
+                ) == null:
                     return check_reinterpret_call(ctx, type_args, arg_types, id.line, id.column)
                 if is_hook_name(id.name) and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
                     return check_hook_call(ctx, id.name, type_args, id.line, id.column)
@@ -7193,7 +7916,16 @@ function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], 
                     let sigp = ctx.functions.get(id.name)
                     if sigp != null:
                         if check_call:
-                            check_substituted_arguments(ctx, id.name, read(sigp), arg_exprs, arg_types, ref_of(subs), id.line, id.column)
+                            check_substituted_arguments(
+                                ctx,
+                                id.name,
+                                read(sigp),
+                                arg_exprs,
+                                arg_types,
+                                ref_of(subs),
+                                id.line,
+                                id.column
+                            )
                         return substitute_type(read(sigp).return_type, ref_of(subs))
                 # A generic struct construction with explicit type arguments
                 # (`Pair[int, bool](first = 10, second = true)`): the value is an
@@ -7202,7 +7934,11 @@ function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], 
                     let fieldsp = ctx.structs.get(id.name)
                     if fieldsp != null:
                         check_construction(ctx, scope, id.name, read(fieldsp), arg_exprs, id.line, id.column)
-                        return types.imported_type(module_name = type_owner_module(ctx, id.name), name = id.name, args = resolve_type_arguments(ctx, type_args))
+                        return types.imported_type(
+                            module_name = type_owner_module(ctx, id.name),
+                            name = id.name,
+                            args = resolve_type_arguments(ctx, type_args)
+                        )
                 # A builtin construction with explicit type arguments
                 # (`array[int, 3](1, 2, 3)`, `span[int](data = …, len = 3)`): the
                 # host validates the arguments (`check_array_construction`, and
@@ -7219,10 +7955,27 @@ function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], 
                 match read(ma.receiver):
                     ast.Expr.expr_identifier as rid:
                         if scope_get(scope, rid.name) == null and ctx.import_aliases.contains(rid.name):
-                            return check_imported_specialization_call(ctx, scope, spec_callee, type_args, arg_types, arg_exprs)
+                            return check_imported_specialization_call(
+                                ctx,
+                                scope,
+                                spec_callee,
+                                type_args,
+                                arg_types,
+                                arg_exprs
+                            )
                     _:
                         pass
-                return check_specialized_method_call(ctx, scope, ma.receiver, ma.member_name, type_args, arg_types, arg_exprs, ma.line, ma.column)
+                return check_specialized_method_call(
+                    ctx,
+                    scope,
+                    ma.receiver,
+                    ma.member_name,
+                    type_args,
+                    arg_types,
+                    arg_exprs,
+                    ma.line,
+                    ma.column
+                )
             _:
                 return types.Type.ty_error
 
@@ -7232,7 +7985,17 @@ function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], 
 ## parameters bind the explicit arguments and its return type is substituted
 ## (`ptr[T]?` -> `ptr[ptr[char]]?`).  The permissive error type when the method
 ## or its parameters are not resolvable.
-function check_specialized_method_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], method_name: str, type_args: span[ast.TypeArgument], arg_types: span[types.Type], arg_exprs: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_specialized_method_call(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr],
+    method_name: str,
+    type_args: span[ast.TypeArgument],
+    arg_types: span[types.Type],
+    arg_exprs: span[ast.Argument],
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     let recv_ty = unwrap_ref(infer_expr(ctx, scope, receiver))
     let tps = method_type_params_of(ctx, recv_ty, method_name) else:
         return types.Type.ty_error
@@ -7300,7 +8063,14 @@ function method_receiver_type_name(recv: types.Type) -> str:
 ## (`heap.must_alloc[ubyte](64)`): validate the type arguments against the
 ## declared parameters and substitute them into the return type, as the
 ## identifier arm does for a local generic function.
-function check_imported_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], arg_types: span[types.Type], arg_exprs: span[ast.Argument]) -> types.Type:
+function check_imported_specialization_call(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    callee: ptr[ast.Expr],
+    type_args: span[ast.TypeArgument],
+    arg_types: span[types.Type],
+    arg_exprs: span[ast.Argument]
+) -> types.Type:
     unsafe:
         match read(callee):
             ast.Expr.expr_member_access as ma:
@@ -7319,7 +8089,16 @@ function check_imported_specialization_call(ctx: ref[Context], scope: ref[sscope
                         var subs = map_mod.Map[str, types.Type].create()
                         defer: subs.release()
                         validate_explicit_type_args(ctx, read(tps_ptr), type_args, ref_of(subs), ma.line, ma.column)
-                        check_substituted_arguments(ctx, ma.member_name, read(sigp), arg_exprs, arg_types, ref_of(subs), ma.line, ma.column)
+                        check_substituted_arguments(
+                            ctx,
+                            ma.member_name,
+                            read(sigp),
+                            arg_exprs,
+                            arg_types,
+                            ref_of(subs),
+                            ma.line,
+                            ma.column
+                        )
                         return substitute_type(read(sigp).return_type, ref_of(subs))
                     _:
                         return types.Type.ty_error
@@ -7432,7 +8211,10 @@ function collect_binding_alias_members(
         key.append(module_name)
         key.append(".")
         key.append(alias_name)
-        members_by_type.set(key.as_str(), ImportedTypeMembers(fields = fields, methods = methods, method_order = method_order, declared = true))
+        members_by_type.set(
+            key.as_str(),
+            ImportedTypeMembers(fields = fields, methods = methods, method_order = method_order, declared = true)
+        )
 
 
 ## One group of a binding's types (its structs, or its unions) with their methods.
@@ -7456,14 +8238,27 @@ function collect_binding_members(
         key.append(module_name)
         key.append(".")
         key.append(type_name)
-        members_by_type.set(key.as_str(), ImportedTypeMembers(fields = unsafe: read(entry.value), methods = methods, method_order = method_order, declared = true))
+        members_by_type.set(
+            key.as_str(),
+            ImportedTypeMembers(
+                fields = unsafe: read(entry.value),
+                methods = methods,
+                method_order = method_order,
+                declared = true
+            )
+        )
 
 
 ## A type's methods, keyed by their own names: the binding's `method_sigs` are
 ## keyed `<Type>.<method>` (no `static:` marker — the signature's `method_kind`
 ## carries that).  Iterating the binding's `method_order` keeps the host's
 ## per-type registration order in `order`.
-function collect_type_methods(type_name: str, binding_ptr: ptr[ModuleBinding], methods: ref[map_mod.Map[str, FnSig]], order: ref[vec.Vec[str]]) -> void:
+function collect_type_methods(
+    type_name: str,
+    binding_ptr: ptr[ModuleBinding],
+    methods: ref[map_mod.Map[str, FnSig]],
+    order: ref[vec.Vec[str]]
+) -> void:
     var prefix = string.String.create()
     prefix.append(type_name)
     prefix.append(".")
@@ -7516,16 +8311,33 @@ function require_unsafe_at(ctx: ref[Context], line: ptr_uint, column: ptr_uint, 
 ## marking the enclosing `unsafe:` node inside one.  Everything else must make a
 ## numeric cast; the host reports `cast requires compatible types` for the
 ## residue, which the self only emits for sides it can classify concretely.
-function check_cast_call(ctx: ref[Context], operand: ptr[ast.Expr], source: types.Type, target: types.Type, line: ptr_uint, column: ptr_uint) -> void:
+function check_cast_call(
+    ctx: ref[Context],
+    operand: ptr[ast.Expr],
+    source: types.Type,
+    target: types.Type,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     if types.type_equals(source, target):
         return
     if types.is_pointer_cast_type(source) and types.is_pointer_cast_type(target):
         if not in_generic_body(ctx):
-            require_unsafe_at(ctx, expr_source_line(operand), expr_source_column(operand), "pointer cast requires unsafe")
+            require_unsafe_at(
+                ctx,
+                expr_source_line(operand),
+                expr_source_column(operand),
+                "pointer cast requires unsafe"
+            )
         return
     if types.is_ref_type(source) and types.is_pointer_cast_type(target):
         if not in_generic_body(ctx):
-            require_unsafe_at(ctx, expr_source_line(operand), expr_source_column(operand), "ref to pointer cast requires unsafe")
+            require_unsafe_at(
+                ctx,
+                expr_source_line(operand),
+                expr_source_column(operand),
+                "ref to pointer cast requires unsafe"
+            )
         return
     if not cast_side_incompatible(ctx, source) and not cast_side_incompatible(ctx, target):
         return
@@ -7763,7 +8575,13 @@ function expr_source_column(ep: ptr[ast.Expr]) -> ptr_uint:
 
 
 ## `reinterpret[T](v)` returns T; requires unsafe context.
-function check_reinterpret_call(ctx: ref[Context], type_args: span[ast.TypeArgument], arg_types: span[types.Type], line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_reinterpret_call(
+    ctx: ref[Context],
+    type_args: span[ast.TypeArgument],
+    arg_types: span[types.Type],
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     if type_args.len != 1:
         return types.Type.ty_error
     if not in_generic_body(ctx):
@@ -7839,7 +8657,12 @@ function byte_size_label(size: long) -> str:
 
 
 ## `zero[T]` returns T (zero-initialized value type).
-function check_zero_call(ctx: ref[Context], type_args: span[ast.TypeArgument], line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_zero_call(
+    ctx: ref[Context],
+    type_args: span[ast.TypeArgument],
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     if type_args.len != 1:
         return types.Type.ty_error
     var arg_ref: ptr[ast.TypeRef]
@@ -8001,7 +8824,14 @@ function span_data_fits(elem_ty: types.Type, actual: types.Type) -> bool:
 ## `simd[E, N](v0, ..., vN-1)` constructs a SIMD vector.  Requires exactly two
 ## type arguments (element type and lane count) and exactly N positional lane
 ## values assignable to E.
-function check_simd_call(ctx: ref[Context], type_args: span[ast.TypeArgument], arg_types: span[types.Type], arg_exprs: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_simd_call(
+    ctx: ref[Context],
+    type_args: span[ast.TypeArgument],
+    arg_types: span[types.Type],
+    arg_exprs: span[ast.Argument],
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     if type_args.len != 2:
         report(ctx, line, column, "simd requires exactly two type arguments")
         return types.Type.ty_error
@@ -8045,7 +8875,15 @@ function check_simd_call(ctx: ref[Context], type_args: span[ast.TypeArgument], a
 
 ## `v.with(lane, value)` returns a copy of `v` with one lane replaced.  The
 ## lane index must be an integer and the value assignable to the element type.
-function check_simd_with_call(ctx: ref[Context], simd_ty: types.Type, args: span[ast.Argument], arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> void:
+function check_simd_with_call(
+    ctx: ref[Context],
+    simd_ty: types.Type,
+    args: span[ast.Argument],
+    arg_types: span[types.Type],
+    any_named: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     if any_named:
         report(ctx, line, column, "simd.with does not accept named arguments")
         return
@@ -8072,7 +8910,14 @@ function check_simd_with_call(ctx: ref[Context], simd_ty: types.Type, args: span
 ## type argument and check it satisfies its parameter's constraints.  Skipped
 ## unless the parameters are all plain type variables and the counts line up
 ## (avoids misaligning value/lifetime parameters).
-function validate_explicit_type_args(ctx: ref[Context], type_params: span[ast.TypeParam], type_args: span[ast.TypeArgument], subs: ref[map_mod.Map[str, types.Type]], line: ptr_uint, column: ptr_uint) -> void:
+function validate_explicit_type_args(
+    ctx: ref[Context],
+    type_params: span[ast.TypeParam],
+    type_args: span[ast.TypeArgument],
+    subs: ref[map_mod.Map[str, types.Type]],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     if type_args.len != type_params.len or not all_plain_type_params(type_params):
         return
     var i: ptr_uint = 0
@@ -8118,10 +8963,21 @@ function substitute_type(t: types.Type, subs: ref[map_mod.Map[str, types.Type]])
                     new_params.push(substitute_type(read(f_ft.params.data + pi2), subs))
                 pi2 += 1
             let new_ret = substitute_type(unsafe: read(f_ft.return_type), subs)
-            return types.function_type(name = f_ft.name, params = new_params.as_span(), return_type = types.alloc_type(new_ret), variadic = f_ft.variadic, is_proc = f_ft.is_proc, param_names = f_ft.param_names)
+            return types.function_type(
+                name = f_ft.name,
+                params = new_params.as_span(),
+                return_type = types.alloc_type(new_ret),
+                variadic = f_ft.variadic,
+                is_proc = f_ft.is_proc,
+                param_names = f_ft.param_names
+            )
         types.Type.ty_imported as imported:
             let imported_bp = unsafe: read(imported.payload)
-            return types.imported_type(module_name = imported_bp.module_name, name = imported_bp.name, args = substitute_type_span(imported_bp.args, subs))
+            return types.imported_type(
+                module_name = imported_bp.module_name,
+                name = imported_bp.name,
+                args = substitute_type_span(imported_bp.args, subs)
+            )
         _:
             return t
 
@@ -8139,7 +8995,13 @@ function substitute_type_span(args: span[types.Type], subs: ref[map_mod.Map[str,
 
 ## Validate constraints against an inferred substitution map (from a bare
 ## `foo(...)` call).  A type parameter with no inferred binding is skipped.
-function validate_inferred_type_args(ctx: ref[Context], type_params: span[ast.TypeParam], subs: ref[map_mod.Map[str, types.Type]], line: ptr_uint, column: ptr_uint) -> void:
+function validate_inferred_type_args(
+    ctx: ref[Context],
+    type_params: span[ast.TypeParam],
+    subs: ref[map_mod.Map[str, types.Type]],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     var i: ptr_uint = 0
     while i < type_params.len:
         var tp: ast.TypeParam
@@ -8152,7 +9014,13 @@ function validate_inferred_type_args(ctx: ref[Context], type_params: span[ast.Ty
         i += 1
 
 
-function check_type_arg_constraints(ctx: ref[Context], actual: types.Type, constraints: span[ast.TypeParamConstraint], line: ptr_uint, column: ptr_uint) -> void:
+function check_type_arg_constraints(
+    ctx: ref[Context],
+    actual: types.Type,
+    constraints: span[ast.TypeParamConstraint],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     var i: ptr_uint = 0
     while i < constraints.len:
         var constraint: ast.TypeParamConstraint
@@ -8168,7 +9036,13 @@ function check_type_arg_constraints(ctx: ref[Context], actual: types.Type, const
 ## the same module with the same aliases, so their qnames compare by identity.
 ## Imported struct arguments, primitives, type variables, and unresolvable
 ## interfaces stay permissive.
-function check_constraint_satisfied(ctx: ref[Context], actual: types.Type, constraint: ast.TypeParamConstraint, line: ptr_uint, column: ptr_uint) -> void:
+function check_constraint_satisfied(
+    ctx: ref[Context],
+    actual: types.Type,
+    constraint: ast.TypeParamConstraint,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     match resolve_interface_methods(ctx, constraint.interface_ref):
         Option.none:
             return
@@ -8196,7 +9070,15 @@ function check_constraint_satisfied(ctx: ref[Context], actual: types.Type, const
 ## interface is then local to that module, so the struct implements it via a bare
 ## `impl_list` entry.  Any other shape (local constraint, interface from a third
 ## module, unexported impl_list) stays permissive.
-function check_imported_constraint(ctx: ref[Context], struct_module: str, struct_name: str, constraint: ast.TypeParamConstraint, constraint_id: str, line: ptr_uint, column: ptr_uint) -> void:
+function check_imported_constraint(
+    ctx: ref[Context],
+    struct_module: str,
+    struct_name: str,
+    constraint: ast.TypeParamConstraint,
+    constraint_id: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     if constraint.interface_ref.parts.len != 2:
         return
     var iface_name: str = ""
@@ -8260,7 +9142,11 @@ function all_plain_type_params(type_params: span[ast.TypeParam]) -> bool:
 ## Best-effort unification of a call's parameter patterns against its argument
 ## types, recording type-variable bindings.  Never fails: unresolvable positions
 ## simply leave a type parameter unbound (and thus unchecked).
-function unify_call_args(params: span[ParamEntry], arg_types: span[types.Type], subs: ref[map_mod.Map[str, types.Type]]) -> void:
+function unify_call_args(
+    params: span[ParamEntry],
+    arg_types: span[types.Type],
+    subs: ref[map_mod.Map[str, types.Type]]
+) -> void:
     var i: ptr_uint = 0
     while i < params.len and i < arg_types.len:
         unsafe:
@@ -8294,7 +9180,12 @@ function unify_call_arguments(
 ## The type an argument contributes to generic inference.  Only a `ty_error`
 ## argument that names a known function is refined (to that function's
 ## signature); everything else is used as inferred.
-function argument_inference_type(ctx: ref[Context], scope: ref[sscope.Scope], arg: ptr[ast.Expr], inferred: types.Type) -> types.Type:
+function argument_inference_type(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    arg: ptr[ast.Expr],
+    inferred: types.Type
+) -> types.Type:
     match inferred:
         types.Type.ty_error:
             unsafe:
@@ -8311,7 +9202,14 @@ function argument_inference_type(ctx: ref[Context], scope: ref[sscope.Scope], ar
                         while pi < sig.params.len:
                             params.push(read(sig.params.data + pi).ty)
                             pi += 1
-                        return types.function_type(name = id.name, params = params.as_span(), return_type = types.alloc_type(sig.return_type), variadic = sig.is_variadic, is_proc = false, param_names = span[str]())
+                        return types.function_type(
+                            name = id.name,
+                            params = params.as_span(),
+                            return_type = types.alloc_type(sig.return_type),
+                            variadic = sig.is_variadic,
+                            is_proc = false,
+                            param_names = span[str]()
+                        )
                     _:
                         return inferred
         _:
@@ -8399,7 +9297,13 @@ function is_hook_name(name: str) -> bool:
 
 ## Check an associated-function hook call `hook[T](...)`.  Flags a missing hook
 ## only when T is a fully-known local struct; yields the hook's result type.
-function check_hook_call(ctx: ref[Context], hook_name: str, type_args: span[ast.TypeArgument], line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_hook_call(
+    ctx: ref[Context],
+    hook_name: str,
+    type_args: span[ast.TypeArgument],
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     if type_args.len != 1:
         return types.Type.ty_error
     var arg_ref: ptr[ast.TypeRef]
@@ -8433,7 +9337,14 @@ function check_hook_call(ctx: ref[Context], hook_name: str, type_args: span[ast.
 ## type), or against an imported struct's fields (a cross-module construction).
 ## Anything else (local calls, unresolved aliases, non-exported members) is left
 ## to the local paths.
-function try_imported_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument], arg_types: span[types.Type], any_named: bool) -> Option[types.Type]:
+function try_imported_call(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    callee: ptr[ast.Expr],
+    args: span[ast.Argument],
+    arg_types: span[types.Type],
+    any_named: bool
+) -> Option[types.Type]:
     unsafe:
         match read(callee):
             ast.Expr.expr_member_access as ma:
@@ -8450,13 +9361,28 @@ function try_imported_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: 
                         let sig_ptr = read(binding_ptr).functions.get(ma.member_name)
                         if sig_ptr != null:
                             let sig = read(sig_ptr)
-                            check_signature_call(ctx, ma.member_name, sig, args, arg_types, any_named, ma.line, ma.column)
+                            check_signature_call(
+                                ctx,
+                                ma.member_name,
+                                sig,
+                                args,
+                                arg_types,
+                                any_named,
+                                ma.line,
+                                ma.column
+                            )
                             let mpi_ptr = read(binding_ptr).mutating_param_indices.get(ma.member_name)
                             if mpi_ptr != null:
                                 record_mutating_args_for_indices(ctx, ptr[map_mod.Map[ptr_uint, bool]]<-mpi_ptr, args)
                             let dpm_ptr = read(binding_ptr).directional_param_modes.get(ma.member_name)
                             if dpm_ptr != null:
-                                record_directional_ffi_sites(ctx, callee, sig.name, ptr[map_mod.Map[ptr_uint, DirectionalParamInfo]]<-dpm_ptr, args)
+                                record_directional_ffi_sites(
+                                    ctx,
+                                    callee,
+                                    sig.name,
+                                    ptr[map_mod.Map[ptr_uint, DirectionalParamInfo]]<-dpm_ptr,
+                                    args
+                                )
                             # A generic exported function infers its type arguments
                             # from the call's arguments (`iter.iter_filter(it, pred)`
                             # -> `Iter[int]`), exactly as a local call does.
@@ -8472,7 +9398,11 @@ function try_imported_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: 
                         let fields_ptr = read(binding_ptr).structs.get(ma.member_name)
                         if fields_ptr != null:
                             check_construction(ctx, scope, ma.member_name, read(fields_ptr), args, ma.line, ma.column)
-                            return Option[types.Type].some(value = types.imported_type(module_name = read(module_name_ptr), name = ma.member_name, args = span[types.Type]()))
+                            return Option[types.Type].some(value = types.imported_type(
+                                module_name = read(module_name_ptr),
+                                name = ma.member_name,
+                                args = span[types.Type]()
+                            ))
 
                         # A re-exported type alias constructs its resolved target
                         # (`rl.Rectangle` is `c.Rectangle`): yield the target type,
@@ -8527,7 +9457,14 @@ function module_exports_type(binding: ModuleBinding, member: str) -> bool:
 ## type name (`import std.str as str` plus `str.order(...)`), so a `member_keys`
 ## entry for `"<alias>.<member>"` counts as a hit: those keys carry the imported
 ## module's `extending`/static methods.
-function report_module_member(ctx: ref[Context], alias: str, module_name: str, member: str, line: ptr_uint, column: ptr_uint) -> void:
+function report_module_member(
+    ctx: ref[Context],
+    alias: str,
+    module_name: str,
+    member: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     let binding_ptr = find_binding(ctx, module_name) else:
         return
     let binding = unsafe: read(binding_ptr)
@@ -8550,7 +9487,12 @@ function report_module_member(ctx: ref[Context], alias: str, module_name: str, m
 
 ## Resolve `alias.member` where `alias` is an imported module and `member` is one
 ## of its exported values, yielding the value's type.  None for anything else.
-function try_imported_member(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], member: str) -> Option[types.Type]:
+function try_imported_member(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr],
+    member: str
+) -> Option[types.Type]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -8566,7 +9508,10 @@ function try_imported_member(ctx: ref[Context], scope: ref[sscope.Scope], receiv
                 # An imported name that is a type/enum/variant, a static method
                 # on a same-named type (`str.order`), or another modelled export
                 # belongs to another path; anything else is a genuine miss.
-                if not module_exports_type(read(binding_ptr), member) and not read(binding_ptr).member_keys.contains(method_key(id.name, member)):
+                if not module_exports_type(
+                    read(binding_ptr),
+                    member
+                ) and not read(binding_ptr).member_keys.contains(method_key(id.name, member)):
                     report_module_member(ctx, id.name, read(module_name_ptr), member, id.line, id.column)
                 return Option[types.Type].some(value = types.Type.ty_error)
             _:
@@ -8586,7 +9531,17 @@ function find_binding(ctx: ref[Context], module_name: str) -> ptr[ModuleBinding]
 ## only.  Struct static methods (`Counter.make(...)`, `lib.Adder.make(...)`) and
 ## value-receiver instance methods (`p.method(...)`) are resolved to a signature
 ## and argument-checked, with the method's return type flowing to the caller.
-function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], method_name: str, args: span[ast.Argument], arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_member_call(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr],
+    method_name: str,
+    args: span[ast.Argument],
+    arg_types: span[types.Type],
+    any_named: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     match imported_static_member(ctx, scope, receiver, method_name, line, column):
         Option.some as imported_static:
             return imported_static.value
@@ -8602,7 +9557,16 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
 
     match static_struct_receiver_type(ctx, scope, receiver):
         Option.some as static_type:
-            return check_typed_method_call(ctx, static_type.value, method_name, args, arg_types, any_named, line, column)
+            return check_typed_method_call(
+                ctx,
+                static_type.value,
+                method_name,
+                args,
+                arg_types,
+                any_named,
+                line,
+                column
+            )
         Option.none:
             pass
 
@@ -8612,7 +9576,16 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
     match specialization_imported_receiver(ctx, scope, receiver):
         Option.some as instantiated:
             check_editable_receiver_immutable(ctx, scope, receiver, instantiated.value, method_name, line, column)
-            match imported_method_call_type(ctx, instantiated.value, method_name, args, arg_types, any_named, line, column):
+            match imported_method_call_type(
+                ctx,
+                instantiated.value,
+                method_name,
+                args,
+                arg_types,
+                any_named,
+                line,
+                column
+            ):
                 Option.some as method_type:
                     return method_type.value
                 Option.none:
@@ -8634,7 +9607,16 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
                     if ctx.static_member_types.contains(im_bp.name):
                         check_static_member(ctx, im_bp.name, method_name, line, column)
                         return instance.value
-                    return check_typed_method_call(ctx, instance.value, method_name, args, arg_types, any_named, line, column)
+                    return check_typed_method_call(
+                        ctx,
+                        instance.value,
+                        method_name,
+                        args,
+                        arg_types,
+                        any_named,
+                        line,
+                        column
+                    )
                 _:
                     pass
         Option.none:
@@ -8645,7 +9627,16 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
     # block declares them (std.linear_algebra's `extending mat4:`).
     match static_builtin_type_name(ctx, scope, receiver):
         Option.some as builtin_name:
-            return check_typed_method_call(ctx, types.named_type(name = builtin_name.value, module_name = "", linkage_name = Option[str].none), method_name, args, arg_types, any_named, line, column)
+            return check_typed_method_call(
+                ctx,
+                types.named_type(name = builtin_name.value, module_name = "", linkage_name = Option[str].none),
+                method_name,
+                args,
+                arg_types,
+                any_named,
+                line,
+                column
+            )
         Option.none:
             pass
 
@@ -8743,7 +9734,16 @@ public function project_pointer_receiver(t: types.Type) -> types.Type:
 ## Resolve and check a method call against a known receiver type (local or
 ## imported): argument-check the signature and flow its return type, or fall back
 ## to a member-existence check when no signature is known.
-function check_typed_method_call(ctx: ref[Context], receiver_type: types.Type, method_name: str, args: span[ast.Argument], arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_typed_method_call(
+    ctx: ref[Context],
+    receiver_type: types.Type,
+    method_name: str,
+    args: span[ast.Argument],
+    arg_types: span[types.Type],
+    any_named: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     if types.is_simd_type(receiver_type):
         if method_name == "with":
             check_simd_with_call(ctx, receiver_type, args, arg_types, any_named, line, column)
@@ -8812,7 +9812,6 @@ function receiver_type_param_names(ctx: ref[Context], type_name: str) -> Option[
         return Option[span[str]].some(value = variant_type_param_names(unsafe: read(declared)))
     return Option[span[str]].none
 
-
 ## When the receiver is a `let`-bound value and the method is `editable`, flag the
 ## call.  `ref` (borrow) and `var` (mutable) receivers are fine.
 ## A receiver of an `editable` method call: the binding's name and the call's
@@ -8845,7 +9844,15 @@ function editable_receiver_assignable(scope: ref[sscope.Scope], name: str) -> bo
     return not scope_is_let(scope, name)
 
 
-function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[sscope.Scope], receiver_expr: ptr[ast.Expr], receiver_type: types.Type, method_name: str, line: ptr_uint, column: ptr_uint) -> void:
+function check_editable_receiver_immutable(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    receiver_expr: ptr[ast.Expr],
+    receiver_type: types.Type,
+    method_name: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     match resolve_method_sig(ctx, receiver_type, method_name):
         Option.some as sig:
             match sig.value.method_kind:
@@ -8856,7 +9863,11 @@ function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[sscope.
                     # `datagram`.  Record the root identifier's site for that walk.
                     match editable_receiver_root(receiver_expr):
                         Option.some as root:
-                            ctx.editable_receiver_sites.push(EditableSite(name = root.value.name, line = root.value.line, column = root.value.column))
+                            ctx.editable_receiver_sites.push(EditableSite(
+                                name = root.value.name,
+                                line = root.value.line,
+                                column = root.value.column
+                            ))
                             if not editable_receiver_assignable(scope, root.value.name):
                                 report(ctx, line, column, editable_on_immutable_message(root.value.name, method_name))
                         Option.none:
@@ -8865,7 +9876,6 @@ function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[sscope.
                     pass
         Option.none:
             pass
-
 
 struct ReceiverRoot:
     name: str
@@ -8881,7 +9891,11 @@ function editable_receiver_root(receiver_expr: ptr[ast.Expr]) -> Option[Receiver
     unsafe:
         match read(receiver_expr):
             ast.Expr.expr_identifier as id:
-                return Option[ReceiverRoot].some(value = ReceiverRoot(name = id.name, line = id.line, column = id.column))
+                return Option[ReceiverRoot].some(value = ReceiverRoot(
+                    name = id.name,
+                    line = id.line,
+                    column = id.column
+                ))
             ast.Expr.expr_member_access as ma:
                 return editable_receiver_root(ma.receiver)
             ast.Expr.expr_index_access as ix:
@@ -8894,14 +9908,22 @@ function editable_receiver_root(receiver_expr: ptr[ast.Expr]) -> Option[Receiver
 ## The struct type named by a static-method receiver: a bare local struct name
 ## (`Counter`) or an imported `alias.Struct`.  None for values, enum/variant type
 ## names (handled as static members), or unknown names.
-function static_struct_receiver_type(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[types.Type]:
+function static_struct_receiver_type(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr]
+) -> Option[types.Type]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
                 if scope_get(scope, id.name) != null:
                     return Option[types.Type].none
                 if ctx.structs.contains(id.name):
-                    return Option[types.Type].some(value = types.named_type(name = id.name, module_name = "", linkage_name = Option[str].none))
+                    return Option[types.Type].some(value = types.named_type(
+                        name = id.name,
+                        module_name = "",
+                        linkage_name = Option[str].none
+                    ))
                 return Option[types.Type].none
             ast.Expr.expr_member_access as inner:
                 match read(inner.receiver):
@@ -8913,7 +9935,11 @@ function static_struct_receiver_type(ctx: ref[Context], scope: ref[sscope.Scope]
                         let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
                             return Option[types.Type].none
                         if read(binding_ptr).structs.contains(inner.member_name):
-                            return Option[types.Type].some(value = types.imported_type(module_name = read(module_name_ptr), name = inner.member_name, args = span[types.Type]()))
+                            return Option[types.Type].some(value = types.imported_type(
+                                module_name = read(module_name_ptr),
+                                name = inner.member_name,
+                                args = span[types.Type]()
+                            ))
                         return Option[types.Type].none
                     _:
                         return Option[types.Type].none
@@ -9009,7 +10035,12 @@ function str_buffer_method_sig(args: span[types.Type], method_name: str) -> Opti
     var kind = ast.MethodKind.mk_plain
     if method_name == "clear":
         kind = ast.MethodKind.mk_editable
-    else if method_name == "assign" or method_name == "append" or method_name == "assign_format" or method_name == "append_format":
+    else if (
+        method_name == "assign"
+        or method_name == "append"
+        or method_name == "assign_format"
+        or method_name == "append_format"
+    ):
         params.push(ParamEntry(name = "text", ty = str_ty))
         kind = ast.MethodKind.mk_editable
     else if method_name == "len":
@@ -9155,7 +10186,14 @@ function resolve_constraint_method(ctx: ref[Context], var_name: str, method_name
                     match interface_method_named(methods.value, method_name):
                         Option.some as m:
                             enter_suppressed_interface_method(ctx, m.value)
-                            let result = build_fn_sig(ctx, m.value.name, m.value.method_params, m.value.return_type, m.value.method_kind, false)
+                            let result = build_fn_sig(
+                                ctx,
+                                m.value.name,
+                                m.value.method_params,
+                                m.value.return_type,
+                                m.value.method_kind,
+                                false
+                            )
                             ctx.suppressed_type_names.clear()
                             return Option[FnSig].some(value = result)
                         Option.none:
@@ -9168,7 +10206,11 @@ function resolve_constraint_method(ctx: ref[Context], var_name: str, method_name
 
 ## Any interface method with this name in a module's interface table, as a
 ## call signature.
-function interface_method_in_map(ctx: ref[Context], ifaces: map_mod.Map[str, span[ast.InterfaceMethod]], method_name: str) -> Option[FnSig]:
+function interface_method_in_map(
+    ctx: ref[Context],
+    ifaces: map_mod.Map[str, span[ast.InterfaceMethod]],
+    method_name: str
+) -> Option[FnSig]:
     var keys = ifaces.keys()
     while true:
         let key_ptr = keys.next() else:
@@ -9178,7 +10220,14 @@ function interface_method_in_map(ctx: ref[Context], ifaces: map_mod.Map[str, spa
         match interface_method_named(unsafe: read(methods_ptr), method_name):
             Option.some as m:
                 enter_suppressed_interface_method(ctx, m.value)
-                let result = build_fn_sig(ctx, m.value.name, m.value.method_params, m.value.return_type, m.value.method_kind, false)
+                let result = build_fn_sig(
+                    ctx,
+                    m.value.name,
+                    m.value.method_params,
+                    m.value.return_type,
+                    m.value.method_kind,
+                    false
+                )
                 ctx.suppressed_type_names.clear()
                 return Option[FnSig].some(value = result)
             Option.none:
@@ -9229,7 +10278,12 @@ function interface_method_named(methods: span[ast.InterfaceMethod], name: str) -
 ## A re-exported type alias follows its resolved target, exactly as
 ## `resolve_imported_type` does for a type reference (`rl.Rectangle` names the
 ## raw binding's struct, not the alias).
-function try_imported_type(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], member: str) -> Option[types.Type]:
+function try_imported_type(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr],
+    member: str
+) -> Option[types.Type]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -9243,8 +10297,18 @@ function try_imported_type(ctx: ref[Context], scope: ref[sscope.Scope], receiver
                 let alias_type = binding.type_alias_types.get(member)
                 if alias_type != null:
                     return Option[types.Type].some(value = read(ptr[types.Type]<-alias_type))
-                if binding.structs.contains(member) or binding.type_aliases.contains(member) or binding.static_member_types.contains(member) or binding.interfaces.contains(member) or binding.types.contains(member):
-                    return Option[types.Type].some(value = types.imported_type(module_name = read(module_name_ptr), name = member, args = span[types.Type]()))
+                if (
+                    binding.structs.contains(member)
+                    or binding.type_aliases.contains(member)
+                    or binding.static_member_types.contains(member)
+                    or binding.interfaces.contains(member)
+                    or binding.types.contains(member)
+                ):
+                    return Option[types.Type].some(value = types.imported_type(
+                        module_name = read(module_name_ptr),
+                        name = member,
+                        args = span[types.Type]()
+                    ))
                 return Option[types.Type].none
             _:
                 return Option[types.Type].none
@@ -9252,7 +10316,11 @@ function try_imported_type(ctx: ref[Context], scope: ref[sscope.Scope], receiver
 
 ## Resolve `alias.Type[args]` in expression position to the instantiated
 ## imported type (none when it is not an imported type).
-function specialization_imported_receiver(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[types.Type]:
+function specialization_imported_receiver(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr]
+) -> Option[types.Type]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_specialization as spec:
@@ -9266,9 +10334,16 @@ function specialization_imported_receiver(ctx: ref[Context], scope: ref[sscope.S
                                     return Option[types.Type].none
                                 let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
                                     return Option[types.Type].none
-                                if not read(binding_ptr).structs.contains(ma.member_name) and not read(binding_ptr).types.contains(ma.member_name):
+                                if (
+                                    not read(binding_ptr).structs.contains(ma.member_name)
+                                    and not read(binding_ptr).types.contains(ma.member_name)
+                                ):
                                     return Option[types.Type].none
-                                return Option[types.Type].some(value = types.imported_type(module_name = read(module_name_ptr), name = ma.member_name, args = resolve_type_arguments(ctx, spec.arguments)))
+                                return Option[types.Type].some(value = types.imported_type(
+                                    module_name = read(module_name_ptr),
+                                    name = ma.member_name,
+                                    args = resolve_type_arguments(ctx, spec.arguments)
+                                ))
                             _:
                                 return Option[types.Type].none
                     _:
@@ -9293,7 +10368,11 @@ function type_owner_module(ctx: ref[Context], name: str) -> str:
 ## `Pair[A, B](…)` — denotes an instance of that type.  Returns the instance
 ## type (module-qualified, type arguments included); none for any other
 ## receiver.  Imported receivers are handled by `specialization_imported_receiver`.
-function type_instance_receiver(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[types.Type]:
+function type_instance_receiver(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr]
+) -> Option[types.Type]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_specialization as spec:
@@ -9303,7 +10382,11 @@ function type_instance_receiver(ctx: ref[Context], scope: ref[sscope.Scope], rec
                             return Option[types.Type].none
                         if not ctx.structs.contains(id.name) and not ctx.static_member_types.contains(id.name):
                             return Option[types.Type].none
-                        return Option[types.Type].some(value = types.imported_type(module_name = type_owner_module(ctx, id.name), name = id.name, args = resolve_type_arguments(ctx, spec.arguments)))
+                        return Option[types.Type].some(value = types.imported_type(
+                            module_name = type_owner_module(ctx, id.name),
+                            name = id.name,
+                            args = resolve_type_arguments(ctx, spec.arguments)
+                        ))
                     _:
                         return Option[types.Type].none
             _:
@@ -9391,7 +10474,11 @@ function resolve_type_arguments(ctx: ref[Context], type_args: span[ast.TypeArgum
 ## Type-argument substitution for an instantiated *local* generic type from the
 ## current module's declared type parameters (`Pair[int, float](…)` -> `{A:
 ## int, B: float}`).  Empty when the name declares no type parameters.
-function local_type_substitution(ctx: ref[Context], type_name: str, args: span[types.Type]) -> map_mod.Map[str, types.Type]:
+function local_type_substitution(
+    ctx: ref[Context],
+    type_name: str,
+    args: span[types.Type]
+) -> map_mod.Map[str, types.Type]:
     var subs = map_mod.Map[str, types.Type].create()
     let params_ptr = ctx.type_param_names.get(type_name) else:
         return subs
@@ -9406,7 +10493,12 @@ function local_type_substitution(ctx: ref[Context], type_name: str, args: span[t
 
 ## Substitute an instantiated type's arguments into the declaring binding's
 ## recorded parameter names.
-function imported_type_substitution(ctx: ref[Context], binding_ptr: ptr[ModuleBinding]?, type_name: str, args: span[types.Type]) -> map_mod.Map[str, types.Type]:
+function imported_type_substitution(
+    ctx: ref[Context],
+    binding_ptr: ptr[ModuleBinding]?,
+    type_name: str,
+    args: span[types.Type]
+) -> map_mod.Map[str, types.Type]:
     var subs = map_mod.Map[str, types.Type].create()
     if binding_ptr == null:
         return subs
@@ -9447,7 +10539,12 @@ function binding_declaring_type(ctx: ref[Context], own: ptr[ModuleBinding]?, typ
 
 ## The signature of `Type.member` among the visible bindings: the receiver's own
 ## module first, then anywhere else (`std.iter` declares `extending Vec[T]:`).
-function imported_method_signature(ctx: ref[Context], own: ptr[ModuleBinding]?, type_name: str, member: str) -> ptr[FnSig]?:
+function imported_method_signature(
+    ctx: ref[Context],
+    own: ptr[ModuleBinding]?,
+    type_name: str,
+    member: str
+) -> ptr[FnSig]?:
     let key = method_key(type_name, member)
     if own != null:
         let own_sig = unsafe: read(own).method_sigs.get(key)
@@ -9543,7 +10640,15 @@ function imported_method_return_type(ctx: ref[Context], recv: types.Type, member
 ## Dispatch a member access: a bare type-name receiver of an enum/flags/variant
 ## is a static member access (validate against members/arms/methods); anything
 ## else is an instance access (struct field/method or permissive).
-function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+function resolve_member_access(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr],
+    member: str,
+    is_method_call: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     if member.len == 0:
         # An incomplete dot access (`read(p).`): the parser recovered with an
         # empty member name.  Record the receiver's type at the dot for the
@@ -9589,7 +10694,11 @@ function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], rece
                     match static_type_receiver(ctx, scope, receiver):
                         Option.some as tn:
                             check_static_member(ctx, tn.value, member, line, column)
-                            return types.named_type(name = tn.value, module_name = ctx.module_name, linkage_name = Option[str].none)
+                            return types.named_type(
+                                name = tn.value,
+                                module_name = ctx.module_name,
+                                linkage_name = Option[str].none
+                            )
                         Option.none:
                             match try_imported_type(ctx, scope, receiver, member):
                                 Option.some as imported_type:
@@ -9607,7 +10716,11 @@ function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], rece
                                     # it — the host requires unsafe
                                     # (`raw pointer dereference requires unsafe`).
                                     # `own`/`ref` receivers auto-deref without.
-                                    if types.is_raw_pointer(raw_recv) and not is_method_call and not in_generic_body(ctx):
+                                    if (
+                                        types.is_raw_pointer(raw_recv)
+                                        and not is_method_call
+                                        and not in_generic_body(ctx)
+                                    ):
                                         if ctx.unsafe_depth == 0:
                                             report(ctx, line, column, "raw pointer dereference requires unsafe")
                                         else:
@@ -9634,7 +10747,11 @@ function receiver_is_text_chain(ep: ptr[ast.Expr]) -> bool:
 ## The inferred receiver type of the member access whose member name starts at
 ## `line`:`column` (1-based), when the receiver is not a plain name/field chain.
 ## None for the chains `receiver_path_type` already resolves.
-public function member_receiver_type_at(analysis: ref[Analysis], line: ptr_uint, column: ptr_uint) -> Option[types.Type]:
+public function member_receiver_type_at(
+    analysis: ref[Analysis],
+    line: ptr_uint,
+    column: ptr_uint
+) -> Option[types.Type]:
     let ty_ptr = unsafe: read(analysis).member_receiver_types.get(binding_key(line, column))
     if ty_ptr == null:
         return Option[types.Type].none
@@ -9644,7 +10761,14 @@ public function member_receiver_type_at(analysis: ref[Analysis], line: ptr_uint,
 ## Resolve `alias.Type.member` where `alias` is an imported module and `Type` is
 ## one of its exported enums/flags/variants: validate that `member` is a member
 ## of that type, flagging it otherwise.  None for anything else.
-function imported_static_member(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], member: str, line: ptr_uint, column: ptr_uint) -> Option[types.Type]:
+function imported_static_member(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr],
+    member: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> Option[types.Type]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_member_access as inner:
@@ -9660,7 +10784,11 @@ function imported_static_member(ctx: ref[Context], scope: ref[sscope.Scope], rec
                             return Option[types.Type].none
                         if not binding_has_member(read(binding_ptr), inner.member_name, member):
                             report(ctx, line, column, unknown_member_message("member", inner.member_name, member))
-                        return Option[types.Type].some(value = types.imported_type(module_name = read(module_name_ptr), name = inner.member_name, args = span[types.Type]()))
+                        return Option[types.Type].some(value = types.imported_type(
+                            module_name = read(module_name_ptr),
+                            name = inner.member_name,
+                            args = span[types.Type]()
+                        ))
                     _:
                         return Option[types.Type].none
             _:
@@ -9696,7 +10824,12 @@ function check_static_member(ctx: ref[Context], type_name: str, member: str, lin
 ## builtin vec/mat/quat type (not shadowed by a local value), validate each
 ## named-field argument and return the constructed type.  Returns none for
 ## ordinary function calls.
-function try_construction(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument]) -> Option[types.Type]:
+function try_construction(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    callee: ptr[ast.Expr],
+    args: span[ast.Argument]
+) -> Option[types.Type]:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
@@ -9714,12 +10847,24 @@ function try_construction(ctx: ref[Context], scope: ref[sscope.Scope], callee: p
                             return Option[types.Type].some(value = read(builtin))
                     return Option[types.Type].none
                 check_construction(ctx, scope, id.name, read(fieldsp), args, id.line, id.column)
-                return Option[types.Type].some(value = types.named_type(name = id.name, module_name = "", linkage_name = Option[str].none))
+                return Option[types.Type].some(value = types.named_type(
+                    name = id.name,
+                    module_name = "",
+                    linkage_name = Option[str].none
+                ))
             _:
                 return Option[types.Type].none
 
 
-function check_construction(ctx: ref[Context], scope: ref[sscope.Scope], struct_name: str, fields: span[FieldEntry], args: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> void:
+function check_construction(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    struct_name: str,
+    fields: span[FieldEntry],
+    args: span[ast.Argument],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     var unnamed = false
     var i: ptr_uint = 0
     while i < args.len:
@@ -9790,14 +10935,30 @@ function has_field(fields: span[FieldEntry], name: str) -> bool:
 ## `with`; anything else is reported ("unknown field" for a read, "unknown
 ## method" when the member is the callee of a call).  Field reads yield the
 ## field type; everything else (methods, non-struct receivers) is permissive.
-function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_member(
+    ctx: ref[Context],
+    receiver: types.Type,
+    member: str,
+    is_method_call: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     match receiver:
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
             return check_named_member(ctx, n_np.module_name, n_np.name, member, is_method_call, line, column)
         types.Type.ty_imported as im:
             let im_bp = unsafe: read(im.payload)
-            return check_imported_receiver_member(ctx, im_bp.module_name, im_bp.name, im_bp.args, member, is_method_call, line, column)
+            return check_imported_receiver_member(
+                ctx,
+                im_bp.module_name,
+                im_bp.name,
+                im_bp.args,
+                member,
+                is_method_call,
+                line,
+                column
+            )
         types.Type.ty_variant_arm_payload as ap:
             # A bound match arm (`Option.some as p`) is the arm's payload struct
             # — the host's `Types::VariantArmPayload` — so `p.value` reads the
@@ -9862,14 +11023,26 @@ function member_call_result_type(field_ty: types.Type, is_method_call: bool) -> 
             return field_ty
 
 
-function check_named_member(ctx: ref[Context], module_name: str, name: str, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_named_member(
+    ctx: ref[Context],
+    module_name: str,
+    name: str,
+    member: str,
+    is_method_call: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     # A struct declared in another module reaches the analyzer as a
     # `ty_named` with that module's name (an exported field's type);
     # resolve its members through the module binding, as `ty_imported`
     # does, instead of looking the name up locally.  Anything the
     # binding does not declare as a struct/union (an enum, an opaque
     # type) keeps the permissive error path below.
-    if module_name.len > 0 and not module_name.equal(ctx.module_name) and binding_has_struct_type(ctx, module_name, name):
+    if module_name.len > 0 and not module_name.equal(ctx.module_name) and binding_has_struct_type(
+        ctx,
+        module_name,
+        name
+    ):
         return check_imported_member(ctx, module_name, name, member, is_method_call, line, column)
     let fieldsp = ctx.structs.get(name)
     if fieldsp == null:
@@ -9903,7 +11076,16 @@ function check_named_member(ctx: ref[Context], module_name: str, name: str, memb
     return types.Type.ty_error
 
 
-function check_imported_receiver_member(ctx: ref[Context], module_name: str, name: str, args: span[types.Type], member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_imported_receiver_member(
+    ctx: ref[Context],
+    module_name: str,
+    name: str,
+    args: span[types.Type],
+    member: str,
+    is_method_call: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     # An instantiated *local* generic struct (`Pair[int, float](…)`)
     # carries the current module's name; its fields read from the local
     # struct table with the instance's arguments substituted, exactly as
@@ -9959,7 +11141,15 @@ function check_primitive_member(name: str, member: str) -> types.Type:
     return types.Type.ty_error
 
 
-function check_generic_member(ctx: ref[Context], name: str, args: span[types.Type], member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_generic_member(
+    ctx: ref[Context],
+    name: str,
+    args: span[types.Type],
+    member: str,
+    is_method_call: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     if name == "Task" and args.len >= 1:
         # The host's `Types::Task#fields` (`types.rb:590-632`): `frame`
         # is `ptr[void]`, `ready`/`release`/`take_result`/`cancel` are
@@ -10018,7 +11208,14 @@ function positional_tuple_index(member: str) -> int:
 ## the methods of its `implements` constraints.  When every constraint interface
 ## resolves, a member not declared by any of them is reported; if a constraint is
 ## unresolvable, or `T` is unconstrained, access stays permissive.
-function check_type_var_member(ctx: ref[Context], var_name: str, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_type_var_member(
+    ctx: ref[Context],
+    var_name: str,
+    member: str,
+    is_method_call: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     let constraints_ptr = ctx.type_params.get(var_name)
     if constraints_ptr == null:
         return types.Type.ty_error
@@ -10054,11 +11251,37 @@ function check_type_var_member(ctx: ref[Context], var_name: str, member: str, is
 ## its (exporter-resolved) type; a public method or the builtin `with` is
 ## permissive; anything else is reported as unknown.  Permissive if the module is
 ## no longer bound.
-function check_imported_member(ctx: ref[Context], module_name: str, type_name: str, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
-    return check_imported_member_args(ctx, module_name, type_name, member, span[types.Type](), is_method_call, line, column)
+function check_imported_member(
+    ctx: ref[Context],
+    module_name: str,
+    type_name: str,
+    member: str,
+    is_method_call: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
+    return check_imported_member_args(
+        ctx,
+        module_name,
+        type_name,
+        member,
+        span[types.Type](),
+        is_method_call,
+        line,
+        column
+    )
 
 
-function check_imported_member_args(ctx: ref[Context], module_name: str, type_name: str, member: str, args: span[types.Type], is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+function check_imported_member_args(
+    ctx: ref[Context],
+    module_name: str,
+    type_name: str,
+    member: str,
+    args: span[types.Type],
+    is_method_call: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
     return check_imported_member_depth(ctx, module_name, type_name, member, args, is_method_call, line, column, 0)
 
 
@@ -10075,7 +11298,17 @@ function binding_has_struct_type(ctx: ref[Context], module_name: str, type_name:
     )
 
 
-function check_imported_member_depth(ctx: ref[Context], module_name: str, type_name: str, member: str, args: span[types.Type], is_method_call: bool, line: ptr_uint, column: ptr_uint, depth: int) -> types.Type:
+function check_imported_member_depth(
+    ctx: ref[Context],
+    module_name: str,
+    type_name: str,
+    member: str,
+    args: span[types.Type],
+    is_method_call: bool,
+    line: ptr_uint,
+    column: ptr_uint,
+    depth: int
+) -> types.Type:
     if depth > 10:
         return types.Type.ty_error
     let binding_ptr = find_binding(ctx, module_name) else:
@@ -10090,7 +11323,10 @@ function check_imported_member_depth(ctx: ref[Context], module_name: str, type_n
             while i < fields.len:
                 let fe = read(fields.data + i)
                 if fe.name == member:
-                    return member_call_result_type(substituted_field_type(binding, type_name, args, fe.ty), is_method_call)
+                    return member_call_result_type(
+                        substituted_field_type(binding, type_name, args, fe.ty),
+                        is_method_call
+                    )
                 i += 1
 
         let union_ptr = binding.unions.get(type_name)
@@ -10100,7 +11336,10 @@ function check_imported_member_depth(ctx: ref[Context], module_name: str, type_n
             while ui < ufields.len:
                 let ufe = read(ufields.data + ui)
                 if ufe.name == member:
-                    return member_call_result_type(substituted_field_type(binding, type_name, args, ufe.ty), is_method_call)
+                    return member_call_result_type(
+                        substituted_field_type(binding, type_name, args, ufe.ty),
+                        is_method_call
+                    )
                 ui += 1
 
         # A private type reached through a public signature (a function whose
@@ -10112,7 +11351,10 @@ function check_imported_member_depth(ctx: ref[Context], module_name: str, type_n
             while pi < fields.len:
                 let fe = read(fields.data + pi)
                 if fe.name == member:
-                    return member_call_result_type(substituted_field_type(binding, type_name, args, fe.ty), is_method_call)
+                    return member_call_result_type(
+                        substituted_field_type(binding, type_name, args, fe.ty),
+                        is_method_call
+                    )
                 pi += 1
 
         let private_union_ptr = binding.private_unions.get(type_name)
@@ -10122,7 +11364,10 @@ function check_imported_member_depth(ctx: ref[Context], module_name: str, type_n
             while pui < ufields.len:
                 let ufe = read(ufields.data + pui)
                 if ufe.name == member:
-                    return member_call_result_type(substituted_field_type(binding, type_name, args, ufe.ty), is_method_call)
+                    return member_call_result_type(
+                        substituted_field_type(binding, type_name, args, ufe.ty),
+                        is_method_call
+                    )
                 pui += 1
 
         if member == "with" or binding_has_member(binding, type_name, member):
@@ -10139,7 +11384,17 @@ function check_imported_member_depth(ctx: ref[Context], module_name: str, type_n
     # external enum whose members live in the source external module).
     match follow_type_alias(ctx, binding_ptr, type_name):
         Option.some as source_info:
-            return check_imported_member_depth(ctx, source_info.value.module_name, source_info.value.type_name, member, span[types.Type](), is_method_call, line, column, depth + 1)
+            return check_imported_member_depth(
+                ctx,
+                source_info.value.module_name,
+                source_info.value.type_name,
+                member,
+                span[types.Type](),
+                is_method_call,
+                line,
+                column,
+                depth + 1
+            )
         Option.none:
             pass
 
@@ -10163,7 +11418,12 @@ function check_imported_member_depth(ctx: ref[Context], module_name: str, type_n
 ## (`RemovedEntry[K, V].value` -> the receiver's `V`).  The exported field types
 ## carry the declaring type's parameters as `ty_var`, so an unsubstituted read
 ## (`entry.value` -> `V`) would leave the member unresolved.
-function substituted_field_type(binding: ModuleBinding, type_name: str, args: span[types.Type], field_ty: types.Type) -> types.Type:
+function substituted_field_type(
+    binding: ModuleBinding,
+    type_name: str,
+    args: span[types.Type],
+    field_ty: types.Type
+) -> types.Type:
     if args.len == 0:
         return field_ty
     let params_ptr = binding.type_param_names.get(type_name) else:
@@ -10215,6 +11475,7 @@ struct AliasSource:
     module_name: str
     type_name: str
 
+
 function follow_type_alias(ctx: ref[Context], binding_ptr: ptr[ModuleBinding], type_name: str) -> Option[AliasSource]:
     unsafe:
         let resolved_ptr = read(binding_ptr).type_alias_types.get(type_name) else:
@@ -10224,7 +11485,10 @@ function follow_type_alias(ctx: ref[Context], binding_ptr: ptr[ModuleBinding], t
                 let im_bp = unsafe: read(im.payload)
                 if im_bp.module_name == "":
                     return Option[AliasSource].none
-                return Option[AliasSource].some(value = AliasSource(module_name = im_bp.module_name, type_name = im_bp.name))
+                return Option[AliasSource].some(value = AliasSource(
+                    module_name = im_bp.module_name,
+                    type_name = im_bp.name
+                ))
             _:
                 return Option[AliasSource].none
 
@@ -10233,7 +11497,14 @@ function follow_type_alias(ctx: ref[Context], binding_ptr: ptr[ModuleBinding], t
 ## size_of, align_of).  Returns `none` for anything else, so the call falls
 ## through to regular function/method dispatch.  `read(ptr)` and `ptr_of(x)` are
 ## side-effectful: they report an unsafe-context requirement when applicable.
-function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_name: str, args: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> Option[types.Type]:
+function try_builtin_call(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    callee_name: str,
+    args: span[ast.Argument],
+    line: ptr_uint,
+    column: ptr_uint
+) -> Option[types.Type]:
     if callee_name == "read":
         if args.len != 1:
             report(ctx, line, column, diag.read_arity_message(args.len))
@@ -10270,7 +11541,10 @@ function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_na
         if callee_name == "ptr_of":
             at = unwrap_ref(at)
         let kind = if callee_name == "ptr_of": "ptr" else: if callee_name == "ref_of": "ref" else: "const_ptr"
-        return Option[types.Type].some(value = types.generic_type(name = string.String.from_str(kind).as_str(), args = alloc_one_type_arg(at)))
+        return Option[types.Type].some(value = types.generic_type(
+            name = string.String.from_str(kind).as_str(),
+            args = alloc_one_type_arg(at)
+        ))
     if callee_name == "size_of" or callee_name == "align_of":
         if args.len != 1:
             return Option[types.Type].none
@@ -10306,7 +11580,17 @@ function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_na
             return Option[types.Type].none
         let left_ty = infer_expr(ctx, scope, unsafe: read(args.data + 0).arg_value)
         let right_ty = infer_expr(ctx, scope, unsafe: read(args.data + 1).arg_value)
-        if incompatible_value_with_consts(left_ty, right_ty, unsafe: read(args.data + 1).arg_value, ref_of(ctx.const_values)) and incompatible_value_with_consts(right_ty, left_ty, unsafe: read(args.data + 0).arg_value, ref_of(ctx.const_values)):
+        if incompatible_value_with_consts(
+            left_ty,
+            right_ty,
+            unsafe: read(args.data + 1).arg_value,
+            ref_of(ctx.const_values)
+        ) and incompatible_value_with_consts(
+            right_ty,
+            left_ty,
+            unsafe: read(args.data + 0).arg_value,
+            ref_of(ctx.const_values)
+        ):
             var cmp_msg = string.String.from_str(callee_name)
             cmp_msg.append(" operands are not comparable")
             report(ctx, line, column, cmp_msg.as_str())
@@ -10332,7 +11616,14 @@ function task_ready_field_type() -> types.Type:
     params.push(task_frame_field_type())
     var names = vec.Vec[str].create()
     names.push("frame")
-    return types.function_type(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("bool")), variadic = false, is_proc = false, param_names = names.as_span())
+    return types.function_type(
+        name = "",
+        params = params.as_span(),
+        return_type = types.alloc_type(types.primitive("bool")),
+        variadic = false,
+        is_proc = false,
+        param_names = names.as_span()
+    )
 
 
 function task_void_field_type() -> types.Type:
@@ -10340,7 +11631,14 @@ function task_void_field_type() -> types.Type:
     params.push(task_frame_field_type())
     var names = vec.Vec[str].create()
     names.push("frame")
-    return types.function_type(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
+    return types.function_type(
+        name = "",
+        params = params.as_span(),
+        return_type = types.alloc_type(types.primitive("void")),
+        variadic = false,
+        is_proc = false,
+        param_names = names.as_span()
+    )
 
 
 function task_take_result_field_type(result_ty: types.Type) -> types.Type:
@@ -10348,7 +11646,14 @@ function task_take_result_field_type(result_ty: types.Type) -> types.Type:
     params.push(task_frame_field_type())
     var names = vec.Vec[str].create()
     names.push("frame")
-    return types.function_type(name = "", params = params.as_span(), return_type = types.alloc_type(result_ty), variadic = false, is_proc = false, param_names = names.as_span())
+    return types.function_type(
+        name = "",
+        params = params.as_span(),
+        return_type = types.alloc_type(result_ty),
+        variadic = false,
+        is_proc = false,
+        param_names = names.as_span()
+    )
 
 
 function task_set_waiter_field_type() -> types.Type:
@@ -10360,13 +11665,27 @@ function task_set_waiter_field_type() -> types.Type:
     names.push("frame")
     names.push("waiter_frame")
     names.push("waiter")
-    return types.function_type(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = names.as_span())
+    return types.function_type(
+        name = "",
+        params = params.as_span(),
+        return_type = types.alloc_type(types.primitive("void")),
+        variadic = false,
+        is_proc = false,
+        param_names = names.as_span()
+    )
 
 
 ## Check a call to a top-level function by identifier and yield its result type.
 ## For a generic function, type arguments are inferred from the call, validated
 ## against their constraints, and substituted into the return type.
-function check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument], arg_types: span[types.Type], any_named: bool) -> types.Type:
+function check_call(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    callee: ptr[ast.Expr],
+    args: span[ast.Argument],
+    arg_types: span[types.Type],
+    any_named: bool
+) -> types.Type:
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
@@ -10386,7 +11705,11 @@ function check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast
                     # value (e.g. a proc-typed `var`) and the compile-time handle
                     # builtins resolve permissively; anything else is an unknown
                     # callable.
-                    if ctx.value_names.contains(id.name) or ctx.suppressed_type_names.contains(id.name) or is_callable_builtin_name(id.name):
+                    if (
+                        ctx.value_names.contains(id.name)
+                        or ctx.suppressed_type_names.contains(id.name)
+                        or is_callable_builtin_name(id.name)
+                    ):
                         return types.Type.ty_error
                     # A source-only check (no loader-backed import bindings) is
                     # the permissive diagnostic helper path; only a real compile
@@ -10403,7 +11726,13 @@ function check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast
                 check_signature_call(ctx, id.name, sig, args, arg_types, any_named, id.line, id.column)
                 let dpm_ptr = ctx.directional_param_modes.get(id.name)
                 if dpm_ptr != null:
-                    record_directional_ffi_sites(ctx, callee, id.name, ptr[map_mod.Map[ptr_uint, DirectionalParamInfo]]<-dpm_ptr, args)
+                    record_directional_ffi_sites(
+                        ctx,
+                        callee,
+                        id.name,
+                        ptr[map_mod.Map[ptr_uint, DirectionalParamInfo]]<-dpm_ptr,
+                        args
+                    )
                 let tps_ptr = ctx.function_type_params.get(id.name)
                 if tps_ptr != null:
                     var subs = map_mod.Map[str, types.Type].create()
@@ -10421,7 +11750,16 @@ function check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast
 ## `args` is the original call argument expression list, used to gate
 ## narrowing-int checks on numeric literal sources (mirroring Ruby's
 ## exact_compile_time_numeric_compatibility?).
-function check_signature_call(ctx: ref[Context], display_name: str, sig: FnSig, args: span[ast.Argument], arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> void:
+function check_signature_call(
+    ctx: ref[Context],
+    display_name: str,
+    sig: FnSig,
+    args: span[ast.Argument],
+    arg_types: span[types.Type],
+    any_named: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     if not any_named:
         record_mutable_lvalue_argument_sites(ctx, sig, args, arg_types)
     if sig.is_variadic:
@@ -10443,8 +11781,16 @@ function check_signature_call(ctx: ref[Context], display_name: str, sig: FnSig, 
                 arg_expr = read(args.data + i).arg_value
             var incompatible = false
             if sig.is_extern:
-                if not (is_imported_constant_member(ctx, arg_expr) and types.is_numeric(pe.ty) and types.is_numeric(atype)):
-                    incompatible = incompatible_external_value_with_consts(pe.ty, atype, arg_expr, ref_of(ctx.const_values))
+                if not (is_imported_constant_member(
+                    ctx,
+                    arg_expr
+                ) and types.is_numeric(pe.ty) and types.is_numeric(atype)):
+                    incompatible = incompatible_external_value_with_consts(
+                        pe.ty,
+                        atype,
+                        arg_expr,
+                        ref_of(ctx.const_values)
+                    )
             else:
                 incompatible = incompatible_value_with_consts(pe.ty, atype, arg_expr, ref_of(ctx.const_values))
             if incompatible:
@@ -10456,7 +11802,12 @@ function check_signature_call(ctx: ref[Context], display_name: str, sig: FnSig, 
 ## `str_buffer` argument passed where a `span` parameter is expected is a
 ## mutable lvalue (the callee may write through the span), recorded for the
 ## linter's prefer-let (the host's `mutable_lvalue_argument_identifier_ids`).
-function record_mutable_lvalue_argument_sites(ctx: ref[Context], sig: FnSig, args: span[ast.Argument], arg_types: span[types.Type]) -> void:
+function record_mutable_lvalue_argument_sites(
+    ctx: ref[Context],
+    sig: FnSig,
+    args: span[ast.Argument],
+    arg_types: span[types.Type]
+) -> void:
     var i: ptr_uint = 0
     while i < arg_types.len and i < sig.params.len and i < args.len:
         unsafe:
@@ -10466,7 +11817,11 @@ function record_mutable_lvalue_argument_sites(ctx: ref[Context], sig: FnSig, arg
             match read(argument.arg_value):
                 ast.Expr.expr_identifier as aid:
                     if mutable_lvalue_span_argument(pe.ty, atype):
-                        ctx.mutable_lvalue_sites.push(EditableSite(name = aid.name, line = aid.line, column = aid.column))
+                        ctx.mutable_lvalue_sites.push(EditableSite(
+                            name = aid.name,
+                            line = aid.line,
+                            column = aid.column
+                        ))
                 _:
                     pass
         i += 1
@@ -10546,7 +11901,13 @@ function record_directional_param_modes(ctx: ref[Context], name: str, params: sp
 ## re-states the parameter's direction: `in x`/`out x`/`inout x`,
 ## `ptr_of(x)`/`ref_of(x)`, or a pointer-like cast of an lvalue (the host's
 ## `legacy_directional_argument_expression?`).
-function record_directional_ffi_sites(ctx: ref[Context], callee: ptr[ast.Expr], function_name: str, modes: ptr[map_mod.Map[ptr_uint, DirectionalParamInfo]], args: span[ast.Argument]) -> void:
+function record_directional_ffi_sites(
+    ctx: ref[Context],
+    callee: ptr[ast.Expr],
+    function_name: str,
+    modes: ptr[map_mod.Map[ptr_uint, DirectionalParamInfo]],
+    args: span[ast.Argument]
+) -> void:
     var i: ptr_uint = 0
     unsafe:
         while i < args.len:
@@ -10612,19 +11973,25 @@ function lvalue_expr(expr: ptr[ast.Expr]) -> bool:
                 return false
 
 
-function record_mutating_args_for_indices(ctx: ref[Context], indices: ptr[map_mod.Map[ptr_uint, bool]], args: span[ast.Argument]) -> void:
+function record_mutating_args_for_indices(
+    ctx: ref[Context],
+    indices: ptr[map_mod.Map[ptr_uint, bool]],
+    args: span[ast.Argument]
+) -> void:
     var i: ptr_uint = 0
     while i < args.len:
         unsafe:
             if read(indices).contains(i):
                 match read(read(args.data + i).arg_value):
                     ast.Expr.expr_identifier as arg_id:
-                        ctx.mutating_argument_sites.push(EditableSite(name = arg_id.name, line = arg_id.line, column = arg_id.column))
+                        ctx.mutating_argument_sites.push(EditableSite(
+                            name = arg_id.name,
+                            line = arg_id.line,
+                            column = arg_id.column
+                        ))
                     _:
                         pass
         i += 1
-
-
 
 # =============================================================================
 #  Diagnostic messages

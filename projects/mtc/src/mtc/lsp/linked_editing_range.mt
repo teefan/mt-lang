@@ -80,7 +80,14 @@ public function handle_linked_editing_range(
                     if not first:
                         ranges_json.append(",")
                     first = false
-                    append_range_json(ref_of(ranges_json), occ.line, occ.column, occ.length, source, ws.position_encoding_utf16)
+                    append_range_json(
+                        ref_of(ranges_json),
+                        occ.line,
+                        occ.column,
+                        occ.length,
+                        source,
+                        ws.position_encoding_utf16
+                    )
                 oi += 1
 
             if first:
@@ -99,7 +106,14 @@ public function handle_linked_editing_range(
 
 
 ## Append a single range object `{"start":{"line":...,"character":...},"end":...}`.
-function append_range_json(output: ref[string.String], line: ptr_uint, column: ptr_uint, length: ptr_uint, source: str, utf16: bool) -> void:
+function append_range_json(
+    output: ref[string.String],
+    line: ptr_uint,
+    column: ptr_uint,
+    length: ptr_uint,
+    source: str,
+    utf16: bool
+) -> void:
     var start_col = column - 1
     var end_col = start_col + length
     if utf16:

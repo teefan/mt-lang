@@ -112,8 +112,6 @@ function opens_block(stripped: str) -> bool:
         first_word.equal("defer") or first_word.equal("when")
 
 
-
-
 function strip_indent(line_text: str) -> str:
     let indent = utils.indent_of(line_text)
     return line_text.slice(indent, line_text.len - indent)

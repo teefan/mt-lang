@@ -218,7 +218,11 @@ public function debug_command(args: span[str]) -> int:
     defer: owned_roots.release()
     var stripped = vec.Vec[str].create()
     defer: stripped.release()
-    main.split_include_pairs(unsafe: span[str](data = args.data + 1, len = args.len - 1), ref_of(roots), ref_of(stripped))
+    main.split_include_pairs(
+        unsafe: span[str](data = args.data + 1, len = args.len - 1),
+        ref_of(roots),
+        ref_of(stripped)
+    )
     if stripped.is_empty():
         main.eprint_line("missing source file path")
         cli_help.print_usage(true)
@@ -248,14 +252,25 @@ public function debug_command(args: span[str]) -> int:
         return 1
     let path = unsafe: read(path_ptr)
 
-    if main.apply_package_resolution(path, resolution.locked, resolution.frozen, ref_of(roots), ref_of(owned_roots)) != 0:
+    if main.apply_package_resolution(
+        path,
+        resolution.locked,
+        resolution.frozen,
+        ref_of(roots),
+        ref_of(owned_roots)
+    ) != 0:
         return 1
 
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
     defer: entry_path_owner.release()
     defer: source_root_owner.release()
-    let effective = main.effective_source_path(path, ref_of(roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
+    let effective = main.effective_source_path(
+        path,
+        ref_of(roots),
+        ref_of(entry_path_owner),
+        ref_of(source_root_owner)
+    ) else:
         return 1
     if not fs.exists(effective):
         var missing = string.String.create()

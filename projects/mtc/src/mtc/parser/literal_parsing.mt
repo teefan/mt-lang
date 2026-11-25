@@ -10,7 +10,6 @@ import std.str
 import std.vec as vec
 import std.mem.heap as heap_mod
 
-
 const ZERO_BYTE_V: ubyte = '0'
 const LOWER_X_V: ubyte = 'x'
 const UPPER_X_V: ubyte = 'X'
@@ -161,7 +160,13 @@ public function parse_string_content(lexeme: str, is_cstring: bool) -> str:
 function heredoc_prefix_length(lexeme: str) -> ptr_uint:
     if lexeme.len >= 4 and lexeme.byte_at(0) == '<' and lexeme.byte_at(1) == '<' and lexeme.byte_at(2) == '-':
         return 3
-    if lexeme.len >= 5 and (lexeme.byte_at(0) == 'c' or lexeme.byte_at(0) == 'f') and lexeme.byte_at(1) == '<' and lexeme.byte_at(2) == '<' and lexeme.byte_at(3) == '-':
+    if (
+        lexeme.len >= 5
+        and (lexeme.byte_at(0) == 'c' or lexeme.byte_at(0) == 'f')
+        and lexeme.byte_at(1) == '<'
+        and lexeme.byte_at(2) == '<'
+        and lexeme.byte_at(3) == '-'
+    ):
         return 4
     return 0
 

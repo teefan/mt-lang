@@ -10,14 +10,12 @@ import std.string as string
 import std.time
 import std.vec as vec
 
-
 ## A profile phase: its name (borrowed — phase names are literals or
 ## analysis-owned strings) with accumulated milliseconds and call count.
 public struct Profile:
     names: vec.Vec[str]
     totals: vec.Vec[double]
     counts: vec.Vec[ptr_uint]
-
 
 ## One `rule.*` phase as the host's `rule_breakdown` renders it: the rule code
 ## (`rule.prefer_let_else` → `prefer-let-else`), its call count, total, average

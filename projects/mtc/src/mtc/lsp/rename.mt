@@ -67,7 +67,14 @@ public function handle_rename(
     if scope_mod.local_binding_line(ref_of(bindings), target.text, target.line).is_some():
         var filtered = filter_occurrences(source, target.text, target.line, ref_of(bindings))
         defer: filtered.release()
-        var local_json = build_rename_edits_json(source, target.text, uri, new_name, ref_of(filtered), ws.position_encoding_utf16)
+        var local_json = build_rename_edits_json(
+            source,
+            target.text,
+            uri,
+            new_name,
+            ref_of(filtered),
+            ws.position_encoding_utf16
+        )
         proto.write_response_raw(id, local_json.as_str())
         local_json.release()
         return
@@ -76,7 +83,14 @@ public function handle_rename(
     # documents, then the lexical same-file fallback.
     match resolve_rename_identity(ws, uri, line, character):
         Option.some as identity:
-            var identity_json = build_identity_edits_json(ws, file_path.as_str(), uri, target.text, new_name, identity.value)
+            var identity_json = build_identity_edits_json(
+                ws,
+                file_path.as_str(),
+                uri,
+                target.text,
+                new_name,
+                identity.value
+            )
             if identity_json.len() > 0:
                 proto.write_response_raw(id, identity_json.as_str())
                 identity_json.release()
@@ -89,7 +103,14 @@ public function handle_rename(
 
     var filtered = filter_occurrences(source, target.text, target.line, ref_of(bindings))
     defer: filtered.release()
-    var edits_json = build_rename_edits_json(source, target.text, uri, new_name, ref_of(filtered), ws.position_encoding_utf16)
+    var edits_json = build_rename_edits_json(
+        source,
+        target.text,
+        uri,
+        new_name,
+        ref_of(filtered),
+        ws.position_encoding_utf16
+    )
     proto.write_response_raw(id, edits_json.as_str())
     edits_json.release()
 
@@ -127,7 +148,11 @@ function resolve_rename_identity(
             Option.none:
                 path.append(uri)
     payload.target_uri.release()
-    return Option[RenameIdentity].some(value = RenameIdentity(path = path, line = payload.line, column = payload.column))
+    return Option[RenameIdentity].some(value = RenameIdentity(
+        path = path,
+        line = payload.line,
+        column = payload.column
+    ))
 
 
 ## The `{"changes":{…}}` edit set: every occurrence of `name` in the seed
@@ -301,7 +326,12 @@ public function handle_prepare_rename(
 
 
 ## Filter cursor occurrences to only those in scope.
-function filter_occurrences(source: str, name: str, target_line: ptr_uint, bindings: ref[vec.Vec[scope_mod.Binding]]) -> vec.Vec[cursor.CursorToken]:
+function filter_occurrences(
+    source: str,
+    name: str,
+    target_line: ptr_uint,
+    bindings: ref[vec.Vec[scope_mod.Binding]]
+) -> vec.Vec[cursor.CursorToken]:
     var all = cursor.identifier_occurrences(source, name)
     var filtered = vec.Vec[cursor.CursorToken].create()
 
@@ -311,7 +341,12 @@ function filter_occurrences(source: str, name: str, target_line: ptr_uint, bindi
             break
         let occ = unsafe: read(op)
         if scope_mod.is_in_same_scope(bindings, name, target_line, occ.line):
-            filtered.push(cursor.CursorToken(text = occ.text, line = occ.line, column = occ.column, length = occ.length))
+            filtered.push(cursor.CursorToken(
+                text = occ.text,
+                line = occ.line,
+                column = occ.column,
+                length = occ.length
+            ))
         oi += 1
 
     all.release()
@@ -319,7 +354,14 @@ function filter_occurrences(source: str, name: str, target_line: ptr_uint, bindi
 
 
 ## Build a WorkspaceEdit JSON with a TextEdit for each occurrence.
-function build_rename_edits_json(source: str, old_name: str, uri: str, new_name: str, occurrences: ref[vec.Vec[cursor.CursorToken]], utf16: bool) -> string.String:
+function build_rename_edits_json(
+    source: str,
+    old_name: str,
+    uri: str,
+    new_name: str,
+    occurrences: ref[vec.Vec[cursor.CursorToken]],
+    utf16: bool
+) -> string.String:
     var result = string.String.create()
     result.append("{\"changes\":{\"")
     append_escaped(ref_of(result), uri)
@@ -344,7 +386,13 @@ function build_rename_edits_json(source: str, old_name: str, uri: str, new_name:
 ## One `TextEdit` object for an occurrence.  `utf16` is always true when the
 ## caller is an LSP request; the parameter keeps the same-file and identity
 ## paths on one conversion boundary.
-function append_edit_span(result: ref[string.String], occ: cursor.CursorToken, new_name: str, lines: ref[vec.Vec[str]], utf16: bool) -> void:
+function append_edit_span(
+    result: ref[string.String],
+    occ: cursor.CursorToken,
+    new_name: str,
+    lines: ref[vec.Vec[str]],
+    utf16: bool
+) -> void:
     let lz = if occ.line > 0: occ.line - 1 else: 0z
     var col = if occ.column > 0: occ.column - 1 else: 0z
     var end_col = col + occ.length

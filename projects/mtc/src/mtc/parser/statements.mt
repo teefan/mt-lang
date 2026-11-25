@@ -261,7 +261,13 @@ function parse_if_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
             elif_cn = read(elif_tok).column
         condition = expressions.parse_expr(s)
         var elif_body = parse_if_branch_body(s)
-        var elif_branch = ast.IfBranch(condition = condition, body = elif_body, line = elif_ln, column = elif_cn, length = 2)
+        var elif_branch = ast.IfBranch(
+            condition = condition,
+            body = elif_body,
+            line = elif_ln,
+            column = elif_cn,
+            length = 2
+        )
         branches.push(elif_branch)
     if pstate.check(s, tk.TokenKind.tk_else):
         let else_tok = pstate.peek(s) else:
@@ -349,7 +355,14 @@ function parse_while_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
         body = parse_statement(s)
         parser.consume_end_of_statement(s)
     var node = parser.alloc_stmt(s)
-    read(node) = ast.Stmt.stmt_while(condition = condition, body = body, is_inline = is_inline, line = ln, column = cn, length = 5)
+    read(node) = ast.Stmt.stmt_while(
+        condition = condition,
+        body = body,
+        is_inline = is_inline,
+        line = ln,
+        column = cn,
+        length = 5
+    )
     return node
 
 
@@ -419,7 +432,14 @@ function parse_match_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
                 break
         var arms_span = arms.as_span()
         var node = parser.alloc_expr(s)
-        read(node) = ast.Expr.expr_match(scrutinee = scrutinee, arms = arms_span, line = m_ln, column = m_cn, length = 5, desugared_from_is = false)
+        read(node) = ast.Expr.expr_match(
+            scrutinee = scrutinee,
+            arms = arms_span,
+            line = m_ln,
+            column = m_cn,
+            length = 5,
+            desugared_from_is = false
+        )
         var stmt = parser.alloc_stmt(s)
         unsafe:
             read(stmt) = ast.Stmt.stmt_expression(expression = node, line = m_ln)
@@ -437,7 +457,13 @@ function parse_match_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     pstate.consume(s, tk.TokenKind.dedent, c"expected end of match body")
     var arms_span = arms.as_span()
     var node = parser.alloc_stmt(s)
-    read(node) = ast.Stmt.stmt_match(scrutinee = scrutinee, arms = arms_span, is_inline = false, line = m_ln, column = m_cn)
+    read(node) = ast.Stmt.stmt_match(
+        scrutinee = scrutinee,
+        arms = arms_span,
+        is_inline = false,
+        line = m_ln,
+        column = m_cn
+    )
     return node
 
 
@@ -507,7 +533,13 @@ public function parse_match_arm_into(s: ref[pstate.ParserState], arms: ref[vec.V
         let pp = patterns.get(i) else:
             break
         unsafe:
-            arms.push(ast.MatchArm(pattern = read(pp), binding_name = binding_name, binding_line = binding_line, binding_column = binding_column, body = body))
+            arms.push(ast.MatchArm(
+                pattern = read(pp),
+                binding_name = binding_name,
+                binding_line = binding_line,
+                binding_column = binding_column,
+                body = body
+            ))
         i += 1
 
 
@@ -624,7 +656,13 @@ function parse_expression_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
         if not parser.block_expr(right):
             parser.consume_end_of_statement(s)
         var node = parser.alloc_stmt(s)
-        read(node) = ast.Stmt.stmt_assignment(target = left, operator = op, value = right, line = start_ln, column = op_cn)
+        read(node) = ast.Stmt.stmt_assignment(
+            target = left,
+            operator = op,
+            value = right,
+            line = start_ln,
+            column = op_cn
+        )
         return node
     if not parser.block_expr(left):
         parser.consume_end_of_statement(s)
@@ -746,7 +784,13 @@ function parse_when_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     pstate.consume(s, tk.TokenKind.dedent, c"expected end of when body")
     var branches_span = branches.as_span()
     var node = parser.alloc_stmt(s)
-    read(node) = ast.Stmt.stmt_when(discriminant = discriminant, branches = branches_span, else_body = else_body, line = ln, column = cn)
+    read(node) = ast.Stmt.stmt_when(
+        discriminant = discriminant,
+        branches = branches_span,
+        else_body = else_body,
+        line = ln,
+        column = cn
+    )
     return node
 
 
@@ -839,7 +883,14 @@ function parse_inline_while_stmt(s: ref[pstate.ParserState], inline_tok: ptr[tok
     unsafe:
         read(body) = ast.Stmt.stmt_block(statements = body_span)
     var node = parser.alloc_stmt(s)
-    read(node) = ast.Stmt.stmt_while(condition = condition, body = body, is_inline = true, line = ln, column = cn, length = 6)
+    read(node) = ast.Stmt.stmt_while(
+        condition = condition,
+        body = body,
+        is_inline = true,
+        line = ln,
+        column = cn,
+        length = 6
+    )
     return node
 
 
@@ -894,7 +945,13 @@ function parse_inline_if_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
             condition = expressions.parse_expr(s)
             pstate.consume(s, tk.TokenKind.colon, c"expected ':' after elif condition")
             var elif_body = parse_block_or_inline_stmt(s)
-            var elif_branch = ast.IfBranch(condition = condition, body = elif_body, line = elif_ln, column = elif_cn, length = 2)
+            var elif_branch = ast.IfBranch(
+                condition = condition,
+                body = elif_body,
+                line = elif_ln,
+                column = elif_cn,
+                length = 2
+            )
             branches.push(elif_branch)
         else:
             pstate.consume(s, tk.TokenKind.colon, c"expected ':' after else")

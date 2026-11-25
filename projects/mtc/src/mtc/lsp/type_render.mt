@@ -221,7 +221,6 @@ function is_moduleless_builtin_type(type_name: str) -> bool:
         or type_name.equal("EventError")
     )
 
-
 ## A signature with its module qualifiers stripped plus the modules that were
 ## stripped, in first-appearance order — the host's `shorten_qualified_types`.
 ## `let s: main.Sample (immutable)` → text `let s: Sample (immutable)`,

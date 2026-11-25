@@ -19,7 +19,10 @@ public function parse_call_args(s: ref[pstate.ParserState]) -> span[ast.Argument
         pstate.step(s)
         if pstate.check(s, tk.TokenKind.rparen):
             break
-        if (parser.check_name(s) or parser.keyword_token_check(pstate.peek(s))) and parser.check_next(s, tk.TokenKind.equal):
+        if (parser.check_name(s) or parser.keyword_token_check(pstate.peek(s))) and parser.check_next(
+            s,
+            tk.TokenKind.equal
+        ):
             let name_tok = pstate.peek(s) else:
                 break
             var arg_name: str

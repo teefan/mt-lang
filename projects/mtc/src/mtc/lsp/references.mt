@@ -97,7 +97,16 @@ public function handle_references(
     defer: bindings.release()
     match scope_mod.local_binding_line(ref_of(bindings), target.text, target.line):
         Option.some as binding_line:
-            collect_scoped_entries(source, file_ast, ref_of(bindings), target.text, binding_line.value, include_declaration, file_path.as_str(), ref_of(entries))
+            collect_scoped_entries(
+                source,
+                file_ast,
+                ref_of(bindings),
+                target.text,
+                binding_line.value,
+                include_declaration,
+                file_path.as_str(),
+                ref_of(entries)
+            )
             write_reference_entries(ws, ref_of(entries), target.text, no_skip_location(), id)
             return
         Option.none:
@@ -105,7 +114,17 @@ public function handle_references(
 
     # A name this document declares at module level.
     if module_level_name(ref_of(analysis), target.text):
-        collect_module_level_references(ws, file_path.as_str(), source, file_ast, ref_of(analysis), ref_of(bindings), target.text, include_declaration, ref_of(entries))
+        collect_module_level_references(
+            ws,
+            file_path.as_str(),
+            source,
+            file_ast,
+            ref_of(analysis),
+            ref_of(bindings),
+            target.text,
+            include_declaration,
+            ref_of(entries)
+        )
         write_reference_entries(ws, ref_of(entries), target.text, no_skip_location(), id)
         return
 
@@ -179,9 +198,18 @@ public function count_declaration_references(
     defer: entries.release()
     var bindings = scope_mod.collect_bindings(source, file_ast)
     defer: bindings.release()
-    collect_module_level_references(ws, file_path, source, file_ast, ref_of(analysis), ref_of(bindings), name, true, ref_of(entries))
+    collect_module_level_references(
+        ws,
+        file_path,
+        source,
+        file_ast,
+        ref_of(analysis),
+        ref_of(bindings),
+        name,
+        true,
+        ref_of(entries)
+    )
     return entries.len()
-
 
 # =============================================================================
 #  Output
@@ -218,7 +246,12 @@ function write_reference_entries(
             break
         ei += 1
         let entry = unsafe: read(ep)
-        if skip.active and entry.path.equal(skip.path.as_str()) and entry.line == skip.line and entry.column == skip.column:
+        if (
+            skip.active
+            and entry.path.equal(skip.path.as_str())
+            and entry.line == skip.line
+            and entry.column == skip.column
+        ):
             continue
         if reference_seen(ref_of(seen), entry):
             continue
@@ -271,7 +304,12 @@ function reference_seen(seen: ref[vec.Vec[string_mod.String]], entry: refidx.Ref
 
 ## Append one Location object: 0-based start/end from the token's 1-based lexer
 ## position, spanning the searched name (the host's `name.length` end).
-function append_reference_json(ws: ref[workspace.Workspace], text: ref[string_mod.String], entry: refidx.ReferenceEntry, name: str) -> void:
+function append_reference_json(
+    ws: ref[workspace.Workspace],
+    text: ref[string_mod.String],
+    entry: refidx.ReferenceEntry,
+    name: str
+) -> void:
     let lz = if entry.line > 0: entry.line - 1 else: 0z
     let col = if entry.column > 0: entry.column - 1 else: 0z
     let out_col = ws.output_character(entry.path, lz, col)
@@ -294,7 +332,6 @@ function append_reference_json(ws: ref[workspace.Workspace], text: ref[string_mo
     text.append_format(f"#{out_end}")
     text.append("}}}")
 
-
 # =============================================================================
 #  Module-level names: the AST scan plus the importing files
 # =============================================================================
@@ -316,7 +353,6 @@ function module_level_name(analysis: ref[analyzer.Analysis], name: str) -> bool:
     if interface_map_has_name(analysis, name):
         return true
     return registered_builtin_type_name(name)
-
 
 ## The builtin names the host's `facts.types` registers
 ## (`INSTALLABLE_BUILTIN_TYPE_NAMES`): the primitives and the handle types.  The
@@ -389,7 +425,6 @@ function collect_module_level_references(
     dependent_documents(ws, analysis.module_name, file_path, ref_of(candidates))
     collect_candidate_entries(ws, name, ref_of(candidates), results)
 
-
 # =============================================================================
 #  The same-file AST scan
 # =============================================================================
@@ -433,7 +468,14 @@ function collect_ast_entries(
 ## An identifier expression.  On the module-level path it is skipped when a
 ## local binding of the same name owns the line (the host's `local_bid_set`
 ## filter); on the scoped path it must belong to the target binding's scope.
-function emit_identifier_reference(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_mod.Binding]], results: ref[vec.Vec[refidx.ReferenceEntry]], name: str, line: ptr_uint, column: ptr_uint) -> void:
+function emit_identifier_reference(
+    w: ref[ReferenceScan],
+    bindings: ref[vec.Vec[scope_mod.Binding]],
+    results: ref[vec.Vec[refidx.ReferenceEntry]],
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     if not name.equal(w.name):
         return
     if line == 0 or column == 0:
@@ -453,7 +495,13 @@ function emit_identifier_reference(w: ref[ReferenceScan], bindings: ref[vec.Vec[
 ## A local binding's own declaration — the host's declaration arm on the scoped
 ## path (a parameter, a `let`/`var`, a `for` or match binding).  The AST records
 ## the statement's line, so the name's column is read off that line.
-function emit_scoped_decl(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_mod.Binding]], results: ref[vec.Vec[refidx.ReferenceEntry]], name: str, line: ptr_uint) -> void:
+function emit_scoped_decl(
+    w: ref[ReferenceScan],
+    bindings: ref[vec.Vec[scope_mod.Binding]],
+    results: ref[vec.Vec[refidx.ReferenceEntry]],
+    name: str,
+    line: ptr_uint
+) -> void:
     if not w.scoped or not w.include_declaration:
         return
     if not name.equal(w.name):
@@ -471,7 +519,14 @@ function emit_scoped_decl(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_mod
 
 
 ## A member access's member name — the host's MemberAccess arm.
-function emit_member_reference(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_mod.Binding]], results: ref[vec.Vec[refidx.ReferenceEntry]], member: str, line: ptr_uint, column: ptr_uint) -> void:
+function emit_member_reference(
+    w: ref[ReferenceScan],
+    bindings: ref[vec.Vec[scope_mod.Binding]],
+    results: ref[vec.Vec[refidx.ReferenceEntry]],
+    member: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     if w.scoped:
         return
     if not member.equal(w.name):
@@ -482,7 +537,14 @@ function emit_member_reference(w: ref[ReferenceScan], bindings: ref[vec.Vec[scop
 
 
 ## A module-level declaration's name — the host's declaration arm.
-function emit_declaration_reference(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_mod.Binding]], results: ref[vec.Vec[refidx.ReferenceEntry]], name: str, line: ptr_uint, column: ptr_uint) -> void:
+function emit_declaration_reference(
+    w: ref[ReferenceScan],
+    bindings: ref[vec.Vec[scope_mod.Binding]],
+    results: ref[vec.Vec[refidx.ReferenceEntry]],
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     if w.scoped or not w.include_declaration:
         return
     if not name.equal(w.name):
@@ -492,11 +554,22 @@ function emit_declaration_reference(w: ref[ReferenceScan], bindings: ref[vec.Vec
     push_reference(results, w.path, line, column, name.len)
 
 
-function push_reference(results: ref[vec.Vec[refidx.ReferenceEntry]], path: str, line: ptr_uint, column: ptr_uint, length: ptr_uint) -> void:
+function push_reference(
+    results: ref[vec.Vec[refidx.ReferenceEntry]],
+    path: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    length: ptr_uint
+) -> void:
     results.push(refidx.ReferenceEntry(path = path, line = line, column = column, length = length))
 
 
-function walk_reference_declarations(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_mod.Binding]], results: ref[vec.Vec[refidx.ReferenceEntry]], decls: span[ast.Decl]) -> void:
+function walk_reference_declarations(
+    w: ref[ReferenceScan],
+    bindings: ref[vec.Vec[scope_mod.Binding]],
+    results: ref[vec.Vec[refidx.ReferenceEntry]],
+    decls: span[ast.Decl]
+) -> void:
     var di: ptr_uint = 0
     while di < decls.len:
         unsafe:
@@ -504,7 +577,12 @@ function walk_reference_declarations(w: ref[ReferenceScan], bindings: ref[vec.Ve
         di += 1
 
 
-function walk_reference_decl(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_mod.Binding]], results: ref[vec.Vec[refidx.ReferenceEntry]], dp: ptr[ast.Decl]) -> void:
+function walk_reference_decl(
+    w: ref[ReferenceScan],
+    bindings: ref[vec.Vec[scope_mod.Binding]],
+    results: ref[vec.Vec[refidx.ReferenceEntry]],
+    dp: ptr[ast.Decl]
+) -> void:
     unsafe:
         match read(dp):
             ast.Decl.decl_function as fun:
@@ -577,7 +655,12 @@ function walk_reference_decl(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_
                 pass
 
 
-function walk_reference_param_defaults(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_mod.Binding]], results: ref[vec.Vec[refidx.ReferenceEntry]], params: span[ast.Param]) -> void:
+function walk_reference_param_defaults(
+    w: ref[ReferenceScan],
+    bindings: ref[vec.Vec[scope_mod.Binding]],
+    results: ref[vec.Vec[refidx.ReferenceEntry]],
+    params: span[ast.Param]
+) -> void:
     var pi: ptr_uint = 0
     while pi < params.len:
         let param = unsafe: read(params.data + pi)
@@ -586,7 +669,12 @@ function walk_reference_param_defaults(w: ref[ReferenceScan], bindings: ref[vec.
         pi += 1
 
 
-function walk_reference_stmt(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_mod.Binding]], results: ref[vec.Vec[refidx.ReferenceEntry]], sp: ptr[ast.Stmt]?) -> void:
+function walk_reference_stmt(
+    w: ref[ReferenceScan],
+    bindings: ref[vec.Vec[scope_mod.Binding]],
+    results: ref[vec.Vec[refidx.ReferenceEntry]],
+    sp: ptr[ast.Stmt]?
+) -> void:
     let node = sp else:
         return
     unsafe:
@@ -673,7 +761,12 @@ function walk_reference_stmt(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_
                 pass
 
 
-function walk_reference_stmts(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_mod.Binding]], results: ref[vec.Vec[refidx.ReferenceEntry]], stmts: span[ast.Stmt]) -> void:
+function walk_reference_stmts(
+    w: ref[ReferenceScan],
+    bindings: ref[vec.Vec[scope_mod.Binding]],
+    results: ref[vec.Vec[refidx.ReferenceEntry]],
+    stmts: span[ast.Stmt]
+) -> void:
     var si: ptr_uint = 0
     while si < stmts.len:
         unsafe:
@@ -681,7 +774,12 @@ function walk_reference_stmts(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope
         si += 1
 
 
-function walk_reference_expr(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_mod.Binding]], results: ref[vec.Vec[refidx.ReferenceEntry]], ep: ptr[ast.Expr]) -> void:
+function walk_reference_expr(
+    w: ref[ReferenceScan],
+    bindings: ref[vec.Vec[scope_mod.Binding]],
+    results: ref[vec.Vec[refidx.ReferenceEntry]],
+    ep: ptr[ast.Expr]
+) -> void:
     unsafe:
         match read(ep):
             ast.Expr.expr_identifier as id:
@@ -770,11 +868,15 @@ function is_identifier_expr(ep: ptr[ast.Expr]) -> bool:
                 return false
 
 
-function walk_reference_expr_opt(w: ref[ReferenceScan], bindings: ref[vec.Vec[scope_mod.Binding]], results: ref[vec.Vec[refidx.ReferenceEntry]], ep: ptr[ast.Expr]?) -> void:
+function walk_reference_expr_opt(
+    w: ref[ReferenceScan],
+    bindings: ref[vec.Vec[scope_mod.Binding]],
+    results: ref[vec.Vec[refidx.ReferenceEntry]],
+    ep: ptr[ast.Expr]?
+) -> void:
     let node = ep else:
         return
     walk_reference_expr(w, bindings, results, node)
-
 
 # =============================================================================
 #  Cross-file occurrences
@@ -885,7 +987,6 @@ function collect_global_entries(
         oi += 1
     refidx.entries_named(ref_of(ws.reference_index), name, results)
 
-
 # =============================================================================
 #  Scoped local occurrences
 # =============================================================================
@@ -914,7 +1015,6 @@ function collect_scoped_entries(
         scope_line = binding_line,
     )
     walk_reference_declarations(ref_of(scan), bindings, results, file_ast.declarations)
-
 
 # =============================================================================
 #  Static methods reached through a type receiver
@@ -1243,7 +1343,14 @@ function static_reference_matches(
     let token_end = entry.column - 1 + entry.length
     match cursor.type_receiver_at(source, entry.line - 1, token_end):
         Option.some as receiver:
-            match resolve_static_receiver_method(ws, entry.path, file_ast, ref_of(analysis), receiver.value, token.text):
+            match resolve_static_receiver_method(
+                ws,
+                entry.path,
+                file_ast,
+                ref_of(analysis),
+                receiver.value,
+                token.text
+            ):
                 Option.some as candidate:
                     return same_target_location(candidate.value, target)
                 Option.none:

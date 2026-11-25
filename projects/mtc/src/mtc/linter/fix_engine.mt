@@ -34,7 +34,6 @@ import mtc.linter.config as lint_config
 import mtc.linter.linter as linter_mod
 import mtc.semantic.analyzer as analyzer
 
-
 const MAX_PASSES: ptr_uint = 5
 
 
@@ -259,7 +258,10 @@ function analyze_with_imports(file: ast.SourceFile, path: str, options: linter_m
 ## True when the fixed analysis adds an error signature — a (line, column,
 ## message) triple whose count exceeds the original's (the host's
 ## `introduces_new_errors?`).
-function introduces_new_errors(original_analysis: ref[analyzer.Analysis], fixed_analysis: ref[analyzer.Analysis]) -> bool:
+function introduces_new_errors(
+    original_analysis: ref[analyzer.Analysis],
+    fixed_analysis: ref[analyzer.Analysis]
+) -> bool:
     var i: ptr_uint = 0
     while i < unsafe: read(fixed_analysis).diagnostics.len():
         let dp = unsafe: read(fixed_analysis).diagnostics.get(i) else:
@@ -275,7 +277,12 @@ function introduces_new_errors(original_analysis: ref[analyzer.Analysis], fixed_
 
 ## How many diagnostics in `analysis` carry the (line, column, message)
 ## signature.
-function count_error_signature(analysis: ref[analyzer.Analysis], line: ptr_uint, column: ptr_uint, message: str) -> ptr_uint:
+function count_error_signature(
+    analysis: ref[analyzer.Analysis],
+    line: ptr_uint,
+    column: ptr_uint,
+    message: str
+) -> ptr_uint:
     var count: ptr_uint = 0
     var i: ptr_uint = 0
     while i < unsafe: read(analysis).diagnostics.len():
@@ -308,7 +315,6 @@ function sort_warnings_descending(warnings: ref[vec.Vec[linter_mod.Warning]]) ->
             warnings.swap(j - 1, j)
             j -= 1
         i += 1
-
 
 ## A single source rewrite.  `end_line == start_line` is an in-line edit of
 ## the character range [start_char, end_char); `end_line > start_line`
@@ -868,7 +874,6 @@ function redundant_type_annotation_edit(lines: ref[vec.Vec[string.String]], line
         new_text = string.String.create()
     ))
 
-
 ## An LSP-space edit for one diagnostic, computed against `source`.  The edit
 ## is passed through unchanged: the generators carry the host's own ranges and
 ## replacement text (whole-line rewrites include their trailing newline), so a
@@ -881,7 +886,13 @@ public struct LspFixEdit:
     new_text: string.String
 
 
-public function lsp_edit_for_warning(source: str, code: str, line: ptr_uint, column: ptr_uint, message: str) -> Option[LspFixEdit]:
+public function lsp_edit_for_warning(
+    source: str,
+    code: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    message: str
+) -> Option[LspFixEdit]:
     var lines = split_lines(source)
     defer: release_lines(ref_of(lines))
     match edits_for_warning(ref_of(lines), code, line, column, message):
@@ -896,13 +907,11 @@ public function lsp_edit_for_warning(source: str, code: str, line: ptr_uint, col
         Option.none:
             return Option[LspFixEdit].none
 
-
 # ── bool-compare text scanning ──────────────────────────────────────────────
 
 struct TextSpan:
     start: ptr_uint
     stop: ptr_uint
-
 
 struct LiteralSpan:
     start: ptr_uint
@@ -1042,7 +1051,6 @@ function find_last_before(text: str, needle: str, before: ptr_uint) -> Option[pt
                 break
     return found
 
-
 # ── line-buffer helpers ─────────────────────────────────────────────────────
 
 function is_bare_else(text: str) -> bool:
@@ -1152,7 +1160,10 @@ function release_lines(lines: ref[vec.Vec[string.String]]) -> void:
 
 ## Delete ` as _` from a match arm line.  Scans the warning line
 ## and the next line for the literal substring.
-function redundant_ignored_match_binding_edit(lines: ref[vec.Vec[string.String]], line_index: ptr_uint) -> Option[FixEdit]:
+function redundant_ignored_match_binding_edit(
+    lines: ref[vec.Vec[string.String]],
+    line_index: ptr_uint
+) -> Option[FixEdit]:
     var ci: ptr_uint = 0
     while ci <= 1:
         if line_index + ci >= lines.len():
@@ -1331,7 +1342,12 @@ function apply_reserved_name_fixes(source: str, fixes: ref[vec.Vec[linter_mod.Re
 
 
 ## True when (line, column) is already among the recorded sites.
-function reserved_site_seen(site_lines: ref[vec.Vec[ptr_uint]], site_columns: ref[vec.Vec[ptr_uint]], line: ptr_uint, column: ptr_uint) -> bool:
+function reserved_site_seen(
+    site_lines: ref[vec.Vec[ptr_uint]],
+    site_columns: ref[vec.Vec[ptr_uint]],
+    line: ptr_uint,
+    column: ptr_uint
+) -> bool:
     var i: ptr_uint = 0
     while i < site_lines.len():
         let l = site_lines.get(i) else:

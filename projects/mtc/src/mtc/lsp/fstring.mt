@@ -11,7 +11,6 @@ import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 
-
 ## One format string's interpolation: the expression source (the format spec
 ## split off) and the 0-based index of the expression's first character in the
 ## lexeme.
@@ -20,7 +19,6 @@ public struct FstringPart:
     source: str
     spec: str
     has_spec: bool
-
 
 ## A token of an interpolation expression, mapped back to document offsets,
 ## lines and 1-based byte columns.

@@ -118,13 +118,15 @@ public function const_eval_int(ctx: ref[lowering.LoweringContext], ep: ptr[ast.E
             _:
                 return 0
 
-
 ## A compile-time constant value: integer, boolean, string, or type.
 ## Extract the compile-time iterable for known comptime builtins (fields_of,
 ## members_of) as a span of struct-field or enum-member info pairs.
 ## Returns none for unrecognised expressions.
 
-public function comptime_iterable_elements(ctx: ref[lowering.LoweringContext], iterable: ptr[ast.Expr]) -> Option[span[comptime_types.ComptimeElement]]:
+public function comptime_iterable_elements(
+    ctx: ref[lowering.LoweringContext],
+    iterable: ptr[ast.Expr]
+) -> Option[span[comptime_types.ComptimeElement]]:
     unsafe:
         match read(iterable):
             ast.Expr.expr_call as call:
@@ -143,7 +145,10 @@ public function comptime_iterable_elements(ctx: ref[lowering.LoweringContext], i
     return Option[span[comptime_types.ComptimeElement]].none
 
 
-function comptime_fields_of(ctx: ref[lowering.LoweringContext], args_data: ptr[ast.Argument]) -> Option[span[comptime_types.ComptimeElement]]:
+function comptime_fields_of(
+    ctx: ref[lowering.LoweringContext],
+    args_data: ptr[ast.Argument]
+) -> Option[span[comptime_types.ComptimeElement]]:
     let type_name: str = comptime_resolve_type_arg_name(ctx, args_data)
     if type_name.len == 0:
         return Option[span[comptime_types.ComptimeElement]].none
@@ -155,7 +160,10 @@ function comptime_fields_of(ctx: ref[lowering.LoweringContext], args_data: ptr[a
         var entry: analyzer.FieldEntry
         unsafe:
             entry = read(entries.data + ei)
-        elements.push(comptime_types.ComptimeElement.ce_struct_field(name = entry.name, field_type = lowering.qualify_type(ctx, entry.ty)))
+        elements.push(comptime_types.ComptimeElement.ce_struct_field(
+            name = entry.name,
+            field_type = lowering.qualify_type(ctx, entry.ty)
+        ))
         ei += 1
     return Option[span[comptime_types.ComptimeElement]].some(value = elements.as_span())
 
@@ -164,7 +172,10 @@ function comptime_fields_of(ctx: ref[lowering.LoweringContext], args_data: ptr[a
 ## then every program analysis.  Cross-module search lets a generic reflective
 ## helper defined in one module (e.g. `std.fmt.format_value[T]`) reflect over a
 ## struct type defined in another module.
-public function comptime_lookup_struct_fields(ctx: ref[lowering.LoweringContext], type_name: str) -> Option[span[analyzer.FieldEntry]]:
+public function comptime_lookup_struct_fields(
+    ctx: ref[lowering.LoweringContext],
+    type_name: str
+) -> Option[span[analyzer.FieldEntry]]:
     let local = ctx.analysis.structs.get(type_name)
     if local != null:
         return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(local))
@@ -180,7 +191,10 @@ public function comptime_lookup_struct_fields(ctx: ref[lowering.LoweringContext]
     return Option[span[analyzer.FieldEntry]].none
 
 
-function comptime_members_of(ctx: ref[lowering.LoweringContext], args_data: ptr[ast.Argument]) -> Option[span[comptime_types.ComptimeElement]]:
+function comptime_members_of(
+    ctx: ref[lowering.LoweringContext],
+    args_data: ptr[ast.Argument]
+) -> Option[span[comptime_types.ComptimeElement]]:
     let type_name: str = comptime_resolve_type_arg_name(ctx, args_data)
     if type_name.len == 0:
         return Option[span[comptime_types.ComptimeElement]].none
@@ -238,7 +252,10 @@ function comptime_enum_member_value(ctx: ref[lowering.LoweringContext], type_nam
     return 0
 
 
-function comptime_attributes_of(ctx: ref[lowering.LoweringContext], args: span[ast.Argument]) -> Option[span[comptime_types.ComptimeElement]]:
+function comptime_attributes_of(
+    ctx: ref[lowering.LoweringContext],
+    args: span[ast.Argument]
+) -> Option[span[comptime_types.ComptimeElement]]:
     if args.len == 0:
         return Option[span[comptime_types.ComptimeElement]].none
     # `attributes_of(field_of(Type, field)[, name])` reflects the field's
@@ -252,7 +269,10 @@ function comptime_attributes_of(ctx: ref[lowering.LoweringContext], args: span[a
                         if cid.name == "field_of" and call.args.len == 2:
                             let type_name = comptime_type_arg_name(call.args.data + 0)
                             let field_name = comptime_arg_name(call.args.data + 1)
-                            return comptime_elements_for_attribute_apps(comptime_field_attr_apps(ctx, type_name, field_name), comptime_attr_filter(args))
+                            return comptime_elements_for_attribute_apps(
+                                comptime_field_attr_apps(ctx, type_name, field_name),
+                                comptime_attr_filter(args)
+                            )
                     _:
                         pass
             _:
@@ -274,7 +294,10 @@ function comptime_attr_filter(args: span[ast.Argument]) -> str:
 
 ## Build one element per attribute application matching `filter` (all of them
 ## when the filter is empty).
-function comptime_elements_for_attribute_apps(apps: span[ast.AttributeApplication], filter: str) -> Option[span[comptime_types.ComptimeElement]]:
+function comptime_elements_for_attribute_apps(
+    apps: span[ast.AttributeApplication],
+    filter: str
+) -> Option[span[comptime_types.ComptimeElement]]:
     var elements = vec.Vec[comptime_types.ComptimeElement].create()
     var ai: ptr_uint = 0
     while ai < apps.len:
@@ -309,7 +332,11 @@ function comptime_attr_apps(ctx: ref[lowering.LoweringContext], type_name: str) 
 
 ## The attribute applications recorded for `Type.field`, searching the current
 ## module first and then every program analysis.
-function comptime_field_attr_apps(ctx: ref[lowering.LoweringContext], type_name: str, field_name: str) -> span[ast.AttributeApplication]:
+function comptime_field_attr_apps(
+    ctx: ref[lowering.LoweringContext],
+    type_name: str,
+    field_name: str
+) -> span[ast.AttributeApplication]:
     if type_name.len == 0 or field_name.len == 0:
         return span[ast.AttributeApplication]()
     var key_buf = string.String.create()
@@ -341,7 +368,16 @@ public function comptime_identifier_type(ctx: ref[lowering.LoweringContext], nam
         return Option[types.Type].some(value = unsafe: read(subst))
     if name == "str":
         return Option[types.Type].some(value = types.Type.ty_str)
-    if types.is_numeric_name(name) or types.is_integer_name(name) or name == "float" or name == "double" or name == "bool" or name == "char" or name == "void" or name == "cstr":
+    if (
+        types.is_numeric_name(name)
+        or types.is_integer_name(name)
+        or name == "float"
+        or name == "double"
+        or name == "bool"
+        or name == "char"
+        or name == "void"
+        or name == "cstr"
+    ):
         return Option[types.Type].some(value = types.primitive(name))
     return Option[types.Type].none
 
@@ -350,7 +386,12 @@ public function comptime_expr_to_type(ctx: ref[lowering.LoweringContext], ep: pt
     unsafe:
         match read(ep):
             ast.Expr.expr_identifier as id:
-                if types.is_numeric_name(id.name) or types.is_integer_name(id.name) or id.name == "float" or id.name == "double":
+                if (
+                    types.is_numeric_name(id.name)
+                    or types.is_integer_name(id.name)
+                    or id.name == "float"
+                    or id.name == "double"
+                ):
                     return types.primitive(id.name)
             _:
                 pass
@@ -360,11 +401,11 @@ public function comptime_expr_to_type(ctx: ref[lowering.LoweringContext], ep: pt
 function comptime_element_type(ctx: ref[lowering.LoweringContext], elem: comptime_types.ComptimeElement) -> types.Type:
     match elem:
         comptime_types.ComptimeElement.ce_struct_field:
-            return types.Type.ty_error  # field_handle — opaque
+            return types.Type.ty_error # field_handle — opaque
         comptime_types.ComptimeElement.ce_enum_member:
-            return types.Type.ty_error  # member_handle — opaque
+            return types.Type.ty_error # member_handle — opaque
         comptime_types.ComptimeElement.ce_attribute:
-            return types.Type.ty_error  # attribute_handle — opaque
+            return types.Type.ty_error # attribute_handle — opaque
 
 
 ## Extract the type name from a comptime argument like `Particle`, `Labeled`, or a
@@ -559,7 +600,12 @@ public function const_decl_type(ctx: ref[lowering.LoweringContext], name: str) -
     return Option[types.Type].none
 
 
-public function const_fold_binary_ir(ctx: ref[lowering.LoweringContext], op: str, l: ptr[ir.Expr], r: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
+public function const_fold_binary_ir(
+    ctx: ref[lowering.LoweringContext],
+    op: str,
+    l: ptr[ir.Expr],
+    r: ptr[ir.Expr]
+) -> Option[ptr[ir.Expr]]:
     let int_ty = types.primitive("int")
     let float_ty = types.primitive("float")
     unsafe:
@@ -569,8 +615,14 @@ public function const_fold_binary_ir(ctx: ref[lowering.LoweringContext], op: str
                     ir.Expr.expr_integer_literal as ri:
                         let result = lowering.apply_int_op(op, li.value, ri.value)
                         if type_helpers.is_comparison_operator(op):
-                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = result != 0, ty = ctx.bool_ty)))
-                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = result, ty = int_ty)))
+                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+                                value = result != 0,
+                                ty = ctx.bool_ty
+                            )))
+                        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                            value = result,
+                            ty = int_ty
+                        )))
                     ir.Expr.expr_float_literal as rf:
                         return const_fold_float_ir(ctx, op, double<-li.value, rf.value)
                     _:
@@ -590,24 +642,46 @@ public function const_fold_binary_ir(ctx: ref[lowering.LoweringContext], op: str
                             var buf = string.String.create()
                             buf.append(ls.value)
                             buf.append(rs.value)
-                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_string_literal(value = buf.as_str(), ty = types.Type.ty_str, cstring = false)))
+                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_string_literal(
+                                value = buf.as_str(),
+                                ty = types.Type.ty_str,
+                                cstring = false
+                            )))
                         if op == "==":
-                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = ls.value == rs.value, ty = ctx.bool_ty)))
+                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+                                value = ls.value == rs.value,
+                                ty = ctx.bool_ty
+                            )))
                         if op == "!=":
-                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = ls.value != rs.value, ty = ctx.bool_ty)))
+                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+                                value = ls.value != rs.value,
+                                ty = ctx.bool_ty
+                            )))
                     _:
                         return Option[ptr[ir.Expr]].none
             ir.Expr.expr_boolean_literal as lb:
                 match read(r):
                     ir.Expr.expr_boolean_literal as rb:
                         if op == "and":
-                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = lb.value and rb.value, ty = ctx.bool_ty)))
+                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+                                value = lb.value and rb.value,
+                                ty = ctx.bool_ty
+                            )))
                         if op == "or":
-                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = lb.value or rb.value, ty = ctx.bool_ty)))
+                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+                                value = lb.value or rb.value,
+                                ty = ctx.bool_ty
+                            )))
                         if op == "==":
-                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = lb.value == rb.value, ty = ctx.bool_ty)))
+                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+                                value = lb.value == rb.value,
+                                ty = ctx.bool_ty
+                            )))
                         if op == "!=":
-                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = lb.value != rb.value, ty = ctx.bool_ty)))
+                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+                                value = lb.value != rb.value,
+                                ty = ctx.bool_ty
+                            )))
                     _:
                         return Option[ptr[ir.Expr]].none
             _:
@@ -626,38 +700,75 @@ function const_fold_float_ir(ctx: ref[lowering.LoweringContext], op: str, l: dou
     else if op == "/":
         result = l / r
     else if op == "==":
-        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = l == r, ty = ctx.bool_ty)))
+        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+            value = l == r,
+            ty = ctx.bool_ty
+        )))
     else if op == "!=":
-        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = l != r, ty = ctx.bool_ty)))
+        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+            value = l != r,
+            ty = ctx.bool_ty
+        )))
     else if op == "<":
-        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = l < r, ty = ctx.bool_ty)))
+        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+            value = l < r,
+            ty = ctx.bool_ty
+        )))
     else if op == "<=":
-        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = l <= r, ty = ctx.bool_ty)))
+        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+            value = l <= r,
+            ty = ctx.bool_ty
+        )))
     else if op == ">":
-        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = l > r, ty = ctx.bool_ty)))
+        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+            value = l > r,
+            ty = ctx.bool_ty
+        )))
     else if op == ">=":
-        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = l >= r, ty = ctx.bool_ty)))
+        return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+            value = l >= r,
+            ty = ctx.bool_ty
+        )))
     else:
         return Option[ptr[ir.Expr]].none
-    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_float_literal(value = result, ty = types.primitive("float"))))
+    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_float_literal(
+        value = result,
+        ty = types.primitive("float")
+    )))
 
 
-public function const_fold_unary_ir(ctx: ref[lowering.LoweringContext], op: str, operand: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
+public function const_fold_unary_ir(
+    ctx: ref[lowering.LoweringContext],
+    op: str,
+    operand: ptr[ir.Expr]
+) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(operand):
             ir.Expr.expr_integer_literal as li:
                 if op == "-":
-                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = -li.value, ty = li.ty)))
+                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                        value = -li.value,
+                        ty = li.ty
+                    )))
                 if op == "~":
-                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = ~li.value, ty = li.ty)))
+                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                        value = ~li.value,
+                        ty = li.ty
+                    )))
                 return Option[ptr[ir.Expr]].none
             ir.Expr.expr_float_literal as lf:
                 if op == "-":
-                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_float_literal(value = -lf.value, ty = lf.ty)))
+                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_float_literal(
+                        value = -lf.value,
+                        ty = lf.ty
+                    )))
                 return Option[ptr[ir.Expr]].none
             ir.Expr.expr_boolean_literal as lb:
                 if op == "not":
-                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = not lb.value, ty = ctx.bool_ty)))
+                    return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(
+                        value = not lb.value,
+                        ty = ctx.bool_ty
+                    )))
                 return Option[ptr[ir.Expr]].none
             _:
                 return Option[ptr[ir.Expr]].none
@@ -723,13 +834,25 @@ public function comptime_inner_arg_expr(ep: ptr[ast.Expr], callee_name: str, ind
 ## (`lower_aggregate_literal_impl`): `rl.Color(r = 1)` with
 ## `type Color = c.Color` in std.raylib constructs std.c.raylib's struct Color,
 ## so the folded literal carries that type and its field types come from it.
-public function const_aggregate_target_type(ctx: ref[lowering.LoweringContext], owner_module: str, name: str) -> Option[types.Type]:
+public function const_aggregate_target_type(
+    ctx: ref[lowering.LoweringContext],
+    owner_module: str,
+    name: str
+) -> Option[types.Type]:
     match lowering.find_imported_analysis(ctx, owner_module):
         Option.some as owner:
             if owner.value.structs.contains(name):
                 if owner_module == ctx.module_name:
-                    return Option[types.Type].some(value = types.named_type(name = name, module_name = ctx.module_name, linkage_name = Option[str].none))
-                return Option[types.Type].some(value = types.imported_type(module_name = owner_module, name = name, args = span[types.Type]()))
+                    return Option[types.Type].some(value = types.named_type(
+                        name = name,
+                        module_name = ctx.module_name,
+                        linkage_name = Option[str].none
+                    ))
+                return Option[types.Type].some(value = types.imported_type(
+                    module_name = owner_module,
+                    name = name,
+                    args = span[types.Type]()
+                ))
             let alias_ptr = owner.value.type_alias_types.get(name)
             if alias_ptr != null:
                 var base = unsafe: read(alias_ptr)
@@ -801,10 +924,16 @@ public function const_value_to_field_type(value: ptr[ir.Expr], field_ty: types.T
                             var elements = vec.Vec[ir.Expr].create()
                             var ei: ptr_uint = 0
                             while ei < al.elements.len:
-                                let retyped = const_value_to_field_type(lowering.alloc_expr(read(al.elements.data + ei)), element_ty)
+                                let retyped = const_value_to_field_type(
+                                    lowering.alloc_expr(read(al.elements.data + ei)),
+                                    element_ty
+                                )
                                 elements.push(unsafe: read(retyped))
                                 ei += 1
-                            return lowering.alloc_expr(ir.Expr.expr_array_literal(ty = target, elements = elements.as_span()))
+                            return lowering.alloc_expr(ir.Expr.expr_array_literal(
+                                ty = target,
+                                elements = elements.as_span()
+                            ))
                         _:
                             pass
         _:
@@ -835,20 +964,32 @@ public function const_value_to_field_type(value: ptr[ir.Expr], field_ty: types.T
                     return lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = b.value, ty = target))
             ir.Expr.expr_string_literal as s:
                 if target_is_str:
-                    return lowering.alloc_expr(ir.Expr.expr_string_literal(value = s.value, ty = target, cstring = target_is_cstr))
+                    return lowering.alloc_expr(ir.Expr.expr_string_literal(
+                        value = s.value,
+                        ty = target,
+                        cstring = target_is_cstr
+                    ))
             _:
                 pass
     return value
 
 
 ## Control-flow outcome of executing compile-time statements.
-public function const_flow_body(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], body: ptr[ast.Stmt]?) -> comptime_types.ConstFlow:
+public function const_flow_body(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    body: ptr[ast.Stmt]?
+) -> comptime_types.ConstFlow:
     let b = body else:
         return comptime_types.ConstFlow.cf_fallthrough
     return const_flow_stmt(ctx, env, b)
 
 
-function const_flow_stmts(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], stmts: span[ast.Stmt]) -> comptime_types.ConstFlow:
+function const_flow_stmts(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    stmts: span[ast.Stmt]
+) -> comptime_types.ConstFlow:
     var i: ptr_uint = 0
     while i < stmts.len:
         match const_flow_stmt(ctx, env, unsafe: ptr[ast.Stmt]<-(stmts.data + i)):
@@ -866,7 +1007,11 @@ function const_flow_stmts(ctx: ref[lowering.LoweringContext], env: ref[map_mod.M
     return comptime_types.ConstFlow.cf_fallthrough
 
 
-function const_flow_stmt(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], sp: ptr[ast.Stmt]) -> comptime_types.ConstFlow:
+function const_flow_stmt(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    sp: ptr[ast.Stmt]
+) -> comptime_types.ConstFlow:
     unsafe:
         match read(sp):
             ast.Stmt.stmt_block as blk:
@@ -890,7 +1035,15 @@ function const_flow_stmt(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Ma
                     return comptime_types.ConstFlow.cf_fallthrough
                 match const_eval.try_const_value_ir(ctx, init_ptr, env):
                     Option.some as lv:
-                        return const_bind_local(ctx, env, loc.name, loc.destructure_bindings, loc.else_binding, loc.else_body, lv.value)
+                        return const_bind_local(
+                            ctx,
+                            env,
+                            loc.name,
+                            loc.destructure_bindings,
+                            loc.else_binding,
+                            loc.else_body,
+                            lv.value
+                        )
                     Option.none:
                         return comptime_types.ConstFlow.cf_stuck
             ast.Stmt.stmt_assignment as asg:
@@ -924,7 +1077,15 @@ function const_flow_stmt(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Ma
     return comptime_types.ConstFlow.cf_stuck
 
 
-function const_bind_local(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], name: str, destructure_bindings: Option[span[str]], else_binding: Option[str], else_body: ptr[ast.Stmt]?, value: ptr[ir.Expr]) -> comptime_types.ConstFlow:
+function const_bind_local(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    name: str,
+    destructure_bindings: Option[span[str]],
+    else_binding: Option[str],
+    else_body: ptr[ast.Stmt]?,
+    value: ptr[ir.Expr]
+) -> comptime_types.ConstFlow:
     match destructure_bindings:
         Option.some as names:
             match const_bind_destructure(env, names.value, value):
@@ -976,7 +1137,11 @@ function const_bind_local(ctx: ref[lowering.LoweringContext], env: ref[map_mod.M
 
 ## Bind a destructuring pattern (`let (a, b) = ...`, `let Pt(x, y) = ...`) by
 ## positional order of the value's fields/elements.
-function const_bind_destructure(env: ref[map_mod.Map[str, ptr[ir.Expr]]], names: span[str], value: ptr[ir.Expr]) -> Option[bool]:
+function const_bind_destructure(
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    names: span[str],
+    value: ptr[ir.Expr]
+) -> Option[bool]:
     unsafe:
         match read(value):
             ir.Expr.expr_aggregate_literal as ag:
@@ -1012,7 +1177,13 @@ public function const_field_value(fields: span[ir.AggregateField], name: str) ->
     return Option[ptr[ir.Expr]].none
 
 
-function const_assign_target(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], target: ptr[ast.Expr], operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
+function const_assign_target(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    target: ptr[ast.Expr],
+    operator: str,
+    new_value: ptr[ir.Expr]
+) -> Option[bool]:
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
@@ -1037,7 +1208,12 @@ function const_assign_target(ctx: ref[lowering.LoweringContext], env: ref[map_mo
 
 
 ## Apply a compound assignment (`+=`) or plain `=` to a compile-time value.
-function const_apply_binop(ctx: ref[lowering.LoweringContext], operator: str, old: ptr[ir.Expr], new_value: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
+function const_apply_binop(
+    ctx: ref[lowering.LoweringContext],
+    operator: str,
+    old: ptr[ir.Expr],
+    new_value: ptr[ir.Expr]
+) -> Option[ptr[ir.Expr]]:
     if operator == "=":
         return Option[ptr[ir.Expr]].some(value = new_value)
     if operator.len < 2:
@@ -1046,7 +1222,14 @@ function const_apply_binop(ctx: ref[lowering.LoweringContext], operator: str, ol
     return const_fold_binary_ir(ctx, op, old, new_value)
 
 
-function const_assign_member(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], receiver: ptr[ast.Expr], member: str, operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
+function const_assign_member(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    receiver: ptr[ast.Expr],
+    member: str,
+    operator: str,
+    new_value: ptr[ir.Expr]
+) -> Option[bool]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as rid:
@@ -1072,7 +1255,10 @@ function const_assign_member(ctx: ref[lowering.LoweringContext], env: ref[map_mo
                             i += 1
                         if not replaced:
                             return Option[bool].none
-                        env.set(rid.name, lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = ag.ty, fields = fields.as_span())))
+                        env.set(
+                            rid.name,
+                            lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = ag.ty, fields = fields.as_span()))
+                        )
                         return Option[bool].some(value = true)
                     _:
                         return Option[bool].none
@@ -1081,7 +1267,14 @@ function const_assign_member(ctx: ref[lowering.LoweringContext], env: ref[map_mo
     return Option[bool].none
 
 
-function const_assign_index(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], receiver: ptr[ast.Expr], index: ptr[ast.Expr], operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
+function const_assign_index(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    receiver: ptr[ast.Expr],
+    index: ptr[ast.Expr],
+    operator: str,
+    new_value: ptr[ir.Expr]
+) -> Option[bool]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as rid:
@@ -1105,7 +1298,10 @@ function const_assign_index(ctx: ref[lowering.LoweringContext], env: ref[map_mod
                             else:
                                 elements.push(read(al.elements.data + i))
                             i += 1
-                        env.set(rid.name, lowering.alloc_expr(ir.Expr.expr_array_literal(ty = al.ty, elements = elements.as_span())))
+                        env.set(
+                            rid.name,
+                            lowering.alloc_expr(ir.Expr.expr_array_literal(ty = al.ty, elements = elements.as_span()))
+                        )
                         return Option[bool].some(value = true)
                     _:
                         return Option[bool].none
@@ -1114,7 +1310,12 @@ function const_assign_index(ctx: ref[lowering.LoweringContext], env: ref[map_mod
     return Option[bool].none
 
 
-function const_flow_if(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> comptime_types.ConstFlow:
+function const_flow_if(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    branches: span[ast.IfBranch],
+    else_body: ptr[ast.Stmt]?
+) -> comptime_types.ConstFlow:
     var bi: ptr_uint = 0
     while bi < branches.len:
         var br: ast.IfBranch
@@ -1132,7 +1333,12 @@ function const_flow_if(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[
     return comptime_types.ConstFlow.cf_fallthrough
 
 
-function const_flow_while(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], condition: ptr[ast.Expr], body: ptr[ast.Stmt]?) -> comptime_types.ConstFlow:
+function const_flow_while(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    condition: ptr[ast.Expr],
+    body: ptr[ast.Stmt]?
+) -> comptime_types.ConstFlow:
     var iteration: ptr_uint = 0
     while iteration < 100000:
         match const_env_eval_bool(ctx, env, condition):
@@ -1156,7 +1362,13 @@ function const_flow_while(ctx: ref[lowering.LoweringContext], env: ref[map_mod.M
     return comptime_types.ConstFlow.cf_stuck
 
 
-function const_flow_for(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body: ptr[ast.Stmt]?) -> comptime_types.ConstFlow:
+function const_flow_for(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    bindings: span[ast.ForBinding],
+    iterables: span[ast.Expr],
+    body: ptr[ast.Stmt]?
+) -> comptime_types.ConstFlow:
     if bindings.len != 1 or iterables.len != 1:
         return comptime_types.ConstFlow.cf_stuck
     var binding: ast.ForBinding
@@ -1190,7 +1402,11 @@ function const_flow_for(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map
 
 ## The element values of a compile-time iterable: an integer range, an array or
 ## string value, or a slice `arr[a..b]` / `str[a..b]`.
-function const_iterable_values(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[span[ptr[ir.Expr]]]:
+function const_iterable_values(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    ep: ptr[ast.Expr]
+) -> Option[span[ptr[ir.Expr]]]:
     unsafe:
         match read(ep):
             ast.Expr.expr_range as r:
@@ -1201,7 +1417,10 @@ function const_iterable_values(ctx: ref[lowering.LoweringContext], env: ref[map_
                 var range_vals = vec.Vec[ptr[ir.Expr]].create()
                 var v = s_opt
                 while v < e_opt:
-                    range_vals.push(lowering.alloc_expr(ir.Expr.expr_integer_literal(value = v, ty = types.primitive("int"))))
+                    range_vals.push(lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                        value = v,
+                        ty = types.primitive("int")
+                    )))
                     v += 1
                     if range_vals.len() > 100000:
                         return Option[span[ptr[ir.Expr]]].none
@@ -1225,7 +1444,10 @@ function const_iterable_values(ctx: ref[lowering.LoweringContext], env: ref[map_
                         var chars = vec.Vec[ptr[ir.Expr]].create()
                         var ci: ptr_uint = 0
                         while ci < sl.value.len:
-                            chars.push(lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-sl.value.byte_at(ci), ty = types.primitive("ubyte"))))
+                            chars.push(lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                                value = long<-sl.value.byte_at(ci),
+                                ty = types.primitive("ubyte")
+                            )))
                             ci += 1
                         return Option[span[ptr[ir.Expr]]].some(value = chars.as_span())
                     _:
@@ -1235,7 +1457,12 @@ function const_iterable_values(ctx: ref[lowering.LoweringContext], env: ref[map_
     return Option[span[ptr[ir.Expr]]].none
 
 
-function const_flow_match_stmt(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> comptime_types.ConstFlow:
+function const_flow_match_stmt(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    scrutinee: ptr[ast.Expr],
+    arms: span[ast.MatchArm]
+) -> comptime_types.ConstFlow:
     match const_eval.try_const_value_ir(ctx, scrutinee, env):
         Option.some as sv:
             var ai: ptr_uint = 0
@@ -1258,7 +1485,12 @@ function const_flow_match_stmt(ctx: ref[lowering.LoweringContext], env: ref[map_
 
 ## True when a match pattern matches the scrutinee value: literals compare by
 ## value and `_` (or a missing pattern) is the wildcard.
-public function const_match_pattern(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], pattern: ptr[ast.Expr]?, value: ptr[ir.Expr]) -> Option[bool]:
+public function const_match_pattern(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    pattern: ptr[ast.Expr]?,
+    value: ptr[ir.Expr]
+) -> Option[bool]:
     let pp = pattern else:
         return Option[bool].some(value = true)
     unsafe:
@@ -1302,7 +1534,11 @@ function const_value_eq_ir(a: ptr[ir.Expr], b: ptr[ir.Expr]) -> Option[bool]:
     return Option[bool].none
 
 
-public function const_env_eval_int(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[long]:
+public function const_env_eval_int(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    ep: ptr[ast.Expr]
+) -> Option[long]:
     match const_eval.try_const_value_ir(ctx, ep, env):
         Option.some as v:
             unsafe:
@@ -1320,7 +1556,11 @@ public function const_env_eval_int(ctx: ref[lowering.LoweringContext], env: ref[
     return Option[long].none
 
 
-public function const_env_eval_bool(ctx: ref[lowering.LoweringContext], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[bool]:
+public function const_env_eval_bool(
+    ctx: ref[lowering.LoweringContext],
+    env: ref[map_mod.Map[str, ptr[ir.Expr]]],
+    ep: ptr[ast.Expr]
+) -> Option[bool]:
     match const_eval.try_const_value_ir(ctx, ep, env):
         Option.some as v:
             unsafe:
@@ -1337,7 +1577,11 @@ public function const_env_eval_bool(ctx: ref[lowering.LoweringContext], env: ref
 
 
 ## Structural equality of two constant operand expressions.
-public function const_operand_eq(ctx: ref[lowering.LoweringContext], left: ptr[ast.Expr], right: ptr[ast.Expr]) -> Option[bool]:
+public function const_operand_eq(
+    ctx: ref[lowering.LoweringContext],
+    left: ptr[ast.Expr],
+    right: ptr[ast.Expr]
+) -> Option[bool]:
     let lp = const_eval.resolve_const_operand(ctx, left, 0) else:
         return Option[bool].none
     let rp = const_eval.resolve_const_operand(ctx, right, 0) else:
@@ -1394,7 +1638,13 @@ public function const_operand_eq(ctx: ref[lowering.LoweringContext], left: ptr[a
 ## Compare two aggregate/literal constructor calls.  Struct and variant
 ## literals compare named fields (order-independent); array constructors
 ## compare positional elements.
-function const_call_eq(ctx: ref[lowering.LoweringContext], lcallee: ptr[ast.Expr], largs: span[ast.Argument], rcallee: ptr[ast.Expr], rargs: span[ast.Argument]) -> Option[bool]:
+function const_call_eq(
+    ctx: ref[lowering.LoweringContext],
+    lcallee: ptr[ast.Expr],
+    largs: span[ast.Argument],
+    rcallee: ptr[ast.Expr],
+    rargs: span[ast.Argument]
+) -> Option[bool]:
     unsafe:
         match read(lcallee):
             ast.Expr.expr_identifier as lid:
@@ -1441,7 +1691,11 @@ function const_expr_names_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
                 return false
 
 
-function const_fields_eq(ctx: ref[lowering.LoweringContext], largs: span[ast.Argument], rargs: span[ast.Argument]) -> Option[bool]:
+function const_fields_eq(
+    ctx: ref[lowering.LoweringContext],
+    largs: span[ast.Argument],
+    rargs: span[ast.Argument]
+) -> Option[bool]:
     if largs.len != rargs.len:
         return Option[bool].none
     var right_by_name = map_mod.Map[str, ptr[ast.Expr]].create()
@@ -1475,7 +1729,11 @@ function const_fields_eq(ctx: ref[lowering.LoweringContext], largs: span[ast.Arg
     return Option[bool].some(value = true)
 
 
-function const_positional_eq(ctx: ref[lowering.LoweringContext], largs: span[ast.Argument], rargs: span[ast.Argument]) -> Option[bool]:
+function const_positional_eq(
+    ctx: ref[lowering.LoweringContext],
+    largs: span[ast.Argument],
+    rargs: span[ast.Argument]
+) -> Option[bool]:
     if largs.len != rargs.len:
         return Option[bool].none
     var i: ptr_uint = 0
@@ -1495,7 +1753,11 @@ function const_positional_eq(ctx: ref[lowering.LoweringContext], largs: span[ast
     return Option[bool].some(value = true)
 
 
-public function const_binary_op(op: str, left_val: comptime_types.ConstValue, right_val: comptime_types.ConstValue) -> Option[comptime_types.ConstValue]:
+public function const_binary_op(
+    op: str,
+    left_val: comptime_types.ConstValue,
+    right_val: comptime_types.ConstValue
+) -> Option[comptime_types.ConstValue]:
     match left_val:
         comptime_types.ConstValue.cv_int as li:
             match right_val:
@@ -1505,8 +1767,16 @@ public function const_binary_op(op: str, left_val: comptime_types.ConstValue, ri
                     # to `cv_int(1)` and an `inline if` (which only accepts
                     # `cv_bool`) would drop both branches.
                     if const_eval.is_const_comparison_op(op):
-                        return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = lowering.apply_int_op(op, li.value, ri.value) != 0))
-                    return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = lowering.apply_int_op(op, li.value, ri.value)))
+                        return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = lowering.apply_int_op(
+                            op,
+                            li.value,
+                            ri.value
+                        ) != 0))
+                    return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_int(value = lowering.apply_int_op(
+                        op,
+                        li.value,
+                        ri.value
+                    )))
                 _:
                     return Option[comptime_types.ConstValue].none
         comptime_types.ConstValue.cv_bool as lb:
@@ -1537,9 +1807,15 @@ public function const_binary_op(op: str, left_val: comptime_types.ConstValue, ri
             match right_val:
                 comptime_types.ConstValue.cv_type as rt:
                     if op == "==":
-                        return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = lowering.types_are_equal(lt.ty, rt.ty)))
+                        return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = lowering.types_are_equal(
+                            lt.ty,
+                            rt.ty
+                        )))
                     if op == "!=":
-                        return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = not lowering.types_are_equal(lt.ty, rt.ty)))
+                        return Option[comptime_types.ConstValue].some(value = comptime_types.ConstValue.cv_bool(value = not lowering.types_are_equal(
+                            lt.ty,
+                            rt.ty
+                        )))
                     return Option[comptime_types.ConstValue].none
                 _:
                     return Option[comptime_types.ConstValue].none

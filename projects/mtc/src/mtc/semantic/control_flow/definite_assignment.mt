@@ -12,7 +12,6 @@ import std.vec as vec
 import mtc.parser.ast as ast
 import mtc.semantic.control_flow.builder as flow_builder
 
-
 ## A diagnostic for a read-before-assignment error.
 public struct Diag:
     name: str
@@ -51,12 +50,17 @@ public function check(params: span[ast.Param], body: ptr[ast.Stmt]) -> vec.Vec[D
     assigned.release()
     return diags
 
-
 ## ---------------------------------------------------------------------------
 ##  Statement checking
 ## ---------------------------------------------------------------------------
 
-function check_stmt(stmt_ptr: ptr[ast.Stmt]?, assigned: ref[map_mod.Map[ptr_uint, bool]], binding_map: ref[map_mod.Map[str, ptr_uint]], diags: ref[vec.Vec[Diag]], scopes: ref[vec.Vec[str]]) -> void:
+function check_stmt(
+    stmt_ptr: ptr[ast.Stmt]?,
+    assigned: ref[map_mod.Map[ptr_uint, bool]],
+    binding_map: ref[map_mod.Map[str, ptr_uint]],
+    diags: ref[vec.Vec[Diag]],
+    scopes: ref[vec.Vec[str]]
+) -> void:
     if stmt_ptr == null:
         return
     unsafe:
@@ -144,12 +148,17 @@ function check_stmt(stmt_ptr: ptr[ast.Stmt]?, assigned: ref[map_mod.Map[ptr_uint
             _:
                 pass
 
-
 ## ---------------------------------------------------------------------------
 ##  Expression checking — validates every identifier read is assigned.
 ## ---------------------------------------------------------------------------
 
-function check_expr(ep: ptr[ast.Expr]?, assigned: ref[map_mod.Map[ptr_uint, bool]], binding_map: ref[map_mod.Map[str, ptr_uint]], diags: ref[vec.Vec[Diag]], scopes: ref[vec.Vec[str]]) -> void:
+function check_expr(
+    ep: ptr[ast.Expr]?,
+    assigned: ref[map_mod.Map[ptr_uint, bool]],
+    binding_map: ref[map_mod.Map[str, ptr_uint]],
+    diags: ref[vec.Vec[Diag]],
+    scopes: ref[vec.Vec[str]]
+) -> void:
     if ep == null:
         return
     unsafe:
@@ -224,24 +233,33 @@ function scope_has(scopes: ref[vec.Vec[str]], name: str) -> bool:
         i += 1
     return false
 
-
 ## ---------------------------------------------------------------------------
 ##  Set helpers — maps of ptr_uint → bool used as ID sets.
 ## ---------------------------------------------------------------------------
 
-function mark_assigned(binding_map: ref[map_mod.Map[str, ptr_uint]], assigned: ref[map_mod.Map[ptr_uint, bool]], name: str) -> void:
+function mark_assigned(
+    binding_map: ref[map_mod.Map[str, ptr_uint]],
+    assigned: ref[map_mod.Map[ptr_uint, bool]],
+    name: str
+) -> void:
     let bid = binding_map.get(name)
     if bid != null:
         unsafe:
             assigned.set(read(bid), true)
 
-function mark_assigned_target(target: ptr[ast.Expr], assigned: ref[map_mod.Map[ptr_uint, bool]], binding_map: ref[map_mod.Map[str, ptr_uint]]) -> void:
+
+function mark_assigned_target(
+    target: ptr[ast.Expr],
+    assigned: ref[map_mod.Map[ptr_uint, bool]],
+    binding_map: ref[map_mod.Map[str, ptr_uint]]
+) -> void:
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
                 mark_assigned(binding_map, assigned, id.name)
             _:
                 pass
+
 
 function copy_assigned(src: ref[map_mod.Map[ptr_uint, bool]]) -> map_mod.Map[ptr_uint, bool]:
     var result = map_mod.Map[ptr_uint, bool].create()
@@ -253,9 +271,14 @@ function copy_assigned(src: ref[map_mod.Map[ptr_uint, bool]]) -> map_mod.Map[ptr
             result.set(read(entries.current().key), true)
     return result
 
+
 ## Intersect `branch` into `result`.  When `init` is true, `branch` is the first
 ## branch and its contents are copied directly into `result`.
-function intersect_assigned(result: ref[map_mod.Map[ptr_uint, bool]], branch: ref[map_mod.Map[ptr_uint, bool]], init: ref[bool]) -> void:
+function intersect_assigned(
+    result: ref[map_mod.Map[ptr_uint, bool]],
+    branch: ref[map_mod.Map[ptr_uint, bool]],
+    init: ref[bool]
+) -> void:
     if read(init):
         var entries = branch.entries()
         while true:
@@ -283,6 +306,7 @@ function intersect_assigned(result: ref[map_mod.Map[ptr_uint, bool]], branch: re
             i += 1
         to_remove.release()
 
+
 function swap_assigned(target: ref[map_mod.Map[ptr_uint, bool]], source: ref[map_mod.Map[ptr_uint, bool]]) -> void:
     clear_map(target)
     var entries = source.entries()
@@ -291,6 +315,7 @@ function swap_assigned(target: ref[map_mod.Map[ptr_uint, bool]], source: ref[map
             break
         unsafe:
             target.set(read(entries.current().key), true)
+
 
 function clear_map(m: ref[map_mod.Map[ptr_uint, bool]]) -> void:
     var to_remove = vec.Vec[ptr_uint].create()

@@ -170,11 +170,11 @@ function write_source_file(dir: str, name: str, content: str) -> bool:
         Result.success:
             return true
 
-
 # =============================================================================
 #  Defer ordering — the cleanup must appear at scope-exit and before each
 #  return, NOT at the declaration site.  (Phase 9 defer lowering fix.)
 # =============================================================================
+
 
 @[test]
 function test_defer_cleanup_not_at_declaration_site() -> void:
@@ -249,12 +249,12 @@ function test_defer_with_block_body_form() -> void:
     ## counter must appear in the IR (defer body was lowered).
     expect(text.contains_substring("counter"))
 
-
 # =============================================================================
 #  String-match expression — must produce a proper else-if chain where exactly
 #  one arm runs, not independent if-thens that clobber each other.  (Phase 9
 #  string-match-expr fix.)
 # =============================================================================
+
 
 @[test]
 function test_string_match_expr_has_else_if_chain() -> void:
@@ -303,12 +303,12 @@ function test_string_match_expr_with_only_wildcard() -> void:
     let text = ir.as_str()
     expect(text.contains_substring("default"))
 
-
 # =============================================================================
 #  Return-value hoisting — when defers are active, a non-trivial return
 #  expression must be hoisted into a temp before the cleanup preamble, so
 #  that running the defers does not invalidate it.  (Phase 9 defer fix.)
 # =============================================================================
+
 
 @[test]
 function test_return_with_active_defer_lowers_cleanly() -> void:
@@ -326,12 +326,12 @@ function test_return_with_active_defer_lowers_cleanly() -> void:
     let text = ir.as_str()
     expect(text.contains_substring("return"))
 
-
 # =============================================================================
 #  Aggregate-literal source-module resolution — struct constructors for
 #  imported types must use the correct module prefix.  (Phase 9
 #  break-in-match-in-while fix #2.)
 # =============================================================================
+
 
 @[test]
 function test_struct_aggregate_lowering_does_not_crash() -> void:
@@ -351,10 +351,10 @@ function test_struct_aggregate_lowering_does_not_crash() -> void:
     # (`Vec[int]`), not a mangled `Vec_int` C name.
     expect(text.contains_substring("Vec[int]"))
 
-
 # =============================================================================
 #  Constant aggregates of a re-exported type alias — the SimpleGame shape.
 # =============================================================================
+
 
 @[test]
 function test_const_aggregate_through_imported_type_alias() -> void:
@@ -506,11 +506,11 @@ function test_null_literal_takes_context_type() -> void:
     ## passes `target.type` to `lower_contextual_expression`).
     expect(dumped.contains_substring(":operator \"=\" :value (IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"int\"))))"))
 
-
 # =============================================================================
 #  A global initialized from an imported constant — the initializer folds to
 #  the constant's aggregate value, not a name reference to it.
 # =============================================================================
+
 
 @[test]
 function test_global_initialized_from_imported_const() -> void:
@@ -597,12 +597,12 @@ function test_function_reference_carries_declared_name() -> void:
     let dumped = dump.as_str()
     expect(dumped.contains_substring(":value (IR::Name :name \"main_noop_scene_draw\" :type (Types::Function :name \"noop_scene_draw\" :params () :return_type (Types::Primitive :name \"void\")"))
 
-
 # =============================================================================
 #  Tuple value structs — the host's `ensure_tuple_struct` registers an
 #  `mt_tuple_*` struct for a tuple literal and for a tuple in a const/global
 #  storage type.
 # =============================================================================
+
 
 @[test]
 function test_tuple_literal_registers_value_struct() -> void:
@@ -1086,10 +1086,10 @@ function test_includes_follow_the_hosts_dfs_post_order() -> void:
         expect(false, "missing aa.h include")
     expect(zz_pos < aa_pos)
 
-
 # =============================================================================
 #  Overall pipeline stability — lowering must not crash on common constructs.
 # =============================================================================
+
 
 @[test]
 function test_lower_function_with_defer_and_while_and_match() -> void:
@@ -1139,11 +1139,11 @@ function test_lower_match_with_variant_arms() -> void:
     defer: ir.release()
     return
 
-
 # =============================================================================
 #  atomic[T] — the builtin methods lower to GCC/Clang __atomic_* builtins with
 #  the sequential-consistency memory order (5).  (Phase A atomic parity.)
 # =============================================================================
+
 
 @[test]
 function test_atomic_methods_lower_to_builtins() -> void:
@@ -1186,12 +1186,12 @@ function test_atomic_sub_and_exchange_lower_to_builtins() -> void:
     expect(text.contains_substring("__atomic_fetch_sub(&counter, 2, 5)"))
     expect(text.contains_substring("__atomic_exchange_n(&counter, 9, 5)"))
 
-
 # =============================================================================
 #  Binary operand widening — mixed-width integer / int+float arithmetic casts
 #  the narrower operand up to the common type, matching Ruby's usual-arithmetic
 #  conversions.  Same-type operands are not cast.
 # =============================================================================
+
 
 @[test]
 function test_mixed_width_integer_arithmetic_widens_narrow_operand() -> void:
@@ -1235,11 +1235,11 @@ function test_comparison_widens_operand_but_yields_bool() -> void:
     let text = ir.as_str()
     expect(text.contains_substring("long<-a < b"))
 
-
 # =============================================================================
 #  Enum / flags backing-cast — comparisons unwrap the operands to their integer
 #  backing type and cast to it, matching Ruby's EnumBase unwrap.
 # =============================================================================
+
 
 @[test]
 function test_enum_comparison_casts_to_backing() -> void:
@@ -1282,11 +1282,11 @@ function test_flags_comparison_casts_but_bitwise_does_not() -> void:
     ## The bitwise-or operands are left un-cast.
     expect(text.contains_substring("Mask_a | "))
 
-
 # =============================================================================
 #  emit — compile-time code generation.  `emit function ...` inside a const
 #  function body is spliced into the module as an ordinary top-level function.
 # =============================================================================
+
 
 @[test]
 function test_emit_function_becomes_top_level() -> void:
@@ -1311,11 +1311,11 @@ function test_emit_function_becomes_top_level() -> void:
     ## The call resolves to the emitted function's linkage name.
     expect(text.contains_substring("return main_zero_meaning()"))
 
-
 # =============================================================================
 #  Format-string locals — the declared local must be visible to later
 #  interpolations (a missing binding made `f"#{s}"` format a str as an int).
 # =============================================================================
+
 
 @[test]
 function test_format_string_local_is_interpolated_as_str() -> void:
@@ -1332,7 +1332,6 @@ function test_format_string_local_is_interpolated_as_str() -> void:
     expect(text.contains_substring("mt_format_append_str"))
     expect(not text.contains_substring("mt_format_append_int"))
 
-
 # =============================================================================
 #  Statement-position foreign-call hoisting — a statement-lowered foreign call
 #  (a `str as cstr` argument needs a temporary) hoists its setup into the
@@ -1340,6 +1339,7 @@ function test_format_string_local_is_interpolated_as_str() -> void:
 #  per-statement shapes: a result temp before a return, the call itself for a
 #  local/assignment, and a nil-line/path statement for a discarded call.
 # =============================================================================
+
 
 @[test]
 function test_foreign_call_setup_hoists_at_statement_position() -> void:
@@ -1401,13 +1401,13 @@ function test_foreign_call_setup_hoists_at_statement_position() -> void:
     ## A local initializer takes the call as the declaration's value.
     expect(dumped.contains_substring("(IR::LocalDecl :name \"img\" :linkage_name \"img\" :type (Types::Struct :name \"Image\" :module_name \"raw\") :value (IR::Call :callee \"ImageText\""))
 
-
 # =============================================================================
 #  Pointer-like foreign arguments — an `inout`/`out` argument that already is a
 #  C pointer (an editable method's `this` receiver) is cast to the boundary's
 #  pointer type instead of being addressed again, and a statement-position
 #  foreign call is emitted by the lowering itself (nil line/path).
 # =============================================================================
+
 
 @[test]
 function test_pointer_receiver_foreign_argument_is_cast_not_addressed() -> void:
@@ -1462,12 +1462,12 @@ function test_pointer_receiver_foreign_argument_is_cast_not_addressed() -> void:
     ## `discard_result`).
     expect(dumped.contains_substring("(IR::Call :callee \"RawPlain\" :arguments ((IR::Name :name \"n\" :type (Types::Primitive :name \"int\") :pointer false)) :type (Types::Primitive :name \"void\")) :line nil :path nil)"))
 
-
 # =============================================================================
 #  Inline foreign mappings — a referenced parameter is temporary-bound only
 #  where the host binds one (`reference_count > 1 && !duplicable || !inlineable`);
 #  every other argument value is substituted into the mapping instead.
 # =============================================================================
+
 
 @[test]
 function test_mapping_arguments_are_substituted_not_tempped() -> void:
@@ -1518,12 +1518,12 @@ function test_mapping_arguments_are_substituted_not_tempped() -> void:
     expect(dumped.contains_substring("(IR::Member :receiver (IR::Name :name \"kernel\" :type (Types::Span :element_type (Types::Primitive :name \"float\")) :pointer false) :member \"data\""))
     expect(dumped.contains_substring("(IR::Cast :target_type (Types::Primitive :name \"int\") :expression (IR::Member :receiver (IR::Name :name \"kernel\""))
 
-
 # =============================================================================
 #  Inline mapping external calls — the embedded call is typed with the raw C
 #  function's declared return type (the host's `owner_analysis` shape), not the
 #  mapping's own return type; the member carries the mapping's type.
 # =============================================================================
+
 
 @[test]
 function test_mapping_external_call_takes_the_declared_return_type() -> void:
@@ -1615,11 +1615,11 @@ function test_simple_mapping_call_takes_the_declared_return_type() -> void:
     ## The result temp keeps the wrapper's `cstr?`.
     expect(dumped.contains_substring("LocalDecl :name \"__mt_foreign_result_2\" :linkage_name \"__mt_foreign_result_2\" :type (Types::Nullable :base (Types::Primitive :name \"cstr\"))"))
 
-
 # =============================================================================
 #  Guard-bound nullable pointer arithmetic — the binary's type is the unwrapped
 #  pointer (the host's flow-refined operand type), not the storage `Nullable`.
 # =============================================================================
+
 
 @[test]
 function test_guard_bound_nullable_pointer_arithmetic_is_unwrapped() -> void:
@@ -1673,12 +1673,12 @@ function test_guard_bound_nullable_pointer_arithmetic_is_unwrapped() -> void:
     expect(dumped.contains_substring(":right (IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"int\")) :type (Types::Generic :name \"ptr\" :arguments ((Types::Struct :name \"Block\" :module_name \"main\")))"))
     expect(not dumped.contains_substring(":right (IR::Name :name \"i\" :type (Types::Primitive :name \"ptr_uint\") :pointer false) :type (Types::Nullable"))
 
-
 # =============================================================================
 #  Assignment literals take the target's type — `i = 1` / `i += 2` on a
 #  `ptr_uint` target emit `ptr_uint` literals (the host's contextual conversion
 #  at the assignment), not `int` ones.
 # =============================================================================
+
 
 @[test]
 function test_assignment_literals_take_the_target_type() -> void:
@@ -1839,12 +1839,12 @@ function test_generic_variant_arm_field_takes_the_instance_type() -> void:
     expect(text.contains_substring(":arm_name \"some\" :fields ((IR::AggregateField :name \"value\" :value (IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"ptr_uint\")))"))
     expect(not text.contains_substring(":arm_name \"some\" :fields ((IR::AggregateField :name \"value\" :value (IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"int\")))"))
 
-
 # =============================================================================
 #  A `continue` in a plain `while` body lowers to a native `continue` (the
 #  host's `loop_exit_continue` kind) — no goto label, since the loop's
 #  condition is the continue point.
 # =============================================================================
+
 
 @[test]
 function test_continue_in_a_plain_while_is_native() -> void:
@@ -2382,7 +2382,11 @@ function test_cstr_backed_strings_pass_data_directly() -> void:
         Result.success:
             pass
 
-    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", "external\n\nexternal function takes_cstr(s: cstr) -> void\n"):
+    if not write_source_file(
+        root.as_str(),
+        "std/c/raw/lib.mt",
+        "external\n\nexternal function takes_cstr(s: cstr) -> void\n"
+    ):
         return
     var wrap_source = <<-SRC
         import std.c.raw.lib as c
@@ -2446,7 +2450,11 @@ function test_if_condition_foreign_setup_hoists_before_the_statement() -> void:
         Result.success:
             pass
 
-    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", "external\n\nexternal function takes_cstr(s: cstr) -> bool\n"):
+    if not write_source_file(
+        root.as_str(),
+        "std/c/raw/lib.mt",
+        "external\n\nexternal function takes_cstr(s: cstr) -> bool\n"
+    ):
         return
     var wrap_source = <<-SRC
         import std.c.raw.lib as c
@@ -2577,7 +2585,6 @@ function test_method_specializations_group_under_the_declaring_module() -> void:
     expect(make_pos.is_some())
     expect(clear_pos.is_some())
     expect(make_pos.unwrap() < clear_pos.unwrap())
-
 
 
 @[test]
@@ -5565,7 +5572,11 @@ function test_extern_out_argument_addresses_the_slot_boundary_type() -> void:
         Result.success:
             pass
 
-    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", "external\n\nopaque Mutex = c\"Mutex\"\n\nexternal function take(out h: ptr[Mutex]?) -> int\n"):
+    if not write_source_file(
+        root.as_str(),
+        "std/c/raw/lib.mt",
+        "external\n\nopaque Mutex = c\"Mutex\"\n\nexternal function take(out h: ptr[Mutex]?) -> int\n"
+    ):
         return
     var source = <<-SRC
         import std.c.raw.lib as c

@@ -17,7 +17,6 @@ import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 import mtc.lsp.workspace_index as idx
 
-
 const KIND_FUNCTION: int = 12
 
 
@@ -176,7 +175,17 @@ public function handle_incoming_calls(
                             result.append(",")
                         first = false
                         var target_uri = build_file_uri(path)
-                        append_incoming_call(ref_of(result), name, caller_name, target_uri.as_str(), entry.line, occ.line, occ.column, source, ws.position_encoding_utf16)
+                        append_incoming_call(
+                            ref_of(result),
+                            name,
+                            caller_name,
+                            target_uri.as_str(),
+                            entry.line,
+                            occ.line,
+                            occ.column,
+                            source,
+                            ws.position_encoding_utf16
+                        )
                         target_uri.release()
                         # Only report once per caller per file.
                         break
@@ -251,12 +260,19 @@ public function handle_outgoing_calls(
         if not first:
             result.append(",")
         first = false
-        append_outgoing_call(ref_of(result), callee.name, callee.line, callee.column, callee.length, source, ws.position_encoding_utf16)
+        append_outgoing_call(
+            ref_of(result),
+            callee.name,
+            callee.line,
+            callee.column,
+            callee.length,
+            source,
+            ws.position_encoding_utf16
+        )
         ci += 1
 
     result.append("]")
     proto.write_response_raw(id, result.as_str())
-
 
 struct CalleeRef:
     name: str
@@ -429,7 +445,6 @@ function stmt_line(sp: ptr[ast.Stmt]) -> ptr_uint:
                 return se.line
             _:
                 return 0
-
 
 
 ## Build a file:// URI from an absolute path.

@@ -38,7 +38,12 @@ public function emitted_constants(program: ir.Program, funcs: span[ir.Function])
     i = 0
     while i < program.globals.len:
         unsafe:
-            collect_constant_refs_expr(read(program.globals.data + i).value, ref_of(by_name), ref_of(referenced), program)
+            collect_constant_refs_expr(
+                read(program.globals.data + i).value,
+                ref_of(by_name),
+                ref_of(referenced),
+                program
+            )
         i += 1
     i = 0
     while i < program.static_asserts.len:
@@ -65,7 +70,12 @@ public function emitted_constants(program: ir.Program, funcs: span[ir.Function])
 
 ## Mark `name` as a referenced constant and recursively scan its value, so
 ## constant-to-constant references pull in their dependencies.
-function add_constant_ref(name: str, by_name: ref[map_mod.Map[str, ptr_uint]], referenced: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
+function add_constant_ref(
+    name: str,
+    by_name: ref[map_mod.Map[str, ptr_uint]],
+    referenced: ref[map_mod.Map[str, bool]],
+    program: ir.Program
+) -> void:
     if referenced.contains(name):
         return
     let idx_ptr = by_name.get(name) else:
@@ -76,7 +86,12 @@ function add_constant_ref(name: str, by_name: ref[map_mod.Map[str, ptr_uint]], r
         collect_constant_refs_expr(unsafe: read(program.constants.data + idx).value, by_name, referenced, program)
 
 
-function collect_constant_refs_stmts(body: span[ir.Stmt], by_name: ref[map_mod.Map[str, ptr_uint]], referenced: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
+function collect_constant_refs_stmts(
+    body: span[ir.Stmt],
+    by_name: ref[map_mod.Map[str, ptr_uint]],
+    referenced: ref[map_mod.Map[str, bool]],
+    program: ir.Program
+) -> void:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
@@ -84,7 +99,12 @@ function collect_constant_refs_stmts(body: span[ir.Stmt], by_name: ref[map_mod.M
         i += 1
 
 
-function collect_constant_refs_stmt(sp: ptr[ir.Stmt], by_name: ref[map_mod.Map[str, ptr_uint]], referenced: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
+function collect_constant_refs_stmt(
+    sp: ptr[ir.Stmt],
+    by_name: ref[map_mod.Map[str, ptr_uint]],
+    referenced: ref[map_mod.Map[str, bool]],
+    program: ir.Program
+) -> void:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as loc:
@@ -129,7 +149,12 @@ function collect_constant_refs_stmt(sp: ptr[ir.Stmt], by_name: ref[map_mod.Map[s
                 pass
 
 
-function collect_constant_refs_expr(ep: ptr[ir.Expr], by_name: ref[map_mod.Map[str, ptr_uint]], referenced: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
+function collect_constant_refs_expr(
+    ep: ptr[ir.Expr],
+    by_name: ref[map_mod.Map[str, ptr_uint]],
+    referenced: ref[map_mod.Map[str, bool]],
+    program: ir.Program
+) -> void:
     unsafe:
         match read(ep):
             ir.Expr.expr_name as n:
@@ -282,7 +307,12 @@ public function emitted_functions(program: ir.Program) -> vec.Vec[ir.Function]:
     return result
 
 
-function reach_from_stmts(body: span[ir.Stmt], func_names: ref[map_mod.Map[str, bool]], reachable: ref[map_mod.Map[str, bool]], worklist: ref[vec.Vec[str]]) -> void:
+function reach_from_stmts(
+    body: span[ir.Stmt],
+    func_names: ref[map_mod.Map[str, bool]],
+    reachable: ref[map_mod.Map[str, bool]],
+    worklist: ref[vec.Vec[str]]
+) -> void:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
@@ -290,7 +320,12 @@ function reach_from_stmts(body: span[ir.Stmt], func_names: ref[map_mod.Map[str, 
         i += 1
 
 
-function reach_from_stmt(sp: ptr[ir.Stmt], func_names: ref[map_mod.Map[str, bool]], reachable: ref[map_mod.Map[str, bool]], worklist: ref[vec.Vec[str]]) -> void:
+function reach_from_stmt(
+    sp: ptr[ir.Stmt],
+    func_names: ref[map_mod.Map[str, bool]],
+    reachable: ref[map_mod.Map[str, bool]],
+    worklist: ref[vec.Vec[str]]
+) -> void:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_return as r:
@@ -329,7 +364,12 @@ function reach_from_stmt(sp: ptr[ir.Stmt], func_names: ref[map_mod.Map[str, bool
                 pass
 
 
-function reach_from_expr(ep: ptr[ir.Expr], func_names: ref[map_mod.Map[str, bool]], reachable: ref[map_mod.Map[str, bool]], worklist: ref[vec.Vec[str]]) -> void:
+function reach_from_expr(
+    ep: ptr[ir.Expr],
+    func_names: ref[map_mod.Map[str, bool]],
+    reachable: ref[map_mod.Map[str, bool]],
+    worklist: ref[vec.Vec[str]]
+) -> void:
     unsafe:
         match read(ep):
             ir.Expr.expr_call as call:

@@ -16,7 +16,12 @@ function location_key(line: ptr_uint, column: ptr_uint) -> ptr_uint:
     return line * 1000000 + column
 
 
-public function lint_trailing_commas(decls: span[ast.Decl], ts: span[token_mod.Token], path: str, warnings: ref[vec.Vec[linter_mod.Warning]]) -> void:
+public function lint_trailing_commas(
+    decls: span[ast.Decl],
+    ts: span[token_mod.Token],
+    path: str,
+    warnings: ref[vec.Vec[linter_mod.Warning]]
+) -> void:
 
     # Map each token's (line, column) to its index, first-occurrence wins.
     var loc_index = map_mod.Map[ptr_uint, ptr_uint].create()
@@ -55,7 +60,15 @@ public function lint_trailing_commas(decls: span[ast.Decl], ts: span[token_mod.T
 
 
 ## Report the trailing comma before the matching `)` of `call`, if any.
-function check_trailing_comma(callee: ptr[ast.Expr], args: span[ast.Argument], ts: span[token_mod.Token], loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]], warned: ref[map_mod.Map[ptr_uint, bool]], path: str, warnings: ref[vec.Vec[linter_mod.Warning]]) -> void:
+function check_trailing_comma(
+    callee: ptr[ast.Expr],
+    args: span[ast.Argument],
+    ts: span[token_mod.Token],
+    loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]],
+    warned: ref[map_mod.Map[ptr_uint, bool]],
+    path: str,
+    warnings: ref[vec.Vec[linter_mod.Warning]]
+) -> void:
     if args.len == 0:
         return
     let callee_line = linter_mod.expression_line(callee)
@@ -136,13 +149,27 @@ function is_trivia_token(k: tk.TokenKind) -> bool:
     return k == tk.TokenKind.newline or k == tk.TokenKind.indent or k == tk.TokenKind.dedent or k == tk.TokenKind.eof
 
 
-function tc_expr_opt(expr: ptr[ast.Expr]?, ts: span[token_mod.Token], loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]], warned: ref[map_mod.Map[ptr_uint, bool]], path: str, warnings: ref[vec.Vec[linter_mod.Warning]]) -> void:
+function tc_expr_opt(
+    expr: ptr[ast.Expr]?,
+    ts: span[token_mod.Token],
+    loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]],
+    warned: ref[map_mod.Map[ptr_uint, bool]],
+    path: str,
+    warnings: ref[vec.Vec[linter_mod.Warning]]
+) -> void:
     let ep = expr else:
         return
     tc_expr(ep, ts, loc_index, warned, path, warnings)
 
 
-function tc_expr(expr: ptr[ast.Expr], ts: span[token_mod.Token], loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]], warned: ref[map_mod.Map[ptr_uint, bool]], path: str, warnings: ref[vec.Vec[linter_mod.Warning]]) -> void:
+function tc_expr(
+    expr: ptr[ast.Expr],
+    ts: span[token_mod.Token],
+    loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]],
+    warned: ref[map_mod.Map[ptr_uint, bool]],
+    path: str,
+    warnings: ref[vec.Vec[linter_mod.Warning]]
+) -> void:
     unsafe:
         match read(expr):
             ast.Expr.expr_call as call:
@@ -201,7 +228,14 @@ function tc_expr(expr: ptr[ast.Expr], ts: span[token_mod.Token], loc_index: ref[
 ## Faithful port of Ruby's walk_statement_lists: process a list's direct-
 ## statement expressions, then recurse into nested statement lists.  Combined
 ## with the `warned` dedup this reproduces Ruby's exact warning order.
-function tc_body(body: ptr[ast.Stmt]?, ts: span[token_mod.Token], loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]], warned: ref[map_mod.Map[ptr_uint, bool]], path: str, warnings: ref[vec.Vec[linter_mod.Warning]]) -> void:
+function tc_body(
+    body: ptr[ast.Stmt]?,
+    ts: span[token_mod.Token],
+    loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]],
+    warned: ref[map_mod.Map[ptr_uint, bool]],
+    path: str,
+    warnings: ref[vec.Vec[linter_mod.Warning]]
+) -> void:
     let bp = body else:
         return
     unsafe:
@@ -213,7 +247,14 @@ function tc_body(body: ptr[ast.Stmt]?, ts: span[token_mod.Token], loc_index: ref
                 tc_recurse_statement(bp, ts, loc_index, warned, path, warnings)
 
 
-function tc_statement_list(stmts: span[ast.Stmt], ts: span[token_mod.Token], loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]], warned: ref[map_mod.Map[ptr_uint, bool]], path: str, warnings: ref[vec.Vec[linter_mod.Warning]]) -> void:
+function tc_statement_list(
+    stmts: span[ast.Stmt],
+    ts: span[token_mod.Token],
+    loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]],
+    warned: ref[map_mod.Map[ptr_uint, bool]],
+    path: str,
+    warnings: ref[vec.Vec[linter_mod.Warning]]
+) -> void:
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:
@@ -226,7 +267,14 @@ function tc_statement_list(stmts: span[ast.Stmt], ts: span[token_mod.Token], loc
         i += 1
 
 
-function tc_recurse_statement(stmt: ptr[ast.Stmt], ts: span[token_mod.Token], loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]], warned: ref[map_mod.Map[ptr_uint, bool]], path: str, warnings: ref[vec.Vec[linter_mod.Warning]]) -> void:
+function tc_recurse_statement(
+    stmt: ptr[ast.Stmt],
+    ts: span[token_mod.Token],
+    loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]],
+    warned: ref[map_mod.Map[ptr_uint, bool]],
+    path: str,
+    warnings: ref[vec.Vec[linter_mod.Warning]]
+) -> void:
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_if as iff:
@@ -255,7 +303,14 @@ function tc_recurse_statement(stmt: ptr[ast.Stmt], ts: span[token_mod.Token], lo
 ## The direct expressions of a statement (Ruby's each_statement_expression) —
 ## does not descend into nested statement bodies, except for the transparent
 ## `when` / `unsafe` / error blocks.
-function tc_each_statement_expr(stmt: ptr[ast.Stmt], ts: span[token_mod.Token], loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]], warned: ref[map_mod.Map[ptr_uint, bool]], path: str, warnings: ref[vec.Vec[linter_mod.Warning]]) -> void:
+function tc_each_statement_expr(
+    stmt: ptr[ast.Stmt],
+    ts: span[token_mod.Token],
+    loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]],
+    warned: ref[map_mod.Map[ptr_uint, bool]],
+    path: str,
+    warnings: ref[vec.Vec[linter_mod.Warning]]
+) -> void:
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_local as loc:
@@ -304,7 +359,14 @@ function tc_each_statement_expr(stmt: ptr[ast.Stmt], ts: span[token_mod.Token], 
                 pass
 
 
-function tc_each_stmt_expr_in_body(body: ptr[ast.Stmt]?, ts: span[token_mod.Token], loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]], warned: ref[map_mod.Map[ptr_uint, bool]], path: str, warnings: ref[vec.Vec[linter_mod.Warning]]) -> void:
+function tc_each_stmt_expr_in_body(
+    body: ptr[ast.Stmt]?,
+    ts: span[token_mod.Token],
+    loc_index: ref[map_mod.Map[ptr_uint, ptr_uint]],
+    warned: ref[map_mod.Map[ptr_uint, bool]],
+    path: str,
+    warnings: ref[vec.Vec[linter_mod.Warning]]
+) -> void:
     let bp = body else:
         return
     unsafe:

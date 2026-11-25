@@ -79,10 +79,10 @@ function warning_of(warns: ref[vec.Vec[linter.Warning]], code: str) -> linter.Wa
         i += 1
     return linter.Warning(path = "", line = 0, column = 0, length = 0, code = "", message = "", severity = "")
 
-
 # =============================================================================
 #  line-too-long
 # =============================================================================
+
 
 @[test]
 function test_line_too_long_wrappable_line_flagged_with_hint() -> void:
@@ -103,7 +103,6 @@ function test_line_too_long_non_wrappable_line_ignored() -> void:
 function test_line_too_long_foreign_header_ignored() -> void:
     var source = "public foreign function really_long_name(alpha: int, beta: int, gamma: int, delta: int, epsilon: int, zeta: int) -> void = c.foo\n"
     expect_none(source, "line-too-long")
-
 
 # =============================================================================
 #  redundant-cast (sema-backed)
@@ -135,7 +134,13 @@ function test_redundant_cast_widening_slot() -> void:
     var warns = lint_text_with_analysis(source)
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 1)
-    expect(message_of(ref_of(warns), "redundant-cast").contains_substring("implicit widening makes this cast redundant: long<-"), "widening")
+    expect(
+        message_of(
+            ref_of(warns),
+            "redundant-cast"
+        ).contains_substring("implicit widening makes this cast redundant: long<-"),
+        "widening"
+    )
 
 
 @[test]
@@ -144,7 +149,13 @@ function test_redundant_cast_literal_slot() -> void:
     var warns = lint_text_with_analysis(source)
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 1)
-    expect(message_of(ref_of(warns), "redundant-cast").contains_substring("integer literal coercion makes this cast redundant: ubyte<-"), "literal")
+    expect(
+        message_of(
+            ref_of(warns),
+            "redundant-cast"
+        ).contains_substring("integer literal coercion makes this cast redundant: ubyte<-"),
+        "literal"
+    )
 
 
 @[test]
@@ -153,7 +164,13 @@ function test_redundant_cast_parens() -> void:
     var warns = lint_text_with_analysis(source)
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 1)
-    expect(message_of(ref_of(warns), "redundant-cast").contains_substring("parentheses around cast expression are redundant: byte<-"), "parens")
+    expect(
+        message_of(
+            ref_of(warns),
+            "redundant-cast"
+        ).contains_substring("parentheses around cast expression are redundant: byte<-"),
+        "parens"
+    )
 
 
 @[test]
@@ -162,7 +179,13 @@ function test_redundant_cast_float_operand() -> void:
     var warns = lint_text_with_analysis(source)
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 1)
-    expect(message_of(ref_of(warns), "redundant-cast").contains_substring("implicit float widening makes this cast redundant: float<-"), "float operand")
+    expect(
+        message_of(
+            ref_of(warns),
+            "redundant-cast"
+        ).contains_substring("implicit float widening makes this cast redundant: float<-"),
+        "float operand"
+    )
 
 
 @[test]
@@ -170,10 +193,10 @@ function test_redundant_cast_narrowing_clean() -> void:
     let source = "function demo(a: long) -> int:\n    return int<-a\n"
     expect_none(source, "redundant-cast")
 
-
 # =============================================================================
 #  select/ignore options and `# lint: ignore` suppressions
 # =============================================================================
+
 
 @[test]
 function test_suppression_same_line() -> void:
@@ -243,10 +266,10 @@ function test_ignore_drops_rule() -> void:
     expect_eq(int<-(count_code(ref_of(warns), "prefer-let")), 0)
     expect_eq(int<-(count_code(ref_of(warns), "self-assignment")), 1)
 
-
 # =============================================================================
 #  self-assignment
 # =============================================================================
+
 
 @[test]
 function test_self_assignment_flagged() -> void:
@@ -267,10 +290,10 @@ function test_distinct_assignment_clean() -> void:
     SRC
     expect_none(source, "self-assignment")
 
-
 # =============================================================================
 #  self-comparison
 # =============================================================================
+
 
 @[test]
 function test_self_comparison_flagged() -> void:
@@ -314,10 +337,10 @@ function test_distinct_comparison_clean() -> void:
     SRC
     expect_none(source, "self-comparison")
 
-
 # =============================================================================
 #  redundant-bool-compare
 # =============================================================================
+
 
 @[test]
 function test_redundant_bool_compare_flagged() -> void:
@@ -341,10 +364,10 @@ function test_bool_literal_both_sides_clean() -> void:
     SRC
     expect_none(source, "redundant-bool-compare")
 
-
 # =============================================================================
 #  redundant-return
 # =============================================================================
+
 
 @[test]
 function test_redundant_return_flagged() -> void:
@@ -373,10 +396,10 @@ function test_implicit_void_return_clean() -> void:
     SRC
     expect_none(source, "redundant-return")
 
-
 # =============================================================================
 #  useless-expression
 # =============================================================================
+
 
 @[test]
 function test_useless_expression_flagged() -> void:
@@ -400,10 +423,10 @@ function test_call_statement_clean() -> void:
     SRC
     expect_none(source, "useless-expression")
 
-
 # =============================================================================
 #  duplicate-if-condition
 # =============================================================================
+
 
 @[test]
 function test_duplicate_if_condition_flagged() -> void:
@@ -447,10 +470,10 @@ function test_distinct_if_conditions_clean() -> void:
     SRC
     expect_none(source, "duplicate-if-condition")
 
-
 # =============================================================================
 #  noop-compound-assignment
 # =============================================================================
+
 
 @[test]
 function test_noop_compound_add_zero_flagged() -> void:
@@ -485,10 +508,10 @@ function test_compound_nonidentity_clean() -> void:
     SRC
     expect_none(source, "noop-compound-assignment")
 
-
 # =============================================================================
 #  redundant-ignored-match-binding
 # =============================================================================
+
 
 @[test]
 function test_redundant_ignored_match_binding_flagged() -> void:
@@ -517,10 +540,10 @@ function test_named_match_binding_clean() -> void:
     SRC
     expect_none(source, "redundant-ignored-match-binding")
 
-
 # =============================================================================
 #  redundant-else
 # =============================================================================
+
 
 @[test]
 function test_redundant_else_flagged() -> void:
@@ -577,10 +600,10 @@ function test_redundant_else_with_fatal_flagged() -> void:
     SRC
     expect_one(source, "redundant-else")
 
-
 # =============================================================================
 #  event-capacity
 # =============================================================================
+
 
 @[test]
 function test_large_event_capacity_flagged() -> void:
@@ -597,10 +620,10 @@ function test_small_event_capacity_clean() -> void:
     SRC
     expect_none(source, "event-capacity")
 
-
 # =============================================================================
 #  trailing-list-comma
 # =============================================================================
+
 
 @[test]
 function test_trailing_list_comma_flagged() -> void:
@@ -628,10 +651,10 @@ function test_no_trailing_comma_clean() -> void:
     SRC
     expect_none(source, "trailing-list-comma")
 
-
 # =============================================================================
 #  doc-tag
 # =============================================================================
+
 
 @[test]
 function test_doc_tag_valid_clean() -> void:
@@ -673,10 +696,10 @@ function test_doc_tag_on_struct_flagged() -> void:
     SRC
     expect_one(source, "doc-tag")
 
-
 # =============================================================================
 #  dead-assignment
 # =============================================================================
+
 
 @[test]
 function test_dead_assignment_flagged() -> void:
@@ -690,7 +713,10 @@ function test_dead_assignment_flagged() -> void:
     expect_one(source, "dead-assignment")
     var warns = lint_text(source)
     defer: warns.release()
-    expect(message_of(ref_of(warns), "dead-assignment").contains_substring("value assigned to 'x' is never read"), "host message")
+    expect(
+        message_of(ref_of(warns), "dead-assignment").contains_substring("value assigned to 'x' is never read"),
+        "host message"
+    )
 
 
 @[test]
@@ -726,10 +752,10 @@ function test_dead_assignment_reused_clean() -> void:
     SRC
     expect_none(source, "dead-assignment")
 
-
 # =============================================================================
 #  missing-return
 # =============================================================================
+
 
 @[test]
 function test_missing_return_flagged() -> void:
@@ -740,7 +766,10 @@ function test_missing_return_flagged() -> void:
     expect_one(source, "missing-return")
     var warns = lint_text(source)
     defer: warns.release()
-    expect(message_of(ref_of(warns), "missing-return").contains_substring("'compute' does not always return a value"), "host message")
+    expect(
+        message_of(ref_of(warns), "missing-return").contains_substring("'compute' does not always return a value"),
+        "host message"
+    )
 
 
 @[test]
@@ -818,10 +847,10 @@ function test_missing_return_clean_for_static_assert_false() -> void:
     SRC
     expect_none(source, "missing-return")
 
-
 # =============================================================================
 #  unreachable-code
 # =============================================================================
+
 
 @[test]
 function test_unreachable_after_return_flagged() -> void:
@@ -868,10 +897,10 @@ function test_unreachable_statement_clean() -> void:
     SRC
     expect_none(source, "unreachable-code")
 
-
 # =============================================================================
 #  constant-condition
 # =============================================================================
+
 
 @[test]
 function test_constant_condition_true_flagged() -> void:
@@ -941,10 +970,10 @@ function test_constant_condition_different_vars_clean() -> void:
     SRC
     expect_none(source, "constant-condition")
 
-
 # =============================================================================
 #  loop-single-iteration
 # =============================================================================
+
 
 @[test]
 function test_loop_single_break_flagged() -> void:
@@ -1016,10 +1045,10 @@ function test_loop_normal_with_break_clean() -> void:
     SRC
     expect_none(source, "loop-single-iteration")
 
-
 # =============================================================================
 #  prefer-own-ptr
 # =============================================================================
+
 
 @[test]
 function test_prefer_own_ptr_flagged() -> void:
@@ -1051,10 +1080,10 @@ function test_ptr_used_outside_unsafe_clean() -> void:
     SRC
     expect_none(source, "prefer-own-ptr")
 
-
 # =============================================================================
 #  redundant-cast
 # =============================================================================
+
 
 @[test]
 function test_redundant_cast_flagged() -> void:
@@ -1078,10 +1107,10 @@ function test_valid_cast_clean() -> void:
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 0)
 
-
 # =============================================================================
 #  redundant-null-check
 # =============================================================================
+
 
 @[test]
 function test_redundant_null_check_nested_flagged() -> void:
@@ -1254,10 +1283,10 @@ function test_null_check_after_borrow_clean() -> void:
     SRC
     expect_none(source, "redundant-null-check")
 
-
 # =============================================================================
 #  redundant-unsafe (sema-marked)
 # =============================================================================
+
 
 @[test]
 function test_redundant_unsafe_pointer_cast_is_required() -> void:
@@ -1337,10 +1366,10 @@ function test_redundant_unsafe_format_part_is_marked() -> void:
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "redundant-unsafe")), 0)
 
-
 # =============================================================================
 #  analyzer marks feeding redundant-unsafe (session 21)
 # =============================================================================
+
 
 @[test]
 function test_redundant_unsafe_short_circuit_and_marks() -> void:
@@ -1388,10 +1417,10 @@ function test_generic_body_cast_is_not_reported() -> void:
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 0)
 
-
 # =============================================================================
 #  prefer-inline-if — the `inline_if_too_wide?` join simulation
 # =============================================================================
+
 
 @[test]
 function test_prefer_inline_if_joinable_reported() -> void:
@@ -1455,7 +1484,6 @@ function test_prefer_inline_if_multiline_body_suppressed() -> void:
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "prefer-inline-if")), 0)
 
-
 # =============================================================================
 #  owning-release-leak / owning-release-double — the CFG precision analysis
 # =============================================================================
@@ -1505,7 +1533,13 @@ function test_owning_release_leak_conditional_release_is_a_leak() -> void:
     var warns = lint_text_with_owning(source, owning)
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "owning-release-leak")), 1)
-    expect(message_of(ref_of(warns), "owning-release-leak").contains_substring("owning binding 'b' of type 'Box' is never released"), "leak message")
+    expect(
+        message_of(
+            ref_of(warns),
+            "owning-release-leak"
+        ).contains_substring("owning binding 'b' of type 'Box' is never released"),
+        "leak message"
+    )
 
 
 @[test]
@@ -1588,10 +1622,10 @@ function test_owning_release_double_across_loop_back_edge() -> void:
     expect_eq(int<-(count_code(ref_of(warns), "owning-release-double")), 1)
     expect_eq(int<-(count_code(ref_of(warns), "owning-release-leak")), 0)
 
-
 # =============================================================================
 #  prefer-struct-with — the struct/type gates
 # =============================================================================
+
 
 @[test]
 function test_prefer_struct_with_copied_fields_reported() -> void:
@@ -1608,7 +1642,10 @@ function test_prefer_struct_with_copied_fields_reported() -> void:
     var warns = lint_text_with_analysis(source)
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "prefer-struct-with")), 1)
-    expect(message_of(ref_of(warns), "prefer-struct-with").contains_substring("copies 2 field(s) from `s`; use `s.with(z = …)`"), "with hint")
+    expect(message_of(
+        ref_of(warns),
+        "prefer-struct-with"
+    ).contains_substring("copies 2 field(s) from `s`; use `s.with(z = …)`"), "with hint")
 
 
 @[test]
@@ -1647,7 +1684,6 @@ function test_prefer_struct_with_unnamed_argument_suppressed() -> void:
     var warns = lint_text_with_analysis(source)
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "prefer-struct-with")), 0)
-
 
 # =============================================================================
 #  Lint tier (the host's `full_tier?` gates)
@@ -1689,7 +1725,6 @@ function test_fast_tier_keeps_the_always_on_rules() -> void:
     var warns = lint_with_options(TIER_LONG_LINE_SOURCE, options)
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "line-too-long")), 1)
-
 
 # =============================================================================
 #  Scope-stack capacity (the fixed-window store's two failure modes)
@@ -1756,6 +1791,18 @@ function test_scope_stack_accepts_deep_nesting() -> void:
     defer: warns.release()
     # Every nested local is reported exactly once; the depth itself is no error.
     expect_eq(int<-(count_code(ref_of(warns), "unused-local")), 60)
+
+
+@[test]
+function test_unused_import_used_only_in_type_positions_is_clean() -> void:
+    ## Type positions credit the import: a parameter/return/field/local
+    ## annotation (`vec.Vec[int]`) is a use, not an unused import.  The rule
+    ## previously scanned expressions only and falsely flagged these.
+    var source = string.String.from_str(
+        "import std.vec as vec\nimport mtc.parser.state as pstate\n\npublic struct Holder:\n    values: vec.Vec[int]\n\nfunction demo(values: vec.Vec[int]) -> vec.Vec[int]:\n    return values\n\nfunction local_demo() -> void:\n    var local: vec.Vec[int]\n    var diags = vec.Vec[pstate.ParseDiagnostic].create()\n    diags.release()\n"
+    )
+    defer: source.release()
+    expect_none(source.as_str(), "unused-import")
 
 
 @[test]

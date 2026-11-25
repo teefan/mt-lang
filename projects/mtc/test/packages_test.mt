@@ -126,7 +126,10 @@ function test_graph_tree_and_source_roots() -> void:
     write_file(lib_main.as_str(), "public function twice(x: int) -> int:\n    return x * 2\n")
     lib_main.release()
     var lib_toml = path_ops.join(lib.as_str(), "package.toml")
-    write_file(lib_toml.as_str(), "[package]\nname = \"demo.lib\"\nversion = \"1.0.0\"\nkind = \"library\"\nsource_root = \"src\"\n")
+    write_file(
+        lib_toml.as_str(),
+        "[package]\nname = \"demo.lib\"\nversion = \"1.0.0\"\nkind = \"library\"\nsource_root = \"src\"\n"
+    )
     lib_toml.release()
     lib.release()
 
@@ -171,7 +174,10 @@ function test_lock_round_trip_and_check() -> void:
     write_file(main_file.as_str(), "function main() -> int:\n    return 0\n")
     main_file.release()
     var toml = path_ops.join(dir.as_str(), "package.toml")
-    write_file(toml.as_str(), "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nsource_root = \"src\"\n\n[build]\nentry = \"src/main.mt\"\n")
+    write_file(
+        toml.as_str(),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nsource_root = \"src\"\n\n[build]\nentry = \"src/main.mt\"\n"
+    )
     toml.release()
 
     var resolver = source.create_resolver(source.ResolutionMode.materialize)

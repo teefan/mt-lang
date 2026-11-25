@@ -31,21 +31,19 @@ import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 import mtc.lsp.workspace_index as idx
 
-
 ## LSP CompletionItemKind values, matching the host's numbering.
-const KIND_MODULE:      int = 2
+const KIND_MODULE: int = 2
 const KIND_MODULE_TYPE: int = 5
-const KIND_METHOD:      int = 6
-const KIND_CLASS:       int = 7
-const KIND_FIELD:       int = 8
-const KIND_FUNCTION:    int = 12
-const KIND_VARIABLE:    int = 13
-const KIND_ENUM:        int = 13
-const KIND_KEYWORD:     int = 14
+const KIND_METHOD: int = 6
+const KIND_CLASS: int = 7
+const KIND_FIELD: int = 8
+const KIND_FUNCTION: int = 12
+const KIND_VARIABLE: int = 13
+const KIND_ENUM: int = 13
+const KIND_KEYWORD: int = 14
 const KIND_ENUM_MEMBER: int = 22
 
 const MAX_COMPLETION_ITEMS: ptr_uint = 200
-
 
 ## The host's `COMPLETION_KEYWORDS`, in its order.
 const COMPLETION_KEYWORDS: array[str, 47] = array[str, 47](
@@ -55,7 +53,6 @@ const COMPLETION_KEYWORDS: array[str, 47] = array[str, 47](
     "unsafe", "consuming", "implements", "include", "link", "foreign", "proc", "editable", "in", "out",
     "inout", "as", "when", "inline", "await", "static_assert", "emit",
 )
-
 
 ## The host's `TYPE_CONSTRUCTOR_KEYWORDS`, in its order.
 const TYPE_CONSTRUCTOR_KEYWORDS: array[str, 12] = array[str, 12](
@@ -676,11 +673,25 @@ function import_completions(
 
                             if fs_mod.is_directory(full_path.as_str()):
                                 if dir_contains_mt(full_path.as_str()):
-                                    add_import_item(ref_of(items_json), entry_name, uri, ref_of(seen), ref_of(count), ref_of(first))
+                                    add_import_item(
+                                        ref_of(items_json),
+                                        entry_name,
+                                        uri,
+                                        ref_of(seen),
+                                        ref_of(count),
+                                        ref_of(first)
+                                    )
                             else if entry_name.ends_with(".mt"):
                                 let mod_name = entry_name.slice(0, entry_name.len - 3)
                                 if mod_name.len > 0:
-                                    add_import_item(ref_of(items_json), mod_name, uri, ref_of(seen), ref_of(count), ref_of(first))
+                                    add_import_item(
+                                        ref_of(items_json),
+                                        mod_name,
+                                        uri,
+                                        ref_of(seen),
+                                        ref_of(count),
+                                        ref_of(first)
+                                    )
                         Option.none:
                             pass
                     ci += 1
@@ -787,9 +798,45 @@ function module_member_completions(
             # Three passes in the host's bucket order: functions, then values,
             # then types (each in declaration order).  Clients sort by sortText,
             # but the host's array order is what it advertises.
-            emit_module_members(ref_of(items_json), module_file, module_name, prefix, uri, 0, exports_all, target, current_module, ref_of(first), ref_of(count))
-            emit_module_members(ref_of(items_json), module_file, module_name, prefix, uri, 1, exports_all, target, current_module, ref_of(first), ref_of(count))
-            emit_module_members(ref_of(items_json), module_file, module_name, prefix, uri, 2, exports_all, target, current_module, ref_of(first), ref_of(count))
+            emit_module_members(
+                ref_of(items_json),
+                module_file,
+                module_name,
+                prefix,
+                uri,
+                0,
+                exports_all,
+                target,
+                current_module,
+                ref_of(first),
+                ref_of(count)
+            )
+            emit_module_members(
+                ref_of(items_json),
+                module_file,
+                module_name,
+                prefix,
+                uri,
+                1,
+                exports_all,
+                target,
+                current_module,
+                ref_of(first),
+                ref_of(count)
+            )
+            emit_module_members(
+                ref_of(items_json),
+                module_file,
+                module_name,
+                prefix,
+                uri,
+                2,
+                exports_all,
+                target,
+                current_module,
+                ref_of(first),
+                ref_of(count)
+            )
 
             items_json.append("]")
             let alloc = heap.must_alloc[string.String](1)
@@ -1122,7 +1169,20 @@ function emit_module_type(
     defer: sort_text.release()
     sort_text.append("2_")
     sort_text.append(name)
-    append_item_ext(items_json, name, KIND_MODULE_TYPE, detail.as_str(), name, sort_text.as_str(), name, uri, 0, "", "", first)
+    append_item_ext(
+        items_json,
+        name,
+        KIND_MODULE_TYPE,
+        detail.as_str(),
+        name,
+        sort_text.as_str(),
+        name,
+        uri,
+        0,
+        "",
+        "",
+        first
+    )
     unsafe:
         read(count) = read(count) + 1
 
@@ -1418,7 +1478,16 @@ function type_receiver_completions(
         let mp = methods.get(mi2) else:
             break
         unsafe:
-            emit_receiver_method(read(mp), ReceiverMethodScope.statics_only, prefix, "0_", uri, ref_of(items_json), ref_of(first), ref_of(count))
+            emit_receiver_method(
+                read(mp),
+                ReceiverMethodScope.statics_only,
+                prefix,
+                "0_",
+                uri,
+                ref_of(items_json),
+                ref_of(first),
+                ref_of(count)
+            )
         mi2 += 1
 
     items_json.append("]")
@@ -1477,14 +1546,37 @@ function value_receiver_completions(
         match field_ty:
             # A match-arm payload binding's type: the arm's declared fields.
             types.Type.ty_variant_arm_payload as arm:
-                emit_payload_field_items(ref_of(items_json), unsafe: read(arm.payload).fields, prefix, uri, ref_of(first), ref_of(count))
+                emit_payload_field_items(
+                    ref_of(items_json),
+                    unsafe: read(arm.payload).fields,
+                    prefix,
+                    uri,
+                    ref_of(first),
+                    ref_of(count)
+                )
             # A tuple's positional or named fields.
             types.Type.ty_tuple as tup:
                 let tup_bp = unsafe: read(tup.payload)
-                emit_tuple_field_items(ref_of(items_json), tup_bp.elements, tup_bp.field_names, prefix, uri, ref_of(first), ref_of(count))
+                emit_tuple_field_items(
+                    ref_of(items_json),
+                    tup_bp.elements,
+                    tup_bp.field_names,
+                    prefix,
+                    uri,
+                    ref_of(first),
+                    ref_of(count)
+                )
             _:
                 if type_name.len > 0:
-                    emit_builtin_fields(ref_of(items_json), analysis, field_ty, prefix, uri, ref_of(first), ref_of(count))
+                    emit_builtin_fields(
+                        ref_of(items_json),
+                        analysis,
+                        field_ty,
+                        prefix,
+                        uri,
+                        ref_of(first),
+                        ref_of(count)
+                    )
 
     let method_ty = navigation.project_value_receiver_type(receiver_ty)
     let method_name = navigation.type_to_key_name(method_ty)
@@ -1499,7 +1591,16 @@ function value_receiver_completions(
             let mp = methods.get(mi) else:
                 break
             unsafe:
-                emit_receiver_method(read(mp), ReceiverMethodScope.instances_only, prefix, "1_", uri, ref_of(items_json), ref_of(first), ref_of(count))
+                emit_receiver_method(
+                    read(mp),
+                    ReceiverMethodScope.instances_only,
+                    prefix,
+                    "1_",
+                    uri,
+                    ref_of(items_json),
+                    ref_of(first),
+                    ref_of(count)
+                )
             mi += 1
 
     items_json.append("]")
@@ -1510,7 +1611,6 @@ function value_receiver_completions(
     let alloc = heap.must_alloc[string.String](1)
     unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
     return alloc
-
 
 const VECTOR_COMPONENT_NAMES: array[str, 4] = array[str, 4]("x", "y", "z", "w")
 const MATRIX_COLUMN_NAMES: array[str, 4] = array[str, 4]("col0", "col1", "col2", "col3")
@@ -1785,7 +1885,16 @@ function imported_value_receiver_completions(
         let mp = methods.get(mi) else:
             break
         unsafe:
-            emit_receiver_method(read(mp), ReceiverMethodScope.instances_only, prefix, "1_", uri, ref_of(items_json), ref_of(first), ref_of(count))
+            emit_receiver_method(
+                read(mp),
+                ReceiverMethodScope.instances_only,
+                prefix,
+                "1_",
+                uri,
+                ref_of(items_json),
+                ref_of(first),
+                ref_of(count)
+            )
         mi += 1
 
     items_json.append("]")
@@ -2060,7 +2169,12 @@ function arm_binding_type_for(
         let ep = entries.get(i) else:
             break
         let entry = unsafe: read(ep)
-        if entry.name.equal(name) and entry.line >= lower_bound and entry.line <= cursor_line and entry.line >= best_line:
+        if (
+            entry.name.equal(name)
+            and entry.line >= lower_bound
+            and entry.line <= cursor_line
+            and entry.line >= best_line
+        ):
             best_line = entry.line
             found = true
             best_ty = entry.ty
@@ -2842,7 +2956,16 @@ function emit_local_binding_items(
     while pi < params.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
         let p = unsafe: read(params.data + pi)
         if p.name.len > 0 and p.name != "_" and prefix_matches(p.name, prefix):
-            emit_local_item(items_json, p.name, ast_formatter.render_type(p.param_type), "parameter ", "3_", uri, first, count)
+            emit_local_item(
+                items_json,
+                p.name,
+                ast_formatter.render_type(p.param_type),
+                "parameter ",
+                "3_",
+                uri,
+                first,
+                count
+            )
         pi += 1
 
     if enclosing.body != null:
@@ -2960,7 +3083,6 @@ function line_prefix(source: str, line: ptr_uint, character: ptr_uint) -> str:
     if pos > line_text.len:
         pos = line_text.len
     return line_text.slice(0, pos)
-
 
 ## The built-in attributes the host lists before the file's declared ones.
 const BUILTIN_ATTRIBUTES: array[str, 3] = array[str, 3]("packed", "align", "deprecated")
@@ -3419,7 +3541,6 @@ public function named_argument_completion_items(
     unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
     return alloc
 
-
 ## Completions inside `name[...` — the host's `specialization_completions`:
 ## every visible type as a `0_` type item.
 ## The host's `facts.types` registration order: the built-in primitives, the
@@ -3576,7 +3697,11 @@ function module_name_for(ws: ref[workspace.Workspace], file_path: str) -> string
 
 
 ## Render `a: int, b: int` from semantic parameters.
-function append_semantic_params(target: ref[string.String], params: span[analyzer.ParamEntry], current_module: str) -> void:
+function append_semantic_params(
+    target: ref[string.String],
+    params: span[analyzer.ParamEntry],
+    current_module: str
+) -> void:
     var pi: ptr_uint = 0
     while pi < params.len:
         let param = unsafe: read(params.data + pi)

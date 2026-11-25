@@ -23,12 +23,10 @@ import std.vec as vec
 import mtc.browser as browser
 import mtc.http_util as http_util
 
-
 struct DocModule:
     name: string.String
     path: string.String
     is_dir: bool
-
 
 struct Declaration:
     kind: string.String
@@ -866,7 +864,6 @@ function extract_declarations(source: str) -> vec.Vec[Declaration]:
             start = pos + 1
         pos += 1
     return result
-
 
 struct DeclarationKeyword:
     keyword: str

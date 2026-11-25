@@ -24,6 +24,7 @@ import mtc.cli_help as cli_help
 import mtc.upstream_sources as upstream_sources
 import mtc.toolchain_bindings as raw_bindings
 
+
 ## The CLI entry point; `args[0]` is the `toolchain` command name.
 public function run(args: span[str]) -> int:
     var quiet = false
@@ -111,7 +112,6 @@ function append_ansi(target: ref[string.String], code: str) -> void:
     target.push_byte(91)
     target.append(code)
     target.push_byte(109)
-
 
 ## ── bootstrap ────────────────────────────────────────────────────────────────
 
@@ -213,13 +213,11 @@ function bootstrap_command(quiet: bool) -> int:
         return 1
     return 0
 
-
 ## The file a checkout records its own revision in.  Sentinels alone cannot
 ## detect a *version* change: every box2d release ships `include/box2d/box2d.h`,
 ## so a cached 3.1.1 tree satisfied the 3.2.0 pin's sentinel and was silently
 ## reused (the CI failure this guards).  The stamp makes a pin change visible.
 const REVISION_STAMP: str = ".mt-source-revision"
-
 
 ## True when `checkout` records exactly `revision` in its stamp.
 ## ── tools ───────────────────────────────────────────────────────────────────
@@ -388,7 +386,6 @@ function is_executable(path: str) -> bool:
         Result.failure:
             return false
 
-
 ## ── doctor ──────────────────────────────────────────────────────────────────
 
 ## One accumulated `ok`/`fail` row (the host's `checks` tuples).
@@ -540,8 +537,6 @@ function push_check(checks: ref[vec.Vec[CheckRow]], name: str, ok: bool, detail:
         detail = string.String.from_str(detail),
         ok = ok,
     ))
-
-
 
 
 ## Append a binding row to the binding block, keeping it sorted by name (the

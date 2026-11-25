@@ -18,10 +18,9 @@ import mtc.dap.session as session
 import mtc.dap.utilities as util
 import mtc.dap.wire as wire
 
-
-public const SIGNAL_STOP:   int = 19
-public const SIGNAL_CONT:   int = 18
-public const SIGNAL_TERM:   int = 15
+public const SIGNAL_STOP: int = 19
+public const SIGNAL_CONT: int = 18
+public const SIGNAL_TERM: int = 15
 
 
 ## Dispatch a DAP request to the appropriate handler based on the command.
@@ -358,7 +357,11 @@ function handle_stack_trace(ses: ref[session.Session], seq: ptr_uint, msg: proto
 
 ## Scopes — single Locals scope.
 function handle_scopes(seq: ptr_uint, req_seq: ptr_uint) -> void:
-    wire.write_response(seq, req_seq, "{\"scopes\":[{\"name\":\"Locals\",\"variablesReference\":1,\"expensive\":false}]}")
+    wire.write_response(
+        seq,
+        req_seq,
+        "{\"scopes\":[{\"name\":\"Locals\",\"variablesReference\":1,\"expensive\":false}]}"
+    )
 
 
 ## Variables — empty for process backend.
@@ -368,7 +371,13 @@ function handle_variables(seq: ptr_uint, req_seq: ptr_uint) -> void:
 
 ## Continue — starts the program if needed (after an entry stop), resumes a
 ## paused one, and emits the continued event.
-function handle_continue(ses: ref[session.Session], child: ref[process.ChildProcess], has_child: ref[bool], seq: ptr_uint, req_seq: ptr_uint) -> void:
+function handle_continue(
+    ses: ref[session.Session],
+    child: ref[process.ChildProcess],
+    has_child: ref[bool],
+    seq: ptr_uint,
+    req_seq: ptr_uint
+) -> void:
     start_runtime(ses, child, has_child)
     continue_runtime_if_paused(ses, child, has_child)
     wire.write_response(seq, req_seq, "{\"allThreadsContinued\":true}")
@@ -377,7 +386,13 @@ function handle_continue(ses: ref[session.Session], child: ref[process.ChildProc
 
 
 ## Pause — SIGSTOPs the running program and emits the stopped event.
-function handle_pause(ses: ref[session.Session], child: ref[process.ChildProcess], has_child: ref[bool], seq: ptr_uint, req_seq: ptr_uint) -> void:
+function handle_pause(
+    ses: ref[session.Session],
+    child: ref[process.ChildProcess],
+    has_child: ref[bool],
+    seq: ptr_uint,
+    req_seq: ptr_uint
+) -> void:
     if not pause_runtime_if_running(ses, child, has_child):
         wire.write_error(seq, req_seq, "pause failed: process is not running")
         return

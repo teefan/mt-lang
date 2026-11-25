@@ -4,7 +4,6 @@
 
 import std.string as string
 
-
 public struct ModuleLoadError:
     message: string.String
     path: string.String

@@ -49,10 +49,10 @@ function format_source_with_comments(source: str) -> string.String:
 function expect_contains(text: str, needle: str) -> void:
     expect(text.contains_substring(needle), needle)
 
-
 # =============================================================================
 #  Idempotency — formatting formatted source must be a fixed point.
 # =============================================================================
+
 
 @[test]
 function test_formatting_is_idempotent() -> void:
@@ -94,10 +94,10 @@ function test_already_formatted_is_stable() -> void:
     defer: twice.release()
     expect_eq(once.as_str(), twice.as_str())
 
-
 # =============================================================================
 #  Normalization
 # =============================================================================
+
 
 @[test]
 function test_normalizes_param_and_operator_spacing() -> void:
@@ -189,7 +189,6 @@ function test_formats_match_statement() -> void:
     expect_contains(text, "State.busy:")
     return
 
-
 # =============================================================================
 #  Comment reattachment (host goldens from `PrettyPrinter.format_ast`)
 # =============================================================================
@@ -239,10 +238,10 @@ function test_plain_parse_still_drops_comments() -> void:
     defer: formatted.release()
     expect_eq(int<-(formatted.as_str().len), int<-("function demo() -> void:\n    pass\n".len))
 
-
 # =============================================================================
 #  Format strings (`f"..."` arguments and specs)
 # =============================================================================
+
 
 @[test]
 function test_renders_format_string_arguments() -> void:

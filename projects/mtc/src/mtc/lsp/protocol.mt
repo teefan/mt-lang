@@ -21,7 +21,6 @@ import std.mem.arena as arena
 const CR: ubyte = 13
 const LF: ubyte = 10
 
-
 public struct Message:
     jsonrpc: string.String
     id: json.Value
@@ -89,12 +88,11 @@ function read_body_bytes(body: ref[string.String], count: ptr_uint) -> bool:
         remaining -= 1
     return true
 
-
 ## Why `read_message` returned none: a clean EOF ends the session, while a
 ## malformed frame must not (a client that writes one bad message — or a stray
 ## byte on the stream — used to shut the server down).
-public const READ_OK:       ptr_uint = 0
-public const READ_EOF:      ptr_uint = 1
+public const READ_OK: ptr_uint = 0
+public const READ_EOF: ptr_uint = 1
 public const READ_MALFORMED: ptr_uint = 2
 
 ## Upper bound on a declared body size: a bogus header must not make the server
@@ -436,8 +434,8 @@ function write_notification_raw(method: str, token: str, payload_json: str) -> v
     response_text.append("}}")
     write_framed_json(response_text.as_str())
 
-
 var progress_token_counter: ptr_uint = 0
+
 
 function next_progress_token() -> ptr_uint:
     progress_token_counter += 1
@@ -459,8 +457,8 @@ public function send_request(method: str, params_json: str) -> ptr_uint:
     write_framed_json(request_text.as_str())
     return id
 
-
 var outgoing_id_counter: ptr_uint = 0
+
 
 function next_outgoing_id() -> ptr_uint:
     outgoing_id_counter += 1

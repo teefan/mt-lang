@@ -76,7 +76,15 @@ public function handle_document_link(
                         result.append(",")
                     first = false
                     let tok_len = token.end_offset - token.start_offset
-                    append_link(ref_of(result), token.line, token.column, tok_len, target_uri.as_str(), source, ws.position_encoding_utf16)
+                    append_link(
+                        ref_of(result),
+                        token.line,
+                        token.column,
+                        tok_len,
+                        target_uri.as_str(),
+                        source,
+                        ws.position_encoding_utf16
+                    )
                     resolved.release()
                     target_uri.release()
                 else:

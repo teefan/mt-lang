@@ -8,7 +8,12 @@ import mtc.dap.protocol as proto
 
 
 ## Write a DAP response message with its command and a body.
-public function write_response_command(session_seq: ptr_uint, request_seq: ptr_uint, command: str, body_json: str) -> void:
+public function write_response_command(
+    session_seq: ptr_uint,
+    request_seq: ptr_uint,
+    command: str,
+    body_json: str
+) -> void:
     var r = string.String.create()
     defer: r.release()
     r.append("{\"seq\":")
@@ -26,7 +31,12 @@ public function write_response_command(session_seq: ptr_uint, request_seq: ptr_u
 
 
 ## Write a DAP error response carrying the request's command.
-public function write_error_command(session_seq: ptr_uint, request_seq: ptr_uint, command: str, error_message: str) -> void:
+public function write_error_command(
+    session_seq: ptr_uint,
+    request_seq: ptr_uint,
+    command: str,
+    error_message: str
+) -> void:
     var r = string.String.create()
     defer: r.release()
     r.append("{\"seq\":")

@@ -16,7 +16,6 @@ import mtc.semantic.types as types
 import mtc.c_naming as naming
 import mtc.strings
 
-
 # =============================================================================
 #  String concatenation
 # =============================================================================
@@ -57,7 +56,6 @@ public function sp_expr(expr: ptr[ir.Expr]) -> span[ir.Expr]:
         buf.push(read(expr))
     return buf.as_span()
 
-
 # =============================================================================
 #  IR allocation
 # =============================================================================
@@ -74,7 +72,12 @@ public function alloc_stmt(value: ir.Stmt) -> own[ir.Stmt]:
     return node
 
 
-public function alloc_reinterpret_expr(target_type: types.Type, source_type: types.Type, expression: ptr[ir.Expr], ty: types.Type) -> ptr[ir.ReinterpretExpr]:
+public function alloc_reinterpret_expr(
+    target_type: types.Type,
+    source_type: types.Type,
+    expression: ptr[ir.Expr],
+    ty: types.Type
+) -> ptr[ir.ReinterpretExpr]:
     var node = heap_mod.must_alloc[ir.ReinterpretExpr](1)
     read(node) = ir.ReinterpretExpr(
         target_type = target_type,
@@ -83,7 +86,6 @@ public function alloc_reinterpret_expr(target_type: types.Type, source_type: typ
         ty = ty,
     )
     return node
-
 
 # =============================================================================
 #  IR expression type extraction
@@ -135,7 +137,6 @@ public function ir_expr_type(ep: ptr[ir.Expr]) -> types.Type:
             _:
                 return types.Type.ty_error
 
-
 # =============================================================================
 #  C local variable naming
 # =============================================================================
@@ -162,7 +163,6 @@ function c_reserved_identifier(identifier: str) -> bool:
         i += 1
     return false
 
-
 const RESERVED_WORD_COUNT: ptr_uint = 44
 const RESERVED_WORDS: array[str, 44] = array[str, 44](
     "auto", "break", "case", "char", "const", "continue", "default", "do",
@@ -177,7 +177,6 @@ const RESERVED_WORDS: array[str, 44] = array[str, 44](
 
 function reserved_words() -> span[str]:
     return RESERVED_WORDS.as_span()
-
 
 # =============================================================================
 #  Type helpers

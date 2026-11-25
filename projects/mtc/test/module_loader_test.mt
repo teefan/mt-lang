@@ -43,7 +43,6 @@ function write_file(dir: str, relative: str, content: str) -> bool:
         Result.success:
             return true
 
-
 # =============================================================================
 #  Shared source strings — every inline module source is a heredoc so tests
 #  are readable and maintainable without embedded \n escapes.
@@ -788,7 +787,6 @@ function test_clean_program_has_no_diagnostics() -> void:
         expect(false, "expected 1 module")
     expect_eq(int<-program.diagnostic_count(), 0)
 
-
 # =============================================================================
 #  Cross-module resolution (L3 + S1)
 # =============================================================================
@@ -804,7 +802,11 @@ function load_lib_and_main(root: ref[string.String], lib_src: str, main_src: str
     var main_path = path_ops.join(root.as_str(), "main.mt")
     defer: main_path.release()
     var roots = array[str, 1](root.as_str())
-    return Option[loader.Program].some(value= loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux))
+    return Option[loader.Program].some(value= loader.check_program(
+        main_path.as_str(),
+        roots.as_span(),
+        resolver.Platform.linux
+    ))
 
 
 @[test]
@@ -1007,7 +1009,6 @@ function test_cross_module_private_enum_member_is_permissive() -> void:
     defer: program.release()
 
     expect_eq(int<-program.diagnostic_count(), 0)
-
 
 # =============================================================================
 #  Imported methods and imported-typed field access
@@ -1228,12 +1229,12 @@ function test_cross_module_interface_missing_method_is_flagged() -> void:
 
     expect(program.has_diagnostic_containing("does not implement"))
 
-
 # =============================================================================
 #  S3b-1: str / primitive method resolution across all reachable bindings.
 #  A str method lives in whichever module extended str; it is found only by the
 #  whole-program binding search, so its argument types and return type flow.
 # =============================================================================
+
 
 @[test]
 function test_str_method_return_type_flows_cross_module() -> void:
@@ -1264,12 +1265,12 @@ function test_unknown_str_method_is_permissive() -> void:
 
     expect_eq(int<-program.diagnostic_count(), 0)
 
-
 # =============================================================================
 #  S3b-4: cross-module generic constraint satisfaction. A constraint interface
 #  imported as lib.Iface is matched by identity; a local struct implementing it
 #  (Case A) and an imported struct argument (Case B) are both checkable.
 # =============================================================================
+
 
 @[test]
 function test_cross_module_constraint_satisfied_local_struct_is_clean() -> void:
@@ -1322,12 +1323,12 @@ function test_imported_struct_arg_satisfied_constraint_is_clean() -> void:
 
     expect_eq(int<-program.diagnostic_count(), 0)
 
-
 # =============================================================================
 #  Phase 1 item A: cross-module type-position resolution. `lib.Type` in a type
 #  annotation or explicit type argument resolves to the concrete imported type,
 #  so its members are checkable and explicit-arg constraints apply.
 # =============================================================================
+
 
 @[test]
 function test_explicit_imported_type_arg_constraint_is_flagged() -> void:
@@ -1369,12 +1370,12 @@ function test_annotated_imported_type_valid_member_is_clean() -> void:
 
     expect_eq(int<-program.diagnostic_count(), 0)
 
-
 # =============================================================================
 #  Phase 1 item G: imported enum/variant match exhaustiveness. The binding now
 #  exports match_case_names; the checker imports them and checks exhaustiveness
 #  when the scrutinee is an imported ty_imported enum/variant.
 # =============================================================================
+
 
 @[test]
 function test_imported_enum_match_missing_case_is_flagged() -> void:
@@ -1401,11 +1402,11 @@ function test_imported_enum_match_exhaustive_is_clean() -> void:
 
     expect_eq(int<-program.diagnostic_count(), 0)
 
-
 # =============================================================================
 #  Regression: imported generic return types must not produce false-positive
 #  type mismatches (contains_error + nominal_definitely_different fixes).
 # =============================================================================
+
 
 @[test]
 function test_imported_generic_method_return_is_clean() -> void:
@@ -1431,7 +1432,6 @@ function test_imported_struct_static_return_is_clean() -> void:
     defer: program.release()
 
     expect_eq(int<-program.diagnostic_count(), 0)
-
 
 # =============================================================================
 #  Module cache: closure reuse, the dependency-version cascade, created
@@ -1483,11 +1483,23 @@ SRC
 
 
 ## Load main.mt through the module cache (and optional open-buffer overrides).
-function load_main_with_cache(root: ref[string.String], cache: ptr[loader.ModuleCache]?, open_docs: ptr[map_mod.Map[string.String, string.String]]?) -> loader.Program:
+function load_main_with_cache(
+    root: ref[string.String],
+    cache: ptr[loader.ModuleCache]?,
+    open_docs: ptr[map_mod.Map[string.String, string.String]]?
+) -> loader.Program:
     var main_path = path_ops.join(root.as_str(), "main.mt")
     defer: main_path.release()
     var roots = array[str, 1](root.as_str())
-    return loader.check_program_with_source(main_path.as_str(), roots.as_span(), resolver.Platform.linux, "", false, cache, open_docs)
+    return loader.check_program_with_source(
+        main_path.as_str(),
+        roots.as_span(),
+        resolver.Platform.linux,
+        "",
+        false,
+        cache,
+        open_docs
+    )
 
 
 @[test]

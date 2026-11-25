@@ -14,7 +14,6 @@ import std.mem.arena as arena
 const CR: ubyte = 13
 const LF: ubyte = 10
 
-
 public struct Message:
     raw_body: string.String
     parsed: json.Value
@@ -27,7 +26,6 @@ public struct Message:
     success: bool
     message: string.String
     evt: string.String
-
 
 ## A byte-buffered framer over one file descriptor.  `framer_fill` reads what
 ## the descriptor has now (never blocks); `framer_next` extracts the next
@@ -140,7 +138,12 @@ function parse_headers(header_text: str) -> HeaderParse:
 function find_header_end(text: str, start: ptr_uint) -> Option[ptr_uint]:
     var i = start
     while i + 3 < text.len:
-        if text.byte_at(i) == CR and text.byte_at(i + 1) == LF and text.byte_at(i + 2) == CR and text.byte_at(i + 3) == LF:
+        if (
+            text.byte_at(i) == CR
+            and text.byte_at(i + 1) == LF
+            and text.byte_at(i + 2) == CR
+            and text.byte_at(i + 3) == LF
+        ):
             return Option[ptr_uint].some(value = i)
         i += 1
     return Option[ptr_uint].none

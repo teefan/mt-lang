@@ -8,7 +8,6 @@ import std.vec as vec
 import mtc.bindgen as bindgen
 import mtc.bindgen.nullable_policy as nullable_policy
 
-
 struct ReportParamEntry:
     function: str
     parameter: str
@@ -86,7 +85,10 @@ public function build_nullable_report(
                     Option.some as index:
                         match nullable_policy.function_sig_text(d.qual_type.as_str()):
                             Option.some as sig_payload:
-                                let c_type = nullable_policy.param_type_text_at(sig_payload.value.params_text, index.value)
+                                let c_type = nullable_policy.param_type_text_at(
+                                    sig_payload.value.params_text,
+                                    index.value
+                                )
                                 var auto_type = bindgen.map_type(c_type, opts)
                                 if auto_type.as_str().equal(override_type):
                                     auto_type.release()

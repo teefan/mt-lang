@@ -19,13 +19,11 @@ import mtc.semantic.types as types
 import mtc.c_naming as naming
 import mtc.strings
 
-
 ## Two-string concatenation helper.
 ## A field of an `sv_node` (`:name value`).
 public struct SexprField:
     name: str
     value: SexprValue
-
 
 ## A dynamic S-expression value so serializers can build a tree and one
 ## renderer formats it exactly like the Ruby dumper.
@@ -44,7 +42,6 @@ public variant SexprValue:
     sv_node(name: str, fields: span[SexprField])
     ## Renders as nothing (host Hash/Set values are elided by the dumper).
     sv_void
-
 
 # =============================================================================
 #  Atom helpers
@@ -159,7 +156,6 @@ function fields1(f: SexprField) -> span[SexprField]:
     v.push(f)
     return v.as_span()
 
-
 # =============================================================================
 #  Tokens
 # =============================================================================
@@ -214,7 +210,13 @@ function fstring_literal_value(lexeme: str) -> SexprValue:
 
 function format_part_count(lexeme: str) -> ptr_uint:
     var content: str = ""
-    if lexeme.len >= 4 and lexeme.byte_at(0) == 'f' and lexeme.byte_at(1) == '<' and lexeme.byte_at(2) == '<' and lexeme.byte_at(3) == '-':
+    if (
+        lexeme.len >= 4
+        and lexeme.byte_at(0) == 'f'
+        and lexeme.byte_at(1) == '<'
+        and lexeme.byte_at(2) == '<'
+        and lexeme.byte_at(3) == '-'
+    ):
         content = lparse.normalize_format_heredoc(lexeme)
     else if lexeme.len >= 3 and lexeme.byte_at(0) == 'f' and lexeme.byte_at(1) == '"':
         content = lexeme.slice(2, lexeme.len - 3)
@@ -302,7 +304,6 @@ public function dump_tokens(tokens: span[token_mod.Token], source: str) -> strin
         i += 1
     buf.push_byte(')')
     return buf
-
 
 # =============================================================================
 #  IR
@@ -426,7 +427,6 @@ function field_path(path: str) -> SexprField:
         return field_nil("path")
     return field_str("path", path)
 
-
 # =============================================================================
 #  Types
 # =============================================================================
@@ -505,7 +505,14 @@ function types_value(ctx: ref[SexprContext], t: types.Type) -> SexprValue:
             # `type_declaration.rb:54-71`); the self keeps them as primitives
             # (arithmetic, fields and the C backend special-case the names), so
             # the dump classifies them here.  Each renders only `:name`.
-            if p.name == "vec2" or p.name == "vec3" or p.name == "vec4" or p.name == "ivec2" or p.name == "ivec3" or p.name == "ivec4":
+            if (
+                p.name == "vec2"
+                or p.name == "vec3"
+                or p.name == "vec4"
+                or p.name == "ivec2"
+                or p.name == "ivec3"
+                or p.name == "ivec4"
+            ):
                 return node("Types::Vector", fields1(field_str("name", p.name)))
             if p.name == "mat3" or p.name == "mat4":
                 return node("Types::Matrix", fields1(field_str("name", p.name)))
@@ -561,7 +568,10 @@ function types_value(ctx: ref[SexprContext], t: types.Type) -> SexprValue:
             # kind map like an imported one (`std.c.box2d.b2HexColor` is the raw
             # module's enum, and no IR declaration carries it).
             if n_np.module_name.len > 0:
-                return node(strings.join_two("Types::", imported_type_class(ctx, n_np.module_name, n_np.name)), nf.as_span())
+                return node(
+                    strings.join_two("Types::", imported_type_class(ctx, n_np.module_name, n_np.name)),
+                    nf.as_span()
+                )
             return node(strings.join_two("Types::", named_type_class(ctx, n_np.name)), nf.as_span())
         types.Type.ty_variant_arm_payload as ap:
             # The host tags the payload distinctly but renders its fields through
@@ -586,7 +596,10 @@ function types_value(ctx: ref[SexprContext], t: types.Type) -> SexprValue:
                 let kind = imported_type_class(ctx, im_bp.module_name, im_bp.name)
                 let cls = if kind == "Variant" or im_bp.name == "Option" or im_bp.name == "Result": "VariantInstance" else: "StructInstance"
                 return node(strings.join_two("Types::", cls), imf.as_span())
-            return node(strings.join_two("Types::", imported_type_class(ctx, im_bp.module_name, im_bp.name)), imf.as_span())
+            return node(
+                strings.join_two("Types::", imported_type_class(ctx, im_bp.module_name, im_bp.name)),
+                imf.as_span()
+            )
         types.Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
             if g_bp.name == "Option" or g_bp.name == "Result":
@@ -701,7 +714,6 @@ function is_builtin_generic_name(name: str) -> bool:
         or name == "span" or name == "array" or name == "str_buffer"
         or name == "atomic" or name == "Task" or name == "SoA" or name == "simd"
     )
-
 
 # =============================================================================
 #  IR expressions
@@ -921,7 +933,6 @@ function ir_expr_value(ctx: ref[SexprContext], ep: ptr[ir.Expr]) -> SexprValue:
                 return node("IR::Assignment", f.as_span())
     return node("IR::ErrorExpr", span[SexprField]())
 
-
 # =============================================================================
 #  IR statements
 # =============================================================================
@@ -972,7 +983,10 @@ function ir_stmt_value(ctx: ref[SexprContext], sp: ptr[ir.Stmt]) -> SexprValue:
                     var sc: ir.SwitchCase
                     sc = read(x.cases.data + ci)
                     if sc.is_default:
-                        cases.push(node("IR::SwitchDefaultCase", fields1(field_value("body", ir_stmts_value(ctx, sc.body)))))
+                        cases.push(node(
+                            "IR::SwitchDefaultCase",
+                            fields1(field_value("body", ir_stmts_value(ctx, sc.body)))
+                        ))
                     else:
                         var cf = vec.Vec[SexprField].create()
                         cf.push(field_opt_expr(ctx, "value", sc.value))
@@ -1022,7 +1036,6 @@ function ir_stmt_value(ctx: ref[SexprContext], sp: ptr[ir.Stmt]) -> SexprValue:
                 f.push(field_path(x.source_path))
                 return node("IR::ExpressionStmt", f.as_span())
     return node("IR::BreakStmt", span[SexprField]())
-
 
 # =============================================================================
 #  IR declarations + program
@@ -1170,7 +1183,10 @@ function ir_includes_value(program: ir.Program) -> SexprValue:
     var includes = vec.Vec[SexprValue].create()
     var ii: ptr_uint = 0
     while ii < program.includes.len:
-        includes.push(node("IR::Include", fields1(field_str("header", unsafe: read(program.includes.data + ii).header))))
+        includes.push(node(
+            "IR::Include",
+            fields1(field_str("header", unsafe: read(program.includes.data + ii).header))
+        ))
         ii += 1
     return list_value(includes.as_span())
 
@@ -1357,11 +1373,9 @@ function ir_functions_value(ctx: ref[SexprContext], program: ir.Program) -> Sexp
         fi += 1
     return list_value(functions.as_span())
 
-
 # =============================================================================
 #  AST serialisation (host AST::* classes)
 # =============================================================================
-
 
 function fields2(a: SexprField, b: SexprField) -> span[SexprField]:
     var f = vec.Vec[SexprField].create()
@@ -1397,7 +1411,14 @@ function fields5(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: 
     return f.as_span()
 
 
-function fields6(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField) -> span[SexprField]:
+function fields6(
+    a: SexprField,
+    b: SexprField,
+    c: SexprField,
+    d: SexprField,
+    e: SexprField,
+    g: SexprField
+) -> span[SexprField]:
     var f = vec.Vec[SexprField].create()
     f.push(a)
     f.push(b)
@@ -1408,7 +1429,15 @@ function fields6(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: 
     return f.as_span()
 
 
-function fields7(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField) -> span[SexprField]:
+function fields7(
+    a: SexprField,
+    b: SexprField,
+    c: SexprField,
+    d: SexprField,
+    e: SexprField,
+    g: SexprField,
+    h: SexprField
+) -> span[SexprField]:
     var f = vec.Vec[SexprField].create()
     f.push(a)
     f.push(b)
@@ -1420,7 +1449,16 @@ function fields7(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: 
     return f.as_span()
 
 
-function fields8(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField, i: SexprField) -> span[SexprField]:
+function fields8(
+    a: SexprField,
+    b: SexprField,
+    c: SexprField,
+    d: SexprField,
+    e: SexprField,
+    g: SexprField,
+    h: SexprField,
+    i: SexprField
+) -> span[SexprField]:
     var f = vec.Vec[SexprField].create()
     f.push(a)
     f.push(b)
@@ -1433,7 +1471,17 @@ function fields8(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: 
     return f.as_span()
 
 
-function fields9(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField, i: SexprField, j: SexprField) -> span[SexprField]:
+function fields9(
+    a: SexprField,
+    b: SexprField,
+    c: SexprField,
+    d: SexprField,
+    e: SexprField,
+    g: SexprField,
+    h: SexprField,
+    i: SexprField,
+    j: SexprField
+) -> span[SexprField]:
     var f = vec.Vec[SexprField].create()
     f.push(a)
     f.push(b)
@@ -1447,7 +1495,18 @@ function fields9(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: 
     return f.as_span()
 
 
-function fields10(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField, i: SexprField, j: SexprField, k: SexprField) -> span[SexprField]:
+function fields10(
+    a: SexprField,
+    b: SexprField,
+    c: SexprField,
+    d: SexprField,
+    e: SexprField,
+    g: SexprField,
+    h: SexprField,
+    i: SexprField,
+    j: SexprField,
+    k: SexprField
+) -> span[SexprField]:
     var f = vec.Vec[SexprField].create()
     f.push(a)
     f.push(b)
@@ -1462,7 +1521,19 @@ function fields10(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e:
     return f.as_span()
 
 
-function fields11(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField, i: SexprField, j: SexprField, k: SexprField, m: SexprField) -> span[SexprField]:
+function fields11(
+    a: SexprField,
+    b: SexprField,
+    c: SexprField,
+    d: SexprField,
+    e: SexprField,
+    g: SexprField,
+    h: SexprField,
+    i: SexprField,
+    j: SexprField,
+    k: SexprField,
+    m: SexprField
+) -> span[SexprField]:
     var f = vec.Vec[SexprField].create()
     f.push(a)
     f.push(b)
@@ -1478,7 +1549,20 @@ function fields11(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e:
     return f.as_span()
 
 
-function fields12(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField, i: SexprField, j: SexprField, k: SexprField, m: SexprField, n: SexprField) -> span[SexprField]:
+function fields12(
+    a: SexprField,
+    b: SexprField,
+    c: SexprField,
+    d: SexprField,
+    e: SexprField,
+    g: SexprField,
+    h: SexprField,
+    i: SexprField,
+    j: SexprField,
+    k: SexprField,
+    m: SexprField,
+    n: SexprField
+) -> span[SexprField]:
     var f = vec.Vec[SexprField].create()
     f.push(a)
     f.push(b)
@@ -1495,7 +1579,21 @@ function fields12(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e:
     return f.as_span()
 
 
-function fields13(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField, i: SexprField, j: SexprField, k: SexprField, m: SexprField, n: SexprField, o: SexprField) -> span[SexprField]:
+function fields13(
+    a: SexprField,
+    b: SexprField,
+    c: SexprField,
+    d: SexprField,
+    e: SexprField,
+    g: SexprField,
+    h: SexprField,
+    i: SexprField,
+    j: SexprField,
+    k: SexprField,
+    m: SexprField,
+    n: SexprField,
+    o: SexprField
+) -> span[SexprField]:
     var f = vec.Vec[SexprField].create()
     f.push(a)
     f.push(b)
@@ -1513,7 +1611,22 @@ function fields13(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e:
     return f.as_span()
 
 
-function fields14(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField, i: SexprField, j: SexprField, k: SexprField, m: SexprField, n: SexprField, o: SexprField, q: SexprField) -> span[SexprField]:
+function fields14(
+    a: SexprField,
+    b: SexprField,
+    c: SexprField,
+    d: SexprField,
+    e: SexprField,
+    g: SexprField,
+    h: SexprField,
+    i: SexprField,
+    j: SexprField,
+    k: SexprField,
+    m: SexprField,
+    n: SexprField,
+    o: SexprField,
+    q: SexprField
+) -> span[SexprField]:
     var f = vec.Vec[SexprField].create()
     f.push(a)
     f.push(b)
@@ -1679,7 +1792,17 @@ function parse_float_lexeme(text: str) -> double:
 ## A type argument's value: numeric literals are synthetic single-part
 ## TypeRefs in the self-hosted AST; the host stores them as literal nodes.
 function type_argument_value_of(ctx: ref[SexprContext], tr: ast.TypeRef) -> SexprValue:
-    if tr.line == 0 and tr.column == 0 and tr.name.parts.len == 1 and tr.arguments.len == 0 and not tr.nullable and not tr.is_fn and not tr.is_proc and not tr.is_dyn and not tr.is_tuple:
+    if (
+        tr.line == 0
+        and tr.column == 0
+        and tr.name.parts.len == 1
+        and tr.arguments.len == 0
+        and not tr.nullable
+        and not tr.is_fn
+        and not tr.is_proc
+        and not tr.is_dyn
+        and not tr.is_tuple
+    ):
         let lexeme = unsafe: read(tr.name.parts.data + 0)
         if lexeme_is_integer(lexeme):
             return node("AST::IntegerLiteral", fields4(
@@ -2224,7 +2347,6 @@ function if_branches_value(ctx: ref[SexprContext], items: span[ast.IfBranch]) ->
         i += 1
     return list_value(items_out.as_span())
 
-
 public struct AstPos:
     line: ptr_uint
     column: ptr_uint
@@ -2482,7 +2604,10 @@ function expr_value(ctx: ref[SexprContext], ep: ptr[ast.Expr]) -> SexprValue:
                     field_nil("length"),
                     field_str("message", x.message),
                 ))
-    return node("AST::ErrorExpr", fields4(field_nil("line"), field_nil("column"), field_nil("length"), field_str("message", "")))
+    return node(
+        "AST::ErrorExpr",
+        fields4(field_nil("line"), field_nil("column"), field_nil("length"), field_str("message", ""))
+    )
 
 
 ## `if` expression node.
@@ -2764,7 +2889,10 @@ function stmt_value(ctx: ref[SexprContext], sp: ptr[ast.Stmt]) -> SexprValue:
             ast.Stmt.stmt_emit as x:
                 var decl_field = field_nil("declaration")
                 if x.declaration != null:
-                    decl_field = field_value("declaration", decl_value(ctx, unsafe: ptr[ast.Decl]<-x.declaration, false))
+                    decl_field = field_value(
+                        "declaration",
+                        decl_value(ctx, unsafe: ptr[ast.Decl]<-x.declaration, false)
+                    )
                 return node("AST::EmitStmt", fields3(
                     decl_field,
                     field_line(x.line),
@@ -2822,7 +2950,10 @@ function stmt_value(ctx: ref[SexprContext], sp: ptr[ast.Stmt]) -> SexprValue:
                 ))
             ast.Stmt.stmt_block as x:
                 return ast_stmts_list(ctx, x.statements)
-    return node("AST::ErrorStmt", fields4(field_nil("line"), field_nil("column"), field_nil("length"), field_str("message", "")))
+    return node(
+        "AST::ErrorStmt",
+        fields4(field_nil("line"), field_nil("column"), field_nil("length"), field_str("message", ""))
+    )
 
 
 function opt_expr_field(ctx: ref[SexprContext], name: str, value: ptr[ast.Expr]?) -> SexprField:
@@ -3048,12 +3179,32 @@ function decl_value(ctx: ref[SexprContext], dp: ptr[ast.Decl], raw: bool) -> Sex
                     field_line(x.line),
                     len_field("column", x.column),
                 ))
-    return node("AST::VarDecl", fields6(field_str("name", ""), field_nil("type"), field_nil("value"), field_sym("visibility", "private"), field_nil("line"), field_nil("column")))
+    return node(
+        "AST::VarDecl",
+        fields6(
+            field_str("name", ""),
+            field_nil("type"),
+            field_nil("value"),
+            field_sym("visibility", "private"),
+            field_nil("line"),
+            field_nil("column")
+        )
+    )
 
 
 ## Fallback node for an unexpected declaration kind.
 function decl_value_fallback() -> SexprValue:
-    return node("AST::VarDecl", fields6(field_str("name", ""), field_nil("type"), field_nil("value"), field_sym("visibility", "private"), field_nil("line"), field_nil("column")))
+    return node(
+        "AST::VarDecl",
+        fields6(
+            field_str("name", ""),
+            field_nil("type"),
+            field_nil("value"),
+            field_sym("visibility", "private"),
+            field_nil("line"),
+            field_nil("column")
+        )
+    )
 
 
 ## `const` declaration node.

@@ -21,7 +21,6 @@ import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 
-
 ## An identifier token under the cursor.  `text` is a view into the caller's
 ## source buffer; `line`/`column` are 1-based lexer coordinates.
 public struct CursorToken:
@@ -29,7 +28,6 @@ public struct CursorToken:
     line: ptr_uint
     column: ptr_uint
     length: ptr_uint
-
 
 ## The innermost call at the cursor: its callee name and 0-based parameter.
 public struct CallContext:
@@ -50,7 +48,12 @@ public function identifier_at(source: str, line: ptr_uint, character: ptr_uint) 
 
 ## `identifier_at` over an existing token stream (the workspace's cached
 ## document tokens), so a request does not re-lex the file per lookup.
-public function identifier_at_in(tokens: span[token_mod.Token], source: str, line: ptr_uint, character: ptr_uint) -> Option[CursorToken]:
+public function identifier_at_in(
+    tokens: span[token_mod.Token],
+    source: str,
+    line: ptr_uint,
+    character: ptr_uint
+) -> Option[CursorToken]:
     let target_line = line + 1
     let target_col = character + 1
 
@@ -78,7 +81,12 @@ public function identifier_at_in(tokens: span[token_mod.Token], source: str, lin
 
 
 ## `interpolation_identifier_at_in` over an existing token stream.
-public function interpolation_identifier_at_in(tokens: span[token_mod.Token], source: str, line: ptr_uint, character: ptr_uint) -> Option[CursorToken]:
+public function interpolation_identifier_at_in(
+    tokens: span[token_mod.Token],
+    source: str,
+    line: ptr_uint,
+    character: ptr_uint
+) -> Option[CursorToken]:
     match interpolation_token_at_in(tokens, source, line, character):
         Option.some as tok:
             if tok.value.kind != tk.TokenKind.identifier:
@@ -98,7 +106,11 @@ public function interpolation_identifier_at_in(tokens: span[token_mod.Token], so
 ## kind: a hover ranges the inner token, and the caller decides what to resolve.
 ## Every f-string token is offered to the splitter, which only answers when the
 ## position falls inside one of its `#{…}` expressions.
-public function interpolation_token_at(source: str, line: ptr_uint, character: ptr_uint) -> Option[fstring.FstringToken]:
+public function interpolation_token_at(
+    source: str,
+    line: ptr_uint,
+    character: ptr_uint
+) -> Option[fstring.FstringToken]:
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: lex_diags.release()
     var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
@@ -107,7 +119,12 @@ public function interpolation_token_at(source: str, line: ptr_uint, character: p
 
 
 ## `interpolation_token_at` over an existing token stream.
-public function interpolation_token_at_in(tokens: span[token_mod.Token], source: str, line: ptr_uint, character: ptr_uint) -> Option[fstring.FstringToken]:
+public function interpolation_token_at_in(
+    tokens: span[token_mod.Token],
+    source: str,
+    line: ptr_uint,
+    character: ptr_uint
+) -> Option[fstring.FstringToken]:
     let target_line = line + 1
     let target_col = character + 1
     var ti: ptr_uint = 0
@@ -115,7 +132,14 @@ public function interpolation_token_at_in(tokens: span[token_mod.Token], source:
         let tok = unsafe: read(tokens.data + ti)
         if tok.kind == tk.TokenKind.fstring:
             let lexeme = unsafe: token_mod.token_lexeme(tok, source)
-            match fstring.interpolation_token_at(tok.start_offset, lexeme, tok.line, tok.column, target_line, target_col):
+            match fstring.interpolation_token_at(
+                tok.start_offset,
+                lexeme,
+                tok.line,
+                tok.column,
+                target_line,
+                target_col
+            ):
                 Option.some as hit:
                     return Option[fstring.FstringToken].some(value = hit.value)
                 Option.none:
@@ -136,7 +160,12 @@ public function token_at(source: str, line: ptr_uint, character: ptr_uint) -> Op
 
 
 ## `token_at` over an existing token stream.
-public function token_at_in(tokens: span[token_mod.Token], source: str, line: ptr_uint, character: ptr_uint) -> Option[CursorToken]:
+public function token_at_in(
+    tokens: span[token_mod.Token],
+    source: str,
+    line: ptr_uint,
+    character: ptr_uint
+) -> Option[CursorToken]:
     let target_line = line + 1
     let target_col = character + 1
 
@@ -164,7 +193,12 @@ public function token_at_in(tokens: span[token_mod.Token], source: str, line: pt
 
 
 function hoverable_token_kind(kind: tk.TokenKind) -> bool:
-    if kind == tk.TokenKind.newline or kind == tk.TokenKind.indent or kind == tk.TokenKind.dedent or kind == tk.TokenKind.eof:
+    if (
+        kind == tk.TokenKind.newline
+        or kind == tk.TokenKind.indent
+        or kind == tk.TokenKind.dedent
+        or kind == tk.TokenKind.eof
+    ):
         return false
     return true
 
@@ -293,7 +327,6 @@ public function dot_receiver_at(source: str, line: ptr_uint, character: ptr_uint
     if start == pos:
         return Option[str].none
     return Option[str].some(value = line_text.slice(start, pos - start))
-
 
 ## The receiver of a *type* member access at the cursor: `Type.method`,
 ## `Type[T].method`, or `alias.Type.method`.  The name is the type (or value)
@@ -511,5 +544,3 @@ public function token_start_in_line(line_text: str, name: str) -> Option[ptr_uin
                 return Option[ptr_uint].some(value = n)
         n += 1
     return Option[ptr_uint].none
-
-

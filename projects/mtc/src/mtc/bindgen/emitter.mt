@@ -106,7 +106,11 @@ function emit_aggregate_decl(
     emit_aggregate_fields(buf, node, name, opts)
 
 
-function emit_synthetic(buf: ref[string.String], synthetic_decl: bindgen.SyntheticDecl, opts: ref[bindgen.BindgenOptions]) -> void:
+function emit_synthetic(
+    buf: ref[string.String],
+    synthetic_decl: bindgen.SyntheticDecl,
+    opts: ref[bindgen.BindgenOptions]
+) -> void:
     let kind_text = synthetic_decl.kind.as_str()
     if kind_text.equal("opaque"):
         buf.append("opaque ")

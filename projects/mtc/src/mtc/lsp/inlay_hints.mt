@@ -28,7 +28,6 @@ import mtc.lsp.type_render as type_render
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
-
 ## The request's range as 0-based positions — the host's `position_in_range?`
 ## inputs (lines *and* characters: a decl at the end line past the end column
 ## is outside, as the host's check has it).
@@ -142,9 +141,25 @@ public function handle_inlay_hint(
                     # the receiver's type and looks the method up in the merged
                     # receiver table.
                     let fn_name = cursor.token_text(source, callee)
-                    match receiver_method_sig_for(analysis, ast_file, receiver_name, fn_name, receiver_tok.line, ref_of(bindings)):
+                    match receiver_method_sig_for(
+                        analysis,
+                        ast_file,
+                        receiver_name,
+                        fn_name,
+                        receiver_tok.line,
+                        ref_of(bindings)
+                    ):
                         Option.some as sig:
-                            emit_call_hints(ref_of(json_text), ref_of(emitted), source, ref_of(tokens), ti + 1, sig.value, range, ws.position_encoding_utf16)
+                            emit_call_hints(
+                                ref_of(json_text),
+                                ref_of(emitted),
+                                source,
+                                ref_of(tokens),
+                                ti + 1,
+                                sig.value,
+                                range,
+                                ws.position_encoding_utf16
+                            )
                         Option.none:
                             pass
                     ti += 1
@@ -171,7 +186,16 @@ public function handle_inlay_hint(
                         let psig = find_function_params(module_file.declarations, fn_name)
                         match psig:
                             Option.some as sig:
-                                emit_call_hints(ref_of(json_text), ref_of(emitted), source, ref_of(tokens), ti + 1, sig.value, range, ws.position_encoding_utf16)
+                                emit_call_hints(
+                                    ref_of(json_text),
+                                    ref_of(emitted),
+                                    source,
+                                    ref_of(tokens),
+                                    ti + 1,
+                                    sig.value,
+                                    range,
+                                    ws.position_encoding_utf16
+                                )
                             Option.none:
                                 pass
                 ti += 1
@@ -194,11 +218,27 @@ public function handle_inlay_hint(
 
     # Type-annotation hints for inferred locals, after the parameter hints —
     # the host's collect_inferred_type_hints.
-    emit_type_hints(ref_of(json_text), ref_of(emitted), ast_file, ref_of(analysis), range, source, ws.position_encoding_utf16)
+    emit_type_hints(
+        ref_of(json_text),
+        ref_of(emitted),
+        ast_file,
+        ref_of(analysis),
+        range,
+        source,
+        ws.position_encoding_utf16
+    )
 
     # Return-type hints for callables whose return type was not written, last —
     # the host's collect_inferred_return_hints.
-    emit_return_hints(ref_of(json_text), ref_of(emitted), ast_file, ref_of(analysis), range, source, ws.position_encoding_utf16)
+    emit_return_hints(
+        ref_of(json_text),
+        ref_of(emitted),
+        ast_file,
+        ref_of(analysis),
+        range,
+        source,
+        ws.position_encoding_utf16
+    )
 
     json_text.append("]")
     proto.write_response_raw(id, json_text.as_str())
@@ -224,12 +264,28 @@ function emit_type_hints(
         match decl:
             ast.Decl.decl_function as fun:
                 if fun.body != null:
-                    emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-fun.body), analysis, range, source, utf16)
+                    emit_type_hints_in_stmt(
+                        json_text,
+                        emitted,
+                        unsafe: read(ptr[ast.Stmt]<-fun.body),
+                        analysis,
+                        range,
+                        source,
+                        utf16
+                    )
             ast.Decl.decl_extending_block as ext:
                 var mi: ptr_uint = 0
                 while mi < ext.methods.len:
                     let method = unsafe: read(ext.methods.data + mi)
-                    emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-method.body), analysis, range, source, utf16)
+                    emit_type_hints_in_stmt(
+                        json_text,
+                        emitted,
+                        unsafe: read(ptr[ast.Stmt]<-method.body),
+                        analysis,
+                        range,
+                        source,
+                        utf16
+                    )
                     mi += 1
             _:
                 pass
@@ -253,7 +309,19 @@ function emit_type_hints_in_stmt(
                 emit_type_hints_in_stmt(json_text, emitted, inner, analysis, range, source, utf16)
                 si += 1
         ast.Stmt.stmt_local as loc:
-            emit_local_type_hint(json_text, emitted, loc.name, loc.stmt_type, loc.value, loc.line, loc.column, analysis, range, source, utf16)
+            emit_local_type_hint(
+                json_text,
+                emitted,
+                loc.name,
+                loc.stmt_type,
+                loc.value,
+                loc.line,
+                loc.column,
+                analysis,
+                range,
+                source,
+                utf16
+            )
         ast.Stmt.stmt_if as iff:
             var bi: ptr_uint = 0
             while bi < iff.branches.len:
@@ -261,23 +329,63 @@ function emit_type_hints_in_stmt(
                 emit_type_hints_in_stmt(json_text, emitted, unsafe: read(branch.body), analysis, range, source, utf16)
                 bi += 1
             if iff.else_body != null:
-                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-iff.else_body), analysis, range, source, utf16)
+                emit_type_hints_in_stmt(
+                    json_text,
+                    emitted,
+                    unsafe: read(ptr[ast.Stmt]<-iff.else_body),
+                    analysis,
+                    range,
+                    source,
+                    utf16
+                )
         ast.Stmt.stmt_while as wh:
             if wh.body != null:
-                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-wh.body), analysis, range, source, utf16)
+                emit_type_hints_in_stmt(
+                    json_text,
+                    emitted,
+                    unsafe: read(ptr[ast.Stmt]<-wh.body),
+                    analysis,
+                    range,
+                    source,
+                    utf16
+                )
         ast.Stmt.stmt_for as fo:
             if fo.body != null:
-                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-fo.body), analysis, range, source, utf16)
+                emit_type_hints_in_stmt(
+                    json_text,
+                    emitted,
+                    unsafe: read(ptr[ast.Stmt]<-fo.body),
+                    analysis,
+                    range,
+                    source,
+                    utf16
+                )
         ast.Stmt.stmt_match as ma:
             var ai: ptr_uint = 0
             while ai < ma.arms.len:
                 let arm = unsafe: read(ma.arms.data + ai)
                 if arm.body != null:
-                    emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-arm.body), analysis, range, source, utf16)
+                    emit_type_hints_in_stmt(
+                        json_text,
+                        emitted,
+                        unsafe: read(ptr[ast.Stmt]<-arm.body),
+                        analysis,
+                        range,
+                        source,
+                        utf16
+                    )
                 ai += 1
         ast.Stmt.stmt_unsafe as un:
             if un.body != null:
-                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-un.body), analysis, range, source, utf16)
+                emit_type_hints_in_stmt(
+                    json_text,
+                    emitted,
+                    unsafe: read(ptr[ast.Stmt]<-un.body),
+                    analysis,
+                    range,
+                    source,
+                    utf16
+                )
         _:
             pass
 
@@ -359,14 +467,34 @@ function emit_return_hints(
             ast.Decl.decl_function as fun:
                 let sig_ptr = unsafe: read(analysis).functions.get(fun.name)
                 if sig_ptr != null:
-                    emit_return_hint(json_text, emitted, fun.name, fun.line, fun.column, unsafe: read(sig_ptr), range, source, utf16)
+                    emit_return_hint(
+                        json_text,
+                        emitted,
+                        fun.name,
+                        fun.line,
+                        fun.column,
+                        unsafe: read(sig_ptr),
+                        range,
+                        source,
+                        utf16
+                    )
             ast.Decl.decl_extending_block as ext:
                 var mi: ptr_uint = 0
                 while mi < ext.methods.len:
                     let method = unsafe: read(ext.methods.data + mi)
                     match find_method_sig(analysis, method.name):
                         Option.some as sig:
-                            emit_return_hint(json_text, emitted, method.name, method.line, method.column, sig.value, range, source, utf16)
+                            emit_return_hint(
+                                json_text,
+                                emitted,
+                                method.name,
+                                method.line,
+                                method.column,
+                                sig.value,
+                                range,
+                                source,
+                                utf16
+                            )
                         Option.none:
                             pass
                     mi += 1

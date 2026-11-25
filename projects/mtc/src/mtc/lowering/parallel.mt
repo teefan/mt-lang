@@ -20,7 +20,6 @@ import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.utils as utils
 import mtc.strings
 
-
 ## Host parity for the parallel constructs (`loops.rb`):
 ## `@parallel_for_counter` is a single per-module counter shared by
 ## `parallel for` (`_pfor_`), `parallel:` (`_spawn_`) and `detach`
@@ -267,14 +266,22 @@ function pfor_assignment_base_name(expr: ir.Expr) -> str:
             return ""
 
 
-function collect_pfor_written_names(stmts: span[ir.Stmt], capture_names: ref[map_mod.Map[str, bool]], written: ref[map_mod.Map[str, bool]]) -> void:
+function collect_pfor_written_names(
+    stmts: span[ir.Stmt],
+    capture_names: ref[map_mod.Map[str, bool]],
+    written: ref[map_mod.Map[str, bool]]
+) -> void:
     var si: ptr_uint = 0
     while si < stmts.len:
         collect_pfor_written_stmt(unsafe: read(stmts.data + si), capture_names, written)
         si += 1
 
 
-function collect_pfor_written_stmt(stmt: ir.Stmt, capture_names: ref[map_mod.Map[str, bool]], written: ref[map_mod.Map[str, bool]]) -> void:
+function collect_pfor_written_stmt(
+    stmt: ir.Stmt,
+    capture_names: ref[map_mod.Map[str, bool]],
+    written: ref[map_mod.Map[str, bool]]
+) -> void:
     match stmt:
         ir.Stmt.stmt_assignment as asg:
             let base = pfor_assignment_base_name(unsafe: read(asg.target))
@@ -366,7 +373,11 @@ function rewrite_pfor_stmt(stmt: ir.Stmt, array_names: ref[map_mod.Map[str, bool
             var ci: ptr_uint = 0
             while ci < sw.cases.len:
                 let c = unsafe: read(sw.cases.data + ci)
-                cases.push(ir.SwitchCase(is_default = c.is_default, value = c.value, body = rewrite_pfor_array_captures(c.body, array_names)))
+                cases.push(ir.SwitchCase(
+                    is_default = c.is_default,
+                    value = c.value,
+                    body = rewrite_pfor_array_captures(c.body, array_names)
+                ))
                 ci += 1
             return ir.Stmt.stmt_switch(
                 expression = lowering.alloc_expr(rewrite_pfor_expr(unsafe: read(sw.expression), array_names)),
@@ -396,7 +407,11 @@ function rewrite_pfor_expr(expr: ir.Expr, array_names: ref[map_mod.Map[str, bool
                                 if lowering.is_array_type(nm.ty):
                                     ptr_ty = pfor_ptr_type(pfor_element_type(nm.ty))
                                 return ir.Expr.expr_index(
-                                    receiver = lowering.alloc_expr(ir.Expr.expr_name(name = nm.name, ty = ptr_ty, pointer = Option[bool].some(value = false))),
+                                    receiver = lowering.alloc_expr(ir.Expr.expr_name(
+                                        name = nm.name,
+                                        ty = ptr_ty,
+                                        pointer = Option[bool].some(value = false)
+                                    )),
                                     index = lowering.alloc_expr(rewrite_pfor_expr(unsafe: read(ci.index), array_names)),
                                     ty = ci.ty,
                                 )
@@ -408,7 +423,11 @@ function rewrite_pfor_expr(expr: ir.Expr, array_names: ref[map_mod.Map[str, bool
                         if lowering.is_array_type(ci.receiver_type):
                             ptr_ty = pfor_ptr_type(pfor_element_type(ci.receiver_type))
                         return ir.Expr.expr_index(
-                            receiver = lowering.alloc_expr(ir.Expr.expr_name(name = nm.name, ty = ptr_ty, pointer = Option[bool].some(value = false))),
+                            receiver = lowering.alloc_expr(ir.Expr.expr_name(
+                                name = nm.name,
+                                ty = ptr_ty,
+                                pointer = Option[bool].some(value = false)
+                            )),
                             index = lowering.alloc_expr(rewrite_pfor_expr(unsafe: read(ci.index), array_names)),
                             ty = ci.ty,
                         )
@@ -459,8 +478,14 @@ function rewrite_pfor_expr(expr: ir.Expr, array_names: ref[map_mod.Map[str, bool
         ir.Expr.expr_conditional as cond:
             return ir.Expr.expr_conditional(
                 condition = lowering.alloc_expr(rewrite_pfor_expr(unsafe: read(cond.condition), array_names)),
-                then_expression = lowering.alloc_expr(rewrite_pfor_expr(unsafe: read(cond.then_expression), array_names)),
-                else_expression = lowering.alloc_expr(rewrite_pfor_expr(unsafe: read(cond.else_expression), array_names)),
+                then_expression = lowering.alloc_expr(rewrite_pfor_expr(
+                    unsafe: read(cond.then_expression),
+                    array_names
+                )),
+                else_expression = lowering.alloc_expr(rewrite_pfor_expr(
+                    unsafe: read(cond.else_expression),
+                    array_names
+                )),
                 ty = cond.ty,
             )
         ir.Expr.expr_member as m:
@@ -479,7 +504,10 @@ function rewrite_pfor_expr(expr: ir.Expr, array_names: ref[map_mod.Map[str, bool
             var fi: ptr_uint = 0
             while fi < al.fields.len:
                 let f = unsafe: read(al.fields.data + fi)
-                fields.push(ir.AggregateField(name = f.name, value = lowering.alloc_expr(rewrite_pfor_expr(unsafe: read(f.value), array_names))))
+                fields.push(ir.AggregateField(
+                    name = f.name,
+                    value = lowering.alloc_expr(rewrite_pfor_expr(unsafe: read(f.value), array_names))
+                ))
                 fi += 1
             return ir.Expr.expr_aggregate_literal(ty = al.ty, fields = fields.as_span())
         _:
@@ -501,7 +529,13 @@ function validate_pfor_no_ref_captures(captures: span[ir.Expr]) -> void:
 ## Lower `parallel for i in 0..N: body` (the host's `lower_threaded_for_stmt`,
 ## `loops.rb:445`): a worker receives `(data, start, end)`, unpacks the capture
 ## struct, and runs the induction loop.
-public function lower_parallel_for(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body: ptr[ast.Stmt]?) -> void:
+public function lower_parallel_for(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    bindings: span[ast.ForBinding],
+    iterables: span[ast.Expr],
+    body: ptr[ast.Stmt]?
+) -> void:
     if bindings.len == 0 or iterables.len == 0:
         return
     var start_ptr: ptr[ast.Expr]
@@ -542,7 +576,12 @@ public function lower_parallel_for(ctx: ref[lowering.LoweringContext], output: r
     let stop_collected = lowering.collect_stmt_setup(ctx, stop_saved)
 
     let saved_locals_len = ctx.locals.len()
-    ctx.locals.push(lowering.LocalBinding(name = index_name, c_name = index_c, ty = loop_type, pointer = Option[bool].some(value = false)))
+    ctx.locals.push(lowering.LocalBinding(
+        name = index_name,
+        c_name = index_c,
+        ty = loop_type,
+        pointer = Option[bool].some(value = false)
+    ))
     let body_span = lowering.lower_block(ctx, bd)
     while ctx.locals.len() > saved_locals_len:
         let _popped = ctx.locals.pop()
@@ -588,7 +627,14 @@ public function lower_parallel_for(ctx: ref[lowering.LoweringContext], output: r
             _:
                 pass
         ci += 1
-    ctx.pending_synthetic_structs.push(ir.StructDecl(name = cap_name, linkage_name = cap_name, fields = cap_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+    ctx.pending_synthetic_structs.push(ir.StructDecl(
+        name = cap_name,
+        linkage_name = cap_name,
+        fields = cap_fields.as_span(),
+        packed = false,
+        alignment = 0,
+        source_module = Option[str].none
+    ))
 
     let cap_ty = types.named_type(name = cap_name, module_name = "", linkage_name = Option[str].none)
     let cap_ptr_ty = pfor_ptr_type(cap_ty)
@@ -598,12 +644,20 @@ public function lower_parallel_for(ctx: ref[lowering.LoweringContext], output: r
         name = "mt_cap", linkage_name = "mt_cap", ty = cap_ptr_ty,
         value = lowering.alloc_expr(ir.Expr.expr_cast(
             target_type = cap_ptr_ty,
-            expression = lowering.alloc_expr(ir.Expr.expr_name(name = "mt_pfor_data", ty = void_ptr, pointer = Option[bool].some(value = false))),
+            expression = lowering.alloc_expr(ir.Expr.expr_name(
+                name = "mt_pfor_data",
+                ty = void_ptr,
+                pointer = Option[bool].some(value = false)
+            )),
             ty = cap_ptr_ty,
         )),
         line = 0, source_path = "",
     ))
-    let cap_ref = lowering.alloc_expr(ir.Expr.expr_name(name = "mt_cap", ty = cap_ptr_ty, pointer = Option[bool].some(value = true)))
+    let cap_ref = lowering.alloc_expr(ir.Expr.expr_name(
+        name = "mt_cap",
+        ty = cap_ptr_ty,
+        pointer = Option[bool].some(value = true)
+    ))
     ci = 0
     while ci < captures.len():
         let cp = captures.get(ci) else:
@@ -615,7 +669,11 @@ public function lower_parallel_for(ctx: ref[lowering.LoweringContext], output: r
                     alias_ty = pfor_ptr_type(pfor_element_type(nm.ty))
                 worker_body.push(ir.Stmt.stmt_local(
                     name = nm.name, linkage_name = nm.name, ty = alias_ty,
-                    value = lowering.alloc_expr(ir.Expr.expr_member(receiver = cap_ref, member = nm.name, ty = alias_ty)),
+                    value = lowering.alloc_expr(ir.Expr.expr_member(
+                        receiver = cap_ref,
+                        member = nm.name,
+                        ty = alias_ty
+                    )),
                     line = 0, source_path = "",
                 ))
             _:
@@ -624,22 +682,65 @@ public function lower_parallel_for(ctx: ref[lowering.LoweringContext], output: r
     var rewritten_body = body_ir.as_span()
     if array_capture_names.len() > 0:
         rewritten_body = rewrite_pfor_array_captures(body_ir.as_span(), ref_of(array_capture_names))
-    let index_ref = lowering.alloc_expr(ir.Expr.expr_name(name = index_c, ty = loop_type, pointer = Option[bool].some(value = false)))
-    let start_ref = lowering.alloc_expr(ir.Expr.expr_name(name = "mt_pfor_start", ty = long_ty, pointer = Option[bool].some(value = false)))
-    let end_ref = lowering.alloc_expr(ir.Expr.expr_name(name = "mt_pfor_end", ty = long_ty, pointer = Option[bool].some(value = false)))
-    let condition = lowering.alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = end_ref, ty = ctx.bool_ty))
+    let index_ref = lowering.alloc_expr(ir.Expr.expr_name(
+        name = index_c,
+        ty = loop_type,
+        pointer = Option[bool].some(value = false)
+    ))
+    let start_ref = lowering.alloc_expr(ir.Expr.expr_name(
+        name = "mt_pfor_start",
+        ty = long_ty,
+        pointer = Option[bool].some(value = false)
+    ))
+    let end_ref = lowering.alloc_expr(ir.Expr.expr_name(
+        name = "mt_pfor_end",
+        ty = long_ty,
+        pointer = Option[bool].some(value = false)
+    ))
+    let condition = lowering.alloc_expr(ir.Expr.expr_binary(
+        operator = "<",
+        left = index_ref,
+        right = end_ref,
+        ty = ctx.bool_ty
+    ))
     let post = lowering.alloc_stmt(ir.Stmt.stmt_assignment(
-        target = lowering.alloc_expr(ir.Expr.expr_name(name = index_c, ty = loop_type, pointer = Option[bool].some(value = false))),
+        target = lowering.alloc_expr(ir.Expr.expr_name(
+            name = index_c,
+            ty = loop_type,
+            pointer = Option[bool].some(value = false)
+        )),
         operator = "+=",
         value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = loop_type)),
     ))
-    let init = lowering.alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = loop_type, value = start_ref, line = 0, source_path = ""))
+    let init = lowering.alloc_stmt(ir.Stmt.stmt_local(
+        name = index_c,
+        linkage_name = index_c,
+        ty = loop_type,
+        value = start_ref,
+        line = 0,
+        source_path = ""
+    ))
     worker_body.push(ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = rewritten_body))
 
     var worker_params = vec.Vec[ir.Param].create()
-    worker_params.push(ir.Param(name = "mt_pfor_data", linkage_name = "mt_pfor_data", ty = void_ptr, pointer = Option[bool].some(value = false)))
-    worker_params.push(ir.Param(name = "mt_pfor_start", linkage_name = "mt_pfor_start", ty = long_ty, pointer = Option[bool].some(value = false)))
-    worker_params.push(ir.Param(name = "mt_pfor_end", linkage_name = "mt_pfor_end", ty = long_ty, pointer = Option[bool].some(value = false)))
+    worker_params.push(ir.Param(
+        name = "mt_pfor_data",
+        linkage_name = "mt_pfor_data",
+        ty = void_ptr,
+        pointer = Option[bool].some(value = false)
+    ))
+    worker_params.push(ir.Param(
+        name = "mt_pfor_start",
+        linkage_name = "mt_pfor_start",
+        ty = long_ty,
+        pointer = Option[bool].some(value = false)
+    ))
+    worker_params.push(ir.Param(
+        name = "mt_pfor_end",
+        linkage_name = "mt_pfor_end",
+        ty = long_ty,
+        pointer = Option[bool].some(value = false)
+    ))
     let worker = ir.Function(
         name = worker_name, linkage_name = worker_name,
         params = worker_params.as_span(), return_type = ctx.void_ty,
@@ -660,7 +761,11 @@ public function lower_parallel_for(ctx: ref[lowering.LoweringContext], output: r
                 if array_capture_names.contains(nm.name):
                     cap_fields_out.push(ir.AggregateField(
                         name = nm.name,
-                        value = lowering.alloc_expr(ir.Expr.expr_name(name = nm.name, ty = pfor_ptr_type(pfor_element_type(nm.ty)), pointer = Option[bool].some(value = false))),
+                        value = lowering.alloc_expr(ir.Expr.expr_name(
+                            name = nm.name,
+                            ty = pfor_ptr_type(pfor_element_type(nm.ty)),
+                            pointer = Option[bool].some(value = false)
+                        )),
                     ))
                 else:
                     cap_fields_out.push(ir.AggregateField(name = nm.name, value = unsafe: cp))
@@ -668,21 +773,46 @@ public function lower_parallel_for(ctx: ref[lowering.LoweringContext], output: r
                 pass
         ci += 1
     let cap_init = lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = cap_ty, fields = cap_fields_out.as_span()))
-    call_site.push(ir.Stmt.stmt_local(name = "mt_pfor_cap", linkage_name = "mt_pfor_cap", ty = cap_ty, value = cap_init, line = 0, source_path = ""))
-    let fn_ty = types.function_type(name = "", params = span[types.Type](), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = span[str]())
+    call_site.push(ir.Stmt.stmt_local(
+        name = "mt_pfor_cap",
+        linkage_name = "mt_pfor_cap",
+        ty = cap_ty,
+        value = cap_init,
+        line = 0,
+        source_path = ""
+    ))
+    let fn_ty = types.function_type(
+        name = "",
+        params = span[types.Type](),
+        return_type = types.alloc_type(ctx.void_ty),
+        variadic = false,
+        is_proc = false,
+        param_names = span[str]()
+    )
     var call_args = vec.Vec[ir.Expr].create()
-    unsafe: call_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(name = worker_name, ty = fn_ty, pointer = Option[bool].some(value = false)))))
+    unsafe: call_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(
+        name = worker_name,
+        ty = fn_ty,
+        pointer = Option[bool].some(value = false)
+    ))))
     unsafe: call_args.push(read(lowering.alloc_expr(ir.Expr.expr_address_of(
-        expression = lowering.alloc_expr(ir.Expr.expr_name(name = "mt_pfor_cap", ty = cap_ty, pointer = Option[bool].some(value = false))),
+        expression = lowering.alloc_expr(ir.Expr.expr_name(
+            name = "mt_pfor_cap",
+            ty = cap_ty,
+            pointer = Option[bool].some(value = false)
+        )),
         ty = void_ptr,
     ))))
     unsafe: call_args.push(read(lowered_stop))
     call_site.push(ir.Stmt.stmt_expression(
-        expression = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_parallel_for", arguments = call_args.as_span(), ty = ctx.void_ty)),
+        expression = lowering.alloc_expr(ir.Expr.expr_call(
+            callee = "mt_parallel_for",
+            arguments = call_args.as_span(),
+            ty = ctx.void_ty
+        )),
         line = 0, source_path = "",
     ))
     output.push(ir.Stmt.stmt_block(body = call_site.as_span()))
-
 
 struct SpawnBlockInfo:
     worker_name: str
@@ -698,7 +828,11 @@ struct SpawnBlockInfo:
 ## Lower `parallel: stmt1; stmt2; ...` (the host's
 ## `lower_parallel_block_stmt`, `loops.rb:603`): one worker and one capture
 ## struct per body, dispatched through an `mt_spawn_item` array.
-public function lower_parallel_block(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], bodies: span[ast.Stmt]) -> void:
+public function lower_parallel_block(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    bodies: span[ast.Stmt]
+) -> void:
     if bodies.len < 2:
         return
     let void_ty = ctx.void_ty
@@ -745,7 +879,14 @@ public function lower_parallel_block(ctx: ref[lowering.LoweringContext], output:
             wi += 1
         idx += 1
 
-    let fn_ty = types.function_type(name = "", params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = span[str]())
+    let fn_ty = types.function_type(
+        name = "",
+        params = span[types.Type](),
+        return_type = types.alloc_type(void_ty),
+        variadic = false,
+        is_proc = false,
+        param_names = span[str]()
+    )
     let spawn_item_ty = types.named_type(name = "mt_spawn_item", module_name = "", linkage_name = Option[str].none)
     var call_site = vec.Vec[ir.Stmt].create()
     idx = 0
@@ -754,9 +895,19 @@ public function lower_parallel_block(ctx: ref[lowering.LoweringContext], output:
             break
         let info = unsafe: read(ip)
         if not info.captureless:
-            call_site.push(ir.Stmt.stmt_local(name = info.cap_local_name, linkage_name = info.cap_local_name, ty = info.cap_ty, value = info.cap_init, line = 0, source_path = ""))
+            call_site.push(ir.Stmt.stmt_local(
+                name = info.cap_local_name,
+                linkage_name = info.cap_local_name,
+                ty = info.cap_ty,
+                value = info.cap_init,
+                line = 0,
+                source_path = ""
+            ))
         idx += 1
-    let tasks_arr_ty = types.generic_type(name = "array", args = lowering.sp_type2(spawn_item_ty, types.literal_int(long<-bodies.len)))
+    let tasks_arr_ty = types.generic_type(
+        name = "array",
+        args = lowering.sp_type2(spawn_item_ty, types.literal_int(long<-bodies.len))
+    )
     var elements = vec.Vec[ir.Expr].create()
     idx = 0
     while idx < infos.len():
@@ -766,13 +917,27 @@ public function lower_parallel_block(ctx: ref[lowering.LoweringContext], output:
         var data_expr = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr))
         if not info.captureless:
             data_expr = lowering.alloc_expr(ir.Expr.expr_address_of(
-                expression = lowering.alloc_expr(ir.Expr.expr_name(name = info.cap_local_name, ty = info.cap_ty, pointer = Option[bool].some(value = false))),
+                expression = lowering.alloc_expr(ir.Expr.expr_name(
+                    name = info.cap_local_name,
+                    ty = info.cap_ty,
+                    pointer = Option[bool].some(value = false)
+                )),
                 ty = void_ptr,
             ))
         var fields = vec.Vec[ir.AggregateField].create()
-        fields.push(ir.AggregateField(name = "work", value = lowering.alloc_expr(ir.Expr.expr_name(name = info.worker_name, ty = fn_ty, pointer = Option[bool].some(value = false)))))
+        fields.push(ir.AggregateField(
+            name = "work",
+            value = lowering.alloc_expr(ir.Expr.expr_name(
+                name = info.worker_name,
+                ty = fn_ty,
+                pointer = Option[bool].some(value = false)
+            ))
+        ))
         fields.push(ir.AggregateField(name = "data", value = data_expr))
-        unsafe: elements.push(read(lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = spawn_item_ty, fields = fields.as_span()))))
+        unsafe: elements.push(read(lowering.alloc_expr(ir.Expr.expr_aggregate_literal(
+            ty = spawn_item_ty,
+            fields = fields.as_span()
+        ))))
         idx += 1
     call_site.push(ir.Stmt.stmt_local(
         name = "mt_spawn_tasks", linkage_name = "mt_spawn_tasks", ty = tasks_arr_ty,
@@ -780,10 +945,21 @@ public function lower_parallel_block(ctx: ref[lowering.LoweringContext], output:
         line = 0, source_path = "",
     ))
     var spawn_args = vec.Vec[ir.Expr].create()
-    unsafe: spawn_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(name = "mt_spawn_tasks", ty = tasks_arr_ty, pointer = Option[bool].some(value = false)))))
-    unsafe: spawn_args.push(read(lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-bodies.len, ty = types.primitive("int")))))
+    unsafe: spawn_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(
+        name = "mt_spawn_tasks",
+        ty = tasks_arr_ty,
+        pointer = Option[bool].some(value = false)
+    ))))
+    unsafe: spawn_args.push(read(lowering.alloc_expr(ir.Expr.expr_integer_literal(
+        value = long<-bodies.len,
+        ty = types.primitive("int")
+    ))))
     call_site.push(ir.Stmt.stmt_expression(
-        expression = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_spawn_all", arguments = spawn_args.as_span(), ty = void_ty)),
+        expression = lowering.alloc_expr(ir.Expr.expr_call(
+            callee = "mt_spawn_all",
+            arguments = spawn_args.as_span(),
+            ty = void_ty
+        )),
         line = 0, source_path = "",
     ))
     # Written scalar captures flow back after the join.
@@ -799,10 +975,18 @@ public function lower_parallel_block(ctx: ref[lowering.LoweringContext], output:
             match unsafe: read(wp):
                 ir.Expr.expr_name as nm:
                     call_site.push(ir.Stmt.stmt_assignment(
-                        target = lowering.alloc_expr(ir.Expr.expr_name(name = nm.name, ty = nm.ty, pointer = Option[bool].some(value = false))),
+                        target = lowering.alloc_expr(ir.Expr.expr_name(
+                            name = nm.name,
+                            ty = nm.ty,
+                            pointer = Option[bool].some(value = false)
+                        )),
                         operator = "=",
                         value = lowering.alloc_expr(ir.Expr.expr_member(
-                            receiver = lowering.alloc_expr(ir.Expr.expr_name(name = info.cap_local_name, ty = info.cap_ty, pointer = Option[bool].some(value = false))),
+                            receiver = lowering.alloc_expr(ir.Expr.expr_name(
+                                name = info.cap_local_name,
+                                ty = info.cap_ty,
+                                pointer = Option[bool].some(value = false)
+                            )),
                             member = nm.name, ty = nm.ty,
                         )),
                     ))
@@ -813,7 +997,14 @@ public function lower_parallel_block(ctx: ref[lowering.LoweringContext], output:
     output.push(ir.Stmt.stmt_block(body = call_site.as_span()))
 
 
-function build_parallel_workers(ctx: ref[lowering.LoweringContext], bodies: span[ast.Stmt], infos: ref[vec.Vec[SpawnBlockInfo]], uid_base: str, void_ty: types.Type, void_ptr: types.Type) -> void:
+function build_parallel_workers(
+    ctx: ref[lowering.LoweringContext],
+    bodies: span[ast.Stmt],
+    infos: ref[vec.Vec[SpawnBlockInfo]],
+    uid_base: str,
+    void_ty: types.Type,
+    void_ptr: types.Type
+) -> void:
     var bi: ptr_uint = 0
     while bi < bodies.len:
         let body_ir = lowering.lower_block(ctx, unsafe: ptr[ast.Stmt]<-(bodies.data + bi))
@@ -885,19 +1076,34 @@ function build_parallel_workers(ctx: ref[lowering.LoweringContext], bodies: span
                     _:
                         pass
                 ci += 1
-            ctx.pending_synthetic_structs.push(ir.StructDecl(name = cap_name, linkage_name = cap_name, fields = cap_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+            ctx.pending_synthetic_structs.push(ir.StructDecl(
+                name = cap_name,
+                linkage_name = cap_name,
+                fields = cap_fields.as_span(),
+                packed = false,
+                alignment = 0,
+                source_module = Option[str].none
+            ))
             cap_ty = types.named_type(name = cap_name, module_name = "", linkage_name = Option[str].none)
             let cap_ptr_ty = pfor_ptr_type(cap_ty)
             worker_body.push(ir.Stmt.stmt_local(
                 name = "mt_cap", linkage_name = "mt_cap", ty = cap_ptr_ty,
                 value = lowering.alloc_expr(ir.Expr.expr_cast(
                     target_type = cap_ptr_ty,
-                    expression = lowering.alloc_expr(ir.Expr.expr_name(name = "mt_pfor_data", ty = void_ptr, pointer = Option[bool].some(value = false))),
+                    expression = lowering.alloc_expr(ir.Expr.expr_name(
+                        name = "mt_pfor_data",
+                        ty = void_ptr,
+                        pointer = Option[bool].some(value = false)
+                    )),
                     ty = cap_ptr_ty,
                 )),
                 line = 0, source_path = "",
             ))
-            let cap_ref = lowering.alloc_expr(ir.Expr.expr_name(name = "mt_cap", ty = cap_ptr_ty, pointer = Option[bool].some(value = true)))
+            let cap_ref = lowering.alloc_expr(ir.Expr.expr_name(
+                name = "mt_cap",
+                ty = cap_ptr_ty,
+                pointer = Option[bool].some(value = true)
+            ))
             ci = 0
             while ci < captures.len():
                 let cp = captures.get(ci) else:
@@ -909,14 +1115,21 @@ function build_parallel_workers(ctx: ref[lowering.LoweringContext], bodies: span
                             alias_ty = pfor_ptr_type(pfor_element_type(nm.ty))
                         worker_body.push(ir.Stmt.stmt_local(
                             name = nm.name, linkage_name = nm.name, ty = alias_ty,
-                            value = lowering.alloc_expr(ir.Expr.expr_member(receiver = cap_ref, member = nm.name, ty = alias_ty)),
+                            value = lowering.alloc_expr(ir.Expr.expr_member(
+                                receiver = cap_ref,
+                                member = nm.name,
+                                ty = alias_ty
+                            )),
                             line = 0, source_path = "",
                         ))
                     _:
                         pass
                 ci += 1
             if array_capture_names.len() > 0:
-                lowering.append_span_stmts(ref_of(worker_body), rewrite_pfor_array_captures(body_ir, ref_of(array_capture_names)))
+                lowering.append_span_stmts(
+                    ref_of(worker_body),
+                    rewrite_pfor_array_captures(body_ir, ref_of(array_capture_names))
+                )
             else:
                 lowering.append_span_stmts(ref_of(worker_body), body_ir)
             # Write-back assignments for written scalar captures.
@@ -927,9 +1140,17 @@ function build_parallel_workers(ctx: ref[lowering.LoweringContext], bodies: span
                 match unsafe: read(wp):
                     ir.Expr.expr_name as nm:
                         worker_body.push(ir.Stmt.stmt_assignment(
-                            target = lowering.alloc_expr(ir.Expr.expr_member(receiver = cap_ref, member = nm.name, ty = nm.ty)),
+                            target = lowering.alloc_expr(ir.Expr.expr_member(
+                                receiver = cap_ref,
+                                member = nm.name,
+                                ty = nm.ty
+                            )),
                             operator = "=",
-                            value = lowering.alloc_expr(ir.Expr.expr_name(name = nm.name, ty = nm.ty, pointer = Option[bool].some(value = false))),
+                            value = lowering.alloc_expr(ir.Expr.expr_name(
+                                name = nm.name,
+                                ty = nm.ty,
+                                pointer = Option[bool].some(value = false)
+                            )),
                         ))
                     _:
                         pass
@@ -944,16 +1165,28 @@ function build_parallel_workers(ctx: ref[lowering.LoweringContext], bodies: span
                         if array_capture_names.contains(nm.name):
                             cap_fields_out.push(ir.AggregateField(
                                 name = nm.name,
-                                value = lowering.alloc_expr(ir.Expr.expr_name(name = nm.name, ty = pfor_ptr_type(pfor_element_type(nm.ty)), pointer = Option[bool].some(value = false))),
+                                value = lowering.alloc_expr(ir.Expr.expr_name(
+                                    name = nm.name,
+                                    ty = pfor_ptr_type(pfor_element_type(nm.ty)),
+                                    pointer = Option[bool].some(value = false)
+                                )),
                             ))
                         else:
                             cap_fields_out.push(ir.AggregateField(name = nm.name, value = unsafe: cp))
                     _:
                         pass
                 ci += 1
-            cap_init = lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = cap_ty, fields = cap_fields_out.as_span()))
+            cap_init = lowering.alloc_expr(ir.Expr.expr_aggregate_literal(
+                ty = cap_ty,
+                fields = cap_fields_out.as_span()
+            ))
         var worker_params = vec.Vec[ir.Param].create()
-        worker_params.push(ir.Param(name = "mt_pfor_data", linkage_name = "mt_pfor_data", ty = void_ptr, pointer = Option[bool].some(value = false)))
+        worker_params.push(ir.Param(
+            name = "mt_pfor_data",
+            linkage_name = "mt_pfor_data",
+            ty = void_ptr,
+            pointer = Option[bool].some(value = false)
+        ))
         let worker = ir.Function(
             name = worker_name, linkage_name = worker_name,
             params = worker_params.as_span(), return_type = void_ty,
@@ -979,7 +1212,11 @@ function void_ptr_ty() -> types.Type:
 
 ## Lower `gather h1, h2, ...`.  Each handle is joined via mt_detach_join; the
 ## host wraps the joins in one block.
-public function lower_gather_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], handles: span[ast.Expr]) -> void:
+public function lower_gather_stmt(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    handles: span[ast.Expr]
+) -> void:
     let void_ty = ctx.void_ty
     var joins = vec.Vec[ir.Stmt].create()
     var i: ptr_uint = 0
@@ -989,7 +1226,11 @@ public function lower_gather_stmt(ctx: ref[lowering.LoweringContext], output: re
         unsafe:
             join_args.push(read(h))
         joins.push(ir.Stmt.stmt_expression(
-            expression = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_detach_join", arguments = join_args.as_span(), ty = void_ty)),
+            expression = lowering.alloc_expr(ir.Expr.expr_call(
+                callee = "mt_detach_join",
+                arguments = join_args.as_span(),
+                ty = void_ty
+            )),
             line = 0, source_path = "",
         ))
         i += 1
@@ -998,7 +1239,11 @@ public function lower_gather_stmt(ctx: ref[lowering.LoweringContext], output: re
 
 ## Lower `detach <call>` (the host's `lower_detach_expr`, `loops.rb:810`).
 ## The call runs in a worker function; the expression yields an opaque Handle.
-public function lower_detach_expr(ctx: ref[lowering.LoweringContext], expression: ptr[ast.Expr], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+public function lower_detach_expr(
+    ctx: ref[lowering.LoweringContext],
+    expression: ptr[ast.Expr],
+    ep: ptr[ast.Expr]
+) -> ptr[ir.Expr]:
     # The call runs in a worker, so its setup must not hoist into the enclosing
     # statement's window.
     let hoist_saved = lowering.suspend_stmt_setup(ctx)
@@ -1027,7 +1272,12 @@ public function lower_detach_expr(ctx: ref[lowering.LoweringContext], expression
     if captures.len() > 0:
         fatal(c"detach with captured variables is not yet supported; use a global function call or module-level variables")
     var worker_params = vec.Vec[ir.Param].create()
-    worker_params.push(ir.Param(name = "mt_pfor_data", linkage_name = "mt_pfor_data", ty = void_ptr, pointer = Option[bool].some(value = false)))
+    worker_params.push(ir.Param(
+        name = "mt_pfor_data",
+        linkage_name = "mt_pfor_data",
+        ty = void_ptr,
+        pointer = Option[bool].some(value = false)
+    ))
     let worker = ir.Function(
         name = worker_name, linkage_name = worker_name,
         params = worker_params.as_span(), return_type = void_ty,
@@ -1035,8 +1285,19 @@ public function lower_detach_expr(ctx: ref[lowering.LoweringContext], expression
     )
     ctx.pending_synthetic_functions.push(worker)
     lowering.resume_stmt_setup(ctx, hoist_saved)
-    let fn_ty = types.function_type(name = "", params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = span[str]())
+    let fn_ty = types.function_type(
+        name = "",
+        params = span[types.Type](),
+        return_type = types.alloc_type(void_ty),
+        variadic = false,
+        is_proc = false,
+        param_names = span[str]()
+    )
     var da = vec.Vec[ir.Expr].create()
-    unsafe: da.push(read(lowering.alloc_expr(ir.Expr.expr_name(name = worker_name, ty = fn_ty, pointer = Option[bool].some(value = false)))))
+    unsafe: da.push(read(lowering.alloc_expr(ir.Expr.expr_name(
+        name = worker_name,
+        ty = fn_ty,
+        pointer = Option[bool].some(value = false)
+    ))))
     unsafe: da.push(read(lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr))))
     return lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_detach_run", arguments = da.as_span(), ty = void_ptr))

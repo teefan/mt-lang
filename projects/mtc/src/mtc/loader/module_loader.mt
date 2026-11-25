@@ -26,7 +26,6 @@ import mtc.semantic.analyzer as analyzer
 import mtc.loader.binder as binder
 import mtc.loader.path_resolver as resolver
 
-
 ## A parsed module plus the storage its AST borrows from.  `source` and the
 ## String fields are owned; `source_file`'s heap nodes are arena-leaked, matching
 ## the parser's ownership model.
@@ -37,7 +36,6 @@ public struct LoadedModule:
     source_file: ast.SourceFile
     parse_diagnostics: vec.Vec[pstate.ParseDiagnostic]
     lex_diagnostics: vec.Vec[token_mod.LexDiagnostic]
-
 
 ## A diagnostic aggregated across the whole program, tagged with the source-file
 ## path it occurs in so parse, load, and semantic errors can be reported
@@ -82,7 +80,6 @@ function empty_program_with_diagnostics(path: str, message: string.String) -> Pr
         modules_owned = true,
         cycle_module_names = vec.Vec[str].create(),
     )
-
 
 ## The result of loading and checking a program: every parsed module, a
 ## dependency-first ordering (indices into `modules`), the per-module semantic
@@ -131,7 +128,6 @@ extending Program:
     public function module_count() -> ptr_uint:
         return this.modules.len()
 
-
     ## Owning type names: types with a `.release()` method in any loaded module.
     public function owning_type_span() -> span[str]:
         return this.owning_type_names.as_span()
@@ -140,14 +136,12 @@ extending Program:
     public function diagnostic_count() -> ptr_uint:
         return this.diagnostics.len()
 
-
     ## The module name of the root program (`root_index` into the canonical
     ## analysis order), or "" when there are no analyses.
     public function root_module_name() -> str:
         let root = this.analyses.get(this.root_index) else:
             return ""
         return unsafe: read(root).module_name
-
 
     ## True when the root program is a raw `external` file.  The C backend cannot
     ## emit a translation unit for a raw ABI-binding file (it has no ordinary
@@ -157,7 +151,6 @@ extending Program:
         let root = this.analyses.get(this.root_index) else:
             return false
         return unsafe: read(root).module_kind == ast.ModuleKind.module_raw
-
 
     ## True when the root program declares a `main` function (regardless of
     ## signature validity).  Distinguishes "no main at all" from "main with an
@@ -178,7 +171,6 @@ extending Program:
                 count += 1
             i += 1
         return count
-
 
     ## Count only loader-level errors (module/error code prefix) — source file
     ## not found, import failures, etc.  These are hard failures that prevent
@@ -208,7 +200,6 @@ extending Program:
             i += 1
         return count
 
-
     ## The module name at the given dependency-order position, if any.
     public function ordered_name(position: ptr_uint) -> Option[str]:
         let index_ptr = this.order.get(position) else:
@@ -218,7 +209,6 @@ extending Program:
             return Option[str].none
         unsafe:
             return Option[str].some(value= read(module_ptr).module_name.as_str())
-
 
     ## True when any diagnostic message contains `needle`.
     public function has_diagnostic_containing(needle: str) -> bool:
@@ -265,7 +255,6 @@ extending Program:
             u += 1
         this.unresolved_import_paths.release()
 
-
 ## One module's cached parse state plus — once the module has been checked in
 ## some run — its analysis and export binding.  Owned by a `ModuleCache`; the
 ## parse and analysis allocations live in the entry's regions and are released
@@ -294,7 +283,6 @@ public struct ModuleCacheEntry:
     ## fields, `import_paths` and `dep_versions` are ordinary heap.
     parse_region: heap.Region
     analysis_region: heap.Region
-
 
 ## The workspace-owned cross-program module cache: one entry per resolved module
 ## path, shared by every Program the workspace builds, so an edit re-parses and
@@ -438,7 +426,6 @@ function release_entry_nodes(entry: ref[ModuleCacheEntry]) -> void:
     if binding_mem != null:
         heap.release(binding_mem)
         entry.binding_ptr = null
-
 
 ## A cached module's parse and analysis, handed out by value for consumers that
 ## only need the surface (the semantic-token scanner's import aliases).
@@ -630,7 +617,14 @@ function import_paths_equal(left: span[string.String], right: span[string.String
 ## this module — is skipped: the module's check could not see that dependency's
 ## binding, so its result is independent of it.  A dependency that resolved but
 ## produced no module (a read failure) is treated conservatively as changed.
-function module_needs_rebuild(cache: ptr[ModuleCache]?, run: ref[LoadRun], module_index: ptr_uint, modules: ref[vec.Vec[LoadedModule]], visited: ref[map_mod.Map[str, ptr_uint]], order_positions: ref[vec.Vec[ptr_uint]]) -> bool:
+function module_needs_rebuild(
+    cache: ptr[ModuleCache]?,
+    run: ref[LoadRun],
+    module_index: ptr_uint,
+    modules: ref[vec.Vec[LoadedModule]],
+    visited: ref[map_mod.Map[str, ptr_uint]],
+    order_positions: ref[vec.Vec[ptr_uint]]
+) -> bool:
     let module_ptr = modules.get(module_index) else:
         return true
     var module_value: LoadedModule
@@ -694,7 +688,10 @@ function module_needs_rebuild(cache: ptr[ModuleCache]?, run: ref[LoadRun], modul
 
 ## The cycle members' module names in parse order (the host's graph-key order).
 ## Lowering uses this to reproduce the host's analysis insertion order.
-function collect_cycle_module_names(modules: ref[vec.Vec[LoadedModule]], cycle_members: ref[map_mod.Map[ptr_uint, bool]]) -> vec.Vec[str]:
+function collect_cycle_module_names(
+    modules: ref[vec.Vec[LoadedModule]],
+    cycle_members: ref[map_mod.Map[ptr_uint, bool]]
+) -> vec.Vec[str]:
     var names = vec.Vec[str].create()
     var i: ptr_uint = 0
     while i < modules.len():
@@ -710,7 +707,11 @@ function collect_cycle_module_names(modules: ref[vec.Vec[LoadedModule]], cycle_m
 ## a module is on a cycle when it can reach itself through the import graph.
 ## Mirrors the host's `check_program_parallel` cycle-member selection, using the
 ## `run.dep_paths` graph instead of a separate parse-cache graph.
-function detect_cycle_members(run: ref[LoadRun], visited: ref[map_mod.Map[str, ptr_uint]], module_count: ptr_uint) -> map_mod.Map[ptr_uint, bool]:
+function detect_cycle_members(
+    run: ref[LoadRun],
+    visited: ref[map_mod.Map[str, ptr_uint]],
+    module_count: ptr_uint
+) -> map_mod.Map[ptr_uint, bool]:
     var members = map_mod.Map[ptr_uint, bool].create()
     var i: ptr_uint = 0
     while i < module_count:
@@ -743,7 +744,13 @@ function module_reaches_itself(start: ptr_uint, run: ref[LoadRun], visited: ref[
     return false
 
 
-function reachable_from(current: ptr_uint, target: ptr_uint, run: ref[LoadRun], visited: ref[map_mod.Map[str, ptr_uint]], seen: ref[map_mod.Map[ptr_uint, bool]]) -> bool:
+function reachable_from(
+    current: ptr_uint,
+    target: ptr_uint,
+    run: ref[LoadRun],
+    visited: ref[map_mod.Map[str, ptr_uint]],
+    seen: ref[map_mod.Map[ptr_uint, bool]]
+) -> bool:
     if current == target:
         return true
     if seen.contains(current):
@@ -772,7 +779,11 @@ function reachable_from(current: ptr_uint, target: ptr_uint, run: ref[LoadRun], 
 ## of a cycle member that is not itself on a cycle.  They are analysed before the
 ## cycle passes (with the forward type bindings) so the cycle members see their
 ## complete export surfaces, then re-analysed after the cycle bindings are final.
-function collect_cycle_dependencies(cycle_members: ref[map_mod.Map[ptr_uint, bool]], run: ref[LoadRun], visited: ref[map_mod.Map[str, ptr_uint]]) -> map_mod.Map[ptr_uint, bool]:
+function collect_cycle_dependencies(
+    cycle_members: ref[map_mod.Map[ptr_uint, bool]],
+    run: ref[LoadRun],
+    visited: ref[map_mod.Map[str, ptr_uint]]
+) -> map_mod.Map[ptr_uint, bool]:
     var needed = map_mod.Map[ptr_uint, bool].create()
     var stack = vec.Vec[ptr_uint].create()
     var i: ptr_uint = 0
@@ -787,7 +798,14 @@ function collect_cycle_dependencies(cycle_members: ref[map_mod.Map[ptr_uint, boo
     return needed
 
 
-function push_non_cycle_deps(index: ptr_uint, cycle_members: ref[map_mod.Map[ptr_uint, bool]], run: ref[LoadRun], visited: ref[map_mod.Map[str, ptr_uint]], needed: ref[map_mod.Map[ptr_uint, bool]], stack: ref[vec.Vec[ptr_uint]]) -> void:
+function push_non_cycle_deps(
+    index: ptr_uint,
+    cycle_members: ref[map_mod.Map[ptr_uint, bool]],
+    run: ref[LoadRun],
+    visited: ref[map_mod.Map[str, ptr_uint]],
+    needed: ref[map_mod.Map[ptr_uint, bool]],
+    stack: ref[vec.Vec[ptr_uint]]
+) -> void:
     let slot = run.dep_paths.get(index) else:
         return
     var deps: vec.Vec[string.String]
@@ -822,16 +840,31 @@ function create_shared_bindings() -> ptr[map_mod.Map[str, analyzer.ModuleBinding
 ## Analyse a module and build its export binding inside `region_ptr` (or on the
 ## ordinary heap when it is null), without emitting diagnostics or registering
 ## the binding.  Cycle passes use this for their provisional and final analyses.
-function analyze_and_bind_in_region(module_ptr: ptr[LoadedModule], bindings_ptr: ptr[map_mod.Map[str, analyzer.ModuleBinding]], require_resolved_imports: bool, region_ptr: ptr[heap.Region]?) -> (analyzer.Analysis, analyzer.ModuleBinding):
+function analyze_and_bind_in_region(
+    module_ptr: ptr[LoadedModule],
+    bindings_ptr: ptr[map_mod.Map[str, analyzer.ModuleBinding]],
+    require_resolved_imports: bool,
+    region_ptr: ptr[heap.Region]?
+) -> (analyzer.Analysis, analyzer.ModuleBinding):
     var previous: ptr[heap.Region]? = null
     if region_ptr != null:
         previous = heap.begin_region(region_ptr)
     let loaded = unsafe: read(module_ptr)
     var analysis: analyzer.Analysis
     if require_resolved_imports:
-        analysis = analyzer.check_module_requiring_resolved_imports(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
+        analysis = analyzer.check_module_requiring_resolved_imports(
+            loaded.source_file,
+            bindings_ptr,
+            loaded.module_name.as_str(),
+            loaded.path.as_str()
+        )
     else:
-        analysis = analyzer.check_module(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
+        analysis = analyzer.check_module(
+            loaded.source_file,
+            bindings_ptr,
+            loaded.module_name.as_str(),
+            loaded.path.as_str()
+        )
     let binding = binder.bind_module(analysis)
     if region_ptr != null:
         heap.end_region(previous)
@@ -920,7 +953,12 @@ function check_cyclic_program(
                                     read(bindings_ptr).set(loaded.module_name.as_str(), read(binding_mem))
                                 binding_found = true
                 if not binding_found:
-                    let (_, binding) = analyze_and_bind_in_region(module_ptr, bindings_ptr, require_resolved_imports, null)
+                    let (_, binding) = analyze_and_bind_in_region(
+                        module_ptr,
+                        bindings_ptr,
+                        require_resolved_imports,
+                        null
+                    )
                     unsafe:
                         read(bindings_ptr).set(loaded.module_name.as_str(), binding)
             pi += 1
@@ -940,7 +978,12 @@ function check_cyclic_program(
                     continue
                 let loaded = unsafe: read(module_ptr)
                 let region_ptr = cycle_pass1_region(cache, ref_of(cyclic_regions), index)
-                let (_, binding) = analyze_and_bind_in_region(module_ptr, bindings_ptr, require_resolved_imports, region_ptr)
+                let (_, binding) = analyze_and_bind_in_region(
+                    module_ptr,
+                    bindings_ptr,
+                    require_resolved_imports,
+                    region_ptr
+                )
                 unsafe:
                     read(bindings_ptr).set(loaded.module_name.as_str(), binding)
             p1 += 1
@@ -962,13 +1005,31 @@ function check_cyclic_program(
                     let region_ptr = cyclic_regions.get(index) else:
                         p2 += 1
                         continue
-                    let (analysis, binding) = analyze_and_bind_in_region(module_ptr, bindings_ptr, require_resolved_imports, region_ptr)
+                    let (analysis, binding) = analyze_and_bind_in_region(
+                        module_ptr,
+                        bindings_ptr,
+                        require_resolved_imports,
+                        region_ptr
+                    )
                     let analysis_region = unsafe: read(region_ptr)
-                    module_cache_store_analysis(cache, loaded.path.as_str(), index, run, analysis, binding, analysis_region)
+                    module_cache_store_analysis(
+                        cache,
+                        loaded.path.as_str(),
+                        index,
+                        run,
+                        analysis,
+                        binding,
+                        analysis_region
+                    )
                     pass2_bindings.set(loaded.module_name.as_str(), binding)
                     final_analyses.set(index, analysis)
                 else:
-                    let (analysis, binding) = analyze_and_bind_in_region(module_ptr, bindings_ptr, require_resolved_imports, null)
+                    let (analysis, binding) = analyze_and_bind_in_region(
+                        module_ptr,
+                        bindings_ptr,
+                        require_resolved_imports,
+                        null
+                    )
                     pass2_bindings.set(loaded.module_name.as_str(), binding)
                     final_analyses.set(index, analysis)
             p2 += 1
@@ -1037,7 +1098,15 @@ function check_cyclic_program(
             if cache != null:
                 rebuilt = module_needs_rebuild(cache, run, index, modules, visited, order_positions)
             if rebuilt:
-                check_and_bind_module(module_ptr, index, bindings_ptr, analyses, diagnostics, require_resolved_imports, run)
+                check_and_bind_module(
+                    module_ptr,
+                    index,
+                    bindings_ptr,
+                    analyses,
+                    diagnostics,
+                    require_resolved_imports,
+                    run
+                )
             else:
                 reuse_cached_module(module_ptr, cache, bindings_ptr, analyses, diagnostics)
         oi += 1
@@ -1047,7 +1116,11 @@ function check_cyclic_program(
 ## cache will carry it past the request boundary, so pass-2 type values that
 ## borrow pass-1 data stay valid for the cache entry's lifetime.  The map's copy
 ## is returned so the entry later receives the same region.
-function cycle_pass1_region(cache: ptr[ModuleCache]?, regions: ref[map_mod.Map[ptr_uint, heap.Region]], index: ptr_uint) -> ptr[heap.Region]?:
+function cycle_pass1_region(
+    cache: ptr[ModuleCache]?,
+    regions: ref[map_mod.Map[ptr_uint, heap.Region]],
+    index: ptr_uint
+) -> ptr[heap.Region]?:
     if cache == null:
         return null
     var region = heap.create_region()
@@ -1124,7 +1197,15 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
 ## direct import's analysis are unchanged — the module's analysis and export
 ## binding, so an edit only re-parses and re-analyzes the edited module and its
 ## dependents instead of the whole import closure.
-public function check_program_with_source(root_path: str, roots: span[str], platform: resolver.Platform, root_source: str, require_resolved_imports: bool, cache: ptr[ModuleCache]?, open_docs: ptr[map_mod.Map[string.String, string.String]]?) -> Program:
+public function check_program_with_source(
+    root_path: str,
+    roots: span[str],
+    platform: resolver.Platform,
+    root_source: str,
+    require_resolved_imports: bool,
+    cache: ptr[ModuleCache]?,
+    open_docs: ptr[map_mod.Map[string.String, string.String]]?
+) -> Program:
     # Normalize the module roots to absolute paths once so every resolved
     # module path is absolute and consistent with the Ruby loader.
     var owned_roots = vec.Vec[string.String].create()
@@ -1184,8 +1265,34 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
     # PreludeInstaller.  Parsing them first also makes them dependency-first in
     # `order`, so they are checked before any consumer.  A prelude that cannot be
     # resolved is skipped silently (the analyzer still synthesizes the types).
-    seed_prelude_module("std.option", norm_roots, platform, root_name_owner.as_str(), "", ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics), ref_of(unresolved_import_paths), ref_of(run))
-    seed_prelude_module("std.result", norm_roots, platform, root_name_owner.as_str(), "", ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics), ref_of(unresolved_import_paths), ref_of(run))
+    seed_prelude_module(
+        "std.option",
+        norm_roots,
+        platform,
+        root_name_owner.as_str(),
+        "",
+        ref_of(modules),
+        ref_of(visited),
+        ref_of(on_stack),
+        ref_of(order),
+        ref_of(diagnostics),
+        ref_of(unresolved_import_paths),
+        ref_of(run)
+    )
+    seed_prelude_module(
+        "std.result",
+        norm_roots,
+        platform,
+        root_name_owner.as_str(),
+        "",
+        ref_of(modules),
+        ref_of(visited),
+        ref_of(on_stack),
+        ref_of(order),
+        ref_of(diagnostics),
+        ref_of(unresolved_import_paths),
+        ref_of(run)
+    )
 
     # `parse_all` takes ownership of the resolved path, so keep a copy for the
     # post-parse root reordering below.
@@ -1272,7 +1379,19 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
     var cycle_members = detect_cycle_members(ref_of(run), ref_of(visited), modules.len())
     var cycle_module_names = collect_cycle_module_names(ref_of(modules), ref_of(cycle_members))
     if cycle_members.len() > 0:
-        check_cyclic_program(ref_of(modules), ref_of(visited), ref_of(order), ref_of(run), cache, ref_of(cycle_members), bindings_ptr, ref_of(analyses), ref_of(diagnostics), require_resolved_imports, ref_of(order_positions))
+        check_cyclic_program(
+            ref_of(modules),
+            ref_of(visited),
+            ref_of(order),
+            ref_of(run),
+            cache,
+            ref_of(cycle_members),
+            bindings_ptr,
+            ref_of(analyses),
+            ref_of(diagnostics),
+            require_resolved_imports,
+            ref_of(order_positions)
+        )
     else:
         var oi: ptr_uint = 0
         while oi < order.len():
@@ -1283,9 +1402,24 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
                 break
             var rebuilt = true
             if cache != null:
-                rebuilt = module_needs_rebuild(cache, ref_of(run), index, ref_of(modules), ref_of(visited), ref_of(order_positions))
+                rebuilt = module_needs_rebuild(
+                    cache,
+                    ref_of(run),
+                    index,
+                    ref_of(modules),
+                    ref_of(visited),
+                    ref_of(order_positions)
+                )
             if rebuilt:
-                check_and_bind_module(module_ptr, index, bindings_ptr, ref_of(analyses), ref_of(diagnostics), require_resolved_imports, ref_of(run))
+                check_and_bind_module(
+                    module_ptr,
+                    index,
+                    bindings_ptr,
+                    ref_of(analyses),
+                    ref_of(diagnostics),
+                    require_resolved_imports,
+                    ref_of(run)
+                )
             else:
                 reuse_cached_module(module_ptr, cache, bindings_ptr, ref_of(analyses), ref_of(diagnostics))
             oi += 1
@@ -1315,7 +1449,17 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
         ci += 1
     analyses.release()
 
-    return Program(modules = modules, order = order, analyses = canonical_analyses, diagnostics = diagnostics, owning_type_names = owning_type_names, root_index = root_index, unresolved_import_paths = unresolved_import_paths, modules_owned = cache == null, cycle_module_names = cycle_module_names)
+    return Program(
+        modules = modules,
+        order = order,
+        analyses = canonical_analyses,
+        diagnostics = diagnostics,
+        owning_type_names = owning_type_names,
+        root_index = root_index,
+        unresolved_import_paths = unresolved_import_paths,
+        modules_owned = cache == null,
+        cycle_module_names = cycle_module_names
+    )
 
 
 ## Canonical module order: depth-first post-order over the module names sorted
@@ -1343,7 +1487,14 @@ function canonical_analysis_order(analyses: span[analyzer.Analysis]) -> vec.Vec[
     while ni < names.len():
         let name_ptr = names.get(ni) else:
             break
-        visit_analysis_name(analyses, ref_of(by_name), ref_of(visited), ref_of(on_stack), ref_of(ordered_names), unsafe: read(name_ptr))
+        visit_analysis_name(
+            analyses,
+            ref_of(by_name),
+            ref_of(visited),
+            ref_of(on_stack),
+            ref_of(ordered_names),
+            unsafe: read(name_ptr)
+        )
         ni += 1
     var result = vec.Vec[analyzer.Analysis].create()
     var oi: ptr_uint = 0
@@ -1365,7 +1516,14 @@ function canonical_analysis_order(analyses: span[analyzer.Analysis]) -> vec.Vec[
     return result
 
 
-function visit_analysis_name(analyses: span[analyzer.Analysis], by_name: ref[map_mod.Map[str, ptr_uint]], visited: ref[map_mod.Map[str, bool]], on_stack: ref[map_mod.Map[str, bool]], ordered: ref[vec.Vec[str]], name: str) -> void:
+function visit_analysis_name(
+    analyses: span[analyzer.Analysis],
+    by_name: ref[map_mod.Map[str, ptr_uint]],
+    visited: ref[map_mod.Map[str, bool]],
+    on_stack: ref[map_mod.Map[str, bool]],
+    ordered: ref[vec.Vec[str]],
+    name: str
+) -> void:
     if visited.contains(name) or on_stack.contains(name):
         return
     let idx_ptr = by_name.get(name) else:
@@ -1500,7 +1658,20 @@ function seed_prelude_module(
             if module_name == skip_path:
                 resolved_ok.value.release()
                 return
-            parse_all(resolved_ok.value, roots, platform, "", root_source, modules, visited, on_stack, order, diagnostics, unresolved_import_paths, run)
+            parse_all(
+                resolved_ok.value,
+                roots,
+                platform,
+                "",
+                root_source,
+                modules,
+                visited,
+                on_stack,
+                order,
+                diagnostics,
+                unresolved_import_paths,
+                run
+            )
         Result.failure as failure:
             var error = failure.error
             error.release()
@@ -1604,7 +1775,22 @@ function parse_all(
                 let index = modules.len() - 1
                 run.dep_paths.push(vec.Vec[string.String].create())
                 on_stack.set(cached_key, true)
-                recurse_imports(cached.source_file, cached_key, index, roots, platform, root_key, root_source, modules, visited, on_stack, order, diagnostics, unresolved_import_paths, run)
+                recurse_imports(
+                    cached.source_file,
+                    cached_key,
+                    index,
+                    roots,
+                    platform,
+                    root_key,
+                    root_source,
+                    modules,
+                    visited,
+                    on_stack,
+                    order,
+                    diagnostics,
+                    unresolved_import_paths,
+                    run
+                )
                 let _dropped = on_stack.remove(cached_key)
                 visited.set(cached_key, index)
                 order.push(index)
@@ -1642,7 +1828,22 @@ function parse_all(
         module_cache_store_module(run.cache, key, strings.fnv1a_hash(source.as_str()), loaded, parse_region)
     run.dep_paths.push(vec.Vec[string.String].create())
 
-    recurse_imports(source_file, key, index, roots, platform, root_key, root_source, modules, visited, on_stack, order, diagnostics, unresolved_import_paths, run)
+    recurse_imports(
+        source_file,
+        key,
+        index,
+        roots,
+        platform,
+        root_key,
+        root_source,
+        modules,
+        visited,
+        on_stack,
+        order,
+        diagnostics,
+        unresolved_import_paths,
+        run
+    )
 
     let _dropped = on_stack.remove(key)
     visited.set(key, index)
@@ -1748,16 +1949,34 @@ function check_and_bind_module(
         previous_region = heap.begin_region(ptr_of(analysis_region))
     var analysis: analyzer.Analysis
     if require_resolved_imports:
-        analysis = analyzer.check_module_requiring_resolved_imports(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
+        analysis = analyzer.check_module_requiring_resolved_imports(
+            loaded.source_file,
+            bindings_ptr,
+            loaded.module_name.as_str(),
+            loaded.path.as_str()
+        )
     else:
-        analysis = analyzer.check_module(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
+        analysis = analyzer.check_module(
+            loaded.source_file,
+            bindings_ptr,
+            loaded.module_name.as_str(),
+            loaded.path.as_str()
+        )
     if run.cache != null:
         let binding = binder.bind_module(analysis)
         heap.end_region(previous_region)
         emit_module_diagnostics(loaded, analysis.diagnostics.as_span(), diagnostics)
         # Keep the analysis' diagnostics: the entry owns them and a later run
         # that reuses this module re-emits them from there.
-        module_cache_store_analysis(run.cache, loaded.path.as_str(), module_index, run, analysis, binding, analysis_region)
+        module_cache_store_analysis(
+            run.cache,
+            loaded.path.as_str(),
+            module_index,
+            run,
+            analysis,
+            binding,
+            analysis_region
+        )
         unsafe:
             read(bindings_ptr).set(loaded.module_name.as_str(), binding)
     else:
@@ -1770,7 +1989,11 @@ function check_and_bind_module(
 
 ## Append a loaded module's lexer, parser and semantic diagnostics (as owned
 ## LoadDiagnostic copies) to the program-wide list, in pipeline order.
-function emit_module_diagnostics(loaded: LoadedModule, sema: span[analyzer.SemanticDiagnostic], diagnostics: ref[vec.Vec[LoadDiagnostic]]) -> void:
+function emit_module_diagnostics(
+    loaded: LoadedModule,
+    sema: span[analyzer.SemanticDiagnostic],
+    diagnostics: ref[vec.Vec[LoadDiagnostic]]
+) -> void:
     unsafe:
         # Lexer diagnostics come first and are always reported (the host emits
         # `lex/error` items alongside the parser's recovered errors).

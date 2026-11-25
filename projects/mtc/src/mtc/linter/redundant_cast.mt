@@ -22,12 +22,10 @@ import mtc.parser.ast as ast
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 
-
 public struct Diag:
     line: ptr_uint
     column: ptr_uint
     message: str
-
 
 # =============================================================================
 #  Primitive classification (the host's `Types::Primitive` flag methods)
@@ -123,7 +121,6 @@ function comparison_op(op: str) -> bool:
         op.equal("==") or op.equal("!=") or op.equal("<") or op.equal("<=")
         or op.equal(">") or op.equal(">=")
     )
-
 
 # =============================================================================
 #  Analysis lookups
@@ -301,7 +298,6 @@ function own_to_pointer_redundant(inner: types.Type, cast: types.Type) -> bool:
         _:
             return false
 
-
 # =============================================================================
 #  Traversal
 # =============================================================================
@@ -324,7 +320,12 @@ public struct Context:
 
 
 public function ctx_create(source: str, analysis: ptr[analyzer.Analysis]?) -> Context:
-    return Context(diags = vec.Vec[Diag].create(), lines = strings.split_lines(source), analysis = analysis, generic_body = false)
+    return Context(
+        diags = vec.Vec[Diag].create(),
+        lines = strings.split_lines(source),
+        analysis = analysis,
+        generic_body = false
+    )
 
 
 ## The linter's walk marks the generic-body state before draining a hook's
@@ -386,24 +387,18 @@ function emit_diag(ctx: ref[Context], line: ptr_uint, column: ptr_uint, reason: 
     message.append("<-")
     ctx.diags.push(Diag(line = line, column = column, message = message.as_str()))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 # =============================================================================
 #  Checks
 # =============================================================================
 
-function check_cast(ctx: ref[Context], cast_ptr: ptr[ast.Expr], target_type: ptr[ast.TypeRef], inner: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> void:
+function check_cast(
+    ctx: ref[Context],
+    cast_ptr: ptr[ast.Expr],
+    target_type: ptr[ast.TypeRef],
+    inner: ptr[ast.Expr],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     let target_name = type_last_name(target_type)
     if target_name.len == 0:
         return
@@ -515,7 +510,13 @@ function flag_literal(ctx: ref[Context], ep: ptr[ast.Expr]?) -> void:
                             return
                         if implicit_cast_allowed(inner_name, target_name):
                             return
-                        emit_diag(ctx, c.line, c.column, "integer literal coercion makes this cast redundant", target_name)
+                        emit_diag(
+                            ctx,
+                            c.line,
+                            c.column,
+                            "integer literal coercion makes this cast redundant",
+                            target_name
+                        )
                     _:
                         pass
             _:
@@ -547,7 +548,13 @@ function check_binary_operand(ctx: ref[Context], op: str, operand: ptr[ast.Expr]
     let type_ref_name = cast_type_last_name(operand)
     if type_ref_name.len == 0:
         return
-    emit_diag(ctx, cast_line(operand), cast_column(operand), "implicit float widening makes this cast redundant", type_ref_name)
+    emit_diag(
+        ctx,
+        cast_line(operand),
+        cast_column(operand),
+        "implicit float widening makes this cast redundant",
+        type_ref_name
+    )
 
 
 ## `State.idle == ubyte<-0`: a fitting integer literal cast as a comparison
@@ -616,10 +623,15 @@ function check_literal_operand(ctx: ref[Context], op: str, operand: ptr[ast.Expr
                             return
                     _:
                         return
-                emit_diag(ctx, cast_line(operand), cast_column(operand), "integer literal coercion makes this cast redundant", target_name)
+                emit_diag(
+                    ctx,
+                    cast_line(operand),
+                    cast_column(operand),
+                    "integer literal coercion makes this cast redundant",
+                    target_name
+                )
             _:
                 pass
-
 
 # =============================================================================
 #  Node helpers

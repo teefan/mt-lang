@@ -292,10 +292,11 @@ function test_call_argument_type_mismatch_is_flagged() -> void:
     SRC
     expect_flagged(source)
 
-
 # The session-138 call-argument compatibility table: a positional argument is
 # inferred with the parameter's expected type, and a compile-time numeric value
 # must fit the parameter's range.
+
+
 @[test]
 function test_call_argument_in_range_literal_is_clean() -> void:
     var source = <<-SRC
@@ -1263,12 +1264,12 @@ function test_generic_interface_conformance_is_permissive() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  Generics — handled permissively (type parameters resolve to the error type),
 #  so generic bodies never false-positive, while concrete errors inside them are
 #  still caught. Deep generic checking (constraints, specialization) is future.
 # =============================================================================
+
 
 @[test]
 function test_generic_function_call_is_permissive() -> void:
@@ -1313,13 +1314,13 @@ function test_concrete_error_in_generic_body_is_flagged() -> void:
     SRC
     expect_flagged(source)
 
-
 # =============================================================================
 #  Generic constraint checking — a `[T implements I]` type parameter is a type
 #  variable whose only members are its constraint interfaces' methods, checked
 #  with full signatures (arity, args, return-type flow). Unconstrained type
 #  parameters stay permissive.
 # =============================================================================
+
 
 @[test]
 function test_generic_constraint_method_call_is_clean() -> void:
@@ -1390,12 +1391,12 @@ function test_unconstrained_generic_member_is_permissive() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  Associated-function hook checking (S3b-2). hash/equal/order/default require
 #  the type argument to provide the hook. Flagged only for a fully-known local
 #  struct; primitives, imports, and abstract type parameters stay permissive.
 # =============================================================================
+
 
 @[test]
 function test_hook_missing_on_local_struct_is_flagged() -> void:
@@ -1467,12 +1468,12 @@ function test_hook_on_type_parameter_is_permissive() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  Generic constraint satisfaction (S3b-3). A concrete local-struct type
 #  argument to a generic function must satisfy the parameter's local-interface
 #  constraint, whether given explicitly (foo[T]) or inferred from the arguments.
 # =============================================================================
+
 
 @[test]
 function test_explicit_type_arg_unsatisfied_constraint_is_flagged() -> void:
@@ -1558,12 +1559,12 @@ function test_abstract_type_arg_constraint_is_permissive() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  Phase 1 item B: generic-call return-type substitution. Explicit and inferred
 #  type arguments are substituted into the generic function's return type, so
 #  chained member access on the result is checkable.
 # =============================================================================
+
 
 @[test]
 function test_generic_explicit_return_type_is_substituted() -> void:
@@ -1750,10 +1751,10 @@ function test_adapt_returns_dyn_type() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  Integer type compatibility (lossless widening / narrowing detection)
 # =============================================================================
+
 
 @[test]
 function test_int_narrowing_to_byte_is_flagged() -> void:
@@ -1844,10 +1845,10 @@ function test_int_variable_arg_to_byte_param_is_flagged() -> void:
     SRC
     expect_flagged(source)
 
-
 # =============================================================================
 #  Integer ↔ char compatibility (chars are integer-compatible)
 # =============================================================================
+
 
 @[test]
 function test_char_cast_is_clean() -> void:
@@ -1867,10 +1868,10 @@ function test_char_to_int_cast_is_clean() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  Same-width sign changes require a cast (Ruby-faithful)
 # =============================================================================
+
 
 @[test]
 function test_int_literal_return_to_uint_is_clean() -> void:
@@ -1930,10 +1931,10 @@ function test_int_to_float_is_clean() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  Nominal type mismatch (distinct structs / enums)
 # =============================================================================
+
 
 @[test]
 function test_distinct_struct_assignment_is_flagged() -> void:
@@ -2000,10 +2001,10 @@ function test_ref_param_accepts_struct_arg_is_clean() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  Extern / foreign call checking
 # =============================================================================
+
 
 @[test]
 function test_foreign_call_arity_is_flagged() -> void:
@@ -2056,10 +2057,10 @@ function test_static_assert_non_bool_condition_is_flagged() -> void:
     SRC
     expect_flagged(source)
 
-
 # =============================================================================
 #  Nullable base compatibility
 # =============================================================================
+
 
 @[test]
 function test_nullable_target_accepts_base_is_clean() -> void:
@@ -2110,10 +2111,10 @@ function test_nullable_narrowing_int_variable_is_flagged() -> void:
     SRC
     expect_flagged(source)
 
-
 # =============================================================================
 #  Aggregate construction completeness
 # =============================================================================
+
 
 @[test]
 function test_construction_duplicate_field_is_flagged() -> void:
@@ -2170,10 +2171,10 @@ function test_construction_literal_to_byte_field_is_clean() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  Statement body-restriction checks
 # =============================================================================
+
 
 @[test]
 function test_return_in_defer_is_flagged() -> void:
@@ -2240,10 +2241,10 @@ function test_parallel_block_accepts_two_stmts_is_clean() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  Unsafe context enforcement
 # =============================================================================
+
 
 @[test]
 function test_read_ptr_without_unsafe_is_flagged() -> void:
@@ -2320,10 +2321,10 @@ function test_ptr_of_without_unsafe_is_clean() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  Builtin call result types
 # =============================================================================
+
 
 @[test]
 function test_zero_returns_specified_type_is_clean() -> void:
@@ -2352,10 +2353,10 @@ function test_read_ptr_returns_element_type_is_clean() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  Duplicate parameter names
 # =============================================================================
+
 
 @[test]
 function test_duplicate_param_is_flagged() -> void:
@@ -2374,10 +2375,10 @@ function test_unique_params_is_clean() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  Await outside async
 # =============================================================================
+
 
 @[test]
 function test_await_outside_async_is_flagged() -> void:
@@ -2387,10 +2388,10 @@ function test_await_outside_async_is_flagged() -> void:
     SRC
     expect_flagged(source)
 
-
 # =============================================================================
 #  Primitive / reserved name reuse
 # =============================================================================
+
 
 @[test]
 function test_param_named_int_is_flagged() -> void:
@@ -2410,10 +2411,10 @@ function test_local_named_str_is_flagged() -> void:
     SRC
     expect_flagged(source)
 
-
 # =============================================================================
 #  Review-pass fixes: defer-in-parallel, negative-literal gate
 # =============================================================================
+
 
 @[test]
 function test_defer_in_parallel_block_is_flagged() -> void:
@@ -2436,10 +2437,10 @@ function test_negative_literal_return_to_byte_is_clean() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  == null narrowing (else-body)
 # =============================================================================
+
 
 @[test]
 function test_not_equal_null_narrows_if_body_is_clean() -> void:
@@ -2462,10 +2463,10 @@ function test_equal_null_narrows_else_body_is_clean() -> void:
     SRC
     expect_clean(source)
 
-
 # =============================================================================
 #  Attribute target validation
 # =============================================================================
+
 
 @[test]
 function test_packed_on_struct_is_clean() -> void:
@@ -2486,10 +2487,10 @@ function test_packed_on_function_is_flagged() -> void:
     SRC
     expect_flagged(source)
 
-
 # =============================================================================
 #  Phase 1: resolved_expr_types and resolved_call_kinds tables
 # =============================================================================
+
 
 @[test]
 function test_resolved_types_recording_does_not_crash() -> void:
@@ -2500,7 +2501,6 @@ function test_resolved_types_recording_does_not_crash() -> void:
             return y
     SRC
     expect_clean(source)
-
 
 # =============================================================================
 #  Imported type aliases: an alias whose target is itself an imported alias
@@ -2580,7 +2580,6 @@ function test_alias_of_alias_records_the_declaring_module() -> void:
 
     expect(saw_wrap, "wrap module was not analyzed")
     expect(saw_main, "main module was not analyzed")
-
 
 # =============================================================================
 #  Control-flow graph — the host's `ControlFlow::Builder` shapes and the
@@ -2671,7 +2670,13 @@ function if_branch_body(if_stmt: ptr[ast.Stmt]?, index: ptr_uint) -> ptr[ast.Stm
 ## Parse `source`, build its first function's CFG graph, solve the nullability
 ## flow, and hand the function body back for navigation.  Returns false when
 ## the source does not parse or declares no function.
-function build_flow(source: str, cfg: ref[cfgb.Cfg], graph: ref[cfgg.CfgGraph], flow: ref[cfgg.NullabilityFlow], body_out: ref[ptr[ast.Stmt]?]) -> bool:
+function build_flow(
+    source: str,
+    cfg: ref[cfgb.Cfg],
+    graph: ref[cfgg.CfgGraph],
+    flow: ref[cfgg.NullabilityFlow],
+    body_out: ref[ptr[ast.Stmt]?]
+) -> bool:
     var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: pdiags.release()
     let file = parser.parse_source(source, ref_of(pdiags))
@@ -2713,7 +2718,12 @@ function node_of(graph: ref[cfgg.CfgGraph], stmt: ptr[ast.Stmt]?) -> ptr_uint:
 
 
 ## True when `key` is known non-null on entry to the node built from `stmt`.
-function nonnull_at(graph: ref[cfgg.CfgGraph], flow: ref[cfgg.NullabilityFlow], stmt: ptr[ast.Stmt]?, key: ptr_uint) -> bool:
+function nonnull_at(
+    graph: ref[cfgg.CfgGraph],
+    flow: ref[cfgg.NullabilityFlow],
+    stmt: ptr[ast.Stmt]?,
+    key: ptr_uint
+) -> bool:
     return cfgg.nonnull_before(flow, node_of(graph, stmt), key)
 
 
@@ -2826,7 +2836,10 @@ function test_cfg_false_edge_refines_when_the_then_branch_returns() -> void:
     let then_return = first_statement(if_branch_body(block_statement(body, 0), 0))
     let after_return = block_statement(body, 1)
     expect(nonnull_at(ref_of(graph), ref_of(flow), then_return, key), "handle is non-null in the != null branch")
-    expect(not nonnull_at(ref_of(graph), ref_of(flow), after_return, key), "handle is not non-null after the merging if")
+    expect(
+        not nonnull_at(ref_of(graph), ref_of(flow), after_return, key),
+        "handle is not non-null after the merging if"
+    )
 
 
 @[test]
@@ -2873,7 +2886,10 @@ function test_cfg_fallthrough_branch_does_not_narrow_after_merge() -> void:
         return
     let key = binding_key(ref_of(cfg), "handle")
     let after_if = block_statement(body, 1)
-    expect(not nonnull_at(ref_of(graph), ref_of(flow), after_if, key), "handle is not non-null after a fallthrough branch")
+    expect(
+        not nonnull_at(ref_of(graph), ref_of(flow), after_if, key),
+        "handle is not non-null after a fallthrough branch"
+    )
 
 
 @[test]
@@ -2931,7 +2947,10 @@ function test_cfg_for_header_records_bindings_and_reads() -> void:
     let assignment = node_of_kind(ref_of(graph), "assignment") else:
         expect(false, "no assignment node")
         return
-    expect(has_read_key(assignment, total_key) and has_read_key(assignment, item_key), "the body assignment reads total and item")
+    expect(
+        has_read_key(assignment, total_key) and has_read_key(assignment, item_key),
+        "the body assignment reads total and item"
+    )
 
 
 @[test]
@@ -2988,7 +3007,10 @@ function test_cfg_unsafe_and_defer_nesting() -> void:
     let use_return = block_statement(inner, 1)
     expect(node_of(ref_of(graph), use_return) > 0, "the nested return has a node")
     expect(nonnull_at(ref_of(graph), ref_of(flow), use_return, key), "the nesting keeps the narrowing")
-    expect(node_of(ref_of(graph), first_statement(inner_body(block_statement(body, 1)))) > 0, "the defer body has a node")
+    expect(
+        node_of(ref_of(graph), first_statement(inner_body(block_statement(body, 1)))) > 0,
+        "the defer body has a node"
+    )
 
 
 @[test]
@@ -3018,8 +3040,14 @@ function test_cfg_break_and_continue_targets() -> void:
     expect(cond_id > 0, "the while has a condition node")
     expect(node_of_kind_succ(ref_of(graph), "continue", cond_id) != null, "continue targets the loop head")
     let after_loop = block_statement(body, 2)
-    expect(node_of_kind_succ(ref_of(graph), "break", node_of(ref_of(graph), after_loop)) != null, "break targets the statement after the loop")
-    expect(cfgg.graph_reaches(ref_of(graph), cond_id, node_of(ref_of(graph), after_loop)), "the loop's false edge reaches the following statement")
+    expect(
+        node_of_kind_succ(ref_of(graph), "break", node_of(ref_of(graph), after_loop)) != null,
+        "break targets the statement after the loop"
+    )
+    expect(
+        cfgg.graph_reaches(ref_of(graph), cond_id, node_of(ref_of(graph), after_loop)),
+        "the loop's false edge reaches the following statement"
+    )
 
 
 @[test]
@@ -3255,7 +3283,6 @@ function test_for_loop_matching_element_types_are_clean() -> void:
     SRC
     expect_clean(source)
 
-
 const PRELUDE_OPTION_STUB: str = <<-SRC
 public variant Option[T]:
     some(value: T)
@@ -3301,7 +3328,6 @@ function test_prelude_unwrap_types_the_payload() -> void:
     defer: program.release()
     expect_eq(int<-program.diagnostic_count(), 1)
 
-
 const GENERIC_FIELD_BASE: str = <<-SRC
 public struct Box[T]:
     value: T
@@ -3337,7 +3363,6 @@ function test_imported_generic_field_is_substituted() -> void:
     var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
     defer: program.release()
     expect_eq(int<-program.diagnostic_count(), 1)
-
 
 const METHOD_SPEC_BASE: str = <<-SRC
 public struct Store:
@@ -3375,7 +3400,6 @@ function test_method_specialization_on_a_value_receiver() -> void:
     var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
     defer: program.release()
     expect_eq(int<-program.diagnostic_count(), 1)
-
 
 const IMPORTED_SPEC_LIB: str = <<-SRC
 public function ident[T](value: T) -> T:
@@ -3639,6 +3663,9 @@ function test_match_on_arm_payload_is_flagged() -> void:
         expect(false, "match diagnostic missing")
         return
     let diag = unsafe: read(dp)
-    expect(diag.message == "match requires an enum, variant, or integer scrutinee, got Outer.some payload", "match scrutinee message")
+    expect(
+        diag.message == "match requires an enum, variant, or integer scrutinee, got Outer.some payload",
+        "match scrutinee message"
+    )
     expect_eq(int<-diag.line, 12)
     expect_eq(int<-diag.column, 13)

@@ -12,7 +12,12 @@ import mtc.lsp.workspace as workspace
 ## workspace so diagnostics and other features can prioritize foreground
 ## documents.  The host answers a *request* form with `null`, so a caller that
 ## sends an id gets a reply (`request_id == 0` means a notification).
-public function handle_document_context(ws: ref[workspace.Workspace], params: json.Value, id: json.Value, request_id: ptr_uint) -> void:
+public function handle_document_context(
+    ws: ref[workspace.Workspace],
+    params: json.Value,
+    id: json.Value,
+    request_id: ptr_uint
+) -> void:
     let uri = proto.extract_text_doc_uri(params)
     if uri.len == 0:
         if request_id > 0:

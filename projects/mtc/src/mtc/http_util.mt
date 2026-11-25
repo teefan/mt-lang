@@ -11,11 +11,9 @@ import std.net as net
 import std.str as text
 import std.string as string
 
-
 ## The signal callback closes the listener; the accept loop checks `stopped`.
 public struct ServerState:
     listener: ptr[net.TcpListener]?
-
 
 var stop_requested: bool = false
 

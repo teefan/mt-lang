@@ -237,7 +237,10 @@ function test_cstring_literal() -> void:
         c"hello"
     SRC
     var tokens = lexer.lex(source)
-    expect(count_by_kind(ref_of(tokens), tk.TokenKind.string) == 0, "c\"...\" should not produce a regular string token")
+    expect(
+        count_by_kind(ref_of(tokens), tk.TokenKind.string) == 0,
+        "c\"...\" should not produce a regular string token"
+    )
     expect(count_by_kind(ref_of(tokens), tk.TokenKind.cstring) == 1, "c\"...\" should produce 1 cstring token")
     return
 
@@ -408,7 +411,6 @@ function test_lex_reporting_unclosed_grouping() -> void:
     diags.release()
     expect(has_error, "unclosed paren should produce lex error")
     return
-
 
 # ── helpers ──
 

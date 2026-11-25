@@ -19,7 +19,6 @@ struct OglSuffix:
     second: str
     count: int
 
-
 const OPENGL_TYPED_SUFFIX_TOKENS: array[OglSuffix, 22] = array[OglSuffix, 22](
     OglSuffix(suffix = "ui64v", first = "uint64", second = "values", count = 2),
     OglSuffix(suffix = "i64v", first = "int64", second = "values", count = 2),
@@ -161,7 +160,6 @@ function starts_at(text: str, start: ptr_uint, pattern: str) -> bool:
 function suffix_boundary(text: str, position: ptr_uint) -> bool:
     return position >= text.len or text.byte_at(position) == 95
 
-
 # =============================================================================
 #  Token lists
 # =============================================================================
@@ -216,7 +214,6 @@ function join_tokens(tokens: ref[vec.Vec[str]]) -> string.String:
         result.append(unsafe: read(p))
         i += 1
     return result
-
 
 # =============================================================================
 #  Core transforms
@@ -318,7 +315,6 @@ public function strip_prefix_str(name: str, prefix: str) -> str:
         return name
     return name.slice(prefix.len, name.len - prefix.len)
 
-
 # =============================================================================
 #  Rename rule application
 # =============================================================================
@@ -375,7 +371,6 @@ public function apply_rename_rules(
         current = next
         i += 1
     return current
-
 
 # =============================================================================
 #  OpenGL normalization (host naming.rb:88-252)
@@ -703,7 +698,6 @@ public function normalize_opengl_terminal_suffix(
 
     return normalized
 
-
 # =============================================================================
 #  Reserved-name sanitization
 # =============================================================================
@@ -783,7 +777,6 @@ public function is_reserved_keyword(name: str) -> bool:
     if name.equal("when"): return true
     if name.equal("while"): return true
     return false
-
 
 const BUILTIN_PRIMITIVE_NAMES: array[str, 26] = array[str, 26](
     "bool", "byte", "ubyte", "char", "short", "ushort", "int", "uint", "long",

@@ -64,7 +64,12 @@ function parse_range(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
             dd_ln = read(dd_tok).line
         var right = parse_or(s)
         var node = parser.alloc_expr(s)
-        read(node) = ast.Expr.expr_range(start_expr = left, end_expr = right, line = dd_ln, column = expr_column_of(left))
+        read(node) = ast.Expr.expr_range(
+            start_expr = left,
+            end_expr = right,
+            line = dd_ln,
+            column = expr_column_of(left)
+        )
         return node
     return left
 
@@ -208,7 +213,10 @@ function parse_additive(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
 
 function parse_multiplicative(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var left = parse_unary(s)
-    while pstate.check(s, tk.TokenKind.star) or pstate.check(s, tk.TokenKind.slash) or pstate.check(s, tk.TokenKind.percent):
+    while pstate.check(s, tk.TokenKind.star) or pstate.check(s, tk.TokenKind.slash) or pstate.check(
+        s,
+        tk.TokenKind.percent
+    ):
         pstate.advance(s)
         let op = parser.previous_lexeme(s)
         var right = parse_unary(s)
@@ -244,7 +252,10 @@ public function parse_unary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
         var node = parser.alloc_expr(s)
         read(node) = ast.Expr.expr_unary_op(operator = op, operand = operand)
         return node
-    if pstate.check(s, tk.TokenKind.tk_out) or pstate.check(s, tk.TokenKind.tk_in) or pstate.check(s, tk.TokenKind.tk_inout):
+    if pstate.check(s, tk.TokenKind.tk_out) or pstate.check(s, tk.TokenKind.tk_in) or pstate.check(
+        s,
+        tk.TokenKind.tk_inout
+    ):
         pstate.advance(s)
         let op = parser.previous_lexeme(s)
         var operand = parse_unary(s)

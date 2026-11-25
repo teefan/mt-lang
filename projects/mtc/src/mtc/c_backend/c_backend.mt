@@ -26,7 +26,6 @@ import mtc.c_naming as naming
 import mtc.c_backend.reachability as reachability
 import mtc.strings
 
-
 ## A backend-stage error raised for unrecoverable code-generation failures.
 public struct CBackendError:
     message: str
@@ -98,22 +97,18 @@ struct GenericVariantArmInfo:
     name: str
     fields: span[ir.Field]
 
-
 struct GenericVariantInfo:
     arms: span[GenericVariantArmInfo]
-
 
 ## std.c.* struct backing C names (`timespec` -> `struct timespec`), populated by
 ## `generate_c` from the program's type aliases so function signatures and field
 ## declarations use the declared C spelling (mirrors Ruby's std_c_backing).
 var std_c_backing_names: ptr[map_mod.Map[str, str]]? = null
 
-
 ## Declared opaques' C backing names (`std_sdl3_Window` -> `SDL_Window`),
 ## populated by `generate_c` from the program's opaque decls so `c_type` renders
 ## opaque values as their backing type (mirrors Ruby's `opaque_c_type_name`).
 var opaque_backing_names: ptr[map_mod.Map[str, str]]? = null
-
 
 ## Opt types that need synthetic StructDecl entries for topological ordering.
 ## `decl` is the StructDecl; `field_store` keeps the field spans alive.
@@ -122,7 +117,12 @@ public struct OptionStructEntry:
     field_store: vec.Vec[ir.Field]
 
 
-public function generate_c(input_program: ir.Program, emit_line_directives: bool, debug_guards: bool, export_public: bool) -> string.String:
+public function generate_c(
+    input_program: ir.Program,
+    emit_line_directives: bool,
+    debug_guards: bool,
+    export_public: bool
+) -> string.String:
     var program = input_program
     # Concrete generic struct instances are carried outside the IR's `:structs`
     # section (host parity).  Merge them into the declaration list the backend
@@ -243,7 +243,13 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     var slice_has_str_index = false
     var slice_has_str_concat = false
     var slice_span_types = vec.Vec[types.Type].create()
-    collect_slice_helpers(funcs, ref_of(slice_has_str), ref_of(slice_has_str_index), ref_of(slice_has_str_concat), ref_of(slice_span_types))
+    collect_slice_helpers(
+        funcs,
+        ref_of(slice_has_str),
+        ref_of(slice_has_str_index),
+        ref_of(slice_has_str_concat),
+        ref_of(slice_span_types)
+    )
 
     var str_lits = collect_str_literals(funcs)
     var li: ptr_uint = 0
@@ -261,10 +267,16 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     var opt_structs = collect_opt_struct_decls(program, ref_of(opaques))
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
-    let use_fatal = e.debug_guards or uses_fatal_helper(funcs, program) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0 or uses_format_helpers(program) or uses_foreign_cstr_helper(funcs) or slice_has_str or slice_has_str_index or slice_has_str_concat or slice_span_types.len() > 0
+    let use_fatal = e.debug_guards or uses_fatal_helper(
+        funcs,
+        program
+    ) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0 or uses_format_helpers(program) or uses_foreign_cstr_helper(funcs) or slice_has_str or slice_has_str_index or slice_has_str_concat or slice_span_types.len() > 0
     let use_fatal_str = uses_fatal_str_helper(funcs)
     let use_entry_argv = uses_entry_argv(program)
-    let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal or use_fatal_str or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants)) or use_entry_argv or slice_has_str or slice_has_str_index or slice_has_str_concat
+    let use_string_view = uses_string_view(
+        funcs,
+        has_str_literals
+    ) or use_fatal or use_fatal_str or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants)) or use_entry_argv or slice_has_str or slice_has_str_index or slice_has_str_concat
     let use_str_equality = uses_str_equality(funcs) or equality_helpers_need_str(ref_of(e), program)
     var simd_types = collect_simd_types(funcs, program)
 
@@ -288,7 +300,21 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
 
     emit_program_types(ref_of(e), program, span_types, tuple_types, gen_variants, opt_structs, funcs)
 
-    emit_program_bodies(ref_of(e), program, funcs, export_public, checked_index_types, checked_span_index_types, has_str_literals, str_lits, slice_has_str, slice_has_str_index, slice_has_str_concat, slice_span_types, use_entry_argv)
+    emit_program_bodies(
+        ref_of(e),
+        program,
+        funcs,
+        export_public,
+        checked_index_types,
+        checked_span_index_types,
+        has_str_literals,
+        str_lits,
+        slice_has_str,
+        slice_has_str_index,
+        slice_has_str_concat,
+        slice_span_types,
+        use_entry_argv
+    )
 
     # Ruby joins the lines and rstrips, then appends a single newline.
     let text = e.buffer.as_str()
@@ -320,7 +346,6 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     simd_types.release()
     span_types.release()
     return trimmed
-
 
 
 ## Emit the feature-test macros, deduplicated include set, forward
@@ -433,11 +458,26 @@ function emit_runtime_helpers(e: ref[Emitter], program: ir.Program, funcs: span[
         emit_line(e, "")
 
 
-function emit_program_types(e: ref[Emitter], program: ir.Program, span_types: vec.Vec[types.Type], tuple_types: vec.Vec[types.Type], gen_variants: vec.Vec[ir.VariantDecl], opt_structs: vec.Vec[OptionStructEntry], funcs: span[ir.Function]) -> void:
+function emit_program_types(
+    e: ref[Emitter],
+    program: ir.Program,
+    span_types: vec.Vec[types.Type],
+    tuple_types: vec.Vec[types.Type],
+    gen_variants: vec.Vec[ir.VariantDecl],
+    opt_structs: vec.Vec[OptionStructEntry],
+    funcs: span[ir.Function]
+) -> void:
     var i: ptr_uint = 0
     var gen_variants_mut = gen_variants
     var opt_structs_mut = opt_structs
-    if program.structs.len > 0 or program.unions.len > 0 or tuple_types.len() > 0 or program.variants.len > 0 or gen_variants.len() > 0 or opt_structs.len() > 0:
+    if (
+        program.structs.len > 0
+        or program.unions.len > 0
+        or tuple_types.len() > 0
+        or program.variants.len > 0
+        or gen_variants.len() > 0
+        or opt_structs.len() > 0
+    ):
         var sorted_structs = topo_sort_structs(program.structs)
         let sorted = sorted_structs.as_span()
 
@@ -447,7 +487,10 @@ function emit_program_types(e: ref[Emitter], program: ir.Program, span_types: ve
             let ty_ptr = span_types.get(si) else:
                 break
             unsafe:
-                emit_line(e, strings.join_three("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";"))
+                emit_line(
+                    e,
+                    strings.join_three("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";")
+                )
             si += 1
         if span_types.len() > 0:
             emit_line(e, "")
@@ -456,13 +499,27 @@ function emit_program_types(e: ref[Emitter], program: ir.Program, span_types: ve
         while i < sorted.len:
             unsafe:
                 let s = read(sorted.data + i)
-                emit_line(e, strings.join_three("typedef struct ", s.linkage_name, strings.join_two(" ", strings.join_two(s.linkage_name, ";"))))
+                emit_line(
+                    e,
+                    strings.join_three(
+                        "typedef struct ",
+                        s.linkage_name,
+                        strings.join_two(" ", strings.join_two(s.linkage_name, ";"))
+                    )
+                )
             i += 1
         i = 0
         while i < program.unions.len:
             unsafe:
                 let u = read(program.unions.data + i)
-                emit_line(e, strings.join_three("typedef union ", u.linkage_name, strings.join_two(" ", strings.join_two(u.linkage_name, ";"))))
+                emit_line(
+                    e,
+                    strings.join_three(
+                        "typedef union ",
+                        u.linkage_name,
+                        strings.join_two(" ", strings.join_two(u.linkage_name, ";"))
+                    )
+                )
             i += 1
         i = 0
         while i < tuple_types.len():
@@ -489,7 +546,14 @@ function emit_program_types(e: ref[Emitter], program: ir.Program, span_types: ve
                 break
             unsafe:
                 let os = read(os_ptr)
-                emit_line(e, strings.join_three("typedef struct ", os.decl.linkage_name, strings.join_two(" ", strings.join_two(os.decl.linkage_name, ";"))))
+                emit_line(
+                    e,
+                    strings.join_three(
+                        "typedef struct ",
+                        os.decl.linkage_name,
+                        strings.join_two(" ", strings.join_two(os.decl.linkage_name, ";"))
+                    )
+                )
             i += 1
         emit_line(e, "")
 
@@ -522,7 +586,15 @@ function emit_program_types(e: ref[Emitter], program: ir.Program, span_types: ve
         # since structs and variants can embed each other by value.  Task structs
         # are included in the sort so that Option[Task[X]] (with value: Task[X])
         # is ordered after the Task struct definition.
-        var type_order = topo_sort_types(program.structs, ref_of(gen_variants_mut), program.variants, ref_of(opt_structs_mut), ref_of(task_seen), ref_of(task_elements), tuple_types)
+        var type_order = topo_sort_types(
+            program.structs,
+            ref_of(gen_variants_mut),
+            program.variants,
+            ref_of(opt_structs_mut),
+            ref_of(task_seen),
+            ref_of(task_elements),
+            tuple_types
+        )
         var toi: ptr_uint = 0
         while toi < type_order.len():
             let node_ptr = type_order.get(toi) else:
@@ -576,7 +648,10 @@ function emit_program_types(e: ref[Emitter], program: ir.Program, span_types: ve
             let ty_ptr = span_types.get(span_si) else:
                 break
             unsafe:
-                emit_line(e, strings.join_three("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";"))
+                emit_line(
+                    e,
+                    strings.join_three("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";")
+                )
             span_si += 1
         span_si = 0
         while span_si < span_types.len():
@@ -589,7 +664,21 @@ function emit_program_types(e: ref[Emitter], program: ir.Program, span_types: ve
         emit_enums_block(e, program)
 
 
-function emit_program_bodies(e: ref[Emitter], program: ir.Program, funcs: span[ir.Function], export_public: bool, checked_index_types: vec.Vec[types.Type], checked_span_index_types: vec.Vec[types.Type], has_str_literals: bool, str_lits: vec.Vec[str], slice_has_str: bool, slice_has_str_index: bool, slice_has_str_concat: bool, slice_span_types: vec.Vec[types.Type], use_entry_argv: bool) -> void:
+function emit_program_bodies(
+    e: ref[Emitter],
+    program: ir.Program,
+    funcs: span[ir.Function],
+    export_public: bool,
+    checked_index_types: vec.Vec[types.Type],
+    checked_span_index_types: vec.Vec[types.Type],
+    has_str_literals: bool,
+    str_lits: vec.Vec[str],
+    slice_has_str: bool,
+    slice_has_str_index: bool,
+    slice_has_str_concat: bool,
+    slice_span_types: vec.Vec[types.Type],
+    use_entry_argv: bool
+) -> void:
     var i: ptr_uint = 0
     if funcs.len > 0:
         i = 0
@@ -691,7 +780,6 @@ function emit_program_bodies(e: ref[Emitter], program: ir.Program, funcs: span[i
     if has_str_buffer_structs(program):
         emit_str_buffer_helpers(e)
 
-
     # Emit the argv → span[str] entry bridge helpers when the entry point uses them.
     if use_entry_argv:
         emit_entry_argv_helpers(e)
@@ -703,7 +791,6 @@ function emit_program_bodies(e: ref[Emitter], program: ir.Program, funcs: span[i
         if i < funcs.len - 1:
             emit_line(e, "")
         i += 1
-
 
 # =============================================================================
 #  String helpers
@@ -763,13 +850,13 @@ function release_opt_struct_entries(entries: ref[vec.Vec[OptionStructEntry]]) ->
         i += 1
     entries.release()
 
-
 ## An indentation view — `level * 2` spaces cut from a static run.  `indent_c`
 ## used to build a `String` and return `as_str()`, i.e. one heap allocation per
 ## indented line (~30k on `main.mt`); the emitted text is identical.  A level
 ## wider than the static run falls back to building the text, so deep nesting
 ## keeps its exact indentation.
 const INDENT_SPACES: str = "                                                                "
+
 
 function indent_c(level: ptr_uint) -> str:
     let width = level * 2
@@ -817,7 +904,6 @@ function ptr_uint_to_str(value: ptr_uint) -> str:
     fmt.append_ptr_uint(ref_of(buf), value)
     return buf.as_str()
 
-
 # =============================================================================
 #  String runtime (mirrors c_backend/type_declaration.rb + runtime_helpers.rb)
 # =============================================================================
@@ -831,16 +917,36 @@ function emit_string_type(e: ref[Emitter]) -> void:
 
 ## True when any emitted function calls `mt_str_slice`; also collects the span
 ## result types whose `mt_span_slice_<T>` helpers must be emitted.
-function collect_slice_helpers(funcs: span[ir.Function], has_str: ref[bool], has_str_index: ref[bool], has_str_concat: ref[bool], span_types: ref[vec.Vec[types.Type]]) -> void:
+function collect_slice_helpers(
+    funcs: span[ir.Function],
+    has_str: ref[bool],
+    has_str_index: ref[bool],
+    has_str_concat: ref[bool],
+    span_types: ref[vec.Vec[types.Type]]
+) -> void:
     var seen = map_mod.Map[str, bool].create()
     var i: ptr_uint = 0
     while i < funcs.len:
         unsafe:
-            collect_slice_from_stmts(read(funcs.data + i).body, has_str, has_str_index, has_str_concat, span_types, ref_of(seen))
+            collect_slice_from_stmts(
+                read(funcs.data + i).body,
+                has_str,
+                has_str_index,
+                has_str_concat,
+                span_types,
+                ref_of(seen)
+            )
         i += 1
 
 
-function collect_slice_from_stmts(body: span[ir.Stmt], has_str: ref[bool], has_str_index: ref[bool], has_str_concat: ref[bool], span_types: ref[vec.Vec[types.Type]], seen: ref[map_mod.Map[str, bool]]) -> void:
+function collect_slice_from_stmts(
+    body: span[ir.Stmt],
+    has_str: ref[bool],
+    has_str_index: ref[bool],
+    has_str_concat: ref[bool],
+    span_types: ref[vec.Vec[types.Type]],
+    seen: ref[map_mod.Map[str, bool]]
+) -> void:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
@@ -848,7 +954,14 @@ function collect_slice_from_stmts(body: span[ir.Stmt], has_str: ref[bool], has_s
         i += 1
 
 
-function collect_slice_from_stmt(sp: ptr[ir.Stmt], has_str: ref[bool], has_str_index: ref[bool], has_str_concat: ref[bool], span_types: ref[vec.Vec[types.Type]], seen: ref[map_mod.Map[str, bool]]) -> void:
+function collect_slice_from_stmt(
+    sp: ptr[ir.Stmt],
+    has_str: ref[bool],
+    has_str_index: ref[bool],
+    has_str_concat: ref[bool],
+    span_types: ref[vec.Vec[types.Type]],
+    seen: ref[map_mod.Map[str, bool]]
+) -> void:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as loc:
@@ -867,7 +980,14 @@ function collect_slice_from_stmt(sp: ptr[ir.Stmt], has_str: ref[bool], has_str_i
             ir.Stmt.stmt_if as iff:
                 collect_slice_from_expr(iff.condition, has_str, has_str_index, has_str_concat, span_types, seen)
                 collect_slice_from_stmts(iff.then_body, has_str, has_str_index, has_str_concat, span_types, seen)
-                collect_slice_from_stmts(else_stmts_or_empty(iff.else_body), has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_stmts(
+                    else_stmts_or_empty(iff.else_body),
+                    has_str,
+                    has_str_index,
+                    has_str_concat,
+                    span_types,
+                    seen
+                )
             ir.Stmt.stmt_while as w:
                 collect_slice_from_expr(w.condition, has_str, has_str_index, has_str_concat, span_types, seen)
                 collect_slice_from_stmts(w.body, has_str, has_str_index, has_str_concat, span_types, seen)
@@ -880,13 +1000,27 @@ function collect_slice_from_stmt(sp: ptr[ir.Stmt], has_str: ref[bool], has_str_i
                 collect_slice_from_expr(sw.expression, has_str, has_str_index, has_str_concat, span_types, seen)
                 var ci: ptr_uint = 0
                 while ci < sw.cases.len:
-                    collect_slice_from_stmts(read(sw.cases.data + ci).body, has_str, has_str_index, has_str_concat, span_types, seen)
+                    collect_slice_from_stmts(
+                        read(sw.cases.data + ci).body,
+                        has_str,
+                        has_str_index,
+                        has_str_concat,
+                        span_types,
+                        seen
+                    )
                     ci += 1
             _:
                 pass
 
 
-function collect_slice_from_expr(ep: ptr[ir.Expr], has_str: ref[bool], has_str_index: ref[bool], has_str_concat: ref[bool], span_types: ref[vec.Vec[types.Type]], seen: ref[map_mod.Map[str, bool]]) -> void:
+function collect_slice_from_expr(
+    ep: ptr[ir.Expr],
+    has_str: ref[bool],
+    has_str_index: ref[bool],
+    has_str_concat: ref[bool],
+    span_types: ref[vec.Vec[types.Type]],
+    seen: ref[map_mod.Map[str, bool]]
+) -> void:
     unsafe:
         match read(ep):
             ir.Expr.expr_call as call:
@@ -905,13 +1039,27 @@ function collect_slice_from_expr(ep: ptr[ir.Expr], has_str: ref[bool], has_str_i
                             span_types.push(ty)
                 var ai: ptr_uint = 0
                 while ai < call.arguments.len:
-                    collect_slice_from_expr(call.arguments.data + ai, has_str, has_str_index, has_str_concat, span_types, seen)
+                    collect_slice_from_expr(
+                        call.arguments.data + ai,
+                        has_str,
+                        has_str_index,
+                        has_str_concat,
+                        span_types,
+                        seen
+                    )
                     ai += 1
             ir.Expr.expr_call_indirect as call:
                 collect_slice_from_expr(call.callee, has_str, has_str_index, has_str_concat, span_types, seen)
                 var bi: ptr_uint = 0
                 while bi < call.arguments.len:
-                    collect_slice_from_expr(call.arguments.data + bi, has_str, has_str_index, has_str_concat, span_types, seen)
+                    collect_slice_from_expr(
+                        call.arguments.data + bi,
+                        has_str,
+                        has_str_index,
+                        has_str_concat,
+                        span_types,
+                        seen
+                    )
                     bi += 1
             ir.Expr.expr_unary as un:
                 collect_slice_from_expr(un.operand, has_str, has_str_index, has_str_concat, span_types, seen)
@@ -938,21 +1086,49 @@ function collect_slice_from_expr(ep: ptr[ir.Expr], has_str: ref[bool], has_str_i
             ir.Expr.expr_address_of as addr:
                 collect_slice_from_expr(addr.expression, has_str, has_str_index, has_str_concat, span_types, seen)
             ir.Expr.expr_reinterpret as rin:
-                collect_slice_from_expr(unsafe: read(rin.payload).expression, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_expr(
+                    unsafe: read(rin.payload).expression,
+                    has_str,
+                    has_str_index,
+                    has_str_concat,
+                    span_types,
+                    seen
+                )
             ir.Expr.expr_aggregate_literal as agg:
                 var fi: ptr_uint = 0
                 while fi < agg.fields.len:
-                    collect_slice_from_expr(read(agg.fields.data + fi).value, has_str, has_str_index, has_str_concat, span_types, seen)
+                    collect_slice_from_expr(
+                        read(agg.fields.data + fi).value,
+                        has_str,
+                        has_str_index,
+                        has_str_concat,
+                        span_types,
+                        seen
+                    )
                     fi += 1
             ir.Expr.expr_variant_literal as vl:
                 var vi: ptr_uint = 0
                 while vi < vl.fields.len:
-                    collect_slice_from_expr(read(vl.fields.data + vi).value, has_str, has_str_index, has_str_concat, span_types, seen)
+                    collect_slice_from_expr(
+                        read(vl.fields.data + vi).value,
+                        has_str,
+                        has_str_index,
+                        has_str_concat,
+                        span_types,
+                        seen
+                    )
                     vi += 1
             ir.Expr.expr_array_literal as arr:
                 var ei: ptr_uint = 0
                 while ei < arr.elements.len:
-                    collect_slice_from_expr(arr.elements.data + ei, has_str, has_str_index, has_str_concat, span_types, seen)
+                    collect_slice_from_expr(
+                        arr.elements.data + ei,
+                        has_str,
+                        has_str_index,
+                        has_str_concat,
+                        span_types,
+                        seen
+                    )
                     ei += 1
             ir.Expr.expr_stmt_expr as se:
                 collect_slice_from_stmts(se.setup, has_str, has_str_index, has_str_concat, span_types, seen)
@@ -964,7 +1140,13 @@ function collect_slice_from_expr(ep: ptr[ir.Expr], has_str: ref[bool], has_str_i
                 pass
 
 
-function emit_slice_helpers(e: ref[Emitter], has_str: bool, has_str_index: bool, has_str_concat: bool, span_types: vec.Vec[types.Type]) -> void:
+function emit_slice_helpers(
+    e: ref[Emitter],
+    has_str: bool,
+    has_str_index: bool,
+    has_str_concat: bool,
+    span_types: vec.Vec[types.Type]
+) -> void:
     if has_str:
         emit_str_slice_helper(e)
     if has_str_index:
@@ -987,7 +1169,10 @@ function emit_str_concat_helper(e: ref[Emitter]) -> void:
     emit_line(e, "")
     emit_line(e, "static mt_str mt_str_concat(mt_str a, mt_str b) {")
     emit_line(e, "  uintptr_t total = a.len + b.len;")
-    emit_line(e, "  if (total > MT_STR_CONCAT_BUF_SIZE) mt_fatal(\"str concatenation exceeds the scratch buffer budget\");")
+    emit_line(
+        e,
+        "  if (total > MT_STR_CONCAT_BUF_SIZE) mt_fatal(\"str concatenation exceeds the scratch buffer budget\");"
+    )
     emit_line(e, "  if (mt_str_concat_offset + total > MT_STR_CONCAT_BUF_SIZE) {")
     emit_line(e, "    mt_str_concat_offset = 0;")
     emit_line(e, "  }")
@@ -1016,7 +1201,10 @@ function emit_str_slice_helper(e: ref[Emitter]) -> void:
     emit_line(e, "")
     emit_line(e, "static mt_str mt_str_slice(mt_str text, uintptr_t start, uintptr_t stop) {")
     emit_line(e, "  if (start > stop || stop > text.len) mt_fatal(\"str slice out of bounds\");")
-    emit_line(e, "  if (!mt_str_utf8_boundary(text, start) || !mt_str_utf8_boundary(text, stop)) mt_fatal(\"str slice bounds must be UTF-8 code-unit boundaries\");")
+    emit_line(
+        e,
+        "  if (!mt_str_utf8_boundary(text, start) || !mt_str_utf8_boundary(text, stop)) mt_fatal(\"str slice bounds must be UTF-8 code-unit boundaries\");"
+    )
     emit_line(e, "  return (mt_str){ .data = text.data + start, .len = stop - start };")
     emit_line(e, "}")
     emit_line(e, "")
@@ -1025,9 +1213,21 @@ function emit_str_slice_helper(e: ref[Emitter]) -> void:
 function emit_span_slice_helper(e: ref[Emitter], span_ty: types.Type) -> void:
     let span_name = span_type_name(array_element_type(span_ty))
     let helper = strings.join_two("mt_span_slice_", naming.type_c_key(array_element_type(span_ty)))
-    emit_line(e, strings.join_five("static inline ", span_name, " ", helper, strings.join_three("(", span_name, " span, uintptr_t start, uintptr_t stop) {")))
+    emit_line(
+        e,
+        strings.join_five(
+            "static inline ",
+            span_name,
+            " ",
+            helper,
+            strings.join_three("(", span_name, " span, uintptr_t start, uintptr_t stop) {")
+        )
+    )
     emit_line(e, "  if (start > stop || stop > span.len) mt_fatal(\"span slice out of bounds\");")
-    emit_line(e, strings.join_five("  return (", span_name, "){ .data = span.data + start, .len = stop - start };", "", ""))
+    emit_line(
+        e,
+        strings.join_five("  return (", span_name, "){ .data = span.data + start, .len = stop - start };", "", "")
+    )
     emit_line(e, "}")
     emit_line(e, "")
 
@@ -1102,7 +1302,6 @@ function c_string_literal(value: str) -> str:
     buf.append("\"")
     return buf.as_str()
 
-
 # =============================================================================
 #  Feature detection (mirrors c_backend/feature_detection.rb)
 # =============================================================================
@@ -1163,7 +1362,6 @@ function fields_have_str(fields: span[ir.Field]) -> bool:
                 return true
         i += 1
     return false
-
 
 # =============================================================================
 #  Generic variant collection (mirrors c_backend/type_collectors.rb)
@@ -1249,7 +1447,11 @@ function collect_generic_variants(program: ir.Program) -> vec.Vec[ir.VariantDecl
     return result
 
 
-function collect_gv_from_func(func: ir.Function, seen: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.VariantDecl]]) -> void:
+function collect_gv_from_func(
+    func: ir.Function,
+    seen: ref[map_mod.Map[str, bool]],
+    result: ref[vec.Vec[ir.VariantDecl]]
+) -> void:
     collect_gv_from_type(func.return_type, seen, result)
     var pi: ptr_uint = 0
     while pi < func.params.len:
@@ -1259,7 +1461,11 @@ function collect_gv_from_func(func: ir.Function, seen: ref[map_mod.Map[str, bool
     collect_gv_from_stmts(func.body, seen, result)
 
 
-function collect_gv_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.VariantDecl]]) -> void:
+function collect_gv_from_stmts(
+    body: span[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    result: ref[vec.Vec[ir.VariantDecl]]
+) -> void:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
@@ -1303,7 +1509,11 @@ function collect_gv_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, b
 ## expression's own result type plus every sub-expression.  Without this,
 ## Option/Result instances that appear only in values (returns, call arguments,
 ## variant/aggregate literal fields) are never declared.
-function collect_gv_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.VariantDecl]]) -> void:
+function collect_gv_from_expr(
+    ep: ptr[ir.Expr],
+    seen: ref[map_mod.Map[str, bool]],
+    result: ref[vec.Vec[ir.VariantDecl]]
+) -> void:
     collect_gv_from_type(expr_result_type(ep), seen, result)
     unsafe:
         match read(ep):
@@ -1356,7 +1566,11 @@ function collect_gv_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]
                 pass
 
 
-function collect_gv_from_type(ty: types.Type, seen: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.VariantDecl]]) -> void:
+function collect_gv_from_type(
+    ty: types.Type,
+    seen: ref[map_mod.Map[str, bool]],
+    result: ref[vec.Vec[ir.VariantDecl]]
+) -> void:
     match ty:
         types.Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
@@ -1390,7 +1604,11 @@ function collect_gv_from_type(ty: types.Type, seen: ref[map_mod.Map[str, bool]],
                     let f = unsafe: read(arm.fields.data + fi)
                     fields.push(f)
                     fi += 1
-                arms.push(ir.VariantArm(name = arm.name, linkage_name = strings.join_three(c_name, "_", arm.name), fields = fields.as_span()))
+                arms.push(ir.VariantArm(
+                    name = arm.name,
+                    linkage_name = strings.join_three(c_name, "_", arm.name),
+                    fields = fields.as_span()
+                ))
                 ai += 1
             result.push(ir.VariantDecl(
                 name = c_name,
@@ -1428,10 +1646,12 @@ function generic_has_type_param(args: span[types.Type]) -> bool:
         i += 1
     return false
 
+
 function sp_elem(t: types.Type) -> span[types.Type]:
     var buf = vec.Vec[types.Type].create()
     buf.push(t)
     return buf.as_span()
+
 
 ## Return the arm info for a prelude variant (Option / Result).  Mirrors the
 ## lowering's `install_prelude_variants`.
@@ -1538,11 +1758,17 @@ function stmt_calls(sp: ptr[ir.Stmt], name: str) -> bool:
             ir.Stmt.stmt_block as blk:
                 return body_calls(blk.body, name)
             ir.Stmt.stmt_if as iff:
-                return expr_calls(iff.condition, name) or body_calls(iff.then_body, name) or body_calls(else_stmts_or_empty(iff.else_body), name)
+                return expr_calls(iff.condition, name) or body_calls(iff.then_body, name) or body_calls(
+                    else_stmts_or_empty(iff.else_body),
+                    name
+                )
             ir.Stmt.stmt_while as w:
                 return expr_calls(w.condition, name) or body_calls(w.body, name)
             ir.Stmt.stmt_for as f:
-                return stmt_calls(f.init, name) or expr_calls(f.condition, name) or stmt_calls(f.post, name) or body_calls(f.body, name)
+                return stmt_calls(f.init, name) or expr_calls(
+                    f.condition,
+                    name
+                ) or stmt_calls(f.post, name) or body_calls(f.body, name)
             ir.Stmt.stmt_switch as sw:
                 if expr_calls(sw.expression, name):
                     return true
@@ -1581,7 +1807,10 @@ function expr_calls(ep: ptr[ir.Expr], name: str) -> bool:
             ir.Expr.expr_unary as un:
                 return expr_calls(un.operand, name)
             ir.Expr.expr_conditional as cond:
-                return expr_calls(cond.condition, name) or expr_calls(cond.then_expression, name) or expr_calls(cond.else_expression, name)
+                return expr_calls(cond.condition, name) or expr_calls(
+                    cond.then_expression,
+                    name
+                ) or expr_calls(cond.else_expression, name)
             ir.Expr.expr_member as member:
                 return expr_calls(member.receiver, name)
             ir.Expr.expr_index as index:
@@ -1608,7 +1837,6 @@ function expr_calls(ep: ptr[ir.Expr], name: str) -> bool:
                 return expr_calls(asg.target, name) or expr_calls(asg.value, name)
             _:
                 return false
-
 
 # =============================================================================
 #  String-literal collection (mirrors c_backend collect_str_literals)
@@ -1640,7 +1868,11 @@ function str_literal_order(a: ptr[str], b: ptr[str]) -> int:
         return read(a).compare(read(b))
 
 
-function collect_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[str]]) -> void:
+function collect_from_stmts(
+    body: span[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[str]]
+) -> void:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
@@ -1809,7 +2041,6 @@ function expr_has_str_equality(ep: ptr[ir.Expr]) -> bool:
             _:
                 return false
 
-
 # =============================================================================
 #  Type mapping (mirrors c_backend/type_system.rb)
 # =============================================================================
@@ -1860,7 +2091,13 @@ function c_type(t: types.Type) -> str:
                     let backing_ptr = map_val.get(im_bp.name)
                     if backing_ptr != null:
                         return unsafe: read(backing_ptr)
-                if im_bp.name == "sockaddr" or im_bp.name == "sockaddr_storage" or im_bp.name == "sockaddr_in" or im_bp.name == "sockaddr_in6" or im_bp.name == "tm":
+                if (
+                    im_bp.name == "sockaddr"
+                    or im_bp.name == "sockaddr_storage"
+                    or im_bp.name == "sockaddr_in"
+                    or im_bp.name == "sockaddr_in6"
+                    or im_bp.name == "tm"
+                ):
                     return strings.join_two("struct ", im_bp.name)
                 return im_bp.name
             var base = naming.qualified_c_name(im_bp.module_name, im_bp.name)
@@ -1985,10 +2222,19 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
         return strings.join_four("mt_soa_", elem_name, "_", count_str)
     # simd[T, N] → mt_simd_<T>xN (a GCC vector typedef)
     if name == "simd" and args.len >= 2:
-        return strings.join_four("mt_simd_", naming.type_c_key(unsafe: read(args.data + 0)), "x", naming.type_c_key(unsafe: read(args.data + 1)))
+        return strings.join_four(
+            "mt_simd_",
+            naming.type_c_key(unsafe: read(args.data + 0)),
+            "x",
+            naming.type_c_key(unsafe: read(args.data + 1))
+        )
     # array[T, N] in type position (e.g. sizeof) → <elem>[<N>]
     if name == "array" and args.len >= 2:
-        return strings.join_three(c_type(unsafe: read(args.data + 0)), "[", strings.join_two(naming.type_c_key(unsafe: read(args.data + 1)), "]"))
+        return strings.join_three(
+            c_type(unsafe: read(args.data + 0)),
+            "[",
+            strings.join_two(naming.type_c_key(unsafe: read(args.data + 1)), "]")
+        )
     # Generic variant: `<name>_<type0>_<type1>_...`.  The caller module prefix
     # is added by `qualified_c_name` when the type is `ty_imported`.
     # Prelude types (Option, Result) carry the prefix in their raw name from the
@@ -2013,14 +2259,18 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
 function span_type_name(element: types.Type) -> str:
     return strings.join_two("mt_span_", naming.type_c_key(element))
 
-
 # =============================================================================
 #  SIMD type collection + emission
 # =============================================================================
 
 ## The C typedef name for a simd[E, N] type.
 function simd_type_name(t: types.Type) -> str:
-    return strings.join_four("mt_simd_", naming.type_c_key(types.simd_element_type(t)), "x", long_to_str(types.simd_lane_count(t)))
+    return strings.join_four(
+        "mt_simd_",
+        naming.type_c_key(types.simd_element_type(t)),
+        "x",
+        long_to_str(types.simd_lane_count(t))
+    )
 
 
 ## The byte size of a primitive C scalar type, or 0 when it is not a scalar.
@@ -2089,7 +2339,11 @@ function maybe_add_simd(t: types.Type, seen: ref[map_mod.Map[str, bool]], collec
         collected.push(t)
 
 
-function simd_from_fields(fields: span[ir.Field], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function simd_from_fields(
+    fields: span[ir.Field],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     var i: ptr_uint = 0
     while i < fields.len:
         unsafe:
@@ -2097,7 +2351,11 @@ function simd_from_fields(fields: span[ir.Field], seen: ref[map_mod.Map[str, boo
         i += 1
 
 
-function simd_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function simd_from_stmts(
+    body: span[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
@@ -2105,7 +2363,11 @@ function simd_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]],
         i += 1
 
 
-function simd_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function simd_from_stmt(
+    sp: ptr[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as loc:
@@ -2145,9 +2407,17 @@ function emit_simd_typedefs(e: ref[Emitter], simd_types: vec.Vec[types.Type]) ->
                 pass
         if elem_size > 0:
             let width = types.simd_lane_count(t) * elem_size
-            emit_line(e, strings.join_five("typedef ", elem_c, " ", simd_type_name(t), strings.join_three(" __attribute__((__vector_size__(", long_to_str(width), ")));")))
+            emit_line(
+                e,
+                strings.join_five(
+                    "typedef ",
+                    elem_c,
+                    " ",
+                    simd_type_name(t),
+                    strings.join_three(" __attribute__((__vector_size__(", long_to_str(width), ")));")
+                )
+            )
         i += 1
-
 
 # =============================================================================
 #  Span type collection + emission
@@ -2244,7 +2514,11 @@ function maybe_add_span(t: types.Type, seen: ref[map_mod.Map[str, bool]], collec
 
 ## Recurse into a type's arguments so a span behind a generic, a nullable, a
 ## tuple, or a callable signature is collected too.
-function add_nested_spans(t: types.Type, seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function add_nested_spans(
+    t: types.Type,
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     match t:
         types.Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
@@ -2265,18 +2539,27 @@ function add_nested_spans(t: types.Type, seen: ref[map_mod.Map[str, bool]], coll
             pass
 
 
-function add_span_args(args: span[types.Type], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function add_span_args(
+    args: span[types.Type],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     var i: ptr_uint = 0
     while i < args.len:
         maybe_add_span(unsafe: read(args.data + i), seen, collected)
         i += 1
+
 
 ## True when `name` is a single-letter type parameter used in generic bodies.
 function is_raw_type_param_name(name: str) -> bool:
     return name == "T" or name == "U" or name == "K" or name == "V" or name == "E"
 
 
-function span_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function span_from_stmts(
+    body: span[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
@@ -2284,7 +2567,11 @@ function span_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]],
         i += 1
 
 
-function span_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function span_from_stmt(
+    sp: ptr[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as loc:
@@ -2326,7 +2613,11 @@ function span_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], col
 ## local declarations inside a statement-expression (`({ mt_span_ubyte t = ...;
 ## ... })`) produced by inline foreign-mapping lowering, whose span typedefs
 ## would otherwise never be emitted.
-function span_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function span_from_expr(
+    ep: ptr[ir.Expr],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     maybe_add_span(expr_result_type(ep), seen, collected)
     unsafe:
         match read(ep):
@@ -2393,7 +2684,6 @@ function emit_span_type(e: ref[Emitter], t: types.Type) -> void:
     emit_line(e, "  uintptr_t len;")
     emit_line(e, strings.join_three("} ", name, ";"))
 
-
 # =============================================================================
 #  Tuple type collection + emission
 # =============================================================================
@@ -2407,7 +2697,11 @@ function is_tuple_type(t: types.Type) -> bool:
 
 
 ## Distinct tuple types across the emitted functions (params, returns, locals).
-function collect_tuple_types(functions: span[ir.Function], program: ir.Program, gen_variants: ref[vec.Vec[ir.VariantDecl]]) -> vec.Vec[types.Type]:
+function collect_tuple_types(
+    functions: span[ir.Function],
+    program: ir.Program,
+    gen_variants: ref[vec.Vec[ir.VariantDecl]]
+) -> vec.Vec[types.Type]:
     var seen = map_mod.Map[str, bool].create()
     var collected = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
@@ -2476,7 +2770,11 @@ function filter_declared_tuple_types(tuple_types: vec.Vec[types.Type], program: 
     return kept
 
 
-function tuple_from_fields(fields: span[ir.Field], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function tuple_from_fields(
+    fields: span[ir.Field],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     var i: ptr_uint = 0
     while i < fields.len:
         unsafe:
@@ -2493,7 +2791,11 @@ function maybe_add_tuple(t: types.Type, seen: ref[map_mod.Map[str, bool]], colle
         collected.push(t)
 
 
-function tuple_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function tuple_from_stmts(
+    body: span[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
@@ -2501,7 +2803,11 @@ function tuple_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]]
         i += 1
 
 
-function tuple_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function tuple_from_stmt(
+    sp: ptr[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as loc:
@@ -2536,7 +2842,11 @@ function tuple_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], co
 
 ## Walk an expression for tuple-typed aggregate literals (e.g. the tuple
 ## literal `(10, 20, 30, 40)` coerced into an array local).
-function tuple_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function tuple_from_expr(
+    ep: ptr[ir.Expr],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     unsafe:
         match read(ep):
             ir.Expr.expr_aggregate_literal as agg:
@@ -2717,12 +3027,7 @@ function is_str_type(t: types.Type) -> bool:
         _:
             return false
 
-
 ## The C name of a module-qualified named type is `naming.qualified_c_name`.
-
-
-
-
 
 function primitive_c_type(name: str) -> str:
     if name == "bool":
@@ -2844,7 +3149,10 @@ function c_decl(t: types.Type, name: str) -> str:
                 let ef_ft = unsafe: read(ef.payload)
                 if ef_ft.is_proc:
                     return strings.join_six(c_type(elem_t), " ", inner_name, "[", long_to_str(array_length(t)), "]")
-                return c_fn_ptr_declarator(elem_t, strings.join_four(inner_name, "[", long_to_str(array_length(t)), "]"))
+                return c_fn_ptr_declarator(
+                    elem_t,
+                    strings.join_four(inner_name, "[", long_to_str(array_length(t)), "]")
+                )
             _:
                 pass
         return strings.join_six(c_type(elem_t), " ", inner_name, "[", long_to_str(array_length(t)), "]")
@@ -2883,13 +3191,16 @@ function c_decl(t: types.Type, name: str) -> str:
                 let base = unsafe: c_type(inner)
                 return strings.join_four("const ", base, "*", name)
             if g_bp.name == "str_buffer" and g_bp.args.len >= 1:
-                let c_name = strings.join_three("mt_str_buffer_", naming.type_c_key(unsafe: read(g_bp.args.data + 0)), "")
+                let c_name = strings.join_three(
+                    "mt_str_buffer_",
+                    naming.type_c_key(unsafe: read(g_bp.args.data + 0)),
+                    ""
+                )
                 return strings.join_three(c_name, " ", name)
             return strings.join_three(generic_c_type(g_bp.name, g_bp.args), " ", name)
         _:
             pass
     return strings.join_three(c_type(t), " ", name)
-
 
 # =============================================================================
 #  Enum emission (mirrors c_backend/type_declaration.rb emit_enum)
@@ -2905,7 +3216,15 @@ function emit_enums_block(e: ref[Emitter], program: ir.Program) -> void:
 
 
 function emit_enum(e: ref[Emitter], enum_decl: ir.EnumDecl) -> void:
-    emit_line(e, strings.join_four("typedef ", c_type(enum_decl.backing_type), " ", strings.join_two(enum_decl.linkage_name, ";")))
+    emit_line(
+        e,
+        strings.join_four(
+            "typedef ",
+            c_type(enum_decl.backing_type),
+            " ",
+            strings.join_two(enum_decl.linkage_name, ";")
+        )
+    )
     if enum_decl.members.len == 0:
         return
     emit_line(e, "enum {")
@@ -2917,7 +3236,6 @@ function emit_enum(e: ref[Emitter], enum_decl: ir.EnumDecl) -> void:
             emit_line(e, strings.join_six("  ", m.linkage_name, " = ", render_expr(e, m.value), suffix, ""))
         i += 1
     emit_line(e, "};")
-
 
 # =============================================================================
 #  Struct emission (mirrors c_backend/type_declaration.rb emit_struct)
@@ -3020,7 +3338,12 @@ function register_soa(e: ref[Emitter], elem_c_name: str, count_str: str, seen: r
 
 
 ## Walk a function's IR and register every SoA type found.
-function collect_soa_from_function(e: ref[Emitter], func: ir.Function, seen: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
+function collect_soa_from_function(
+    e: ref[Emitter],
+    func: ir.Function,
+    seen: ref[map_mod.Map[str, bool]],
+    program: ir.Program
+) -> void:
     collect_soa_from_type(e, func.return_type, seen, program)
     var pi: ptr_uint = 0
     while pi < func.params.len:
@@ -3031,7 +3354,12 @@ function collect_soa_from_function(e: ref[Emitter], func: ir.Function, seen: ref
 
 
 ## Walk statements looking for SoA types (local decls, assignments, returns).
-function collect_soa_from_stmts(e: ref[Emitter], body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
+function collect_soa_from_stmts(
+    e: ref[Emitter],
+    body: span[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    program: ir.Program
+) -> void:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
@@ -3060,7 +3388,12 @@ function collect_soa_from_stmts(e: ref[Emitter], body: span[ir.Stmt], seen: ref[
 
 
 ## Register an SoA type from a types.Type if it is `ty_generic(name="SoA", ...)`.
-function collect_soa_from_type(e: ref[Emitter], ty: types.Type, seen: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
+function collect_soa_from_type(
+    e: ref[Emitter],
+    ty: types.Type,
+    seen: ref[map_mod.Map[str, bool]],
+    program: ir.Program
+) -> void:
     match ty:
         types.Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
@@ -3119,13 +3452,27 @@ function variant_has_payload(vd: ir.VariantDecl) -> bool:
 ## Forward typedefs for a variant: the outer tagged struct plus one per payload
 ## arm (no-payload arms have no payload struct).  Mirrors emit_forward_declarations.
 function emit_variant_forward(e: ref[Emitter], vd: ir.VariantDecl) -> void:
-    emit_line(e, strings.join_three("typedef struct ", vd.linkage_name, strings.join_two(" ", strings.join_two(vd.linkage_name, ";"))))
+    emit_line(
+        e,
+        strings.join_three(
+            "typedef struct ",
+            vd.linkage_name,
+            strings.join_two(" ", strings.join_two(vd.linkage_name, ";"))
+        )
+    )
     var i: ptr_uint = 0
     while i < vd.arms.len:
         unsafe:
             let arm = read(vd.arms.data + i)
             if arm.fields.len > 0:
-                emit_line(e, strings.join_three("typedef struct ", arm.linkage_name, strings.join_two(" ", strings.join_two(arm.linkage_name, ";"))))
+                emit_line(
+                    e,
+                    strings.join_three(
+                        "typedef struct ",
+                        arm.linkage_name,
+                        strings.join_two(" ", strings.join_two(arm.linkage_name, ";"))
+                    )
+                )
         i += 1
 
 
@@ -3162,12 +3509,27 @@ function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
                 while fi < arm.fields.len:
                     let f = read(arm.fields.data + fi)
                     if not is_void_type(f.ty) and c_type(f.ty) == outer_c:
-                        emit_line(e, strings.join_four("  ", c_decl(f.ty, strings.join_two("*", c_safe_field_name(f.name))), ";", ""))
+                        emit_line(
+                            e,
+                            strings.join_four(
+                                "  ",
+                                c_decl(f.ty, strings.join_two("*", c_safe_field_name(f.name))),
+                                ";",
+                                ""
+                            )
+                        )
                     else:
                         emit_line(e, strings.join_four("  ", c_field_decl(f.ty, c_safe_field_name(f.name)), ";", ""))
                     fi += 1
                 emit_line(e, "};")
-                emit_line(e, strings.join_three("typedef struct ", arm.linkage_name, strings.join_two(" ", strings.join_two(arm.linkage_name, ";"))))
+                emit_line(
+                    e,
+                    strings.join_three(
+                        "typedef struct ",
+                        arm.linkage_name,
+                        strings.join_two(" ", strings.join_two(arm.linkage_name, ";"))
+                    )
+                )
         i += 1
 
     # Kind enum
@@ -3179,7 +3541,17 @@ function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
             unsafe:
                 let arm = read(vd.arms.data + i)
                 let suffix = if i == vd.arms.len - 1: "" else: ","
-                emit_line(e, strings.join_six("  ", outer_c, "_kind_", arm.name, strings.join_three(" = ", ptr_uint_to_str(i), suffix), ""))
+                emit_line(
+                    e,
+                    strings.join_six(
+                        "  ",
+                        outer_c,
+                        "_kind_",
+                        arm.name,
+                        strings.join_three(" = ", ptr_uint_to_str(i), suffix),
+                        ""
+                    )
+                )
             i += 1
         emit_line(e, "};")
 
@@ -3191,7 +3563,10 @@ function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
             unsafe:
                 let arm = read(vd.arms.data + i)
                 if arm.fields.len > 0:
-                    emit_line(e, strings.join_six("  struct ", arm.linkage_name, " ", c_safe_field_name(arm.name), ";", ""))
+                    emit_line(
+                        e,
+                        strings.join_six("  struct ", arm.linkage_name, " ", c_safe_field_name(arm.name), ";", "")
+                    )
             i += 1
         emit_line(e, "};")
 
@@ -3221,7 +3596,13 @@ function topo_sort_structs(structs: span[ir.StructDecl]) -> vec.Vec[ir.StructDec
     return result
 
 
-function topo_visit_struct(structs: span[ir.StructDecl], index: ptr_uint, by_linkage: ref[map_mod.Map[str, ptr_uint]], visited: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.StructDecl]]) -> void:
+function topo_visit_struct(
+    structs: span[ir.StructDecl],
+    index: ptr_uint,
+    by_linkage: ref[map_mod.Map[str, ptr_uint]],
+    visited: ref[map_mod.Map[str, bool]],
+    result: ref[vec.Vec[ir.StructDecl]]
+) -> void:
     var s: ir.StructDecl
     unsafe:
         s = read(structs.data + index)
@@ -3258,7 +3639,6 @@ function struct_field_linkage(ty: types.Type) -> Option[str]:
                     return Option[str].none
         _:
             return Option[str].none
-
 
 # =============================================================================
 #  Combined struct + variant topological ordering
@@ -3329,7 +3709,11 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
             # a struct field of that type depends on the full str_buffer struct
             # definition being ordered first.
             if g_bp.name == "str_buffer" and g_bp.args.len >= 1:
-                return Option[str].some(value = strings.join_three("mt_str_buffer_", naming.type_c_key(unsafe: read(g_bp.args.data + 0)), ""))
+                return Option[str].some(value = strings.join_three(
+                    "mt_str_buffer_",
+                    naming.type_c_key(unsafe: read(g_bp.args.data + 0)),
+                    ""
+                ))
             # Pointer-like generics need only a forward declaration, not a
             # by-value dependency.
             if (
@@ -3343,7 +3727,11 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
             # definition.  The Task struct itself is also a dependency target
             # for variants that embed Task instances by value.
             if g_bp.name == "Task" and g_bp.args.len >= 1:
-                return Option[str].some(value = strings.join_three("mt_task_", naming.type_c_key(unsafe: read(g_bp.args.data + 0)), ""))
+                return Option[str].some(value = strings.join_three(
+                    "mt_task_",
+                    naming.type_c_key(unsafe: read(g_bp.args.data + 0)),
+                    ""
+                ))
             # A generic variant instance embedded by value (e.g.
             # `Option[span[str]]` → `Option_span_str`): it depends on the concrete
             # instance's full definition being ordered first.  Uses the same name
@@ -3411,7 +3799,15 @@ function register_variant_arm_aliases(vd: ir.VariantDecl, by_key: ref[map_mod.Ma
         i += 1
 
 
-function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptionStructEntry]], task_elements: ref[map_mod.Map[str, types.Type]], tuple_types: vec.Vec[types.Type]) -> vec.Vec[str]:
+function type_node_deps(
+    node: TypeNode,
+    structs: span[ir.StructDecl],
+    gen_variants: ref[vec.Vec[ir.VariantDecl]],
+    program_variants: span[ir.VariantDecl],
+    opt_structs: ref[vec.Vec[OptionStructEntry]],
+    task_elements: ref[map_mod.Map[str, types.Type]],
+    tuple_types: vec.Vec[types.Type]
+) -> vec.Vec[str]:
     var deps = vec.Vec[str].create()
     if node.kind == 0:
         unsafe:
@@ -3458,7 +3854,15 @@ function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_varian
     return deps
 
 
-function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptionStructEntry]], task_seen: ref[map_mod.Map[str, bool]], task_elements: ref[map_mod.Map[str, types.Type]], tuple_types: vec.Vec[types.Type]) -> vec.Vec[TypeNode]:
+function topo_sort_types(
+    structs: span[ir.StructDecl],
+    gen_variants: ref[vec.Vec[ir.VariantDecl]],
+    program_variants: span[ir.VariantDecl],
+    opt_structs: ref[vec.Vec[OptionStructEntry]],
+    task_seen: ref[map_mod.Map[str, bool]],
+    task_elements: ref[map_mod.Map[str, types.Type]],
+    tuple_types: vec.Vec[types.Type]
+) -> vec.Vec[TypeNode]:
     var nodes = vec.Vec[TypeNode].create()
     var by_key = map_mod.Map[str, ptr_uint].create()
     var i: ptr_uint = 0
@@ -3539,12 +3943,36 @@ function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec
     var result = vec.Vec[TypeNode].create()
     i = 0
     while i < nodes.len():
-        topo_visit_type(ref_of(nodes), i, structs, gen_variants, program_variants, opt_structs, task_elements, tuple_types, ref_of(by_key), ref_of(visited), ref_of(result))
+        topo_visit_type(
+            ref_of(nodes),
+            i,
+            structs,
+            gen_variants,
+            program_variants,
+            opt_structs,
+            task_elements,
+            tuple_types,
+            ref_of(by_key),
+            ref_of(visited),
+            ref_of(result)
+        )
         i += 1
     return result
 
 
-function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptionStructEntry]], task_elements: ref[map_mod.Map[str, types.Type]], tuple_types: vec.Vec[types.Type], by_key: ref[map_mod.Map[str, ptr_uint]], visited: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[TypeNode]]) -> void:
+function topo_visit_type(
+    nodes: ref[vec.Vec[TypeNode]],
+    index: ptr_uint,
+    structs: span[ir.StructDecl],
+    gen_variants: ref[vec.Vec[ir.VariantDecl]],
+    program_variants: span[ir.VariantDecl],
+    opt_structs: ref[vec.Vec[OptionStructEntry]],
+    task_elements: ref[map_mod.Map[str, types.Type]],
+    tuple_types: vec.Vec[types.Type],
+    by_key: ref[map_mod.Map[str, ptr_uint]],
+    visited: ref[map_mod.Map[str, bool]],
+    result: ref[vec.Vec[TypeNode]]
+) -> void:
     var node: TypeNode
     let node_ptr = nodes.get(index) else:
         return
@@ -3561,9 +3989,22 @@ function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs
         unsafe:
             let dep_idx = by_key.get(read(dep_ptr))
             if dep_idx != null:
-                topo_visit_type(nodes, read(dep_idx), structs, gen_variants, program_variants, opt_structs, task_elements, tuple_types, by_key, visited, result)
+                topo_visit_type(
+                    nodes,
+                    read(dep_idx),
+                    structs,
+                    gen_variants,
+                    program_variants,
+                    opt_structs,
+                    task_elements,
+                    tuple_types,
+                    by_key,
+                    visited,
+                    result
+                )
         di += 1
     result.push(node)
+
 
 ## `export_public` keeps a `public` top-level function's symbol external (the
 ## host's library intent); executables keep every non-entry function `static`.
@@ -3616,6 +4057,7 @@ function function_params(func: ir.Function) -> str:
 ## synthetic `__mt_out` first parameter of an array-returning function.
 function array_out_param_decl(t: types.Type, name: str) -> str:
     return c_decl(t, strings.join_three("(*", name, ")"))
+
 
 function emit_function(e: ref[Emitter], func: ir.Function, export_public: bool) -> void:
     e.used_labels.clear()
@@ -3735,7 +4177,6 @@ function collect_used_labels(body: span[ir.Stmt], labels: ref[map_mod.Map[str, b
                 _:
                     pass
         i += 1
-
 
 # =============================================================================
 #  Statement emission (mirrors c_backend/statements.rb)
@@ -3926,12 +4367,31 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                         # first, then copy into the out-param.
                         emit_indented(e, indent, "{")
                         let inner = indent_c(level + 1)
-                        emit_line(e, strings.join_five(inner, c_decl(e.current_fn_return_type, "__mt_ret"), " = ", render_initializer(e, value), ";"))
+                        emit_line(
+                            e,
+                            strings.join_five(
+                                inner,
+                                c_decl(e.current_fn_return_type, "__mt_ret"),
+                                " = ",
+                                render_initializer(e, value),
+                                ";"
+                            )
+                        )
                         emit_indented(e, inner, "memcpy(*__mt_out, __mt_ret, sizeof(*__mt_out));")
                         emit_indented(e, inner, "return;")
                         emit_indented(e, indent, "}")
                     else:
-                        emit_line(e, strings.join_six(indent, "memcpy(*__mt_out, ", render_expr(e, value), ", sizeof(*__mt_out)", ");", ""))
+                        emit_line(
+                            e,
+                            strings.join_six(
+                                indent,
+                                "memcpy(*__mt_out, ",
+                                render_expr(e, value),
+                                ", sizeof(*__mt_out)",
+                                ");",
+                                ""
+                            )
+                        )
                         emit_indented(e, indent, "return;")
                     return
                 emit_line(e, strings.join_four(indent, "return ", render_expr(e, value), ";"))
@@ -3940,7 +4400,14 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     # `let a = <array-returning call>` — declare the array, then
                     # call the callee with `&a` as its out-param.
                     emit_line(e, strings.join_three(indent, c_decl(loc.ty, loc.linkage_name), ";"))
-                    emit_line(e, strings.join_three(indent, emit_array_call(e, loc.value, strings.join_two("&", loc.linkage_name)), ";"))
+                    emit_line(
+                        e,
+                        strings.join_three(
+                            indent,
+                            emit_array_call(e, loc.value, strings.join_two("&", loc.linkage_name)),
+                            ";"
+                        )
+                    )
                 else if aggregate_has_array_call_field(e, loc.value):
                     # `let s = S(arr = <array-returning call>, ...)` — build the
                     # struct with the array-call field omitted, then fill it via
@@ -3948,38 +4415,109 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                     unsafe:
                         match read(loc.value):
                             ir.Expr.expr_aggregate_literal as agg:
-                                emit_aggregate_with_array_call_fields(e, indent, c_decl(loc.ty, loc.linkage_name), loc.linkage_name, agg.fields)
+                                emit_aggregate_with_array_call_fields(
+                                    e,
+                                    indent,
+                                    c_decl(loc.ty, loc.linkage_name),
+                                    loc.linkage_name,
+                                    agg.fields
+                                )
                             _:
                                 pass
                 else if is_array_type(loc.ty) and not array_direct_initializer(loc.value):
                     emit_line(e, strings.join_three(indent, c_decl(loc.ty, loc.linkage_name), ";"))
-                    emit_line(e, strings.join_six(indent, "memcpy(", loc.linkage_name, ", ", render_expr(e, loc.value), strings.join_three(", sizeof(", loc.linkage_name, "));")))
+                    emit_line(
+                        e,
+                        strings.join_six(
+                            indent,
+                            "memcpy(",
+                            loc.linkage_name,
+                            ", ",
+                            render_expr(e, loc.value),
+                            strings.join_three(", sizeof(", loc.linkage_name, "));")
+                        )
+                    )
                 else:
-                    emit_line(e, strings.join_five(indent, c_decl(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), ";"))
+                    emit_line(
+                        e,
+                        strings.join_five(
+                            indent,
+                            c_decl(loc.ty, loc.linkage_name),
+                            " = ",
+                            render_initializer(e, loc.value),
+                            ";"
+                        )
+                    )
             ir.Stmt.stmt_assignment as asg:
                 # `arr = <array-returning call>` — call the callee with `&arr`.
-                if asg.operator == "=" and is_array_type(expr_result_type(asg.target)) and expr_is_array_call(e, asg.value):
+                if asg.operator == "=" and is_array_type(expr_result_type(asg.target)) and expr_is_array_call(
+                    e,
+                    asg.value
+                ):
                     let target_c = render_expr(e, asg.target)
-                    emit_line(e, strings.join_three(indent, emit_array_call(e, asg.value, strings.join_three("&(", target_c, ")")), ";"))
+                    emit_line(
+                        e,
+                        strings.join_three(
+                            indent,
+                            emit_array_call(e, asg.value, strings.join_three("&(", target_c, ")")),
+                            ";"
+                        )
+                    )
                     return
                 # `arr = {a, b, ...}` — C forbids assigning an initializer list to
                 # an array; bind it to a temp array and memcpy into the target.
-                if asg.operator == "=" and is_array_type(expr_result_type(asg.target)) and array_direct_initializer(asg.value):
+                if (
+                    asg.operator == "="
+                    and is_array_type(expr_result_type(asg.target))
+                    and array_direct_initializer(asg.value)
+                ):
                     let target_c = render_expr(e, asg.target)
                     let arr_ty = expr_result_type(asg.target)
                     emit_indented(e, indent, "{")
                     let inner = indent_c(level + 1)
-                    emit_line(e, strings.join_five(inner, c_decl(arr_ty, "__mt_arr_tmp"), " = ", render_initializer(e, asg.value), ";"))
-                    emit_line(e, strings.join_six(inner, "memcpy(", target_c, ", __mt_arr_tmp, sizeof(__mt_arr_tmp)", ");", ""))
+                    emit_line(
+                        e,
+                        strings.join_five(
+                            inner,
+                            c_decl(arr_ty, "__mt_arr_tmp"),
+                            " = ",
+                            render_initializer(e, asg.value),
+                            ";"
+                        )
+                    )
+                    emit_line(
+                        e,
+                        strings.join_six(inner, "memcpy(", target_c, ", __mt_arr_tmp, sizeof(__mt_arr_tmp)", ");", "")
+                    )
                     emit_indented(e, indent, "}")
                     return
                 # `arr = other_arr` — C forbids assigning one array to another;
                 # emit a memcpy of the whole array instead.
                 if asg.operator == "=" and is_array_type(expr_result_type(asg.target)):
                     let target_c = render_expr(e, asg.target)
-                    emit_line(e, strings.join_six(indent, "memcpy(", target_c, ", ", render_expr(e, asg.value), strings.join_three(", sizeof(", target_c, "));")))
+                    emit_line(
+                        e,
+                        strings.join_six(
+                            indent,
+                            "memcpy(",
+                            target_c,
+                            ", ",
+                            render_expr(e, asg.value),
+                            strings.join_three(", sizeof(", target_c, "));")
+                        )
+                    )
                     return
-                emit_line(e, strings.join_six(indent, render_expr(e, asg.target), " ", asg.operator, " ", strings.join_two(render_expr(e, asg.value), ";")))
+                emit_line(
+                    e,
+                    strings.join_six(
+                        indent,
+                        render_expr(e, asg.target),
+                        " ",
+                        asg.operator,
+                        " ",
+                        strings.join_two(render_expr(e, asg.value), ";")
+                    )
+                )
             ir.Stmt.stmt_expression as ex:
                 emit_line(e, strings.join_three(indent, render_expr(e, ex.expression), ";"))
             ir.Stmt.stmt_block as blk:
@@ -4031,7 +4569,13 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
 ## arm is `default: { body [break;] }`; and an exhaustive switch with no explicit
 ## default gets `default: __builtin_unreachable();`.  Mirrors the switch path in
 ## c_backend/statements.rb.
-function emit_switch(e: ref[Emitter], expression: ptr[ir.Expr], cases: span[ir.SwitchCase], exhaustive: bool, level: ptr_uint) -> void:
+function emit_switch(
+    e: ref[Emitter],
+    expression: ptr[ir.Expr],
+    cases: span[ir.SwitchCase],
+    exhaustive: bool,
+    level: ptr_uint
+) -> void:
     let indent = indent_c(level)
     let case_indent = indent_c(level + 1)
     emit_line(e, strings.join_four(indent, "switch (", render_expr(e, expression), ") {"))
@@ -4114,7 +4658,13 @@ public function else_stmts_or_empty(else_body: Option[span[ir.Stmt]]) -> span[ir
 
 ## Emit an `if` and its else chain, re-flattening a single-`if` else body back
 ## into `else if` (mirrors control_flow_emission.rb emit_if_statement).
-function emit_if(e: ref[Emitter], condition: ptr[ir.Expr], then_body: span[ir.Stmt], else_body: span[ir.Stmt], level: ptr_uint) -> void:
+function emit_if(
+    e: ref[Emitter],
+    condition: ptr[ir.Expr],
+    then_body: span[ir.Stmt],
+    else_body: span[ir.Stmt],
+    level: ptr_uint
+) -> void:
     let indent = indent_c(level)
     emit_line(e, strings.join_four(indent, "if (", render_expr(e, condition), ") {"))
     emit_stmts(e, then_body, level + 1)
@@ -4147,14 +4697,19 @@ function render_for_clause(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as loc:
-                return strings.join_five(c_decl(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), "", "")
+                return strings.join_five(
+                    c_decl(loc.ty, loc.linkage_name),
+                    " = ",
+                    render_initializer(e, loc.value),
+                    "",
+                    ""
+                )
             ir.Stmt.stmt_assignment as asg:
                 return strings.join_five(render_expr(e, asg.target), " ", asg.operator, " ", render_expr(e, asg.value))
             ir.Stmt.stmt_expression as ex:
                 return render_expr(e, ex.expression)
             _:
                 fatal(c"c_backend: unsupported for-loop clause")
-
 
 # =============================================================================
 #  Expression emission (mirrors c_backend/expressions.rb)
@@ -4198,7 +4753,13 @@ function render_expr(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return strings.join_two(un.operator, wrap_expr(e, un.operand))
             ir.Expr.expr_binary as bin:
                 if is_str_equality(bin.operator, bin.left, bin.right):
-                    let call = strings.join_five("mt_str_equal(", render_expr(e, bin.left), ", ", render_expr(e, bin.right), ")")
+                    let call = strings.join_five(
+                        "mt_str_equal(",
+                        render_expr(e, bin.left),
+                        ", ",
+                        render_expr(e, bin.right),
+                        ")"
+                    )
                     if bin.operator == "!=":
                         return strings.join_two("!", call)
                     return call
@@ -4229,11 +4790,20 @@ function render_expr(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                         _:
                             pass
                 let operator = if pointer_member_receiver(member.receiver): "->" else: "."
-                return strings.join_three(wrap_member_receiver(e, member.receiver), operator, c_safe_field_name(member.member))
+                return strings.join_three(
+                    wrap_member_receiver(e, member.receiver),
+                    operator,
+                    c_safe_field_name(member.member)
+                )
             ir.Expr.expr_aggregate_literal as agg:
                 return render_aggregate_literal(e, agg.ty, agg.fields)
             ir.Expr.expr_variant_literal as vl:
-                return strings.join_four("(", c_type(vl.ty), ")", render_variant_initializer(e, vl.ty, vl.arm_name, vl.fields, true))
+                return strings.join_four(
+                    "(",
+                    c_type(vl.ty),
+                    ")",
+                    render_variant_initializer(e, vl.ty, vl.arm_name, vl.fields, true)
+                )
             ir.Expr.expr_zero_init as z:
                 return render_zero_expr(z.ty)
             ir.Expr.expr_null_literal as nl:
@@ -4252,13 +4822,37 @@ function render_expr(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 cast_buf.append(emit_cast_operand(e, cast.expression))
                 return cast_buf.as_str()
             ir.Expr.expr_checked_index as ci:
-                return strings.join_five("(*", checked_array_index_helper_name(ci.receiver_type), "(", wrap_member_receiver(e, ci.receiver), strings.join_three(", ", render_expr(e, ci.index), "))"))
+                return strings.join_five(
+                    "(*",
+                    checked_array_index_helper_name(ci.receiver_type),
+                    "(",
+                    wrap_member_receiver(e, ci.receiver),
+                    strings.join_three(", ", render_expr(e, ci.index), "))")
+                )
             ir.Expr.expr_checked_span_index as cs:
-                return strings.join_five("(*", checked_span_index_helper_name(cs.receiver_type), "(", render_expr(e, cs.receiver), strings.join_three(", ", render_expr(e, cs.index), "))"))
+                return strings.join_five(
+                    "(*",
+                    checked_span_index_helper_name(cs.receiver_type),
+                    "(",
+                    render_expr(e, cs.receiver),
+                    strings.join_three(", ", render_expr(e, cs.index), "))")
+                )
             ir.Expr.expr_nullable_index as ni:
-                return strings.join_five(nullable_array_index_helper_name(ni.receiver_type), "(", wrap_member_receiver(e, ni.receiver), ", ", strings.join_two(render_expr(e, ni.index), ")"))
+                return strings.join_five(
+                    nullable_array_index_helper_name(ni.receiver_type),
+                    "(",
+                    wrap_member_receiver(e, ni.receiver),
+                    ", ",
+                    strings.join_two(render_expr(e, ni.index), ")")
+                )
             ir.Expr.expr_nullable_span_index as ns:
-                return strings.join_five(nullable_span_index_helper_name(ns.receiver_type), "(", render_expr(e, ns.receiver), ", ", strings.join_two(render_expr(e, ns.index), ")"))
+                return strings.join_five(
+                    nullable_span_index_helper_name(ns.receiver_type),
+                    "(",
+                    render_expr(e, ns.receiver),
+                    ", ",
+                    strings.join_two(render_expr(e, ns.index), ")")
+                )
             ir.Expr.expr_index as ix:
                 return strings.join_four(wrap_member_receiver(e, ix.receiver), "[", render_expr(e, ix.index), "]")
             ir.Expr.expr_address_of as addr:
@@ -4294,7 +4888,13 @@ function render_expr(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
             ir.Expr.expr_array_literal as arr:
                 return render_array_literal_expr(e, arr.ty, arr.elements)
             ir.Expr.expr_conditional as cond:
-                return strings.join_five(emit_conditional_condition(e, cond.condition), " ? ", render_expr(e, cond.then_expression), " : ", render_expr(e, cond.else_expression))
+                return strings.join_five(
+                    emit_conditional_condition(e, cond.condition),
+                    " ? ",
+                    render_expr(e, cond.then_expression),
+                    " : ",
+                    render_expr(e, cond.else_expression)
+                )
             ir.Expr.expr_stmt_expr as se:
                 return render_stmt_expr(e, se.setup, se.result)
             ir.Expr.expr_simd_lane_with as lw:
@@ -4355,7 +4955,14 @@ function render_stmt_expr_stmt(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
             ir.Stmt.stmt_local as loc:
                 return strings.join_four(c_decl(loc.ty, loc.linkage_name), " = ", render_initializer(e, loc.value), ";")
             ir.Stmt.stmt_assignment as asg:
-                return strings.join_six(render_expr(e, asg.target), " ", asg.operator, " ", render_expr(e, asg.value), ";")
+                return strings.join_six(
+                    render_expr(e, asg.target),
+                    " ",
+                    asg.operator,
+                    " ",
+                    render_expr(e, asg.value),
+                    ";"
+                )
             ir.Stmt.stmt_expression as ex:
                 return strings.join_two(render_expr(e, ex.expression), ";")
             _:
@@ -4369,7 +4976,12 @@ function render_address_of(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     unsafe:
         match read(ep):
             ir.Expr.expr_checked_index as ci:
-                return strings.join_four(checked_array_index_helper_name(ci.receiver_type), "(", wrap_member_receiver(e, ci.receiver), strings.join_three(", ", render_expr(e, ci.index), ")"))
+                return strings.join_four(
+                    checked_array_index_helper_name(ci.receiver_type),
+                    "(",
+                    wrap_member_receiver(e, ci.receiver),
+                    strings.join_three(", ", render_expr(e, ci.index), ")")
+                )
             _:
                 return render_address_of_operand(e, ep)
 
@@ -4403,7 +5015,10 @@ function checked_span_index_helper_name(receiver_type: types.Type) -> str:
                 let elem = unsafe: read(g_bp.args.data + 0)
                 match elem:
                     types.Type.ty_function:
-                        return strings.join_two("mt_checked_span_index_", naming.sanitize_c_identifier(c_decl(elem, "value")))
+                        return strings.join_two(
+                            "mt_checked_span_index_",
+                            naming.sanitize_c_identifier(c_decl(elem, "value"))
+                        )
                     _:
                         pass
         _:
@@ -4435,13 +5050,15 @@ function nullable_span_index_helper_name(receiver_type: types.Type) -> str:
                 let elem = unsafe: read(g_bp.args.data + 0)
                 match elem:
                     types.Type.ty_function:
-                        return strings.join_two("mt_nullable_span_index_", naming.sanitize_c_identifier(c_decl(elem, "value")))
+                        return strings.join_two(
+                            "mt_nullable_span_index_",
+                            naming.sanitize_c_identifier(c_decl(elem, "value"))
+                        )
                     _:
                         pass
         _:
             pass
     return strings.join_two("mt_nullable_span_index_", naming.type_c_key(receiver_type))
-
 
 # =============================================================================
 #  Checked-index helper generation
@@ -4460,7 +5077,11 @@ function collect_checked_index_types(functions: span[ir.Function]) -> vec.Vec[ty
     return collected
 
 
-function checked_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function checked_from_stmts(
+    body: span[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
@@ -4468,7 +5089,11 @@ function checked_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool
         i += 1
 
 
-function checked_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function checked_from_stmt(
+    sp: ptr[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_return as r:
@@ -4506,7 +5131,11 @@ function checked_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], 
                 pass
 
 
-function checked_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function checked_from_expr(
+    ep: ptr[ir.Expr],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     unsafe:
         match read(ep):
             ir.Expr.expr_checked_index as ci:
@@ -4704,7 +5333,11 @@ function collect_checked_span_index_types(functions: span[ir.Function]) -> vec.V
     return collected
 
 
-function span_index_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function span_index_from_stmts(
+    body: span[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
@@ -4712,7 +5345,11 @@ function span_index_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, b
         i += 1
 
 
-function span_index_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function span_index_from_stmt(
+    sp: ptr[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_return as r:
@@ -4750,7 +5387,11 @@ function span_index_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]
                 pass
 
 
-function span_index_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+function span_index_from_expr(
+    ep: ptr[ir.Expr],
+    seen: ref[map_mod.Map[str, bool]],
+    collected: ref[vec.Vec[types.Type]]
+) -> void:
     unsafe:
         match read(ep):
             ir.Expr.expr_checked_span_index as cs:
@@ -4907,7 +5548,13 @@ function render_initializer(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
 ##   `{ .kind = <outer_c>_kind_<arm> }`                                (no payload)
 ## In expression context the payload aggregate is a compound literal
 ## `(struct <arm_c>){ ... }`, matching how a variant literal is used as a value.
-function render_variant_initializer(e: ref[Emitter], ty: types.Type, arm_name: str, fields: span[ir.AggregateField], as_expression: bool) -> str:
+function render_variant_initializer(
+    e: ref[Emitter],
+    ty: types.Type,
+    arm_name: str,
+    fields: span[ir.AggregateField],
+    as_expression: bool
+) -> str:
     # Resolve the outer C type name directly: `ty_generic` builds `<name>_<type0>_...`,
     # `ty_imported` uses `qualified_c_name`, everything else delegates to `c_type`.
     var outer_c: str
@@ -5110,14 +5757,27 @@ function render_aggregate_omitting_array_calls(e: ref[Emitter], fields: span[ir.
 ## Emit `<decl> = { non-array-call fields }; f(&<target>.field, args);` for a
 ## struct aggregate with array-returning-call fields.  `target_ref` is the C
 ## lvalue of the struct (e.g. `light`).
-function emit_aggregate_with_array_call_fields(e: ref[Emitter], indent: str, decl: str, target_ref: str, fields: span[ir.AggregateField]) -> void:
+function emit_aggregate_with_array_call_fields(
+    e: ref[Emitter],
+    indent: str,
+    decl: str,
+    target_ref: str,
+    fields: span[ir.AggregateField]
+) -> void:
     emit_line(e, strings.join_five(indent, decl, " = ", render_aggregate_omitting_array_calls(e, fields), ";"))
     var i: ptr_uint = 0
     while i < fields.len:
         unsafe:
             let f = read(fields.data + i)
             if expr_is_array_call(e, f.value):
-                emit_line(e, strings.join_three(indent, emit_array_call(e, f.value, strings.join_four("&", target_ref, ".", c_safe_field_name(f.name))), ";"))
+                emit_line(
+                    e,
+                    strings.join_three(
+                        indent,
+                        emit_array_call(e, f.value, strings.join_four("&", target_ref, ".", c_safe_field_name(f.name))),
+                        ";"
+                    )
+                )
         i += 1
 
 
@@ -5232,7 +5892,13 @@ function render_string_literal(e: ref[Emitter], value: str, cstring: bool) -> st
     if name_ptr != null:
         unsafe:
             return read(name_ptr)
-    return strings.join_five("(mt_str){ .data = ", c_string_literal(value), ", .len = ", ptr_uint_to_str(value.len), " }")
+    return strings.join_five(
+        "(mt_str){ .data = ",
+        c_string_literal(value),
+        ", .len = ",
+        ptr_uint_to_str(value.len),
+        " }"
+    )
 
 
 function is_str_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> bool:
@@ -5316,7 +5982,12 @@ function is_null_literal_expr(ep: ptr[ir.Expr]) -> bool:
 
 
 ## Render a nullable-value `== null` or `!= null` comparison as a `.has_value` check.
-function render_nullable_null_comparison(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
+function render_nullable_null_comparison(
+    e: ref[Emitter],
+    operator: str,
+    left: ptr[ir.Expr],
+    right: ptr[ir.Expr]
+) -> str:
     unsafe:
         let operand = if is_null_literal_expr(left): right else: left
         let access = strings.join_three(render_expr(e, operand), ".has_value", "")
@@ -5710,14 +6381,34 @@ function emit_equality_forward_decls(e: ref[Emitter], program: ir.Program) -> vo
             break
         let name = unsafe: read(kp)
         let struct_ty = strings.join_three("struct ", name, "")
-        emit_line(e, strings.join_six("static bool ", variant_equality_helper_name(name), "(", struct_ty, " left, ", strings.join_three(struct_ty, " right);", "")))
+        emit_line(
+            e,
+            strings.join_six(
+                "static bool ",
+                variant_equality_helper_name(name),
+                "(",
+                struct_ty,
+                " left, ",
+                strings.join_three(struct_ty, " right);", "")
+            )
+        )
     keys = e.struct_eq_set.keys()
     while true:
         let kp = keys.next() else:
             break
         let name = unsafe: read(kp)
         let struct_ty = strings.join_three("struct ", name, "")
-        emit_line(e, strings.join_six("static bool ", struct_equality_helper_name(name), "(", struct_ty, " left, ", strings.join_three(struct_ty, " right);", "")))
+        emit_line(
+            e,
+            strings.join_six(
+                "static bool ",
+                struct_equality_helper_name(name),
+                "(",
+                struct_ty,
+                " left, ",
+                strings.join_three(struct_ty, " right);", "")
+            )
+        )
     emit_line(e, "")
 
 
@@ -5753,7 +6444,13 @@ function emit_struct_eq_helper(e: ref[Emitter], outer_c: str, fields: span[ir.Fi
         unsafe:
             field = read(fields.data + fi)
         if not is_void_type(field.ty):
-            emit_eq_field_guard(e, strings.join_three("left.", c_safe_field_name(field.name), ""), strings.join_three("right.", c_safe_field_name(field.name), ""), field.ty, 1)
+            emit_eq_field_guard(
+                e,
+                strings.join_three("left.", c_safe_field_name(field.name), ""),
+                strings.join_three("right.", c_safe_field_name(field.name), ""),
+                field.ty,
+                1
+            )
         fi += 1
     e.buffer.append("  return true;")
     e.buffer.push_byte(10)
@@ -5767,35 +6464,92 @@ function emit_struct_eq_helper(e: ref[Emitter], outer_c: str, fields: span[ir.Fi
 ##   value nullable      → has_value flag, then the wrapped value
 ##   array               → element-wise loop
 ##   anything else       → `!=`
-function emit_eq_field_guard(e: ref[Emitter], left_expr: str, right_expr: str, field_ty: types.Type, indent: ptr_uint) -> void:
+function emit_eq_field_guard(
+    e: ref[Emitter],
+    left_expr: str,
+    right_expr: str,
+    field_ty: types.Type,
+    indent: ptr_uint
+) -> void:
     let pad = indent_c(indent)
     if is_str_type(field_ty):
-        e.buffer.append(strings.join_five(pad, "if (!mt_str_equal(", left_expr, ", ", strings.join_five(right_expr, ")) return false;", "", "", "")))
+        e.buffer.append(strings.join_five(
+            pad,
+            "if (!mt_str_equal(",
+            left_expr,
+            ", ",
+            strings.join_five(right_expr, ")) return false;", "", "", "")
+        ))
     else if types.is_nullable_type(field_ty) and not is_pointer_like_for_nullable(types.unwrap_nullable(field_ty)):
         let base = types.unwrap_nullable(field_ty)
-        e.buffer.append(strings.join_six(pad, "if (", left_expr, ".has_value != ", right_expr, strings.join_three(".has_value) return false;", "", "")))
+        e.buffer.append(strings.join_six(
+            pad,
+            "if (",
+            left_expr,
+            ".has_value != ",
+            right_expr,
+            strings.join_three(".has_value) return false;", "", "")
+        ))
         e.buffer.push_byte(10)
         e.buffer.append(strings.join_four(pad, "if (", left_expr, ".has_value) {"))
         e.buffer.push_byte(10)
-        emit_eq_field_guard(e, strings.join_three(left_expr, ".value", ""), strings.join_three(right_expr, ".value", ""), base, indent + 1)
+        emit_eq_field_guard(
+            e,
+            strings.join_three(left_expr, ".value", ""),
+            strings.join_three(right_expr, ".value", ""),
+            base,
+            indent + 1
+        )
         e.buffer.append(strings.join_two(pad, "}"))
         e.buffer.push_byte(10)
     else if is_array_type(field_ty):
         let elem_ty = array_element_type(field_ty)
         let count = array_length(field_ty)
-        e.buffer.append(strings.join_four(pad, "for (uintptr_t index = 0; index < ", long_to_str(count), "; index++) {"))
+        e.buffer.append(strings.join_four(
+            pad,
+            "for (uintptr_t index = 0; index < ",
+            long_to_str(count),
+            "; index++) {"
+        ))
         e.buffer.push_byte(10)
-        emit_eq_field_guard(e, strings.join_five(left_expr, "[index]", "", "", ""), strings.join_five(right_expr, "[index]", "", "", ""), elem_ty, indent + 1)
+        emit_eq_field_guard(
+            e,
+            strings.join_five(left_expr, "[index]", "", "", ""),
+            strings.join_five(right_expr, "[index]", "", "", ""),
+            elem_ty,
+            indent + 1
+        )
         e.buffer.append(strings.join_two(pad, "}"))
         e.buffer.push_byte(10)
     else:
         let cname = c_type(field_ty)
         if e.variant_eq_set.contains(cname):
-            e.buffer.append(strings.join_six(pad, "if (!", variant_equality_helper_name(cname), "(", left_expr, strings.join_five(", ", right_expr, ")) return false;", "", "")))
+            e.buffer.append(strings.join_six(
+                pad,
+                "if (!",
+                variant_equality_helper_name(cname),
+                "(",
+                left_expr,
+                strings.join_five(", ", right_expr, ")) return false;", "", "")
+            ))
         else if e.struct_eq_set.contains(cname):
-            e.buffer.append(strings.join_six(pad, "if (!", struct_equality_helper_name(cname), "(", left_expr, strings.join_five(", ", right_expr, ")) return false;", "", "")))
+            e.buffer.append(strings.join_six(
+                pad,
+                "if (!",
+                struct_equality_helper_name(cname),
+                "(",
+                left_expr,
+                strings.join_five(", ", right_expr, ")) return false;", "", "")
+            ))
         else:
-            e.buffer.append(strings.join_six(pad, "if (", left_expr, " != ", right_expr, strings.join_three(") return false;", "", "")))
+            e.buffer.append(strings.join_six(
+                pad,
+                "if (",
+                left_expr,
+                " != ",
+                right_expr,
+                strings.join_three(") return false;", "", "")
+            ))
         e.buffer.push_byte(10)
 
 
@@ -6045,7 +6799,6 @@ function binary_precedence(operator: str) -> int:
         return 10
     fatal(c"c_backend: unsupported binary operator")
 
-
 # =============================================================================
 #  IR expression result type (for str-equality detection)
 # =============================================================================
@@ -6116,7 +6869,6 @@ function expr_result_type(ep: ptr[ir.Expr]) -> types.Type:
             ir.Expr.expr_assignment as x:
                 return expr_result_type(x.value)
 
-
 # =============================================================================
 #  Constant emission
 # =============================================================================
@@ -6161,7 +6913,6 @@ function render_global(e: ref[Emitter], g: ir.Global) -> str:
     buf.append(";")
     return buf.as_str()
 
-
 # =============================================================================
 #  str_buffer runtime helpers
 # =============================================================================
@@ -6200,7 +6951,10 @@ function emit_str_buffer_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  *dirty = false;")
     emit_line(e, "}")
     emit_line(e, "")
-    emit_line(e, "static void mt_str_buffer_assign(mt_str value, char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {")
+    emit_line(
+        e,
+        "static void mt_str_buffer_assign(mt_str value, char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {"
+    )
     emit_line(e, "  if (value.len > cap) mt_fatal(\"str_buffer.assign exceeds capacity\");")
     emit_line(e, "  memcpy(data, value.data, value.len);")
     emit_line(e, "  data[value.len] = '\\0';")
@@ -6208,7 +6962,10 @@ function emit_str_buffer_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  *dirty = false;")
     emit_line(e, "}")
     emit_line(e, "")
-    emit_line(e, "static void mt_str_buffer_append(mt_str suffix, char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {")
+    emit_line(
+        e,
+        "static void mt_str_buffer_append(mt_str suffix, char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {"
+    )
     emit_line(e, "  uintptr_t current = mt_str_buffer_len(data, cap, len, dirty);")
     emit_line(e, "  uintptr_t total = current + suffix.len;")
     emit_line(e, "  if (total > cap) mt_fatal(\"str_buffer.append exceeds capacity\");")
@@ -6237,11 +6994,9 @@ function emit_str_buffer_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  return data;")
     emit_line(e, "}")
 
-
 # =============================================================================
 #  Format string runtime helpers
 # =============================================================================
-
 
 function uses_format_helpers(program: ir.Program) -> bool:
     # The dynamic format builder and the explicit sinks share one helper block;
@@ -6307,10 +7062,16 @@ function emit_format_string_core(e: ref[Emitter]) -> void:
     emit_line(e, "}")
     emit_line(e, "")
     emit_line(e, "static void mt_format_check_capacity(mt_str target, uintptr_t offset, uintptr_t len) {")
-    emit_line(e, "  if (offset > target.len || len > target.len - offset) mt_fatal(\"format string append exceeds capacity\");")
+    emit_line(
+        e,
+        "  if (offset > target.len || len > target.len - offset) mt_fatal(\"format string append exceeds capacity\");"
+    )
     emit_line(e, "}")
     emit_line(e, "")
-    emit_line(e, "static uintptr_t mt_format_append_bytes(mt_str target, uintptr_t offset, const char* data, uintptr_t len) {")
+    emit_line(
+        e,
+        "static uintptr_t mt_format_append_bytes(mt_str target, uintptr_t offset, const char* data, uintptr_t len) {"
+    )
     emit_line(e, "  mt_format_check_capacity(target, offset, len);")
     emit_line(e, "  if (len > 0) memcpy(target.data + offset, data, (size_t)len);")
     emit_line(e, "  offset += len;")
@@ -6404,7 +7165,10 @@ function emit_format_string_length_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  while (value >= 10) { value /= 10; len += 1; }")
     emit_line(e, "  return len;")
     emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_uint_len(uint32_t value) { return mt_format_ptr_uint_len((uintptr_t)value); }")
+    emit_line(
+        e,
+        "static uintptr_t mt_format_uint_len(uint32_t value) { return mt_format_ptr_uint_len((uintptr_t)value); }"
+    )
     emit_line(e, "static uintptr_t mt_format_long_len(int64_t value) {")
     emit_line(e, "  if (value < 0) return 1 + mt_format_ulong_len(((uint64_t)(-(value + 1))) + 1);")
     emit_line(e, "  return mt_format_ulong_len((uint64_t)value);")
@@ -6433,14 +7197,20 @@ function emit_format_string_append_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  return mt_format_append_bytes(target, offset, value, len);")
     emit_line(e, "}")
     emit_line(e, "static uintptr_t mt_format_append_bool(mt_str target, uintptr_t offset, bool value) {")
-    emit_line(e, "  return value ? mt_format_append_bytes(target, offset, \"true\", 4) : mt_format_append_bytes(target, offset, \"false\", 5);")
+    emit_line(
+        e,
+        "  return value ? mt_format_append_bytes(target, offset, \"true\", 4) : mt_format_append_bytes(target, offset, \"false\", 5);"
+    )
     emit_line(e, "}")
     emit_line(e, "static uintptr_t mt_format_append_ulong(mt_str target, uintptr_t offset, uint64_t value) {")
     emit_line(e, "  uintptr_t len = mt_format_ulong_len(value);")
     emit_line(e, "  uintptr_t index = offset + len;")
     emit_line(e, "  mt_format_check_capacity(target, offset, len);")
     emit_line(e, "  target.data[index] = '\\0';")
-    emit_line(e, "  do { index -= 1; target.data[index] = (char)('0' + (value % 10)); value /= 10; } while (index > offset);")
+    emit_line(
+        e,
+        "  do { index -= 1; target.data[index] = (char)('0' + (value % 10)); value /= 10; } while (index > offset);"
+    )
     emit_line(e, "  return offset + len;")
     emit_line(e, "}")
     emit_line(e, "static uintptr_t mt_format_append_uint(mt_str target, uintptr_t offset, uint32_t value) {")
@@ -6456,34 +7226,61 @@ function emit_format_string_append_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "static uintptr_t mt_format_append_ulong_hex(mt_str target, uintptr_t offset, uint64_t value) {")
     emit_line(e, "  uintptr_t len = mt_format_ulong_hex_len(value);")
     emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(e, "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llx\", (unsigned long long)value);")
-    emit_line(e, "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned hex\");")
+    emit_line(
+        e,
+        "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llx\", (unsigned long long)value);"
+    )
+    emit_line(
+        e,
+        "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned hex\");"
+    )
     emit_line(e, "  return offset + len;")
     emit_line(e, "}")
     emit_line(e, "static uintptr_t mt_format_append_ulong_hex_upper(mt_str target, uintptr_t offset, uint64_t value) {")
     emit_line(e, "  uintptr_t len = mt_format_ulong_hex_len(value);")
     emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(e, "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llX\", (unsigned long long)value);")
-    emit_line(e, "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned hex\");")
+    emit_line(
+        e,
+        "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llX\", (unsigned long long)value);"
+    )
+    emit_line(
+        e,
+        "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned hex\");"
+    )
     emit_line(e, "  return offset + len;")
     emit_line(e, "}")
     emit_line(e, "static uintptr_t mt_format_append_long_hex(mt_str target, uintptr_t offset, int64_t value) {")
-    emit_line(e, "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_hex(target, offset, ((uint64_t)(-(value + 1))) + 1); }")
+    emit_line(
+        e,
+        "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_hex(target, offset, ((uint64_t)(-(value + 1))) + 1); }"
+    )
     emit_line(e, "  return mt_format_append_ulong_hex(target, offset, (uint64_t)value);")
     emit_line(e, "}")
     emit_line(e, "static uintptr_t mt_format_append_long_hex_upper(mt_str target, uintptr_t offset, int64_t value) {")
-    emit_line(e, "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_hex_upper(target, offset, ((uint64_t)(-(value + 1))) + 1); }")
+    emit_line(
+        e,
+        "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_hex_upper(target, offset, ((uint64_t)(-(value + 1))) + 1); }"
+    )
     emit_line(e, "  return mt_format_append_ulong_hex_upper(target, offset, (uint64_t)value);")
     emit_line(e, "}")
     emit_line(e, "static uintptr_t mt_format_append_ulong_oct(mt_str target, uintptr_t offset, uint64_t value) {")
     emit_line(e, "  uintptr_t len = mt_format_ulong_oct_len(value);")
     emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(e, "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llo\", (unsigned long long)value);")
-    emit_line(e, "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned octal\");")
+    emit_line(
+        e,
+        "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llo\", (unsigned long long)value);"
+    )
+    emit_line(
+        e,
+        "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned octal\");"
+    )
     emit_line(e, "  return offset + len;")
     emit_line(e, "}")
     emit_line(e, "static uintptr_t mt_format_append_long_oct(mt_str target, uintptr_t offset, int64_t value) {")
-    emit_line(e, "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_oct(target, offset, ((uint64_t)(-(value + 1))) + 1); }")
+    emit_line(
+        e,
+        "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_oct(target, offset, ((uint64_t)(-(value + 1))) + 1); }"
+    )
     emit_line(e, "  return mt_format_append_ulong_oct(target, offset, (uint64_t)value);")
     emit_line(e, "}")
     emit_line(e, "static uintptr_t mt_format_append_ulong_bin(mt_str target, uintptr_t offset, uint64_t value) {")
@@ -6491,17 +7288,26 @@ function emit_format_string_append_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  uintptr_t index = offset + len;")
     emit_line(e, "  mt_format_check_capacity(target, offset, len);")
     emit_line(e, "  target.data[index] = '\\0';")
-    emit_line(e, "  do { index -= 1; target.data[index] = (char)('0' + (value & 1)); value >>= 1; } while (index > offset);")
+    emit_line(
+        e,
+        "  do { index -= 1; target.data[index] = (char)('0' + (value & 1)); value >>= 1; } while (index > offset);"
+    )
     emit_line(e, "  return offset + len;")
     emit_line(e, "}")
     emit_line(e, "static uintptr_t mt_format_append_long_bin(mt_str target, uintptr_t offset, int64_t value) {")
-    emit_line(e, "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_bin(target, offset, ((uint64_t)(-(value + 1))) + 1); }")
+    emit_line(
+        e,
+        "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_bin(target, offset, ((uint64_t)(-(value + 1))) + 1); }"
+    )
     emit_line(e, "  return mt_format_append_ulong_bin(target, offset, (uint64_t)value);")
     emit_line(e, "}")
     emit_line(e, "static uintptr_t mt_format_append_float(mt_str target, uintptr_t offset, float value) {")
     emit_line(e, "  uintptr_t len = mt_format_float_len(value);")
     emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(e, "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%g\", (double)value);")
+    emit_line(
+        e,
+        "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%g\", (double)value);"
+    )
     emit_line(e, "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format float\");")
     emit_line(e, "  return offset + len;")
     emit_line(e, "}")
@@ -6512,26 +7318,30 @@ function emit_format_string_append_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format double\");")
     emit_line(e, "  return offset + len;")
     emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_double_precision(mt_str target, uintptr_t offset, double value, int32_t precision) {")
+    emit_line(
+        e,
+        "static uintptr_t mt_format_append_double_precision(mt_str target, uintptr_t offset, double value, int32_t precision) {"
+    )
     emit_line(e, "  uintptr_t len = mt_format_double_precision_len(value, precision);")
     emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(e, "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%.*f\", precision, value);")
-    emit_line(e, "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format double precision\");")
+    emit_line(
+        e,
+        "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%.*f\", precision, value);"
+    )
+    emit_line(
+        e,
+        "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format double precision\");"
+    )
     emit_line(e, "  return offset + len;")
     emit_line(e, "}")
-
 
 # =============================================================================
 #  Event runtime helpers
 # =============================================================================
 
-
-
 #  Parallel / detach runtime helpers
 
 # =============================================================================
-
-
 
 function uses_parallel_runtime(program: ir.Program) -> bool:
 
@@ -6543,7 +7353,13 @@ function uses_parallel_runtime(program: ir.Program) -> bool:
 
             let f = read(program.functions.data + i)
 
-            if body_calls(f.body, "mt_parallel_for") or body_calls(f.body, "mt_spawn_all") or body_calls(f.body, "mt_detach_run") or body_calls(f.body, "mt_detach_join"):
+            if body_calls(
+                f.body,
+                "mt_parallel_for"
+            ) or body_calls(f.body, "mt_spawn_all") or body_calls(f.body, "mt_detach_run") or body_calls(
+                f.body,
+                "mt_detach_join"
+            ):
 
                 return true
 
@@ -6551,8 +7367,11 @@ function uses_parallel_runtime(program: ir.Program) -> bool:
     return false
 
 
-
-function collect_task_type_set(program: ir.Program, seen: ref[map_mod.Map[str, bool]], task_elements: ref[map_mod.Map[str, types.Type]]) -> void:
+function collect_task_type_set(
+    program: ir.Program,
+    seen: ref[map_mod.Map[str, bool]],
+    task_elements: ref[map_mod.Map[str, types.Type]]
+) -> void:
     var i: ptr_uint = 0
     while i < program.functions.len:
         unsafe:
@@ -6585,7 +7404,6 @@ function collect_task_type_set(program: ir.Program, seen: ref[map_mod.Map[str, b
         i += 1
 
 
-
 function emit_task_forward_decls(e: ref[Emitter], seen: ref[map_mod.Map[str, bool]]) -> void:
     var keys = seen.keys()
     while true:
@@ -6597,7 +7415,6 @@ function emit_task_forward_decls(e: ref[Emitter], seen: ref[map_mod.Map[str, boo
         emit_line(e, "")
 
 
-
 function emit_task_structs(e: ref[Emitter], program: ir.Program) -> void:
     var seen = map_mod.Map[str, bool].create()
     var task_elements = map_mod.Map[str, types.Type].create()
@@ -6605,8 +7422,11 @@ function emit_task_structs(e: ref[Emitter], program: ir.Program) -> void:
     emit_task_struct_types_from_set(e, ref_of(seen), ref_of(task_elements))
 
 
-
-function emit_task_struct_types_from_set(e: ref[Emitter], seen: ref[map_mod.Map[str, bool]], task_elements: ref[map_mod.Map[str, types.Type]]) -> void:
+function emit_task_struct_types_from_set(
+    e: ref[Emitter],
+    seen: ref[map_mod.Map[str, bool]],
+    task_elements: ref[map_mod.Map[str, types.Type]]
+) -> void:
     var keys = seen.keys()
     while true:
         let kp = keys.next() else:
@@ -6621,7 +7441,12 @@ function emit_task_struct_types_from_set(e: ref[Emitter], seen: ref[map_mod.Map[
         emit_line(e, "")
 
 
-function task_scan_stmts(program: ir.Program, body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], elements: ref[map_mod.Map[str, types.Type]]) -> void:
+function task_scan_stmts(
+    program: ir.Program,
+    body: span[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    elements: ref[map_mod.Map[str, types.Type]]
+) -> void:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
@@ -6629,7 +7454,12 @@ function task_scan_stmts(program: ir.Program, body: span[ir.Stmt], seen: ref[map
         i += 1
 
 
-function task_scan_stmt(program: ir.Program, sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], elements: ref[map_mod.Map[str, types.Type]]) -> void:
+function task_scan_stmt(
+    program: ir.Program,
+    sp: ptr[ir.Stmt],
+    seen: ref[map_mod.Map[str, bool]],
+    elements: ref[map_mod.Map[str, types.Type]]
+) -> void:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_return as r:
@@ -6667,7 +7497,12 @@ function task_scan_stmt(program: ir.Program, sp: ptr[ir.Stmt], seen: ref[map_mod
                 pass
 
 
-function task_scan_expr(program: ir.Program, ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], elements: ref[map_mod.Map[str, types.Type]]) -> void:
+function task_scan_expr(
+    program: ir.Program,
+    ep: ptr[ir.Expr],
+    seen: ref[map_mod.Map[str, bool]],
+    elements: ref[map_mod.Map[str, types.Type]]
+) -> void:
     unsafe:
         match read(ep):
             ir.Expr.expr_binary as bin:
@@ -6761,11 +7596,15 @@ function task_scan_expr(program: ir.Program, ep: ptr[ir.Expr], seen: ref[map_mod
                 pass
 
 
-
 ## Collect a Task type element from a type reference.  When `t` is a
 ## `Task[T]` or has Task-typed sub-expressions, adds the concrete Task
 ## struct name to `seen` and records the element type.
-function collect_task_type(program: ir.Program, seen: ref[map_mod.Map[str, bool]], elements: ref[map_mod.Map[str, types.Type]], t: types.Type) -> void:
+function collect_task_type(
+    program: ir.Program,
+    seen: ref[map_mod.Map[str, bool]],
+    elements: ref[map_mod.Map[str, types.Type]],
+    t: types.Type
+) -> void:
     match t:
         types.Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
@@ -6796,7 +7635,6 @@ function collect_task_type(program: ir.Program, seen: ref[map_mod.Map[str, bool]
             pass
 
 
-
 function task_type_element(t: types.Type) -> Option[types.Type]:
     match t:
 
@@ -6812,9 +7650,6 @@ function task_type_element(t: types.Type) -> Option[types.Type]:
         _:
 
             return Option[types.Type].none
-
-
-
 
 
 function emit_task_struct_type(e: ref[Emitter], c_name: str, elem: types.Type) -> void:
@@ -6853,9 +7688,6 @@ function emit_task_struct_type(e: ref[Emitter], c_name: str, elem: types.Type) -
     emit_line(e, "")
 
 
-
-
-
 function is_vec_math_name(name: str) -> bool:
 
     return (
@@ -6869,9 +7701,6 @@ function is_vec_math_name(name: str) -> bool:
     )
 
 
-
-
-
 function is_void_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_primitive as p:
@@ -6880,9 +7709,6 @@ function is_void_type(t: types.Type) -> bool:
             return true
         _:
             return false
-
-
-
 
 
 ## Walk statements/expressions collecting native builtin (vec/mat/quat) types
@@ -7103,10 +7929,6 @@ function emit_builtin_type_defs(e: ref[Emitter], program: ir.Program) -> void:
     emit_line(e, "typedef struct mt_quat { float x; float y; float z; float w; } mt_quat;")
     emit_line(e, "")
 
-
-
-
-
 ## Collect and emit nullable opt struct definitions for value-type nullables.
 
 function bare_opaque_name(base: types.Type) -> str:
@@ -7130,7 +7952,11 @@ function extract_bare_name(qname: str) -> str:
     return qname
 
 
-function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], opaques: ref[map_mod.Map[str, bool]], t: types.Type) -> void:
+function collect_opt_type(
+    needed: ref[map_mod.Map[str, types.Type]],
+    opaques: ref[map_mod.Map[str, bool]],
+    t: types.Type
+) -> void:
     match t:
         types.Type.ty_nullable as nl:
             unsafe:
@@ -7206,10 +8032,10 @@ function collect_opt_type(needed: ref[map_mod.Map[str, types.Type]], opaques: re
             pass
 
 
-
-
-
-function collect_opt_struct_decls(program: ir.Program, opaques: ref[map_mod.Map[str, bool]]) -> vec.Vec[OptionStructEntry]:
+function collect_opt_struct_decls(
+    program: ir.Program,
+    opaques: ref[map_mod.Map[str, bool]]
+) -> vec.Vec[OptionStructEntry]:
 
     var needed = map_mod.Map[str, types.Type].create()
 
@@ -7367,13 +8193,13 @@ function collect_opt_struct_decls(program: ir.Program, opaques: ref[map_mod.Map[
 
     return result
 
-
-
-
-
 ## Walk statements to collect nullable value types from local variable declarations.
 
-function collect_opt_from_stmts(needed: ref[map_mod.Map[str, types.Type]], opaques: ref[map_mod.Map[str, bool]], body: span[ir.Stmt]) -> void:
+function collect_opt_from_stmts(
+    needed: ref[map_mod.Map[str, types.Type]],
+    opaques: ref[map_mod.Map[str, bool]],
+    body: span[ir.Stmt]
+) -> void:
 
     var i: ptr_uint = 0
 
@@ -7473,19 +8299,15 @@ function collect_opt_from_stmts(needed: ref[map_mod.Map[str, types.Type]], opaqu
 
         i += 1
 
-
-
-
-
 ## Walk expression sub-tree to collect nullable value types.
 
-function collect_opt_from_expr(needed: ref[map_mod.Map[str, types.Type]], opaques: ref[map_mod.Map[str, bool]], ep: ptr[ir.Expr]) -> void:
+function collect_opt_from_expr(
+    needed: ref[map_mod.Map[str, types.Type]],
+    opaques: ref[map_mod.Map[str, bool]],
+    ep: ptr[ir.Expr]
+) -> void:
 
     collect_opt_type(needed, opaques, expr_result_type(ep))
-
-
-
-
 
 ## Scan all expressions in function bodies for nullable value types.
 
@@ -7495,7 +8317,17 @@ function collect_builtin_types(needed: ref[map_mod.Map[str, bool]], t: types.Typ
 
         types.Type.ty_primitive as p:
 
-            if p.name == "vec2" or p.name == "ivec2" or p.name == "vec3" or p.name == "ivec3" or p.name == "vec4" or p.name == "ivec4" or p.name == "mat3" or p.name == "mat4" or p.name == "quat":
+            if (
+                p.name == "vec2"
+                or p.name == "ivec2"
+                or p.name == "vec3"
+                or p.name == "ivec3"
+                or p.name == "vec4"
+                or p.name == "ivec4"
+                or p.name == "mat3"
+                or p.name == "mat4"
+                or p.name == "quat"
+            ):
 
                 needed.set(p.name, true)
 
@@ -7566,9 +8398,6 @@ function collect_builtin_types(needed: ref[map_mod.Map[str, bool]], t: types.Typ
             pass
 
 
-
-
-
 ## Emit `typedef struct <linkage> <linkage>;` for each forward-declarable
 ## opaque, deduped by linkage (the host's `emit_forward_declarations` opaque
 ## half).  A re-export's linkage is its backing C name, whose own header may
@@ -7617,7 +8446,6 @@ function emit_type_aliases(e: ref[Emitter], program: ir.Program) -> void:
         emit_line(e, "")
 
 
-
 ## The C backing name of every declared opaque, keyed by the type's qualified C
 ## key (`std_sdl3_Window` -> `SDL_Window`), so `c_type` renders opaque values as
 ## the backing type (host `opaque_c_type_name`).
@@ -7658,10 +8486,6 @@ function collect_std_c_backing(program: ir.Program) -> map_mod.Map[str, str]:
         ai += 1
     return m
 
-
-
-
-
 ## True when the include set contains the fs/tls support headers, which pull in
 
 ## POSIX APIs guarded by the _GNU_SOURCE / _POSIX_C_SOURCE feature-test macros.
@@ -7684,10 +8508,6 @@ function includes_need_feature_macros(program: ir.Program) -> bool:
 
     return false
 
-
-
-
-
 ## True when any lowered function references offset_of, which requires
 
 ## <stddef.h> (mirrors Ruby's program_uses_offsetof?).
@@ -7705,10 +8525,6 @@ function functions_use_offsetof(functions: span[ir.Function]) -> bool:
         i += 1
 
     return false
-
-
-
-
 
 ## Check if any IR constant uses offsetof — constants are not in function
 
@@ -7731,9 +8547,6 @@ function constants_use_offsetof(constants: span[ir.Constant]) -> bool:
     return false
 
 
-
-
-
 function stmts_use_offsetof(body: span[ir.Stmt]) -> bool:
 
     var i: ptr_uint = 0
@@ -7749,9 +8562,6 @@ function stmts_use_offsetof(body: span[ir.Stmt]) -> bool:
         i += 1
 
     return false
-
-
-
 
 
 function stmt_uses_offsetof(sp: ptr[ir.Stmt]) -> bool:
@@ -7821,9 +8631,6 @@ function stmt_uses_offsetof(sp: ptr[ir.Stmt]) -> bool:
             _:
 
                 return false
-
-
-
 
 
 function expr_uses_offsetof(ep: ptr[ir.Expr]) -> bool:
@@ -7962,9 +8769,6 @@ function expr_uses_offsetof(ep: ptr[ir.Expr]) -> bool:
                 return false
 
 
-
-
-
 ## True when any function allocates or frees an async frame/env through the
 ## host's refcounted allocator (`feature_detection.rb:161`).
 function uses_async_memory_helpers(program: ir.Program) -> bool:
@@ -8026,7 +8830,10 @@ function emit_parallel_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  chunk->work(chunk->data, chunk->start, chunk->end);")
     emit_line(e, "}")
     emit_line(e, "")
-    emit_line(e, "static void mt_parallel_for(void (*work)(void* data, int64_t start, int64_t end), void* data, int64_t count) {")
+    emit_line(
+        e,
+        "static void mt_parallel_for(void (*work)(void* data, int64_t start, int64_t end), void* data, int64_t count) {"
+    )
     emit_line(e, "  if (count <= 0) return;")
     emit_line(e, "  uv_cpu_info_t* cpu_info;")
     emit_line(e, "  int ncpu = 1;")
@@ -8101,9 +8908,6 @@ function emit_parallel_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "}")
 
 
-
-
-
 function uses_builtin_helpers(program: ir.Program) -> bool:
 
     var i: ptr_uint = 0
@@ -8114,16 +8918,16 @@ function uses_builtin_helpers(program: ir.Program) -> bool:
 
             let f = read(program.functions.data + i)
 
-            if body_calls(f.body, "mt_order_func") or body_calls(f.body, "mt_equal_func") or body_calls(f.body, "mt_hash_func"):
+            if body_calls(
+                f.body,
+                "mt_order_func"
+            ) or body_calls(f.body, "mt_equal_func") or body_calls(f.body, "mt_hash_func"):
 
                 return true
 
         i += 1
 
     return false
-
-
-
 
 
 function emit_builtin_helpers(e: ref[Emitter]) -> void:
@@ -8152,10 +8956,6 @@ function emit_builtin_helpers(e: ref[Emitter]) -> void:
 
     emit_line(e, "}")
 
-
-
-
-
 ## True when the entry point uses the argv → span[str] bridge.
 
 function uses_entry_argv(program: ir.Program) -> bool:
@@ -8175,10 +8975,6 @@ function uses_entry_argv(program: ir.Program) -> bool:
         i += 1
 
     return false
-
-
-
-
 
 ## Emit the argv → span[str] entry bridge runtime helpers.  Mirrors Ruby's
 

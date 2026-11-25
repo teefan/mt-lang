@@ -15,7 +15,12 @@ import mtc.semantic.types as types
 ## structural equality wins, then the common numeric type, then nullable-base
 ## unification, then the compatibility fallbacks (a branch that widens into the
 ## other's type makes the other the common type — `if flag: 0 else: <ptr_uint>`).
-public function conditional_common_type(then_ty: types.Type, else_ty: types.Type, then_expr: ptr[ast.Expr]?, else_expr: ptr[ast.Expr]?) -> types.Type:
+public function conditional_common_type(
+    then_ty: types.Type,
+    else_ty: types.Type,
+    then_expr: ptr[ast.Expr]?,
+    else_expr: ptr[ast.Expr]?
+) -> types.Type:
     # Identical types — the ideal case.
     if types.type_equals(then_ty, else_ty):
         return then_ty

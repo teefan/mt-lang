@@ -13,24 +13,20 @@ import mtc.packages.paths as paths
 import mtc.packages.solver as solver
 import mtc.packages.source as pkg_source
 
-
 public struct GraphEdge:
     dependency_name: string.String
     ## Index into `PackageGraph.nodes`; none only for an unresolved edge (the
     ## locked graph never leaves one).
     node_index: Option[ptr_uint]
 
-
 public struct GraphNode:
     manifest: manifest.PackageManifest
     source: pkg_source.Source
     edges: vec.Vec[GraphEdge]
 
-
 public struct PackageGraph:
     nodes: vec.Vec[GraphNode]
     root_index: ptr_uint
-
 
 struct NodeRef:
     path: string.String
@@ -251,7 +247,6 @@ function release_edges(edges: ref[vec.Vec[GraphEdge]]) -> void:
         i += 1
     edges.release()
 
-
 # =============================================================================
 #  Queries
 # =============================================================================
@@ -270,7 +265,12 @@ public function root_node(graph: ref[PackageGraph]) -> ptr[GraphNode]?:
 
 ## Pre-order DFS from the root, deduplicated by manifest path (the host's
 ## `Node#packages`).
-function collect_node_indices(graph: ref[PackageGraph], index: ptr_uint, output: ref[vec.Vec[ptr_uint]], visited: ref[vec.Vec[string.String]]) -> void:
+function collect_node_indices(
+    graph: ref[PackageGraph],
+    index: ptr_uint,
+    output: ref[vec.Vec[ptr_uint]],
+    visited: ref[vec.Vec[string.String]]
+) -> void:
     let node = graph.nodes.get(index) else:
         return
     let node_value = unsafe: read(node)

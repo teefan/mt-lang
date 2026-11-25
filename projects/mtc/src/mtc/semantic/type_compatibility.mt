@@ -19,7 +19,10 @@ import mtc.semantic.types as types
 ## `evaluate_compile_time_const_value` reach for the value-range coercion: any
 ## expression with a statically-known integer value (a literal, a named const,
 ## or arithmetic over them) is subject to the same range test.
-public function fold_int_constant(const_values: ptr[map_mod.Map[str, ptr[ast.Expr]]]?, ep: ptr[ast.Expr]?) -> Option[long]:
+public function fold_int_constant(
+    const_values: ptr[map_mod.Map[str, ptr[ast.Expr]]]?,
+    ep: ptr[ast.Expr]?
+) -> Option[long]:
     let p = ep else:
         return Option[long].none
     unsafe:
@@ -495,7 +498,12 @@ function nullable_base_pointer_compatible(expected_base: types.Type, actual_base
                         types.Type.ty_generic as eg:
                             let eg_bp = unsafe: read(eg.payload)
                             if eg_bp.name == "const_ptr" and eg_bp.args.len >= 1:
-                                return types_compatible_with_consts(read(eg_bp.args.data + 0), actual_element, null, null)
+                                return types_compatible_with_consts(
+                                    read(eg_bp.args.data + 0),
+                                    actual_element,
+                                    null,
+                                    null
+                                )
                         _:
                             pass
                 if ag_bp.name == "own":
@@ -503,7 +511,12 @@ function nullable_base_pointer_compatible(expected_base: types.Type, actual_base
                         types.Type.ty_generic as eg2:
                             let eg2_bp = unsafe: read(eg2.payload)
                             if (eg2_bp.name == "ptr" or eg2_bp.name == "const_ptr") and eg2_bp.args.len >= 1:
-                                return types_compatible_with_consts(read(eg2_bp.args.data + 0), actual_element, null, null)
+                                return types_compatible_with_consts(
+                                    read(eg2_bp.args.data + 0),
+                                    actual_element,
+                                    null,
+                                    null
+                                )
                         _:
                             pass
             _:

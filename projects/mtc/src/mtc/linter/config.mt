@@ -15,9 +15,7 @@ import std.str
 import std.string as string
 import std.vec as vec
 
-
 public const CONFIG_FILE_NAME: str = ".mt-lint.yml"
-
 
 public struct LintConfig:
     has_select: bool

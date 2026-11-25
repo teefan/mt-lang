@@ -15,7 +15,11 @@ import mtc.parser.statements as statements
 import mtc.parser.expressions as expressions
 
 
-public function parse_const_decl(s: ref[pstate.ParserState], attrs: span[ast.AttributeApplication], visibility: bool) -> ptr[ast.Decl]:
+public function parse_const_decl(
+    s: ref[pstate.ParserState],
+    attrs: span[ast.AttributeApplication],
+    visibility: bool
+) -> ptr[ast.Decl]:
     let tok = pstate.peek(s)
     var ln: ptr_uint = 0
     var cn: ptr_uint = 0
@@ -173,7 +177,10 @@ public function parse_declaration_type_params(s: ref[pstate.ParserState]) -> spa
     return params.as_span()
 
 
-function parse_type_param_constraints(s: ref[pstate.ParserState], constraints: ref[vec.Vec[ast.TypeParamConstraint]]) -> void:
+function parse_type_param_constraints(
+    s: ref[pstate.ParserState],
+    constraints: ref[vec.Vec[ast.TypeParamConstraint]]
+) -> void:
     while true:
         let iface = decl_forms.parse_qualified_name_with_type_args(s)
         constraints.push(ast.TypeParamConstraint(kind = ast.TypeParamConstraintKind.implement, interface_ref = iface))
@@ -188,7 +195,10 @@ function str_prepend_at(name: str) -> str:
     return buf.as_str()
 
 
-function with_type_param_scope(s: ref[pstate.ParserState], body: proc(session: ref[pstate.ParserState]) -> void) -> void:
+function with_type_param_scope(
+    s: ref[pstate.ParserState],
+    body: proc(session: ref[pstate.ParserState]) -> void
+) -> void:
     var saved_count = s.current_type_param_names.len()
     body(s)
     while s.current_type_param_names.len() > saved_count:
@@ -226,7 +236,13 @@ public function parse_params(s: ref[pstate.ParserState]) -> span[ast.Param]:
         else if seen_default:
             pstate.parser_error_naked(s, c"required parameter cannot follow a parameter with a default value")
         unsafe:
-            var pm = ast.Param(name = name_str, param_type = read(ptype), line = ln, column = cn, default_value = default_value)
+            var pm = ast.Param(
+                name = name_str,
+                param_type = read(ptype),
+                line = ln,
+                column = cn,
+                default_value = default_value
+            )
             params.push(pm)
         if not pstate.match_kind(s, tk.TokenKind.comma):
             break
@@ -258,7 +274,12 @@ public function parse_type_ref(s: ref[pstate.ParserState]) -> ptr[ast.TypeRef]:
         var node = heap_mod.must_alloc[ast.TypeRef](1)
         unsafe:
             read(node) = ast.TypeRef(
-                name = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef](), line = lt_ln, column = lt_cn),
+                name = ast.QualifiedName(
+                    parts = span[str](),
+                    type_arguments = span[ast.TypeRef](),
+                    line = lt_ln,
+                    column = lt_cn
+                ),
                 arguments = span[ast.TypeRef](), nullable = false,
                 lifetime = Option[str].some(value = lt_name), line = lt_ln, column = lt_cn,
                 length = lt_name.len + 1,
@@ -302,7 +323,13 @@ function parse_callable_type_ref(s: ref[pstate.ParserState], is_proc_val: bool) 
             pstate.consume(s, tk.TokenKind.colon, c"expected ':' after parameter name")
             var ptype = parse_type_ref(s)
             unsafe:
-                params_vec.push(ast.Param(name = pname, param_type = read(ptype), line = pln, column = pcn, default_value = null))
+                params_vec.push(ast.Param(
+                    name = pname,
+                    param_type = read(ptype),
+                    line = pln,
+                    column = pcn,
+                    default_value = null
+                ))
             if not pstate.match_kind(s, tk.TokenKind.comma):
                 break
             if pstate.check(s, tk.TokenKind.rparen):
@@ -361,7 +388,12 @@ function parse_dyn_type_ref(s: ref[pstate.ParserState]) -> ptr[ast.TypeRef]:
                     break
         pstate.consume(s, tk.TokenKind.rbracket, c"expected ']' after dyn interface type arguments")
         iface_args = iface_args_vec.as_span()
-    var iface_qname = ast.QualifiedName(parts = parts_vec.as_span(), type_arguments = iface_args, line = iface_ln, column = iface_cn)
+    var iface_qname = ast.QualifiedName(
+        parts = parts_vec.as_span(),
+        type_arguments = iface_args,
+        line = iface_ln,
+        column = iface_cn
+    )
     pstate.consume(s, tk.TokenKind.rbracket, c"expected ']' after dyn interface")
     var nullable = pstate.match_kind(s, tk.TokenKind.question)
     var node = heap_mod.must_alloc[ast.TypeRef](1)
@@ -408,7 +440,12 @@ function parse_tuple_or_parenthesized_type(s: ref[pstate.ParserState]) -> ptr[as
         var node = heap_mod.must_alloc[ast.TypeRef](1)
         unsafe:
             read(node) = ast.TypeRef(
-                name = ast.QualifiedName(parts = span[str](), type_arguments = span[ast.TypeRef](), line = ln, column = cn),
+                name = ast.QualifiedName(
+                    parts = span[str](),
+                    type_arguments = span[ast.TypeRef](),
+                    line = ln,
+                    column = cn
+                ),
                 arguments = types_span, nullable = nullable,
                 lifetime = Option[str].none, line = ln, column = cn,
                 fn_params = span[ast.Param](), fn_return = null,
@@ -504,7 +541,12 @@ public function parse_type_argument(s: ref[pstate.ParserState]) -> ptr[ast.TypeR
         var span_parts = parts.as_span()
         unsafe:
             read(node) = ast.TypeRef(
-                name = ast.QualifiedName(parts = span_parts, type_arguments = span[ast.TypeRef](), line = 0, column = 0),
+                name = ast.QualifiedName(
+                    parts = span_parts,
+                    type_arguments = span[ast.TypeRef](),
+                    line = 0,
+                    column = 0
+                ),
                 arguments = span[ast.TypeRef](), nullable = false,
                 lifetime = Option[str].none, line = 0, column = 0,
                 fn_params = span[ast.Param](), fn_return = null,
@@ -521,7 +563,12 @@ public function parse_type_argument(s: ref[pstate.ParserState]) -> ptr[ast.TypeR
         var span_parts = parts.as_span()
         unsafe:
             read(node) = ast.TypeRef(
-                name = ast.QualifiedName(parts = span_parts, type_arguments = span[ast.TypeRef](), line = 0, column = 0),
+                name = ast.QualifiedName(
+                    parts = span_parts,
+                    type_arguments = span[ast.TypeRef](),
+                    line = 0,
+                    column = 0
+                ),
                 arguments = span[ast.TypeRef](), nullable = false,
                 lifetime = Option[str].none, line = 0, column = 0,
                 fn_params = span[ast.Param](), fn_return = null,

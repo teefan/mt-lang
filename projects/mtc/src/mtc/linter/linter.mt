@@ -110,7 +110,6 @@ public function known_rule_codes() -> vec.Vec[str]:
     codes.push("useless-expression")
     return codes
 
-
 ## `column` is the 1-based character column of the offending token and
 ## `length` its character length; both are 0 when the emitting rule does not
 ## track positions (most rules are line-granular).
@@ -123,7 +122,6 @@ public struct Warning:
     message: str
     severity: str
 
-
 ## The linter's two tiers (the host's `Linter.normalize_lint_tier`): the `full`
 ## tier runs every rule; `fast` skips the rules the host's `full_tier?` gates
 ## (the per-body flow rules, the If/Match preference rules, `prefer-struct-with`
@@ -131,7 +129,6 @@ public struct Warning:
 public enum LintTier: ubyte
     fast = 0
     full = 1
-
 
 ## Options for one lint pass — the single funnel the CLI (`check`/`lint`), the
 ## LSP diagnostics path and the fix engine all go through.
@@ -194,7 +191,12 @@ public function default_lint_options() -> LintOptions:
 ## Lint a parsed source file with default options, returning warnings in
 ## source (traversal) order.  `source` is the original text, re-lexed for the
 ## token-based passes.
-public function lint_source(file: ast.SourceFile, source: str, path: str, owning_type_names: span[str]) -> vec.Vec[Warning]:
+public function lint_source(
+    file: ast.SourceFile,
+    source: str,
+    path: str,
+    owning_type_names: span[str]
+) -> vec.Vec[Warning]:
     var options = default_lint_options()
     options.owning_type_names = owning_type_names
     return lint_source_with(file, source, path, options)
@@ -254,7 +256,12 @@ public function lint_source_with(
     # `unused-local`/`unused-param`/`prefer-let`/`prefer-own-ptr` at each pop.
     var scope = scope_tracking.ctx_create()
     defer: scope_tracking.ctx_release(ref_of(scope))
-    scope_tracking.ctx_set_sites(ref_of(scope), options.editable_sites, options.mutating_sites, options.mutable_lvalue_sites)
+    scope_tracking.ctx_set_sites(
+        ref_of(scope),
+        options.editable_sites,
+        options.mutating_sites,
+        options.mutable_lvalue_sites
+    )
     lint_directional_sites = options.directional_ffi_sites
     lint_scope_ctx = ptr_of(scope)
     var ptr_state = own_ptr.PtrState.create()
@@ -276,7 +283,14 @@ public function lint_source_with(
     var unused_imports = vec.Vec[scope_tracking.ScopeWarning].create()
     defer: unused_imports.release()
     let unused_started = lint_profile_mark()
-    scope_tracking.lint_unused_imports(file, path, options.unresolved_import_paths, options.method_providers, options.analysis, ref_of(unused_imports))
+    scope_tracking.lint_unused_imports(
+        file,
+        path,
+        options.unresolved_import_paths,
+        options.method_providers,
+        options.analysis,
+        ref_of(unused_imports)
+    )
     lint_profile_done("rule.unused_import", unused_started)
     drain_scope_warnings(ref_of(unused_imports), ref_of(warnings))
 
@@ -350,14 +364,17 @@ public function lint_source_with(
     lint_profile = null
     return warnings
 
-
 # =============================================================================
 #  Rule filtering and `# lint: ignore` suppressions (host `linter.rb`)
 # =============================================================================
 
 ## Keep only warnings the effective select/ignore lists allow.  Explicit
 ## option lists win over the config's (the host's `select ||= cfg[:select]`).
-function filter_rules(warnings: ref[vec.Vec[Warning]], options: LintOptions, config: ref[lint_config.LintConfig]) -> void:
+function filter_rules(
+    warnings: ref[vec.Vec[Warning]],
+    options: LintOptions,
+    config: ref[lint_config.LintConfig]
+) -> void:
     var lint_cfg = unsafe: read(config)
     var select = vec.Vec[str].create()
     defer: select.release()
@@ -432,12 +449,10 @@ function code_list_contains(code: str, codes: ref[vec.Vec[str]]) -> bool:
         i += 1
     return false
 
-
 struct Suppression:
     line: ptr_uint
     all: bool
     codes: vec.Vec[string.String]
-
 
 struct SuppressionBody:
     all: bool
@@ -512,7 +527,10 @@ function parse_suppression(text: str) -> Option[SuppressionBody]:
         return Option[SuppressionBody].none
     rest = rest.slice(6, rest.len - 6)
     if rest.len == 0:
-        return Option[SuppressionBody].some(value = SuppressionBody(all = true, codes = vec.Vec[string.String].create()))
+        return Option[SuppressionBody].some(value = SuppressionBody(
+            all = true,
+            codes = vec.Vec[string.String].create()
+        ))
     if rest.len >= 3 and rest.byte_at(0) == '(' and rest.byte_at(rest.len - 1) == ')':
         let inner = rest.slice(1, rest.len - 2)
         var codes = vec.Vec[string.String].create()
@@ -578,8 +596,6 @@ function release_strings(strings: ref[vec.Vec[string.String]]) -> void:
         i += 1
     strings.release()
 
-
-
 # =============================================================================
 #  prefer-inline-methods — `extending X:` blocks whose receiver struct is
 #  declared in the same file (the methods can be written inline inside the
@@ -618,73 +634,69 @@ function lint_prefer_inline_methods(decls: span[ast.Decl], path: str, warnings: 
                                 msg.append("methods on '")
                                 msg.append(name)
                                 msg.append("' can be written inline inside the struct declaration")
-                                push_warning_at(warnings, path, ex.line, ex.column, name.len, "prefer-inline-methods", msg.as_str(), "hint")
+                                push_warning_at(
+                                    warnings,
+                                    path,
+                                    ex.line,
+                                    ex.column,
+                                    name.len,
+                                    "prefer-inline-methods",
+                                    msg.as_str(),
+                                    "hint"
+                                )
                 _:
                     pass
         i += 1
 
-
 ## Enclosing loop depth for the visitor — the host's `@loop_depth`, which
 ## suppresses the conciseness hints that would rewrite a loop body.
 var lint_loop_depth: ptr_uint = 0
-
 
 ## Enclosing generic-body depth for the visitor — the host's
 ## `generic_function_context?` (`redundant-unsafe` skips those bodies: their
 ## required-unsafe facts are only complete once instantiated elsewhere).
 var lint_generic_depth: ptr_uint = 0
 
-
 ## The analysis the visitor consults for facts-dependent rules (the host's
 ## `@sema_facts`) — currently `redundant-unsafe`'s required-unsafe lines.
 var lint_analysis: ptr[analyzer.Analysis]? = null
-
 
 ## The scope state the declaration walk drives (the host's `@scopes` and
 ## `@module_bindings`): `null` outside a lint pass, and `null` for callers
 ## that only run a sub-rule.
 var lint_scope_ctx: ptr[scope_tracking.ScopeContext]? = null
 
-
 ## prefer-own-ptr's walk state (the host's `@ptr_candidates` and
 ## `@binding_ptr_unsafe_uses`): candidates by name, uses counted at every
 ## identifier; the warning fires at a scope pop.
 var lint_ptr_state: ptr[own_ptr.PtrState]? = null
 
-
 ## Enclosing `unsafe:` depth for the visitor (the host's `@unsafe_depth`):
 ## prefer-own-ptr counts identifier uses above it.
 var lint_unsafe_depth: ptr_uint = 0
-
 
 ## redundant-cast's check context for the walk (the host checks each site
 ## inline, so the module's whole-file walk is gone).
 var lint_cast_ctx: ptr[redundant_cast.Context]? = null
 
-
 ## How many of `lint_cast_ctx.diags` have already been emitted.
 var lint_cast_drained: ptr_uint = 0
-
 
 ## The owning type names the ownership rule reports releases for (the caller's
 ## `LintOptions.owning_type_names`); the walk needs them per body.
 var lint_owning_type_names: span[str] = span[str]()
 
-
 ## The file's source lines (the host's `@source_lines`), for the source-line
 ## spans the rules anchor on.  `null` outside a lint pass.
 var lint_source_lines: ptr[vec.Vec[str]]? = null
-
 
 ## The `--timings` profile a lint pass records into (the caller's
 ## `LintOptions.profile`); null outside a profiled pass.
 var lint_profile: ptr[profile_mod.Profile]? = null
 
-
 ## The active lint tier (the host's `full_tier?`): set by `lint_source_with`
 ## from the options; the walk's gated rules read it.
 var lint_full_tier: bool = true
-
 
 ## The analyzer-recorded `directional-ffi-arg` sites (emitted at each call's
 ## visit so they interleave with the host's expression warnings).
@@ -705,12 +717,6 @@ function lint_profile_done(name: str, mark: double) -> void:
         profile_mod.record(lint_profile, name, profile_mod.now_ms() - mark)
 
 
-
-
-
-
-
-
 ## The host's `check_redundant_unsafe`: an `unsafe:` block or expression whose
 ## line the analyzer never recorded as *required* has nothing to do.
 function check_redundant_unsafe(line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -726,8 +732,16 @@ function check_redundant_unsafe(line: ptr_uint, column: ptr_uint, path: str, war
         if unsafe: read(lp) == line:
             return
         i += 1
-    push_warning_at(warnings, path, line, column, 6, "redundant-unsafe", "unsafe block contains no unsafe operations and can be removed", "hint")
-
+    push_warning_at(
+        warnings,
+        path,
+        line,
+        column,
+        6,
+        "redundant-unsafe",
+        "unsafe block contains no unsafe operations and can be removed",
+        "hint"
+    )
 
 const EVENT_CAPACITY_THRESHOLD: int = 128
 
@@ -751,7 +765,14 @@ function lint_events(decls: span[ast.Decl], owner: str, path: str, warnings: ref
         i += 1
 
 
-function warn_event_capacity(name: str, owner: str, capacity: int, line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function warn_event_capacity(
+    name: str,
+    owner: str,
+    capacity: int,
+    line: ptr_uint,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     var label = string.String.create()
     defer: label.release()
     if owner.len > 0:
@@ -805,18 +826,40 @@ function split_source_lines(source: str, sink: ref[vec.Vec[str]]) -> void:
         i += 1
 
 
-public function push_warning(warnings: ref[vec.Vec[Warning]], path: str, line: ptr_uint, code: str, message: str, severity: str) -> void:
+public function push_warning(
+    warnings: ref[vec.Vec[Warning]],
+    path: str,
+    line: ptr_uint,
+    code: str,
+    message: str,
+    severity: str
+) -> void:
     push_warning_at(warnings, path, line, 0, 0, code, message, severity)
 
 
 ## Like push_warning but extracts line and column from an AST expression.
-function push_warning_expr(warnings: ref[vec.Vec[Warning]], path: str, expr: ptr[ast.Expr]?, code: str, message: str, severity: str) -> void:
+function push_warning_expr(
+    warnings: ref[vec.Vec[Warning]],
+    path: str,
+    expr: ptr[ast.Expr]?,
+    code: str,
+    message: str,
+    severity: str
+) -> void:
     let line = expression_line(expr)
     push_warning_at(warnings, path, line, expression_column(expr), 0, code, message, severity)
 
 
 ## Like push_warning but uses a statement's line and column position.
-function push_warning_stmt(warnings: ref[vec.Vec[Warning]], path: str, line: ptr_uint, col: ptr_uint, code: str, message: str, severity: str) -> void:
+function push_warning_stmt(
+    warnings: ref[vec.Vec[Warning]],
+    path: str,
+    line: ptr_uint,
+    col: ptr_uint,
+    code: str,
+    message: str,
+    severity: str
+) -> void:
     push_warning_at(warnings, path, line, col, 0, code, message, severity)
 
 
@@ -839,7 +882,6 @@ public function push_warning_at(
         message = message,
         severity = severity
     ))
-
 
 # =============================================================================
 #  Line resolution — descend to the first sub-expression that carries a line.
@@ -1116,8 +1158,6 @@ function expression_length(expr: ptr[ast.Expr]?) -> ptr_uint:
             _:
                 return 1
 
-
-
 # =============================================================================
 #  Rules
 # =============================================================================
@@ -1141,7 +1181,13 @@ function bool_literal_of(expr: ptr[ast.Expr]) -> Option[bool]:
 
 
 ## `x = x` — a variable assigned to itself.
-function check_self_assignment(target: ptr[ast.Expr], operator: str, value: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_self_assignment(
+    target: ptr[ast.Expr],
+    operator: str,
+    value: ptr[ast.Expr],
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     if operator != "=":
         return
     let target_name = is_identifier(target) else:
@@ -1158,7 +1204,13 @@ function check_self_assignment(target: ptr[ast.Expr], operator: str, value: ptr[
 
 
 ## `x == x` / `x != x` — a variable compared to itself.
-function check_self_comparison(operator: str, left: ptr[ast.Expr], right: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_self_comparison(
+    operator: str,
+    left: ptr[ast.Expr],
+    right: ptr[ast.Expr],
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     if operator != "==" and operator != "!=":
         return
     let left_name = is_identifier(left) else:
@@ -1175,11 +1227,26 @@ function check_self_comparison(operator: str, left: ptr[ast.Expr], right: ptr[as
     buf.append(always)
     # The host anchors the warning on the whole binary expression
     # (`expression_line/column/length` of the comparison).
-    push_warning_at(warnings, path, expression_line(left), expression_column(left), binary_expression_length(left, right), "self-comparison", buf.as_str(), "warning")
+    push_warning_at(
+        warnings,
+        path,
+        expression_line(left),
+        expression_column(left),
+        binary_expression_length(left, right),
+        "self-comparison",
+        buf.as_str(),
+        "warning"
+    )
 
 
 ## `x == true` / `x != false` and friends — comparison against a boolean literal.
-function check_redundant_bool_compare(operator: str, left: ptr[ast.Expr], right: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_redundant_bool_compare(
+    operator: str,
+    left: ptr[ast.Expr],
+    right: ptr[ast.Expr],
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     if operator != "==" and operator != "!=":
         return
     let left_bool = bool_literal_of(left)
@@ -1264,7 +1331,12 @@ function contains_side_effect(expr: ptr[ast.Expr]) -> bool:
                 return false
 
 
-function check_useless_expr(expr: ptr[ast.Expr], stmt_line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_useless_expr(
+    expr: ptr[ast.Expr],
+    stmt_line: ptr_uint,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     if not is_pure_expr(expr):
         return
     unsafe:
@@ -1279,7 +1351,14 @@ function check_useless_expr(expr: ptr[ast.Expr], stmt_line: ptr_uint, path: str,
     var line = expression_line(expr)
     if line == 0:
         line = stmt_line
-    push_warning(warnings, path, line, "useless-expression", "expression result is unused and has no side effects", "warning")
+    push_warning(
+        warnings,
+        path,
+        line,
+        "useless-expression",
+        "expression result is unused and has no side effects",
+        "warning"
+    )
 
 
 ## The column of an if-chain's first branch (the `if` keyword) — the host's
@@ -1291,16 +1370,39 @@ function first_branch_column(branches: span[ast.IfBranch]) -> ptr_uint:
 
 
 ## Compound assignment against an identity value (`x += 0`, `x *= 1`).
-function check_noop_compound_assignment(line: ptr_uint, target: ptr[ast.Expr], operator: str, value: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_noop_compound_assignment(
+    line: ptr_uint,
+    target: ptr[ast.Expr],
+    operator: str,
+    value: ptr[ast.Expr],
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     var is_identity = false
-    if operator == "+=" or operator == "-=" or operator == "|=" or operator == "^=" or operator == "<<=" or operator == ">>=":
+    if (
+        operator == "+="
+        or operator == "-="
+        or operator == "|="
+        or operator == "^="
+        or operator == "<<="
+        or operator == ">>="
+    ):
         is_identity = integer_literal_matches(value, "0")
     else if operator == "*=" or operator == "/=":
         is_identity = numeric_literal_one(value)
     if is_identity:
         # The host anchors on the assignment's line and the target's column, with
         # the target identifier's own length.
-        push_warning_at(warnings, path, line, expression_column(target), expression_length(target), "noop-compound-assignment", "compound assignment with identity value has no effect", "hint")
+        push_warning_at(
+            warnings,
+            path,
+            line,
+            expression_column(target),
+            expression_length(target),
+            "noop-compound-assignment",
+            "compound assignment with identity value has no effect",
+            "hint"
+        )
 
 
 function lexeme_without_underscores(lexeme: str) -> string.String:
@@ -1340,7 +1442,11 @@ function numeric_literal_one(value: ptr[ast.Expr]) -> bool:
 
 
 ## Duplicate condition across the branches of one if/else-if chain.
-function check_duplicate_if_conditions(branches: span[ast.IfBranch], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_duplicate_if_conditions(
+    branches: span[ast.IfBranch],
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     var seen = vec.Vec[str].create()
     defer: seen.release()
     var bi: ptr_uint = 0
@@ -1447,18 +1553,36 @@ function expression_signature(expr: ptr[ast.Expr]) -> Option[str]:
 
 
 ## `Variant.arm as _` — an ignored match binding is redundant.
-function warn_redundant_ignored_match_binding(binding_name: Option[str], binding_line: ptr_uint, fallback_line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function warn_redundant_ignored_match_binding(
+    binding_name: Option[str],
+    binding_line: ptr_uint,
+    fallback_line: ptr_uint,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     match binding_name:
         Option.some as bn:
             if bn.value.equal("_"):
                 let line = if binding_line != 0: binding_line else: fallback_line
-                push_warning(warnings, path, line, "redundant-ignored-match-binding", "ignored match binding is redundant; remove 'as _'", "hint")
+                push_warning(
+                    warnings,
+                    path,
+                    line,
+                    "redundant-ignored-match-binding",
+                    "ignored match binding is redundant; remove 'as _'",
+                    "hint"
+                )
         Option.none:
             pass
 
 
 ## Final bare `return` in an explicit `-> void` body is redundant.
-function check_redundant_return(return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_redundant_return(
+    return_type: ptr[ast.TypeRef]?,
+    body: ptr[ast.Stmt]?,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     if not is_void_type(return_type):
         return
     let last = last_block_statement(body) else:
@@ -1469,7 +1593,16 @@ function check_redundant_return(return_type: ptr[ast.TypeRef]?, body: ptr[ast.St
                 if r.value == null:
                     # The host spans the statement's own `length` — the `return`
                     # keyword (its `final_statement.length || "return".length`).
-                    push_warning_at(warnings, path, r.line, r.column, 6, "redundant-return", "final bare return in void function is redundant", "hint")
+                    push_warning_at(
+                        warnings,
+                        path,
+                        r.line,
+                        r.column,
+                        6,
+                        "redundant-return",
+                        "final bare return in void function is redundant",
+                        "hint"
+                    )
             _:
                 pass
 
@@ -1497,7 +1630,6 @@ function last_block_statement(body: ptr[ast.Stmt]?) -> ptr[ast.Stmt]?:
                 return blk.statements.data + blk.statements.len - 1
             _:
                 return null
-
 
 # =============================================================================
 #  Traversal
@@ -1539,7 +1671,6 @@ function visit_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warni
                 visit_stmt_list(blk.statements, path, warnings)
             _:
                 visit_stmt(bp, path, warnings)
-
 
 # =============================================================================
 #  Scope state — the linter owns the emission, scope_tracking owns the state,
@@ -1595,7 +1726,16 @@ function scope_pop(path: str, warnings: ref[vec.Vec[Warning]]) -> void:
             buf.append(" '")
             buf.append(bd.name)
             buf.append("'")
-            push_warning_at(warnings, path, bd.line, bd.column, bd.name.len, if is_param: "unused-param" else: "unused-local", buf.as_str(), "warning")
+            push_warning_at(
+                warnings,
+                path,
+                bd.line,
+                bd.column,
+                bd.name.len,
+                if is_param: "unused-param" else: "unused-local",
+                buf.as_str(),
+                "warning"
+            )
         else:
             if bd.allow_prefer_let and not bd.mutated:
                 var buf = string.String.create()
@@ -1626,7 +1766,14 @@ function ptr_state_record_local(name: str, stmt_type: ptr[ast.TypeRef]?, value: 
     unsafe: read(p).record_local(name, stmt_type, value)
 
 
-function scope_declare_local(name: str, line: ptr_uint, column: ptr_uint, is_var: bool, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function scope_declare_local(
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    is_var: bool,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     let c = lint_scope_ctx else:
         return
     if name.len == 0 or name.starts_with("_"):
@@ -1648,7 +1795,13 @@ function scope_declare_local(name: str, line: ptr_uint, column: ptr_uint, is_var
     scope_tracking.ctx_declare_local(ctx, name, line, column, is_var, reserved_fix)
 
 
-function scope_declare_param(name: str, line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function scope_declare_param(
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     let c = lint_scope_ctx else:
         return
     if name.len == 0 or name.starts_with("_"):
@@ -1761,7 +1914,6 @@ function visit_assignment_target(target: ptr[ast.Expr], path: str, warnings: ref
             _:
                 visit_expr(target, path, warnings)
 
-
 # =============================================================================
 #  The per-function rule group (the host's `visit_function` tail)
 # =============================================================================
@@ -1774,7 +1926,13 @@ function visit_assignment_target(target: ptr[ast.Expr], path: str, warnings: ref
 ## host caches one `statement_flow_analysis` per statement list and reuses it
 ## across its rule group; each rule's own solve (liveness, constant
 ## propagation) still runs inside its rule, once per body.
-function lint_body_rules(params: span[ast.Param], body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]], proc_context: bool) -> void:
+function lint_body_rules(
+    params: span[ast.Param],
+    body: ptr[ast.Stmt]?,
+    path: str,
+    warnings: ref[vec.Vec[Warning]],
+    proc_context: bool
+) -> void:
     let b = body else:
         return
     var flow_cfg = flow_builder.empty_cfg()
@@ -1854,9 +2012,17 @@ function lint_null_check_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec
             buf.append("'")
             buf.append(d.name)
             buf.append("' is already known to be non-null here — this nil check is redundant")
-            push_warning_at(warnings, path, span.line, span.column, span.length, "redundant-null-check", buf.as_str(), "hint")
+            push_warning_at(
+                warnings,
+                path,
+                span.line,
+                span.column,
+                span.length,
+                "redundant-null-check",
+                buf.as_str(),
+                "hint"
+            )
         di += 1
-
 
 # =============================================================================
 #  redundant-cast — the linter's walk calls the module's hooks (the host
@@ -1878,7 +2044,12 @@ function drain_cast_diags(path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     lint_cast_drained = diags.len()
 
 
-function lint_redundant_cast_local(stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function lint_redundant_cast_local(
+    stmt_type: ptr[ast.TypeRef]?,
+    value: ptr[ast.Expr]?,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     let cp = lint_cast_ctx else:
         return
     redundant_cast.set_generic_body(unsafe: ref_of(read(cp)), lint_generic_depth > 0)
@@ -1910,7 +2081,13 @@ function lint_redundant_cast_prefix(expr: ptr[ast.Expr], path: str, warnings: re
     drain_cast_diags(path, warnings)
 
 
-function lint_redundant_cast_binary(op: str, left: ptr[ast.Expr], right: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function lint_redundant_cast_binary(
+    op: str,
+    left: ptr[ast.Expr],
+    right: ptr[ast.Expr],
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     let cp = lint_cast_ctx else:
         return
     redundant_cast.set_generic_body(unsafe: ref_of(read(cp)), lint_generic_depth > 0)
@@ -1939,7 +2116,16 @@ function lint_directional_ffi(callee: ptr[ast.Expr], path: str, warnings: ref[ve
                 buf.append("' already declares ")
                 buf.append(site.mode_label)
                 buf.append(" passing")
-                push_warning_at(warnings, path, expression_line(arg_expr), expression_column(arg_expr), expression_length(arg_expr), "directional-ffi-arg", buf.as_str(), "hint")
+                push_warning_at(
+                    warnings,
+                    path,
+                    expression_line(arg_expr),
+                    expression_column(arg_expr),
+                    expression_length(arg_expr),
+                    "directional-ffi-arg",
+                    buf.as_str(),
+                    "hint"
+                )
         i += 1
 
 
@@ -1985,7 +2171,17 @@ function visit_decl(decl: ptr[ast.Decl], path: str, warnings: ref[vec.Vec[Warnin
     unsafe:
         match read(decl):
             ast.Decl.decl_function as fun:
-                visit_function_decl(fun.name, fun.type_params, fun.method_params, fun.return_type, fun.body, fun.line, false, path, warnings)
+                visit_function_decl(
+                    fun.name,
+                    fun.type_params,
+                    fun.method_params,
+                    fun.return_type,
+                    fun.body,
+                    fun.line,
+                    false,
+                    path,
+                    warnings
+                )
             ast.Decl.decl_extending_block as ex:
                 # The host's `extending_block_generic?`: a receiver with type
                 # arguments makes every method in it a generic context.
@@ -1995,7 +2191,17 @@ function visit_decl(decl: ptr[ast.Decl], path: str, warnings: ref[vec.Vec[Warnin
                     let m = read(ex.methods.data + j)
                     if is_reserved_type_name(m.name):
                         reserved_name_warn(path, m.line, m.column, m.name, "function", warnings)
-                    visit_function_decl(m.name, m.type_params, m.method_params, m.return_type, m.body, m.line, generic_block, path, warnings)
+                    visit_function_decl(
+                        m.name,
+                        m.type_params,
+                        m.method_params,
+                        m.return_type,
+                        m.body,
+                        m.line,
+                        generic_block,
+                        path,
+                        warnings
+                    )
                     j += 1
             ast.Decl.decl_const as c:
                 visit_expr_opt(c.value, path, warnings)
@@ -2036,12 +2242,28 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                     scope_push()
                     match loc.else_binding:
                         Option.some as bn:
-                            scope_declare_local(bn.value, loc.else_binding_line, loc.else_binding_column, false, path, warnings)
+                            scope_declare_local(
+                                bn.value,
+                                loc.else_binding_line,
+                                loc.else_binding_column,
+                                false,
+                                path,
+                                warnings
+                            )
                         Option.none:
                             pass
                     visit_body(loc.else_body, path, warnings)
                     scope_pop(path, warnings)
-                check_redundant_type_annotation(loc.is_let, loc.name, loc.stmt_type, loc.value, loc.line, loc.column, path, warnings)
+                check_redundant_type_annotation(
+                    loc.is_let,
+                    loc.name,
+                    loc.stmt_type,
+                    loc.value,
+                    loc.line,
+                    loc.column,
+                    path,
+                    warnings
+                )
                 if loc.stmt_type != null and loc.value != null:
                     lint_redundant_cast_local(loc.stmt_type, loc.value, path, warnings)
                 ptr_state_record_local(loc.name, loc.stmt_type, loc.value)
@@ -2074,12 +2296,34 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                     scope_push()
                     visit_body(iff.else_body, path, warnings)
                     scope_pop(path, warnings)
-                rules_redundant_else.check_redundant_else(iff.branches, iff.else_body, iff.else_line, iff.else_column, path, warnings)
+                rules_redundant_else.check_redundant_else(
+                    iff.branches,
+                    iff.else_body,
+                    iff.else_line,
+                    iff.else_column,
+                    path,
+                    warnings
+                )
                 check_duplicate_if_conditions(iff.branches, path, warnings)
                 # The If-preference rules are full-tier only.
                 if lint_full_tier:
-                    check_prefer_inline_if(iff.branches, iff.else_body, iff.is_inline, iff.line, iff.else_line, path, warnings)
-                    check_prefer_conditional_expression_if(iff.branches, iff.else_body, iff.line, first_branch_column(iff.branches), path, warnings)
+                    check_prefer_inline_if(
+                        iff.branches,
+                        iff.else_body,
+                        iff.is_inline,
+                        iff.line,
+                        iff.else_line,
+                        path,
+                        warnings
+                    )
+                    check_prefer_conditional_expression_if(
+                        iff.branches,
+                        iff.else_body,
+                        iff.line,
+                        first_branch_column(iff.branches),
+                        path,
+                        warnings
+                    )
             ast.Stmt.stmt_while as wh:
                 lint_loop_depth += 1
                 visit_expr(wh.condition, path, warnings)
@@ -2125,7 +2369,13 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                 if lint_full_tier:
                     check_prefer_conditional_expression_match(mt.arms, mt.line, mt.column, path, warnings)
                     check_prefer_or_pattern_stmt(mt.arms, path, warnings)
-                    check_prefer_try_stmt(mt.arms, expression_declared_line(mt.scrutinee), expression_column(mt.scrutinee), path, warnings)
+                    check_prefer_try_stmt(
+                        mt.arms,
+                        expression_declared_line(mt.scrutinee),
+                        expression_column(mt.scrutinee),
+                        path,
+                        warnings
+                    )
             ast.Stmt.stmt_ret as r:
                 visit_expr_opt(r.value, path, warnings)
                 if r.value != null:
@@ -2293,11 +2543,18 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
             ast.Expr.expr_match as mm:
                 # The Match-expression preference rules are full-tier only.
                 if lint_full_tier:
-                    check_prefer_is_variant_expr(mm.arms, mm.line, mm.column, mm.length, mm.desugared_from_is, path, warnings)
+                    check_prefer_is_variant_expr(
+                        mm.arms,
+                        mm.line,
+                        mm.column,
+                        mm.length,
+                        mm.desugared_from_is,
+                        path,
+                        warnings
+                    )
                     check_prefer_or_pattern_expr(mm.arms, path, warnings)
             _:
                 pass
-
 
 # =============================================================================
 #  Helpers — statement / expression structural comparison
@@ -2366,7 +2623,10 @@ function stmts_structural_equal(a: ptr[ast.Stmt]?, b: ptr[ast.Stmt]?) -> bool:
             ast.Stmt.stmt_assignment as aa:
                 match read(b):
                     ast.Stmt.stmt_assignment as ab:
-                        return aa.operator.equal(ab.operator) and exprs_structural_equal(aa.target, ab.target) and exprs_structural_equal(aa.value, ab.value)
+                        return aa.operator.equal(ab.operator) and exprs_structural_equal(
+                            aa.target,
+                            ab.target
+                        ) and exprs_structural_equal(aa.value, ab.value)
                     _:
                         return false
             ast.Stmt.stmt_break:
@@ -2410,7 +2670,10 @@ function stmts_structural_equal(a: ptr[ast.Stmt]?, b: ptr[ast.Stmt]?) -> bool:
             ast.Stmt.stmt_while as wa:
                 match read(b):
                     ast.Stmt.stmt_while as wb:
-                        return wa.is_inline == wb.is_inline and exprs_structural_equal(wa.condition, wb.condition) and stmts_structural_equal(wa.body, wb.body)
+                        return wa.is_inline == wb.is_inline and exprs_structural_equal(
+                            wa.condition,
+                            wb.condition
+                        ) and stmts_structural_equal(wa.body, wb.body)
                     _:
                         return false
             ast.Stmt.stmt_for:
@@ -2439,7 +2702,10 @@ function stmts_structural_equal(a: ptr[ast.Stmt]?, b: ptr[ast.Stmt]?) -> bool:
             ast.Stmt.stmt_defer as da:
                 match read(b):
                     ast.Stmt.stmt_defer as db:
-                        return option_expr_equal(da.expression, db.expression) and stmts_structural_equal(da.body, db.body)
+                        return option_expr_equal(
+                            da.expression,
+                            db.expression
+                        ) and stmts_structural_equal(da.body, db.body)
                     _:
                         return false
             ast.Stmt.stmt_unsafe as ua:
@@ -2451,7 +2717,10 @@ function stmts_structural_equal(a: ptr[ast.Stmt]?, b: ptr[ast.Stmt]?) -> bool:
             ast.Stmt.stmt_static_assert as sa:
                 match read(b):
                     ast.Stmt.stmt_static_assert as sb:
-                        return exprs_structural_equal(sa.condition, sb.condition) and option_expr_equal(sa.message, sb.message)
+                        return exprs_structural_equal(
+                            sa.condition,
+                            sb.condition
+                        ) and option_expr_equal(sa.message, sb.message)
                     _:
                         return false
             ast.Stmt.stmt_when as wa:
@@ -2769,7 +3038,10 @@ function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
             ast.Expr.expr_index_access as xa:
                 match read(b):
                     ast.Expr.expr_index_access as xb:
-                        return exprs_structural_equal(xa.receiver, xb.receiver) and exprs_structural_equal(xa.index, xb.index)
+                        return exprs_structural_equal(
+                            xa.receiver,
+                            xb.receiver
+                        ) and exprs_structural_equal(xa.index, xb.index)
                     _:
                         return false
             ast.Expr.expr_specialization as spa:
@@ -2781,7 +3053,10 @@ function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
                             return false
                         var i: ptr_uint = 0
                         while i < spa.arguments.len:
-                            if not type_refs_structural_equal(read(spa.arguments.data + i).value, read(spb.arguments.data + i).value):
+                            if not type_refs_structural_equal(
+                                read(spa.arguments.data + i).value,
+                                read(spb.arguments.data + i).value
+                            ):
                                 return false
                             i += 1
                         return true
@@ -2790,7 +3065,13 @@ function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
             ast.Expr.expr_if as ifa:
                 match read(b):
                     ast.Expr.expr_if as ifb:
-                        return exprs_structural_equal(ifa.condition, ifb.condition) and exprs_structural_equal(ifa.then_expr, ifb.then_expr) and exprs_structural_equal(ifa.else_expr, ifb.else_expr)
+                        return exprs_structural_equal(
+                            ifa.condition,
+                            ifb.condition
+                        ) and exprs_structural_equal(
+                            ifa.then_expr,
+                            ifb.then_expr
+                        ) and exprs_structural_equal(ifa.else_expr, ifb.else_expr)
                     _:
                         return false
             ast.Expr.expr_match as mma:
@@ -2805,7 +3086,14 @@ function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
             ast.Expr.expr_proc as pa:
                 match read(b):
                     ast.Expr.expr_proc as pb:
-                        return proc_exprs_equal(pa.method_params, pa.return_type, pa.body, pb.method_params, pb.return_type, pb.body)
+                        return proc_exprs_equal(
+                            pa.method_params,
+                            pa.return_type,
+                            pa.body,
+                            pb.method_params,
+                            pb.return_type,
+                            pb.body
+                        )
                     _:
                         return false
             ast.Expr.expr_await as awa:
@@ -2835,13 +3123,19 @@ function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
             ast.Expr.expr_range as rga:
                 match read(b):
                     ast.Expr.expr_range as rgb:
-                        return exprs_structural_equal(rga.start_expr, rgb.start_expr) and exprs_structural_equal(rga.end_expr, rgb.end_expr)
+                        return exprs_structural_equal(
+                            rga.start_expr,
+                            rgb.start_expr
+                        ) and exprs_structural_equal(rga.end_expr, rgb.end_expr)
                     _:
                         return false
             ast.Expr.expr_prefix_cast as pca:
                 match read(b):
                     ast.Expr.expr_prefix_cast as pcb:
-                        return type_refs_structural_equal(pca.target_type, pcb.target_type) and exprs_structural_equal(pca.expression, pcb.expression)
+                        return type_refs_structural_equal(
+                            pca.target_type,
+                            pcb.target_type
+                        ) and exprs_structural_equal(pca.expression, pcb.expression)
                     _:
                         return false
             ast.Expr.expr_unsafe as usa:
@@ -2865,7 +3159,10 @@ function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
             ast.Expr.expr_offsetof as ofa:
                 match read(b):
                     ast.Expr.expr_offsetof as ofb:
-                        return ofa.field.equal(ofb.field) and type_refs_structural_equal(ofa.target_type, ofb.target_type)
+                        return ofa.field.equal(ofb.field) and type_refs_structural_equal(
+                            ofa.target_type,
+                            ofb.target_type
+                        )
                     _:
                         return false
             ast.Expr.expr_error as era:
@@ -2883,7 +3180,13 @@ function exprs_structural_equal(a: ptr[ast.Expr], b: ptr[ast.Expr]) -> bool:
             ast.Expr.expr_binary_op as ba2:
                 match read(b):
                     ast.Expr.expr_binary_op as bb2:
-                        return ba2.operator.equal(bb2.operator) and exprs_structural_equal(ba2.left, bb2.left) and exprs_structural_equal(ba2.right, bb2.right)
+                        return ba2.operator.equal(bb2.operator) and exprs_structural_equal(
+                            ba2.left,
+                            bb2.left
+                        ) and exprs_structural_equal(
+                            ba2.right,
+                            bb2.right
+                        )
                     _:
                         return false
             _:
@@ -3030,7 +3333,6 @@ function identifier_name_of(expr: ptr[ast.Expr]) -> Option[str]:
             _:
                 return Option[str].none
 
-
 # =============================================================================
 #  missing-return — non-void function whose body does not always return.
 # =============================================================================
@@ -3039,10 +3341,14 @@ function identifier_name_of(expr: ptr[ast.Expr]) -> Option[str]:
 ## frame has popped, so the function's `unused-local`/`prefer-let` warnings come
 ## first.
 
-
-
-
-function check_missing_return(name: str, line: ptr_uint, return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_missing_return(
+    name: str,
+    line: ptr_uint,
+    return_type: ptr[ast.TypeRef]?,
+    body: ptr[ast.Stmt]?,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     if return_type == null:
         return
     if is_void_type(return_type):
@@ -3061,13 +3367,20 @@ function mk_missing_return_msg(name: str) -> str:
     buf.append("' does not always return a value")
     return buf.as_str()
 
-
 # =============================================================================
 #  prefer-inline-if — multi-line if/else where each branch is a single simple
 #  statement that fits on one line.
 # =============================================================================
 
-function check_prefer_inline_if(branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?, is_inline: bool, line: ptr_uint, else_line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_prefer_inline_if(
+    branches: span[ast.IfBranch],
+    else_body: ptr[ast.Stmt]?,
+    is_inline: bool,
+    line: ptr_uint,
+    else_line: ptr_uint,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     if is_inline:
         return
     if not rules_redundant_else.block_is_nonempty(else_body):
@@ -3090,7 +3403,16 @@ function check_prefer_inline_if(branches: span[ast.IfBranch], else_body: ptr[ast
         return
     # The host anchors on the branch (the `if` keyword), not the condition.
     let first_branch = unsafe: read(branches.data + 0)
-    push_warning_at(warnings, path, first_branch.line, first_branch.column, 0, "prefer-inline-if", "if/else with single-statement branches can be written inline", "hint")
+    push_warning_at(
+        warnings,
+        path,
+        first_branch.line,
+        first_branch.column,
+        0,
+        "prefer-inline-if",
+        "if/else with single-statement branches can be written inline",
+        "hint"
+    )
 
 
 ## The host's `visually_inline_if?`: every branch body starts on its branch's own
@@ -3245,7 +3567,6 @@ function balanced_inline_line(text: str) -> bool:
         i += 1
     return depth == 0
 
-
 # =============================================================================
 #  prefer-or-pattern — adjacent match arms with identical bodies should merge
 #  with |.
@@ -3278,7 +3599,14 @@ function check_prefer_or_pattern_stmt(arms: span[ast.MatchArm], path: str, warni
                 if pat_line == 0:
                     i += 1
                     continue
-                push_warning_expr(warnings, path, curr.pattern, "prefer-or-pattern", "adjacent match arms have identical bodies; merge them with `|`", "hint")
+                push_warning_expr(
+                    warnings,
+                    path,
+                    curr.pattern,
+                    "prefer-or-pattern",
+                    "adjacent match arms have identical bodies; merge them with `|`",
+                    "hint"
+                )
         i += 1
 
 
@@ -3305,16 +3633,29 @@ function check_prefer_or_pattern_expr(arms: span[ast.MatchExprArm], path: str, w
             if exprs_structural_equal(prev.value, curr.value):
                 let pat_line = expression_line(curr.pattern)
                 if pat_line != 0:
-                    push_warning_expr(warnings, path, curr.pattern, "prefer-or-pattern", "adjacent match arms have identical bodies; merge them with `|`", "hint")
+                    push_warning_expr(
+                        warnings,
+                        path,
+                        curr.pattern,
+                        "prefer-or-pattern",
+                        "adjacent match arms have identical bodies; merge them with `|`",
+                        "hint"
+                    )
         i += 1
-
 
 # =============================================================================
 #  prefer-conditional-expression — if/match where every branch returns a value
 #  or assigns to the same target.
 # =============================================================================
 
-function check_prefer_conditional_expression_if(branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?, line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_prefer_conditional_expression_if(
+    branches: span[ast.IfBranch],
+    else_body: ptr[ast.Stmt]?,
+    line: ptr_uint,
+    column: ptr_uint,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     if lint_loop_depth > 0:
         return
     if not rules_redundant_else.block_is_nonempty(else_body):
@@ -3340,7 +3681,13 @@ function check_prefer_conditional_expression_if(branches: span[ast.IfBranch], el
     report_conditional_expr(ref_of(stmts), line, column, "if", path, warnings)
 
 
-function check_prefer_conditional_expression_match(arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_prefer_conditional_expression_match(
+    arms: span[ast.MatchArm],
+    line: ptr_uint,
+    column: ptr_uint,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     if lint_loop_depth > 0:
         return
     # Only fires when there is a wildcard arm.
@@ -3375,7 +3722,14 @@ function check_prefer_conditional_expression_match(arms: span[ast.MatchArm], lin
 ## The host's `report_conditional_expr`: every single-statement branch
 ## either returns a value or assigns the same target, and the message names the
 ## kind and (for an assignment) the target.
-function report_conditional_expr(stmts: ref[vec.Vec[ptr[ast.Stmt]]], line: ptr_uint, column: ptr_uint, kind: str, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function report_conditional_expr(
+    stmts: ref[vec.Vec[ptr[ast.Stmt]]],
+    line: ptr_uint,
+    column: ptr_uint,
+    kind: str,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     if stmts.len() == 0:
         return
     if lint_loop_depth > 0:
@@ -3453,14 +3807,16 @@ function expr_source_sig(expr: ptr[ast.Expr]) -> str:
             _:
                 return "unknown"
 
-
 # =============================================================================
 #  prefer-let-else — `let x = expr; if x == null: ...` should use let...else.
 # =============================================================================
 
-
-
-function prefer_else_walk_body(body: ptr[ast.Stmt]?, want_let: bool, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function prefer_else_walk_body(
+    body: ptr[ast.Stmt]?,
+    want_let: bool,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     let bp = body else:
         return
     unsafe:
@@ -3481,7 +3837,12 @@ function prefer_else_ignored_name(name: str) -> bool:
     return false
 
 
-function prefer_else_walk_stmts(stmts: span[ast.Stmt], want_let: bool, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function prefer_else_walk_stmts(
+    stmts: span[ast.Stmt],
+    want_let: bool,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     # The host's `walk_statement_lists` yields the current list first and then
     # recurses into each statement's bodies, so outer candidates precede inner.
     var i: ptr_uint = 0
@@ -3533,7 +3894,16 @@ function prefer_else_walk_stmts(stmts: span[ast.Stmt], want_let: bool, path: str
                             buf.append("' can use ")
                             buf.append(if want_let: "let" else: "var")
                             buf.append(" ... else")
-                            push_warning_at(warnings, path, span.line, span.column, span.length, if want_let: "prefer-let-else" else: "prefer-var-else", buf.as_str(), "hint")
+                            push_warning_at(
+                                warnings,
+                                path,
+                                span.line,
+                                span.column,
+                                span.length,
+                                if want_let: "prefer-let-else" else: "prefer-var-else",
+                                buf.as_str(),
+                                "hint"
+                            )
                         _:
                             pass
                 _:
@@ -3600,7 +3970,12 @@ function prefer_else_guard_name(condition: ptr[ast.Expr], name: str) -> Option[b
                 return Option[bool].none
 
 
-function prefer_else_recurse_into(stmt: ptr[ast.Stmt], want_let: bool, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function prefer_else_recurse_into(
+    stmt: ptr[ast.Stmt],
+    want_let: bool,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_if as iff:
@@ -3627,7 +4002,6 @@ function prefer_else_recurse_into(stmt: ptr[ast.Stmt], want_let: bool, path: str
             _:
                 pass
 
-
 # =============================================================================
 #  prefer-try — match over Option/Result that only propagates failure.
 # =============================================================================
@@ -3636,7 +4010,14 @@ struct TryArmPair:
     early_is_first: bool
     base: str
 
-function check_prefer_try_stmt(arms: span[ast.MatchArm], anchor_line: ptr_uint, anchor_column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+
+function check_prefer_try_stmt(
+    arms: span[ast.MatchArm],
+    anchor_line: ptr_uint,
+    anchor_column: ptr_uint,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     # The host needs the scrutinee's resolved variant type, and the analyzer
     # records no expression types inside a generic body (see `resolve_expr_type`
     # in redundant_cast), so the rule never fires there.
@@ -3793,7 +4174,6 @@ function is_result_failure_propagation(value: ptr[ast.Expr], binding_name: Optio
                 return false
     return false
 
-
 # =============================================================================
 #  prefer-is-variant — `match expr: Arm: true; _: false` → `expr is Arm`.
 # =============================================================================
@@ -3802,7 +4182,16 @@ struct IsVariantPair:
     pat_is_first: bool
     want_true: bool
 
-function check_prefer_is_variant_expr(arms: span[ast.MatchExprArm], match_line: ptr_uint, match_column: ptr_uint, match_length: ptr_uint, desugared_from_is: bool, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+
+function check_prefer_is_variant_expr(
+    arms: span[ast.MatchExprArm],
+    match_line: ptr_uint,
+    match_column: ptr_uint,
+    match_length: ptr_uint,
+    desugared_from_is: bool,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     # The host skips a match the parser desugared from `is` (warning would be
     # circular) and anchors on the match expression itself.
     if desugared_from_is:
@@ -3828,7 +4217,16 @@ function check_prefer_is_variant_expr(arms: span[ast.MatchExprArm], match_line: 
         buf.append("prefer `")
         buf.append(suggestion.as_str())
         buf.append("` over a match that maps one variant arm to a boolean")
-        push_warning_at(warnings, path, match_line, match_column, match_length, "prefer-is-variant", buf.as_str(), "hint")
+        push_warning_at(
+            warnings,
+            path,
+            match_line,
+            match_column,
+            match_length,
+            "prefer-is-variant",
+            buf.as_str(),
+            "hint"
+        )
 
 
 function classify_is_variant_arms(arm0: ast.MatchExprArm, arm1: ast.MatchExprArm) -> Option[IsVariantPair]:
@@ -3880,7 +4278,6 @@ function expr_source_name(expr: ptr[ast.Expr]?) -> str:
             _:
                 return ""
 
-
 # =============================================================================
 #  redundant-type-annotation — `let x: T = value` where T matches literal type.
 # =============================================================================
@@ -3912,7 +4309,15 @@ function check_redundant_type_annotation(
 
 ## If the expression's literal type matches the declared type name, emit a
 ## redundant-type-annotation warning.
-function redundancy_match(declared: str, name: str, val: ptr[ast.Expr], line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function redundancy_match(
+    declared: str,
+    name: str,
+    val: ptr[ast.Expr],
+    line: ptr_uint,
+    column: ptr_uint,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     let inferred = expression_literal_type_name(val) else:
         return
     if declared.equal(inferred):
@@ -3978,12 +4383,9 @@ function expression_literal_type_name(expr: ptr[ast.Expr]) -> Option[str]:
             _:
                 return Option[str].none
 
-
 # =============================================================================
 #  prefer-struct-with — struct construction with many copy-field args.
 # =============================================================================
-
-
 
 ## The host's `check_prefer_struct_with`: a constructor literal that copies
 ## all-but-one field from the same source value can use `.with(...)`.  The
@@ -3992,7 +4394,13 @@ function expression_literal_type_name(expr: ptr[ast.Expr]) -> Option[str]:
 ## *struct* (the host's `Types::Struct` — not a generic instance, union, enum
 ## or variant), the copied source's type must be that same struct, and the
 ## copied names must be exactly the struct's fields minus the changed ones.
-function check_prefer_struct_with(call_expr: ptr[ast.Expr], callee: ptr[ast.Expr], args: span[ast.Argument], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_prefer_struct_with(
+    call_expr: ptr[ast.Expr],
+    callee: ptr[ast.Expr],
+    args: span[ast.Argument],
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     let ap = lint_analysis else:
         return
     let analysis = unsafe: ref_of(read(ap))
@@ -4080,7 +4488,16 @@ function check_prefer_struct_with(call_expr: ptr[ast.Expr], callee: ptr[ast.Expr
         first = false
         ci += 1
     buf.append(" = …)`")
-    push_warning_at(warnings, path, expression_line(callee), expression_column(callee), 0, "prefer-struct-with", buf.as_str(), "hint")
+    push_warning_at(
+        warnings,
+        path,
+        expression_line(callee),
+        expression_column(callee),
+        0,
+        "prefer-struct-with",
+        buf.as_str(),
+        "hint"
+    )
 
 
 ## The resolved type of an expression from the analysis record.
@@ -4095,7 +4512,10 @@ function prefer_struct_with_expr_type(analysis: ref[analyzer.Analysis], expr: pt
 ## and variants are separate tables), and an imported instance only without
 ## type arguments (a generic instance is the host's `GenericInstance`, not a
 ## `Struct`).
-function prefer_struct_with_fields(analysis: ref[analyzer.Analysis], ty: types.Type) -> Option[span[analyzer.FieldEntry]]:
+function prefer_struct_with_fields(
+    analysis: ref[analyzer.Analysis],
+    ty: types.Type
+) -> Option[span[analyzer.FieldEntry]]:
     match ty:
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
@@ -4146,7 +4566,11 @@ function prefer_struct_with_binding_fields(module_name: str, type_name: str) -> 
 ## The struct fields a type alias resolves to: an imported target resolves in
 ## its own binding, a plain name in the alias' module.  An alias to anything
 ## else (a proc, a primitive, a generic instance) has no struct fields.
-function prefer_struct_with_alias_fields(bindings: ptr[map_mod.Map[str, analyzer.ModuleBinding]], target: types.Type, alias_module: str) -> Option[span[analyzer.FieldEntry]]:
+function prefer_struct_with_alias_fields(
+    bindings: ptr[map_mod.Map[str, analyzer.ModuleBinding]],
+    target: types.Type,
+    alias_module: str
+) -> Option[span[analyzer.FieldEntry]]:
     match target:
         types.Type.ty_imported as tim:
             let tim_bp = unsafe: read(tim.payload)
@@ -4215,7 +4639,11 @@ function named_modules_match(name_a: str, module_a: str, name_b: str, module_b: 
 
 ## The host's `(field_names - changed_names) == copied_names`: every copied
 ## name is a field that was not changed, and every field not changed is copied.
-function prefer_struct_with_partition_ok(fields: span[analyzer.FieldEntry], copied: ref[vec.Vec[str]], changed: ref[vec.Vec[str]]) -> bool:
+function prefer_struct_with_partition_ok(
+    fields: span[analyzer.FieldEntry],
+    copied: ref[vec.Vec[str]],
+    changed: ref[vec.Vec[str]]
+) -> bool:
     var ci: ptr_uint = 0
     while ci < copied.len():
         let cp = copied.get(ci) else:
@@ -4262,14 +4690,20 @@ function prefer_struct_with_source_name(expr: ptr[ast.Expr]) -> str:
 function uint_to_str(n: ptr_uint) -> str:
     return analyzer.uint_to_str(n)
 
-
 # =============================================================================
 #  line-too-long — source-level check for lines exceeding the max length.
 # =============================================================================
 
 public const DEFAULT_MAX_LINE_LENGTH: ptr_uint = 120
 
-function lint_line_too_long(source: str, tokens: vec.Vec[token_mod.Token], path: str, max_line_length: ptr_uint, warnings: ref[vec.Vec[Warning]]) -> void:
+
+function lint_line_too_long(
+    source: str,
+    tokens: vec.Vec[token_mod.Token],
+    path: str,
+    max_line_length: ptr_uint,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     var start: ptr_uint = 0
     var line_index: ptr_uint = 0
     var i: ptr_uint = 0
@@ -4285,7 +4719,15 @@ function lint_line_too_long(source: str, tokens: vec.Vec[token_mod.Token], path:
 ## One line: only wrappable over-long lines are reported (host
 ## `emit_line_too_long_warnings`), with the host's column/length and the
 ## `; wrap the expression` suffix when the formatter can wrap it.
-function lint_one_long_line(source: str, tokens: vec.Vec[token_mod.Token], path: str, line_index: ptr_uint, line: str, max_line_length: ptr_uint, warnings: ref[vec.Vec[Warning]]) -> void:
+function lint_one_long_line(
+    source: str,
+    tokens: vec.Vec[token_mod.Token],
+    path: str,
+    line_index: ptr_uint,
+    line: str,
+    max_line_length: ptr_uint,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     if line.len == 0:
         return
     if is_external_or_foreign_function_header_line(line):
@@ -4406,7 +4848,6 @@ function utf8_char_width(s: str) -> ptr_uint:
         count += 1
     return count
 
-
 # =============================================================================
 #  owning-release-leak / owning-release-double — AST-based ownership checks.
 # =============================================================================
@@ -4482,10 +4923,8 @@ function own_callee_type_name(callee: ptr[ast.Expr]) -> str:
             _:
                 return ""
 
-
 ## Walk all function-like bodies to collect owning locals and release calls,
 ## then report leaks and double-releases.
-
 
 # =============================================================================
 #  The host's release rules tail: `own[T]` leaks and the sequential
@@ -4523,7 +4962,16 @@ function ownership_own_leaks(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.
                 buf.append("' of type '")
                 buf.append(lb.type_name)
                 buf.append("' is never released")
-                push_warning_at(warnings, path, lb.line, lb.column, lb.name.len, "owning-release-leak", buf.as_str(), "warning")
+                push_warning_at(
+                    warnings,
+                    path,
+                    lb.line,
+                    lb.column,
+                    lb.name.len,
+                    "owning-release-leak",
+                    buf.as_str(),
+                    "warning"
+                )
         i += 1
 
 
@@ -4547,7 +4995,12 @@ function ownership_collect_own_locals_stmt(stmt: ptr[ast.Stmt], sink: ref[vec.Ve
                 if loc.name.len > 0:
                     match own_local_type(loc.value):
                         Option.some as type_name:
-                            sink.push(OwnBinding(name = loc.name, line = loc.line, column = loc.column, type_name = type_name.value))
+                            sink.push(OwnBinding(
+                                name = loc.name,
+                                line = loc.line,
+                                column = loc.column,
+                                type_name = type_name.value
+                            ))
                         Option.none:
                             pass
             ast.Stmt.stmt_if as iff:
@@ -4937,7 +5390,11 @@ function ownership_double_warnings(body: ptr[ast.Stmt]?, path: str, warnings: re
         i += 1
 
 
-function ownership_double_scope(body: ptr[ast.Stmt]?, result_names: ref[vec.Vec[str]], result_lines: ref[map_mod.Map[str, ptr_uint]]) -> void:
+function ownership_double_scope(
+    body: ptr[ast.Stmt]?,
+    result_names: ref[vec.Vec[str]],
+    result_lines: ref[map_mod.Map[str, ptr_uint]]
+) -> void:
     let b = body else:
         return
     unsafe:
@@ -4948,7 +5405,11 @@ function ownership_double_scope(body: ptr[ast.Stmt]?, result_names: ref[vec.Vec[
                 pass
 
 
-function ownership_double_in_stmts(stmts: span[ast.Stmt], result_names: ref[vec.Vec[str]], result_lines: ref[map_mod.Map[str, ptr_uint]]) -> void:
+function ownership_double_in_stmts(
+    stmts: span[ast.Stmt],
+    result_names: ref[vec.Vec[str]],
+    result_lines: ref[map_mod.Map[str, ptr_uint]]
+) -> void:
     var names = vec.Vec[str].create()
     defer: names.release()
     var counts = map_mod.Map[str, ptr_uint].create()
@@ -4987,7 +5448,12 @@ function ownership_double_in_stmts(stmts: span[ast.Stmt], result_names: ref[vec.
 
 
 ## Record one statement's release (the host's ).
-function ownership_double_note_stmt(stmt: ptr[ast.Stmt], names: ref[vec.Vec[str]], counts: ref[map_mod.Map[str, ptr_uint]], lines: ref[map_mod.Map[str, ptr_uint]]) -> void:
+function ownership_double_note_stmt(
+    stmt: ptr[ast.Stmt],
+    names: ref[vec.Vec[str]],
+    counts: ref[map_mod.Map[str, ptr_uint]],
+    lines: ref[map_mod.Map[str, ptr_uint]]
+) -> void:
     var name: str = ""
     match ownership_extract_expr(stmt):
         Option.some as ep:
@@ -5106,7 +5572,13 @@ function scope_name_visible(name: str) -> bool:
 ## the analysis is present, the simple AST fallback when it is not — the host's
 ## `cfg_available`), then the `own[T]` leaks, then the sequential double
 ## releases.
-function ownership_walk_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str], graph: ref[flow_graph.CfgGraph]) -> void:
+function ownership_walk_body(
+    body: ptr[ast.Stmt]?,
+    path: str,
+    warnings: ref[vec.Vec[Warning]],
+    owning_type_names: span[str],
+    graph: ref[flow_graph.CfgGraph]
+) -> void:
     let bp = body else:
         return
     if lint_analysis != null:
@@ -5123,7 +5595,6 @@ function ownership_walk_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.
     ownership_own_leaks(bp, path, warnings)
     ownership_double_warnings(bp, path, warnings)
 
-
 # =============================================================================
 #  The host's CFG release analysis (`release_rules.rb`'s
 #  `emit_owning_release_cfg_warnings`): the struct-owning leak and
@@ -5134,7 +5605,13 @@ function ownership_walk_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.
 ## declaration order — a leak when some path from the declaration reaches an
 ## exit without a consumer, then a double release when a release node is
 ## reachable from another release before any reassignment.
-function ownership_cfg_warnings(body: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str], graph: ref[flow_graph.CfgGraph]) -> void:
+function ownership_cfg_warnings(
+    body: ptr[ast.Stmt],
+    path: str,
+    warnings: ref[vec.Vec[Warning]],
+    owning_type_names: span[str],
+    graph: ref[flow_graph.CfgGraph]
+) -> void:
     var locals = vec.Vec[OwnBinding].create()
     defer: locals.release()
     var index = map_mod.Map[str, ptr_uint].create()
@@ -5158,7 +5635,14 @@ function ownership_cfg_warnings(body: ptr[ast.Stmt], path: str, warnings: ref[ve
 
 ## The per-local half of `emit_owning_release_cfg_warnings`: the leak, then the
 ## first reachable double release.
-function ownership_cfg_warn_one(graph: ref[flow_graph.CfgGraph], reachable: ref[vec.Vec[ptr_uint]], decl_id: ptr_uint, lb: OwnBinding, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function ownership_cfg_warn_one(
+    graph: ref[flow_graph.CfgGraph],
+    reachable: ref[vec.Vec[ptr_uint]],
+    decl_id: ptr_uint,
+    lb: OwnBinding,
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     var releases = vec.Vec[ptr_uint].create()
     defer: releases.release()
     var consumers = vec.Vec[ptr_uint].create()
@@ -5195,7 +5679,12 @@ function ownership_cfg_warn_one(graph: ref[flow_graph.CfgGraph], reachable: ref[
 ## The host's `owning_local_bindings`: the struct-owning locals in declaration
 ## order.  A re-declaration updates the entry in place at its first position,
 ## as Ruby's hash update does.
-function ownership_collect_owning_locals(body: ptr[ast.Stmt]?, sink: ref[vec.Vec[OwnBinding]], index: ref[map_mod.Map[str, ptr_uint]], owning_type_names: span[str]) -> void:
+function ownership_collect_owning_locals(
+    body: ptr[ast.Stmt]?,
+    sink: ref[vec.Vec[OwnBinding]],
+    index: ref[map_mod.Map[str, ptr_uint]],
+    owning_type_names: span[str]
+) -> void:
     let bp = body else:
         return
     unsafe:
@@ -5209,7 +5698,12 @@ function ownership_collect_owning_locals(body: ptr[ast.Stmt]?, sink: ref[vec.Vec
                 ownership_collect_owning_locals_stmt(bp, sink, index, owning_type_names)
 
 
-function ownership_collect_owning_locals_stmt(stmt: ptr[ast.Stmt], sink: ref[vec.Vec[OwnBinding]], index: ref[map_mod.Map[str, ptr_uint]], owning_type_names: span[str]) -> void:
+function ownership_collect_owning_locals_stmt(
+    stmt: ptr[ast.Stmt],
+    sink: ref[vec.Vec[OwnBinding]],
+    index: ref[map_mod.Map[str, ptr_uint]],
+    owning_type_names: span[str]
+) -> void:
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_local as loc:
@@ -5242,7 +5736,14 @@ function ownership_collect_owning_locals_stmt(stmt: ptr[ast.Stmt], sink: ref[vec
                 pass
 
 
-function ownership_note_owning_local(sink: ref[vec.Vec[OwnBinding]], index: ref[map_mod.Map[str, ptr_uint]], name: str, line: ptr_uint, column: ptr_uint, type_name: str) -> void:
+function ownership_note_owning_local(
+    sink: ref[vec.Vec[OwnBinding]],
+    index: ref[map_mod.Map[str, ptr_uint]],
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    type_name: str
+) -> void:
     let existing = index.get(name)
     if existing != null:
         let slot = unsafe: read(existing)
@@ -5259,7 +5760,11 @@ function ownership_note_owning_local(sink: ref[vec.Vec[OwnBinding]], index: ref[
 
 ## The host's `resolve_local_owning_type`: the annotation's base name when it
 ## names an owning type, else the initializer's created type.
-function ownership_resolve_owning_type(stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, owning_type_names: span[str]) -> Option[str]:
+function ownership_resolve_owning_type(
+    stmt_type: ptr[ast.TypeRef]?,
+    value: ptr[ast.Expr]?,
+    owning_type_names: span[str]
+) -> Option[str]:
     let tp = stmt_type else:
         return ownership_initializer_owning_type(value, owning_type_names)
     let base = owning_annotation_type_name(tp)
@@ -5412,7 +5917,14 @@ function ownership_decl_has_initializer(stmt_key: ptr_uint) -> bool:
 ## binding (consumers; the non-defer ones also count as releases), the nodes
 ## that consume it by transfer (a by-name return or a struct-field transfer)
 ## and the nodes that reassign it.
-function ownership_classify_nodes(graph: ref[flow_graph.CfgGraph], reachable: ref[vec.Vec[ptr_uint]], name: str, releases: ref[vec.Vec[ptr_uint]], consumers: ref[vec.Vec[ptr_uint]], reassigns: ref[vec.Vec[ptr_uint]]) -> void:
+function ownership_classify_nodes(
+    graph: ref[flow_graph.CfgGraph],
+    reachable: ref[vec.Vec[ptr_uint]],
+    name: str,
+    releases: ref[vec.Vec[ptr_uint]],
+    consumers: ref[vec.Vec[ptr_uint]],
+    reassigns: ref[vec.Vec[ptr_uint]]
+) -> void:
     var i: ptr_uint = 0
     let count = unsafe: read(graph).nodes.len()
     while i < count:
@@ -5621,7 +6133,12 @@ function ownership_argument_transfers(value: ptr[ast.Expr], name: str, named: bo
 ## The host's `every_path_to_exit_has_consumer?`: walk from the declaration;
 ## a consumer ends the path, an exit node before any consumer is a leak.  An
 ## exhausted walk (no exit nodes reachable) is not a leak.
-function ownership_every_path_has_consumer(graph: ref[flow_graph.CfgGraph], decl_id: ptr_uint, consumers: ref[vec.Vec[ptr_uint]], reachable: ref[vec.Vec[ptr_uint]]) -> bool:
+function ownership_every_path_has_consumer(
+    graph: ref[flow_graph.CfgGraph],
+    decl_id: ptr_uint,
+    consumers: ref[vec.Vec[ptr_uint]],
+    reachable: ref[vec.Vec[ptr_uint]]
+) -> bool:
     var visited = vec.Vec[ptr_uint].create()
     defer: visited.release()
     var queue = vec.Vec[ptr_uint].create()
@@ -5665,7 +6182,13 @@ function ownership_every_path_has_consumer(graph: ref[flow_graph.CfgGraph], decl
 
 ## The host's `find_reachable_release`: the first release node reachable from
 ## another release for the same binding without passing a reassignment.
-function ownership_find_reachable_release(graph: ref[flow_graph.CfgGraph], start_id: ptr_uint, releases: ref[vec.Vec[ptr_uint]], reassigns: ref[vec.Vec[ptr_uint]], reachable: ref[vec.Vec[ptr_uint]]) -> ptr_uint:
+function ownership_find_reachable_release(
+    graph: ref[flow_graph.CfgGraph],
+    start_id: ptr_uint,
+    releases: ref[vec.Vec[ptr_uint]],
+    reassigns: ref[vec.Vec[ptr_uint]],
+    reachable: ref[vec.Vec[ptr_uint]]
+) -> ptr_uint:
     var visited = vec.Vec[ptr_uint].create()
     defer: visited.release()
     var queue = vec.Vec[ptr_uint].create()
@@ -5717,7 +6240,12 @@ function ownership_ids_contain(ids: ref[vec.Vec[ptr_uint]], id: ptr_uint) -> boo
     return false
 
 
-function ownership_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str]) -> void:
+function ownership_walk_stmts(
+    stmts: span[ast.Stmt],
+    path: str,
+    warnings: ref[vec.Vec[Warning]],
+    owning_type_names: span[str]
+) -> void:
     var created = vec.Vec[str].create()
     defer: created.release()
     var released = vec.Vec[str].create()
@@ -5731,7 +6259,16 @@ function ownership_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[ve
     var si: ptr_uint = 0
     while si < stmts.len:
         unsafe:
-            ownership_collect_stmt(stmts.data + si, ref_of(created), ref_of(created_info), ref_of(released), ref_of(transferred), path, warnings, owning_type_names)
+            ownership_collect_stmt(
+                stmts.data + si,
+                ref_of(created),
+                ref_of(created_info),
+                ref_of(released),
+                ref_of(transferred),
+                path,
+                warnings,
+                owning_type_names
+            )
         si += 1
 
     # Recurse into nested scopes.
@@ -5779,7 +6316,16 @@ function ownership_contains(vec_ref: ref[vec.Vec[str]], name: str) -> bool:
     return false
 
 
-function ownership_collect_stmt(stmt: ptr[ast.Stmt], created: ref[vec.Vec[str]], created_info: ref[map_mod.Map[str, OwningBinding]], released: ref[vec.Vec[str]], transferred: ref[vec.Vec[str]], path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str]) -> void:
+function ownership_collect_stmt(
+    stmt: ptr[ast.Stmt],
+    created: ref[vec.Vec[str]],
+    created_info: ref[map_mod.Map[str, OwningBinding]],
+    released: ref[vec.Vec[str]],
+    transferred: ref[vec.Vec[str]],
+    path: str,
+    warnings: ref[vec.Vec[Warning]],
+    owning_type_names: span[str]
+) -> void:
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_local as loc:
@@ -5796,7 +6342,10 @@ function ownership_collect_stmt(stmt: ptr[ast.Stmt], created: ref[vec.Vec[str]],
                     let vt = loc.stmt_type
                     if vt != null and is_owning_type_annotation(unsafe: read(vt), owning_type_names):
                         created.push(loc.name)
-                        created_info.set(loc.name, OwningBinding(line = loc.line, type_name = own_created_type_name(null, loc.stmt_type)))
+                        created_info.set(
+                            loc.name,
+                            OwningBinding(line = loc.line, type_name = own_created_type_name(null, loc.stmt_type))
+                        )
                 ownership_collect_expr_opt(loc.value, released, transferred, path, warnings)
                 ownership_collect_body_opt(loc.else_body, path, warnings)
             ast.Stmt.stmt_expression as ex:
@@ -5840,7 +6389,16 @@ function ownership_collect_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[v
                 defer: transferred.release()
                 var created_info = map_mod.Map[str, OwningBinding].create()
                 defer: created_info.release()
-                ownership_collect_stmt(bp, ref_of(created), ref_of(created_info), ref_of(released), ref_of(transferred), path, warnings, span[str]())
+                ownership_collect_stmt(
+                    bp,
+                    ref_of(created),
+                    ref_of(created_info),
+                    ref_of(released),
+                    ref_of(transferred),
+                    path,
+                    warnings,
+                    span[str]()
+                )
 
 
 function ownership_collect_body_opt(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -5849,7 +6407,13 @@ function ownership_collect_body_opt(body: ptr[ast.Stmt]?, path: str, warnings: r
     ownership_collect_body(bp, path, warnings)
 
 
-function ownership_collect_expr(expr: ptr[ast.Expr], released: ref[vec.Vec[str]], transferred: ref[vec.Vec[str]], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function ownership_collect_expr(
+    expr: ptr[ast.Expr],
+    released: ref[vec.Vec[str]],
+    transferred: ref[vec.Vec[str]],
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     unsafe:
         match read(expr):
             ast.Expr.expr_call as call:
@@ -5908,7 +6472,13 @@ function ownership_collect_expr(expr: ptr[ast.Expr], released: ref[vec.Vec[str]]
                 pass
 
 
-function ownership_collect_expr_opt(expr: ptr[ast.Expr]?, released: ref[vec.Vec[str]], transferred: ref[vec.Vec[str]], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function ownership_collect_expr_opt(
+    expr: ptr[ast.Expr]?,
+    released: ref[vec.Vec[str]],
+    transferred: ref[vec.Vec[str]],
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     let ep = expr else:
         return
     ownership_collect_expr(ep, released, transferred, path, warnings)
@@ -6023,7 +6593,11 @@ function is_alloc_method_name(name: str) -> bool:
 ## True when `expr` is a `.release()` or `.release_and_null()` call.
 ## Record transfers: when `target` is an identifier (struct field assignment or
 ## similar), and `value` contains an owning name, that name is transferred.
-function ownership_collect_transfer_in_args(value: ptr[ast.Expr], target: ptr[ast.Expr], transferred: ref[vec.Vec[str]]) -> void:
+function ownership_collect_transfer_in_args(
+    value: ptr[ast.Expr],
+    target: ptr[ast.Expr],
+    transferred: ref[vec.Vec[str]]
+) -> void:
     unsafe:
         match read(value):
             ast.Expr.expr_identifier as id:
@@ -6055,7 +6629,6 @@ function ownership_collect_ret_transfer(value: ptr[ast.Expr]?, transferred: ref[
 ## (transfers ownership). For AST-only, we just record names passed to any call.
 function ownership_transfer_ctor(expr: ptr[ast.Expr]?, target_name: str) -> bool:
     return false
-
 
 # =============================================================================
 #  reserved-primitive-name — warn when a binding shadows a built-in type name.
@@ -6114,7 +6687,15 @@ function lint_reserved_module_names(file: ast.SourceFile, path: str, warnings: r
                         # The host's `RESERVED_IMPORT_ALIAS_NAMES`: only
                         # `Option`/`Result`, not the primitive type names.
                         if is_reserved_import_alias_name(local_name):
-                            reserved_register(path, imp.line, imp.column, local_name, "import alias", ref_of(import_names), warnings)
+                            reserved_register(
+                                path,
+                                imp.line,
+                                imp.column,
+                                local_name,
+                                "import alias",
+                                ref_of(import_names),
+                                warnings
+                            )
                 _:
                     pass
         ii += 1
@@ -6129,33 +6710,63 @@ function lint_reserved_module_names(file: ast.SourceFile, path: str, warnings: r
             match read(file.declarations.data + i):
                 ast.Decl.decl_function as fun:
                     if is_reserved_type_name(fun.name):
-                        reserved_register(path, fun.line, fun.column, fun.name, "function", ref_of(declared_names), warnings)
+                        reserved_register(
+                            path,
+                            fun.line,
+                            fun.column,
+                            fun.name,
+                            "function",
+                            ref_of(declared_names),
+                            warnings
+                        )
                 ast.Decl.decl_const as c:
                     if is_reserved_type_name(c.name):
                         reserved_register(path, c.line, c.column, c.name, "constant", ref_of(declared_names), warnings)
                 ast.Decl.decl_var as v:
                     if is_reserved_type_name(v.name):
-                        reserved_register(path, v.line, v.column, v.name, "module variable", ref_of(declared_names), warnings)
+                        reserved_register(
+                            path,
+                            v.line,
+                            v.column,
+                            v.name,
+                            "module variable",
+                            ref_of(declared_names),
+                            warnings
+                        )
                 ast.Decl.decl_event as ev:
                     if is_reserved_type_name(ev.name):
                         reserved_register(path, ev.line, ev.column, ev.name, "event", ref_of(declared_names), warnings)
                 ast.Decl.decl_extern_function as ef:
                     if is_reserved_type_name(ef.name):
-                        reserved_register(path, ef.line, reserved_name_column(ef.line, ef.name), ef.name, "function", ref_of(declared_names), warnings)
+                        reserved_register(
+                            path,
+                            ef.line,
+                            reserved_name_column(ef.line, ef.name),
+                            ef.name,
+                            "function",
+                            ref_of(declared_names),
+                            warnings
+                        )
                 ast.Decl.decl_foreign_function as ff:
                     if is_reserved_type_name(ff.name):
-                        reserved_register(path, ff.line, reserved_name_column(ff.line, ff.name), ff.name, "function", ref_of(declared_names), warnings)
+                        reserved_register(
+                            path,
+                            ff.line,
+                            reserved_name_column(ff.line, ff.name),
+                            ff.name,
+                            "function",
+                            ref_of(declared_names),
+                            warnings
+                        )
                 _:
                     pass
         i += 1
-
 
 ## One reserved-name site: the 1-based position of the name and its length.
 public struct ReservedNameSite:
     line: ptr_uint
     column: ptr_uint
     length: ptr_uint
-
 
 ## One binding's rename fix: every site that spells its name, and the
 ## replacement the sites become (the host's `ReservedPrimitiveNameFix`).
@@ -6165,7 +6776,6 @@ public struct ReservedNameFix:
     replacement_base_name: str
     replacement_name: str
     sites: vec.Vec[ReservedNameSite]
-
 
 ## The fixes collected by the lint pass in flight (the host's
 ## `@reserved_primitive_name_fixes`), the module-level name → fix index
@@ -6388,7 +6998,13 @@ function reserved_register(
             sites = sites,
         ))
     # Module-level bindings answer identifier uses no local shadows.
-    if kind_label.equal("function") or kind_label.equal("constant") or kind_label.equal("module variable") or kind_label.equal("event") or kind_label.equal("import alias"):
+    if (
+        kind_label.equal("function")
+        or kind_label.equal("constant")
+        or kind_label.equal("module variable")
+        or kind_label.equal("event")
+        or kind_label.equal("import alias")
+    ):
         let module_fix = lint_reserved_module_fix else:
             return index + 1
         unsafe: read(module_fix).set(name, index)
@@ -6413,7 +7029,11 @@ function reserved_record_use(index: ptr_uint, line: ptr_uint, column: ptr_uint) 
 ## Collect the reserved-primitive-name rename fixes for `source` — the host's
 ## `collect_reserved_primitive_name_fixes`.  The caller releases the result
 ## with `release_reserved_name_fixes`.
-public function collect_reserved_primitive_name_fixes(source: str, path: str, options: LintOptions) -> vec.Vec[ReservedNameFix]:
+public function collect_reserved_primitive_name_fixes(
+    source: str,
+    path: str,
+    options: LintOptions
+) -> vec.Vec[ReservedNameFix]:
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
     let file = parser.parse_source(source, ref_of(parse_diags))
@@ -6424,7 +7044,11 @@ public function collect_reserved_primitive_name_fixes(source: str, path: str, op
     return collected
 
 
-function reserved_type_params_warn(type_params: span[ast.TypeParam], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function reserved_type_params_warn(
+    type_params: span[ast.TypeParam],
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     var i: ptr_uint = 0
     while i < type_params.len:
         unsafe:
@@ -6434,7 +7058,14 @@ function reserved_type_params_warn(type_params: span[ast.TypeParam], path: str, 
         i += 1
 
 
-function reserved_name_warn(path: str, line: ptr_uint, column: ptr_uint, name: str, kind_label: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function reserved_name_warn(
+    path: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    name: str,
+    kind_label: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     var buf = string.String.create()
     buf.append(kind_label)
     buf.append(" '")
@@ -6444,12 +7075,9 @@ function reserved_name_warn(path: str, line: ptr_uint, column: ptr_uint, name: s
     buf.append("'; rename it before this becomes a hard error")
     push_warning_at(warnings, path, line, column, name.len, "reserved-primitive-name", buf.as_str(), "warning")
 
-
 # =============================================================================
 #  borrow-and-mutate — warn when a variable is borrowed and also mutated.
 # =============================================================================
-
-
 
 ## The first `ref_of`/`ptr_of` site seen for a borrowed name.  The host finds
 ## the earliest site with `find_borrow_location`; recording it during collection
@@ -6495,7 +7123,11 @@ function borrow_collect_body(body: ptr[ast.Stmt], borrows: ref[vec.Vec[BorrowSit
                 borrow_collect_stmt(body, borrows, writes)
 
 
-function borrow_collect_stmts(stmts: span[ast.Stmt], borrows: ref[vec.Vec[BorrowSite]], writes: ref[vec.Vec[str]]) -> void:
+function borrow_collect_stmts(
+    stmts: span[ast.Stmt],
+    borrows: ref[vec.Vec[BorrowSite]],
+    writes: ref[vec.Vec[str]]
+) -> void:
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:
@@ -6580,7 +7212,11 @@ function borrow_collect_expr(
                 pass
 
 
-function borrow_collect_expr_opt(expr: ptr[ast.Expr]?, borrows: ref[vec.Vec[BorrowSite]], writes: ref[vec.Vec[str]]) -> void:
+function borrow_collect_expr_opt(
+    expr: ptr[ast.Expr]?,
+    borrows: ref[vec.Vec[BorrowSite]],
+    writes: ref[vec.Vec[str]]
+) -> void:
     let ep = expr else:
         return
     borrow_collect_expr(ep, borrows, writes, false)
@@ -6623,7 +7259,11 @@ function borrow_recurse_stmt(stmt: ptr[ast.Stmt], borrows: ref[vec.Vec[BorrowSit
                 pass
 
 
-function borrow_collect_body_opt2(body: ptr[ast.Stmt]?, borrows: ref[vec.Vec[BorrowSite]], writes: ref[vec.Vec[str]]) -> void:
+function borrow_collect_body_opt2(
+    body: ptr[ast.Stmt]?,
+    borrows: ref[vec.Vec[BorrowSite]],
+    writes: ref[vec.Vec[str]]
+) -> void:
     let bp = body else:
         return
     borrow_collect_body(bp, borrows, writes)
@@ -6650,7 +7290,6 @@ function borrow_vec_contains(vec_ref: ref[vec.Vec[str]], name: str) -> bool:
         i += 1
     return false
 
-
 # =============================================================================
 #  Shared helpers for CFG-based rules
 # =============================================================================
@@ -6658,14 +7297,9 @@ function borrow_vec_contains(vec_ref: ref[vec.Vec[str]], name: str) -> bool:
 ## Walk all function-like bodies in a source file (free functions and extending
 ## methods) and pass each body pointer to the given action.
 
-
-
-
 # =============================================================================
 #  dead-assignment — assignment whose value is never read
 # =============================================================================
-
-
 
 function lint_dead_body(
     flow_cfg: ref[flow_builder.Cfg],
@@ -6731,12 +7365,9 @@ function key_in(keys: ref[vec.Vec[ptr_uint]], key: ptr_uint) -> bool:
         i += 1
     return false
 
-
 # =============================================================================
 #  unreachable-code — statement after a terminating statement
 # =============================================================================
-
-
 
 ## The host's `emit_unreachable_warnings`: every CFG node not reachable from
 ## the entry, except the exit node, anchored at its statement's own span.
@@ -6796,7 +7427,6 @@ function unreachable_length(node: ptr[flow_graph.CfgNode]) -> ptr_uint:
             return 0
         return statement_length(reinterpret[ptr[ast.Stmt]](read(node).statement))
 
-
 # =============================================================================
 #  constant-condition — the host's `emit_constant_condition_warnings`
 # =============================================================================
@@ -6823,7 +7453,6 @@ function rstrip_line(text: str) -> str:
         else:
             break
     return text.slice(0, end)
-
 
 struct ConditionSpan:
     line: ptr_uint
@@ -6901,7 +7530,12 @@ function text_matches_at(text: str, at: ptr_uint, needle: str) -> bool:
 ## The host's `emit_constant_condition_warnings` over one body: the shared
 ## graph, the constant-propagation solver, the loop-body skip, then the
 ## source-line anchor.
-function lint_const_cond_in_body(flow_cfg: ref[flow_builder.Cfg], graph: ref[flow_graph.CfgGraph], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function lint_const_cond_in_body(
+    flow_cfg: ref[flow_builder.Cfg],
+    graph: ref[flow_graph.CfgGraph],
+    path: str,
+    warnings: ref[vec.Vec[Warning]]
+) -> void:
     var states = constprop.states_empty()
     defer: constprop.states_release(ref_of(states))
     constprop.solve_into(flow_cfg, graph, ref_of(states))
@@ -6949,15 +7583,22 @@ function lint_const_cond_node(
             else:
                 buf.append("branch condition is always ")
             buf.append(if val.value: "true" else: "false")
-            push_warning_at(warnings, path, span.line, span.column, span.length, "constant-condition", buf.as_str(), "warning")
+            push_warning_at(
+                warnings,
+                path,
+                span.line,
+                span.column,
+                span.length,
+                "constant-condition",
+                buf.as_str(),
+                "warning"
+            )
         Option.none:
             pass
 
 # =============================================================================
 #  loop-single-iteration — loop body always breaks/returns on first iteration
 # =============================================================================
-
-
 
 function lint_loop_single_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     let bp = body else:
@@ -7045,13 +7686,6 @@ function lint_loop_single_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.V
             _:
                 pass
 
-
-
-
-
-
 # =============================================================================
 #  redundant-null-check — `x != null` where x is already narrowed non-null
 # =============================================================================
-
-

@@ -6,12 +6,10 @@ import std.str
 import std.string as string
 import std.vec as vec
 
-
 public struct PackageVersion:
     major: ptr_uint
     minor: ptr_uint
     patch: ptr_uint
-
 
 public enum VersionOperator: ubyte
     eq = 0
@@ -20,11 +18,9 @@ public enum VersionOperator: ubyte
     lt = 3
     lte = 4
 
-
 public struct VersionConstraint:
     operator: VersionOperator
     version: PackageVersion
-
 
 public struct PackageVersionReq:
     constraints: vec.Vec[VersionConstraint]
@@ -33,6 +29,7 @@ public struct PackageVersionReq:
 extending PackageVersion:
     public function to_string() -> string.String:
         return string.String.from_str(f"#{this.major}.#{this.minor}.#{this.patch}")
+
 
     public function compare_to(other: PackageVersion) -> int:
         if this.major < other.major:
@@ -66,6 +63,7 @@ extending VersionConstraint:
                 return order <= 0
         return false
 
+
     public function to_string() -> string.String:
         var prefix: str = ""
         match this.operator:
@@ -95,6 +93,7 @@ extending PackageVersionReq:
             return false
         return unsafe: read(first).operator == VersionOperator.eq
 
+
     public function exact_version() -> Option[PackageVersion]:
         if not this.exact():
             return Option[PackageVersion].none
@@ -102,12 +101,14 @@ extending PackageVersionReq:
             return Option[PackageVersion].none
         return Option[PackageVersion].some(value = unsafe: read(first).version)
 
+
     public function matches_text(value: str) -> Result[bool, string.String]:
         match parse(value, "package version"):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)
             Result.success as parsed:
                 return Result[bool, string.String].success(value = this.matches(parsed.value))
+
 
     public function matches(candidate: PackageVersion) -> bool:
         var i: ptr_uint = 0
@@ -118,6 +119,7 @@ extending PackageVersionReq:
                 return false
             i += 1
         return true
+
 
     public function to_string() -> string.String:
         var result = string.String.create()
@@ -132,6 +134,7 @@ extending PackageVersionReq:
             rendered.release()
             i += 1
         return result
+
 
     public editable function release() -> void:
         this.constraints.release()
@@ -295,7 +298,11 @@ public function parse_requirement(value: str, label: str) -> Result[PackageVersi
     )
 
 
-function parse_segment_pair(segment: str, label: str, out_constraints: ref[vec.Vec[VersionConstraint]]) -> Result[bool, string.String]:
+function parse_segment_pair(
+    segment: str,
+    label: str,
+    out_constraints: ref[vec.Vec[VersionConstraint]]
+) -> Result[bool, string.String]:
     if segment.starts_with("^"):
         let version_text = segment.slice(1, segment.len - 1)
         match parse(version_text, label):
@@ -304,7 +311,10 @@ function parse_segment_pair(segment: str, label: str, out_constraints: ref[vec.V
             Result.success as parsed:
                 let version = parsed.value
                 out_constraints.push(VersionConstraint(operator = VersionOperator.gte, version = version))
-                out_constraints.push(VersionConstraint(operator = VersionOperator.lt, version = caret_upper_bound(version)))
+                out_constraints.push(VersionConstraint(
+                    operator = VersionOperator.lt,
+                    version = caret_upper_bound(version)
+                ))
                 return Result[bool, string.String].success(value = true)
     if segment.starts_with("~"):
         let version_text = segment.slice(1, segment.len - 1)
@@ -314,7 +324,10 @@ function parse_segment_pair(segment: str, label: str, out_constraints: ref[vec.V
             Result.success as parsed:
                 let version = parsed.value
                 out_constraints.push(VersionConstraint(operator = VersionOperator.gte, version = version))
-                out_constraints.push(VersionConstraint(operator = VersionOperator.lt, version = tilde_upper_bound(version)))
+                out_constraints.push(VersionConstraint(
+                    operator = VersionOperator.lt,
+                    version = tilde_upper_bound(version)
+                ))
                 return Result[bool, string.String].success(value = true)
 
     # `>=|<=|>|<|=` optionally followed by whitespace, else an exact version.

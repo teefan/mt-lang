@@ -187,7 +187,6 @@ function rename_opt_str(value: Option[str], mapping: ref[map_mod.Map[str, str]])
         Option.none:
             return Option[str].none
 
-
 # =============================================================================
 #  Collection (first-occurrence order in the final IR)
 # =============================================================================
@@ -326,7 +325,6 @@ function collect_stmt_proc(s: ir.Stmt, order: ref[ProcOrder]) -> void:
         _:
             pass
 
-
 # =============================================================================
 #  Rewriting
 # =============================================================================
@@ -348,10 +346,19 @@ function rename_type(t: types.Type, mapping: ref[map_mod.Map[str, str]]) -> type
             let pp = ev_bp.payload_type
             if pp != null:
                 payload = types.alloc_type(rename_type(unsafe: read(pp), mapping))
-            return types.event_type(name = rename_proc_str(ev_bp.name, mapping), capacity = ev_bp.capacity, payload_type = payload, linkage_name = rename_proc_str(ev_bp.linkage_name, mapping))
+            return types.event_type(
+                name = rename_proc_str(ev_bp.name, mapping),
+                capacity = ev_bp.capacity,
+                payload_type = payload,
+                linkage_name = rename_proc_str(ev_bp.linkage_name, mapping)
+            )
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
-            return types.named_type(name = rename_proc_str(n_np.name, mapping), module_name = n_np.module_name, linkage_name = rename_opt_str(n_np.linkage_name, mapping))
+            return types.named_type(
+                name = rename_proc_str(n_np.name, mapping),
+                module_name = n_np.module_name,
+                linkage_name = rename_opt_str(n_np.linkage_name, mapping)
+            )
         types.Type.ty_variant_arm_payload as ap:
             let payload = unsafe: read(ap.payload)
             return types.variant_arm_payload_raw(
@@ -364,22 +371,39 @@ function rename_type(t: types.Type, mapping: ref[map_mod.Map[str, str]]) -> type
             )
         types.Type.ty_imported as im:
             let im_bp = unsafe: read(im.payload)
-            return types.imported_type(module_name = im_bp.module_name, name = rename_proc_str(im_bp.name, mapping), args = rename_types(im_bp.args, mapping))
+            return types.imported_type(
+                module_name = im_bp.module_name,
+                name = rename_proc_str(im_bp.name, mapping),
+                args = rename_types(im_bp.args, mapping)
+            )
         types.Type.ty_dyn as d:
             let d_bp = unsafe: read(d.payload)
             return types.dyn_type(iface = rename_proc_str(d_bp.iface, mapping), args = rename_types(d_bp.args, mapping))
         types.Type.ty_dyn_vtable as dv:
             let dv_bp = unsafe: read(dv.payload)
-            return types.dyn_vtable_type(interface_name = dv_bp.interface_name, linkage_name = rename_proc_str(dv_bp.linkage_name, mapping))
+            return types.dyn_vtable_type(
+                interface_name = dv_bp.interface_name,
+                linkage_name = rename_proc_str(dv_bp.linkage_name, mapping)
+            )
         types.Type.ty_opaque as op:
             let op_bp = unsafe: read(op.payload)
             return types.opaque_type(module_name = op_bp.module_name, name = op_bp.name)
         types.Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
-            return types.generic_type(name = rename_proc_str(g_bp.name, mapping), args = rename_types(g_bp.args, mapping))
+            return types.generic_type(
+                name = rename_proc_str(g_bp.name, mapping),
+                args = rename_types(g_bp.args, mapping)
+            )
         types.Type.ty_function as fnt:
             let fnt_ft = unsafe: read(fnt.payload)
-            return types.function_type(name = rename_proc_str(fnt_ft.name, mapping), params = rename_types(fnt_ft.params, mapping), return_type = types.alloc_type(rename_type(unsafe: read(fnt_ft.return_type), mapping)), variadic = fnt_ft.variadic, is_proc = fnt_ft.is_proc, param_names = fnt_ft.param_names)
+            return types.function_type(
+                name = rename_proc_str(fnt_ft.name, mapping),
+                params = rename_types(fnt_ft.params, mapping),
+                return_type = types.alloc_type(rename_type(unsafe: read(fnt_ft.return_type), mapping)),
+                variadic = fnt_ft.variadic,
+                is_proc = fnt_ft.is_proc,
+                param_names = fnt_ft.param_names
+            )
         types.Type.ty_tuple as tup:
             let tup_bp = unsafe: read(tup.payload)
             return types.tuple_type(elements = rename_types(tup_bp.elements, mapping), field_names = tup_bp.field_names)
@@ -396,7 +420,10 @@ function rename_types(items: span[types.Type], mapping: ref[map_mod.Map[str, str
     return renamed.as_span()
 
 
-function rename_payload_fields(fields: span[types.PayloadField], mapping: ref[map_mod.Map[str, str]]) -> span[types.PayloadField]:
+function rename_payload_fields(
+    fields: span[types.PayloadField],
+    mapping: ref[map_mod.Map[str, str]]
+) -> span[types.PayloadField]:
     var renamed = vec.Vec[types.PayloadField].create()
     var i: ptr_uint = 0
     while i < fields.len:
@@ -498,13 +525,26 @@ function rename_expr(ep: ptr[ir.Expr], mapping: ref[map_mod.Map[str, str]]) -> p
                 )
             ))
         ir.Expr.expr_sizeof as z:
-            return utils.alloc_expr(ir.Expr.expr_sizeof(target_type = rename_type(z.target_type, mapping), ty = rename_type(z.ty, mapping)))
+            return utils.alloc_expr(ir.Expr.expr_sizeof(
+                target_type = rename_type(z.target_type, mapping),
+                ty = rename_type(z.ty, mapping)
+            ))
         ir.Expr.expr_alignof as z:
-            return utils.alloc_expr(ir.Expr.expr_alignof(target_type = rename_type(z.target_type, mapping), ty = rename_type(z.ty, mapping)))
+            return utils.alloc_expr(ir.Expr.expr_alignof(
+                target_type = rename_type(z.target_type, mapping),
+                ty = rename_type(z.ty, mapping)
+            ))
         ir.Expr.expr_offsetof as z:
-            return utils.alloc_expr(ir.Expr.expr_offsetof(target_type = rename_type(z.target_type, mapping), field = z.field, ty = rename_type(z.ty, mapping)))
+            return utils.alloc_expr(ir.Expr.expr_offsetof(
+                target_type = rename_type(z.target_type, mapping),
+                field = z.field,
+                ty = rename_type(z.ty, mapping)
+            ))
         ir.Expr.expr_address_of as a:
-            return utils.alloc_expr(ir.Expr.expr_address_of(expression = rename_expr(a.expression, mapping), ty = rename_type(a.ty, mapping)))
+            return utils.alloc_expr(ir.Expr.expr_address_of(
+                expression = rename_expr(a.expression, mapping),
+                ty = rename_type(a.ty, mapping)
+            ))
         ir.Expr.expr_cast as c:
             return utils.alloc_expr(ir.Expr.expr_cast(
                 target_type = rename_type(c.target_type, mapping),
@@ -523,7 +563,10 @@ function rename_expr(ep: ptr[ir.Expr], mapping: ref[map_mod.Map[str, str]]) -> p
                 fields = rename_aggregate_fields(vl.fields, mapping),
             ))
         ir.Expr.expr_array_literal as arr:
-            return utils.alloc_expr(ir.Expr.expr_array_literal(ty = rename_type(arr.ty, mapping), elements = rename_exprs(arr.elements, mapping)))
+            return utils.alloc_expr(ir.Expr.expr_array_literal(
+                ty = rename_type(arr.ty, mapping),
+                elements = rename_exprs(arr.elements, mapping)
+            ))
         ir.Expr.expr_stmt_expr as se:
             return utils.alloc_expr(ir.Expr.expr_stmt_expr(
                 setup = rename_stmt_span(se.setup, mapping),
@@ -558,7 +601,10 @@ function rename_exprs(items: span[ir.Expr], mapping: ref[map_mod.Map[str, str]])
     return renamed.as_span()
 
 
-function rename_aggregate_fields(fields: span[ir.AggregateField], mapping: ref[map_mod.Map[str, str]]) -> span[ir.AggregateField]:
+function rename_aggregate_fields(
+    fields: span[ir.AggregateField],
+    mapping: ref[map_mod.Map[str, str]]
+) -> span[ir.AggregateField]:
     var renamed = vec.Vec[ir.AggregateField].create()
     var i: ptr_uint = 0
     while i < fields.len:
@@ -586,7 +632,11 @@ function rename_stmt(s: ir.Stmt, mapping: ref[map_mod.Map[str, str]]) -> ir.Stmt
                 value = rename_expr(asg.value, mapping),
             )
         ir.Stmt.stmt_expression as ex:
-            return ir.Stmt.stmt_expression(expression = rename_expr(ex.expression, mapping), line = ex.line, source_path = ex.source_path)
+            return ir.Stmt.stmt_expression(
+                expression = rename_expr(ex.expression, mapping),
+                line = ex.line,
+                source_path = ex.source_path
+            )
         ir.Stmt.stmt_return as ret:
             let value = ret.value
             if value == null:
@@ -608,7 +658,10 @@ function rename_stmt(s: ir.Stmt, mapping: ref[map_mod.Map[str, str]]) -> ir.Stmt
                 else_body = else_body,
             )
         ir.Stmt.stmt_while as w:
-            return ir.Stmt.stmt_while(condition = rename_expr(w.condition, mapping), body = rename_stmt_span(w.body, mapping))
+            return ir.Stmt.stmt_while(
+                condition = rename_expr(w.condition, mapping),
+                body = rename_stmt_span(w.body, mapping)
+            )
         ir.Stmt.stmt_for as f:
             return ir.Stmt.stmt_for(
                 init = utils.alloc_stmt(rename_stmt(unsafe: read(f.init), mapping)),
@@ -627,11 +680,22 @@ function rename_stmt(s: ir.Stmt, mapping: ref[map_mod.Map[str, str]]) -> ir.Stmt
                 let cv = c.value
                 if cv != null:
                     case_value = rename_expr(unsafe: ptr[ir.Expr]<-cv, mapping)
-                cases.push(ir.SwitchCase(is_default = c.is_default, value = case_value, body = rename_stmt_span(c.body, mapping)))
+                cases.push(ir.SwitchCase(
+                    is_default = c.is_default,
+                    value = case_value,
+                    body = rename_stmt_span(c.body, mapping)
+                ))
                 ci += 1
-            return ir.Stmt.stmt_switch(expression = rename_expr(sw.expression, mapping), cases = cases.as_span(), exhaustive = sw.exhaustive)
+            return ir.Stmt.stmt_switch(
+                expression = rename_expr(sw.expression, mapping),
+                cases = cases.as_span(),
+                exhaustive = sw.exhaustive
+            )
         ir.Stmt.stmt_static_assert as sa:
-            return ir.Stmt.stmt_static_assert(condition = rename_expr(sa.condition, mapping), message = rename_expr(sa.message, mapping))
+            return ir.Stmt.stmt_static_assert(
+                condition = rename_expr(sa.condition, mapping),
+                message = rename_expr(sa.message, mapping)
+            )
         _:
             return s
 

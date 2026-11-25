@@ -20,16 +20,13 @@ import mtc.float_text as float_text
 import mtc.ir as ir
 import mtc.semantic.types as types
 
-
 const IF_EXPRESSION_PRECEDENCE: int = 5
 const POSTFIX_PRECEDENCE: int = 90
 const UNARY_PRECEDENCE: int = 80
 
-
 ## Chunk size for `write_program`: the dump is flushed to stdout whenever the
 ## buffer reaches this many bytes, so the peak stays bounded by one chunk.
 const STREAM_CHUNK_BYTES: ptr_uint = 1 << 16
-
 
 struct Formatter:
     buffer: string.String
@@ -86,7 +83,6 @@ function maybe_flush(f: ref[Formatter]) -> void:
     if f.streaming and f.buffer.len() >= STREAM_CHUNK_BYTES:
         flush_chunk(f)
 
-
 # =============================================================================
 #  String helpers
 # =============================================================================
@@ -113,7 +109,6 @@ function append_inspect(f: ref[Formatter], value: str) -> void:
             f.buffer.push_byte(b)
         i += 1
     f.buffer.append("\"")
-
 
 # =============================================================================
 #  Line buffer
@@ -155,7 +150,6 @@ function section_open(f: ref[Formatter], title: str) -> void:
 
 function section_close(f: ref[Formatter]) -> void:
     f.indent -= 1
-
 
 # =============================================================================
 #  Precedence / wrapping
@@ -222,7 +216,6 @@ function is_ptr_type(t: types.Type) -> bool:
             return g_bp.name == "ptr" and g_bp.args.len == 1
         _:
             return false
-
 
 # =============================================================================
 #  Program
@@ -350,7 +343,6 @@ function emit_program(f: ref[Formatter], program: ir.Program) -> void:
                 blank_line(f)
             i += 1
         section_close(f)
-
 
 # =============================================================================
 #  Declaration emitters
@@ -548,7 +540,6 @@ function append_param(f: ref[Formatter], p: ir.Param) -> void:
         return
     render_type(f, p.ty)
 
-
 # =============================================================================
 #  Statements
 # =============================================================================
@@ -709,7 +700,6 @@ function render_for_clause(f: ref[Formatter], sp: ptr[ir.Stmt]) -> void:
                 render_expr(f, s.expression, 0)
             _:
                 pass
-
 
 # =============================================================================
 #  Expressions

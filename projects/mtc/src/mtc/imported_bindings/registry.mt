@@ -10,7 +10,6 @@ public struct BindingEntry:
     raw_module_name: str
     policy_path: str
 
-
 public const ALL_COUNT: ptr_uint = 29
 
 public const ALL: array[BindingEntry, 29] = array[BindingEntry, 29](

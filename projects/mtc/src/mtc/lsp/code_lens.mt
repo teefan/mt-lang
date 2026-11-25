@@ -14,10 +14,9 @@ import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
-
 ## LSP SymbolKind for codeLens data items.
 const KIND_FUNCTION: int = 12
-const KIND_METHOD:   int = 6
+const KIND_METHOD: int = 6
 
 
 ## Handle textDocument/codeLens.  Returns CodeLens entries for every

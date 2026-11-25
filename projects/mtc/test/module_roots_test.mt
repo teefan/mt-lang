@@ -49,10 +49,10 @@ function cleanup_dir(dir: ref[string.String]) -> void:
             e.release()
     dir.release()
 
-
 # =============================================================================
 #  Compiler roots
 # =============================================================================
+
 
 @[test]
 function test_compiler_roots_include_the_running_binary_std() -> void:
@@ -102,10 +102,10 @@ function test_module_resolution_from_std_root() -> void:
         Result.failure:
             expect(false, "std.vec did not resolve against the compiler roots")
 
-
 # =============================================================================
 #  Package roots
 # =============================================================================
+
 
 @[test]
 function test_package_source_root_from_manifest() -> void:
@@ -171,10 +171,10 @@ function test_package_source_root_absent_without_manifest() -> void:
 
     expect(package_manifest.package_source_root_for_path(entry.as_str()).is_none(), "unexpected package root")
 
-
 # =============================================================================
 #  Per-file effective roots (the LSP workspace)
 # =============================================================================
+
 
 @[test]
 function test_effective_roots_include_enclosing_package_for_file() -> void:
@@ -186,7 +186,11 @@ function test_effective_roots_include_enclosing_package_for_file() -> void:
         expect(false, "could not create temp dir")
     defer: cleanup_dir(ref_of(root))
 
-    if not write_file(root.as_str(), "workspace/pkg/package.toml", "[package]\nname = \"pkg\"\nsource_root = \"src\"\n"):
+    if not write_file(
+        root.as_str(),
+        "workspace/pkg/package.toml",
+        "[package]\nname = \"pkg\"\nsource_root = \"src\"\n"
+    ):
         expect(false, "could not write package.toml")
     if not write_file(root.as_str(), "workspace/pkg/src/mod.mt", "public function f() -> int:\n    return 1\n"):
         expect(false, "could not write mod.mt")
@@ -213,7 +217,6 @@ function test_effective_roots_include_enclosing_package_for_file() -> void:
         i += 1
 
     expect(found, "effective module roots omit the file's package source root")
-
 
 # =============================================================================
 #  Per-file roots in the workspace symbol index
@@ -242,7 +245,11 @@ function test_workspace_index_resolves_nested_package_imports() -> void:
         expect(false, "could not write package.toml")
     if not write_file(root.as_str(), "demo/src/demo/util.mt", "public function helper() -> int:\n    return 1\n"):
         expect(false, "could not write util.mt")
-    if not write_file(root.as_str(), "demo/src/demo/main.mt", "import demo.util\n\npublic function run() -> int:\n    return util.helper()\n"):
+    if not write_file(
+        root.as_str(),
+        "demo/src/demo/main.mt",
+        "import demo.util\n\npublic function run() -> int:\n    return util.helper()\n"
+    ):
         expect(false, "could not write main.mt")
 
     var walk_roots = vec.Vec[string.String].create()

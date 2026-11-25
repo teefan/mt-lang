@@ -19,10 +19,10 @@ function cleanup_dir(dir: ref[string.String]) -> void:
             e.release()
     dir.release()
 
-
 # =============================================================================
 #  platform_suffix / platform_suffix_for_path
 # =============================================================================
+
 
 @[test]
 function test_platform_suffix_names() -> void:
@@ -55,10 +55,10 @@ function test_platform_suffix_for_wasm_file() -> void:
 function test_platform_suffix_for_plain_file_is_none() -> void:
     expect(resolver.platform_suffix_for_path("a/b/c.mt").is_none())
 
-
 # =============================================================================
 #  infer_module_name
 # =============================================================================
+
 
 @[test]
 function test_infer_module_name_under_root() -> void:
@@ -91,10 +91,10 @@ function test_infer_module_name_without_root_uses_stem() -> void:
     defer: name.release()
     expect_eq(name.as_str(), "widget")
 
-
 # =============================================================================
 #  resolve_module_path — failure path (no filesystem needed)
 # =============================================================================
+
 
 @[test]
 function test_resolve_module_path_missing_is_error() -> void:
@@ -109,10 +109,10 @@ function test_resolve_module_path_missing_is_error() -> void:
             e.release()
             return
 
-
 # =============================================================================
 #  resolve_module_path / resolve_source_path — filesystem integration
 # =============================================================================
+
 
 @[test]
 function test_resolve_module_path_finds_existing_file() -> void:

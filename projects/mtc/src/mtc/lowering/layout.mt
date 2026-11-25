@@ -16,7 +16,6 @@ struct LayoutInfo:
     size: long
     alignment: long
 
-
 struct StructMeta:
     packed: bool
     alignment: long
@@ -139,7 +138,11 @@ function layout_info(ctx: ref[lowering.LoweringContext], ty: types.Type) -> Opti
 
 ## Field entries for a named struct: the current module first, then the
 ## declaring module of an imported type.
-function layout_struct_fields(ctx: ref[lowering.LoweringContext], module_name: str, name: str) -> Option[span[analyzer.FieldEntry]]:
+function layout_struct_fields(
+    ctx: ref[lowering.LoweringContext],
+    module_name: str,
+    name: str
+) -> Option[span[analyzer.FieldEntry]]:
     if module_name.len == 0 or module_name == ctx.module_name:
         let local = ctx.analysis.structs.get(name)
         if local != null:
@@ -183,7 +186,12 @@ function layout_struct_meta_of(sf: ast.SourceFile, name: str) -> StructMeta:
 
 
 ## C struct layout for an ordered field list (host `struct_layout_from_infos`).
-function layout_aggregate_info(ctx: ref[lowering.LoweringContext], fields: span[analyzer.FieldEntry], packed: bool, explicit_alignment: long) -> Option[LayoutInfo]:
+function layout_aggregate_info(
+    ctx: ref[lowering.LoweringContext],
+    fields: span[analyzer.FieldEntry],
+    packed: bool,
+    explicit_alignment: long
+) -> Option[LayoutInfo]:
     var offset: long = 0
     var natural_alignment: long = 1
     var i: ptr_uint = 0
@@ -273,7 +281,12 @@ public function layout_offset_of(ctx: ref[lowering.LoweringContext], ty: types.T
             return Option[long].none
 
 
-function layout_struct_field_offset(ctx: ref[lowering.LoweringContext], fields: span[analyzer.FieldEntry], packed: bool, field: str) -> Option[long]:
+function layout_struct_field_offset(
+    ctx: ref[lowering.LoweringContext],
+    fields: span[analyzer.FieldEntry],
+    packed: bool,
+    field: str
+) -> Option[long]:
     var offset: long = 0
     var i: ptr_uint = 0
     while i < fields.len:

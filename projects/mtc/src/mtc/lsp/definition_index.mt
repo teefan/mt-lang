@@ -27,24 +27,21 @@ import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 
-
 ## One declaration identifier: its 1-based line and column, and its length.
 public struct DefinitionToken:
     line: ptr_uint
     column: ptr_uint
     length: ptr_uint
 
-
 ## LSP SymbolKinds, as the host's `symbol_kind` maps them.
 const KIND_TYPE_ALIAS: int = 5
-const KIND_ENUM:       int = 10
-const KIND_INTERFACE:  int = 11
-const KIND_FUNCTION:   int = 12
-const KIND_VARIABLE:   int = 13
-const KIND_CONSTANT:   int = 14
-const KIND_STRUCT:     int = 23
-const KIND_EVENT:      int = 24
-
+const KIND_ENUM: int = 10
+const KIND_INTERFACE: int = 11
+const KIND_FUNCTION: int = 12
+const KIND_VARIABLE: int = 13
+const KIND_CONSTANT: int = 14
+const KIND_STRUCT: int = 23
+const KIND_EVENT: int = 24
 
 ## A resolved cross-file hit: the token and the document (by path) that
 ## declares it.
@@ -54,13 +51,11 @@ public struct DefinitionEntry:
     column: ptr_uint
     length: ptr_uint
 
-
 ## A document the global lookup may search: its uri (borrowed) and its text
 ## (borrowed — the caller owns it and keeps it alive for the call).
 public struct CandidateDocument:
     uri: str
     source: str
-
 
 ## One token-pair declaration as the host's `extract_symbols_from_tokens`
 ## reports it: the identifier's name, the LSP SymbolKind of the keyword that
@@ -71,7 +66,6 @@ public struct SymbolEntry:
     line: ptr_uint
     column: ptr_uint
 
-
 ## Per-document state: the token-pair index (name → tokens, document order), the
 ## names the document's declaration lines introduce, and the declaration symbols
 ## in document order (the host's `get_symbols`).
@@ -79,7 +73,6 @@ public struct DocumentIndex:
     tokens: map_mod.Map[string.String, vec.Vec[DefinitionToken]]
     names: map_mod.Map[string.String, bool]
     symbols: vec.Vec[SymbolEntry]
-
 
 public struct DefinitionIndex:
     documents: map_mod.Map[string.String, DocumentIndex]
@@ -387,7 +380,11 @@ public function declaration_token(
 
 ## The declaration tokens of `name` in `doc` — warming the document's index
 ## first — or none when the document does not declare `name`.
-function document_tokens(index: ref[DefinitionIndex], doc: CandidateDocument, name: str) -> Option[span[DefinitionToken]]:
+function document_tokens(
+    index: ref[DefinitionIndex],
+    doc: CandidateDocument,
+    name: str
+) -> Option[span[DefinitionToken]]:
     warm_document(index, doc)
     let doc_index = stored_document(index, doc.uri) else:
         return Option[span[DefinitionToken]].none
@@ -426,7 +423,10 @@ function warm_document(index: ref[DefinitionIndex], doc: CandidateDocument) -> v
     var names = map_mod.Map[string.String, bool].create()
     collect_declared_names(ref_of(names), doc.source)
 
-    index.documents.set(string.String.from_str(doc.uri), DocumentIndex(tokens = tokens, names = names, symbols = symbols))
+    index.documents.set(
+        string.String.from_str(doc.uri),
+        DocumentIndex(tokens = tokens, names = names, symbols = symbols)
+    )
 
 
 function stored_document(index: ref[DefinitionIndex], uri: str) -> Option[DocumentIndex]:

@@ -17,7 +17,6 @@ import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.lowering as lowering
 import mtc.strings
 
-
 # =============================================================================
 #  Format string lowering (f"...")
 # =============================================================================
@@ -47,7 +46,11 @@ public function format_string_static_literal(parts: span[ast.FormatStringPart]) 
             _:
                 pass
         i += 1
-    return lowering.alloc_expr(ir.Expr.expr_string_literal(value = buf.as_str(), ty = types.Type.ty_str, cstring = false))
+    return lowering.alloc_expr(ir.Expr.expr_string_literal(
+        value = buf.as_str(),
+        ty = types.Type.ty_str,
+        cstring = false
+    ))
 
 
 ## The append/length plan for a single interpolation, selected from the value's
@@ -84,37 +87,133 @@ function fmt_plan(ctx: ref[lowering.LoweringContext], val_ty: types.Type, spec_p
         let signed = fmt_is_signed_int_name(prim_name)
         match spec.spec_kind:
             ast.FormatSpecKind.precision:
-                return FormatPlan(append_helper = "mt_format_append_double_precision", len_helper = "", arg_ty = double_ty, len_kind = 2, precision = spec.value)
+                return FormatPlan(
+                    append_helper = "mt_format_append_double_precision",
+                    len_helper = "",
+                    arg_ty = double_ty,
+                    len_kind = 2,
+                    precision = spec.value
+                )
             ast.FormatSpecKind.hex:
                 if signed:
-                    return FormatPlan(append_helper = if spec.uppercase: "mt_format_append_long_hex_upper" else: "mt_format_append_long_hex", len_helper = "mt_format_long_hex_len", arg_ty = long_ty, len_kind = 0, precision = 0)
-                return FormatPlan(append_helper = if spec.uppercase: "mt_format_append_ulong_hex_upper" else: "mt_format_append_ulong_hex", len_helper = "mt_format_ulong_hex_len", arg_ty = ulong_ty, len_kind = 0, precision = 0)
+                    return FormatPlan(
+                        append_helper = if spec.uppercase: "mt_format_append_long_hex_upper" else: "mt_format_append_long_hex",
+                        len_helper = "mt_format_long_hex_len",
+                        arg_ty = long_ty,
+                        len_kind = 0,
+                        precision = 0
+                    )
+                return FormatPlan(
+                    append_helper = if spec.uppercase: "mt_format_append_ulong_hex_upper" else: "mt_format_append_ulong_hex",
+                    len_helper = "mt_format_ulong_hex_len",
+                    arg_ty = ulong_ty,
+                    len_kind = 0,
+                    precision = 0
+                )
             ast.FormatSpecKind.octal:
                 if signed:
-                    return FormatPlan(append_helper = "mt_format_append_long_oct", len_helper = "mt_format_long_oct_len", arg_ty = long_ty, len_kind = 0, precision = 0)
-                return FormatPlan(append_helper = "mt_format_append_ulong_oct", len_helper = "mt_format_ulong_oct_len", arg_ty = ulong_ty, len_kind = 0, precision = 0)
+                    return FormatPlan(
+                        append_helper = "mt_format_append_long_oct",
+                        len_helper = "mt_format_long_oct_len",
+                        arg_ty = long_ty,
+                        len_kind = 0,
+                        precision = 0
+                    )
+                return FormatPlan(
+                    append_helper = "mt_format_append_ulong_oct",
+                    len_helper = "mt_format_ulong_oct_len",
+                    arg_ty = ulong_ty,
+                    len_kind = 0,
+                    precision = 0
+                )
             ast.FormatSpecKind.binary:
                 if signed:
-                    return FormatPlan(append_helper = "mt_format_append_long_bin", len_helper = "mt_format_long_bin_len", arg_ty = long_ty, len_kind = 0, precision = 0)
-                return FormatPlan(append_helper = "mt_format_append_ulong_bin", len_helper = "mt_format_ulong_bin_len", arg_ty = ulong_ty, len_kind = 0, precision = 0)
+                    return FormatPlan(
+                        append_helper = "mt_format_append_long_bin",
+                        len_helper = "mt_format_long_bin_len",
+                        arg_ty = long_ty,
+                        len_kind = 0,
+                        precision = 0
+                    )
+                return FormatPlan(
+                    append_helper = "mt_format_append_ulong_bin",
+                    len_helper = "mt_format_ulong_bin_len",
+                    arg_ty = ulong_ty,
+                    len_kind = 0,
+                    precision = 0
+                )
     if is_str:
-        return FormatPlan(append_helper = "mt_format_append_str", len_helper = "", arg_ty = types.Type.ty_str, len_kind = 1, precision = 0)
+        return FormatPlan(
+            append_helper = "mt_format_append_str",
+            len_helper = "",
+            arg_ty = types.Type.ty_str,
+            len_kind = 1,
+            precision = 0
+        )
     if prim_name == "cstr":
-        return FormatPlan(append_helper = "mt_format_append_cstr", len_helper = "mt_format_cstr_len", arg_ty = types.primitive("cstr"), len_kind = 0, precision = 0)
+        return FormatPlan(
+            append_helper = "mt_format_append_cstr",
+            len_helper = "mt_format_cstr_len",
+            arg_ty = types.primitive("cstr"),
+            len_kind = 0,
+            precision = 0
+        )
     if prim_name == "bool":
-        return FormatPlan(append_helper = "mt_format_append_bool", len_helper = "mt_format_bool_len", arg_ty = ctx.bool_ty, len_kind = 0, precision = 0)
+        return FormatPlan(
+            append_helper = "mt_format_append_bool",
+            len_helper = "mt_format_bool_len",
+            arg_ty = ctx.bool_ty,
+            len_kind = 0,
+            precision = 0
+        )
     if prim_name == "float":
-        return FormatPlan(append_helper = "mt_format_append_float", len_helper = "mt_format_float_len", arg_ty = types.primitive("float"), len_kind = 0, precision = 0)
+        return FormatPlan(
+            append_helper = "mt_format_append_float",
+            len_helper = "mt_format_float_len",
+            arg_ty = types.primitive("float"),
+            len_kind = 0,
+            precision = 0
+        )
     if prim_name == "double":
-        return FormatPlan(append_helper = "mt_format_append_double", len_helper = "mt_format_double_len", arg_ty = double_ty, len_kind = 0, precision = 0)
+        return FormatPlan(
+            append_helper = "mt_format_append_double",
+            len_helper = "mt_format_double_len",
+            arg_ty = double_ty,
+            len_kind = 0,
+            precision = 0
+        )
     if prim_name == "ubyte" or prim_name == "ushort" or prim_name == "uint":
-        return FormatPlan(append_helper = "mt_format_append_uint", len_helper = "mt_format_uint_len", arg_ty = types.primitive("uint"), len_kind = 0, precision = 0)
+        return FormatPlan(
+            append_helper = "mt_format_append_uint",
+            len_helper = "mt_format_uint_len",
+            arg_ty = types.primitive("uint"),
+            len_kind = 0,
+            precision = 0
+        )
     if prim_name == "ptr_uint":
-        return FormatPlan(append_helper = "mt_format_append_ptr_uint", len_helper = "mt_format_ptr_uint_len", arg_ty = types.primitive("ptr_uint"), len_kind = 0, precision = 0)
+        return FormatPlan(
+            append_helper = "mt_format_append_ptr_uint",
+            len_helper = "mt_format_ptr_uint_len",
+            arg_ty = types.primitive("ptr_uint"),
+            len_kind = 0,
+            precision = 0
+        )
     if prim_name == "long" or prim_name == "ptr_int":
-        return FormatPlan(append_helper = "mt_format_append_long", len_helper = "mt_format_long_len", arg_ty = long_ty, len_kind = 0, precision = 0)
+        return FormatPlan(
+            append_helper = "mt_format_append_long",
+            len_helper = "mt_format_long_len",
+            arg_ty = long_ty,
+            len_kind = 0,
+            precision = 0
+        )
     if prim_name == "ulong":
-        return FormatPlan(append_helper = "mt_format_append_ulong", len_helper = "mt_format_ulong_len", arg_ty = ulong_ty, len_kind = 0, precision = 0)
+        return FormatPlan(
+            append_helper = "mt_format_append_ulong",
+            len_helper = "mt_format_ulong_len",
+            arg_ty = ulong_ty,
+            len_kind = 0,
+            precision = 0
+        )
     # Custom format hooks: a struct implementing `format_len() -> ptr_uint` and
     # `append_format(output: ref[std.string.String]) -> void` renders through
     # those methods (`len_kind = 3`; the helper fields hold the method C names).
@@ -123,15 +222,30 @@ function fmt_plan(ctx: ref[lowering.LoweringContext], val_ty: types.Type, spec_p
             Option.some as lmi:
                 match lowering.resolve_method_info(ctx, val_ty, "append_format"):
                     Option.some as ami:
-                        if lmi.value.method_kind != ast.MethodKind.mk_editable and ami.value.method_kind != ast.MethodKind.mk_editable:
-                            return FormatPlan(append_helper = ami.value.c_name, len_helper = lmi.value.c_name, arg_ty = val_ty, len_kind = 3, precision = 0)
+                        if (
+                            lmi.value.method_kind != ast.MethodKind.mk_editable
+                            and ami.value.method_kind != ast.MethodKind.mk_editable
+                        ):
+                            return FormatPlan(
+                                append_helper = ami.value.c_name,
+                                len_helper = lmi.value.c_name,
+                                arg_ty = val_ty,
+                                len_kind = 3,
+                                precision = 0
+                            )
                     Option.none:
                         pass
             Option.none:
                 pass
     # byte/short/int and any integer-like fallback (e.g. an int-backed enum cast
     # to int in C) format as a signed 32-bit integer.
-    return FormatPlan(append_helper = "mt_format_append_int", len_helper = "mt_format_int_len", arg_ty = types.primitive("int"), len_kind = 0, precision = 0)
+    return FormatPlan(
+        append_helper = "mt_format_append_int",
+        len_helper = "mt_format_int_len",
+        arg_ty = types.primitive("int"),
+        len_kind = 0,
+        precision = 0
+    )
 
 
 ## The result temp the next dynamic format string in this function gets, and
@@ -167,7 +281,11 @@ function format_string_result_base(ctx: ref[lowering.LoweringContext]) -> str:
 ## hoisted statements).
 public function format_str_release_stmt(temp: ptr[ir.Expr]) -> ir.Stmt:
     return ir.Stmt.stmt_expression(
-        expression = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_release", arguments = lowering.single_expr_span(temp), ty = types.primitive("void"))),
+        expression = lowering.alloc_expr(ir.Expr.expr_call(
+            callee = "mt_format_str_release",
+            arguments = lowering.single_expr_span(temp),
+            ty = types.primitive("void")
+        )),
         line = 0, source_path = "",
     )
 
@@ -235,7 +353,12 @@ public function format_owning_target_type(ctx: ref[lowering.LoweringContext], ty
 ## enclosing statement — the host's `cstr_backed_storage_value?`: a `cstr`
 ## local, or a `str` local whose value is a cstr-typed expression, a string
 ## literal, a dynamic format string, or another cstr-backed local.
-public function cstr_backed_binding(ctx: ref[lowering.LoweringContext], ty: types.Type, init: ptr[ast.Expr]?, value_expr: ptr[ir.Expr]) -> bool:
+public function cstr_backed_binding(
+    ctx: ref[lowering.LoweringContext],
+    ty: types.Type,
+    init: ptr[ast.Expr]?,
+    value_expr: ptr[ir.Expr]
+) -> bool:
     match ty:
         types.Type.ty_primitive as p:
             if p.name == "cstr":
@@ -318,7 +441,13 @@ public function is_cstr_backed_lowered(ctx: ref[lowering.LoweringContext], ep: p
 ## value>` keeps it; every other assignment and every compound assignment
 ## clears it (`skybox_file_name = dropped_path` turns a literal-backed local
 ## into a plain `str`, so a later `str as cstr` boundary must copy it).
-public function update_cstr_metadata_for_assignment_mt(ctx: ref[lowering.LoweringContext], target: ptr[ast.Expr], value_ast: ptr[ast.Expr], value_ir: ptr[ir.Expr], operator: str) -> void:
+public function update_cstr_metadata_for_assignment_mt(
+    ctx: ref[lowering.LoweringContext],
+    target: ptr[ast.Expr],
+    value_ast: ptr[ast.Expr],
+    value_ir: ptr[ir.Expr],
+    operator: str
+) -> void:
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
@@ -331,7 +460,10 @@ public function update_cstr_metadata_for_assignment_mt(ctx: ref[lowering.Lowerin
                                     if p.name == "cstr":
                                         backed = true
                                 types.Type.ty_str:
-                                    backed = is_cstr_backed_lowered(ctx, value_ir) or ast_expr_cstr_backed(ctx, value_ast)
+                                    backed = is_cstr_backed_lowered(ctx, value_ir) or ast_expr_cstr_backed(
+                                        ctx,
+                                        value_ast
+                                    )
                                 _:
                                     pass
                         if backed:
@@ -351,7 +483,11 @@ public function update_cstr_metadata_for_assignment_mt(ctx: ref[lowering.Lowerin
 ## (`cap = cap + len(...)`), the result local (`mt_format_str_make`) and the
 ## write offset, then the append statements.  Returns the result temp's
 ## identifier; the caller hoists `output` and owns the release.
-public function build_format_string_dynamic(ctx: ref[lowering.LoweringContext], parts: span[ast.FormatStringPart], output: ref[vec.Vec[ir.Stmt]]) -> ptr[ir.Expr]:
+public function build_format_string_dynamic(
+    ctx: ref[lowering.LoweringContext],
+    parts: span[ast.FormatStringPart],
+    output: ref[vec.Vec[ir.Stmt]]
+) -> ptr[ir.Expr]:
     let str_ty = types.Type.ty_str
     let ptr_uint_ty = types.primitive("ptr_uint")
     let base = format_string_result_base(ctx)
@@ -384,8 +520,19 @@ public function build_format_string_dynamic(ctx: ref[lowering.LoweringContext], 
                     # The host's `cast_expression`: a cast is emitted only when
                     # the lowered value's type differs from the append
                     # argument's.
-                    temp_val = lowering.alloc_expr(ir.Expr.expr_cast(target_type = plan.arg_ty, expression = lowered, ty = plan.arg_ty))
-                output.push(ir.Stmt.stmt_local(name = temp_c, linkage_name = temp_c, ty = temp_ty, value = temp_val, line = 0, source_path = ""))
+                    temp_val = lowering.alloc_expr(ir.Expr.expr_cast(
+                        target_type = plan.arg_ty,
+                        expression = lowered,
+                        ty = plan.arg_ty
+                    ))
+                output.push(ir.Stmt.stmt_local(
+                    name = temp_c,
+                    linkage_name = temp_c,
+                    ty = temp_ty,
+                    value = temp_val,
+                    line = 0,
+                    source_path = ""
+                ))
                 temps.push(temp_c)
                 plans.push(plan)
                 if plan.len_kind == 3:
@@ -393,7 +540,11 @@ public function build_format_string_dynamic(ctx: ref[lowering.LoweringContext], 
                     # `__mt_fmt_part_len_N` at the temp, before the capacity
                     # accumulation.
                     let len_c = lowering.fresh_c_temp_name(ctx, "fmt_part_len")
-                    let temp_ref = lowering.alloc_expr(ir.Expr.expr_name(name = temp_c, ty = temp_ty, pointer = Option[bool].some(value = false)))
+                    let temp_ref = lowering.alloc_expr(ir.Expr.expr_name(
+                        name = temp_c,
+                        ty = temp_ty,
+                        pointer = Option[bool].some(value = false)
+                    ))
                     var hook_args = vec.Vec[ir.Expr].create()
                     unsafe:
                         hook_args.push(read(temp_ref))
@@ -401,7 +552,11 @@ public function build_format_string_dynamic(ctx: ref[lowering.LoweringContext], 
                         name = len_c,
                         linkage_name = len_c,
                         ty = ptr_uint_ty,
-                        value = lowering.alloc_expr(ir.Expr.expr_call(callee = plan.len_helper, arguments = hook_args.as_span(), ty = ptr_uint_ty)),
+                        value = lowering.alloc_expr(ir.Expr.expr_call(
+                            callee = plan.len_helper,
+                            arguments = hook_args.as_span(),
+                            ty = ptr_uint_ty
+                        )),
                         line = 0,
                         source_path = "",
                     ))
@@ -414,7 +569,14 @@ public function build_format_string_dynamic(ctx: ref[lowering.LoweringContext], 
 
     # The capacity local (the static text's length), then one accumulation per
     # interpolation (the host writes `cap = cap + len(...)`).
-    output.push(ir.Stmt.stmt_local(name = cap_name, linkage_name = cap_name, ty = ptr_uint_ty, value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-static_len, ty = ptr_uint_ty)), line = 0, source_path = ""))
+    output.push(ir.Stmt.stmt_local(
+        name = cap_name,
+        linkage_name = cap_name,
+        ty = ptr_uint_ty,
+        value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-static_len, ty = ptr_uint_ty)),
+        line = 0,
+        source_path = ""
+    ))
     var ai: ptr_uint = 0
     while ai < temps.len():
         let temp_c = temps.get(ai) else:
@@ -424,26 +586,69 @@ public function build_format_string_dynamic(ctx: ref[lowering.LoweringContext], 
         var temp_ty: types.Type = unsafe: read(plan).arg_ty
         if unsafe: read(plan).len_kind == 1:
             temp_ty = str_ty
-        let temp_ref = lowering.alloc_expr(ir.Expr.expr_name(name = unsafe: read(temp_c), ty = temp_ty, pointer = Option[bool].some(value = false)))
+        let temp_ref = lowering.alloc_expr(ir.Expr.expr_name(
+            name = unsafe: read(temp_c),
+            ty = temp_ty,
+            pointer = Option[bool].some(value = false)
+        ))
         var len_expr = fmt_len_expr(unsafe: read(plan), temp_ref, ptr_uint_ty)
         if unsafe: read(plan).len_kind == 3:
             let len_name_ptr = expected_lengths.get(ai) else:
                 fatal(c"format string: missing custom length")
-            len_expr = lowering.alloc_expr(ir.Expr.expr_name(name = unsafe: read(len_name_ptr), ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
-        let cap_ref = lowering.alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
+            len_expr = lowering.alloc_expr(ir.Expr.expr_name(
+                name = unsafe: read(len_name_ptr),
+                ty = ptr_uint_ty,
+                pointer = Option[bool].some(value = false)
+            ))
+        let cap_ref = lowering.alloc_expr(ir.Expr.expr_name(
+            name = cap_name,
+            ty = ptr_uint_ty,
+            pointer = Option[bool].some(value = false)
+        ))
         output.push(ir.Stmt.stmt_assignment(
-            target = lowering.alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false))),
+            target = lowering.alloc_expr(ir.Expr.expr_name(
+                name = cap_name,
+                ty = ptr_uint_ty,
+                pointer = Option[bool].some(value = false)
+            )),
             operator = "=",
-            value = lowering.alloc_expr(ir.Expr.expr_binary(operator = "+", left = cap_ref, right = len_expr, ty = ptr_uint_ty)),
+            value = lowering.alloc_expr(ir.Expr.expr_binary(
+                operator = "+",
+                left = cap_ref,
+                right = len_expr,
+                ty = ptr_uint_ty
+            )),
         ))
         ai += 1
 
     # Allocate the result buffer and reset the write offset.
     var make_args = vec.Vec[ir.Expr].create()
     unsafe:
-        make_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))))
-    output.push(ir.Stmt.stmt_local(name = result_c, linkage_name = result_c, ty = str_ty, value = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_make", arguments = make_args.as_span(), ty = str_ty)), line = 0, source_path = ""))
-    output.push(ir.Stmt.stmt_local(name = off_name, linkage_name = off_name, ty = ptr_uint_ty, value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
+        make_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(
+            name = cap_name,
+            ty = ptr_uint_ty,
+            pointer = Option[bool].some(value = false)
+        ))))
+    output.push(ir.Stmt.stmt_local(
+        name = result_c,
+        linkage_name = result_c,
+        ty = str_ty,
+        value = lowering.alloc_expr(ir.Expr.expr_call(
+            callee = "mt_format_str_make",
+            arguments = make_args.as_span(),
+            ty = str_ty
+        )),
+        line = 0,
+        source_path = ""
+    ))
+    output.push(ir.Stmt.stmt_local(
+        name = off_name,
+        linkage_name = off_name,
+        ty = ptr_uint_ty,
+        value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)),
+        line = 0,
+        source_path = ""
+    ))
 
     # Pass 2: append each part in order.
     var expr_index: ptr_uint = 0
@@ -453,10 +658,34 @@ public function build_format_string_dynamic(ctx: ref[lowering.LoweringContext], 
             ast.FormatStringPart.fmt_text as t:
                 var append_args = vec.Vec[ir.Expr].create()
                 unsafe:
-                    append_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = Option[bool].some(value = false)))))
-                    append_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))))
-                    append_args.push(read(lowering.alloc_expr(ir.Expr.expr_string_literal(value = t.value, ty = str_ty, cstring = false))))
-                output.push(ir.Stmt.stmt_assignment(target = lowering.alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false))), operator = "=", value = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_str", arguments = append_args.as_span(), ty = ptr_uint_ty))))
+                    append_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(
+                        name = result_c,
+                        ty = str_ty,
+                        pointer = Option[bool].some(value = false)
+                    ))))
+                    append_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(
+                        name = off_name,
+                        ty = ptr_uint_ty,
+                        pointer = Option[bool].some(value = false)
+                    ))))
+                    append_args.push(read(lowering.alloc_expr(ir.Expr.expr_string_literal(
+                        value = t.value,
+                        ty = str_ty,
+                        cstring = false
+                    ))))
+                output.push(ir.Stmt.stmt_assignment(
+                    target = lowering.alloc_expr(ir.Expr.expr_name(
+                        name = off_name,
+                        ty = ptr_uint_ty,
+                        pointer = Option[bool].some(value = false)
+                    )),
+                    operator = "=",
+                    value = lowering.alloc_expr(ir.Expr.expr_call(
+                        callee = "mt_format_append_str",
+                        arguments = append_args.as_span(),
+                        ty = ptr_uint_ty
+                    ))
+                ))
             ast.FormatStringPart.fmt_expr:
                 let temp_ptr = temps.get(expr_index) else:
                     fatal(c"format string: missing interpolation temp")
@@ -474,22 +703,63 @@ public function build_format_string_dynamic(ctx: ref[lowering.LoweringContext], 
                     # check, the offset advance and the NUL terminator.
                     let len_name_ptr = expected_lengths.get(expr_index - 1) else:
                         fatal(c"format string: missing custom length")
-                    let part = FormatSinkPart(kind = 3, text = "", temp = temp_c, plan = plan, expected_length = unsafe: read(len_name_ptr))
-                    let result_ref = lowering.alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = Option[bool].some(value = false)))
+                    let part = FormatSinkPart(
+                        kind = 3,
+                        text = "",
+                        temp = temp_c,
+                        plan = plan,
+                        expected_length = unsafe: read(len_name_ptr)
+                    )
+                    let result_ref = lowering.alloc_expr(ir.Expr.expr_name(
+                        name = result_c,
+                        ty = str_ty,
+                        pointer = Option[bool].some(value = false)
+                    ))
                     format_sink_buffer_part_stmts(ctx, output, part, result_ref, off_name)
                     pi += 1
                     continue
                 var append_args = vec.Vec[ir.Expr].create()
                 unsafe:
-                    append_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = Option[bool].some(value = false)))))
-                    append_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))))
-                    append_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(name = temp_c, ty = temp_ty, pointer = Option[bool].some(value = false)))))
+                    append_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(
+                        name = result_c,
+                        ty = str_ty,
+                        pointer = Option[bool].some(value = false)
+                    ))))
+                    append_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(
+                        name = off_name,
+                        ty = ptr_uint_ty,
+                        pointer = Option[bool].some(value = false)
+                    ))))
+                    append_args.push(read(lowering.alloc_expr(ir.Expr.expr_name(
+                        name = temp_c,
+                        ty = temp_ty,
+                        pointer = Option[bool].some(value = false)
+                    ))))
                     if plan.len_kind == 2:
-                        append_args.push(read(lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-(plan.precision), ty = types.primitive("int")))))
-                output.push(ir.Stmt.stmt_assignment(target = lowering.alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false))), operator = "=", value = lowering.alloc_expr(ir.Expr.expr_call(callee = plan.append_helper, arguments = append_args.as_span(), ty = ptr_uint_ty))))
+                        append_args.push(read(lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                            value = long<-(plan.precision),
+                            ty = types.primitive("int")
+                        ))))
+                output.push(ir.Stmt.stmt_assignment(
+                    target = lowering.alloc_expr(ir.Expr.expr_name(
+                        name = off_name,
+                        ty = ptr_uint_ty,
+                        pointer = Option[bool].some(value = false)
+                    )),
+                    operator = "=",
+                    value = lowering.alloc_expr(ir.Expr.expr_call(
+                        callee = plan.append_helper,
+                        arguments = append_args.as_span(),
+                        ty = ptr_uint_ty
+                    ))
+                ))
         pi += 1
 
-    return lowering.alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = Option[bool].some(value = false)))
+    return lowering.alloc_expr(ir.Expr.expr_name(
+        name = result_c,
+        ty = str_ty,
+        pointer = Option[bool].some(value = false)
+    ))
 
 
 ## The length expression for one interpolation temp, per its plan's `len_kind`.
@@ -501,16 +771,30 @@ function fmt_len_expr(plan: FormatPlan, temp_ref: ptr[ir.Expr], ptr_uint_ty: typ
         var hook_args = vec.Vec[ir.Expr].create()
         unsafe:
             hook_args.push(read(temp_ref))
-        return lowering.alloc_expr(ir.Expr.expr_call(callee = plan.len_helper, arguments = hook_args.as_span(), ty = ptr_uint_ty))
+        return lowering.alloc_expr(ir.Expr.expr_call(
+            callee = plan.len_helper,
+            arguments = hook_args.as_span(),
+            ty = ptr_uint_ty
+        ))
     var args = vec.Vec[ir.Expr].create()
     unsafe:
         args.push(read(temp_ref))
     if plan.len_kind == 2:
         unsafe:
-            args.push(read(lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-(plan.precision), ty = types.primitive("int")))))
-        return lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_format_double_precision_len", arguments = args.as_span(), ty = ptr_uint_ty))
-    return lowering.alloc_expr(ir.Expr.expr_call(callee = plan.len_helper, arguments = args.as_span(), ty = ptr_uint_ty))
-
+            args.push(read(lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                value = long<-(plan.precision),
+                ty = types.primitive("int")
+            ))))
+        return lowering.alloc_expr(ir.Expr.expr_call(
+            callee = "mt_format_double_precision_len",
+            arguments = args.as_span(),
+            ty = ptr_uint_ty
+        ))
+    return lowering.alloc_expr(ir.Expr.expr_call(
+        callee = plan.len_helper,
+        arguments = args.as_span(),
+        ty = ptr_uint_ty
+    ))
 
 # =============================================================================
 #  Explicit format sinks (`String`/`str_buffer` append_format/assign_format)
@@ -526,7 +810,6 @@ function fmt_len_expr(plan: FormatPlan, temp_ref: ptr[ir.Expr], ptr_uint_ty: typ
 #  `std_string_String_append`/`std_fmt_append_*` for a String, or a single
 #  `__mt_fmt_sink_offset_N` through a `str` view for a str_buffer.
 # =============================================================================
-
 
 ## True when `t` is `std.string.String` (or a ref/pointer to it).
 function is_std_string_type(t: types.Type) -> bool:
@@ -548,7 +831,11 @@ function is_std_string_type(t: types.Type) -> bool:
 ## name the analyzer did not qualify, so also accept the resolved method's
 ## `std_string_String_*` linkage (a user struct named `String` resolves to its
 ## own module prefix and is not treated as a sink).
-function is_std_string_sink_method(ctx: ref[lowering.LoweringContext], receiver_ty: types.Type, method_name: str) -> bool:
+function is_std_string_sink_method(
+    ctx: ref[lowering.LoweringContext],
+    receiver_ty: types.Type,
+    method_name: str
+) -> bool:
     if is_std_string_type(receiver_ty):
         return true
     match lowering.resolve_method_info(ctx, receiver_ty, method_name):
@@ -560,8 +847,10 @@ function is_std_string_sink_method(ctx: ref[lowering.LoweringContext], receiver_
 
 ## The `data` member's type: the host's `str_buffer_storage_capacity` is `N + 1`.
 public function str_buffer_data_member_type(cap: long) -> types.Type:
-    return types.generic_type(name = "array", args = lowering.sp_type2(types.primitive("char"), types.literal_int(cap + 1)))
-
+    return types.generic_type(
+        name = "array",
+        args = lowering.sp_type2(types.primitive("char"), types.literal_int(cap + 1))
+    )
 
 struct FormatSinkInfo:
     is_assign: bool
@@ -571,7 +860,6 @@ struct FormatSinkInfo:
     ## `String.append_format` passes its receiver through the editable-method
     ## borrow; `std.fmt.append_format` uses the declared `ref[String]` parameter.
     method_form: bool
-
 
 variant FormatSinkTarget:
     fst_string(value: ptr[ir.Expr])
@@ -583,9 +871,8 @@ variant FormatSinkTarget:
         capacity: ptr[ir.Expr],
     )
 
-
 struct FormatSinkPart:
-    kind: int  # 0 text, 1 expression, 2 precision, 3 custom hook
+    kind: int # 0 text, 1 expression, 2 precision, 3 custom hook
     text: str
     temp: str
     plan: FormatPlan
@@ -624,7 +911,10 @@ function explicit_format_sink_info(ctx: ref[lowering.LoweringContext], ep: ptr[a
                         # `String.append_format(f"...")` / `str_buffer[N].…`.
                         # Only the `*_format` methods are sinks; `.assign` and
                         # `.append` take a `str` and keep the ordinary path.
-                        if call.args.len == 1 and (ma.member_name == "append_format" or ma.member_name == "assign_format"):
+                        if (
+                            call.args.len == 1
+                            and (ma.member_name == "append_format" or ma.member_name == "assign_format")
+                        ):
                             let fmt_arg = read(call.args.data + 0).arg_value
                             match read(fmt_arg):
                                 ast.Expr.expr_format_string as fs:
@@ -666,7 +956,11 @@ function lower_format_sink_target(ctx: ref[lowering.LoweringContext], info: Form
         let recv = lowering.lower_expr(ctx, info.sink_ep)
         let recv_ty = lowering.ir_expr_type(recv)
         let cap = lowering.str_buffer_capacity_of(recv_ty)
-        let data_member = lowering.alloc_expr(ir.Expr.expr_member(receiver = recv, member = "data", ty = str_buffer_data_member_type(cap)))
+        let data_member = lowering.alloc_expr(ir.Expr.expr_member(
+            receiver = recv,
+            member = "data",
+            ty = str_buffer_data_member_type(cap)
+        ))
         let data_elem = lowering.alloc_expr(ir.Expr.expr_index(
             receiver = data_member,
             index = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0z, ty = ptr_uint_ty)),
@@ -698,7 +992,11 @@ function lower_format_sink_target(ctx: ref[lowering.LoweringContext], info: Form
                 pass
     else:
         let fn_name = if info.is_assign: "assign_format" else: "append_format"
-        sink_value = lowering.coerce_arg_to_ref_param(type_helpers.find_imported_fn_sig(ctx, "std.fmt", fn_name), 0, recv)
+        sink_value = lowering.coerce_arg_to_ref_param(
+            type_helpers.find_imported_fn_sig(ctx, "std.fmt", fn_name),
+            0,
+            recv
+        )
     return FormatSinkTarget.fst_string(value = sink_value)
 
 
@@ -723,7 +1021,13 @@ function build_format_sink_parts(
                         kind = 0,
                         text = t.value,
                         temp = "",
-                        plan = FormatPlan(append_helper = "", len_helper = "", arg_ty = types.Type.ty_error, len_kind = 0, precision = 0),
+                        plan = FormatPlan(
+                            append_helper = "",
+                            len_helper = "",
+                            arg_ty = types.Type.ty_error,
+                            len_kind = 0,
+                            precision = 0
+                        ),
                         expected_length = "",
                     ))
             ast.FormatStringPart.fmt_expr as ex:
@@ -738,8 +1042,19 @@ function build_format_sink_parts(
                 else if plan.len_kind == 3:
                     pass
                 else if not types.type_equals(lowering.ir_expr_type(lowered), plan.arg_ty):
-                    temp_val = lowering.alloc_expr(ir.Expr.expr_cast(target_type = plan.arg_ty, expression = lowered, ty = plan.arg_ty))
-                setup.push(ir.Stmt.stmt_local(name = temp_c, linkage_name = temp_c, ty = temp_ty, value = temp_val, line = 0, source_path = ""))
+                    temp_val = lowering.alloc_expr(ir.Expr.expr_cast(
+                        target_type = plan.arg_ty,
+                        expression = lowered,
+                        ty = plan.arg_ty
+                    ))
+                setup.push(ir.Stmt.stmt_local(
+                    name = temp_c,
+                    linkage_name = temp_c,
+                    ty = temp_ty,
+                    value = temp_val,
+                    line = 0,
+                    source_path = ""
+                ))
                 var kind = 1
                 if plan.len_kind == 2:
                     kind = 2
@@ -748,7 +1063,11 @@ function build_format_sink_parts(
                 var expected_length = ""
                 if plan.len_kind == 3:
                     let len_c = lowering.fresh_c_temp_name(ctx, "fmt_part_len")
-                    let temp_ref = lowering.alloc_expr(ir.Expr.expr_name(name = temp_c, ty = temp_ty, pointer = Option[bool].some(value = false)))
+                    let temp_ref = lowering.alloc_expr(ir.Expr.expr_name(
+                        name = temp_c,
+                        ty = temp_ty,
+                        pointer = Option[bool].some(value = false)
+                    ))
                     var hook_args = vec.Vec[ir.Expr].create()
                     unsafe:
                         hook_args.push(read(temp_ref))
@@ -756,12 +1075,22 @@ function build_format_sink_parts(
                         name = len_c,
                         linkage_name = len_c,
                         ty = ptr_uint_ty,
-                        value = lowering.alloc_expr(ir.Expr.expr_call(callee = plan.len_helper, arguments = hook_args.as_span(), ty = ptr_uint_ty)),
+                        value = lowering.alloc_expr(ir.Expr.expr_call(
+                            callee = plan.len_helper,
+                            arguments = hook_args.as_span(),
+                            ty = ptr_uint_ty
+                        )),
                         line = 0,
                         source_path = "",
                     ))
                     expected_length = len_c
-                result_parts.push(FormatSinkPart(kind = kind, text = "", temp = temp_c, plan = plan, expected_length = expected_length))
+                result_parts.push(FormatSinkPart(
+                    kind = kind,
+                    text = "",
+                    temp = temp_c,
+                    plan = plan,
+                    expected_length = expected_length
+                ))
         pi += 1
     return result_parts
 
@@ -789,16 +1118,28 @@ function copy_format_sink_parts(
         let is_cstr_part = part.kind == 1 and is_buffer and part.plan.append_helper == "mt_format_append_cstr"
         if is_str_part or is_cstr_part:
             let param_ty = if is_cstr_part: types.primitive("cstr") else: str_ty
-            let param = lowering.alloc_expr(ir.Expr.expr_name(name = part.temp, ty = param_ty, pointer = Option[bool].some(value = false)))
+            let param = lowering.alloc_expr(ir.Expr.expr_name(
+                name = part.temp,
+                ty = param_ty,
+                pointer = Option[bool].some(value = false)
+            ))
             let copy_c = lowering.fresh_c_temp_name(ctx, "fmt_sink_str")
-            let copy_ref = lowering.alloc_expr(ir.Expr.expr_name(name = copy_c, ty = str_ty, pointer = Option[bool].some(value = false)))
+            let copy_ref = lowering.alloc_expr(ir.Expr.expr_name(
+                name = copy_c,
+                ty = str_ty,
+                pointer = Option[bool].some(value = false)
+            ))
             ctx.cstr_backed_names.set(copy_c, true)
             var len_expr = lowering.alloc_expr(ir.Expr.expr_member(receiver = param, member = "len", ty = ptr_uint_ty))
             if is_cstr_part:
                 var len_args = vec.Vec[ir.Expr].create()
                 unsafe:
                     len_args.push(read(param))
-                len_expr = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_format_cstr_len", arguments = len_args.as_span(), ty = ptr_uint_ty))
+                len_expr = lowering.alloc_expr(ir.Expr.expr_call(
+                    callee = "mt_format_cstr_len",
+                    arguments = len_args.as_span(),
+                    ty = ptr_uint_ty
+                ))
             var make_args = vec.Vec[ir.Expr].create()
             unsafe:
                 make_args.push(read(len_expr))
@@ -806,7 +1147,11 @@ function copy_format_sink_parts(
                 name = copy_c,
                 linkage_name = copy_c,
                 ty = str_ty,
-                value = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_make", arguments = make_args.as_span(), ty = str_ty)),
+                value = lowering.alloc_expr(ir.Expr.expr_call(
+                    callee = "mt_format_str_make",
+                    arguments = make_args.as_span(),
+                    ty = str_ty
+                )),
                 line = 0,
                 source_path = "",
             ))
@@ -814,7 +1159,11 @@ function copy_format_sink_parts(
             setup.push(ir.Stmt.stmt_expression(
                 expression = lowering.alloc_expr(ir.Expr.expr_call(
                     callee = append_callee,
-                    arguments = lowering.sp_expr3(copy_ref, lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), param),
+                    arguments = lowering.sp_expr3(
+                        copy_ref,
+                        lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)),
+                        param
+                    ),
                     ty = ptr_uint_ty,
                 )),
                 line = 0,
@@ -824,12 +1173,22 @@ function copy_format_sink_parts(
             unsafe:
                 release_args.push(read(copy_ref))
             cleanups.push(ir.Stmt.stmt_expression(
-                expression = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_release", arguments = release_args.as_span(), ty = void_ty)),
+                expression = lowering.alloc_expr(ir.Expr.expr_call(
+                    callee = "mt_format_str_release",
+                    arguments = release_args.as_span(),
+                    ty = void_ty
+                )),
                 line = 0,
                 source_path = "",
             ))
             part.temp = copy_c
-            part.plan = FormatPlan(append_helper = "mt_format_append_str", len_helper = part.plan.len_helper, arg_ty = str_ty, len_kind = 1, precision = 0)
+            part.plan = FormatPlan(
+                append_helper = "mt_format_append_str",
+                len_helper = part.plan.len_helper,
+                arg_ty = str_ty,
+                len_kind = 1,
+                precision = 0
+            )
         copied.push(part)
         i += 1
     return copied
@@ -853,19 +1212,42 @@ function format_sink_string_append_call(part: FormatSinkPart, sink_value: ptr[ir
     if part.kind == 0:
         return lowering.alloc_expr(ir.Expr.expr_call(
             callee = "std_string_String_append",
-            arguments = lowering.sp_expr2(sink_value, lowering.alloc_expr(ir.Expr.expr_string_literal(value = part.text, ty = types.Type.ty_str, cstring = false))),
+            arguments = lowering.sp_expr2(
+                sink_value,
+                lowering.alloc_expr(ir.Expr.expr_string_literal(
+                    value = part.text,
+                    ty = types.Type.ty_str,
+                    cstring = false
+                ))
+            ),
             ty = void_ty,
         ))
-    let temp_ref = lowering.alloc_expr(ir.Expr.expr_name(name = part.temp, ty = part.plan.arg_ty, pointer = Option[bool].some(value = false)))
+    let temp_ref = lowering.alloc_expr(ir.Expr.expr_name(
+        name = part.temp,
+        ty = part.plan.arg_ty,
+        pointer = Option[bool].some(value = false)
+    ))
     if part.kind == 2:
         return lowering.alloc_expr(ir.Expr.expr_call(
             callee = "std_fmt_append_double_precision",
-            arguments = lowering.sp_expr3(sink_value, temp_ref, lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-(part.plan.precision), ty = int_ty))),
+            arguments = lowering.sp_expr3(
+                sink_value,
+                temp_ref,
+                lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-(part.plan.precision), ty = int_ty))
+            ),
             ty = void_ty,
         ))
     if part.kind == 3:
-        return lowering.alloc_expr(ir.Expr.expr_call(callee = part.plan.append_helper, arguments = lowering.sp_expr2(temp_ref, sink_value), ty = void_ty))
-    return lowering.alloc_expr(ir.Expr.expr_call(callee = format_sink_string_callee(part.plan.append_helper), arguments = lowering.sp_expr2(sink_value, temp_ref), ty = void_ty))
+        return lowering.alloc_expr(ir.Expr.expr_call(
+            callee = part.plan.append_helper,
+            arguments = lowering.sp_expr2(temp_ref, sink_value),
+            ty = void_ty
+        ))
+    return lowering.alloc_expr(ir.Expr.expr_call(
+        callee = format_sink_string_callee(part.plan.append_helper),
+        arguments = lowering.sp_expr2(sink_value, temp_ref),
+        ty = void_ty
+    ))
 
 
 ## Append one part into a str_buffer sink through the `str` view `{data, len=cap}`,
@@ -881,31 +1263,54 @@ function format_sink_buffer_part_stmts(
     let char_ty = types.primitive("char")
     let void_ty = types.primitive("void")
     let int_ty = types.primitive("int")
-    let offset_ref = lowering.alloc_expr(ir.Expr.expr_name(name = offset_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
+    let offset_ref = lowering.alloc_expr(ir.Expr.expr_name(
+        name = offset_name,
+        ty = ptr_uint_ty,
+        pointer = Option[bool].some(value = false)
+    ))
     if part.kind == 0:
         var args = vec.Vec[ir.Expr].create()
         unsafe:
             args.push(read(view))
             args.push(read(offset_ref))
-            args.push(read(lowering.alloc_expr(ir.Expr.expr_string_literal(value = part.text, ty = types.Type.ty_str, cstring = false))))
+            args.push(read(lowering.alloc_expr(ir.Expr.expr_string_literal(
+                value = part.text,
+                ty = types.Type.ty_str,
+                cstring = false
+            ))))
         stmts.push(ir.Stmt.stmt_assignment(
             target = offset_ref,
             operator = "=",
-            value = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_str", arguments = args.as_span(), ty = ptr_uint_ty)),
+            value = lowering.alloc_expr(ir.Expr.expr_call(
+                callee = "mt_format_append_str",
+                arguments = args.as_span(),
+                ty = ptr_uint_ty
+            )),
         ))
         return
-    let temp_ref = lowering.alloc_expr(ir.Expr.expr_name(name = part.temp, ty = part.plan.arg_ty, pointer = Option[bool].some(value = false)))
+    let temp_ref = lowering.alloc_expr(ir.Expr.expr_name(
+        name = part.temp,
+        ty = part.plan.arg_ty,
+        pointer = Option[bool].some(value = false)
+    ))
     if part.kind == 2:
         var prec_args = vec.Vec[ir.Expr].create()
         unsafe:
             prec_args.push(read(view))
             prec_args.push(read(offset_ref))
             prec_args.push(read(temp_ref))
-            prec_args.push(read(lowering.alloc_expr(ir.Expr.expr_integer_literal(value = long<-(part.plan.precision), ty = int_ty))))
+            prec_args.push(read(lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                value = long<-(part.plan.precision),
+                ty = int_ty
+            ))))
         stmts.push(ir.Stmt.stmt_assignment(
             target = offset_ref,
             operator = "=",
-            value = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_double_precision", arguments = prec_args.as_span(), ty = ptr_uint_ty)),
+            value = lowering.alloc_expr(ir.Expr.expr_call(
+                callee = "mt_format_append_double_precision",
+                arguments = prec_args.as_span(),
+                ty = ptr_uint_ty
+            )),
         ))
         return
     if part.kind == 3:
@@ -919,16 +1324,39 @@ function format_sink_buffer_part_stmts(
         let data_field_ty = types.Type.ty_nullable(base = types.alloc_type(ubyte_ptr_ty))
         let char_ptr_ty = types.generic_type(name = "ptr", args = lowering.sp_type(char_ty))
         let view_data = lowering.alloc_expr(ir.Expr.expr_member(receiver = view, member = "data", ty = char_ptr_ty))
-        let slice_sum = lowering.alloc_expr(ir.Expr.expr_binary(operator = "+", left = view_data, right = offset_ref, ty = char_ptr_ty))
-        let slice_data = lowering.alloc_expr(ir.Expr.expr_cast(target_type = data_field_ty, expression = slice_sum, ty = data_field_ty))
+        let slice_sum = lowering.alloc_expr(ir.Expr.expr_binary(
+            operator = "+",
+            left = view_data,
+            right = offset_ref,
+            ty = char_ptr_ty
+        ))
+        let slice_data = lowering.alloc_expr(ir.Expr.expr_cast(
+            target_type = data_field_ty,
+            expression = slice_sum,
+            ty = data_field_ty
+        ))
         let output_name = lowering.fresh_c_temp_name(ctx, "fmt_part_output")
-        let output_value = lowering.alloc_expr(ir.Expr.expr_name(name = output_name, ty = string_ty, pointer = Option[bool].some(value = false)))
-        let expected_length = lowering.alloc_expr(ir.Expr.expr_name(name = part.expected_length, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
+        let output_value = lowering.alloc_expr(ir.Expr.expr_name(
+            name = output_name,
+            ty = string_ty,
+            pointer = Option[bool].some(value = false)
+        ))
+        let expected_length = lowering.alloc_expr(ir.Expr.expr_name(
+            name = part.expected_length,
+            ty = ptr_uint_ty,
+            pointer = Option[bool].some(value = false)
+        ))
         var fields = vec.Vec[ir.AggregateField].create()
         fields.push(ir.AggregateField(name = "data", value = slice_data))
-        fields.push(ir.AggregateField(name = "len", value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))))
+        fields.push(ir.AggregateField(
+            name = "len",
+            value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))
+        ))
         fields.push(ir.AggregateField(name = "capacity", value = expected_length))
-        fields.push(ir.AggregateField(name = "owns_storage", value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = ctx.bool_ty))))
+        fields.push(ir.AggregateField(
+            name = "owns_storage",
+            value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = ctx.bool_ty))
+        ))
         stmts.push(ir.Stmt.stmt_local(
             name = output_name,
             linkage_name = output_name,
@@ -940,28 +1368,57 @@ function format_sink_buffer_part_stmts(
         var hook_args = vec.Vec[ir.Expr].create()
         unsafe:
             hook_args.push(read(temp_ref))
-            hook_args.push(read(lowering.alloc_expr(ir.Expr.expr_address_of(expression = output_value, ty = ref_string_ty))))
+            hook_args.push(read(lowering.alloc_expr(ir.Expr.expr_address_of(
+                expression = output_value,
+                ty = ref_string_ty
+            ))))
         stmts.push(ir.Stmt.stmt_expression(
-            expression = lowering.alloc_expr(ir.Expr.expr_call(callee = part.plan.append_helper, arguments = hook_args.as_span(), ty = void_ty)),
+            expression = lowering.alloc_expr(ir.Expr.expr_call(
+                callee = part.plan.append_helper,
+                arguments = hook_args.as_span(),
+                ty = void_ty
+            )),
             line = 0,
             source_path = "",
         ))
-        let output_len = lowering.alloc_expr(ir.Expr.expr_member(receiver = output_value, member = "len", ty = ptr_uint_ty))
+        let output_len = lowering.alloc_expr(ir.Expr.expr_member(
+            receiver = output_value,
+            member = "len",
+            ty = ptr_uint_ty
+        ))
         var fatal_args = vec.Vec[ir.Expr].create()
         unsafe:
-            fatal_args.push(read(lowering.alloc_expr(ir.Expr.expr_string_literal(value = "custom format hook length mismatch", ty = types.primitive("cstr"), cstring = true))))
+            fatal_args.push(read(lowering.alloc_expr(ir.Expr.expr_string_literal(
+                value = "custom format hook length mismatch",
+                ty = types.primitive("cstr"),
+                cstring = true
+            ))))
         var then_body = vec.Vec[ir.Stmt].create()
         then_body.push(ir.Stmt.stmt_expression(
-            expression = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_fatal", arguments = fatal_args.as_span(), ty = void_ty)),
+            expression = lowering.alloc_expr(ir.Expr.expr_call(
+                callee = "mt_fatal",
+                arguments = fatal_args.as_span(),
+                ty = void_ty
+            )),
             line = 0,
             source_path = "",
         ))
         stmts.push(ir.Stmt.stmt_if(
-            condition = lowering.alloc_expr(ir.Expr.expr_binary(operator = "!=", left = output_len, right = expected_length, ty = ctx.bool_ty)),
+            condition = lowering.alloc_expr(ir.Expr.expr_binary(
+                operator = "!=",
+                left = output_len,
+                right = expected_length,
+                ty = ctx.bool_ty
+            )),
             then_body = then_body.as_span(),
             else_body = Option[span[ir.Stmt]].none,
         ))
-        let offset_next = lowering.alloc_expr(ir.Expr.expr_binary(operator = "+", left = offset_ref, right = output_len, ty = ptr_uint_ty))
+        let offset_next = lowering.alloc_expr(ir.Expr.expr_binary(
+            operator = "+",
+            left = offset_ref,
+            right = output_len,
+            ty = ptr_uint_ty
+        ))
         stmts.push(ir.Stmt.stmt_assignment(target = offset_ref, operator = "=", value = offset_next))
         stmts.push(ir.Stmt.stmt_assignment(
             target = lowering.alloc_expr(ir.Expr.expr_index(receiver = view_data, index = offset_ref, ty = char_ty)),
@@ -977,7 +1434,11 @@ function format_sink_buffer_part_stmts(
     stmts.push(ir.Stmt.stmt_assignment(
         target = offset_ref,
         operator = "=",
-        value = lowering.alloc_expr(ir.Expr.expr_call(callee = part.plan.append_helper, arguments = args.as_span(), ty = ptr_uint_ty)),
+        value = lowering.alloc_expr(ir.Expr.expr_call(
+            callee = part.plan.append_helper,
+            arguments = args.as_span(),
+            ty = ptr_uint_ty
+        )),
     ))
 
 
@@ -1002,7 +1463,11 @@ function explicit_format_sink_runtime_call(
             return lowering.alloc_expr(ir.Expr.expr_call(callee = callee, arguments = args.as_span(), ty = void_ty))
         FormatSinkTarget.fst_string as s:
             let callee = if is_assign: "std_string_String_assign" else: "std_string_String_append"
-            return lowering.alloc_expr(ir.Expr.expr_call(callee = callee, arguments = lowering.sp_expr2(s.value, text_value), ty = void_ty))
+            return lowering.alloc_expr(ir.Expr.expr_call(
+                callee = callee,
+                arguments = lowering.sp_expr2(s.value, text_value),
+                ty = void_ty
+            ))
 
 
 ## Emit the dynamic sink stream (host `lower_explicit_format_sink_expression_
@@ -1022,7 +1487,11 @@ function emit_format_sink_dynamic(
             FormatSinkTarget.fst_string as s:
                 if info.is_assign:
                     stmts.push(ir.Stmt.stmt_expression(
-                        expression = lowering.alloc_expr(ir.Expr.expr_call(callee = "std_string_String_clear", arguments = lowering.single_expr_span(s.value), ty = types.primitive("void"))),
+                        expression = lowering.alloc_expr(ir.Expr.expr_call(
+                            callee = "std_string_String_clear",
+                            arguments = lowering.single_expr_span(s.value),
+                            ty = types.primitive("void")
+                        )),
                         line = line,
                         source_path = path,
                     ))
@@ -1049,12 +1518,19 @@ function emit_format_sink_dynamic(
                     clear_args.push(read(buf.len_pointer))
                     clear_args.push(read(buf.dirty_pointer))
                 stmts.push(ir.Stmt.stmt_expression(
-                    expression = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_clear", arguments = clear_args.as_span(), ty = types.primitive("void"))),
+                    expression = lowering.alloc_expr(ir.Expr.expr_call(
+                        callee = "mt_str_buffer_clear",
+                        arguments = clear_args.as_span(),
+                        ty = types.primitive("void")
+                    )),
                     line = line,
                     source_path = path,
                 ))
             let offset_name = lowering.fresh_c_temp_name(ctx, "fmt_sink_offset")
-            var offset_init: ptr[ir.Expr] = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))
+            var offset_init: ptr[ir.Expr] = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+                value = 0,
+                ty = ptr_uint_ty
+            ))
             if not info.is_assign:
                 var len_args = vec.Vec[ir.Expr].create()
                 unsafe:
@@ -1062,12 +1538,26 @@ function emit_format_sink_dynamic(
                     len_args.push(read(buf.capacity))
                     len_args.push(read(buf.len_pointer))
                     len_args.push(read(buf.dirty_pointer))
-                offset_init = lowering.alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_len", arguments = len_args.as_span(), ty = ptr_uint_ty))
-            stmts.push(ir.Stmt.stmt_local(name = offset_name, linkage_name = offset_name, ty = ptr_uint_ty, value = offset_init, line = 0, source_path = ""))
+                offset_init = lowering.alloc_expr(ir.Expr.expr_call(
+                    callee = "mt_str_buffer_len",
+                    arguments = len_args.as_span(),
+                    ty = ptr_uint_ty
+                ))
+            stmts.push(ir.Stmt.stmt_local(
+                name = offset_name,
+                linkage_name = offset_name,
+                ty = ptr_uint_ty,
+                value = offset_init,
+                line = 0,
+                source_path = ""
+            ))
             var view_fields = vec.Vec[ir.AggregateField].create()
             view_fields.push(ir.AggregateField(name = "data", value = buf.data_pointer))
             view_fields.push(ir.AggregateField(name = "len", value = buf.capacity))
-            let view = lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_str, fields = view_fields.as_span()))
+            let view = lowering.alloc_expr(ir.Expr.expr_aggregate_literal(
+                ty = types.Type.ty_str,
+                fields = view_fields.as_span()
+            ))
             var i: ptr_uint = 0
             while i < parts.len:
                 let part_ptr = parts.get(i) else:
@@ -1081,7 +1571,11 @@ function emit_format_sink_dynamic(
                     ty = ptr_uint_ty,
                 )),
                 operator = "=",
-                value = lowering.alloc_expr(ir.Expr.expr_name(name = offset_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false))),
+                value = lowering.alloc_expr(ir.Expr.expr_name(
+                    name = offset_name,
+                    ty = ptr_uint_ty,
+                    pointer = Option[bool].some(value = false)
+                )),
             ))
         _:
             pass
@@ -1146,9 +1640,6 @@ public function lower_explicit_format_sink_stmt(
         output.push(unsafe: read(stmt))
         ci += 1
     return true
-
-
-
 
 
 ## Map a type to its format-length helper name.

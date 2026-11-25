@@ -4,7 +4,6 @@
 import std.stdio as stdio
 import std.terminal as terminal
 
-
 ## The CLI version string, printed by `mtc version`; `tools/release.sh` checks
 ## that the general help banner carries the same version.
 public const VERSION: str = "0.6.2"
@@ -61,29 +60,53 @@ public function print_help(to_err: bool) -> void:
     emit_line(to_err, "")
     emit_line(to_err, "Usage: mtc lex PATH")
     emit_line(to_err, "       mtc parse PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
-    emit_line(to_err, "       mtc format PATH|DIR [PATH|DIR ...] [--check|--write] [--safe|--canonical|--preserve|--tidy] [--max-line-length N] [--timings]")
-    emit_line(to_err, "       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--ignore-generated] [--timings] [--locked] [--frozen] [-I PATH]")
+    emit_line(
+        to_err,
+        "       mtc format PATH|DIR [PATH|DIR ...] [--check|--write] [--safe|--canonical|--preserve|--tidy] [--max-line-length N] [--timings]"
+    )
+    emit_line(
+        to_err,
+        "       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--ignore-generated] [--timings] [--locked] [--frozen] [-I PATH]"
+    )
     emit_line(to_err, "       mtc lint --init")
     emit_line(to_err, "       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [-I PATH]")
     emit_line(to_err, "       mtc debug PATH [--locked] [--frozen] [-I PATH]")
     emit_line(to_err, "       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
     emit_line(to_err, "       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
-    emit_line(to_err, "       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--debug-guards|--no-debug-guards] [--clean] [-I PATH]")
+    emit_line(
+        to_err,
+        "       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--debug-guards|--no-debug-guards] [--clean] [-I PATH]"
+    )
     emit_line(to_err, "       mtc new NAME")
-    emit_line(to_err, "       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [--debug-guards|--no-debug-guards]")
-    emit_line(to_err, "       mtc test PATH|DIR [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--timeout SECONDS] [--mem MB] [--jobs N] [--sanitize] [-n SUBSTRING] [--format human|tap|junit] [--locked] [--frozen] [-I PATH]")
-    emit_line(to_err, "       mtc run-module MODULE [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [-- ARGS...]")
+    emit_line(
+        to_err,
+        "       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [--debug-guards|--no-debug-guards]"
+    )
+    emit_line(
+        to_err,
+        "       mtc test PATH|DIR [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--timeout SECONDS] [--mem MB] [--jobs N] [--sanitize] [-n SUBSTRING] [--format human|tap|junit] [--locked] [--frozen] [-I PATH]"
+    )
+    emit_line(
+        to_err,
+        "       mtc run-module MODULE [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [-- ARGS...]"
+    )
     emit_line(to_err, "       mtc toolchain bootstrap")
     emit_line(to_err, "       mtc toolchain doctor")
     emit_line(to_err, "       mtc toolchain tools")
-    emit_line(to_err, "       mtc deps add [PATH_OR_PACKAGE] NAME[@VERSION_REQ] [--path PATH] [--git URL --rev REV [--subdir DIR]] [--version VERSION_REQ]")
+    emit_line(
+        to_err,
+        "       mtc deps add [PATH_OR_PACKAGE] NAME[@VERSION_REQ] [--path PATH] [--git URL --rev REV [--subdir DIR]] [--version VERSION_REQ]"
+    )
     emit_line(to_err, "       mtc deps remove [PATH_OR_PACKAGE] NAME")
     emit_line(to_err, "       mtc deps update [PATH_OR_PACKAGE] [NAME ...]")
     emit_line(to_err, "       mtc deps tree [PATH_OR_PACKAGE]")
     emit_line(to_err, "       mtc deps lock [PATH_OR_PACKAGE] [--check]")
     emit_line(to_err, "       mtc deps publish [PATH_OR_PACKAGE] [--upstream]")
     emit_line(to_err, "       mtc deps fetch [PATH_OR_PACKAGE]")
-    emit_line(to_err, "       mtc bindgen MODULE HEADER [-o OUTPUT] [--nullable-policy PATH] [--nullable-report PATH] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
+    emit_line(
+        to_err,
+        "       mtc bindgen MODULE HEADER [-o OUTPUT] [--nullable-policy PATH] [--nullable-report PATH] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]"
+    )
     emit_line(to_err, "       mtc cache purge|status")
     emit_line(to_err, "       mtc docs [--open] [--port PORT]")
     emit_line(to_err, "       mtc std list [--json]")
@@ -100,29 +123,53 @@ public function print_help(to_err: bool) -> void:
 public function print_usage(to_err: bool) -> void:
     emit_line(to_err, "Usage: mtc lex PATH")
     emit_line(to_err, "       mtc parse PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
-    emit_line(to_err, "       mtc format PATH|DIR [PATH|DIR ...] [--check|--write] [--safe|--canonical|--preserve|--tidy] [--max-line-length N] [--timings]")
-    emit_line(to_err, "       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--ignore-generated] [--timings] [--locked] [--frozen] [-I PATH]")
+    emit_line(
+        to_err,
+        "       mtc format PATH|DIR [PATH|DIR ...] [--check|--write] [--safe|--canonical|--preserve|--tidy] [--max-line-length N] [--timings]"
+    )
+    emit_line(
+        to_err,
+        "       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--ignore-generated] [--timings] [--locked] [--frozen] [-I PATH]"
+    )
     emit_line(to_err, "       mtc lint --init")
     emit_line(to_err, "       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [-I PATH]")
     emit_line(to_err, "       mtc debug PATH [--locked] [--frozen] [-I PATH]")
     emit_line(to_err, "       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
     emit_line(to_err, "       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
-    emit_line(to_err, "       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--debug-guards|--no-debug-guards] [--clean] [-I PATH]")
+    emit_line(
+        to_err,
+        "       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--debug-guards|--no-debug-guards] [--clean] [-I PATH]"
+    )
     emit_line(to_err, "       mtc new NAME")
-    emit_line(to_err, "       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [--debug-guards|--no-debug-guards]")
-    emit_line(to_err, "       mtc test PATH|DIR [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--timeout SECONDS] [--mem MB] [--jobs N] [--sanitize] [-n SUBSTRING] [--format human|tap|junit] [--locked] [--frozen] [-I PATH]")
-    emit_line(to_err, "       mtc run-module MODULE [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [-- ARGS...]")
+    emit_line(
+        to_err,
+        "       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [--debug-guards|--no-debug-guards]"
+    )
+    emit_line(
+        to_err,
+        "       mtc test PATH|DIR [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--timeout SECONDS] [--mem MB] [--jobs N] [--sanitize] [-n SUBSTRING] [--format human|tap|junit] [--locked] [--frozen] [-I PATH]"
+    )
+    emit_line(
+        to_err,
+        "       mtc run-module MODULE [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [-- ARGS...]"
+    )
     emit_line(to_err, "       mtc toolchain bootstrap")
     emit_line(to_err, "       mtc toolchain doctor")
     emit_line(to_err, "       mtc toolchain tools")
-    emit_line(to_err, "       mtc deps add [PATH_OR_PACKAGE] NAME[@VERSION_REQ] [--path PATH] [--git URL --rev REV [--subdir DIR]] [--version VERSION_REQ]")
+    emit_line(
+        to_err,
+        "       mtc deps add [PATH_OR_PACKAGE] NAME[@VERSION_REQ] [--path PATH] [--git URL --rev REV [--subdir DIR]] [--version VERSION_REQ]"
+    )
     emit_line(to_err, "       mtc deps remove [PATH_OR_PACKAGE] NAME")
     emit_line(to_err, "       mtc deps update [PATH_OR_PACKAGE] [NAME ...]")
     emit_line(to_err, "       mtc deps tree [PATH_OR_PACKAGE]")
     emit_line(to_err, "       mtc deps lock [PATH_OR_PACKAGE] [--check]")
     emit_line(to_err, "       mtc deps publish [PATH_OR_PACKAGE] [--upstream]")
     emit_line(to_err, "       mtc deps fetch [PATH_OR_PACKAGE]")
-    emit_line(to_err, "       mtc bindgen MODULE HEADER [-o OUTPUT] [--nullable-policy PATH] [--nullable-report PATH] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
+    emit_line(
+        to_err,
+        "       mtc bindgen MODULE HEADER [-o OUTPUT] [--nullable-policy PATH] [--nullable-report PATH] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]"
+    )
     emit_line(to_err, "       mtc cache purge|status")
     emit_line(to_err, "       mtc docs [--open] [--port PORT]")
     emit_line(to_err, "       mtc std list [--json]")
@@ -161,12 +208,21 @@ function print_cli_command_help(command: str, to_err: bool) -> bool:
         emit_line(to_err, "    --keep-c C_PATH              Write the generated C source to this path.")
         emit_line(to_err, "    --profile PROFILE            debug (default) | release.")
         emit_line(to_err, "    --platform PLATFORM          linux (default) | windows | wasm.")
-        emit_line(to_err, "    --bundle                     Package a native package build into a distributable directory.")
-        emit_line(to_err, "    --archive                    Also write a .tar.gz archive for the native bundle (implies --bundle).")
+        emit_line(
+            to_err,
+            "    --bundle                     Package a native package build into a distributable directory."
+        )
+        emit_line(
+            to_err,
+            "    --archive                    Also write a .tar.gz archive for the native bundle (implies --bundle)."
+        )
         emit_line(to_err, "     --locked                     Resolve dependencies from package.lock.")
         emit_line(to_err, "     --frozen                     Require a current package.lock and use locked resolution.")
         emit_line(to_err, "     --no-cache                   Skip build cache, force rebuild from source.")
-        emit_line(to_err, "     --debug-guards               Enable loop iteration and recursion guards (default: on in debug, off in release).")
+        emit_line(
+            to_err,
+            "     --debug-guards               Enable loop iteration and recursion guards (default: on in debug, off in release)."
+        )
         emit_line(to_err, "     --no-debug-guards            Disable loop iteration and recursion guards.")
         emit_line(to_err, "     --clean                      Remove existing build outputs and exit.")
         emit_line(to_err, "     -I, --include-path PATH      Add an extra module root.")
@@ -190,7 +246,10 @@ function print_cli_command_help(command: str, to_err: bool) -> bool:
         emit_line(to_err, "     --locked                     Resolve dependencies from package.lock.")
         emit_line(to_err, "     --frozen                     Require a current package.lock and use locked resolution.")
         emit_line(to_err, "     --no-cache                   Skip build cache, force rebuild from source.")
-        emit_line(to_err, "     --debug-guards               Enable loop iteration and recursion guards (default: on in debug, off in release).")
+        emit_line(
+            to_err,
+            "     --debug-guards               Enable loop iteration and recursion guards (default: on in debug, off in release)."
+        )
         emit_line(to_err, "     --no-debug-guards            Disable loop iteration and recursion guards.")
         emit_line(to_err, "     -I, --include-path PATH      Add an extra module root.")
         if to_err:
@@ -224,7 +283,10 @@ function print_cli_command_help(command: str, to_err: bool) -> bool:
 ## Per-command help for the project command family.
 function print_project_command_help(command: str, to_err: bool) -> bool:
     if command == "test":
-        emit_line(to_err, "Usage: mtc test PATH|DIR [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--timeout SECONDS] [--mem MB] [--jobs N] [--sanitize] [-n SUBSTRING] [--format human|tap|junit] [--locked] [--frozen] [-I PATH]")
+        emit_line(
+            to_err,
+            "Usage: mtc test PATH|DIR [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--timeout SECONDS] [--mem MB] [--jobs N] [--sanitize] [-n SUBSTRING] [--format human|tap|junit] [--locked] [--frozen] [-I PATH]"
+        )
         emit_line(to_err, "")
         emit_line(to_err, "  Discover and run @[test] functions in a Milk Tea source file or directory.")
         emit_line(to_err, "")
@@ -305,7 +367,10 @@ function print_source_command_help(command: str, to_err: bool) -> bool:
         emit_line(to_err, "    --ignore-generated      Skip files that start with '# generated by mtc'.")
         emit_line(to_err, "    --timings               Print lint timing: per-file summary and per-rule breakdown.")
         emit_line(to_err, "    --locked                Use package.lock for semantic dependency resolution.")
-        emit_line(to_err, "    --frozen                Require a current package.lock before semantic dependency resolution.")
+        emit_line(
+            to_err,
+            "    --frozen                Require a current package.lock before semantic dependency resolution."
+        )
         emit_line(to_err, "    -I, --include-path PATH Add an extra module root for semantic resolution.")
         if to_err:
             let _ = terminal.flush_stderr()
@@ -367,7 +432,10 @@ function print_tooling_command_help(command: str, to_err: bool) -> bool:
         emit_line(to_err, "    update       Re-resolve dependencies and refresh package.lock.")
         emit_line(to_err, "    tree         Print the package dependency tree for a local package.")
         emit_line(to_err, "    lock         Write or verify a deterministic package.lock for a local package.")
-        emit_line(to_err, "    publish      Publish an exact-version package into the local or configured upstream registry store.")
+        emit_line(
+            to_err,
+            "    publish      Publish an exact-version package into the local or configured upstream registry store."
+        )
         emit_line(to_err, "    fetch        Materialize cache-backed sources from package.lock explicitly.")
         if to_err:
             let _ = terminal.flush_stderr()
@@ -391,7 +459,10 @@ function print_tooling_command_help(command: str, to_err: bool) -> bool:
         emit_line(to_err, "")
         emit_line(to_err, "  Options:")
         emit_line(to_err, "    -o, --output OUTPUT    Write the generated module to this file.")
-        emit_line(to_err, "    --nullable-policy PATH Apply a JSON nullable policy of symbols documented as returning NULL.")
+        emit_line(
+            to_err,
+            "    --nullable-policy PATH Apply a JSON nullable policy of symbols documented as returning NULL."
+        )
         emit_line(to_err, "    --nullable-report PATH Write the remaining manual nullable policy report to this file.")
         emit_line(to_err, "    --link LIB             Link against this library (repeatable).")
         emit_line(to_err, "    --include HEADER       Extra #include directive (repeatable).")

@@ -42,8 +42,8 @@ const PLUS_BYTE: ubyte = '+'
 const MINUS_BYTE: ubyte = '-'
 
 const INDENT_SIZE: ptr_uint = 4
-const PLAIN_HEREDOC_PREFIX_LEN: ptr_uint = 3   # <<-
-const CHEAD_FHEREDOC_PREFIX_LEN: ptr_uint = 4  # c<<- / f<<-
+const PLAIN_HEREDOC_PREFIX_LEN: ptr_uint = 3 # <<-
+const CHEAD_FHEREDOC_PREFIX_LEN: ptr_uint = 4 # c<<- / f<<-
 
 # Exact match of Ruby Lexer::LINE_CONTINUATION_OPERATORS (19 entries).
 #
@@ -82,7 +82,6 @@ struct LexSession:
     with_trivia: bool
     trivia: vec.Vec[triv.TriviaEntry]
 
-
 # =============================================================================
 #  Public API
 # =============================================================================
@@ -107,7 +106,10 @@ public function lex(source: str) -> vec.Vec[token_mod.Token]:
     return tokens
 
 
-public function lex_reporting(source: str, diagnostics: ref[vec.Vec[token_mod.LexDiagnostic]]) -> vec.Vec[token_mod.Token]:
+public function lex_reporting(
+    source: str,
+    diagnostics: ref[vec.Vec[token_mod.LexDiagnostic]]
+) -> vec.Vec[token_mod.Token]:
     var session = LexSession(
         tokens = vec.Vec[token_mod.Token].create(),
         indent_stack = vec.Vec[ptr_uint].create(),
@@ -148,7 +150,6 @@ public function lex_with_trivia(source: str, diagnostics: ref[vec.Vec[token_mod.
     session.indent_stack.release()
     return triv.CstLexResult(tokens = tokens, trivia = session.trivia)
 
-
 # =============================================================================
 #  Character classification
 # =============================================================================
@@ -156,21 +157,25 @@ public function lex_with_trivia(source: str, diagnostics: ref[vec.Vec[token_mod.
 function is_identifier_start_byte(b: ubyte) -> bool:
     return (b >= 'A' and b <= 'Z') or (b >= 'a' and b <= 'z') or b == '_'
 
+
 function is_identifier_part_byte(b: ubyte) -> bool:
     return is_identifier_start_byte(b) or (b >= '0' and b <= '9')
+
 
 function is_digit_byte(b: ubyte) -> bool:
     return b >= '0' and b <= '9'
 
+
 function is_hex_digit_byte(b: ubyte) -> bool:
     return is_digit_byte(b) or (b >= 'a' and b <= 'f') or (b >= 'A' and b <= 'F') or b == '_'
+
 
 function is_bin_digit_byte(b: ubyte) -> bool:
     return b == '0' or b == '1' or b == '_'
 
+
 function is_numeric_part_byte(b: ubyte) -> bool:
     return is_digit_byte(b) or b == '_'
-
 
 # =============================================================================
 #  Error handling — either fatal or collect
@@ -185,7 +190,6 @@ function session_fatal(session: ref[LexSession], msg: cstr, line: ptr_uint, col:
         let diag = token_mod.LexDiagnostic(message = msg, line = line, column = col)
         diags.push(diag)
         read(diag_ptr) = diags
-
 
 # =============================================================================
 #  Line utilities
@@ -292,7 +296,6 @@ function trivia_push(
         ),
     )
 
-
 # =============================================================================
 #  Main lex loop
 # =============================================================================
@@ -359,7 +362,16 @@ function lex_lines(session: ref[LexSession]) -> void:
                 break
 
             if b == DOUBLE_QUOTE:
-                let s_result = scan_string_adjacent(session, line_end, pos, line_number, line_start, line_content_len, indent, false)
+                let s_result = scan_string_adjacent(
+                    session,
+                    line_end,
+                    pos,
+                    line_number,
+                    line_start,
+                    line_content_len,
+                    indent,
+                    false
+                )
                 pos = s_result.next_pos
                 consumed_lines = s_result.lines_consumed
                 continue
@@ -371,7 +383,16 @@ function lex_lines(session: ref[LexSession]) -> void:
             if b == 'c' and pos + 1 < line_stop:
                 let n1 = unsafe: ubyte<-read(source.data + pos + 1)
                 if n1 == DOUBLE_QUOTE:
-                    let s_result = scan_string_adjacent(session, line_end, pos, line_number, line_start, line_content_len, indent, true)
+                    let s_result = scan_string_adjacent(
+                        session,
+                        line_end,
+                        pos,
+                        line_number,
+                        line_start,
+                        line_content_len,
+                        indent,
+                        true
+                    )
                     pos = s_result.next_pos
                     consumed_lines = s_result.lines_consumed
                     continue
@@ -518,12 +539,16 @@ function emit_eof(session: ref[LexSession]) -> vec.Vec[token_mod.Token]:
 
     return session.tokens
 
-
 # =============================================================================
 #  Indentation
 # =============================================================================
 
-function emit_indentation(session: ref[LexSession], indent: ptr_uint, line_number: ptr_uint, line_offset: ptr_uint) -> void:
+function emit_indentation(
+    session: ref[LexSession],
+    indent: ptr_uint,
+    line_number: ptr_uint,
+    line_offset: ptr_uint
+) -> void:
     if indent % INDENT_SIZE != 0:
         session_fatal(session, c"indentation must use multiples of 4 spaces", line_number, 1)
         return
@@ -578,7 +603,6 @@ function emit_indentation(session: ref[LexSession], indent: ptr_uint, line_numbe
     if unsafe: read(final_top) != indent:
         session_fatal(session, c"indentation does not match any open block", line_number, 1)
 
-
 # =============================================================================
 #  Line continuation
 # =============================================================================
@@ -598,7 +622,6 @@ function is_line_continuation(session: ref[LexSession]) -> bool:
             return true
         i += 1
     return false
-
 
 # =============================================================================
 #  Identifier / keyword
@@ -631,7 +654,6 @@ function scan_identifier(
     )
     session.tokens.push(tok)
     return pos
-
 
 # =============================================================================
 #  Numbers
@@ -763,7 +785,6 @@ function is_identifier_part_near(source: str, pos: ptr_uint, line_stop: ptr_uint
     let b = unsafe: ubyte<-read(source.data + pos)
     return is_identifier_part_byte(b)
 
-
 # =============================================================================
 #  String scan result
 # =============================================================================
@@ -771,7 +792,6 @@ function is_identifier_part_near(source: str, pos: ptr_uint, line_stop: ptr_uint
 struct StringScanResult:
     next_pos: ptr_uint
     lines_consumed: ptr_uint
-
 
 # =============================================================================
 #  Strings (with adjacent continuation)
@@ -790,7 +810,14 @@ function scan_string_adjacent(
     let source = session.source
     var consumed_lines: ptr_uint = 1
 
-    let first_end = scan_string_segment(session, start, line_start + line_content_len, line_number, line_start, is_cstring)
+    let first_end = scan_string_segment(
+        session,
+        start,
+        line_start + line_content_len,
+        line_number,
+        line_start,
+        is_cstring
+    )
     var segment_end = first_end
 
     let remainder_blank = line_remainder_is_blank(source, segment_end, line_start + line_content_len)
@@ -840,7 +867,14 @@ function scan_string_adjacent(
                 if not (ch0 == DOUBLE_QUOTE):
                     break
 
-            let seg_end = scan_string_segment(session, nl_start + i, nl_start + nl_len, next_line_number, nl_start, is_cstring)
+            let seg_end = scan_string_segment(
+                session,
+                nl_start + i,
+                nl_start + nl_len,
+                next_line_number,
+                nl_start,
+                is_cstring
+            )
 
             if not line_remainder_is_blank(source, seg_end, nl_start + nl_len):
                 break
@@ -901,7 +935,6 @@ function scan_string_segment(
     session_fatal(session, c"unterminated string literal", line_number, start - line_start + 1)
     return line_stop
 
-
 # =============================================================================
 #  Character literals
 # =============================================================================
@@ -958,7 +991,6 @@ function scan_char_literal(
     )
     session.tokens.push(tok)
     return pos
-
 
 # =============================================================================
 #  Symbols / operators
@@ -1024,7 +1056,6 @@ function emit_symbol(
     )
     session.tokens.push(tok)
 
-
 # =============================================================================
 #  Heredocs
 # =============================================================================
@@ -1055,7 +1086,12 @@ function scan_heredoc(
     let rest_stop = line_end - 1z
     if tag_end < rest_stop:
         if not line_remainder_is_blank(source, tag_end, rest_stop):
-            session_fatal(session, c"unexpected characters after heredoc tag", line_number, start - line_start_cached(source, start) + 1)
+            session_fatal(
+                session,
+                c"unexpected characters after heredoc tag",
+                line_number,
+                start - line_start_cached(source, start) + 1
+            )
             return StringScanResult(next_pos = start, lines_consumed = 1)
 
     var content_line_starts = vec.Vec[ptr_uint].create()
@@ -1089,7 +1125,12 @@ function scan_heredoc(
         scan_offset = nl_end
 
     if not found_terminator:
-        session_fatal(session, c"unterminated heredoc literal", line_number, start - line_start_cached(source, start) + 1)
+        session_fatal(
+            session,
+            c"unterminated heredoc literal",
+            line_number,
+            start - line_start_cached(source, start) + 1
+        )
         content_line_starts.release()
         content_line_lengths.release()
         return StringScanResult(next_pos = start, lines_consumed = 1)
@@ -1173,7 +1214,6 @@ function line_start_cached(source: str, pos: ptr_uint) -> ptr_uint:
             return result + 1
     return 0
 
-
 # =============================================================================
 #  Format strings
 # =============================================================================
@@ -1240,7 +1280,6 @@ function scan_format_string(
     session_fatal(session, c"unterminated format string literal", line_number, start - line_start + 1)
     return pos
 
-
 # =============================================================================
 #  Operator token lookup tables
 # =============================================================================
@@ -1251,7 +1290,7 @@ function three_char_token(ch0: char, ch1: char, ch2: char) -> tk.TokenKind:
         ('.', '.', '.'): tk.TokenKind.ellipsis
         ('<', '<', '='): tk.TokenKind.shift_left_equal
         ('>', '>', '='): tk.TokenKind.shift_right_equal
-        _:               tk.TokenKind.eof
+        _: tk.TokenKind.eof
 
 
 function two_char_token(ch0: char, ch1: char) -> tk.TokenKind:
@@ -1273,7 +1312,7 @@ function two_char_token(ch0: char, ch1: char) -> tk.TokenKind:
         ('!', '='): tk.TokenKind.bang_equal
         ('<', '='): tk.TokenKind.less_equal
         ('>', '='): tk.TokenKind.greater_equal
-        _:          tk.TokenKind.eof
+        _: tk.TokenKind.eof
 
 
 function one_char_token(ch: char) -> tk.TokenKind:

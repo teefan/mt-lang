@@ -10,11 +10,9 @@ import std.vec as vec
 
 import mtc.debug_map as debug_map
 
-
 ## The adapter's static capabilities (advertised for the process backend and
 ## merged with lldb-dap's own response by the bridge).
 public const ADAPTER_CAPABILITIES: str = "{\"supportsConfigurationDoneRequest\":true,\"supportsFunctionBreakpoints\":true,\"supportsConditionalBreakpoints\":false,\"supportsHitConditionalBreakpoints\":false,\"supportsEvaluateForHovers\":false,\"supportsSetVariable\":false,\"supportTerminateDebuggee\":true,\"supportsTerminateRequest\":true,\"supportsLoadedSourcesRequest\":true,\"exceptionBreakpointFilters\":[],\"supportsPauseRequest\":true}"
-
 
 public struct Breakpoint:
     id: ptr_uint
@@ -22,12 +20,10 @@ public struct Breakpoint:
     verified: bool
     message: string.String
 
-
 public struct FunctionBreakpoint:
     id: ptr_uint
     name: string.String
     verified: bool
-
 
 ## Where a variablesReference came from: its frame and (for a Locals scope)
 ## the function whose C names the bridge rewrites.
@@ -35,7 +31,6 @@ public struct VariableContext:
     frame_id: ptr_uint
     function: ptr[debug_map.DebugFunction]?
     has_function: bool
-
 
 public struct Session:
     next_seq: ptr_uint
@@ -76,11 +71,9 @@ extending Session:
         this.next_breakpoint_id = id + 1
         return id
 
-
     ## Remember a temporary directory for cleanup on terminate/disconnect.
     public editable function remember_tmp_dir(dir: str) -> void:
         this.tmp_dirs.push(string.String.from_str(dir))
-
 
     ## Remove every remembered temporary directory (the host's
     ## `cleanup_tmp_dirs`).
@@ -99,7 +92,6 @@ extending Session:
                     read(dir_ptr).release()
             i += 1
         this.tmp_dirs.clear()
-
 
     ## Replace a source's stored breakpoints with fresh ids, in order (the
     ## host's `set_breakpoints`).
@@ -122,7 +114,6 @@ extending Session:
             Option.none:
                 pass
 
-
     ## Install a freshly loaded debug map (releasing the previous one).
     public editable function set_debug_map(loaded: debug_map.DebugMap) -> void:
         this.clear_debug_map()
@@ -130,7 +121,6 @@ extending Session:
         unsafe:
             read(stored) = loaded
         this.debug_map = stored
-
 
     ## Drop the map and its frame/variable-reference caches.
     public editable function clear_debug_map() -> void:

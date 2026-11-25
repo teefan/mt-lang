@@ -19,7 +19,6 @@ import mtc.float_text as float_text
 import mtc.parser.ast as ast
 import mtc.lsp.debug_text as debug_text
 
-
 ## ── Section entry ────────────────────────────────────────────────────────────
 
 ## `module_name`: the workspace's inferred module name, which the host's cached
@@ -28,7 +27,12 @@ import mtc.lsp.debug_text as debug_text
 ## `root_line` reproduces the host's two paths: its LSP cached AST re-wrap
 ## carries `line: ast.line || 1`, while the CLI's loader/parse tree carries no
 ## line and renders a bare `SourceFile`.
-public function append_ast_section(target: ref[string.String], file: ast.SourceFile, module_name: str, root_line: bool) -> void:
+public function append_ast_section(
+    target: ref[string.String],
+    file: ast.SourceFile,
+    module_name: str,
+    root_line: bool
+) -> void:
     target.append("\n\n── AST  1 SourceFile, ")
     target.append_format(f"#{file.imports.len} imports, ")
     target.append_format(f"#{file.directives.len} directives, ")
@@ -55,7 +59,6 @@ public function append_ast_section(target: ref[string.String], file: ast.SourceF
     render_decl_array(target, file.declarations, cp, false, "declarations")
     render_count_leaf(target, cp, true, "node_ids", count_ast_nodes(file))
 
-
 ## ── Line helpers ─────────────────────────────────────────────────────────────
 
 function ast_line(target: ref[string.String], prefix: str, is_last: bool, text: str) -> void:
@@ -76,7 +79,14 @@ function ast_leaf(target: ref[string.String], prefix: str, is_last: bool, member
 
 ## `Kind [Ln N, Col M]` — the column renders even when 0 (Ruby's 0 is truthy
 ## and the host stores 0 for some positions).
-function ast_header_always_column(target: ref[string.String], prefix: str, is_last: bool, kind: str, line: ptr_uint, column: ptr_uint) -> void:
+function ast_header_always_column(
+    target: ref[string.String],
+    prefix: str,
+    is_last: bool,
+    kind: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     var text = string.String.create()
     defer: text.release()
     text.append(kind)
@@ -149,14 +159,29 @@ function expr_column(e: ast.Expr) -> ptr_uint:
 
 
 ## `Kind ◆ name [Ln N, Col M]`.
-public function ast_header(target: ref[string.String], prefix: str, is_last: bool, kind: str, has_name: bool, name: str, line: ptr_uint, column: ptr_uint) -> void:
+public function ast_header(
+    target: ref[string.String],
+    prefix: str,
+    is_last: bool,
+    kind: str,
+    has_name: bool,
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     var text = ast_header_text(kind, has_name, name, line, column)
     defer: text.release()
     ast_line(target, prefix, is_last, text.as_str())
 
 
 ## The header's text without the tree connector (`FunctionDef ◆ compute [Ln 33, Col 10]`).
-public function ast_header_text(kind: str, has_name: bool, name: str, line: ptr_uint, column: ptr_uint) -> string.String:
+public function ast_header_text(
+    kind: str,
+    has_name: bool,
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> string.String:
     var text = string.String.create()
     text.append(kind)
     if has_name:
@@ -173,7 +198,14 @@ public function ast_header_text(kind: str, has_name: bool, name: str, line: ptr_
 
 
 ## `◆ <member> (N):` — an array member that has children.
-function ast_container_line(target: ref[string.String], prefix: str, is_last: bool, member: str, count: ptr_uint, colon: bool) -> void:
+function ast_container_line(
+    target: ref[string.String],
+    prefix: str,
+    is_last: bool,
+    member: str,
+    count: ptr_uint,
+    colon: bool
+) -> void:
     var text = string.String.create()
     defer: text.release()
     text.append("◆ ")
@@ -185,7 +217,13 @@ function ast_container_line(target: ref[string.String], prefix: str, is_last: bo
 
 
 ## `◆ <member> (N)  "a", "b"` — an array of plain strings.
-function ast_string_array_line(target: ref[string.String], prefix: str, is_last: bool, member: str, values: span[str]) -> void:
+function ast_string_array_line(
+    target: ref[string.String],
+    prefix: str,
+    is_last: bool,
+    member: str,
+    values: span[str]
+) -> void:
     var text = string.String.create()
     defer: text.release()
     text.append("◆ ")
@@ -203,7 +241,13 @@ function ast_string_array_line(target: ref[string.String], prefix: str, is_last:
 
 
 ## `node_ids: {N entries}` (the host's `value_repr` for a Hash).
-function render_count_leaf(target: ref[string.String], prefix: str, is_last: bool, member: str, count: ptr_uint) -> void:
+function render_count_leaf(
+    target: ref[string.String],
+    prefix: str,
+    is_last: bool,
+    member: str,
+    count: ptr_uint
+) -> void:
     var text = string.String.create()
     defer: text.release()
     text.append("{")
@@ -229,9 +273,14 @@ function render_bool_leaf(target: ref[string.String], prefix: str, is_last: bool
     ast_leaf(target, prefix, is_last, member, if value: "true" else: "false")
 
 
-function render_option_int_leaf(target: ref[string.String], prefix: str, is_last: bool, member: str, value: ptr_uint) -> void:
+function render_option_int_leaf(
+    target: ref[string.String],
+    prefix: str,
+    is_last: bool,
+    member: str,
+    value: ptr_uint
+) -> void:
     render_int_leaf(target, prefix, is_last, member, value)
-
 
 ## ── Compact nodes ────────────────────────────────────────────────────────────
 
@@ -322,7 +371,13 @@ function compact_type_ref(t: ast.TypeRef) -> string.String:
 ## A type in a member position: a plain TypeRef renders `member: <repr>`; the
 ## host's non-compact type nodes (fn/proc/tuple/dyn) render as a subtree with
 ## no label.
-function render_type_member(target: ref[string.String], t: ast.TypeRef, prefix: str, is_last: bool, member: str) -> void:
+function render_type_member(
+    target: ref[string.String],
+    t: ast.TypeRef,
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     if type_is_compact(t):
         var repr = compact_type_ref(t)
         defer: repr.release()
@@ -380,7 +435,13 @@ function render_type_node(target: ref[string.String], t: ast.TypeRef, prefix: st
             render_bool_leaf(target, prefix + cp, true, "nullable", true)
 
 
-function render_function_type(target: ref[string.String], t: ast.TypeRef, prefix: str, is_last: bool, kind: str) -> void:
+function render_function_type(
+    target: ref[string.String],
+    t: ast.TypeRef,
+    prefix: str,
+    is_last: bool,
+    kind: str
+) -> void:
     ast_header(target, prefix, is_last, kind, false, "", 0z, 0z)
     let cp = if is_last: "   " else: "│  "
     let ret_ptr = t.fn_return
@@ -543,7 +604,13 @@ function data_to_s_expr(e: ast.Expr) -> string.String:
 
 
 ## `◆ <member> (N)  :a, :b` — an array of symbols.
-function render_symbol_array_line(target: ref[string.String], prefix: str, is_last: bool, member: str, values: span[str]) -> void:
+function render_symbol_array_line(
+    target: ref[string.String],
+    prefix: str,
+    is_last: bool,
+    member: str,
+    values: span[str]
+) -> void:
     var text = string.String.create()
     defer: text.release()
     text.append("◆ ")
@@ -561,7 +628,6 @@ function render_symbol_array_line(target: ref[string.String], prefix: str, is_la
 
 function append_long(target: ref[string.String], value: long) -> void:
     target.append_format(f"#{value}")
-
 
 ## ── Expressions ──────────────────────────────────────────────────────────────
 
@@ -621,7 +687,13 @@ function render_expr_member(target: ref[string.String], e: ast.Expr, prefix: str
     render_expr(target, e, prefix, is_last)
 
 
-function render_argument_array(target: ref[string.String], args: span[ast.Argument], prefix: str, is_last: bool, member: str) -> void:
+function render_argument_array(
+    target: ref[string.String],
+    args: span[ast.Argument],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, args.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -635,7 +707,6 @@ function render_argument_array(target: ref[string.String], args: span[ast.Argume
         let arg_cp = if i == args.len - 1: "   " else: "│  "
         render_expr_member(target, unsafe: read(arg.arg_value), prefix + cp + arg_cp, true, "value")
         i += 1
-
 
 ## ── Statements ───────────────────────────────────────────────────────────────
 
@@ -700,13 +771,25 @@ function render_local_decl(target: ref[string.String], d: ast.Stmt, prefix: str,
                 let bindings = s.destructure_bindings.unwrap()
                 ast_string_array_line(target, prefix + cp, last == 5, "destructure_bindings", bindings)
             if s.destructure_type_name.is_some():
-                render_str_leaf(target, prefix + cp, last == 6, "destructure_type_name", s.destructure_type_name.unwrap())
+                render_str_leaf(
+                    target,
+                    prefix + cp,
+                    last == 6,
+                    "destructure_type_name",
+                    s.destructure_type_name.unwrap()
+                )
         else:
             return
 
 
 ## `body`-family members: the host's array vs the self's single block.
-function render_block_array(target: ref[string.String], block: ast.Stmt, prefix: str, is_last: bool, member: str) -> void:
+function render_block_array(
+    target: ref[string.String],
+    block: ast.Stmt,
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     match block:
         ast.Stmt.stmt_block as b:
             ast_container_line(target, prefix, is_last, member, b.statements.len, true)
@@ -720,10 +803,15 @@ function render_block_array(target: ref[string.String], block: ast.Stmt, prefix:
             let cp = if is_last: "   " else: "│  "
             render_stmt(target, block, prefix + cp, true)
 
-
 ## ── Declarations ─────────────────────────────────────────────────────────────
 
-function render_decl_array(target: ref[string.String], items: span[ast.Decl], prefix: str, is_last: bool, member: str) -> void:
+function render_decl_array(
+    target: ref[string.String],
+    items: span[ast.Decl],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     if items.len == 0:
         return
     ast_container_line(target, prefix, is_last, member, items.len, true)
@@ -910,10 +998,16 @@ function render_function_decl(target: ref[string.String], s: ast.Decl, prefix: s
         else:
             return
 
-
 ## ── Members ──────────────────────────────────────────────────────────────────
 
-function render_field_array(target: ref[string.String], fields: span[ast.Field], prefix: str, is_last: bool, member: str, with_location: bool) -> void:
+function render_field_array(
+    target: ref[string.String],
+    fields: span[ast.Field],
+    prefix: str,
+    is_last: bool,
+    member: str,
+    with_location: bool
+) -> void:
     ast_container_line(target, prefix, is_last, member, fields.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -932,7 +1026,13 @@ function render_field_array(target: ref[string.String], fields: span[ast.Field],
         i += 1
 
 
-function render_param_array(target: ref[string.String], params: span[ast.Param], prefix: str, is_last: bool, member: str) -> void:
+function render_param_array(
+    target: ref[string.String],
+    params: span[ast.Param],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, params.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -950,7 +1050,13 @@ function render_param_array(target: ref[string.String], params: span[ast.Param],
         i += 1
 
 
-function render_type_param_array(target: ref[string.String], params: span[ast.TypeParam], prefix: str, is_last: bool, member: str) -> void:
+function render_type_param_array(
+    target: ref[string.String],
+    params: span[ast.TypeParam],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, params.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -973,7 +1079,16 @@ function render_type_param_array(target: ref[string.String], params: span[ast.Ty
             var j: ptr_uint = 0
             while j < p.constraints.len:
                 let c = unsafe: read(p.constraints.data + j)
-                ast_header(target, constraint_prefix, j == p.constraints.len - 1, "TypeParamConstraint", false, "", 0z, 0z)
+                ast_header(
+                    target,
+                    constraint_prefix,
+                    j == p.constraints.len - 1,
+                    "TypeParamConstraint",
+                    false,
+                    "",
+                    0z,
+                    0z
+                )
                 let member_cp = constraint_prefix + (if j == p.constraints.len - 1: "   " else: "│  ")
                 ast_leaf(target, member_cp, false, "kind", ":interface")
                 var iface = compact_qualified_name(c.interface_ref)
@@ -983,7 +1098,13 @@ function render_type_param_array(target: ref[string.String], params: span[ast.Ty
         i += 1
 
 
-function render_variant_arm_array(target: ref[string.String], arms: span[ast.VariantArm], prefix: str, is_last: bool, member: str) -> void:
+function render_variant_arm_array(
+    target: ref[string.String],
+    arms: span[ast.VariantArm],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, arms.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -996,7 +1117,13 @@ function render_variant_arm_array(target: ref[string.String], arms: span[ast.Var
         i += 1
 
 
-function render_method_array(target: ref[string.String], methods: span[ast.Method], prefix: str, is_last: bool, member: str) -> void:
+function render_method_array(
+    target: ref[string.String],
+    methods: span[ast.Method],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, methods.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -1054,7 +1181,13 @@ function block_is_empty(block: ast.Stmt) -> bool:
             return false
 
 
-function render_method_kind_leaf(target: ref[string.String], prefix: str, is_last: bool, member: str, kind: ast.MethodKind) -> void:
+function render_method_kind_leaf(
+    target: ref[string.String],
+    prefix: str,
+    is_last: bool,
+    member: str,
+    kind: ast.MethodKind
+) -> void:
     var text = ":plain"
     if kind == ast.MethodKind.mk_editable:
         text = ":editable"
@@ -1063,7 +1196,13 @@ function render_method_kind_leaf(target: ref[string.String], prefix: str, is_las
     ast_leaf(target, prefix, is_last, member, text)
 
 
-function render_interface_method_array(target: ref[string.String], methods: span[ast.InterfaceMethod], prefix: str, is_last: bool, member: str) -> void:
+function render_interface_method_array(
+    target: ref[string.String],
+    methods: span[ast.InterfaceMethod],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, methods.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -1095,7 +1234,13 @@ function render_interface_method_array(target: ref[string.String], methods: span
         i += 1
 
 
-function render_qname_array(target: ref[string.String], names: span[ast.QualifiedName], prefix: str, is_last: bool, member: str) -> void:
+function render_qname_array(
+    target: ref[string.String],
+    names: span[ast.QualifiedName],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, names.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -1106,7 +1251,13 @@ function render_qname_array(target: ref[string.String], names: span[ast.Qualifie
         i += 1
 
 
-function render_attr_array(target: ref[string.String], attrs: span[ast.AttributeApplication], prefix: str, is_last: bool, member: str) -> void:
+function render_attr_array(
+    target: ref[string.String],
+    attrs: span[ast.AttributeApplication],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, attrs.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -1114,12 +1265,20 @@ function render_attr_array(target: ref[string.String], attrs: span[ast.Attribute
         let a = unsafe: read(attrs.data + i)
         var name_text = qualified_name_to_s(a.name)
         defer: name_text.release()
-        ast_header(target, prefix + cp, i == attrs.len - 1, "AttributeApplication", true, name_text.as_str(), a.line, a.column)
+        ast_header(
+            target,
+            prefix + cp,
+            i == attrs.len - 1,
+            "AttributeApplication",
+            true,
+            name_text.as_str(),
+            a.line,
+            a.column
+        )
         let acp = if i == attrs.len - 1: "   " else: "│  "
         if a.arguments.len > 0:
             render_argument_array(target, a.arguments, prefix + cp + acp, true, "arguments")
         i += 1
-
 
 ## ── Remaining declaration kinds ─────────────────────────────────────────────
 
@@ -1302,13 +1461,27 @@ function render_decl_rest(target: ref[string.String], d: ast.Decl, prefix: str, 
             return
 
 
-function render_directive(target: ref[string.String], kind: str, value: str, line: ptr_uint, column: ptr_uint, prefix: str, is_last: bool) -> void:
+function render_directive(
+    target: ref[string.String],
+    kind: str,
+    value: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    prefix: str,
+    is_last: bool
+) -> void:
     ast_header(target, prefix, is_last, kind, false, "", line, column)
     let cp = if is_last: "   " else: "│  "
     render_str_leaf(target, prefix + cp, true, "value", value)
 
 
-function render_foreign_param_array(target: ref[string.String], params: span[ast.ForeignParam], prefix: str, is_last: bool, member: str) -> void:
+function render_foreign_param_array(
+    target: ref[string.String],
+    params: span[ast.ForeignParam],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, params.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -1328,7 +1501,13 @@ function render_foreign_param_array(target: ref[string.String], params: span[ast
 
 
 ## The host's `ForeignParam.mode` is a Symbol.
-function render_foreign_mode_leaf(target: ref[string.String], prefix: str, is_last: bool, member: str, mode: ast.ForeignParamMode) -> void:
+function render_foreign_mode_leaf(
+    target: ref[string.String],
+    prefix: str,
+    is_last: bool,
+    member: str,
+    mode: ast.ForeignParamMode
+) -> void:
     var text = ":plain"
     if mode == ast.ForeignParamMode.fmode_out:
         text = ":out"
@@ -1339,7 +1518,6 @@ function render_foreign_mode_leaf(target: ref[string.String], prefix: str, is_la
     else if mode == ast.ForeignParamMode.fmode_consuming:
         text = ":consuming"
     ast_leaf(target, prefix, is_last, member, text)
-
 
 ## ── Remaining statement kinds ───────────────────────────────────────────────
 
@@ -1531,7 +1709,13 @@ function render_stmt_rest(target: ref[string.String], s: ast.Stmt, prefix: str, 
             return
 
 
-function render_if_branch_array(target: ref[string.String], branches: span[ast.IfBranch], prefix: str, is_last: bool, member: str) -> void:
+function render_if_branch_array(
+    target: ref[string.String],
+    branches: span[ast.IfBranch],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, branches.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -1551,7 +1735,13 @@ function render_if_branch_array(target: ref[string.String], branches: span[ast.I
         i += 1
 
 
-function render_for_binding_array(target: ref[string.String], bindings: span[ast.ForBinding], prefix: str, is_last: bool, member: str) -> void:
+function render_for_binding_array(
+    target: ref[string.String],
+    bindings: span[ast.ForBinding],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, bindings.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -1561,7 +1751,13 @@ function render_for_binding_array(target: ref[string.String], bindings: span[ast
         i += 1
 
 
-function render_match_arm_array(target: ref[string.String], arms: span[ast.MatchArm], prefix: str, is_last: bool, member: str) -> void:
+function render_match_arm_array(
+    target: ref[string.String],
+    arms: span[ast.MatchArm],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, arms.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -1613,7 +1809,16 @@ function render_match_arm_array(target: ref[string.String], arms: span[ast.Match
         i += 1
 
 
-function render_when_stmt(target: ref[string.String], discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?, prefix: str, is_last: bool, line: ptr_uint, column: ptr_uint) -> void:
+function render_when_stmt(
+    target: ref[string.String],
+    discriminant: ptr[ast.Expr],
+    branches: span[ast.WhenBranch],
+    else_body: ptr[ast.Stmt]?,
+    prefix: str,
+    is_last: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     ast_header(target, prefix, is_last, "WhenStmt", false, "", line, column)
     let cp = if is_last: "   " else: "│  "
     let else_ptr = else_body
@@ -1638,7 +1843,16 @@ function render_when_stmt(target: ref[string.String], discriminant: ptr[ast.Expr
 
 ## The module-level `when`: the host parses it as the same `WhenStmt`, with
 ## `WhenBranch` arms whose bodies are declarations.
-function render_when_decl_stmt(target: ref[string.String], discriminant: ptr[ast.Expr], branches: span[ast.WhenDeclBranch], else_body: span[ast.Decl], prefix: str, is_last: bool, line: ptr_uint, column: ptr_uint) -> void:
+function render_when_decl_stmt(
+    target: ref[string.String],
+    discriminant: ptr[ast.Expr],
+    branches: span[ast.WhenDeclBranch],
+    else_body: span[ast.Decl],
+    prefix: str,
+    is_last: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     ast_header(target, prefix, is_last, "WhenStmt", false, "", line, column)
     let cp = if is_last: "   " else: "│  "
     var last: int = 0
@@ -1656,7 +1870,16 @@ function render_when_decl_stmt(target: ref[string.String], discriminant: ptr[ast
             let br = unsafe: read(branches.data + i)
             let item_last = i == branches.len - 1
             let br_pat = unsafe: read(br.pattern)
-            ast_header(target, prefix + cp + bcp, item_last, "WhenBranch", false, "", expr_line(br_pat), expr_column(br_pat))
+            ast_header(
+                target,
+                prefix + cp + bcp,
+                item_last,
+                "WhenBranch",
+                false,
+                "",
+                expr_line(br_pat),
+                expr_column(br_pat)
+            )
             let wcp = if item_last: "   " else: "│  "
             var br_last: int = 1
             if br.binding_name.is_some():
@@ -1679,7 +1902,12 @@ function render_when_decl_stmt(target: ref[string.String], discriminant: ptr[ast
                 let body_cp = if br_last == 5: "   " else: "│  "
                 var j: ptr_uint = 0
                 while j < br.body.len:
-                    render_decl(target, unsafe: read(br.body.data + j), prefix + cp + bcp + wcp + body_cp, j == br.body.len - 1)
+                    render_decl(
+                        target,
+                        unsafe: read(br.body.data + j),
+                        prefix + cp + bcp + wcp + body_cp,
+                        j == br.body.len - 1
+                    )
                     j += 1
             i += 1
     if else_body.len > 0:
@@ -1692,7 +1920,13 @@ function render_when_decl_stmt(target: ref[string.String], discriminant: ptr[ast
 
 
 ## The statement form's `when` branches are MatchArm nodes on the host.
-function render_when_match_arm_array(target: ref[string.String], branches: span[ast.WhenBranch], prefix: str, is_last: bool, member: str) -> void:
+function render_when_match_arm_array(
+    target: ref[string.String],
+    branches: span[ast.WhenBranch],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, branches.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -1727,10 +1961,15 @@ function render_when_match_arm_array(target: ref[string.String], branches: span[
                 j += 1
         i += 1
 
-
 ## ── Remaining expression kinds ──────────────────────────────────────────────
 
-function render_expr_array(target: ref[string.String], items: span[ast.Expr], prefix: str, is_last: bool, member: str) -> void:
+function render_expr_array(
+    target: ref[string.String],
+    items: span[ast.Expr],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, items.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -1739,7 +1978,13 @@ function render_expr_array(target: ref[string.String], items: span[ast.Expr], pr
         i += 1
 
 
-function render_type_argument_array(target: ref[string.String], args: span[ast.TypeArgument], prefix: str, is_last: bool, member: str) -> void:
+function render_type_argument_array(
+    target: ref[string.String],
+    args: span[ast.TypeArgument],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, args.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -1875,7 +2120,13 @@ function render_expr_rest(target: ref[string.String], e: ast.Expr, prefix: str, 
             return
 
 
-function render_match_expr_arm_array(target: ref[string.String], arms: span[ast.MatchExprArm], prefix: str, is_last: bool, member: str) -> void:
+function render_match_expr_arm_array(
+    target: ref[string.String],
+    arms: span[ast.MatchExprArm],
+    prefix: str,
+    is_last: bool,
+    member: str
+) -> void:
     ast_container_line(target, prefix, is_last, member, arms.len, true)
     let cp = if is_last: "   " else: "│  "
     var i: ptr_uint = 0
@@ -1917,7 +2168,6 @@ function render_match_expr_arm_array(target: ref[string.String], arms: span[ast.
             render_int_leaf(target, prefix + cp + acp, last == 4, "binding_column", arm.binding_column)
         render_expr_member(target, unsafe: read(arm.value), prefix + cp + acp, true, "value")
         i += 1
-
 
 ## ── Node counting (`assign_node_ids` semantics) ─────────────────────────────
 ## The host's `node_ids`/`node_path_ids` map sizes are the number of distinct

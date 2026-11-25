@@ -81,10 +81,10 @@ function compile_to_c(source: str) -> string.String:
 function expect_contains(text: str, needle: str) -> void:
     expect(text.contains_substring(needle), needle)
 
-
 # =============================================================================
 #  Preamble
 # =============================================================================
+
 
 @[test]
 function test_emits_c_stdint_header() -> void:
@@ -99,10 +99,10 @@ function test_emits_c_stdint_header() -> void:
     expect_contains(text, "#include <stdbool.h>")
     return
 
-
 # =============================================================================
 #  Structs
 # =============================================================================
+
 
 @[test]
 function test_struct_typedef_and_definition() -> void:
@@ -144,10 +144,10 @@ function test_struct_aggregate_initializer() -> void:
     expect_contains(text, ".y = 2")
     return
 
-
 # =============================================================================
 #  Enums
 # =============================================================================
+
 
 @[test]
 function test_enum_typedef_and_constants() -> void:
@@ -168,10 +168,10 @@ function test_enum_typedef_and_constants() -> void:
     expect_contains(text, "main_Color_green = 1")
     return
 
-
 # =============================================================================
 #  Functions and the real main entrypoint
 # =============================================================================
+
 
 @[test]
 function test_function_signature_and_body() -> void:
@@ -221,10 +221,10 @@ function test_dead_function_is_not_emitted() -> void:
     ## Reachability-based emission drops functions not reached from main.
     expect(not text.contains_substring("main_unused_helper"))
 
-
 # =============================================================================
 #  Match -> switch
 # =============================================================================
+
 
 @[test]
 function test_enum_match_lowers_to_switch() -> void:
@@ -251,10 +251,10 @@ function test_enum_match_lowers_to_switch() -> void:
     expect_contains(text, "case main_Color_green:")
     return
 
-
 # =============================================================================
 #  Variants -> tagged unions
 # =============================================================================
+
 
 @[test]
 function test_variant_lowers_to_tagged_union() -> void:
@@ -280,10 +280,10 @@ function test_variant_lowers_to_tagged_union() -> void:
     expect_contains(text, "struct main_Shape {")
     return
 
-
 # =============================================================================
 #  Generic monomorphization
 # =============================================================================
+
 
 @[test]
 function test_generic_function_is_monomorphized() -> void:
@@ -302,10 +302,10 @@ function test_generic_function_is_monomorphized() -> void:
     expect_contains(text, "main_identity__int(int32_t x)")
     return
 
-
 # =============================================================================
 #  Inline-while compile-time unrolling
 # =============================================================================
+
 
 @[test]
 function test_inline_while_literal_unrolled_no_c_while() -> void:
@@ -342,10 +342,10 @@ function test_inline_while_const_condition_unrolled() -> void:
         expect(false, "inline while with const condition should be unrolled")
     return
 
-
 # =============================================================================
 #  Stateful event emit — state pointer must be passed to listener
 # =============================================================================
+
 
 @[test]
 function test_stateful_event_listener_receives_state_pointer() -> void:
@@ -376,10 +376,10 @@ function test_stateful_event_listener_receives_state_pointer() -> void:
     expect_contains(text, "__mt_snapshots[__mt_dispatch_index].listener)(__mt_snapshots[__mt_dispatch_index].state)")
     return
 
-
 # =============================================================================
 #  Opaque values are pointers; recursive arm payloads dereference
 # =============================================================================
+
 
 @[test]
 function test_opaque_value_renders_as_pointer() -> void:
@@ -447,7 +447,6 @@ function test_recursive_variant_field_dereferences_on_read() -> void:
     expect_contains(text, "eval_expr(*b.right)")
     return
 
-
 # =============================================================================
 #  Generic extending blocks keep the block's type parameters
 # =============================================================================
@@ -476,10 +475,10 @@ function test_generic_extending_block_type_parameters() -> void:
     let text = Box[str](value = "milk")
     expect_eq(text.round_trip(), "milk")
 
-
 # =============================================================================
 #  External-struct equality helpers
 # =============================================================================
+
 
 @[test]
 function test_external_struct_equality_helper_is_synthesized() -> void:
@@ -574,7 +573,6 @@ function test_external_struct_equality_helper_is_synthesized() -> void:
     # must descend into blocks).
     expect_contains(text, "static bool mt_struct_eq_Slot(struct Slot left, struct Slot right);")
     expect_contains(text, "mt_struct_eq_Slot((*mt_checked_index")
-
 
 
 @[test]
@@ -676,7 +674,10 @@ function test_proc_array_element_uses_the_proc_struct_helper() -> void:
     var c = compile_to_c(source)
     defer: c.release()
     let text = c.as_str()
-    expect_contains(text, "static inline mt_proc_proc_int *mt_checked_index_array_mt_proc_proc_int_value_2(mt_proc_proc_int *array, uintptr_t index)")
+    expect_contains(
+        text,
+        "static inline mt_proc_proc_int *mt_checked_index_array_mt_proc_proc_int_value_2(mt_proc_proc_int *array, uintptr_t index)"
+    )
     expect_contains(text, "mt_proc_proc_int a = (*mt_checked_index_array_mt_proc_proc_int_value_2(ops, 0));")
 
 

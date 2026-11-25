@@ -229,7 +229,6 @@ function token_table_lexeme_width(tokens: ref[vec.Vec[token_mod.Token]]) -> ptr_
         return 28
     return width
 
-
 ## One histogram row: a token kind and its token count.
 public struct HistogramEntry:
     kind: tk.TokenKind
@@ -380,7 +379,12 @@ function histogram_insertion_sort(entries: ref[vec.Vec[HistogramEntry]], lo: ptr
 
 
 ## `rb_uniform_heap_down_2`.
-function histogram_heap_down(entries: ref[vec.Vec[HistogramEntry]], lo: ptr_uint, offset: ptr_uint, len: ptr_uint) -> void:
+function histogram_heap_down(
+    entries: ref[vec.Vec[HistogramEntry]],
+    lo: ptr_uint,
+    offset: ptr_uint,
+    len: ptr_uint
+) -> void:
     let tmp = histogram_entry(entries, lo + offset)
     var pos = offset
     while true:
@@ -422,7 +426,12 @@ function histogram_heapsort(entries: ref[vec.Vec[HistogramEntry]], lo: ptr_uint,
 ## middle and last counts, falling back to heapsort when the depth budget runs
 ## out.  `i`/`j` are signed: the algorithm can step one element outside the
 ## region before the final `j + 1` (which the C pointer arithmetic absorbs).
-function histogram_quicksort_intro(entries: ref[vec.Vec[HistogramEntry]], lo: ptr_uint, hi: ptr_uint, depth: ptr_uint) -> void:
+function histogram_quicksort_intro(
+    entries: ref[vec.Vec[HistogramEntry]],
+    lo: ptr_uint,
+    hi: ptr_uint,
+    depth: ptr_uint
+) -> void:
     if hi - lo <= 16:
         histogram_insertion_sort(entries, lo, hi)
         return
@@ -509,7 +518,6 @@ function append_diagnostics_text(target: ref[string.String], analysis: ref[analy
         target.append("]: ")
         target.append(d.message)
         i += 1
-
 
 ## ── Facts ────────────────────────────────────────────────────────────────────
 
@@ -700,7 +708,12 @@ function append_facts_functions(target: ref[string.String], analysis: ref[analyz
     facts_function_decls(target, analysis, ref_of(seen), analysis.when_declarations)
 
 
-function facts_function_decls(target: ref[string.String], analysis: ref[analyzer.Analysis], seen: ref[vec.Vec[str]], decls: span[ast.Decl]) -> void:
+function facts_function_decls(
+    target: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    seen: ref[vec.Vec[str]],
+    decls: span[ast.Decl]
+) -> void:
     var i: ptr_uint = 0
     while i < decls.len:
         var d: ast.Decl
@@ -712,19 +725,79 @@ function facts_function_decls(target: ref[string.String], analysis: ref[analyzer
                 if analysis.functions.contains(fun.name) and not facts_contains(seen, fun.name):
                     let sig = analysis.functions.get(fun.name)
                     if sig != null:
-                        append_facts_callable(target, analysis, fun.name, sig, node, "FunctionDef", fun.line, fun.column, "    ", fun.name, true, fun.is_const, false, false, fun.type_params, span[ast.TypeRef](), 0z, types.Type.ty_error, false)
+                        append_facts_callable(
+                            target,
+                            analysis,
+                            fun.name,
+                            sig,
+                            node,
+                            "FunctionDef",
+                            fun.line,
+                            fun.column,
+                            "    ",
+                            fun.name,
+                            true,
+                            fun.is_const,
+                            false,
+                            false,
+                            fun.type_params,
+                            span[ast.TypeRef](),
+                            0z,
+                            types.Type.ty_error,
+                            false
+                        )
                     append_rule_seen(seen, fun.name)
             ast.Decl.decl_extern_function as ef:
                 if analysis.functions.contains(ef.name) and not facts_contains(seen, ef.name):
                     let sig = analysis.functions.get(ef.name)
                     if sig != null:
-                        append_facts_callable(target, analysis, ef.name, sig, node, "ExternFunctionDecl", ef.line, 0z, "    ", ef.name, false, false, true, false, ef.type_params, span[ast.TypeRef](), 0z, types.Type.ty_error, false)
+                        append_facts_callable(
+                            target,
+                            analysis,
+                            ef.name,
+                            sig,
+                            node,
+                            "ExternFunctionDecl",
+                            ef.line,
+                            0z,
+                            "    ",
+                            ef.name,
+                            false,
+                            false,
+                            true,
+                            false,
+                            ef.type_params,
+                            span[ast.TypeRef](),
+                            0z,
+                            types.Type.ty_error,
+                            false
+                        )
                     append_rule_seen(seen, ef.name)
             ast.Decl.decl_foreign_function as ff:
                 if analysis.functions.contains(ff.name) and not facts_contains(seen, ff.name):
                     let sig = analysis.functions.get(ff.name)
                     if sig != null:
-                        append_facts_callable(target, analysis, ff.name, sig, node, "ForeignFunctionDecl", ff.line, 0z, "    ", ff.name, false, false, false, false, ff.type_params, span[ast.TypeRef](), 0z, types.Type.ty_error, false)
+                        append_facts_callable(
+                            target,
+                            analysis,
+                            ff.name,
+                            sig,
+                            node,
+                            "ForeignFunctionDecl",
+                            ff.line,
+                            0z,
+                            "    ",
+                            ff.name,
+                            false,
+                            false,
+                            false,
+                            false,
+                            ff.type_params,
+                            span[ast.TypeRef](),
+                            0z,
+                            types.Type.ty_error,
+                            false
+                        )
                     append_rule_seen(seen, ff.name)
             _:
                 pass
@@ -876,7 +949,15 @@ function facts_body_return(s: analyzer.FnSig) -> types.Type:
     return s.return_type
 
 
-function append_facts_value_binding(target: ref[string.String], analysis: ref[analyzer.Analysis], id: ptr_uint, mutable: bool, kind: str, name: str, ty: types.Type) -> void:
+function append_facts_value_binding(
+    target: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    id: ptr_uint,
+    mutable: bool,
+    kind: str,
+    name: str,
+    ty: types.Type
+) -> void:
     target.append("ValueBinding[id: ")
     target.append_format(f"#{id}")
     target.append("] ")
@@ -915,7 +996,12 @@ function append_facts_values(target: ref[string.String], analysis: ref[analyzer.
     facts_value_decls(target, analysis, ref_of(seen), analysis.when_declarations)
 
 
-function facts_value_decls(target: ref[string.String], analysis: ref[analyzer.Analysis], seen: ref[vec.Vec[str]], decls: span[ast.Decl]) -> void:
+function facts_value_decls(
+    target: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    seen: ref[vec.Vec[str]],
+    decls: span[ast.Decl]
+) -> void:
     var i: ptr_uint = 0
     while i < decls.len:
         var d: ast.Decl
@@ -939,7 +1025,13 @@ function facts_value_decls(target: ref[string.String], analysis: ref[analyzer.An
         i += 1
 
 
-function append_facts_value_row(target: ref[string.String], analysis: ref[analyzer.Analysis], name: str, mutable: bool, kind: str) -> void:
+function append_facts_value_row(
+    target: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    name: str,
+    mutable: bool,
+    kind: str
+) -> void:
     let ty = analysis.value_types.get(name) else:
         return
     target.append("\n    ")
@@ -981,7 +1073,11 @@ function facts_method_receiver_string(analysis: ref[analyzer.Analysis], base: st
     return base
 
 
-function facts_collect_receivers(analysis: ref[analyzer.Analysis], receivers: ref[vec.Vec[str]], decls: span[ast.Decl]) -> void:
+function facts_collect_receivers(
+    analysis: ref[analyzer.Analysis],
+    receivers: ref[vec.Vec[str]],
+    decls: span[ast.Decl]
+) -> void:
     var i: ptr_uint = 0
     while i < decls.len:
         var d: ast.Decl
@@ -1004,7 +1100,12 @@ function facts_collect_receivers(analysis: ref[analyzer.Analysis], receivers: re
         i += 1
 
 
-function facts_emit_receiver_methods(target: ref[string.String], analysis: ref[analyzer.Analysis], receiver: str, decls: span[ast.Decl]) -> void:
+function facts_emit_receiver_methods(
+    target: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    receiver: str,
+    decls: span[ast.Decl]
+) -> void:
     var i: ptr_uint = 0
     while i < decls.len:
         var d: ast.Decl
@@ -1019,14 +1120,28 @@ function facts_emit_receiver_methods(target: ref[string.String], analysis: ref[a
                 while j < ex.methods.len:
                     var m: ast.Method = unsafe: read(ex.methods.data + j)
                     if facts_method_receiver_string(analysis, base, m.name) == receiver:
-                        emit_one_method(target, analysis, ex.type_name, base, m, unsafe: reinterpret[ptr_uint](ex.methods.data + j))
+                        emit_one_method(
+                            target,
+                            analysis,
+                            ex.type_name,
+                            base,
+                            m,
+                            unsafe: reinterpret[ptr_uint](ex.methods.data + j)
+                        )
                     j += 1
             _:
                 pass
         i += 1
 
 
-function emit_one_method(target: ref[string.String], analysis: ref[analyzer.Analysis], target_type: ptr[ast.TypeRef], base: str, m: ast.Method, node: ptr_uint) -> void:
+function emit_one_method(
+    target: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    target_type: ptr[ast.TypeRef],
+    base: str,
+    m: ast.Method,
+    node: ptr_uint
+) -> void:
     let key = analyzer.method_key(base, m.name)
     let sig = analysis.method_sigs.get(key) else:
         return
@@ -1044,7 +1159,27 @@ function emit_one_method(target: ref[string.String], analysis: ref[analyzer.Anal
     type_name.append(m.name)
     let this_id = facts_this_id(analysis, node)
     let has_this = m.method_kind != ast.MethodKind.mk_static
-    append_facts_callable(target, analysis, display_name, sig, node, "MethodDef", m.line, m.column, "      ", type_name.as_str(), true, m.is_const, false, has_this, m.type_params, unsafe: read(target_type).arguments, this_id, this_ty, m.method_kind == ast.MethodKind.mk_editable)
+    append_facts_callable(
+        target,
+        analysis,
+        display_name,
+        sig,
+        node,
+        "MethodDef",
+        m.line,
+        m.column,
+        "      ",
+        type_name.as_str(),
+        true,
+        m.is_const,
+        false,
+        has_this,
+        m.type_params,
+        unsafe: read(target_type).arguments,
+        this_id,
+        this_ty,
+        m.method_kind == ast.MethodKind.mk_editable
+    )
 
 
 function static_method_display_name(name: str) -> str:
@@ -1208,7 +1343,11 @@ function append_bindings_section(target: ref[string.String], analysis: ref[analy
 
 ## The `obj <node> → binding_id: <id>` rows of one site list, capped at 30 like
 ## the host's `.take(30)`.
-function append_binding_site_rows(target: ref[string.String], analysis: ref[analyzer.Analysis], identifiers: bool) -> void:
+function append_binding_site_rows(
+    target: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    identifiers: bool
+) -> void:
     var i: ptr_uint = 0
     if identifiers:
         while i < 30 and i < analysis.identifier_sites.len():
@@ -1331,7 +1470,12 @@ function append_binding_type_repr(target: ref[string.String], analysis: ref[anal
 ## A type name with its owning module: the recorded module when present, else
 ## the declared type's, with the prelude variants under `std.option` /
 ## `std.result` (the host's `Types::Variant#to_s`).
-function append_binding_type_name(target: ref[string.String], analysis: ref[analyzer.Analysis], module_name: str, name: str) -> void:
+function append_binding_type_name(
+    target: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    module_name: str,
+    name: str
+) -> void:
     if module_name.len > 0:
         target.append(module_name)
         target.append(".")
@@ -1358,7 +1502,11 @@ function append_binding_type_name(target: ref[string.String], analysis: ref[anal
     target.append(name)
 
 
-function append_binding_type_args(target: ref[string.String], analysis: ref[analyzer.Analysis], args: span[types.Type]) -> void:
+function append_binding_type_args(
+    target: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    args: span[types.Type]
+) -> void:
     if args.len == 0:
         return
     target.append("[")

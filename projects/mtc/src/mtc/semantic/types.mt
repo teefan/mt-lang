@@ -15,7 +15,6 @@ import std.mem.heap as heap
 import std.map as map_mod
 import std.vec as vec
 
-
 ## One field of a variant arm's payload.  The host's `Types::VariantArmPayload`
 ## *is* the arm's struct (its fields are the variant's declared arm fields with
 ## the scrutinee's type arguments substituted), so `p.value` on a bound arm
@@ -23,7 +22,6 @@ import std.vec as vec
 public struct PayloadField:
     name: str
     ty: Type
-
 
 ## The payload of `ty_variant_arm_payload`.  Boxed: it is the largest `Type`
 ## variant (five `str` fields plus a span) and rare, so keeping it inline would
@@ -35,7 +33,6 @@ public struct VariantArmPayload:
     c_name: str
     display_name: str
     fields: span[PayloadField]
-
 
 ## The payload of `ty_function`.  Boxed like `VariantArmPayload`: it was the
 ## widest arm (two spans, a pointer, a `str` and two bools = 48 bytes), and a
@@ -50,13 +47,11 @@ public struct FunctionType:
     param_names: span[str]
     name: str
 
-
 ## The payload of `ty_named`.
 public struct NamedType:
     name: str
     module_name: str
     linkage_name: Option[str]
-
 
 ## The payload of `ty_event`.
 public struct EventType:
@@ -65,43 +60,36 @@ public struct EventType:
     payload_type: ptr[Type]?
     linkage_name: str
 
-
 ## The payload of `ty_imported`.
 public struct ImportedType:
     module_name: str
     name: str
     args: span[Type]
 
-
 ## The payload of `ty_dyn`.
 public struct DynType:
     iface: str
     args: span[Type]
-
 
 ## The payload of `ty_dyn_vtable`.
 public struct DynVtableType:
     interface_name: str
     linkage_name: str
 
-
 ## The payload of `ty_opaque`.
 public struct OpaqueType:
     module_name: str
     name: str
-
 
 ## The payload of `ty_generic`.
 public struct GenericType:
     name: str
     args: span[Type]
 
-
 ## The payload of `ty_tuple`.
 public struct TupleType:
     elements: span[Type]
     field_names: Option[span[str]]
-
 
 public variant Type:
     ty_primitive(name: str)
@@ -171,7 +159,12 @@ public function named_type(name: str, module_name: str, linkage_name: Option[str
 public function event_type(name: str, capacity: ptr_uint, payload_type: ptr[Type]?, linkage_name: str) -> Type:
     let payload = heap.must_alloc[EventType](1)
     unsafe:
-        read(payload) = EventType(name = name, capacity = capacity, payload_type = payload_type, linkage_name = linkage_name)
+        read(payload) = EventType(
+            name = name,
+            capacity = capacity,
+            payload_type = payload_type,
+            linkage_name = linkage_name
+        )
     return Type.ty_event(payload = payload)
 
 
@@ -220,7 +213,14 @@ public function tuple_type(elements: span[Type], field_names: Option[span[str]])
 ## The one constructor for `ty_function`.  The arm's fields live in a boxed
 ## `FunctionType`, so callers build the payload here rather than naming the
 ## variant arm directly.
-public function function_type(name: str, params: span[Type], return_type: ptr[Type], variadic: bool, is_proc: bool, param_names: span[str]) -> Type:
+public function function_type(
+    name: str,
+    params: span[Type],
+    return_type: ptr[Type],
+    variadic: bool,
+    is_proc: bool,
+    param_names: span[str]
+) -> Type:
     var payload = heap.must_alloc[FunctionType](1)
     unsafe:
         read(payload) = FunctionType(
@@ -246,7 +246,14 @@ public function literal_int(value: long) -> Type:
 
 ## Construct an arm payload from already-computed parts.  `proc_renumber`
 ## rebuilds one with renamed `__proc_N__` symbols.
-public function variant_arm_payload_raw(variant_name: str, name: str, module_name: str, c_name: str, display_name: str, fields: span[PayloadField]) -> Type:
+public function variant_arm_payload_raw(
+    variant_name: str,
+    name: str,
+    module_name: str,
+    c_name: str,
+    display_name: str,
+    fields: span[PayloadField]
+) -> Type:
     var payload = heap.must_alloc[VariantArmPayload](1)
     unsafe:
         read(payload) = VariantArmPayload(
@@ -282,7 +289,14 @@ public function variant_arm_payload(variant_name: str, module_name: str, c_name:
 ## renders `<variant>. <arm> payload` (`Option[(str, str)].some payload`), so
 ## the *instantiated* variant text and the arm's substituted field list travel
 ## with the type instead of being recomputed at every consumer.
-public function variant_arm_payload_with(variant_name: str, module_name: str, c_name: str, arm_name: str, variant_text: str, fields: span[PayloadField]) -> Type:
+public function variant_arm_payload_with(
+    variant_name: str,
+    module_name: str,
+    c_name: str,
+    arm_name: str,
+    variant_text: str,
+    fields: span[PayloadField]
+) -> Type:
     var buf = string.String.create()
     buf.append(variant_name)
     buf.append("_")
@@ -300,7 +314,6 @@ public function variant_arm_payload_with(variant_name: str, module_name: str, c_
         display_name = display.as_str(),
         fields = fields,
     )
-
 
 # ---------------------------------------------------------------------------
 #  Classification predicates (mirror Types::Primitive flag methods)
@@ -448,7 +461,6 @@ public function is_numeric(t: Type) -> bool:
             return is_numeric_name(p.name)
         _:
             return false
-
 
 # ---------------------------------------------------------------------------
 #  Rendering (mirrors Types::* #to_s), used for diagnostics
@@ -698,7 +710,6 @@ public function type_to_string(t: Type) -> str:
             buf.append(")")
             return buf.as_str()
 
-
 # ---------------------------------------------------------------------------
 #  Category-based incompatibility (mirrors Ruby's types_compatible? chain).
 #  Returns true ONLY when concrete evidence proves target and source are
@@ -872,7 +883,11 @@ public function type_equals(a: Type, b: Type) -> bool:
             match b:
                 Type.ty_event as eb:
                     let eb_bp = unsafe: read(eb.payload)
-                    if ea_bp.name != eb_bp.name or ea_bp.capacity != eb_bp.capacity or ea_bp.linkage_name != eb_bp.linkage_name:
+                    if (
+                        ea_bp.name != eb_bp.name
+                        or ea_bp.capacity != eb_bp.capacity
+                        or ea_bp.linkage_name != eb_bp.linkage_name
+                    ):
                         return false
                     let pa = ea_bp.payload_type
                     let pb = eb_bp.payload_type
@@ -1385,7 +1400,6 @@ function nominal_definitely_different(a: Type, b: Type) -> bool:
         return false
 
     return not module_a == module_b
-
 
 const KIND_UNKNOWN: int = 0
 const KIND_SCALAR: int = 1

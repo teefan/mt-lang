@@ -17,17 +17,16 @@ import mtc.lsp.workspace as workspace
 import mtc.lsp.workspace_index as idx
 import mtc.semantic.types as types
 
-
 ## LSP SymbolKind values for type hierarchy items.
 ## Per LSP 3.17 spec: File=1, Module=2, Namespace=3, Package=4, Class=5,
 ## Method=6, Property=7, Field=8, Constructor=9, Enum=10, Interface=11,
 ## Function=12, Variable=13, Constant=14, String=15, Number=16, Boolean=17,
 ## Array=18, Object=19, Key=20, Null=21, EnumMember=22, Struct=23, Event=24,
 ## Operator=25, TypeParameter=26.
-const KIND_STRUCT:    int = 23
-const KIND_ENUM:      int = 13
+const KIND_STRUCT: int = 23
+const KIND_ENUM: int = 13
 const KIND_INTERFACE: int = 11
-const KIND_CLASS:     int = 5
+const KIND_CLASS: int = 5
 
 
 ## Handle textDocument/prepareTypeHierarchy.  Finds a type symbol at the
@@ -91,7 +90,18 @@ public function handle_prepare_type_hierarchy(
             var result = string.String.create()
             defer: result.release()
             result.append("[")
-            append_hierarchy_item(ref_of(result), name, kind, kind_text, uri, token_payload.value.line, token_payload.value.column, token_payload.value.length, source, ws.position_encoding_utf16)
+            append_hierarchy_item(
+                ref_of(result),
+                name,
+                kind,
+                kind_text,
+                uri,
+                token_payload.value.line,
+                token_payload.value.column,
+                token_payload.value.length,
+                source,
+                ws.position_encoding_utf16
+            )
             result.append("]")
             proto.write_response_raw(id, result.as_str())
 
@@ -142,7 +152,18 @@ public function handle_supertypes(
                     if not first:
                         result.append(",")
                     first = false
-                    append_hierarchy_item(ref_of(result), iface_name, KIND_INTERFACE, "interface", item_uri, 1, 0, iface_name.len, source, ws.position_encoding_utf16)
+                    append_hierarchy_item(
+                        ref_of(result),
+                        iface_name,
+                        KIND_INTERFACE,
+                        "interface",
+                        item_uri,
+                        1,
+                        0,
+                        iface_name.len,
+                        source,
+                        ws.position_encoding_utf16
+                    )
                 si += 1
 
     result.append("]")
@@ -208,7 +229,18 @@ public function handle_subtypes(
                                 result.append(",")
                             first = false
                             var target_uri = build_file_uri(path)
-                            append_hierarchy_item(ref_of(result), entry_name, entry.kind, hierarchy_kind_text(entry.kind), target_uri.as_str(), entry.line, 0, entry_name.len, content.as_str(), ws.position_encoding_utf16)
+                            append_hierarchy_item(
+                                ref_of(result),
+                                entry_name,
+                                entry.kind,
+                                hierarchy_kind_text(entry.kind),
+                                target_uri.as_str(),
+                                entry.line,
+                                0,
+                                entry_name.len,
+                                content.as_str(),
+                                ws.position_encoding_utf16
+                            )
                             target_uri.release()
                     content.release()
                 Result.failure:
@@ -217,7 +249,6 @@ public function handle_subtypes(
 
     result.append("]")
     proto.write_response_raw(id, result.as_str())
-
 
 
 ## Build a file:// URI from an absolute path.  Returns an owned string.String.

@@ -11,6 +11,7 @@
 import std.str
 import std.string as string
 import std.vec as vec
+import std.mem.heap as heap
 
 import mtc.formatter.cst as cst
 import mtc.lexer.lexer as lexer_mod
@@ -22,34 +23,35 @@ import mtc.parser.state as pstate
 import mtc.pretty_printer.ast_formatter as ast_formatter
 import mtc.profile as profile_mod
 
-
 const DEFAULT_MAX_LINE_LENGTH: ptr_uint = 120
+
+## Minimum wrap-fix budget.  The pass may need one fix per line, and a single
+## line may need more than one (nested delimited groups), so the real bound is
+## scaled by the source's line count in `wrap_long_argument_lists`; a fixed 100
+## left files with more long lines unformatted until the next invocation.
 const MAX_WRAP_ITERATIONS: ptr_uint = 100
 
-
 public enum FormatMode: ubyte
-    safe      = 0
+    safe = 0
     canonical = 1
-    preserve  = 2
-    tidy      = 3
-
+    preserve = 2
+    tidy = 3
 
 ## Top-level declaration groups for the blank-line rules (host
 ## `top_level_declaration_group`).
 public enum DeclGroup: ubyte
-    directive         = 0
-    opaque_decl       = 1
-    type_decl         = 2
-    struct_decl       = 3
-    union_decl        = 4
-    variant_decl      = 5
-    enum_decl         = 6
-    flags_decl        = 7
-    const_decl        = 8
-    var_decl          = 9
+    directive = 0
+    opaque_decl = 1
+    type_decl = 2
+    struct_decl = 3
+    union_decl = 4
+    variant_decl = 5
+    enum_decl = 6
+    flags_decl = 7
+    const_decl = 8
+    var_decl = 9
     external_function = 10
-    external_decl     = 11
-
+    external_decl = 11
 
 # =============================================================================
 #  Mode dispatch
@@ -72,7 +74,12 @@ public function parse_format_mode(name: str) -> Option[FormatMode]:
 
 ## `Formatter.format_source`.  `explicit_max_line_length` of 0 means "resolve
 ## from the linter config, else the default" (the host's `explicit: nil`).
-public function format_source(source: str, path: str, mode: FormatMode, explicit_max_line_length: ptr_uint) -> Option[string.String]:
+public function format_source(
+    source: str,
+    path: str,
+    mode: FormatMode,
+    explicit_max_line_length: ptr_uint
+) -> Option[string.String]:
     return format_source_profiled(source, path, mode, explicit_max_line_length, null)
 
 
@@ -80,7 +87,13 @@ public function format_source(source: str, path: str, mode: FormatMode, explicit
 ## `format` phase plus each mode's steps (`format.lex`/`format.parse`/
 ## `format.ast` for the AST modes; `format.cst`, `format.normalize`,
 ## `format.wrap`, `format.blank_lines`, `format.cst_fmt` for the CST modes).
-public function format_source_profiled(source: str, path: str, mode: FormatMode, explicit_max_line_length: ptr_uint, profile: ptr[profile_mod.Profile]?) -> Option[string.String]:
+public function format_source_profiled(
+    source: str,
+    path: str,
+    mode: FormatMode,
+    explicit_max_line_length: ptr_uint,
+    profile: ptr[profile_mod.Profile]?
+) -> Option[string.String]:
     let started = profile_mod.now_ms()
     var result = Option[string.String].none
     match mode:
@@ -123,12 +136,23 @@ public function format_preserve(source: str, profile: ptr[profile_mod.Profile]?)
 ## `:safe` / `:canonical` — AST pretty printer with comment reattachment
 ## (trivia from a `lex_with_trivia` pass, as the host's `canonical_format` does).
 public function format_canonical(source: str, profile: ptr[profile_mod.Profile]?) -> Option[string.String]:
+    # The parser's AST nodes are `heap.must_alloc` allocations, which the
+    # compiler normally reclaims with a per-file region.  The formatter has no
+    # such caller, so scope the parse here: without it every canonical format
+    # retains its whole AST (`mtc format DIR` grew by one file's AST per file).
+    var region = heap.create_region()
+    defer: region.release_all()
+    let previous_region = heap.begin_region(ptr_of(region))
     var diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: diags.release()
     let parse_started = profile_mod.now_ms()
     var file = parser.parse_source(source, ref_of(diags))
+    let parse_failed = diags.len() > 0
+    # Region-owned storage: this release is a no-op while the region is active,
+    # and it keeps the linter's owning-release check from flagging `diags`.
+    diags.release()
+    heap.end_region(previous_region)
     profile_mod.record(profile, "format.parse", profile_mod.now_ms() - parse_started)
-    if diags.len() > 0:
+    if parse_failed:
         return Option[string.String].none
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: lex_diags.release()
@@ -144,7 +168,12 @@ public function format_canonical(source: str, profile: ptr[profile_mod.Profile]?
 
 
 ## `:tidy` — CST normalize → wrap → blank lines.
-public function format_tidy(source: str, path: str, max_line_length: ptr_uint, profile: ptr[profile_mod.Profile]?) -> Option[string.String]:
+public function format_tidy(
+    source: str,
+    path: str,
+    max_line_length: ptr_uint,
+    profile: ptr[profile_mod.Profile]?
+) -> Option[string.String]:
     var diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: diags.release()
     let cst_started = profile_mod.now_ms()
@@ -164,11 +193,14 @@ public function format_tidy(source: str, path: str, max_line_length: ptr_uint, p
     profile_mod.record(profile, "format.wrap", profile_mod.now_ms() - wrap_started)
     defer: wrapped.release()
 
+    var wrap_tokens = lexer_mod.lex(wrapped.as_str())
+    defer: wrap_tokens.release()
+    var protected = protected_string_lines(wrapped.as_str(), wrap_tokens, false)
+    defer: protected.release()
     let blank_started = profile_mod.now_ms()
-    var result = normalize_blank_lines(wrapped.as_str())
+    var result = normalize_blank_lines_with(wrapped.as_str(), protected.as_span())
     profile_mod.record(profile, "format.blank_lines", profile_mod.now_ms() - blank_started)
     return Option[string.String].some(value = result)
-
 
 # =============================================================================
 #  Text helpers
@@ -224,6 +256,120 @@ function utf8_char_count(text: str) -> ptr_uint:
             count += 1
         i += 1
     return count
+
+
+## The number of physical lines in `source` (a final newline does not add an
+## empty line).  Used only to bound the wrap-fix loop.
+function source_line_count(source: str) -> ptr_uint:
+    var count: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < source.len:
+        if source.byte_at(i) == 10:
+            count += 1
+        i += 1
+    if source.len > 0 and source.byte_at(source.len - 1) != 10:
+        count += 1
+    return count
+
+
+function newline_count_between(source: str, start: ptr_uint, end: ptr_uint) -> ptr_uint:
+    var count: ptr_uint = 0
+    var i = start
+    while i < end and i < source.len:
+        if source.byte_at(i) == 10:
+            count += 1
+        i += 1
+    return count
+
+
+## Lines covered by a multi-line string/heredoc token.  A heredoc is one token
+## whose span runs from `<<-TAG` through the terminator line; its body is source
+## text, not trivia, so the line-based wrap and blank-line passes must copy it
+## verbatim.  `include_opening` is true for the wrap pass (never wrap a line
+## that opens a heredoc) and false for the blank-line pass (the opening line is
+## ordinary code and still follows declaration spacing).
+function protected_string_lines(source: str, tokens: vec.Vec[token_mod.Token], include_opening: bool) -> vec.Vec[bool]:
+    let line_count = source_line_count(source)
+    var line_flags = vec.Vec[bool].create()
+    var fi: ptr_uint = 0
+    while fi < line_count:
+        line_flags.push(false)
+        fi += 1
+
+    var ti: ptr_uint = 0
+    while ti < tokens.len():
+        let token_ptr = tokens.get(ti) else:
+            break
+        let token = unsafe: read(token_ptr)
+        let is_string = (
+            token.kind == tk.TokenKind.string
+            or token.kind == tk.TokenKind.cstring
+            or token.kind == tk.TokenKind.fstring
+        )
+        if is_string and token.end_offset > token.start_offset and token.line > 0:
+            let newlines = newline_count_between(source, token.start_offset, token.end_offset)
+            if newlines > 0:
+                let start_line = token.line - 1
+                var first = start_line
+                if not include_opening:
+                    first = start_line + 1
+                let last = start_line + newlines
+                var li = first
+                while li <= last and li < line_count:
+                    let flag_ptr = line_flags.get(li) else:
+                        break
+                    unsafe:
+                        read(flag_ptr) = true
+                    li += 1
+        ti += 1
+    return line_flags
+
+
+function protected_at(line_flags: vec.Vec[bool], index: ptr_uint) -> bool:
+    if index >= line_flags.len():
+        return false
+    let flag_ptr = line_flags.get(index) else:
+        return false
+    return unsafe: read(flag_ptr)
+
+
+## Separator before a top-level comment block (with optional attribute lines)
+## that introduces a declaration: 2 for a function or type declaration, 1 for a
+## `const`/`var`/directive, 0 when the block is standalone or detached.  This is
+## PEP 8 / Black / ruff format: two blank lines around defs and classes, one
+## around module-level assignments, with the declaration's comment block carried
+## along (no blank between the block and the declaration).
+function comment_block_separator(lines: vec.Vec[str], start_index: ptr_uint) -> ptr_uint:
+    let first = line_at(lines, start_index) else:
+        return 0
+    if leading_indent_width(first) != 0 or not line_is_comment(first):
+        return 0
+
+    var cursor = start_index
+    while cursor < lines.len():
+        let line = line_at(lines, cursor) else:
+            return 0
+        if leading_indent_width(line) != 0:
+            return 0
+        if line_is_comment(line):
+            cursor += 1
+            continue
+        if blank_line(line):
+            return 0
+        if attribute_application_line(line):
+            if top_level_function_attached_to_attribute_start(lines, cursor).is_some():
+                return 2
+            return 0
+        if function_line(line) or extending_block_header_line(line) or interface_block_header_line(line):
+            return 2
+        let group = top_level_declaration_group(line)
+        if group.is_some():
+            let g = group.unwrap()
+            if g == DeclGroup.const_decl or g == DeclGroup.var_decl or g == DeclGroup.directive:
+                return 1
+            return 2
+        return 0
+    return 0
 
 
 ## Ruby `String#lines` — every line keeps its "\n".
@@ -347,7 +493,6 @@ function join_lines_with_newlines(lines: vec.Vec[str]) -> string.String:
     append_to(ref_of(output), "\n")
     return output
 
-
 # =============================================================================
 #  Line classification (host helpers 318-621)
 # =============================================================================
@@ -464,7 +609,11 @@ function line_inside_bodyless_function_header(lines: vec.Vec[str], line_index: p
         let line = line_at(lines, cursor) else:
             break
         if function_line(line):
-            return bodyless_function_header_at(lines, cursor) and line_in_function_header_span(lines, cursor, line_index)
+            return bodyless_function_header_at(lines, cursor) and line_in_function_header_span(
+                lines,
+                cursor,
+                line_index
+            )
     return false
 
 
@@ -643,6 +792,12 @@ function line_is_comment(line: str) -> bool:
     return line.trim_ascii_whitespace().starts_with("#")
 
 
+## A `##` documentation comment.  Docs attach to the next declaration only when
+## no blank line intervenes, so the blank-line pass must not insert one.
+function line_is_doc_comment(line: str) -> bool:
+    return line.trim_ascii_whitespace().starts_with("##")
+
+
 function attribute_application_line(line: str) -> bool:
     return line.trim_ascii_whitespace().starts_with("@[")
 
@@ -775,12 +930,15 @@ function top_level_declaration_group(line: str) -> Option[DeclGroup]:
         return Option[DeclGroup].some(value = DeclGroup.external_decl)
     return Option[DeclGroup].none
 
-
 # =============================================================================
 #  Blank-line normalization (host 225-316)
 # =============================================================================
 
-public function normalize_blank_lines(source: str) -> string.String:
+## Blank-line normalization, with lines that must be copied verbatim (heredoc
+## bodies and their terminators).  The line-based rules otherwise see a
+## heredoc's `function ...` text as a top-level function and a `#` line as a
+## comment, and rewrite the literal's contents.
+public function normalize_blank_lines_with(source: str, protected: span[bool]) -> string.String:
     var lines = split_lines_chomp(source)
     defer: lines.release()
 
@@ -800,6 +958,17 @@ public function normalize_blank_lines(source: str) -> string.String:
         let line = line_at(lines, line_index) else:
             break
 
+        # A heredoc body is data, not layout: copy it and its blank lines
+        # verbatim, and do not let its text update the declaration/comment state.
+        if line_index < protected.len and protected[line_index]:
+            result.push(line)
+            blank_run = 0
+            emitted_content = true
+            previous_content_line = line
+            previous_content_index = Option[ptr_uint].some(value = line_index)
+            line_index += 1
+            continue
+
         if blank_line(line):
             blank_run += 1
         else:
@@ -808,12 +977,39 @@ public function normalize_blank_lines(source: str) -> string.String:
 
             if emitted_content:
                 var needed: ptr_uint = 0
-                if decorated.is_some():
+                # A declaration's leading comment block belongs to it: the
+                # separator goes before the block, and no blank goes between the
+                # block and the declaration.  This is PEP 8 / Black / ruff
+                # format (two blank lines around defs and classes, one around
+                # module-level assignments), and it makes a formatted file
+                # stable on the next pass.
+                let attached_comment = previous_was_comment and blank_run == 0
+                let comment_separator = if previous_was_comment: 0 else: comment_block_separator(lines, line_index)
+                let current_is_declaration = (
+                    function_line(line)
+                    or current_group.is_some()
+                    or extending_block_header_line(line)
+                    or interface_block_header_line(line)
+                    or decorated.is_some()
+                )
+                if attached_comment and current_is_declaration:
+                    needed = 0
+                else if comment_separator > 0:
+                    needed = comment_separator
+                # An adjacent doc block and its declaration are one unit: a blank
+                # here would detach the docs (the `##` attachment rule), not
+                # separate declarations.
+                else if previous_was_comment and blank_run == 0 and line_is_doc_comment(previous_content_line):
+                    needed = 0
+                else if decorated.is_some():
                     if bodyless_function_header_at(lines, decorated.unwrap()):
                         needed = 1
                     else:
                         needed = 2
-                else if previous_content_index.is_some() and line_inside_attribute_application(lines, previous_content_index.unwrap()):
+                else if previous_content_index.is_some() and line_inside_attribute_application(
+                    lines,
+                    previous_content_index.unwrap()
+                ):
                     needed = 0
                 else if extending_block_header_line(line):
                     if previous_was_comment:
@@ -822,7 +1018,10 @@ public function normalize_blank_lines(source: str) -> string.String:
                         needed = 2
                 else if function_line(line):
                     if bodyless_function_header_at(lines, line_index):
-                        if previous_content_index.is_some() and line_inside_bodyless_function_header(lines, previous_content_index.unwrap()):
+                        if previous_content_index.is_some() and line_inside_bodyless_function_header(
+                            lines,
+                            previous_content_index.unwrap()
+                        ):
                             needed = 0
                         else if interface_block_header_line(previous_content_line):
                             needed = 0
@@ -838,11 +1037,23 @@ public function normalize_blank_lines(source: str) -> string.String:
                         needed = 2
                 else if current_group.is_some():
                     let group = current_group.unwrap()
-                    if group == DeclGroup.struct_decl and previous_group.is_some() and previous_group.unwrap() == DeclGroup.struct_decl:
+                    if (
+                        group == DeclGroup.struct_decl
+                        and previous_group.is_some()
+                        and previous_group.unwrap() == DeclGroup.struct_decl
+                    ):
                         needed = 1
-                    else if group == DeclGroup.enum_decl and previous_group.is_some() and previous_group.unwrap() == DeclGroup.enum_decl:
+                    else if (
+                        group == DeclGroup.enum_decl
+                        and previous_group.is_some()
+                        and previous_group.unwrap() == DeclGroup.enum_decl
+                    ):
                         needed = 1
-                    else if group == DeclGroup.union_decl and previous_group.is_some() and previous_group.unwrap() == DeclGroup.union_decl:
+                    else if (
+                        group == DeclGroup.union_decl
+                        and previous_group.is_some()
+                        and previous_group.unwrap() == DeclGroup.union_decl
+                    ):
                         needed = 1
                     else if previous_group.is_some() and group != previous_group.unwrap():
                         needed = 1
@@ -875,7 +1086,13 @@ public function normalize_blank_lines(source: str) -> string.String:
                     previous_was_bodyful_function = true
             else if function_line(line) and not bodyless_function_header_at(lines, line_index):
                 previous_was_bodyful_function = true
-            else if line_group.is_some() or extending_block_header_line(line) or interface_block_header_line(line) or line_is_import(line) or line_is_comment(line):
+            else if (
+                line_group.is_some()
+                or extending_block_header_line(line)
+                or interface_block_header_line(line)
+                or line_is_import(line)
+                or line_is_comment(line)
+            ):
                 previous_was_bodyful_function = false
 
             previous_was_comment = line_is_comment(line)
@@ -886,7 +1103,6 @@ public function normalize_blank_lines(source: str) -> string.String:
         return string.String.create()
 
     return join_lines_with_newlines(result)
-
 
 # =============================================================================
 #  Long-line wrapping (host 71-216 + 623-778)
@@ -900,19 +1116,16 @@ struct WrapCandidate:
     closing_delimiter: str
     arguments: vec.Vec[str]
 
-
 struct ChainCandidate:
     start_char: ptr_uint
     end_char: ptr_uint
     operators: vec.Vec[str]
     segments: vec.Vec[str]
 
-
 struct DelimiterEntry:
     kind: tk.TokenKind
     index: ptr_uint
     depth: ptr_uint
-
 
 public struct WrapFix:
     line_index: ptr_uint
@@ -942,7 +1155,6 @@ public function wrappable_long_line_candidate_text(line: str) -> bool:
     if line.contains_substring("(") or line.contains_substring("["):
         return true
     return line.contains_substring(" and ") or line.contains_substring(" or ")
-
 
 # =============================================================================
 #  Single-line wrap fixes (linter `line-too-long` and the LSP quickfix)
@@ -974,6 +1186,10 @@ public function build_line_wrap_fix_with_tokens(
 ) -> Option[WrapFix]:
     if max_line_length == 0:
         return Option[WrapFix].none
+    var protected = protected_string_lines(source, tokens, true)
+    defer: protected.release()
+    if protected_at(protected, line_index):
+        return Option[WrapFix].none
     var lines = split_lines_keep(source)
     defer: lines.release()
     let original_line = line_at(lines, line_index) else:
@@ -990,8 +1206,9 @@ public function wrap_long_argument_lists(source: str, max_line_length: ptr_uint,
     if max_line_length == 0:
         return current
 
+    let max_iterations = source_line_count(source) * 4 + MAX_WRAP_ITERATIONS
     var iterations: ptr_uint = 0
-    while iterations < MAX_WRAP_ITERATIONS:
+    while iterations < max_iterations:
         iterations += 1
 
         let text = current.as_str()
@@ -1016,10 +1233,18 @@ public function wrap_long_argument_lists(source: str, max_line_length: ptr_uint,
         return current
 
     # The host re-validates the wrapped text and falls back to the input.
+    # The re-parse happens once per file; keep its AST out of the process-lifetime
+    # heap (see `format_canonical`).  The diagnostics vector is created inside the
+    # region too, so `release_all` owns its storage.
+    var region = heap.create_region()
+    defer: region.release_all()
+    let previous_region = heap.begin_region(ptr_of(region))
     var diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: diags.release()
     var _file = parser.parse_source(current.as_str(), ref_of(diags))
-    if diags.len() > 0:
+    let parse_failed = diags.len() > 0
+    diags.release()
+    heap.end_region(previous_region)
+    if parse_failed:
         current.release()
         var fallback = string.String.create()
         fallback.append(source)
@@ -1031,11 +1256,16 @@ public function wrap_long_argument_lists(source: str, max_line_length: ptr_uint,
 function find_wrap_fix(text: str, lines: vec.Vec[str], max_line_length: ptr_uint, path: str) -> Option[WrapFix]:
     var tokens = lexer_mod.lex(text)
     defer: tokens.release()
+    var protected = protected_string_lines(text, tokens, true)
+    defer: protected.release()
 
     var line_index: ptr_uint = 0
     while line_index < lines.len():
         let original_line = line_at(lines, line_index) else:
             break
+        if protected_at(protected, line_index):
+            line_index += 1
+            continue
         let line = strip_trailing_newline(original_line)
         if utf8_char_count(line) > max_line_length:
             let fix = build_wrap_fix_from_parts(lines, line_index, line, original_line, max_line_length, tokens, true)
@@ -1086,7 +1316,13 @@ function build_wrap_fix_from_parts(
             let candidate_entry = candidates.get(candidate_index) else:
                 break
             let candidate = unsafe: read(candidate_entry)
-            var new_text = build_wrapped_delimited_group_text(line, candidate, indent, item_indent.as_str(), line_terminator)
+            var new_text = build_wrapped_delimited_group_text(
+                line,
+                candidate,
+                indent,
+                item_indent.as_str(),
+                line_terminator
+            )
             if new_text.as_str().equal(original_line):
                 new_text.release()
                 candidate_index += 1
@@ -1107,10 +1343,19 @@ function validate_wrap(lines: vec.Vec[str], line_index: ptr_uint, new_text: str)
     var updated = replace_line(lines, line_index, new_text)
     defer: updated.release()
 
+    # One validation parse per candidate per wrap iteration.  Left unregioned,
+    # each parse retained its full AST and a long file's wrap pass peaked at
+    # gigabytes.  Release the diagnostics vector while the region is active
+    # (a no-op for region memory) so the linter sees an owned release.
+    var region = heap.create_region()
+    defer: region.release_all()
+    let previous_region = heap.begin_region(ptr_of(region))
     var diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: diags.release()
     var _file = parser.parse_source(updated.as_str(), ref_of(diags))
-    return diags.len() == 0
+    let parsed_cleanly = diags.len() == 0
+    diags.release()
+    heap.end_region(previous_region)
+    return parsed_cleanly
 
 
 function release_wrap_candidates(candidates: ref[vec.Vec[WrapCandidate]]) -> void:
@@ -1192,7 +1437,13 @@ function long_line_wrap_candidates(line: str, line_tokens: vec.Vec[token_mod.Tok
             if opening_option.is_some():
                 let opening = opening_option.unwrap()
                 if matching_delimiter_pair(opening.kind, token.kind):
-                    let candidate = build_long_line_wrap_candidate(line, line_tokens, opening.index, index, opening.depth)
+                    let candidate = build_long_line_wrap_candidate(
+                        line,
+                        line_tokens,
+                        opening.index,
+                        index,
+                        opening.depth
+                    )
                     if candidate.is_some():
                         candidates.push(candidate.unwrap())
         index += 1
@@ -1268,8 +1519,16 @@ function build_long_line_wrap_candidate(
             depth = depth,
             start_char = start_char,
             end_char = end_char,
-            opening_delimiter = slice_span(line, open_token.column - 1, open_token.end_offset - open_token.start_offset + open_token.column - 1),
-            closing_delimiter = slice_span(line, close_token.column - 1, close_token.end_offset - close_token.start_offset + close_token.column - 1),
+            opening_delimiter = slice_span(
+                line,
+                open_token.column - 1,
+                open_token.end_offset - open_token.start_offset + open_token.column - 1
+            ),
+            closing_delimiter = slice_span(
+                line,
+                close_token.column - 1,
+                close_token.end_offset - close_token.start_offset + close_token.column - 1
+            ),
             arguments = arguments,
         ),
     )

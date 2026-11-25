@@ -19,6 +19,7 @@ import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.utils as utils
 import mtc.strings
 
+
 ## Lower an `if`/`else if`/`else` chain into nested `IR::IfStmt`s.  A branch
 ## condition's hoisted setup (a statement-lowered foreign call's argument temps)
 ## is emitted *before* its `IfStmt` — for an `else if` that is the enclosing
@@ -30,12 +31,26 @@ import mtc.strings
 ## branches, the body adds the condition's truthy refinements, and an else-less
 ## `if` whose branches all terminate narrows the enclosing block after the
 ## statement.
-public function lower_if_chain(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], index: ptr_uint, else_body: ptr[ast.Stmt]?) -> void:
+public function lower_if_chain(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    branches: span[ast.IfBranch],
+    index: ptr_uint,
+    else_body: ptr[ast.Stmt]?
+) -> void:
     var prior_false = map_mod.Map[str, types.Type].create()
     lower_if_chain_at(ctx, output, branches, index, else_body, ref_of(prior_false), true)
 
 
-public function lower_if_chain_at(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], index: ptr_uint, else_body: ptr[ast.Stmt]?, prior_false: ref[map_mod.Map[str, types.Type]], top: bool) -> void:
+public function lower_if_chain_at(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    branches: span[ast.IfBranch],
+    index: ptr_uint,
+    else_body: ptr[ast.Stmt]?,
+    prior_false: ref[map_mod.Map[str, types.Type]],
+    top: bool
+) -> void:
     var branch: ast.IfBranch
     unsafe:
         branch = read(branches.data + index)
@@ -99,7 +114,11 @@ public function lower_if_chain_at(ctx: ref[lowering.LoweringContext], output: re
         var final_false = map_mod.Map[str, types.Type].create()
         var bi: ptr_uint = 0
         while bi < branches.len:
-            var cond_false_i = type_helpers.lowering_flow_refinements(ctx, unsafe: read(branches.data + bi).condition, false)
+            var cond_false_i = type_helpers.lowering_flow_refinements(
+                ctx,
+                unsafe: read(branches.data + bi).condition,
+                false
+            )
             type_helpers.merge_flow_refinements(ref_of(final_false), ref_of(cond_false_i))
             bi += 1
         let _post_scope = type_helpers.push_flow_refinements(ctx, ref_of(final_false))
@@ -123,7 +142,13 @@ function if_branches_all_terminate(branches: span[ast.IfBranch]) -> bool:
 ## stop temporary and a C `for` loop.  Mirrors lowering/loops.rb
 ## lower_range_for_stmt, including the always-allocated (here unused) continue /
 ## break label temporaries so the fresh-temp counter advances identically.
-public function lower_for_range(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+public function lower_for_range(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    bindings: span[ast.ForBinding],
+    iterables: span[ast.Expr],
+    body_ptr: ptr[ast.Stmt]?
+) -> void:
     if bindings.len != 1 or iterables.len != 1:
         tasks.lower_multi_for(ctx, output, bindings, iterables, body_ptr)
         return
@@ -191,7 +216,12 @@ public function lower_for_range(ctx: ref[lowering.LoweringContext], output: ref[
             stop_linkage = strings.join_two("__mt_frame->", stp_field)
             async_cps.async_register_local_field(ctx, stop_c, stp_field, stop_linkage, loop_type)
     else:
-        ctx.locals.push(lowering.LocalBinding(name = index_name, c_name = index_c, ty = loop_type, pointer = Option[bool].some(value = false)))
+        ctx.locals.push(lowering.LocalBinding(
+            name = index_name,
+            c_name = index_c,
+            ty = loop_type,
+            pointer = Option[bool].some(value = false)
+        ))
 
     let saved_loop_depth = ctx.loop_defer_depth
     ctx.loop_defer_depth = ctx.defer_stack.len()
@@ -201,7 +231,11 @@ public function lower_for_range(ctx: ref[lowering.LoweringContext], output: ref[
     if lowering.contains_label_target(body.as_span(), cl):
         body.push(ir.Stmt.stmt_label(name = cl))
 
-    let index_ref = lowering.alloc_expr(ir.Expr.expr_name(name = index_linkage, ty = loop_type, pointer = Option[bool].some(value = false)))
+    let index_ref = lowering.alloc_expr(ir.Expr.expr_name(
+        name = index_linkage,
+        ty = loop_type,
+        pointer = Option[bool].some(value = false)
+    ))
     # The host lowers both bounds with the loop type as the expected type
     # (`lower_expression(..., expected_type: loop_type)`).
     let start_value = lowering.int_literal_to_context_type(start, loop_type, lowering.lower_expr(ctx, start))
@@ -218,9 +252,22 @@ public function lower_for_range(ctx: ref[lowering.LoweringContext], output: ref[
             line = 0,
             source_path = "",
         ))
-    let stop_value = if inline_stop: stop_lowered else: lowering.alloc_expr(ir.Expr.expr_name(name = stop_linkage, ty = loop_type, pointer = Option[bool].some(value = false)))
-    let condition = lowering.alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = stop_value, ty = ctx.bool_ty))
-    let post_target = lowering.alloc_expr(ir.Expr.expr_name(name = index_linkage, ty = loop_type, pointer = Option[bool].some(value = false)))
+    let stop_value = if inline_stop: stop_lowered else: lowering.alloc_expr(ir.Expr.expr_name(
+        name = stop_linkage,
+        ty = loop_type,
+        pointer = Option[bool].some(value = false)
+    ))
+    let condition = lowering.alloc_expr(ir.Expr.expr_binary(
+        operator = "<",
+        left = index_ref,
+        right = stop_value,
+        ty = ctx.bool_ty
+    ))
+    let post_target = lowering.alloc_expr(ir.Expr.expr_name(
+        name = index_linkage,
+        ty = loop_type,
+        pointer = Option[bool].some(value = false)
+    ))
     let one = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = loop_type))
     let post = lowering.alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = one))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = body.as_span())
@@ -228,7 +275,15 @@ public function lower_for_range(ctx: ref[lowering.LoweringContext], output: ref[
     var block_stmts = vec.Vec[ir.Stmt].create()
     if not inline_stop:
         if ctx.async_cps_active:
-            block_stmts.push(ir.Stmt.stmt_assignment(target = lowering.alloc_expr(ir.Expr.expr_name(name = stop_linkage, ty = loop_type, pointer = Option[bool].some(value = false))), operator = "=", value = stop_lowered))
+            block_stmts.push(ir.Stmt.stmt_assignment(
+                target = lowering.alloc_expr(ir.Expr.expr_name(
+                    name = stop_linkage,
+                    ty = loop_type,
+                    pointer = Option[bool].some(value = false)
+                )),
+                operator = "=",
+                value = stop_lowered
+            ))
         else:
             block_stmts.push(ir.Stmt.stmt_local(
                 name = stop_c,
@@ -280,7 +335,13 @@ function is_numeric_const_expr(ctx: ref[lowering.LoweringContext], ep: ptr[ast.E
 ## copies the iterable into a temp and drives a C index loop.  Mirrors
 ## lowering/loops.rb lower_collection_for_stmt (including the always-allocated
 ## continue/break label temporaries so the fresh-temp counter matches).
-function lower_collection_for(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], binding_name: str, iterable: ptr[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+function lower_collection_for(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    binding_name: str,
+    iterable: ptr[ast.Expr],
+    body_ptr: ptr[ast.Stmt]?
+) -> void:
     let iterable_type = lowering.index_receiver_type(ctx, iterable)
     let element_type = lowering.generic_first_arg(iterable_type)
     let is_arr = lowering.is_array_type(iterable_type)
@@ -323,41 +384,92 @@ function lower_collection_for(ctx: ref[lowering.LoweringContext], output: ref[ve
         items_linkage = strings.join_two("__mt_frame->", items_field)
         async_cps.async_register_local_field(ctx, items_c, items_field, items_linkage, iterable_type)
 
-    ctx.locals.push(lowering.LocalBinding(name = binding_name, c_name = binding_c, ty = element_type, pointer = Option[bool].some(value = false)))
+    ctx.locals.push(lowering.LocalBinding(
+        name = binding_name,
+        c_name = binding_c,
+        ty = element_type,
+        pointer = Option[bool].some(value = false)
+    ))
     let saved_loop_depth = ctx.loop_defer_depth
     ctx.loop_defer_depth = ctx.defer_stack.len()
     let body_span = lowering.lower_block(ctx, body_ptr)
 
     # item value: array -> items[index]; span -> items.data[index]
     var item_value: ptr[ir.Expr]
-    let index_ref_item = lowering.alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
+    let index_ref_item = lowering.alloc_expr(ir.Expr.expr_name(
+        name = idx_linkage,
+        ty = ptr_uint_ty,
+        pointer = Option[bool].some(value = false)
+    ))
     if is_arr:
-        let items_ref = lowering.alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = Option[bool].some(value = false)))
-        item_value = lowering.alloc_expr(ir.Expr.expr_index(receiver = items_ref, index = index_ref_item, ty = element_type))
+        let items_ref = lowering.alloc_expr(ir.Expr.expr_name(
+            name = items_linkage,
+            ty = iterable_type,
+            pointer = Option[bool].some(value = false)
+        ))
+        item_value = lowering.alloc_expr(ir.Expr.expr_index(
+            receiver = items_ref,
+            index = index_ref_item,
+            ty = element_type
+        ))
     else:
-        let items_ref = lowering.alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = Option[bool].some(value = false)))
+        let items_ref = lowering.alloc_expr(ir.Expr.expr_name(
+            name = items_linkage,
+            ty = iterable_type,
+            pointer = Option[bool].some(value = false)
+        ))
         var ptr_args = vec.Vec[types.Type].create()
         ptr_args.push(element_type)
         let data_ty = types.generic_type(name = "ptr", args = ptr_args.as_span())
         let data_ref = lowering.alloc_expr(ir.Expr.expr_member(receiver = items_ref, member = "data", ty = data_ty))
-        item_value = lowering.alloc_expr(ir.Expr.expr_index(receiver = data_ref, index = index_ref_item, ty = element_type))
+        item_value = lowering.alloc_expr(ir.Expr.expr_index(
+            receiver = data_ref,
+            index = index_ref_item,
+            ty = element_type
+        ))
 
     # stop value: array -> N; span -> items.len
     var stop_value: ptr[ir.Expr]
     if is_arr:
-        stop_value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = array_length_of(iterable_type), ty = ptr_uint_ty))
+        stop_value = lowering.alloc_expr(ir.Expr.expr_integer_literal(
+            value = array_length_of(iterable_type),
+            ty = ptr_uint_ty
+        ))
     else:
-        let items_ref_stop = lowering.alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = Option[bool].some(value = false)))
-        stop_value = lowering.alloc_expr(ir.Expr.expr_member(receiver = items_ref_stop, member = "len", ty = ptr_uint_ty))
+        let items_ref_stop = lowering.alloc_expr(ir.Expr.expr_name(
+            name = items_linkage,
+            ty = iterable_type,
+            pointer = Option[bool].some(value = false)
+        ))
+        stop_value = lowering.alloc_expr(ir.Expr.expr_member(
+            receiver = items_ref_stop,
+            member = "len",
+            ty = ptr_uint_ty
+        ))
 
     var loop_body = vec.Vec[ir.Stmt].create()
     if ctx.async_cps_active:
         let elt_field = strings.join_two("local_for_elt_", binding_name)
         let elt_cname = strings.join_two("__mt_frame->", elt_field)
         async_cps.async_register_local_field(ctx, binding_name, elt_field, elt_cname, element_type)
-        loop_body.push(ir.Stmt.stmt_assignment(target = lowering.alloc_expr(ir.Expr.expr_name(name = elt_cname, ty = element_type, pointer = Option[bool].some(value = false))), operator = "=", value = item_value))
+        loop_body.push(ir.Stmt.stmt_assignment(
+            target = lowering.alloc_expr(ir.Expr.expr_name(
+                name = elt_cname,
+                ty = element_type,
+                pointer = Option[bool].some(value = false)
+            )),
+            operator = "=",
+            value = item_value
+        ))
     else:
-        loop_body.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = element_type, value = item_value, line = 0, source_path = ""))
+        loop_body.push(ir.Stmt.stmt_local(
+            name = binding_name,
+            linkage_name = binding_c,
+            ty = element_type,
+            value = item_value,
+            line = 0,
+            source_path = ""
+        ))
     var bi: ptr_uint = 0
     while bi < body_span.len:
         unsafe:
@@ -368,20 +480,67 @@ function lower_collection_for(ctx: ref[lowering.LoweringContext], output: ref[ve
 
     var init: ptr[ir.Stmt]
     if ctx.async_cps_active:
-        init = lowering.alloc_stmt(ir.Stmt.stmt_assignment(target = lowering.alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = Option[bool].some(value = false))), operator = "=", value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))))
+        init = lowering.alloc_stmt(ir.Stmt.stmt_assignment(
+            target = lowering.alloc_expr(ir.Expr.expr_name(
+                name = idx_linkage,
+                ty = ptr_uint_ty,
+                pointer = Option[bool].some(value = false)
+            )),
+            operator = "=",
+            value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))
+        ))
     else:
-        init = lowering.alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = ptr_uint_ty, value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
-    let index_ref_cond = lowering.alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
-    let condition = lowering.alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref_cond, right = stop_value, ty = ctx.bool_ty))
-    let post_target = lowering.alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
-    let post = lowering.alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
+        init = lowering.alloc_stmt(ir.Stmt.stmt_local(
+            name = index_c,
+            linkage_name = index_c,
+            ty = ptr_uint_ty,
+            value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)),
+            line = 0,
+            source_path = ""
+        ))
+    let index_ref_cond = lowering.alloc_expr(ir.Expr.expr_name(
+        name = idx_linkage,
+        ty = ptr_uint_ty,
+        pointer = Option[bool].some(value = false)
+    ))
+    let condition = lowering.alloc_expr(ir.Expr.expr_binary(
+        operator = "<",
+        left = index_ref_cond,
+        right = stop_value,
+        ty = ctx.bool_ty
+    ))
+    let post_target = lowering.alloc_expr(ir.Expr.expr_name(
+        name = idx_linkage,
+        ty = ptr_uint_ty,
+        pointer = Option[bool].some(value = false)
+    ))
+    let post = lowering.alloc_stmt(ir.Stmt.stmt_assignment(
+        target = post_target,
+        operator = "+=",
+        value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))
+    ))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = loop_body.as_span())
 
     var block_stmts = vec.Vec[ir.Stmt].create()
     if ctx.async_cps_active:
-        block_stmts.push(ir.Stmt.stmt_assignment(target = lowering.alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = Option[bool].some(value = false))), operator = "=", value = lowering.lower_expr(ctx, iterable)))
+        block_stmts.push(ir.Stmt.stmt_assignment(
+            target = lowering.alloc_expr(ir.Expr.expr_name(
+                name = items_linkage,
+                ty = iterable_type,
+                pointer = Option[bool].some(value = false)
+            )),
+            operator = "=",
+            value = lowering.lower_expr(ctx, iterable)
+        ))
     else:
-        block_stmts.push(ir.Stmt.stmt_local(name = items_c, linkage_name = items_c, ty = iterable_type, value = lowering.lower_expr(ctx, iterable), line = 0, source_path = ""))
+        block_stmts.push(ir.Stmt.stmt_local(
+            name = items_c,
+            linkage_name = items_c,
+            ty = iterable_type,
+            value = lowering.lower_expr(ctx, iterable),
+            line = 0,
+            source_path = ""
+        ))
     block_stmts.push(for_stmt)
     if lowering.contains_label_target(loop_body.as_span(), bl):
         block_stmts.push(ir.Stmt.stmt_label(name = bl))
@@ -403,11 +562,22 @@ function lower_collection_for(ctx: ref[lowering.LoweringContext], output: ref[ve
 ##     if (x == null) break; body }`
 ##   * ready flag: `Iter it = xs.iter(); while (true) { bool ready = it.next();
 ##     if (!ready) break; T x = it.current(); body }`
-function lower_custom_iter_for(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], binding_name: str, iterable: ptr[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
+function lower_custom_iter_for(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    binding_name: str,
+    iterable: ptr[ast.Expr],
+    body_ptr: ptr[ast.Stmt]?
+) -> void:
     # The host's `iterator_loop_type` instantiates `iter`/`next`/`current` while
     # analyzing the loop but never validates their bodies, so those
     # specializations' nested calls are lowering-created.
-    let iter_callee = async_cps.alloc_ast_expr(ast.Expr.expr_member_access(receiver = iterable, member_name = "iter", line = 0, column = 0))
+    let iter_callee = async_cps.alloc_ast_expr(ast.Expr.expr_member_access(
+        receiver = iterable,
+        member_name = "iter",
+        line = 0,
+        column = 0
+    ))
     ctx.next_spec_body_validated = Option[bool].some(value = false)
     let iter_call = lowering.lower_call(ctx, iter_callee, span[ast.Argument](), iter_callee)
     ctx.next_spec_body_validated = Option[bool].none
@@ -416,10 +586,20 @@ function lower_custom_iter_for(ctx: ref[lowering.LoweringContext], output: ref[v
         return
 
     let it_c = lowering.fresh_c_temp_name(ctx, "for_iterator")
-    ctx.locals.push(lowering.LocalBinding(name = it_c, c_name = it_c, ty = iter_ty, pointer = Option[bool].some(value = false)))
+    ctx.locals.push(lowering.LocalBinding(
+        name = it_c,
+        c_name = it_c,
+        ty = iter_ty,
+        pointer = Option[bool].some(value = false)
+    ))
 
     let it_id = async_cps.alloc_ast_expr(ast.Expr.expr_identifier(name = it_c, line = 0, column = 0))
-    let next_callee = async_cps.alloc_ast_expr(ast.Expr.expr_member_access(receiver = it_id, member_name = "next", line = 0, column = 0))
+    let next_callee = async_cps.alloc_ast_expr(ast.Expr.expr_member_access(
+        receiver = it_id,
+        member_name = "next",
+        line = 0,
+        column = 0
+    ))
     ctx.next_spec_body_validated = Option[bool].some(value = false)
     let next_call = lowering.lower_call(ctx, next_callee, span[ast.Argument](), next_callee)
     ctx.next_spec_body_validated = Option[bool].none
@@ -432,7 +612,12 @@ function lower_custom_iter_for(ctx: ref[lowering.LoweringContext], output: ref[v
     var cur_ty = next_ty
     if not nullable_item:
         let it_id2 = async_cps.alloc_ast_expr(ast.Expr.expr_identifier(name = it_c, line = 0, column = 0))
-        let cur_callee = async_cps.alloc_ast_expr(ast.Expr.expr_member_access(receiver = it_id2, member_name = "current", line = 0, column = 0))
+        let cur_callee = async_cps.alloc_ast_expr(ast.Expr.expr_member_access(
+            receiver = it_id2,
+            member_name = "current",
+            line = 0,
+            column = 0
+        ))
         ctx.next_spec_body_validated = Option[bool].some(value = false)
         cur_call = lowering.lower_call(ctx, cur_callee, span[ast.Argument](), cur_callee)
         ctx.next_spec_body_validated = Option[bool].none
@@ -463,7 +648,13 @@ function lower_custom_iter_for(ctx: ref[lowering.LoweringContext], output: ref[v
     var binding_projection = lowering.plain_binding_projection()
     if nullable_item:
         binding_projection = lowering.guard_binding_projection("nullable", next_ty)
-    ctx.locals.push(lowering.LocalBinding(name = binding_name, c_name = binding_c, ty = binding_ty, pointer = Option[bool].some(value = false), projection = binding_projection))
+    ctx.locals.push(lowering.LocalBinding(
+        name = binding_name,
+        c_name = binding_c,
+        ty = binding_ty,
+        pointer = Option[bool].some(value = false),
+        projection = binding_projection
+    ))
     let saved_loop_depth = ctx.loop_defer_depth
     ctx.loop_defer_depth = ctx.defer_stack.len()
     let body_span = lowering.lower_block(ctx, body_ptr)
@@ -473,18 +664,60 @@ function lower_custom_iter_for(ctx: ref[lowering.LoweringContext], output: ref[v
 
     var loop_body = vec.Vec[ir.Stmt].create()
     if nullable_item:
-        let item_ref = lowering.alloc_expr(ir.Expr.expr_name(name = binding_c, ty = next_ty, pointer = Option[bool].some(value = false)))
-        loop_body.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = next_ty, value = next_call, line = 0, source_path = ""))
+        let item_ref = lowering.alloc_expr(ir.Expr.expr_name(
+            name = binding_c,
+            ty = next_ty,
+            pointer = Option[bool].some(value = false)
+        ))
+        loop_body.push(ir.Stmt.stmt_local(
+            name = binding_name,
+            linkage_name = binding_c,
+            ty = next_ty,
+            value = next_call,
+            line = 0,
+            source_path = ""
+        ))
         let null_lit = lowering.alloc_expr(ir.Expr.expr_null_literal(ty = next_ty))
-        let is_null = lowering.alloc_expr(ir.Expr.expr_binary(operator = "==", left = item_ref, right = null_lit, ty = ctx.bool_ty))
-        loop_body.push(ir.Stmt.stmt_if(condition = is_null, then_body = break_body.as_span(), else_body = Option[span[ir.Stmt]].none))
+        let is_null = lowering.alloc_expr(ir.Expr.expr_binary(
+            operator = "==",
+            left = item_ref,
+            right = null_lit,
+            ty = ctx.bool_ty
+        ))
+        loop_body.push(ir.Stmt.stmt_if(
+            condition = is_null,
+            then_body = break_body.as_span(),
+            else_body = Option[span[ir.Stmt]].none
+        ))
     else:
         let ready_c = lowering.fresh_c_temp_name(ctx, "for_ready")
-        let ready_ref = lowering.alloc_expr(ir.Expr.expr_name(name = ready_c, ty = ctx.bool_ty, pointer = Option[bool].some(value = false)))
-        loop_body.push(ir.Stmt.stmt_local(name = ready_c, linkage_name = ready_c, ty = ctx.bool_ty, value = next_call, line = 0, source_path = ""))
+        let ready_ref = lowering.alloc_expr(ir.Expr.expr_name(
+            name = ready_c,
+            ty = ctx.bool_ty,
+            pointer = Option[bool].some(value = false)
+        ))
+        loop_body.push(ir.Stmt.stmt_local(
+            name = ready_c,
+            linkage_name = ready_c,
+            ty = ctx.bool_ty,
+            value = next_call,
+            line = 0,
+            source_path = ""
+        ))
         let not_ready = lowering.alloc_expr(ir.Expr.expr_unary(operator = "not", operand = ready_ref, ty = ctx.bool_ty))
-        loop_body.push(ir.Stmt.stmt_if(condition = not_ready, then_body = break_body.as_span(), else_body = Option[span[ir.Stmt]].none))
-        loop_body.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = cur_ty, value = cur_call, line = 0, source_path = ""))
+        loop_body.push(ir.Stmt.stmt_if(
+            condition = not_ready,
+            then_body = break_body.as_span(),
+            else_body = Option[span[ir.Stmt]].none
+        ))
+        loop_body.push(ir.Stmt.stmt_local(
+            name = binding_name,
+            linkage_name = binding_c,
+            ty = cur_ty,
+            value = cur_call,
+            line = 0,
+            source_path = ""
+        ))
 
     var bi: ptr_uint = 0
     while bi < body_span.len:
@@ -495,7 +728,14 @@ function lower_custom_iter_for(ctx: ref[lowering.LoweringContext], output: ref[v
         loop_body.push(ir.Stmt.stmt_label(name = cl))
 
     var block_stmts = vec.Vec[ir.Stmt].create()
-    block_stmts.push(ir.Stmt.stmt_local(name = it_c, linkage_name = it_c, ty = iter_ty, value = iter_call, line = 0, source_path = ""))
+    block_stmts.push(ir.Stmt.stmt_local(
+        name = it_c,
+        linkage_name = it_c,
+        ty = iter_ty,
+        value = iter_call,
+        line = 0,
+        source_path = ""
+    ))
     let true_lit = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = ctx.bool_ty))
     block_stmts.push(ir.Stmt.stmt_while(condition = true_lit, body = loop_body.as_span()))
     if lowering.contains_label_target(loop_body.as_span(), bl):
@@ -527,7 +767,11 @@ public function array_length_of(t: types.Type) -> long:
 
 ## Lower `array[T, N].as_span()` to a `span[T]` aggregate literal
 ## `{ data = &arr[0], len = N }`, mirroring Ruby's `lower_array_to_span_expression`.
-public function lower_array_as_span(ctx: ref[lowering.LoweringContext], receiver: ptr[ast.Expr], array_ty: types.Type) -> ptr[ir.Expr]:
+public function lower_array_as_span(
+    ctx: ref[lowering.LoweringContext],
+    receiver: ptr[ast.Expr],
+    array_ty: types.Type
+) -> ptr[ir.Expr]:
     let elem_ty = lowering.generic_first_arg(array_ty)
     let ptr_uint_ty = types.primitive("ptr_uint")
     # Recover the length from the array type; if it lost its literal length

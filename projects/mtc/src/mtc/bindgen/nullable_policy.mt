@@ -10,7 +10,6 @@ import std.fs as fs
 
 import mtc.bindgen as bindgen
 
-
 ## A clang `qualType` function signature split into its return-type text and the
 ## parameter-list text (without the surrounding parentheses).
 
@@ -82,7 +81,11 @@ public function find_type_override(overrides: span[bindgen.TypeOverride], functi
     return Option[str].none
 
 
-public function find_param_override(overrides: span[bindgen.ParamOverride], function_name: str, parameter: str) -> Option[str]:
+public function find_param_override(
+    overrides: span[bindgen.ParamOverride],
+    function_name: str,
+    parameter: str
+) -> Option[str]:
     var i: ptr_uint = 0
     while i < overrides.len:
         let entry = unsafe: read(overrides.data + i)
@@ -92,7 +95,10 @@ public function find_param_override(overrides: span[bindgen.ParamOverride], func
     return Option[str].none
 
 
-public function find_function_decl(decls: ref[vec.Vec[bindgen.CDecl]], function_name: str) -> Option[ptr[bindgen.CDecl]]:
+public function find_function_decl(
+    decls: ref[vec.Vec[bindgen.CDecl]],
+    function_name: str
+) -> Option[ptr[bindgen.CDecl]]:
     var i: ptr_uint = 0
     while i < decls.len():
         let decl_ptr = decls.get(i) else:
@@ -117,7 +123,10 @@ public function param_index_of(names: vec.Vec[string.String], parameter: str) ->
 ## The host's override-target validation (`validate_function_param_type_overrides!`
 ## and `validate_function_return_type_overrides!`), with its exact messages.
 
-public function validate_override_targets(decls: ref[vec.Vec[bindgen.CDecl]], opts: ref[bindgen.BindgenOptions]) -> Option[string.String]:
+public function validate_override_targets(
+    decls: ref[vec.Vec[bindgen.CDecl]],
+    opts: ref[bindgen.BindgenOptions]
+) -> Option[string.String]:
     let header = opts.header_path.as_str()
     var pi: ptr_uint = 0
     while pi < opts.param_overrides.len():

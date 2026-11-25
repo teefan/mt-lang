@@ -20,7 +20,6 @@ import mtc.dap.session as session
 import mtc.dap.utilities as util
 import mtc.dap.wire as wire
 
-
 const REQUEST_TIMEOUT_SECONDS: ptr_uint = 5
 const REVERSE_TIMEOUT_SECONDS: ptr_uint = 15
 
@@ -379,7 +378,12 @@ function dispatch_response(
     if pending.kind == lldb.KIND_START:
         backend.start_pending = false
         if msg.success:
-            wire.write_response_command(ses.reserve_seq(), pending.client_seq, pending.command.as_str(), body_text.as_str())
+            wire.write_response_command(
+                ses.reserve_seq(),
+                pending.client_seq,
+                pending.command.as_str(),
+                body_text.as_str()
+            )
         else:
             var message = backend_error_message(msg)
             defer: message.release()
@@ -421,7 +425,12 @@ function dispatch_response(
     if pending.kind == lldb.KIND_FORWARD:
         if msg.success:
             rewrite_forward_response(ses, pending, ref_of(body_text))
-            wire.write_response_command(ses.reserve_seq(), pending.client_seq, pending.command.as_str(), body_text.as_str())
+            wire.write_response_command(
+                ses.reserve_seq(),
+                pending.client_seq,
+                pending.command.as_str(),
+                body_text.as_str()
+            )
         else:
             var message = backend_error_message(msg)
             defer: message.release()
@@ -548,7 +557,11 @@ function handle_event(ses: ref[session.Session], backend: ref[lldb.Backend], msg
             Option.none:
                 pass
         let all = bool_field(msg.body, "allThreadsContinued")
-        if backend.has_continued_signature and backend.last_continued_thread == thread_id and backend.last_continued_all == all:
+        if (
+            backend.has_continued_signature
+            and backend.last_continued_thread == thread_id
+            and backend.last_continued_all == all
+        ):
             return
         backend.has_continued_signature = true
         backend.last_continued_thread = thread_id
@@ -593,7 +606,11 @@ function forward_reverse_request(ses: ref[session.Session], backend: ref[lldb.Ba
 
 
 ## A client response to a forwarded reverse request.
-public function handle_client_response(ses: ref[session.Session], backend: ref[lldb.Backend], msg: proto.Message) -> void:
+public function handle_client_response(
+    ses: ref[session.Session],
+    backend: ref[lldb.Backend],
+    msg: proto.Message
+) -> void:
     let pending_opt = lldb.take_pending_client(backend, msg.request_seq)
     match pending_opt:
         Option.none:
@@ -636,7 +653,12 @@ function expire_pendings(ses: ref[session.Session], backend: ref[lldb.Backend]) 
                     if pending.client_seq != 0:
                         var message = string.String.from_str("backend request timed out: ")
                         message.append(pending.command.as_str())
-                        wire.write_error_command(ses.reserve_seq(), pending.client_seq, pending.command.as_str(), message.as_str())
+                        wire.write_error_command(
+                            ses.reserve_seq(),
+                            pending.client_seq,
+                            pending.command.as_str(),
+                            message.as_str()
+                        )
                         message.release()
                     if pending.kind == lldb.KIND_START:
                         backend.start_pending = false
@@ -720,7 +742,6 @@ public function stop(ses: ref[session.Session], backend: ref[lldb.Backend]) -> v
         fail_pending(ses, backend, "backend closed")
         clear_pending_client(backend)
     lldb.stop(backend)
-
 
 # =============================================================================
 #  Adapter command + argument builders
@@ -855,7 +876,6 @@ function continue_arguments(backend: ref[lldb.Backend]) -> string.String:
         return result
     return string.String.from_str("{}")
 
-
 # =============================================================================
 #  Capabilities and body/arg helpers
 # =============================================================================
@@ -947,7 +967,10 @@ function append_capability(
         let caps_obj = caps_parsed.as_object()
         if caps_obj != null:
             unsafe:
-                if key.equal("supportsSetVariable") and (capability_true(caps_obj, "supportsSetExpression") or capability_true(caps_obj, "supportsSetVariable")):
+                if key.equal("supportsSetVariable") and (capability_true(
+                    caps_obj,
+                    "supportsSetExpression"
+                ) or capability_true(caps_obj, "supportsSetVariable")):
                     target.append("true")
                     return
                 let value_ptr = read(caps_obj).get(key)
@@ -1105,7 +1128,6 @@ function lowercase_copy(text: str) -> string.String:
 function deadline_after(seconds: ptr_uint) -> ptr_uint:
     return ptr_uint<-time.now() + seconds
 
-
 # =============================================================================
 #  Debug-map rewrites, breakpoint sync and pause diagnostics
 # =============================================================================
@@ -1170,7 +1192,14 @@ public function request_set_variable(
     if capability_flag(backend, "supportsSetVariable"):
         var args_text = rewrite_set_variable_arguments(ses, arguments)
         defer: args_text.release()
-        let _ = lldb.send(backend, "setVariable", args_text.as_str(), req_seq, lldb.KIND_FORWARD, deadline_after(REQUEST_TIMEOUT_SECONDS))
+        let _ = lldb.send(
+            backend,
+            "setVariable",
+            args_text.as_str(),
+            req_seq,
+            lldb.KIND_FORWARD,
+            deadline_after(REQUEST_TIMEOUT_SECONDS)
+        )
         return
 
     if capability_flag(backend, "supportsSetExpression"):
@@ -1233,7 +1262,11 @@ public function request_set_variable(
 
 ## Request-side argument rewriting for the forwarded commands (nil when the
 ## command has no rewrite).
-public function rewrite_request_arguments(ses: ref[session.Session], command: str, arguments: json.Value) -> string.String:
+public function rewrite_request_arguments(
+    ses: ref[session.Session],
+    command: str,
+    arguments: json.Value
+) -> string.String:
     if ses.debug_map == null:
         return render_value_text(arguments)
     if command.equal("evaluate"):
@@ -1742,14 +1775,17 @@ function load_debug_map_from_modules(ses: ref[session.Session], body: json.Value
                                 pass
             i += 1
 
-
 # =============================================================================
 #  Response and argument rewriters
 # =============================================================================
 
 ## Rewrite a forwarded response's body text for the debug map (stackTrace
 ## frames, scope references, variable names).
-function rewrite_forward_response(ses: ref[session.Session], pending: lldb.PendingRequest, body: ref[string.String]) -> void:
+function rewrite_forward_response(
+    ses: ref[session.Session],
+    pending: lldb.PendingRequest,
+    body: ref[string.String]
+) -> void:
     if ses.debug_map == null:
         return
     let command = pending.command.as_str()
@@ -1784,9 +1820,15 @@ function rewrite_stack_trace_body(ses: ref[session.Session], body: ref[string.St
                                         Option.some as name:
                                             let map_ptr = ses.debug_map
                                             if map_ptr != null:
-                                                let entry_fn = debug_map.function_for_c_name(ref_of(read(map_ptr)), name.value)
+                                                let entry_fn = debug_map.function_for_c_name(
+                                                    ref_of(read(map_ptr)),
+                                                    name.value
+                                                )
                                                 if entry_fn != null:
-                                                    read(frame_obj).set("name", json.string_from_str(read(entry_fn).name.as_str()))
+                                                    read(frame_obj).set(
+                                                        "name",
+                                                        json.string_from_str(read(entry_fn).name.as_str())
+                                                    )
                                                     match number_field_from_object(frame_obj, "id"):
                                                         Option.some as frame_id:
                                                             ses.frame_functions.set(frame_id.value, entry_fn)
@@ -1862,6 +1904,7 @@ function rewrite_scopes_body(ses: ref[session.Session], pending: lldb.PendingReq
                                                 pass
                                         ses.variable_contexts.set(reference, session.VariableContext(
                                             frame_id = frame_id,
+
                                             function = function_ptr,
                                             has_function = is_locals and function_ptr != null,
                                         ))
@@ -1876,7 +1919,11 @@ function rewrite_scopes_body(ses: ref[session.Session], pending: lldb.PendingReq
                     error.release()
 
 
-function rewrite_variables_body(ses: ref[session.Session], pending: lldb.PendingRequest, body: ref[string.String]) -> void:
+function rewrite_variables_body(
+    ses: ref[session.Session],
+    pending: lldb.PendingRequest,
+    body: ref[string.String]
+) -> void:
     var reference: ptr_uint = 0
     var has_reference = false
     match json.parse(pending.arguments_text.as_str()):
@@ -1930,7 +1977,11 @@ function rewrite_variables_body(ses: ref[session.Session], pending: lldb.Pending
                             var keep = true
                             let map_ptr = ses.debug_map
                             if map_ptr != null and function_ptr != null:
-                                let entry = debug_map.variable_for(ref_of(read(map_ptr)), read(function_ptr).linkage_name.as_str(), raw_name)
+                                let entry = debug_map.variable_for(
+                                    ref_of(read(map_ptr)),
+                                    read(function_ptr).linkage_name.as_str(),
+                                    raw_name
+                                )
                                 if entry != null:
                                     read(variable_obj).set("name", json.string_from_str(read(entry).name.as_str()))
                                 else if raw_name.starts_with("__mt_"):
@@ -1947,7 +1998,11 @@ function rewrite_variables_body(ses: ref[session.Session], pending: lldb.Pending
 
 
 ## evaluate/setExpression argument rewriting (expression and optionally value).
-function rewrite_expression_arguments(ses: ref[session.Session], arguments: json.Value, include_value: bool) -> string.String:
+function rewrite_expression_arguments(
+    ses: ref[session.Session],
+    arguments: json.Value,
+    include_value: bool
+) -> string.String:
     var frame_id: ptr_uint = 0
     match number_field(arguments, "frameId"):
         Option.some as found:
@@ -1958,7 +2013,14 @@ function rewrite_expression_arguments(ses: ref[session.Session], arguments: json
     var value = string.String.create()
     if include_value:
         value = rewrite_expression_for_frame(ses, string_arg(arguments, "value"), frame_id)
-    var result = render_replaced_two(arguments, "expression", expression.as_str(), include_value, "value", value.as_str())
+    var result = render_replaced_two(
+        arguments,
+        "expression",
+        expression.as_str(),
+        include_value,
+        "value",
+        value.as_str()
+    )
     expression.release()
     value.release()
     return result
@@ -2131,11 +2193,19 @@ function source_path_from_arguments(arguments_text: str) -> string.String:
 
 
 ## The variable entry for a source name through the debug map.
-function source_variable_entry(ses: ref[session.Session], function_ptr: ptr[debug_map.DebugFunction], source_name: str) -> ptr[debug_map.DebugEntry]?:
+function source_variable_entry(
+    ses: ref[session.Session],
+    function_ptr: ptr[debug_map.DebugFunction],
+    source_name: str
+) -> ptr[debug_map.DebugEntry]?:
     let map_ptr = ses.debug_map
     if map_ptr == null:
         return null
-    return debug_map.source_variable_for(unsafe: ref_of(read(map_ptr)), unsafe: read(function_ptr).linkage_name.as_str(), source_name)
+    return debug_map.source_variable_for(
+        unsafe: ref_of(read(map_ptr)),
+        unsafe: read(function_ptr).linkage_name.as_str(),
+        source_name
+    )
 
 
 ## Render request arguments with up to two keys replaced by rewritten values.
@@ -2236,7 +2306,6 @@ function capability_flag(backend: ref[lldb.Backend], key: str) -> bool:
             var error = failure.error
             error.release()
     return false
-
 
 ## Syntactic absolute path (`File.expand_path`).
 # =============================================================================

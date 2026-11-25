@@ -9,15 +9,13 @@ import std.vec as vec
 
 import mtc.lexer.token as token_mod
 
-
 ## Trivia kinds.  `space` is the only kind the normalized reconstruct
 ## rewrites (to a single space, unless it is line indentation).
 public enum TriviaKind: ubyte
     blank_line = 0
-    comment    = 1
-    space      = 2
-    newline    = 3
-
+    comment = 1
+    space = 2
+    newline = 3
 
 ## One piece of non-token source text, in source order.
 public struct TriviaEntry:
@@ -26,7 +24,6 @@ public struct TriviaEntry:
     end_offset: ptr_uint
     line: ptr_uint
     column: ptr_uint
-
 
 ## Result of a with-trivia lex: the ordinary token stream plus every trivia
 ## entry in source order.  `tokens` and `trivia` are owned; the caller

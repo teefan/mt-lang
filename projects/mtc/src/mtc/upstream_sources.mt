@@ -38,7 +38,14 @@ public function source_at(index: ptr_uint) -> UpstreamSource:
             dir = "third_party/raylib-upstream",
             url = "https://github.com/raysan5/raylib.git",
             revision = "dbc56a87da87d973a9c5baa4e7438a9d20121d28",
-            sentinels = array[str, 6]("src/raylib.h", "examples/shapes/raygui.h", "examples/core/msf_gif.h", "", "", ""),
+            sentinels = array[str, 6](
+                "src/raylib.h",
+                "examples/shapes/raygui.h",
+                "examples/core/msf_gif.h",
+                "",
+                "",
+                ""
+            ),
             sentinel_count = 3,
         )
     if index == 1:
@@ -206,7 +213,6 @@ public function source_at(index: ptr_uint) -> UpstreamSource:
         sentinel_count = 1,
     )
 
-
 ## `config/upstream_versions.yml`'s entry for one source.
 public struct SourceOverride:
     name: string.String
@@ -228,7 +234,6 @@ extending SourceOverride:
                 read(p).release()
             i += 1
         this.sentinels.release()
-
 
 ## The file a checkout records its own revision in.  Sentinels alone cannot
 ## detect a *version* change: every box2d release ships `include/box2d/box2d.h`,
@@ -268,7 +273,12 @@ function write_revision_stamp(checkout: str, revision: str) -> bool:
 ## A checkout is usable only when the stamp matches the pinned revision *and*
 ## the sentinel files are present.  The revision is passed separately because
 ## it may come from `config/upstream_versions.yml`.
-public function checkout_is_current(checkout: str, src: UpstreamSource, revision: str, overrides: ref[vec.Vec[SourceOverride]]) -> bool:
+public function checkout_is_current(
+    checkout: str,
+    src: UpstreamSource,
+    revision: str,
+    overrides: ref[vec.Vec[SourceOverride]]
+) -> bool:
     return revision_stamp_matches(checkout, revision) and source_complete(checkout, src, overrides)
 
 
@@ -312,7 +322,14 @@ public function revision_for(src: UpstreamSource, overrides: ref[vec.Vec[SourceO
 
 
 ## Remove an incomplete checkout, clone the pinned revision, and verify.
-public function bootstrap_source(checkout: str, url: str, revision: str, src: UpstreamSource, overrides: ref[vec.Vec[SourceOverride]], failure_message: ref[string.String]) -> bool:
+public function bootstrap_source(
+    checkout: str,
+    url: str,
+    revision: str,
+    src: UpstreamSource,
+    overrides: ref[vec.Vec[SourceOverride]],
+    failure_message: ref[string.String]
+) -> bool:
     if fs.exists(checkout):
         match fs.remove_tree(checkout):
             Result.failure as remove_failure:
@@ -415,7 +432,6 @@ public function run_command(command: span[str]) -> Result[bool, string.String]:
             error.release()
             return Result[bool, string.String].failure(error = message)
 
-
 ## ── upstream_versions.yml ───────────────────────────────────────────────────
 
 public function load_overrides(root: str) -> vec.Vec[SourceOverride]:
@@ -445,7 +461,13 @@ public function load_overrides(root: str) -> vec.Vec[SourceOverride]:
             return result
 
 
-function parse_override_line(line: str, result: ref[vec.Vec[SourceOverride]], current_index: ref[ptr_uint], has_current: ref[bool], in_sentinels: ref[bool]) -> void:
+function parse_override_line(
+    line: str,
+    result: ref[vec.Vec[SourceOverride]],
+    current_index: ref[ptr_uint],
+    has_current: ref[bool],
+    in_sentinels: ref[bool]
+) -> void:
     var indent: ptr_uint = 0
     while indent < line.len and line.byte_at(indent) == 32:
         indent += 1
@@ -533,8 +555,6 @@ public function release_overrides(overrides: ref[vec.Vec[SourceOverride]]) -> vo
     overrides.release()
 
 
-
-
 ## Ensure one pinned source (by `UpstreamSource.name`) is present under
 ## `data_root`, fetching it on demand.
 ##
@@ -568,7 +588,11 @@ public function ensure_source(name: str, data_root: str, failure_message: ref[st
 ## The first sentinel missing under `checkout` (the `toolchain doctor` report
 ## and the bootstrap skip both ask this), applying `upstream_versions.yml`'s
 ## sentinel overrides when present.
-public function first_missing_sentinel(checkout: str, src: UpstreamSource, overrides: ref[vec.Vec[SourceOverride]]) -> Option[str]:
+public function first_missing_sentinel(
+    checkout: str,
+    src: UpstreamSource,
+    overrides: ref[vec.Vec[SourceOverride]]
+) -> Option[str]:
     let override = find_override(overrides, src.name)
     if override != null:
         let entry = unsafe: read(override)

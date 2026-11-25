@@ -13,7 +13,6 @@ import mtc.c_naming as naming
 import mtc.lowering.utils as utils
 import mtc.strings
 
-
 # =============================================================================
 #  Await detection
 # =============================================================================
@@ -154,7 +153,6 @@ public function expr_has_short_circuit(ep: ptr[ast.Expr]?) -> bool:
             _:
                 return false
 
-
 # =============================================================================
 #  State counting
 # =============================================================================
@@ -266,26 +264,30 @@ function count_await_in_expr(ep: ptr[ast.Expr]?, count: ref[int]) -> void:
             _:
                 pass
 
-
 # =============================================================================
 #  Frame struct builder
 # =============================================================================
 
-public function build_async_frame(module_name: str, name: str, has_await: bool, result_type: types.Type) -> ir.StructDecl:
+public function build_async_frame(
+    module_name: str,
+    name: str,
+    has_await: bool,
+    result_type: types.Type
+) -> ir.StructDecl:
     let bool_ty = types.primitive("bool")
     let int_ty = types.primitive("int")
     let ptr_void = types.generic_type(name = "ptr", args = utils.sp_type(types.primitive("void")))
     let frame_c = naming.qualified_c_name(module_name, strings.join_two(name, "_frame"))
 
     var fields = vec.Vec[ir.Field].create()
-    fields.push(ir.Field(name = "ready",          ty = bool_ty))
-    fields.push(ir.Field(name = "cancelled",      ty = bool_ty))
-    fields.push(ir.Field(name = "waiter_frame",   ty = ptr_void))
-    fields.push(ir.Field(name = "waiter",         ty = ptr_void))
+    fields.push(ir.Field(name = "ready", ty = bool_ty))
+    fields.push(ir.Field(name = "cancelled", ty = bool_ty))
+    fields.push(ir.Field(name = "waiter_frame", ty = ptr_void))
+    fields.push(ir.Field(name = "waiter", ty = ptr_void))
     if has_await:
-        fields.push(ir.Field(name = "state",      ty = int_ty))
+        fields.push(ir.Field(name = "state", ty = int_ty))
     if not is_void_type(result_type):
-        fields.push(ir.Field(name = "result",     ty = result_type))
+        fields.push(ir.Field(name = "result", ty = result_type))
 
     return ir.StructDecl(
         name = frame_c,
@@ -295,7 +297,6 @@ public function build_async_frame(module_name: str, name: str, has_await: bool, 
         alignment = 0,
         source_module = Option[str].none,
     )
-
 
 # =============================================================================
 #  Type helpers

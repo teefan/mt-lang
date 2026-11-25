@@ -93,7 +93,11 @@ public function handle_signature_help(
 
 
 ## Build a SignatureHelp JSON string.
-function build_signature_help_json(sig: ref[analyzer.FnSig], func_name: str, active_parameter: ptr_uint) -> string.String:
+function build_signature_help_json(
+    sig: ref[analyzer.FnSig],
+    func_name: str,
+    active_parameter: ptr_uint
+) -> string.String:
     var result = string.String.create()
     result.append("{\"signatures\":[{\"label\":\"")
     result.append(func_name)

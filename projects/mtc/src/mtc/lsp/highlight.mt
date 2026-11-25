@@ -109,7 +109,6 @@ public function handle_document_highlight(
     json_text.append("]")
     proto.write_response_raw(id, json_text.as_str())
 
-
 ## The line span (1-based, inclusive) of the enclosing `extending` block's
 ## instance method — the scope the host binds `this` in.  None when the cursor
 ## is outside an `extending` block or in one of its `static` methods (which have
@@ -194,7 +193,11 @@ function unbound_occurrence(source: str, line: ptr_uint, column: ptr_uint, lengt
 
     # A named-argument label: `name = ` (not `==`) and the name starts an
     # argument (`(` or `,` before it, ignoring spaces).
-    if after < source.len and source.byte_at(after) == '=' and (after + 1 >= source.len or source.byte_at(after + 1) != '='):
+    if (
+        after < source.len
+        and source.byte_at(after) == '='
+        and (after + 1 >= source.len or source.byte_at(after + 1) != '=')
+    ):
         if before > 0:
             let previous = source.byte_at(before - 1)
             if previous == '(' or previous == ',':

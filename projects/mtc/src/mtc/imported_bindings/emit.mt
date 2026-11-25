@@ -51,7 +51,6 @@ public function find_type_entry(type_map: span[TypeNameEntry], raw_name: str) ->
         i += 1
     return null
 
-
 # =============================================================================
 #  Name resolution utilities
 # =============================================================================
@@ -111,7 +110,13 @@ function public_type_name(
     if override_name.len > 0:
         return string.String.from_str(override_name)
 
-    var name = apply_spec_rules(raw_name, spec_strip_prefix, spec_rule_kinds, spec_rule_patterns, spec_rule_replacements)
+    var name = apply_spec_rules(
+        raw_name,
+        spec_strip_prefix,
+        spec_rule_kinds,
+        spec_rule_patterns,
+        spec_rule_replacements
+    )
     var sanitized = naming.sanitize_type_binding_name(name.as_str())
     name.release()
     return sanitized
@@ -132,7 +137,13 @@ function public_value_name(
     if override_name.len > 0:
         return string.String.from_str(override_name)
 
-    var name = apply_spec_rules(raw_name, spec_strip_prefix, spec_rule_kinds, spec_rule_patterns, spec_rule_replacements)
+    var name = apply_spec_rules(
+        raw_name,
+        spec_strip_prefix,
+        spec_rule_kinds,
+        spec_rule_patterns,
+        spec_rule_replacements
+    )
     var sanitized = naming.sanitize_value_binding_name(name.as_str())
     name.release()
     var snaked = naming.snake_case(sanitized.as_str())
@@ -155,11 +166,16 @@ function public_const_name(
     spec_rule_patterns: vec.Vec[string.String],
     spec_rule_replacements: vec.Vec[string.String],
 ) -> string.String:
-    var name = apply_spec_rules(raw_name, spec_strip_prefix, spec_rule_kinds, spec_rule_patterns, spec_rule_replacements)
+    var name = apply_spec_rules(
+        raw_name,
+        spec_strip_prefix,
+        spec_rule_kinds,
+        spec_rule_patterns,
+        spec_rule_replacements
+    )
     var sanitized = naming.sanitize_value_binding_name(name.as_str())
     name.release()
     return sanitized
-
 
 # =============================================================================
 #  Raw type rendering
@@ -386,7 +402,6 @@ public function build_public_type_names(
     release_string_vec(ref_of(replacements))
     return result
 
-
 # =============================================================================
 #  Type alias generation
 # =============================================================================
@@ -498,7 +513,6 @@ function find_type_info(raw_types: span[raw.RawTypeInfo], name: str) -> ptr[raw.
                 return ti
         i += 1
     return null
-
 
 # =============================================================================
 #  Const alias generation
@@ -617,7 +631,6 @@ function find_const_info(raw_consts: span[raw.RawConstInfo], name: str) -> ptr[r
                 return ci
         i += 1
     return null
-
 
 # =============================================================================
 #  Foreign function generation
@@ -895,7 +908,6 @@ function find_func_info(raw_funcs: span[raw.RawFuncInfo], name: str) -> ptr[raw.
         i += 1
     return null
 
-
 # =============================================================================
 #  Cross-module import detection
 # =============================================================================
@@ -930,7 +942,12 @@ public function collect_cross_module_imports(
             while pi < read(fi).params.len:
                 let param_ptr = read(fi).params.get(pi)
                 if param_ptr != null:
-                    add_module_import_for_type(read(param_ptr).param_type.as_str(), raw_imports, ref_of(imports), ref_of(seen))
+                    add_module_import_for_type(
+                        read(param_ptr).param_type.as_str(),
+                        raw_imports,
+                        ref_of(imports),
+                        ref_of(seen)
+                    )
                 pi += 1
 
             let rtype = read(fi).return_type.as_str()
@@ -987,7 +1004,6 @@ function release_string_vec(v: ref[vec.Vec[string.String]]) -> void:
             unsafe: read(p).release()
         i += 1
     v.release()
-
 
 # =============================================================================
 #  Rename rule metadata helpers

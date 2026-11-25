@@ -22,7 +22,6 @@ import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
-
 ## The code-action request's document view.  Every fix edits the request's own
 ## document, so these two request-scoped values are all the deep fix helpers
 ## need to convert their byte columns to the negotiated encoding.
@@ -142,7 +141,6 @@ public function handle_code_actions(ws: ref[workspace.Workspace], uri: str, para
 
     json_text.append("]")
     proto.write_response_raw(id, json_text.as_str())
-
 
 struct DiagnosticInfo:
     code: str
@@ -503,6 +501,8 @@ function emit_reserved_name_action(
         k += 1
 
     json_text.append("]}}}")
+
+
 ## host's cast quickfix (`code_actions.rb:38-67`): the line's first `=` splits
 ## the assignment, a simple operand is cast bare and anything else is
 ## parenthesized.  The host prefixes the line's indent to the already indented

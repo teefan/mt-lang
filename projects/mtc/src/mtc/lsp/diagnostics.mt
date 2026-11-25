@@ -20,12 +20,11 @@ import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
-
 ## LSP Diagnostic severity values.
-const SEVERITY_ERROR:   double = 1.0
+const SEVERITY_ERROR: double = 1.0
 const SEVERITY_WARNING: double = 2.0
-const SEVERITY_INFO:    double = 3.0
-const SEVERITY_HINT:    double = 4.0
+const SEVERITY_INFO: double = 3.0
+const SEVERITY_HINT: double = 4.0
 
 ## LSP TextDocumentSyncKind: Full = 1.
 const SYNC_FULL: double = 1.0
@@ -183,7 +182,12 @@ public function publish_empty_for_uri(ws: ref[workspace.Workspace], uri: str) ->
 ## pipeline stage, the range spans the offending token, import failures anchor at
 ## the module path text, parse/lex messages carry the error's own location
 ## suffix, and sema messages that quote identifiers become MarkupContent.
-function diagnostic_from_load_diagnostic(ws: ref[workspace.Workspace], d: loader.LoadDiagnostic, source: str, uri: str) -> json.Value:
+function diagnostic_from_load_diagnostic(
+    ws: ref[workspace.Workspace],
+    d: loader.LoadDiagnostic,
+    source: str,
+    uri: str
+) -> json.Value:
     var diag = json.create_object_value()
     let diag_obj = diag.as_object() else:
         return json.null_value()

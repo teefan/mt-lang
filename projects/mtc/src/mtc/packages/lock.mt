@@ -17,17 +17,14 @@ import mtc.packages.manifest as manifest
 import mtc.packages.paths as paths
 import mtc.packages.source as pkg_source
 
-
 public enum LockStatus: ubyte
     current = 0
     missing = 1
     stale = 2
 
-
 public struct LockCheck:
     lock_path: string.String
     status: LockStatus
-
 
 public struct LockedPackage:
     package_name: string.String
@@ -37,14 +34,12 @@ public struct LockedPackage:
     dependency_names: vec.Vec[string.String]
     dependency_ids: vec.Vec[string.String]
 
-
 struct LockRecord:
     instance_id: string.String
     package_name: string.String
     identity: pkg_source.SourceIdentity
     manifest_path: string.String
     dependency_ids: vec.Vec[string.String]
-
 
 struct LockContext:
     root_manifest: manifest.PackageManifest
@@ -53,22 +48,18 @@ struct LockContext:
     schema_version: int
     records: vec.Vec[LockRecord]
 
-
 struct LockedNodeRef:
     instance_id: string.String
     index: ptr_uint
-
 
 struct PackageSortEntry:
     package_name: string.String
     instance_id: string.String
     index: ptr_uint
 
-
 struct DependencySortEntry:
     name: string.String
     instance_id: string.String
-
 
 type LockedPackageList = vec.Vec[LockedPackage]
 type StringList = vec.Vec[string.String]
@@ -78,8 +69,10 @@ extending LockCheck:
     public function current() -> bool:
         return this.status == LockStatus.current
 
+
     public function missing() -> bool:
         return this.status == LockStatus.missing
+
 
     public editable function release() -> void:
         this.lock_path.release()
@@ -140,7 +133,6 @@ function graph_error(message: string.String) -> Result[graph.PackageGraph, strin
 
 function index_error(message: string.String) -> Result[ptr_uint, string.String]:
     return Result[ptr_uint, string.String].failure(error = message)
-
 
 # =============================================================================
 #  Rendering and the public check/write API
@@ -395,7 +387,6 @@ function write_atomic(path: str, content: str) -> Result[bool, string.String]:
             pass
     return Result[bool, string.String].success(value = true)
 
-
 # =============================================================================
 #  Instance identity
 # =============================================================================
@@ -446,7 +437,6 @@ function identity_instance_id(package_name: str, identity: pkg_source.SourceIden
         i += 1
     pkg_source.release_lock_attributes(ref_of(attributes))
     return crypto.sha256_to_str(text_ops.as_byte_span(joined.as_str()))
-
 
 # =============================================================================
 #  Rendering helpers
@@ -501,7 +491,10 @@ function sort_package_indices(loaded: ref[graph.PackageGraph], indices: ref[vec.
             index = index,
         ))
         i += 1
-    entries.sort_by(proc(left: ptr[PackageSortEntry], right: ptr[PackageSortEntry]) -> int: compare_sort_entries(left, right))
+    entries.sort_by(proc(
+        left: ptr[PackageSortEntry],
+        right: ptr[PackageSortEntry]
+    ) -> int: compare_sort_entries(left, right))
     indices.clear()
     i = 0
     while i < entries.len():
@@ -541,7 +534,11 @@ function release_sort_entries(entries: ref[vec.Vec[PackageSortEntry]]) -> void:
     entries.release()
 
 
-function append_dependency_names(loaded: ref[graph.PackageGraph], node: ref[graph.GraphNode], content: ref[string.String]) -> void:
+function append_dependency_names(
+    loaded: ref[graph.PackageGraph],
+    node: ref[graph.GraphNode],
+    content: ref[string.String]
+) -> void:
     var entries = collect_dependency_entries(loaded, node)
     defer: release_dependency_entries(ref_of(entries))
     content.push_byte('[')
@@ -556,7 +553,11 @@ function append_dependency_names(loaded: ref[graph.PackageGraph], node: ref[grap
     content.push_byte(']')
 
 
-function append_dependency_ids(loaded: ref[graph.PackageGraph], node: ref[graph.GraphNode], content: ref[string.String]) -> void:
+function append_dependency_ids(
+    loaded: ref[graph.PackageGraph],
+    node: ref[graph.GraphNode],
+    content: ref[string.String]
+) -> void:
     var entries = collect_dependency_entries(loaded, node)
     defer: release_dependency_entries(ref_of(entries))
     content.push_byte('[')
@@ -571,7 +572,10 @@ function append_dependency_ids(loaded: ref[graph.PackageGraph], node: ref[graph.
     content.push_byte(']')
 
 
-function collect_dependency_entries(loaded: ref[graph.PackageGraph], node: ref[graph.GraphNode]) -> vec.Vec[DependencySortEntry]:
+function collect_dependency_entries(
+    loaded: ref[graph.PackageGraph],
+    node: ref[graph.GraphNode]
+) -> vec.Vec[DependencySortEntry]:
     var entries = vec.Vec[DependencySortEntry].create()
     var i: ptr_uint = 0
     while i < node.edges.len():
@@ -585,12 +589,18 @@ function collect_dependency_entries(loaded: ref[graph.PackageGraph], node: ref[g
                 let child_node = unsafe: read(child_entry)
                 entries.push(DependencySortEntry(
                     name = string.String.from_str(value.dependency_name.as_str()),
-                    instance_id = identity_instance_id(child_node.manifest.package_name.as_str(), child_node.source.identity),
+                    instance_id = identity_instance_id(
+                        child_node.manifest.package_name.as_str(),
+                        child_node.source.identity
+                    ),
                 ))
             Option.none:
                 pass
         i += 1
-    entries.sort_by(proc(left: ptr[DependencySortEntry], right: ptr[DependencySortEntry]) -> int: compare_dependency_entries(left, right))
+    entries.sort_by(proc(
+        left: ptr[DependencySortEntry],
+        right: ptr[DependencySortEntry]
+    ) -> int: compare_dependency_entries(left, right))
     return entries
 
 
@@ -626,12 +636,14 @@ function append_toml_string(output: ref[string.String], value: str) -> void:
         i += 1
     output.push_byte('"')
 
-
 # =============================================================================
 #  Locked package records
 # =============================================================================
 
-public function locked_packages(path: str, resolver: ref[pkg_source.SourceResolver]) -> Result[LockedPackageList, string.String]:
+public function locked_packages(
+    path: str,
+    resolver: ref[pkg_source.SourceResolver]
+) -> Result[LockedPackageList, string.String]:
     var context: LockContext
     match load_context(path):
         Result.failure as context_failure:
@@ -695,7 +707,10 @@ function clone_strings(values: ref[StringList]) -> StringList:
 
 
 ## Load the graph described by an existing package.lock (the `--locked` path).
-public function load_graph(path: str, resolver: ref[pkg_source.SourceResolver]) -> Result[graph.PackageGraph, string.String]:
+public function load_graph(
+    path: str,
+    resolver: ref[pkg_source.SourceResolver]
+) -> Result[graph.PackageGraph, string.String]:
     var context: LockContext
     match load_context(path):
         Result.failure as context_failure:
@@ -710,7 +725,14 @@ public function load_graph(path: str, resolver: ref[pkg_source.SourceResolver]) 
     var stack = vec.Vec[string.String].create()
     defer: pkg_source.release_strings(ref_of(stack))
 
-    match build_locked_node(ref_of(context), resolver, context.root_package_id.as_str(), ref_of(loaded), ref_of(nodes_by_id), ref_of(stack)):
+    match build_locked_node(
+        ref_of(context),
+        resolver,
+        context.root_package_id.as_str(),
+        ref_of(loaded),
+        ref_of(nodes_by_id),
+        ref_of(stack)
+    ):
         Result.failure as build_failure:
             loaded.release()
             return graph_error(build_failure.error)
@@ -905,7 +927,6 @@ function build_locked_node(
         node.edges = edges
         read(node_ptr) = node
     return Result[ptr_uint, string.String].success(value = node_index)
-
 
 # =============================================================================
 #  Lockfile parsing
@@ -1191,7 +1212,10 @@ function find_record_index(context: ref[LockContext], instance_id: str) -> Optio
     return Option[ptr_uint].none
 
 
-function identity_from_lock(package_object: ref[toml.Object], lock_path: str) -> Result[pkg_source.SourceIdentity, string.String]:
+function identity_from_lock(
+    package_object: ref[toml.Object],
+    lock_path: str
+) -> Result[pkg_source.SourceIdentity, string.String]:
     var source_kind = string.String.create()
     defer: source_kind.release()
     match object_string(package_object, "source_kind"):
@@ -1321,7 +1345,11 @@ function find_entry(package_object: ref[toml.Object], key: str) -> ptr[toml.Entr
     return null
 
 
-function required_string(package_object: ref[toml.Object], key: str, lock_path: str) -> Result[string.String, string.String]:
+function required_string(
+    package_object: ref[toml.Object],
+    key: str,
+    lock_path: str
+) -> Result[string.String, string.String]:
     match object_string(package_object, key):
         Option.some as payload:
             if payload.value.len() > 0:
@@ -1368,4 +1396,3 @@ function normalize_dependency_ids(
                 return Result[StringList, string.String].failure(error = message)
         i += 1
     return Result[StringList, string.String].success(value = ids)
-

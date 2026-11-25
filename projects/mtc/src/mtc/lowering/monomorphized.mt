@@ -30,7 +30,16 @@ import mtc.strings
 ## Lower a function body with type-parameter substitution applied: every reference
 ## to a type param (e.g. `T`) in locals, expressions, and the return type is
 ## replaced by the corresponding concrete type from `sub`.
-public function lower_specialized_function(ctx: ref[lowering.LoweringContext], name: str, spec_key: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, sub: ref[map_mod.Map[str, types.Type]], body_validated: bool) -> ir.Function:
+public function lower_specialized_function(
+    ctx: ref[lowering.LoweringContext],
+    name: str,
+    spec_key: str,
+    params: span[ast.Param],
+    return_type: ptr[ast.TypeRef]?,
+    body: ptr[ast.Stmt]?,
+    sub: ref[map_mod.Map[str, types.Type]],
+    body_validated: bool
+) -> ir.Function:
     # Reset function-level state
     ctx.locals.clear()
     ctx.temp_counter = 0
@@ -66,12 +75,25 @@ public function lower_specialized_function(ctx: ref[lowering.LoweringContext], n
             let substituted = substitute_type_params(ctx, fn_type, sub)
             p_ty = lowering.qualify_type(ctx, substituted)
         else:
-            p_ty = lowering.qualify_type(ctx, substitute_type_params(ctx, lowering.resolve_field_type_ref(ctx, fn_tref), sub))
+            p_ty = lowering.qualify_type(
+                ctx,
+                substitute_type_params(ctx, lowering.resolve_field_type_ref(ctx, fn_tref), sub)
+            )
         let p_c = utils.c_local_name(p.name)
         let p_ptr = false
         let p_link = lowering.array_param_input_name(p_ty, p_c, ref_of(param_setup))
-        ir_params.push(ir.Param(name = p.name, linkage_name = p_link, ty = p_ty, pointer = Option[bool].some(value = p_ptr)))
-        ctx.locals.push(lowering.LocalBinding(name = p.name, c_name = p_c, ty = p_ty, pointer = Option[bool].some(value = p_ptr)))
+        ir_params.push(ir.Param(
+            name = p.name,
+            linkage_name = p_link,
+            ty = p_ty,
+            pointer = Option[bool].some(value = p_ptr)
+        ))
+        ctx.locals.push(lowering.LocalBinding(
+            name = p.name,
+            c_name = p_c,
+            ty = p_ty,
+            pointer = Option[bool].some(value = p_ptr)
+        ))
         pi += 1
     var ret_ty = ctx.void_ty
     if return_type != null:
@@ -81,7 +103,10 @@ public function lower_specialized_function(ctx: ref[lowering.LoweringContext], n
             let substituted = substitute_type_params(ctx, fn_type, sub)
             ret_ty = lowering.qualify_type(ctx, substituted)
         else:
-            ret_ty = lowering.qualify_type(ctx, substitute_type_params(ctx, lowering.resolve_field_type_ref(ctx, rt_raw), sub))
+            ret_ty = lowering.qualify_type(
+                ctx,
+                substitute_type_params(ctx, lowering.resolve_field_type_ref(ctx, rt_raw), sub)
+            )
     # Register the specialization's return type before lowering its body so a
     # recursive self-call resolves its type from here instead of the analyzer's
     # unsubstituted generic-body record.
@@ -112,7 +137,11 @@ public function lower_specialized_function(ctx: ref[lowering.LoweringContext], n
 
 ## Replace type-parameter references (`ty_var`) in a type with their concrete
 ## values from the substitution map.  Other type variants pass through unchanged.
-public function substitute_type_params(ctx: ref[lowering.LoweringContext], ty: types.Type, sub: ref[map_mod.Map[str, types.Type]]) -> types.Type:
+public function substitute_type_params(
+    ctx: ref[lowering.LoweringContext],
+    ty: types.Type,
+    sub: ref[map_mod.Map[str, types.Type]]
+) -> types.Type:
     match ty:
         types.Type.ty_var as v:
             let concrete = sub.get(v.name)
@@ -149,7 +178,11 @@ public function substitute_type_params(ctx: ref[lowering.LoweringContext], ty: t
                 i += 1
             return types.generic_type(name = g_bp.name, args = args.as_span())
         types.Type.ty_nullable as nl:
-            return types.Type.ty_nullable(base = types.alloc_type(substitute_type_params(ctx, unsafe: read(nl.base), sub)))
+            return types.Type.ty_nullable(base = types.alloc_type(substitute_type_params(
+                ctx,
+                unsafe: read(nl.base),
+                sub
+            )))
         types.Type.ty_function as fnt:
             let fnt_ft = unsafe: read(fnt.payload)
             var fn_params = vec.Vec[types.Type].with_capacity_exact(fnt_ft.params.len)
@@ -158,7 +191,14 @@ public function substitute_type_params(ctx: ref[lowering.LoweringContext], ty: t
                 unsafe:
                     fn_params.push(substitute_type_params(ctx, read(fnt_ft.params.data + pi), sub))
                 pi += 1
-            return types.function_type(name = fnt_ft.name, params = fn_params.as_span(), return_type = types.alloc_type(substitute_type_params(ctx, unsafe: read(fnt_ft.return_type), sub)), variadic = fnt_ft.variadic, is_proc = fnt_ft.is_proc, param_names = fnt_ft.param_names)
+            return types.function_type(
+                name = fnt_ft.name,
+                params = fn_params.as_span(),
+                return_type = types.alloc_type(substitute_type_params(ctx, unsafe: read(fnt_ft.return_type), sub)),
+                variadic = fnt_ft.variadic,
+                is_proc = fnt_ft.is_proc,
+                param_names = fnt_ft.param_names
+            )
         _:
             return ty
 
@@ -169,7 +209,11 @@ public function generic_instance_get(ctx: ref[lowering.LoweringContext], name: s
     return unsafe: read(ctx.generic_struct_instances).get(name)
 
 
-public function generic_instance_set(ctx: ref[lowering.LoweringContext], name: str, value: lowering.GenericReceiver) -> void:
+public function generic_instance_set(
+    ctx: ref[lowering.LoweringContext],
+    name: str,
+    value: lowering.GenericReceiver
+) -> void:
     unsafe: read(ctx.generic_struct_instances).set(name, value)
 
 
@@ -179,7 +223,16 @@ public function generic_instance_contains(ctx: ref[lowering.LoweringContext], na
 
 ## Create a fully initialised lowering.LoweringContext for a single module.  Every field is
 ## set explicitly so all code paths start from a known clean state.
-function create_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map_mod.Map[str, types.Type]], prog_async: ptr[map_mod.Map[str, bool]], pl_field_types: ptr[map_mod.Map[str, types.Type]], prog_analyses: span[analyzer.Analysis], lod_modules: span[loader.LoadedModule], gen_instances: ptr[map_mod.Map[str, lowering.GenericReceiver]], spec_infos: ptr[map_mod.Map[str, lowering.SpecInfo]]) -> lowering.LoweringContext:
+function create_lowering_context(
+    analysis: analyzer.Analysis,
+    prog_returns: ptr[map_mod.Map[str, types.Type]],
+    prog_async: ptr[map_mod.Map[str, bool]],
+    pl_field_types: ptr[map_mod.Map[str, types.Type]],
+    prog_analyses: span[analyzer.Analysis],
+    lod_modules: span[loader.LoadedModule],
+    gen_instances: ptr[map_mod.Map[str, lowering.GenericReceiver]],
+    spec_infos: ptr[map_mod.Map[str, lowering.SpecInfo]]
+) -> lowering.LoweringContext:
     return lowering.LoweringContext(
         module_name = analysis.module_name,
         analysis = analysis,
@@ -294,7 +347,14 @@ function collect_opaque_keys(prog_analyses: span[analyzer.Analysis]) -> map_mod.
                 d = read(analysis.source_file.declarations.data + di)
             match d:
                 ast.Decl.decl_opaque as op:
-                    keys.set(naming.type_c_key(types.imported_type(module_name = analysis.module_name, name = op.name, args = span[types.Type]())), true)
+                    keys.set(
+                        naming.type_c_key(types.imported_type(
+                            module_name = analysis.module_name,
+                            name = op.name,
+                            args = span[types.Type]()
+                        )),
+                        true
+                    )
                 _:
                     pass
             di += 1
@@ -305,7 +365,13 @@ function collect_opaque_keys(prog_analyses: span[analyzer.Analysis]) -> map_mod.
 ## Pre-scan every module's function declarations and record each one's resolved
 ## return type keyed by its C linkage name, so cross-module calls can look them
 ## up regardless of lowering order.
-public function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[str, types.Type]], async_sink: ref[map_mod.Map[str, bool]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], gen_instances: ref[map_mod.Map[str, lowering.GenericReceiver]]) -> void:
+public function collect_program_returns(
+    program: loader.Program,
+    sink: ref[map_mod.Map[str, types.Type]],
+    async_sink: ref[map_mod.Map[str, bool]],
+    prelude_arm_field_types: ref[map_mod.Map[str, types.Type]],
+    gen_instances: ref[map_mod.Map[str, lowering.GenericReceiver]]
+) -> void:
     # Specialization metadata is only meaningful for the module fragments the
     # driver assembles; this pass discards it.
     var discarded_spec_infos = map_mod.Map[str, lowering.SpecInfo].create()
@@ -315,7 +381,16 @@ public function collect_program_returns(program: loader.Program, sink: ref[map_m
             mi += 1
             continue
         var analysis = unsafe: read(a_ptr)
-        var ctx = create_lowering_context(analysis, ptr_of(read(sink)), ptr_of(read(async_sink)), ptr_of(read(prelude_arm_field_types)), program.analyses.as_span(), program.modules.as_span(), ptr_of(read(gen_instances)), ptr_of(discarded_spec_infos))
+        var ctx = create_lowering_context(
+            analysis,
+            ptr_of(read(sink)),
+            ptr_of(read(async_sink)),
+            ptr_of(read(prelude_arm_field_types)),
+            program.analyses.as_span(),
+            program.modules.as_span(),
+            ptr_of(read(gen_instances)),
+            ptr_of(discarded_spec_infos)
+        )
         var di: ptr_uint = 0
         while di < analysis.source_file.declarations.len:
             var d: ast.Decl
@@ -333,13 +408,21 @@ public function collect_program_returns(program: loader.Program, sink: ref[map_m
                     # context) would instantiate bogus concrete types.  Its
                     # specializations record their own return types.
                     if fun.type_params.len == 0:
-                        let ret = type_helpers.resolve_return_type(ref_of(ctx), type_helpers.find_fn_sig(ref_of(ctx), fun.name), fun.return_type)
+                        let ret = type_helpers.resolve_return_type(
+                            ref_of(ctx),
+                            type_helpers.find_fn_sig(ref_of(ctx), fun.name),
+                            fun.return_type
+                        )
                         sink.set(naming.qualified_c_name(analysis.module_name, fun.name), ret)
                 ast.Decl.decl_extern_function as ext:
                     # External functions use their bare C name as the linkage name
                     # (no module prefix), so a cross-module call `c.func(...)` can
                     # resolve the result type from that same bare-name key.
-                    let ext_ret = if ext.return_type != null: type_helpers.resolve_return_type(ref_of(ctx), Option[analyzer.FnSig].none, ext.return_type) else: types.primitive("void")
+                    let ext_ret = if ext.return_type != null: type_helpers.resolve_return_type(
+                        ref_of(ctx),
+                        Option[analyzer.FnSig].none,
+                        ext.return_type
+                    ) else: types.primitive("void")
                     sink.set(ext.name, ext_ret)
                 ast.Decl.decl_foreign_function as ff:
                     # Foreign functions are called cross-module by their Milk Tea
@@ -348,7 +431,10 @@ public function collect_program_returns(program: loader.Program, sink: ref[map_m
                     # type under that same qualified linkage key.  Without this a
                     # cross-module foreign call resolves to void and its result
                     # local is emitted `void`.
-                    let ff_ret = lowering.qualify_type(ref_of(ctx), lowering.resolve_type_ref(ref_of(ctx), ff.return_type))
+                    let ff_ret = lowering.qualify_type(
+                        ref_of(ctx),
+                        lowering.resolve_type_ref(ref_of(ctx), ff.return_type)
+                    )
                     sink.set(naming.qualified_c_name(analysis.module_name, ff.name), ff_ret)
                 _:
                     pass
@@ -495,7 +581,11 @@ function spec_owner_key(owner_module: str, decl_key: str) -> str:
 ## Build one module's declaration visit sequence in the host's order
 ## (`expanded_declarations`, `functions.rb:18-73`): functions in source order,
 ## an extending block's methods in source order.
-function build_decl_visits(analysis: analyzer.Analysis, analyses: span[analyzer.Analysis], expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]]) -> vec.Vec[DeclVisit]:
+function build_decl_visits(
+    analysis: analyzer.Analysis,
+    analyses: span[analyzer.Analysis],
+    expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]]
+) -> vec.Vec[DeclVisit]:
     var visits = vec.Vec[DeclVisit].create()
     let module_name = analysis.module_name
     var source_decls = analysis.source_file.declarations
@@ -566,7 +656,13 @@ function build_decl_visits(analysis: analyzer.Analysis, analyses: span[analyzer.
                     else:
                         visits.push(DeclVisit(
                             instance = false,
-                            linkage = lowering.method_c_name_for_receiver(receiver_ty, module_name, recv_name, m.name, m.method_kind),
+                            linkage = lowering.method_c_name_for_receiver(
+                                receiver_ty,
+                                module_name,
+                                recv_name,
+                                m.name,
+                                m.method_kind
+                            ),
                             owner_module = "", decl_key = "", owner_key = "", is_main = false,
                         ))
                     mi += 1
@@ -580,7 +676,12 @@ function build_decl_visits(analysis: analyzer.Analysis, analyses: span[analyzer.
 ## Instances created outside any function body (module constants/globals,
 ## synthetic setup) are available from the start; a creator that the declaration
 ## walk never emits is treated the same way.
-function spec_creator_ready(info: lowering.SpecInfo, emittable: ref[map_mod.Map[str, bool]], emitted: ref[map_mod.Map[str, bool]], setup_reached: ref[map_mod.Map[str, bool]]) -> bool:
+function spec_creator_ready(
+    info: lowering.SpecInfo,
+    emittable: ref[map_mod.Map[str, bool]],
+    emitted: ref[map_mod.Map[str, bool]],
+    setup_reached: ref[map_mod.Map[str, bool]]
+) -> bool:
     if info.pre_instantiated:
         return true
     if info.creator == "":
@@ -607,7 +708,13 @@ function push_module_function(per_module: ref[vec.Vec[vec.Vec[ir.Function]]], mi
 ## created by an earlier declaration in the same pass can still be emitted later
 ## in that pass, while one created after its declaration was seen waits for the
 ## next pass.
-public function order_module_functions(analyses: span[analyzer.Analysis], fragments: span[ir.Program], all_by_linkage: ref[map_mod.Map[str, ir.Function]], spec_infos: ref[map_mod.Map[str, lowering.SpecInfo]], expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]]) -> vec.Vec[ir.Function]:
+public function order_module_functions(
+    analyses: span[analyzer.Analysis],
+    fragments: span[ir.Program],
+    all_by_linkage: ref[map_mod.Map[str, ir.Function]],
+    spec_infos: ref[map_mod.Map[str, lowering.SpecInfo]],
+    expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]]
+) -> vec.Vec[ir.Function]:
     var visits = vec.Vec[vec.Vec[DeclVisit]].create()
     var emittable = map_mod.Map[str, bool].create()
     var specs_by_decl = map_mod.Map[str, vec.Vec[str]].create()
@@ -694,7 +801,12 @@ public function order_module_functions(analyses: span[analyzer.Analysis], fragme
                                 let info_ptr = spec_infos.get(key)
                                 if info_ptr != null:
                                     let info = unsafe: read(info_ptr)
-                                    if spec_creator_ready(info, ref_of(emittable), ref_of(emitted), ref_of(setup_reached)):
+                                    if spec_creator_ready(
+                                        info,
+                                        ref_of(emittable),
+                                        ref_of(emitted),
+                                        ref_of(setup_reached)
+                                    ):
                                         let fp = all_by_linkage.get(key)
                                         if fp != null:
                                             picked.push(unsafe: read(fp))
@@ -853,7 +965,12 @@ function validate_spec_creation_graph(spec_infos: ref[map_mod.Map[str, lowering.
 
 
 ## Append the declarations of a module-level `when`'s selected branch to `out`.
-function append_selected_when_decls(ctx: ref[lowering.LoweringContext], discriminant: ptr[ast.Expr], branches: span[ast.WhenDeclBranch], dest: ref[vec.Vec[ast.Decl]]) -> void:
+function append_selected_when_decls(
+    ctx: ref[lowering.LoweringContext],
+    discriminant: ptr[ast.Expr],
+    branches: span[ast.WhenDeclBranch],
+    dest: ref[vec.Vec[ast.Decl]]
+) -> void:
     match const_eval.try_evaluate_const_expr(ctx, discriminant):
         Option.some as dv:
             var bi: ptr_uint = 0
@@ -896,8 +1013,36 @@ function decl_lowering_pass(d: ast.Decl) -> ptr_uint:
             return 2
 
 
-public function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], program_async: ref[map_mod.Map[str, bool]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, lowering.GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]], synthetic_functions: ref[vec.Vec[ir.Function]], synthetic_enums: ref[vec.Vec[ir.EnumDecl]], emitted_functions: ptr[vec.Vec[ir.Function]], emitted_structs: ptr[vec.Vec[ir.StructDecl]], emitted_constants: ptr[vec.Vec[ir.Constant]], spec_infos: ref[map_mod.Map[str, lowering.SpecInfo]], expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]]) -> ir.Program:
-    var ctx = create_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(program_async)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)))
+public function lower_module(
+    analysis: analyzer.Analysis,
+    program_returns: ref[map_mod.Map[str, types.Type]],
+    program_async: ref[map_mod.Map[str, bool]],
+    prelude_arm_field_types: ref[map_mod.Map[str, types.Type]],
+    is_root: bool,
+    program_analyses: span[analyzer.Analysis],
+    loaded_modules: span[loader.LoadedModule],
+    gen_instances: ref[map_mod.Map[str, lowering.GenericReceiver]],
+    monomorphized: ref[vec.Vec[ir.StructDecl]],
+    monomorphized_variants: ref[vec.Vec[ir.VariantDecl]],
+    pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]],
+    synthetic_functions: ref[vec.Vec[ir.Function]],
+    synthetic_enums: ref[vec.Vec[ir.EnumDecl]],
+    emitted_functions: ptr[vec.Vec[ir.Function]],
+    emitted_structs: ptr[vec.Vec[ir.StructDecl]],
+    emitted_constants: ptr[vec.Vec[ir.Constant]],
+    spec_infos: ref[map_mod.Map[str, lowering.SpecInfo]],
+    expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]]
+) -> ir.Program:
+    var ctx = create_lowering_context(
+        analysis,
+        ptr_of(read(program_returns)),
+        ptr_of(read(program_async)),
+        ptr_of(read(prelude_arm_field_types)),
+        program_analyses,
+        loaded_modules,
+        ptr_of(read(gen_instances)),
+        ptr_of(read(spec_infos))
+    )
     ctx.is_root_module = is_root
     ctx.pending_emitted_functions = emitted_functions
     ctx.pending_emitted_structs = emitted_structs
@@ -1096,7 +1241,12 @@ public function lower_module(analysis: analyzer.Analysis, program_returns: ref[m
 ## Returns true for functions that can be lowered directly (non-generic and
 ## not an external/foreign/async declaration — async functions take the CPS
 ## path in `lower_async_fn`).
-function lower_module_function_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl, is_root: bool, functions: ref[vec.Vec[ir.Function]]) -> void:
+function lower_module_function_decl(
+    ctx: ref[lowering.LoweringContext],
+    d: ast.Decl,
+    is_root: bool,
+    functions: ref[vec.Vec[ir.Function]]
+) -> void:
     match d:
         ast.Decl.decl_function as fun:
             if fun.is_async:
@@ -1105,8 +1255,22 @@ function lower_module_function_decl(ctx: ref[lowering.LoweringContext], d: ast.D
                 # function is the single-state case.  An async `main`
                 # constructor carries the host's `__async_main` linkage
                 # (`function_binding_c_name`, utils.rb:1089-1092).
-                let link_base = if is_root and fun.name == "main": naming.qualified_c_name(ctx.module_name, "__async_main") else: naming.qualified_c_name(ctx.module_name, fun.name)
-                async_cps.lower_async_fn(ctx, fun.name, link_base, Option[types.Type].none, false, fun.method_params, fun.return_type, fun.body, functions, is_root and fun.name == "main")
+                let link_base = if is_root and fun.name == "main": naming.qualified_c_name(
+                    ctx.module_name,
+                    "__async_main"
+                ) else: naming.qualified_c_name(ctx.module_name, fun.name)
+                async_cps.lower_async_fn(
+                    ctx,
+                    fun.name,
+                    link_base,
+                    Option[types.Type].none,
+                    false,
+                    fun.method_params,
+                    fun.return_type,
+                    fun.body,
+                    functions,
+                    is_root and fun.name == "main"
+                )
                 if is_root and fun.name == "main":
                     match async_cps.build_async_main_entrypoint(ctx, fun.name):
                         Option.some as entry:
@@ -1114,7 +1278,15 @@ function lower_module_function_decl(ctx: ref[lowering.LoweringContext], d: ast.D
                         Option.none:
                             pass
             else if lowerable_function(fun.type_params, fun.body):
-                functions.push(lowering.lower_function(ctx, fun.name, fun.method_params, fun.return_type, fun.body, false, fun.visibility))
+                functions.push(lowering.lower_function(
+                    ctx,
+                    fun.name,
+                    fun.method_params,
+                    fun.return_type,
+                    fun.body,
+                    false,
+                    fun.visibility
+                ))
                 if is_root and fun.name == "main":
                     match lowering.build_root_main_entrypoint(ctx, fun.name, fun.method_params):
                         Option.some as entry:
@@ -1125,7 +1297,11 @@ function lower_module_function_decl(ctx: ref[lowering.LoweringContext], d: ast.D
             pass
 
 
-function lower_module_struct_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl, structs: ref[vec.Vec[ir.StructDecl]]) -> void:
+function lower_module_struct_decl(
+    ctx: ref[lowering.LoweringContext],
+    d: ast.Decl,
+    structs: ref[vec.Vec[ir.StructDecl]]
+) -> void:
     match d:
         ast.Decl.decl_struct as s:
             # Skip generic structs — only their concrete specializations
@@ -1144,7 +1320,11 @@ function lower_module_struct_decl(ctx: ref[lowering.LoweringContext], d: ast.Dec
             pass
 
 
-function lower_module_var_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl, globals: ref[vec.Vec[ir.Global]]) -> void:
+function lower_module_var_decl(
+    ctx: ref[lowering.LoweringContext],
+    d: ast.Decl,
+    globals: ref[vec.Vec[ir.Global]]
+) -> void:
     match d:
         ast.Decl.decl_var as v:
             var g_ty = types.primitive("void")
@@ -1192,12 +1372,21 @@ function lower_module_var_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl, 
                         g_val = lowering.float_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
                         g_val = lowering.string_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
                         g_val = lowering.null_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
-            globals.push(ir.Global(name = v.name, linkage_name = naming.qualified_c_name(ctx.module_name, v.name), ty = g_ty, value = g_val))
+            globals.push(ir.Global(
+                name = v.name,
+                linkage_name = naming.qualified_c_name(ctx.module_name, v.name),
+                ty = g_ty,
+                value = g_val
+            ))
         _:
             pass
 
 
-function lower_module_const_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl, constants: ref[vec.Vec[ir.Constant]]) -> void:
+function lower_module_const_decl(
+    ctx: ref[lowering.LoweringContext],
+    d: ast.Decl,
+    constants: ref[vec.Vec[ir.Constant]]
+) -> void:
     match d:
         ast.Decl.decl_const as c:
             var c_ty = lowering.resolve_type_ref(ctx, c.const_type)
@@ -1238,10 +1427,21 @@ function lower_module_const_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl
                     var empty_env = map_mod.Map[str, ptr[ir.Expr]].create()
                     match const_eval.try_const_value_body(ctx, c.block_body, ref_of(empty_env)):
                         Option.some as body_val:
-                            bv = lowering.alloc_expr(const_eval.coerce_const_value(ctx, unsafe: read(body_val.value), c_ty))
+                            bv = lowering.alloc_expr(const_eval.coerce_const_value(
+                                ctx,
+                                unsafe: read(body_val.value),
+                                c_ty
+                            ))
                         Option.none:
                             pass
-                constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = bv, line = c.line, path = ctx.analysis.source_path))
+                constants.push(ir.Constant(
+                    name = c.name,
+                    linkage_name = naming.qualified_c_name(ctx.module_name, c.name),
+                    ty = c_ty,
+                    value = bv,
+                    line = c.line,
+                    path = ctx.analysis.source_path
+                ))
             else:
                 # `const EQ: bool = A == B` over constant aggregates folds
                 # at compile time; a C function call is not a constant
@@ -1255,10 +1455,22 @@ function lower_module_const_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl
                         pass
                 match folded:
                     Option.some as fb:
-                        constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = fb.value, ty = c_ty)), line = c.line, path = ctx.analysis.source_path))
+                        constants.push(ir.Constant(
+                            name = c.name,
+                            linkage_name = naming.qualified_c_name(ctx.module_name, c.name),
+                            ty = c_ty,
+                            value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = fb.value, ty = c_ty)),
+                            line = c.line,
+                            path = ctx.analysis.source_path
+                        ))
                     Option.none:
                         var const_env = map_mod.Map[str, ptr[ir.Expr]].create()
-                        match const_eval.try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-val_ptr, ref_of(const_env), c_ty):
+                        match const_eval.try_const_typed_value_ir(
+                            ctx,
+                            unsafe: ptr[ast.Expr]<-val_ptr,
+                            ref_of(const_env),
+                            c_ty
+                        ):
                             Option.some as cv2:
                                 var c_val = unsafe: read(cv2.value)
                                 # The host's `lower_const_value_literal` path
@@ -1286,20 +1498,42 @@ function lower_module_const_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl
                                     # reference to its declaration initializer and
                                     # lowering that AST with the expected type.
                                     if not comptime.const_value_ir_representable(ctx, c_val, c_ty):
-                                        match const_eval.lower_imported_const_initializer(ctx, unsafe: ptr[ast.Expr]<-val_ptr, c_ty):
+                                        match const_eval.lower_imported_const_initializer(
+                                            ctx,
+                                            unsafe: ptr[ast.Expr]<-val_ptr,
+                                            c_ty
+                                        ):
                                             Option.some as iv:
                                                 c_val = unsafe: read(iv.value)
                                             Option.none:
                                                 pass
                                     coerced = lowering.alloc_expr(const_eval.retype_const_literal(c_val, c_ty))
-                                constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = coerced, line = c.line, path = ctx.analysis.source_path))
+                                constants.push(ir.Constant(
+                                    name = c.name,
+                                    linkage_name = naming.qualified_c_name(ctx.module_name, c.name),
+                                    ty = c_ty,
+                                    value = coerced,
+                                    line = c.line,
+                                    path = ctx.analysis.source_path
+                                ))
                             Option.none:
-                                constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lowering.lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr), line = c.line, path = ctx.analysis.source_path))
+                                constants.push(ir.Constant(
+                                    name = c.name,
+                                    linkage_name = naming.qualified_c_name(ctx.module_name, c.name),
+                                    ty = c_ty,
+                                    value = lowering.lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr),
+                                    line = c.line,
+                                    path = ctx.analysis.source_path
+                                ))
         _:
             pass
 
 
-function lower_module_event_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl, globals: ref[vec.Vec[ir.Global]]) -> void:
+function lower_module_event_decl(
+    ctx: ref[lowering.LoweringContext],
+    d: ast.Decl,
+    globals: ref[vec.Vec[ir.Global]]
+) -> void:
     match d:
         ast.Decl.decl_event as ev:
             var info = lowering.ensure_event_runtime(ctx, "", ev.name)
@@ -1309,9 +1543,19 @@ function lower_module_event_decl(ctx: ref[lowering.LoweringContext], d: ast.Decl
             var ev_payload: ptr[types.Type]? = null
             if info.has_payload:
                 ev_payload = types.alloc_type(info.payload_type)
-            let ev_ty = types.event_type(name = ev.name, capacity = info.capacity, payload_type = ev_payload, linkage_name = info.event_c_name)
+            let ev_ty = types.event_type(
+                name = ev.name,
+                capacity = info.capacity,
+                payload_type = ev_payload,
+                linkage_name = info.event_c_name
+            )
             let ev_zero = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = ev_ty))
-            globals.push(ir.Global(name = ev.name, linkage_name = naming.qualified_c_name(ctx.module_name, ev.name), ty = ev_ty, value = ev_zero))
+            globals.push(ir.Global(
+                name = ev.name,
+                linkage_name = naming.qualified_c_name(ctx.module_name, ev.name),
+                ty = ev_ty,
+                value = ev_zero
+            ))
         _:
             pass
 

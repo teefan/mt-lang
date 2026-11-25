@@ -69,7 +69,6 @@ function find_entry(entries: vec.Vec[debug_map.DebugEntry], name: str) -> ptr[de
         i += 1
     return null
 
-
 const SOURCE: str = <<-SRC
     function add(a: int, b: int) -> int:
         let x = a + b
@@ -146,7 +145,11 @@ function test_from_ir_records_params_locals_and_path() -> void:
 
         # The lookup helpers must find the same entries.
         expect(debug_map.function_for_c_name(ref_of(map), read(add_fn).linkage_name.as_str()) == add_fn)
-        expect(debug_map.variable_for(ref_of(map), read(add_fn).linkage_name.as_str(), read(local_x).linkage_name.as_str()) == local_x)
+        expect(debug_map.variable_for(
+            ref_of(map),
+            read(add_fn).linkage_name.as_str(),
+            read(local_x).linkage_name.as_str()
+        ) == local_x)
         expect(debug_map.source_variable_for(ref_of(map), read(add_fn).linkage_name.as_str(), "x") == local_x)
 
     # `add` and `main` plus the synthesized C entry wrapper.

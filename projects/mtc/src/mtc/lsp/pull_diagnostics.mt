@@ -16,8 +16,6 @@ import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
-
-
 ## The workspace report is bounded: indexed files in workspace order, plus any
 ## open document the index has not seen yet.  A larger workspace gets the first
 ## 500 files (the client can still pull individual documents).
@@ -128,7 +126,13 @@ public function handle_workspace_diagnostic(
                 pi += 1
                 var item = string.String.create()
                 var item_first = true
-                append_workspace_document_report(ws, params, unsafe: read(path_ptr).as_str(), ref_of(item), ref_of(item_first))
+                append_workspace_document_report(
+                    ws,
+                    params,
+                    unsafe: read(path_ptr).as_str(),
+                    ref_of(item),
+                    ref_of(item_first)
+                )
                 if item.len() > 0:
                     var chunk = string.String.create()
                     chunk.append("{\"items\":[")
@@ -148,7 +152,13 @@ public function handle_workspace_diagnostic(
                 let path_ptr = paths.get(pi) else:
                     break
                 pi += 1
-                append_workspace_document_report(ws, params, unsafe: read(path_ptr).as_str(), ref_of(result_json), ref_of(first))
+                append_workspace_document_report(
+                    ws,
+                    params,
+                    unsafe: read(path_ptr).as_str(),
+                    ref_of(result_json),
+                    ref_of(first)
+                )
             result_json.append("]}")
             proto.write_response_raw(id, result_json.as_str())
 

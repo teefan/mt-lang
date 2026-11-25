@@ -17,7 +17,6 @@ import std.vec as vec
 
 import mtc.parser.ast as ast
 
-
 ## A redundant null check: the tested name, the line of the `if` branch, and the
 ## branch condition (the linter derives the reported condition span from it).
 public struct Diag:
@@ -46,7 +45,6 @@ function check_body(body: ptr[ast.Stmt]?, diags: ref[vec.Vec[Diag]]) -> void:
     var state = vec.Vec[str].create()
     defer: state.release()
     walk_body(body, ref_of(state), diags)
-
 
 # =============================================================================
 #  Non-null set helpers
@@ -120,7 +118,6 @@ function intersect_into(target: ref[vec.Vec[str]], other: ref[vec.Vec[str]], fir
             i += 1
         else:
             let _removed = target.swap_remove(i)
-
 
 # =============================================================================
 #  Condition refinements — the Ruby builder's null_check_pairs
@@ -239,7 +236,6 @@ function null_check_name(ep: ptr[ast.Expr]) -> str:
             _:
                 pass
     return ""
-
 
 # =============================================================================
 #  Write collection — names whose narrowing a region invalidates
@@ -430,7 +426,6 @@ function kill_expr_writes(ep: ptr[ast.Expr]?, state: ref[vec.Vec[str]]) -> void:
     collect_expr_writes(ep, ref_of(written))
     remove_all(state, ref_of(written))
 
-
 # =============================================================================
 #  Path termination — a body that always leaves the enclosing block
 # =============================================================================
@@ -493,7 +488,6 @@ function is_fatal_call(ep: ptr[ast.Expr]) -> bool:
                         return false
             _:
                 return false
-
 
 # =============================================================================
 #  Forward walk

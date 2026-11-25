@@ -16,9 +16,7 @@ import std.vec as vec
 
 import mtc.ir as ir
 
-
 const VERSION: int = 1
-
 
 ## One source entry (parameter or local): the Milk Tea name, the generated C
 ## name, and the declaration line when the IR records one.
@@ -27,7 +25,6 @@ public struct DebugEntry:
     linkage_name: string.String
     line: ptr_uint
     has_line: bool
-
 
 ## One lowered function with its parameters and locals.
 public struct DebugFunction:
@@ -38,7 +35,6 @@ public struct DebugFunction:
     has_line: bool
     params: vec.Vec[DebugEntry]
     locals: vec.Vec[DebugEntry]
-
 
 ## A generated or loaded debug map.
 public struct DebugMap:
