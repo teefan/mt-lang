@@ -203,6 +203,31 @@ function test_tidy_two_blanks_before_comment_block_on_function() -> void:
 
 
 @[test]
+function test_tidy_removes_blank_after_block_opener() -> void:
+    ## Legacy formatter output left a blank immediately inside every block;
+    ## Black/ruff do not require one, and this codebase does not want it.
+    var source = string.String.from_str("function main() -> int:\n\n    var x = 1\n\n    return x\n")
+    defer: source.release()
+
+    var formatted = format_tidy(source.as_str())
+    defer: formatted.release()
+    expect(formatted.as_str().contains_substring("function main() -> int:\n    var x = 1"))
+    # A blank between sibling statements is still the author's grouping.
+    expect(formatted.as_str().contains_substring("var x = 1\n\n    return x"))
+
+
+@[test]
+function test_tidy_removes_blank_before_else() -> void:
+    ## A blank between a branch body and `else` is legacy formatter noise.
+    var source = string.String.from_str("function main(a: bool) -> int:\n    if a:\n        return 1\n\n    else:\n        return 0\n")
+    defer: source.release()
+
+    var formatted = format_tidy(source.as_str())
+    defer: formatted.release()
+    expect(formatted.as_str().contains_substring("return 1\n    else:"))
+
+
+@[test]
 function test_tidy_preserves_continuation_newlines() -> void:
     ## The CST's trivia omits a newline after a continuation operator.  Tidy
     ## must keep the source gap: its own wrap pass emits those newlines, so

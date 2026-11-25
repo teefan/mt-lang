@@ -992,7 +992,18 @@ public function normalize_blank_lines_with(source: str, protected: span[bool]) -
                     or interface_block_header_line(line)
                     or decorated.is_some()
                 )
-                if attached_comment and current_is_declaration:
+                # No blank line belongs immediately after a block opener
+                # (`function …:`, `if …:`, `unsafe:`, a struct body, …); the
+                # legacy formatter inserted them, especially in c_backend.
+                let previous_opens_block = (
+                    not line_is_comment(previous_content_line)
+                    and previous_content_line.trim_ascii_whitespace().ends_with(":")
+                    and leading_indent_width(line) > leading_indent_width(previous_content_line)
+                )
+                let is_else_branch = line.trim_ascii_whitespace().starts_with("else")
+                if previous_opens_block or is_else_branch:
+                    needed = 0
+                else if attached_comment and current_is_declaration:
                     needed = 0
                 else if comment_separator > 0:
                     needed = comment_separator

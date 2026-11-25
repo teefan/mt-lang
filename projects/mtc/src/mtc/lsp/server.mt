@@ -373,11 +373,9 @@ function dispatch_known_method(
     else if method == "textDocument/onTypeFormatting":
         var pos = position_params(ws, msg.params)
         on_type.handle_on_type_formatting(ws, pos.uri, pos.line, extract_trigger_character(msg.params), msg.id)
-
     else if method == "$/setTrace":
         apply_trace_level(msg.params)
         return Option[bool].some(value = true)
-
     else:
         return Option[bool].none
     return Option[bool].some(value = true)

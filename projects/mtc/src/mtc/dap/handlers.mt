@@ -53,7 +53,6 @@ public function dispatch(
         handle_set_exception_breakpoints(seq, msg.seq)
     else if command == "configurationDone":
         handle_configuration_done(ses, child, has_child, seq, msg.seq)
-
     else if command == "threads":
         handle_threads(seq, msg.seq)
     else if command == "stackTrace":
@@ -62,7 +61,6 @@ public function dispatch(
         handle_scopes(seq, msg.seq)
     else if command == "variables":
         handle_variables(seq, msg.seq)
-
     else if command == "continue":
         handle_continue(ses, child, has_child, seq, msg.seq)
     else if command == "next":
@@ -77,7 +75,6 @@ public function dispatch(
         handle_terminate(ses, child, has_child, seq, msg.seq)
     else if command == "disconnect":
         handle_disconnect(ses, child, has_child, seq, msg.seq)
-
     else if command == "evaluate":
         wire.write_error(seq, msg.seq, "evaluate is not supported by the process backend")
     else if command == "source":

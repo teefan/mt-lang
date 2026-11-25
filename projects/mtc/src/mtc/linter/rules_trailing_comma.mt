@@ -22,7 +22,6 @@ public function lint_trailing_commas(
     path: str,
     warnings: ref[vec.Vec[linter_mod.Warning]]
 ) -> void:
-
     # Map each token's (line, column) to its index, first-occurrence wins.
     var loc_index = map_mod.Map[ptr_uint, ptr_uint].create()
     defer: loc_index.release()

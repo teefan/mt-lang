@@ -618,10 +618,6 @@ function ensure_str_buffer_struct(ctx: ref[LoweringContext], sb_ty: types.Type) 
         source_module = Option[str].none,
     ))
 
-## Lower a checked program to IR.  Every non-external module is lowered in
-## dependency-first order (the root module is the last retained analysis) and the
-## fragments are concatenated into one program — mirroring Ruby's
-## `lower_modules` / `assemble_modules`.
 
 ## Look up the backing C type name, following type aliases across modules.
 ## For `type uv_handle_s = c.uv_handle_s` in `std.libuv`, this follows the
@@ -709,6 +705,10 @@ function find_decl_c_name(analysis: analyzer.Analysis, type_name: str) -> Option
     return Option[str].none
 
 
+## Lower a checked program to IR.  Every non-external module is lowered in
+## dependency-first order (the root module is the last retained analysis) and the
+## fragments are concatenated into one program — mirroring Ruby's
+## `lower_modules` / `assemble_modules`.
 public function lower(program: loader.Program) -> ir.Program:
     let count = program.analyses.len()
     if count == 0:
@@ -11925,9 +11925,6 @@ function collect_variant_literal_fields(
         i += 1
     return fields.as_span()
 
-## Build a specialization key from the callee name + concrete type args.  For a
-## same-module function `first[int]`, the key is `<module_prefix>_first_int`.  The
-## key doubles as the monomorphized C linkage name.
 
 ## Compute a type-key string for specialization naming.  Builtin generic types
 ## (ptr/own/span/…) use their bare `type_c_key`.  User-defined generic structs
@@ -11957,6 +11954,9 @@ public function spec_type_key(ctx: ref[LoweringContext], ty: types.Type) -> str:
             return naming.type_c_key(ty)
 
 
+## Build a specialization key from the callee name + concrete type args.  For a
+## same-module function `first[int]`, the key is `<module_prefix>_first_int`.  The
+## key doubles as the monomorphized C linkage name.
 function specialization_key(
     ctx: ref[LoweringContext],
     module_name: str,
@@ -14228,7 +14228,6 @@ function lower_monomorphized_method(
     receiver: ptr[ast.Expr],
     args: span[ast.Argument]
 ) -> ptr[ir.Expr]:
-
     # For the struct prefix in the C name, use the struct's defining module
     # (which may differ from the extending-block module, e.g. `Writer` is
     # defined in `std_binary` but extended by `std_serialize`).  The receiver
@@ -17593,7 +17592,6 @@ function lower_call_with_callee(
     override_ty: ptr[types.Type]?,
     sig: Option[analyzer.FnSig]
 ) -> ptr[ir.Expr]:
-
     var ir_args = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
     while i < args.len:

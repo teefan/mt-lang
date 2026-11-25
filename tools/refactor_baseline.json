@@ -1639,7 +1639,7 @@
     ]
   },
   "sizes": {
-    "total_code": 145934,
+    "total_code": 145942,
     "functions_over_limit": 36,
     "files_over_limit": 13,
     "files": {
@@ -1698,7 +1698,7 @@
         "max_function": 52
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 9067,
+        "lines": 8613,
         "code": 7207,
         "max_line": 237,
         "max_function": 242
@@ -1722,7 +1722,7 @@
         "max_function": 98
       },
       "projects/mtc/src/mtc/dap/handlers.mt": {
-        "lines": 698,
+        "lines": 695,
         "code": 566,
         "max_line": 113,
         "max_function": 88
@@ -1800,10 +1800,10 @@
         "max_function": 55
       },
       "projects/mtc/src/mtc/formatter/tidy.mt": {
-        "lines": 1737,
-        "code": 1352,
+        "lines": 1748,
+        "code": 1360,
         "max_line": 129,
-        "max_function": 165
+        "max_function": 176
       },
       "projects/mtc/src/mtc/http_util.mt": {
         "lines": 182,
@@ -1950,7 +1950,7 @@
         "max_function": 46
       },
       "projects/mtc/src/mtc/linter/rules_trailing_comma.mt": {
-        "lines": 380,
+        "lines": 379,
         "code": 335,
         "max_line": 118,
         "max_function": 83
@@ -2052,7 +2052,7 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 22765,
+        "lines": 22763,
         "code": 17877,
         "max_line": 175,
         "max_function": 326
@@ -2292,10 +2292,10 @@
         "max_function": 189
       },
       "projects/mtc/src/mtc/lsp/server.mt": {
-        "lines": 702,
+        "lines": 700,
         "code": 545,
         "max_line": 198,
-        "max_function": 189
+        "max_function": 187
       },
       "projects/mtc/src/mtc/lsp/signature_help.mt": {
         "lines": 140,

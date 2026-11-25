@@ -139,7 +139,7 @@ affected the local loop only.
 
 ### Size, markers, tests
 
-- **145,934 code lines**; **36 functions ≥ 200 lines** (the tidy pass wraps
+- **145,942 code lines**; **36 functions ≥ 200 lines** (the tidy pass wraps
   long signatures/expressions, so raw spans grew; the three pre-format
   functions were `binding_at` 385, `collect_binding_flags` 211, and
   `resolve_cursor` 200); **13 files ≥ 2,000 code lines**. The ratchet counts
@@ -214,11 +214,11 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 166, 2026-11-25)
+## 6. Current baseline (session 167, 2026-11-25)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 170 / 178,948 / 145,934 |
+| source files / lines / code lines | 170 / 178,497 / 145,942 |
 | layering edges / violations | 119 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
@@ -246,6 +246,15 @@ the formatter re-added 81 required separator blanks before the blocks).
 Eight stale, section, or indented comments remain detached deliberately.
 Code-line, duplication and function-size metrics are unchanged; total lines
 178,958 → 178,948.
+
+Session 167 removed the legacy formatter's blank lines inside blocks: the tidy
+rule now drops a blank after any block opener and before `else`/`else if`.
+The tree lost 175 opener blanks (172 `c_backend`), 5 pre-`else` blanks, and
+282 code-to-code blanks in `c_backend`'s dense region (blanks adjacent to
+comments are preserved; same-indent blanks there fell 155 → 17).  Two orphaned
+`lowering.mt` docs moved to `lower()` and `specialization_key()`.  Code lines
+145,934 → 145,942 (the rule and moved docs); duplication, long-function and
+dead-export metrics are unchanged; total lines 178,497.
 
 Session 161 **shrank** the baseline: the inert interning layer (`TypeStore`,
 `type_hash`/`type_identical`/`types_identical`, `TypeId`, `ir.Program.type_table`
