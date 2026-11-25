@@ -1102,42 +1102,56 @@ function uses_libuv_support(program: loader.Program) -> bool:
     return uses_binding_module(program, "std.c.sync")
 
 
-## Locate `third_party/<sub>` across `roots`, fetching it into the last root (the
-## compiler's own data root) when no root has it.  That root is where
-## `mtc toolchain bootstrap` puts its trees, so the two agree.
-##
-## Returns the owning root, which `vendored_source_root` then finds again.
+## Locate `third_party/<sub>` across `roots` or the compiler's data root,
+## fetching it into the data root when neither has it.  The data root is where
+## `mtc toolchain bootstrap` puts its trees, so the two agree, and it keeps
+## upstream sources out of the user's project — a module root can be the
+## program's own `src/`.
 function ensure_vendored_source(roots: span[str], sub: str, name: str) -> Result[bool, string.String]:
-    match vendored_source_root(roots, sub):
-        Option.some as found:
-            return Result[bool, string.String].success(value = true)
-        Option.none:
-            pass
+    if vendored_source_root(roots, sub).is_some():
+        return Result[bool, string.String].success(value = true)
 
-    if roots.len == 0:
-        return Result[bool, string.String].failure(error = string.String.from_str(
-            "no module root to fetch the vendored source into"
-        ))
-    var data_root: str
-    unsafe:
-        data_root = read(roots.data + (roots.len - 1))
+    var data_root = upstream_sources.data_root_dir(upstream_sources.compiler_root())
+    defer: data_root.release()
+
+    var data_roots = array[str, 1](data_root.as_str())
+    if vendored_source_root(data_roots, sub).is_some():
+        return Result[bool, string.String].success(value = true)
 
     var message = string.String.create()
     defer: message.release()
-    match upstream_sources.ensure_source(name, data_root, ref_of(message)):
+    match upstream_sources.ensure_source(name, data_root.as_str(), ref_of(message)):
         Option.some:
             return Result[bool, string.String].success(value = true)
         Option.none:
             var error = string.String.from_str("vendored ")
             error.append(name)
             error.append(" source is missing and could not be fetched into ")
-            error.append(data_root)
+            error.append(data_root.as_str())
             error.append(". Run `mtc toolchain bootstrap`, or set the network/proxy that git needs. ")
             if message.len() > 0:
                 error.append("(")
                 error.append(message.as_str())
                 error.append(")")
             return Result[bool, string.String].failure(error = error)
+
+
+## The module roots to prepare vendored libraries against: the program's roots
+## plus the compiler's data root, so a tree fetched there is found by the build
+## steps that follow.  The returned views borrow `owned`, which the caller must
+## keep alive — a `str` into a temporary `String` would dangle.
+function vendored_roots(roots: span[str], owned: ref[vec.Vec[string.String]]) -> vec.Vec[str]:
+    var result = vec.Vec[str].create()
+    var i: ptr_uint = 0
+    while i < roots.len:
+        unsafe:
+            result.push(read(roots.data + i))
+        i += 1
+    owned.push(upstream_sources.data_root_dir(upstream_sources.compiler_root()))
+    let data_root = owned.get(owned.len() - 1) else:
+        return result
+    result.push(unsafe: read(data_root).as_str())
+    return result
 
 
 ## Build the vendored static libraries required by the program's raw bindings
@@ -1148,7 +1162,14 @@ function ensure_vendored_source(roots: span[str], sub: str, name: str) -> Result
 ## A missing source tree is fetched on demand (`ensure_vendored_source`), so a
 ## release install builds a vendored binding without a manual bootstrap step.
 ## Mirrors Ruby's VendoredCLibrary CMake/Archive `prepare!` flow in minimal form.
-function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -> Result[bool, string.String]:
+function prepare_vendored_libraries(program: loader.Program, program_roots: span[str]) -> Result[bool, string.String]:
+    # Include the compiler's data root so a tree fetched there is visible to the
+    # `prepare_vendored_*` steps below.
+    var root_owners = vec.Vec[string.String].create()
+    defer: root_owners.release()
+    var owned_roots = vendored_roots(program_roots, ref_of(root_owners))
+    defer: owned_roots.release()
+    let roots = owned_roots.as_span()
     if uses_vendored_raylib(program):
         match ensure_vendored_source(roots, "raylib-upstream", "raylib"):
             Result.failure as missing:

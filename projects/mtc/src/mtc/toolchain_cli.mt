@@ -116,8 +116,8 @@ function append_ansi(target: ref[string.String], code: str) -> void:
 ## ── bootstrap ────────────────────────────────────────────────────────────────
 
 function bootstrap_command(quiet: bool) -> int:
-    let root_opt = compiler_root()
-    var data_root = data_root_dir(root_opt)
+    let root_opt = upstream_sources.compiler_root()
+    var data_root = upstream_sources.data_root_dir(root_opt)
     defer: data_root.release()
 
     var overrides = upstream_sources.load_overrides(data_root.as_str())
@@ -225,8 +225,8 @@ const REVISION_STAMP: str = ".mt-source-revision"
 ## ── tools ───────────────────────────────────────────────────────────────────
 
 function tools_command(quiet: bool) -> int:
-    let root_opt = compiler_root()
-    var data_root = data_root_dir(root_opt)
+    let root_opt = upstream_sources.compiler_root()
+    var data_root = upstream_sources.data_root_dir(root_opt)
     defer: data_root.release()
 
     var source_dir = path_ops.join(data_root.as_str(), "third_party/tracy-upstream/profiler")
@@ -408,8 +408,8 @@ extending CheckRow:
 ## the system tools, the vendored-source sentinels, and the raw-binding headers,
 ## then one `ok name: detail` / `fail name: detail` row per check.
 function doctor_command(quiet: bool) -> int:
-    let root_opt = compiler_root()
-    var data_root = data_root_dir(root_opt)
+    let root_opt = upstream_sources.compiler_root()
+    var data_root = upstream_sources.data_root_dir(root_opt)
     defer: data_root.release()
 
     var overrides = upstream_sources.load_overrides(data_root.as_str())
@@ -685,42 +685,3 @@ function prepare_binding_source(
     return upstream_sources.bootstrap_source(
         checkout.as_str(), src.url, revision, src, overrides, ref_of(failure_message)
     )
-
-
-## ── root discovery ──────────────────────────────────────────────────────────
-
-## The compiler's source tree: the nearest ancestor of the running binary that
-## contains `std/` (the same lookup `build_cache.cache_root` uses).
-function compiler_root() -> Option[string.String]:
-    match fs.canonicalize("/proc/self/exe"):
-        Result.success as exe_payload:
-            var exe = exe_payload.value
-            defer: exe.release()
-            return fs.find_ancestor_containing(exe.as_str(), "std")
-        Result.failure as exe_failure:
-            var exe_error = exe_failure.error
-            exe_error.release()
-            return Option[string.String].none
-
-
-## `MilkTea.data_root`: the checkout when the binary runs from one, else the XDG
-## cache directory (`$XDG_CACHE_HOME/milk_tea`, or `~/.cache/milk_tea`).
-function data_root_dir(root_opt: Option[string.String]) -> string.String:
-    match root_opt:
-        Option.some as root_payload:
-            return root_payload.value
-        Option.none:
-            pass
-    match env.get("XDG_CACHE_HOME"):
-        Option.some as xdg:
-            if xdg.value.len > 0:
-                return path_ops.join(xdg.value, "milk_tea")
-        Option.none:
-            pass
-    match env.get("HOME"):
-        Option.some as home:
-            if home.value.len > 0:
-                return path_ops.join(home.value, ".cache/milk_tea")
-        Option.none:
-            pass
-    return string.String.from_str("/tmp/milk_tea")

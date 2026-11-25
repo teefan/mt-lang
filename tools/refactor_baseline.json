@@ -1257,7 +1257,7 @@
     ]
   },
   "sizes": {
-    "total_code": 129149,
+    "total_code": 129161,
     "functions_over_limit": 3,
     "files_over_limit": 11,
     "files": {
@@ -1304,8 +1304,8 @@
         "max_function": 18
       },
       "projects/mtc/src/mtc/build.mt": {
-        "lines": 2251,
-        "code": 1818,
+        "lines": 2272,
+        "code": 1830,
         "max_line": 300,
         "max_function": 211
       },
@@ -2258,14 +2258,14 @@
         "max_function": 385
       },
       "projects/mtc/src/mtc/toolchain_cli.mt": {
-        "lines": 726,
-        "code": 594,
+        "lines": 687,
+        "code": 565,
         "max_line": 110,
         "max_function": 125
       },
       "projects/mtc/src/mtc/upstream_sources.mt": {
-        "lines": 598,
-        "code": 506,
+        "lines": 635,
+        "code": 535,
         "max_line": 180,
         "max_function": 174
       },

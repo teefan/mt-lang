@@ -596,3 +596,40 @@ public function first_missing_sentinel(checkout: str, src: UpstreamSource, overr
             return Option[str].some(value = sentinel)
         index += 1
     return Option[str].none
+
+
+## The compiler's source tree: the nearest ancestor of the running binary that
+## contains `std/` (the same lookup `build_cache.cache_root` uses).
+public function compiler_root() -> Option[string.String]:
+    match fs.canonicalize("/proc/self/exe"):
+        Result.success as exe_payload:
+            var exe = exe_payload.value
+            defer: exe.release()
+            return fs.find_ancestor_containing(exe.as_str(), "std")
+        Result.failure as exe_failure:
+            var exe_error = exe_failure.error
+            exe_error.release()
+            return Option[string.String].none
+
+
+## `MilkTea.data_root`: the checkout when the binary runs from one, else the XDG
+## cache directory (`$XDG_CACHE_HOME/milk_tea`, or `~/.cache/milk_tea`).
+public function data_root_dir(root_opt: Option[string.String]) -> string.String:
+    match root_opt:
+        Option.some as root_payload:
+            return root_payload.value
+        Option.none:
+            pass
+    match env.get("XDG_CACHE_HOME"):
+        Option.some as xdg:
+            if xdg.value.len > 0:
+                return path_ops.join(xdg.value, "milk_tea")
+        Option.none:
+            pass
+    match env.get("HOME"):
+        Option.some as home:
+            if home.value.len > 0:
+                return path_ops.join(home.value, ".cache/milk_tea")
+        Option.none:
+            pass
+    return string.String.from_str("/tmp/milk_tea")
