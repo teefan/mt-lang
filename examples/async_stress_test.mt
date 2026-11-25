@@ -386,10 +386,12 @@ async function test_await_in_expression_contexts() -> int:
     check("await in if expression context", label == "positive")
 
     # await inside index (member access chain)
+    # `leaf_value()` returns 42, which is not an index into a 4-element array:
+    # take it modulo the length so the awaited value selects an element.
     let arr = array[int, 4](40, 41, 42, 43)
-    let idx = await leaf_value()
+    let idx = (await leaf_value()) % 4
     let val = arr[idx]
-    check("await in index access", val == 43)
+    check("await in index access", val == 42)
 
     return 0
 

@@ -1253,7 +1253,7 @@
     ]
   },
   "sizes": {
-    "total_code": 129012,
+    "total_code": 129043,
     "functions_over_limit": 3,
     "files_over_limit": 11,
     "files": {
@@ -1312,10 +1312,10 @@
         "max_function": 49
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 8212,
-        "code": 6269,
+        "lines": 8275,
+        "code": 6300,
         "max_line": 436,
-        "max_function": 197
+        "max_function": 198
       },
       "projects/mtc/src/mtc/c_backend/reachability.mt": {
         "lines": 393,

@@ -81,6 +81,12 @@ struct Emitter:
     # `LOOP_GUARD_MAX_ITERATIONS` iterations (mirrors Ruby's `debug_guards`).
     debug_guards: bool
     loop_guard_id: ptr_uint
+    # Loop statement (by pointer identity) -> its guard counter's C name.  The
+    # counters are declared at *function* scope, not around the loop, because a
+    # CPS-async resume jumps into the loop body with a label: a declaration
+    # inside that block is skipped, leaving the counter uninitialized and the
+    # guard aborting on stack garbage (see `emit_function`).
+    loop_guards: map_mod.Map[ptr_uint, str]
     # The linkage name of the function currently being emitted, used in the
     # loop-guard abort message.
     current_fn_linkage: str
@@ -180,6 +186,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     e.emit_line_directives = emit_line_directives
     e.debug_guards = debug_guards
     e.loop_guard_id = 0
+    e.loop_guards = map_mod.Map[ptr_uint, str].create()
     e.current_fn_linkage = ""
     e.array_call_temps = map_mod.Map[ptr_uint, str].create()
     e.array_call_temp_counter = 0
@@ -729,6 +736,7 @@ function release_emitter_tables(e: ref[Emitter]) -> void:
     e.opt_type_set.release()
     e.std_c_backing.release()
     e.array_call_temps.release()
+    e.loop_guards.release()
     let std_c_map = std_c_backing_names
     if std_c_map != null:
         var owned = unsafe: read(std_c_map)
@@ -3616,10 +3624,88 @@ function emit_function(e: ref[Emitter], func: ir.Function, export_public: bool) 
     e.current_fn_linkage = func.linkage_name
     e.array_call_temps = map_mod.Map[ptr_uint, str].create()
     emit_line(e, strings.join_two(function_signature(func, export_public), " {"))
+    # Debug profile: reserve one guard counter per loop and declare them all at
+    # function scope, before any statement.  They must NOT be declared around
+    # each loop: a CPS-async resume jumps into the loop body through a label,
+    # which skips a declaration inside that block and leaves the counter
+    # uninitialized.  `++counter` then starts at stack garbage and the hang
+    # detector aborts a loop that would have finished in a few iterations
+    # (`await` inside `while`).  Collecting first also keeps `loop_guard_id`
+    # numbering identical to in-place emission, so C output stays diffable.
+    if e.debug_guards:
+        let first_guard_id = e.loop_guard_id + 1
+        collect_loop_guards(e, func.body)
+        emit_loop_guard_declarations(e, first_guard_id)
     emit_stmts(e, func.body, 1)
     emit_line(e, "}")
     e.current_fn_return_type = types.primitive("void")
     e.current_fn_linkage = ""
+    e.loop_guards.clear()
+
+
+## Assign a guard counter name to every loop statement in `body`, in the order
+## `emit_statement` reaches them, so the `__mt_loop_N` numbering is unchanged
+## from the old in-place scheme.
+function collect_loop_guards(e: ref[Emitter], body: span[ir.Stmt]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            collect_loop_guards_stmt(e, body.data + i)
+        i += 1
+
+
+function collect_loop_guards_stmt(e: ref[Emitter], sp: ptr[ir.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_while as w:
+                reserve_loop_guard(e, sp)
+                collect_loop_guards(e, w.body)
+            ir.Stmt.stmt_for as f:
+                reserve_loop_guard(e, sp)
+                collect_loop_guards(e, f.body)
+            ir.Stmt.stmt_block as blk:
+                collect_loop_guards(e, blk.body)
+            ir.Stmt.stmt_if as iff:
+                collect_loop_guards(e, iff.then_body)
+                collect_loop_guards(e, else_stmts_or_empty(iff.else_body))
+            ir.Stmt.stmt_switch as sw:
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    collect_loop_guards(e, read(sw.cases.data + ci).body)
+                    ci += 1
+            _:
+                pass
+
+
+## Record the counter name for loop `sp` once, keyed by statement identity.
+function reserve_loop_guard(e: ref[Emitter], sp: ptr[ir.Stmt]) -> void:
+    let key = unsafe: reinterpret[ptr_uint](sp)
+    if e.loop_guards.get(key) != null:
+        return
+    e.loop_guards.set(key, next_loop_guard_name(e))
+
+
+## The counter name reserved for loop `sp`, or "" when it has none.
+function loop_guard_name(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
+    let key = unsafe: reinterpret[ptr_uint](sp)
+    let found = e.loop_guards.get(key) else:
+        return ""
+    return unsafe: read(found)
+
+
+## Emit the `uintptr_t __mt_loop_N = 0;` declarations reserved for this
+## function, one statement per line so a long function stays readable.  Names
+## are consecutive from `first_id` through the current `loop_guard_id`, because
+## `reserve_loop_guard` is the only caller of `next_loop_guard_name`.
+function emit_loop_guard_declarations(e: ref[Emitter], first_id: ptr_uint) -> void:
+    var n = first_id
+    while n <= e.loop_guard_id:
+        var line = string.String.create()
+        line.append("  uintptr_t __mt_loop_")
+        line.append(long_to_str(long<-n))
+        line.append(" = 0;")
+        emit_line(e, line.as_str())
+        n += 1
 
 
 ## Collect every label targeted by a `goto` anywhere in a statement body, so an
@@ -3906,49 +3992,26 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
             ir.Stmt.stmt_if as iff:
                 emit_if(e, iff.condition, iff.then_body, else_stmts_or_empty(iff.else_body), level)
             ir.Stmt.stmt_while as w:
+                emit_line(e, strings.join_four(indent, "while (", render_expr(e, w.condition), ") {"))
                 if e.debug_guards:
-                    let guard_name = next_loop_guard_name(e)
-                    emit_line(e, strings.join_four(indent, "{ uintptr_t ", guard_name, " = 0;"))
-                    emit_line(e, strings.join_four(indent, "while (", render_expr(e, w.condition), ") {"))
-                    emit_loop_guard(e, guard_name, level + 1)
-                    emit_stmts(e, w.body, level + 1)
-                    emit_indented(e, indent, "}")
-                    emit_indented(e, indent, "}")
-                else:
-                    emit_line(e, strings.join_four(indent, "while (", render_expr(e, w.condition), ") {"))
-                    emit_stmts(e, w.body, level + 1)
-                    emit_indented(e, indent, "}")
+                    emit_loop_guard(e, loop_guard_name(e, sp), level + 1)
+                emit_stmts(e, w.body, level + 1)
+                emit_indented(e, indent, "}")
             ir.Stmt.stmt_for as f:
+                var header = string.String.create()
+                header.append(indent)
+                header.append("for (")
+                header.append(render_for_clause(e, f.init))
+                header.append("; ")
+                header.append(render_expr(e, f.condition))
+                header.append("; ")
+                header.append(render_for_clause(e, f.post))
+                header.append(") {")
+                emit_line(e, header.as_str())
                 if e.debug_guards:
-                    let guard_name = next_loop_guard_name(e)
-                    emit_line(e, strings.join_four(indent, "{ uintptr_t ", guard_name, " = 0;"))
-                    var for_header = string.String.create()
-                    for_header.append(indent)
-                    for_header.append("for (")
-                    for_header.append(render_for_clause(e, f.init))
-                    for_header.append("; ")
-                    for_header.append(render_expr(e, f.condition))
-                    for_header.append("; ")
-                    for_header.append(render_for_clause(e, f.post))
-                    for_header.append(") {")
-                    emit_line(e, for_header.as_str())
-                    emit_loop_guard(e, guard_name, level + 1)
-                    emit_stmts(e, f.body, level + 1)
-                    emit_indented(e, indent, "}")
-                    emit_indented(e, indent, "}")
-                else:
-                    var header = string.String.create()
-                    header.append(indent)
-                    header.append("for (")
-                    header.append(render_for_clause(e, f.init))
-                    header.append("; ")
-                    header.append(render_expr(e, f.condition))
-                    header.append("; ")
-                    header.append(render_for_clause(e, f.post))
-                    header.append(") {")
-                    emit_line(e, header.as_str())
-                    emit_stmts(e, f.body, level + 1)
-                    emit_indented(e, indent, "}")
+                    emit_loop_guard(e, loop_guard_name(e, sp), level + 1)
+                emit_stmts(e, f.body, level + 1)
+                emit_indented(e, indent, "}")
             ir.Stmt.stmt_switch as sw:
                 emit_switch(e, sw.expression, sw.cases, sw.exhaustive, level)
             ir.Stmt.stmt_goto as g:

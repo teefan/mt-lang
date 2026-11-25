@@ -138,7 +138,7 @@ fi
 
 gate_kind() {
     case "$1" in
-        bootstrap|test_mt|dev_build|dev_tests|dap|tools_check|bindings|wasm_smoke|docs_smoke|refactor_guard|guard_tests|golden_cli|golden_diag|golden_lint|golden_format|examples|box2d_smoke|lsp_conformance) echo hard ;;
+        bootstrap|test_mt|dev_build|dev_tests|dap|tools_check|bindings|wasm_smoke|docs_smoke|refactor_guard|guard_tests|golden_cli|golden_diag|golden_lint|golden_format|examples|box2d_smoke|async_smoke|lsp_conformance) echo hard ;;
         *) echo meter ;;
     esac
 }
@@ -166,6 +166,7 @@ gate_label() {
         guard_tests)    echo "refactor guard unit tests" ;;
         examples)       echo "example emit-c/check sweep: every examples/**/*.mt (311)" ;;
         box2d_smoke)    echo "box2d 3.2 headless binding smoke (build + run)" ;;
+        async_smoke)    echo "async example run smoke (CPS resume + loop guard)" ;;
         lsp_conformance) echo "LSP 3.18 spec conformance (explicit assertions)" ;;
         valgrind_lsp)   echo "valgrind over an LSP drive (0 errors)" ;;
         neovim)         echo "headless-Neovim smoke (when tmp/ has the script)" ;;
@@ -189,6 +190,7 @@ gate_cmd() {
         golden_format) echo "ruby tools/format_parity.rb all -j 4 --expect tools/golden/format.json -q" ;;
         examples)      echo "gates_examples" ;;
         box2d_smoke)   echo "gates_box2d_smoke" ;;
+        async_smoke)   echo "gates_async_smoke" ;;
         lsp_conformance) echo "ruby tools/lsp_conformance.rb --bin build/stage2/mtc" ;;
         valgrind_lsp)  echo "command -v valgrind >/dev/null && gates_valgrind || echo 'skipped: valgrind not installed'" ;;
         neovim)        echo "gates_neovim" ;;
@@ -213,6 +215,7 @@ gate_summary() {
         golden_format)  echo "^modes=" ;;
         examples)       echo "^examples ok=" ;;
         box2d_smoke)    echo "^box2d smoke:" ;;
+        async_smoke)    echo "^async smoke:" ;;
         lsp_conformance) echo "^lsp conformance:" ;;
         valgrind_lsp)   echo "ERROR SUMMARY|skipped" ;;
         neovim)         echo "HOVER|Error|skipped" ;;
@@ -313,6 +316,35 @@ gates_box2d_smoke() {
     timeout 30 bash -c "ulimit -v 20000000; ./$bin"
 }
 
+# Async examples must RUN, not merely emit C.  The examples sweep only compiles,
+# which is why a CPS-resume defect (`await` inside a loop aborted at the loop
+# guard, because the counter's initializer was skipped by the resume `goto`)
+# survived every release until a C review found it.  These two print a pass
+# count and exit 0; a regression shows up as rc 134 or a missing summary.
+gates_async_smoke() {
+    local rc=0 f out bin run_rc
+    for f in examples/async_stress_test.mt examples/async_network_lobby.mt; do
+        [ -e "$f" ] || continue
+        bin="tmp/async-smoke-$(basename "$f" .mt)"
+        if ! timeout 300 build/stage2/mtc build "$f" -I . -o "$bin" >/dev/null 2>&1; then
+            echo "async smoke: FAIL build $f"
+            rc=1
+            continue
+        fi
+        out="$(timeout 120 bash -c "ulimit -v 20000000; ./$bin" 2>&1)"
+        run_rc=$?
+        if [ "$run_rc" -ne 0 ]; then
+            echo "async smoke: FAIL run $f (rc=$run_rc)"
+            printf '%s\n' "$out" | tail -3
+            rc=1
+        else
+            printf 'async smoke: ok %s (%s)\n' "$(basename "$f")" \
+                "$(printf '%s\n' "$out" | grep -E 'tests passed|SUCCESS' | tail -1)"
+        fi
+    done
+    return $rc
+}
+
 gates_neovim() {
     local script="tmp/nvim_hover_smoke.lua"
     local target="${NEOVIM_TARGET:-$HOME/Projects/MilkTea/SimpleGame/docs/language_baseline.mt}"
@@ -356,7 +388,7 @@ gates_for_area() {
         bindings)  echo "dev_tests refactor_guard bootstrap bindings box2d_smoke" ;;
         dap)       echo "dev_tests refactor_guard bootstrap dap" ;;
         std)       echo "examples golden_lint box2d_smoke" ;;
-        examples)  echo "examples box2d_smoke" ;;
+        examples)  echo "examples box2d_smoke async_smoke" ;;
         tests)     echo "dev_build dev_tests refactor_guard" ;;
         wasm)      echo "dev_tests refactor_guard bootstrap test_mt golden_cli wasm_smoke" ;;
         docs_cli)  echo "dev_tests refactor_guard bootstrap test_mt golden_cli docs_smoke" ;;
