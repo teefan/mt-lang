@@ -4506,7 +4506,7 @@ The release archive is `mtc-0.5.2-linux-x86_64.tar.gz`; the release binary
 passes `test/mt` 85/0, CLI 227/227, LSP 38/38, and the clean-container smoke.
 The archive is rebuilt after the documentation sync and tagged `v0.5.2`.
 
-## Session 163 — generated-C review: a real async codegen defect
+## Session 163 — generated-C review, the async loop-guard fix, and 0.6.1
 
 Reviewed `emit-c` output for six examples against the quality bar in
 `docs/language-design.md`.  Most of it is genuinely good, and one defect is not.
@@ -4578,6 +4578,54 @@ two statements on one line in generated equality helpers
 (`-Wmisleading-indentation`); and an unused `__mt_proc_env` on capture-free
 closures.  The 239 warnings across six files are dominated by benign
 `unused variable '_x'` discard bindings.
+
+### The fix
+
+`emit_function` now reserves a counter per loop in a pre-pass and declares them
+all at function scope, before any statement:
+
+```c
+static void a5_three__resume(void *__mt_frame_raw) {
+  uintptr_t __mt_loop_4 = 0;     /* function scope: the goto cannot skip it */
+  a5_three__frame *__mt_frame = …;
+  switch (__mt_frame->state) { … }
+  a5_three__resume_state_0:;
+  while (__mt_frame->local_i < 3) {
+    if (++__mt_loop_4 > 50000000) mt_fatal(…);
+    …
+    a5_three__resume_state_1:;   /* legal: nothing is initialized here */
+```
+
+`collect_loop_guards` mirrors `emit_statement`'s traversal (while/for/block/if/
+switch) so the `__mt_loop_N` numbering is unchanged, and the per-loop `{ … }`
+wrapper is gone — two levels of indentation and a stray scoped statement removed
+from every guarded loop.  Verified with `-Wjump-misses-init`: **0 warnings** on
+the repro, where the old emitter produced "jump skips variable initialization".
+
+The fix unmasked a second defect: `examples/async_stress_test.mt` indexed a
+4-element array with `await leaf_value() == 42`.  The bounds check had never
+been reached because the loop guard aborted first.  The test now takes the value
+modulo the length and asserts the element it actually selects; the file reports
+**31/31 tests passed**.
+
+**Coverage gap closed.**  The examples sweep only *compiles*; `box2d_smoke` was
+the only example that ever ran.  A new hard gate, `async_smoke` (in the
+`examples` area), builds and runs both async examples and reports their pass
+summary.  Verified it fails on the pre-fix emitter (`rc 134`, both examples,
+`loop iteration limit exceeded in …`) and passes on the fixed one.
+
+**Verified.** Fixed point holds; dev suite **22/0**; CLI **227/227**;
+diagnostics **503 / 0 differ**; lint **644 / 0 differ**; formatter **744 × 3 / 0
+differ**; examples **311/311**; box2d smoke **3.2.0 ok**; async smoke
+**31/31 + SUCCESS**; guard `--check --strict --ratchet` ok after a reviewed
+refresh (**129,043** code lines, +31).
+
+**Released as 0.6.1** (patch).  `cli_help.VERSION` and the banner move together;
+the CLI golden re-recorded 9 version-only rows, proven structurally identical
+after normalizing the version token.  **0.6.0 shipped this defect** — 0.6.1
+supersedes it.  The `std/net/discovery.mt` case the docs had recorded as "a
+pre-existing pattern, not a compiler bug" has the same root cause and is fixed
+by this change; that note is corrected here.
 
 ## Session 162 — release 0.6.0
 
