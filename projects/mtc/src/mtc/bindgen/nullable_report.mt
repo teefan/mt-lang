@@ -56,9 +56,9 @@ function release_return_entries(entries: ref[vec.Vec[ReportReturnEntry]]) -> voi
         i += 1
     entries.release()
 
+
 ## The host's `nullable_policy_report`: manually overridden entries whose type
 ## actually differs from the automatic mapping, sorted for stable output.
-
 public function build_nullable_report(
     target: ref[string.String],
     opts: ref[bindgen.BindgenOptions],

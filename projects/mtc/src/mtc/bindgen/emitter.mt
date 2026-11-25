@@ -225,8 +225,8 @@ function emit_decl(buf: ref[string.String], d: bindgen.CDecl, opts: ref[bindgen.
         buf.append("\n")
         return
 
-## A stable index sort for declarations (the host's `sort_by { index }`).
 
+## A stable index sort for declarations (the host's `sort_by { index }`).
 function sort_declaration_order(decls: vec.Vec[bindgen.CDecl]) -> vec.Vec[ptr_uint]:
     var order = vec.Vec[ptr_uint].create()
     var i: ptr_uint = 0

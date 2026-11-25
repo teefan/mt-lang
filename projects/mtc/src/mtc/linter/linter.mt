@@ -3340,7 +3340,6 @@ function identifier_name_of(expr: ptr[ast.Expr]) -> Option[str]:
 ## Emitted after the scope pass: the host checks each function once its scope
 ## frame has popped, so the function's `unused-local`/`prefer-let` warnings come
 ## first.
-
 function check_missing_return(
     name: str,
     line: ptr_uint,

@@ -8193,8 +8193,8 @@ function collect_opt_struct_decls(
 
     return result
 
-## Walk statements to collect nullable value types from local variable declarations.
 
+## Walk statements to collect nullable value types from local variable declarations.
 function collect_opt_from_stmts(
     needed: ref[map_mod.Map[str, types.Type]],
     opaques: ref[map_mod.Map[str, bool]],
@@ -8299,8 +8299,8 @@ function collect_opt_from_stmts(
 
         i += 1
 
-## Walk expression sub-tree to collect nullable value types.
 
+## Walk expression sub-tree to collect nullable value types.
 function collect_opt_from_expr(
     needed: ref[map_mod.Map[str, types.Type]],
     opaques: ref[map_mod.Map[str, bool]],
@@ -8486,10 +8486,9 @@ function collect_std_c_backing(program: ir.Program) -> map_mod.Map[str, str]:
         ai += 1
     return m
 
+
 ## True when the include set contains the fs/tls support headers, which pull in
-
 ## POSIX APIs guarded by the _GNU_SOURCE / _POSIX_C_SOURCE feature-test macros.
-
 function includes_need_feature_macros(program: ir.Program) -> bool:
 
     var i: ptr_uint = 0
@@ -8508,10 +8507,9 @@ function includes_need_feature_macros(program: ir.Program) -> bool:
 
     return false
 
+
 ## True when any lowered function references offset_of, which requires
-
 ## <stddef.h> (mirrors Ruby's program_uses_offsetof?).
-
 function functions_use_offsetof(functions: span[ir.Function]) -> bool:
 
     var i: ptr_uint = 0
@@ -8526,10 +8524,9 @@ function functions_use_offsetof(functions: span[ir.Function]) -> bool:
 
     return false
 
+
 ## Check if any IR constant uses offsetof — constants are not in function
-
 ## bodies so we must scan them separately.
-
 function constants_use_offsetof(constants: span[ir.Constant]) -> bool:
 
     var i: ptr_uint = 0
@@ -8956,8 +8953,8 @@ function emit_builtin_helpers(e: ref[Emitter]) -> void:
 
     emit_line(e, "}")
 
-## True when the entry point uses the argv → span[str] bridge.
 
+## True when the entry point uses the argv → span[str] bridge.
 function uses_entry_argv(program: ir.Program) -> bool:
 
     var i: ptr_uint = 0
@@ -8976,10 +8973,9 @@ function uses_entry_argv(program: ir.Program) -> bool:
 
     return false
 
+
 ## Emit the argv → span[str] entry bridge runtime helpers.  Mirrors Ruby's
-
 ## mt_entry_argv_to_span_str / mt_free_entry_argv_strs (runtime_helpers.rb).
-
 function emit_entry_argv_helpers(e: ref[Emitter]) -> void:
 
     emit_line(e, "static mt_span_str mt_entry_argv_to_span_str(int32_t argc, char** argv, mt_str** items_out) {")

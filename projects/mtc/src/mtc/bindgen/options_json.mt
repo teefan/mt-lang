@@ -11,11 +11,11 @@ import std.mem.heap as heap
 
 import mtc.bindgen as bindgen
 
+
 ## Load the raw-binding option table into `opts`.  The returned root owns every
 ## string the table populated (they are `str` views into it); the caller must
 ## keep it alive until generation finishes and then release it with
 ## `release_options_json`.
-
 public function load_options_json(
     path: str,
     opts: ref[bindgen.BindgenOptions]

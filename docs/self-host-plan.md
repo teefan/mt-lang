@@ -112,7 +112,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 165, 2026-11-25)
+## Status at a glance (session 166, 2026-11-25)
 
 | Area | State |
 | --- | --- |
@@ -136,7 +136,7 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check`; **Box2D is 3.2.0** (`178495ba…`, tag `v3.2.0`) and the raw module is reproducible (session 158; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; `bindings/raw/<name>.json` holds the option tables, `bindings/nullable/<name>.json` the `?` policies, and `tools/rebind_binding.rb` reproduces a raw module; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 170 files / 178,958 lines / 145,934 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **29 unused + 7 test-only** public declarations; 8,272 duplicated lines / 1,253 clusters; **36 functions ≥ 200 lines**; **13 files ≥ 2,000 code lines**; 0 markers; tests 22/86 (855 + 362 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 165 after the reviewed tidy formatting; wrap-driven line growth is layout, not behavior) |
+| **Refactoring safety** | structural guard: 170 files / 178,948 lines / 145,934 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **29 unused + 7 test-only** public declarations; 8,272 duplicated lines / 1,253 clusters; **36 functions ≥ 200 lines**; **13 files ≥ 2,000 code lines**; 0 markers; tests 22/86 (855 + 362 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 166 after the tidy formatting and comment-attachment pass; wrap-driven line growth is layout, not behavior) |
 | Gate planning | `tools/gates.sh` area inference covers `lexer/` (→ `parser`), `main/` (→ `cli`), `bindgen/` (→ `bindings`) and every other `projects/mtc/src/mtc/` path (→ `compiler_core`, the full behaviour set).  An unclassified path is a hard error naming the file; previously it planned **zero** gates and exited 0 (session 159) |
 | Bootstrap `-j` | **removed** (session 159).  The flag was parsed, capped and warned about but never passed to a build command — a stage build is one whole-program `mtc build`.  `release.sh -j` removed with it; `bootstrap.sh -j 4` now errors |
 
@@ -5904,7 +5904,7 @@ historical record.
 | installer | `install.sh` in the archive: versioned prefix, `current` symlink, `BIN_DIR/mtc`; `--prefix`/`--bin-dir`/`--force`/`--dry-run`/`--uninstall`; verifies both compiler copies; refuses a symlink prefix; no shell-config edits; the release smoke installs to a temp prefix and uses the installed binary | session 155 | `tools/install.sh --help`; `tools/release_smoke.sh` |
 | release runtime | glibc **≥ 2.38**, zlib, OpenSSL 3; libuv static; the seed has the same requirements | session 164 | `ldd dist/mtc-0.6.2-linux-x86_64/bin/mtc`; `tools/release_container_smoke.sh` |
 | CI | `.github/workflows/ci.yml`: vendored fetch, bootstrap, `test/mt`, four oracles, LSP conformance, examples (now the 28 box2d ports + `box2d_smoke`), bindings, docs smoke, deterministic release, container smoke | session 158 (examples gate extended; the YAML is unchanged; the PR re-run is the merge gate) | `cat .github/workflows/ci.yml` |
-| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (119 edges, 170 files / 178,958 lines / 145,934 code lines); 29 unused / 7 test-only exports; 8,272 duplicated lines / 1,253 clusters; 36 functions ≥ 200 lines; 13 files ≥ 2,000 code lines; 0 markers; tests 22/86; `--check --strict --ratchet` ok | session 165 (baseline refreshed after the reviewed tidy formatting; wrap-driven growth is layout) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
+| refactor guard | **0 layering / 0 alias / 0 naming / 0 vocabulary violations** (119 edges, 170 files / 178,948 lines / 145,934 code lines); 29 unused / 7 test-only exports; 8,272 duplicated lines / 1,253 clusters; 36 functions ≥ 200 lines; 13 files ≥ 2,000 code lines; 0 markers; tests 22/86; `--check --strict --ratchet` ok | session 166 (baseline refreshed after the reviewed tidy formatting and comment attachment; wrap-driven growth is layout) | `ruby tools/refactor_guard.rb --check --strict --ratchet`; `ruby tools/test/refactor_guard_test.rb`; `tools/gates.sh --areas refactor --run` |
 | extension activation | `bindings/vscode/package.json` activates on `onLanguage:milk-tea` and `onDebug:milk-tea`; `dist/` and `.vsix` are local artifacts | session 147 | `git show HEAD:bindings/vscode/package.json` |
 
 ## Porting notes
@@ -6060,3 +6060,23 @@ unchanged at **227/227**. Fixed point holds from the 0.6.2 seed
 reviewed baseline refresh (170 files / 178,958 lines / 145,934 code lines;
 8,272 duplicated lines; 36 functions ≥ 200 raw lines). The baseline growth is
 layout-only: tidy wrapping enlarged raw line/function spans.
+
+## Session 166 — attach descriptive comments to declarations
+
+Manual audit of `projects/mtc/src`: 284 comment → blank → function groups, of
+which 195 are section banners and stay separated. Of the 94 detached prose
+blocks plus four paragraph-split groups, **86 comments that describe the
+following function were attached** (90 blank lines removed; tidy then re-added
+the 81 required two-blank separators before the blocks). Eight were left
+detached deliberately: stale host-comment fragments before
+`macro_line_marker_path`, `jget_inner`, `uppercase_macro_name`,
+`primitive_c_type`, `bare_opaque_name`, and `collect_builtin_types`; the
+indented note at the end of `register_import_from_disk`; and the
+scope-management section note above the `scope_create` wrapper group.
+`comptime.mt`'s stale "A compile-time constant value…" line was removed and its
+real three-line doc attached.
+
+All 170 source files remain idempotent. Verified: fixed point, self suite
+**22/0**, `test/mt` **86/0**, guard strict ratchet green, oracles re-recorded
+(777 × 3 / 675 / 505), CLI **227/227**. Total lines 178,958 → 178,948; code
+lines, duplication and function-size metrics are unchanged.

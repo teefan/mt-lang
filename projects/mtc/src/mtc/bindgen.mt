@@ -57,8 +57,8 @@ function strip_cv(t: str) -> str:
 function is_cv_token(word: str) -> bool:
     return word.equal("const") or word.equal("volatile") or word.equal("restrict")
 
-## The host's `strip_qualifiers`: remove const/volatile/restrict tokens.
 
+## The host's `strip_qualifiers`: remove const/volatile/restrict tokens.
 function strip_cv_tokens(text: str) -> string.String:
     var result = string.String.create()
     var i: ptr_uint = 0
@@ -134,9 +134,9 @@ function strip_trailing_qualifier(text: str) -> Option[TrailingQualifier]:
             ))
     return Option[TrailingQualifier].none
 
+
 ## The host's `strip_pointer_suffix_qualifiers`: drop trailing
 ## const/volatile/restrict words (they qualify the pointer itself).
-
 function strip_pointer_suffix_qualifiers(text: str) -> string.String:
     var current = str_strip(text)
     while true:
@@ -147,8 +147,8 @@ function strip_pointer_suffix_qualifiers(text: str) -> string.String:
                 return string.String.from_str(current)
     return string.String.from_str(current)
 
-## The host's `pointer_suffix_qualifiers` contains "const"?
 
+## The host's `pointer_suffix_qualifiers` contains "const"?
 function pointer_suffix_has_const(text: str) -> bool:
     var current = str_strip(text)
     while true:
@@ -161,8 +161,8 @@ function pointer_suffix_has_const(text: str) -> bool:
                 return false
     return false
 
-## The host's `top_level_const_qualified?`.
 
+## The host's `top_level_const_qualified?`.
 function top_level_const_qualified(text: str) -> bool:
     let normalized = str_strip(text)
     var candidate_owner = strip_pointer_suffix_qualifiers(normalized)
@@ -200,7 +200,6 @@ function parse_long(s: str) -> long:
 
 ## Extract a string from a clang JSON value.  Handles both plain JSON strings
 ## (the common case) and clang wrapped objects.
-
 function jstr(vp: ptr[json.Value]?) -> str:
     if vp == null:
         return ""
@@ -220,9 +219,9 @@ function jstr(vp: ptr[json.Value]?) -> str:
             return jstr(val_vp)
     return ""
 
+
 ## Walk through an Object node to get a named string field: obj.key → value.
 ## `node` is the Object containing the field; `key` is the field name.
-
 public function jget_str(node: ptr[json.Object]?, key: str) -> str:
     if node == null:
         return ""
@@ -247,13 +246,12 @@ public function jget_inner(node: ptr[json.Object]?) -> ptr[json.Array]?:
 
 ## Mark the current declaration's type mapping as failed (the host raises
 ## BindgenError; the selection passes skip that declaration).
-
 function map_fail() -> string.String:
     bindgen_map_failed = true
     return string.String.create()
 
-## Collapse whitespace runs and strip (the host's `normalize_c_type`).
 
+## Collapse whitespace runs and strip (the host's `normalize_c_type`).
 function normalize_c_type(qual_type: str) -> string.String:
     var result = string.String.create()
     var i: ptr_uint = 0
@@ -284,8 +282,8 @@ function is_identifier(text: str) -> bool:
         i += 1
     return true
 
-## The last whitespace-separated token (`struct foo` -> `foo`).
 
+## The last whitespace-separated token (`struct foo` -> `foo`).
 function last_token(text: str) -> str:
     var end = text.len
     while end > 0 and text.byte_at(end - 1) == ' ':
@@ -299,9 +297,9 @@ struct TrimmedToken:
     token: str
     rest: str
 
+
 ## Strip one trailing nullability qualifier (the host's
 ## `extract_top_level_nullability` suffix match).
-
 function strip_trailing_nullability(text: str) -> Option[TrimmedToken]:
     var t = text
     while t.len > 0 and t.byte_at(t.len - 1) == ' ':
@@ -675,9 +673,9 @@ function standard_typedef_primitive(unqualified: str) -> string.String:
         return string.String.from_str("int")
     return integer_typedef_primitive(unqualified)
 
+
 ## The host's `integer_typedef_primitive`: `(u_?)?int(8|16|32|64)_t` with an
 ## optional `__` prefix.
-
 function integer_typedef_primitive(unqualified: str) -> string.String:
     var at: ptr_uint = 0
     if at + 2 <= unqualified.len and unqualified.slice(at, 2).equal("__"):
@@ -723,8 +721,8 @@ function integer_typedef_primitive(unqualified: str) -> string.String:
         return string.String.create()
     return string.String.from_str(rendered_name)
 
-## The host's `PRIMITIVE_TYPE_MAP` lookup ("" when absent).
 
+## The host's `PRIMITIVE_TYPE_MAP` lookup ("" when absent).
 function primitive_type_map(unqualified: str) -> str:
     if unqualified.equal("_Bool") or unqualified.equal("bool"): return "bool"
     if unqualified.equal("void"): return "void"
@@ -771,8 +769,8 @@ function map_long_type(unqualified: str) -> string.String:
         return string.String.from_str("ptr_uint")
     return map_fail()
 
-## The host's `map_c_type`: string-based C type mapping.
 
+## The host's `map_c_type`: string-based C type mapping.
 public function map_type(qual_type: str, opts: ref[BindgenOptions]) -> string.String:
     var normalized_owner = normalize_c_type(qual_type)
     defer: normalized_owner.release()
@@ -863,9 +861,9 @@ public function map_type(qual_type: str, opts: ref[BindgenOptions]) -> string.St
     apply_nullability(ref_of(mapped), split.nullable)
     return mapped
 
+
 ## The first TypedefType name in a node's type subtree (the host's
 ## `typedef_name_from_type_node`).
-
 function typedef_name_from_type_node(node: ptr[json.Object]) -> str:
     unsafe:
         var queue = vec.Vec[ptr[json.Object]].create()
@@ -1131,7 +1129,6 @@ public function set_bindgen_map_failed(value: bool) -> void:
 
 ## The `desugaredQualType` (or `qualType`) of a node's type, the host's
 ## `type_qual_type`: nullability-annotated spellings keep `qualType`.
-
 function type_qual_text(node: ptr[json.Object], prefer_desugared: bool) -> str:
     unsafe:
         let tp = read(node).get("type")
@@ -1166,8 +1163,8 @@ function str_replace_all(text: str, needle: str, replacement: str) -> string.Str
             i += 1
     return replaced
 
-## The module path the tidy formatter sees (`std.c.cjson` -> `std/c/cjson.mt`).
 
+## The module path the tidy formatter sees (`std.c.cjson` -> `std/c/cjson.mt`).
 function generated_module_path(module_name: str) -> string.String:
     var slashed = str_replace_all(module_name, ".", "/")
     slashed.append(".mt")
@@ -1193,8 +1190,8 @@ public function absolute_path(path: str) -> string.String:
     cwd.append(path)
     return cwd
 
-## A JSON path field, expanded like the host's `File.expand_path`.
 
+## A JSON path field, expanded like the host's `File.expand_path`.
 function node_file(o: ptr[json.Object]?, key: str) -> string.String:
     let op = o else:
         return string.String.create()
@@ -1203,11 +1200,11 @@ function node_file(o: ptr[json.Object]?, key: str) -> string.String:
         return string.String.create()
     return absolute_path(value)
 
+
 ## True when the path is the header itself or under a tracked path/prefix.
 ## The macro scan uses the host's `tracked_header_path?`, which does NOT treat
 ## the generated translation unit as tracked (its `#define`s are user
 ## configuration, not header constants).
-
 public function tracked_macro_file(path: str, header: str, opts: ref[BindgenOptions]) -> bool:
     if path.equal(header):
         return true
@@ -1255,10 +1252,10 @@ function tracked_file(path: str, header: str, tu_path: str, opts: ref[BindgenOpt
         i += 1
     return false
 
+
 ## The host's `node_from_header?`: any node source file under the header or a
 ## tracked path counts; when a node carries no source file at all, its
 ## `includedFrom` file is checked instead (macro-expanded probes).
-
 function node_from_header(node: ptr[json.Object], header: str, tu_path: str, opts: ref[BindgenOptions]) -> bool:
     unsafe:
         var found_file = false
@@ -1305,8 +1302,8 @@ function node_from_header(node: ptr[json.Object], header: str, tu_path: str, opt
                     return true
         return false
 
-## Scan a range node's begin/end (and their spelling/expansion) files.
 
+## Scan a range node's begin/end (and their spelling/expansion) files.
 function scan_range_files(
     range: ptr[json.Object],
     header: str,
@@ -1352,8 +1349,8 @@ function scan_range_files(
                 ef.release()
         return found
 
-## The host's `allowed_declaration_name?`.
 
+## The host's `allowed_declaration_name?`.
 public function allowed_declaration_name(name: str, opts: ref[BindgenOptions]) -> bool:
     if name == "":
         return false
@@ -1375,8 +1372,8 @@ public function allowed_declaration_name(name: str, opts: ref[BindgenOptions]) -
         i += 1
     return false
 
-## Does the node contain a child of `kind` (the host's `has_body` test)?
 
+## Does the node contain a child of `kind` (the host's `has_body` test)?
 function has_child_kind(node: ptr[json.Object], kind: str) -> bool:
     unsafe:
         let children = jget_inner(node)
@@ -1398,17 +1395,17 @@ function map_get_str(m: ref[map_mod.Map[str, str]], key: str) -> str:
         return ""
     return unsafe: read(value)
 
+
 ## The host's `visible_type_name`: a `type_name_overrides` entry renames a C
 ## type (and every reference to it).
-
 function visible_type_name(name: str, opts: ref[BindgenOptions]) -> str:
     let override = map_get_str(ref_of(read(opts).type_name_overrides), name)
     if override != "":
         return override
     return name
 
-## The host's `emitted_name`: optionally strip a leading-underscore prefix.
 
+## The host's `emitted_name`: optionally strip a leading-underscore prefix.
 public function emitted_name(name: str, opts: ref[BindgenOptions]) -> str:
     if not read(opts).strip_leading_underscores:
         return name
@@ -1430,9 +1427,9 @@ function synthetic_exists(name: str) -> bool:
         i += 1
     return false
 
+
 ## The host's `synthesize_typedef_dependency`: `va_list`/`__va_list_tag`
 ## become opaque declarations.
-
 function synthesize_typedef_dependency(name: str) -> void:
     let state = bindgen_state else:
         return
@@ -1455,8 +1452,8 @@ function synthesize_typedef_dependency(name: str) -> void:
             node = null,
         ))
 
-## The host's `record_c_name`: the typedef alias for a record, else its tag.
 
+## The host's `record_c_name`: the typedef alias for a record, else its tag.
 public function record_c_name(node: ptr[json.Object]) -> str:
     let state = bindgen_state else:
         return ""
@@ -1479,9 +1476,9 @@ public function record_c_name(node: ptr[json.Object]) -> str:
         return joined.as_str()
     return ""
 
+
 ## The host's `synthesize_record_dependency`: a referenced `struct X`/`union X`
 ## gets an emitted declaration (full when a definition exists, opaque otherwise).
-
 function synthesize_record_dependency(unqualified: str, opts: ref[BindgenOptions]) -> void:
     let state = bindgen_state else:
         return
@@ -1556,8 +1553,8 @@ function enum_name_for(unqualified: str) -> string.String:
         return string.String.from_str(visible)
     return string.String.from_str(tag_name)
 
-## The host's `known_generated_type_name?`.
 
+## The host's `known_generated_type_name?`.
 function known_generated_type_name(name: str) -> bool:
     let primitive = primitive_type_map(name)
     if primitive != "":
@@ -1652,8 +1649,8 @@ function function_return_type_override_text(opts: ref[BindgenOptions], function_
         return Option[str].none
     return Option[str].some(value = unsafe: read(value))
 
-## The host's `field_type_overrides[type][field]`.
 
+## The host's `field_type_overrides[type][field]`.
 function field_type_override(opts: ref[BindgenOptions], type_name: str, field_name: str) -> Option[str]:
     if field_name == "":
         return Option[str].none
@@ -1669,7 +1666,6 @@ function field_type_override(opts: ref[BindgenOptions], type_name: str, field_na
 
 ## The host's `extract_top_level_header_nodes`: the translation unit's direct
 ## declarations (plus tags owned by a typedef) whose provenance is the header.
-
 function extract_top_level_nodes(
     root: ptr[json.Object],
     opts: ref[BindgenOptions],
@@ -1722,9 +1718,9 @@ function append_unique_node(
             seen_ids.push(string.String.from_str(node_id))
         nodes.push(node)
 
+
 ## The host's `typedef_owned_tag_nodes`: RecordDecl/EnumDecl nodes nested in a
 ## typedef's type subtree.
-
 function collect_owned_tag_nodes(
     node: ptr[json.Object],
     opts: ref[BindgenOptions],
@@ -1749,8 +1745,8 @@ function collect_owned_tag_nodes(
                 collect_owned_tag_nodes(co, opts, tu_path, nodes, seen_ids)
             i += 1
 
-## The host's `build_alias_maps`.
 
+## The host's `build_alias_maps`.
 function build_alias_maps(nodes: vec.Vec[ptr[json.Object]], state: ref[GenState]) -> void:
     var i: ptr_uint = 0
     while i < nodes.len():
@@ -1775,9 +1771,9 @@ function build_alias_maps(nodes: vec.Vec[ptr[json.Object]], state: ref[GenState]
                     else if target.value.kind.equal("EnumDecl"):
                         read(state).enum_aliases.set(target.value.id, alias_name)
 
+
 ## The host's `index_referenceable_record_declarations`: every struct/union
 ## RecordDecl in the AST, by tag name (complete definitions preferred) and id.
-
 function index_referenceable_records(root: ptr[json.Object], state: ref[GenState]) -> void:
     unsafe:
         var queue = vec.Vec[ptr[json.Object]].create()
@@ -1826,8 +1822,8 @@ function index_referenceable_records(root: ptr[json.Object], state: ref[GenState
                         queue.push(child)
                     i += 1
 
-## The host's `record_complete_definition?`.
 
+## The host's `record_complete_definition?`.
 function record_complete_definition(node: ptr[json.Object]) -> bool:
     unsafe:
         if read(node).get("completeDefinition") != null:
@@ -1845,8 +1841,8 @@ function record_complete_definition(node: ptr[json.Object]) -> bool:
             i += 1
     return false
 
-## The host's `enum_member_values`: explicit values and implicit successors.
 
+## The host's `enum_member_values`: explicit values and implicit successors.
 function enum_member_list(node: ptr[json.Object]) -> vec.Vec[CMember]:
     var members = vec.Vec[CMember].create()
     unsafe:
@@ -1870,8 +1866,8 @@ function enum_member_list(node: ptr[json.Object]) -> vec.Vec[CMember]:
             i += 1
     return members
 
-## The host's `enum_kind`: flags when every non-zero member is a power of two.
 
+## The host's `enum_kind`: flags when every non-zero member is a power of two.
 function enum_kind(members: vec.Vec[CMember]) -> str:
     var index: ptr_uint = 0
     var any_nonzero = false
@@ -1925,8 +1921,8 @@ function create_decl(kind: str, c_name: str, mt_name: str, index: ptr_uint) -> C
         index = index,
     )
 
-## The host's `select_record_declarations` plus its typedef projections.
 
+## The host's `select_record_declarations` plus its typedef projections.
 function select_record_declarations(
     nodes: vec.Vec[ptr[json.Object]],
     opts: ref[BindgenOptions],
@@ -2031,8 +2027,8 @@ function select_record_declarations(
         decls.push(unsafe: read(alias))
         alias_index += 1
 
-## The host's `select_enum_declarations`.
 
+## The host's `select_enum_declarations`.
 function select_enum_declarations(
     nodes: vec.Vec[ptr[json.Object]],
     opts: ref[BindgenOptions],
@@ -2094,8 +2090,8 @@ function select_enum_declarations(
             read(state).enum_visible_names.set(declaration.mt_name.as_str(), declaration.mt_name.as_str())
         decls.push(declaration)
 
-## The host's `select_type_alias_declarations`.
 
+## The host's `select_type_alias_declarations`.
 function select_type_alias_declarations(
     nodes: vec.Vec[ptr[json.Object]],
     opts: ref[BindgenOptions],
@@ -2146,8 +2142,8 @@ function map_function_pointer_typedef(node: ptr[json.Object], opts: ref[BindgenO
     apply_nullability(ref_of(mapped), function_pointer_surface_nullability(type_qual_text(node, true)))
     return mapped
 
-## The host's `macro_probe_decl?` / `constant_name_for`.
 
+## The host's `macro_probe_decl?` / `constant_name_for`.
 function macro_probe_decl(node: ptr[json.Object]) -> bool:
     return str_has_prefix(jget_str(node, "name"), macro_probes.MACRO_PROBE_PREFIX)
 
@@ -2158,8 +2154,8 @@ function constant_name_for(node: ptr[json.Object]) -> str:
         return name.slice(macro_probes.MACRO_PROBE_PREFIX.len, name.len - macro_probes.MACRO_PROBE_PREFIX.len)
     return name
 
-## The host's `constant_var_decl?`: an initializer plus a top-level qualifier.
 
+## The host's `constant_var_decl?`: an initializer plus a top-level qualifier.
 function constant_var_decl(node: ptr[json.Object]) -> bool:
     unsafe:
         if read(node).get("init") == null:
@@ -2171,8 +2167,8 @@ function constant_var_decl(node: ptr[json.Object]) -> bool:
         defer: stripped.release()
         return not stripped.as_str().equal(normalized_owner.as_str())
 
-## The host's `constant_qual_type`.
 
+## The host's `constant_qual_type`.
 function constant_qual_type(node: ptr[json.Object]) -> str:
     unsafe:
         let tp = read(node).get("type")
@@ -2193,8 +2189,8 @@ function constant_qual_type(node: ptr[json.Object]) -> str:
             return qual_type
         return qual_type
 
-## The host's `constant_typedef_alias_aggregate?`.
 
+## The host's `constant_typedef_alias_aggregate?`.
 function constant_typedef_alias_aggregate(node: ptr[json.Object]) -> bool:
     unsafe:
         let tp = read(node).get("type")
@@ -2223,8 +2219,8 @@ function constant_typedef_alias_aggregate(node: ptr[json.Object]) -> bool:
             return false
         return str_has_prefix(desugared, "struct ") or str_has_prefix(desugared, "union ")
 
-## The host's `constant_expression_kind`.
 
+## The host's `constant_expression_kind`.
 function constant_expression_kind(node: ptr[json.Object]?) -> str:
     var current = node
     while current != null:
@@ -2257,9 +2253,9 @@ function string_literal_macro_compatible_c_type(qual_type: str) -> bool:
     defer: element_stripped.release()
     return element_stripped.as_str().equal("char")
 
+
 ## The host's `macro_string_constant_type`: a probe whose initializer is a
 ## string literal maps through its surface type.
-
 function macro_string_constant_type(node: ptr[json.Object], initializer: ptr[json.Object]?) -> Option[string.String]:
     if not macro_probe_decl(node):
         return Option[string.String].none
@@ -2273,8 +2269,8 @@ function macro_string_constant_type(node: ptr[json.Object], initializer: ptr[jso
     bindgen_map_failed = true
     return Option[string.String].none
 
-## The host's `select_constant_declarations`.
 
+## The host's `select_constant_declarations`.
 function select_constant_declarations(
     nodes: vec.Vec[ptr[json.Object]],
     opts: ref[BindgenOptions],
@@ -2326,8 +2322,8 @@ function is_variadic_function(node: ptr[json.Object]) -> bool:
     unsafe:
         return read(node).get("variadic") != null and options_json.jget_bool(node, "variadic")
 
-## The host's `select_function_declarations`.
 
+## The host's `select_function_declarations`.
 function select_function_declarations(
     nodes: vec.Vec[ptr[json.Object]],
     opts: ref[BindgenOptions],
@@ -2417,8 +2413,8 @@ function select_function_declarations(
             break
         decls.push(unsafe: read(value))
 
-## The host's `function_return_type`: the qual type's return portion.
 
+## The host's `function_return_type`: the qual type's return portion.
 function function_return_type_text(node: ptr[json.Object]) -> str:
     let qual_type = type_qual_text(node, true)
     match nullable_policy.function_sig_text(qual_type):
@@ -2434,8 +2430,8 @@ function function_return_type_text(node: ptr[json.Object]) -> str:
 public function field_unnamed(field: ptr[json.Object]) -> bool:
     return jget_str(field, "name") == ""
 
-## Asserts a nullable AST node after an explicit null check.
 
+## Asserts a nullable AST node after an explicit null check.
 public function node_non_null(value: ptr[json.Object]?) -> ptr[json.Object]:
     unsafe:
         return ptr[json.Object]<-value
@@ -2574,8 +2570,8 @@ function aggregate_seen(seen: ref[vec.Vec[PendingAggregate]], owner: str, node: 
         i += 1
     return false
 
-## The host's `discover_synthetic_aggregate_dependencies`.
 
+## The host's `discover_synthetic_aggregate_dependencies`.
 function discover_synthetic_aggregate_dependencies(
     declarations: vec.Vec[CDecl],
     opts: ref[BindgenOptions],
@@ -2640,8 +2636,8 @@ function discover_synthetic_aggregate_dependencies(
                     read(state).aggregate_declarations.set(synthetic_name.as_str(), node_non_null(anonymous_record))
                 pending.push(PendingAggregate(owner = synthetic_name.as_str(), node = node_non_null(anonymous_record)))
 
-## The host's `discover_synthetic_field_type_dependencies`.
 
+## The host's `discover_synthetic_field_type_dependencies`.
 function discover_synthetic_field_type_dependencies(
     declarations: vec.Vec[CDecl],
     opts: ref[BindgenOptions],
@@ -2736,9 +2732,9 @@ function long_to_str(n: long) -> str:
         return r.as_str()
     return uint_to_str(ptr_uint<-n)
 
+
 ## Find the value of an enum constant by looking inside its inner
 ## ConstantExpr child node.
-
 function find_enum_value(ec_node: ptr[json.Object], name: str) -> str:
     unsafe:
         # First try the node's own "value" field (some clang versions).
@@ -2830,9 +2826,9 @@ public struct BindgenOutput:
     source: string.String
     report: string.String
 
+
 ## A `str` view of a String without UTF-8 validation (clang expands a header
 ## into a multi-hundred-MB AST JSON; the host parses it unvalidated).
-
 function raw_string_view(text: ref[string.String]) -> str:
     let length = read(text).len
     if length == 0:
@@ -2840,8 +2836,8 @@ function raw_string_view(text: ref[string.String]) -> str:
     unsafe:
         return str(data = ptr[char]<-read(text).data, len = length)
 
-## Release the per-generation selection state.
 
+## Release the per-generation selection state.
 function release_gen_state() -> void:
     let state = bindgen_state else:
         return
@@ -2868,8 +2864,8 @@ function release_gen_state() -> void:
             si += 1
         read(state).synthetics.release()
 
-## The host's `@visible_typedef_names` / `@function_type_typedef_names`.
 
+## The host's `@visible_typedef_names` / `@function_type_typedef_names`.
 function collect_visible_typedef_names(
     nodes: vec.Vec[ptr[json.Object]],
     opts: ref[BindgenOptions],
@@ -2984,12 +2980,12 @@ function generate_internal(opts: ref[BindgenOptions], want_report: bool) -> Resu
                 error = clang_failure_message(fail.error.code, fail.error.message, clang)
             )
 
+
 # A translation unit that includes the header, like the host's Tempfile:
 # clang prints `includedFrom` for declarations whose own loc omits a file,
 # which is how the provenance filter keeps header declarations.  The macro
 # probes land at the end of the TU, so the AST also gives the host's
 # constant order.
-
 function create_translation_unit(
     opts: ref[BindgenOptions],
     header: str,
@@ -3115,12 +3111,12 @@ function clang_failure_message(code: int, message: string.String, clang: str) ->
     owned.release()
     return m
 
+
 # The host parses stdout first: clang can report a diagnostic and
 # still emit a usable AST (the macro probes trigger warnings).
 # `as_str` would validate every UTF-8 byte of a multi-hundred-MB
 # AST (the host does not validate either, and the C backend's debug
 # loop guard counts the scan); view the captured text directly.
-
 function generate_from_clang_result(
     stdout: ref[string.String],
     stderr: ref[string.String],

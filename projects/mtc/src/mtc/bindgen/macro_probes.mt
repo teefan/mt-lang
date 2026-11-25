@@ -28,10 +28,10 @@ public function first_inner_child(node: ptr[json.Object]) -> ptr[json.Object]?:
             i += 1
     return null
 
+
 ## Candidate macro names in definition order (the host's
 ## `macro_constant_candidates`): uppercase, allowed by the declaration
 ## prefixes, value-shaped bodies.
-
 public function macro_candidates(
     tu_path: str,
     clang_bin: str,
@@ -188,9 +188,9 @@ function first_macro_token_disallowed(body: str) -> bool:
         return false
     return token.equal("extern") or token.equal("static") or token.equal("inline") or token.equal("typedef") or token.equal("struct") or token.equal("union") or token.equal("enum") or token.equal("do") or token.equal("if") or token.equal("else") or token.equal("for") or token.equal("while") or token.equal("return") or token.equal("sizeof") or token.equal("__attribute__") or token.equal("__attribute") or token.equal("__declspec")
 
+
 ## The host's `contains_disallowed_macro_call?`: a call to a non-uppercase
 ## name (e.g. a C function) makes the body unusable as a constant.
-
 function contains_disallowed_macro_call(source: str) -> bool:
     var index: ptr_uint = 0
     while index < source.len:
@@ -265,8 +265,8 @@ function is_macro_body_char(b: ubyte) -> bool:
         return true
     return b == 9 or b == 10 or b == 13
 
-## The host's `lower_constant_expression`; none when the shape is unsupported.
 
+## The host's `lower_constant_expression`; none when the shape is unsupported.
 public function lower_constant(
     node: ptr[json.Object]?,
     expected_type: str,

@@ -214,11 +214,11 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 165, 2026-11-25)
+## 6. Current baseline (session 166, 2026-11-25)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 170 / 178,958 / 145,934 |
+| source files / lines / code lines | 170 / 178,948 / 145,934 |
 | layering edges / violations | 119 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
@@ -238,6 +238,14 @@ mechanically (128,970 → 145,934 code lines; 3 → 36 long functions).  This is
 layout change, not a behavior change; the baseline was refreshed only after the
 full gate run (fixed point, 22/0, `test/mt` 86/0, re-recorded oracles) and is
 the new ratchet floor.
+
+Session 166 attached 86 descriptive comment blocks directly to their following
+functions (94 detached prose blocks plus four paragraph-split groups were
+reviewed; 90 blank lines and one stale `comptime.mt` doc line were removed, and
+the formatter re-added 81 required separator blanks before the blocks).
+Eight stale, section, or indented comments remain detached deliberately.
+Code-line, duplication and function-size metrics are unchanged; total lines
+178,958 → 178,948.
 
 Session 161 **shrank** the baseline: the inert interning layer (`TypeStore`,
 `type_hash`/`type_identical`/`types_identical`, `TypeId`, `ir.Program.type_table`

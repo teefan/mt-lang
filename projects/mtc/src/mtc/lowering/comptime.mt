@@ -118,11 +118,10 @@ public function const_eval_int(ctx: ref[lowering.LoweringContext], ep: ptr[ast.E
             _:
                 return 0
 
-## A compile-time constant value: integer, boolean, string, or type.
+
 ## Extract the compile-time iterable for known comptime builtins (fields_of,
 ## members_of) as a span of struct-field or enum-member info pairs.
 ## Returns none for unrecognised expressions.
-
 public function comptime_iterable_elements(
     ctx: ref[lowering.LoweringContext],
     iterable: ptr[ast.Expr]

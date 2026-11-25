@@ -304,11 +304,11 @@ function multi_for_stop(items_name: str, iterable_type: types.Type) -> ptr[ir.Ex
     ))
     return lowering.alloc_expr(ir.Expr.expr_member(receiver = items_ref, member = "len", ty = ptr_uint_ty))
 
+
 ## True when a span of type parameters contains at least one non-lifetime
 ## parameter (i.e. the struct/deferred type requires monomorphization).
 ## Lifetime-only parameters (`@a`) are erased at the C level and the struct
 ## can be emitted directly without specialization.
-
 public function has_non_lifetime_type_params(params: span[ast.TypeParam]) -> bool:
     var i: ptr_uint = 0
     while i < params.len:

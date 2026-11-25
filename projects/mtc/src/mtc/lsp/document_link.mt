@@ -19,10 +19,10 @@ import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
+
 ## Handle textDocument/documentLink.  Scans the document source for string
 ## and cstring literals that look like file paths and returns DocumentLink
 ## entries for ones that resolve to existing files.
-
 public function handle_document_link(
     ws: ref[workspace.Workspace],
     params: json.Value,
@@ -94,10 +94,10 @@ public function handle_document_link(
     result.append("]")
     proto.write_response_raw(id, result.as_str())
 
+
 ## Handle documentLink/resolve.  Echoes the link back with a `tooltip` of the
 ## form `"<path>\n<first line>"` (host `handle_document_link_resolve`); a link
 ## whose target is missing or unreadable comes back unchanged.
-
 public function handle_document_link_resolve(
     params: json.Value,
     id: json.Value,
@@ -137,8 +137,8 @@ public function handle_document_link_resolve(
 
     proto.write_response(id, params)
 
-## The first line of a text file, or none when it cannot be read.
 
+## The first line of a text file, or none when it cannot be read.
 function read_first_line(path: str) -> Option[string.String]:
     match fs_mod.read_text(path):
         Result.success as payload:
@@ -157,13 +157,13 @@ function read_first_line(path: str) -> Option[string.String]:
         Result.failure:
             return Option[string.String].none
 
-## Extract the text content of a token from the source, using lexer offsets.
 
+## Extract the text content of a token from the source, using lexer offsets.
 function token_text(source: str, t: token_mod.Token) -> str:
     return token_mod.token_lexeme(t, source)
 
-## Strip surrounding quotes from a string token.
 
+## Strip surrounding quotes from a string token.
 function strip_quotes(kind: tk.TokenKind, text: str) -> str:
     if text.len < 2:
         return text
@@ -175,8 +175,8 @@ function strip_quotes(kind: tk.TokenKind, text: str) -> str:
             return text.slice(2, text.len - 3)
     return text
 
-## True when a string literal looks like a relative file path.
 
+## True when a string literal looks like a relative file path.
 function looks_like_path(text: str) -> bool:
     if text.len == 0 or text.len > 512:
         return false
@@ -196,10 +196,10 @@ function looks_like_path(text: str) -> bool:
                 return false
     return false
 
+
 ## Resolve a relative path against the document's directory.
 ## Returns an owned string.String that the caller must release, or
 ## an empty string.String when the target does not exist.
-
 function resolve_link(file_path: str, dir: str, target: str) -> string.String:
     var joined = path_ops.join(dir, target)
     if fs_mod.exists(joined.as_str()):
@@ -207,9 +207,9 @@ function resolve_link(file_path: str, dir: str, target: str) -> string.String:
     joined.release()
     return string.String.create()
 
+
 ## Build a file:// URI from an absolute path.  Returns an owned
 ## string.String that the caller must release.
-
 function build_file_uri(path: str) -> string.String:
     var uri = string.String.create()
     uri.append("file://")
@@ -225,8 +225,8 @@ function build_file_uri(path: str) -> string.String:
         i += 1
     return uri
 
-## Extract a string field from a JSON object.  Returns "" when absent.
 
+## Extract a string field from a JSON object.  Returns "" when absent.
 function extract_string_field(value: json.Value, field: str) -> str:
     let obj_ptr = value.as_object()
     if obj_ptr == null:
@@ -239,8 +239,8 @@ function extract_string_field(value: json.Value, field: str) -> str:
             return ""
         return field_str
 
-## Append a single DocumentLink entry to the JSON array.
 
+## Append a single DocumentLink entry to the JSON array.
 function append_link(
     output: ref[string.String],
     line: ptr_uint,

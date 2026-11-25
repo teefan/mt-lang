@@ -1644,7 +1644,7 @@
     "files_over_limit": 13,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
-        "lines": 3223,
+        "lines": 3219,
         "code": 2740,
         "max_line": 1984,
         "max_function": 103
@@ -1698,7 +1698,7 @@
         "max_function": 52
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 9071,
+        "lines": 9067,
         "code": 7207,
         "max_line": 237,
         "max_function": 242
@@ -1908,7 +1908,7 @@
         "max_function": 91
       },
       "projects/mtc/src/mtc/linter/linter.mt": {
-        "lines": 7691,
+        "lines": 7690,
         "code": 6366,
         "max_line": 203,
         "max_function": 219
@@ -2004,7 +2004,7 @@
         "max_function": 374
       },
       "projects/mtc/src/mtc/lowering/comptime.mt": {
-        "lines": 1839,
+        "lines": 1838,
         "code": 1617,
         "max_line": 149,
         "max_function": 87

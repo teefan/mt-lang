@@ -47,8 +47,8 @@ public function function_sig_text(qual_type: str) -> Option[FunctionSigText]:
         params_text = qual_type.slice(open + 1, close - open - 1),
     ))
 
-## The type text of the `index`-th top-level parameter in a parameter-list text.
 
+## The type text of the `index`-th top-level parameter in a parameter-list text.
 public function param_type_text_at(params: str, index: ptr_uint) -> str:
     if params == "void" or params == "":
         return ""
@@ -120,9 +120,9 @@ public function param_index_of(names: vec.Vec[string.String], parameter: str) ->
         i += 1
     return Option[ptr_uint].none
 
+
 ## The host's override-target validation (`validate_function_param_type_overrides!`
 ## and `validate_function_return_type_overrides!`), with its exact messages.
-
 public function validate_override_targets(
     decls: ref[vec.Vec[bindgen.CDecl]],
     opts: ref[bindgen.BindgenOptions]
@@ -213,9 +213,9 @@ public function release_param_overrides(overrides: ref[vec.Vec[bindgen.ParamOver
         i += 1
     overrides.release()
 
+
 ## Load and validate a `--nullable-policy` JSON file, mirroring the host's
 ## `BindgenCLI#load_nullable_policy` messages.
-
 public function load_nullable_policy(path: str) -> Result[NullablePolicy, string.String]:
     var text: string.String
     match fs.read_text(path):
