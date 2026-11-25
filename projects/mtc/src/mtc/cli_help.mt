@@ -6,7 +6,7 @@ import std.terminal as terminal
 
 ## The CLI version string, printed by `mtc version`; `tools/release.sh` checks
 ## that the general help banner carries the same version.
-public const VERSION: str = "0.6.2"
+public const VERSION: str = "0.6.3"
 
 
 ## Emit one line of a help block to stdout, or to stderr when `to_err`.
@@ -20,7 +20,7 @@ function emit_line(to_err: bool, text: str) -> void:
 
 ## The general help (`mtc`, `mtc help`, `mtc --help`).
 public function print_help(to_err: bool) -> void:
-    emit_line(to_err, "mtc 0.6.2 — the Milk Tea compiler")
+    emit_line(to_err, "mtc 0.6.3 — the Milk Tea compiler")
     emit_line(to_err, "")
     emit_line(to_err, "Usage: mtc <command> [options]")
     emit_line(to_err, "")
