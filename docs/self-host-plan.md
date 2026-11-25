@@ -4506,6 +4506,79 @@ The release archive is `mtc-0.5.2-linux-x86_64.tar.gz`; the release binary
 passes `test/mt` 85/0, CLI 227/227, LSP 38/38, and the clean-container smoke.
 The archive is rebuilt after the documentation sync and tagged `v0.5.2`.
 
+## Session 163 — generated-C review: a real async codegen defect
+
+Reviewed `emit-c` output for six examples against the quality bar in
+`docs/language-design.md`.  Most of it is genuinely good, and one defect is not.
+
+**The defect: `await` inside a loop aborts at the loop guard.**
+
+```mt
+async function three() -> int:
+    var i = 0
+    while i < 3:
+        let _ = await aio.sleep(1z)
+        i += 1
+    return i
+
+function main() -> int:
+    return aio.wait(three())     # -> rc 134
+```
+
+`sleep` is long enough to suspend, so the loop body re-enters through
+`a4_two__resume`'s second state.  The emitted C declares the loop's guard
+counter *inside* the block the resume `goto` enters:
+
+```c
+  a4_two__resume_state_0:;
+  __mt_frame->local_i = 0;
+  { uintptr_t __mt_loop_4 = 0;          /* initializer is skipped on resume */
+  while (__mt_frame->local_i < 3) {
+    if (++__mt_loop_4 > 50000000) mt_fatal("loop iteration limit exceeded ...");
+    ...
+    a4_two__resume_state_1:;            /* the goto lands here, past the init */
+```
+
+C leaves `__mt_loop_4` **uninitialized** on that path, so `++` starts from stack
+garbage and trips the 50,000,000 threshold immediately — the hang *detector*
+fires on a loop that would have finished in 3 iterations.  GCC states it
+directly:
+
+```
+warning: jump skips variable initialization [-Wjump-misses-init]
+  note: label 'a5_three__resume_state_1' defined here
+  note: '__mt_loop_4' declared here
+```
+
+`emit_loop_guard`'s caller (`c_backend.mt`, the `stmt_while` / `stmt_for` arms)
+wraps the counter in `{ … }`; a function-scope declaration would make the jump
+legal.  The counter must also be *reset* at the resume label if the intent is a
+single-entry budget, but hoisting the declaration is the part that removes the
+undefined behaviour.
+
+**Impact.** `examples/async_stress_test.mt` (rc 134) and
+`examples/async_network_lobby.mt` (rc 134) fail on this, and it reproduces on
+**0.5.0, 0.5.2 and 0.6.0** — it predates this work and is not a regression.  It
+is invisible to the gates because the examples sweep only emits C and
+`box2d_smoke` is the only example that is *run*.
+
+**What is good.** Verified against the quality bar: source names survive
+(`examples_option_and_result_surface_match_option`), methods lower to plain
+functions, `match` lowers to a `switch` over a `kind` discriminant with named
+union arms and `__builtin_unreachable()` for exhaustiveness, `defer` runs LIFO
+after the return value is captured, `let … else:` is a plain
+`if (!has_value) return`, `?` is an early return, reachability pruning drops
+unreferenced functions (52 declared, 8 emitted), and parentheses are preserved
+exactly where precedence needs them.  All 11 non-async examples run to rc 0.
+
+**Cosmetic defects found** (not correctness): `static const const char*` for a
+`const … : cstr` global (the `cstr` type already carries `const`); dangling
+`typedef struct mt_span_int;` declarations with no declarator (`-Wpedantic`);
+two statements on one line in generated equality helpers
+(`-Wmisleading-indentation`); and an unused `__mt_proc_env` on capture-free
+closures.  The 239 warnings across six files are dominated by benign
+`unused variable '_x'` discard bindings.
+
 ## Session 162 — release 0.6.0
 
 Cut the first release since 0.5.2.  A minor bump, not a patch: two changes break
