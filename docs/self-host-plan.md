@@ -4506,7 +4506,7 @@ The release archive is `mtc-0.5.2-linux-x86_64.tar.gz`; the release binary
 passes `test/mt` 85/0, CLI 227/227, LSP 38/38, and the clean-container smoke.
 The archive is rebuilt after the documentation sync and tagged `v0.5.2`.
 
-## Session 163 — generated-C review, the async loop-guard fix, and 0.6.1
+## Session 163 — generated-C review, async loop-guard fix, 0.6.1, and the vendored-source gap
 
 Reviewed `emit-c` output for six examples against the quality bar in
 `docs/language-design.md`.  Most of it is genuinely good, and one defect is not.
@@ -5962,3 +5962,54 @@ the Appendix, is at commit `d8a199c7`
 (`git show d8a199c7:docs/self-host-plan.md`), and earlier originals are in git
 history.  `projects/stress` parity (build, output and exit status identical)
 was recorded done in the pre-compaction history.
+
+## Session 164 — the vendored-source gap behind every release
+
+`mtc build` on a program importing a vendored binding (raylib, box2d, sdl3, …)
+failed after **every** release with
+
+```
+error: vendored raylib source not found: the raylib binding needs
+third_party/raylib-upstream to build libraylib
+```
+
+**Cause.**  `build` only ever *built* vendored archives; it never fetched the
+sources.  Only `toolchain doctor` / `toolchain bootstrap` did, and the release
+archive deliberately ships no `third_party/` (1.7 GB of upstream trees that are
+not reproducible).  So each fresh install was missing them by construction.  The
+0.5.1/0.5.2 installs appeared to work only because a manual `third_party`
+symlink had been created in them by hand; a new version directory never has one.
+
+**Fix.**  `build` calls `ensure_source` for each vendored binding the program
+uses before preparing its archive, cloning only that tree, into the compiler's
+data root.  A warm checkout costs one stat.  A failed clone now reports the
+destination, the git error and the manual fallback instead of a bare "not
+found".
+
+Two defects in the first attempt, both caught before release:
+
+- It fetched into the **last module root**, which for a package is the program's
+  own `src/` — a raylib build dumped 510 MB into the user's project.  The target
+  is now `data_root_dir(compiler_root())`, the same root `toolchain bootstrap`
+  populates, and that root joins the search list so later steps find the tree.
+- `vendored_roots` pushed a `str` view into a `String` released by `defer`,
+  aborting the build with `string.as_str text must be valid UTF-8`.  The owner
+  is threaded through explicitly.
+
+**Structural.**  The pinned-source table, the `upstream_versions.yml` overrides,
+the clone/verify machinery and the root discovery moved from `toolchain_cli`
+into a new `mtc.upstream_sources` (rank 7), because `build` (8) cannot import
+the CLI entry point (10).  The guard rejected the upward import immediately,
+which is the right answer: the fetch primitive is not CLI logic.
+`toolchain_cli` keeps the dispatch, `doctor` and the vendored-tool build.
+
+**Verified** in an isolated tree (own `HOME`, no cache, archive install with no
+`third_party`): a raylib program builds end to end, the sources fetch into
+`<install>/third_party/raylib-upstream`, and the project directory holds only
+`build/`, `package.toml` and `src/`.  A dead-proxy fetch prints the new message.
+Fixed point holds from the refreshed seed (`af7c11c4…`); `test/mt` 86/0; dev
+suite 22/0; CLI 227/227; diagnostics 503/0 differ; lint 644/0 differ; formatter
+744 × 3 / 0 differ; guard ok (**119** edges, 0 violations).
+
+**Released as 0.6.2** (patch; archive `02a6594c…`).  0.6.0 and 0.6.1 carry the
+defect, though 0.6.1 at least fixed the async loop guard.
