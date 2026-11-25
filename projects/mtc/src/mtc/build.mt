@@ -18,6 +18,7 @@ import mtc.debug_map as debug_map
 import mtc.loader.module_loader as loader
 import mtc.loader.path_resolver as resolver
 import mtc.ir as ir
+import mtc.upstream_sources as upstream_sources
 import mtc.c_backend.c_backend as c_backend
 import mtc.parser.ast as ast
 import mtc.strings
@@ -1101,14 +1102,59 @@ function uses_libuv_support(program: loader.Program) -> bool:
     return uses_binding_module(program, "std.c.sync")
 
 
+## Locate `third_party/<sub>` across `roots`, fetching it into the last root (the
+## compiler's own data root) when no root has it.  That root is where
+## `mtc toolchain bootstrap` puts its trees, so the two agree.
+##
+## Returns the owning root, which `vendored_source_root` then finds again.
+function ensure_vendored_source(roots: span[str], sub: str, name: str) -> Result[bool, string.String]:
+    match vendored_source_root(roots, sub):
+        Option.some as found:
+            return Result[bool, string.String].success(value = true)
+        Option.none:
+            pass
+
+    if roots.len == 0:
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "no module root to fetch the vendored source into"
+        ))
+    var data_root: str
+    unsafe:
+        data_root = read(roots.data + (roots.len - 1))
+
+    var message = string.String.create()
+    defer: message.release()
+    match upstream_sources.ensure_source(name, data_root, ref_of(message)):
+        Option.some:
+            return Result[bool, string.String].success(value = true)
+        Option.none:
+            var error = string.String.from_str("vendored ")
+            error.append(name)
+            error.append(" source is missing and could not be fetched into ")
+            error.append(data_root)
+            error.append(". Run `mtc toolchain bootstrap`, or set the network/proxy that git needs. ")
+            if message.len() > 0:
+                error.append("(")
+                error.append(message.as_str())
+                error.append(")")
+            return Result[bool, string.String].failure(error = error)
+
+
 ## Build the vendored static libraries required by the program's raw bindings
 ## when their archives are not already present.  The vendored sources are pinned
 ## trees, so an existing archive is reused as-is.  Supported libraries:
 ##   - raylib family, glfw, tracy, cjson, box2d, sdl3, flecs, pcre2, steamworks,
 ##     libuv.
+## A missing source tree is fetched on demand (`ensure_vendored_source`), so a
+## release install builds a vendored binding without a manual bootstrap step.
 ## Mirrors Ruby's VendoredCLibrary CMake/Archive `prepare!` flow in minimal form.
 function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -> Result[bool, string.String]:
     if uses_vendored_raylib(program):
+        match ensure_vendored_source(roots, "raylib-upstream", "raylib"):
+            Result.failure as missing:
+                return Result[bool, string.String].failure(error = missing.error)
+            Result.success:
+                pass
         match prepare_vendored_raylib(roots):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)
@@ -1116,6 +1162,11 @@ function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -
                 pass
 
     if uses_binding_module(program, "std.c.glfw"):
+        match ensure_vendored_source(roots, "glfw-upstream", "glfw"):
+            Result.failure as missing:
+                return Result[bool, string.String].failure(error = missing.error)
+            Result.success:
+                pass
         match prepare_vendored_glfw(roots):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)
@@ -1123,6 +1174,11 @@ function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -
                 pass
 
     if uses_binding_module(program, "std.c.tracy"):
+        match ensure_vendored_source(roots, "tracy-upstream", "tracy"):
+            Result.failure as missing:
+                return Result[bool, string.String].failure(error = missing.error)
+            Result.success:
+                pass
         match prepare_vendored_tracy(roots):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)
@@ -1130,6 +1186,11 @@ function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -
                 pass
 
     if uses_binding_module(program, "std.cjson"):
+        match ensure_vendored_source(roots, "cjson-upstream", "cjson"):
+            Result.failure as missing:
+                return Result[bool, string.String].failure(error = missing.error)
+            Result.success:
+                pass
         match prepare_vendored_cjson(roots):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)
@@ -1137,6 +1198,11 @@ function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -
                 pass
 
     if uses_binding_module(program, "std.c.box2d"):
+        match ensure_vendored_source(roots, "box2d-upstream", "box2d"):
+            Result.failure as missing:
+                return Result[bool, string.String].failure(error = missing.error)
+            Result.success:
+                pass
         match prepare_vendored_box2d(roots):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)
@@ -1144,6 +1210,11 @@ function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -
                 pass
 
     if uses_binding_module(program, "std.c.box3d"):
+        match ensure_vendored_source(roots, "box3d-upstream", "box3d"):
+            Result.failure as missing:
+                return Result[bool, string.String].failure(error = missing.error)
+            Result.success:
+                pass
         match prepare_vendored_box3d(roots):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)
@@ -1151,6 +1222,11 @@ function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -
                 pass
 
     if uses_binding_module(program, "std.c.sdl3"):
+        match ensure_vendored_source(roots, "sdl3-upstream", "sdl3"):
+            Result.failure as missing:
+                return Result[bool, string.String].failure(error = missing.error)
+            Result.success:
+                pass
         match prepare_vendored_sdl3(roots):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)
@@ -1158,6 +1234,11 @@ function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -
                 pass
 
     if uses_binding_module(program, "std.c.flecs"):
+        match ensure_vendored_source(roots, "flecs-upstream", "flecs"):
+            Result.failure as missing:
+                return Result[bool, string.String].failure(error = missing.error)
+            Result.success:
+                pass
         match prepare_vendored_flecs(roots):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)
@@ -1165,6 +1246,11 @@ function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -
                 pass
 
     if uses_binding_module(program, "std.c.pcre2"):
+        match ensure_vendored_source(roots, "pcre2-upstream", "pcre2"):
+            Result.failure as missing:
+                return Result[bool, string.String].failure(error = missing.error)
+            Result.success:
+                pass
         match prepare_vendored_pcre2(roots):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)
@@ -1172,6 +1258,11 @@ function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -
                 pass
 
     if uses_binding_module(program, "std.c.steamworks"):
+        match ensure_vendored_source(roots, "steamworks-sdk-upstream", "steamworks_sdk"):
+            Result.failure as missing:
+                return Result[bool, string.String].failure(error = missing.error)
+            Result.success:
+                pass
         match prepare_vendored_steamworks(roots):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)

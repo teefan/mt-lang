@@ -631,6 +631,13 @@ tools/bootstrap.sh            # stage1 -> stage2 -> stage3, fixed point, self-te
 build/stage2/mtc run hello.mt
 ```
 
+`mtc build` fetches a missing vendored tree **on demand**: building a program
+that imports a vendored binding (raylib, box2d, sdl3, …) clones only the tree
+that binding needs, into the compiler's own data root — so a release install
+needs no separate bootstrap step, and `toolchain bootstrap` remains the way to
+fetch everything up front.  A failed clone reports the URL, the destination and
+the git error, and names `mtc toolchain bootstrap` as the manual fallback.
+
 `tools/bootstrap.sh` resolves stage0 as `--bootstrap PATH`, `$MTC_BOOTSTRAP`,
 or `vendor/bootstrap/<platform>/mtc` (sha256-verified); there is no second
 compiler. Stage2 is the distributable compiler; stage3 proves the fixed point

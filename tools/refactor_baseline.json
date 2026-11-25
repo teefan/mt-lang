@@ -34,6 +34,7 @@
       "strings": 0,
       "toolchain_bindings": 10,
       "toolchain_cli": 10,
+      "upstream_sources": 7,
       "version_info": 0,
       "wasm_preview": 10,
       "wasm_shell": 0
@@ -48,6 +49,7 @@
       "build -> loader",
       "build -> parser",
       "build -> strings",
+      "build -> upstream_sources",
       "build -> wasm_shell",
       "build_cache -> debug_map",
       "build_cache -> loader",
@@ -154,6 +156,7 @@
       "sexpr -> strings",
       "toolchain_cli -> cli_help",
       "toolchain_cli -> toolchain_bindings",
+      "toolchain_cli -> upstream_sources",
       "wasm_preview -> browser",
       "wasm_preview -> http_util"
     ],
@@ -329,6 +332,7 @@
     "strings": "strings",
     "toolchain_bindings": "raw_bindings",
     "toolchain_cli": "toolchain_cli",
+    "upstream_sources": "upstream_sources",
     "wasm_preview": "wasm_preview",
     "wasm_shell": "wasm_shell"
   },
@@ -1253,7 +1257,7 @@
     ]
   },
   "sizes": {
-    "total_code": 129043,
+    "total_code": 129149,
     "functions_over_limit": 3,
     "files_over_limit": 11,
     "files": {
@@ -1300,8 +1304,8 @@
         "max_function": 18
       },
       "projects/mtc/src/mtc/build.mt": {
-        "lines": 2160,
-        "code": 1738,
+        "lines": 2251,
+        "code": 1818,
         "max_line": 300,
         "max_function": 211
       },
@@ -2254,9 +2258,15 @@
         "max_function": 385
       },
       "projects/mtc/src/mtc/toolchain_cli.mt": {
-        "lines": 1273,
-        "code": 1074,
-        "max_line": 173,
+        "lines": 726,
+        "code": 594,
+        "max_line": 110,
+        "max_function": 125
+      },
+      "projects/mtc/src/mtc/upstream_sources.mt": {
+        "lines": 598,
+        "code": 506,
+        "max_line": 180,
         "max_function": 174
       },
       "projects/mtc/src/mtc/wasm_preview.mt": {

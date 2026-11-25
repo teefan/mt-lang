@@ -70,6 +70,10 @@ module MilkTea
       "sexpr" => 6,
       "debug_map" => 6,
       "c_backend" => 7,
+      # `upstream_sources` holds the pinned vendored-source table and fetch
+      # machinery; `build` must reach it to fetch a missing tree on demand, so it
+      # ranks below `build`.
+      "upstream_sources" => 7,
       "build" => 8,
       "build_cache" => 8,
       "bindgen" => 8,
