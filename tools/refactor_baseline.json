@@ -241,6 +241,7 @@
     "lowering.layout": "layout_mod",
     "lowering.lowering": "lowering",
     "lowering.match": "match_mod",
+    "lowering.member_access": "member_mod",
     "lowering.monomorphized": "monomorphized",
     "lowering.parallel": "parallel_mod",
     "lowering.proc_renumber": "proc_renumber",
@@ -1632,7 +1633,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148659,
+    "total_code": 148676,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -2051,8 +2052,8 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 21735,
-        "code": 17098,
+        "lines": 20436,
+        "code": 16015,
         "max_line": 175,
         "max_function": 327
       },
@@ -2061,6 +2062,12 @@
         "code": 1652,
         "max_line": 119,
         "max_function": 188
+      },
+      "projects/mtc/src/mtc/lowering/member_access.mt": {
+        "lines": 960,
+        "code": 806,
+        "max_line": 138,
+        "max_function": 271
       },
       "projects/mtc/src/mtc/lowering/monomorphized.mt": {
         "lines": 1674,
@@ -2081,8 +2088,8 @@
         "max_function": 155
       },
       "projects/mtc/src/mtc/lowering/statements.mt": {
-        "lines": 1293,
-        "code": 1007,
+        "lines": 1664,
+        "code": 1301,
         "max_line": 154,
         "max_function": 207
       },
