@@ -4196,9 +4196,41 @@ function check_assignment_stmt(
         ctx.expected_type_hint = target_ty
     let vt = infer_expr(ctx, scope, value)
     ctx.expected_type_hint = assign_saved_hint
-    if operator == "=" and incompatible_value_with_consts(target_ty, vt, value, ref_of(ctx.const_values)):
-        report(ctx, line, column, assign_message(target_ty, vt))
+    if operator == "=":
+        if incompatible_value_with_consts(target_ty, vt, value, ref_of(ctx.const_values)):
+            report(ctx, line, column, assign_message(target_ty, vt))
+    else if types.is_str(target_ty) and operator == "+=":
+        report(ctx, line, column, "str += is not supported; use std.string.String for concatenation")
+    else:
+        let bin_op = operator.slice(0, operator.len - 1)
+        let result_ty = infer_binary_operands(ctx, bin_op, target, value, target_ty, vt)
+        if types.is_error(result_ty) and compound_assignment_checkable(target_ty, vt):
+            report(ctx, line, column, "compound assignment is not supported for this type")
+        else if incompatible_value_with_consts(target_ty, result_ty, target, ref_of(ctx.const_values)):
+            report(ctx, line, column, assign_message(target_ty, result_ty))
     check_assign_target_immutable(ctx, scope, target, line, column)
+
+
+## Compound-assignment diagnostics are limited to concrete operand shapes.
+## Permissive generic/unresolved returns (`ty_error`, `ty_var`, `Task[T]`) must
+## stay accepted; only a concrete target and value that the binary rules reject
+## are reported.
+function compound_assignment_checkable(target_ty: types.Type, value_ty: types.Type) -> bool:
+    if types.is_error(target_ty) or types.is_error(value_ty):
+        return false
+    return concrete_compound_operand(target_ty) and concrete_compound_operand(value_ty)
+
+
+function concrete_compound_operand(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_primitive:
+            return true
+        types.Type.ty_str:
+            return true
+        types.Type.ty_named:
+            return true
+        _:
+            return false
 
 
 ## The type an assignment target is checked against.  A plain identifier uses
@@ -6774,6 +6806,20 @@ function infer_binary(
         return types.primitive("bool")
     let rt = infer_expr(ctx, scope, right)
     ctx.expected_type_hint = outer_hint
+    return infer_binary_operands(ctx, op, left, right, lt, rt)
+
+
+## The result type of a binary operation whose operand types are already known.
+## Shared by expression inference and compound assignment (which must not
+## re-infer the target/value expressions).
+function infer_binary_operands(
+    ctx: ref[Context],
+    op: str,
+    left: ptr[ast.Expr],
+    right: ptr[ast.Expr],
+    lt: types.Type,
+    rt: types.Type
+) -> types.Type:
     harmonize_float_binary_operands(ctx, op, left, right, lt, rt)
     if is_comparison_op(op):
         return types.primitive("bool")
@@ -6870,15 +6916,28 @@ function infer_numeric_binary_type(
     return lt
 
 
+## The SIMD operator set: arithmetic for every lane type, plus `%` and bitwise/
+## shift operators for integer lanes.
+function simd_binary_op_supported(op: str, element: types.Type) -> bool:
+    if op == "+" or op == "-" or op == "*" or op == "/":
+        return true
+    if types.is_integer_type(element):
+        return (
+            op == "%" or op == "&" or op == "|" or op == "^"
+            or op == "<<" or op == ">>"
+        )
+    return false
+
+
 function infer_simd_binary_type(op: str, lt: types.Type, rt: types.Type) -> types.Type:
     if types.is_simd_type(lt) and types.is_simd_type(rt):
-        if types.type_equals(lt, rt) and (op == "+" or op == "-" or op == "*" or op == "/"):
+        if types.type_equals(lt, rt) and simd_binary_op_supported(op, types.simd_element_type(lt)):
             return lt
     if types.is_simd_type(lt) and types.is_numeric(rt) and types.type_equals(types.simd_element_type(lt), rt):
-        if op == "*" or op == "/":
+        if simd_binary_op_supported(op, types.simd_element_type(lt)):
             return lt
     if types.is_simd_type(rt) and types.is_numeric(lt) and types.type_equals(types.simd_element_type(rt), lt):
-        if op == "*":
+        if simd_binary_op_supported(op, types.simd_element_type(rt)):
             return rt
     return types.Type.ty_error
 

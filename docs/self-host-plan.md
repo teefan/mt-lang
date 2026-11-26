@@ -6297,6 +6297,27 @@ examples **311/311**; box2d/async smokes; CLI **227/227**; diagnostics **500 /
 5 changed / 1 unrecorded / 0 differ**; lint **656 / 19 changed / 1 unrecorded
 / 0 differ**.
 
+### Compound assignment type checking (B2)
+
+`check_assignment_stmt` now checks every non-`=` operator.  `str +=` is rejected
+with a static message (use `std.string.String`); other compounds derive the
+binary result through the extracted `infer_binary_operands` (no double
+inference of the target/value) and report an unsupported concrete shape.
+Permissive generic/unresolved value types (`ty_error`, `ty_var`, `Task[T]`)
+stay accepted, so `total += aio.wait(async_child())` in the baseline example
+is not a false positive.
+
+The check exposed a missing SIMD result matrix: `%`, bitwise `& | ^`, shifts
+`<< >>`, and their scalar variants now return the SIMD type for integer lanes.
+Tests: `test/mt/compound_assignment_test.mt` covers integer `+= *= <<= -=`;
+`compound_assignment_str.mt` and `compound_assignment_struct.mt` pin the two
+diagnostics.  `check std examples` reports **0 sema errors**.
+
+Verified: bootstrap fixed point; stage2 self **22/0** and `test/mt` **96/0**;
+examples **311/311**; box2d/async smokes; CLI **227/227**; diagnostics **500 /
+5 changed / 1 unrecorded / 0 differ**; lint **656 / 19 changed / 1 unrecorded
+/ 0 differ**.
+
 ### Known issue: `milkTea/debugInfo` on very large files
 
 The LSP debug-AST renderer aborts with `string.as_str text must be valid UTF-8`
