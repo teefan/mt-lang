@@ -6387,6 +6387,17 @@ Examples **311/311**, box2d/async smokes, CLI **227/227**, diagnostics **500 /
 5 changed / 1 unrecorded / 0 differ**, lint **654 / 21 changed / 1 unrecorded
 / 0 differ**.
 
+### `check --lower` (B1e)
+
+`mtc check --lower PATH...` runs the middle-end after a clean semantic pass
+and reports user-reachable lowering errors as `error[lowering/error]` with the
+same exit-code contract as a semantic error.  The flag is extracted only by
+`check` (before the shared resolution flags), so `build`/`run`/`lower` do not
+gain an ignored option; a literal `--` still ends flag interpretation.  Check
+with no operand now reports `missing source file path`.  The check help/usage
+lists the flag; the CLI oracle was re-recorded (227 cases; only the check
+usage/help rows changed) and replays **227/227**.
+
 ### Known issue: `milkTea/debugInfo` on very large files
 
 The LSP debug-AST renderer aborts with `string.as_str text must be valid UTF-8`

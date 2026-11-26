@@ -1094,6 +1094,7 @@ function check_one_file(
     owned_roots: ref[vec.Vec[string.String]],
     platform: resolver.Platform,
     resolution: ResolutionFlags,
+    lower_after_check: bool,
     scoped: bool,
 ) -> Option[CheckFileResult]:
     var file_roots = vec.Vec[str].create()
@@ -1166,7 +1167,7 @@ function check_one_file(
     defer: lint_path_owner.release()
     let lint_path = lint_path_owner.as_str()
 
-    let errors = program.diagnostic_error_count()
+    let file_errors = program.diagnostic_error_count()
     let warnings = program.diagnostic_warning_count()
 
     # The host's `check` prints a file's diagnostics (semantic then lint,
@@ -1176,14 +1177,14 @@ function check_one_file(
     var warning_count: ptr_uint = 0
     var note_count: ptr_uint = 0
     var file_diagnostic_count: ptr_uint = 0
-    if errors > 0 or warnings > 0:
+    if file_errors > 0 or warnings > 0:
         printed_errors = print_program_diagnostics(ref_of(program))
         warning_count += warnings
         file_diagnostic_count += printed_errors
         file_diagnostic_count += warnings
 
     # Run linter on clean files to catch style hints.
-    if errors == 0:
+    if file_errors == 0:
         match fs.read_text(effective):
             Result.success as content:
                 var src = content.value
@@ -1266,6 +1267,15 @@ function check_one_file(
                 var em = read_err.error
                 em.release()
 
+    # `check --lower`: run the middle-end after a clean semantic pass and report
+    # user-reachable lowering errors with the same exit-code contract.
+    if file_errors == 0 and lower_after_check:
+        let lowering_outcome = lowering.lower_checked(program)
+        if lowering_outcome.failed:
+            lowering.print_lowering_error(lowering_outcome.error)
+            printed_errors += 1
+            file_diagnostic_count += 1
+
     if file_diagnostic_count == 0:
         # The host's `elsif module_name` arm: a file with no diagnostics at
         # all reports its resolved module name.  Prints unless `--quiet`.
@@ -1311,8 +1321,31 @@ function check_command(args: span[str]) -> int:
         eprint_line("missing source file path")
         cli_help.print_usage(true)
         return 1
-    let resolution = extract_resolution_flags_span(stripped.as_span(), ref_of(input_paths))
+    # `--lower` is a check-only flag; extract it before the shared resolution
+    # flags so build/run/lower do not grow an ignored option.  A literal `--`
+    # stops flag interpretation, as elsewhere.
+    var lower_after_check = false
+    var check_args = vec.Vec[str].create()
+    defer: check_args.release()
+    var seen_separator = false
+    var ci: ptr_uint = 0
+    while ci < stripped.len():
+        let check_arg_ptr = stripped.get(ci) else:
+            break
+        let check_arg = unsafe: read(check_arg_ptr)
+        if not seen_separator and check_arg == "--lower":
+            lower_after_check = true
+        else:
+            check_args.push(check_arg)
+            if check_arg == "--":
+                seen_separator = true
+        ci += 1
+    let resolution = extract_resolution_flags_span(check_args.as_span(), ref_of(input_paths))
     let warnings_as_errors = resolution.warnings_as_errors
+    if input_paths.is_empty():
+        eprint_line("missing source file path")
+        cli_help.print_usage(true)
+        return 1
     if validate_source_operands("check", input_paths.as_span()) != 0:
         return 1
 
@@ -1354,7 +1387,15 @@ function check_command(args: span[str]) -> int:
             break
         let source_path = unsafe: read(raw_path).as_str()
         let scoped = should_scope_file(source_files.len() - (fi + 1))
-        let result = check_one_file(source_path, ref_of(roots), ref_of(owned_roots), platform, resolution, scoped) else:
+        let result = check_one_file(
+            source_path,
+            ref_of(roots),
+            ref_of(owned_roots),
+            platform,
+            resolution,
+            lower_after_check,
+            scoped
+        ) else:
             fi += 1
             continue
         if result.fatal:

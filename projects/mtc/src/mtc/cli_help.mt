@@ -69,7 +69,7 @@ public function print_help(to_err: bool) -> void:
         "       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--ignore-generated] [--timings] [--locked] [--frozen] [-I PATH]"
     )
     emit_line(to_err, "       mtc lint --init")
-    emit_line(to_err, "       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [-I PATH]")
+    emit_line(to_err, "       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [--lower] [-I PATH]")
     emit_line(to_err, "       mtc debug PATH [--locked] [--frozen] [-I PATH]")
     emit_line(to_err, "       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
     emit_line(to_err, "       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
@@ -132,7 +132,7 @@ public function print_usage(to_err: bool) -> void:
         "       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--ignore-generated] [--timings] [--locked] [--frozen] [-I PATH]"
     )
     emit_line(to_err, "       mtc lint --init")
-    emit_line(to_err, "       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [-I PATH]")
+    emit_line(to_err, "       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [--lower] [-I PATH]")
     emit_line(to_err, "       mtc debug PATH [--locked] [--frozen] [-I PATH]")
     emit_line(to_err, "       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
     emit_line(to_err, "       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
@@ -185,12 +185,13 @@ public function print_usage(to_err: bool) -> void:
 ## Per-command help for the cli command family.
 function print_cli_command_help(command: str, to_err: bool) -> bool:
     if command == "check":
-        emit_line(to_err, "Usage: mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [-I PATH]")
+        emit_line(to_err, "Usage: mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [--lower] [-I PATH]")
         emit_line(to_err, "")
         emit_line(to_err, "  Run semantic analysis on one or more source files and report errors.")
         emit_line(to_err, "")
         emit_line(to_err, "  Options:")
         emit_line(to_err, "    -Werror                     Treat warnings as errors.")
+        emit_line(to_err, "    --lower                     Lower the checked program and report lowering errors.")
         emit_line(to_err, "    --locked / --frozen         Dependency resolution mode.")
         emit_line(to_err, "    -I, --include-path PATH     Add an extra module root.")
         if to_err:
