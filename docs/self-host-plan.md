@@ -6197,6 +6197,21 @@ Verified: bootstrap fixed point; stage2 self suite **22/0** and `test/mt`
 async smokes; CLI **227/227**; diagnostics **504 / 1 changed / 1 unrecorded /
 0 differ**; lint **667 / 8 changed / 1 unrecorded / 0 differ**.
 
+### Atomic `compare_exchange`
+
+`atomic[T].compare_exchange(expected: ref[T], desired: T) -> bool` is now
+type-checked and lowered to
+`__atomic_compare_exchange_n(&receiver, expected, desired, false, 5, 5)` with
+sequential consistency.  On failure the builtin writes the observed value back
+through `expected`.  The README limitation that claimed the checker accepted it
+while the lowering did not has been replaced with the real API.
+
+Tests: `projects/mtc/test/lowering_test.mt` asserts the builtin call, and
+`test/mt/atomic_test.mt` covers success, failure, and the expected-value
+write-back.  Verified with stage2: self **22/0**, `test/mt` **89/0**, bootstrap
+fixed point, examples **311/311**, box2d/async smokes, CLI **227/227**,
+diagnostics **504 / 0 differ**, lint **667 / 0 differ**.
+
 ### Known issue: `milkTea/debugInfo` on very large files
 
 The LSP debug-AST renderer aborts with `string.as_str text must be valid UTF-8`

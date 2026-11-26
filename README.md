@@ -843,7 +843,7 @@ Type constructors:
 - `SoA[T, N]` — Structure-of-Arrays: each struct field becomes a separate array of length `N`; access `soa[i].field` reads from column `field` at row `i`
 - `simd[T, N]` — SIMD vector of `N` numeric lanes (128 or 256 bits); component-wise `+` `-` `*` `/` `%` `&` `|` `^` `~` `<<` `>>`; lane access via `[i]`. Lowers to GCC/Clang vector extensions.
 - `dyn[InterfaceName]` — runtime interface value (fat pointer: `{ void* data, void* vtable }`). Constructed via `adapt[Interface](value: ref[T])`. @see §6.
-- `atomic[T]` — lock-free atomic value (`T` = primitive integer or `bool`) with `load`/`store`/`add`/`sub`/`exchange`; sequential consistency. Lowers to C11 `_Atomic T`.
+- `atomic[T]` — lock-free atomic value (`T` = primitive integer or `bool`) with `load`/`store`/`add`/`sub`/`exchange`/`compare_exchange`; sequential consistency. `compare_exchange(expected: ref[T], desired: T) -> bool` writes the observed value back through `expected` on failure. Lowers to C11 `_Atomic T`.
 - `(T, U)` — tuple type. Positional fields auto-named `_0`, `_1`. Named fields use `(x = T, y = U)`. Copy by value, returns supported.
 
 When a `span[T]` is expected, an addressable `array[T, N]` value may be passed directly via implicit boundary coercion. For explicit conversion, `array.as_span()` returns `span[T]` without requiring a boundary context.
@@ -1218,8 +1218,8 @@ Current compiler rejects:
 - `parallel:` blocks enforce single-writer-or-multiple-readers: a variable written in one statement cannot be accessed by another
 - `parallel:` blocks accept at most 64 statements; use `std.jobs` for larger fan-out
 - `atomic[T]` requires `T` to be a primitive integer type or `bool`
-- `atomic[T]` methods (`store`, `add`, `sub`, `exchange`) require an editable (mutable) receiver
-- `atomic[T].compare_exchange` is accepted by the type checker but not yet implemented in the lowering; use `std.sync.AtomicUint` for compare-exchange operations
+- `atomic[T]` methods (`store`, `add`, `sub`, `exchange`, `compare_exchange`) require an editable (mutable) receiver
+- `atomic[T].compare_exchange(expected: ref[T], desired: T) -> bool` performs a sequential-consistency compare-exchange; on failure the observed value is written back through `expected`
 
 ## 17. CLI Commands
 

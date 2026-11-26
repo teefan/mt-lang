@@ -513,7 +513,11 @@ var counter: atomic[int]
 counter.store(0)
 let prev = counter.add(1)
 let value = counter.load()
+var expected: int = 1
+let swapped = counter.compare_exchange(ref_of(expected), 2)
 ```
+
+`compare_exchange(expected: ref[T], desired: T) -> bool` is a sequential-consistency compare-exchange; on failure it writes the observed value back through `expected`.
 
 `atomic[T]` is deliberately narrow: it supports only primitive integer types and `bool`. This avoids the complexity of atomic struct operations and keeps the C lowering simple and efficient. For more complex synchronization patterns, use `std.sync.Mutex`, `std.sync.Condition`, and `std.sync.Semaphore`.
 

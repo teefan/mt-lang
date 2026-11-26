@@ -14972,6 +14972,25 @@ function lower_atomic_method(
             arguments = sp_expr3(addr, arg_ir, seq_cst),
             ty = elem_ty
         ))
+    if method_name == "compare_exchange":
+        let expected_ir = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
+        let desired_ir = lower_expr(ctx, unsafe: read(args.data + 1).arg_value)
+        let bool_ty = types.primitive("bool")
+        let false_lit = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty))
+        let failure_order = alloc_expr(ir.Expr.expr_integer_literal(value = 5l, ty = int_ty))
+        var cmp_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            cmp_args.push(read(addr))
+            cmp_args.push(read(expected_ir))
+            cmp_args.push(read(desired_ir))
+            cmp_args.push(read(false_lit))
+            cmp_args.push(read(seq_cst))
+            cmp_args.push(read(failure_order))
+        return alloc_expr(ir.Expr.expr_call(
+            callee = "__atomic_compare_exchange_n",
+            arguments = cmp_args.as_span(),
+            ty = bool_ty
+        ))
     fatal(c"atomic lowering: unknown method")
 
 # =============================================================================

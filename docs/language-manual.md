@@ -1163,7 +1163,7 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 - `SoA[T, N]` — Structure-of-Arrays: transforms `T`'s fields into separate arrays of length `N`; access as `soa[i].field`
 - `simd[T, N]` — SIMD vector: fixed-width vector of `N` numeric lanes. Constructed with `simd[T, N](lane0, lane1, ...)`. Supports component-wise `+` `-` `*` `/` (and `%` for integer lanes), bitwise `&` `|` `^` `~`, shift `<<` `>>`, unary `-` `~`, and compound assignment. Lane access via compile-time constant `[i]`. Total width must be 128 or 256 bits. Lowers to GCC/Clang vector extensions.
 - `dyn[InterfaceName]` — runtime interface value (fat pointer: data + vtable). Constructed via `adapt[Interface](value: ref[T])`. @see §3.5.
-- `atomic[T]` — atomic value for lock-free concurrent access. `T` must be a primitive integer or `bool`. Methods: `load() -> T`, `store(value: T)`, `add(value: T) -> T`, `sub(value: T) -> T`, `exchange(value: T) -> T`. All operations use sequential consistency. Lowers to C11 `_Atomic T` with `__atomic_*` builtins. `atomic[T]` is zero-initializable and sendable.
+- `atomic[T]` — atomic value for lock-free concurrent access. `T` must be a primitive integer or `bool`. Methods: `load() -> T`, `store(value: T)`, `add(value: T) -> T`, `sub(value: T) -> T`, `exchange(value: T) -> T`, and `compare_exchange(expected: ref[T], desired: T) -> bool`. All operations use sequential consistency. `compare_exchange` writes the observed value back through `expected` when it fails. Lowers to C11 `_Atomic T` with `__atomic_*` builtins. `atomic[T]` is zero-initializable and sendable.
 - `(T, U)` — tuple type. Positional fields auto-named `_0`, `_1`. Named fields use `(x = T, y = U)`. Copy by value, returns supported.
 
 ### 6.3 Nullability

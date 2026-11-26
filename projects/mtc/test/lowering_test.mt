@@ -1186,6 +1186,22 @@ function test_atomic_sub_and_exchange_lower_to_builtins() -> void:
     expect(text.contains_substring("__atomic_fetch_sub(&counter, 2, 5)"))
     expect(text.contains_substring("__atomic_exchange_n(&counter, 9, 5)"))
 
+
+@[test]
+function test_atomic_compare_exchange_lowers_to_builtin() -> void:
+    ## compare_exchange threads the receiver address, the expected pointer and
+    ## the desired value through __atomic_compare_exchange_n with weak=false and
+    ## seq-cst success/failure orders.
+    var source = <<-SRC
+        function cas_demo(expected: ref[int]) -> bool:
+            var counter: atomic[int]
+            return counter.compare_exchange(expected, 7)
+    SRC
+    var ir = lower_source(source)
+    defer: ir.release()
+    let text = ir.as_str()
+    expect(text.contains_substring("__atomic_compare_exchange_n(&counter, expected, 7, false, 5, 5)"))
+
 # =============================================================================
 #  Binary operand widening — mixed-width integer / int+float arithmetic casts
 #  the narrower operand up to the common type, matching Ruby's usual-arithmetic

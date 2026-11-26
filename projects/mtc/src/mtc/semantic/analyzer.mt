@@ -10090,6 +10090,14 @@ function atomic_method_sig(args: span[types.Type], method_name: str) -> Option[F
         params.push(ParamEntry(name = "value", ty = elem_ty))
         return_type = elem_ty
         method_kind = ast.MethodKind.mk_editable
+    else if method_name == "compare_exchange":
+        params.push(ParamEntry(
+            name = "expected",
+            ty = types.generic_type(name = "ref", args = alloc_one_type_arg(elem_ty))
+        ))
+        params.push(ParamEntry(name = "desired", ty = elem_ty))
+        return_type = types.primitive("bool")
+        method_kind = ast.MethodKind.mk_editable
     else:
         return Option[FnSig].none
     return Option[FnSig].some(value = FnSig(
