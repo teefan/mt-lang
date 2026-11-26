@@ -250,6 +250,8 @@ function create_lowering_context(
         module_path = loaded_module_path(lod_modules, analysis.module_name),
         failed = false,
         error = zero[lowering.LoweringError],
+        current_line = 0,
+        current_column = 0,
         analysis = analysis,
         is_root_module = false,
         locals = vec.Vec[lowering.LocalBinding].create(),

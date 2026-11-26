@@ -76,8 +76,8 @@ public function fail_lowering(ctx: ref[LoweringContext], message: str) -> void:
     ctx.failed = true
     ctx.error = LoweringError(
         message = message,
-        line = 0,
-        column = 0,
+        line = ctx.current_line,
+        column = ctx.current_column,
         path = ctx.module_path
     )
 
@@ -259,6 +259,10 @@ public struct LoweringContext:
     ## by `lower_expr`/`lower_stmt` so the rest of the module short-circuits.
     failed: bool
     error: LoweringError
+    ## Location of the statement currently being lowered; 0:0 for
+    ## declaration-level or synthesized work.
+    current_line: ptr_uint
+    current_column: ptr_uint
     analysis: analyzer.Analysis
     # True while lowering the program's root module: the root async `main`'s
     # synthesized proc calls its `__async_main` constructor, not a plain `main`.
@@ -2312,9 +2316,64 @@ public function lower_function_body(ctx: ref[LoweringContext], body_ptr: ptr[ast
     return result
 
 
+struct StmtLocation:
+    line: ptr_uint
+    column: ptr_uint
+
+
+function stmt_location(sp: ptr[ast.Stmt]) -> StmtLocation:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_local as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_assignment as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_if as s:
+                return StmtLocation(line = s.line, column = 0)
+            ast.Stmt.stmt_while as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_for as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_match as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_ret as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_break as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_continue as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_pass as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_defer as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_unsafe as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_expression as s:
+                return StmtLocation(line = s.line, column = 0)
+            ast.Stmt.stmt_static_assert as s:
+                return StmtLocation(line = s.line, column = 0)
+            ast.Stmt.stmt_emit as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_when as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_parallel_block as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_gather as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_error as s:
+                return StmtLocation(line = s.line, column = s.column)
+            ast.Stmt.stmt_error_block as s:
+                return StmtLocation(line = s.line, column = s.column)
+            _:
+                return StmtLocation(line = 0, column = 0)
+
+
 public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
     if lowering_failed(ctx):
         return
+    let location = stmt_location(sp)
+    ctx.current_line = location.line
+    ctx.current_column = location.column
     unsafe:
         match read(sp):
             ast.Stmt.stmt_ret:

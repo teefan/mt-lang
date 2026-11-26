@@ -6361,6 +6361,15 @@ examples **311/311**; box2d/async smokes; CLI **227/227**; diagnostics **500 /
 5 changed / 1 unrecorded / 0 differ**; lint **655 / 20 changed / 1 unrecorded
 / 0 differ**.
 
+### Lowering error locations (B1c)
+
+`LoweringContext` now tracks `current_line`/`current_column`; `lower_stmt`
+records the statement being lowered through `stmt_location`, and
+`fail_lowering` writes that location into `LoweringError`.  The detach-capture
+diagnostic now reports `file:6:9` instead of `0:0`; declaration-level or
+synthesized errors still report `0:0`.  `test/mt` remains **102/0** and the
+recorded oracles are unchanged.
+
 ### Known issue: `milkTea/debugInfo` on very large files
 
 The LSP debug-AST renderer aborts with `string.as_str text must be valid UTF-8`
