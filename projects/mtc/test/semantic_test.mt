@@ -3711,3 +3711,63 @@ function test_strict_assignability_warns_on_fallback() -> void:
     )
     expect_eq(int<-diag.line, 9)
     expect_eq(int<-diag.column, 17)
+
+
+@[test]
+function test_strict_assignability_suppresses_generic_variables() -> void:
+    # A generic body is checked before instantiation; `ptr[ubyte] -> ptr[T]`
+    # is not a strict violation because the target contains an unresolved type
+    # variable.
+    let source = <<-SRC
+        function take[T](p: ptr[T]) -> int:
+            return 0
+
+        function relay[U](p: ptr[ubyte]) -> int:
+            return take(p)
+    SRC
+    analyzer.set_strict_assignability(false)
+    expect_clean(source)
+
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    expect_eq(int<-pdiags.len(), 0)
+    analyzer.set_strict_assignability(true)
+    defer: analyzer.set_strict_assignability(false)
+    var analysis = analyzer.check_source_file(file)
+    defer: analysis.diagnostics.release()
+    expect_eq(int<-analysis.diagnostics.len(), 0)
+
+
+@[test]
+function test_strict_assignability_explicit_widening_and_borrow() -> void:
+    # `int -> float` and `Widget -> ref[Widget]` are the explicit Stage 1
+    # coercions; neither is a permissive fallback, so strict mode stays silent.
+    let source = <<-SRC
+        struct Widget:
+            value: int
+
+        function take_float(f: float) -> int:
+            return 0
+
+        function take_ref(w: ref[Widget]) -> int:
+            return 0
+
+        function main() -> int:
+            let n: int = 1
+            let w = Widget(value = 1)
+            let a = take_float(n)
+            return a + take_ref(w)
+    SRC
+    analyzer.set_strict_assignability(false)
+    expect_clean(source)
+
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    expect_eq(int<-pdiags.len(), 0)
+    analyzer.set_strict_assignability(true)
+    defer: analyzer.set_strict_assignability(false)
+    var analysis = analyzer.check_source_file(file)
+    defer: analysis.diagnostics.release()
+    expect_eq(int<-analysis.diagnostics.len(), 0)

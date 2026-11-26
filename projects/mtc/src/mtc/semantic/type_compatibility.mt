@@ -394,9 +394,148 @@ public function types_explicitly_compatible_with_consts(
         _:
             pass
 
-    # 11  The permissive negative-only fallback lives in
+    # 11  Explicit runtime coercions the compiler relies on: numeric widening,
+    #     shared borrows (`ref[T] <- T`), interface erasure (`dyn[I] -> dyn`),
+    #     and structurally equal function/tuple types.  Each rule is a subset of
+    #     the pairs the permissive fallback already accepted, so it removes a
+    #     strict warning without changing compatibility.
+    if numeric_widening_compatible(expected, actual):
+        return true
+    if ref_borrow_compatible(expected, actual):
+        return true
+    if dyn_compatible(expected, actual):
+        return true
+    if same_function_type(expected, actual):
+        return true
+    if same_tuple_type(expected, actual):
+        return true
+
+    # 12  The permissive negative-only fallback lives in
     #     `types_compatibility_status`; this function is the explicit rule chain.
     return false
+
+
+function primitive_name(t: types.Type) -> Option[str]:
+    match t:
+        types.Type.ty_primitive as p:
+            return Option[str].some(value = p.name)
+        _:
+            return Option[str].none
+
+
+function integer_rank_name(name: str) -> int:
+    if name == "byte" or name == "ubyte":
+        return 1
+    if name == "short" or name == "ushort":
+        return 2
+    if name == "int" or name == "uint":
+        return 3
+    if name == "long" or name == "ulong" or name == "ptr_int" or name == "ptr_uint":
+        return 4
+    return 0
+
+
+function signed_integer_name(name: str) -> bool:
+    return name == "byte" or name == "short" or name == "int" or name == "long" or name == "ptr_int"
+
+
+function unsigned_integer_name(name: str) -> bool:
+    return name == "ubyte" or name == "ushort" or name == "uint" or name == "ulong" or name == "ptr_uint"
+
+
+function numeric_widening_compatible(expected: types.Type, actual: types.Type) -> bool:
+    let an = primitive_name(actual) else:
+        return false
+    let en = primitive_name(expected) else:
+        return false
+    if types.is_integer_name(an) and (en == "float" or en == "double"):
+        return true
+    if an == "float" and en == "double":
+        return true
+    if types.is_integer_name(an) and types.is_integer_name(en):
+        let ar = integer_rank_name(an)
+        let er = integer_rank_name(en)
+        if ar == 0 or er == 0 or er < ar:
+            return false
+        if er > ar:
+            # Widening may cross into a signed target (ubyte -> int), but a
+            # negative signed value must not silently become unsigned.
+            return not (signed_integer_name(an) and unsigned_integer_name(en))
+        # Same width: only a same-signedness conversion is implicit (`int ->
+        # uint` and `uint -> int` require a cast).
+        return (
+            (signed_integer_name(an) and signed_integer_name(en))
+            or (unsigned_integer_name(an) and unsigned_integer_name(en))
+        )
+    return false
+
+
+## A shared borrow is assignable from its referent: `ref[T] <- T`.  A `ref`
+## argument list may start with an explicit lifetime, so the referent is last.
+function ref_borrow_compatible(expected: types.Type, actual: types.Type) -> bool:
+    match expected:
+        types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.name != "ref" or g_bp.args.len < 1:
+                return false
+            let referent = unsafe: read(g_bp.args.data + (g_bp.args.len - 1))
+            return types.type_equals(referent, actual)
+        _:
+            return false
+
+
+function is_bare_dyn(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_named as n:
+            return unsafe: read(n.payload).name == "dyn"
+        _:
+            return false
+
+
+## `dyn[Iface]` erases to the untyped `dyn`; a typed-to-typed match must agree
+## on the interface and its arguments.
+function dyn_compatible(expected: types.Type, actual: types.Type) -> bool:
+    if is_bare_dyn(expected):
+        match actual:
+            types.Type.ty_dyn:
+                return true
+            types.Type.ty_named:
+                return is_bare_dyn(actual)
+            _:
+                return false
+    match expected:
+        types.Type.ty_dyn:
+            match actual:
+                types.Type.ty_dyn:
+                    return types.type_equals(expected, actual)
+                _:
+                    return false
+        _:
+            return false
+
+
+function same_function_type(expected: types.Type, actual: types.Type) -> bool:
+    match expected:
+        types.Type.ty_function:
+            match actual:
+                types.Type.ty_function:
+                    return types.type_equals(expected, actual)
+                _:
+                    return false
+        _:
+            return false
+
+
+function same_tuple_type(expected: types.Type, actual: types.Type) -> bool:
+    match expected:
+        types.Type.ty_tuple:
+            match actual:
+                types.Type.ty_tuple:
+                    return types.type_equals(expected, actual)
+                _:
+                    return false
+        _:
+            return false
 
 
 ## Compatibility plus whether the answer came only from the permissive

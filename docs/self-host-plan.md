@@ -6437,6 +6437,44 @@ The Stage 2–4 work is therefore numeric widening, interface erasure,
 `ref[T] <- T` borrowing, generic-instantiation invariance, function types, and
 const-pointer conversions.  The census is an observation tool, not a gate.
 
+### Strict assignability, Stage 1/2 (B3)
+
+Stage 1 provenance is the structural form: a type that is, or contains, an
+unresolved `ty_error` or `ty_var` is exempt from strict warnings
+(`contains_error`/`contains_type_var`).  This covers operands poisoned by an
+earlier diagnostic and generic bodies checked before instantiation.
+
+The explicit rule chain now handles the coercions the compiler actually relies
+on; each rule returns true only for pairs the fallback already accepted, so
+compatibility and code generation are unchanged:
+
+- numeric widening with signedness: `int -> float`, `float -> double`,
+  `ubyte -> int`, `short -> int`, `uint -> ptr_uint`, `ulong -> ptr_uint`;
+  same-width signed/unsigned changes (`int -> uint`) stay flagged, and
+  narrowing remains fallback-only until promotion;
+- shared borrows `ref[T] <- T` (lifetime-prefixed `ref` arguments use the last
+  argument as the referent);
+- dynamic erasure `dyn[I] -> dyn`, plus structural equality for typed `dyn`,
+  function types, and tuple types.
+
+The census after these rules is **16 unique warnings / 6 pairs** (std 9,
+examples 7, compiler sources **0**):
+
+| count | remaining pair |
+|---|---|
+| 8 | `void -> fn` |
+| 3 | `b2SurfaceMaterial -> const_ptr[b2SurfaceMaterial]` |
+| 2 | `fn -> bool` |
+| 1 | `(float, float, float) -> span[float]` |
+| 1 | `(int, int) -> span[int]` |
+| 1 | `(int, int, int, int) -> array[int, 4]` |
+
+Two semantic tests pin the new behavior: generic type variables produce no
+warning, and `int -> float` / `Widget -> ref[Widget]` are explicit rather than
+fallback-compatible.  The analyzer gate (bootstrap fixed point, 22/0, 103/0,
+CLI 227/227, diagnostics/lint 0 differ, examples 311/311, valgrind LSP,
+neovim) is green.
+
 ### Known issue: `milkTea/debugInfo` on very large files
 
 The LSP debug-AST renderer aborts with `string.as_str text must be valid UTF-8`

@@ -3837,16 +3837,11 @@ function unknown_type_message(name: str) -> str:
     return buf.as_str()
 
 
-## `ty_error` and `ty_var` are the two shapes the permissive fallback exists
-## for; they are never strict violations.
+## A type that is, or contains, an unresolved error or type variable is not a
+## strict violation: the operand was already poisoned by an earlier diagnostic,
+## or the enclosing generic body is only checked after instantiation.
 function strict_assignability_exempt(t: types.Type) -> bool:
-    match t:
-        types.Type.ty_error:
-            return true
-        types.Type.ty_var:
-            return true
-        _:
-            return false
+    return types.contains_error(t) or types.contains_type_var(t)
 
 
 function strict_assignability_message(target: types.Type, source_ty: types.Type) -> str:
