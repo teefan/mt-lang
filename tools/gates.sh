@@ -155,11 +155,11 @@ gate_tier() {
 
 gate_label() {
     case "$1" in
-        dev_build)      echo "dev build to tmp/mtc-dev from the seed (~1 min)" ;;
+        dev_build)      echo "dev build + IR verify to tmp/mtc-dev from the seed (~1 min)" ;;
         dev_tests)      echo "self-host suite, one process per file (~1 min)" ;;
         bootstrap)      echo "bootstrap --fast: fixed point only (~3 min)" ;;
         test_mt)        echo "test/mt under stage2 (106 files / 0 failed)" ;;
-        golden_cli)     echo "recorded CLI oracle (230 cases)" ;;
+        golden_cli)     echo "recorded CLI oracle (231 cases)" ;;
         golden_diag)    echo "recorded diagnostics oracle (std+examples)" ;;
         golden_lint)    echo "recorded lint oracle (corpus)" ;;
         golden_format)  echo "recorded formatter oracle (all modes)" ;;
@@ -187,7 +187,7 @@ gate_label() {
 
 gate_cmd() {
     case "$1" in
-        dev_build)     echo "\"$(tools/bootstrap.sh --print-stage0)\" build projects/mtc -I . --no-cache -o tmp/mtc-dev" ;;
+        dev_build)     echo "\"$(tools/bootstrap.sh --print-stage0)\" build projects/mtc -I . --no-cache -o tmp/mtc-dev && tmp/mtc-dev lower --verify-ir projects/mtc/src/mtc/main.mt -I . >/dev/null" ;;
         dev_tests)     echo "gates_dev_tests" ;;
         bootstrap)     echo "tools/bootstrap.sh --fast" ;;
         test_mt)       echo "build/stage2/mtc test test/mt -I ." ;;

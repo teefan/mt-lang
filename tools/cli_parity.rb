@@ -347,6 +347,7 @@ def build_cases
   add.call("parse-multiple", ["parse", "multi/a.mt", "multi/b.mt"])
   add.call("parse-directory", ["parse", "multi"])
   add.call("lower", ["lower", "standalone/clean.mt", "-I", FIXROOT])
+  add.call("lower-verify-ir", ["lower", "--verify-ir", "standalone/clean.mt", "-I", FIXROOT])
   add.call("emit-c", ["emit-c", "standalone/clean.mt", "-I", FIXROOT])
   add.call("emit-c-external", ["emit-c", "standalone/external_bindings.mt", "-I", FIXROOT])
   add.call("emit-c-multiple", ["emit-c", "multi/a.mt", "multi/b.mt", "-I", FIXROOT])

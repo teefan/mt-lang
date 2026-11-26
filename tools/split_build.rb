@@ -150,7 +150,7 @@ unless quick
       report_failure(failures, "compiler-split-version", (out + err).lines.last(4).join)
     end
     out, err, status = capture(compiler, "test", "projects/mtc", "-I", ROOT, "--timeout", "120")
-    unless status.success? && out.include?("22 test file(s), 0 failed")
+    unless status.success? && out.include?("23 test file(s), 0 failed")
       report_failure(failures, "compiler-split-self", (out + err).lines.last(6).join)
     end
     out, err, status = capture(compiler, "test", "test/mt", "-I", ROOT, "--timeout", "120")

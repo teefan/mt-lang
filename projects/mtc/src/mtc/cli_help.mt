@@ -72,16 +72,16 @@ public function print_help(to_err: bool) -> void:
     emit_line(to_err, "       mtc lint --init")
     emit_line(to_err, "       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [--lower] [--strict-types] [-I PATH]")
     emit_line(to_err, "       mtc debug PATH [--locked] [--frozen] [-I PATH]")
-    emit_line(to_err, "       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
-    emit_line(to_err, "       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [--split DIR] [-I PATH]")
+    emit_line(to_err, "       mtc lower PATH|DIR [PATH|DIR ...] [--sexpr] [--verify-ir] [--locked] [--frozen] [-I PATH]")
+    emit_line(to_err, "       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [--verify-ir] [--split DIR] [-I PATH]")
     emit_line(
         to_err,
-        "       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--debug-guards|--no-debug-guards] [--strict-types] [--split] [--clean] [-I PATH]"
+        "       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--debug-guards|--no-debug-guards] [--strict-types] [--split] [--verify-ir] [--clean] [-I PATH]"
     )
     emit_line(to_err, "       mtc new NAME")
     emit_line(
         to_err,
-        "       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [--strict-types] [--split] [-I PATH] [--debug-guards|--no-debug-guards]"
+        "       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [--strict-types] [--split] [--verify-ir] [-I PATH] [--debug-guards|--no-debug-guards]"
     )
     emit_line(
         to_err,
@@ -139,16 +139,16 @@ public function print_usage(to_err: bool) -> void:
     emit_line(to_err, "       mtc lint --init")
     emit_line(to_err, "       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [--lower] [--strict-types] [-I PATH]")
     emit_line(to_err, "       mtc debug PATH [--locked] [--frozen] [-I PATH]")
-    emit_line(to_err, "       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
-    emit_line(to_err, "       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [--split DIR] [-I PATH]")
+    emit_line(to_err, "       mtc lower PATH|DIR [PATH|DIR ...] [--sexpr] [--verify-ir] [--locked] [--frozen] [-I PATH]")
+    emit_line(to_err, "       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [--verify-ir] [--split DIR] [-I PATH]")
     emit_line(
         to_err,
-        "       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--debug-guards|--no-debug-guards] [--strict-types] [--split] [--clean] [-I PATH]"
+        "       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--debug-guards|--no-debug-guards] [--strict-types] [--split] [--verify-ir] [--clean] [-I PATH]"
     )
     emit_line(to_err, "       mtc new NAME")
     emit_line(
         to_err,
-        "       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [--strict-types] [--split] [-I PATH] [--debug-guards|--no-debug-guards]"
+        "       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [--strict-types] [--split] [--verify-ir] [-I PATH] [--debug-guards|--no-debug-guards]"
     )
     emit_line(
         to_err,
@@ -237,6 +237,7 @@ function print_cli_command_help(command: str, to_err: bool) -> bool:
         emit_line(to_err, "     --no-debug-guards            Disable loop iteration and recursion guards.")
         emit_line(to_err, "     --strict-types               Warn when assignability uses the permissive fallback.")
         emit_line(to_err, "     --split                      Emit one C unit per module and compile them as separate translation units.")
+        emit_line(to_err, "     --verify-ir                  Verify the lowered IR before C generation.")
         emit_line(to_err, "     --clean                      Remove existing build outputs and exit.")
         emit_line(to_err, "     -I, --include-path PATH      Add an extra module root.")
         if to_err:
@@ -266,6 +267,7 @@ function print_cli_command_help(command: str, to_err: bool) -> bool:
         emit_line(to_err, "     --no-debug-guards            Disable loop iteration and recursion guards.")
         emit_line(to_err, "     --strict-types               Warn when assignability uses the permissive fallback.")
         emit_line(to_err, "     --split                      Emit one C unit per module and compile them as separate translation units.")
+        emit_line(to_err, "     --verify-ir                  Verify the lowered IR before C generation.")
         emit_line(to_err, "     -I, --include-path PATH      Add an extra module root.")
         if to_err:
             let _ = terminal.flush_stderr()
@@ -427,14 +429,14 @@ function print_source_command_help(command: str, to_err: bool) -> bool:
             let _ = terminal.flush_stderr()
         return true
     if command == "lower":
-        emit_line(to_err, "Usage: mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
+        emit_line(to_err, "Usage: mtc lower PATH|DIR [PATH|DIR ...] [--sexpr] [--verify-ir] [--locked] [--frozen] [-I PATH]")
         emit_line(to_err, "")
         emit_line(to_err, "  Lower one or more source files to IR and print it.")
         if to_err:
             let _ = terminal.flush_stderr()
         return true
     if command == "emit-c":
-        emit_line(to_err, "Usage: mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [--split DIR] [-I PATH]")
+        emit_line(to_err, "Usage: mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [--verify-ir] [--split DIR] [-I PATH]")
         emit_line(to_err, "")
         emit_line(to_err, "  Compile one or more source files to C and print the output.")
         if to_err:

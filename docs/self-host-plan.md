@@ -14,7 +14,7 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-173-2026-11-26)
+- [Status at a glance](#status-at-a-glance-session-174-2026-11-26)
 - [Handoff](#handoff-session-158)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
@@ -112,12 +112,12 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 173, 2026-11-26)
+## Status at a glance (session 174, 2026-11-26)
 
 | Area | State |
 | --- | --- |
 | Compiler | **native self-host only**; the release is **0.6.3** (tag `v0.6.3`); the Ruby host is archived at tag `archive/host-ruby-0.4.26`, and `lib/`, the Ruby `test/**` suite, `milk_tea.gemspec`, `Rakefile`, `Gemfile` and `bin/mtc` are removed (session 143).  The source tree pins **Box2D 3.2.0** (session 158), and the 0.6.3 archive and seed carry it (sessions 162/164) |
-| Bootstrap fixed point | **holds** from the **0.6.3** seed (`stage2.c == stage3.c`, session 170); self-test suite **22 files / 0 failed**; `build/stage2/mtc test test/mt -I .` **106 / 0**; the shim proof is session 145 (a `ruby` shim that exits 127 is never invoked) |
+| Bootstrap fixed point | **holds** from the **0.6.3** seed (`stage2.c == stage3.c`, session 170); self-test suite **23 files / 0 failed**; `build/stage2/mtc test test/mt -I .` **106 / 0**; the shim proof is session 145 (a `ruby` shim that exits 127 is never invoked) |
 | Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`a9ddc2bc…`, release 0.6.3); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
 | Release archive | **3.5 MiB deterministic tar.gz** (`mtc-0.6.3-linux-x86_64`, `40481c09…`), checksummed beside the archive; identical across two packagings; clean-path and clean-container (Ubuntu 24.04) smokes green; includes `install.sh` (versioned prefix + `current` symlink) and `config/`; tagged `v0.6.3`; the version is the authored `cli_help.VERSION`.  The archive and seed carry Box2D 3.2.0 |
 | Release runtime | Linux x86_64: **glibc ≥ 2.38, zlib, OpenSSL 3**; libuv is linked statically; `tools/release_container_smoke.sh` verifies the archive in a clean Ubuntu 24.04 image; the seed has the same requirements |
@@ -127,7 +127,8 @@ history.
 | Examples | **311/311** under the self-only `emit-c`/`check` sweep — session 161 extended it from 78 to **every** `examples/**/*.mt`, adding `examples/raylib` (219) and `examples/box3d` (14); a first line of `external` selects `check` instead of `emit-c` (one raw binding module).  That gap is how a call to a nonexistent `rl.image_draw` survived (session 160).  Plus the headless **`box2d_smoke`** build/run gate |
 | Multi-TU build | **opt-in `--split`** (sessions 171–172): shared `mtc.h`, one data unit for globals/static asserts, one `unit_<n>.c` per module, and one `cc -c` object per unit with an exact content-keyed object cache (512 MiB cap including key sidecars).  The split-built compiler passes 22/22 and 106/106; cache edit-one-module reuses all but one object.  Single-file output is byte-identical and remains the default.  Static archives and wasm still reject `--split` |
 | Watch/dev loop | **`mtc watch PATH`** (session 173): polls `.mt` mtime seconds/nanoseconds/size under the entry directory plus every `-I` root (default 500 ms), keeps a loader `ModuleCache` and calls `check_program_with_source` in-process (a leaf edit advances parse/analysis only for the changed module and dependents), then forks a build child for lowering/C/link so per-build IR memory dies with the child.  `--split` reuses unchanged per-TU objects (leaf `3 reused / 1 compiled`; no-op `0 compiled`).  `--run` optional; 100-cycle no-growth gate |
-| Recorded oracles | **CLI 230/230 (0.6.3); diagnostics 497 compared / 8 changed / 2 unrecorded / 0 differ; lint 645 compared / 30 changed / 3 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
+| IR verifier | **`ir_verify.mt`** (session 174): checks unique linkage names, concrete declaration types (no `ty_error`/`ty_var`), non-empty module owners, unique fields/params/members/arms, a single `main` entry point returning `int`, switch defaults, and labels/gotos.  `--verify-ir` is available on `build`/`run`/`lower`/`emit-c`; the dev gate verifies the compiler IR after rebuilding, and 12 constructed-IR unit tests cover each rejection path |
+| Recorded oracles | **CLI 231/231 (0.6.3); diagnostics 497 compared / 8 changed / 2 unrecorded / 0 differ; lint 645 compared / 30 changed / 4 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
 | `check` diagnostics | the 500-file diagnostic oracle is the gate (the extra row is `box2d_api_smoke`); the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field anchor is a reviewed difference, not a residual (session 146). |
 | Linter | **43/43 rules, 13/13 fixers**; the 646-compared lint oracle is the corpus gate.  `unused-import` now credits type positions (annotations, params/returns, fields, aliases, specialization type arguments, proc signatures, `emit` declarations), fixing the type-only false positives; the remaining tree output is dominated by true style/ownership hints.  The historical host residue (3 self-only `std` files, timeout rows) is in *Deliberate differences*. |
@@ -138,7 +139,7 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check`; **Box2D is 3.2.0** (`178495ba…`, tag `v3.2.0`) and the raw module is reproducible (session 158; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; `bindings/raw/<name>.json` holds the option tables, `bindings/nullable/<name>.json` the `?` policies, and `tools/rebind_binding.rb` reproduces a raw module; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 171 files / 148,079 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **28 unused + 7 test-only** public declarations; 8,459 duplicated lines / 1,265 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 22/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 173 for the C4 watch growth) |
+| **Refactoring safety** | structural guard: 172 files / 148,642 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **28 unused + 7 test-only** public declarations; 8,477 duplicated lines / 1,262 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 23/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 174 for the IR verifier) |
 | Gate planning | `tools/gates.sh` area inference covers `lexer/` (→ `parser`), `main/` (→ `cli`), `bindgen/` (→ `bindings`) and every other `projects/mtc/src/mtc/` path (→ `compiler_core`, the full behaviour set).  An unclassified path is a hard error naming the file; previously it planned **zero** gates and exited 0 (session 159) |
 | Bootstrap `-j` | **removed** (session 159).  The flag was parsed, capped and warned about but never passed to a build command — a stage build is one whole-program `mtc build`.  `release.sh -j` removed with it; `bootstrap.sh -j 4` now errors |
 
@@ -6606,6 +6607,38 @@ the compiler build, confirming the cap includes sidecars.
 full; watch **100 rebuilds, no RSS/FD growth**; CLI **230/230**; diagnostics
 **497 compared / 8 changed / 2 unrecorded / 0 differ**; lint **645 compared /
 30 changed / 3 unrecorded / 0 differ**; examples **311/311**.
+
+### Session 174 — Wave 4.1 IR verifier
+
+The first middle-end checkpoint is a structural verifier over `ir.Program`:
+
+- New `ir_verify.mt` checks unique linkage names across functions, constants,
+  globals and types; rejects `ty_error`/`ty_var` in declaration types; requires
+  non-empty source-module owners; checks unique struct/union/variant fields,
+  function parameters, enum members and variant arms; enforces one `main` entry
+  point returning `int`; validates switch defaults; and checks function-scoped
+  label uniqueness and every `goto` target.
+- `--verify-ir` is wired into `build`, `run`, `lower`, and `emit-c`.  The
+  `dev_build` gate builds with the seed, then runs the fresh `tmp/mtc-dev lower
+  --verify-ir` over `main.mt`; the one-shot paths call the shared verifier, and
+  `run` covers its own lower/build path.
+- `ir_verify_test.mt` constructs invalid IR directly (duplicate linkage,
+  unresolved param/return types, duplicate fields, duplicate/missing labels,
+  multiple switch defaults, bad entrypoint linkage, empty module owner) and
+  asserts each is rejected; valid empty/function/label programs are accepted.
+  The self-host suite is now **23 files / 0 failed**.
+- CLI help and the oracle gained the new flag; the oracle is now **231 cases**
+  (`lower-verify-ir` added, help rows re-recorded).  The structural guard ranks
+  `ir_verify` with `ir` and the baseline was refreshed for the deliberate
+  **+563 code lines** (172 files / 148,642 code lines; 8,477 duplicated /
+  1,262 clusters; 40 long functions; 14 large files; 28 unused + 7 test-only
+  exports; tests 23/106).
+
+**Verified with the compiler-core gate:** dev build + IR verify; dev suite
+**23/0**; bootstrap fixed point; `test/mt` **106/0**; strict **0**; conformance
+**22/22**; split full; watch **100 rebuilds**; CLI **231/231**; diagnostics
+**497 compared / 8 changed / 2 unrecorded / 0 differ**; lint **645 compared /
+30 changed / 4 unrecorded / 0 differ**; examples **311/311**.
 
 ### Known issue: `milkTea/debugInfo` on very large files
 

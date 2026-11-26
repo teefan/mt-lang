@@ -124,3 +124,12 @@ memory is released by process exit.
 ```sh
 ruby tools/watch_smoke.rb --self build/stage2/mtc --soak 100
 ```
+
+## 7. IR verification
+
+`--verify-ir` runs `ir_verify.mt` after lowering for `build`, `run`, `lower`,
+and `emit-c`.  The dev gate builds the compiler with the seed and then runs
+`tmp/mtc-dev lower --verify-ir projects/mtc/src/mtc/main.mt -I .`, so lowering
+changes are checked against the full compiler IR.  `projects/mtc/test/ir_verify_test.mt`
+constructs invalid programs directly and covers each rejection path; it is part
+of the 23-file self-host suite.

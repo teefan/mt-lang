@@ -41,6 +41,7 @@ import mtc.semantic.analyzer as analyzer
 import mtc.lowering.lowering as lowering
 import mtc.c_backend.c_backend as c_backend
 import mtc.ir as ir
+import mtc.ir_verify as ir_verify
 import mtc.build as build_driver
 import mtc.build_cache as build_cache
 import mtc.linter.linter as linter_mod
@@ -2513,18 +2514,33 @@ public function reject_missing_entrypoint(program: loader.Program, ir_program: i
     return true
 
 
+## Verify lowered IR and print the first violation.  Returns false when the
+## program fails verification.
+public function verify_ir_or_error(ir_program: ir.Program) -> bool:
+    match ir_verify.verify(ir_program):
+        Option.some as error:
+            eprint_line(error.value.as_str())
+            error.value.release()
+            return false
+        Option.none:
+            return true
+
+
 ## Lower one or more source files to IR (`mtc lower`).  Mirrors the host's
 ## command: `--sexpr` is stripped anywhere, resolution flags are extracted, the
 ## operands are expanded (directories contribute every `.mt` file) and validated,
 ## and multiple outputs are separated by `# --- <path> ---` headers.
 function lower_command(args: span[str]) -> int:
     var sexpr = false
+    var verify_ir = false
     var stripped = vec.Vec[str].create()
     defer: stripped.release()
     var si: ptr_uint = 1
     while si < args.len:
         if args[si] == "--sexpr":
             sexpr = true
+        else if args[si] == "--verify-ir":
+            verify_ir = true
         else:
             stripped.push(args[si])
         si += 1
@@ -2590,6 +2606,7 @@ function lower_command(args: span[str]) -> int:
             ref_of(file_owned),
             platform,
             sexpr,
+            verify_ir,
             multiple and not sexpr,
             paths.len() - (pi + 1)
         )
@@ -2608,6 +2625,7 @@ function lower_one_path(
     owned: ref[vec.Vec[string.String]],
     platform: resolver.Platform,
     sexpr: bool,
+    verify_ir: bool,
     header: bool,
     remaining_files: ptr_uint
 ) -> int:
@@ -2658,6 +2676,10 @@ function lower_one_path(
         source_root_owner.release()
         return 1
     let ir_program = lowering_outcome.program
+    if verify_ir and not verify_ir_or_error(ir_program):
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
     if sexpr:
         var dumped = sexpr_mod.dump_ir_with_analyses(ir_program, program.analyses.as_span())
         defer: dumped.release()
@@ -2763,6 +2785,7 @@ function emit_c_one_path(
     roots: ref[vec.Vec[str]],
     owned_roots: ref[vec.Vec[string.String]],
     platform: resolver.Platform,
+    verify_ir: bool,
     remaining_files: ptr_uint,
     split_dir: Option[str]
 ) -> int:
@@ -2811,6 +2834,10 @@ function emit_c_one_path(
         source_root_owner.release()
         return 1
     let ir_program = lowering_outcome.program
+    if verify_ir and not verify_ir_or_error(ir_program):
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
     match split_dir:
         Option.some as split:
             var split_output = c_backend.create_split_output()
@@ -2894,6 +2921,7 @@ function emit_c_command(args: span[str]) -> int:
     var no_includes = vec.Vec[str].create()
     defer: no_includes.release()
     var split_dir: Option[str] = Option[str].none
+    var verify_ir = false
     var split_args = vec.Vec[str].create()
     defer: split_args.release()
     var ai: ptr_uint = 1
@@ -2904,6 +2932,9 @@ function emit_c_command(args: span[str]) -> int:
                 return 1
             split_dir = Option[str].some(value = args[ai + 1])
             ai += 2
+        else if args[ai] == "--verify-ir":
+            verify_ir = true
+            ai += 1
         else:
             split_args.push(args[ai])
             ai += 1
@@ -2976,6 +3007,7 @@ function emit_c_command(args: span[str]) -> int:
             ref_of(file_roots),
             ref_of(file_owned),
             platform,
+            verify_ir,
             program_paths.len() - (pi + 1),
             split_dir
         )

@@ -24,6 +24,7 @@ import mtc.loader.package_manifest as package_manifest
 import mtc.loader.path_resolver as resolver
 import mtc.build as build_driver
 import mtc.build_cache as build_cache
+import mtc.ir_verify as ir_verify
 import mtc.wasm_preview as wasm_preview
 import mtc.cli_help as cli_help
 import mtc.main.format_cli as format_cli
@@ -59,6 +60,7 @@ struct BuildOptions:
     frozen_flag: bool
     strict_types: bool
     split: bool
+    verify_ir: bool
 
 
 ## The post-load build inputs shared by the one-shot path and the watch fork.
@@ -107,6 +109,7 @@ function parse_command_options(
         frozen_flag = false,
         strict_types = false,
         split = false,
+        verify_ir = false,
     )
     read(filtered).push(command_name)
     var ai: ptr_uint = 1
@@ -212,6 +215,10 @@ function parse_command_options(
             continue
         if arg == "--split":
             options.split = true
+            ai += 1
+            continue
+        if arg == "--verify-ir":
+            options.verify_ir = true
             ai += 1
             continue
         if arg == "--locked":
@@ -463,6 +470,14 @@ function finish_build(program: loader.Program, run: BuildRun) -> int:
         lowering.print_lowering_error(lowering_outcome.error)
         return 1
     let ir_program = lowering_outcome.program
+    if run.options.verify_ir:
+        match ir_verify.verify(ir_program):
+            Option.some as verification_error:
+                main.eprint_line(verification_error.value.as_str())
+                verification_error.value.release()
+                return 1
+            Option.none:
+                pass
 
     if run.options.kind == build_driver.BuildKind.executable and main.reject_missing_entrypoint(program, ir_program):
         return 1
@@ -1468,6 +1483,14 @@ public function run_command(args: span[str]) -> int:
         lowering.print_lowering_error(lowering_outcome.error)
         return 1
     let ir_program = lowering_outcome.program
+    if options.verify_ir:
+        match ir_verify.verify(ir_program):
+            Option.some as verification_error:
+                main.eprint_line(verification_error.value.as_str())
+                verification_error.value.release()
+                return 1
+            Option.none:
+                pass
 
     if main.reject_missing_entrypoint(program, ir_program):
         return 1

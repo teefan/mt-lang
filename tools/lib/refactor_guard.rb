@@ -66,6 +66,7 @@ module MilkTea
       "pretty_printer" => 5,
       "imported_bindings" => 5,
       "ir" => 5,
+      "ir_verify" => 5,
       "lowering" => 6,
       "sexpr" => 6,
       "debug_map" => 6,

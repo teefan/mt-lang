@@ -18,6 +18,7 @@
       "http_util": 0,
       "imported_bindings": 5,
       "ir": 5,
+      "ir_verify": 5,
       "lexer": 1,
       "linter": 5,
       "loader": 4,
@@ -76,6 +77,8 @@
       "imported_bindings -> formatter",
       "imported_bindings -> imported_bindings",
       "ir -> semantic",
+      "ir_verify -> ir",
+      "ir_verify -> semantic",
       "lexer -> lexer",
       "linter -> formatter",
       "linter -> lexer",
@@ -120,6 +123,7 @@
       "main -> formatter",
       "main -> imported_bindings",
       "main -> ir",
+      "main -> ir_verify",
       "main -> lexer",
       "main -> linter",
       "main -> loader",
@@ -202,6 +206,7 @@
     "imported_bindings.raw_scanner": "raw",
     "imported_bindings.registry": "ib_registry",
     "ir": "ir",
+    "ir_verify": "ir_verify",
     "lexer.keywords": "keywords",
     "lexer.lexer": "lexer_mod",
     "lexer.token": "token_mod",
@@ -381,8 +386,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 1265,
-    "duplicated_lines": 8459,
+    "windows": 1262,
+    "duplicated_lines": 8477,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -462,7 +467,6 @@
       "0f24ca3603bd46cc71bb9de4088d67d77fe40400",
       "0f7e0e285bbc456667509eb0e28c4a22fc9249c4",
       "0fb697dfe84ead81d35d499574cd1eafd8441ac3",
-      "0fc4c7b681c72025535d67cd4ce0b0be4186ca3e",
       "10976286b8eece0346a8db5c3bc0c1c062660b17",
       "109f19c142959627c0ed8593bb8c23af92955129",
       "10b2b302cf1642bd0cfd4245851ea69648e91e6d",
@@ -507,7 +511,6 @@
       "1856b7bd47b47b2ec5e9826acc98ecfbb1f40463",
       "186cc97fa812364761a8ea709af05326be431282",
       "1875ee48a263508e36749b364054d2fbda42bc0c",
-      "199f7d49a3ed322bcf6ba931fcf35df7e567a000",
       "19a2151b475491be06a330de1b279336fc384d3e",
       "19dd08b1c830b9f9a7e3545041c16a1dd5e7e252",
       "1a64a80faff194a29d44a35a685e0a0f3a9f2ecb",
@@ -571,6 +574,7 @@
       "277ea64588f15c382d641bdc007b8deef3ec3dcc",
       "278bcb325143dcc5f32d5e8f86d028262a2bc0c4",
       "279bea4f3c3e13aecfe6c9fbafe56a7e2ebf4cfe",
+      "27f05c886caa8a98d560424e8143ed7ef13a2419",
       "280b78fc8da742dc3fd7cf025f58bb7e8f2bd431",
       "280f56f57f5e03eaf8194e06bf25af50ece8b161",
       "28297016038005f4aa2b23f1607183fa644b9dc4",
@@ -774,7 +778,6 @@
       "4fb5097a5d9f6fccefeb22e77656e903ac74f033",
       "4fc182886f8188a2676c175a65586849c79bd1e2",
       "4fe1ae1dec2996d2c6a96b20c006383ea68ce6f1",
-      "4feba198db5a97186d311627d2510e8b37a53081",
       "501323fc64a5531c07a9665e461d59469a59eaea",
       "506059cffae116fec8b3eb84fbcf04d24f088d1e",
       "5061454116f1ecd5bb200fb52b163f0be97ae636",
@@ -806,7 +809,6 @@
       "5741736737b62d782cbde0da58413fa18c06cc6a",
       "5776e045280e49df9ea2b18abfd060cfbabf7d34",
       "57a4aa2b46462970a5986afb97f78882f87bd03f",
-      "57d0166f3e4cc77b3944e7c4808b06d58b27fdd7",
       "5846ce877fa2a0fd52c81c7b00af54e9c917e731",
       "58593c4895dabab122cd019be74c5c441e5944f0",
       "588d52cd294b8c0831375e44332771463dd4a862",
@@ -820,6 +822,7 @@
       "5aab9234db340f118a17dd17ea4b03d78ab1f482",
       "5ad95bbe111b3c36af13a206bd05cce0b8635ab4",
       "5b01757314831299ffe306f33fbf1832ce78d930",
+      "5b3cf19e722460be382663e211295d05ebb17579",
       "5b55170b93ad1a19ab1b60288d47bb944637a2a1",
       "5bbb490937b30c00a875a1e2aa3c3693b1e2c2cf",
       "5bfdd71c73b2dddc3ba4023cf8fa258f5c22455f",
@@ -965,6 +968,7 @@
       "73f40511c724b9a8e9a83958c3d3f39299490f19",
       "73f43d898e82b56174710a1ecf3e20c1b35d7883",
       "73fc4541209a8b5fd89952c8dbdec7982e719f1c",
+      "740bebded550894d7f56dee9b547755c2500d8fb",
       "742c08cceeebf6f6e10c747e9c609ab3b0a8b4e7",
       "74538f7edfe6479271dcc52019849955392aa7ff",
       "745af51a73da7d98607255ceee0563f16a090486",
@@ -998,7 +1002,6 @@
       "77b6432bb6ab5452f75f091850310bdce2823fdd",
       "783b00eeef0e4d33310c8600f4dc7082f9cf8215",
       "783d929f711008884dd1db8599d7baccefc4b3a2",
-      "7870c6231c3ab6040d26c2904815f0a79533b077",
       "78bbc0e7c86383980edfbd9ffbdaf9f0eda7f3c2",
       "78bcb584d3d090d37e9d4e55f22eb7168a916732",
       "78f22084a53bbce3529ffad083205931553568bf",
@@ -1097,6 +1100,7 @@
       "8df3eb432737da41c38807d68bc65a6b26f4ae02",
       "8dffd59c975fda0214f65a3fc29cf75708916ba3",
       "8e081bdeb9229ea739ce9000d71f7f0401dee71a",
+      "8e7020bfbe63bbdd95cd6facbc3364d3617b3896",
       "8f0a4f037ae5589e96f03225da9df80c6d9314bd",
       "8f964bd5f5770ab61f09a05fa5792240be615372",
       "8fcb983201f9f48eb5d94eed7c41fef07c64382e",
@@ -1291,7 +1295,6 @@
       "b6aaa5c021799b982c4f209062abc692da9c55eb",
       "b71b73ca766d36c44a3b7c107b522b9b429c0fd0",
       "b726103405e8d41392e6be2dd91013ab5b3f9f84",
-      "b72b07c8211f599677a4030d6de753c62b309496",
       "b7372aa3e798dd84c6e6e73e8c330db00d3abeff",
       "b7a69a5881ee9d44a38c380930bf654a62e56459",
       "b7c77b1fcd3ecd101b2ad59892dd5795f6889bda",
@@ -1368,7 +1371,6 @@
       "c641cdd90c323c448e0a4802e65e9942085a2fda",
       "c66fb2c2cc10ff41345c57bc543974ba955fa6f7",
       "c7b8016ee77aad32ffb308bcff3c40787b95e311",
-      "c7d711396f758aba4b42efe0d543d856d20da606",
       "c7ff895f961a7d3322b61e297294f6ade52eade1",
       "c81565b5cd21cd5db4b29723a6a0862eff98836d",
       "c8223ccc14afbf0abb227ef89b874dcec58223cc",
@@ -1652,7 +1654,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148079,
+    "total_code": 148642,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -1729,10 +1731,10 @@
         "max_function": 84
       },
       "projects/mtc/src/mtc/cli_help.mt": {
-        "lines": 621,
-        "code": 587,
-        "max_line": 288,
-        "max_function": 118
+        "lines": 623,
+        "code": 589,
+        "max_line": 302,
+        "max_function": 120
       },
       "projects/mtc/src/mtc/dap/handlers.mt": {
         "lines": 695,
@@ -1871,6 +1873,12 @@
         "code": 196,
         "max_line": 114,
         "max_function": 20
+      },
+      "projects/mtc/src/mtc/ir_verify.mt": {
+        "lines": 581,
+        "code": 510,
+        "max_line": 107,
+        "max_function": 107
       },
       "projects/mtc/src/mtc/lexer/keywords.mt": {
         "lines": 82,
@@ -2377,8 +2385,8 @@
         "max_function": 46
       },
       "projects/mtc/src/mtc/main.mt": {
-        "lines": 4155,
-        "code": 3372,
+        "lines": 4187,
+        "code": 3400,
         "max_line": 277,
         "max_function": 204
       },
@@ -2389,10 +2397,10 @@
         "max_function": 144
       },
       "projects/mtc/src/mtc/main/build_cli.mt": {
-        "lines": 1705,
-        "code": 1492,
+        "lines": 1728,
+        "code": 1515,
         "max_line": 198,
-        "max_function": 184
+        "max_function": 192
       },
       "projects/mtc/src/mtc/main/format_cli.mt": {
         "lines": 349,
@@ -2686,7 +2694,7 @@
   },
   "markers": [],
   "tests": {
-    "projects": 22,
+    "projects": 23,
     "test_mt": 106
   }
 }
