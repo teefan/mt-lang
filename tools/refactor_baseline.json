@@ -379,8 +379,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 1256,
-    "duplicated_lines": 8431,
+    "windows": 1262,
+    "duplicated_lines": 8433,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -694,6 +694,7 @@
       "41b6de35e742e296fc4e6c97102f0a7ba6c71178",
       "41bc2390cb9f5a257c858935c4dec8850e316397",
       "41caf77ca04ee63e11d705c54b3126db1996f551",
+      "42220aa471d228257ba95228beb5b423f79cd9ad",
       "424f52cbbfd551f0ad0fe8f552479f9c1a8e06c5",
       "426a8f563b8f847f4fa2ff041eddce527424143f",
       "4280d3dbc19ea0d030fb9307948b4206e59ed2f1",
@@ -964,6 +965,7 @@
       "74538f7edfe6479271dcc52019849955392aa7ff",
       "745af51a73da7d98607255ceee0563f16a090486",
       "748019c628b763ab36335c24767c831f85582144",
+      "748c194c9e746b15d8e7a5c808e255c6140db52f",
       "749c13564c97c260bf27eaa4d982b78b73def5c0",
       "74af0f20289b72107a241478b2d05fddeae00705",
       "74cc8fcf367dbddf69837c8cce19b89569185ff5",
@@ -1040,6 +1042,7 @@
       "82a7d33636e03a805aecdbc5bd4a227229f2cbcb",
       "82cbf30314fa772405227f26d970a6a74fa8b7dd",
       "833a67381ad4b131e89f9561c5dfa537136ccc5d",
+      "8361142aded62380c9c6e6db17765ec1b5c311b7",
       "83a28867d1cab09e08793ebed1481f8d2aa07c4d",
       "83b1e53fecb9de03080e21bf81a9cd057cade9cc",
       "83c97a3f58faa4534922fb85a0842507aefc9e32",
@@ -1179,6 +1182,7 @@
       "a0e5594a5e3f0d66ea144aeb2ae85a8eb1b9ff39",
       "a0eeea473554894a27100391b7f2904ea1f11c54",
       "a106eeb09ed3aa6a8357409440db84bf98049e76",
+      "a1193e501cddc4c8440e916422f63f8553768540",
       "a1497b29d3d4a52b37d1e7ce596dc68ed54c3186",
       "a15122d937017775362450e0673d7c67eeffba69",
       "a156821a8246da636a6a0fdfb342a0a9c2423acd",
@@ -1399,6 +1403,7 @@
       "cf5cc1a3ca2550e0beee95dcc3f28d0255b3332f",
       "cf5f4714a4a31724ab464a8ff49834cb8d376023",
       "cf9642ec96b2ac5587385ec14f5413dd6362b4cb",
+      "cfd3a44f1a17262eda5e16cea333b6b0795f2fd2",
       "cfe2b2e1923e6debca2e3a16a71c955694086545",
       "d08f61aec6ea8033907fd5a1106385b1ad67d6db",
       "d08f9188754e7b2ad626dd0a7d77c5f2cbc93052",
@@ -1587,6 +1592,7 @@
       "f588c744d59aa26492771c9527f960a44a38b2d0",
       "f5959dfe3ca8fb7d9b4216f3b21e221afb201376",
       "f5bd0ffa106ed8fa04b2fac8dd85660caf397f62",
+      "f5e5bca4a57920104840a4b7010f5d5773fd8310",
       "f649302ba5e941f640de158d13be77c6cc4f553e",
       "f64a6bcbdb757d7723d6076ca9f0cd0779cf48d4",
       "f65a2374d2c2884e3713182f1f255f35d2de476b",
@@ -1641,9 +1647,9 @@
     ]
   },
   "sizes": {
-    "total_code": 146774,
-    "functions_over_limit": 39,
-    "files_over_limit": 13,
+    "total_code": 147288,
+    "functions_over_limit": 40,
+    "files_over_limit": 14,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
         "lines": 3219,
@@ -1688,8 +1694,8 @@
         "max_function": 18
       },
       "projects/mtc/src/mtc/build.mt": {
-        "lines": 2289,
-        "code": 1849,
+        "lines": 2498,
+        "code": 2043,
         "max_line": 121,
         "max_function": 218
       },
@@ -1700,10 +1706,10 @@
         "max_function": 52
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 8618,
-        "code": 7212,
+        "lines": 8881,
+        "code": 7435,
         "max_line": 237,
-        "max_function": 242
+        "max_function": 270
       },
       "projects/mtc/src/mtc/c_backend/reachability.mt": {
         "lines": 433,
@@ -1718,10 +1724,10 @@
         "max_function": 84
       },
       "projects/mtc/src/mtc/cli_help.mt": {
-        "lines": 593,
-        "code": 559,
-        "max_line": 278,
-        "max_function": 99
+        "lines": 595,
+        "code": 561,
+        "max_line": 288,
+        "max_function": 101
       },
       "projects/mtc/src/mtc/dap/handlers.mt": {
         "lines": 695,
@@ -2366,8 +2372,8 @@
         "max_function": 46
       },
       "projects/mtc/src/mtc/main.mt": {
-        "lines": 4055,
-        "code": 3276,
+        "lines": 4147,
+        "code": 3365,
         "max_line": 277,
         "max_function": 204
       },
@@ -2378,9 +2384,9 @@
         "max_function": 144
       },
       "projects/mtc/src/mtc/main/build_cli.mt": {
-        "lines": 1430,
-        "code": 1258,
-        "max_line": 176,
+        "lines": 1436,
+        "code": 1264,
+        "max_line": 198,
         "max_function": 215
       },
       "projects/mtc/src/mtc/main/format_cli.mt": {

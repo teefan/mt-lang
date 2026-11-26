@@ -89,6 +89,53 @@ struct Emitter:
     # The linkage name of the function currently being emitted, used in the
     # loop-guard abort message.
     current_fn_linkage: str
+    # Split emission.  `split_target` is 0 (single-file buffer), 1 (header),
+    # 2 (data unit), or 3 (the current module unit).  Every line goes through
+    # `emit_append`, so single-file output is unchanged when split_mode is
+    # false.
+    split_mode: bool
+    split_target: int
+    split_header: string.String
+    split_data: string.String
+    split_unit_names: vec.Vec[string.String]
+    split_unit_sources: vec.Vec[string.String]
+    split_unit_index: ptr_uint
+
+
+## One module unit in a split render.
+public struct SplitUnit:
+    module_name: string.String
+    source: string.String
+
+
+## The three render products: a shared header, a data unit for globals and
+## static assertions, and one C unit per owning module.
+public struct SplitOutput:
+    header: string.String
+    data: string.String
+    units: vec.Vec[SplitUnit]
+
+
+public function create_split_output() -> SplitOutput:
+    return SplitOutput(
+        header = string.String.create(),
+        data = string.String.create(),
+        units = vec.Vec[SplitUnit].create()
+    )
+
+
+public function release_split_output(output: ref[SplitOutput]) -> void:
+    output.header.release()
+    output.data.release()
+    var i: ptr_uint = 0
+    while i < output.units.len():
+        let unit_ptr = output.units.get(i) else:
+            break
+        unsafe:
+            read(unit_ptr).module_name.release()
+            read(unit_ptr).source.release()
+        i += 1
+    output.units.release()
 
 
 ## Local variant-arm metadata for prelude type collection (mirrors lowering's
@@ -122,6 +169,33 @@ public function generate_c(
     emit_line_directives: bool,
     debug_guards: bool,
     export_public: bool
+) -> string.String:
+    return generate_c_impl(input_program, emit_line_directives, debug_guards, export_public, null)
+
+
+public function generate_c_split(
+    input_program: ir.Program,
+    emit_line_directives: bool,
+    debug_guards: bool,
+    export_public: bool,
+    output: ref[SplitOutput]
+) -> void:
+    var ignored = generate_c_impl(
+        input_program,
+        emit_line_directives,
+        debug_guards,
+        export_public,
+        ptr_of(output)
+    )
+    ignored.release()
+
+
+function generate_c_impl(
+    input_program: ir.Program,
+    emit_line_directives: bool,
+    debug_guards: bool,
+    export_public: bool,
+    split: ptr[SplitOutput]?
 ) -> string.String:
     var program = input_program
     # Concrete generic struct instances are carried outside the IR's `:structs`
@@ -171,6 +245,13 @@ public function generate_c(
         external_eq_fields = map_mod.Map[str, span[ir.Field]].create(),
         opt_type_set = map_mod.Map[str, types.Type].create(),
         std_c_backing = map_mod.Map[str, str].create(),
+        split_mode = split != null,
+        split_target = 0,
+        split_header = string.String.create(),
+        split_data = string.String.create(),
+        split_unit_names = vec.Vec[string.String].create(),
+        split_unit_sources = vec.Vec[string.String].create(),
+        split_unit_index = 0,
     )
     var backing_map = collect_std_c_backing(program)
     let backing_map_ptr = heap.must_alloc[map_mod.Map[str, str]](1)
@@ -276,6 +357,8 @@ public function generate_c(
     ) or use_fatal or use_fatal_str or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants)) or use_entry_argv or slice_has_str or slice_has_str_index or slice_has_str_concat
     let use_str_equality = uses_str_equality(funcs) or equality_helpers_need_str(ref_of(e), program)
     var simd_types = collect_simd_types(funcs, program)
+    if e.split_mode:
+        e.split_target = 1
 
     # Feature-test macros, includes, forward declarations, and the fixed helper
     # types/emitters that precede the program's own declarations.
@@ -295,6 +378,8 @@ public function generate_c(
     # Emit runtime helpers before forward declarations (mirrors Ruby order).
     emit_runtime_helpers(ref_of(e), program, funcs)
     emit_program_types(ref_of(e), program, span_types, tuple_types, gen_variants, opt_structs, funcs)
+    if e.split_mode:
+        prepare_split_units(ref_of(e), funcs, program.module_name)
     emit_program_bodies(
         ref_of(e),
         program,
@@ -311,19 +396,53 @@ public function generate_c(
         use_entry_argv
     )
 
-    # Ruby joins the lines and rstrips, then appends a single newline.
-    let text = e.buffer.as_str()
-    var end = text.len
-    while end > 0:
-        let b = text.byte_at(end - 1)
-        if b == 10 or b == 32 or b == 9 or b == 13:
-            end -= 1
-        else:
-            break
-    var trimmed = string.String.with_capacity(end + 1)
-    trimmed.append(text.slice(0, end))
-    trimmed.push_byte('\n')
-    # Everything the emitter accumulated is dead once `trimmed` is built: the
+    var result = string.String.create()
+    if split != null:
+        let output = split
+        e.split_target = 0
+        var header_text = trim_string(e.split_header)
+        var final_header = string.String.create()
+        final_header.append("#ifndef MTC_SPLIT_HEADER_H\n#define MTC_SPLIT_HEADER_H\n")
+        final_header.append(header_text.as_str())
+        final_header.append("#endif\n")
+        header_text.release()
+        unsafe:
+            read(output).header.release()
+            read(output).header = final_header
+
+        var data_text = trim_string(e.split_data)
+        var final_data = string.String.create()
+        final_data.append("#include \"mtc.h\"\n")
+        final_data.append(data_text.as_str())
+        data_text.release()
+        unsafe:
+            read(output).data.release()
+            read(output).data = final_data
+
+        var units = vec.Vec[SplitUnit].create()
+        var ui: ptr_uint = 0
+        while ui < e.split_unit_sources.len():
+            let name_ptr = e.split_unit_names.get(ui) else:
+                break
+            let source_ptr = e.split_unit_sources.get(ui) else:
+                break
+            var unit = SplitUnit(
+                module_name = string.String.from_str(unsafe: read(name_ptr).as_str()),
+                source = string.String.create()
+            )
+            unit.source.append("#include \"mtc.h\"\n")
+            var unit_text = trim_string(unsafe: read(source_ptr))
+            unit.source.append(unit_text.as_str())
+            unit_text.release()
+            units.push(unit)
+            ui += 1
+        unsafe:
+            read(output).units.release()
+            read(output).units = units
+    else:
+        result.release()
+        result = trim_string(e.buffer)
+    # Everything the emitter accumulated is dead once `result` is built: the
     # output buffer, the per-generation lookup tables, the collected type/func
     # sets and the two module-level backing-name maps.  They used to be left to
     # process exit, which cost ~80 MB per call (`--keep-c` emits twice, `mtc test`
@@ -340,7 +459,55 @@ public function generate_c(
     opaques.release()
     simd_types.release()
     span_types.release()
+    return result
+
+
+## Rstrip trailing whitespace and append one newline, matching the single-file
+## output shape.
+function trim_string(input: string.String) -> string.String:
+    let text = input.as_str()
+    var end = text.len
+    while end > 0:
+        let b = text.byte_at(end - 1)
+        if b == 10 or b == 32 or b == 9 or b == 13:
+            end -= 1
+        else:
+            break
+    var trimmed = string.String.with_capacity(end + 1)
+    trimmed.append(text.slice(0, end))
+    trimmed.push_byte('\n')
     return trimmed
+
+
+## One unit per module that contributes an emitted function.  Synthetic
+## functions without an owner go to the root unit.
+function prepare_split_units(e: ref[Emitter], funcs: span[ir.Function], root_module: str) -> void:
+    var i: ptr_uint = 0
+    while i < funcs.len:
+        let f = unsafe: read(funcs.data + i)
+        var module_name = root_module
+        match f.source_module:
+            Option.some as owner:
+                module_name = owner.value
+            Option.none:
+                pass
+        if module_name.len == 0:
+            module_name = "program"
+        if split_unit_index_for(e, module_name) >= e.split_unit_names.len():
+            e.split_unit_names.push(string.String.from_str(module_name))
+            e.split_unit_sources.push(string.String.create())
+        i += 1
+
+
+function split_unit_index_for(e: ref[Emitter], module_name: str) -> ptr_uint:
+    var i: ptr_uint = 0
+    while i < e.split_unit_names.len():
+        let name_ptr = e.split_unit_names.get(i) else:
+            break
+        if unsafe: read(name_ptr).as_str() == module_name:
+            return i
+        i += 1
+    return e.split_unit_names.len()
 
 
 ## Emit the feature-test macros, deduplicated include set, forward
@@ -665,12 +832,20 @@ function emit_program_bodies(
     slice_span_types: vec.Vec[types.Type],
     use_entry_argv: bool
 ) -> void:
+    if e.split_mode:
+        e.split_target = 1
     var i: ptr_uint = 0
     if funcs.len > 0:
         i = 0
         while i < funcs.len:
             unsafe:
-                emit_line(e, strings.join_two(function_signature(read(funcs.data + i), export_public), ";"))
+                emit_line(
+                    e,
+                    strings.join_two(
+                        function_signature(read(funcs.data + i), export_public, e.split_mode),
+                        ";"
+                    )
+                )
             i += 1
         emit_line(e, "")
     i = 0
@@ -736,17 +911,34 @@ function emit_program_bodies(
         if emitted_consts.len() > 0:
             emit_line(e, "")
     if program.globals.len > 0:
-        var gi: ptr_uint = 0
-        while gi < program.globals.len:
-            unsafe:
-                let g = read(program.globals.data + gi)
-                emit_line(e, render_global(e, g))
-            gi += 1
+        if e.split_mode:
+            e.split_target = 1
+            var gh: ptr_uint = 0
+            while gh < program.globals.len:
+                unsafe:
+                    emit_line(e, render_global_extern(read(program.globals.data + gh)))
+                gh += 1
+            e.split_target = 2
+            var gd: ptr_uint = 0
+            while gd < program.globals.len:
+                unsafe:
+                    emit_line(e, render_global_definition(ref_of(e), read(program.globals.data + gd)))
+                gd += 1
+            e.split_target = 1
+        else:
+            var gi: ptr_uint = 0
+            while gi < program.globals.len:
+                unsafe:
+                    let g = read(program.globals.data + gi)
+                    emit_line(e, render_global(e, g))
+                gi += 1
         emit_line(e, "")
 
     # Top-level static asserts, evaluated by the C compiler.  Emitted after all
     # type definitions so `sizeof` over user structs sees complete types.
     if program.static_asserts.len > 0:
+        if e.split_mode:
+            e.split_target = 2
         var sai: ptr_uint = 0
         while sai < program.static_asserts.len:
             unsafe:
@@ -754,6 +946,8 @@ function emit_program_bodies(
                 emit_line(e, render_static_assert(e, assertion.condition, assertion.message))
             sai += 1
         emit_line(e, "")
+        if e.split_mode:
+            e.split_target = 1
 
     # Emit str_buffer runtime helpers if any str_buffer struct is present.
     if has_str_buffer_structs(program):
@@ -763,9 +957,22 @@ function emit_program_bodies(
     if use_entry_argv:
         emit_entry_argv_helpers(e)
     i = 0
+    if e.split_mode:
+        e.split_target = 3
     while i < funcs.len:
         unsafe:
-            emit_function(e, read(funcs.data + i), export_public)
+            let f = read(funcs.data + i)
+            if e.split_mode:
+                var module_name = program.module_name
+                match f.source_module:
+                    Option.some as owner:
+                        module_name = owner.value
+                    Option.none:
+                        pass
+                if module_name.len == 0:
+                    module_name = "program"
+                e.split_unit_index = split_unit_index_for(e, module_name)
+            emit_function(e, f, export_public, e.split_mode)
         if i < funcs.len - 1:
             emit_line(e, "")
         i += 1
@@ -775,17 +982,39 @@ function emit_program_bodies(
 # =============================================================================
 
 function emit_line(e: ref[Emitter], text: str) -> void:
-    e.buffer.append(text)
-    e.buffer.append("\n")
+    emit_append(e, text)
+    emit_newline(e)
+
+
+## Append raw text to the active split target, or to the single-file buffer.
+function emit_append(e: ref[Emitter], text: str) -> void:
+    if not e.split_mode:
+        e.buffer.append(text)
+        return
+    match e.split_target:
+        1:
+            e.split_header.append(text)
+        2:
+            e.split_data.append(text)
+        3:
+            let unit_ptr = e.split_unit_sources.get(e.split_unit_index) else:
+                return
+            unsafe: read(unit_ptr).append(text)
+        _:
+            e.buffer.append(text)
+
+
+function emit_newline(e: ref[Emitter]) -> void:
+    emit_append(e, "\n")
 
 
 ## Emit `indent + text + newline` without materializing the joined line.  The
 ## joined form (`emit_line(e, join_two(indent, text))`) allocated one `String`
 ## per statement; both appends land in the output buffer either way.
 function emit_indented(e: ref[Emitter], indent: str, text: str) -> void:
-    e.buffer.append(indent)
-    e.buffer.append(text)
-    e.buffer.append("\n")
+    emit_append(e, indent)
+    emit_append(e, text)
+    emit_newline(e)
 
 
 ## Free the per-generation lookup tables and the module-level backing-name maps.
@@ -802,6 +1031,22 @@ function release_emitter_tables(e: ref[Emitter]) -> void:
     e.std_c_backing.release()
     e.array_call_temps.release()
     e.loop_guards.release()
+    e.split_header.release()
+    e.split_data.release()
+    var sui: ptr_uint = 0
+    while sui < e.split_unit_names.len():
+        let name_ptr = e.split_unit_names.get(sui) else:
+            break
+        unsafe: read(name_ptr).release()
+        sui += 1
+    sui = 0
+    while sui < e.split_unit_sources.len():
+        let source_ptr = e.split_unit_sources.get(sui) else:
+            break
+        unsafe: read(source_ptr).release()
+        sui += 1
+    e.split_unit_names.release()
+    e.split_unit_sources.release()
     let std_c_map = std_c_backing_names
     if std_c_map != null:
         var owned = unsafe: read(std_c_map)
@@ -3987,8 +4232,8 @@ function topo_visit_type(
 
 ## `export_public` keeps a `public` top-level function's symbol external (the
 ## host's library intent); executables keep every non-entry function `static`.
-function function_signature(func: ir.Function, export_public: bool) -> str:
-    let prefix = if func.entry_point or (export_public and func.public_export): "" else: "static "
+function function_signature(func: ir.Function, export_public: bool, force_external: bool) -> str:
+    let prefix = if func.entry_point or force_external or (export_public and func.public_export): "" else: "static "
     var buf = string.String.create()
     buf.append(prefix)
     # A function returning `array[T, N]` cannot return it by value in C; it is
@@ -4038,13 +4283,13 @@ function array_out_param_decl(t: types.Type, name: str) -> str:
     return c_decl(t, strings.join_three("(*", name, ")"))
 
 
-function emit_function(e: ref[Emitter], func: ir.Function, export_public: bool) -> void:
+function emit_function(e: ref[Emitter], func: ir.Function, export_public: bool, force_external: bool) -> void:
     e.used_labels.clear()
     collect_used_labels(func.body, ref_of(e.used_labels))
     e.current_fn_return_type = func.return_type
     e.current_fn_linkage = func.linkage_name
     e.array_call_temps = map_mod.Map[ptr_uint, str].create()
-    emit_line(e, strings.join_two(function_signature(func, export_public), " {"))
+    emit_line(e, strings.join_two(function_signature(func, export_public, force_external), " {"))
     # Debug profile: reserve one guard counter per loop and declare them all at
     # function scope, before any statement.  They must NOT be declared around
     # each loop: a CPS-async resume jumps into the loop body through a label,
@@ -6127,29 +6372,29 @@ function emit_variant_eq_helper(e: ref[Emitter], vd: ir.VariantDecl) -> void:
     let outer_c = vd.linkage_name
     let fn_name = variant_equality_helper_name(outer_c)
     let struct_ty = strings.join_three("struct ", outer_c, "")
-    e.buffer.append(strings.join_five("static bool ", fn_name, "(", struct_ty, " left, "))
-    e.buffer.append(struct_ty)
-    e.buffer.append(" right) {")
-    e.buffer.push_byte(10)
+    emit_append(e, strings.join_five("static bool ", fn_name, "(", struct_ty, " left, "))
+    emit_append(e, struct_ty)
+    emit_append(e, " right) {")
+    emit_newline(e)
 
     # Compare discriminants first.
-    e.buffer.append("  if (left.kind != right.kind) return false;")
-    e.buffer.push_byte(10)
+    emit_append(e, "  if (left.kind != right.kind) return false;")
+    emit_newline(e)
 
     # Switch on left.kind.
-    e.buffer.append("  switch (left.kind) {")
-    e.buffer.push_byte(10)
+    emit_append(e, "  switch (left.kind) {")
+    emit_newline(e)
     var ai: ptr_uint = 0
     while ai < vd.arms.len:
         var arm: ir.VariantArm
         unsafe:
             arm = read(vd.arms.data + ai)
         let kind_name = strings.join_four(outer_c, "_kind_", arm.name, "")
-        e.buffer.append(strings.join_three("    case ", kind_name, ":"))
-        e.buffer.push_byte(10)
+        emit_append(e, strings.join_three("    case ", kind_name, ":"))
+        emit_newline(e)
         if arm.fields.len > 0:
-            e.buffer.append("      {")
-            e.buffer.push_byte(10)
+            emit_append(e, "      {")
+            emit_newline(e)
             var fi: ptr_uint = 0
             while fi < arm.fields.len:
                 var field: ir.Field
@@ -6159,17 +6404,17 @@ function emit_variant_eq_helper(e: ref[Emitter], vd: ir.VariantDecl) -> void:
                 let right_expr = strings.join_five("right.data.", arm.name, ".", c_safe_field_name(field.name), "")
                 emit_variant_field_compare(e, left_expr, right_expr, field.ty)
                 fi += 1
-            e.buffer.append("      }")
-            e.buffer.push_byte(10)
-        e.buffer.append("      break;")
-        e.buffer.push_byte(10)
+            emit_append(e, "      }")
+            emit_newline(e)
+        emit_append(e, "      break;")
+        emit_newline(e)
         ai += 1
-    e.buffer.append("  }")
-    e.buffer.push_byte(10)
-    e.buffer.append("  return true;")
-    e.buffer.push_byte(10)
-    e.buffer.append("}")
-    e.buffer.push_byte(10)
+    emit_append(e, "  }")
+    emit_newline(e)
+    emit_append(e, "  return true;")
+    emit_newline(e)
+    emit_append(e, "}")
+    emit_newline(e)
 
 
 ## Emit a comparison check for one variant payload field.  Recursively handles
@@ -6407,10 +6652,10 @@ function emit_struct_equality_helpers(e: ref[Emitter], program: ir.Program) -> v
 function emit_struct_eq_helper(e: ref[Emitter], outer_c: str, fields: span[ir.Field]) -> void:
     let fn_name = struct_equality_helper_name(outer_c)
     let struct_ty = strings.join_three("struct ", outer_c, "")
-    e.buffer.append(strings.join_five("static bool ", fn_name, "(", struct_ty, " left, "))
-    e.buffer.append(struct_ty)
-    e.buffer.append(" right) {")
-    e.buffer.push_byte(10)
+    emit_append(e, strings.join_five("static bool ", fn_name, "(", struct_ty, " left, "))
+    emit_append(e, struct_ty)
+    emit_append(e, " right) {")
+    emit_newline(e)
     var fi: ptr_uint = 0
     while fi < fields.len:
         var field: ir.Field
@@ -6425,10 +6670,10 @@ function emit_struct_eq_helper(e: ref[Emitter], outer_c: str, fields: span[ir.Fi
                 1
             )
         fi += 1
-    e.buffer.append("  return true;")
-    e.buffer.push_byte(10)
-    e.buffer.append("}")
-    e.buffer.push_byte(10)
+    emit_append(e, "  return true;")
+    emit_newline(e)
+    emit_append(e, "}")
+    emit_newline(e)
 
 
 ## Emit the C guard comparing one field (or nested element) by type:
@@ -6446,7 +6691,7 @@ function emit_eq_field_guard(
 ) -> void:
     let pad = indent_c(indent)
     if is_str_type(field_ty):
-        e.buffer.append(strings.join_five(
+        emit_append(e, strings.join_five(
             pad,
             "if (!mt_str_equal(",
             left_expr,
@@ -6455,7 +6700,7 @@ function emit_eq_field_guard(
         ))
     else if types.is_nullable_type(field_ty) and not is_pointer_like_for_nullable(types.unwrap_nullable(field_ty)):
         let base = types.unwrap_nullable(field_ty)
-        e.buffer.append(strings.join_six(
+        emit_append(e, strings.join_six(
             pad,
             "if (",
             left_expr,
@@ -6463,9 +6708,9 @@ function emit_eq_field_guard(
             right_expr,
             strings.join_three(".has_value) return false;", "", "")
         ))
-        e.buffer.push_byte(10)
-        e.buffer.append(strings.join_four(pad, "if (", left_expr, ".has_value) {"))
-        e.buffer.push_byte(10)
+        emit_newline(e)
+        emit_append(e, strings.join_four(pad, "if (", left_expr, ".has_value) {"))
+        emit_newline(e)
         emit_eq_field_guard(
             e,
             strings.join_three(left_expr, ".value", ""),
@@ -6473,18 +6718,18 @@ function emit_eq_field_guard(
             base,
             indent + 1
         )
-        e.buffer.append(strings.join_two(pad, "}"))
-        e.buffer.push_byte(10)
+        emit_append(e, strings.join_two(pad, "}"))
+        emit_newline(e)
     else if is_array_type(field_ty):
         let elem_ty = array_element_type(field_ty)
         let count = array_length(field_ty)
-        e.buffer.append(strings.join_four(
+        emit_append(e, strings.join_four(
             pad,
             "for (uintptr_t index = 0; index < ",
             long_to_str(count),
             "; index++) {"
         ))
-        e.buffer.push_byte(10)
+        emit_newline(e)
         emit_eq_field_guard(
             e,
             strings.join_five(left_expr, "[index]", "", "", ""),
@@ -6492,12 +6737,12 @@ function emit_eq_field_guard(
             elem_ty,
             indent + 1
         )
-        e.buffer.append(strings.join_two(pad, "}"))
-        e.buffer.push_byte(10)
+        emit_append(e, strings.join_two(pad, "}"))
+        emit_newline(e)
     else:
         let cname = c_type(field_ty)
         if e.variant_eq_set.contains(cname):
-            e.buffer.append(strings.join_six(
+            emit_append(e, strings.join_six(
                 pad,
                 "if (!",
                 variant_equality_helper_name(cname),
@@ -6506,7 +6751,7 @@ function emit_eq_field_guard(
                 strings.join_five(", ", right_expr, ")) return false;", "", "")
             ))
         else if e.struct_eq_set.contains(cname):
-            e.buffer.append(strings.join_six(
+            emit_append(e, strings.join_six(
                 pad,
                 "if (!",
                 struct_equality_helper_name(cname),
@@ -6515,7 +6760,7 @@ function emit_eq_field_guard(
                 strings.join_five(", ", right_expr, ")) return false;", "", "")
             ))
         else:
-            e.buffer.append(strings.join_six(
+            emit_append(e, strings.join_six(
                 pad,
                 "if (",
                 left_expr,
@@ -6523,7 +6768,7 @@ function emit_eq_field_guard(
                 right_expr,
                 strings.join_three(") return false;", "", "")
             ))
-        e.buffer.push_byte(10)
+        emit_newline(e)
 
 
 ## True when the binary expression is a struct `==` / `!=` comparison whose
@@ -6871,6 +7116,24 @@ function render_initializer_exp(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
 
 
 ## Emit a module-level global variable (event, var, etc.).
+function render_global_extern(g: ir.Global) -> str:
+    var buf = string.String.create()
+    buf.append("extern ")
+    buf.append(c_decl(g.ty, g.linkage_name))
+    buf.append(";")
+    return buf.as_str()
+
+
+## Split-mode definition: the data unit owns the one external definition.
+function render_global_definition(e: ref[Emitter], g: ir.Global) -> str:
+    var buf = string.String.create()
+    buf.append(c_decl(g.ty, g.linkage_name))
+    buf.append(" = ")
+    buf.append(render_initializer(e, g.value))
+    buf.append(";")
+    return buf.as_str()
+
+
 function render_global(e: ref[Emitter], g: ir.Global) -> str:
     var buf = string.String.create()
     buf.append("static ")

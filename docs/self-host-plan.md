@@ -125,10 +125,11 @@ history.
 | Multi-file commands | **Flat in the file count, and no longer ~2× a heavy file's peak** (session 152).  The per-file heap region is a bump allocator: it frees everything at once and cannot reuse anything released inside it, so an abandoned temporary lands in the peak.  It buys release of every file *after* the one compiling, so it is now gated on the **file count** (`should_scope_file`, `remaining_after >= 2`): the last two files of a run compile unregioned.  Measured: `check main.mt` + a 60-byte file **422 MiB** (was 958,616 KiB always-regioned; 432,068 never-regioned), 40 small files **372 MiB** (1,367,120 never-regioned), `check projects/mtc` (191 files) **997 MiB** (11,398,120 never-regioned).  The `lower`/`emit-c` 8-heaviest sets pay 2–3% (**1,456 / 1,694 MiB**) because their last two files are heavy.  The old session-151 row (same file twice 946 MiB, `main.mt` + `sexpr.mt` 1,407 MiB) was the ungated region; see *Region gate (session 152)*. |
 | `test/mt` | **106 files / 0 failed** (71 in-language tests + 35 compile-fail diagnostics fixtures; session 170 added three generic-invariance fixtures and the conformance corpus lives separately; peak RSS **100 MiB**, measured session 151) |
 | Examples | **311/311** under the self-only `emit-c`/`check` sweep — session 161 extended it from 78 to **every** `examples/**/*.mt`, adding `examples/raylib` (219) and `examples/box3d` (14); a first line of `external` selects `check` instead of `emit-c` (one raw binding module).  That gap is how a call to a nonexistent `rl.image_draw` survived (session 160).  Plus the headless **`box2d_smoke`** build/run gate |
-| Recorded oracles | **CLI 227/227 (0.6.3); diagnostics 498 compared / 7 changed / 1 unrecorded / 0 differ; lint 649 compared / 26 changed / 1 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
+| Multi-TU build | **opt-in `--split`** (session 171): shared `mtc.h`, one data unit for globals/static asserts, one `unit_<n>.c` per module, and a single `cc` driver invocation; all functions are external and the split-built compiler passes 22/22 and 106/106.  Single-file output is byte-identical and remains the default.  Static archives and wasm still reject `--split`; per-TU object caching is C3 |
+| Recorded oracles | **CLI 227/227 (0.6.3); diagnostics 498 compared / 7 changed / 1 unrecorded / 0 differ; lint 646 compared / 29 changed / 1 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
 | `check` diagnostics | the 500-file diagnostic oracle is the gate (the extra row is `box2d_api_smoke`); the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field anchor is a reviewed difference, not a residual (session 146). |
-| Linter | **43/43 rules, 13/13 fixers**; the 649-compared lint oracle is the corpus gate.  `unused-import` now credits type positions (annotations, params/returns, fields, aliases, specialization type arguments, proc signatures, `emit` declarations), fixing the type-only false positives; the remaining tree output is dominated by true style/ownership hints.  The historical host residue (3 self-only `std` files, timeout rows) is in *Deliberate differences*. |
+| Linter | **43/43 rules, 13/13 fixers**; the 646-compared lint oracle is the corpus gate.  `unused-import` now credits type positions (annotations, params/returns, fields, aliases, specialization type arguments, proc signatures, `emit` declarations), fixing the type-only false positives; the remaining tree output is dominated by true style/ownership hints.  The historical host residue (3 self-only `std` files, timeout rows) is in *Deliberate differences*. |
 | LSP | self-only instruments: valgrind **0 errors**; edit latency **4.9 ms median**; hover **2.0–7.7 ms median** by probe class on `analyzer.mt`; soak **74.9 KB/cycle raw / 7.9 LS at 200 cycles** (session 148, the last full instrument run; no positive slope); `milkTea/debugInfo` byte-equal on the recorded fixtures.  Completion after a non-text receiver (`read(p).`, `make().`, `arr[0].`) landed in session 147; enum-member hover through a type alias in session 148.  Session 154 evicted the per-document caches on close and released map keys in every bulk cache release, and measured the remaining open/close RSS growth as allocator high-water, not retention.  The host-differential harness/audit/recovery probes are retired with the host; `lsp_parity record --server self` and `lsp_soak` remain |
 | LSP conformance | **phases 0–5 + the session-147/148/156 extensions**: `tools/lsp_conformance.rb`, **38 spec cases, 38 pass / 0 fail** (session 158 re-ran); the `lsp_conformance` tier-2 gate is green.  Coverage 43/54 requests, 30 capability keys; rangesFormatting, refresh endpoints, progress/partial results, non-text receiver completion, aliased enum-member hover and the outline's generic-parameter shape are implemented; only the deliberately skipped editor features remain out of scope.  Plan and evidence: `docs/lsp-enhancement-plan.md` |
 | DAP | self-only `dap_smoke`: all probes answer, the real lldb-dap breakpoint session reaches `add` and terminates; `dap_async_probe` proves the VS Code launch ordering; desktop F5 smoke passed session 74; re-ran session 155 |
@@ -136,7 +137,7 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check`; **Box2D is 3.2.0** (`178495ba…`, tag `v3.2.0`) and the raw module is reproducible (session 158; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; `bindings/raw/<name>.json` holds the option tables, `bindings/nullable/<name>.json` the `?` policies, and `tools/rebind_binding.rb` reproduces a raw module; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 170 files / 179,501 lines / 146,774 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **28 unused + 7 test-only** public declarations; 8,431 duplicated lines / 1,256 clusters; **39 functions ≥ 200 lines**; **13 files ≥ 2,000 code lines**; 0 markers; tests 22/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 170 after the B3 closure, callable/match fixes and the conformance seed; growth is deliberate, not a layout regression) |
+| **Refactoring safety** | structural guard: 170 files / 180,073 lines / 147,288 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **28 unused + 7 test-only** public declarations; 8,433 duplicated lines / 1,262 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 22/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 170 after the B3 closure, callable/match fixes and the conformance seed; growth is deliberate, not a layout regression) |
 | Gate planning | `tools/gates.sh` area inference covers `lexer/` (→ `parser`), `main/` (→ `cli`), `bindgen/` (→ `bindings`) and every other `projects/mtc/src/mtc/` path (→ `compiler_core`, the full behaviour set).  An unclassified path is a hard error naming the file; previously it planned **zero** gates and exited 0 (session 159) |
 | Bootstrap `-j` | **removed** (session 159).  The flag was parsed, capped and warned about but never passed to a build command — a stage build is one whole-program `mtc build`.  `release.sh -j` removed with it; `bootstrap.sh -j 4` now errors |
 
@@ -5075,7 +5076,7 @@ their historical record is the archived tag `archive/host-ruby-0.4.26`.
 | --- | --- | --- |
 | CLI behavior | Track B; `tools/golden/README.md` | `ruby tools/cli_parity.rb --expect tools/golden/cli.json -q` (227 cases) |
 | Analyzer / `check` diagnostics | the session-72/139/141 records | `ruby tools/diag_parity.rb check std examples --expect tools/golden/diag.json -q` (498 compared / 7 changed / 1 unrecorded) |
-| Linter | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb --expect tools/golden/lint.json -q` (649 compared / 26 changed / 1 unrecorded) |
+| Linter | Track C; the linter sections of `docs/language-design.md` | `ruby tools/lint_parity.rb --expect tools/golden/lint.json -q` (646 compared / 29 changed / 1 unrecorded) |
 | Formatter (`:tidy`, `:preserve`, `:canonical`) | Track E/formatter history at `d8a199c7` §7 | `ruby tools/format_parity.rb all -j 4 --expect tools/golden/format.json -q` |
 | Wasm build/preview | Track B item 1; `wasm_preview.mt` | `ruby tools/wasm_smoke.rb --self build/stage2/mtc` |
 | Docs server | Track B item 2; `docs_app.mt` | `ruby tools/docs_smoke.rb --self build/stage2/mtc` |
@@ -5088,6 +5089,7 @@ their historical record is the archived tag `archive/host-ruby-0.4.26`.
 | In-language tests | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` (106/0) |
 | Refactoring pass | `docs/refactoring.md` | `tools/gates.sh --areas refactor --run`; `ruby tools/refactor_guard.rb --check --strict --ratchet` |
 | Example builds | Track H | `tools/gates.sh --areas examples --run` (311/311) |
+| Multi-TU split | `tools/split_build.rb`; C2 notes | `ruby tools/split_build.rb --self build/stage2/mtc` (samples + split-compiler suites); `--quick` for CI sample coverage |
 
 ### Verification tiers
 
@@ -6507,6 +6509,36 @@ verification surface:
   compared / 7 changed / 1 unrecorded / 0 differ**; lint **649 compared / 26
   changed / 1 unrecorded / 0 differ**; examples **311/311**; valgrind LSP **0
   errors**; neovim smoke.
+
+### Session 171 — C2 multi-TU `--split`
+
+Multi-TU C emission is now opt-in and behavior-locked:
+
+- IR `Function`/`Constant`/`Global` carry `source_module`; assembly stamps every
+  module fragment and proc renumbering preserves the owner.  Synthetic/emitted
+  declarations without an owner land in the root unit.
+- `generate_c_split` emits a guarded `mtc.h` (preamble, types, prototypes,
+  helpers, literals, constants, global externs), a `data.c` for mutable globals
+  and static assertions, and one `unit_<n>.c` per owning module.  All functions
+  are external in split mode; single-file mode keeps its exact prior linkage and
+  remains byte-identical.
+- `build --split` writes the tree, compiles every source in one `cc` driver
+  invocation, links, and writes the debug map; `--keep-c` saves the split tree.
+  `emit-c --split DIR` emits the same tree for inspection.  The whole-binary
+  cache is bypassed for split builds.  Static archives and wasm reject
+  `--split` with a clear error for now.
+- `tools/split_build.rb` compares single/split execution on four samples and
+  split-builds the compiler, then runs `test projects/mtc` **22/0** and
+  `test/mt` **106/0** with the split compiler.  CI runs the full gate; the
+  structural baseline is refreshed for the deliberate +514 code lines and the
+  new long `build_split` function.
+
+Verified with the compiler-core gate: bootstrap fixed point; strict **0**;
+conformance **22/22**; split_build **full ok**; CLI **227/227**; diagnostics
+**498 / 7 changed / 1 unrecorded / 0 differ**; lint **646 / 29 changed / 1
+unrecorded / 0 differ**; examples **311/311**.  The split-built compiler emits
+the same C as the single-file compiler on the comparison case.
+
 
 ### Known issue: `milkTea/debugInfo` on very large files
 

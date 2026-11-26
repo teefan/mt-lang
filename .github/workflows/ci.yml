@@ -48,6 +48,9 @@ jobs:
       - name: Structural guard
         run: ruby tools/refactor_guard.rb --check --strict --ratchet -q
 
+      - name: Split build
+        run: ruby tools/split_build.rb --self build/stage2/mtc
+
       - name: Recorded oracles
         run: |
           # Five CLI cases are host-toolchain artifacts: bindgen output is

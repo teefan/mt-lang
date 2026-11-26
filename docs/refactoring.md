@@ -218,15 +218,15 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 170 / 179,501 / 146,774 |
+| source files / lines / code lines | 170 / 180,073 / 147,288 |
 | layering edges / violations | 119 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (170 modules) |
 | dead exports (unused / test-only) | 28 / 7 |
-| duplication (windows / duplicated lines) | 1,256 / 8,431 (window 12) |
-| functions ≥ 200 lines | 39 |
-| files ≥ 2,000 code lines | 13 |
+| duplication (windows / duplicated lines) | 1,262 / 8,433 (window 12) |
+| functions ≥ 200 lines | 40 |
+| files ≥ 2,000 code lines | 14 |
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 22 / 106 |
 
@@ -241,6 +241,15 @@ seed.  Code lines 145,942 → 146,700 (+758); total source lines 178,497 →
 test-only.  The conformance `.mt` cases live outside `projects/mtc` and do not
 enter the source metrics.  The strict ratchet is now the gate command
 (`--check --strict --ratchet`), not just the invariant check.
+
+Session 171 refreshed the baseline after C2 multi-TU emission: IR source
+ownership, the split header/data/unit renderer, `emit-c --split DIR`, and
+`build --split` with `--keep-c` tree output.  Against the session-170
+provenance baseline, code lines 146,774 → 147,288 (+514), duplicated lines
+8,431 → 8,433, one new ≥200-line function (`build_split`), and `build.mt`
+crossed 2,000 code lines (13 → 14 files).  Tests remain 22 / 106; dead exports
+remain 28 / 7.  The split renderer is opt-in; single-file output is
+byte-identical and remains the default.
 
 Session 165 formatted `projects/mtc/src` and `projects/mtc/test` with
 `mtc format --tidy` (192 files, idempotent on a second pass).  The tidy rules

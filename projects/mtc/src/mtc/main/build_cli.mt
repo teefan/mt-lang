@@ -55,6 +55,7 @@ struct BuildOptions:
     locked_flag: bool
     frozen_flag: bool
     strict_types: bool
+    split: bool
 
 
 ## Parse the shared `build`/`run` flag set into [[BuildOptions]], appending
@@ -86,6 +87,7 @@ function parse_command_options(
         locked_flag = false,
         frozen_flag = false,
         strict_types = false,
+        split = false,
     )
     read(filtered).push(command_name)
     var ai: ptr_uint = 1
@@ -187,6 +189,10 @@ function parse_command_options(
             continue
         if arg == "--strict-types":
             options.strict_types = true
+            ai += 1
+            continue
+        if arg == "--split":
+            options.split = true
             ai += 1
             continue
         if arg == "--locked":
@@ -362,7 +368,7 @@ public function build_command(args: span[str]) -> int:
     # are re-run on a hit, as the host's `build_cached` does.
     # The cache stores a single executable; emcc's `.js`/`.wasm`/`.data`
     # sidecars are not cached, so wasm builds always recompile.
-    let cache_enabled = options.use_cache and options.keep_c_path.is_none() and options.kind == build_driver.BuildKind.executable and options.platform != resolver.Platform.wasm
+    let cache_enabled = options.use_cache and not options.split and options.keep_c_path.is_none() and options.kind == build_driver.BuildKind.executable and options.platform != resolver.Platform.wasm
     var cache_key = string.String.create()
     defer: cache_key.release()
     if cache_enabled:
@@ -389,7 +395,7 @@ public function build_command(args: span[str]) -> int:
     match build_driver.build(
         program, ir_program, output_owner.as_str(), options.c_compiler, roots.as_span(), options.sanitize,
         options.profile_name, options.debug_guards, options.kind, options.platform, build_template, build_assets,
-        options.keep_c_path
+        options.keep_c_path, options.split
     ):
         Result.success as built:
             var output = built.value
@@ -1200,7 +1206,7 @@ public function run_command(args: span[str]) -> int:
     match build_driver.build(
         program, ir_program, output_path.as_str(), options.c_compiler, roots.as_span(), options.sanitize,
         options.profile_name, options.debug_guards, build_driver.BuildKind.executable, options.platform,
-        run_template, run_assets, options.keep_c_path
+        run_template, run_assets, options.keep_c_path, options.split
     ):
         Result.success as built:
             var built_path = built.value

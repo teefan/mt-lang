@@ -72,15 +72,15 @@ public function print_help(to_err: bool) -> void:
     emit_line(to_err, "       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [--lower] [--strict-types] [-I PATH]")
     emit_line(to_err, "       mtc debug PATH [--locked] [--frozen] [-I PATH]")
     emit_line(to_err, "       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
-    emit_line(to_err, "       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
+    emit_line(to_err, "       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [--split DIR] [-I PATH]")
     emit_line(
         to_err,
-        "       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--debug-guards|--no-debug-guards] [--strict-types] [--clean] [-I PATH]"
+        "       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--debug-guards|--no-debug-guards] [--strict-types] [--split] [--clean] [-I PATH]"
     )
     emit_line(to_err, "       mtc new NAME")
     emit_line(
         to_err,
-        "       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [--strict-types] [-I PATH] [--debug-guards|--no-debug-guards]"
+        "       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [--strict-types] [--split] [-I PATH] [--debug-guards|--no-debug-guards]"
     )
     emit_line(
         to_err,
@@ -135,15 +135,15 @@ public function print_usage(to_err: bool) -> void:
     emit_line(to_err, "       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [--lower] [--strict-types] [-I PATH]")
     emit_line(to_err, "       mtc debug PATH [--locked] [--frozen] [-I PATH]")
     emit_line(to_err, "       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
-    emit_line(to_err, "       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
+    emit_line(to_err, "       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [--split DIR] [-I PATH]")
     emit_line(
         to_err,
-        "       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--debug-guards|--no-debug-guards] [--strict-types] [--clean] [-I PATH]"
+        "       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--debug-guards|--no-debug-guards] [--strict-types] [--split] [--clean] [-I PATH]"
     )
     emit_line(to_err, "       mtc new NAME")
     emit_line(
         to_err,
-        "       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [--strict-types] [-I PATH] [--debug-guards|--no-debug-guards]"
+        "       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [--strict-types] [--split] [-I PATH] [--debug-guards|--no-debug-guards]"
     )
     emit_line(
         to_err,
@@ -207,7 +207,7 @@ function print_cli_command_help(command: str, to_err: bool) -> bool:
         emit_line(to_err, "  Options:")
         emit_line(to_err, "    -o, --output OUTPUT          Output path for the compiled artifact.")
         emit_line(to_err, "    --cc COMPILER                C compiler to use (default: $CC or cc).")
-        emit_line(to_err, "    --keep-c C_PATH              Write the generated C source to this path.")
+        emit_line(to_err, "    --keep-c C_PATH              Write the generated C source (or split tree with --split) to this path.")
         emit_line(to_err, "    --profile PROFILE            debug (default) | release.")
         emit_line(to_err, "    --platform PLATFORM          linux (default) | windows | wasm.")
         emit_line(
@@ -227,6 +227,7 @@ function print_cli_command_help(command: str, to_err: bool) -> bool:
         )
         emit_line(to_err, "     --no-debug-guards            Disable loop iteration and recursion guards.")
         emit_line(to_err, "     --strict-types               Warn when assignability uses the permissive fallback.")
+        emit_line(to_err, "     --split                      Emit one C unit per module and compile them as separate translation units.")
         emit_line(to_err, "     --clean                      Remove existing build outputs and exit.")
         emit_line(to_err, "     -I, --include-path PATH      Add an extra module root.")
         if to_err:
@@ -243,7 +244,7 @@ function print_cli_command_help(command: str, to_err: bool) -> bool:
         emit_line(to_err, "  Options:")
         emit_line(to_err, "    -o, --output OUTPUT          Output path for the compiled binary.")
         emit_line(to_err, "    --cc COMPILER                C compiler to use (default: $CC or cc).")
-        emit_line(to_err, "    --keep-c C_PATH              Write the generated C source to this path.")
+        emit_line(to_err, "    --keep-c C_PATH              Write the generated C source (or split tree with --split) to this path.")
         emit_line(to_err, "    --profile PROFILE            debug (default) | release.")
         emit_line(to_err, "    --platform PLATFORM          linux (default) | windows | wasm.")
         emit_line(to_err, "     --locked                     Resolve dependencies from package.lock.")
@@ -255,6 +256,7 @@ function print_cli_command_help(command: str, to_err: bool) -> bool:
         )
         emit_line(to_err, "     --no-debug-guards            Disable loop iteration and recursion guards.")
         emit_line(to_err, "     --strict-types               Warn when assignability uses the permissive fallback.")
+        emit_line(to_err, "     --split                      Emit one C unit per module and compile them as separate translation units.")
         emit_line(to_err, "     -I, --include-path PATH      Add an extra module root.")
         if to_err:
             let _ = terminal.flush_stderr()
@@ -406,7 +408,7 @@ function print_source_command_help(command: str, to_err: bool) -> bool:
             let _ = terminal.flush_stderr()
         return true
     if command == "emit-c":
-        emit_line(to_err, "Usage: mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
+        emit_line(to_err, "Usage: mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [--split DIR] [-I PATH]")
         emit_line(to_err, "")
         emit_line(to_err, "  Compile one or more source files to C and print the output.")
         if to_err:

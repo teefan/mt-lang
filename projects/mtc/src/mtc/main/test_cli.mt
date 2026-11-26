@@ -1302,7 +1302,7 @@ function build_runner_file(source_path: str, options: TestRunOptions, output_pat
     match build_driver.build(
         program, ir_program, output_path, options.cc, runner_roots.as_span(), options.sanitize, options.profile,
         Option[bool].some(value = false), build_driver.BuildKind.executable, options.platform,
-        Option[str].none, span[string.String](), Option[str].none
+        Option[str].none, span[string.String](), Option[str].none, false
     ):
         Result.success:
             heap_mod.end_region(previous_region)

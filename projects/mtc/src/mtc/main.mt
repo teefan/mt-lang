@@ -2760,7 +2760,8 @@ function emit_c_one_path(
     roots: ref[vec.Vec[str]],
     owned_roots: ref[vec.Vec[string.String]],
     platform: resolver.Platform,
-    remaining_files: ptr_uint
+    remaining_files: ptr_uint,
+    split_dir: Option[str]
 ) -> int:
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
@@ -2807,6 +2808,20 @@ function emit_c_one_path(
         source_root_owner.release()
         return 1
     let ir_program = lowering_outcome.program
+    match split_dir:
+        Option.some as split:
+            var split_output = c_backend.create_split_output()
+            defer: c_backend.release_split_output(ref_of(split_output))
+            c_backend.generate_c_split(ir_program, false, false, false, ref_of(split_output))
+            if write_split_output(ref_of(split_output), split.value) != 0:
+                entry_path_owner.release()
+                source_root_owner.release()
+                return 1
+            entry_path_owner.release()
+            source_root_owner.release()
+            return 0
+        Option.none:
+            pass
     var c_source = c_backend.generate_c(ir_program, false, false, false)
     defer: c_source.release()
     let text = c_source.as_str()
@@ -2816,13 +2831,80 @@ function emit_c_one_path(
     return 0
 
 
+## Write a split render as `mtc.h`, `data.c`, and one `unit_<n>.c` per module.
+function write_split_output(output: ref[c_backend.SplitOutput], dir: str) -> int:
+    match fs.create_directories(dir):
+        Result.failure as failure:
+            var error = failure.error
+            eprint_line(error.message.as_str())
+            error.release()
+            return 1
+        Result.success:
+            pass
+    var header_path = path_ops.join(dir, "mtc.h")
+    defer: header_path.release()
+    match fs.write_text(header_path.as_str(), output.header.as_str()):
+        Result.failure as failure:
+            var error = failure.error
+            eprint_line(error.message.as_str())
+            error.release()
+            return 1
+        Result.success:
+            pass
+    var data_path = path_ops.join(dir, "data.c")
+    defer: data_path.release()
+    match fs.write_text(data_path.as_str(), output.data.as_str()):
+        Result.failure as failure:
+            var error = failure.error
+            eprint_line(error.message.as_str())
+            error.release()
+            return 1
+        Result.success:
+            pass
+    var ui: ptr_uint = 0
+    while ui < output.units.len():
+        let unit_ptr = output.units.get(ui) else:
+            break
+        var file_name = string.String.create()
+        defer: file_name.release()
+        file_name.append("unit_")
+        file_name.append(ptr_uint_to_str(ui))
+        file_name.append(".c")
+        var unit_path = path_ops.join(dir, file_name.as_str())
+        defer: unit_path.release()
+        match fs.write_text(unit_path.as_str(), unsafe: read(unit_ptr).source.as_str()):
+            Result.failure as failure:
+                var error = failure.error
+                eprint_line(error.message.as_str())
+                error.release()
+                return 1
+            Result.success:
+                pass
+        ui += 1
+    return 0
+
+
 ## `mtc emit-c PATH|DIR [PATH|DIR ...] [--locked|--frozen] [-I PATH]`.
 function emit_c_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer: roots.release()
     var no_includes = vec.Vec[str].create()
     defer: no_includes.release()
-    split_include_pairs(unsafe: span[str](data = args.data + 1, len = args.len - 1), ref_of(roots), ref_of(no_includes))
+    var split_dir: Option[str] = Option[str].none
+    var split_args = vec.Vec[str].create()
+    defer: split_args.release()
+    var ai: ptr_uint = 1
+    while ai < args.len:
+        if args[ai] == "--split":
+            if ai + 1 >= args.len:
+                eprint_line("missing value for --split")
+                return 1
+            split_dir = Option[str].some(value = args[ai + 1])
+            ai += 2
+        else:
+            split_args.push(args[ai])
+            ai += 1
+    split_include_pairs(split_args.as_span(), ref_of(roots), ref_of(no_includes))
     if no_includes.is_empty():
         eprint_line("missing source file path")
         cli_help.print_usage(true)
@@ -2869,6 +2951,9 @@ function emit_c_command(args: span[str]) -> int:
 
     let platform = resolver.Platform.linux
     let multiple = program_paths.len() > 1
+    if multiple and split_dir.is_some():
+        eprint_line("emit-c --split accepts one program")
+        return 1
     var pi: ptr_uint = 0
     while pi < program_paths.len():
         let path_ptr = program_paths.get(pi) else:
@@ -2883,7 +2968,14 @@ function emit_c_command(args: span[str]) -> int:
             return 1
         if multiple:
             stdio.print_format(c"/* --- %.*s --- */\n", int<-(path.len), path.data)
-        let rc = emit_c_one_path(path, ref_of(file_roots), ref_of(file_owned), platform, program_paths.len() - (pi + 1))
+        let rc = emit_c_one_path(
+            path,
+            ref_of(file_roots),
+            ref_of(file_owned),
+            platform,
+            program_paths.len() - (pi + 1),
+            split_dir
+        )
         if rc != 0:
             return rc
         if multiple and pi + 1 < program_paths.len():

@@ -55,6 +55,7 @@ public function build(
     html_template: Option[str],
     assets: span[string.String],
     keep_c_path: Option[str],
+    split: bool,
 ) -> Result[string.String, string.String]:
     let is_wasm = platform == resolver.Platform.wasm
     let toolchain = prepare_build_toolchain(program, roots, c_compiler, output_path, platform, kind)
@@ -79,7 +80,10 @@ public function build(
 
     var c_source = string.String.create()
     defer: c_source.release()
-    match generate_build_c_source(ir_program, is_debug, guards, kind, keep_c_path):
+    var single_keep_c = keep_c_path
+    if split:
+        single_keep_c = Option[str].none
+    match generate_build_c_source(ir_program, is_debug, guards, kind, single_keep_c):
         Result.success as generated:
             c_source.release()
             c_source = generated.value
@@ -130,6 +134,28 @@ public function build(
     defer: release_owned_strings(ref_of(link_flags))
     var vendored_flags = collect_vendored_link_flags(program, roots)
     defer: release_owned_strings(ref_of(vendored_flags))
+
+    if split:
+        match fs.remove(c_path.as_str()):
+            Result.success:
+                pass
+            Result.failure:
+                pass
+        return build_split(
+            ir_program,
+            output_path,
+            compiler,
+            is_wasm,
+            is_debug,
+            guards,
+            sanitize,
+            kind,
+            include_flag.as_str(),
+            ref_of(binding_flags),
+            ref_of(link_flags),
+            ref_of(vendored_flags),
+            keep_c_path
+        )
 
     var owned_args = vec.Vec[string.String].create()
     defer: release_owned_strings(ref_of(owned_args))
@@ -223,6 +249,189 @@ public function build(
             var message = string.String.from_str("C compiler not found: ")
             message.append(compiler)
             return Result[string.String, string.String].failure(error = message)
+
+
+## Multi-TU build: write the shared header, data unit, and one unit per module,
+## then compile all sources in one cc driver invocation.  This keeps every
+## function external (prototypes in the header) and puts mutable globals in one
+## data unit; single-file output remains the default.
+function build_split(
+    ir_program: ir.Program,
+    output_path: str,
+    compiler: str,
+    is_wasm: bool,
+    is_debug: bool,
+    guards: bool,
+    sanitize: bool,
+    kind: BuildKind,
+    include_flag: str,
+    binding_flags: ref[vec.Vec[string.String]],
+    link_flags: ref[vec.Vec[string.String]],
+    vendored_flags: ref[vec.Vec[string.String]],
+    keep_c_path: Option[str],
+) -> Result[string.String, string.String]:
+    if is_wasm:
+        return Result[string.String, string.String].failure(
+            error = string.String.from_str("--split is not supported for wasm")
+        )
+    if kind == BuildKind.kind_static:
+        return Result[string.String, string.String].failure(
+            error = string.String.from_str("--split does not support static archives yet")
+        )
+
+    var output = c_backend.create_split_output()
+    defer: c_backend.release_split_output(ref_of(output))
+    c_backend.generate_c_split(
+        ir_program,
+        is_debug,
+        guards,
+        kind != BuildKind.executable,
+        ref_of(output)
+    )
+
+    var split_dir = string.String.create()
+    defer: split_dir.release()
+    var keep_tree = keep_c_path.is_some()
+    match keep_c_path:
+        Option.some as path:
+            split_dir.append(path.value)
+        Option.none:
+            var temp_dir = fs.create_temporary_directory_in_system_temp("mtc_split_") else:
+                return Result[string.String, string.String].failure(
+                    error = string.String.from_str("could not create split build directory")
+                )
+            split_dir.append(temp_dir.as_str())
+            temp_dir.release()
+    defer:
+        if not keep_tree:
+            match fs.remove_tree(split_dir.as_str()):
+                Result.success:
+                    pass
+                Result.failure:
+                    pass
+
+    var c_paths = vec.Vec[string.String].create()
+    defer: release_owned_strings(ref_of(c_paths))
+    match write_split_tree(ref_of(output), split_dir.as_str(), ref_of(c_paths)):
+        Result.success:
+            pass
+        Result.failure as failure:
+            return Result[string.String, string.String].failure(error = failure.error)
+
+    var command = vec.Vec[str].create()
+    defer: command.release()
+    command.push(compiler)
+    command.push("-std=c11")
+    command.push("-D_GNU_SOURCE")
+    if sanitize:
+        command.push("-fsanitize=address,undefined")
+        command.push("-fno-sanitize-recover=all")
+        command.push("-fno-omit-frame-pointer")
+    if is_debug:
+        command.push("-g")
+        command.push("-O0")
+    else:
+        command.push("-O3")
+        command.push("-DNDEBUG")
+    if include_flag.len > 0:
+        command.push(include_flag)
+    command.push("-I")
+    command.push(split_dir.as_str())
+    push_owned_flags(ref_of(command), binding_flags)
+    if kind == BuildKind.kind_shared:
+        command.push("-fPIC")
+        command.push("-shared")
+    var ci: ptr_uint = 0
+    while ci < c_paths.len():
+        let path_ptr = c_paths.get(ci) else:
+            break
+        command.push(unsafe: read(path_ptr).as_str())
+        ci += 1
+    command.push("-o")
+    command.push(output_path)
+    push_link_line(ref_of(command), vendored_flags, link_flags)
+
+    match process.capture(command.as_span()):
+        Result.success as captured:
+            var result = captured.value
+            defer: result.stdout.release()
+            defer: result.stderr.release()
+            if result.status.exit_code != 0:
+                var details = string.String.from_str(result.stdout.as_str())
+                details.append(result.stderr.as_str())
+                var message = string.String.from_str("C compiler failed:\n")
+                message.append(details.as_str())
+                details.release()
+                return Result[string.String, string.String].failure(error = message)
+        Result.failure as failure:
+            var error = failure.error
+            error.release()
+            return Result[string.String, string.String].failure(
+                error = string.String.from_str("C compiler not found: ")
+            )
+
+    if kind == BuildKind.executable:
+        write_debug_map(ir_program, output_path)
+    return Result[string.String, string.String].success(value = string.String.from_str(output_path))
+
+
+function write_split_tree(
+    output: ref[c_backend.SplitOutput],
+    dir: str,
+    c_paths: ref[vec.Vec[string.String]],
+) -> Result[bool, string.String]:
+    match fs.create_directories(dir):
+        Result.failure as failure:
+            var error = failure.error
+            var message = string.String.from_str(error.message.as_str())
+            error.release()
+            return Result[bool, string.String].failure(error = message)
+        Result.success:
+            pass
+    var header_path = path_ops.join(dir, "mtc.h")
+    match fs.write_text(header_path.as_str(), output.header.as_str()):
+        Result.failure as failure:
+            var error = failure.error
+            var message = string.String.from_str(error.message.as_str())
+            error.release()
+            header_path.release()
+            return Result[bool, string.String].failure(error = message)
+        Result.success:
+            pass
+    header_path.release()
+    var data_path = path_ops.join(dir, "data.c")
+    match fs.write_text(data_path.as_str(), output.data.as_str()):
+        Result.failure as failure:
+            var error = failure.error
+            var message = string.String.from_str(error.message.as_str())
+            error.release()
+            data_path.release()
+            return Result[bool, string.String].failure(error = message)
+        Result.success:
+            pass
+    c_paths.push(data_path)
+    var ui: ptr_uint = 0
+    while ui < output.units.len():
+        let unit_ptr = output.units.get(ui) else:
+            break
+        var file_name = string.String.create()
+        file_name.append("unit_")
+        file_name.append(strings.uint_to_str(ui))
+        file_name.append(".c")
+        var unit_path = path_ops.join(dir, file_name.as_str())
+        file_name.release()
+        match fs.write_text(unit_path.as_str(), unsafe: read(unit_ptr).source.as_str()):
+            Result.failure as failure:
+                var error = failure.error
+                var message = string.String.from_str(error.message.as_str())
+                error.release()
+                unit_path.release()
+                return Result[bool, string.String].failure(error = message)
+            Result.success:
+                pass
+        c_paths.push(unit_path)
+        ui += 1
+    return Result[bool, string.String].success(value = true)
 
 
 ## Validate the target, resolve the C compiler, and prepare the vendored
