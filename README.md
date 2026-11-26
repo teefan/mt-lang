@@ -947,7 +947,7 @@ Core modules in `std/`:
 
 **Collections**: `std.vec.Vec[T]`, `std.deque.Deque[T]`, `std.map.Map[K,V]`, `std.set.Set[T]`, `std.ordered_map.OrderedMap[K,V]`, `std.ordered_set.OrderedSet[T]`, `std.binary_heap.BinaryHeap[T]`, `std.priority_queue.PriorityQueue[T]`, `std.linked_map.LinkedMap[K,V]`, `std.linked_set.LinkedSet[T]`, `std.counter.Counter[T]`, `std.multiset.MultiSet[T]`, `std.queue.Queue[T]`, `std.stack.Stack[T]`, `std.bitset.Bitset`, `std.spatial.SpatialGrid[T]`, `std.ring_buffer.RingBuffer[T]`, `std.sparse_set.SparseSet[T]`, `std.lru_cache.LruCache[K,V]`
 
-**Serialization**: `std.json`, `std.toml`, `std.uri`, `std.serialize`
+**Serialization**: `std.json`, `std.toml`, `std.uri`, `std.serialize` (raw POD structs opt in with `@[serializable]`)
 
 **System**: `std.time`, `std.fs`, `std.path`, `std.process`, `std.cli`, `std.stdio`, `std.terminal`
 

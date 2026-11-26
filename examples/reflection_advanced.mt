@@ -23,23 +23,27 @@ const SELECTOR: int = 2
 # 2  Structs
 # ---------------------------------------------------------------------------
 
+@[ser.serializable]
 struct Vec3:
     x: float
     y: float
     z: float
 
 @[packed]
+@[ser.serializable]
 struct CompactHeader:
     tag: ubyte
     version: ushort
     extra: ubyte
 
+@[ser.serializable]
 struct Entity:
     pos: Vec3
     health: uint
     speed: float
     alive: byte
 
+@[ser.serializable]
 struct NestedContainer:
     entity: Entity
     id: uint

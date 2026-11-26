@@ -282,6 +282,56 @@ function comptime_attributes_of(
     return comptime_elements_for_attribute_apps(comptime_attr_apps(ctx, type_name), comptime_attr_filter(args))
 
 
+## Resolve `has_attribute(target, name)` against a type, `field_of`, or
+## `callable_of` target.  Applications match on their bare name, so an imported
+## `@[alias.serializable]` matches `serializable`.
+public function comptime_has_attribute(
+    ctx: ref[lowering.LoweringContext],
+    args: span[ast.Argument]
+) -> Option[bool]:
+    unsafe:
+        if args.len < 2:
+            return Option[bool].none
+        let attr_name = comptime_arg_name(args.data + 1)
+        if attr_name.len == 0:
+            return Option[bool].none
+        let first = read(args.data + 0)
+        match read(first.arg_value):
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_identifier as cid:
+                        if (cid.name == "field_of" or cid.name == "callable_of") and call.args.len == 2:
+                            let target_name = comptime_resolve_type_arg_name(ctx, call.args.data + 0)
+                            if cid.name == "field_of":
+                                let field_name = comptime_arg_name(call.args.data + 1)
+                                return Option[bool].some(value = attribute_apps_contain(
+                                    comptime_field_attr_apps(ctx, target_name, field_name),
+                                    attr_name
+                                ))
+                            return Option[bool].some(value = attribute_apps_contain(
+                                comptime_attr_apps(ctx, target_name),
+                                attr_name
+                            ))
+                    _:
+                        pass
+            _:
+                pass
+        let type_name = comptime_resolve_type_arg_name(ctx, args.data + 0)
+        return Option[bool].some(value = attribute_apps_contain(comptime_attr_apps(ctx, type_name), attr_name))
+
+
+function attribute_apps_contain(apps: span[ast.AttributeApplication], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < apps.len:
+        var app: ast.AttributeApplication
+        unsafe:
+            app = read(apps.data + i)
+        if lowering.attribute_application_name_is(app, name):
+            return true
+        i += 1
+    return false
+
+
 ## The attribute-name filter of `attributes_of(target, name)`, or "" when the
 ## call has no filter argument.
 function comptime_attr_filter(args: span[ast.Argument]) -> str:

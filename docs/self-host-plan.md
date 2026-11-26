@@ -6212,6 +6212,34 @@ write-back.  Verified with stage2: self **22/0**, `test/mt` **89/0**, bootstrap
 fixed point, examples **311/311**, box2d/async smokes, CLI **227/227**,
 diagnostics **504 / 0 differ**, lint **667 / 0 differ**.
 
+### Attribute reflection and opt-in raw serialization
+
+`has_attribute` now resolves at compile time for type, `field_of`, and
+`callable_of` targets.  The former lowering fallback returned `true`
+unconditionally; the resolver now reads the recorded attribute applications in
+const initializers (`try_const_call_ir`), `inline if`/`inline match`
+(`try_evaluate_const_expr`), and `static_assert` (`try_const_eval_bool`).
+Applications match on the bare name, so `@[alias.serializable]` matches
+`serializable`.
+
+`std.serialize` adds `public attribute[struct] serializable()` and a
+`require_serializable[T]()` guard called by `pack`/`unpack` and the
+`bin.Writer`/`bin.Reader` extensions.  An unmarked type emits a C
+`_Static_assert(0, "serialize.pack requires @[serializable] on T")` in its
+specialized function, so a pointer-containing type cannot be raw-memcpy'd by
+accident.  `examples/reflection_advanced.mt` annotates its POD structs
+(`@[ser.serializable]`), and the negative case was verified by building a
+temporary unmarked `str`-bearing struct: the C compiler fails with that
+message.
+
+Tests: `test/mt/attribute_test.mt` pins true/false `has_attribute` constants;
+`test/mt/serialize_test.mt` covers POD round-trip and short-input failure; the
+lowering test asserts the guard message in the specialized IR.  Verified:
+bootstrap fixed point; stage2 self **22/0** and `test/mt` **91/0**; examples
+**311/311**; box2d/async smokes; CLI **227/227**; diagnostics **502 / 3
+changed / 1 unrecorded / 0 differ**; lint **663 / 12 changed / 1 unrecorded /
+0 differ**.
+
 ### Known issue: `milkTea/debugInfo` on very large files
 
 The LSP debug-AST renderer aborts with `string.as_str text must be valid UTF-8`

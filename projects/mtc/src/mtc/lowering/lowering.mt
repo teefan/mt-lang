@@ -22214,6 +22214,14 @@ function try_const_eval_bool(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> Op
                         return Option[bool].none
                     return Option[bool].some(value = not inner)
                 return Option[bool].none
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_identifier as id:
+                        if id.name == "has_attribute" and call.args.len == 2:
+                            return comptime.comptime_has_attribute(ctx, call.args)
+                    _:
+                        pass
+                return Option[bool].none
             ast.Expr.expr_binary_op as bin:
                 if bin.operator == "and" or bin.operator == "or":
                     let lb = try_const_eval_bool(ctx, bin.left) else:

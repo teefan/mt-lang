@@ -826,6 +826,14 @@ function try_const_call_ir(
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
+                if id.name == "has_attribute" and args.len == 2:
+                    match comptime.comptime_has_attribute(ctx, args):
+                        Option.some as present:
+                            return Option[ptr[ir.Expr]].some(value = lowering.alloc_expr(
+                                ir.Expr.expr_boolean_literal(value = present.value, ty = ctx.bool_ty)
+                            ))
+                        Option.none:
+                            pass
                 # A struct of this module, or a local type alias re-exporting one
                 # (`type Color = c.Color`), constructs an aggregate literal.
                 match comptime.const_aggregate_target_type(ctx, ctx.module_name, id.name):
@@ -1593,6 +1601,20 @@ public function try_evaluate_const_expr(
                 return evaluate_const_unary(ctx, un.operator, un.operand)
             ast.Expr.expr_prefix_cast as pc:
                 return evaluate_const_prefix_cast(ctx, pc.target_type, pc.expression)
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_identifier as id:
+                        if id.name == "has_attribute" and call.args.len == 2:
+                            match comptime.comptime_has_attribute(ctx, call.args):
+                                Option.some as present:
+                                    return Option[comptime_types.ConstValue].some(
+                                        value = comptime_types.ConstValue.cv_bool(value = present.value)
+                                    )
+                                Option.none:
+                                    pass
+                    _:
+                        pass
+                return Option[comptime_types.ConstValue].none
             _:
                 return Option[comptime_types.ConstValue].none
 

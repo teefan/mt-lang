@@ -1202,6 +1202,34 @@ function test_atomic_compare_exchange_lowers_to_builtin() -> void:
     let text = ir.as_str()
     expect(text.contains_substring("__atomic_compare_exchange_n(&counter, expected, 7, false, 5, 5)"))
 
+
+@[test]
+function test_serialize_guard_rejects_unmarked_type() -> void:
+    ## `std.serialize.pack[T]` is opt-in: a type without @[serializable] emits
+    ## the C static assertion in its specialized function.
+    var source = <<-SRC
+        import std.serialize as ser
+
+        @[ser.serializable]
+        struct Pod:
+            x: int
+
+        struct NonPod:
+            x: int
+
+        function main() -> int:
+            var pod = Pod(x = 1)
+            let _ = ser.pack[Pod](ref_of(pod))
+            var bad = NonPod(x = 2)
+            let _ = ser.pack[NonPod](ref_of(bad))
+            return 0
+    SRC
+    var root = test_module_root()
+    defer: root.release()
+    var text = lower_source_roots(source, root.as_str())
+    defer: text.release()
+    expect(text.contains_substring("serialize.pack requires @[serializable]"))
+
 # =============================================================================
 #  Binary operand widening — mixed-width integer / int+float arithmetic casts
 #  the narrower operand up to the common type, matching Ruby's usual-arithmetic
