@@ -1,3 +1,4 @@
+import std.c.heap as heap_c
 import std.c.libc as libc
 import std.cstring as cstring
 
@@ -53,30 +54,151 @@ public struct RegionBlock:
 ## A growable bump region.  Blocks are allocated with libc directly (region
 ## bookkeeping must never be captured by another active region), and every
 ## allocation is preceded by a 16-byte header holding its size.
+##
+## The active region and the live-region list are thread-local.  A region is
+## owned by the thread that created it; `begin_region`/`end_region` also scope
+## its registration in the live list, so a region copied into a cache entry
+## after `end_region` never carries stale list pointers.
 public struct Region:
     blocks: ptr[RegionBlock]?
     block_count: ptr_uint
     block_capacity: ptr_uint
     next_block_bytes: ptr_uint
-
-
-var active_region: ptr[Region]? = null
+    owner_thread: ptr_uint
+    registered: bool
+    prev_live: ptr[Region]?
+    next_live: ptr[Region]?
 
 
 public function create_region() -> Region:
-    return Region(blocks = null, block_count = 0, block_capacity = 0, next_block_bytes = 0)
+    return Region(
+        blocks = null,
+        block_count = 0,
+        block_capacity = 0,
+        next_block_bytes = 0,
+        owner_thread = heap_c.mt_thread_id(),
+        registered = false,
+        prev_live = null,
+        next_live = null
+    )
 
 
-## Make `region` the active allocation region and return the previous one.
-## Pass the result to `end_region` to restore it (regions nest).
+function set_active_region(region: ptr[Region]?) -> void:
+    if region == null:
+        heap_c.mt_heap_set_active_region(null)
+    else:
+        unsafe:
+            heap_c.mt_heap_set_active_region(ptr[void]<-region)
+
+
+function set_live_region_head(region: ptr[Region]?) -> void:
+    if region == null:
+        heap_c.mt_heap_set_live_regions(null)
+    else:
+        unsafe:
+            heap_c.mt_heap_set_live_regions(ptr[void]<-region)
+
+
+## The active region for this thread, checking that it belongs to this thread.
+function current_region() -> ptr[Region]?:
+    let raw = heap_c.mt_heap_get_active_region()
+    if raw == null:
+        return null
+    unsafe:
+        let region = ptr[Region]<-raw
+        let owner = read(region).owner_thread
+        let current = heap_c.mt_thread_id()
+        if owner != 0 and owner != current:
+            fatal(c"heap: active region belongs to another thread")
+        return region
+
+
+function register_live_region(region: ptr[Region]) -> void:
+    let head_raw = heap_c.mt_heap_get_live_regions()
+    var head: ptr[Region]? = null
+    if head_raw != null:
+        unsafe:
+            head = ptr[Region]<-head_raw
+    unsafe:
+        read(region).prev_live = null
+        read(region).next_live = head
+        if head != null:
+            read(head).prev_live = region
+        read(region).registered = true
+    set_live_region_head(region)
+
+
+function unregister_live_region(region: ptr[Region]) -> void:
+    unsafe:
+        let prev = read(region).prev_live
+        let next = read(region).next_live
+        if prev != null:
+            read(prev).next_live = next
+        else:
+            set_live_region_head(next)
+        if next != null:
+            read(next).prev_live = prev
+        read(region).prev_live = null
+        read(region).next_live = null
+        read(region).registered = false
+
+
+## True when `memory` belongs to any live region registered on this thread.
+## Used on the slow release/resize path to reject a pointer whose region is not
+## the active one instead of handing interior region memory to libc.
+function belongs_to_live_region(memory: ptr[void]?) -> bool:
+    if memory == null:
+        return false
+    let head_raw = heap_c.mt_heap_get_live_regions()
+    if head_raw == null:
+        return false
+    unsafe:
+        var region: ptr[Region]? = ptr[Region]<-head_raw
+        while region != null:
+            if read(region).contains(memory):
+                return true
+            region = read(region).next_live
+    return false
+
+
+## Make `region` the active allocation region for this thread and return the
+## previous one.  The region is registered in the thread-local live list so a
+## release from the wrong region can be diagnosed.
 public function begin_region(region: ptr[Region]) -> ptr[Region]?:
-    let previous = active_region
-    active_region = region
+    var owner: ptr_uint = 0
+    var registered = false
+    unsafe:
+        owner = read(region).owner_thread
+        registered = read(region).registered
+    let current = heap_c.mt_thread_id()
+    if owner != 0 and owner != current:
+        fatal(c"heap.begin_region: region belongs to another thread")
+    if owner == 0:
+        unsafe:
+            read(region).owner_thread = current
+    if not registered:
+        register_live_region(region)
+    let previous = current_region()
+    set_active_region(region)
     return previous
 
 
 public function end_region(previous: ptr[Region]?) -> void:
-    active_region = previous
+    let current = current_region()
+    if current != null:
+        var registered = false
+        unsafe:
+            registered = read(current).registered
+        if registered:
+            unregister_live_region(current)
+    if previous != null:
+        var owner: ptr_uint = 0
+        unsafe:
+            owner = read(previous).owner_thread
+        let current_thread = heap_c.mt_thread_id()
+        if owner != 0 and owner != current_thread:
+            fatal(c"heap.end_region: previous region belongs to another thread")
+    set_active_region(previous)
 
 
 extending Region:
@@ -210,6 +332,8 @@ extending Region:
     ## Free every block and reset the region.  Only this call frees region
     ## memory; `heap.release_bytes` on region memory is a no-op.
     public editable function release_all() -> void:
+        if this.registered:
+            fatal(c"heap.Region.release_all called inside its begin_region/end_region scope")
         let blocks = this.blocks else:
             return
         var i: ptr_uint = 0
@@ -257,7 +381,7 @@ public function alloc_bytes(size_bytes: ptr_uint) -> ptr[void]?:
     if size_bytes == 0:
         return null
 
-    let region = active_region
+    let region = current_region()
     if region != null:
         unsafe:
             let memory = read(region).alloc_aligned_bytes(size_bytes, minimum_alignment) else:
@@ -285,7 +409,7 @@ public function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -
     if normalized_alignment == 0:
         return null
 
-    let region = active_region
+    let region = current_region()
     if region != null and normalized_alignment <= region_max_alignment:
         unsafe:
             let memory = read(region).alloc_aligned_bytes(size_bytes, normalized_alignment) else:
@@ -321,7 +445,7 @@ public function alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr_uint
     if mul_overflows(count, element_size_bytes):
         return null
 
-    let region = active_region
+    let region = current_region()
     if region != null:
         unsafe:
             let memory = read(region).alloc_aligned_bytes(count * element_size_bytes, minimum_alignment) else:
@@ -369,13 +493,16 @@ public function resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[vo
         release_bytes(memory)
         return null
 
-    let region = active_region
+    let region = current_region()
     if region != null:
         if memory == null:
             return alloc_bytes(size_bytes)
         unsafe:
             if read(region).contains(memory):
                 return read(region).resize_payload(memory, size_bytes)
+
+    if belongs_to_live_region(memory):
+        fatal(c"heap.resize_bytes: pointer belongs to a live region that is not active; resize it inside that region's scope")
 
     return libc.realloc(memory, size_bytes)
 
@@ -395,17 +522,21 @@ public function must_resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> p
 ## This is inherent to by-value pointer parameters: the function cannot reach
 ## the caller's binding to null it. For idempotent safe-release syntax, see
 ## `release_and_null[T]` or use a scope-bound allocator such as `arena.Arena`.
-## Memory owned by the active region is a no-op here: a region frees its
-## allocations only through `Region.release_all()`.
+## Memory owned by any live region on this thread is a no-op here: a region
+## frees its allocations only through `Region.release_all()`, even when a
+## different region is active.
 public function release_bytes(memory: ptr[void]?) -> void:
     if memory == null:
         return
 
-    let region = active_region
+    let region = current_region()
     if region != null:
         unsafe:
             if read(region).contains(memory):
                 return
+
+    if belongs_to_live_region(memory):
+        return
 
     libc.free(memory)
 

@@ -6172,6 +6172,31 @@ calls return immediately.  Fixed-pointed by valgrind: `async_stress_test`
 **31/31** with **0 errors**.  New `test/mt/async_receiver_test.mt` exercises an
 editable async receiver; it passes under `--sanitize`.
 
+### Heap regions: thread-local state and scoped cross-region checks
+
+`std/c/heap_support.h` (wrapped by `std/c/heap.mt`) now owns the per-thread
+active-region and live-region head (`_Thread_local`; pthread / Windows thread
+id, 0 on wasm).  `Region` records its owner thread; `begin_region` rejects a
+region created on another thread, and `end_region`/alloc/release/resize check
+the owner.  `begin_region`/`end_region` scope the region's registration in the
+thread-local live list, so a region copied into a `ModuleCacheEntry` after
+`end_region` never carries stale list pointers.  The first attempt registered
+at release time, which broke the module-cache tests; scoped registration fixed
+it.
+
+`release_bytes` on a pointer owned by any live region is a no-op (the region
+frees it in bulk); `resize_bytes` on a live region that is not active is a
+diagnosed error; `release_all` inside a live begin/end scope is a diagnosed
+error.  `heap_region_test.mt` adds thread-local worker regions, cross-region
+release no-op, cross-region resize fatal, cross-thread begin fatal, and active
+release_all fatal.  `module_loader_test.mt` (including the module-cache
+lifetime cases) passes.
+
+Verified: bootstrap fixed point; stage2 self suite **22/0** and `test/mt`
+**88/0**; `check projects/mtc`; LSP **38/38**; examples **311/311**; box2d and
+async smokes; CLI **227/227**; diagnostics **504 / 1 changed / 1 unrecorded /
+0 differ**; lint **667 / 8 changed / 1 unrecorded / 0 differ**.
+
 ### Known issue: `milkTea/debugInfo` on very large files
 
 The LSP debug-AST renderer aborts with `string.as_str text must be valid UTF-8`

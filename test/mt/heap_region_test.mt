@@ -5,7 +5,36 @@
 import std.map as map_mod
 import std.mem.heap as heap
 import std.string as string
+import std.thread as thread
 import std.vec as vec
+
+
+var tls_worker_a_ok: bool = false
+var tls_worker_b_ok: bool = false
+var shared_region: heap.Region = zero[heap.Region]
+
+
+function tls_region_worker_a() -> void:
+    var region = heap.create_region()
+    let previous = heap.begin_region(ptr_of(region))
+    let data = heap.must_alloc[long](8)
+    tls_worker_a_ok = region.contains(unsafe: ptr[void]<-data)
+    heap.end_region(previous)
+    region.release_all()
+
+
+function tls_region_worker_b() -> void:
+    var region = heap.create_region()
+    let previous = heap.begin_region(ptr_of(region))
+    let data = heap.must_alloc[long](8)
+    tls_worker_b_ok = region.contains(unsafe: ptr[void]<-data)
+    heap.end_region(previous)
+    region.release_all()
+
+
+function cross_thread_region_worker() -> void:
+    let previous = heap.begin_region(ptr_of(shared_region))
+    heap.end_region(previous)
 
 
 @[test]
@@ -148,4 +177,69 @@ function test_region_owns_container_buffers() -> void:
     table.set(1, 2)
     heap.end_region(previous)
     region.release_all()
+    return
+
+
+@[test]
+function test_region_state_is_thread_local() -> void:
+    tls_worker_a_ok = false
+    tls_worker_b_ok = false
+    var first = thread.spawn(tls_region_worker_a).unwrap()
+    var second = thread.spawn(tls_region_worker_b).unwrap()
+    let _ = first.join()
+    let _ = second.join()
+    expect(tls_worker_a_ok, "worker A allocated inside its own region")
+    expect(tls_worker_b_ok, "worker B allocated inside its own region")
+    return
+
+
+@[test]
+function test_region_cross_region_release_is_a_noop() -> void:
+    var first = heap.create_region()
+    var second = heap.create_region()
+    let previous_first = heap.begin_region(ptr_of(first))
+    let data = heap.must_alloc[long](8)
+    let previous_second = heap.begin_region(ptr_of(second))
+    heap.release(data)
+    # `first` is still an active outer region, so the release is a no-op even
+    # though `second` is the innermost active region.
+    expect(first.contains(unsafe: ptr[void]<-data), "a cross-region release does not free region memory")
+    heap.end_region(previous_second)
+    heap.end_region(previous_first)
+    first.release_all()
+    second.release_all()
+    return
+
+
+@[test] @[expect_fatal]
+function test_region_rejects_cross_region_resize() -> void:
+    var first = heap.create_region()
+    var second = heap.create_region()
+    let previous_first = heap.begin_region(ptr_of(first))
+    let data = heap.must_alloc[long](8)
+    let previous_second = heap.begin_region(ptr_of(second))
+    let grown = heap.must_resize[long](data, 32)
+    heap.release(grown)
+    heap.end_region(previous_second)
+    heap.end_region(previous_first)
+    first.release_all()
+    second.release_all()
+    return
+
+
+@[test] @[expect_fatal]
+function test_region_rejects_cross_thread_use() -> void:
+    shared_region = heap.create_region()
+    var worker = thread.spawn(cross_thread_region_worker).unwrap()
+    let _ = worker.join()
+    shared_region.release_all()
+    return
+
+
+@[test] @[expect_fatal]
+function test_region_release_all_rejects_the_active_region() -> void:
+    var region = heap.create_region()
+    let previous = heap.begin_region(ptr_of(region))
+    region.release_all()
+    heap.end_region(previous)
     return
