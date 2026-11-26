@@ -409,6 +409,10 @@ public function types_explicitly_compatible_with_consts(
         return true
     if same_tuple_type(expected, actual):
         return true
+    if tuple_literal_to_array_compatible(expected, actual, source_expr):
+        return true
+    if tuple_literal_to_span_compatible(expected, actual, source_expr):
+        return true
 
     # 12  The permissive negative-only fallback lives in
     #     `types_compatibility_status`; this function is the explicit rule chain.
@@ -532,6 +536,97 @@ function same_tuple_type(expected: types.Type, actual: types.Type) -> bool:
             match actual:
                 types.Type.ty_tuple:
                     return types.type_equals(expected, actual)
+                _:
+                    return false
+        _:
+            return false
+
+
+## A parenthesized value list is the language's array/span literal form:
+## `var a: array[int, 3] = (1, 2, 3)` and `span_range = (1.0, 2.0)`.
+## Accept it only when the source expression really is an expression list and
+## the target's element type agrees; a tuple-valued variable is not a literal.
+function tuple_literal_source(source_expr: ptr[ast.Expr]?) -> bool:
+    let ep = source_expr else:
+        return false
+    match unsafe: read(ep):
+        ast.Expr.expr_expression_list:
+            return true
+        ast.Expr.expr_named as named:
+            return tuple_literal_source(named.value)
+        _:
+            return false
+
+
+function tuple_literal_to_array_compatible(
+    expected: types.Type,
+    actual: types.Type,
+    source_expr: ptr[ast.Expr]?,
+) -> bool:
+    if not tuple_literal_source(source_expr):
+        return false
+    match actual:
+        types.Type.ty_tuple as t:
+            let t_bp = unsafe: read(t.payload)
+            match expected:
+                types.Type.ty_generic as g:
+                    let g_bp = unsafe: read(g.payload)
+                    if g_bp.name != "array" or g_bp.args.len < 2:
+                        return false
+                    let elem_ty = unsafe: read(g_bp.args.data + 0)
+                    let len_ty = unsafe: read(g_bp.args.data + 1)
+                    match len_ty:
+                        types.Type.ty_literal_int as lit:
+                            if lit.value != long<-t_bp.elements.len:
+                                return false
+                        _:
+                            return false
+                    var i: ptr_uint = 0
+                    while i < t_bp.elements.len:
+                        unsafe:
+                            if not types_compatible_with_consts(
+                                elem_ty,
+                                read(t_bp.elements.data + i),
+                                null,
+                                null
+                            ):
+                                return false
+                        i += 1
+                    return true
+                _:
+                    return false
+        _:
+            return false
+
+
+function tuple_literal_to_span_compatible(
+    expected: types.Type,
+    actual: types.Type,
+    source_expr: ptr[ast.Expr]?,
+) -> bool:
+    if not tuple_literal_source(source_expr):
+        return false
+    match actual:
+        types.Type.ty_tuple as t:
+            let t_bp = unsafe: read(t.payload)
+            match expected:
+                types.Type.ty_generic as g:
+                    let g_bp = unsafe: read(g.payload)
+                    if g_bp.name != "span" or g_bp.args.len < 1:
+                        return false
+                    let elem_ty = unsafe: read(g_bp.args.data + 0)
+                    var i: ptr_uint = 0
+                    while i < t_bp.elements.len:
+                        unsafe:
+                            if not types_compatible_with_consts(
+                                elem_ty,
+                                read(t_bp.elements.data + i),
+                                null,
+                                null
+                            ):
+                                return false
+                        i += 1
+                    return true
                 _:
                     return false
         _:

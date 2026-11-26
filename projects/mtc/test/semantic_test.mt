@@ -3771,3 +3771,82 @@ function test_strict_assignability_explicit_widening_and_borrow() -> void:
     var analysis = analyzer.check_source_file(file)
     defer: analysis.diagnostics.release()
     expect_eq(int<-analysis.diagnostics.len(), 0)
+
+
+@[test]
+function test_specialized_function_value_has_function_type() -> void:
+    # `work_one[T]` in value position denotes the function, not its void
+    # return; assigning it to a `fn(...)` field must not look like `void -> fn`.
+    let source = <<-SRC
+        struct Handler:
+            run: fn(state: ptr[void]) -> void
+
+        function work_one[T](state: ptr[void]) -> void:
+            pass
+
+        function make_handler[T]() -> Handler:
+            return Handler(run = work_one[T])
+    SRC
+    analyzer.set_strict_assignability(false)
+    expect_clean(source)
+
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    expect_eq(int<-pdiags.len(), 0)
+    analyzer.set_strict_assignability(true)
+    defer: analyzer.set_strict_assignability(false)
+    var analysis = analyzer.check_source_file(file)
+    defer: analysis.diagnostics.release()
+    expect_eq(int<-analysis.diagnostics.len(), 0)
+
+
+@[test]
+function test_function_field_call_returns_result_type() -> void:
+    # `p.ready(frame)` calls the callable field; the expression type is the
+    # field's return type (`bool`), not the field's `fn(...)` type.
+    let source = <<-SRC
+        struct Predicate:
+            ready: fn(frame: ptr[void]) -> bool
+
+        function test(p: Predicate) -> bool:
+            let frame = zero[ptr[void]]
+            return p.ready(frame)
+    SRC
+    analyzer.set_strict_assignability(false)
+    expect_clean(source)
+
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    expect_eq(int<-pdiags.len(), 0)
+    analyzer.set_strict_assignability(true)
+    defer: analyzer.set_strict_assignability(false)
+    var analysis = analyzer.check_source_file(file)
+    defer: analysis.diagnostics.release()
+    expect_eq(int<-analysis.diagnostics.len(), 0)
+
+
+@[test]
+function test_tuple_literal_array_and_span_are_explicit() -> void:
+    # Parenthesized value lists are the array/span literal surface; the
+    # explicit rules must not fall back for these two target shapes.
+    let source = <<-SRC
+        function main() -> int:
+            var a: array[int, 3] = (1, 2, 3)
+            var b: array[float, 4]
+            b[0..3] = (1.0, 2.0, 3.0)
+            return 0
+    SRC
+    analyzer.set_strict_assignability(false)
+    expect_clean(source)
+
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    expect_eq(int<-pdiags.len(), 0)
+    analyzer.set_strict_assignability(true)
+    defer: analyzer.set_strict_assignability(false)
+    var analysis = analyzer.check_source_file(file)
+    defer: analysis.diagnostics.release()
+    expect_eq(int<-analysis.diagnostics.len(), 0)

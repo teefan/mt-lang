@@ -8088,7 +8088,8 @@ function check_specialization_call(
                                 id.line,
                                 id.column
                             )
-                        return substitute_type(read(sigp).return_type, ref_of(subs))
+                            return substitute_type(read(sigp).return_type, ref_of(subs))
+                        return specialized_function_value_type(id.name, read(sigp), ref_of(subs))
                 # A generic struct construction with explicit type arguments
                 # (`Pair[int, bool](first = 10, second = true)`): the value is an
                 # instance of the named type.
@@ -8140,6 +8141,34 @@ function check_specialization_call(
                 )
             _:
                 return types.Type.ty_error
+
+
+## The value form of a specialized generic function (`span_release[T]` passed
+## to a function-typed field).  The expression denotes the function itself, not
+## its return value; substituting the explicit type arguments into both the
+## parameter and return types gives the callable's real `fn(...)` type.
+function specialized_function_value_type(
+    name: str,
+    sig: FnSig,
+    subs: ref[map_mod.Map[str, types.Type]],
+) -> types.Type:
+    var params = vec.Vec[types.Type].create()
+    var names = vec.Vec[str].create()
+    var i: ptr_uint = 0
+    while i < sig.params.len:
+        let param = unsafe: read(sig.params.data + i)
+        params.push(substitute_type(param.ty, subs))
+        names.push(param.name)
+        i += 1
+    let ret = substitute_type(sig.return_type, subs)
+    return types.function_type(
+        name = name,
+        params = params.as_span(),
+        return_type = types.alloc_type(ret),
+        variadic = sig.is_variadic,
+        is_proc = false,
+        param_names = names.as_span()
+    )
 
 
 ## `x.method[T](args)` — a generic method called with explicit type arguments on
@@ -9959,7 +9988,37 @@ function check_typed_method_call(
                     pass
             return sig.value.return_type
         Option.none:
-            return check_member(ctx, receiver_type, method_name, true, line, column)
+            let member_ty = check_member(ctx, receiver_type, method_name, true, line, column)
+            match member_ty:
+                types.Type.ty_function as callable:
+                    let ft = unsafe: read(callable.payload)
+                    let sig = function_field_signature(method_name, ft)
+                    check_signature_call(ctx, method_name, sig, args, arg_types, any_named, line, column)
+                    return unsafe: read(ft.return_type)
+                _:
+                    return member_ty
+
+
+## A callable field is called like a method: `task.ready(task.frame)`.  Its
+## `fn(...)` type supplies the parameter and return types for the call.
+function function_field_signature(name: str, ft: types.FunctionType) -> FnSig:
+    var params = vec.Vec[ParamEntry].create()
+    var i: ptr_uint = 0
+    while i < ft.params.len:
+        let pname = if i < ft.param_names.len: unsafe: read(ft.param_names.data + i) else: ""
+        params.push(ParamEntry(name = pname, ty = unsafe: read(ft.params.data + i)))
+        i += 1
+    return FnSig(
+        name = name,
+        params = params.as_span(),
+        return_type = unsafe: read(ft.return_type),
+        has_return_type = true,
+        method_kind = ast.MethodKind.mk_plain,
+        is_async = false,
+        is_variadic = ft.variadic,
+        is_extern = false,
+        required_count = params.len()
+    )
 
 
 ## The declared type-parameter *names* of a receiver's generic type — the

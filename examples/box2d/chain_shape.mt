@@ -136,13 +136,13 @@ extending ChainShape:
             b2.shape_set_friction(this.shape_id, this.friction)
             var left_material = b2.chain_get_surface_material(this.chain_id, 0)
             left_material.friction = this.friction
-            b2.chain_set_all_surface_materials(this.chain_id, left_material)
+            b2.chain_set_all_surface_materials(this.chain_id, const_ptr_of(left_material))
         if rl.is_key_pressed(rl.KeyboardKey.KEY_RIGHT_BRACKET):
             this.friction = common.min_float(this.friction + 0.1, 1.0)
             b2.shape_set_friction(this.shape_id, this.friction)
             var right_material = b2.chain_get_surface_material(this.chain_id, 0)
             right_material.friction = this.friction
-            b2.chain_set_all_surface_materials(this.chain_id, right_material)
+            b2.chain_set_all_surface_materials(this.chain_id, const_ptr_of(right_material))
         if rl.is_key_pressed(rl.KeyboardKey.KEY_MINUS):
             this.restitution = common.max_float(this.restitution - 0.1, 0.0)
             b2.shape_set_restitution(this.shape_id, this.restitution)

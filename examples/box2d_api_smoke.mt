@@ -148,7 +148,7 @@ function main() -> int:
         return fail("chain segment count mismatch")
     var chain_material = b2.chain_get_surface_material(chain, 0)
     chain_material.friction = 0.3
-    b2.chain_set_all_surface_materials(chain, chain_material)
+    b2.chain_set_all_surface_materials(chain, const_ptr_of(chain_material))
 
     # Revolute joint through the shared base definition.
     var link_def = b2.default_body_def()
