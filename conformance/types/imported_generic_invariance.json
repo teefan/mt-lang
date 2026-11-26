@@ -1,0 +1,11 @@
+{
+  "mode": "check",
+  "errors": [
+    {
+      "code": "sema/error",
+      "line": 11,
+      "column": 12,
+      "message_contains": "expects"
+    }
+  ]
+}

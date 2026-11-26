@@ -91,3 +91,22 @@ mtc test tests
 ```
 
 See the `mtc test --help` text for the current full option list.
+
+## 5. Conformance suite
+
+`conformance/` is a small, **spec-derived** suite separate from `test/mt`.
+Each case cites a manual/README section in a leading `# Spec:` line, and its
+sibling JSON expectation is checked in and reviewed; `tools/conformance.rb`
+has no record or update mode.
+
+- Run cases compare exact stdout, exit status, and optional stderr substrings.
+- Check cases compare the exact number of `error[...]` diagnostics plus code,
+  message substring, and (when present) line/column.
+- Cases that set `"strict": true` use `--strict-types`; strict warnings are
+  never silently accepted as expected output.
+- The suite is a fast hard gate: `tools/gates.sh --areas conformance --run`.
+  CI runs it after bootstrap alongside the zero-warning strict-types census.
+
+```sh
+ruby tools/conformance.rb --self build/stage2/mtc
+```

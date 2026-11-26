@@ -3828,6 +3828,44 @@ function test_function_field_call_returns_result_type() -> void:
 
 
 @[test]
+function test_match_expression_requires_exhaustive_enum() -> void:
+    let source = <<-SRC
+        enum Color: int
+            red = 0
+            blue = 1
+
+        function main() -> int:
+            let c = Color.red
+            return match c:
+                Color.red: 0
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_match_expression_requires_wildcard() -> void:
+    let source = <<-SRC
+        function main() -> int:
+            let n = 1
+            return match n:
+                1: 0
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_match_expression_with_wildcard_is_clean() -> void:
+    let source = <<-SRC
+        function main() -> int:
+            let n = 1
+            return match n:
+                1: 0
+                _: 1
+    SRC
+    expect_clean(source)
+
+
+@[test]
 function test_tuple_literal_array_and_span_are_explicit() -> void:
     # Parenthesized value lists are the array/span literal surface; the
     # explicit rules must not fall back for these two target shapes.

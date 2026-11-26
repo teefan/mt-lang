@@ -1,0 +1,5 @@
+{
+  "mode": "run",
+  "stdout": "second\nfirst\n",
+  "exit": 0
+}

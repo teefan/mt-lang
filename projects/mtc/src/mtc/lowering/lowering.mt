@@ -94,10 +94,6 @@ public function poison_expr() -> ptr[ir.Expr]:
     return alloc_expr(ir.Expr.expr_integer_literal(value = 0l, ty = types.Type.ty_error))
 
 
-public function poison_stmt() -> ptr[ir.Stmt]:
-    return alloc_stmt(ir.Stmt.stmt_expression(expression = poison_expr(), line = 0, source_path = ""))
-
-
 ## Render the error for the CLI.  The backing String is intentionally leaked:
 ## the compiler exits after reporting the first lowering error.
 public function lowering_error_text(error: LoweringError) -> str:

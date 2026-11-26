@@ -1,0 +1,9 @@
+{
+  "mode": "check",
+  "errors": [
+    {
+      "code": "sema/error",
+      "message_contains": "wildcard"
+    }
+  ]
+}

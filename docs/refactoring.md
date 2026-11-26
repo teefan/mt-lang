@@ -214,21 +214,33 @@ Review the baseline diff like code: it should shrink or be explained. Never
 refresh it to silence a check. The invariants (layering, naming, markers) do
 not depend on line counts, so ordinary feature commits do not need a refresh.
 
-## 6. Current baseline (session 167, 2026-11-25)
+## 6. Current baseline (session 170, 2026-11-25)
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 170 / 178,497 / 145,942 |
+| source files / lines / code lines | 170 / 179,427 / 146,700 |
 | layering edges / violations | 119 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (170 modules) |
-| dead exports (unused / test-only) | 29 / 7 |
-| duplication (windows / duplicated lines) | 1,253 / 8,272 (window 12) |
-| functions ≥ 200 lines | 36 |
+| dead exports (unused / test-only) | 28 / 7 |
+| duplication (windows / duplicated lines) | 1,253 / 8,369 (window 12) |
+| functions ≥ 200 lines | 39 |
 | files ≥ 2,000 code lines | 13 |
 | markers | 0 |
-| test files (projects/mtc / test/mt) | 22 / 86 |
+| test files (projects/mtc / test/mt) | 22 / 106 |
+
+Session 170 refreshed the baseline after Wave 0: the B3 strict-assignability
+closure (the remaining strict pairs and imported-generic invariance), callable
+inference/member-call fixes, explicit tuple/array/span literals,
+match-expression exhaustiveness/wildcard checks, and the 22-case conformance
+seed.  Code lines 145,942 → 146,700 (+758); total source lines 178,497 →
+179,427; long functions 36 → 39; duplicated lines 8,272 → 8,369; test files
+86 → 106; two newly dead exports (`poison_stmt`,
+`types_compatible_external_with_consts`) were removed, leaving 28 unused / 7
+test-only.  The conformance `.mt` cases live outside `projects/mtc` and do not
+enter the source metrics.  The strict ratchet is now the gate command
+(`--check --strict --ratchet`), not just the invariant check.
 
 Session 165 formatted `projects/mtc/src` and `projects/mtc/test` with
 `mtc format --tidy` (192 files, idempotent on a second pass).  The tidy rules

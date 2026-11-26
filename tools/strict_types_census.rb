@@ -15,6 +15,7 @@
 # Options:
 #   --self PATH          compiler binary          (default: build/stage2/mtc)
 #   --targets LIST       comma-separated paths    (default: std,examples,projects/mtc/src)
+#   --fail-on-warning    exit 1 when any strict warning remains
 #   -q, --quiet          print only the pair table
 #   -h, --help           show this message
 #
@@ -27,6 +28,7 @@ ROOT = File.expand_path("..", __dir__)
 self_bin = File.join(ROOT, "build/stage2/mtc")
 targets = %w[std examples projects/mtc/src]
 quiet = false
+fail_on_warning = false
 
 argv = ARGV.dup
 until argv.empty?
@@ -38,6 +40,8 @@ until argv.empty?
     targets = argv.shift.to_s.split(",").reject(&:empty?)
   when "-q", "--quiet"
     quiet = true
+  when "--fail-on-warning"
+    fail_on_warning = true
   when "-h", "--help"
     puts File.read(__FILE__).lines[2..].join.gsub(/^# ?/, "")
     exit 0
@@ -104,4 +108,4 @@ counts.sort_by { |message, count| [-count, message] }.each do |message, count|
   puts "#{count}\t#{message}"
 end
 
-exit 0
+exit(fail_on_warning && total > 0 ? 1 : 0)

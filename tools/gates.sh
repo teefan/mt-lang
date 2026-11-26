@@ -96,6 +96,7 @@ infer_area() {
         tools/golden/*|tools/lib/golden.rb)       echo oracles ;;
         tools/cli_parity.rb|tools/diag_parity.rb|tools/lint_parity.rb|tools/format_parity.rb) echo oracles ;;
         tools/lib/refactor_guard.rb)               echo refactor_tools ;;
+        conformance/*|tools/conformance.rb|tools/strict_types_census.rb) echo conformance ;;
         std/*)                                    echo std ;;
         examples/*)                               echo examples ;;
         docs/*)                                   echo docs ;;
@@ -138,7 +139,7 @@ fi
 
 gate_kind() {
     case "$1" in
-        bootstrap|test_mt|dev_build|dev_tests|dap|tools_check|bindings|wasm_smoke|docs_smoke|refactor_guard|guard_tests|golden_cli|golden_diag|golden_lint|golden_format|examples|box2d_smoke|async_smoke|lsp_conformance) echo hard ;;
+        bootstrap|test_mt|dev_build|dev_tests|dap|tools_check|bindings|wasm_smoke|docs_smoke|refactor_guard|guard_tests|golden_cli|golden_diag|golden_lint|golden_format|examples|box2d_smoke|async_smoke|lsp_conformance|strict_types|conformance) echo hard ;;
         *) echo meter ;;
     esac
 }
@@ -146,6 +147,7 @@ gate_kind() {
 gate_tier() {
     case "$1" in
         dev_build|dev_tests|tools_check|refactor_guard|guard_tests) echo 1 ;;
+        strict_types|conformance) echo 2 ;;
         *) echo 2 ;;
     esac
 }
@@ -155,14 +157,16 @@ gate_label() {
         dev_build)      echo "dev build to tmp/mtc-dev from the seed (~1 min)" ;;
         dev_tests)      echo "self-host suite, one process per file (~1 min)" ;;
         bootstrap)      echo "bootstrap --fast: fixed point only (~3 min)" ;;
-        test_mt)        echo "test/mt under stage2 (85 files / 0 failed)" ;;
+        test_mt)        echo "test/mt under stage2 (106 files / 0 failed)" ;;
         golden_cli)     echo "recorded CLI oracle (227 cases)" ;;
         golden_diag)    echo "recorded diagnostics oracle (std+examples)" ;;
         golden_lint)    echo "recorded lint oracle (corpus)" ;;
         golden_format)  echo "recorded formatter oracle (all modes)" ;;
         wasm_smoke)     echo "wasm preview end-to-end (HTTP/signal smoke)" ;;
         docs_smoke)     echo "docs server end-to-end (routes/SIGINT smoke)" ;;
-        refactor_guard) echo "structural guard: layering/naming/markers (fast)" ;;
+        refactor_guard) echo "structural guard: layering/naming/markers (strict ratchet)" ;;
+        strict_types)  echo "strict assignability census (zero remaining)" ;;
+        conformance)   echo "spec-derived conformance cases" ;;
         guard_tests)    echo "refactor guard unit tests" ;;
         examples)       echo "example emit-c/check sweep: every examples/**/*.mt (311)" ;;
         box2d_smoke)    echo "box2d 3.2 headless binding smoke (build + run)" ;;
@@ -199,7 +203,9 @@ gate_cmd() {
         dap)           echo "ruby tools/dap_smoke.rb && ruby tools/dap_async_probe.rb" ;;
         wasm_smoke)    echo "ruby tools/wasm_smoke.rb --self build/stage2/mtc" ;;
         docs_smoke)    echo "ruby tools/docs_smoke.rb --self build/stage2/mtc" ;;
-        refactor_guard) echo "ruby tools/refactor_guard.rb --check -q" ;;
+        refactor_guard) echo "ruby tools/refactor_guard.rb --check --strict --ratchet -q" ;;
+        strict_types)  echo "ruby tools/strict_types_census.rb --self build/stage2/mtc --fail-on-warning -q" ;;
+        conformance)   echo "ruby tools/conformance.rb --self build/stage2/mtc" ;;
         guard_tests)   echo "ruby tools/test/refactor_guard_test.rb" ;;
         tools_check)   echo "for f in tools/*.rb tools/lib/*.rb tools/test/*.rb; do ruby -c \"\$f\" >/dev/null || exit 1; done; bash -n tools/gates.sh tools/bootstrap.sh tools/release.sh tools/release_smoke.sh && echo 'tools syntax ok'" ;;
         *)             echo "true" ;;
@@ -223,6 +229,8 @@ gate_summary() {
         bindings)       echo "verified|changed" ;;
         dap)            echo "^check |lldb-dap|stderr:" ;;
         refactor_guard) echo "^refactor_guard:" ;;
+        strict_types)   echo "^strict-types census:" ;;
+        conformance)    echo "^conformance:" ;;
         guard_tests)    echo "runs, .* failures" ;;
         tools_check)    echo "tools syntax ok" ;;
         *)              echo "." ;;
@@ -373,7 +381,7 @@ EOF
 
 gates_for_area() {
     case "$1" in
-        analyzer)  echo "dev_tests refactor_guard bootstrap test_mt golden_cli golden_diag golden_lint examples valgrind_lsp neovim" ;;
+        analyzer)  echo "dev_tests refactor_guard bootstrap test_mt strict_types conformance golden_cli golden_diag golden_lint examples valgrind_lsp neovim" ;;
         linter)    echo "dev_tests refactor_guard bootstrap test_mt golden_cli golden_diag golden_lint" ;;
         lsp)       echo "dev_tests refactor_guard bootstrap lsp_conformance valgrind_lsp neovim soak" ;;
         codegen)   echo "dev_tests refactor_guard bootstrap test_mt examples" ;;
@@ -383,7 +391,7 @@ gates_for_area() {
         ## A top-level compiler file with no narrower home (`ir.mt`, `strings.mt`,
         ## `debug_map.mt`, `sexpr.mt`, …) feeds every stage, so it earns the full
         ## behaviour set rather than silently planning nothing.
-        compiler_core) echo "dev_tests refactor_guard bootstrap test_mt golden_cli golden_diag golden_lint examples" ;;
+        compiler_core) echo "dev_tests refactor_guard bootstrap test_mt strict_types conformance golden_cli golden_diag golden_lint examples" ;;
         formatter) echo "dev_tests refactor_guard bootstrap golden_format" ;;
         bindings)  echo "dev_tests refactor_guard bootstrap bindings box2d_smoke" ;;
         dap)       echo "dev_tests refactor_guard bootstrap dap" ;;
@@ -394,6 +402,7 @@ gates_for_area() {
         docs_cli)  echo "dev_tests refactor_guard bootstrap test_mt golden_cli docs_smoke" ;;
         packages|toolchain) echo "dev_tests refactor_guard bootstrap test_mt golden_cli" ;;
         tools)     echo "tools_check guard_tests refactor_guard" ;;
+        conformance) echo "tools_check conformance strict_types" ;;
         oracles)   echo "tools_check golden_cli golden_diag golden_lint golden_format" ;;
         refactor_tools) echo "tools_check guard_tests refactor_guard" ;;
         refactor)  echo "dev_tests refactor_guard test_mt golden_cli" ;;

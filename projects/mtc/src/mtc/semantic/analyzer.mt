@@ -5076,6 +5076,26 @@ function check_match(
     line: ptr_uint,
     column: ptr_uint
 ) -> void:
+    var patterns = vec.Vec[ptr[ast.Expr]?].create()
+    defer: patterns.release()
+    var i: ptr_uint = 0
+    while i < arms.len:
+        unsafe:
+            patterns.push(read(arms.data + i).pattern)
+        i += 1
+    check_match_patterns(ctx, scrutinee_ty, patterns.as_span(), line, column)
+
+
+## The exhaustiveness/wildcard/duplicate-arm pass shared by match statements and
+## match expressions.  `patterns` carries one optional pattern per arm; a null
+## pattern is the wildcard arm.
+function check_match_patterns(
+    ctx: ref[Context],
+    scrutinee_ty: types.Type,
+    patterns: span[ptr[ast.Expr]?],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
     # The scrutinee's type arrives precomputed (and unrecorded — this is a
     # diagnostic-only pass that must not mutate the `resolved_expr_types` map
     # that lowering later consumes).
@@ -5092,7 +5112,7 @@ function check_match(
             # `pack.Error`) must not pick the wrong member list.
             let owning_module = scrutinee_type_module(scrutinee_ty)
             if match_case_names_for(ctx, owning_module, nm.value) != null:
-                check_case_match(ctx, owning_module, nm.value, arms, line, column)
+                check_case_match(ctx, owning_module, nm.value, patterns, line, column)
                 return
         Option.none:
             pass
@@ -5102,11 +5122,29 @@ function check_match(
     match scrutinee_ty:
         types.Type.ty_primitive as p:
             if is_integer_name(p.name):
-                check_scalar_match(ctx, arms, line, column, integer_wildcard_message(p.name), true)
+                check_scalar_match(ctx, patterns, line, column, integer_wildcard_message(p.name), true)
         types.Type.ty_str:
-            check_scalar_match(ctx, arms, line, column, str_wildcard_message(), false)
+            check_scalar_match(ctx, patterns, line, column, str_wildcard_message(), false)
         _:
             pass
+
+
+## Match-expression form: the same pattern checks as a match statement.
+function check_match_expression_arms(
+    ctx: ref[Context],
+    scrutinee_ty: types.Type,
+    arms: span[ast.MatchExprArm],
+    line: ptr_uint,
+    column: ptr_uint
+) -> void:
+    var patterns = vec.Vec[ptr[ast.Expr]?].create()
+    defer: patterns.release()
+    var i: ptr_uint = 0
+    while i < arms.len:
+        unsafe:
+            patterns.push(read(arms.data + i).pattern)
+        i += 1
+    check_match_patterns(ctx, scrutinee_ty, patterns.as_span(), line, column)
 
 
 ## The name of a nominal (enum/variant/struct) type, for `match_case_names`
@@ -5228,7 +5266,7 @@ function check_case_match(
     ctx: ref[Context],
     module_name: str,
     type_name: str,
-    arms: span[ast.MatchArm],
+    patterns: span[ptr[ast.Expr]?],
     line: ptr_uint,
     column: ptr_uint
 ) -> void:
@@ -5237,11 +5275,8 @@ function check_case_match(
     var covered = vec.Vec[str].create()
     var has_wild = false
     var i: ptr_uint = 0
-    while i < arms.len:
-        var arm: ast.MatchArm
-        unsafe:
-            arm = read(arms.data + i)
-        let p = arm.pattern
+    while i < patterns.len:
+        let p = unsafe: read(patterns.data + i)
         if p == null:
             has_wild = true
         else:
@@ -5296,7 +5331,7 @@ function span_contains_str(members: span[str], name: str) -> bool:
 
 function check_scalar_match(
     ctx: ref[Context],
-    arms: span[ast.MatchArm],
+    patterns: span[ptr[ast.Expr]?],
     line: ptr_uint,
     column: ptr_uint,
     wildcard_message: str,
@@ -5305,11 +5340,8 @@ function check_scalar_match(
     var has_wild = false
     var seen = vec.Vec[int].create()
     var i: ptr_uint = 0
-    while i < arms.len:
-        var arm: ast.MatchArm
-        unsafe:
-            arm = read(arms.data + i)
-        let p = arm.pattern
+    while i < patterns.len:
+        let p = unsafe: read(patterns.data + i)
         if p == null:
             has_wild = true
         else if check_duplicate_int:
@@ -6471,6 +6503,7 @@ function infer_match_expr_type(
         if not match_scrutinee_supported(ctx, expr_scrutinee_ty):
             report_at(ctx, line, column, 5, match_scrutinee_message(expr_scrutinee_ty))
             return types.Type.ty_error
+        check_match_expression_arms(ctx, expr_scrutinee_ty, arms, line, column)
         var arm_types = vec.Vec[types.Type].create()
         var arm_exprs = vec.Vec[ptr[ast.Expr]].create()
         let match_hint = ctx.expected_type_hint

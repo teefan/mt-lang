@@ -683,15 +683,6 @@ public function types_compatibility_external_status(
     return CompatibilityStatus(compatible = false, used_fallback = false)
 
 
-public function types_compatible_external_with_consts(
-    expected: types.Type,
-    actual: types.Type,
-    source_expr: ptr[ast.Expr]?,
-    const_values: ptr[map_mod.Map[str, ptr[ast.Expr]]]?,
-) -> bool:
-    return types_compatibility_external_status(expected, actual, source_expr, const_values).compatible
-
-
 ## A `str` public parameter with a `cstr` boundary (`str as cstr`) accepts a
 ## `cstr` argument as well as `str` (the host's
 ## `foreign_cstr_argument_compatible?`).

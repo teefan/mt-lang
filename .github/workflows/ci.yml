@@ -39,6 +39,15 @@ jobs:
       - name: In-language tests
         run: build/stage2/mtc test test/mt -I .
 
+      - name: Strict assignability
+        run: ruby tools/strict_types_census.rb --self build/stage2/mtc --fail-on-warning -q
+
+      - name: Conformance
+        run: ruby tools/conformance.rb --self build/stage2/mtc
+
+      - name: Structural guard
+        run: ruby tools/refactor_guard.rb --check --strict --ratchet -q
+
       - name: Recorded oracles
         run: |
           # Five CLI cases are host-toolchain artifacts: bindgen output is
