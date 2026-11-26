@@ -1,4 +1,5 @@
 import std.c.libc as c
+import std.c.posix as posix
 
 public type IntDiv = c.div_t
 public type PtrIntDiv = c.ldiv_t
@@ -17,6 +18,10 @@ public foreign function parse_long_to_end(text: str as cstr, end_ptr: ptr[ptr[ch
 public foreign function parse_ulong_to_end(text: str as cstr, end_ptr: ptr[ptr[char]]?, base: int) -> ptr_uint = c.strtoul
 public foreign function parse_long_long_to_end(text: str as cstr, end_ptr: ptr[ptr[char]]?, base: int) -> long = c.strtoll
 public foreign function parse_ulong_long_to_end(text: str as cstr, end_ptr: ptr[ptr[char]]?, base: int) -> ulong = c.strtoull
+public foreign function fork_process() -> int = posix.fork
+public foreign function wait_process(pid: int, status: ptr[int], options: int) -> int = posix.waitpid
+public foreign function exit_process(status: int) -> void = c.exit
+
 public foreign function get_environment_variable(name: str as cstr) -> cstr? = c.getenv
 public foreign function set_environment_variable(name: str as cstr, value: str as cstr, overwrite: int) -> int = c.setenv
 public foreign function unset_environment_variable(name: str as cstr) -> int = c.unsetenv

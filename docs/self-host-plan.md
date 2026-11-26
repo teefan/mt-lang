@@ -126,8 +126,8 @@ history.
 | `test/mt` | **106 files / 0 failed** (71 in-language tests + 35 compile-fail diagnostics fixtures; session 170 added three generic-invariance fixtures and the conformance corpus lives separately; peak RSS **100 MiB**, measured session 151) |
 | Examples | **311/311** under the self-only `emit-c`/`check` sweep — session 161 extended it from 78 to **every** `examples/**/*.mt`, adding `examples/raylib` (219) and `examples/box3d` (14); a first line of `external` selects `check` instead of `emit-c` (one raw binding module).  That gap is how a call to a nonexistent `rl.image_draw` survived (session 160).  Plus the headless **`box2d_smoke`** build/run gate |
 | Multi-TU build | **opt-in `--split`** (sessions 171–172): shared `mtc.h`, one data unit for globals/static asserts, one `unit_<n>.c` per module, and one `cc -c` object per unit with an exact content-keyed object cache (512 MiB cap including key sidecars).  The split-built compiler passes 22/22 and 106/106; cache edit-one-module reuses all but one object.  Single-file output is byte-identical and remains the default.  Static archives and wasm still reject `--split` |
-| Watch/dev loop | **`mtc watch PATH`** (session 173): polls `.mt` mtime seconds/nanoseconds/size under the entry directory plus every `-I` root (default 500 ms), rebuilds through a child `mtc build` with `--run` optional, and reuses unchanged per-TU objects under `--split` (leaf edit `2 reused / 1 compiled`).  Child-build isolation keeps the long-lived watcher flat (8-cycle RSS/FD soak gate).  **In-process ModuleCache reuse is not wired yet**; each rebuild still re-analyzes and lowers the whole program in the child |
-| Recorded oracles | **CLI 230/230 (0.6.3); diagnostics 498 compared / 7 changed / 1 unrecorded / 0 differ; lint 646 compared / 29 changed / 1 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
+| Watch/dev loop | **`mtc watch PATH`** (session 173): polls `.mt` mtime seconds/nanoseconds/size under the entry directory plus every `-I` root (default 500 ms), keeps a loader `ModuleCache` and calls `check_program_with_source` in-process (a leaf edit advances parse/analysis only for the changed module and dependents), then forks a build child for lowering/C/link so per-build IR memory dies with the child.  `--split` reuses unchanged per-TU objects (leaf `3 reused / 1 compiled`; no-op `0 compiled`).  `--run` optional; 100-cycle no-growth gate |
+| Recorded oracles | **CLI 230/230 (0.6.3); diagnostics 497 compared / 8 changed / 2 unrecorded / 0 differ; lint 645 compared / 30 changed / 3 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
 | `check` diagnostics | the 500-file diagnostic oracle is the gate (the extra row is `box2d_api_smoke`); the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field anchor is a reviewed difference, not a residual (session 146). |
 | Linter | **43/43 rules, 13/13 fixers**; the 646-compared lint oracle is the corpus gate.  `unused-import` now credits type positions (annotations, params/returns, fields, aliases, specialization type arguments, proc signatures, `emit` declarations), fixing the type-only false positives; the remaining tree output is dominated by true style/ownership hints.  The historical host residue (3 self-only `std` files, timeout rows) is in *Deliberate differences*. |
@@ -138,7 +138,7 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check`; **Box2D is 3.2.0** (`178495ba…`, tag `v3.2.0`) and the raw module is reproducible (session 158; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; `bindings/raw/<name>.json` holds the option tables, `bindings/nullable/<name>.json` the `?` policies, and `tools/rebind_binding.rb` reproduces a raw module; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 171 files / 148,043 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **28 unused + 7 test-only** public declarations; 8,459 duplicated lines / 1,265 clusters; **41 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 22/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 173 for the deliberate watch CLI growth) |
+| **Refactoring safety** | structural guard: 171 files / 148,079 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **28 unused + 7 test-only** public declarations; 8,459 duplicated lines / 1,265 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 22/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 173 for the C4 watch growth) |
 | Gate planning | `tools/gates.sh` area inference covers `lexer/` (→ `parser`), `main/` (→ `cli`), `bindgen/` (→ `bindings`) and every other `projects/mtc/src/mtc/` path (→ `compiler_core`, the full behaviour set).  An unclassified path is a hard error naming the file; previously it planned **zero** gates and exited 0 (session 159) |
 | Bootstrap `-j` | **removed** (session 159).  The flag was parsed, capped and warned about but never passed to a build command — a stage build is one whole-program `mtc build`.  `release.sh -j` removed with it; `bootstrap.sh -j 4` now errors |
 
@@ -6576,36 +6576,36 @@ the compiler build, confirming the cap includes sidecars.
   `--interval MS` (default 500), comparing mtime seconds/nanoseconds and size.
   A new, changed, or removed file triggers a rebuild; the snapshot is refreshed
   after each build, so newly imported modules enter the watch set.
-- Each rebuild runs a child `mtc build` with the same options (source, `-o`,
-  `--split`, profile/platform/cc), so compiler arenas and IR are released by
-  process exit and the long-lived watcher cannot accumulate them.  `--run`
-  executes the rebuilt binary after a successful build; without `-o` the
-  output defaults to `<stem>.watch` beside the entry.
+- The watcher owns a loader `ModuleCache` and calls
+  `check_program_with_source` in-process, so a leaf edit re-parses and
+  re-analyzes only the changed module and its dependents.  It forks a build
+  child for lowering, C generation, and linking; the child's IR and compiler
+  buffers are released by process exit, and the watcher retains the cache.
+  `--run` executes the rebuilt binary after a successful build; without `-o`
+  the output defaults to `<stem>.watch` beside the entry.
 - With `--split`, the child uses the C3 per-TU object cache.  The smoke's leaf
-  edit reports `2 object(s) reused, 1 compiled`, and the rebuilt binary returns
-  the new value.
-- `tools/watch_smoke.rb` starts a two-module project, checks the initial binary,
-  edits the leaf eight times, verifies every rebuilt value and the `2/1`
-  object-reuse split, and samples the watcher's `/proc` RSS and FD count before
-  and after (allowances 4 MiB / 4 FDs).  It is a hard tier-2 `watch_smoke` gate
-  and a CI step.
-- **Deliberate first checkpoint:** the watcher does not yet run the loader's
-  `ModuleCache` in-process.  Each rebuild re-parses and re-analyzes the whole
-  program in the child; the object cache is the incremental layer.  This keeps
-  the no-growth guarantee simple, but the ModuleCache reuse remains the next
-  latency step if the self-host dev loop needs it.  Whole-program lowering is
-  otherwise unchanged from the one-shot build.
+  edit reports `3 object(s) reused, 1 compiled` and a no-op save reports
+  `0 compiled`; the ModuleCache counters advance for real edits and stay fixed
+  for the no-op.
+- `tools/watch_smoke.rb` starts a three-module project and covers the initial
+  build, leaf edit, core-module edit, no-op save, and a 100-cycle soak.  It
+  checks cache counters, object reuse, rebuilt values, a 4 MiB / 4 FD growth
+  bound, and stale watcher/build processes after Ctrl-C.  It is a hard tier-2
+  `watch_smoke` gate and a CI step.
+- The first version's child `mtc build` loop is gone; the one-shot build path
+  is now the same `finish_build` function called directly, while the watch path
+  calls it in the forked child.  Whole-program lowering remains unchanged.
 - CLI help/global usage gained `watch`; the CLI oracle has three new cases
   (watch help, missing source, help topic) and is now **230 cases**.  The
-  structural baseline was refreshed for the deliberate +307 code lines:
-  **171 files / 148,043 code lines; 8,459 duplicated / 1,265 clusters; 41 long
+  structural baseline was refreshed for the deliberate +343 code lines:
+  **171 files / 148,079 code lines; 8,459 duplicated / 1,265 clusters; 40 long
   functions / 14 large files; 28 unused + 7 test-only exports; tests 22/106**.
 
 **Verified with the compiler-core gate:** bootstrap fixed point; dev suite
 **22/0**; `test/mt` **106/0**; strict **0**; conformance **22/22**; split build
-full; watch **8 rebuilds, no RSS/FD growth**; CLI **230/230**; diagnostics
-**498 compared / 7 changed / 1 unrecorded / 0 differ**; lint **646 compared /
-29 changed / 2 unrecorded / 0 differ**; examples **311/311**.
+full; watch **100 rebuilds, no RSS/FD growth**; CLI **230/230**; diagnostics
+**497 compared / 8 changed / 2 unrecorded / 0 differ**; lint **645 compared /
+30 changed / 3 unrecorded / 0 differ**; examples **311/311**.
 
 ### Known issue: `milkTea/debugInfo` on very large files
 

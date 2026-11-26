@@ -113,14 +113,14 @@ ruby tools/conformance.rb --self build/stage2/mtc
 
 ## 6. Watch loop
 
-`tools/watch_smoke.rb` starts `mtc watch` over a two-module project, edits the
-leaf module eight times, checks the rebuilt binary observes every value, and
-asserts the split build reuses the two unchanged objects while compiling one.
-It also samples the watcher's RSS and FD count before and after the rebuilds and
-fails on growth (4 MiB / 4 FDs). The watcher uses child `mtc build` processes, so
-compiler arenas and IR are released by process exit; the in-process ModuleCache
-reuse is a separate future optimization.
+`tools/watch_smoke.rb` starts `mtc watch` over a three-module project and checks
+the leaf, core, and no-op save paths. It asserts that the ModuleCache counters
+advance for real edits, stay fixed for a no-op save, that the split build
+recompiles one object for a leaf/core edit and zero for a no-op, and that a
+100-cycle soak leaves RSS and FD counts flat (4 MiB / 4 FDs). The watcher keeps
+parse/analysis in-process and forks the lowering/C/link child, so per-build IR
+memory is released by process exit.
 
 ```sh
-ruby tools/watch_smoke.rb --self build/stage2/mtc --soak 8
+ruby tools/watch_smoke.rb --self build/stage2/mtc --soak 100
 ```

@@ -52,7 +52,7 @@ jobs:
         run: ruby tools/split_build.rb --self build/stage2/mtc
 
       - name: Watch smoke
-        run: ruby tools/watch_smoke.rb --self build/stage2/mtc --soak 8
+        run: ruby tools/watch_smoke.rb --self build/stage2/mtc --soak 100
 
       - name: Recorded oracles
         run: |

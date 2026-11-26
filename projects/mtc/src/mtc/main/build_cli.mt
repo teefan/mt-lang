@@ -4,7 +4,9 @@
 
 import std.asset_pack as asset_pack
 import std.fs as fs
+import std.libc as libc
 import std.fmt as fmt_mod
+import std.parse as parse_mod
 import std.path as path_ops
 import std.process as process
 import std.str as str
@@ -26,6 +28,7 @@ import mtc.wasm_preview as wasm_preview
 import mtc.cli_help as cli_help
 import mtc.main.format_cli as format_cli
 import mtc.main.test_cli as test_cli
+import mtc.main.watch_cli as watch_cli
 import mtc.main as main
 
 
@@ -56,6 +59,22 @@ struct BuildOptions:
     frozen_flag: bool
     strict_types: bool
     split: bool
+
+
+## The post-load build inputs shared by the one-shot path and the watch fork.
+## All strings are borrowed from the caller's owners, which outlive the build.
+struct BuildRun:
+    options: BuildOptions
+    roots: span[str]
+    package_opt: Option[package_manifest.PackageBuild]
+    build_template: Option[str]
+    build_assets: span[string.String]
+    output_owner: str
+    bundle_root: str
+    display_path: str
+    output_dir: str
+    cache_enabled: bool
+    cache_key: str
 
 
 ## Parse the shared `build`/`run` flag set into [[BuildOptions]], appending
@@ -248,6 +267,12 @@ function parse_command_options(
 ## Build a program (`mtc build`).  Supports both single `.mt` files and package
 ## directory targets (reads package.toml for the entry point).
 public function build_command(args: span[str]) -> int:
+    return build_command_impl(args, null)
+
+
+## Build with an optional persistent module cache.  The watch command uses the
+## cache for parse/analysis reuse; the one-shot command passes null.
+function build_command_impl(args: span[str], watch_cache: ptr[loader.ModuleCache]?) -> int:
     var roots = vec.Vec[str].create()
     defer: roots.release()
     var owned_roots = vec.Vec[string.String].create()
@@ -332,7 +357,12 @@ public function build_command(args: span[str]) -> int:
     if options.clean_mode:
         return run_build_clean(clean_target.as_str(), build_output.clean_target_is_tree)
 
-    var program = loader.check_program(effective, roots.as_span(), options.platform)
+    var program = if watch_cache != null:
+        loader.check_program_with_source(
+            effective, roots.as_span(), options.platform, "", false, watch_cache, null
+        )
+    else:
+        loader.check_program(effective, roots.as_span(), options.platform)
     defer: program.release()
 
     let error_count = program.diagnostic_error_count()
@@ -383,26 +413,71 @@ public function build_command(args: span[str]) -> int:
             Option.none:
                 pass
 
+    let prepared = BuildRun(
+        options = options,
+        roots = roots.as_span(),
+        package_opt = package_opt,
+        build_template = build_template,
+        build_assets = build_assets,
+        output_owner = output_owner.as_str(),
+        bundle_root = bundle_root.as_str(),
+        display_path = display_path,
+        output_dir = output_dir,
+        cache_enabled = cache_enabled,
+        cache_key = cache_key.as_str(),
+    )
+    if watch_cache == null:
+        return finish_build(program, prepared)
+
+    # The watch path keeps parse/analysis in this process and forks the
+    # lowering/C/link phase.  The child's IR and compiler buffers die with it,
+    # while this process retains the ModuleCache for the next edit.
+    let _ = terminal.flush_stdout()
+    let _ = terminal.flush_stderr()
+    let child = libc.fork_process()
+    if child < 0:
+        main.eprint_line("error: fork failed")
+        return 1
+    if child == 0:
+        let code = finish_build(program, prepared)
+        let _ = terminal.flush_stdout()
+        let _ = terminal.flush_stderr()
+        libc.exit_process(code)
+        return code
+    var wait_status: int = 0
+    let waited = libc.wait_process(child, ptr_of(wait_status), 0)
+    if waited < 0:
+        main.eprint_line("error: waitpid failed")
+        return 1
+    if wait_status == 0:
+        return 0
+    return 1
+
+
+## The post-load half of a build.  The one-shot command calls it directly; the
+## watch command calls it in a forked child so lowering/C/link allocations are
+## released by process exit.
+function finish_build(program: loader.Program, run: BuildRun) -> int:
     let lowering_outcome = lowering.lower_checked(program)
     if lowering_outcome.failed:
         lowering.print_lowering_error(lowering_outcome.error)
         return 1
     let ir_program = lowering_outcome.program
 
-    if options.kind == build_driver.BuildKind.executable and main.reject_missing_entrypoint(program, ir_program):
+    if run.options.kind == build_driver.BuildKind.executable and main.reject_missing_entrypoint(program, ir_program):
         return 1
 
     match build_driver.build(
-        program, ir_program, output_owner.as_str(), options.c_compiler, roots.as_span(), options.sanitize,
-        options.profile_name, options.debug_guards, options.kind, options.platform, build_template, build_assets,
-        options.keep_c_path, options.split, options.use_cache
+        program, ir_program, run.output_owner, run.options.c_compiler, run.roots, run.options.sanitize,
+        run.options.profile_name, run.options.debug_guards, run.options.kind, run.options.platform, run.build_template, run.build_assets,
+        run.options.keep_c_path, run.options.split, run.options.use_cache
     ):
         Result.success as built:
             var output = built.value
             defer: output.release()
-            if cache_enabled:
-                build_cache.store(cache_key.as_str(), output.as_str())
-            match stage_package_assets(package_opt, output_owner.as_str(), options.bundle_mode, options.platform):
+            if run.cache_enabled:
+                build_cache.store(run.cache_key, output.as_str())
+            match stage_package_assets(run.package_opt, run.output_owner, run.options.bundle_mode, run.options.platform):
                 Result.success:
                     pass
                 Result.failure as asset_failure:
@@ -416,8 +491,8 @@ public function build_command(args: span[str]) -> int:
                     return 1
             var archive_owner = string.String.create()
             defer: archive_owner.release()
-            if options.archive_mode:
-                match write_bundle_archive(bundle_root.as_str(), ref_of(archive_owner)):
+            if run.options.archive_mode:
+                match write_bundle_archive(run.bundle_root, ref_of(archive_owner)):
                     Result.success:
                         pass
                     Result.failure as archive_failure:
@@ -430,17 +505,17 @@ public function build_command(args: span[str]) -> int:
                         main.eprint_line(message.as_str())
                         return 1
             if not main.cli_is_quiet():
-                if options.bundle_mode:
+                if run.options.bundle_mode:
                     stdio.print_format(
                         c"built %.*s -> %.*s\n",
-                        int<-(display_path.len), display_path.data,
-                        int<-(output_dir.len), output_dir.data,
+                        int<-(run.display_path.len), run.display_path.data,
+                        int<-(run.output_dir.len), run.output_dir.data,
                     )
                     stdio.print_format(
                         c"entry executable %.*s\n",
-                        int<-(output_owner.as_str().len), output_owner.as_str().data,
+                        int<-(run.output_owner.len), run.output_owner.data,
                     )
-                    if options.archive_mode:
+                    if run.options.archive_mode:
                         stdio.print_format(
                             c"archive %.*s\n",
                             int<-(archive_owner.as_str().len), archive_owner.as_str().data,
@@ -448,11 +523,11 @@ public function build_command(args: span[str]) -> int:
                 else:
                     stdio.print_format(
                         c"built %.*s -> %.*s\n",
-                        int<-(display_path.len), display_path.data,
-                        int<-(output_owner.as_str().len), output_owner.as_str().data,
+                        int<-(run.display_path.len), run.display_path.data,
+                        int<-(run.output_owner.len), run.output_owner.data,
                     )
-                if options.keep_c_path.is_some():
-                    var saved_path = loader.absolute_path(options.keep_c_path.unwrap())
+                if run.options.keep_c_path.is_some():
+                    var saved_path = loader.absolute_path(run.options.keep_c_path.unwrap())
                     stdio.print_format(c"saved C to %.*s\n", int<-(saved_path.len), saved_path.data)
                     saved_path.release()
             return 0
@@ -462,6 +537,200 @@ public function build_command(args: span[str]) -> int:
             let text = message.as_str()
             stdio.print_format(c"error: %.*s\n", int<-(text.len), text.data)
             return 1
+
+
+
+## Print one policy-free status line for the watch cache.  Parse/analysis counts
+## are the ModuleCache's verification counters: a leaf edit should move them,
+## a no-op save should not re-parse.
+function print_watch_cache(cache: ref[loader.ModuleCache]) -> void:
+    if main.cli_is_quiet():
+        return
+    stdio.print_format(
+        c"watch: cache parse=%zu analysis=%zu\n",
+        cache.parse_count,
+        cache.analysis_count
+    )
+
+
+## Build once through the shared command parser and the persistent cache.  The
+## child build is forked inside build_command_impl; this process only parses,
+## analyzes, and keeps the cache.
+function watch_build_once(build_args: span[str], cache: ref[loader.ModuleCache]) -> bool:
+    let status = build_command_impl(build_args, ptr_of(cache))
+    loader.drain_retired_regions(ref_of(cache))
+    print_watch_cache(cache)
+    return status == 0
+
+
+function run_watch_program(output: str) -> void:
+    var command = vec.Vec[str].create()
+    defer: command.release()
+    command.push(output)
+    match process.capture(command.as_span()):
+        Result.failure as failure:
+            var error = failure.error
+            stdio.print_line("watch: could not launch program")
+            error.release()
+        Result.success as captured:
+            var result = captured.value
+            defer:
+                result.stdout.release()
+                result.stderr.release()
+            let stdout_text = result.stdout.as_str()
+            let stderr_text = result.stderr.as_str()
+            if stdout_text.len > 0:
+                stdio.print_format(c"%.*s", int<-stdout_text.len, stdout_text.data)
+            if stderr_text.len > 0:
+                stdio.print_format(c"%.*s", int<-stderr_text.len, stderr_text.data)
+
+
+## `mtc watch PATH [--run] [--interval MS] [BUILD OPTIONS]`.
+public function watch_command(args: span[str]) -> int:
+    var start: ptr_uint = 0
+    if args.len > 0 and args[0] == "watch":
+        start = 1
+
+    var source = string.String.create()
+    defer: source.release()
+    var build_args = vec.Vec[str].create()
+    defer: build_args.release()
+    build_args.push("build")
+    var interval_ms: ptr_uint = 500
+    var run_after_build = false
+    var i: ptr_uint = start
+    while i < args.len:
+        let arg = args[i]
+        if arg == "--interval":
+            if i + 1 >= args.len:
+                stdio.print_line("missing value for --interval")
+                return 1
+            let parsed = parse_mod.parse_int(args[i + 1], 10)
+            if parsed <= 0:
+                stdio.print_line("--interval must be a positive number of milliseconds")
+                return 1
+            interval_ms = ptr_uint<-parsed
+            i += 2
+            continue
+        if arg == "--run":
+            run_after_build = true
+            i += 1
+            continue
+        if (
+            arg == "-I" or arg == "--include-path"
+            or arg == "-o" or arg == "--output"
+            or arg == "--cc" or arg == "--profile"
+            or arg == "--platform" or arg == "--keep-c"
+        ) and i + 1 < args.len:
+            build_args.push(arg)
+            build_args.push(args[i + 1])
+            i += 2
+            continue
+        if not arg.starts_with("-") and source.len() == 0:
+            source.append(arg)
+        build_args.push(arg)
+        i += 1
+    if source.len() == 0:
+        cli_help.print_command_help("watch", true)
+        return 1
+
+    var output = string.String.create()
+    defer: output.release()
+    var has_output = false
+    var bi: ptr_uint = 1
+    while bi < build_args.len():
+        let arg_ptr = build_args.get(bi) else:
+            break
+        let arg = unsafe: read(arg_ptr)
+        if (arg == "-o" or arg == "--output") and bi + 1 < build_args.len():
+            let value_ptr = build_args.get(bi + 1) else:
+                break
+            output.append(unsafe: read(value_ptr))
+            has_output = true
+            bi += 2
+            continue
+        bi += 1
+    if not has_output:
+        var stem_name = string.String.create()
+        defer: stem_name.release()
+        stem_name.append(path_ops.stem(source.as_str()))
+        stem_name.append(".watch")
+        var default_output = path_ops.join(path_ops.dirname(source.as_str()), stem_name.as_str())
+        defer: default_output.release()
+        output.append(default_output.as_str())
+        build_args.push("-o")
+        build_args.push(output.as_str())
+
+    var roots = vec.Vec[string.String].create()
+    defer:
+        var ri: ptr_uint = 0
+        while ri < roots.len():
+            let root_ptr = roots.get(ri) else:
+                break
+            unsafe: read(root_ptr).release()
+            ri += 1
+        roots.release()
+    roots.push(string.String.from_str(path_ops.dirname(source.as_str())))
+    bi = 1
+    while bi < build_args.len():
+        let arg_ptr = build_args.get(bi) else:
+            break
+        let arg = unsafe: read(arg_ptr)
+        if (arg == "-I" or arg == "--include-path") and bi + 1 < build_args.len():
+            let value_ptr = build_args.get(bi + 1) else:
+                break
+            let include_path = unsafe: read(value_ptr)
+            if not watch_cli.watch_roots_has(ref_of(roots), include_path):
+                roots.push(string.String.from_str(include_path))
+            bi += 2
+            continue
+        bi += 1
+
+    var cache = loader.create_module_cache()
+    defer: loader.release_module_cache(ref_of(cache))
+
+    let build_ok = watch_build_once(build_args.as_span(), ref_of(cache))
+    if build_ok and run_after_build:
+        run_watch_program(output.as_str())
+
+    var files = vec.Vec[watch_cli.WatchFile].create()
+    defer: watch_cli.watch_file_release(ref_of(files))
+    watch_cli.collect_watch_files(ref_of(roots), ref_of(files))
+    stdio.print_format(
+        c"watching %zu .mt file(s); interval %zu ms; output %.*s\n",
+        files.len(),
+        interval_ms,
+        int<-output.as_str().len,
+        output.as_str().data
+    )
+    let _ = terminal.flush_stdout()
+
+    while true:
+        let _ = time.sleep_milliseconds(interval_ms)
+        var fresh = vec.Vec[watch_cli.WatchFile].create()
+        watch_cli.collect_watch_files(ref_of(roots), ref_of(fresh))
+        if not watch_cli.snapshots_differ(ref_of(files), ref_of(fresh)):
+            watch_cli.watch_file_release(ref_of(fresh))
+            continue
+        watch_cli.watch_file_release(ref_of(files))
+        files = fresh
+        var dirty = true
+        while dirty:
+            stdio.print_line("change detected; rebuilding")
+            let _ = terminal.flush_stdout()
+            let ok = watch_build_once(build_args.as_span(), ref_of(cache))
+            if ok and run_after_build:
+                run_watch_program(output.as_str())
+            var after = vec.Vec[watch_cli.WatchFile].create()
+            watch_cli.collect_watch_files(ref_of(roots), ref_of(after))
+            dirty = watch_cli.snapshots_differ(ref_of(files), ref_of(after))
+            watch_cli.watch_file_release(ref_of(files))
+            files = after
+            if dirty:
+                stdio.print_line("source changed during rebuild; rebuilding")
+            let _ = terminal.flush_stdout()
+    return 0
+
 
 
 ## Release the optional package manifest (its owned strings) at scope exit.

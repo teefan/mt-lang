@@ -1652,8 +1652,8 @@
     ]
   },
   "sizes": {
-    "total_code": 148043,
-    "functions_over_limit": 41,
+    "total_code": 148079,
+    "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
@@ -2377,8 +2377,8 @@
         "max_function": 46
       },
       "projects/mtc/src/mtc/main.mt": {
-        "lines": 4156,
-        "code": 3373,
+        "lines": 4155,
+        "code": 3372,
         "max_line": 277,
         "max_function": 204
       },
@@ -2389,10 +2389,10 @@
         "max_function": 144
       },
       "projects/mtc/src/mtc/main/build_cli.mt": {
-        "lines": 1436,
-        "code": 1264,
+        "lines": 1705,
+        "code": 1492,
         "max_line": 198,
-        "max_function": 215
+        "max_function": 184
       },
       "projects/mtc/src/mtc/main/format_cli.mt": {
         "lines": 349,
@@ -2419,10 +2419,10 @@
         "max_function": 136
       },
       "projects/mtc/src/mtc/main/watch_cli.mt": {
-        "lines": 318,
-        "code": 278,
-        "max_line": 105,
-        "max_function": 150
+        "lines": 103,
+        "code": 87,
+        "max_line": 112,
+        "max_function": 31
       },
       "projects/mtc/src/mtc/packages/editor.mt": {
         "lines": 489,

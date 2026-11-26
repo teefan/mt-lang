@@ -210,7 +210,7 @@ gate_cmd() {
         strict_types)  echo "ruby tools/strict_types_census.rb --self build/stage2/mtc --fail-on-warning -q" ;;
         conformance)   echo "ruby tools/conformance.rb --self build/stage2/mtc" ;;
         split_build)   echo "ruby tools/split_build.rb --self build/stage2/mtc" ;;
-        watch_smoke)   echo "ruby tools/watch_smoke.rb --self build/stage2/mtc --soak 8" ;;
+        watch_smoke)   echo "ruby tools/watch_smoke.rb --self build/stage2/mtc --soak 100" ;;
         guard_tests)   echo "ruby tools/test/refactor_guard_test.rb" ;;
         tools_check)   echo "for f in tools/*.rb tools/lib/*.rb tools/test/*.rb; do ruby -c \"\$f\" >/dev/null || exit 1; done; bash -n tools/gates.sh tools/bootstrap.sh tools/release.sh tools/release_smoke.sh && echo 'tools syntax ok'" ;;
         *)             echo "true" ;;
