@@ -2407,9 +2407,9 @@ public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stm
             ast.Stmt.stmt_local:
                 lower_local_stmt(ctx, output, sp)
             ast.Stmt.stmt_assignment:
-                lower_assignment_stmt(ctx, output, sp)
+                stmt_mod.lower_assignment_stmt(ctx, output, sp)
             ast.Stmt.stmt_while:
-                lower_while_stmt(ctx, output, sp)
+                stmt_mod.lower_while_stmt(ctx, output, sp)
             ast.Stmt.stmt_for:
                 lower_for_stmt(ctx, output, sp)
             ast.Stmt.stmt_expression:
@@ -2556,383 +2556,6 @@ function lower_local_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt
                             _:
                                 pass
                 stmt_mod.lower_plain_local_stmt(ctx, output, sp, c_name)
-            _:
-                pass
-
-
-function lower_assignment_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
-    unsafe:
-        match read(sp):
-            ast.Stmt.stmt_assignment as asg:
-                # Async CPS: an assignment whose value contains an await.  For a
-                # plain `x = await Y` (operator `=`), assign the awaited result
-                # straight into the target.  For a compound operator (`+=` etc.)
-                # or an embedded await, hoist the await(s) into temp frame locals
-                # first, then emit the (await-free) assignment normally.
-                if ctx.async_cps_active and async_mod.expr_has_await(asg.value):
-                    if asg.operator == "=" and async_cps.expr_is_direct_await(asg.value):
-                        let asg_target = lower_assignment_target(ctx, asg.target)
-                        async_cps.lower_async_await_into(
-                            ctx,
-                            output,
-                            async_cps.direct_await_inner(asg.value),
-                            Option[ptr[ir.Expr]].some(value = asg_target)
-                        )
-                        return
-                    let hoisted = async_cps.async_hoist_awaits(ctx, output, asg.value)
-                    output.push(ir.Stmt.stmt_assignment(
-                        target = lower_assignment_target(ctx, asg.target),
-                        operator = asg.operator,
-                        value = lower_expr(ctx, hoisted)
-                    ))
-                    return
-                # Lower `arr[start..end] = (e1, e2, ...)` — range index assignment.
-                # Expand into individual checked-index assignments, one per RHS element.
-                match read(asg.target):
-                    ast.Expr.expr_index_access as idx_target:
-                        match read(idx_target.index):
-                            ast.Expr.expr_range as rng:
-                                match read(asg.value):
-                                    ast.Expr.expr_expression_list as els:
-                                        lower_range_index_assignment(
-                                            ctx,
-                                            output,
-                                            idx_target.receiver,
-                                            rng.start_expr,
-                                            els.elements
-                                        )
-                                        return
-                                    _:
-                                        pass
-                            _:
-                                pass
-                    _:
-                        pass
-                # Desugar `read(x) = value` to `*x = value`.
-                var target_expr = asg.target
-                # `target = expr?` — Result/Option propagation into an existing
-                # lvalue (not a `let` binding).  Unwrap on success into the target;
-                # on failure return/complete-early like `let _ = expr? / return`.
-                if asg.operator == "=":
-                    match read(asg.value):
-                        ast.Expr.expr_unary_op as un:
-                            if un.operator == "?":
-                                lower_propagate_assign(ctx, output, asg.target, un.operand)
-                                return
-                        _:
-                            pass
-                match is_read_call(target_expr):
-                    Option.some as inner:
-                        let deref_target = lower_expr(ctx, inner.value)
-                        # The deref's type is the handle's value type (the host's
-                        # `infer_value_type`, `utils.rb:128`): a pointer-like
-                        # nullable unwraps to its base, then the pointee/referent.
-                        # Falls back to the recorded `read(...)` type when the
-                        # handle is not a pointer.
-                        var deref_ty = type_helpers.expr_type(ctx, inner.value)
-                        if types.is_nullable_type(deref_ty) and is_nullable_pointer_like(deref_ty):
-                            deref_ty = types.unwrap_nullable(deref_ty)
-                        let pointee_ty = types.pointer_element(deref_ty)
-                        if types.is_error(pointee_ty):
-                            deref_ty = type_helpers.expr_type(ctx, target_expr)
-                        else:
-                            deref_ty = pointee_ty
-                        let target = alloc_expr(ir.Expr.expr_unary(
-                            operator = "*",
-                            operand = deref_target,
-                            ty = deref_ty
-                        ))
-                        let hoist_base = output.len()
-                        let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
-                        ctx.hoist_root_ep = asg.value
-                        if is_array_type(deref_ty) and not ctx.async_completion_active:
-                            ctx.array_call_exempt = asg.value
-                        var value = lower_expr(ctx, asg.value)
-                        let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
-                        emit_hoist_setup(output, hoist_base, hoist_collected)
-                        value = contextual_value_to_type(
-                            ctx,
-                            asg.value,
-                            deref_ty,
-                            value,
-                            types.is_float_type(deref_ty) and not is_foreign_call_initializer(ctx, asg.value),
-                            false
-                        )
-                        output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
-                        let read_target_cleanups = if format.format_owning_target_type(ctx, deref_ty, 0):
-                            format.drop_format_release_cleanups(hoist_collected)
-                        else:
-                            hoist_collected
-                        record_or_emit_local_cleanups(ctx, output, read_target_cleanups.cleanups)
-                        return
-                    Option.none:
-                        pass
-                let target = lower_assignment_target(ctx, asg.target)
-                let hoist_base = output.len()
-                let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
-                ctx.hoist_root_ep = asg.value
-                if is_array_type(type_helpers.expr_type(ctx, asg.target)) and not ctx.async_completion_active:
-                    ctx.array_call_exempt = asg.value
-                var value = lower_expr(ctx, asg.value)
-                let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
-                emit_hoist_setup(output, hoist_base, hoist_collected)
-                # The host passes the lowered target's *storage* type as the
-                # expected type (`block.rb:527,555`), not the analyzer's
-                # flow-refined type: inside `if x == null`, the refined `null`
-                # must not retype a `null` RHS (the declared `ptr[T]?` wins).
-                var target_ty = ir_expr_type(target)
-                if types.is_error(target_ty) or types.is_void(target_ty):
-                    target_ty = type_helpers.expr_type(ctx, asg.target)
-                # A bare literal takes the target's type (the host's
-                # `lower_contextual_expression` with the target as the expected
-                # type): `i = 1` / `i += 1` on a `ptr_uint` target emits a
-                # `ptr_uint` literal, not an `int` one.  Mirrors the local
-                # declaration arm's literal set.
-                value = contextual_value_to_type(
-                    ctx,
-                    asg.value,
-                    target_ty,
-                    value,
-                    types.is_float_type(target_ty) and not is_foreign_call_initializer(ctx, asg.value),
-                    external_numeric_assignment_target(ctx, asg.target),
-                )
-                format.update_cstr_metadata_for_assignment_mt(ctx, asg.target, asg.value, value, asg.operator)
-                # Native math compound assignment (`a += b`, `a *= 2.0`): the C
-                # aggregate structs have no operators, so expand component-wise
-                # and emit a plain assignment.
-                if type_helpers.is_compound_assignment_operator(asg.operator):
-                    var math_name = type_helpers.nominal_type_name(target_ty)
-                    if not type_helpers.is_vec_math_name(math_name):
-                        math_name = type_helpers.nominal_type_name(ir_expr_type(target))
-                    if type_helpers.is_vec_math_name(math_name):
-                        let expanded = type_helpers.lower_vec_binary_op(
-                            ctx,
-                            type_helpers.compound_base_operator(asg.operator),
-                            target,
-                            value,
-                            target_ty,
-                            math_name
-                        )
-                        output.push(ir.Stmt.stmt_assignment(target = target, operator = "=", value = expanded))
-                        let math_cleanups = if format.format_owning_target_type(ctx, target_ty, 0):
-                            format.drop_format_release_cleanups(hoist_collected)
-                        else:
-                            hoist_collected
-                        record_or_emit_local_cleanups(ctx, output, math_cleanups.cleanups)
-                        return
-                if types.is_nullable_type(target_ty) and not is_nullable_pointer_like(target_ty):
-                    let value_ty = ir_expr_type(value)
-                    if not types.is_nullable_type(value_ty):
-                        match read(value):
-                            ir.Expr.expr_null_literal:
-                                value = alloc_expr(ir.Expr.expr_zero_init(ty = target_ty))
-                            _:
-                                value = nullable_some_literal(target_ty, value)
-                # A proc-containing target's assignment owns a reference: retain a
-                # non-fresh RHS, release the old value, then store through a temp
-                # (the host's `proc_assign` shape, `block.rb:583-590`).
-                if asg.operator == "=" and contains_proc_storage_type(ctx, target_ty):
-                    let rhs_temp = fresh_c_temp_name(ctx, "proc_assign")
-                    let rhs_c = utils.c_local_name(rhs_temp)
-                    output.push(ir.Stmt.stmt_local(
-                        name = rhs_temp,
-                        linkage_name = rhs_c,
-                        ty = target_ty,
-                        value = value,
-                        line = 0,
-                        source_path = ""
-                    ))
-                    let rhs_ref = alloc_expr(ir.Expr.expr_name(
-                        name = rhs_c,
-                        ty = target_ty,
-                        pointer = Option[bool].some(value = false)
-                    ))
-                    proc_selective_retain_stmts(ctx, rhs_ref, asg.value, target_ty, output)
-                    proc_nullable_release_stmts(ctx, target, target_ty, output)
-                    output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = rhs_ref))
-                else:
-                    output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
-                let assign_cleanups = if format.format_owning_target_type(ctx, target_ty, 0):
-                    format.drop_format_release_cleanups(hoist_collected)
-                else:
-                    hoist_collected
-                record_or_emit_local_cleanups(ctx, output, assign_cleanups.cleanups)
-            _:
-                pass
-
-
-function lower_while_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
-    unsafe:
-        match read(sp):
-            ast.Stmt.stmt_while as w:
-                if w.is_inline:
-                    inline_mod.lower_inline_while(ctx, output, w.condition, w.body)
-                    return
-                # Async CPS: an await in the loop condition must be re-evaluated
-                # (and may suspend) each iteration.  The host normalizer also
-                # restructures an await-free condition that contains `and`/`or`
-                # (its setup is non-empty) and spills the evaluated condition to
-                # a `cond_name` frame temp.  Restructure to
-                # `while (true) { <cond setup>; cond = <cond>; if (!cond) break; <body> }`.
-                if (
-                    ctx.async_cps_active
-                    and (async_mod.expr_has_await(w.condition) or async_mod.expr_has_short_circuit(w.condition))
-                ):
-                    var wbody = vec.Vec[ir.Stmt].create()
-                    # The host normalizes the condition into the loop body and
-                    # lowers that body as a unit: when neither the condition nor
-                    # the body awaits, the generated condition temps are plain
-                    # locals (their frame fields still register); an await in
-                    # either keeps the whole body on the CF path.
-                    let loop_needs_cps = async_mod.expr_has_await(w.condition) or async_mod.body_has_await(w.body)
-                    let loop_cps = ctx.async_cps_active
-                    if not loop_needs_cps:
-                        ctx.async_cps_active = false
-                    let saved_structured = ctx.async_structured_setup
-                    ctx.async_structured_setup = true
-                    let cond_hoisted = async_cps.async_hoist_awaits(ctx, ref_of(wbody), w.condition)
-                    ctx.async_structured_setup = saved_structured
-                    # The host's `normalize_async_expression` evaluates the
-                    # condition into a fresh `cond_name` bool local after the
-                    # condition setup and declares it inside the loop body
-                    # (`normalization.rb:107`), so its field registers after the
-                    # setup temps but before the body locals.
-                    let cond_base = wbody.len()
-                    let cond_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
-                    let cond_ir = lower_expr(ctx, cond_hoisted)
-                    let cond_collected = collect_stmt_setup(ctx, cond_saved)
-                    emit_hoist_setup(ref_of(wbody), cond_base, cond_collected)
-                    ctx.async_tmp_counter += 1
-                    let cond_tmp = strings.join_two("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
-                    let cond_field = strings.join_two("local_", cond_tmp)
-                    let cond_frame = strings.join_two("__mt_frame->", cond_field)
-                    var cond_name: str
-                    if ctx.async_cps_active:
-                        async_cps.async_register_local_field(ctx, cond_tmp, cond_field, cond_frame, ctx.bool_ty)
-                        wbody.push(async_cps.async_frame_field_assignment(ctx, cond_field, ctx.bool_ty, cond_ir))
-                        cond_name = cond_frame
-                    else:
-                        async_cps.async_register_unused_field(ctx, cond_field, ctx.bool_ty)
-                        wbody.push(ir.Stmt.stmt_local(
-                            name = cond_tmp,
-                            linkage_name = cond_tmp,
-                            ty = ctx.bool_ty,
-                            value = cond_ir,
-                            line = 0,
-                            source_path = ""
-                        ))
-                        cond_name = cond_tmp
-                    append_hoist_cleanups(ref_of(wbody), cond_collected)
-                    let cond_ref = alloc_expr(ir.Expr.expr_name(
-                        name = cond_name,
-                        ty = ctx.bool_ty,
-                        pointer = Option[bool].some(value = false)
-                    ))
-                    # Use goto labels so user-written `break`/`continue` inside the
-                    # loop body (including inside match→switch arms) still exit the
-                    # correct enclosing loop.
-                    let saved_break = ctx.loop_break_label
-                    let saved_continue = ctx.loop_continue_label
-                    let saved_continue_native = ctx.loop_continue_native
-                    let saved_break_native = ctx.loop_break_native
-                    let saved_loop_depth = ctx.loop_defer_depth
-                    let cl = fresh_c_temp_name(ctx, "loop_continue")
-                    let bl = fresh_c_temp_name(ctx, "loop_break")
-                    ctx.loop_break_label = bl
-                    ctx.loop_continue_label = cl
-                    ctx.loop_defer_depth = ctx.defer_stack.len()
-                    ctx.loop_continue_native = true
-                    ctx.loop_break_native = true
-                    var brk = vec.Vec[ir.Stmt].create()
-                    brk.push(ir.Stmt.stmt_break())
-                    wbody.push(ir.Stmt.stmt_if(
-                        condition = alloc_expr(ir.Expr.expr_unary(
-                            operator = "not",
-                            operand = cond_ref,
-                            ty = ctx.bool_ty
-                        )),
-                        then_body = brk.as_span(),
-                        else_body = Option[span[ir.Stmt]].none
-                    ))
-                    ctx.async_cps_active = loop_cps
-                    ctx.async_force_cps_body = loop_needs_cps
-                    let inner = lower_block(ctx, w.body)
-                    var ii: ptr_uint = 0
-                    while ii < inner.len:
-                        wbody.push(unsafe: read(inner.data + ii))
-                        ii += 1
-                    if contains_label_target(wbody.as_span(), cl):
-                        wbody.push(ir.Stmt.stmt_label(name = cl))
-                    var wrap = vec.Vec[ir.Stmt].create()
-                    wrap.push(ir.Stmt.stmt_while(
-                        condition = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = ctx.bool_ty)),
-                        body = wbody.as_span()
-                    ))
-                    if contains_label_target(wbody.as_span(), bl):
-                        wrap.push(ir.Stmt.stmt_label(name = bl))
-                    # The host's CF path (`lower_async_cf_while_stmt`) emits the
-                    # while (and any break label) directly, without the sync
-                    # path's scoping block.
-                    var wi: ptr_uint = 0
-                    while wi < wrap.len():
-                        let wsp = wrap.get(wi) else:
-                            break
-                        output.push(unsafe: read(wsp))
-                        wi += 1
-                    ctx.loop_break_label = saved_break
-                    ctx.loop_continue_label = saved_continue
-                    ctx.loop_continue_native = saved_continue_native
-                    ctx.loop_break_native = saved_break_native
-                    ctx.loop_defer_depth = saved_loop_depth
-                    return
-                let cond = lower_expr(ctx, w.condition)
-                let saved_break = ctx.loop_break_label
-                let saved_continue = ctx.loop_continue_label
-                let saved_continue_native = ctx.loop_continue_native
-                let saved_break_native = ctx.loop_break_native
-                let saved_loop_depth = ctx.loop_defer_depth
-                let cl = fresh_c_temp_name(ctx, "loop_continue")
-                let bl = fresh_c_temp_name(ctx, "loop_break")
-                ctx.loop_break_label = bl
-                ctx.loop_continue_label = cl
-                ctx.loop_defer_depth = ctx.defer_stack.len()
-                # A plain C `while`'s continue point is the loop's condition, so
-                # a native `continue` here reaches exactly the label's position;
-                # a native `break` likewise exits exactly this loop (unless a
-                # match's `switch` intervenes, which clears the flag around its
-                # arms).
-                ctx.loop_continue_native = true
-                ctx.loop_break_native = true
-                # The body sees the condition's truthy refinements (the host's
-                # `lower_while_stmt`, `loops.rb:28`).
-                var while_refs = type_helpers.lowering_flow_refinements(ctx, w.condition, true)
-                let while_flow_saved = type_helpers.push_flow_refinements(ctx, ref_of(while_refs))
-                let body_span = lower_block(ctx, w.body)
-                type_helpers.restore_flow_refinements(ctx, while_flow_saved)
-                var body = vec.Vec[ir.Stmt].create()
-                append_span_stmts(ref_of(body), body_span)
-                if contains_label_target(body.as_span(), cl):
-                    body.push(ir.Stmt.stmt_label(name = cl))
-                var wrap = vec.Vec[ir.Stmt].create()
-                wrap.push(ir.Stmt.stmt_while(condition = cond, body = body.as_span()))
-                if contains_label_target(body.as_span(), bl):
-                    wrap.push(ir.Stmt.stmt_label(name = bl))
-                if ctx.async_cps_active:
-                    # The host's CF path emits the while directly (no scoping
-                    # block); only the sync path wraps it.
-                    var wi: ptr_uint = 0
-                    while wi < wrap.len():
-                        let wsp = wrap.get(wi) else:
-                            break
-                        output.push(unsafe: read(wsp))
-                        wi += 1
-                else:
-                    output.push(ir.Stmt.stmt_block(body = wrap.as_span()))
-                ctx.loop_break_label = saved_break
-                ctx.loop_continue_label = saved_continue
-                ctx.loop_continue_native = saved_continue_native
-                ctx.loop_break_native = saved_break_native
-                ctx.loop_defer_depth = saved_loop_depth
             _:
                 pass
 
@@ -3886,7 +3509,7 @@ public function lower_propagate_let(
 ## `lower_propagate_let` but assigns the unwrapped success value into an existing
 ## lvalue target rather than introducing a `let` binding.  The failure branch is
 ## identical (return the wrapped failure, or complete the frame early in CPS).
-function lower_propagate_assign(
+public function lower_propagate_assign(
     ctx: ref[LoweringContext],
     output: ref[vec.Vec[ir.Stmt]],
     target_ast: ptr[ast.Expr],
@@ -4305,7 +3928,7 @@ function lower_binding_read(ctx: ref[LoweringContext], lb: LocalBinding) -> ptr[
 ## rule (`utils.rb:1237`): the target's `IR::Name` carries the *visible*
 ## (flow-refined) type when that is the storage type itself or the storage
 ## nullable's base, and the storage type otherwise.
-function lower_assignment_target(ctx: ref[LoweringContext], target_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
+public function lower_assignment_target(ctx: ref[LoweringContext], target_ast: ptr[ast.Expr]) -> ptr[ir.Expr]:
     unsafe:
         match read(target_ast):
             ast.Expr.expr_identifier as id:
@@ -7997,7 +7620,7 @@ public function proc_contained_retain_stmts(
 ## The host's `lower_proc_selective_retain_statements` (`proc.rb:329-362`): a
 ## value that is not a fresh proc literal is retained for the new owner.  Struct
 ## fields take their own AST source when the RHS is a struct literal.
-function proc_selective_retain_stmts(
+public function proc_selective_retain_stmts(
     ctx: ref[LoweringContext],
     recv: ptr[ir.Expr],
     value_ast: ptr[ast.Expr],
@@ -8491,7 +8114,7 @@ function coerce_index_bound_to_ptr_uint(ctx: ref[LoweringContext], bound: ptr[ir
 ## Lower `arr[start..end] = (e1, e2, ...)` into individual checked-index
 ## assignments.  The range start must be a uint-typed integer literal, and the
 ## RHS expression list length must match the range width.
-function lower_range_index_assignment(
+public function lower_range_index_assignment(
     ctx: ref[LoweringContext],
     output: ref[vec.Vec[ir.Stmt]],
     receiver: ptr[ast.Expr],
@@ -10171,7 +9794,7 @@ function resolve_method_return_from_import(
     return qualify_type(ctx, ret)
 
 
-function is_read_call(ep: ptr[ast.Expr]) -> Option[ptr[ast.Expr]]:
+public function is_read_call(ep: ptr[ast.Expr]) -> Option[ptr[ast.Expr]]:
     unsafe:
         match read(ep):
             ast.Expr.expr_call as call:
@@ -17580,7 +17203,7 @@ function float_width_name(name: str) -> int:
 
 ## True when an assignment target is a member of a raw-module (`std.c.*`) type —
 ## the host's `external_numeric_assignment_target?`.
-function external_numeric_assignment_target(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> bool:
+public function external_numeric_assignment_target(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(ep):
             ast.Expr.expr_member_access as ma:

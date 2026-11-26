@@ -1632,7 +1632,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148655,
+    "total_code": 148657,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -2051,8 +2051,8 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 22465,
-        "code": 17667,
+        "lines": 22088,
+        "code": 17356,
         "max_line": 175,
         "max_function": 327
       },
@@ -2081,8 +2081,8 @@
         "max_function": 155
       },
       "projects/mtc/src/mtc/lowering/statements.mt": {
-        "lines": 560,
-        "code": 434,
+        "lines": 938,
+        "code": 747,
         "max_line": 154,
         "max_function": 207
       },
