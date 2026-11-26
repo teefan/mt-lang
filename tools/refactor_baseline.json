@@ -379,8 +379,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 1253,
-    "duplicated_lines": 8369,
+    "windows": 1256,
+    "duplicated_lines": 8431,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -423,7 +423,6 @@
       "08d010e04f401cf4f800ab51182eec32f4abdfd1",
       "091619c40c05ebf6aec9692585439be71abe1941",
       "09166949561711ce32633eb60c7dc6c7089cb1f6",
-      "091c04699f807fed97a4fccd9ce9b1a9219324b6",
       "09425ac4bf85fccaac3d8410f589f20945a30108",
       "09b4d280d433c80378ea1458a98fb8126b0cf0b5",
       "09d2919d1b02d282f3d00859ff4011e0fe8553d9",
@@ -713,6 +712,7 @@
       "44d8ef6f8cd547dd429d441d398059bb7324db38",
       "4551552157f211e93e3f02c84005958721bb5183",
       "459513aac8992d2755100f75300278cb2b0bdb6b",
+      "45bb4227f6a8ffb1a82dbd057db6b1a7ad22ce48",
       "45f09c8595593faf3e5ca99f0ebb4c02de534854",
       "469aee3d1cd2356e5c9878505449b350c75e2012",
       "46cf4145a781717e1ac87abdd9055f3baf1a50b3",
@@ -1403,6 +1403,7 @@
       "d08f61aec6ea8033907fd5a1106385b1ad67d6db",
       "d08f9188754e7b2ad626dd0a7d77c5f2cbc93052",
       "d0a985221c51ae9490fcdec37ba34df6babbf064",
+      "d0d078318a47d49cb1f68a6df081aa94dddd5a2c",
       "d0dfd19d12a9382b7473d81cf3720ad759579135",
       "d10887fdcd0a7b2df5bf365699f84342b2d3c1c0",
       "d10a0a38727841857642ac83b50b5faa474acd39",
@@ -1585,6 +1586,7 @@
       "f5277a188afcb2dc204b8700968012c457c44c64",
       "f588c744d59aa26492771c9527f960a44a38b2d0",
       "f5959dfe3ca8fb7d9b4216f3b21e221afb201376",
+      "f5bd0ffa106ed8fa04b2fac8dd85660caf397f62",
       "f649302ba5e941f640de158d13be77c6cc4f553e",
       "f64a6bcbdb757d7723d6076ca9f0cd0779cf48d4",
       "f65a2374d2c2884e3713182f1f255f35d2de476b",
@@ -1625,6 +1627,7 @@
       "fe1ac6102575056816a7acfb23d049f302116977",
       "fe5decc5dbdf0cd8a3c3144657d2d89c3e5831c2",
       "fe6664bbbd5a45ce2130ccb576341eed76d9647f",
+      "feb35a43525faec24334fec42426788663c03ea1",
       "feb876e87f8e51760659e4e753c2a6b493535373",
       "fec5ddd0bd6478d2113f9021cb82587469f74099",
       "fecc1d59bac85c5bd5e7e9a7e4a6f86cafe91a92",
@@ -1638,7 +1641,7 @@
     ]
   },
   "sizes": {
-    "total_code": 146700,
+    "total_code": 146774,
     "functions_over_limit": 39,
     "files_over_limit": 13,
     "files": {
@@ -1853,8 +1856,8 @@
         "max_function": 0
       },
       "projects/mtc/src/mtc/ir.mt": {
-        "lines": 316,
-        "code": 193,
+        "lines": 319,
+        "code": 196,
         "max_line": 114,
         "max_function": 20
       },
@@ -1997,10 +2000,10 @@
         "max_function": 63
       },
       "projects/mtc/src/mtc/lowering/async_cps.mt": {
-        "lines": 2853,
-        "code": 2400,
+        "lines": 2861,
+        "code": 2408,
         "max_line": 126,
-        "max_function": 368
+        "max_function": 372
       },
       "projects/mtc/src/mtc/lowering/comptime.mt": {
         "lines": 1888,
@@ -2051,10 +2054,10 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 22958,
-        "code": 18038,
+        "lines": 23008,
+        "code": 18088,
         "max_line": 175,
-        "max_function": 326
+        "max_function": 327
       },
       "projects/mtc/src/mtc/lowering/match.mt": {
         "lines": 2066,
@@ -2063,20 +2066,20 @@
         "max_function": 188
       },
       "projects/mtc/src/mtc/lowering/monomorphized.mt": {
-        "lines": 1667,
-        "code": 1376,
+        "lines": 1674,
+        "code": 1383,
         "max_line": 119,
         "max_function": 229
       },
       "projects/mtc/src/mtc/lowering/parallel.mt": {
-        "lines": 1322,
-        "code": 1209,
+        "lines": 1325,
+        "code": 1212,
         "max_line": 120,
-        "max_function": 287
+        "max_function": 288
       },
       "projects/mtc/src/mtc/lowering/proc_renumber.mt": {
-        "lines": 892,
-        "code": 798,
+        "lines": 895,
+        "code": 801,
         "max_line": 120,
         "max_function": 155
       },

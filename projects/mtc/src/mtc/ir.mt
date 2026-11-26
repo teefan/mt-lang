@@ -148,12 +148,14 @@ public struct Constant:
     # `--sexpr` IR dump.
     line: ptr_uint
     path: str
+    source_module: Option[str]
 
 public struct Global:
     name: str
     linkage_name: str
     ty: types.Type
     value: ptr[Expr]
+    source_module: Option[str]
 
 public struct OpaqueDecl:
     name: str
@@ -204,6 +206,7 @@ public struct Function:
     ## building a library (`build --kind static|shared`).
     public_export: bool
     method_receiver_param: bool
+    source_module: Option[str]
 
 # =============================================================================
 #  Program root

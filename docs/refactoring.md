@@ -218,13 +218,13 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 170 / 179,427 / 146,700 |
+| source files / lines / code lines | 170 / 179,501 / 146,774 |
 | layering edges / violations | 119 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (170 modules) |
 | dead exports (unused / test-only) | 28 / 7 |
-| duplication (windows / duplicated lines) | 1,253 / 8,369 (window 12) |
+| duplication (windows / duplicated lines) | 1,256 / 8,431 (window 12) |
 | functions ≥ 200 lines | 39 |
 | files ≥ 2,000 code lines | 13 |
 | markers | 0 |

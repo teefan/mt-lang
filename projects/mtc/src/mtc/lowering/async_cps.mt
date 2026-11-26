@@ -387,6 +387,7 @@ public function lower_async_fn(
     # every module's functions), while the constructor stays in the declaring
     # module's list (`functions.rb:199-215`).
     ctx.pending_synthetic_functions.push(ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(name, "__resume"),
         linkage_name = resume_c,
         params = vparam_s,
@@ -702,6 +703,7 @@ function emit_async_vtable(
         source_path = ""
     ))
     ctx.pending_synthetic_functions.push(ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(ready_lk, "_fn"),
         linkage_name = ready_lk,
         params = vparam_s,
@@ -790,6 +792,7 @@ function emit_async_vtable(
         pointer = Option[bool].some(value = false)
     ))
     ctx.pending_synthetic_functions.push(ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(waiter_lk, "_fn"),
         linkage_name = waiter_lk,
         params = sw_params.as_span(),
@@ -964,6 +967,7 @@ function emit_async_vtable(
     ))
     vrel.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     ctx.pending_synthetic_functions.push(ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(release_lk, "_fn"),
         linkage_name = release_lk,
         params = vparam_s,
@@ -1000,6 +1004,7 @@ function emit_async_vtable(
             source_path = ""
         ))
     ctx.pending_synthetic_functions.push(ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(take_lk, "_fn"),
         linkage_name = take_lk,
         params = vparam_s,
@@ -1245,6 +1250,7 @@ function emit_async_cancel_fn(
     ))
     vcn.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     ctx.pending_synthetic_functions.push(ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(cancel_lk, "_fn"),
         linkage_name = cancel_lk,
         params = vparam_s,
@@ -1456,6 +1462,7 @@ function emit_async_constructor(
     # host's `method_receiver_param: !binding.type.receiver_type.nil?`,
     # `frame_builder.rb:329`).
     let ctor_fn = ir.Function(
+        source_module = Option[str].none,
         name = name,
         linkage_name = link_base,
         params = ctor_params.as_span(),
@@ -2744,6 +2751,7 @@ public function build_async_main_entrypoint(ctx: ref[lowering.LoweringContext], 
         ))
 
     return Option[ir.Function].some(value = ir.Function(
+        source_module = Option[str].none,
         name = name, linkage_name = "main", params = c_params.as_span(),
         return_type = int_ty, body = body.as_span(), entry_point = true, public_export = false, method_receiver_param = false,
     ))

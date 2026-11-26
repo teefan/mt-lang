@@ -125,6 +125,7 @@ public function lower_specialized_function(
     ctx.current_function_linkage = saved_current_fn
     ctx.pre_instantiated_context = saved_pre_instantiated
     return ir.Function(
+        source_module = Option[str].none,
         name = name,
         linkage_name = name,
         params = ir_params.as_span(),
@@ -1396,6 +1397,7 @@ function lower_module_var_decl(
                         g_val = lowering.string_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
                         g_val = lowering.null_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
             globals.push(ir.Global(
+                source_module = Option[str].none,
                 name = v.name,
                 linkage_name = naming.qualified_c_name(ctx.module_name, v.name),
                 ty = g_ty,
@@ -1458,6 +1460,7 @@ function lower_module_const_decl(
                         Option.none:
                             pass
                 constants.push(ir.Constant(
+                    source_module = Option[str].none,
                     name = c.name,
                     linkage_name = naming.qualified_c_name(ctx.module_name, c.name),
                     ty = c_ty,
@@ -1479,6 +1482,7 @@ function lower_module_const_decl(
                 match folded:
                     Option.some as fb:
                         constants.push(ir.Constant(
+                            source_module = Option[str].none,
                             name = c.name,
                             linkage_name = naming.qualified_c_name(ctx.module_name, c.name),
                             ty = c_ty,
@@ -1532,6 +1536,7 @@ function lower_module_const_decl(
                                                 pass
                                     coerced = lowering.alloc_expr(const_eval.retype_const_literal(c_val, c_ty))
                                 constants.push(ir.Constant(
+                                    source_module = Option[str].none,
                                     name = c.name,
                                     linkage_name = naming.qualified_c_name(ctx.module_name, c.name),
                                     ty = c_ty,
@@ -1541,6 +1546,7 @@ function lower_module_const_decl(
                                 ))
                             Option.none:
                                 constants.push(ir.Constant(
+                                    source_module = Option[str].none,
                                     name = c.name,
                                     linkage_name = naming.qualified_c_name(ctx.module_name, c.name),
                                     ty = c_ty,
@@ -1574,6 +1580,7 @@ function lower_module_event_decl(
             )
             let ev_zero = lowering.alloc_expr(ir.Expr.expr_zero_init(ty = ev_ty))
             globals.push(ir.Global(
+                source_module = Option[str].none,
                 name = ev.name,
                 linkage_name = naming.qualified_c_name(ctx.module_name, ev.name),
                 ty = ev_ty,

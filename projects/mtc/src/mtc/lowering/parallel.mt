@@ -750,6 +750,7 @@ public function lower_parallel_for(
         pointer = Option[bool].some(value = false)
     ))
     let worker = ir.Function(
+        source_module = Option[str].none,
         name = worker_name, linkage_name = worker_name,
         params = worker_params.as_span(), return_type = ctx.void_ty,
         body = worker_body.as_span(), entry_point = false, public_export = false, method_receiver_param = false,
@@ -1201,6 +1202,7 @@ function build_parallel_workers(
             pointer = Option[bool].some(value = false)
         ))
         let worker = ir.Function(
+            source_module = Option[str].none,
             name = worker_name, linkage_name = worker_name,
             params = worker_params.as_span(), return_type = void_ty,
             body = worker_body.as_span(), entry_point = false, public_export = false, method_receiver_param = false,
@@ -1298,6 +1300,7 @@ public function lower_detach_expr(
         pointer = Option[bool].some(value = false)
     ))
     let worker = ir.Function(
+        source_module = Option[str].none,
         name = worker_name, linkage_name = worker_name,
         params = worker_params.as_span(), return_type = void_ty,
         body = wb.as_span(), entry_point = false, public_export = false, method_receiver_param = false,

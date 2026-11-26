@@ -711,6 +711,7 @@ function rename_stmt_span(items: span[ir.Stmt], mapping: ref[map_mod.Map[str, st
 
 function rename_function(f: ir.Function, mapping: ref[map_mod.Map[str, str]]) -> ir.Function:
     return ir.Function(
+        source_module = f.source_module,
         name = rename_proc_str(f.name, mapping),
         linkage_name = rename_proc_str(f.linkage_name, mapping),
         params = rename_params(f.params, mapping),
@@ -756,6 +757,7 @@ function rename_struct_decl(s: ir.StructDecl, mapping: ref[map_mod.Map[str, str]
 
 function rename_constant(c: ir.Constant, mapping: ref[map_mod.Map[str, str]]) -> ir.Constant:
     return ir.Constant(
+        source_module = c.source_module,
         name = rename_proc_str(c.name, mapping),
         linkage_name = rename_proc_str(c.linkage_name, mapping),
         ty = rename_type(c.ty, mapping),
@@ -767,6 +769,7 @@ function rename_constant(c: ir.Constant, mapping: ref[map_mod.Map[str, str]]) ->
 
 function rename_global(g: ir.Global, mapping: ref[map_mod.Map[str, str]]) -> ir.Global:
     return ir.Global(
+        source_module = g.source_module,
         name = rename_proc_str(g.name, mapping),
         linkage_name = rename_proc_str(g.linkage_name, mapping),
         ty = rename_type(g.ty, mapping),

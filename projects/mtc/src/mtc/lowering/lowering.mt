@@ -845,6 +845,7 @@ public function lower_checked(program: loader.Program) -> LoweringOutcome:
     var expanded_decls = map_mod.Map[str, span[ast.Decl]].create()
     var module_fragments = vec.Vec[ir.Program].create()
     var module_analyses = vec.Vec[analyzer.Analysis].create()
+    var function_owner = map_mod.Map[str, str].create()
     var lowering_error = zero[LoweringError]
     var lowering_failed = false
     var synthetic_functions = vec.Vec[ir.Function].create()
@@ -893,14 +894,29 @@ public function lower_checked(program: loader.Program) -> LoweringOutcome:
             )
         module_fragments.push(fragment)
         module_analyses.push(analysis)
-        globals.append_span(fragment.globals)
+        var gi_owned: ptr_uint = 0
+        while gi_owned < fragment.globals.len:
+            var owned_global = unsafe: read(fragment.globals.data + gi_owned)
+            owned_global.source_module = Option[str].some(value = analysis.module_name)
+            globals.push(owned_global)
+            gi_owned += 1
         opaques.append_span(fragment.opaques)
         dedup_append_structs(ref_of(structs), fragment.structs, ref_of(seen_structs))
         unions.append_span(fragment.unions)
         enums.append_span(fragment.enums)
         dedup_append_variants(ref_of(variants), fragment.variants, ref_of(seen_variants))
         static_asserts.append_span(fragment.static_asserts)
-        constants.append_span(fragment.constants)
+        var ci_owned: ptr_uint = 0
+        while ci_owned < fragment.constants.len:
+            var owned_constant = unsafe: read(fragment.constants.data + ci_owned)
+            owned_constant.source_module = Option[str].some(value = analysis.module_name)
+            constants.push(owned_constant)
+            ci_owned += 1
+        var fi_owned: ptr_uint = 0
+        while fi_owned < fragment.functions.len:
+            let owned_function = unsafe: read(fragment.functions.data + fi_owned)
+            function_owner.set(owned_function.linkage_name, analysis.module_name)
+            fi_owned += 1
         # External-struct layouts for the C backend's equality helpers, deduped
         # across modules (several modules can compare the same raw struct type).
         var efx: ptr_uint = 0
@@ -945,7 +961,16 @@ public function lower_checked(program: loader.Program) -> LoweringOutcome:
         ref_of(spec_infos),
         ref_of(expanded_decls)
     )
-    dedup_append_functions(ref_of(functions), ordered.as_span(), ref_of(seen_functions))
+    var owned_ordered = vec.Vec[ir.Function].create()
+    var oi_ordered: ptr_uint = 0
+    while oi_ordered < ordered.len:
+        var f_ordered = unsafe: read(ordered.data + oi_ordered)
+        let owner_ptr = function_owner.get(f_ordered.linkage_name)
+        if owner_ptr != null:
+            f_ordered.source_module = Option[str].some(value = unsafe: read(owner_ptr))
+        owned_ordered.push(f_ordered)
+        oi_ordered += 1
+    dedup_append_functions(ref_of(functions), owned_ordered.as_span(), ref_of(seen_functions))
     let module_fn_count = functions.len()
     # The host's program-level synthetic function list (proc invoke/release/
     # retain bodies and pfor/spawn workers) follows every module's functions.
@@ -1462,6 +1487,7 @@ function lower_method(ctx: ref[LoweringContext], c_name: str, receiver_ty: types
     ctx.current_function_linkage = saved_current_fn
 
     return ir.Function(
+        source_module = Option[str].none,
         name = m.name,
         linkage_name = c_name,
         params = ir_params.as_span(),
@@ -1658,6 +1684,7 @@ public function lower_function(
     ctx.current_function_linkage = saved_current_fn
 
     return ir.Function(
+        source_module = Option[str].none,
         name = name,
         linkage_name = naming.qualified_c_name(ctx.module_name, name),
         params = ir_params.as_span(),
@@ -1692,6 +1719,7 @@ public function build_root_main_entrypoint(
         var body = vec.Vec[ir.Stmt].create()
         append_entry_call_and_return(ref_of(body), call, user_return, int_ty)
         return Option[ir.Function].some(value = ir.Function(
+            source_module = Option[str].none,
             name = name, linkage_name = "main", params = span[ir.Param](),
             return_type = int_ty, body = body.as_span(), entry_point = true, public_export = false, method_receiver_param = false,
         ))
@@ -1808,6 +1836,7 @@ public function build_root_main_entrypoint(
             pointer = Option[bool].some(value = false)
         ))
         return Option[ir.Function].some(value = ir.Function(
+            source_module = Option[str].none,
             name = name, linkage_name = "main", params = entry_params.as_span(),
             return_type = int_ty, body = body.as_span(), entry_point = true, public_export = false, method_receiver_param = false,
         ))
@@ -3712,6 +3741,7 @@ function lower_emitted_decl(ctx: ref[LoweringContext], decl: ast.Decl) -> void:
             while ctx.locals.len() > saved_locals_len:
                 let _popped = ctx.locals.pop()
             push_emitted_function(ctx, ir.Function(
+                source_module = Option[str].none,
                 name = fun.name,
                 linkage_name = strings.join_two(prefix, fun.name),
                 params = params.as_span(),
@@ -3746,6 +3776,7 @@ function lower_emitted_decl(ctx: ref[LoweringContext], decl: ast.Decl) -> void:
                 lowered = literal_value_to_context_type(ctx, unsafe: ptr[ast.Expr]<-c_value, c_ty, lowered)
                 c_val = lowered
             push_emitted_constant(ctx, ir.Constant(
+                source_module = Option[str].none,
                 name = c.name,
                 linkage_name = naming.qualified_c_name(ctx.module_name, c.name),
                 ty = c_ty,
@@ -7854,6 +7885,7 @@ function build_env_setup_fn(
     body.push(ir.Stmt.stmt_return(value = env_ref, line = 0, source_path = ""))
 
     return ir.Function(
+        source_module = Option[str].none,
         name = c_name,
         linkage_name = c_name,
         params = params.as_span(),
@@ -7981,6 +8013,7 @@ function build_capturing_invoke(
     ctx.async_completion_active = saved_cps_ci_completion
     ctx.inside_async = saved_ci_inside_async
     return ir.Function(
+        source_module = Option[str].none,
         name = invoke_c_name,
         linkage_name = invoke_c_name,
         params = params.as_span(),
@@ -8076,6 +8109,7 @@ function build_capturing_release(
     ))
     body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     return ir.Function(
+        source_module = Option[str].none,
         name = c_name,
         linkage_name = c_name,
         params = params.as_span(),
@@ -8127,6 +8161,7 @@ function build_capturing_retain(c_name: str, env_type_name: str) -> ir.Function:
     body.push(ir.Stmt.stmt_assignment(target = ref_field, operator = "+=", value = one))
     body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     return ir.Function(
+        source_module = Option[str].none,
         name = c_name,
         linkage_name = c_name,
         params = params.as_span(),
@@ -8193,6 +8228,7 @@ function build_proc_invoke_fn(
     ctx.async_completion_active = saved_cps_pi_completion
     ctx.inside_async = saved_pi_inside_async
     return ir.Function(
+        source_module = Option[str].none,
         name = invoke_c_name,
         linkage_name = invoke_c_name,
         params = params.as_span(),
@@ -8216,6 +8252,7 @@ function build_proc_noop_fn(c_name: str) -> ir.Function:
     var body = vec.Vec[ir.Stmt].create()
     body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     return ir.Function(
+        source_module = Option[str].none,
         name = c_name,
         linkage_name = c_name,
         params = params.as_span(),
@@ -12786,6 +12823,7 @@ function gen_dyn_vtable_wrappers(
                     source_path = "",
                 ))
                 ctx.pending_synthetic_functions.push(ir.Function(
+                    source_module = Option[str].none,
                     name = wrapper_c_name,
                     linkage_name = wrapper_c_name,
                     params = wrapper_params.as_span(),
@@ -12910,6 +12948,7 @@ function gen_dyn_vtable_constant(
         ))
         mi += 1
     ctx.pending_dyn_constants.push(ir.Constant(
+        source_module = Option[str].none,
         name = vtable_c_name,
         linkage_name = vtable_c_name,
         ty = const_ty,
@@ -14893,6 +14932,7 @@ function lower_specialized_method(
     ctx.pre_instantiated_context = saved_pre_instantiated
 
     return ir.Function(
+        source_module = Option[str].none,
         # Host parity: the instance's `name` is the method name; the linkage
         # name carries the receiver and type-argument suffix.
         name = m.name,
@@ -14992,6 +15032,7 @@ function lower_fn_to_proc(
                 inv_body.push(ir.Stmt.stmt_return(value = call, line = 0, source_path = source_path))
 
             ctx.pending_synthetic_functions.push(ir.Function(
+                source_module = Option[str].none,
                 name = invoke_str,
                 linkage_name = invoke_str,
                 params = inv_params.as_span(),
@@ -16183,6 +16224,7 @@ function build_event_subscribe_fn(
         pointer = Option[bool].some(value = false)
     ))
     return ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(callee, "_fn"),
         linkage_name = callee,
         params = params.as_span(),
@@ -16328,6 +16370,7 @@ function build_event_subscribe_stateful_fn(
         pointer = Option[bool].some(value = false)
     ))
     return ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(callee, "_fn"),
         linkage_name = callee,
         params = params.as_span(),
@@ -16422,6 +16465,7 @@ function build_event_unsubscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, e
         pointer = Option[bool].some(value = false)
     ))
     return ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(info.unsubscribe_c_name, "_fn"),
         linkage_name = info.unsubscribe_c_name,
         params = params.as_span(),
@@ -16751,6 +16795,7 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
             pointer = Option[bool].some(value = false)
         ))
     return ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(info.emit_c_name, "_fn"),
         linkage_name = info.emit_c_name,
         params = params.as_span(),
@@ -16822,6 +16867,7 @@ function build_event_wait_ready_fn(info: ref[EventRuntimeInfo], slot_cn: str, ev
         pointer = Option[bool].some(value = false)
     ))
     return ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(info.wait_ready_c_name, "_fn"),
         linkage_name = info.wait_ready_c_name,
         params = params.as_span(),
@@ -16933,6 +16979,7 @@ function build_event_wait_set_waiter_fn(info: ref[EventRuntimeInfo], slot_cn: st
         pointer = Option[bool].some(value = false)
     ))
     return ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(info.wait_set_waiter_c_name, "_fn"),
         linkage_name = info.wait_set_waiter_c_name,
         params = params.as_span(),
@@ -17033,6 +17080,7 @@ function build_event_wait_release_fn(info: ref[EventRuntimeInfo], slot_cn: str, 
         pointer = Option[bool].some(value = false)
     ))
     return ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(info.wait_release_c_name, "_fn"),
         linkage_name = info.wait_release_c_name,
         params = params.as_span(),
@@ -17109,6 +17157,7 @@ function build_event_wait_take_result_fn(
         pointer = Option[bool].some(value = false)
     ))
     return ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(info.wait_take_result_c_name, "_fn"),
         linkage_name = info.wait_take_result_c_name,
         params = params.as_span(),
@@ -17244,6 +17293,7 @@ function build_event_wait_fn(
         pointer = Option[bool].some(value = false)
     ))
     return ir.Function(
+        source_module = Option[str].none,
         name = strings.join_two(info.wait_c_name, "_fn"),
         linkage_name = info.wait_c_name,
         params = params.as_span(),
