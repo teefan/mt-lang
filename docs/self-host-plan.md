@@ -6370,6 +6370,23 @@ diagnostic now reports `file:6:9` instead of `0:0`; declaration-level or
 synthesized errors still report `0:0`.  `test/mt` remains **102/0** and the
 recorded oracles are unchanged.
 
+### Match and construction diagnostics (B1d)
+
+All `match.mt` abort sites are now lowering errors with an immediate return
+(no `fatal` remains in the match module): unknown scrutinee type, unsupported
+pattern, the string-match statement/expression families, non-enum match
+expressions, unknown variant match targets, unsupported variant expression and
+statement patterns, and the missing-wrapper paths.  The `str` and `span`
+named-field construction sites in `lowering.mt` are converted too; positional
+`str(...)` is sema-clean and now reports
+`lowering: str construction requires named fields` (positional `span(...)` is
+already a sema error).
+
+One new fixture (`lowering_str_positional.mt`); `test/mt` is now **103/0**.
+Examples **311/311**, box2d/async smokes, CLI **227/227**, diagnostics **500 /
+5 changed / 1 unrecorded / 0 differ**, lint **654 / 21 changed / 1 unrecorded
+/ 0 differ**.
+
 ### Known issue: `milkTea/debugInfo` on very large files
 
 The LSP debug-AST renderer aborts with `string.as_str text must be valid UTF-8`

@@ -159,7 +159,8 @@ public function lower_match(
         if ts == "void" or ts == "<error>" or ts.starts_with("("):
             ctx.locals = saved_locals
             return
-        fatal(strings.join_two("lowering: match requires known type, got ", ts))
+        lowering.fail_lowering(ctx, strings.join_two("lowering: match requires known type, got ", ts))
+        return
     var enum_module = enum_source_module(ctx, scrutinee_ty, ctx.module_name)
     var cases = vec.Vec[ir.SwitchCase].create()
     var i: ptr_uint = 0
@@ -181,7 +182,8 @@ public function lower_match(
             cases.push(ir.SwitchCase(is_default = true, value = null, body = body))
         else:
             let member = match_member_name(pattern) else:
-                fatal(c"lowering: unsupported match pattern")
+                lowering.fail_lowering_cstr(ctx, c"lowering: unsupported match pattern")
+                return
             let value = lowering.alloc_expr(ir.Expr.expr_name(
                 name = enum_member_reference_c_name(ctx, enum_module, enum_name, member),
                 ty = scrutinee_ty,
@@ -377,9 +379,11 @@ function lower_string_match(
     while idx > 0:
         idx -= 1
         let value_ptr = lit_values.get(idx) else:
-            fatal(c"lowering: string match value")
+            lowering.fail_lowering_cstr(ctx, c"lowering: string match value")
+            return
         let body_ptr = lit_bodies.get(idx) else:
-            fatal(c"lowering: string match body")
+            lowering.fail_lowering_cstr(ctx, c"lowering: string match body")
+            return
         let condition = lowering.alloc_expr(ir.Expr.expr_binary(
             operator = "==",
             left = scrutinee_expr,
@@ -586,16 +590,19 @@ function lower_str_match_expr(
     var chain = vec.Vec[ir.Stmt].create()
     if has_default:
         let dv = default_val else:
-            fatal(c"lowering: str match expr default value")
+            lowering.fail_lowering_cstr(ctx, c"lowering: str match expr default value")
+            return
         chain.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = dv))
 
     var back = pattern_lits.len
     while back > 0:
         back -= 1
         let pat_ptr = pattern_lits.get(back) else:
-            fatal(c"lowering: str match expr pattern")
+            lowering.fail_lowering_cstr(ctx, c"lowering: str match expr pattern")
+            return
         let val_ptr = result_vals.get(back) else:
-            fatal(c"lowering: str match expr value")
+            lowering.fail_lowering_cstr(ctx, c"lowering: str match expr value")
+            return
         let condition = lowering.alloc_expr(ir.Expr.expr_binary(
             operator = "==",
             left = scrutinee_expr,
@@ -829,7 +836,8 @@ function lower_enum_match_expr(
                     ))
                     cases.push(ir.SwitchCase(is_default = false, value = value, body = body.as_span()))
                 Option.none:
-                    fatal(c"lowering: match expression on non-enum scrutinee")
+                    lowering.fail_lowering_cstr(ctx, c"lowering: match expression on non-enum scrutinee")
+                    return
         i += 1
 
     output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = true))
@@ -847,7 +855,8 @@ function lower_variant_match_expr(
     result_ref: ptr[ir.Expr]
 ) -> void:
     let info_ptr = ctx.variants.get(variant_registry_key(ctx, variant_name, scrutinee_ty)) else:
-        fatal(c"lowering: variant match expr on unknown variant")
+        lowering.fail_lowering_cstr(ctx, c"lowering: variant match expr on unknown variant")
+        return
     let info = unsafe: read(info_ptr)
     let outer_c = lowering.variant_base_c_name(scrutinee_ty, ctx.module_name)
     let int_ty = types.primitive("int")
@@ -865,7 +874,8 @@ function lower_variant_match_expr(
             match arm.binding_name:
                 Option.some as bn:
                     let arm_name = variant_match_arm_name_from_pattern(pattern) else:
-                        fatal(c"lowering: unsupported variant match expression pattern")
+                        lowering.fail_lowering_cstr(ctx, c"lowering: unsupported variant match expression pattern")
+                        return
                     let binding_ty = variant_arm_payload_binding(variant_name, info.module_name, outer_c, arm_name)
                     register_arm_payload_fields(
                         ctx,
@@ -911,7 +921,8 @@ function lower_variant_match_expr(
             cases.push(ir.SwitchCase(is_default = true, value = null, body = body.as_span()))
         else:
             let arm_name = variant_match_arm_name_from_pattern(pattern) else:
-                fatal(c"lowering: unsupported variant match expression pattern")
+                lowering.fail_lowering_cstr(ctx, c"lowering: unsupported variant match expression pattern")
+                return
             let kind_const = lowering.alloc_expr(ir.Expr.expr_name(
                 name = variant_kind_const_name(outer_c, arm_name),
                 ty = int_ty,
@@ -980,7 +991,8 @@ function lower_variant_match_switch(
         if bn.is_some():
             info_ptr = ctx.variants.get(variant_registry_key(ctx, bn.unwrap(), scrutinee_ty))
     let info_ptr2 = info_ptr else:
-        fatal(c"lowering: variant match on unknown variant")
+        lowering.fail_lowering_cstr(ctx, c"lowering: variant match on unknown variant")
+        return
     let info = unsafe: read(info_ptr2)
     let outer_c = lowering.variant_base_c_name(scrutinee_ty, ctx.module_name)
     let int_ty = types.primitive("int")
@@ -1038,7 +1050,8 @@ function lower_variant_match_switch(
                 cases.push(ir.SwitchCase(is_default = true, value = null, body = lower_switch_arm_body(ctx, arm.body)))
         else:
             let arm_name = match_member_name(pattern) else:
-                fatal(c"lowering: unsupported variant match pattern")
+                lowering.fail_lowering_cstr(ctx, c"lowering: unsupported variant match pattern")
+                return
             var stmts = vec.Vec[ir.Stmt].create()
             var reg_field = ""
             var reg_field_ty = ctx.void_ty
@@ -1126,7 +1139,8 @@ function lower_variant_match_goto(
     arms: span[ast.MatchArm]
 ) -> void:
     let info_ptr = ctx.variants.get(variant_registry_key(ctx, variant_name, scrutinee_ty)) else:
-        fatal(c"lowering: variant match on unknown variant")
+        lowering.fail_lowering_cstr(ctx, c"lowering: variant match on unknown variant")
+        return
     let info = unsafe: read(info_ptr)
     let outer_c = lowering.variant_base_c_name(scrutinee_ty, ctx.module_name)
     let int_ty = types.primitive("int")
@@ -1173,7 +1187,8 @@ function lower_variant_match_goto(
             output.push(ir.Stmt.stmt_block(body = blk.as_span()))
         else:
             let arm_name = variant_match_arm_name_from_pattern(pattern) else:
-                fatal(c"lowering: unsupported variant match pattern")
+                lowering.fail_lowering_cstr(ctx, c"lowering: unsupported variant match pattern")
+                return
             let goto_label = if arm_index < arms.len - 1: match_arm_label(m, arm_index + 1) else: next_label
 
             let kind_expr = lowering.alloc_expr(ir.Expr.expr_member(

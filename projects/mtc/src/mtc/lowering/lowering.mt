@@ -9396,7 +9396,8 @@ function lower_identifier_call(
                         unsafe:
                             sarg = read(args.data + sfi)
                         let fname = sarg.arg_name else:
-                            fatal(c"lowering: str construction requires named fields")
+                            fail_lowering_cstr(ctx, c"lowering: str construction requires named fields")
+                            return poison_expr()
                         str_fields.push(ir.AggregateField(name = fname, value = lower_expr(ctx, sarg.arg_value)))
                         sfi += 1
                     return alloc_expr(ir.Expr.expr_aggregate_literal(
@@ -10373,7 +10374,8 @@ function lower_specialization_call(
                     while i < call_args.len:
                         let arg = read(call_args.data + i)
                         let field_name = arg.arg_name else:
-                            fatal(c"lowering: span construction requires named fields")
+                            fail_lowering_cstr(ctx, c"lowering: span construction requires named fields")
+                            return poison_expr()
                         var field_value = lower_expr(ctx, arg.arg_value)
                         # `.len` is a ptr_uint field, so an integer literal is
                         # re-typed to ptr_uint (matching the host).
