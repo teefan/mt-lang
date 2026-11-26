@@ -7024,6 +7024,7 @@ function emit_format_string_helpers(e: ref[Emitter]) -> void:
 
 function emit_format_string_core(e: ref[Emitter]) -> void:
     emit_line(e, "static mt_str mt_format_str_make(uintptr_t len) {")
+    emit_line(e, "  if (len > UINTPTR_MAX - 1) mt_fatal(\"format string size overflow\");")
     emit_line(e, "  char* data = (char*)malloc((size_t)(len + 1));")
     emit_line(e, "  if (data == NULL) mt_fatal(\"format string allocation failed\");")
     emit_line(e, "  data[len] = '\\0';")
@@ -8549,6 +8550,7 @@ function emit_entry_argv_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  uintptr_t len = argc > 0 ? (uintptr_t)argc : 0;")
     emit_line(e, "  mt_str* items = NULL;")
     emit_line(e, "  uintptr_t index = 0;")
+    emit_line(e, "  if (len > UINTPTR_MAX / sizeof(mt_str)) abort();")
     emit_line(e, "  if (len > 0) {")
     emit_line(e, "    items = (mt_str*)malloc(len * sizeof(mt_str));")
     emit_line(e, "    if (items == NULL) abort();")
@@ -8594,6 +8596,7 @@ function uses_free_foreign_cstr_helper(functions: span[ir.Function]) -> bool:
 ## Mirrors Ruby's c_backend/runtime_helpers.rb `mt_foreign_str_to_cstr_temp`.
 function emit_foreign_cstr_helper(e: ref[Emitter]) -> void:
     emit_line(e, "static const char* mt_foreign_str_to_cstr_temp(mt_str value) {")
+    emit_line(e, "  if (value.len > UINTPTR_MAX - 1) mt_fatal(\"foreign str temporary size overflow\");")
     emit_line(e, "  char* data = (char*)malloc(value.len + 1);")
     emit_line(e, "  uintptr_t index = 0;")
     emit_line(e, "  if (data == NULL) mt_fatal(\"foreign str temporary allocation failed\");")

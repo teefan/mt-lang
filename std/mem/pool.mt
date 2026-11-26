@@ -14,6 +14,10 @@ function slot_alignment(slot_size_bytes: ptr_uint, base_alignment: ptr_uint) -> 
 public struct Pool:
     memory: ptr[ubyte]?
     occupancy: ptr[bool]?
+    ## Intrusive free-list: `free_head` is a slot index, `next_free[i]` is the
+    ## next free slot after `i`, and `heap.ptr_uint_max` terminates the list.
+    next_free: ptr[ptr_uint]?
+    free_head: ptr_uint
     slot_size: ptr_uint
     slot_alignment: ptr_uint
     slot_count: ptr_uint
@@ -33,6 +37,8 @@ public function create_aligned(slot_size_bytes: ptr_uint, slot_count: ptr_uint, 
         return Pool(
             memory = null,
             occupancy = null,
+            next_free = null,
+            free_head = heap.ptr_uint_max,
             slot_size = slot_size_bytes,
             slot_alignment = slot_alignment(slot_size_bytes, normalized_alignment),
             slot_count = 0,
@@ -53,9 +59,23 @@ public function create_aligned(slot_size_bytes: ptr_uint, slot_count: ptr_uint, 
         heap.release_bytes(memory)
         fatal(c"pool.create occupancy out of memory")
 
+    let next_free = heap.alloc[ptr_uint](slot_count) else:
+        heap.release(occupancy)
+        heap.release_bytes(memory)
+        fatal(c"pool.create free list out of memory")
+
+    unsafe:
+        var index: ptr_uint = 0
+        while index < slot_count:
+            read(next_free + index) = index + 1
+            index += 1
+        read(next_free + (slot_count - 1)) = heap.ptr_uint_max
+
     return unsafe: Pool(
             memory = ptr[ubyte]<-memory,
             occupancy = occupancy,
+            next_free = next_free,
+            free_head = 0,
             slot_size = slot_size_bytes,
             slot_alignment = slot_alignment(slot_size_bytes, normalized_alignment),
             slot_count = slot_count,
@@ -83,22 +103,21 @@ extending Pool:
 
 
     public editable function alloc_bytes() -> ptr[ubyte]?:
+        if this.free_head == heap.ptr_uint_max:
+            return null
+
         let memory = this.memory else:
             return null
         let occupancy = this.occupancy else:
             return null
-
-        var index: ptr_uint = 0
-        while index < this.slot_count:
-            unsafe:
-                let state_ptr = occupancy + index
-                if not (read(state_ptr)):
-                    read(state_ptr) = true
-                    this.used_count = this.used_count + 1
-                    return memory + (index * this.slot_size)
-            index = index + 1
-
-        return null
+        let next_free = this.next_free else:
+            return null
+        let index = this.free_head
+        unsafe:
+            this.free_head = read(next_free + index)
+            read(occupancy + index) = true
+            this.used_count = this.used_count + 1
+            return memory + (index * this.slot_size)
 
 
     public editable function alloc[T]() -> ptr[T]?:
@@ -128,22 +147,27 @@ extending Pool:
             return false
         let occupancy = this.occupancy else:
             return false
-
-        var index: ptr_uint = 0
-        while index < this.slot_count:
-            unsafe:
-                let candidate = memory + (index * this.slot_size)
-                if candidate == slot:
-                    let state_ptr = occupancy + index
-                    if not (read(state_ptr)):
-                        return false
-
-                    read(state_ptr) = false
-                    this.used_count = this.used_count - 1
-                    return true
-            index = index + 1
-
-        return false
+        let next_free = this.next_free else:
+            return false
+        unsafe:
+            let base = reinterpret[ptr_uint](memory)
+            let target = reinterpret[ptr_uint](slot)
+            if target < base:
+                return false
+            let offset = target - base
+            if offset >= this.slot_size * this.slot_count:
+                return false
+            if offset % this.slot_size != 0:
+                return false
+            let index = offset / this.slot_size
+            let state_ptr = occupancy + index
+            if not read(state_ptr):
+                return false
+            read(state_ptr) = false
+            read(next_free + index) = this.free_head
+            this.free_head = index
+            this.used_count = this.used_count - 1
+            return true
 
 
     public editable function release_slot[T](slot: ptr[T]?) -> bool:
@@ -156,8 +180,11 @@ extending Pool:
     public editable function release() -> void:
         heap.release(this.memory)
         heap.release(this.occupancy)
+        heap.release(this.next_free)
         this.memory = null
         this.occupancy = null
+        this.next_free = null
+        this.free_head = heap.ptr_uint_max
         this.slot_size = 0
         this.slot_alignment = 0
         this.slot_count = 0

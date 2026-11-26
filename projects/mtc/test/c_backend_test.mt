@@ -801,3 +801,21 @@ function test_repeated_generation_is_identical() -> void:
     var second = compile_to_c(source)
     defer: second.release()
     expect(first.as_str().equal(second.as_str()))
+
+
+@[test]
+function test_format_string_size_guard_is_emitted() -> void:
+    ## The dynamic format-string allocator must not let `len + 1` wrap before
+    ## malloc; the guard is emitted with the helper.
+    var source = <<-SRC
+        function main() -> int:
+            let value = 7
+            let text = f"v=#{value}"
+            return 0
+    SRC
+    var c = compile_to_c(source)
+    defer: c.release()
+    expect_contains(
+        c.as_str(),
+        "if (len > UINTPTR_MAX - 1) mt_fatal(\"format string size overflow\");"
+    )

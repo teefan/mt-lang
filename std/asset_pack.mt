@@ -37,6 +37,18 @@ public struct Reader:
     ## Set by `close`; the closed file handle itself stays in `file` (a
     ## nullable opaque field cannot be reset to none by the C backend).
     closed: bool
+    index_size: ptr_uint
+    file_size: ptr_uint
+    ## The index is loaded and validated once in `open`; lookups only scan this
+    ## in-memory list, never the file.
+    index: vec.Vec[IndexEntry]
+
+struct IndexEntry:
+    path: string.String
+    entry_flags: uint
+    data_offset: ptr_uint
+    stored_size: ptr_uint
+    unpacked_size: ptr_uint
 
 struct EntryMetadata:
     path_length: ptr_uint
@@ -49,6 +61,20 @@ struct EntryMetadata:
 public function open(path: str) -> Result[Reader, Error]:
     let file = stdio.file_open(path, "rb") else:
         return Result[Reader, Error].failure(error= Error.open_failed)
+
+    var file_size: ptr_uint = 0
+    match fs.metadata(path):
+        Result.failure as metadata_failure:
+            var metadata_error = metadata_failure.error
+            metadata_error.release()
+            stdio.file_close(file)
+            return Result[Reader, Error].failure(error= Error.open_failed)
+        Result.success as metadata_payload:
+            file_size = metadata_payload.value.size
+
+    if file_size < HEADER_SIZE_BYTES:
+        stdio.file_close(file)
+        return Result[Reader, Error].failure(error= Error.malformed_header)
 
     var header = zero[array[ubyte, 28]]
     let header_ptr = ptr_of(header[0])
@@ -89,17 +115,39 @@ public function open(path: str) -> Result[Reader, Error]:
         Result.success as data_payload:
             data_offset = data_payload.value
 
+    if index_size > file_size - HEADER_SIZE_BYTES:
+        stdio.file_close(file)
+        return Result[Reader, Error].failure(error= Error.malformed_header)
+
     if data_offset != HEADER_SIZE_BYTES + index_size:
         stdio.file_close(file)
         return Result[Reader, Error].failure(error= Error.malformed_header)
 
-    return Result[Reader, Error].success(value= Reader(file = file, entry_count = entry_count, closed = false))
+    # Every entry has a 32-byte prefix and at least a one-byte path.
+    if ptr_uint<-entry_count > index_size / (ENTRY_PREFIX_SIZE_BYTES + 1):
+        stdio.file_close(file)
+        return Result[Reader, Error].failure(error= Error.malformed_header)
+
+    match load_index(file, entry_count, index_size, data_offset, file_size):
+        Result.failure as index_failure:
+            stdio.file_close(file)
+            return Result[Reader, Error].failure(error= index_failure.error)
+        Result.success as index_payload:
+            return Result[Reader, Error].success(value= Reader(
+                file = file,
+                entry_count = entry_count,
+                closed = false,
+                index_size = index_size,
+                file_size = file_size,
+                index = index_payload.value
+            ))
 
 
 extending Reader:
     public editable function close() -> void:
         if this.closed:
             return
+        release_index_entries(ref_of(this.index))
         let file = this.file else:
             this.closed = true
             this.entry_count = 0
@@ -113,34 +161,16 @@ extending Reader:
         if this.closed or this.file == null:
             return Result[bytes.Bytes, Error].failure(error= Error.closed)
 
-        if stdio.file_seek(this.file, HEADER_SIZE_BYTES, stdio.SEEK_SET) != 0:
-            return Result[bytes.Bytes, Error].failure(error= Error.io)
-
-        var entry_index: uint = 0
-        while entry_index < this.entry_count:
-            let metadata_result = read_entry_metadata(this.file)
-            match metadata_result:
-                Result.failure as payload:
-                    return Result[bytes.Bytes, Error].failure(error= payload.error)
-                Result.success as metadata_payload:
-                    let metadata = metadata_payload.value
-                    let path_match_result = read_path_matches(this.file, metadata.path_length, logical_path)
-                    match path_match_result:
-                        Result.failure as payload:
-                            return Result[bytes.Bytes, Error].failure(error= payload.error)
-                        Result.success as match_payload:
-                            if match_payload.value:
-                                if metadata.entry_flags != ENTRY_FLAGS_RAW:
-                                    return Result[bytes.Bytes, Error].failure(error= Error.unsupported_flags)
-
-                                if metadata.stored_size != metadata.unpacked_size:
-                                    return Result[bytes.Bytes, Error].failure(error= Error.malformed_index)
-
-                                if stdio.file_seek(this.file, ptr_int<-metadata.data_offset, stdio.SEEK_SET) != 0:
-                                    return Result[bytes.Bytes, Error].failure(error= Error.io)
-
-                                return read_payload(this.file, metadata.stored_size)
-                    entry_index += 1
+        var entry_index: ptr_uint = 0
+        while entry_index < this.index.len():
+            let entry_ptr = this.index.get(entry_index) else:
+                break
+            let entry = unsafe: read(entry_ptr)
+            if entry.path.as_str().equal(logical_path):
+                if stdio.file_seek(this.file, ptr_int<-entry.data_offset, stdio.SEEK_SET) != 0:
+                    return Result[bytes.Bytes, Error].failure(error= Error.io)
+                return read_payload(this.file, entry.stored_size)
+            entry_index += 1
 
         return Result[bytes.Bytes, Error].failure(error= Error.entry_not_found)
 
@@ -199,14 +229,96 @@ function read_entry_metadata(file: stdio.File?) -> Result[EntryMetadata, Error]:
     ))
 
 
-function read_path_matches(file: stdio.File?, path_length: ptr_uint, logical_path: str) -> Result[bool, Error]:
-    let path_buffer = heap.must_alloc[ubyte](path_length)
-    defer: heap.release(path_buffer)
+## Read and validate the whole entry index once.  Every path is copied into an
+## owned `String`, every data range is checked against the file size, and the
+## index byte count must be exactly consumed.  A malformed pack fails here, not
+## on the first lookup.
+function load_index(
+    file: stdio.File?,
+    entry_count: uint,
+    index_size: ptr_uint,
+    data_base: ptr_uint,
+    file_size: ptr_uint
+) -> Result[vec.Vec[IndexEntry], Error]:
+    var entries = vec.Vec[IndexEntry].create()
+    if stdio.file_seek(file, HEADER_SIZE_BYTES, stdio.SEEK_SET) != 0:
+        return Result[vec.Vec[IndexEntry], Error].failure(error= Error.io)
 
-    if not read_exact(file, path_buffer, path_length):
-        return Result[bool, Error].failure(error= Error.malformed_index)
+    var consumed: ptr_uint = 0
+    var entry_index: uint = 0
+    while entry_index < entry_count:
+        if consumed > index_size or ENTRY_PREFIX_SIZE_BYTES > index_size - consumed:
+            release_index_entries(ref_of(entries))
+            return Result[vec.Vec[IndexEntry], Error].failure(error= Error.malformed_index)
 
-    return Result[bool, Error].success(value= bytes_equal_str(path_buffer, path_length, logical_path))
+        let metadata_result = read_entry_metadata(file)
+        match metadata_result:
+            Result.failure as payload:
+                release_index_entries(ref_of(entries))
+                return Result[vec.Vec[IndexEntry], Error].failure(error= payload.error)
+            Result.success as metadata_payload:
+                let metadata = metadata_payload.value
+                if metadata.path_length > index_size - consumed - ENTRY_PREFIX_SIZE_BYTES:
+                    release_index_entries(ref_of(entries))
+                    return Result[vec.Vec[IndexEntry], Error].failure(error= Error.malformed_index)
+
+                if metadata.entry_flags != ENTRY_FLAGS_RAW:
+                    release_index_entries(ref_of(entries))
+                    return Result[vec.Vec[IndexEntry], Error].failure(error= Error.unsupported_flags)
+
+                if metadata.stored_size != metadata.unpacked_size:
+                    release_index_entries(ref_of(entries))
+                    return Result[vec.Vec[IndexEntry], Error].failure(error= Error.malformed_index)
+
+                if metadata.data_offset < data_base or metadata.data_offset > file_size:
+                    release_index_entries(ref_of(entries))
+                    return Result[vec.Vec[IndexEntry], Error].failure(error= Error.range)
+
+                if metadata.stored_size > file_size - metadata.data_offset:
+                    release_index_entries(ref_of(entries))
+                    return Result[vec.Vec[IndexEntry], Error].failure(error= Error.range)
+
+                let path_buffer = heap.must_alloc[ubyte](metadata.path_length)
+                if not read_exact(file, path_buffer, metadata.path_length):
+                    heap.release(path_buffer)
+                    release_index_entries(ref_of(entries))
+                    return Result[vec.Vec[IndexEntry], Error].failure(error= Error.malformed_index)
+
+                let path_view = span[ubyte](data = path_buffer, len = metadata.path_length)
+                let path_text_opt = str.utf8_byte_span_as_str(path_view)
+                let path_text = path_text_opt else:
+                    heap.release(path_buffer)
+                    release_index_entries(ref_of(entries))
+                    return Result[vec.Vec[IndexEntry], Error].failure(error= Error.malformed_index)
+
+                var path_copy = string.String.from_str(path_text)
+                heap.release(path_buffer)
+                entries.push(IndexEntry(
+                    path = path_copy,
+                    entry_flags = metadata.entry_flags,
+                    data_offset = metadata.data_offset,
+                    stored_size = metadata.stored_size,
+                    unpacked_size = metadata.unpacked_size
+                ))
+                consumed += ENTRY_PREFIX_SIZE_BYTES + metadata.path_length
+        entry_index += 1
+
+    if consumed != index_size:
+        release_index_entries(ref_of(entries))
+        return Result[vec.Vec[IndexEntry], Error].failure(error= Error.malformed_index)
+
+    return Result[vec.Vec[IndexEntry], Error].success(value= entries)
+
+
+function release_index_entries(entries: ref[vec.Vec[IndexEntry]]) -> void:
+    var i: ptr_uint = 0
+    while i < entries.len():
+        let entry_ptr = entries.get(i) else:
+            break
+        unsafe:
+            read(entry_ptr).path.release()
+        i += 1
+    entries.release()
 
 
 function read_payload(file: stdio.File?, size_bytes: ptr_uint) -> Result[bytes.Bytes, Error]:
@@ -226,20 +338,6 @@ function read_exact(file: stdio.File?, buffer: ptr[ubyte], size_bytes: ptr_uint)
         return true
 
     return stdio.file_read_bytes(unsafe: ptr[void]<-buffer, 1, size_bytes, file) == size_bytes
-
-
-function bytes_equal_str(left: ptr[ubyte], left_len: ptr_uint, right: str) -> bool:
-    if left_len != right.len:
-        return false
-
-    var index: ptr_uint = 0
-    while index < left_len:
-        unsafe:
-            if read(left + index) != ubyte<-read(right.data + index):
-                return false
-        index += 1
-
-    return true
 
 
 function decode_ushort_le(bytes: ptr[ubyte]) -> uint:

@@ -6240,6 +6240,34 @@ bootstrap fixed point; stage2 self **22/0** and `test/mt` **91/0**; examples
 changed / 1 unrecorded / 0 differ**; lint **663 / 12 changed / 1 unrecorded /
 0 differ**.
 
+### Pool free-list, asset-pack index, and helper size guards
+
+`std.mem.pool.Pool` now carries an intrusive free-list (`free_head` +
+`next_free[]`); `alloc_bytes` pops a slot index and `release_bytes` maps the
+pointer back to its index, so both are O(1) instead of O(slot_count) scans.
+The occupancy array remains the double-free/invalid-slot guard, and `release`
+frees the free-list storage too.
+
+`std.asset_pack.Reader` loads and validates the whole entry index once in
+`open`: paths are copied into owned `String` values before their read buffer is
+released, data ranges are checked against the file size, each entry must be raw
+with `stored_size == unpacked_size`, and the index must be consumed exactly.
+`read_bytes` scans the in-memory index instead of seeking and re-reading the
+index on every lookup. `open` rejects a file shorter than the header, an index
+larger than the file, an impossible entry count, and out-of-range entries.
+`test/mt/asset_pack_test.mt` round-trips a written pack, checks a missing
+entry, and rejects a truncated header.
+
+The emitted helpers now guard size math: `mt_format_str_make` and
+`mt_foreign_str_to_cstr_temp` check `len + 1`, and
+`mt_entry_argv_to_span_str` checks `len * sizeof(mt_str)`. The C backend test
+pins the format-string guard.
+
+Verified: bootstrap fixed point; stage2 self **22/0** and `test/mt` **92/0**;
+examples **311/311**; box2d/async smokes; CLI **227/227**; diagnostics **500 /
+5 changed / 1 unrecorded / 0 differ**; lint **661 / 14 changed / 1
+unrecorded / 0 differ**.
+
 ### Known issue: `milkTea/debugInfo` on very large files
 
 The LSP debug-AST renderer aborts with `string.as_str text must be valid UTF-8`
