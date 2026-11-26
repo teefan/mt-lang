@@ -9,11 +9,13 @@ import mtc.semantic.types as types
 
 import mtc.lowering.async as async_mod
 import mtc.lowering.async_cps as async_cps
+import mtc.lowering.control_flow as control_flow
 import mtc.lowering.format as format
 import mtc.lowering.inline as inline_mod
 import mtc.lowering.lowering as lowering
 import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.match as match_mod
+import mtc.lowering.parallel as parallel_mod
 import mtc.lowering.tasks as tasks
 import mtc.lowering.utils as utils
 import mtc.strings
@@ -933,6 +935,359 @@ function lower_while_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Ve
                 ctx.loop_continue_native = saved_continue_native
                 ctx.loop_break_native = saved_break_native
                 ctx.loop_defer_depth = saved_loop_depth
+            _:
+                pass
+
+
+function lower_for_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_for as f:
+                if f.is_inline:
+                    inline_mod.lower_inline_for_stmt(ctx, output, f.bindings, f.iterables, f.body)
+                    return
+                if f.threaded:
+                    parallel_mod.lower_parallel_for(ctx, output, f.bindings, f.iterables, f.body)
+                    return
+                # A for-loop's desugared post statement sits after its continue
+                # point, so its body keeps the label/goto form.
+                let saved_continue_native = ctx.loop_continue_native
+                ctx.loop_continue_native = false
+                control_flow.lower_for_range(ctx, output, f.bindings, f.iterables, f.body)
+                ctx.loop_continue_native = saved_continue_native
+            _:
+                pass
+
+
+function lower_expression_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_expression as ex:
+                # Async CPS: bare `await Y` splits into suspend/resume, discarding
+                # the awaited result.
+                if ctx.async_cps_active and async_cps.expr_is_direct_await(ex.expression):
+                    async_cps.lower_async_await_into(
+                        ctx,
+                        output,
+                        async_cps.direct_await_inner(ex.expression),
+                        Option[ptr[ir.Expr]].none
+                    )
+                    return
+                # Bare `expr?` propagation: unwrap the result and return on failure.
+                unsafe:
+                    match read(ex.expression):
+                        ast.Expr.expr_unary_op as un:
+                            if un.operator == "?":
+                                lowering.lower_propagate_let(ctx, output, "_", un.operand, ex.line, true, "")
+                                return
+                        _:
+                            pass
+                # Assertion intrinsics are statement-only: lower to
+                # `if (!condition) fatal(message)`.
+                unsafe:
+                    match read(ex.expression):
+                        ast.Expr.expr_call as call:
+                            match read(call.callee):
+                                ast.Expr.expr_identifier as id:
+                                    if (
+                                        id.name == "assert"
+                                        or id.name == "expect"
+                                        or id.name == "expect_eq"
+                                        or id.name == "expect_ne"
+                                    ):
+                                        lowering.lower_assert_stmt(ctx, output, id.name, call.args, ex.line)
+                                        return
+                                _:
+                                    pass
+                        _:
+                            pass
+                # Explicit format sinks (`String`/`str_buffer` append_format/
+                # assign_format, and `std.fmt.append_format/assign_format`) are
+                # statement-only: the host streams the format into the
+                # destination instead of building a `str` and copying it.  An
+                # async body lowers its statements through
+                # `lower_async_expression_statement`, which has no sink case, so
+                # the ordinary call form is emitted there.
+                if not ctx.async_completion_active:
+                    if format.lower_explicit_format_sink_stmt(ctx, output, ex.expression, ex.line):
+                        return
+                let stmt_base = output.len()
+                let stmt_saved = lowering.begin_stmt_setup(ctx, lowering.HoistMode.hm_discard)
+                ctx.hoist_root_ep = ex.expression
+                let lowered = lowering.lower_expr(ctx, ex.expression)
+                let stmt_collected = lowering.collect_stmt_setup(ctx, stmt_saved)
+                lowering.emit_hoist_setup(output, stmt_base, stmt_collected)
+                if not stmt_collected.stmt_emitted:
+                    output.push(ir.Stmt.stmt_expression(
+                        expression = lowered,
+                        line = ex.line,
+                        source_path = ctx.analysis.source_path
+                    ))
+                # A consuming foreign call nulls its argument bindings after the
+                # call (the host's `consuming_foreign_release_assignments`),
+                # before the statement's cstr cleanups.
+                lowering.append_foreign_consuming_releases(ctx, output, ex.expression)
+                # The host's async statement paths (`lower_async_expression_
+                # statement` / `lower_async_non_await_statements`) never drain
+                # `prepared_expression_cleanups`, so an async body's prepared
+                # temps (a dynamic format string's release) are dropped there;
+                # the cstr temps of the same window are still freed.
+                if ctx.async_completion_active:
+                    lowering.append_cstr_temp_cleanups(output, stmt_collected)
+                else:
+                    lowering.append_hoist_cleanups(output, stmt_collected)
+            _:
+                pass
+
+
+function lower_when_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_when as wn:
+                inline_mod.lower_when_stmt(ctx, output, wn.discriminant, wn.branches, wn.else_body)
+            _:
+                pass
+
+
+function lower_parallel_block_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_parallel_block as pb:
+                parallel_mod.lower_parallel_block(ctx, output, pb.bodies)
+            _:
+                pass
+
+
+function lower_gather_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_gather as gth:
+                parallel_mod.lower_gather_stmt(ctx, output, gth.handles)
+            _:
+                pass
+
+
+function lower_pass_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_pass:
+                pass
+            _:
+                pass
+
+
+function lower_if_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_if as iff:
+                if iff.is_inline:
+                    inline_mod.lower_inline_if_statement(ctx, output, iff.branches, iff.else_body)
+                    return
+                # Async CPS: hoist an await in a single `if` condition into
+                # preceding statements (the condition is evaluated exactly once).
+                # else-if chains with awaits in later conditions are left to the
+                # normal path (rare; would need nested restructuring).
+                if ctx.async_cps_active and iff.branches.len == 1:
+                    let br0 = unsafe: read(iff.branches.data + 0)
+                    if async_mod.expr_has_await(br0.condition):
+                        let cond_hoisted = async_cps.async_hoist_awaits(ctx, output, br0.condition)
+                        var new_branches = vec.Vec[ast.IfBranch].create()
+                        new_branches.push(ast.IfBranch(
+                            condition = cond_hoisted,
+                            body = br0.body,
+                            line = br0.line,
+                            column = br0.column
+                        ))
+                        var async_if_stmts = vec.Vec[ir.Stmt].create()
+                        control_flow.lower_if_chain(
+                            ctx,
+                            ref_of(async_if_stmts),
+                            new_branches.as_span(),
+                            0,
+                            iff.else_body
+                        )
+                        output.append_span(async_if_stmts.as_span())
+                        return
+                # An inline-for body lowers with the host's constant folding
+                # (`@bypass_sema_type_cache`): a condition over the comptime
+                # element (`member.name == "red"`, `field.type != float`) picks
+                # exactly one branch.
+                if ctx.inline_for_element.is_some():
+                    inline_mod.lower_inline_for_if_fold(ctx, output, iff.branches, iff.else_body)
+                    return
+                if iff.branches.len > 0:
+                    control_flow.lower_if_chain(ctx, output, iff.branches, 0, iff.else_body)
+            _:
+                pass
+
+
+function lower_match_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_match as m:
+                if m.is_inline:
+                    inline_mod.lower_inline_match_statement(ctx, output, m.scrutinee, m.arms)
+                    return
+                # In an async CPS body, an `await` embedded in the match scrutinee
+                # (`match await expr: ...`) must be hoisted to a frame field and
+                # split into a suspend/resume point before the switch is emitted;
+                # otherwise the whole match (scrutinee + arms) is dropped.
+                var match_scrutinee = m.scrutinee
+                if ctx.async_cps_active and async_mod.expr_has_await(m.scrutinee):
+                    match_scrutinee = async_cps.async_hoist_awaits(ctx, output, m.scrutinee)
+                match_mod.lower_match(ctx, output, match_scrutinee, m.arms)
+            _:
+                pass
+
+
+function lower_break_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_break:
+                # A loop-scoped cleanup forces the label/goto form: the defers
+                # run before the jump (the host's `lower_loop_exit`).
+                if lowering.has_loop_defers(ctx) and ctx.loop_break_label != "":
+                    lowering.flush_loop_defers(ctx, output)
+                    output.push(ir.Stmt.stmt_goto(label = ctx.loop_break_label))
+                else if ctx.loop_break_native:
+                    output.push(ir.Stmt.stmt_break())
+                else if ctx.loop_break_label != "":
+                    output.push(ir.Stmt.stmt_goto(label = ctx.loop_break_label))
+                else:
+                    output.push(ir.Stmt.stmt_break())
+            _:
+                pass
+
+
+function lower_continue_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_continue:
+                if lowering.has_loop_defers(ctx) and ctx.loop_continue_label != "":
+                    lowering.flush_loop_defers(ctx, output)
+                    output.push(ir.Stmt.stmt_goto(label = ctx.loop_continue_label))
+                else if ctx.loop_continue_native:
+                    output.push(ir.Stmt.stmt_continue())
+                else if ctx.loop_continue_label != "":
+                    output.push(ir.Stmt.stmt_goto(label = ctx.loop_continue_label))
+                else:
+                    output.push(ir.Stmt.stmt_continue())
+            _:
+                pass
+
+
+function lower_static_assert_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_static_assert as sa:
+                let assertion = lowering.lower_static_assert(ctx, sa.condition, sa.message)
+                output.push(ir.Stmt.stmt_static_assert(condition = assertion.condition, message = assertion.message))
+            _:
+                pass
+
+
+function lower_unsafe_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_unsafe as u:
+                if u.body != null:
+                    # Lower the unsafe body into its own statement list and wrap it
+                    # in an IR block, so its locals get a distinct C scope (`{ }`).
+                    # Without this, sibling `unsafe:` blocks that each declare the
+                    # same local name (e.g. `let t = read(tok)`) collide in the flat
+                    # function scope ("redefinition of 't'").  The parser wraps an
+                    # indented body in a `stmt_block`, which must be unwrapped here
+                    # so the result is a single block (matching the host).
+                    var body_stmts = vec.Vec[ir.Stmt].create()
+                    # The wrapped body is its own C `{ }` scope, so it needs its
+                    # own defer group: a `defer` declared inside must replay
+                    # inside the block, not after it (where its locals are gone).
+                    lowering.push_defer_scope(ctx)
+                    unsafe:
+                        match read(ptr[ast.Stmt]<-u.body):
+                            ast.Stmt.stmt_block as blk:
+                                var bi: ptr_uint = 0
+                                while bi < blk.statements.len:
+                                    lowering.lower_stmt(ctx, ref_of(body_stmts), blk.statements.data + bi)
+                                    bi += 1
+                            _:
+                                lowering.lower_stmt(ctx, ref_of(body_stmts), ptr[ast.Stmt]<-u.body)
+                    if not lowering.stmts_terminate(body_stmts.as_span()):
+                        lowering.flush_top_defers(ctx, ref_of(body_stmts))
+                    lowering.pop_defer_scope(ctx)
+                    if ctx.async_completion_active:
+                        # The async lowerers splice an unsafe body's statements
+                        # (`async_lowering.rb:289,736`) instead of wrapping them
+                        # in a block.
+                        lowering.append_span_stmts(output, body_stmts.as_span())
+                    else:
+                        output.push(ir.Stmt.stmt_block(body = body_stmts.as_span()))
+                return
+            _:
+                pass
+
+
+function lower_block_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_block as blk:
+                var block_stmts = vec.Vec[ir.Stmt].create()
+                lowering.push_defer_scope(ctx)
+                var i: ptr_uint = 0
+                while i < blk.statements.len:
+                    unsafe:
+                        lowering.lower_stmt(ctx, ref_of(block_stmts), ptr[ast.Stmt]<-(blk.statements.data + i))
+                    i += 1
+                if not lowering.stmts_terminate(block_stmts.as_span()):
+                    lowering.flush_top_defers(ctx, ref_of(block_stmts))
+                lowering.pop_defer_scope(ctx)
+                output.push(ir.Stmt.stmt_block(body = block_stmts.as_span()))
+            _:
+                pass
+
+
+function lower_defer_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_defer as d:
+                # A `defer` does not emit at its declaration site.  Lower its
+                # cleanup into its own statement span and record it in the
+                # innermost open block; the span is replayed on block exit and
+                # before every `return` (reverse order).  Mirrors Ruby's
+                # lower_defer_cleanup_expression / lower_defer_cleanup_body.
+                var cleanup = vec.Vec[ir.Stmt].create()
+                if d.expression != null:
+                    cleanup.push(ir.Stmt.stmt_expression(
+                        expression = lowering.lower_expr(ctx, ptr[ast.Expr]<-d.expression),
+                        line = 0, source_path = "",
+                    ))
+                if d.body != null:
+                    # The host's `lower_defer_cleanup_body` is `lower_block` — a
+                    # *flat* statement list — so a braced body splices its
+                    # statements into the cleanup span instead of wrapping them
+                    # in an `IR::BlockStmt` (`examples/box3d/common.mt`'s `run`
+                    # replays `UnloadModel`, `b3DestroyWorld`, `CloseWindow` as
+                    # siblings).
+                    let defer_body = lowering.lower_block(ctx, ptr[ast.Stmt]<-d.body)
+                    lowering.append_span_stmts(ref_of(cleanup), defer_body)
+                lowering.record_defer(ctx, cleanup.as_span())
+            _:
+                pass
+
+
+function lower_emit_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_emit as em:
+                # The host lowers the emitted declaration a second time here
+                # (`lower_emit_stmt`) and appends it to
+                # `@artifacts.emitted_declarations`; the analyzer's own
+                # expansion (`expand_emit_declarations`) already produced the
+                # ordinary declaration, so both copies exist in the IR.
+                let emitted_decl = em.declaration else:
+                    return
+                lowering.lower_emitted_decl(ctx, unsafe: read(emitted_decl))
+                return
             _:
                 pass
 
