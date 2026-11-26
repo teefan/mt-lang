@@ -1291,3 +1291,374 @@ function lower_emit_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec
             _:
                 pass
 
+function lower_local_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_local as loc:
+                # Async CPS: spill every `let`/`var` to a frame field and, when the
+                # initializer is a direct `await`, split into suspend/resume.
+                if ctx.async_cps_active and loc.destructure_bindings.is_none() and loc.else_body == null:
+                    async_cps.lower_async_local(ctx, output, loc.name, loc.value, loc.stmt_type, loc.line)
+                    return
+                match loc.destructure_bindings:
+                    Option.some as binds:
+                        lower_destructure(ctx, output, binds.value, loc.destructure_type_name, loc.value)
+                        return
+                    Option.none:
+                        pass
+                # Guard form: `let x = expr else: <exit>` (and var).  The else body
+                # runs on the absent/failure case; on success `x` binds the
+                # unwrapped value.
+                if loc.else_body != null and loc.value != null:
+                    lower_guard_local(ctx, output, loc.name, loc.else_binding, loc.value, loc.else_body, loc.line)
+                    return
+                # A `_` binding keeps the host's declaration shape: the IR name
+                # is `_` and the linkage is a fresh discard temp (`__mt___N`,
+                # `let_else_storage_c_name`).  The value is evaluated and stored
+                # like any other local — `let _ = expr?` still propagates.
+                let c_name = if loc.name == "_": lowering.fresh_c_temp_name(ctx, "_") else: utils.c_local_name(loc.name)
+                let init_val = loc.value
+                if init_val != null:
+                    # The host's `env[:current_local_name]`: a dynamic format
+                    # string later in this block names its result temp after the
+                    # most recent local declaration (`__fmt_<name>`).  Only the
+                    # synchronous `lower_local_decl_stmt` records it; the async
+                    # statement paths never do, so an async body's format result
+                    # uses the `fmt_str` counter (`__mt_fmt_str_N`).
+                    if not ctx.inside_async:
+                        ctx.fmt_dest_name = c_name
+                    unsafe:
+                        match read(init_val):
+                            ast.Expr.expr_unary_op as un:
+                                if un.operator == "?":
+                                    # The host allocates the discard binding's
+                                    # temp name *before* preparing the value
+                                    # (`let_else_storage_c_name` precedes
+                                    # `prepare_expression_with_cleanups`), so the
+                                    # `__mt___N` counter value is the statement's
+                                    # own, not one past the propagation temp's.
+                                    lowering.lower_propagate_let(ctx, output, loc.name, un.operand, loc.line, false, c_name)
+                                    return
+                            # `let x = <cast>(inner?)` — the `?` is nested inside a
+                            # prefix cast.  The host's prepared-temp path wraps the
+                            # propagation's success projection in the cast directly
+                            # (one local decl, the statement's line); the storage
+                            # temp is named first.
+                            ast.Expr.expr_prefix_cast as pc:
+                                match read(pc.expression):
+                                    ast.Expr.expr_unary_op as inner_un:
+                                        if inner_un.operator == "?":
+                                            let temp = lowering.lower_propagate_storage(ctx, output, inner_un.operand)
+                                            let storage_ref = lowering.alloc_expr(ir.Expr.expr_name(
+                                                name = temp.name,
+                                                ty = temp.storage_ty,
+                                                pointer = Option[bool].some(value = false)
+                                            ))
+                                            let success_ty = lowering.guard_success_type(ctx, temp.kind, temp.storage_ty)
+                                            let success_val = lowering.guard_success_projection(
+                                                ctx,
+                                                temp.kind,
+                                                temp.storage_ty,
+                                                storage_ref,
+                                                success_ty
+                                            )
+                                            let target_ty = lowering.qualify_type(ctx, lowering.resolve_type_ref(ctx, pc.target_type))
+                                            let val_ir = lowering.alloc_expr(ir.Expr.expr_cast(
+                                                target_type = target_ty,
+                                                expression = success_val,
+                                                ty = target_ty
+                                            ))
+                                            let bc = utils.c_local_name(loc.name)
+                                            output.push(ir.Stmt.stmt_local(
+                                                name = loc.name,
+                                                linkage_name = bc,
+                                                ty = target_ty,
+                                                value = val_ir,
+                                                line = loc.line,
+                                                source_path = ctx.analysis.source_path
+                                            ))
+                                            ctx.locals.push(lowering.LocalBinding(
+                                                name = loc.name,
+                                                c_name = bc,
+                                                ty = target_ty,
+                                                pointer = Option[bool].some(value = false)
+                                            ))
+                                            return
+                                    _:
+                                        pass
+                            _:
+                                pass
+                        match read(init_val):
+                            ast.Expr.expr_match as me:
+                                match_mod.lower_match_expression_local(
+                                    ctx,
+                                    output,
+                                    loc.name,
+                                    loc.stmt_type,
+                                    me.scrutinee,
+                                    me.arms,
+                                    loc.line
+                                )
+                                return
+                            _:
+                                pass
+                lower_plain_local_stmt(ctx, output, sp, c_name)
+            _:
+                pass
+
+
+
+
+public function lower_guard_local(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    name: str,
+    else_binding: Option[str],
+    value: ptr[ast.Expr]?,
+    else_body: ptr[ast.Stmt]?,
+    line: ptr_uint
+) -> void:
+    let value_ptr = value else:
+        fatal(c"lowering: guard local requires an initializer")
+    # Hidden storage local holding the full Option/Result/nullable value.  The
+    # host names it after the user binding (`memory`) so the C local name is
+    # stable; `_` and discarded bindings get a fresh temp.  It is allocated
+    # *before* the initializer's temps (the host's `lower_local_decl_stmt`
+    # computes `linkage_name` first) and becomes the block's format
+    # destination, so a later `f"..."` in this block (the guard's own else body
+    # included) is named `__fmt_<storage>`.
+    let storage_c = if name == "_": lowering.fresh_c_temp_name(ctx, "let_else_discard") else: utils.c_local_name(name)
+    # The same sync-only `current_local_name` rule as a plain local: the async
+    # statement paths never record it.
+    if not ctx.inside_async:
+        ctx.fmt_dest_name = storage_c
+    var storage_ty: types.Type
+    var storage_ref: ptr[ir.Expr]
+    if ctx.async_cps_active and async_cps.expr_is_direct_await(value_ptr):
+        # The host normalizer hoists the guard's direct await, and the CF
+        # lowering takes the awaited result straight into the guard's frame
+        # storage field (the field holds the full Result/Option; there is no
+        # separate temp field and no second store).
+        var inner = async_cps.direct_await_inner(value_ptr)
+        if async_mod.expr_has_await(inner):
+            inner = async_cps.async_hoist_awaits(ctx, output, inner)
+        let task_ir = lowering.lower_expr(ctx, inner)
+        let task_ty = async_cps.normalize_awaited_task_type(lowering.ir_expr_type(task_ir))
+        storage_ty = async_cps.extract_task_element_type(ctx, task_ty)
+        let gfield = if name == "_": strings.join_two(
+            "local_discard_",
+            lowering.pw1_str(line)
+        ) else: strings.join_two("local_", name)
+        async_cps.async_register_unused_field(ctx, gfield, storage_ty)
+        let frame_ref = lowering.alloc_expr(ir.Expr.expr_name(
+            name = "__mt_frame",
+            ty = ctx.async_frame_ptr_ty,
+            pointer = Option[bool].some(value = false)
+        ))
+        let target = lowering.alloc_expr(ir.Expr.expr_member(receiver = frame_ref, member = gfield, ty = storage_ty))
+        async_cps.async_emit_await(
+            ctx,
+            output,
+            task_ir,
+            task_ty,
+            storage_ty,
+            Option[ptr[ir.Expr]].some(value = target),
+            inner
+        )
+        storage_ref = lowering.alloc_expr(ir.Expr.expr_member(receiver = frame_ref, member = gfield, ty = storage_ty))
+    else:
+        # The initializer is a prepared position: a foreign call's argument/cleanup
+        # temporaries hoist into the statement stream before the storage local (the
+        # host's `prepare_expression_with_cleanups` with `allow_root_statement_foreign`).
+        let hoist_base = output.len()
+        let hoist_saved = lowering.begin_stmt_setup(ctx, lowering.HoistMode.hm_value)
+        ctx.hoist_root_ep = value_ptr
+        let value_ir = lowering.lower_expr(ctx, value_ptr)
+        let hoist_collected = lowering.collect_stmt_setup(ctx, hoist_saved)
+        lowering.emit_hoist_setup(output, hoist_base, hoist_collected)
+        # The storage type is the host's inference of the initializer
+        # (`infer_expression_type`): a foreign wrapper call's declared return
+        # (`cstr?`) rather than the simple mapping's raw `ptr[char]` call type.
+        storage_ty = lowering.qualify_type(ctx, lowering.ir_expr_type(value_ir))
+        unsafe:
+            match read(value_ptr):
+                ast.Expr.expr_call as call:
+                    match lowering.foreign_wrapper_call_return_type(ctx, call.callee):
+                        Option.some as declared:
+                            storage_ty = declared.value
+                        Option.none:
+                            pass
+                _:
+                    pass
+
+        if ctx.async_cps_active:
+            # The host's CF path spills the guard's storage to the frame field and
+            # binds the success name to that same field (no plain local, no copy).
+            let gfield = if name == "_": strings.join_two(
+                "local_discard_",
+                lowering.pw1_str(line)
+            ) else: strings.join_two("local_", name)
+            async_cps.async_register_unused_field(ctx, gfield, storage_ty)
+            let frame_ref = lowering.alloc_expr(ir.Expr.expr_name(
+                name = "__mt_frame",
+                ty = ctx.async_frame_ptr_ty,
+                pointer = Option[bool].some(value = false)
+            ))
+            output.push(ir.Stmt.stmt_assignment(
+                target = lowering.alloc_expr(ir.Expr.expr_member(receiver = frame_ref, member = gfield, ty = storage_ty)),
+                operator = "=",
+                value = value_ir
+            ))
+            # The guard condition reads the field as a member expression (the host's
+            # `async_frame_field_expression`); later binding reads use the text name.
+            storage_ref = lowering.alloc_expr(ir.Expr.expr_member(receiver = frame_ref, member = gfield, ty = storage_ty))
+        else:
+            # The host's no-await async body declares its plain locals without a
+            # source line/path (`lower_async_non_await_statements`); its sync path
+            # carries both.
+            let guard_line = if ctx.async_nonawait_body: 0z else: line
+            let guard_path = if ctx.async_nonawait_body: "" else: ctx.analysis.source_path
+            output.push(ir.Stmt.stmt_local(
+                name = storage_c,
+                linkage_name = storage_c,
+                ty = storage_ty,
+                value = value_ir,
+                line = guard_line,
+                source_path = guard_path
+            ))
+            storage_ref = lowering.alloc_expr(ir.Expr.expr_name(
+                name = storage_c,
+                ty = storage_ty,
+                pointer = Option[bool].some(value = false)
+            ))
+        let guard_cleanups = if format.format_owning_target_type(ctx, storage_ty, 0):
+            format.drop_format_release_cleanups(hoist_collected)
+        else:
+            hoist_collected
+        lowering.record_or_emit_local_cleanups(ctx, output, guard_cleanups.cleanups)
+
+    let kind = lowering.guard_storage_kind(ctx, storage_ty)
+
+    # else body: for a Result `else as error:` guard, register the failure error
+    # binding so the else body can reference it.
+    var else_stmts = vec.Vec[ir.Stmt].create()
+    if kind == "result" and else_binding.is_some():
+        lowering.register_result_failure_binding(ctx, storage_c, storage_ty, else_binding.unwrap())
+    lowering.append_span_stmts(ref_of(else_stmts), lowering.lower_block(ctx, else_body))
+    let else_ir = else_stmts.as_span()
+
+    # `if (<failure condition>) { <else body> }`
+    let cond = lowering.guard_failure_condition(ctx, kind, storage_ty, storage_ref)
+    output.push(ir.Stmt.stmt_if(condition = cond, then_body = else_ir, else_body = Option[span[ir.Stmt]].none))
+
+    # Bind `name` to the unwrapped success value (unless discarded with `_`).
+    if name == "_":
+        return
+    let success_ty = lowering.guard_success_type(ctx, kind, storage_ty)
+    if ctx.async_cps_active:
+        # The frame field stores the *full* storage value (the host's spilled
+        # guard storage, e.g. `Nullable(ptr[PendingReliable])`); reads of the
+        # binding project the success value out of it, so a suspend/resume keeps
+        # the absent case as well as the payload.  The field already holds the
+        # initializer (spilled above), so no copy is emitted.
+        let gfield = strings.join_two("local_", name)
+        let gcname = strings.join_two("__mt_frame->", gfield)
+        async_cps.async_register_unused_field(ctx, gfield, storage_ty)
+        ctx.locals.push(lowering.LocalBinding(
+            name = name,
+            c_name = gcname,
+            ty = success_ty,
+            pointer = Option[bool].some(value = false),
+            projection = lowering.guard_binding_projection(kind, storage_ty)
+        ))
+        return
+    # No second local: reads project the success value out of the storage local.
+    ctx.locals.push(lowering.LocalBinding(
+        name = name,
+        c_name = storage_c,
+        ty = success_ty,
+        pointer = Option[bool].some(value = false),
+        projection = lowering.guard_binding_projection(kind, storage_ty)
+    ))
+
+
+public function lower_destructure(
+    ctx: ref[lowering.LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    bindings: span[str],
+    type_name: Option[str],
+    value: ptr[ast.Expr]?
+) -> void:
+    let val = value else:
+        fatal(c"lowering: destructuring requires an initializer")
+    let lowered_val = lowering.lower_expr(ctx, val)
+    let val_ty = lowering.ir_expr_type(lowered_val)
+    let temp = lowering.fresh_c_temp_name(ctx, "destructure_val")
+    output.push(ir.Stmt.stmt_local(
+        name = temp,
+        linkage_name = temp,
+        ty = val_ty,
+        value = lowered_val,
+        line = 0,
+        source_path = ""
+    ))
+
+    var i: ptr_uint = 0
+    while i < bindings.len:
+        var binding: str
+        unsafe:
+            binding = read(bindings.data + i)
+        # `_` discards bind nothing — skip them (emitting a local for each would
+        # collide, and there is no name to reference).  Mirrors Ruby's
+        # `next if name == "_"`.
+        if binding == "_":
+            i += 1
+            continue
+        var member_name: str
+        var member_ty: types.Type
+        match type_name:
+            Option.some:
+                let fields_opt = lowering.struct_fields_of(ctx, val_ty)
+                match fields_opt:
+                    Option.some as fields:
+                        member_name = lowering.struct_field_name_at(fields.value, i)
+                        member_ty = lowering.qualify_type(ctx, lowering.struct_field_type_at(fields.value, i))
+                    Option.none:
+                        member_name = ""
+                        member_ty = types.Type.ty_error
+            Option.none:
+                member_name = lowering.tuple_field_name(i)
+                member_ty = lowering.tuple_element_type(val_ty, i)
+                match val_ty:
+                    types.Type.ty_tuple as tup:
+                        let tup_bp = unsafe: read(tup.payload)
+                        match tup_bp.field_names:
+                            Option.some as fnames:
+                                if i < fnames.value.len:
+                                    member_name = unsafe: read(fnames.value.data + i)
+                            Option.none:
+                                pass
+                    _:
+                        pass
+        let receiver = lowering.alloc_expr(ir.Expr.expr_name(
+            name = temp,
+            ty = val_ty,
+            pointer = Option[bool].some(value = false)
+        ))
+        let member = lowering.alloc_expr(ir.Expr.expr_member(receiver = receiver, member = member_name, ty = member_ty))
+        let binding_c = utils.c_local_name(binding)
+        output.push(ir.Stmt.stmt_local(
+            name = binding,
+            linkage_name = binding_c,
+            ty = member_ty,
+            value = member,
+            line = 0,
+            source_path = ""
+        ))
+        ctx.locals.push(lowering.LocalBinding(
+            name = binding,
+            c_name = binding_c,
+            ty = member_ty,
+            pointer = Option[bool].some(value = false)
+        ))
+        i += 1
