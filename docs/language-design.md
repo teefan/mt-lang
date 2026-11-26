@@ -38,7 +38,7 @@ If code allocates, takes an address, dereferences a raw pointer, performs an FFI
 
 FFI visibility belongs at the declaration site. Raw `external` files expose exact ABI types. Imported foreign declarations may project those raw types into ordinary Milk Tea types, but the projection rule, temporary-storage rule, and ownership rule must be declared there instead of repeated at every call site.
 
-The same rule applies to text construction. Plain string literals are borrowed `str` values. A dynamic format string `f"..."` builds into a heap-backed temporary that the compiler releases after the surrounding statement; returning it (or storing it in a `str` local) transfers ownership of that buffer to the caller. The `+` operator on `str` concatenates into a per-thread scratch buffer without allocating — the result is a borrowed `str` valid until that buffer's budget is exhausted. For loops or amortized building, and whenever ownership should stay explicit and controllable, `string.String` and `str_buffer[N]` remain the explicit surfaces with visible cost; `std.fmt.format(f"...")` is the explicit owned-text path returning a `string.String`.
+The same rule applies to text construction. Plain string literals are borrowed `str` values. A dynamic format string `f"..."` builds into a heap-backed temporary that the compiler releases after the surrounding statement; returning it (or storing it in a `str` local) transfers ownership of that buffer to the caller. The `+` operator on `str` concatenates into a per-thread scratch buffer without allocating — the result is a borrowed `str` valid until that buffer's 256 KiB budget is exhausted. Exhaustion aborts rather than silently reusing earlier results. For loops or amortized building, and whenever ownership should stay explicit and controllable, `string.String` and `str_buffer[N]` remain the explicit surfaces with visible cost; `std.fmt.format(f"...")` is the explicit owned-text path returning a `string.String`.
 
 ### 2. C is the ABI ground truth
 
@@ -498,6 +498,7 @@ parallel:
 Design choices:
 
 - **Structured, not fire-and-forget.** All `parallel for` and `parallel:` blocks are synchronous barriers — the calling thread blocks until all work completes. This guarantees that captured local variables remain alive for the duration and eliminates lifetime concerns without ownership annotations.
+- **Bounded arms.** A `parallel:` block accepts at most 64 statements; one arm runs on the caller and the rest use a fixed worker-handle array. Larger fan-out belongs in `std.jobs`.
 - **Compile-time safety.** `ref[T]` captures are rejected because mutable aliases across thread boundaries create data races. The `parallel:` block enforces single-writer-or-multiple-readers: if one statement writes a variable, no other block may read or write it.
 - **Value capture, pointer-based arrays.** Scalars and spans are captured by value (the span's data pointer still references the original storage). Arrays are captured as pointers to their first element, so writes in the worker affect the original array.
 - **Real OS threads via libuv.** Thread dispatch uses `uv_thread_create` / `uv_thread_join`, consistent with `std.thread` and `std.sync`. CPU count is detected at runtime via `uv_cpu_info`. The first chunk runs on the calling thread to avoid unnecessary dispatch when the workload is small.

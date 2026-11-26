@@ -8,6 +8,11 @@
 
 import std.str
 
+## Maximum number of statements in a `parallel:` block.  The runtime keeps its
+## thread handles in a fixed 64-entry array (one arm runs on the caller), so the
+## analyzer rejects larger blocks instead of letting the codegen drop arms.
+public const MAX_PARALLEL_ARMS: ptr_uint = 64
+
 # =============================================================================
 #  Name / type-level nodes (value types)
 # =============================================================================

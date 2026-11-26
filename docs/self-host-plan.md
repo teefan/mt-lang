@@ -6118,3 +6118,71 @@ seed reaches the fixed point, self suite **22/0**, stage2 `test/mt` **86/0**.
 Installed locally: `mtc 0.6.3`, `~/.local/opt/mtc/current` → `0.6.3`.  The
 release commit is the CI gate (bootstrap, tests, four oracles, LSP, examples,
 bindings, deterministic release, container smoke).
+
+## Session 169 — runtime hardening: parallel arms, async frames, str budget
+
+First item of the semantic/runtime hardening program (the working plan is
+`~/.commandcode/plans/mtc-semantic-runtime-hardening.md`; the authoritative
+record stays here).
+
+`parallel:` blocks are now capped at **64 statements**, matching the fixed
+64-entry worker-handle array.  `parser/ast.mt` owns
+`MAX_PARALLEL_ARMS`/`MAX_PARALLEL_ARMS_MESSAGE`; the analyzer reports the cap,
+the lowering rejects a bypass, and the emitted `mt_spawn_all` carries a
+defensive `count > 64` fatal.  This closes the silent arm drop (`nworkers < 63`
+previously stopped after arm 63 while the post-join write-back still read every
+capture).
+
+The parallel runtime no longer trusts thread creation: `mt_spawn_all` and
+`mt_parallel_for` check `uv_thread_create` and run the chunk inline on failure;
+`mt_detach_run` checks `malloc`, records `started`, runs the work inline when
+the thread cannot start, and `mt_detach_join` joins only a started thread.
+Parallel-for chunk math is overflow-safe (`count / ncpu + remainder`).
+
+The first diagnostic attempt used a dynamic `f"..."` message; the buffer was
+released before the diagnostic rendered (the known `str` lifetime hazard), so
+the message is a static constant.  This is a concrete input to the planned
+`str`-lifetime work.
+
+Docs: `README.md` §8/§16, `docs/language-manual.md` §4.3b,
+`docs/language-design.md` §Concurrency.  Test:
+`test/mt/diagnostics/parallel_arms.mt` (65 arms, compile-fail).
+
+### `str` concatenation: no silent wraparound
+
+`mt_str_concat` no longer resets its offset when the next concatenation would
+not fit.  The per-thread budget is **256 KiB**; exhausting it is a `fatal`
+with an actionable message (`use std.string.String for repeated building`).
+The size arithmetic is overflow-safe (`b.len > BUF` / `offset > BUF - total`).
+`test/mt/string_test.mt` pins the over-budget abort with `@[expect_fatal]`.
+README/manual/design now state the budget and the abort behavior.
+
+### Async frame release: caller-owned receiver and reentrancy
+
+`mt_async_alloc` is now a plain checked `calloc` and `mt_async_free` a plain
+`free`; the magic/refcount header and the never-called `mt_async_retain` are
+gone.  The frame no longer frees pointer-lowered params: an editable receiver's
+`this` is stored verbatim and is caller-owned.
+
+Removing the magic guard exposed a real reentrant double free in the network
+stress test: releasing a frame's await field resumed the same task and
+re-entered its release function before the outer free.  The synthesized frame
+now carries a `released` flag, set before any field cleanup; nested release
+calls return immediately.  Fixed-pointed by valgrind: `async_stress_test`
+**31/31** with **0 errors**.  New `test/mt/async_receiver_test.mt` exercises an
+editable async receiver; it passes under `--sanitize`.
+
+### Known issue: `milkTea/debugInfo` on very large files
+
+The LSP debug-AST renderer aborts with `string.as_str text must be valid UTF-8`
+on `lowering.mt` (22k lines).  The **seed compiler does the same**, so this is
+pre-existing, not a regression from this session.  The debug-AST prefix
+accumulation is the heaviest `str +` user; converting it to `string.String`
+remains the planned fix (A1 follow-up).  A new `str` constant at the top of a
+file also triggered the abort in the dev compiler; that cosmetic constant was
+removed and the analyzer message is a static literal.
+
+Verified with the seed-built dev compiler: self suite **22/0**, `test/mt`
+**88/0**, `examples/multithreading_test.mt` and `examples/async_stress_test.mt`
+pass, LSP conformance **38/38**, valgrind **0 errors**.  The bootstrap fixed
+point and the recorded oracles are re-run at the next batch.

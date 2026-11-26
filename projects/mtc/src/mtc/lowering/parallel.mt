@@ -834,7 +834,9 @@ public function lower_parallel_block(
     bodies: span[ast.Stmt]
 ) -> void:
     if bodies.len < 2:
-        return
+        fatal(c"internal: parallel block with fewer than two statements reached lowering")
+    if bodies.len > ast.MAX_PARALLEL_ARMS:
+        fatal(c"internal: parallel block exceeds the 64-arm runtime limit")
     let void_ty = ctx.void_ty
     let void_ptr = void_ptr_ty()
     parallel_cnt += 1

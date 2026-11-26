@@ -401,6 +401,7 @@ public function lower_async_fn(
     var ff = vec.Vec[ir.Field].create()
     ff.push(ir.Field(name = "ready", ty = bool_ty))
     ff.push(ir.Field(name = "cancelled", ty = bool_ty))
+    ff.push(ir.Field(name = "released", ty = bool_ty))
     ff.push(ir.Field(name = "waiter_frame", ty = ctx.ptr_void_ty))
     ff.push(ir.Field(name = "waiter", ty = waiter_fn_ty))
     if has_await:
@@ -813,6 +814,28 @@ function emit_async_vtable(
         line = 0,
         source_path = ""
     ))
+    # Reentrancy guard: releasing an await field can resume this task and
+    # re-enter release before the frame is freed.  The first caller owns the
+    # teardown; nested calls must return without touching the frame.
+    let released_cond = lowering.alloc_expr(ir.Expr.expr_member(
+        receiver = frame_exp,
+        member = "released",
+        ty = bool_ty
+    ))
+    vrel.push(ir.Stmt.stmt_if(
+        condition = released_cond,
+        then_body = lowering.single_stmt_span(ir.Stmt.stmt_return(value = null, line = 0, source_path = "")),
+        else_body = Option[span[ir.Stmt]].none
+    ))
+    vrel.push(ir.Stmt.stmt_assignment(
+        target = lowering.alloc_expr(ir.Expr.expr_member(
+            receiver = frame_exp,
+            member = "released",
+            ty = bool_ty
+        )),
+        operator = "=",
+        value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))
+    ))
     # If not yet ready, release the pending await tasks and return without
     # freeing (the host's `build_async_release_function`).
     var rel_if_body = vec.Vec[ir.Stmt].create()
@@ -927,37 +950,9 @@ function emit_async_vtable(
             source_path = ""
         ))
         rfsi += 1
-    # Pointer-lowered params are heap copies; free them before the frame
-    # (`frame_builder.rb:483-490`).
-    var rppi: ptr_uint = 0
-    while rppi < ctor_param_names.len:
-        var rpp_name: str
-        var rpp_ty: types.Type
-        unsafe:
-            rpp_name = read(ptr[str]<-ctor_param_names.data + rppi)
-            rpp_ty = read(ptr[types.Type]<-ctor_field_tys.data + rppi)
-        var rpp_is_ptr = false
-        match async_param_pointer(receiver_ty_opt, receiver_editable, rpp_name):
-            Option.some as app:
-                rpp_is_ptr = app.value
-            Option.none:
-                pass
-        if rpp_is_ptr:
-            let rpp_field = lowering.alloc_expr(ir.Expr.expr_member(
-                receiver = frame_exp,
-                member = strings.join_two("param_", rpp_name),
-                ty = rpp_ty
-            ))
-            vrel.push(ir.Stmt.stmt_expression(
-                expression = lowering.alloc_expr(ir.Expr.expr_call(
-                    callee = "mt_async_free",
-                    arguments = lowering.single_expr_span(rpp_field),
-                    ty = void_t
-                )),
-                line = 0,
-                source_path = ""
-            ))
-        rppi += 1
+    # Pointer-lowered params (an editable receiver's `this`) are stored in the
+    # frame verbatim, not copied; the caller owns them, so the frame must not
+    # free them.
     vrel.push(ir.Stmt.stmt_expression(
         expression = lowering.alloc_expr(ir.Expr.expr_call(
             callee = "mt_async_free",
@@ -1196,37 +1191,8 @@ function emit_async_cancel_fn(
             source_path = ""
         ))
         cfsi += 1
-    # Pointer-lowered params are heap copies; cancel frees them before marking
-    # the frame ready (`frame_builder.rb:577-591`).
-    var cppi: ptr_uint = 0
-    while cppi < ctor_param_names.len:
-        var cpp_name: str
-        var cpp_ty: types.Type
-        unsafe:
-            cpp_name = read(ptr[str]<-ctor_param_names.data + cppi)
-            cpp_ty = read(ptr[types.Type]<-ctor_field_tys.data + cppi)
-        var cpp_is_ptr = false
-        match async_param_pointer(receiver_ty_opt, receiver_editable, cpp_name):
-            Option.some as ap:
-                cpp_is_ptr = ap.value
-            Option.none:
-                pass
-        if cpp_is_ptr:
-            let cpp_field = lowering.alloc_expr(ir.Expr.expr_member(
-                receiver = frame_exp,
-                member = strings.join_two("param_", cpp_name),
-                ty = cpp_ty
-            ))
-            vcn.push(ir.Stmt.stmt_expression(
-                expression = lowering.alloc_expr(ir.Expr.expr_call(
-                    callee = "mt_async_free",
-                    arguments = lowering.single_expr_span(cpp_field),
-                    ty = void_t
-                )),
-                line = 0,
-                source_path = ""
-            ))
-        cppi += 1
+    # Pointer-lowered params (an editable receiver's `this`) are caller-owned
+    # and stored verbatim; cancel must not free them.
     vcn.push(ir.Stmt.stmt_expression(
         expression = lowering.alloc_expr(ir.Expr.expr_assignment(
             target = lowering.alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)),
@@ -1317,9 +1283,8 @@ function emit_async_constructor(
     let cancel_lk = strings.join_two(link_base, "__cancel")
     # -- constructor function --
     let size_expr = lowering.alloc_expr(ir.Expr.expr_sizeof(target_type = frame_ty, ty = ptr_ty))
-    # The frame comes from the host's refcounted `mt_async_alloc`
-    # (`frame_builder.rb:270-283`): one `sizeof` argument, the call typed
-    # `ptr[void]`, zeroed by the allocator's calloc.
+    # The frame comes from `mt_async_alloc`: one `sizeof` argument, the call
+    # typed `ptr[void]`, zeroed by the allocator's calloc.
     let alloc_call = lowering.alloc_expr(ir.Expr.expr_call(
         callee = "mt_async_alloc",
         arguments = lowering.pack_single(size_expr),

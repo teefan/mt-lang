@@ -7620,8 +7620,8 @@ function build_env_setup_fn(
 
     var body = vec.Vec[ir.Stmt].create()
 
-    # env = (env_type*) mt_async_alloc(sizeof(env_type)) — the host's refcounted
-    # allocator (`block.rb:122-126`).
+    # env = (env_type*) mt_async_alloc(sizeof(env_type)) — a checked, zeroed
+    # allocation (`block.rb:122-126`).
     let sizeof_call = alloc_expr(ir.Expr.expr_call(
         callee = "mt_async_alloc",
         arguments = pack_single(alloc_expr(ir.Expr.expr_sizeof(target_type = env_ty_named, ty = uint_ty))),

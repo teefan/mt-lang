@@ -636,10 +636,11 @@ parallel:
 
 Rules:
 
-- A `parallel:` block must contain at least two statements.
+- A `parallel:` block must contain at least two statements and at most 64.
 - Each statement must not contain `break`, `continue`, `return`, or `defer`.
 - The compiler enforces single-writer-or-multiple-readers: if a variable is written in one statement, no other block may access it.
 - Captured `ref[T]` values are rejected at compile time.
+- Larger fan-out belongs in `std.jobs`; the 64-statement limit matches the fixed worker-handle array.
 
 `detach` spawns work on a separate thread and returns a `Handle`. `gather` blocks until all handles complete:
 
@@ -968,7 +969,7 @@ See module source for full method surface. Iterator forms:
 
 Text categories:
 
-- `str` -> string view. `s[i]` reads the byte at `i` as `ubyte` (bounds-checked). `s[start..stop]` returns a borrowed `str` view using byte offsets; bounds must be UTF-8 code-unit boundaries or the slice traps. The `+` operator concatenates two `str` values into a per-thread scratch buffer (no heap allocation), returning a borrowed `str`; the result stays valid while cumulative concatenations on that thread remain within the scratch buffer budget. For loops or repeated concatenation, prefer `string.String` for amortized building.
+- `str` -> string view. `s[i]` reads the byte at `i` as `ubyte` (bounds-checked). `s[start..stop]` returns a borrowed `str` view using byte offsets; bounds must be UTF-8 code-unit boundaries or the slice traps. The `+` operator concatenates two `str` values into a per-thread scratch buffer (no heap allocation), returning a borrowed `str`; the result stays valid while cumulative concatenations on that thread remain within the 256 KiB scratch buffer budget. Exhausting the budget aborts instead of reusing earlier results. For loops or repeated concatenation, prefer `string.String` for amortized building.
 - `cstr` -> C ABI string
 - `str_buffer[N]` -> fixed-capacity mutable UTF-8 text buffer
 
@@ -1174,6 +1175,7 @@ Current compiler rejects:
 ### Operator and expression restrictions
 
 - `+` concatenates `str`; `cstr` and mixed `str`/`cstr` concatenation are not supported
+- `str` concatenation uses a 256 KiB per-thread scratch buffer; exhausting it aborts. Use `std.string.String` for loops or repeated building.
 - `==`/`!=` on structs and variants requires all fields equality-comparable; use `equal[T]` otherwise
 - range expressions are restricted to `for`-loop iterables, range index reads (`a[start..stop]`), and range-index assignment targets
 - `str` is an immutable borrowed view: index and range-index results cannot be assigned through
@@ -1214,6 +1216,7 @@ Current compiler rejects:
 - `parallel for` and bodies reject `break`, `continue`, `return`, `defer`, and nested `parallel for`
 - `ref[T]` captures are rejected at thread boundaries in both `parallel for` and `parallel:` blocks
 - `parallel:` blocks enforce single-writer-or-multiple-readers: a variable written in one statement cannot be accessed by another
+- `parallel:` blocks accept at most 64 statements; use `std.jobs` for larger fan-out
 - `atomic[T]` requires `T` to be a primitive integer type or `bool`
 - `atomic[T]` methods (`store`, `add`, `sub`, `exchange`) require an editable (mutable) receiver
 - `atomic[T].compare_exchange` is accepted by the type checker but not yet implemented in the lowering; use `std.sync.AtomicUint` for compare-exchange operations

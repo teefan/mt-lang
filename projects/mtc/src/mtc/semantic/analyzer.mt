@@ -3999,6 +3999,13 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
             ast.Stmt.stmt_parallel_block as pb:
                 if pb.bodies.len < 2:
                     report(ctx, pb.line, pb.column, "parallel block requires at least two statements")
+                else if pb.bodies.len > ast.MAX_PARALLEL_ARMS:
+                    report(
+                        ctx,
+                        pb.line,
+                        pb.column,
+                        "parallel block supports at most 64 statements; use std.jobs for larger fan-out"
+                    )
                 check_stmt_span(ctx, scope, check_flags(chk.ret, chk.inside_loop, chk.inside_defer, true), pb.bodies)
             ast.Stmt.stmt_gather:
                 pass

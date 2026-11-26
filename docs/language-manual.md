@@ -872,11 +872,12 @@ parallel:
 
 Rules:
 
-- A `parallel:` block must contain at least two statements.
+- A `parallel:` block must contain at least two statements and at most 64.
 - Each statement must not contain `break`, `continue`, `return`, or `defer`.
 - The compiler enforces single-writer-or-multiple-readers: if a variable is written in one statement, no other block may access it.
 - Captured `ref[T]` values are rejected at compile time.
 - Each statement runs on its own OS thread (one on the calling thread, the rest on worker threads).
+- The 64-statement limit matches the fixed worker-handle array; use `std.jobs` for larger fan-out.
 
 ### 4.3c Detach and Collect (detached concurrency)
 
@@ -1097,7 +1098,7 @@ Rules:
 11. `+`, `-`
 12. `*`, `/`, `%`
 
-The `+` operator also concatenates two `str` operands into a per-thread scratch buffer, producing a borrowed `str` (no heap allocation) whose validity is bounded by the scratch buffer budget (§8). It does not concatenate `cstr` or mixed `str`/`cstr` operands.
+The `+` operator also concatenates two `str` operands into a per-thread scratch buffer, producing a borrowed `str` (no heap allocation) whose validity is bounded by the 256 KiB scratch buffer budget (§8); exhausting the budget aborts rather than reusing earlier results. It does not concatenate `cstr` or mixed `str`/`cstr` operands.
 
 ### 5.4 Assignment operators
 

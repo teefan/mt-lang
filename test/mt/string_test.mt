@@ -48,3 +48,15 @@ function test_string_shrink_to_fit() -> void:
 
     s.append("x")
     expect(s.capacity() == 4z, "auto-grow to base 4 after zeroed shrink")
+
+
+@[test] @[expect_fatal]
+function test_str_concat_exceeds_scratch_budget() -> void:
+    var big = string.String.with_capacity(300000z)
+    let limit: ptr_uint = 300000
+    var i: ptr_uint = 0
+    while i < limit:
+        big.push_byte('a')
+        i += 1
+    let text = big.as_str()
+    let _ = text + "b"

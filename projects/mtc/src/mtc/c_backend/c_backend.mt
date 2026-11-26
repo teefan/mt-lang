@@ -1140,20 +1140,21 @@ function emit_slice_helpers(
 
 
 function emit_str_concat_helper(e: ref[Emitter]) -> void:
-    emit_line(e, "#define MT_STR_CONCAT_BUF_SIZE 65536")
+    emit_line(e, "#define MT_STR_CONCAT_BUF_SIZE (256 * 1024)")
     emit_line(e, "")
     emit_line(e, "static _Thread_local char mt_str_concat_buf[MT_STR_CONCAT_BUF_SIZE];")
     emit_line(e, "static _Thread_local uintptr_t mt_str_concat_offset = 0;")
     emit_line(e, "")
     emit_line(e, "static mt_str mt_str_concat(mt_str a, mt_str b) {")
+    emit_line(
+        e,
+        "  if (b.len > MT_STR_CONCAT_BUF_SIZE || a.len > MT_STR_CONCAT_BUF_SIZE - b.len) mt_fatal(\"str concatenation exceeded the 256 KiB per-thread scratch budget; use std.string.String for repeated building\");"
+    )
     emit_line(e, "  uintptr_t total = a.len + b.len;")
     emit_line(
         e,
-        "  if (total > MT_STR_CONCAT_BUF_SIZE) mt_fatal(\"str concatenation exceeds the scratch buffer budget\");"
+        "  if (mt_str_concat_offset > MT_STR_CONCAT_BUF_SIZE - total) mt_fatal(\"str concatenation exceeded the 256 KiB per-thread scratch budget; use std.string.String for repeated building\");"
     )
-    emit_line(e, "  if (mt_str_concat_offset + total > MT_STR_CONCAT_BUF_SIZE) {")
-    emit_line(e, "    mt_str_concat_offset = 0;")
-    emit_line(e, "  }")
     emit_line(e, "  char* buf = mt_str_concat_buf + mt_str_concat_offset;")
     emit_line(e, "  if (a.len > 0) memcpy(buf, a.data, a.len);")
     emit_line(e, "  if (b.len > 0) memcpy(buf + a.len, b.data, b.len);")
@@ -8373,37 +8374,20 @@ function uses_async_memory_helpers(program: ir.Program) -> bool:
     return false
 
 
-## The host's refcounted async frame allocator (`runtime_helpers.rb:224-255`):
-## a hidden header (magic + refcount) in front of every frame/env, so
-## `mt_async_free` only returns the block at refcount zero.
+## Async frame/env allocation.  The block is a plain checked `calloc`; the
+## earlier magic/refcount header was never retained (`mt_async_retain` had no
+## call sites) and `mt_async_free` read the header before the pointer.
 function emit_async_memory_helpers(e: ref[Emitter]) -> void:
-    emit_line(e, "#define MT_ASYNC_HEADER_SIZE (sizeof(uint64_t) + sizeof(uintptr_t))")
-    emit_line(e, "#define MT_ASYNC_MAGIC UINT64_C(0x4D5441464D454D00)")
-    emit_line(e, "")
     emit_line(e, "static void* mt_async_alloc(uintptr_t size) {")
-    emit_line(e, "  char* raw = (char*) calloc(1, (size_t)(MT_ASYNC_HEADER_SIZE + size));")
-    emit_line(e, "  if (raw == NULL) {")
+    emit_line(e, "  void* frame = calloc(1, size == 0 ? 1 : size);")
+    emit_line(e, "  if (frame == NULL) {")
     emit_line(e, "    abort();")
     emit_line(e, "  }")
-    emit_line(e, "  *(uint64_t*)raw = MT_ASYNC_MAGIC;")
-    emit_line(e, "  *(uintptr_t*)(raw + sizeof(uint64_t)) = 1;")
-    emit_line(e, "  return raw + MT_ASYNC_HEADER_SIZE;")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static void mt_async_retain(void* frame) {")
-    emit_line(e, "  char* raw = (char*)frame - MT_ASYNC_HEADER_SIZE;")
-    emit_line(e, "  if (*(uint64_t*)raw != MT_ASYNC_MAGIC) return;")
-    emit_line(e, "  uintptr_t* ref = (uintptr_t*)(raw + sizeof(uint64_t));")
-    emit_line(e, "  (*ref)++;")
+    emit_line(e, "  return frame;")
     emit_line(e, "}")
     emit_line(e, "")
     emit_line(e, "static void mt_async_free(void* frame) {")
-    emit_line(e, "  char* raw = (char*)frame - MT_ASYNC_HEADER_SIZE;")
-    emit_line(e, "  if (*(uint64_t*)raw != MT_ASYNC_MAGIC) return;")
-    emit_line(e, "  uintptr_t* ref = (uintptr_t*)(raw + sizeof(uint64_t));")
-    emit_line(e, "  if (--(*ref) == 0) {")
-    emit_line(e, "    free(raw);")
-    emit_line(e, "  }")
+    emit_line(e, "  free(frame);")
     emit_line(e, "}")
     emit_line(e, "")
 
@@ -8426,6 +8410,7 @@ function emit_parallel_helpers(e: ref[Emitter]) -> void:
         "static void mt_parallel_for(void (*work)(void* data, int64_t start, int64_t end), void* data, int64_t count) {"
     )
     emit_line(e, "  if (count <= 0) return;")
+    emit_line(e, "  if (count > INT64_MAX / 64) mt_fatal(\"parallel for range is too large\");")
     emit_line(e, "  uv_cpu_info_t* cpu_info;")
     emit_line(e, "  int ncpu = 1;")
     emit_line(e, "  if (uv_cpu_info(&cpu_info, &ncpu) == 0) {")
@@ -8434,7 +8419,7 @@ function emit_parallel_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "  if (ncpu < 1) ncpu = 1;")
     emit_line(e, "  if (ncpu > 64) ncpu = 64;")
     emit_line(e, "  if (count < (int64_t)ncpu) ncpu = (int)count;")
-    emit_line(e, "  int64_t chunk_size = (count + ncpu - 1) / ncpu;")
+    emit_line(e, "  int64_t chunk_size = count / ncpu + (count % ncpu != 0 ? 1 : 0);")
     emit_line(e, "  mt_pfor_chunk chunks[64];")
     emit_line(e, "  uv_thread_t threads[64];")
     emit_line(e, "  int nworkers = 0;")
@@ -8447,8 +8432,14 @@ function emit_parallel_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "    chunks[nworkers].data = data;")
     emit_line(e, "    chunks[nworkers].start = s;")
     emit_line(e, "    chunks[nworkers].end = e;")
-    emit_line(e, "    uv_thread_create(&threads[nworkers], mt_pfor_runner, &chunks[nworkers]);")
-    emit_line(e, "    nworkers++;")
+    emit_line(
+        e,
+        "    if (uv_thread_create(&threads[nworkers], mt_pfor_runner, &chunks[nworkers]) == 0) {"
+    )
+    emit_line(e, "      nworkers++;")
+    emit_line(e, "    } else {")
+    emit_line(e, "      work(data, s, e);")
+    emit_line(e, "    }")
     emit_line(e, "  }")
     emit_line(e, "  int64_t first_end = chunk_size < count ? chunk_size : count;")
     emit_line(e, "  work(data, 0, first_end);")
@@ -8469,11 +8460,15 @@ function emit_parallel_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "")
     emit_line(e, "static void mt_spawn_all(mt_spawn_item* items, int count) {")
     emit_line(e, "  if (count <= 0) return;")
+    emit_line(e, "  if (count > 64) mt_fatal(\"parallel block supports at most 64 statements\");")
     emit_line(e, "  uv_thread_t threads[64];")
     emit_line(e, "  int nworkers = 0;")
-    emit_line(e, "  for (int t = 1; t < count && nworkers < 63; t++) {")
-    emit_line(e, "    uv_thread_create(&threads[nworkers], mt_spawn_item_runner, &items[t]);")
-    emit_line(e, "    nworkers++;")
+    emit_line(e, "  for (int t = 1; t < count; t++) {")
+    emit_line(e, "    if (uv_thread_create(&threads[nworkers], mt_spawn_item_runner, &items[t]) == 0) {")
+    emit_line(e, "      nworkers++;")
+    emit_line(e, "    } else {")
+    emit_line(e, "      items[t].work(items[t].data);")
+    emit_line(e, "    }")
     emit_line(e, "  }")
     emit_line(e, "  items[0].work(items[0].data);")
     emit_line(e, "  for (int t = 0; t < nworkers; t++) {")
@@ -8483,18 +8478,25 @@ function emit_parallel_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "")
     emit_line(e, "typedef struct {")
     emit_line(e, "  uv_thread_t thread;")
+    emit_line(e, "  int started;")
     emit_line(e, "} mt_detach_handle;")
     emit_line(e, "")
     emit_line(e, "static void* mt_detach_run(void (*work)(void*), void* cap) {")
     emit_line(e, "  mt_detach_handle* h = (mt_detach_handle*)malloc(sizeof(mt_detach_handle));")
-    emit_line(e, "  uv_thread_create(&h->thread, work, cap);")
+    emit_line(e, "  if (h == NULL) mt_fatal(\"detach allocation failed\");")
+    emit_line(e, "  if (uv_thread_create(&h->thread, work, cap) == 0) {")
+    emit_line(e, "    h->started = 1;")
+    emit_line(e, "  } else {")
+    emit_line(e, "    h->started = 0;")
+    emit_line(e, "    work(cap);")
+    emit_line(e, "  }")
     emit_line(e, "  return h;")
     emit_line(e, "}")
     emit_line(e, "")
     emit_line(e, "static void mt_detach_join(void* handle) {")
     emit_line(e, "  if (!handle) return;")
     emit_line(e, "  mt_detach_handle* h = (mt_detach_handle*)handle;")
-    emit_line(e, "  uv_thread_join(&h->thread);")
+    emit_line(e, "  if (h->started) uv_thread_join(&h->thread);")
     emit_line(e, "  free(h);")
     emit_line(e, "}")
 
