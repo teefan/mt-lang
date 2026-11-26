@@ -328,15 +328,6 @@ public function build_command(args: span[str]) -> int:
     if main.reject_external_root(program):
         return 1
 
-    let lowering_outcome = lowering.lower_checked(program)
-    if lowering_outcome.failed:
-        lowering.print_lowering_error(lowering_outcome.error)
-        return 1
-    let ir_program = lowering_outcome.program
-
-    if options.kind == build_driver.BuildKind.executable and main.reject_missing_entrypoint(program, ir_program):
-        return 1
-
     let output_dir = path_ops.dirname(output_owner.as_str())
     match fs.create_directories(output_dir):
         Result.failure as dir_failure:
@@ -375,6 +366,15 @@ public function build_command(args: span[str]) -> int:
                 return status.value
             Option.none:
                 pass
+
+    let lowering_outcome = lowering.lower_checked(program)
+    if lowering_outcome.failed:
+        lowering.print_lowering_error(lowering_outcome.error)
+        return 1
+    let ir_program = lowering_outcome.program
+
+    if options.kind == build_driver.BuildKind.executable and main.reject_missing_entrypoint(program, ir_program):
+        return 1
 
     match build_driver.build(
         program, ir_program, output_owner.as_str(), options.c_compiler, roots.as_span(), options.sanitize,
@@ -1135,15 +1135,6 @@ public function run_command(args: span[str]) -> int:
     if main.reject_external_root(program):
         return 1
 
-    let lowering_outcome = lowering.lower_checked(program)
-    if lowering_outcome.failed:
-        lowering.print_lowering_error(lowering_outcome.error)
-        return 1
-    let ir_program = lowering_outcome.program
-
-    if main.reject_missing_entrypoint(program, ir_program):
-        return 1
-
     var bundle_root = string.String.create()
     defer: bundle_root.release()
     var output_path = string.String.create()
@@ -1183,6 +1174,15 @@ public function run_command(args: span[str]) -> int:
                 return status.value
             Option.none:
                 pass
+
+    let lowering_outcome = lowering.lower_checked(program)
+    if lowering_outcome.failed:
+        lowering.print_lowering_error(lowering_outcome.error)
+        return 1
+    let ir_program = lowering_outcome.program
+
+    if main.reject_missing_entrypoint(program, ir_program):
+        return 1
 
     match build_driver.build(
         program, ir_program, output_path.as_str(), options.c_compiler, roots.as_span(), options.sanitize,

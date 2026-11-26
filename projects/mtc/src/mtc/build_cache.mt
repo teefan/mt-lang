@@ -344,58 +344,46 @@ struct CacheStatus:
     total_bytes: ptr_uint
 
 
-## Count two-level cache entries under `base` and add their file sizes to
-## `total`.  A program entry is a directory tree; a binary entry is the
-## `<key>/binary` file.
-function count_cache_entries(base: str, is_program: bool, total: ref[ptr_uint]) -> ptr_uint:
-    if not fs.is_directory(base):
-        return 0
-    var count: ptr_uint = 0
-    match fs.list_entries(base):
+## Count the flat cache entries (`<root>/<hash>/{key,binary,debug-map.json}`).
+## `programs` counts entries with a `key` file; `binaries` counts entries with a
+## `binary` file.  The directory is a single level, not the older
+## `programs/<2>/<key>` / `binaries/<2>/<key>` layout.
+public function status() -> CacheStatus:
+    var root = cache_root()
+    defer: root.release()
+    if not fs.is_directory(root.as_str()):
+        return CacheStatus(programs = 0, binaries = 0, total_bytes = 0)
+
+    var total_bytes: ptr_uint = 0
+    var programs: ptr_uint = 0
+    var binaries: ptr_uint = 0
+    match fs.list_entries(root.as_str()):
         Result.failure as failure:
             var err = failure.error
             err.release()
-            return 0
-        Result.success as prefixes_payload:
-            var prefixes = prefixes_payload.value
-            defer: prefixes.release()
-            var pi: ptr_uint = 0
-            while pi < prefixes.len():
-                let prefix = prefixes.get(pi) else:
+            return CacheStatus(programs = 0, binaries = 0, total_bytes = 0)
+        Result.success as entries_payload:
+            var entries = entries_payload.value
+            defer: entries.release()
+            var i: ptr_uint = 0
+            while i < entries.len():
+                let name = entries.get(i) else:
                     break
-                var prefix_path = path_ops.join(base, prefix)
-                match fs.list_entries(prefix_path.as_str()):
-                    Result.failure as failure:
-                        var err = failure.error
-                        err.release()
-                    Result.success as entries_payload:
-                        var entries = entries_payload.value
-                        defer: entries.release()
-                        var ei: ptr_uint = 0
-                        while ei < entries.len():
-                            let entry = entries.get(ei) else:
-                                break
-                            var entry_path = path_ops.join(prefix_path.as_str(), entry)
-                            if is_program:
-                                if fs.is_directory(entry_path.as_str()):
-                                    count += 1
-                                    add_tree_size(entry_path.as_str(), total)
-                            else:
-                                var binary_path = path_ops.join(entry_path.as_str(), "binary")
-                                if fs.is_file(binary_path.as_str()):
-                                    count += 1
-                                    match fs.metadata(binary_path.as_str()):
-                                        Result.success as meta_payload:
-                                            var meta = meta_payload.value
-                                            unsafe: read(total) += meta.size
-                                        Result.failure:
-                                            pass
-                                binary_path.release()
-                            entry_path.release()
-                            ei += 1
-                prefix_path.release()
-                pi += 1
-    return count
+                var entry_path = path_ops.join(root.as_str(), name)
+                if fs.is_directory(entry_path.as_str()):
+                    var key_path = path_ops.join(entry_path.as_str(), "key")
+                    if fs.is_file(key_path.as_str()):
+                        programs += 1
+                    key_path.release()
+                    var binary_path = path_ops.join(entry_path.as_str(), "binary")
+                    if fs.is_file(binary_path.as_str()):
+                        binaries += 1
+                    binary_path.release()
+                    add_tree_size(entry_path.as_str(), ref_of(total_bytes))
+                entry_path.release()
+                i += 1
+
+    return CacheStatus(programs = programs, binaries = binaries, total_bytes = total_bytes)
 
 
 ## Add every regular file's size under `dir` (recursively) to `total`.
@@ -419,19 +407,3 @@ function add_tree_size(dir: str, total: ref[ptr_uint]) -> void:
                         pass
                 i += 1
 
-
-## Count cached program dirs, binary files and total bytes used (the host's
-## `cache status` layout: `programs/<2>/<key>` and `binaries/<2>/<key>/binary`).
-public function status() -> CacheStatus:
-    var root = cache_root()
-    defer: root.release()
-    if not fs.is_directory(root.as_str()):
-        return CacheStatus(programs = 0, binaries = 0, total_bytes = 0)
-    var total_bytes: ptr_uint = 0
-    var programs_path = path_ops.join(root.as_str(), "programs")
-    let programs = count_cache_entries(programs_path.as_str(), true, ref_of(total_bytes))
-    programs_path.release()
-    var binaries_path = path_ops.join(root.as_str(), "binaries")
-    let binaries = count_cache_entries(binaries_path.as_str(), false, ref_of(total_bytes))
-    binaries_path.release()
-    return CacheStatus(programs = programs, binaries = binaries, total_bytes = total_bytes)

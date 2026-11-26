@@ -6318,6 +6318,24 @@ examples **311/311**; box2d/async smokes; CLI **227/227**; diagnostics **500 /
 5 changed / 1 unrecorded / 0 differ**; lint **656 / 19 changed / 1 unrecorded
 / 0 differ**.
 
+### Binary cache before lowering (C1a)
+
+`build` and `run` now create the output directory and compute the binary-cache
+key / probe the cache **before** `lower_checked`.  A cache hit skips the entire
+middle-end (and codegen); the entrypoint check still runs on a miss.  A hit
+implies the previous build of the identical source/options passed that check.
+A second `mtc build` of an unchanged trivial program reports `[cached]` and
+drops from 61 ms to 31 ms in the local smoke.
+
+`mtc cache status` now counts the real flat layout
+(`<root>/<hash>/{key,binary,debug-map.json}`); it previously looked for the
+retired `programs/<2>/<key>` and `binaries/<2>/<key>` trees and always reported
+zero.  The CLI golden normalizes the counts, so the 227-case oracle is
+unchanged.
+
+Verified: bootstrap fixed point; stage2 self **22/0** and `test/mt` **96/0**;
+CLI **227/227**.
+
 ### Known issue: `milkTea/debugInfo` on very large files
 
 The LSP debug-AST renderer aborts with `string.as_str text must be valid UTF-8`
