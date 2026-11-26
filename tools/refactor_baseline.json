@@ -43,6 +43,7 @@
       "bindgen -> bindgen",
       "bindgen -> formatter",
       "bindgen -> strings",
+      "build -> build_cache",
       "build -> c_backend",
       "build -> debug_map",
       "build -> ir",
@@ -1647,8 +1648,8 @@
     ]
   },
   "sizes": {
-    "total_code": 147288,
-    "functions_over_limit": 40,
+    "total_code": 147736,
+    "functions_over_limit": 41,
     "files_over_limit": 14,
     "files": {
       "projects/mtc/src/mtc/bindgen.mt": {
@@ -1694,16 +1695,16 @@
         "max_function": 18
       },
       "projects/mtc/src/mtc/build.mt": {
-        "lines": 2498,
-        "code": 2043,
+        "lines": 2697,
+        "code": 2231,
         "max_line": 121,
         "max_function": 218
       },
       "projects/mtc/src/mtc/build_cache.mt": {
-        "lines": 409,
-        "code": 313,
-        "max_line": 109,
-        "max_function": 52
+        "lines": 697,
+        "code": 568,
+        "max_line": 115,
+        "max_function": 78
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
         "lines": 8881,
@@ -2372,8 +2373,8 @@
         "max_function": 46
       },
       "projects/mtc/src/mtc/main.mt": {
-        "lines": 4147,
-        "code": 3365,
+        "lines": 4152,
+        "code": 3370,
         "max_line": 277,
         "max_function": 204
       },

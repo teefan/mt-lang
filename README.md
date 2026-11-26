@@ -1309,7 +1309,7 @@ mtc bindgen mylib.mt mylib.h --nullable-policy nullable_policy.json --nullable-r
 
 Types must match what bindgen would otherwise emit for the symbol (minus the `?`). Bindgen rejects policy entries for unknown symbols, so a stale policy fails loudly instead of silently drifting.
 
-Build and run commands support `-o`/`--output`, `--profile`, `--platform`, `--cc`, `--keep-c C_PATH`, `--split`, `--no-cache`, `--locked`, `--frozen`, and `-I` include paths. `--split` emits one C unit per module and compiles them as separate translation units; single-file output remains the default. Dependency-locked flows support `--locked` (use package.lock) and `--frozen` (require current package.lock).
+Build and run commands support `-o`/`--output`, `--profile`, `--platform`, `--cc`, `--keep-c C_PATH`, `--split`, `--no-cache`, `--locked`, `--frozen`, and `-I` include paths. `--split` emits one C unit per module and compiles them as separate translation units with a content-keyed per-TU object cache; `--no-cache` disables object reuse. Single-file output remains the default. Dependency-locked flows support `--locked` (use package.lock) and `--frozen` (require current package.lock).
 
 Global options work with any command (before or after the subcommand, up to a `--` separator): `-h`/`--help` (also `mtc help <command>` for command-specific help), `-V`/`--version`, `-q`/`--quiet` (suppress informational output), `-v`/`--verbose` (per-file progress), and `--color auto|always|never`. Generate shell completions with `mtc completions bash|zsh|fish`. Timing breakdowns use `--timings` (on `format` and `lint`); `lint` reports warnings with per-file progress.
 

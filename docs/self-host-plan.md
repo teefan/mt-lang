@@ -125,7 +125,7 @@ history.
 | Multi-file commands | **Flat in the file count, and no longer ~2× a heavy file's peak** (session 152).  The per-file heap region is a bump allocator: it frees everything at once and cannot reuse anything released inside it, so an abandoned temporary lands in the peak.  It buys release of every file *after* the one compiling, so it is now gated on the **file count** (`should_scope_file`, `remaining_after >= 2`): the last two files of a run compile unregioned.  Measured: `check main.mt` + a 60-byte file **422 MiB** (was 958,616 KiB always-regioned; 432,068 never-regioned), 40 small files **372 MiB** (1,367,120 never-regioned), `check projects/mtc` (191 files) **997 MiB** (11,398,120 never-regioned).  The `lower`/`emit-c` 8-heaviest sets pay 2–3% (**1,456 / 1,694 MiB**) because their last two files are heavy.  The old session-151 row (same file twice 946 MiB, `main.mt` + `sexpr.mt` 1,407 MiB) was the ungated region; see *Region gate (session 152)*. |
 | `test/mt` | **106 files / 0 failed** (71 in-language tests + 35 compile-fail diagnostics fixtures; session 170 added three generic-invariance fixtures and the conformance corpus lives separately; peak RSS **100 MiB**, measured session 151) |
 | Examples | **311/311** under the self-only `emit-c`/`check` sweep — session 161 extended it from 78 to **every** `examples/**/*.mt`, adding `examples/raylib` (219) and `examples/box3d` (14); a first line of `external` selects `check` instead of `emit-c` (one raw binding module).  That gap is how a call to a nonexistent `rl.image_draw` survived (session 160).  Plus the headless **`box2d_smoke`** build/run gate |
-| Multi-TU build | **opt-in `--split`** (session 171): shared `mtc.h`, one data unit for globals/static asserts, one `unit_<n>.c` per module, and a single `cc` driver invocation; all functions are external and the split-built compiler passes 22/22 and 106/106.  Single-file output is byte-identical and remains the default.  Static archives and wasm still reject `--split`; per-TU object caching is C3 |
+| Multi-TU build | **opt-in `--split`** (sessions 171–172): shared `mtc.h`, one data unit for globals/static asserts, one `unit_<n>.c` per module, and one `cc -c` object per unit with an exact content-keyed object cache (512 MiB cap including key sidecars).  The split-built compiler passes 22/22 and 106/106; cache edit-one-module reuses all but one object.  Single-file output is byte-identical and remains the default.  Static archives and wasm still reject `--split` |
 | Recorded oracles | **CLI 227/227 (0.6.3); diagnostics 498 compared / 7 changed / 1 unrecorded / 0 differ; lint 646 compared / 29 changed / 1 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
 | `check` diagnostics | the 500-file diagnostic oracle is the gate (the extra row is `box2d_api_smoke`); the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field anchor is a reviewed difference, not a residual (session 146). |
@@ -137,7 +137,7 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check`; **Box2D is 3.2.0** (`178495ba…`, tag `v3.2.0`) and the raw module is reproducible (session 158; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; `bindings/raw/<name>.json` holds the option tables, `bindings/nullable/<name>.json` the `?` policies, and `tools/rebind_binding.rb` reproduces a raw module; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 170 files / 180,073 lines / 147,288 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **28 unused + 7 test-only** public declarations; 8,433 duplicated lines / 1,262 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 22/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 170 after the B3 closure, callable/match fixes and the conformance seed; growth is deliberate, not a layout regression) |
+| **Refactoring safety** | structural guard: 170 files / 180,565 lines / 147,736 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **28 unused + 7 test-only** public declarations; 8,433 duplicated lines / 1,262 clusters; **41 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 22/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 170 after the B3 closure, callable/match fixes and the conformance seed; growth is deliberate, not a layout regression) |
 | Gate planning | `tools/gates.sh` area inference covers `lexer/` (→ `parser`), `main/` (→ `cli`), `bindgen/` (→ `bindings`) and every other `projects/mtc/src/mtc/` path (→ `compiler_core`, the full behaviour set).  An unclassified path is a hard error naming the file; previously it planned **zero** gates and exited 0 (session 159) |
 | Bootstrap `-j` | **removed** (session 159).  The flag was parsed, capped and warned about but never passed to a build command — a stage build is one whole-program `mtc build`.  `release.sh -j` removed with it; `bootstrap.sh -j 4` now errors |
 
@@ -6539,6 +6539,33 @@ conformance **22/22**; split_build **full ok**; CLI **227/227**; diagnostics
 unrecorded / 0 differ**; examples **311/311**.  The split-built compiler emits
 the same C as the single-file compiler on the comparison case.
 
+
+### Session 172 — C3 per-TU object cache
+
+Split builds now compile one object per source with `cc -c` and cache the
+objects:
+
+- Each object key includes the generated source, the shared header, the C
+  compiler identity, profile/sanitizer/shared/include/binding flags, and an
+  object-cache format version.  The `.key` file stores the exact material and
+  the object's content hash; a missing, truncated, or hash-mismatched object is
+  removed and recompiled rather than linked.
+- `object_lookup`/`object_materialize`/`object_store` live in
+  `build_cache.mt`; object files live under `<cache>/objects/<hash>.o` with a
+  `<hash>.key` sidecar.  Eviction is newest-first and bounds both count (512)
+  and total bytes (512 MiB, including the key sidecars).  `cache status` reports
+  the object count alongside programs/binaries.
+- Split builds print `split: N object(s) reused, M compiled`; the split gate
+  now includes a three-build edit-one-module case: cold `[0,3]`, warm `[3,0]`,
+  leaf edit `[2,1]`, and runs the edited binary.  `--no-cache` disables object
+  lookup/store while still compiling per-TU.
+- The split-built compiler remains 22/0 and 106/0; the full split gate is green.
+  Static archives and wasm still reject `--split`.
+
+Verified: compiler-core gate (bootstrap fixed point; strict 0; conformance
+22/22; split_build full; CLI 227/227; diagnostics/lint 0 differ; examples
+311/311).  The local object cache was observed at 173 objects / 512 MiB after
+the compiler build, confirming the cap includes sidecars.
 
 ### Known issue: `milkTea/debugInfo` on very large files
 

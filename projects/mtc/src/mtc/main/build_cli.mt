@@ -395,7 +395,7 @@ public function build_command(args: span[str]) -> int:
     match build_driver.build(
         program, ir_program, output_owner.as_str(), options.c_compiler, roots.as_span(), options.sanitize,
         options.profile_name, options.debug_guards, options.kind, options.platform, build_template, build_assets,
-        options.keep_c_path, options.split
+        options.keep_c_path, options.split, options.use_cache
     ):
         Result.success as built:
             var output = built.value
@@ -1206,7 +1206,7 @@ public function run_command(args: span[str]) -> int:
     match build_driver.build(
         program, ir_program, output_path.as_str(), options.c_compiler, roots.as_span(), options.sanitize,
         options.profile_name, options.debug_guards, build_driver.BuildKind.executable, options.platform,
-        run_template, run_assets, options.keep_c_path, options.split
+        run_template, run_assets, options.keep_c_path, options.split, options.use_cache
     ):
         Result.success as built:
             var built_path = built.value

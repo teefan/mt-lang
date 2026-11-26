@@ -643,7 +643,7 @@
       "rc": 1
     },
     "cache-status": {
-      "stdout": "cache  <N> programs, <N> binaries (<SIZE>)\n  root  <ROOT><TMP>\n",
+      "stdout": "cache  <N> programs, <N> binaries, <N> objects (<SIZE>)\n  root  <ROOT><TMP>\n",
       "stderr": "",
       "rc": 0
     },
@@ -1018,7 +1018,7 @@
       "rc": 1
     },
     "cache-status-extra": {
-      "stdout": "cache  <N> programs, <N> binaries (<SIZE>)\n  root  <ROOT><TMP>\n",
+      "stdout": "cache  <N> programs, <N> binaries, <N> objects (<SIZE>)\n  root  <ROOT><TMP>\n",
       "stderr": "",
       "rc": 0
     },

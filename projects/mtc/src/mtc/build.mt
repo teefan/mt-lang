@@ -11,10 +11,12 @@ import std.log as log
 import std.path as path_ops
 import std.process as process
 import std.string as string
+import std.stdio as stdio
 import std.str
 import std.vec as vec
 
 import mtc.debug_map as debug_map
+import mtc.build_cache as build_cache
 import mtc.loader.module_loader as loader
 import mtc.loader.path_resolver as resolver
 import mtc.ir as ir
@@ -56,6 +58,7 @@ public function build(
     assets: span[string.String],
     keep_c_path: Option[str],
     split: bool,
+    object_cache: bool,
 ) -> Result[string.String, string.String]:
     let is_wasm = platform == resolver.Platform.wasm
     let toolchain = prepare_build_toolchain(program, roots, c_compiler, output_path, platform, kind)
@@ -154,7 +157,8 @@ public function build(
             ref_of(binding_flags),
             ref_of(link_flags),
             ref_of(vendored_flags),
-            keep_c_path
+            keep_c_path,
+            object_cache
         )
 
     var owned_args = vec.Vec[string.String].create()
@@ -269,6 +273,7 @@ function build_split(
     link_flags: ref[vec.Vec[string.String]],
     vendored_flags: ref[vec.Vec[string.String]],
     keep_c_path: Option[str],
+    object_cache: bool,
 ) -> Result[string.String, string.String]:
     if is_wasm:
         return Result[string.String, string.String].failure(
@@ -318,32 +323,115 @@ function build_split(
         Result.failure as failure:
             return Result[string.String, string.String].failure(error = failure.error)
 
+    var object_dir = path_ops.join(split_dir.as_str(), "obj")
+    defer: object_dir.release()
+    match fs.create_directories(object_dir.as_str()):
+        Result.failure as failure:
+            var error = failure.error
+            var message = string.String.from_str(error.message.as_str())
+            error.release()
+            return Result[string.String, string.String].failure(error = message)
+        Result.success:
+            pass
+
+    if object_cache:
+        build_cache.object_prune()
+    var key_base = split_object_key_base(
+        compiler,
+        is_debug,
+        sanitize,
+        kind,
+        include_flag,
+        binding_flags,
+        output.header.as_str()
+    )
+    defer: key_base.release()
+
+    var object_paths = vec.Vec[string.String].create()
+    defer: release_owned_strings(ref_of(object_paths))
+    var reused: ptr_uint = 0
+    var compiled: ptr_uint = 0
+    var ci: ptr_uint = 0
+    while ci < c_paths.len():
+        let path_ptr = c_paths.get(ci) else:
+            break
+        let source_path = unsafe: read(path_ptr).as_str()
+        var source = string.String.create()
+        match fs.read_text(source_path):
+            Result.failure as failure:
+                var error = failure.error
+                var message = string.String.from_str(error.message.as_str())
+                error.release()
+                source.release()
+                return Result[string.String, string.String].failure(error = message)
+            Result.success as payload:
+                source = payload.value
+        var object_path = string.String.create()
+        object_path.append(object_dir.as_str())
+        object_path.append("/part_")
+        object_path.append(strings.uint_to_str(ci))
+        object_path.append(".o")
+
+        var used_cache = false
+        if object_cache:
+            var key = string.String.create()
+            key.append(key_base.as_str())
+            key.append("\nsource:\n")
+            key.append(source.as_str())
+            match build_cache.object_lookup(key.as_str()):
+                Option.some as cached:
+                    if build_cache.object_materialize(cached.value.as_str(), object_path.as_str()):
+                        reused += 1
+                        used_cache = true
+                    cached.value.release()
+                Option.none:
+                    pass
+            key.release()
+        if not used_cache:
+            match compile_split_object(
+                compiler,
+                source_path,
+                object_path.as_str(),
+                is_debug,
+                sanitize,
+                kind,
+                include_flag,
+                binding_flags,
+                split_dir.as_str()
+            ):
+                Result.success:
+                    compiled += 1
+                    if object_cache:
+                        var key = string.String.create()
+                        key.append(key_base.as_str())
+                        key.append("\nsource:\n")
+                        key.append(source.as_str())
+                        build_cache.object_store(key.as_str(), object_path.as_str())
+                        key.release()
+                Result.failure as failure:
+                    source.release()
+                    object_path.release()
+                    return Result[string.String, string.String].failure(error = failure.error)
+        source.release()
+        object_paths.push(object_path)
+        ci += 1
+
     var command = vec.Vec[str].create()
     defer: command.release()
     command.push(compiler)
     command.push("-std=c11")
-    command.push("-D_GNU_SOURCE")
     if sanitize:
         command.push("-fsanitize=address,undefined")
         command.push("-fno-sanitize-recover=all")
         command.push("-fno-omit-frame-pointer")
     if is_debug:
         command.push("-g")
-        command.push("-O0")
-    else:
-        command.push("-O3")
-        command.push("-DNDEBUG")
-    if include_flag.len > 0:
-        command.push(include_flag)
-    command.push("-I")
-    command.push(split_dir.as_str())
-    push_owned_flags(ref_of(command), binding_flags)
     if kind == BuildKind.kind_shared:
         command.push("-fPIC")
         command.push("-shared")
-    var ci: ptr_uint = 0
-    while ci < c_paths.len():
-        let path_ptr = c_paths.get(ci) else:
+    ci = 0
+    while ci < object_paths.len():
+        let path_ptr = object_paths.get(ci) else:
             break
         command.push(unsafe: read(path_ptr).as_str())
         ci += 1
@@ -370,9 +458,120 @@ function build_split(
                 error = string.String.from_str("C compiler not found: ")
             )
 
+    stdio.print_format(
+        c"split: %zu object(s) reused, %zu compiled\n",
+        reused,
+        compiled
+    )
     if kind == BuildKind.executable:
         write_debug_map(ir_program, output_path)
     return Result[string.String, string.String].success(value = string.String.from_str(output_path))
+
+
+## Key material shared by every object in one split build: compiler identity,
+## profile/sanitizer/shared flags, include/binding flags, a format version, and
+## the constructed header.  The per-source suffix is added by the caller.
+function split_object_key_base(
+    compiler: str,
+    is_debug: bool,
+    sanitize: bool,
+    kind: BuildKind,
+    include_flag: str,
+    binding_flags: ref[vec.Vec[string.String]],
+    header: str,
+) -> string.String:
+    var key = string.String.create()
+    key.append("mtc-object-cache-v1\n")
+    var ccid = build_cache.cc_identity(compiler)
+    key.append(ccid.as_str())
+    ccid.release()
+    key.append("\ncc:")
+    key.append(compiler)
+    key.append("\nprofile:")
+    if is_debug:
+        key.append("debug")
+    else:
+        key.append("release")
+    key.append("\nsanitize:")
+    if sanitize:
+        key.append("1")
+    else:
+        key.append("0")
+    key.append("\nshared:")
+    if kind == BuildKind.kind_shared:
+        key.append("1")
+    else:
+        key.append("0")
+    key.append("\ninclude:")
+    key.append(include_flag)
+    var i: ptr_uint = 0
+    while i < binding_flags.len():
+        let flag_ptr = binding_flags.get(i) else:
+            break
+        key.append("\nbinding:")
+        key.append(unsafe: read(flag_ptr).as_str())
+        i += 1
+    key.append("\nheader:\n")
+    key.append(header)
+    return key
+
+
+function compile_split_object(
+    compiler: str,
+    source_path: str,
+    object_path: str,
+    is_debug: bool,
+    sanitize: bool,
+    kind: BuildKind,
+    include_flag: str,
+    binding_flags: ref[vec.Vec[string.String]],
+    split_dir: str,
+) -> Result[bool, string.String]:
+    var command = vec.Vec[str].create()
+    defer: command.release()
+    command.push(compiler)
+    command.push("-std=c11")
+    command.push("-D_GNU_SOURCE")
+    if sanitize:
+        command.push("-fsanitize=address,undefined")
+        command.push("-fno-sanitize-recover=all")
+        command.push("-fno-omit-frame-pointer")
+    if is_debug:
+        command.push("-g")
+        command.push("-O0")
+    else:
+        command.push("-O3")
+        command.push("-DNDEBUG")
+    if include_flag.len > 0:
+        command.push(include_flag)
+    command.push("-I")
+    command.push(split_dir)
+    push_owned_flags(ref_of(command), binding_flags)
+    if kind == BuildKind.kind_shared:
+        command.push("-fPIC")
+    command.push("-c")
+    command.push(source_path)
+    command.push("-o")
+    command.push(object_path)
+    match process.capture(command.as_span()):
+        Result.success as captured:
+            var result = captured.value
+            defer: result.stdout.release()
+            defer: result.stderr.release()
+            if result.status.exit_code == 0:
+                return Result[bool, string.String].success(value = true)
+            var details = string.String.from_str(result.stdout.as_str())
+            details.append(result.stderr.as_str())
+            var message = string.String.from_str("C compiler failed:\n")
+            message.append(details.as_str())
+            details.release()
+            return Result[bool, string.String].failure(error = message)
+        Result.failure as failure:
+            var error = failure.error
+            error.release()
+            return Result[bool, string.String].failure(
+                error = string.String.from_str("C compiler not found: ")
+            )
 
 
 function write_split_tree(

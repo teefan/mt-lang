@@ -601,8 +601,11 @@ def normalize(text, self_bin:)
   text = text.gsub(/^built .*\[cached\]$/, "built <TARGET> [cached]")
   # `cache status` counts depend on earlier cases in the same run (and on the
   # checkout's build history); pin the report shape, not the population.
-  text = text.gsub(/^(cache\s+)\d+ programs, \d+ binaries/, '\\1<N> programs, <N> binaries')
-  text = text.gsub(/^(cache\s+<N> programs, <N> binaries)\s+\([^)]*\)$/, '\\1 (<SIZE>)')
+  text = text.gsub(
+    /^(cache\s+)\d+ programs, \d+ binaries(?:, \d+ objects)?/,
+    '\\1<N> programs, <N> binaries, <N> objects'
+  )
+  text = text.gsub(/^(cache\s+<N> programs, <N> binaries, <N> objects)\s+\([^)]*\)$/, '\\1 (<SIZE>)')
   # pcre2's binding header lives under the per-checkout vendored build prefix,
   # which `toolchain tools` creates; the doctor row is environment state.
   text = text.gsub(/^(?:ok|fail) (binding\/pcre2): .*$/, 'binding/pcre2: <BUILD>')

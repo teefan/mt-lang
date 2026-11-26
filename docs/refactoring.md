@@ -218,14 +218,14 @@ not depend on line counts, so ordinary feature commits do not need a refresh.
 
 | Metric | Value |
 | --- | --- |
-| source files / lines / code lines | 170 / 180,073 / 147,288 |
+| source files / lines / code lines | 170 / 180,565 / 147,736 |
 | layering edges / violations | 119 / 0 |
 | naming violations | 0 |
 | vocabulary violations | 0 |
 | alias violations | 0 (170 modules) |
 | dead exports (unused / test-only) | 28 / 7 |
 | duplication (windows / duplicated lines) | 1,262 / 8,433 (window 12) |
-| functions ≥ 200 lines | 40 |
+| functions ≥ 200 lines | 41 |
 | files ≥ 2,000 code lines | 14 |
 | markers | 0 |
 | test files (projects/mtc / test/mt) | 22 / 106 |
@@ -241,6 +241,14 @@ seed.  Code lines 145,942 → 146,700 (+758); total source lines 178,497 →
 test-only.  The conformance `.mt` cases live outside `projects/mtc` and do not
 enter the source metrics.  The strict ratchet is now the gate command
 (`--check --strict --ratchet`), not just the invariant check.
+
+Session 172 refreshed the baseline after C3 per-TU object caching: split
+builds now compile one `cc -c` object per unit, key each object by source +
+header + compiler identity/flags, store exact key material and an object-content
+hash beside the `.o`, and evict oldest entries at a 512 MiB cap that includes the
+key sidecars.  Code lines 147,288 → 147,736 (+448), one new ≥200-line function
+(`evict_objects`), duplication unchanged at 8,433, tests unchanged at 22/106.
+The split-built compiler and cache edit-one-module test remain green.
 
 Session 171 refreshed the baseline after C2 multi-TU emission: IR source
 ownership, the split header/data/unit renderer, `emit-c --split DIR`, and

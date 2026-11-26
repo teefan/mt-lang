@@ -3627,7 +3627,12 @@ function cache_command(args: span[str]) -> int:
             root.release()
             return 0
         var st = build_cache.status()
-        stdio.print_format(c"cache  %zu programs, %zu binaries  (", st.programs, st.binaries)
+        stdio.print_format(
+            c"cache  %zu programs, %zu binaries, %zu objects  (",
+            st.programs,
+            st.binaries,
+            st.objects
+        )
         print_human_size(st.total_bytes)
         stdio.print_format(c")\n  root  %.*s\n", int<-(root_text.len), root_text.data)
         root.release()

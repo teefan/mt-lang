@@ -78,16 +78,68 @@ def run_case(failures, bin, name, source)
   end
 end
 
+def stats(out)
+  match = out.match(/split: (\d+) object\(s\) reused, (\d+) compiled/)
+  return nil unless match
+  [match[1].to_i, match[2].to_i]
+end
+
+def cache_case(failures, bin)
+  Dir.mktmpdir("mtc-split-cache-") do |dir|
+    lib = File.join(dir, "lib.mt")
+    main = File.join(dir, "main.mt")
+    nonce = "#{Process.pid}_#{Time.now.to_i}"
+    File.write(lib, <<~MT)
+      public function value_#{nonce}() -> int:
+          return 1
+    MT
+    File.write(main, <<~MT)
+      import lib
+
+      function main() -> int:
+          return lib.value_#{nonce}()
+    MT
+    output = File.join(dir, "app")
+    out, err, status = capture(bin, "build", "--split", main, "-I", dir, "-o", output)
+    first = stats(out + err)
+    unless status.success? && first == [0, 3]
+      report_failure(failures, "object-cache-first", "status=#{status.exitstatus} stats=#{first.inspect} #{(out + err).lines.last(6).join}")
+      next
+    end
+    out, err, status = capture(bin, "build", "--split", main, "-I", dir, "-o", output)
+    second = stats(out + err)
+    unless status.success? && second == [3, 0]
+      report_failure(failures, "object-cache-hit", "status=#{status.exitstatus} stats=#{second.inspect} #{(out + err).lines.last(6).join}")
+      next
+    end
+    File.write(lib, <<~MT)
+      public function value_#{nonce}() -> int:
+          return 2
+    MT
+    out, err, status = capture(bin, "build", "--split", main, "-I", dir, "-o", output)
+    third = stats(out + err)
+    unless status.success? && third == [2, 1]
+      report_failure(failures, "object-cache-edit", "status=#{status.exitstatus} stats=#{third.inspect} #{(out + err).lines.last(6).join}")
+      next
+    end
+    _out, _err, run_status = capture(output)
+    unless run_status.exitstatus == 2
+      report_failure(failures, "object-cache-run", "exit #{run_status.exitstatus} != 2")
+    end
+  end
+end
+
 run_case(failures, self_bin, "array_to_span", "conformance/memory/array_to_span.mt")
 run_case(failures, self_bin, "string_builder", "conformance/stdlib/string_builder.mt")
 run_case(failures, self_bin, "defer_order", "conformance/control/defer_order.mt")
 run_case(failures, self_bin, "tuple_literal", "conformance/types/tuple_array_literal.mt")
+cache_case(failures, self_bin)
 
 unless quick
   Dir.mktmpdir("mtc-split-self-") do |dir|
     compiler = File.join(dir, "mtc-split")
     out, err, status = capture(
-      self_bin, "build", "--split", "projects/mtc", "-I", ROOT, "-o", compiler, "--no-cache"
+      self_bin, "build", "--split", "projects/mtc", "-I", ROOT, "-o", compiler
     )
     unless status.success?
       report_failure(failures, "compiler-split-build", (out + err).lines.last(12).join)
