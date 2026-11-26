@@ -6336,6 +6336,31 @@ unchanged.
 Verified: bootstrap fixed point; stage2 self **22/0** and `test/mt` **96/0**;
 CLI **227/227**.
 
+### More lowering diagnostics (B1b)
+
+Converted the next sema-clean / lowering-fatal family:
+
+- `p.with(2)` positional field update → `lower_with_call: named arguments required`;
+- positional variant arm construction → `variant arm construction requires named fields`;
+- `adapt[I]()` arity → `adapt requires exactly one argument`;
+- `tick.foo()` → `unknown event method`;
+- `adapt[Missing](...)` → `dyn lowering: interface not found`;
+- `adapt[I](ref_of(number))` → `dyn lowering: concrete type must be nominal`.
+
+The dyn vtable path also short-circuits after a wrapper-generation failure:
+`ensure_dyn_vtable` returns without emitting the constant, `lower_adapt_call`
+checks `lowering_failed` before building the fat pointer, and the missing-wrapper
+site is a diagnostic rather than an abort.  Six new compile-fail fixtures pin
+these; `test/mt` is now **102 files / 0 failed**.
+
+Still open in B1: the match/`str`/`span` construction sites, statement
+line/column tracking, and `check --lower`.
+
+Verified: bootstrap fixed point; stage2 self **22/0** and `test/mt` **102/0**;
+examples **311/311**; box2d/async smokes; CLI **227/227**; diagnostics **500 /
+5 changed / 1 unrecorded / 0 differ**; lint **655 / 20 changed / 1 unrecorded
+/ 0 differ**.
+
 ### Known issue: `milkTea/debugInfo` on very large files
 
 The LSP debug-AST renderer aborts with `string.as_str text must be valid UTF-8`

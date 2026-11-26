@@ -6192,7 +6192,8 @@ function lower_with_call(
                         Option.none:
                             pass
     if field_names.len() == 0:
-        fatal(c"lower_with_call: cannot determine fields for type")
+        fail_lowering_cstr(ctx, c"lower_with_call: cannot determine fields for type")
+        return poison_expr()
     var arg_map = map_mod.Map[str, ptr[ir.Expr]].create()
     var ai: ptr_uint = 0
     while ai < args.len:
@@ -6200,7 +6201,8 @@ function lower_with_call(
         unsafe:
             a = read(args.data + ai)
         let aname = a.arg_name else:
-            fatal(c"lower_with_call: named arguments required")
+            fail_lowering_cstr(ctx, c"lower_with_call: named arguments required")
+            return poison_expr()
         var arg_val = lower_expr(ctx, a.arg_value)
         # A literal argument takes the replaced field's type (`v.with(x = 10.0)`
         # on a double field is a double literal), the host's contextual
@@ -11988,7 +11990,8 @@ function collect_variant_literal_fields(
         unsafe:
             arg = read(args.data + i)
         let field_name = arg.arg_name else:
-            fatal(c"lowering: variant arm construction requires named fields")
+            fail_lowering_cstr(ctx, c"lowering: variant arm construction requires named fields")
+            return span[ir.AggregateField]()
         var value = lower_expr(ctx, arg.arg_value)
         # Auto-address recursive variant fields.
         let field_ty = match_mod.variant_field_type_from_arm(ctx, variant_ty, arm_name, field_name)
@@ -12229,7 +12232,8 @@ function lower_adapt_call(
     args: span[ast.Argument]
 ) -> ptr[ir.Expr]:
     if args.len != 1:
-        fatal(c"dyn lowering: adapt requires exactly one argument")
+        fail_lowering_cstr(ctx, c"dyn lowering: adapt requires exactly one argument")
+        return poison_expr()
     var arg = unsafe: read(args.data + 0)
     let arg_value = lower_expr(ctx, arg.arg_value)
     let arg_type = type_helpers.expr_type(ctx, arg.arg_value)
@@ -12261,6 +12265,8 @@ function lower_adapt_call(
                 type_args.as_span(),
                 ia.value.type_params
             )
+            if lowering_failed(ctx):
+                return poison_expr()
             var void_ptr = types.generic_type(name = "ptr", args = sp_type(ctx.void_ty))
             # The vtable constant has the `DynVtable` type; its address is a
             # `ptr[DynVtable]`, then cast to `void*` for the fat-pointer field.
@@ -12295,7 +12301,8 @@ function lower_adapt_call(
                 ),
             ))
         Option.none:
-            fatal(c"dyn lowering: interface not found")
+            fail_lowering_cstr(ctx, c"dyn lowering: interface not found")
+            return poison_expr()
 
 
 ## Interface analysis: the methods declared by the interface.
@@ -12429,6 +12436,8 @@ function ensure_dyn_vtable(
         type_args,
         type_params
     )
+    if lowering_failed(ctx):
+        return vtable_c_name
     gen_dyn_vtable_constant(
         ctx,
         iface_name,
@@ -12585,7 +12594,8 @@ function gen_dyn_vtable_wrappers(
     var wrappers = map_mod.Map[str, str].create()
     var void_ptr = types.generic_type(name = "ptr", args = sp_type(ctx.void_ty))
     let concrete_type_name = named_type_name(concrete_type) else:
-        fatal(c"dyn lowering: concrete type must be nominal")
+        fail_lowering_cstr(ctx, c"dyn lowering: concrete type must be nominal")
+        return wrappers
     # Use a module-qualified type so c_type renders the correct C struct name.
     # The concrete type's OWN module is authoritative: the `adapt` site is often
     # in a different module than the type being adapted.
@@ -12729,7 +12739,8 @@ function gen_dyn_vtable_wrappers(
                 ))
                 wrappers.set(m.name, wrapper_c_name)
             Option.none:
-                fatal(c"dyn lowering: could not find method implementation")
+                fail_lowering_cstr(ctx, c"dyn lowering: could not find method implementation")
+                return wrappers
         mi += 1
     return wrappers
 
@@ -12796,7 +12807,8 @@ function gen_dyn_vtable_constant(
         unsafe:
             m = read(methods.data + mi)
         let wrapper_ptr = unsafe: read(wrappers).get(m.name) else:
-            fatal(c"dyn lowering: missing wrapper for method")
+            fail_lowering_cstr(ctx, c"dyn lowering: missing wrapper for method")
+            return
         let wrapper_c_name = unsafe: read(wrapper_ptr)
         # Use the function type for the field so the constant matches the struct
         # decl — with the interface's type parameters substituted, as the struct
@@ -15544,7 +15556,8 @@ function lower_event_method(
         let wait_result_ty = ensure_generic_variant(ctx, "Result", wait_result_args.as_span())
         let task_ty = tasks.make_task_type(wait_result_ty)
         return alloc_expr(ir.Expr.expr_call(callee = info.wait_c_name, arguments = call_args.as_span(), ty = task_ty))
-    fatal(c"lowering: unknown event method")
+    fail_lowering_cstr(ctx, c"lowering: unknown event method")
+    return poison_expr()
 
 
 ## The host's `event_slot_pointer_expr`: `&event->slots[index]`.
