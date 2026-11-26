@@ -14,7 +14,7 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-174-2026-11-26)
+- [Status at a glance](#status-at-a-glance-session-175-2026-11-26)
 - [Handoff](#handoff-session-158)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
@@ -112,7 +112,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 174, 2026-11-26)
+## Status at a glance (session 175, 2026-11-26)
 
 | Area | State |
 | --- | --- |
@@ -128,7 +128,8 @@ history.
 | Multi-TU build | **opt-in `--split`** (sessions 171–172): shared `mtc.h`, one data unit for globals/static asserts, one `unit_<n>.c` per module, and one `cc -c` object per unit with an exact content-keyed object cache (512 MiB cap including key sidecars).  The split-built compiler passes 22/22 and 106/106; cache edit-one-module reuses all but one object.  Single-file output is byte-identical and remains the default.  Static archives and wasm still reject `--split` |
 | Watch/dev loop | **`mtc watch PATH`** (session 173): polls `.mt` mtime seconds/nanoseconds/size under the entry directory plus every `-I` root (default 500 ms), keeps a loader `ModuleCache` and calls `check_program_with_source` in-process (a leaf edit advances parse/analysis only for the changed module and dependents), then forks a build child for lowering/C/link so per-build IR memory dies with the child.  `--split` reuses unchanged per-TU objects (leaf `3 reused / 1 compiled`; no-op `0 compiled`).  `--run` optional; 100-cycle no-growth gate |
 | IR verifier | **`ir_verify.mt`** (session 174): checks unique linkage names, concrete declaration types (no `ty_error`/`ty_var`), non-empty module owners, unique fields/params/members/arms, a single `main` entry point returning `int`, switch defaults, and labels/gotos.  `--verify-ir` is available on `build`/`run`/`lower`/`emit-c`; the dev gate verifies the compiler IR after rebuilding, and 12 constructed-IR unit tests cover each rejection path |
-| Recorded oracles | **CLI 231/231 (0.6.3); diagnostics 497 compared / 8 changed / 2 unrecorded / 0 differ; lint 645 compared / 30 changed / 4 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
+| Lowering extraction | **`lowering/statements.mt`** (session 175): `lower_return_stmt`, `lower_propagate_return`, and `lower_plain_local_stmt` moved verbatim out of `lowering/lowering.mt` (23,008 → 22,465 lines; statements 560).  Helper visibility was opened for the moved calls; C differs only by the extracted function's source position, and all behavior oracles remain green.  The next 4.2 clusters are assignment/loop/guard statements; 4.3 context grouping and 4.4 per-module lowering remain |
+| Recorded oracles | **CLI 231/231 (0.6.3); diagnostics 497 compared / 8 changed / 2 unrecorded / 0 differ; lint 645 compared / 30 changed / 5 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
 | `check` diagnostics | the 500-file diagnostic oracle is the gate (the extra row is `box2d_api_smoke`); the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field anchor is a reviewed difference, not a residual (session 146). |
 | Linter | **43/43 rules, 13/13 fixers**; the 646-compared lint oracle is the corpus gate.  `unused-import` now credits type positions (annotations, params/returns, fields, aliases, specialization type arguments, proc signatures, `emit` declarations), fixing the type-only false positives; the remaining tree output is dominated by true style/ownership hints.  The historical host residue (3 self-only `std` files, timeout rows) is in *Deliberate differences*. |
@@ -139,7 +140,7 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check`; **Box2D is 3.2.0** (`178495ba…`, tag `v3.2.0`) and the raw module is reproducible (session 158; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; `bindings/raw/<name>.json` holds the option tables, `bindings/nullable/<name>.json` the `?` policies, and `tools/rebind_binding.rb` reproduces a raw module; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 172 files / 148,642 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **28 unused + 7 test-only** public declarations; 8,477 duplicated lines / 1,262 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 23/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 174 for the IR verifier) |
+| **Refactoring safety** | structural guard: 173 files / 148,655 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **28 unused + 7 test-only** public declarations; 8,405 duplicated lines / 1,239 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 23/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 175 for the statement extraction) |
 | Gate planning | `tools/gates.sh` area inference covers `lexer/` (→ `parser`), `main/` (→ `cli`), `bindgen/` (→ `bindings`) and every other `projects/mtc/src/mtc/` path (→ `compiler_core`, the full behaviour set).  An unclassified path is a hard error naming the file; previously it planned **zero** gates and exited 0 (session 159) |
 | Bootstrap `-j` | **removed** (session 159).  The flag was parsed, capped and warned about but never passed to a build command — a stage build is one whole-program `mtc build`.  `release.sh -j` removed with it; `bootstrap.sh -j 4` now errors |
 
@@ -6639,6 +6640,31 @@ The first middle-end checkpoint is a structural verifier over `ir.Program`:
 **22/22**; split full; watch **100 rebuilds**; CLI **231/231**; diagnostics
 **497 compared / 8 changed / 2 unrecorded / 0 differ**; lint **645 compared /
 30 changed / 4 unrecorded / 0 differ**; examples **311/311**.
+
+### Session 175 — Wave 4.2 first lowering extraction
+
+The first structural extraction from the lowering core is in:
+
+- `lowering/statements.mt` now owns `lower_return_stmt`,
+  `lower_propagate_return`, and `lower_plain_local_stmt` (543 lines moved;
+  `lowering/lowering.mt` 23,008 → 22,465, statements 560).
+- Only the helper visibility needed by the moved bodies was opened
+  (`HoistedValue`, return/format/guard helpers, `LocalBinding` use stays via
+  `lowering.`).  `lowering.mt` imports the new module as `stmt_mod`.
+- The generated C differs only by the extracted function's source position and
+  its prototype; the body is the same and every behavior oracle is green.
+  The structural guard's duplication count **fell** from 8,477 to 8,405 lines
+  (1,262 → 1,239 clusters); code lines are +2 and long functions/file counts
+  are unchanged (40 / 14).  Baseline refreshed for this reviewed extraction.
+- The next 4.2 clusters are assignment/loop/guard statements.  The 4.2 target
+  remains 12k lines; 4.3 context grouping and 4.4 per-module lowering are not
+  started.  Per-module lowering remains conditional on measurements.
+
+**Verified with the compiler-core gate:** dev build + IR verify; dev suite
+**23/0**; bootstrap fixed point; `test/mt` **106/0**; strict **0**; conformance
+**22/22**; split full; watch **100 rebuilds**; CLI **231/231**; diagnostics
+**497 compared / 8 changed / 2 unrecorded / 0 differ**; lint **645 compared /
+30 changed / 5 unrecorded / 0 differ**; examples **311/311**.
 
 ### Known issue: `milkTea/debugInfo` on very large files
 
