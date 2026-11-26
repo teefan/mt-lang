@@ -110,3 +110,17 @@ has no record or update mode.
 ```sh
 ruby tools/conformance.rb --self build/stage2/mtc
 ```
+
+## 6. Watch loop
+
+`tools/watch_smoke.rb` starts `mtc watch` over a two-module project, edits the
+leaf module eight times, checks the rebuilt binary observes every value, and
+asserts the split build reuses the two unchanged objects while compiling one.
+It also samples the watcher's RSS and FD count before and after the rebuilds and
+fails on growth (4 MiB / 4 FDs). The watcher uses child `mtc build` processes, so
+compiler arenas and IR are released by process exit; the in-process ModuleCache
+reuse is a separate future optimization.
+
+```sh
+ruby tools/watch_smoke.rb --self build/stage2/mtc --soak 8
+```

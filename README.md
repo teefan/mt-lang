@@ -1231,6 +1231,7 @@ Essential commands:
 mtc check  <path>             # Type-check + lint; reports all diagnostics sorted by line
 mtc build  <path>             # Build only (emit C, compile, link, --no-cache to build without cache)
 mtc run    <path>             # Build and execute (--no-cache to build and run without cache)
+mtc watch  <path>             # Poll source files and rebuild on change (--split, --run, --interval MS)
 mtc debug  <file.mt>          # Print debug info (tokens, AST, facts, bindings, diagnostics)
 mtc emit-c <path>             # Emit generated C to stdout
 mtc format <path>             # Format source to stdout (--write rewrites in place, --check verifies)
@@ -1310,6 +1311,8 @@ mtc bindgen mylib.mt mylib.h --nullable-policy nullable_policy.json --nullable-r
 Types must match what bindgen would otherwise emit for the symbol (minus the `?`). Bindgen rejects policy entries for unknown symbols, so a stale policy fails loudly instead of silently drifting.
 
 Build and run commands support `-o`/`--output`, `--profile`, `--platform`, `--cc`, `--keep-c C_PATH`, `--split`, `--no-cache`, `--locked`, `--frozen`, and `-I` include paths. `--split` emits one C unit per module and compiles them as separate translation units with a content-keyed per-TU object cache; `--no-cache` disables object reuse. Single-file output remains the default. Dependency-locked flows support `--locked` (use package.lock) and `--frozen` (require current package.lock).
+
+`mtc watch PATH` polls the entry's directory and every `-I` root for `.mt` changes (default 500 ms) and rebuilds through a child `mtc build`; `--run` executes the rebuilt binary after each successful build. With `--split`, unchanged modules are reused from the per-TU object cache. Keeping each rebuild in a child process keeps the long-lived watcher's memory and file descriptors flat; in-process ModuleCache reuse remains a future optimization.
 
 Global options work with any command (before or after the subcommand, up to a `--` separator): `-h`/`--help` (also `mtc help <command>` for command-specific help), `-V`/`--version`, `-q`/`--quiet` (suppress informational output), `-v`/`--verbose` (per-file progress), and `--color auto|always|never`. Generate shell completions with `mtc completions bash|zsh|fish`. Timing breakdowns use `--timings` (on `format` and `lint`); `lint` reports warnings with per-file progress.
 

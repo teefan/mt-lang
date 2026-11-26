@@ -28,6 +28,7 @@ public function print_help(to_err: bool) -> void:
     emit_line(to_err, "  check        Type-check and lint source files")
     emit_line(to_err, "  build        Compile a source file or package")
     emit_line(to_err, "  run          Build and execute a program")
+    emit_line(to_err, "  watch        Rebuild a program when its source files change")
     emit_line(to_err, "  run-module   Resolve, build, and run a module by name")
     emit_line(to_err, "  test         Discover and run @[test] functions")
     emit_line(to_err, "  new          Scaffold a new package")
@@ -81,6 +82,10 @@ public function print_help(to_err: bool) -> void:
     emit_line(
         to_err,
         "       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [--strict-types] [--split] [-I PATH] [--debug-guards|--no-debug-guards]"
+    )
+    emit_line(
+        to_err,
+        "       mtc watch PATH [--run] [--interval MS] [--split] [-o OUTPUT] [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [-I PATH]"
     )
     emit_line(
         to_err,
@@ -144,6 +149,10 @@ public function print_usage(to_err: bool) -> void:
     emit_line(
         to_err,
         "       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [--strict-types] [--split] [-I PATH] [--debug-guards|--no-debug-guards]"
+    )
+    emit_line(
+        to_err,
+        "       mtc watch PATH [--run] [--interval MS] [--split] [-o OUTPUT] [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [-I PATH]"
     )
     emit_line(
         to_err,
@@ -258,6 +267,23 @@ function print_cli_command_help(command: str, to_err: bool) -> bool:
         emit_line(to_err, "     --strict-types               Warn when assignability uses the permissive fallback.")
         emit_line(to_err, "     --split                      Emit one C unit per module and compile them as separate translation units.")
         emit_line(to_err, "     -I, --include-path PATH      Add an extra module root.")
+        if to_err:
+            let _ = terminal.flush_stderr()
+        return true
+    if command == "watch":
+        emit_line(to_err, "Usage: mtc watch PATH [OPTIONS]")
+        emit_line(to_err, "")
+        emit_line(to_err, "  Poll the entry's source tree and rebuild when a .mt file changes.")
+        emit_line(to_err, "")
+        emit_line(to_err, "  Options:")
+        emit_line(to_err, "    --run                        Run the rebuilt program after each successful build.")
+        emit_line(to_err, "    --interval MS                Poll interval in milliseconds (default: 500).")
+        emit_line(to_err, "    --split                      Use multi-TU emission and the per-TU object cache.")
+        emit_line(to_err, "    -o, --output OUTPUT          Output path for the rebuilt binary.")
+        emit_line(to_err, "    --cc COMPILER                C compiler to use (default: $CC or cc).")
+        emit_line(to_err, "    --profile PROFILE            debug (default) | release.")
+        emit_line(to_err, "    --platform PLATFORM          linux (default) | windows | wasm.")
+        emit_line(to_err, "    -I, --include-path PATH      Add an extra module root to watch.")
         if to_err:
             let _ = terminal.flush_stderr()
         return true

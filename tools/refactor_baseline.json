@@ -293,6 +293,7 @@
     "main.snapshot_debug_cli": "snapshot_debug_cli",
     "main.std_cli": "std_cli",
     "main.test_cli": "test_cli",
+    "main.watch_cli": "watch_cli",
     "packages.editor": "editor",
     "packages.graph": "graph",
     "packages.lock": "package_lock",
@@ -380,8 +381,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 1262,
-    "duplicated_lines": 8433,
+    "windows": 1265,
+    "duplicated_lines": 8459,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -398,6 +399,7 @@
       "0246d61421bf84d5d7ac88a7749863ac4a00122c",
       "024d680a30f0bc9048885fdc46e4c795b8655aa1",
       "02d2717d81d1ae50b7a5b602637e703d0042986b",
+      "02dcaa7224c645a5a653261636ecbea96ddad6a0",
       "0383cda2bf806abfd9153c32a012261633fc3eff",
       "03b76ee7fca570b12286e6bdb31ec18808ac17a1",
       "040fdde90b55024137016c4c7daad9abaf5c917b",
@@ -439,6 +441,7 @@
       "0b524fa9bcaf6727b041d751223502ef89465442",
       "0b52750c1054760f6d28a3bf3917877ddb4bf5b8",
       "0b5a0c502bb4aed534f15d903bc3aba421937c9a",
+      "0b6db08797d8ce4f255e9d337052dd0940384626",
       "0ba965e635b2f57a2e9706b79d893e4fab37633b",
       "0bc5c07b193a04c5755fc24d560be983acea86ed",
       "0bd3cf3b3b66ae4337f3da7e161366e5a412d6db",
@@ -1532,6 +1535,7 @@
       "eaeb81e4b3a6f38fe7d6fa559917637e10cc07ef",
       "eb355245a46d60f8f7b10fdc87a7163f3dd020d1",
       "eb3daad8344528cab80cba98df5d9fb8507112e0",
+      "eb6fff60d99e62296c0f87a2cd3d810c342d2d70",
       "eb98d1bc2272909a71b656389179e27d775d867f",
       "eba7319ff8ad429991f13d97521a3046b45fbe50",
       "eba771be0549a7f8daed3ec48b02c1115066292a",
@@ -1648,7 +1652,7 @@
     ]
   },
   "sizes": {
-    "total_code": 147736,
+    "total_code": 148043,
     "functions_over_limit": 41,
     "files_over_limit": 14,
     "files": {
@@ -1725,10 +1729,10 @@
         "max_function": 84
       },
       "projects/mtc/src/mtc/cli_help.mt": {
-        "lines": 595,
-        "code": 561,
+        "lines": 621,
+        "code": 587,
         "max_line": 288,
-        "max_function": 101
+        "max_function": 118
       },
       "projects/mtc/src/mtc/dap/handlers.mt": {
         "lines": 695,
@@ -2373,8 +2377,8 @@
         "max_function": 46
       },
       "projects/mtc/src/mtc/main.mt": {
-        "lines": 4152,
-        "code": 3370,
+        "lines": 4156,
+        "code": 3373,
         "max_line": 277,
         "max_function": 204
       },
@@ -2413,6 +2417,12 @@
         "code": 1358,
         "max_line": 126,
         "max_function": 136
+      },
+      "projects/mtc/src/mtc/main/watch_cli.mt": {
+        "lines": 318,
+        "code": 278,
+        "max_line": 105,
+        "max_function": 150
       },
       "projects/mtc/src/mtc/packages/editor.mt": {
         "lines": 489,

@@ -23,7 +23,7 @@ tools/gates.sh --areas refactor --run
 
 Tier 1 (fast, per edit): dev build, the 22-file self-host suite, the structural
 guard. Tier 2 (once per commit, on frozen sources): `test/mt` under stage2 and
-the 227-case CLI golden. Logs land in `tmp/gates/`.  The other recorded oracles
+the 230-case CLI golden. Logs land in `tmp/gates/`.  The other recorded oracles
 are in the `oracles` area; run them when the shared compiler code moves.
 
 Print the set without running it with `tools/gates.sh --areas refactor`.

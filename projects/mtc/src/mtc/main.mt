@@ -62,6 +62,7 @@ import mtc.main.std_cli as std_cli
 import mtc.main.bindings_cli as bindings_cli
 import mtc.main.format_cli as format_cli
 import mtc.main.test_cli as test_cli
+import mtc.main.watch_cli as watch_cli
 import mtc.main.snapshot_debug_cli as snapshot_debug_cli
 import mtc.main.build_cli as build_cli
 import mtc.docs_app as docs_app
@@ -112,7 +113,7 @@ function eprint_unknown_option(flag: str, command: str) -> void:
 
 ## Commands that accept module-root flags (host: `command_supports_include_paths?`).
 function command_supports_include_paths(command: str) -> bool:
-    return command == "parse" or command == "lint" or command == "check" or command == "lower" or command == "emit-c" or command == "build" or command == "run" or command == "test" or command == "debug"
+    return command == "parse" or command == "lint" or command == "check" or command == "lower" or command == "emit-c" or command == "build" or command == "run" or command == "watch" or command == "test" or command == "debug"
 
 
 function main(args: span[str]) -> int:
@@ -344,6 +345,9 @@ function dispatch_command(args: span[str], saw_include: bool, include_flag: str)
 
     if cmd == "run":
         return build_cli.run_command(args)
+
+    if cmd == "watch":
+        return watch_cli.watch_command(args)
 
     if cmd == "run-module":
         return build_cli.run_module_command(args)
