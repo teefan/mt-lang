@@ -6398,6 +6398,45 @@ with no operand now reports `missing source file path`.  The check help/usage
 lists the flag; the CLI oracle was re-recorded (227 cases; only the check
 usage/help rows changed) and replays **227/227**.
 
+### Strict assignability, Stage 0 (B3)
+
+`SemanticDiagnostic` now carries `severity` and `code`, and the loader preserves
+them instead of stamping every semantic diagnostic as `sema/error`.  The
+analyzer's `strict_assignability` context flag is driven by `--strict-types` on
+`check`, `build`, and `run`; `build`/`run` print those warnings without failing,
+and `check -Werror` turns them into exit 1.
+
+`type_compatibility.mt` now separates the explicit rule chain
+(`types_explicitly_compatible_with_consts`) from the negative-only fallback via
+`types_compatibility_status { compatible, used_fallback }`.  The three
+assignment wrappers report a fallback as
+`warning[strict-types]: strict assignability: implicit <actual> -> <expected>`
+at the source expression.  `ty_error` and `ty_var` are exempt, so unresolved
+generics do not flood the census.  A semantic test pins the warning, code,
+message, and position for `Box[int] -> Box[str]`.
+
+`tools/strict_types_census.rb` runs `check --strict-types` over `std`,
+`examples`, and `projects/mtc/src` and counts unique warning lines by pair.  The
+Stage 0 baseline is **389 unique warnings / 104 distinct pairs** (std 129,
+examples 190, compiler sources 70).  The largest categories are the rules the
+next stages must make explicit:
+
+| count | pair |
+|---|---|
+| 64 | `int -> float` |
+| 41 | `dyn[common.Sample] -> dyn` |
+| 26 | `span[ubyte] -> span[T]` |
+| 18 | `Task[Result[UdpDatagram, Error]] -> Task[T]` |
+| 17 | `Vec[EventMessage] -> ref[Vec[EventMessage]]` |
+| 14 | `String -> ref[String]` |
+| 12 | `void -> fn` |
+| 10 | `proc(Error) -> Error -> proc(E) -> F` |
+| 10 | `uint -> ptr_uint` |
+
+The Stage 2–4 work is therefore numeric widening, interface erasure,
+`ref[T] <- T` borrowing, generic-instantiation invariance, function types, and
+const-pointer conversions.  The census is an observation tool, not a gate.
+
 ### Known issue: `milkTea/debugInfo` on very large files
 
 The LSP debug-AST renderer aborts with `string.as_str text must be valid UTF-8`

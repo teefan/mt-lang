@@ -2042,8 +2042,8 @@ function emit_module_diagnostics(
                 column = sema_diag.column,
                 length = sema_diag.length,
                 message = string.String.from_str(sema_diag.message),
-                severity = "error",
-                code = "sema/error",
+                severity = sema_diag.severity,
+                code = sema_diag.code,
                 symbol_name = string.String.from_str(""),
             ))
             si += 1

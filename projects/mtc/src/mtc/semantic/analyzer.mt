@@ -38,6 +38,17 @@ var tooling_facts_enabled: bool = true
 public function set_tooling_facts(enabled: bool) -> void:
     tooling_facts_enabled = enabled
 
+
+## True when `--strict-types` asks the analyzer to report assignments that are
+## accepted only by the permissive assignability fallback.  Off by default so
+## normal builds, diagnostics, and goldens are unchanged.
+var strict_assignability_enabled: bool = false
+
+
+public function set_strict_assignability(enabled: bool) -> void:
+    strict_assignability_enabled = enabled
+
+
 public struct SemanticDiagnostic:
     line: ptr_uint
     column: ptr_uint
@@ -45,6 +56,8 @@ public struct SemanticDiagnostic:
     ## the LSP falls back to 1, matching the Ruby `Diagnostic#length` default.
     length: ptr_uint
     message: str
+    severity: str
+    code: str
 
 public struct ParamEntry:
     name: str
@@ -323,6 +336,8 @@ struct Context:
     ## the alias are reported as unknown names (the LSP's `allow_missing_imports`
     ## equivalent).  The compile path leaves it false and stays permissive.
     require_resolved_imports: bool
+    ## See `strict_assignability_enabled`.
+    strict_assignability: bool
     ## See `tooling_facts_enabled`.
     tooling_facts: bool
     types: map_mod.Map[str, types.Type]
@@ -753,6 +768,7 @@ function create_context(
         import_aliases = map_mod.Map[str, str].create(),
         imported_modules = imported_modules,
         require_resolved_imports = require_resolved_imports,
+        strict_assignability = strict_assignability_enabled,
         tooling_facts = tooling_facts_enabled,
         types = map_mod.Map[str, types.Type].create(),
         attribute_apps = map_mod.Map[str, vec.Vec[ast.AttributeApplication]].create(),
@@ -1266,13 +1282,27 @@ function preassign_expr_binding_ids(ctx: ref[Context], e: ast.Expr) -> void:
 
 
 function report(ctx: ref[Context], line: ptr_uint, column: ptr_uint, message: str) -> void:
-    ctx.diagnostics.push(SemanticDiagnostic(line = line, column = column, length = 0, message = message))
+    ctx.diagnostics.push(SemanticDiagnostic(
+        line = line,
+        column = column,
+        length = 0,
+        message = message,
+        severity = "error",
+        code = "sema/error",
+    ))
 
 
 ## Like `report`, with the offending token's character length so the LSP range
 ## spans the token (Ruby's sema diagnostics carry a `length`).
 function report_at(ctx: ref[Context], line: ptr_uint, column: ptr_uint, length: ptr_uint, message: str) -> void:
-    ctx.diagnostics.push(SemanticDiagnostic(line = line, column = column, length = length, message = message))
+    ctx.diagnostics.push(SemanticDiagnostic(
+        line = line,
+        column = column,
+        length = length,
+        message = message,
+        severity = "error",
+        code = "sema/error",
+    ))
 
 
 ## Record each import's alias -> module name so member access on an alias
@@ -3807,6 +3837,61 @@ function unknown_type_message(name: str) -> str:
     return buf.as_str()
 
 
+## `ty_error` and `ty_var` are the two shapes the permissive fallback exists
+## for; they are never strict violations.
+function strict_assignability_exempt(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_error:
+            return true
+        types.Type.ty_var:
+            return true
+        _:
+            return false
+
+
+function strict_assignability_message(target: types.Type, source_ty: types.Type) -> str:
+    var buf = string.String.create()
+    buf.append("strict assignability: implicit ")
+    buf.append(types.type_to_string(source_ty))
+    buf.append(" -> ")
+    buf.append(types.type_to_string(target))
+    return buf.as_str()
+
+
+function report_strict_assignability(
+    ctx: ref[Context],
+    target: types.Type,
+    source_ty: types.Type,
+    source_expr: ptr[ast.Expr]?,
+) -> void:
+    if strict_assignability_exempt(target) or strict_assignability_exempt(source_ty):
+        return
+    var line = ctx.statement_line
+    var column = ctx.statement_column
+    let expr = source_expr else:
+        ctx.diagnostics.push(SemanticDiagnostic(
+            line = line,
+            column = column,
+            length = 0,
+            message = strict_assignability_message(target, source_ty),
+            severity = "warning",
+            code = "strict-types",
+        ))
+        return
+    let expr_line = expr_source_line(expr)
+    if expr_line != 0:
+        line = expr_line
+        column = expr_source_column(expr)
+    ctx.diagnostics.push(SemanticDiagnostic(
+        line = line,
+        column = column,
+        length = 0,
+        message = strict_assignability_message(target, source_ty),
+        severity = "warning",
+        code = "strict-types",
+    ))
+
+
 ## Assignment-site incompatibility check.  Delegates to the full positive
 ## type-compatibility rule (type_compatibility.mt), negating the result so this
 ## function continues to return true when types are incompatible.
@@ -3816,21 +3901,29 @@ function unknown_type_message(name: str) -> str:
 ## whose value fits a numeric target is assignable (`const C: uint = 200;
 ## let x: ubyte = C`), one that does not is rejected (`256` into `ubyte`).
 function incompatible_value_with_consts(
+    ctx: ref[Context],
     target: types.Type,
     source_ty: types.Type,
     source_expr: ptr[ast.Expr]?,
     const_values: ref[map_mod.Map[str, ptr[ast.Expr]]],
 ) -> bool:
-    return not compat.types_compatible_with_consts(target, source_ty, source_expr, ptr_of(const_values))
+    let status = compat.types_compatibility_status(target, source_ty, source_expr, ptr_of(const_values))
+    if ctx.strict_assignability and status.compatible and status.used_fallback:
+        report_strict_assignability(ctx, target, source_ty, source_expr)
+    return not status.compatible
 
 
 function incompatible_external_value_with_consts(
+    ctx: ref[Context],
     target: types.Type,
     source_ty: types.Type,
     source_expr: ptr[ast.Expr]?,
     const_values: ref[map_mod.Map[str, ptr[ast.Expr]]],
 ) -> bool:
-    return not compat.types_compatible_external_with_consts(target, source_ty, source_expr, ptr_of(const_values))
+    let status = compat.types_compatibility_external_status(target, source_ty, source_expr, ptr_of(const_values))
+    if ctx.strict_assignability and status.compatible and status.used_fallback:
+        report_strict_assignability(ctx, target, source_ty, source_expr)
+    return not status.compatible
 
 
 ## True when `ep` is `alias.member` and `member` is an exported constant of the
@@ -3860,8 +3953,16 @@ function is_imported_constant_member(ctx: ref[Context], ep: ptr[ast.Expr]?) -> b
                 return false
 
 
-function incompatible_value(target: types.Type, source_ty: types.Type, source_expr: ptr[ast.Expr]?) -> bool:
-    return not compat.types_compatible(target, source_ty, source_expr)
+function incompatible_value(
+    ctx: ref[Context],
+    target: types.Type,
+    source_ty: types.Type,
+    source_expr: ptr[ast.Expr]?,
+) -> bool:
+    let status = compat.types_compatibility_status(target, source_ty, source_expr, null)
+    if ctx.strict_assignability and status.compatible and status.used_fallback:
+        report_strict_assignability(ctx, target, source_ty, source_expr)
+    return not status.compatible
 
 struct CheckFlags:
     ret: types.Type
@@ -4053,7 +4154,7 @@ function check_return_stmt(
         ctx.expected_type_hint = chk.ret
         let vt = infer_expr(ctx, scope, rv)
         ctx.expected_type_hint = ret_saved_hint
-        if incompatible_value_with_consts(chk.ret, vt, rv, ref_of(ctx.const_values)):
+        if incompatible_value_with_consts(ctx, chk.ret, vt, rv, ref_of(ctx.const_values)):
             let rl = expr_source_line(rv)
             if rl == 0:
                 report(ctx, line, column, return_mismatch_message(chk.ret, vt))
@@ -4197,7 +4298,7 @@ function check_assignment_stmt(
     let vt = infer_expr(ctx, scope, value)
     ctx.expected_type_hint = assign_saved_hint
     if operator == "=":
-        if incompatible_value_with_consts(target_ty, vt, value, ref_of(ctx.const_values)):
+        if incompatible_value_with_consts(ctx, target_ty, vt, value, ref_of(ctx.const_values)):
             report(ctx, line, column, assign_message(target_ty, vt))
     else if types.is_str(target_ty) and operator == "+=":
         report(ctx, line, column, "str += is not supported; use std.string.String for concatenation")
@@ -4206,7 +4307,7 @@ function check_assignment_stmt(
         let result_ty = infer_binary_operands(ctx, bin_op, target, value, target_ty, vt)
         if types.is_error(result_ty) and compound_assignment_checkable(target_ty, vt):
             report(ctx, line, column, "compound assignment is not supported for this type")
-        else if incompatible_value_with_consts(target_ty, result_ty, target, ref_of(ctx.const_values)):
+        else if incompatible_value_with_consts(ctx, target_ty, result_ty, target, ref_of(ctx.const_values)):
             report(ctx, line, column, assign_message(target_ty, result_ty))
     check_assign_target_immutable(ctx, scope, target, line, column)
 
@@ -5765,7 +5866,7 @@ function check_local(
     # it is compared against the unwrapped (narrowed) value type instead.
     if has_declared and has_value:
         let compared = if has_guard: narrowed else: value_type
-        if incompatible_value_with_consts(declared, compared, value, ref_of(ctx.const_values)):
+        if incompatible_value_with_consts(ctx, declared, compared, value, ref_of(ctx.const_values)):
             report(ctx, line, column, local_mismatch_message(declared, compared, name))
 
     # Bind the name for later inference: prefer the declared type, but narrow a
@@ -7932,14 +8033,14 @@ function check_substituted_arguments(
                         ctx,
                         arg_expr
                     ) and types.is_numeric(pty) and types.is_numeric(atype)):
-                        incompatible = incompatible_external_value_with_consts(
+                        incompatible = incompatible_external_value_with_consts(ctx,
                             pty,
                             atype,
                             arg_expr,
                             ref_of(ctx.const_values)
                         )
                 else:
-                    incompatible = incompatible_value_with_consts(pty, atype, arg_expr, ref_of(ctx.const_values))
+                    incompatible = incompatible_value_with_consts(ctx, pty, atype, arg_expr, ref_of(ctx.const_values))
                 if incompatible:
                     report(ctx, line, column, argument_message(pe.name, display_name, pty, atype))
         i += 1
@@ -8817,7 +8918,7 @@ function check_builtin_construction(
             ctx.expected_type_hint = elem_ty
             let at = infer_expr(ctx, scope, arg.arg_value)
             ctx.expected_type_hint = saved_hint
-            if incompatible_value_with_consts(elem_ty, at, arg.arg_value, ref_of(ctx.const_values)):
+            if incompatible_value_with_consts(ctx, elem_ty, at, arg.arg_value, ref_of(ctx.const_values)):
                 report(ctx, line, column, diag.array_element_message(elem_ty, at))
                 return types.Type.ty_error
             i += 1
@@ -8851,7 +8952,7 @@ function check_builtin_construction(
                     ctx.expected_type_hint = len_ty
                     let at = infer_expr(ctx, scope, arg.arg_value)
                     ctx.expected_type_hint = saved_hint
-                    if incompatible_value_with_consts(len_ty, at, arg.arg_value, ref_of(ctx.const_values)):
+                    if incompatible_value_with_consts(ctx, len_ty, at, arg.arg_value, ref_of(ctx.const_values)):
                         report(ctx, line, column, diag.field_type_mismatch_message(display, "len", len_ty, at))
                         return types.Type.ty_error
                 else:
@@ -8929,7 +9030,7 @@ function check_simd_call(
             at = read(arg_types.data + i)
             if i < arg_exprs.len:
                 arg_expr = read(arg_exprs.data + i).arg_value
-        if incompatible_value(elem_ty, at, arg_expr):
+        if incompatible_value(ctx, elem_ty, at, arg_expr):
             report(ctx, line, column, "simd lane value type does not match the element type")
             return types.Type.ty_error
         i += 1
@@ -8968,7 +9069,7 @@ function check_simd_with_call(
     unsafe:
         if args.len >= 2:
             value_expr = read(args.data + 1).arg_value
-    if incompatible_value(elem_ty, value_ty, value_expr):
+    if incompatible_value(ctx, elem_ty, value_ty, value_expr):
         report(ctx, line, column, "simd.with lane value type does not match the element type")
 
 
@@ -10975,7 +11076,7 @@ function check_construction(
                     ctx.expected_type_hint = field_ty
                     let vt = infer_expr(ctx, scope, arg.arg_value)
                     ctx.expected_type_hint = saved_hint
-                    if incompatible_value_with_consts(field_ty, vt, arg.arg_value, ref_of(ctx.const_values)):
+                    if incompatible_value_with_consts(ctx, field_ty, vt, arg.arg_value, ref_of(ctx.const_values)):
                         report(ctx, line, column, field_type_mismatch_message(struct_name, nm.value, field_ty, vt))
             _:
                 pass
@@ -11654,12 +11755,12 @@ function try_builtin_call(
             return Option[types.Type].none
         let left_ty = infer_expr(ctx, scope, unsafe: read(args.data + 0).arg_value)
         let right_ty = infer_expr(ctx, scope, unsafe: read(args.data + 1).arg_value)
-        if incompatible_value_with_consts(
+        if incompatible_value_with_consts(ctx,
             left_ty,
             right_ty,
             unsafe: read(args.data + 1).arg_value,
             ref_of(ctx.const_values)
-        ) and incompatible_value_with_consts(
+        ) and incompatible_value_with_consts(ctx,
             right_ty,
             left_ty,
             unsafe: read(args.data + 0).arg_value,
@@ -11859,14 +11960,14 @@ function check_signature_call(
                     ctx,
                     arg_expr
                 ) and types.is_numeric(pe.ty) and types.is_numeric(atype)):
-                    incompatible = incompatible_external_value_with_consts(
+                    incompatible = incompatible_external_value_with_consts(ctx,
                         pe.ty,
                         atype,
                         arg_expr,
                         ref_of(ctx.const_values)
                     )
             else:
-                incompatible = incompatible_value_with_consts(pe.ty, atype, arg_expr, ref_of(ctx.const_values))
+                incompatible = incompatible_value_with_consts(ctx, pe.ty, atype, arg_expr, ref_of(ctx.const_values))
             if incompatible:
                 report(ctx, line, column, argument_message(pe.name, display_name, pe.ty, atype))
         i += 1

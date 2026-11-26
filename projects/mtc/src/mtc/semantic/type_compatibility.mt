@@ -202,7 +202,7 @@ public function types_compatible(expected: types.Type, actual: types.Type, sourc
 ## As `types_compatible`, with an explicit `const` table for the compile-time
 ## numeric coercion.  `const_values` null disables the coercion (the literal-only
 ## form still applies).
-public function types_compatible_with_consts(
+public function types_explicitly_compatible_with_consts(
     expected: types.Type,
     actual: types.Type,
     source_expr: ptr[ast.Expr]?,
@@ -394,30 +394,68 @@ public function types_compatible_with_consts(
         _:
             pass
 
-    # 11  Fall back to the existing negative-only rule.  A type pair that is NOT
-    #      provably incompatible is treated as compatible (permissive Phase-1
-    #      design — unresolved generics, imported types, and type variables are
-    #      never flagged as mismatches).
-    return not types.definitely_incompatible(expected, actual)
+    # 11  The permissive negative-only fallback lives in
+    #     `types_compatibility_status`; this function is the explicit rule chain.
+    return false
+
+
+## Compatibility plus whether the answer came only from the permissive
+## negative-only fallback.  `--strict-types` reports the latter as warnings; the
+## normal compatibility API ignores the distinction.
+public struct CompatibilityStatus:
+    compatible: bool
+    used_fallback: bool
+
+
+public function types_compatibility_status(
+    expected: types.Type,
+    actual: types.Type,
+    source_expr: ptr[ast.Expr]?,
+    const_values: ptr[map_mod.Map[str, ptr[ast.Expr]]]?,
+) -> CompatibilityStatus:
+    if types_explicitly_compatible_with_consts(expected, actual, source_expr, const_values):
+        return CompatibilityStatus(compatible = true, used_fallback = false)
+    if not types.definitely_incompatible(expected, actual):
+        return CompatibilityStatus(compatible = true, used_fallback = true)
+    return CompatibilityStatus(compatible = false, used_fallback = false)
+
+
+public function types_compatible_with_consts(
+    expected: types.Type,
+    actual: types.Type,
+    source_expr: ptr[ast.Expr]?,
+    const_values: ptr[map_mod.Map[str, ptr[ast.Expr]]]?,
+) -> bool:
+    return types_compatibility_status(expected, actual, source_expr, const_values).compatible
 
 
 ## External/foreign call argument compatibility: the structural assignability
 ## rule plus the FFI boundary coercions the host's
 ## `argument_types_compatible?(external: true)` adds.  The call site passes the
 ## declared public parameter type, not the lowering's boundary projection.
+public function types_compatibility_external_status(
+    expected: types.Type,
+    actual: types.Type,
+    source_expr: ptr[ast.Expr]?,
+    const_values: ptr[map_mod.Map[str, ptr[ast.Expr]]]?,
+) -> CompatibilityStatus:
+    let status = types_compatibility_status(expected, actual, source_expr, const_values)
+    if status.compatible:
+        return status
+    if external_cstr_argument_compatible(expected, actual):
+        return CompatibilityStatus(compatible = true, used_fallback = false)
+    if external_void_pointer_argument_compatible(expected, actual):
+        return CompatibilityStatus(compatible = true, used_fallback = false)
+    return CompatibilityStatus(compatible = false, used_fallback = false)
+
+
 public function types_compatible_external_with_consts(
     expected: types.Type,
     actual: types.Type,
     source_expr: ptr[ast.Expr]?,
     const_values: ptr[map_mod.Map[str, ptr[ast.Expr]]]?,
 ) -> bool:
-    if types_compatible_with_consts(expected, actual, source_expr, const_values):
-        return true
-    if external_cstr_argument_compatible(expected, actual):
-        return true
-    if external_void_pointer_argument_compatible(expected, actual):
-        return true
-    return false
+    return types_compatibility_external_status(expected, actual, source_expr, const_values).compatible
 
 
 ## A `str` public parameter with a `cstr` boundary (`str as cstr`) accepts a

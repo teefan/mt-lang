@@ -3669,3 +3669,45 @@ function test_match_on_arm_payload_is_flagged() -> void:
     )
     expect_eq(int<-diag.line, 12)
     expect_eq(int<-diag.column, 13)
+
+
+@[test]
+function test_strict_assignability_warns_on_fallback() -> void:
+    # `Box[int]` into a `Box[str]` parameter is accepted only by the permissive
+    # negative-only fallback.  `--strict-types` exposes that as a warning (not
+    # an error), with the source expression's position and the type pair.
+    let source = <<-SRC
+        struct Box[T]:
+            value: T
+
+        function take(b: Box[str]) -> int:
+            return 0
+
+        function main() -> int:
+            let b = Box[int](value = 1)
+            return take(b)
+    SRC
+    analyzer.set_strict_assignability(false)
+    expect_clean(source)
+
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    expect_eq(int<-pdiags.len(), 0)
+    analyzer.set_strict_assignability(true)
+    defer: analyzer.set_strict_assignability(false)
+    var analysis = analyzer.check_source_file(file)
+    defer: analysis.diagnostics.release()
+    expect_eq(int<-analysis.diagnostics.len(), 1)
+    let dp = analysis.diagnostics.get(0) else:
+        expect(false, "strict-types warning missing")
+        return
+    let diag = unsafe: read(dp)
+    expect(diag.severity == "warning", "strict-types severity")
+    expect(diag.code == "strict-types", "strict-types code")
+    expect(
+        diag.message == "strict assignability: implicit Box[int] -> Box[str]",
+        "strict-types message"
+    )
+    expect_eq(int<-diag.line, 9)
+    expect_eq(int<-diag.column, 17)

@@ -17,6 +17,7 @@ import std.vec as vec
 
 import mtc.lowering.lowering as lowering
 import mtc.loader.module_loader as loader
+import mtc.semantic.analyzer as analyzer
 import mtc.loader.package_manifest as package_manifest
 import mtc.loader.path_resolver as resolver
 import mtc.build as build_driver
@@ -53,6 +54,7 @@ struct BuildOptions:
     archive_mode: bool
     locked_flag: bool
     frozen_flag: bool
+    strict_types: bool
 
 
 ## Parse the shared `build`/`run` flag set into [[BuildOptions]], appending
@@ -83,6 +85,7 @@ function parse_command_options(
         archive_mode = false,
         locked_flag = false,
         frozen_flag = false,
+        strict_types = false,
     )
     read(filtered).push(command_name)
     var ai: ptr_uint = 1
@@ -182,6 +185,10 @@ function parse_command_options(
         if arg == "--timings":
             ai += 1
             continue
+        if arg == "--strict-types":
+            options.strict_types = true
+            ai += 1
+            continue
         if arg == "--locked":
             options.locked_flag = true
             ai += 1
@@ -247,6 +254,7 @@ public function build_command(args: span[str]) -> int:
         args, BuildCommandMode.build, "build", ref_of(filtered), ref_of(program_args)
     ) else:
         return 1
+    analyzer.set_strict_assignability(options.strict_types)
     let path = main.parse_source_operand(
         filtered.as_span(),
         ref_of(roots),
@@ -321,8 +329,10 @@ public function build_command(args: span[str]) -> int:
     var program = loader.check_program(effective, roots.as_span(), options.platform)
     defer: program.release()
 
-    if program.diagnostic_error_count() > 0:
+    let error_count = program.diagnostic_error_count()
+    if error_count > 0 or (options.strict_types and program.diagnostic_warning_count() > 0):
         let _ = main.print_program_diagnostics(ref_of(program))
+    if error_count > 0:
         return 1
 
     if main.reject_external_root(program):
@@ -1050,6 +1060,7 @@ public function run_command(args: span[str]) -> int:
         args, BuildCommandMode.run, "run", ref_of(filtered), ref_of(program_args)
     ) else:
         return 1
+    analyzer.set_strict_assignability(options.strict_types)
     let path = main.parse_source_operand(
         filtered.as_span(),
         ref_of(roots),
@@ -1128,8 +1139,10 @@ public function run_command(args: span[str]) -> int:
     var program = loader.check_program(effective, roots.as_span(), options.platform)
     defer: program.release()
 
-    if program.diagnostic_error_count() > 0:
+    let error_count = program.diagnostic_error_count()
+    if error_count > 0 or (options.strict_types and program.diagnostic_warning_count() > 0):
         let _ = main.print_program_diagnostics(ref_of(program))
+    if error_count > 0:
         return 1
 
     if main.reject_external_root(program):

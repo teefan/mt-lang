@@ -759,10 +759,11 @@ struct ResolutionFlags:
     locked: bool
     frozen: bool
     warnings_as_errors: bool
+    strict_types: bool
 
 
 public function extract_resolution_flags_span(args: span[str], remaining: ref[vec.Vec[str]]) -> ResolutionFlags:
-    var resolution = ResolutionFlags(locked = false, frozen = false, warnings_as_errors = false)
+    var resolution = ResolutionFlags(locked = false, frozen = false, warnings_as_errors = false, strict_types = false)
     var i: ptr_uint = 0
     while i < args.len:
         let arg = args[i]
@@ -773,6 +774,8 @@ public function extract_resolution_flags_span(args: span[str], remaining: ref[ve
             resolution.frozen = true
         else if arg == "-Werror" or arg == "--warnings-as-errors":
             resolution.warnings_as_errors = true
+        else if arg == "--strict-types":
+            resolution.strict_types = true
         else if arg == "--":
             var rest = i + 1
             while rest < args.len:
@@ -1341,6 +1344,7 @@ function check_command(args: span[str]) -> int:
                 seen_separator = true
         ci += 1
     let resolution = extract_resolution_flags_span(check_args.as_span(), ref_of(input_paths))
+    analyzer.set_strict_assignability(resolution.strict_types)
     let warnings_as_errors = resolution.warnings_as_errors
     if input_paths.is_empty():
         eprint_line("missing source file path")
@@ -2535,6 +2539,7 @@ function lower_command(args: span[str]) -> int:
     var inputs = vec.Vec[str].create()
     defer: inputs.release()
     let resolution = extract_resolution_flags_span(no_includes.as_span(), ref_of(inputs))
+    analyzer.set_strict_assignability(resolution.strict_types)
     if validate_source_operands("lower", inputs.as_span()) != 0:
         return 1
 
@@ -2826,6 +2831,7 @@ function emit_c_command(args: span[str]) -> int:
     var inputs = vec.Vec[str].create()
     defer: inputs.release()
     let resolution = extract_resolution_flags_span(no_includes.as_span(), ref_of(inputs))
+    analyzer.set_strict_assignability(resolution.strict_types)
     if validate_source_operands("emit-c", inputs.as_span()) != 0:
         return 1
 
