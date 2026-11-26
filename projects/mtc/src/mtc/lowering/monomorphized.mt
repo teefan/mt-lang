@@ -221,6 +221,18 @@ public function generic_instance_contains(ctx: ref[lowering.LoweringContext], na
     return unsafe: read(ctx.generic_struct_instances).contains(name)
 
 
+function loaded_module_path(modules: span[loader.LoadedModule], name: str) -> str:
+    var i: ptr_uint = 0
+    while i < modules.len:
+        var loaded: loader.LoadedModule
+        unsafe:
+            loaded = read(modules.data + i)
+        if loaded.module_name.as_str() == name:
+            return loaded.path.as_str()
+        i += 1
+    return ""
+
+
 ## Create a fully initialised lowering.LoweringContext for a single module.  Every field is
 ## set explicitly so all code paths start from a known clean state.
 function create_lowering_context(
@@ -235,6 +247,9 @@ function create_lowering_context(
 ) -> lowering.LoweringContext:
     return lowering.LoweringContext(
         module_name = analysis.module_name,
+        module_path = loaded_module_path(lod_modules, analysis.module_name),
+        failed = false,
+        error = zero[lowering.LoweringError],
         analysis = analysis,
         is_root_module = false,
         locals = vec.Vec[lowering.LocalBinding].create(),
@@ -1031,7 +1046,9 @@ public function lower_module(
     emitted_structs: ptr[vec.Vec[ir.StructDecl]],
     emitted_constants: ptr[vec.Vec[ir.Constant]],
     spec_infos: ref[map_mod.Map[str, lowering.SpecInfo]],
-    expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]]
+    expanded_decls: ref[map_mod.Map[str, span[ast.Decl]]],
+    error_out: ref[lowering.LoweringError],
+    failed_out: ref[bool]
 ) -> ir.Program:
     var ctx = create_lowering_context(
         analysis,
@@ -1216,6 +1233,10 @@ public function lower_module(
             break
         monomorphized_variants.push(unsafe: read(gv_ptr))
 
+    # Export the first user-reachable lowering error to the driver.  The
+    # context itself is local to this module.
+    read(error_out) = ctx.error
+    read(failed_out) = ctx.failed
     # A fragment is an intermediate: the shared type store keeps growing while
     # later modules lower, so a table captured here would be a stale span.  The
     # assembled program carries the finished table (see `lowering.lower`).

@@ -17,6 +17,7 @@ import std.map as map_mod
 import std.str
 import std.string as string
 import std.fmt as fmt
+import std.stdio as stdio
 import std.mem.heap as heap_mod
 
 import mtc.ir as ir
@@ -49,12 +50,69 @@ import mtc.strings
 
 ## A lowering-stage error.  The lowering resolves types structurally and
 ## uses `ty_error` as a permissive fallback; `LoweringError` is raised for
-## truly unrecoverable situations.
+## user-reachable unsupported constructs.  The first error stops further
+## lowering through `lowering_failed`.
 public struct LoweringError:
     message: str
     line: ptr_uint
     column: ptr_uint
     path: str
+
+
+## The checked lowering result.  A plain struct, not `Result[ir.Program, E]`:
+## the prelude generic instance with a module-local payload is not synthesized
+## by this module's lowering and reached C as a bare `std_result_Result`.
+public struct LoweringOutcome:
+    program: ir.Program
+    failed: bool
+    error: LoweringError
+
+
+## Record the first lowering error for this module.  Later lower_expr/lower_stmt
+## calls short-circuit on it, so a poison IR node never reaches the backend.
+public function fail_lowering(ctx: ref[LoweringContext], message: str) -> void:
+    if ctx.failed:
+        return
+    ctx.failed = true
+    ctx.error = LoweringError(
+        message = message,
+        line = 0,
+        column = 0,
+        path = ctx.module_path
+    )
+
+
+public function fail_lowering_cstr(ctx: ref[LoweringContext], message: cstr) -> void:
+    fail_lowering(ctx, str.cstr_as_str(message))
+
+
+public function lowering_failed(ctx: ref[LoweringContext]) -> bool:
+    return ctx.failed
+
+
+public function poison_expr() -> ptr[ir.Expr]:
+    return alloc_expr(ir.Expr.expr_integer_literal(value = 0l, ty = types.Type.ty_error))
+
+
+public function poison_stmt() -> ptr[ir.Stmt]:
+    return alloc_stmt(ir.Stmt.stmt_expression(expression = poison_expr(), line = 0, source_path = ""))
+
+
+## Render the error for the CLI.  The backing String is intentionally leaked:
+## the compiler exits after reporting the first lowering error.
+public function lowering_error_text(error: LoweringError) -> str:
+    var text = string.String.from_str("error[lowering/error]: ")
+    text.append(error.message)
+    if error.path.len > 0:
+        text.append(" -- ")
+        text.append(error.path)
+        text.append_format(f":#{error.line}:#{error.column}")
+    return text.as_str()
+
+
+public function print_lowering_error(error: LoweringError) -> void:
+    let text = lowering_error_text(error)
+    stdio.print_format(c"%.*s\n", int<-text.len, text.data)
 
 
 ## How a guard-style binding's visible value is read out of its storage local.
@@ -196,6 +254,11 @@ public struct HoistSaved:
 
 public struct LoweringContext:
     module_name: str
+    module_path: str
+    ## First user-reachable lowering error; set by `fail_lowering` and checked
+    ## by `lower_expr`/`lower_stmt` so the rest of the module short-circuits.
+    failed: bool
+    error: LoweringError
     analysis: analyzer.Analysis
     # True while lowering the program's root module: the root async `main`'s
     # synthesized proc calls its `__async_main` constructor, not a plain `main`.
@@ -709,12 +772,20 @@ function find_decl_c_name(analysis: analyzer.Analysis, type_name: str) -> Option
 ## dependency-first order (the root module is the last retained analysis) and the
 ## fragments are concatenated into one program — mirroring Ruby's
 ## `lower_modules` / `assemble_modules`.
-public function lower(program: loader.Program) -> ir.Program:
+public function lower_checked(program: loader.Program) -> LoweringOutcome:
     let count = program.analyses.len()
     if count == 0:
-        return ir.empty_program("(anonymous)", "")
+        return LoweringOutcome(
+            program = ir.empty_program("(anonymous)", ""),
+            failed = false,
+            error = zero[LoweringError]
+        )
     let root_ptr = program.analyses.get(program.root_index) else:
-        return ir.empty_program("(anonymous)", "")
+        return LoweringOutcome(
+            program = ir.empty_program("(anonymous)", ""),
+            failed = false,
+            error = zero[LoweringError]
+        )
     var root = unsafe: read(root_ptr)
     let root_name = root.module_name
     # Per-compile counters (the host resets these in `Lowering#initialize`).
@@ -774,6 +845,8 @@ public function lower(program: loader.Program) -> ir.Program:
     var expanded_decls = map_mod.Map[str, span[ast.Decl]].create()
     var module_fragments = vec.Vec[ir.Program].create()
     var module_analyses = vec.Vec[analyzer.Analysis].create()
+    var lowering_error = zero[LoweringError]
+    var lowering_failed = false
     var synthetic_functions = vec.Vec[ir.Function].create()
     var synthetic_enums = vec.Vec[ir.EnumDecl].create()
     # `emit`-produced declarations (the host's `@artifacts.emitted_declarations`),
@@ -808,8 +881,16 @@ public function lower(program: loader.Program) -> ir.Program:
             ptr_of(emitted_structs),
             ptr_of(emitted_constants),
             ref_of(spec_infos),
-            ref_of(expanded_decls)
+            ref_of(expanded_decls),
+            ref_of(lowering_error),
+            ref_of(lowering_failed)
         )
+        if lowering_failed:
+            return LoweringOutcome(
+                program = ir.empty_program("(lowering failed)", ""),
+                failed = true,
+                error = lowering_error
+            )
         module_fragments.push(fragment)
         module_analyses.push(analysis)
         globals.append_span(fragment.globals)
@@ -907,7 +988,20 @@ public function lower(program: loader.Program) -> ir.Program:
         str_buffer_structs = str_buffer_synthetic.as_span(),
         arena = null,
     )
-    return proc_renumber.renumber_program_procs(assembled, module_fn_count)
+    return LoweringOutcome(
+        program = proc_renumber.renumber_program_procs(assembled, module_fn_count),
+        failed = false,
+        error = zero[LoweringError]
+    )
+
+
+## Unchecked lowering for the in-language lowering tests.  The user-facing
+## drivers call `lower_checked` and report the diagnostic.
+public function lower(program: loader.Program) -> ir.Program:
+    let outcome = lower_checked(program)
+    if outcome.failed:
+        fatal(lowering_error_text(outcome.error))
+    return outcome.program
 
 
 ## Append synthetic enums and value structs after the module declarations.
@@ -2219,6 +2313,8 @@ public function lower_function_body(ctx: ref[LoweringContext], body_ptr: ptr[ast
 
 
 public function lower_stmt(ctx: ref[LoweringContext], output: ref[vec.Vec[ir.Stmt]], sp: ptr[ast.Stmt]) -> void:
+    if lowering_failed(ctx):
+        return
     unsafe:
         match read(sp):
             ast.Stmt.stmt_ret:
@@ -6405,6 +6501,8 @@ function lower_short_circuit_binary(
 
 
 public function lower_expr(ctx: ref[LoweringContext], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    if lowering_failed(ctx):
+        return poison_expr()
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:

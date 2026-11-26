@@ -2602,7 +2602,13 @@ function lower_one_path(
         source_root_owner.release()
         return 1
 
-    let ir_program = lowering.lower(program)
+    let lowering_outcome = lowering.lower_checked(program)
+    if lowering_outcome.failed:
+        lowering.print_lowering_error(lowering_outcome.error)
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
+    let ir_program = lowering_outcome.program
     if sexpr:
         var dumped = sexpr_mod.dump_ir_with_analyses(ir_program, program.analyses.as_span())
         defer: dumped.release()
@@ -2748,7 +2754,13 @@ function emit_c_one_path(
         source_root_owner.release()
         return 1
 
-    let ir_program = lowering.lower(program)
+    let lowering_outcome = lowering.lower_checked(program)
+    if lowering_outcome.failed:
+        lowering.print_lowering_error(lowering_outcome.error)
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 1
+    let ir_program = lowering_outcome.program
     var c_source = c_backend.generate_c(ir_program, false, false, false)
     defer: c_source.release()
     let text = c_source.as_str()

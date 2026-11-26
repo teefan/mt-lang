@@ -72,8 +72,10 @@ function lower_source(source: str) -> string.String:
     var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
     defer: program.release()
 
-    var ir_program = lowering.lower(program)
-    return irfmt.format_program(ir_program)
+    let lowering_outcome = lowering.lower_checked(program)
+    if lowering_outcome.failed:
+        return string.String.from_str(lowering.lowering_error_text(lowering_outcome.error))
+    return irfmt.format_program(lowering_outcome.program)
 
 
 ## The repository root (the ancestor of the test's working directory that holds

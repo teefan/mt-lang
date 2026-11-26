@@ -514,13 +514,18 @@ function rewrite_pfor_expr(expr: ir.Expr, array_names: ref[map_mod.Map[str, bool
             return expr
 
 
-function validate_pfor_no_ref_captures(captures: span[ir.Expr]) -> void:
+function validate_pfor_no_ref_captures(ctx: ref[lowering.LoweringContext], captures: span[ir.Expr]) -> void:
     var ci: ptr_uint = 0
     while ci < captures.len:
         match unsafe: read(captures.data + ci):
             ir.Expr.expr_name as nm:
                 if types.is_ref_type(nm.ty):
-                    fatal(strings.join_three("cannot capture '", nm.name, "' of type ref across thread boundary — ref values are not safe to share across threads"))
+                    lowering.fail_lowering(ctx, strings.join_three(
+                        "cannot capture '",
+                        nm.name,
+                        "' of type ref across thread boundary — ref values are not safe to share across threads"
+                    ))
+                    return
             _:
                 pass
         ci += 1
@@ -546,7 +551,8 @@ public function lower_parallel_for(
                 start_ptr = rng.start_expr
                 end_ptr = rng.end_expr
             _:
-                fatal(c"lowering parallel for: only range iteration is supported")
+                lowering.fail_lowering_cstr(ctx, c"lowering parallel for: only range iteration is supported")
+                return
     let bd = body else:
         return
     var index_name: str
@@ -604,7 +610,9 @@ public function lower_parallel_for(
         if not local_decls.contains(pfor_capture_name(c)):
             captures.push(c)
         ni += 1
-    validate_pfor_no_ref_captures(captures.as_span())
+    validate_pfor_no_ref_captures(ctx, captures.as_span())
+    if lowering.lowering_failed(ctx):
+        return
 
     parallel_cnt += 1
     let uid = parallel_uid(ctx, "pfor")
@@ -875,7 +883,8 @@ public function lower_parallel_block(
                             fmt.append_ptr_uint(ref_of(msg), idx + 1)
                             msg.append(" and accessed in spawn block ")
                             fmt.append_ptr_uint(ref_of(msg), oi + 1)
-                            fatal(msg.as_str())
+                            lowering.fail_lowering(ctx, msg.as_str())
+                            return
                         ci2 += 1
                 oi += 1
             wi += 1
@@ -1023,7 +1032,9 @@ function build_parallel_workers(
             if not local_decls.contains(pfor_capture_name(c)):
                 captures.push(c)
             ni += 1
-        validate_pfor_no_ref_captures(captures.as_span())
+        validate_pfor_no_ref_captures(ctx, captures.as_span())
+        if lowering.lowering_failed(ctx):
+            return
         var capture_names_map = map_mod.Map[str, bool].create()
         var capture_names = vec.Vec[str].create()
         var ci: ptr_uint = 0
@@ -1270,9 +1281,15 @@ public function lower_detach_expr(
         if not local_decls.contains(pfor_capture_name(c)):
             captures.push(c)
         ni += 1
-    validate_pfor_no_ref_captures(captures.as_span())
+    validate_pfor_no_ref_captures(ctx, captures.as_span())
+    if lowering.lowering_failed(ctx):
+        return lowering.poison_expr()
     if captures.len() > 0:
-        fatal(c"detach with captured variables is not yet supported; use a global function call or module-level variables")
+        lowering.fail_lowering_cstr(
+            ctx,
+            c"detach with captured variables is not yet supported; use a global function call or module-level variables"
+        )
+        return lowering.poison_expr()
     var worker_params = vec.Vec[ir.Param].create()
     worker_params.push(ir.Param(
         name = "mt_pfor_data",

@@ -418,6 +418,11 @@ function check_compile_fail_expectations(
         di += 1
 
     if error_msgs.len() == 0:
+        let lowering_outcome = lowering.lower_checked(program)
+        if lowering_outcome.failed:
+            error_msgs.push(lowering_outcome.error.message)
+
+    if error_msgs.len() == 0:
         return CompileFailVerdict(outcome = CompileFailOutcome.compiled_cleanly, unmatched_index = 0)
     var ei: ptr_uint = 0
     while ei < expected.len:
@@ -1284,7 +1289,13 @@ function build_runner_file(source_path: str, options: TestRunOptions, output_pat
         build_region.release_all()
         return Result[bool, string.String].failure(error = message)
 
-    let ir_program = lowering.lower(program)
+    let lowering_outcome = lowering.lower_checked(program)
+    if lowering_outcome.failed:
+        heap_mod.end_region(previous_region)
+        var message = string.String.from_str(lowering.lowering_error_text(lowering_outcome.error))
+        build_region.release_all()
+        return Result[bool, string.String].failure(error = message)
+    let ir_program = lowering_outcome.program
 
     # The host forces guards off for synthesized test runners, regardless of
     # the debug profile.

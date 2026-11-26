@@ -63,8 +63,12 @@ public function step(s: ref[ParserState]) -> void:
     s.step_counter += 1
     s.total_steps += 1
     if s.total_steps > MAX_TOTAL_STEPS:
-        record_loop_guard_diagnostic(s, 0, 0)
-        fatal(c"parser step limit exceeded: the source file is too large or the parser entered an unrecoverable loop")
+        if not s.error_suppressed:
+            record_loop_guard_diagnostic(s, 0, 0)
+            s.error_suppressed = true
+        # Force the stream forward so an exhausted step budget cannot spin; the
+        # diagnostic above is reported by the loader like any parse error.
+        ts.advance(ref_of(s.stream))
         return
     if s.step_counter > MAX_LOOP_STEPS:
         if not s.error_suppressed:

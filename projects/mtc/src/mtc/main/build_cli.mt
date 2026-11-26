@@ -328,7 +328,11 @@ public function build_command(args: span[str]) -> int:
     if main.reject_external_root(program):
         return 1
 
-    let ir_program = lowering.lower(program)
+    let lowering_outcome = lowering.lower_checked(program)
+    if lowering_outcome.failed:
+        lowering.print_lowering_error(lowering_outcome.error)
+        return 1
+    let ir_program = lowering_outcome.program
 
     if options.kind == build_driver.BuildKind.executable and main.reject_missing_entrypoint(program, ir_program):
         return 1
@@ -1131,7 +1135,11 @@ public function run_command(args: span[str]) -> int:
     if main.reject_external_root(program):
         return 1
 
-    let ir_program = lowering.lower(program)
+    let lowering_outcome = lowering.lower_checked(program)
+    if lowering_outcome.failed:
+        lowering.print_lowering_error(lowering_outcome.error)
+        return 1
+    let ir_program = lowering_outcome.program
 
     if main.reject_missing_entrypoint(program, ir_program):
         return 1

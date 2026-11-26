@@ -6268,6 +6268,35 @@ examples **311/311**; box2d/async smokes; CLI **227/227**; diagnostics **500 /
 5 changed / 1 unrecorded / 0 differ**; lint **661 / 14 changed / 1
 unrecorded / 0 differ**.
 
+### Lowering error channel (B1a)
+
+`LoweringError` is live.  `LoweringContext` carries `failed`/`error`;
+`fail_lowering` records the first error and `lower_expr`/`lower_stmt`
+short-circuit on it, so a poison IR node never reaches the backend.
+`lower_checked` returns a plain `LoweringOutcome { program, failed, error }`
+rather than `Result[ir.Program, LoweringError]`: the prelude generic instance
+with a module-local payload was not synthesized in this module and reached C as
+a bare `std_result_Result`.  `lower()` remains the unchecked convenience used
+by the in-language lowering tests.
+
+The `lower`, `emit-c`, `build`, `run`, and `test` drivers now report
+`error[lowering/error]: ... -- path` and exit 1.  The compile-fail harness
+lowers a sema-clean fixture and collects the lowering error, so the new
+`test/mt/diagnostics/lowering_detach_capture.mt` covers a sema-clean,
+lowering-only failure.  Converted sites: parallel/detach `ref` captures, detach
+captured variables, the parallel-block write conflict, non-range
+`parallel for`, and the parser's total step limit (now a diagnostic plus a
+forced token advance instead of an abort).  The error path records the module
+path; line/column stay 0 until statement tracking lands.  The remaining
+user-reachable `fatal` sites (match patterns, construction shapes, dyn/event/
+str_buffer methods) and `check --lower` are the next B1 step; internal
+invariant `fatal` sites remain ICEs.
+
+Verified: bootstrap fixed point; stage2 self **22/0** and `test/mt` **93/0**;
+examples **311/311**; box2d/async smokes; CLI **227/227**; diagnostics **500 /
+5 changed / 1 unrecorded / 0 differ**; lint **656 / 19 changed / 1 unrecorded
+/ 0 differ**.
+
 ### Known issue: `milkTea/debugInfo` on very large files
 
 The LSP debug-AST renderer aborts with `string.as_str text must be valid UTF-8`
