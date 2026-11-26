@@ -1399,7 +1399,42 @@ function nominal_definitely_different(a: Type, b: Type) -> bool:
     if module_a.len == 0 or module_b.len == 0:
         return false
 
+    if contains_error(a) or contains_error(b) or contains_type_var(a) or contains_type_var(b):
+        return false
+
+    # Imported generic arguments are invariant when both sides carry concrete
+    # arguments (`Vec[int]` is not a `Vec[str]`).  A bare name or a missing
+    # module stays permissive, matching the host's unresolved-type escape.
+    match nominal_type_args(a):
+        Option.some as args_a:
+            match nominal_type_args(b):
+                Option.some as args_b:
+                    if args_a.value.len > 0 and args_b.value.len > 0:
+                        if args_a.value.len != args_b.value.len:
+                            return true
+                        var i: ptr_uint = 0
+                        while i < args_a.value.len:
+                            unsafe:
+                                if not type_equals(
+                                    read(args_a.value.data + i),
+                                    read(args_b.value.data + i)
+                                ):
+                                    return true
+                            i += 1
+                Option.none:
+                    pass
+        Option.none:
+            pass
+
     return not module_a == module_b
+
+
+function nominal_type_args(t: Type) -> Option[span[Type]]:
+    match t:
+        Type.ty_imported as im:
+            return Option[span[Type]].some(value = unsafe: read(im.payload).args)
+        _:
+            return Option[span[Type]].none
 
 const KIND_UNKNOWN: int = 0
 const KIND_SCALAR: int = 1
