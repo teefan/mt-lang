@@ -1,6 +1,8 @@
 ## Binary, identifier, and specialization expression lowering, extracted from
 ## lowering/lowering.mt (Wave 4.2).
 
+import std.fmt as fmt
+import std.string as string
 import std.vec as vec
 
 import mtc.ir as ir
@@ -781,5 +783,257 @@ function lower_proc_expr(
     var ret_ty = ctx.void_ty
     if return_type != null:
         ret_ty = lowering.resolve_type_ref(ctx, return_type)
-    return lowering.lower_proc_expression_typed(ctx, method_params, ret_ty, body_ptr, proc_ty)
+    return lower_proc_expression_typed(ctx, method_params, ret_ty, body_ptr, proc_ty)
 
+function lower_proc_expression_typed(
+    ctx: ref[lowering.LoweringContext],
+    method_params: span[ast.Param],
+    ret_ty: types.Type,
+    body_ptr: ptr[ast.Stmt],
+    proc_ty: types.Type
+) -> ptr[ir.Expr]:
+    return lower_proc_expression_typed_named(ctx, method_params, ret_ty, body_ptr, proc_ty, "")
+
+
+## Like `lower_proc_expression_typed`, but `name_hint` seeds the env temp name
+## (`__mt_<hint>_env_<N>`) and the returned literal is not materialized into a
+## `__mt_proc_expr_N` local (the caller stores it in its own named local).  The
+## host's `lower_proc_expression_for_local(..., local_name:)`.
+
+public function lower_proc_expression_typed_named(
+    ctx: ref[lowering.LoweringContext],
+    method_params: span[ast.Param],
+    ret_ty: types.Type,
+    body_ptr: ptr[ast.Stmt],
+    proc_ty: types.Type,
+    name_hint: str
+) -> ptr[ir.Expr]:
+    # A proc body runs later, so its window is its own: suspend the enclosing
+    # statement's hoisting while the synthetic invoke/release/retain functions
+    # (and their bodies) are built.  The literal's own setup hoists into the
+    # enclosing statement stream (the host's prepared-expression rule), so the
+    # window is restored before emitting it.
+    let hoist_saved = lowering.suspend_stmt_setup(ctx)
+    let proc_id = lowering.next_proc_counter()
+    var id_buf = string.String.create()
+    id_buf.append(naming.module_c_prefix(ctx.module_name))
+    id_buf.append("__proc_")
+    fmt.append_ptr_uint(ref_of(id_buf), proc_id)
+    let proc_prefix = id_buf.as_str()
+
+    # Captures are the body's referenced enclosing locals (the host's
+    # first-reference-order walk), not every visible local.
+    let captures = lowering.collect_proc_captures(ctx, method_params, body_ptr)
+    let has_captures = captures.len > 0
+
+    # The host's prepared-literal naming (`lower_proc_expression_for_local` plus
+    # `materialize_prepared_expression`): the literal's base temp is requested
+    # first (it seeds the env temp even when unused), then the env temp derived
+    # from it, then the literal's own local.
+    let local_name = if name_hint.len > 0: name_hint else: lowering.fresh_c_temp_name(ctx, "proc_expr")
+    var env_decl_name = ""
+    if has_captures:
+        env_decl_name = lowering.fresh_c_temp_name(ctx, strings.join_two(local_name, "_env"))
+
+    # Proc struct type: { env, invoke, release, retain }, named from the
+    # signature (`naming.proc_type_c_name`, the host's `proc_type_name`) so that
+    # proc-typed fields, params, and expressions all unify to one C struct.
+    let void_ptr = types.generic_type(name = "ptr", args = lowering.sp_type(ctx.void_ty))
+    let shared_name = naming.proc_type_c_name(proc_ty)
+    let struct_name = shared_name
+    # Register the shared struct declaration (no-op if already emitted).
+    let _proc_struct_ty = lowering.proc_ensure_struct_decl(ctx, struct_name, proc_ty)
+
+    var struct_fields = vec.Vec[ir.Field].create()
+    struct_fields.push(ir.Field(name = "env", ty = void_ptr))
+    struct_fields.push(ir.Field(name = "invoke", ty = lowering.proc_invoke_field_type(proc_ty)))
+    let lifecycle_ty = lowering.proc_lifecycle_fn_type()
+    struct_fields.push(ir.Field(name = "release", ty = lifecycle_ty))
+    struct_fields.push(ir.Field(name = "retain", ty = lifecycle_ty))
+    ctx.pending_proc_structs.push(ir.StructDecl(
+        name = struct_name,
+        linkage_name = struct_name,
+        fields = struct_fields.as_span(),
+        packed = false,
+        alignment = 0,
+        source_module = Option[str].none
+    ))
+
+    var invoke_c = string.String.create()
+    invoke_c.append(proc_prefix)
+    invoke_c.append("__invoke")
+    var release_c = string.String.create()
+    release_c.append(proc_prefix)
+    release_c.append("__release")
+    var retain_c = string.String.create()
+    retain_c.append(proc_prefix)
+    retain_c.append("__retain")
+
+    let invoke_str = invoke_c.as_str()
+    let release_str = release_c.as_str()
+    let retain_str = retain_c.as_str()
+
+    var env_value: ptr[ir.Expr]
+    if has_captures:
+        # Build capture-env struct: { __mt_ref_count, cap1, cap2, ... }.
+        var env_struct_name = string.String.create()
+        env_struct_name.append(proc_prefix)
+        env_struct_name.append("__env")
+        let env_type_name = env_struct_name.as_str()
+        let uint_ty = types.primitive("ptr_uint")
+        var env_fields = vec.Vec[ir.Field].create()
+        env_fields.push(ir.Field(name = "__mt_ref_count", ty = uint_ty))
+        var ci: ptr_uint = 0
+        while ci < captures.len:
+            let cap = unsafe: read(captures.data + ci)
+            env_fields.push(ir.Field(name = cap.name, ty = cap.ty))
+            ci += 1
+        ctx.pending_synthetic_structs.push(ir.StructDecl(
+            name = env_type_name,
+            linkage_name = env_type_name,
+            fields = env_fields.as_span(),
+            packed = false,
+            alignment = 0,
+            source_module = Option[str].none
+        ))
+
+        # Build capturing invoke: unpacks env→locals, then body.
+        ctx.pending_synthetic_functions.push(lowering.build_capturing_invoke(
+            ctx,
+            method_params,
+            ret_ty,
+            body_ptr,
+            invoke_str,
+            env_type_name,
+            captures
+        ))
+
+        # Build release: decrement ref_count, free if zero.
+        ctx.pending_synthetic_functions.push(lowering.build_capturing_release(ctx, release_str, env_type_name, captures))
+
+        # Build retain: increment ref_count.
+        ctx.pending_synthetic_functions.push(lowering.build_capturing_retain(retain_str, env_type_name))
+
+        let env_named_ty = types.named_type(name = env_type_name, module_name = "", linkage_name = Option[str].none)
+        let env_ptr_ty = types.generic_type(name = "ptr", args = lowering.sp_type(env_named_ty))
+        # The window is the enclosing statement's again: the env setup hoists
+        # before the statement (the host's inline shape), or falls back to the
+        # separate setup function where no prepared position exists.
+        lowering.resume_stmt_setup(ctx, hoist_saved)
+        if ctx.hoist.mode != lowering.HoistMode.hm_off:
+            let alloc_call = lowering.alloc_expr(ir.Expr.expr_call(
+                callee = "mt_async_alloc",
+                arguments = lowering.pack_single(lowering.alloc_expr(ir.Expr.expr_sizeof(target_type = env_named_ty, ty = uint_ty))),
+                ty = void_ptr
+            ))
+            ctx.hoist.stmts.push(ir.Stmt.stmt_local(
+                name = env_decl_name,
+                linkage_name = env_decl_name,
+                ty = env_ptr_ty,
+                value = lowering.alloc_expr(ir.Expr.expr_cast(
+                    target_type = env_ptr_ty,
+                    expression = alloc_call,
+                    ty = env_ptr_ty
+                )),
+                line = 0,
+                source_path = ""
+            ))
+            let env_ref = lowering.alloc_expr(ir.Expr.expr_name(
+                name = env_decl_name,
+                ty = env_ptr_ty,
+                pointer = Option[bool].some(value = false)
+            ))
+            ctx.hoist.stmts.push(ir.Stmt.stmt_assignment(
+                target = lowering.alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = "__mt_ref_count", ty = uint_ty)),
+                operator = "=",
+                value = lowering.alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = uint_ty))
+            ))
+            var si: ptr_uint = 0
+            while si < captures.len:
+                let cap = unsafe: read(captures.data + si)
+                ctx.hoist.stmts.push(ir.Stmt.stmt_assignment(
+                    target = lowering.alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = cap.name, ty = cap.ty)),
+                    operator = "=",
+                    value = cap.read_expr
+                ))
+                si += 1
+            # A proc-storing capture is retained by the env, which outlives the
+            # enclosing scope's releases (the host's `block.rb:146-151`).
+            var cri: ptr_uint = 0
+            while cri < captures.len:
+                let cap = unsafe: read(captures.data + cri)
+                if lowering.contains_proc_storage_type(ctx, cap.ty):
+                    let member = lowering.alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = cap.name, ty = cap.ty))
+                    lowering.proc_contained_retain_stmts(ctx, member, cap.ty, ref_of(ctx.hoist.stmts))
+                cri += 1
+            env_value = lowering.alloc_expr(ir.Expr.expr_cast(
+                target_type = void_ptr,
+                expression = lowering.alloc_expr(ir.Expr.expr_name(
+                    name = env_decl_name,
+                    ty = env_ptr_ty,
+                    pointer = Option[bool].some(value = false)
+                )),
+                ty = void_ptr
+            ))
+        else:
+            # Lazy region: no statement stream to hoist into.  Keep the separate
+            # setup function (a recorded residue; the host has no such position).
+            var setup_c = string.String.create()
+            setup_c.append(proc_prefix)
+            setup_c.append("__setup_env")
+            ctx.pending_synthetic_functions.push(lowering.build_env_setup_fn(ctx, setup_c.as_str(), env_type_name, captures))
+            var setup_args = vec.Vec[ir.Expr].create()
+            var sai: ptr_uint = 0
+            while sai < captures.len:
+                let cap = unsafe: read(captures.data + sai)
+                unsafe:
+                    setup_args.push(read(cap.read_expr))
+                sai += 1
+            let setup_call = lowering.alloc_expr(ir.Expr.expr_call(
+                callee = setup_c.as_str(),
+                arguments = setup_args.as_span(),
+                ty = env_ptr_ty
+            ))
+            env_value = lowering.alloc_expr(ir.Expr.expr_cast(target_type = void_ptr, expression = setup_call, ty = void_ptr))
+    else:
+        # No-capture path.  The host's synthetic-function order is invoke,
+        # release, retain (`block.rb:155-157`).
+        ctx.pending_synthetic_functions.push(lowering.build_proc_invoke_fn(ctx, method_params, ret_ty, body_ptr, invoke_str))
+        ctx.pending_synthetic_functions.push(lowering.build_proc_noop_fn(release_str))
+        ctx.pending_synthetic_functions.push(lowering.build_proc_noop_fn(retain_str))
+        lowering.resume_stmt_setup(ctx, hoist_saved)
+        env_value = lowering.alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr))
+
+    var fields = vec.Vec[ir.AggregateField].create()
+    fields.push(ir.AggregateField(name = "env", value = env_value))
+    fields.push(ir.AggregateField(
+        name = "invoke",
+        value = lowering.alloc_expr(ir.Expr.expr_name(
+            name = invoke_str,
+            ty = lowering.proc_invoke_field_type(proc_ty),
+            pointer = Option[bool].some(value = false)
+        ))
+    ))
+    fields.push(ir.AggregateField(
+        name = "release",
+        value = lowering.alloc_expr(ir.Expr.expr_name(
+            name = release_str,
+            ty = lifecycle_ty,
+            pointer = Option[bool].some(value = false)
+        ))
+    ))
+    fields.push(ir.AggregateField(
+        name = "retain",
+        value = lowering.alloc_expr(ir.Expr.expr_name(
+            name = retain_str,
+            ty = lifecycle_ty,
+            pointer = Option[bool].some(value = false)
+        ))
+    ))
+    let literal = lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = proc_ty, fields = fields.as_span()))
+    if name_hint.len > 0:
+        return literal
+    return lowering.materialize_proc_literal(ctx, literal, proc_ty)
+
+
+## Pack a single expression into a span.

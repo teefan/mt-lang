@@ -18,6 +18,7 @@ import mtc.c_naming as naming
 import mtc.lowering.async as async_mod
 import mtc.lowering.format as format
 import mtc.lowering.type_helpers as type_helpers
+import mtc.lowering.expressions as expr_mod
 import mtc.lowering.lowering as lowering
 import mtc.lowering.monomorphized as monomorphized
 import mtc.lowering.tasks as tasks
@@ -2652,7 +2653,7 @@ public function build_async_main_entrypoint(ctx: ref[lowering.LoweringContext], 
     # `__mt___mt_async_main_root_env_1` (the counter starts at zero).
     let saved_proc_counter = ctx.counters.temp
     ctx.counters.temp = 0
-    let proc_expr = lowering.lower_proc_expression_typed_named(
+    let proc_expr = expr_mod.lower_proc_expression_typed_named(
         ctx,
         span[ast.Param](),
         task_ret,
