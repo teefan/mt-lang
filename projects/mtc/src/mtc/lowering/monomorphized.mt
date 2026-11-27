@@ -43,10 +43,10 @@ public function lower_specialized_function(
     # Reset function-level state
     ctx.locals.clear()
     ctx.counters.temp = 0
-    ctx.fmt_dest_name = ""
-    ctx.fmt_counter.clear()
-    ctx.fmt_counter_visible = false
-    ctx.cstr_backed_names.clear()
+    ctx.format_state.dest_name = ""
+    ctx.format_state.counter.clear()
+    ctx.format_state.counter_visible = false
+    ctx.format_state.cstr_backed.clear()
     ctx.function_returns.clear()
     var saved_current_fn = ctx.current_function_linkage
     ctx.current_function_linkage = spec_key
@@ -258,10 +258,9 @@ function create_lowering_context(
         locals = vec.Vec[lowering.LocalBinding].create(),
         flow_scopes = vec.Vec[map_mod.Map[str, types.Type]].create(),
         counters = lowering.LoweringCounters(temp = 0, match_label = 0, async_await = 0, async_tmp = 0),
-        fmt_dest_name = "",
-        fmt_counter = map_mod.Map[str, ptr_uint].create(),
-        fmt_counter_visible = false,
-        cstr_backed_names = map_mod.Map[str, bool].create(),
+        format_state = lowering.LoweringFormatState(dest_name = "", counter = map_mod.Map[str, ptr_uint].create(), counter_visible = false, cstr_backed = map_mod.Map[str, bool].create()),
+        hoist = lowering.LoweringHoistState(mode = lowering.HoistMode.hm_off, stmts = vec.Vec[ir.Stmt].create(), cleanups = vec.Vec[ir.Stmt].create(), stmt_emitted = false, root_ep = null, array_exempt = null),
+        caches = lowering.LoweringCaches(specializations = map_mod.Map[str, ir.Function].create(), generic_structs = map_mod.Map[str, ir.StructDecl].create(), str_buffers = map_mod.Map[str, str].create(), event_runtimes = map_mod.Map[str, lowering.EventRuntimeInfo].create(), dyn_vtables = map_mod.Map[str, bool].create()),
         foreign_map = map_mod.Map[str, lowering.ForeignInfo].create(),
         extern_map = map_mod.Map[str, str].create(),
         function_returns = map_mod.Map[str, types.Type].create(),
@@ -270,8 +269,6 @@ function create_lowering_context(
         program_async = prog_async,
         prelude_arm_field_types = pl_field_types,
         pending_specializations = vec.Vec[lowering.PendingSpecialization].create(),
-        specialization_cache = map_mod.Map[str, ir.Function].create(),
-        generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
         generic_struct_instances = gen_instances,
         spec_infos = spec_infos,
         arm_payload_fields = map_mod.Map[str, lowering.VariantArmInfo].create(),
@@ -287,9 +284,6 @@ function create_lowering_context(
         pending_dyn_structs = vec.Vec[ir.StructDecl].create(),
         pending_dyn_vtable_structs = vec.Vec[ir.StructDecl].create(),
         pending_dyn_constants = vec.Vec[ir.Constant].create(),
-        dyn_generated_vtables = map_mod.Map[str, bool].create(),
-        str_buffer_structs = map_mod.Map[str, str].create(),
-        event_runtimes = map_mod.Map[str, lowering.EventRuntimeInfo].create(),
         pending_synthetic_enums = vec.Vec[ir.EnumDecl].create(),
         pending_generic_variants = vec.Vec[ir.VariantDecl].create(),
         pending_proc_structs = vec.Vec[ir.StructDecl].create(),
@@ -302,12 +296,6 @@ function create_lowering_context(
         event_error_emitted = false,
         inline_for_element = Option[comptime_types.ComptimeElement].none,
         defer_stack = vec.Vec[lowering.DeferGroup].create(),
-        hoist_mode = lowering.HoistMode.hm_off,
-        hoist_stmts = vec.Vec[ir.Stmt].create(),
-        hoist_cleanups = vec.Vec[ir.Stmt].create(),
-        hoist_stmt_emitted = false,
-        hoist_root_ep = null,
-        array_call_exempt = null,
         mapping_replacements = map_mod.Map[str, ptr[ir.Expr]].create(),
         inside_async = false,
         async_completion_active = false,
@@ -1156,7 +1144,7 @@ public function lower_module(
     # sections (host parity: its C backend collects them from the types in
     # use).  Hand them to the driver, which exposes them to the C backend
     # through `Program.monomorphized_structs`.
-    var gs_iter = ctx.generic_struct_decls.values()
+    var gs_iter = ctx.caches.generic_structs.values()
     while true:
         let gs_ptr = gs_iter.next() else:
             break
@@ -1178,7 +1166,7 @@ public function lower_module(
         pending_synthetic_structs.push(unsafe: read(ss_ptr))
 
     # Append any monomorphized generic functions from the specialization cache.
-    var spec_iter = ctx.specialization_cache.values()
+    var spec_iter = ctx.caches.specializations.values()
     while true:
         let spec_ptr = spec_iter.next() else:
             break

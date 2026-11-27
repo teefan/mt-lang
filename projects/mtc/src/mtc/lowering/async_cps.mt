@@ -280,10 +280,10 @@ public function lower_async_fn(
     # fresh-temp counter, format destination and cstr metadata.
     ctx.locals.clear()
     ctx.counters.temp = 0
-    ctx.fmt_dest_name = ""
-    ctx.fmt_counter.clear()
-    ctx.fmt_counter_visible = false
-    ctx.cstr_backed_names.clear()
+    ctx.format_state.dest_name = ""
+    ctx.format_state.counter.clear()
+    ctx.format_state.counter_visible = false
+    ctx.format_state.cstr_backed.clear()
     var saved_current_fn = ctx.current_function_linkage
     ctx.current_function_linkage = link_base
     # Reset async CPS state so a no-await function (or the next function) never
@@ -2188,7 +2188,7 @@ public function lower_async_local(
     # when the local's own type is that array.
     let hoist_base = output.len()
     let hoist_saved = lowering.begin_stmt_setup(ctx, lowering.HoistMode.hm_value)
-    ctx.hoist_root_ep = hv
+    ctx.hoist.root_ep = hv
     var val_ir = lowering.lower_expr(ctx, hv)
     let hoist_collected = lowering.collect_stmt_setup(ctx, hoist_saved)
     lowering.emit_hoist_setup(output, hoist_base, hoist_collected)
@@ -2787,7 +2787,7 @@ function ensure_async_wait_specialization(ctx: ref[lowering.LoweringContext], in
     key.append(lowering.spec_type_key(ctx, inner_ty))
     let spec_key = key.as_str()
 
-    if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
+    if not ctx.caches.specializations.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
         # The async main's `wait` call is synthesized during lowering, not seen
         # by the analyzer, so its instance (and everything its body creates) is
         # creator-gated rather than pre-instantiated.

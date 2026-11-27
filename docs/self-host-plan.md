@@ -14,7 +14,7 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-176-2026-11-26)
+- [Status at a glance](#status-at-a-glance-session-177-2026-11-26)
 - [Handoff](#handoff-session-158)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
@@ -112,7 +112,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 176, 2026-11-26)
+## Status at a glance (session 177, 2026-11-26)
 
 | Area | State |
 | --- | --- |
@@ -129,8 +129,8 @@ history.
 | Watch/dev loop | **`mtc watch PATH`** (session 173): polls `.mt` mtime seconds/nanoseconds/size under the entry directory plus every `-I` root (default 500 ms), keeps a loader `ModuleCache` and calls `check_program_with_source` in-process (a leaf edit advances parse/analysis only for the changed module and dependents), then forks a build child for lowering/C/link so per-build IR memory dies with the child.  `--split` reuses unchanged per-TU objects (leaf `3 reused / 1 compiled`; no-op `0 compiled`).  `--run` optional; 100-cycle no-growth gate |
 | IR verifier | **`ir_verify.mt`** (session 174): checks unique linkage names, concrete declaration types (no `ty_error`/`ty_var`), non-empty module owners, unique fields/params/members/arms, a single `main` entry point returning `int`, switch defaults, and labels/gotos.  `--verify-ir` is available on `build`/`run`/`lower`/`emit-c`; the dev gate verifies the compiler IR after rebuilding, and 12 constructed-IR unit tests cover each rejection path |
 | Lowering extraction | **`lowering/statements.mt` + `lowering/member_access.mt` + `lowering/expressions.mt`** (session 175): statements owns the full statement lowering (1,664 lines); member_access owns identifier/member access and member calls (960 lines); expressions owns binary/identifier/specialization/expression dispatch (784 lines).  `lowering.mt` moved from 23,008 to 19,696 lines (3,312 extracted).  Helper visibility was opened for the moved calls; C differs only by the extracted functions' source positions, and all behavior oracles remain green.  The remaining 4.2 clusters are the call/declaration/event lowering; 4.3 context grouping and 4.4 per-module lowering remain |
-| Context grouping | **`LoweringCounters`** (session 176): `temp`, `match_label`, `async_await`, and `async_tmp` moved from `LoweringContext` into a nested `LoweringCounters` struct; 44 access sites updated across lowering modules.  Access-only refactor, no behavior change; the full compiler-core gate is green |
-| Recorded oracles | **CLI 231/231 (0.6.3); diagnostics 497 compared / 8 changed / 2 unrecorded / 0 differ; lint 645 compared / 30 changed / 7 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
+| Context grouping | **`LoweringCounters`** (session 176) plus **`LoweringCaches`**, **`LoweringFormatState`**, and **`LoweringHoistState`** (session 177).  Counters group temp/match/async; caches group specialization bodies, generic struct declarations, str-buffer types, event runtimes, and dyn vtables; format groups the dynamic-format/name/cstr state; hoist groups the statement-position window.  Access-only refactors, no behavior changes; the full compiler-core gate is green |
+| Recorded oracles | **CLI 231/231 (0.6.3); diagnostics 497 compared / 8 changed / 2 unrecorded / 0 differ; lint 644 compared / 31 changed / 7 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
 | `check` diagnostics | the 500-file diagnostic oracle is the gate (the extra row is `box2d_api_smoke`); the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field anchor is a reviewed difference, not a residual (session 146). |
 | Linter | **43/43 rules, 13/13 fixers**; the 646-compared lint oracle is the corpus gate.  `unused-import` now credits type positions (annotations, params/returns, fields, aliases, specialization type arguments, proc signatures, `emit` declarations), fixing the type-only false positives; the remaining tree output is dominated by true style/ownership hints.  The historical host residue (3 self-only `std` files, timeout rows) is in *Deliberate differences*. |
@@ -6692,6 +6692,28 @@ The lowering core has been split into statement and member-expression modules:
 **22/22**; split full; watch **100 rebuilds**; CLI **231/231**; diagnostics
 **497 compared / 8 changed / 2 unrecorded / 0 differ**; lint **645 compared /
 30 changed / 7 unrecorded / 0 differ**; examples **311/311**.
+
+### Session 177 — Wave 4.3 cache/format/hoist groups
+
+- `LoweringCaches` replaces five flat caches: specialization bodies,
+  generic struct declarations, str-buffer types, event runtimes, and dyn
+  vtable guards.
+- `LoweringFormatState` replaces `fmt_dest_name`, `fmt_counter`,
+  `fmt_counter_visible`, and `cstr_backed_names`.
+- `LoweringHoistState` replaces the hoist mode/stmts/cleanups/emitted/root/
+  array-exemption fields.
+- All access sites in the lowering modules were updated mechanically; no
+  behavior or C-body change.  The context object is now grouped by counters,
+  caches, format state, and hoist state rather than flat fields.
+- **4.4 remains deferred:** whole-program lowering remains the path; no
+  per-module lowering cache is added without a measured self-host watch
+  bottleneck.
+
+**Verified with the compiler-core gate:** dev build + IR verify; dev suite
+**23/0**; bootstrap fixed point; `test/mt` **106/0**; strict **0**; conformance
+**22/22**; split full; watch **100 rebuilds**; CLI **231/231**; diagnostics
+**497 compared / 8 changed / 2 unrecorded / 0 differ**; lint **644 compared /
+31 changed / 7 unrecorded / 0 differ**; examples **311/311**.
 
 ### Known issue: `milkTea/debugInfo` on very large files
 

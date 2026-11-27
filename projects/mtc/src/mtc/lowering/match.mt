@@ -105,13 +105,13 @@ public function lower_match(
     # (`block.rb:838-845,924`).  A proc argument therefore materializes before
     # the `match_value` temp; reusing the same IR node keeps the single
     # evaluation's proc ids/temps/instantiations.
-    let had_window = ctx.hoist_mode != lowering.HoistMode.hm_off
+    let had_window = ctx.hoist.mode != lowering.HoistMode.hm_off
     let window_saved = lowering.begin_stmt_setup(ctx, lowering.HoistMode.hm_value)
     let scrutinee_expr = lowering.lower_expr(ctx, scrutinee)
     let window_collected = lowering.collect_stmt_setup(ctx, window_saved)
     if had_window:
-        lowering.append_span_stmts(ref_of(ctx.hoist_stmts), window_collected.stmts.as_span())
-        lowering.append_span_stmts(ref_of(ctx.hoist_cleanups), window_collected.cleanups.as_span())
+        lowering.append_span_stmts(ref_of(ctx.hoist.stmts), window_collected.stmts.as_span())
+        lowering.append_span_stmts(ref_of(ctx.hoist.cleanups), window_collected.cleanups.as_span())
     else:
         lowering.append_span_stmts(output, window_collected.stmts.as_span())
         defer: lowering.append_span_stmts(output, window_collected.cleanups.as_span())

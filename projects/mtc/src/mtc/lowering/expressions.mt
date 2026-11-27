@@ -54,16 +54,16 @@ public function lower_short_circuit_binary(
         # Lower both operands into child windows: their setup follows the temp
         # declaration, and their cleanups follow the enclosing statement (the
         # host's prepared binary shape).
-        let left_saved = lowering.begin_stmt_setup(ctx, ctx.hoist_mode)
+        let left_saved = lowering.begin_stmt_setup(ctx, ctx.hoist.mode)
         if left_stored_ptr != null:
             var left_stored = unsafe: read(ptr[vec.Vec[ir.Stmt]]<-left_stored_ptr)
-            lowering.append_span_stmts(ref_of(ctx.hoist_stmts), left_stored.as_span())
+            lowering.append_span_stmts(ref_of(ctx.hoist.stmts), left_stored.as_span())
         let left = lower_expr(ctx, left_ep)
         let left_collected = lowering.collect_stmt_setup(ctx, left_saved)
-        let right_saved = lowering.begin_stmt_setup(ctx, ctx.hoist_mode)
+        let right_saved = lowering.begin_stmt_setup(ctx, ctx.hoist.mode)
         if right_stored_ptr != null:
             var right_stored = unsafe: read(ptr[vec.Vec[ir.Stmt]]<-right_stored_ptr)
-            lowering.append_span_stmts(ref_of(ctx.hoist_stmts), right_stored.as_span())
+            lowering.append_span_stmts(ref_of(ctx.hoist.stmts), right_stored.as_span())
         # The right operand sees the left operand's refinement (the host's
         # `binary_right_env`, `resolve.rb:967`).
         var right_refs = type_helpers.lowering_flow_refinements(ctx, left_ep, operator == "and")
@@ -71,8 +71,8 @@ public function lower_short_circuit_binary(
         let right = lower_expr(ctx, right_ep)
         type_helpers.restore_flow_refinements(ctx, right_flow_saved)
         let right_collected = lowering.collect_stmt_setup(ctx, right_saved)
-        lowering.append_cleanup_stmts(ref_of(ctx.hoist_cleanups), left_collected.cleanups)
-        lowering.append_cleanup_stmts(ref_of(ctx.hoist_cleanups), right_collected.cleanups)
+        lowering.append_cleanup_stmts(ref_of(ctx.hoist.cleanups), left_collected.cleanups)
+        lowering.append_cleanup_stmts(ref_of(ctx.hoist.cleanups), right_collected.cleanups)
         ctx.counters.async_tmp += 1
         let tmp = strings.join_two("__mt_async_tmp_", lowering.pw1_str(ctx.counters.async_tmp))
         let field_name = strings.join_two("local_", tmp)
@@ -97,14 +97,14 @@ public function lower_short_circuit_binary(
                 member = field_name,
                 ty = bool_ty
             ))
-            ctx.hoist_stmts.push(ir.Stmt.stmt_assignment(
+            ctx.hoist.stmts.push(ir.Stmt.stmt_assignment(
                 target = init_target,
                 operator = "=",
                 value = lowering.alloc_expr(ir.Expr.expr_boolean_literal(value = short_circuit_value, ty = bool_ty))
             ))
         else:
             value_name = tmp
-            ctx.hoist_stmts.push(ir.Stmt.stmt_local(
+            ctx.hoist.stmts.push(ir.Stmt.stmt_local(
                 name = tmp,
                 linkage_name = tmp,
                 ty = bool_ty,
@@ -113,7 +113,7 @@ public function lower_short_circuit_binary(
                 source_path = ""
             ))
         var left_stmts = left_collected.stmts
-        lowering.append_span_stmts(ref_of(ctx.hoist_stmts), left_stmts.as_span())
+        lowering.append_span_stmts(ref_of(ctx.hoist.stmts), left_stmts.as_span())
         # `and`: left true -> value = right, left false -> value = false.
         # `or`:  left true -> value = true,  left false -> value = right.
         # The host swaps the two branch bodies for `or`
@@ -151,7 +151,7 @@ public function lower_short_circuit_binary(
             then_body.push(short_assign)
             lowering.append_span_stmts(ref_of(else_body), right_stmts.as_span())
             else_body.push(right_assign)
-        ctx.hoist_stmts.push(ir.Stmt.stmt_if(
+        ctx.hoist.stmts.push(ir.Stmt.stmt_if(
             condition = left,
             then_body = then_body.as_span(),
             else_body = Option[span[ir.Stmt]].some(value = else_body.as_span())
@@ -161,17 +161,17 @@ public function lower_short_circuit_binary(
             ty = bool_ty,
             pointer = Option[bool].some(value = false)
         ))
-    let setup_base = ctx.hoist_stmts.len
+    let setup_base = ctx.hoist.stmts.len
     let left = lower_expr(ctx, left_ep)
-    let left_has_setup = ctx.hoist_stmts.len > setup_base
-    let right_saved = lowering.begin_stmt_setup(ctx, ctx.hoist_mode)
+    let left_has_setup = ctx.hoist.stmts.len > setup_base
+    let right_saved = lowering.begin_stmt_setup(ctx, ctx.hoist.mode)
     var right_refs = type_helpers.lowering_flow_refinements(ctx, left_ep, operator == "and")
     let right_flow_saved = type_helpers.push_flow_refinements(ctx, ref_of(right_refs))
     let right = lower_expr(ctx, right_ep)
     type_helpers.restore_flow_refinements(ctx, right_flow_saved)
     let right_collected = lowering.collect_stmt_setup(ctx, right_saved)
     let right_has_setup = right_collected.stmts.len > 0
-    lowering.append_cleanup_stmts(ref_of(ctx.hoist_cleanups), right_collected.cleanups)
+    lowering.append_cleanup_stmts(ref_of(ctx.hoist.cleanups), right_collected.cleanups)
     if not left_has_setup and not right_has_setup:
         return lowering.alloc_expr(ir.Expr.expr_binary(operator = operator, left = left, right = right, ty = ctx.bool_ty))
     let result_c = lowering.fresh_c_temp_name(ctx, operator)
@@ -181,7 +181,7 @@ public function lower_short_circuit_binary(
         ty = result_ty,
         pointer = Option[bool].some(value = false)
     ))
-    ctx.hoist_stmts.push(ir.Stmt.stmt_local(
+    ctx.hoist.stmts.push(ir.Stmt.stmt_local(
         name = result_c,
         linkage_name = result_c,
         ty = result_ty,
@@ -201,7 +201,7 @@ public function lower_short_circuit_binary(
         then_body.push(unsafe: read(stmt))
         ri += 1
     then_body.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = right))
-    ctx.hoist_stmts.push(ir.Stmt.stmt_if(
+    ctx.hoist.stmts.push(ir.Stmt.stmt_if(
         condition = cond,
         then_body = then_body.as_span(),
         else_body = Option[span[ir.Stmt]].none
@@ -302,7 +302,7 @@ public function lower_expr(ctx: ref[lowering.LoweringContext], ep: ptr[ast.Expr]
                 # form, which cannot carry the post-statement release.
                 if format.format_string_all_static(fs.parts):
                     return format.format_string_static_literal(fs.parts)
-                if ctx.hoist_mode == lowering.HoistMode.hm_off:
+                if ctx.hoist.mode == lowering.HoistMode.hm_off:
                     var fmt_setup = vec.Vec[ir.Stmt].create()
                     let fmt_result = format.build_format_string_dynamic(ctx, fs.parts, ref_of(fmt_setup))
                     return lowering.alloc_expr(ir.Expr.expr_stmt_expr(
@@ -310,21 +310,21 @@ public function lower_expr(ctx: ref[lowering.LoweringContext], ep: ptr[ast.Expr]
                         result = fmt_result,
                         ty = types.Type.ty_str
                     ))
-                let fmt_result = format.build_format_string_dynamic(ctx, fs.parts, ref_of(ctx.hoist_stmts))
+                let fmt_result = format.build_format_string_dynamic(ctx, fs.parts, ref_of(ctx.hoist.stmts))
                 # The result temp owns its buffer and outlives the statement
                 # (the host's `register_prepared_temp!(…, cstr_backed: true)`),
                 # so a `str as cstr` boundary may pass its `data` directly.
                 unsafe:
                     match read(fmt_result):
                         ir.Expr.expr_name as nm:
-                            ctx.cstr_backed_names.set(nm.name, true)
+                            ctx.format_state.cstr_backed.set(nm.name, true)
                         _:
                             pass
                 # Register the release here in every window; a return whose type
                 # owns the buffer drops it (`filter_return_format_cleanups`), and
                 # an assignment/local-target arm drops it through
                 # `drop_format_release_cleanups`.
-                ctx.hoist_cleanups.push(format.format_str_release_stmt(fmt_result))
+                ctx.hoist.cleanups.push(format.format_str_release_stmt(fmt_result))
                 return fmt_result
             ast.Expr.expr_detach as dt:
                 return parallel_mod.lower_detach_expr(ctx, dt.expression, ep)
@@ -469,7 +469,7 @@ public function lower_binary_expr(
     left_ast: ptr[ast.Expr],
     right_ast: ptr[ast.Expr]
 ) -> ptr[ir.Expr]:
-    if (operator == "and" or operator == "or") and ctx.hoist_mode != lowering.HoistMode.hm_off:
+    if (operator == "and" or operator == "or") and ctx.hoist.mode != lowering.HoistMode.hm_off:
         return lower_short_circuit_binary(ctx, operator, left_ast, right_ast, ep)
     var left = lower_expr(ctx, left_ast)
     var right: ptr[ir.Expr]
@@ -710,7 +710,7 @@ public function lower_specialization_expr(
                                 if vfun.type_params.len > 0 and vfun.type_params.len == arguments.len:
                                     let vspec_key = lowering.specialization_key(ctx, vgm.value.module_name, id.name, arguments)
                                     if (
-                                        not ctx.specialization_cache.contains(vspec_key)
+                                        not ctx.caches.specializations.contains(vspec_key)
                                         and not ctx.spec_in_progress.contains(vspec_key)
                                     ):
                                         # A function *reference* instantiates the
@@ -732,7 +732,7 @@ public function lower_specialization_expr(
                                         # call site elsewhere records the edge.
                                         pass
                                     var fn_ty = type_helpers.expr_type(ctx, ep)
-                                    let vcached = ctx.specialization_cache.get(vspec_key)
+                                    let vcached = ctx.caches.specializations.get(vspec_key)
                                     if vcached != null:
                                         let sf = unsafe: read(vcached)
                                         var ptypes = vec.Vec[types.Type].create()

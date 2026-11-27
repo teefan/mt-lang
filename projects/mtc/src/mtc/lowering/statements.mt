@@ -244,13 +244,13 @@ public function lower_propagate_return(
         actual = async_cps.async_hoist_awaits(ctx, output, operand)
     # The host prepares the `?` operand with the enclosing statement's window,
     # so an operand temp materializes before the propagation storage local.
-    let had_window = ctx.hoist_mode != lowering.HoistMode.hm_off
+    let had_window = ctx.hoist.mode != lowering.HoistMode.hm_off
     let window_saved = lowering.begin_stmt_setup(ctx, lowering.HoistMode.hm_value)
     let value_ir = lowering.lower_expr(ctx, actual)
     let window_collected = lowering.collect_stmt_setup(ctx, window_saved)
     if had_window:
-        lowering.append_span_stmts(ref_of(ctx.hoist_stmts), window_collected.stmts.as_span())
-        lowering.append_span_stmts(ref_of(ctx.hoist_cleanups), window_collected.cleanups.as_span())
+        lowering.append_span_stmts(ref_of(ctx.hoist.stmts), window_collected.stmts.as_span())
+        lowering.append_span_stmts(ref_of(ctx.hoist.cleanups), window_collected.cleanups.as_span())
     else:
         lowering.append_span_stmts(output, window_collected.stmts.as_span())
     let storage_ty = lowering.ir_expr_type(value_ir)
@@ -376,7 +376,7 @@ public function lower_plain_local_stmt(
                 let init = loc.value
                 let hoist_base = output.len()
                 let hoist_saved = lowering.begin_stmt_setup(ctx, lowering.HoistMode.hm_value)
-                ctx.hoist_root_ep = init
+                ctx.hoist.root_ep = init
                 if init != null:
                     # The local's storage type: the declared annotation, else
                     # the analyzer's inferred initializer type.  An array there
@@ -391,7 +391,7 @@ public function lower_plain_local_stmt(
                     # The async statement preparers materialize array calls
                     # unconditionally (they never pass the sync root exemption).
                     if storage_is_array and not ctx.async_completion_active:
-                        ctx.array_call_exempt = init
+                        ctx.hoist.array_exempt = init
                 if init == null:
                     let declared = loc.stmt_type else:
                         fatal(c"lowering: local without initializer requires a type")
@@ -543,7 +543,7 @@ public function lower_plain_local_stmt(
                     pointer = Option[bool].some(value = false)
                 ))
                 if format.cstr_backed_binding(ctx, ty, init, value_expr):
-                    ctx.cstr_backed_names.set(c_name, true)
+                    ctx.format_state.cstr_backed.set(c_name, true)
                 # A proc-containing local owns a reference: its release runs as a
                 # defer at every scope exit (guarded, for a zero-initialized var
                 # too), and a non-fresh initializer is retained for the new owner
@@ -646,9 +646,9 @@ function lower_assignment_stmt(ctx: ref[lowering.LoweringContext], output: ref[v
                         ))
                         let hoist_base = output.len()
                         let hoist_saved = lowering.begin_stmt_setup(ctx, lowering.HoistMode.hm_value)
-                        ctx.hoist_root_ep = asg.value
+                        ctx.hoist.root_ep = asg.value
                         if lowering.is_array_type(deref_ty) and not ctx.async_completion_active:
-                            ctx.array_call_exempt = asg.value
+                            ctx.hoist.array_exempt = asg.value
                         var value = lowering.lower_expr(ctx, asg.value)
                         let hoist_collected = lowering.collect_stmt_setup(ctx, hoist_saved)
                         lowering.emit_hoist_setup(output, hoist_base, hoist_collected)
@@ -672,9 +672,9 @@ function lower_assignment_stmt(ctx: ref[lowering.LoweringContext], output: ref[v
                 let target = lowering.lower_assignment_target(ctx, asg.target)
                 let hoist_base = output.len()
                 let hoist_saved = lowering.begin_stmt_setup(ctx, lowering.HoistMode.hm_value)
-                ctx.hoist_root_ep = asg.value
+                ctx.hoist.root_ep = asg.value
                 if lowering.is_array_type(type_helpers.expr_type(ctx, asg.target)) and not ctx.async_completion_active:
-                    ctx.array_call_exempt = asg.value
+                    ctx.hoist.array_exempt = asg.value
                 var value = lowering.lower_expr(ctx, asg.value)
                 let hoist_collected = lowering.collect_stmt_setup(ctx, hoist_saved)
                 lowering.emit_hoist_setup(output, hoist_base, hoist_collected)
@@ -1013,7 +1013,7 @@ function lower_expression_stmt(ctx: ref[lowering.LoweringContext], output: ref[v
                         return
                 let stmt_base = output.len()
                 let stmt_saved = lowering.begin_stmt_setup(ctx, lowering.HoistMode.hm_discard)
-                ctx.hoist_root_ep = ex.expression
+                ctx.hoist.root_ep = ex.expression
                 let lowered = lowering.lower_expr(ctx, ex.expression)
                 let stmt_collected = lowering.collect_stmt_setup(ctx, stmt_saved)
                 lowering.emit_hoist_setup(output, stmt_base, stmt_collected)
@@ -1326,7 +1326,7 @@ function lower_local_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Ve
                     # statement paths never do, so an async body's format result
                     # uses the `fmt_str` counter (`__mt_fmt_str_N`).
                     if not ctx.inside_async:
-                        ctx.fmt_dest_name = c_name
+                        ctx.format_state.dest_name = c_name
                     unsafe:
                         match read(init_val):
                             ast.Expr.expr_unary_op as un:
@@ -1431,7 +1431,7 @@ public function lower_guard_local(
     # The same sync-only `current_local_name` rule as a plain local: the async
     # statement paths never record it.
     if not ctx.inside_async:
-        ctx.fmt_dest_name = storage_c
+        ctx.format_state.dest_name = storage_c
     var storage_ty: types.Type
     var storage_ref: ptr[ir.Expr]
     if ctx.async_cps_active and async_cps.expr_is_direct_await(value_ptr):
@@ -1472,7 +1472,7 @@ public function lower_guard_local(
         # host's `prepare_expression_with_cleanups` with `allow_root_statement_foreign`).
         let hoist_base = output.len()
         let hoist_saved = lowering.begin_stmt_setup(ctx, lowering.HoistMode.hm_value)
-        ctx.hoist_root_ep = value_ptr
+        ctx.hoist.root_ep = value_ptr
         let value_ir = lowering.lower_expr(ctx, value_ptr)
         let hoist_collected = lowering.collect_stmt_setup(ctx, hoist_saved)
         lowering.emit_hoist_setup(output, hoist_base, hoist_collected)

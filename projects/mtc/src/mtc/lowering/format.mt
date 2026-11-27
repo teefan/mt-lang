@@ -255,20 +255,20 @@ function fmt_plan(ctx: ref[lowering.LoweringContext], val_ty: types.Type, spec_p
 ## most recent local declaration in scope names one, else
 ## `fresh_c_temp_name(ctx, "fmt_str")` (`__mt_fmt_str_N`).
 function format_string_result_base(ctx: ref[lowering.LoweringContext]) -> str:
-    if ctx.fmt_dest_name.len > 0:
+    if ctx.format_state.dest_name.len > 0:
         # The env creates its counter slot at the first use (the host's
         # `env[:fmt_counter] ||= {}`).
-        if not ctx.fmt_counter_visible:
-            ctx.fmt_counter.clear()
-            ctx.fmt_counter_visible = true
+        if not ctx.format_state.counter_visible:
+            ctx.format_state.counter.clear()
+            ctx.format_state.counter_visible = true
         var n: ptr_uint = 1
-        let n_ptr = ctx.fmt_counter.get(ctx.fmt_dest_name)
+        let n_ptr = ctx.format_state.counter.get(ctx.format_state.dest_name)
         if n_ptr != null:
             n = unsafe: read(n_ptr) + 1
-        ctx.fmt_counter.set(ctx.fmt_dest_name, n)
+        ctx.format_state.counter.set(ctx.format_state.dest_name, n)
         var buf = string.String.create()
         buf.append("__fmt_")
-        buf.append(ctx.fmt_dest_name)
+        buf.append(ctx.format_state.dest_name)
         if n > 1:
             buf.append("_")
             fmt.append_ptr_uint(ref_of(buf), n)
@@ -402,7 +402,7 @@ public function ast_expr_cstr_backed(ctx: ref[lowering.LoweringContext], ep: ptr
                                     return true
                             _:
                                 pass
-                        return ctx.cstr_backed_names.contains(lb.value.c_name)
+                        return ctx.format_state.cstr_backed.contains(lb.value.c_name)
                     Option.none:
                         # A module constant whose compile-time value is a string
                         # literal is cstr-backed (the host's
@@ -431,7 +431,7 @@ public function is_cstr_backed_lowered(ctx: ref[lowering.LoweringContext], ep: p
     unsafe:
         match read(ep):
             ir.Expr.expr_name as n:
-                return ctx.cstr_backed_names.contains(n.name)
+                return ctx.format_state.cstr_backed.contains(n.name)
             _:
                 return false
 
@@ -467,9 +467,9 @@ public function update_cstr_metadata_for_assignment_mt(
                                 _:
                                     pass
                         if backed:
-                            ctx.cstr_backed_names.set(lb.value.c_name, true)
+                            ctx.format_state.cstr_backed.set(lb.value.c_name, true)
                         else:
-                            let _removed = ctx.cstr_backed_names.remove(lb.value.c_name)
+                            let _removed = ctx.format_state.cstr_backed.remove(lb.value.c_name)
                     Option.none:
                         pass
             _:
@@ -1129,7 +1129,7 @@ function copy_format_sink_parts(
                 ty = str_ty,
                 pointer = Option[bool].some(value = false)
             ))
-            ctx.cstr_backed_names.set(copy_c, true)
+            ctx.format_state.cstr_backed.set(copy_c, true)
             var len_expr = lowering.alloc_expr(ir.Expr.expr_member(receiver = param, member = "len", ty = ptr_uint_ty))
             if is_cstr_part:
                 var len_args = vec.Vec[ir.Expr].create()
@@ -1593,23 +1593,23 @@ public function lower_explicit_format_sink_stmt(
         return false
     let base = output.len()
     let saved = lowering.begin_stmt_setup(ctx, lowering.HoistMode.hm_value)
-    ctx.hoist_root_ep = ep
-    let sink_cleanup_start = ctx.hoist_cleanups.len
+    ctx.hoist.root_ep = ep
+    let sink_cleanup_start = ctx.hoist.cleanups.len
     let target = lower_format_sink_target(ctx, info)
-    let sink_cleanup_end = ctx.hoist_cleanups.len
+    let sink_cleanup_end = ctx.hoist.cleanups.len
     if format_string_all_static(info.format_parts):
         let text = format_string_static_literal(info.format_parts)
-        ctx.hoist_stmts.push(ir.Stmt.stmt_expression(
+        ctx.hoist.stmts.push(ir.Stmt.stmt_expression(
             expression = explicit_format_sink_runtime_call(ctx, info.is_assign, target, text),
             line = line,
             source_path = ctx.analysis.source_path,
         ))
     else:
-        var parts = build_format_sink_parts(ctx, info.format_parts, ref_of(ctx.hoist_stmts))
-        let part_cleanup_end = ctx.hoist_cleanups.len
+        var parts = build_format_sink_parts(ctx, info.format_parts, ref_of(ctx.hoist.stmts))
+        let part_cleanup_end = ctx.hoist.cleanups.len
         var copy_cleanups = vec.Vec[ir.Stmt].create()
-        let copied = copy_format_sink_parts(ctx, parts, info.is_buffer, ref_of(ctx.hoist_stmts), ref_of(copy_cleanups))
-        emit_format_sink_dynamic(ctx, ref_of(ctx.hoist_stmts), info, target, copied, line, ctx.analysis.source_path)
+        let copied = copy_format_sink_parts(ctx, parts, info.is_buffer, ref_of(ctx.hoist.stmts), ref_of(copy_cleanups))
+        emit_format_sink_dynamic(ctx, ref_of(ctx.hoist.stmts), info, target, copied, line, ctx.analysis.source_path)
         let collected = lowering.collect_stmt_setup(ctx, saved)
         lowering.emit_hoist_setup(output, base, collected)
         var ci: ptr_uint = 0

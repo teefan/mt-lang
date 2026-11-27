@@ -251,6 +251,33 @@ public struct HoistSaved:
     # `materialize_array_calls: !array_type?(…)` at return/assignment/local).
     array_exempt: ptr[ast.Expr]?
 
+## Memoized lowering state, grouped out of the context god object.
+public struct LoweringCaches:
+    specializations: map_mod.Map[str, ir.Function]
+    generic_structs: map_mod.Map[str, ir.StructDecl]
+    str_buffers: map_mod.Map[str, str]
+    event_runtimes: map_mod.Map[str, EventRuntimeInfo]
+    dyn_vtables: map_mod.Map[str, bool]
+
+
+## Per-function format-string lowering state.
+public struct LoweringFormatState:
+    dest_name: str
+    counter: map_mod.Map[str, ptr_uint]
+    counter_visible: bool
+    cstr_backed: map_mod.Map[str, bool]
+
+
+## Statement-position hoisting window.
+public struct LoweringHoistState:
+    mode: HoistMode
+    stmts: vec.Vec[ir.Stmt]
+    cleanups: vec.Vec[ir.Stmt]
+    stmt_emitted: bool
+    root_ep: ptr[ast.Expr]?
+    array_exempt: ptr[ast.Expr]?
+
+
 ## Per-compile lowering counters, grouped out of the context god object.
 public struct LoweringCounters:
     temp: ptr_uint
@@ -328,12 +355,11 @@ public struct LoweringContext:
     pending_specializations: vec.Vec[PendingSpecialization]
     # Cache of already-monomorphized generic function bodies, keyed by the
     # specialization's qualified C name (e.g. "lib_first_int").
-    specialization_cache: map_mod.Map[str, ir.Function]
+    caches: LoweringCaches
     # Concrete generic struct declarations emitted during lowering, keyed by C
     # type name.  When a `Pair[int, int](...)` constructor is lowered, the
     # concrete struct decl (with resolved field types) is recorded here so it can
     # be appended to the module's structs span.
-    generic_struct_decls: map_mod.Map[str, ir.StructDecl]
     # Map from a concrete struct's qualified C name (`std_vec_Vec_int`) to the
     # generic struct instance info (owner module, name, type args), enabling
     # method resolution on variables whose type has been collapsed to
@@ -387,9 +413,7 @@ public struct LoweringContext:
     pending_dyn_structs: vec.Vec[ir.StructDecl]
     pending_dyn_vtable_structs: vec.Vec[ir.StructDecl]
     pending_dyn_constants: vec.Vec[ir.Constant]
-    dyn_generated_vtables: map_mod.Map[str, bool]
     # str_buffer[N] struct type cache: N → struct_linkage_name
-    str_buffer_structs: map_mod.Map[str, str]
     # Event runtime: per-event-type synthetic info (capacity, payload, linkage names).
     event_runtimes: map_mod.Map[str, EventRuntimeInfo]
     # Synthetic enums (the builtin `EventError`), the host's
@@ -433,33 +457,26 @@ public struct LoweringContext:
     # is emitted before the statement, `hoist_cleanups` after it, and the mode
     # selects the host's per-statement shape.  Lazily-evaluated sub-expressions
     # suspend the window (`suspend_stmt_setup`), keeping the inline StmtExpr.
-    hoist_mode: HoistMode
-    hoist_stmts: vec.Vec[ir.Stmt]
-    hoist_cleanups: vec.Vec[ir.Stmt]
+    hoist: LoweringHoistState
     # Set by the foreign lowering when it emitted the statement-position call
     # itself (an `hm_discard` root): the statement arm then skips its own
     # ExpressionStmt, matching the host's `discard_result` shape (no line/path).
-    hoist_stmt_emitted: bool
     # The statement-root AST expression of the current window, so the foreign
     # lowering can tell the root call from a nested one (pointer identity).
-    hoist_root_ep: ptr[ast.Expr]?
     # Set by a statement arm whose expected/storage type is an array (a return
     # of an array, an array-typed assignment target or local): the root call
     # keeps its inline form instead of hoisting `__mt_array_call_<N>`.
-    array_call_exempt: ptr[ast.Expr]?
     # Dynamic format-string result naming (the host's `env[:fmt_counter]` and
     # `env[:current_local_name]`): `fmt_dest_name` is the most recent local
     # declaration's C name in the current block (and its ancestors), which names
     # a format string's result temp `__fmt_<name>`; `fmt_counter` counts the
     # results per destination per function (`_2`, `_3` … suffixes).  Both reset
     # at every function body.
-    fmt_dest_name: str
-    fmt_counter: map_mod.Map[str, ptr_uint]
+    format_state: LoweringFormatState
     # Whether the *current env* holds the counter map.  The host creates it
     # lazily (`env[:fmt_counter] ||= {}`) on a `duplicate_env`'d child, so a
     # child's count is invisible to the parent and to sibling blocks — only a
     # block that already inherits a visible counter continues the numbering.
-    fmt_counter_visible: bool
     # Locals whose `str`/`cstr` value is backed by a C-string buffer that
     # outlives the enclosing statement — the host's `cstr_backed` bindings: a
     # string-literal initializer, a `cstr`-typed local, another cstr-backed
@@ -467,7 +484,6 @@ public struct LoweringContext:
     # argument that names one of these passes its `data` pointer directly
     # instead of allocating an `mt_foreign_str_to_cstr_temp` copy
     # (`cstr_backed_expression?`); per-function, cleared at every body.
-    cstr_backed_names: map_mod.Map[str, bool]
     # Inline foreign-mapping substitutions: an argument value the host does not
     # temporary-bind is bound here (parameter name → the lowered value
     # expression) and `lower_expr`'s identifier arm resolves it ahead of the
@@ -669,9 +685,9 @@ function ensure_str_buffer_struct(ctx: ref[LoweringContext], sb_ty: types.Type) 
         _:
             pass
     let c_name = strings.join_three("mt_str_buffer_", n_str, "")
-    if ctx.str_buffer_structs.contains(c_name):
+    if ctx.caches.str_buffers.contains(c_name):
         return
-    ctx.str_buffer_structs.set(c_name, c_name)
+    ctx.caches.str_buffers.set(c_name, c_name)
     var fields = vec.Vec[ir.Field].create()
     let char_ty = types.primitive("char")
     let ptr_uint_ty = types.primitive("ptr_uint")
@@ -1434,10 +1450,10 @@ public function lower_extending_block(
 function lower_method(ctx: ref[LoweringContext], c_name: str, receiver_ty: types.Type, m: ast.Method) -> ir.Function:
     ctx.locals.clear()
     ctx.counters.temp = 0
-    ctx.fmt_dest_name = ""
-    ctx.fmt_counter.clear()
-    ctx.fmt_counter_visible = false
-    ctx.cstr_backed_names.clear()
+    ctx.format_state.dest_name = ""
+    ctx.format_state.counter.clear()
+    ctx.format_state.counter_visible = false
+    ctx.format_state.cstr_backed.clear()
     var saved_current_fn = ctx.current_function_linkage
     ctx.current_function_linkage = c_name
     let sig = type_helpers.find_fn_sig(ctx, m.name)
@@ -1647,10 +1663,10 @@ public function lower_function(
 ) -> ir.Function:
     ctx.locals.clear()
     ctx.counters.temp = 0
-    ctx.fmt_dest_name = ""
-    ctx.fmt_counter.clear()
-    ctx.fmt_counter_visible = false
-    ctx.cstr_backed_names.clear()
+    ctx.format_state.dest_name = ""
+    ctx.format_state.counter.clear()
+    ctx.format_state.counter_visible = false
+    ctx.format_state.cstr_backed.clear()
     var saved_current_fn = ctx.current_function_linkage
     ctx.current_function_linkage = naming.qualified_c_name(ctx.module_name, name)
     let sig = type_helpers.find_fn_sig(ctx, name)
@@ -2025,19 +2041,19 @@ public function cleanup_safe_return_expr(ep: ptr[ast.Expr]) -> bool:
 ## window with `collect_stmt_setup`.
 public function begin_stmt_setup(ctx: ref[LoweringContext], mode: HoistMode) -> HoistSaved:
     let saved = HoistSaved(
-        mode = ctx.hoist_mode,
-        stmts = ctx.hoist_stmts,
-        cleanups = ctx.hoist_cleanups,
-        stmt_emitted = ctx.hoist_stmt_emitted,
-        root_ep = ctx.hoist_root_ep,
-        array_exempt = ctx.array_call_exempt
+        mode = ctx.hoist.mode,
+        stmts = ctx.hoist.stmts,
+        cleanups = ctx.hoist.cleanups,
+        stmt_emitted = ctx.hoist.stmt_emitted,
+        root_ep = ctx.hoist.root_ep,
+        array_exempt = ctx.hoist.array_exempt
     )
-    ctx.hoist_mode = mode
-    ctx.hoist_stmts = vec.Vec[ir.Stmt].create()
-    ctx.hoist_cleanups = vec.Vec[ir.Stmt].create()
-    ctx.hoist_stmt_emitted = false
-    ctx.hoist_root_ep = null
-    ctx.array_call_exempt = null
+    ctx.hoist.mode = mode
+    ctx.hoist.stmts = vec.Vec[ir.Stmt].create()
+    ctx.hoist.cleanups = vec.Vec[ir.Stmt].create()
+    ctx.hoist.stmt_emitted = false
+    ctx.hoist.root_ep = null
+    ctx.hoist.array_exempt = null
     return saved
 
 
@@ -2045,19 +2061,19 @@ public function begin_stmt_setup(ctx: ref[LoweringContext], mode: HoistMode) -> 
 ## window collected (`stmts` before the statement, `cleanups` after it).
 public function collect_stmt_setup(ctx: ref[LoweringContext], saved: HoistSaved) -> HoistSaved:
     let collected = HoistSaved(
-        mode = ctx.hoist_mode,
-        stmts = ctx.hoist_stmts,
-        cleanups = ctx.hoist_cleanups,
-        stmt_emitted = ctx.hoist_stmt_emitted,
-        root_ep = ctx.hoist_root_ep,
-        array_exempt = ctx.array_call_exempt
+        mode = ctx.hoist.mode,
+        stmts = ctx.hoist.stmts,
+        cleanups = ctx.hoist.cleanups,
+        stmt_emitted = ctx.hoist.stmt_emitted,
+        root_ep = ctx.hoist.root_ep,
+        array_exempt = ctx.hoist.array_exempt
     )
-    ctx.hoist_mode = saved.mode
-    ctx.hoist_stmts = saved.stmts
-    ctx.hoist_cleanups = saved.cleanups
-    ctx.hoist_stmt_emitted = saved.stmt_emitted
-    ctx.hoist_root_ep = saved.root_ep
-    ctx.array_call_exempt = saved.array_exempt
+    ctx.hoist.mode = saved.mode
+    ctx.hoist.stmts = saved.stmts
+    ctx.hoist.cleanups = saved.cleanups
+    ctx.hoist.stmt_emitted = saved.stmt_emitted
+    ctx.hoist.root_ep = saved.root_ep
+    ctx.hoist.array_exempt = saved.array_exempt
     return collected
 
 
@@ -2130,9 +2146,9 @@ public function lower_expr_hoisting(
     # A return value is a statement root: the host passes
     # `allow_root_statement_foreign: true`, so a foreign call keeps its inline
     # shape rather than materializing a `__mt_foreign_expr_N` value.
-    ctx.hoist_root_ep = ep
+    ctx.hoist.root_ep = ep
     if array_exempt:
-        ctx.array_call_exempt = ep
+        ctx.hoist.array_exempt = ep
     let lowered = lower_expr(ctx, ep)
     let collected = collect_stmt_setup(ctx, saved)
     emit_hoist_setup(output, base, collected)
@@ -2219,25 +2235,25 @@ public function filter_return_format_cleanups(
 ## run must not hoist its setup out, so it keeps the inline `StmtExpr` form.
 public function suspend_stmt_setup(ctx: ref[LoweringContext]) -> HoistSaved:
     let saved = HoistSaved(
-        mode = ctx.hoist_mode,
-        stmts = ctx.hoist_stmts,
-        cleanups = ctx.hoist_cleanups,
-        stmt_emitted = ctx.hoist_stmt_emitted,
-        root_ep = ctx.hoist_root_ep,
-        array_exempt = ctx.array_call_exempt
+        mode = ctx.hoist.mode,
+        stmts = ctx.hoist.stmts,
+        cleanups = ctx.hoist.cleanups,
+        stmt_emitted = ctx.hoist.stmt_emitted,
+        root_ep = ctx.hoist.root_ep,
+        array_exempt = ctx.hoist.array_exempt
     )
-    ctx.hoist_mode = HoistMode.hm_off
+    ctx.hoist.mode = HoistMode.hm_off
     return saved
 
 
 ## Restore the state saved by `suspend_stmt_setup`.
 public function resume_stmt_setup(ctx: ref[LoweringContext], saved: HoistSaved) -> void:
-    ctx.hoist_mode = saved.mode
-    ctx.array_call_exempt = saved.array_exempt
-    ctx.hoist_stmts = saved.stmts
-    ctx.hoist_cleanups = saved.cleanups
-    ctx.hoist_stmt_emitted = saved.stmt_emitted
-    ctx.hoist_root_ep = saved.root_ep
+    ctx.hoist.mode = saved.mode
+    ctx.hoist.array_exempt = saved.array_exempt
+    ctx.hoist.stmts = saved.stmts
+    ctx.hoist.cleanups = saved.cleanups
+    ctx.hoist.stmt_emitted = saved.stmt_emitted
+    ctx.hoist.root_ep = saved.root_ep
 
 
 public function lower_block(ctx: ref[LoweringContext], body_ptr: ptr[ast.Stmt]?) -> span[ir.Stmt]:
@@ -2270,21 +2286,21 @@ public function lower_block(ctx: ref[LoweringContext], body_ptr: ptr[ast.Stmt]?)
     # `fmt_dest_name` is block-scoped (the host's per-block `env` copy): a local
     # declared inside this block names this block's format results, and the
     # name is restored on exit so sibling blocks are unaffected.
-    let fmt_dest_saved = ctx.fmt_dest_name
-    defer: ctx.fmt_dest_name = fmt_dest_saved
+    let fmt_dest_saved = ctx.format_state.dest_name
+    defer: ctx.format_state.dest_name = fmt_dest_saved
     # The dynamic format-string counter is created lazily *at the first use in
     # an env* and shared with descendants by reference (the host's
     # `env[:fmt_counter] ||= {}` on a duplicated env): an env whose parent
     # holds no counter starts with none, so sibling blocks each restart at 1
     # (`convex_hull.mt`'s two branches both emit `__fmt_index_cap`), while a
     # child of an env that already counted continues the numbering.
-    let fmt_visible_saved = ctx.fmt_counter_visible
+    let fmt_visible_saved = ctx.format_state.counter_visible
     if not fmt_visible_saved:
-        ctx.fmt_counter.clear()
+        ctx.format_state.counter.clear()
     defer:
         if not fmt_visible_saved:
-            ctx.fmt_counter.clear()
-            ctx.fmt_counter_visible = false
+            ctx.format_state.counter.clear()
+            ctx.format_state.counter_visible = false
     let bp = body_ptr else:
         pop_defer_scope(ctx)
         return stmts.as_span()
@@ -2485,10 +2501,10 @@ public function lower_emitted_decl(ctx: ref[LoweringContext], decl: ast.Decl) ->
                 pi += 1
             let saved_ret = ctx.current_fn_return_type
             ctx.current_fn_return_type = ret_ty
-            let saved_fmt = ctx.fmt_dest_name
-            ctx.fmt_dest_name = ""
+            let saved_fmt = ctx.format_state.dest_name
+            ctx.format_state.dest_name = ""
             let body = lower_block(ctx, fun.body)
-            ctx.fmt_dest_name = saved_fmt
+            ctx.format_state.dest_name = saved_fmt
             ctx.current_fn_return_type = saved_ret
             while ctx.locals.len() > saved_locals_len:
                 let _popped = ctx.locals.pop()
@@ -2632,13 +2648,13 @@ public function lower_propagate_storage(
     # local before the propagation storage.  A caller that already opened a
     # window gets the operand's setup merged into it; otherwise raise a local
     # window so the operand's temps precede the storage local.
-    let had_window = ctx.hoist_mode != HoistMode.hm_off
+    let had_window = ctx.hoist.mode != HoistMode.hm_off
     let window_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
     let value_ir = lower_expr(ctx, actual)
     let window_collected = collect_stmt_setup(ctx, window_saved)
     if had_window:
-        append_span_stmts(ref_of(ctx.hoist_stmts), window_collected.stmts.as_span())
-        append_span_stmts(ref_of(ctx.hoist_cleanups), window_collected.cleanups.as_span())
+        append_span_stmts(ref_of(ctx.hoist.stmts), window_collected.stmts.as_span())
+        append_span_stmts(ref_of(ctx.hoist.cleanups), window_collected.cleanups.as_span())
     else:
         append_span_stmts(output, window_collected.stmts.as_span())
     let storage_ty = ir_expr_type(value_ir)
@@ -2888,13 +2904,13 @@ public function lower_propagate_assign(
         actual = async_cps.async_hoist_awaits(ctx, output, operand)
     # The host prepares the `?` operand with the enclosing statement's window,
     # so an operand temp materializes before the propagation storage local.
-    let had_window = ctx.hoist_mode != HoistMode.hm_off
+    let had_window = ctx.hoist.mode != HoistMode.hm_off
     let window_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
     let value_ir = lower_expr(ctx, actual)
     let window_collected = collect_stmt_setup(ctx, window_saved)
     if had_window:
-        append_span_stmts(ref_of(ctx.hoist_stmts), window_collected.stmts.as_span())
-        append_span_stmts(ref_of(ctx.hoist_cleanups), window_collected.cleanups.as_span())
+        append_span_stmts(ref_of(ctx.hoist.stmts), window_collected.stmts.as_span())
+        append_span_stmts(ref_of(ctx.hoist.cleanups), window_collected.cleanups.as_span())
     else:
         append_span_stmts(output, window_collected.stmts.as_span())
     let storage_ty = ir_expr_type(value_ir)
@@ -3558,7 +3574,7 @@ public function qualify_type(ctx: ref[LoweringContext], t: types.Type) -> types.
             # Already-monomorphized concrete names (e.g. std_map_Node_str_bool)
             # are fully qualified: pass them through so re-qualifying in a
             # different module context does not double-prefix them.
-            if monomorphized.generic_instance_contains(ctx, n_np.name) or ctx.generic_struct_decls.contains(n_np.name):
+            if monomorphized.generic_instance_contains(ctx, n_np.name) or ctx.caches.generic_structs.contains(n_np.name):
                 return t
             # Concrete C names produced by generic_struct_c_name always contain
             # at least one underscore (module_prefix_Name_Arg).  Bare names
@@ -4744,12 +4760,12 @@ function maybe_materialize_array_call(
             pass
         _:
             return value
-    if ctx.hoist_mode == HoistMode.hm_off:
+    if ctx.hoist.mode == HoistMode.hm_off:
         return value
-    if ctx.array_call_exempt == ep:
+    if ctx.hoist.array_exempt == ep:
         return value
     let name = fresh_c_temp_name(ctx, "array_call")
-    ctx.hoist_stmts.push(ir.Stmt.stmt_local(
+    ctx.hoist.stmts.push(ir.Stmt.stmt_local(
         name = name,
         linkage_name = name,
         ty = ty,
@@ -4812,10 +4828,10 @@ function materialize_proc_literal(
     literal: ptr[ir.Expr],
     proc_ty: types.Type
 ) -> ptr[ir.Expr]:
-    if ctx.hoist_mode == HoistMode.hm_off:
+    if ctx.hoist.mode == HoistMode.hm_off:
         return literal
     let name = fresh_c_temp_name(ctx, "proc_expr")
-    ctx.hoist_stmts.push(ir.Stmt.stmt_local(
+    ctx.hoist.stmts.push(ir.Stmt.stmt_local(
         name = name,
         linkage_name = name,
         ty = proc_ty,
@@ -4964,13 +4980,13 @@ public function lower_proc_expression_typed_named(
         # before the statement (the host's inline shape), or falls back to the
         # separate setup function where no prepared position exists.
         resume_stmt_setup(ctx, hoist_saved)
-        if ctx.hoist_mode != HoistMode.hm_off:
+        if ctx.hoist.mode != HoistMode.hm_off:
             let alloc_call = alloc_expr(ir.Expr.expr_call(
                 callee = "mt_async_alloc",
                 arguments = pack_single(alloc_expr(ir.Expr.expr_sizeof(target_type = env_named_ty, ty = uint_ty))),
                 ty = void_ptr
             ))
-            ctx.hoist_stmts.push(ir.Stmt.stmt_local(
+            ctx.hoist.stmts.push(ir.Stmt.stmt_local(
                 name = env_decl_name,
                 linkage_name = env_decl_name,
                 ty = env_ptr_ty,
@@ -4987,7 +5003,7 @@ public function lower_proc_expression_typed_named(
                 ty = env_ptr_ty,
                 pointer = Option[bool].some(value = false)
             ))
-            ctx.hoist_stmts.push(ir.Stmt.stmt_assignment(
+            ctx.hoist.stmts.push(ir.Stmt.stmt_assignment(
                 target = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = "__mt_ref_count", ty = uint_ty)),
                 operator = "=",
                 value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = uint_ty))
@@ -4995,7 +5011,7 @@ public function lower_proc_expression_typed_named(
             var si: ptr_uint = 0
             while si < captures.len:
                 let cap = unsafe: read(captures.data + si)
-                ctx.hoist_stmts.push(ir.Stmt.stmt_assignment(
+                ctx.hoist.stmts.push(ir.Stmt.stmt_assignment(
                     target = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = cap.name, ty = cap.ty)),
                     operator = "=",
                     value = cap.read_expr
@@ -5008,7 +5024,7 @@ public function lower_proc_expression_typed_named(
                 let cap = unsafe: read(captures.data + cri)
                 if contains_proc_storage_type(ctx, cap.ty):
                     let member = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = cap.name, ty = cap.ty))
-                    proc_contained_retain_stmts(ctx, member, cap.ty, ref_of(ctx.hoist_stmts))
+                    proc_contained_retain_stmts(ctx, member, cap.ty, ref_of(ctx.hoist.stmts))
                 cri += 1
             env_value = alloc_expr(ir.Expr.expr_cast(
                 target_type = void_ptr,
@@ -5537,10 +5553,10 @@ function build_capturing_invoke(
     ctx.inside_async = false
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.counters.temp = 0
-    ctx.fmt_dest_name = ""
-    ctx.fmt_counter.clear()
-    ctx.fmt_counter_visible = false
-    ctx.cstr_backed_names.clear()
+    ctx.format_state.dest_name = ""
+    ctx.format_state.counter.clear()
+    ctx.format_state.counter_visible = false
+    ctx.format_state.cstr_backed.clear()
 
     let void_ptr = types.generic_type(name = "ptr", args = sp_type(ctx.void_ty))
     let env_ptr_ty = types.generic_type(
@@ -5810,10 +5826,10 @@ function build_proc_invoke_fn(
     ctx.inside_async = false
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.counters.temp = 0
-    ctx.fmt_dest_name = ""
-    ctx.fmt_counter.clear()
-    ctx.fmt_counter_visible = false
-    ctx.cstr_backed_names.clear()
+    ctx.format_state.dest_name = ""
+    ctx.format_state.counter.clear()
+    ctx.format_state.counter_visible = false
+    ctx.format_state.cstr_backed.clear()
 
     let void_ptr = types.generic_type(name = "ptr", args = sp_type(ctx.void_ty))
     var params = vec.Vec[ir.Param].create()
@@ -6072,12 +6088,12 @@ function proc_struct_fields(ctx: ref[LoweringContext], t: types.Type) -> Option[
                     im_bp.module_name,
                     generic_struct_c_name(im_bp.name, im_bp.args)
                 )
-                let p = ctx.generic_struct_decls.get(lookup_name)
+                let p = ctx.caches.generic_structs.get(lookup_name)
                 if p != null:
                     return Option[span[ir.Field]].some(value = unsafe: read(p).fields)
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
-            let p = ctx.generic_struct_decls.get(n_np.name)
+            let p = ctx.caches.generic_structs.get(n_np.name)
             if p != null:
                 return Option[span[ir.Field]].some(value = unsafe: read(p).fields)
         types.Type.ty_generic as g:
@@ -7433,7 +7449,7 @@ public function cross_module_return_type(ctx: ref[LoweringContext], c_name: str,
         if is_cross_module_function_async(ctx, c_name):
             ret_ty = tasks.make_task_type(ret_ty)
         return ret_ty
-    let sc = ctx.specialization_cache.get(c_name)
+    let sc = ctx.caches.specializations.get(c_name)
     if sc != null:
         unsafe:
             ret_ty = read(sc).return_type
@@ -7840,7 +7856,7 @@ function generic_struct_field_type(
     owner_module: str
 ) -> Option[types.Type]:
     let unqualified = generic_struct_c_name(struct_name, concrete_args)
-    let decl_ptr = ctx.generic_struct_decls.get(unqualified)
+    let decl_ptr = ctx.caches.generic_structs.get(unqualified)
     if decl_ptr != null:
         unsafe:
             let decl = read(decl_ptr)
@@ -7854,7 +7870,7 @@ function generic_struct_field_type(
     # module that *defines* the struct (`std_net_sync_SyncValue_uint`), not the
     # caller's module.
     let decl_module = if owner_module.len > 0: owner_module else: ctx.module_name
-    let q_ptr = ctx.generic_struct_decls.get(naming.qualified_c_name(decl_module, unqualified))
+    let q_ptr = ctx.caches.generic_structs.get(naming.qualified_c_name(decl_module, unqualified))
     if q_ptr != null:
         unsafe:
             let decl = read(q_ptr)
@@ -7945,7 +7961,7 @@ function ensure_generic_struct_decl_named(
     concrete_args: span[types.Type],
     decl_name: str
 ) -> void:
-    if ctx.generic_struct_decls.contains(decl_name):
+    if ctx.caches.generic_structs.contains(decl_name):
         return
     # Guard against recursive monomorphization: when Node's `next` field
     # triggers another monomorphization of Node[str, bool], skip.
@@ -7992,7 +8008,7 @@ function ensure_generic_struct_decl_named(
             pai += 1
     match fields_opt:
         Option.some as f:
-            ctx.generic_struct_decls.set(decl_name, ir.StructDecl(
+            ctx.caches.generic_structs.set(decl_name, ir.StructDecl(
                 name = decl_name,
                 linkage_name = decl_name,
                 fields = f.value,
@@ -8326,7 +8342,7 @@ function lower_monomorphized_call(
     # from multiple caller modules dedups to one definition (see
     # dedup_append_functions).
     let spec_key = specialization_key(ctx, gm.module_name, callee_name, type_args)
-    if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
+    if not ctx.caches.specializations.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
         lower_and_cache_specialization(ctx, gm, type_args, spec_key, ctx.pre_instantiated_context)
     else:
         note_validated_spec_reach(ctx, spec_key)
@@ -8344,7 +8360,7 @@ function lower_monomorphized_call(
         ordered_args,
         call_ep,
         ret_type_ptr,
-        ctx.specialization_cache.get(spec_key)
+        ctx.caches.specializations.get(spec_key)
     )
 
 
@@ -8490,7 +8506,7 @@ public function try_inferred_generic_call(
                 key.append(spec_type_key(ctx, inferred))
                 tpi += 1
             let spec_key = key.as_str()
-            if not ctx.specialization_cache.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
+            if not ctx.caches.specializations.contains(spec_key) and not ctx.spec_in_progress.contains(spec_key):
                 lower_and_cache_specialization_with_sub(ctx, gm, ref_of(sub), spec_key, ctx.pre_instantiated_context)
             else:
                 note_validated_spec_reach(ctx, spec_key)
@@ -8537,7 +8553,7 @@ public function try_inferred_generic_call(
                         args,
                         call_ep,
                         types.alloc_type(ret_ty),
-                        ctx.specialization_cache.get(spec_key)
+                        ctx.caches.specializations.get(spec_key)
                     )
             return Option[ptr[ir.Expr]].some(value = lowered_call)
         _:
@@ -8953,10 +8969,10 @@ public function lower_and_cache_specialization_with_sub(
             # later `f"..."` in the caller loses its `__fmt_<dest>` name (and
             # numbering).  The maps are shared by reference, so the body gets
             # fresh ones and the caller's are restored afterwards.
-            var saved_fmt_dest = ctx.fmt_dest_name
-            var saved_fmt_counter = ctx.fmt_counter
-            var saved_fmt_visible = ctx.fmt_counter_visible
-            var saved_cstr_backed = ctx.cstr_backed_names
+            var saved_fmt_dest = ctx.format_state.dest_name
+            var saved_fmt_counter = ctx.format_state.counter
+            var saved_fmt_visible = ctx.format_state.counter_visible
+            var saved_cstr_backed = ctx.format_state.cstr_backed
             # Specializations are lowered in their own right; a caller's CPS
             # state must not leak into their IR bodies (or the body will emit a
             # frame completion against a frame that doesn't exist).
@@ -8979,10 +8995,10 @@ public function lower_and_cache_specialization_with_sub(
 
             ctx.locals = vec.Vec[LocalBinding].create()
             ctx.counters.temp = 0
-            ctx.fmt_dest_name = ""
-            ctx.fmt_counter = map_mod.Map[str, ptr_uint].create()
-            ctx.fmt_counter_visible = false
-            ctx.cstr_backed_names = map_mod.Map[str, bool].create()
+            ctx.format_state.dest_name = ""
+            ctx.format_state.counter = map_mod.Map[str, ptr_uint].create()
+            ctx.format_state.counter_visible = false
+            ctx.format_state.cstr_backed = map_mod.Map[str, bool].create()
             ctx.function_returns = map_mod.Map[str, types.Type].create()
             ctx.type_substitution = map_mod.Map[str, types.Type].create()
             ctx.inside_async = false
@@ -9001,7 +9017,7 @@ public function lower_and_cache_specialization_with_sub(
             # the linkage name carries the specialization suffix.
             spec_fun.linkage_name = spec_key
 
-            ctx.specialization_cache.set(spec_key, spec_fun)
+            ctx.caches.specializations.set(spec_key, spec_fun)
             saved_returns.set(spec_key, spec_fun.return_type)
             # Record owner/declaration/arguments so the driver can place this
             # instance in its owner module's function list (host ordering).
@@ -9061,10 +9077,10 @@ public function lower_and_cache_specialization_with_sub(
             ctx.inside_async = saved_inside_async
             ctx.async_cps_active = saved_cps_active
             ctx.async_completion_active = saved_cps_completion
-            ctx.fmt_dest_name = saved_fmt_dest
-            ctx.fmt_counter = saved_fmt_counter
-            ctx.fmt_counter_visible = saved_fmt_visible
-            ctx.cstr_backed_names = saved_cstr_backed
+            ctx.format_state.dest_name = saved_fmt_dest
+            ctx.format_state.counter = saved_fmt_counter
+            ctx.format_state.counter_visible = saved_fmt_visible
+            ctx.format_state.cstr_backed = saved_cstr_backed
         _:
             fatal(strings.join_two("lowering: monomorphization failed, expected function decl for ", gm.module_name))
 
@@ -9578,7 +9594,7 @@ function ensure_dyn_vtable(
     type_params: span[ast.TypeParam]
 ) -> str:
     let vtable_c_name = strings.join_five("mt_vtable_", concrete_name, "_", iface_name, "")
-    if ctx.dyn_generated_vtables.contains(vtable_c_name):
+    if ctx.caches.dyn_vtables.contains(vtable_c_name):
         return vtable_c_name
 
     # Ensure the vtable struct type exists (once per interface), with type subsitution.
@@ -9611,7 +9627,7 @@ function ensure_dyn_vtable(
     # Ensure the dyn struct type exists (once per interface).
     ensure_dyn_struct_type(ctx, iface_name)
 
-    ctx.dyn_generated_vtables.set(vtable_c_name, true)
+    ctx.caches.dyn_vtables.set(vtable_c_name, true)
     return vtable_c_name
 
 
@@ -11519,13 +11535,13 @@ function lower_monomorphized_method(
             sai += 1
     let method_c = monomorphized_method_c_name(struct_module, info, gm, method_name)
 
-    if not ctx.specialization_cache.contains(method_c) and not ctx.spec_in_progress.contains(method_c):
+    if not ctx.caches.specializations.contains(method_c) and not ctx.spec_in_progress.contains(method_c):
         ensure_monomorphized_method(ctx, method_c, info, gm, ctx.pre_instantiated_context)
     else:
         note_validated_spec_reach(ctx, method_c)
 
     var ret_ty = ctx.void_ty
-    let cached = ctx.specialization_cache.get(method_c)
+    let cached = ctx.caches.specializations.get(method_c)
     if cached != null:
         ret_ty = unsafe: read(cached).return_type
     else:
@@ -11768,10 +11784,10 @@ function ensure_monomorphized_method(
     # disturb the caller's format state (its `__fmt_<dest>` naming and repeat
     # counters, and the cstr-backed local set); the maps are shared by
     # reference, so the body gets fresh ones and the caller's are restored.
-    var saved_fmt_dest = ctx.fmt_dest_name
-    var saved_fmt_counter = ctx.fmt_counter
-    var saved_fmt_visible = ctx.fmt_counter_visible
-    var saved_cstr_backed = ctx.cstr_backed_names
+    var saved_fmt_dest = ctx.format_state.dest_name
+    var saved_fmt_counter = ctx.format_state.counter
+    var saved_fmt_visible = ctx.format_state.counter_visible
+    var saved_cstr_backed = ctx.format_state.cstr_backed
 
     ctx.module_name = gm.owner_module
     ctx.analysis = owner_a
@@ -11779,10 +11795,10 @@ function ensure_monomorphized_method(
     ctx.variants = map_mod.Map[str, VariantInfo].create()
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.counters.temp = 0
-    ctx.fmt_dest_name = ""
-    ctx.fmt_counter = map_mod.Map[str, ptr_uint].create()
-    ctx.fmt_counter_visible = false
-    ctx.cstr_backed_names = map_mod.Map[str, bool].create()
+    ctx.format_state.dest_name = ""
+    ctx.format_state.counter = map_mod.Map[str, ptr_uint].create()
+    ctx.format_state.counter_visible = false
+    ctx.format_state.cstr_backed = map_mod.Map[str, bool].create()
     ctx.function_returns = map_mod.Map[str, types.Type].create()
     ctx.type_substitution = sub
     ctx.inside_async = false
@@ -11798,7 +11814,7 @@ function ensure_monomorphized_method(
     install_prelude_variants(ctx)
 
     let spec_fun = lower_specialized_method(ctx, method_c, info, gm, ref_of(sub), body_validated)
-    ctx.specialization_cache.set(method_c, spec_fun)
+    ctx.caches.specializations.set(method_c, spec_fun)
     saved_returns.set(method_c, spec_fun.return_type)
     # Record owner/declaration/arguments for host-style ordering.  The sort key
     # is the host's rendered `type_arguments.map(&:to_s).join(",")`.
@@ -11859,10 +11875,10 @@ function ensure_monomorphized_method(
     ctx.inside_async = saved_inside_async
     ctx.async_cps_active = saved_cps_active
     ctx.async_completion_active = saved_cps_completion
-    ctx.fmt_dest_name = saved_fmt_dest
-    ctx.fmt_counter = saved_fmt_counter
-    ctx.fmt_counter_visible = saved_fmt_visible
-    ctx.cstr_backed_names = saved_cstr_backed
+    ctx.format_state.dest_name = saved_fmt_dest
+    ctx.format_state.counter = saved_fmt_counter
+    ctx.format_state.counter_visible = saved_fmt_visible
+    ctx.format_state.cstr_backed = saved_cstr_backed
 
 
 ## Find the module that defines a struct named `name` by searching loaded analyses.
@@ -11893,10 +11909,10 @@ function lower_specialized_method(
     let m = gm.method
     ctx.locals.clear()
     ctx.counters.temp = 0
-    ctx.fmt_dest_name = ""
-    ctx.fmt_counter.clear()
-    ctx.fmt_counter_visible = false
-    ctx.cstr_backed_names.clear()
+    ctx.format_state.dest_name = ""
+    ctx.format_state.counter.clear()
+    ctx.format_state.counter_visible = false
+    ctx.format_state.cstr_backed.clear()
     var saved_current_fn = ctx.current_function_linkage
     ctx.current_function_linkage = method_c
     # Nested instances are analyzer-created only when the body was validated
@@ -12417,7 +12433,7 @@ function event_runtime_for_type(ctx: ref[LoweringContext], t: types.Type) -> Eve
     match t:
         types.Type.ty_event as e:
             let e_bp = unsafe: read(e.payload)
-            var iter = ctx.event_runtimes.entries()
+            var iter = ctx.caches.event_runtimes.entries()
             while true:
                 if not iter.next():
                     break
@@ -12464,7 +12480,7 @@ function ensure_event_error_enum(ctx: ref[LoweringContext]) -> types.Type:
 ## Called lazily on first event method call.
 public function ensure_event_runtime(ctx: ref[LoweringContext], owner: str, event_name: str) -> EventRuntimeInfo:
     let runtime_key = analyzer.event_registry_key(owner, event_name)
-    let existing_ptr = ctx.event_runtimes.get(runtime_key)
+    let existing_ptr = ctx.caches.event_runtimes.get(runtime_key)
     if existing_ptr != null:
         return unsafe: read(existing_ptr)
     var ev_ptr = ctx.analysis.events.get(runtime_key)
@@ -12603,7 +12619,7 @@ public function ensure_event_runtime(ctx: ref[LoweringContext], owner: str, even
         wait_take_result_c_name = strings.join_two(linkage, "__wait__take_result"),
         wait_result_ty = wait_result_ty,
     )
-    ctx.event_runtimes.set(runtime_key, info)
+    ctx.caches.event_runtimes.set(runtime_key, info)
     ctx.pending_synthetic_functions.push(build_event_subscribe_fn(ctx, ref_of(info), slot_cn, event_cn, false))
     ctx.pending_synthetic_functions.push(build_event_subscribe_fn(ctx, ref_of(info), slot_cn, event_cn, true))
     ctx.pending_synthetic_functions.push(build_event_subscribe_stateful_fn(ctx, ref_of(info), slot_cn, event_cn, false))
@@ -14571,13 +14587,13 @@ function lower_expression_match(
     # `__mt_match_expr_<N>` result local plus the strategy's switch/if chain in
     # the enclosing statement's setup, with the expression replaced by a read of
     # the result.
-    if ctx.hoist_mode != HoistMode.hm_off:
+    if ctx.hoist.mode != HoistMode.hm_off:
         var result_ty = type_helpers.expr_type(ctx, ep)
         if types.is_error(result_ty) or types.type_to_string(result_ty) == "void":
             result_ty = ctx.bool_ty
         let temp = fresh_c_temp_name(ctx, "match_expr")
         let zero_init = alloc_expr(ir.Expr.expr_zero_init(ty = result_ty))
-        ctx.hoist_stmts.push(ir.Stmt.stmt_local(
+        ctx.hoist.stmts.push(ir.Stmt.stmt_local(
             name = temp,
             linkage_name = temp,
             ty = result_ty,
@@ -14590,7 +14606,7 @@ function lower_expression_match(
             ty = result_ty,
             pointer = Option[bool].some(value = false)
         ))
-        match_mod.lower_match_expr_to_ref(ctx, ref_of(ctx.hoist_stmts), scrutinee, arms, result_ref)
+        match_mod.lower_match_expr_to_ref(ctx, ref_of(ctx.hoist.stmts), scrutinee, arms, result_ref)
         return result_ref
     # `expr is Variant.Arm` desugars (in the parser) to a two-arm match
     # expression: [Variant.Arm -> true, _ -> false].  In a lazy region (no
@@ -15750,8 +15766,8 @@ function materialize_foreign_expr(ctx: ref[LoweringContext], result: ptr[ir.Expr
     let rt = fresh_c_temp_name(ctx, "foreign_expr")
     let decl = ir.Stmt.stmt_local(name = rt, linkage_name = rt, ty = ret_ty, value = result, line = 0, source_path = "")
     let ref_expr = alloc_expr(ir.Expr.expr_name(name = rt, ty = ret_ty, pointer = Option[bool].some(value = false)))
-    if ctx.hoist_mode != HoistMode.hm_off:
-        ctx.hoist_stmts.push(decl)
+    if ctx.hoist.mode != HoistMode.hm_off:
+        ctx.hoist.stmts.push(decl)
         return ref_expr
     var stmts = vec.Vec[ir.Stmt].create()
     stmts.push(decl)
@@ -15786,7 +15802,7 @@ public function lower_foreign_call(
     # `prepare_statement_lowered_foreign_call`); the statement roots
     # (initializer, assignment value, return value, discarded expression) keep
     # the call inline.
-    if ctx.hoist_mode != HoistMode.hm_off and ctx.hoist_root_ep != call_ep and foreign_call_needs_materialized_value(
+    if ctx.hoist.mode != HoistMode.hm_off and ctx.hoist.root_ep != call_ep and foreign_call_needs_materialized_value(
         ctx,
         info,
         args
@@ -16012,24 +16028,24 @@ function wrap_foreign_cstr_frees(
     cstr_temps: ref[vec.Vec[str]],
     call_ep: ptr[ast.Expr]
 ) -> ptr[ir.Expr]:
-    if ctx.hoist_mode != HoistMode.hm_off:
+    if ctx.hoist.mode != HoistMode.hm_off:
         var hs: ptr_uint = 0
         while hs < setup.len:
             let s = setup.get(hs) else:
                 fatal(c"lowering: missing foreign setup statement")
-            ctx.hoist_stmts.push(unsafe: read(s))
+            ctx.hoist.stmts.push(unsafe: read(s))
             hs += 1
         # A statement-position (discarded) foreign call is emitted by the
         # lowering itself, without the statement's line/path — the host's
         # `lower_foreign_call_statement(discard_result: true)` shape — whatever
         # its arguments needed; the frees follow it as cleanups.
-        if ctx.hoist_mode == HoistMode.hm_discard and ctx.hoist_root_ep == call_ep:
+        if ctx.hoist.mode == HoistMode.hm_discard and ctx.hoist.root_ep == call_ep:
             var hd: ptr_uint = 0
             while hd < cstr_temps.len():
-                ctx.hoist_cleanups.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hd)))
+                ctx.hoist.cleanups.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hd)))
                 hd += 1
-            ctx.hoist_stmts.push(ir.Stmt.stmt_expression(expression = result, line = 0, source_path = ""))
-            ctx.hoist_stmt_emitted = true
+            ctx.hoist.stmts.push(ir.Stmt.stmt_expression(expression = result, line = 0, source_path = ""))
+            ctx.hoist.stmt_emitted = true
             return result
         if cstr_temps.len() == 0:
             return result
@@ -16039,10 +16055,10 @@ function wrap_foreign_cstr_frees(
         # not: the assignment/local/return destination stores it directly (the
         # host's `lower_foreign_call_components` path).  A nested call inside a
         # discarded statement (`DrawText(TextFormat(…), …)`) materializes too.
-        let nested_value_call = ctx.hoist_mode != HoistMode.hm_off and call_ep != ctx.hoist_root_ep
-        if (ctx.hoist_mode == HoistMode.hm_return or nested_value_call) and not types.is_void(ret_ty):
+        let nested_value_call = ctx.hoist.mode != HoistMode.hm_off and call_ep != ctx.hoist.root_ep
+        if (ctx.hoist.mode == HoistMode.hm_return or nested_value_call) and not types.is_void(ret_ty):
             let rt = fresh_c_temp_name(ctx, "foreign_result")
-            ctx.hoist_stmts.push(ir.Stmt.stmt_local(
+            ctx.hoist.stmts.push(ir.Stmt.stmt_local(
                 name = rt,
                 linkage_name = rt,
                 ty = ret_ty,
@@ -16052,12 +16068,12 @@ function wrap_foreign_cstr_frees(
             ))
             var hi: ptr_uint = 0
             while hi < cstr_temps.len():
-                ctx.hoist_stmts.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hi)))
+                ctx.hoist.stmts.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hi)))
                 hi += 1
             return alloc_expr(ir.Expr.expr_name(name = rt, ty = ret_ty, pointer = Option[bool].some(value = false)))
         var hj: ptr_uint = 0
         while hj < cstr_temps.len():
-            ctx.hoist_cleanups.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hj)))
+            ctx.hoist.cleanups.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hj)))
             hj += 1
         return result
 
@@ -18155,18 +18171,18 @@ public function method_receiver_type(ctx: ref[LoweringContext], receiver: ptr[as
         # the real lowering below (in the call path) reproduces them once.
         let saved_setup = suspend_stmt_setup(ctx)
         let saved_temp = ctx.counters.temp
-        let saved_fmt_dest = ctx.fmt_dest_name
-        let saved_fmt_visible = ctx.fmt_counter_visible
+        let saved_fmt_dest = ctx.format_state.dest_name
+        let saved_fmt_visible = ctx.format_state.counter_visible
         var saved_fmt_n: ptr_uint = 0
-        let saved_n_ptr = ctx.fmt_counter.get(ctx.fmt_dest_name)
+        let saved_n_ptr = ctx.format_state.counter.get(ctx.format_state.dest_name)
         if saved_n_ptr != null:
             saved_fmt_n = unsafe: read(saved_n_ptr)
         let lowered_ty = ir_expr_type(lower_expr(ctx, receiver))
         resume_stmt_setup(ctx, saved_setup)
         ctx.counters.temp = saved_temp
-        ctx.fmt_dest_name = saved_fmt_dest
-        ctx.fmt_counter_visible = saved_fmt_visible
-        ctx.fmt_counter.set(ctx.fmt_dest_name, saved_fmt_n)
+        ctx.format_state.dest_name = saved_fmt_dest
+        ctx.format_state.counter_visible = saved_fmt_visible
+        ctx.format_state.counter.set(ctx.format_state.dest_name, saved_fmt_n)
         if not types.is_error(lowered_ty) and not types.type_to_string(lowered_ty) == "void":
             return lowered_ty
     return type_helpers.expr_type(ctx, receiver)
@@ -18225,7 +18241,7 @@ public function concrete_field_type(ctx: ref[LoweringContext], recv_ty: types.Ty
                     return Option[types.Type].none
         _:
             return Option[types.Type].none
-    let decl_ptr = ctx.generic_struct_decls.get(lookup_name)
+    let decl_ptr = ctx.caches.generic_structs.get(lookup_name)
     if decl_ptr != null:
         unsafe:
             let decl = read(decl_ptr)

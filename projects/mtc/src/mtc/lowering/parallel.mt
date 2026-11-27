@@ -574,10 +574,10 @@ public function lower_parallel_for(
 
     # Both bounds are prepared before the stop value is lowered
     # (`prepare_expression_for_inline_lowering` on start, then stop).
-    let start_saved = lowering.begin_stmt_setup(ctx, ctx.hoist_mode)
+    let start_saved = lowering.begin_stmt_setup(ctx, ctx.hoist.mode)
     let _start_value = lowering.lower_expr(ctx, start_ptr)
     let start_collected = lowering.collect_stmt_setup(ctx, start_saved)
-    let stop_saved = lowering.begin_stmt_setup(ctx, ctx.hoist_mode)
+    let stop_saved = lowering.begin_stmt_setup(ctx, ctx.hoist.mode)
     let lowered_stop = lowering.int_literal_to_context_type(end_ptr, loop_type, lowering.lower_expr(ctx, end_ptr))
     let stop_collected = lowering.collect_stmt_setup(ctx, stop_saved)
 
