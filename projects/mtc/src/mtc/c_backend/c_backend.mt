@@ -25,6 +25,7 @@ import mtc.semantic.types as types
 import mtc.c_naming as naming
 import mtc.c_backend.reachability as reachability
 import mtc.c_backend.format_string as format_string
+import mtc.c_backend.program as program_emitter
 import mtc.strings
 
 ## The C emitter: an output buffer plus the program-global string-literal map
@@ -370,10 +371,10 @@ function generate_c_impl(
 
     # Emit runtime helpers before forward declarations (mirrors Ruby order).
     emit_runtime_helpers(ref_of(e), program, funcs)
-    emit_program_types(ref_of(e), program, span_types, tuple_types, gen_variants, opt_structs, funcs)
+    program_emitter.emit_program_types(ref_of(e), program, span_types, tuple_types, gen_variants, opt_structs, funcs)
     if e.split_mode:
         prepare_split_units(ref_of(e), funcs, program.module_name)
-    emit_program_bodies(
+    program_emitter.emit_program_bodies(
         ref_of(e),
         program,
         funcs,
@@ -492,7 +493,7 @@ function prepare_split_units(e: ref[Emitter], funcs: span[ir.Function], root_mod
         i += 1
 
 
-function split_unit_index_for(e: ref[Emitter], module_name: str) -> ptr_uint:
+public function split_unit_index_for(e: ref[Emitter], module_name: str) -> ptr_uint:
     var i: ptr_uint = 0
     while i < e.split_unit_names.len():
         let name_ptr = e.split_unit_names.get(i) else:
@@ -607,372 +608,6 @@ function emit_runtime_helpers(e: ref[Emitter], program: ir.Program, funcs: span[
         emit_free_foreign_cstr_helper(e)
         emit_line(e, "")
 
-
-function emit_program_types(
-    e: ref[Emitter],
-    program: ir.Program,
-    span_types: vec.Vec[types.Type],
-    tuple_types: vec.Vec[types.Type],
-    gen_variants: vec.Vec[ir.VariantDecl],
-    opt_structs: vec.Vec[OptionStructEntry],
-    funcs: span[ir.Function]
-) -> void:
-    var i: ptr_uint = 0
-    var gen_variants_mut = gen_variants
-    var opt_structs_mut = opt_structs
-    if (
-        program.structs.len > 0
-        or program.unions.len > 0
-        or tuple_types.len() > 0
-        or program.variants.len > 0
-        or gen_variants.len() > 0
-        or opt_structs.len() > 0
-    ):
-        var sorted_structs = topo_sort_structs(program.structs)
-        let sorted = sorted_structs.as_span()
-
-        # Emit span type forward declarations first (so struct types can reference them).
-        var si: ptr_uint = 0
-        while si < span_types.len():
-            let ty_ptr = span_types.get(si) else:
-                break
-            unsafe:
-                emit_line(
-                    e,
-                    strings.join_three("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";")
-                )
-            si += 1
-        if span_types.len() > 0:
-            emit_line(e, "")
-        i = 0
-        while i < sorted.len:
-            unsafe:
-                let s = read(sorted.data + i)
-                emit_line(
-                    e,
-                    strings.join_three(
-                        "typedef struct ",
-                        s.linkage_name,
-                        strings.join_two(" ", strings.join_two(s.linkage_name, ";"))
-                    )
-                )
-            i += 1
-        i = 0
-        while i < program.unions.len:
-            unsafe:
-                let u = read(program.unions.data + i)
-                emit_line(
-                    e,
-                    strings.join_three(
-                        "typedef union ",
-                        u.linkage_name,
-                        strings.join_two(" ", strings.join_two(u.linkage_name, ";"))
-                    )
-                )
-            i += 1
-        i = 0
-        while i < tuple_types.len():
-            let ty_ptr = tuple_types.get(i) else:
-                break
-            unsafe:
-                emit_tuple_type_forward(e, read(ty_ptr))
-            i += 1
-        i = 0
-        while i < program.variants.len:
-            unsafe:
-                emit_variant_forward(e, read(program.variants.data + i))
-            i += 1
-        i = 0
-        while i < gen_variants.len():
-            let v_ptr = gen_variants.get(i) else:
-                break
-            unsafe:
-                emit_variant_forward(e, read(v_ptr))
-            i += 1
-        i = 0
-        while i < opt_structs.len():
-            let os_ptr = opt_structs.get(i) else:
-                break
-            unsafe:
-                let os = read(os_ptr)
-                emit_line(
-                    e,
-                    strings.join_three(
-                        "typedef struct ",
-                        os.decl.linkage_name,
-                        strings.join_two(" ", strings.join_two(os.decl.linkage_name, ";"))
-                    )
-                )
-            i += 1
-        emit_line(e, "")
-        emit_enums_block(e, program)
-
-        # Collect Task types once; used by both forward declarations (before
-        # type aliases) and topological sort (alongside structs/variants).
-        var task_seen = map_mod.Map[str, bool].create()
-        var task_elements = map_mod.Map[str, types.Type].create()
-        collect_task_type_set(program, ref_of(task_seen), ref_of(task_elements))
-
-        # Task forward declarations must come before type aliases because
-        # aliases like `typedef mt_task_X ChanMessageTask` reference them.
-        emit_task_forward_decls(e, ref_of(task_seen))
-        emit_type_aliases(e, program)
-
-        # Emit span type full definitions after forward declarations
-        # so they can reference struct types.
-        si = 0
-        while si < span_types.len():
-            let ty_ptr = span_types.get(si) else:
-                break
-            unsafe:
-                emit_span_type(e, read(ty_ptr))
-            emit_line(e, "")
-            si += 1
-
-        # Emit struct and variant full definitions in a single dependency order,
-        # since structs and variants can embed each other by value.  Task structs
-        # are included in the sort so that Option[Task[X]] (with value: Task[X])
-        # is ordered after the Task struct definition.
-        var type_order = topo_sort_types(
-            program.structs,
-            ref_of(gen_variants_mut),
-            program.variants,
-            ref_of(opt_structs_mut),
-            ref_of(task_seen),
-            ref_of(task_elements),
-            tuple_types
-        )
-        var toi: ptr_uint = 0
-        while toi < type_order.len():
-            let node_ptr = type_order.get(toi) else:
-                break
-            unsafe:
-                let node = read(node_ptr)
-                if node.kind == 0:
-                    emit_struct(e, read(program.structs.data + node.index))
-                else if node.kind == 1:
-                    let gv_ptr = gen_variants.get(node.index) else:
-                        toi += 1
-                        continue
-                    emit_variant(e, read(gv_ptr))
-                else if node.kind == 2:
-                    emit_variant(e, read(program.variants.data + node.index))
-                else if node.kind == 3:
-                    let os_ptr = opt_structs.get(node.index) else:
-                        toi += 1
-                        continue
-                    emit_struct(e, read(os_ptr).decl)
-                else if node.kind == 4:
-                    # kind 4: Task struct
-                    var elem = types.primitive("void")
-                    let te_ptr = task_elements.get(node.key)
-                    if te_ptr != null:
-                        elem = unsafe: read(te_ptr)
-                    emit_task_struct_type(e, node.key, elem)
-                else:
-                    # kind 5: tuple struct
-                    let tuple_ptr = tuple_types.get(node.index) else:
-                        toi += 1
-                        continue
-                    emit_tuple_type_def(e, unsafe: read(tuple_ptr))
-            emit_line(e, "")
-            toi += 1
-        i = 0
-        while i < program.unions.len:
-            unsafe:
-                emit_union(e, read(program.unions.data + i))
-            emit_line(e, "")
-            i += 1
-
-        # Emit SoA struct definitions after regular structs (they reference
-        # element struct fields by C name).
-        emit_soa_types(e, funcs, program)
-    else:
-        # No structs/unions/variants — but span types may still be needed.
-        var span_si: ptr_uint = 0
-        while span_si < span_types.len():
-            let ty_ptr = span_types.get(span_si) else:
-                break
-            unsafe:
-                emit_line(
-                    e,
-                    strings.join_three("typedef struct ", span_type_name(array_element_type(read(ty_ptr))), ";")
-                )
-            span_si += 1
-        span_si = 0
-        while span_si < span_types.len():
-            let ty_ptr = span_types.get(span_si) else:
-                break
-            unsafe:
-                emit_span_type(e, read(ty_ptr))
-                emit_line(e, "")
-            span_si += 1
-        emit_enums_block(e, program)
-
-
-function emit_program_bodies(
-    e: ref[Emitter],
-    program: ir.Program,
-    funcs: span[ir.Function],
-    export_public: bool,
-    checked_index_types: vec.Vec[types.Type],
-    checked_span_index_types: vec.Vec[types.Type],
-    has_str_literals: bool,
-    str_lits: vec.Vec[str],
-    slice_has_str: bool,
-    slice_has_str_index: bool,
-    slice_has_str_concat: bool,
-    slice_span_types: vec.Vec[types.Type],
-    use_entry_argv: bool
-) -> void:
-    if e.split_mode:
-        e.split_target = 1
-    var i: ptr_uint = 0
-    if funcs.len > 0:
-        i = 0
-        while i < funcs.len:
-            unsafe:
-                emit_line(
-                    e,
-                    strings.join_two(
-                        function_signature(read(funcs.data + i), export_public, e.split_mode),
-                        ";"
-                    )
-                )
-            i += 1
-        emit_line(e, "")
-    i = 0
-    var emitted_helpers = map_mod.Map[str, bool].create()
-    while i < checked_index_types.len():
-        let ty_ptr = checked_index_types.get(i) else:
-            break
-        unsafe:
-            let name = checked_array_index_helper_name(read(ty_ptr))
-            if not emitted_helpers.contains(name):
-                emitted_helpers.set(name, true)
-                emit_checked_index_helper(e, read(ty_ptr), false)
-                emit_line(e, "")
-            let nullable_name = nullable_array_index_helper_name(read(ty_ptr))
-            if not emitted_helpers.contains(nullable_name):
-                emitted_helpers.set(nullable_name, true)
-                emit_checked_index_helper(e, read(ty_ptr), true)
-                emit_line(e, "")
-        i += 1
-    i = 0
-    var emitted_span_helpers = map_mod.Map[str, bool].create()
-    while i < checked_span_index_types.len():
-        let ty_ptr = checked_span_index_types.get(i) else:
-            break
-        unsafe:
-            let name = checked_span_index_helper_name(read(ty_ptr))
-            if not emitted_span_helpers.contains(name):
-                emitted_span_helpers.set(name, true)
-                emit_checked_span_index_helper(e, read(ty_ptr), false)
-                emit_line(e, "")
-            let nullable_name = nullable_span_index_helper_name(read(ty_ptr))
-            if not emitted_span_helpers.contains(nullable_name):
-                emitted_span_helpers.set(nullable_name, true)
-                emit_checked_span_index_helper(e, read(ty_ptr), true)
-                emit_line(e, "")
-        i += 1
-    if has_str_literals:
-        i = 0
-        while i < str_lits.len():
-            let value_ptr = str_lits.get(i) else:
-                break
-            unsafe:
-                emit_line(e, render_str_literal_constant(read(value_ptr), i))
-            i += 1
-        emit_line(e, "")
-    if e.variant_eq_set.len() > 0 or e.struct_eq_set.len() > 0:
-        emit_equality_forward_decls(e, program)
-        emit_variant_equality_helpers(e)
-        emit_struct_equality_helpers(e, program)
-    if slice_has_str or slice_has_str_index or slice_has_str_concat or slice_span_types.len() > 0:
-        emit_slice_helpers(e, slice_has_str, slice_has_str_index, slice_has_str_concat, slice_span_types)
-    if program.constants.len > 0:
-        var emitted_consts = reachability.emitted_constants(program, funcs)
-        var ci: ptr_uint = 0
-        while ci < emitted_consts.len():
-            let c_ptr = emitted_consts.get(ci) else:
-                break
-            unsafe:
-                emit_line(e, render_constant(e, read(c_ptr)))
-            ci += 1
-        # A module import can contribute constants that are all pruned; the
-        # host emits no separator when nothing was written.
-        if emitted_consts.len() > 0:
-            emit_line(e, "")
-    if program.globals.len > 0:
-        if e.split_mode:
-            e.split_target = 1
-            var gh: ptr_uint = 0
-            while gh < program.globals.len:
-                unsafe:
-                    emit_line(e, render_global_extern(read(program.globals.data + gh)))
-                gh += 1
-            e.split_target = 2
-            var gd: ptr_uint = 0
-            while gd < program.globals.len:
-                unsafe:
-                    emit_line(e, render_global_definition(ref_of(e), read(program.globals.data + gd)))
-                gd += 1
-            e.split_target = 1
-        else:
-            var gi: ptr_uint = 0
-            while gi < program.globals.len:
-                unsafe:
-                    let g = read(program.globals.data + gi)
-                    emit_line(e, render_global(e, g))
-                gi += 1
-        emit_line(e, "")
-
-    # Top-level static asserts, evaluated by the C compiler.  Emitted after all
-    # type definitions so `sizeof` over user structs sees complete types.
-    if program.static_asserts.len > 0:
-        if e.split_mode:
-            e.split_target = 2
-        var sai: ptr_uint = 0
-        while sai < program.static_asserts.len:
-            unsafe:
-                let assertion = read(program.static_asserts.data + sai)
-                emit_line(e, render_static_assert(e, assertion.condition, assertion.message))
-            sai += 1
-        emit_line(e, "")
-        if e.split_mode:
-            e.split_target = 1
-
-    # Emit str_buffer runtime helpers if any str_buffer struct is present.
-    if has_str_buffer_structs(program):
-        emit_str_buffer_helpers(e)
-
-    # Emit the argv → span[str] entry bridge helpers when the entry point uses them.
-    if use_entry_argv:
-        emit_entry_argv_helpers(e)
-    i = 0
-    if e.split_mode:
-        e.split_target = 3
-    while i < funcs.len:
-        unsafe:
-            let f = read(funcs.data + i)
-            if e.split_mode:
-                var module_name = program.module_name
-                match f.source_module:
-                    Option.some as owner:
-                        module_name = owner.value
-                    Option.none:
-                        pass
-                if module_name.len == 0:
-                    module_name = "program"
-                e.split_unit_index = split_unit_index_for(e, module_name)
-            emit_function(e, f, export_public, e.split_mode)
-        if i < funcs.len - 1:
-            emit_line(e, "")
-        i += 1
-
-# =============================================================================
-#  String helpers
-# =============================================================================
 
 public function emit_line(e: ref[Emitter], text: str) -> void:
     emit_append(e, text)
@@ -1356,7 +991,7 @@ function collect_slice_from_expr(
                 pass
 
 
-function emit_slice_helpers(
+public function emit_slice_helpers(
     e: ref[Emitter],
     has_str: bool,
     has_str_index: bool,
@@ -1481,7 +1116,7 @@ function str_literal_name(index: ptr_uint) -> str:
     return strings.join_two("mt_str_lit_", ptr_uint_to_str(index))
 
 
-function render_str_literal_constant(value: str, index: ptr_uint) -> str:
+public function render_str_literal_constant(value: str, index: ptr_uint) -> str:
     return strings.join_six(
         "static const mt_str ",
         str_literal_name(index),
@@ -2473,7 +2108,7 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
     fatal(c"c_backend: unsupported generic C type")
 
 
-function span_type_name(element: types.Type) -> str:
+public function span_type_name(element: types.Type) -> str:
     return strings.join_two("mt_span_", naming.type_c_key(element))
 
 # =============================================================================
@@ -2893,7 +2528,7 @@ function span_from_expr(
                 pass
 
 
-function emit_span_type(e: ref[Emitter], t: types.Type) -> void:
+public function emit_span_type(e: ref[Emitter], t: types.Type) -> void:
     let element = array_element_type(t)
     let name = span_type_name(element)
     emit_line(e, strings.join_three("typedef struct ", name, " {"))
@@ -3116,12 +2751,12 @@ function tuple_from_expr(
                 pass
 
 
-function emit_tuple_type_forward(e: ref[Emitter], t: types.Type) -> void:
+public function emit_tuple_type_forward(e: ref[Emitter], t: types.Type) -> void:
     let name = naming.tuple_type_c_name(t)
     emit_line(e, strings.join_three("typedef struct ", name, strings.join_two(" ", strings.join_two(name, ";"))))
 
 
-function emit_tuple_type_def(e: ref[Emitter], t: types.Type) -> void:
+public function emit_tuple_type_def(e: ref[Emitter], t: types.Type) -> void:
     let name = naming.tuple_type_c_name(t)
     emit_line(e, strings.join_three("struct ", name, " {"))
     match t:
@@ -3213,7 +2848,7 @@ function is_span_type(t: types.Type) -> bool:
             return false
 
 
-function array_element_type(t: types.Type) -> types.Type:
+public function array_element_type(t: types.Type) -> types.Type:
     match t:
         types.Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
@@ -3423,7 +3058,7 @@ function c_decl(t: types.Type, name: str) -> str:
 #  Enum emission (mirrors c_backend/type_declaration.rb emit_enum)
 # =============================================================================
 
-function emit_enums_block(e: ref[Emitter], program: ir.Program) -> void:
+public function emit_enums_block(e: ref[Emitter], program: ir.Program) -> void:
     var i: ptr_uint = 0
     while i < program.enums.len:
         unsafe:
@@ -3458,7 +3093,7 @@ function emit_enum(e: ref[Emitter], enum_decl: ir.EnumDecl) -> void:
 #  Struct emission (mirrors c_backend/type_declaration.rb emit_struct)
 # =============================================================================
 
-function emit_struct(e: ref[Emitter], s: ir.StructDecl) -> void:
+public function emit_struct(e: ref[Emitter], s: ir.StructDecl) -> void:
     emit_line(e, strings.join_three("struct ", s.linkage_name, " {"))
     var i: ptr_uint = 0
     while i < s.fields.len:
@@ -3484,7 +3119,7 @@ function struct_closer(packed: bool, alignment: int) -> str:
     return "};"
 
 
-function emit_union(e: ref[Emitter], u: ir.UnionDecl) -> void:
+public function emit_union(e: ref[Emitter], u: ir.UnionDecl) -> void:
     emit_line(e, strings.join_three("union ", u.linkage_name, " {"))
     var i: ptr_uint = 0
     while i < u.fields.len:
@@ -3498,7 +3133,7 @@ function emit_union(e: ref[Emitter], u: ir.UnionDecl) -> void:
 ## Emit SoA (Structure-of-Arrays) struct definitions for every SoA type used in
 ## the program.  Each SoA struct has an array member per field of the element
 ## struct, e.g. `mt_soa_Point_4 { float x[4]; float y[4]; float z[4]; }`.
-function emit_soa_types(e: ref[Emitter], funcs: span[ir.Function], program: ir.Program) -> void:
+public function emit_soa_types(e: ref[Emitter], funcs: span[ir.Function], program: ir.Program) -> void:
     var seen = map_mod.Map[str, bool].create()
     # Collect SoA types from function signatures, local types, and struct fields.
     var fi: ptr_uint = 0
@@ -3668,7 +3303,7 @@ function variant_has_payload(vd: ir.VariantDecl) -> bool:
 
 ## Forward typedefs for a variant: the outer tagged struct plus one per payload
 ## arm (no-payload arms have no payload struct).  Mirrors emit_forward_declarations.
-function emit_variant_forward(e: ref[Emitter], vd: ir.VariantDecl) -> void:
+public function emit_variant_forward(e: ref[Emitter], vd: ir.VariantDecl) -> void:
     emit_line(
         e,
         strings.join_three(
@@ -3712,7 +3347,7 @@ function c_safe_field_name(name: str) -> str:
     return name
 
 
-function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
+public function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
     let outer_c = vd.linkage_name
 
     # Per-arm payload structs
@@ -3797,7 +3432,7 @@ function emit_variant(e: ref[Emitter], vd: ir.VariantDecl) -> void:
 
 ## Order struct definitions so a struct that embeds another (by value) is emitted
 ## after its dependency.  Depth-first post-order over struct-typed fields.
-function topo_sort_structs(structs: span[ir.StructDecl]) -> vec.Vec[ir.StructDecl]:
+public function topo_sort_structs(structs: span[ir.StructDecl]) -> vec.Vec[ir.StructDecl]:
     var by_linkage = map_mod.Map[str, ptr_uint].create()
     var i: ptr_uint = 0
     while i < structs.len:
@@ -4071,7 +3706,7 @@ function type_node_deps(
     return deps
 
 
-function topo_sort_types(
+public function topo_sort_types(
     structs: span[ir.StructDecl],
     gen_variants: ref[vec.Vec[ir.VariantDecl]],
     program_variants: span[ir.VariantDecl],
@@ -4225,7 +3860,7 @@ function topo_visit_type(
 
 ## `export_public` keeps a `public` top-level function's symbol external (the
 ## host's library intent); executables keep every non-entry function `static`.
-function function_signature(func: ir.Function, export_public: bool, force_external: bool) -> str:
+public function function_signature(func: ir.Function, export_public: bool, force_external: bool) -> str:
     let prefix = if func.entry_point or force_external or (export_public and func.public_export): "" else: "static "
     var buf = string.String.create()
     buf.append(prefix)
@@ -4276,7 +3911,7 @@ function array_out_param_decl(t: types.Type, name: str) -> str:
     return c_decl(t, strings.join_three("(*", name, ")"))
 
 
-function emit_function(e: ref[Emitter], func: ir.Function, export_public: bool, force_external: bool) -> void:
+public function emit_function(e: ref[Emitter], func: ir.Function, export_public: bool, force_external: bool) -> void:
     e.used_labels.clear()
     collect_used_labels(func.body, ref_of(e.used_labels))
     e.current_fn_return_type = func.return_type
@@ -5143,7 +4778,7 @@ function render_expr(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
 ## `_Static_assert(<condition>, "<message>");` — a string-literal message is
 ## emitted as a bare C string (the host's `emit_static_assert`), regardless of
 ## its IR type; any other message expression renders normally.
-function render_static_assert(e: ref[Emitter], condition: ptr[ir.Expr], message: ptr[ir.Expr]) -> str:
+public function render_static_assert(e: ref[Emitter], condition: ptr[ir.Expr], message: ptr[ir.Expr]) -> str:
     var message_text = string.String.create()
     match unsafe: read(message):
         ir.Expr.expr_string_literal as lit:
@@ -5207,7 +4842,7 @@ function render_address_of_operand(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     return strings.join_two("&", wrap_member_receiver(e, ep))
 
 
-function checked_array_index_helper_name(receiver_type: types.Type) -> str:
+public function checked_array_index_helper_name(receiver_type: types.Type) -> str:
     let elem = array_element_type(receiver_type)
     var buf = string.String.create()
     buf.append("mt_checked_index_array_")
@@ -5224,7 +4859,7 @@ function checked_array_index_helper_name(receiver_type: types.Type) -> str:
     return buf.as_str()
 
 
-function checked_span_index_helper_name(receiver_type: types.Type) -> str:
+public function checked_span_index_helper_name(receiver_type: types.Type) -> str:
     match receiver_type:
         types.Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
@@ -5245,7 +4880,7 @@ function checked_span_index_helper_name(receiver_type: types.Type) -> str:
 
 ## The host's `nullable_array_index_helper_name` (`reinterpret.rb:141`): the
 ## bounds-checked accessor that returns NULL instead of aborting (`get()`).
-function nullable_array_index_helper_name(receiver_type: types.Type) -> str:
+public function nullable_array_index_helper_name(receiver_type: types.Type) -> str:
     let elem = array_element_type(receiver_type)
     var buf = string.String.create()
     buf.append("mt_nullable_index_array_")
@@ -5259,7 +4894,7 @@ function nullable_array_index_helper_name(receiver_type: types.Type) -> str:
     return buf.as_str()
 
 
-function nullable_span_index_helper_name(receiver_type: types.Type) -> str:
+public function nullable_span_index_helper_name(receiver_type: types.Type) -> str:
     match receiver_type:
         types.Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
@@ -5450,7 +5085,7 @@ function span_index_bounds_body(nullable: bool) -> str:
     return "  if (index >= span.len) mt_fatal(\"span index out of bounds\");"
 
 
-function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type, nullable: bool) -> void:
+public function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type, nullable: bool) -> void:
     let elem_type = array_element_type(receiver_type)
     let helper_name = if nullable: nullable_array_index_helper_name(receiver_type) else: checked_array_index_helper_name(receiver_type)
     # When the element is itself an array (e.g. array[array[float, 2], 6]) the
@@ -5686,7 +5321,7 @@ function span_index_from_expr(
                 pass
 
 
-function emit_checked_span_index_helper(e: ref[Emitter], receiver_type: types.Type, nullable: bool) -> void:
+public function emit_checked_span_index_helper(e: ref[Emitter], receiver_type: types.Type, nullable: bool) -> void:
     let elem = array_element_type(receiver_type)
     let elem_c = c_type(elem)
     let span_c = c_type(receiver_type)
@@ -6347,7 +5982,7 @@ function scan_expr_for_variant_eq(e: ref[Emitter], ep: ptr[ir.Expr], program: ir
 ## Emit static `mt_variant_eq_<name>` helper functions for every variant type
 ## registered during the pre-scan.  Each helper compares discriminants first,
 ## then switches on the arm to compare payload fields.
-function emit_variant_equality_helpers(e: ref[Emitter]) -> void:
+public function emit_variant_equality_helpers(e: ref[Emitter]) -> void:
     var keys = e.variant_eq_set.keys()
     while true:
         let kp = keys.next() else:
@@ -6585,7 +6220,7 @@ function equality_type_needs_str(ty: types.Type) -> bool:
 
 ## Forward declarations for every aggregate equality helper, so helpers can
 ## call one another regardless of definition order.
-function emit_equality_forward_decls(e: ref[Emitter], program: ir.Program) -> void:
+public function emit_equality_forward_decls(e: ref[Emitter], program: ir.Program) -> void:
     var keys = e.variant_eq_set.keys()
     while true:
         let kp = keys.next() else:
@@ -6628,7 +6263,7 @@ function struct_equality_helper_name(struct_c_name: str) -> str:
 
 
 ## Emit one `mt_struct_eq_<name>` helper per registered struct type.
-function emit_struct_equality_helpers(e: ref[Emitter], program: ir.Program) -> void:
+public function emit_struct_equality_helpers(e: ref[Emitter], program: ir.Program) -> void:
     var keys = e.struct_eq_set.keys()
     while true:
         let kp = keys.next() else:
@@ -7085,7 +6720,7 @@ function expr_result_type(ep: ptr[ir.Expr]) -> types.Type:
 # =============================================================================
 
 ## Emit a global constant (vtable, etc.) as a static const variable.
-function render_constant(e: ref[Emitter], c: ir.Constant) -> str:
+public function render_constant(e: ref[Emitter], c: ir.Constant) -> str:
     var buf = string.String.create()
     buf.append("static const ")
     # Use c_decl so array types get C-native `TYPE NAME[N]` syntax
@@ -7109,7 +6744,7 @@ function render_initializer_exp(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
 
 
 ## Emit a module-level global variable (event, var, etc.).
-function render_global_extern(g: ir.Global) -> str:
+public function render_global_extern(g: ir.Global) -> str:
     var buf = string.String.create()
     buf.append("extern ")
     buf.append(c_decl(g.ty, g.linkage_name))
@@ -7118,7 +6753,7 @@ function render_global_extern(g: ir.Global) -> str:
 
 
 ## Split-mode definition: the data unit owns the one external definition.
-function render_global_definition(e: ref[Emitter], g: ir.Global) -> str:
+public function render_global_definition(e: ref[Emitter], g: ir.Global) -> str:
     var buf = string.String.create()
     buf.append(c_decl(g.ty, g.linkage_name))
     buf.append(" = ")
@@ -7127,7 +6762,7 @@ function render_global_definition(e: ref[Emitter], g: ir.Global) -> str:
     return buf.as_str()
 
 
-function render_global(e: ref[Emitter], g: ir.Global) -> str:
+public function render_global(e: ref[Emitter], g: ir.Global) -> str:
     var buf = string.String.create()
     buf.append("static ")
     # Use c_decl so array types get C-native `TYPE NAME[N]` syntax
@@ -7146,7 +6781,7 @@ function render_global(e: ref[Emitter], g: ir.Global) -> str:
 #  str_buffer runtime helpers
 # =============================================================================
 
-function has_str_buffer_structs(program: ir.Program) -> bool:
+public function has_str_buffer_structs(program: ir.Program) -> bool:
     var i: ptr_uint = 0
     while i < program.structs.len:
         unsafe:
@@ -7156,7 +6791,7 @@ function has_str_buffer_structs(program: ir.Program) -> bool:
     return false
 
 
-function emit_str_buffer_helpers(e: ref[Emitter]) -> void:
+public function emit_str_buffer_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "static uintptr_t mt_str_buffer_len(char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {")
     emit_line(e, "  if (*dirty) {")
     emit_line(e, "    uintptr_t current = 0;")
@@ -7295,7 +6930,7 @@ function uses_parallel_runtime(program: ir.Program) -> bool:
     return false
 
 
-function collect_task_type_set(
+public function collect_task_type_set(
     program: ir.Program,
     seen: ref[map_mod.Map[str, bool]],
     task_elements: ref[map_mod.Map[str, types.Type]]
@@ -7332,7 +6967,7 @@ function collect_task_type_set(
         i += 1
 
 
-function emit_task_forward_decls(e: ref[Emitter], seen: ref[map_mod.Map[str, bool]]) -> void:
+public function emit_task_forward_decls(e: ref[Emitter], seen: ref[map_mod.Map[str, bool]]) -> void:
     var keys = seen.keys()
     while true:
         let kp = keys.next() else:
@@ -7574,7 +7209,7 @@ function task_type_element(t: types.Type) -> Option[types.Type]:
             return Option[types.Type].none
 
 
-function emit_task_struct_type(e: ref[Emitter], c_name: str, elem: types.Type) -> void:
+public function emit_task_struct_type(e: ref[Emitter], c_name: str, elem: types.Type) -> void:
     let is_void = is_void_type(elem)
     let type_str = c_type(elem)
     emit_line(e, strings.join_three("struct ", c_name, " {"))
@@ -8104,7 +7739,7 @@ function emit_opaque_forward_decls(e: ref[Emitter], program: ir.Program) -> void
     seen.release()
 
 
-function emit_type_aliases(e: ref[Emitter], program: ir.Program) -> void:
+public function emit_type_aliases(e: ref[Emitter], program: ir.Program) -> void:
     var ai: ptr_uint = 0
     while ai < program.type_aliases.len:
         var ta: ir.TypeAlias
@@ -8506,7 +8141,7 @@ function uses_entry_argv(program: ir.Program) -> bool:
 
 ## Emit the argv → span[str] entry bridge runtime helpers.  Mirrors Ruby's
 ## mt_entry_argv_to_span_str / mt_free_entry_argv_strs (runtime_helpers.rb).
-function emit_entry_argv_helpers(e: ref[Emitter]) -> void:
+public function emit_entry_argv_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "static mt_span_str mt_entry_argv_to_span_str(int32_t argc, char** argv, mt_str** items_out) {")
     emit_line(e, "  uintptr_t len = argc > 0 ? (uintptr_t)argc : 0;")
     emit_line(e, "  mt_str* items = NULL;")

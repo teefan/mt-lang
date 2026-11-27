@@ -181,6 +181,7 @@
     "build_cache": "build_cache",
     "c_backend.c_backend": "c_backend",
     "c_backend.format_string": "format_string",
+    "c_backend.program": "program_emitter",
     "c_backend.reachability": "reachability",
     "c_naming": "naming",
     "cli_help": "cli_help",
@@ -1610,7 +1611,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148742,
+    "total_code": 148751,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -1669,8 +1670,8 @@
         "max_function": 78
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 8579,
-        "code": 7151,
+        "lines": 8215,
+        "code": 6824,
         "max_line": 237,
         "max_function": 270
       },
@@ -1679,6 +1680,12 @@
         "code": 281,
         "max_line": 178,
         "max_function": 144
+      },
+      "projects/mtc/src/mtc/c_backend/program.mt": {
+        "lines": 378,
+        "code": 336,
+        "max_line": 132,
+        "max_function": 200
       },
       "projects/mtc/src/mtc/c_backend/reachability.mt": {
         "lines": 433,
