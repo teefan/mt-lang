@@ -224,6 +224,7 @@
     "linter.rules_redundant_else": "rules_redundant_else",
     "linter.rules_trailing_comma": "rules_trailing_comma",
     "linter.scope_tracking": "scope_tracking",
+    "linter.structural": "structural",
     "loader.binder": "binder",
     "loader.errors": "errors",
     "loader.module_loader": "loader",
@@ -359,7 +360,7 @@
     "unused": [],
     "test_only": [
       "projects/mtc/src/mtc/linter/fix_engine.mt:60:function:is_fixable",
-      "projects/mtc/src/mtc/linter/linter.mt:194:function:lint_source",
+      "projects/mtc/src/mtc/linter/linter.mt:195:function:lint_source",
       "projects/mtc/src/mtc/parser/parser.mt:920:function:parse_reporting",
       "projects/mtc/src/mtc/pretty_printer/ir_formatter.mt:41:function:format_program",
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt:552:function:flow_create",
@@ -1594,7 +1595,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148726,
+    "total_code": 148728,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -1869,10 +1870,10 @@
         "max_function": 91
       },
       "projects/mtc/src/mtc/linter/linter.mt": {
-        "lines": 7690,
-        "code": 6366,
+        "lines": 6997,
+        "code": 5708,
         "max_line": 203,
-        "max_function": 219
+        "max_function": 188
       },
       "projects/mtc/src/mtc/linter/nullcheck.mt": {
         "lines": 693,
@@ -1921,6 +1922,12 @@
         "code": 1304,
         "max_line": 119,
         "max_function": 98
+      },
+      "projects/mtc/src/mtc/linter/structural.mt": {
+        "lines": 698,
+        "code": 660,
+        "max_line": 121,
+        "max_function": 219
       },
       "projects/mtc/src/mtc/loader/binder.mt": {
         "lines": 410,
