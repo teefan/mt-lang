@@ -22,6 +22,7 @@ import mtc.lowering.monomorphized as monomorphized
 import mtc.lowering.parallel as parallel_mod
 import mtc.lowering.tasks as tasks
 import mtc.lowering.declarations as decl_mod
+import mtc.lowering.foreign as foreign_mod
 import mtc.lowering.lowering as lowering
 import mtc.lowering.member_access as member_mod
 import mtc.lowering.type_helpers as type_helpers
@@ -208,7 +209,7 @@ public function lower_identifier_call(
                     return lowering.lower_aggregate_literal(ctx, id.name, args)
                 let foreign_ptr = ctx.foreign_map.get(id.name)
                 if foreign_ptr != null:
-                    return lowering.lower_foreign_call(ctx, read(foreign_ptr), args, call_ep)
+                    return foreign_mod.lower_foreign_call(ctx, read(foreign_ptr), args, call_ep)
                 let extern_ptr = ctx.extern_map.get(id.name)
                 if extern_ptr != null:
                     return lowering.lower_plain_call(ctx, read(extern_ptr), args, call_ep, null)

@@ -239,6 +239,7 @@
     "lowering.declarations": "decl_mod",
     "lowering.events": "events_mod",
     "lowering.expressions": "expr_mod",
+    "lowering.foreign": "foreign_mod",
     "lowering.format": "format",
     "lowering.include_scan": "include_scan",
     "lowering.inline": "inline_mod",
@@ -1629,7 +1630,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148774,
+    "total_code": 148842,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -2000,8 +2001,8 @@
         "max_function": 372
       },
       "projects/mtc/src/mtc/lowering/calls.mt": {
-        "lines": 859,
-        "code": 677,
+        "lines": 860,
+        "code": 678,
         "max_line": 135,
         "max_function": 158
       },
@@ -2047,6 +2048,12 @@
         "max_line": 193,
         "max_function": 234
       },
+      "projects/mtc/src/mtc/lowering/foreign.mt": {
+        "lines": 731,
+        "code": 537,
+        "max_line": 154,
+        "max_function": 185
+      },
       "projects/mtc/src/mtc/lowering/format.mt": {
         "lines": 1659,
         "code": 1451,
@@ -2072,8 +2079,8 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 16146,
-        "code": 12324,
+        "lines": 15465,
+        "code": 11807,
         "max_line": 156,
         "max_function": 246
       },
@@ -2084,8 +2091,8 @@
         "max_function": 188
       },
       "projects/mtc/src/mtc/lowering/member_access.mt": {
-        "lines": 961,
-        "code": 807,
+        "lines": 962,
+        "code": 808,
         "max_line": 138,
         "max_function": 271
       },
@@ -2108,8 +2115,8 @@
         "max_function": 155
       },
       "projects/mtc/src/mtc/lowering/statements.mt": {
-        "lines": 1664,
-        "code": 1301,
+        "lines": 1665,
+        "code": 1302,
         "max_line": 154,
         "max_function": 207
       },
@@ -2408,8 +2415,8 @@
         "max_function": 144
       },
       "projects/mtc/src/mtc/main/build_cli.mt": {
-        "lines": 1728,
-        "code": 1515,
+        "lines": 1781,
+        "code": 1560,
         "max_line": 198,
         "max_function": 192
       },

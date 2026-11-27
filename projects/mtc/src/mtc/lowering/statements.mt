@@ -12,6 +12,7 @@ import mtc.lowering.async_cps as async_cps
 import mtc.lowering.control_flow as control_flow
 import mtc.lowering.format as format
 import mtc.lowering.inline as inline_mod
+import mtc.lowering.foreign as foreign_mod
 import mtc.lowering.lowering as lowering
 import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.match as match_mod
@@ -457,7 +458,7 @@ public function lower_plain_local_stmt(
                                 ast.Expr.expr_identifier:
                                     ty = lowering.qualify_type(ctx, type_helpers.fallback_type(ctx, ptr[ast.Expr]<-init))
                                 ast.Expr.expr_call as call:
-                                    match lowering.foreign_wrapper_call_return_type(ctx, call.callee):
+                                    match foreign_mod.foreign_wrapper_call_return_type(ctx, call.callee):
                                         Option.some as declared:
                                             ty = declared.value
                                         Option.none:
@@ -1483,7 +1484,7 @@ public function lower_guard_local(
         unsafe:
             match read(value_ptr):
                 ast.Expr.expr_call as call:
-                    match lowering.foreign_wrapper_call_return_type(ctx, call.callee):
+                    match foreign_mod.foreign_wrapper_call_return_type(ctx, call.callee):
                         Option.some as declared:
                             storage_ty = declared.value
                         Option.none:

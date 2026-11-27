@@ -16,6 +16,7 @@ import mtc.lowering.async_cps as async_cps
 import mtc.lowering.control_flow as control_flow
 import mtc.lowering.inline as inline_mod
 import mtc.lowering.events as events_mod
+import mtc.lowering.foreign as foreign_mod
 import mtc.lowering.lowering as lowering
 import mtc.lowering.match as match_mod
 import mtc.lowering.monomorphized as monomorphized
@@ -520,7 +521,7 @@ public function lower_member_call(
                             # target module's declarations before the plain path.
                             match lowering.imported_foreign_call(ctx, target_module, ma.member_name):
                                 Option.some as ff_info:
-                                    return lowering.lower_foreign_call(ctx, ff_info.value, args, call_ep)
+                                    return foreign_mod.lower_foreign_call(ctx, ff_info.value, args, call_ep)
                                 Option.none:
                                     pass
                             # Cross-module external function call (`libc.malloc(...)`):

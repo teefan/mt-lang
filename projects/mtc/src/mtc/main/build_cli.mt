@@ -578,6 +578,38 @@ function watch_build_once(build_args: span[str], cache: ref[loader.ModuleCache])
     return status == 0
 
 
+## Compile to a sibling temp path and atomically replace the final binary.  A
+## user (or `--run`) can therefore never observe a partially written output.
+function watch_build_atomic(
+    build_args: span[str],
+    cache: ref[loader.ModuleCache],
+    temporary_output: str,
+    final_output: str
+) -> bool:
+    match fs.remove(temporary_output):
+        Result.success:
+            pass
+        Result.failure as removal:
+            var error = removal.error
+            error.release()
+    if not watch_build_once(build_args, ref_of(cache)):
+        return false
+    match fs.rename(temporary_output, final_output):
+        Result.success:
+            return true
+        Result.failure as rename_failure:
+            var error = rename_failure.error
+            var message = string.String.create()
+            defer: message.release()
+            message.append("watch: could not replace ")
+            message.append(final_output)
+            message.append(": ")
+            message.append(error.message.as_str())
+            error.release()
+            stdio.print_line(message.as_str())
+            return false
+
+
 function run_watch_program(output: str) -> void:
     var command = vec.Vec[str].create()
     defer: command.release()
@@ -676,6 +708,27 @@ public function watch_command(args: span[str]) -> int:
         build_args.push("-o")
         build_args.push(output.as_str())
 
+    var temp_output = string.String.create()
+    defer: temp_output.release()
+    temp_output.append(output.as_str())
+    temp_output.append(".watch-tmp")
+
+    # Clone the build arguments with the output redirected to the temp path.
+    # The child builds there; the parent renames atomically on success.
+    var atomic_args = vec.Vec[str].create()
+    defer: atomic_args.release()
+    bi = 0
+    while bi < build_args.len():
+        let arg_ptr = build_args.get(bi) else:
+            break
+        let arg = unsafe: read(arg_ptr)
+        atomic_args.push(arg)
+        if (arg == "-o" or arg == "--output") and bi + 1 < build_args.len():
+            atomic_args.push(temp_output.as_str())
+            bi += 2
+            continue
+        bi += 1
+
     var roots = vec.Vec[string.String].create()
     defer:
         var ri: ptr_uint = 0
@@ -704,7 +757,7 @@ public function watch_command(args: span[str]) -> int:
     var cache = loader.create_module_cache()
     defer: loader.release_module_cache(ref_of(cache))
 
-    let build_ok = watch_build_once(build_args.as_span(), ref_of(cache))
+    let build_ok = watch_build_atomic(atomic_args.as_span(), ref_of(cache), temp_output.as_str(), output.as_str())
     if build_ok and run_after_build:
         run_watch_program(output.as_str())
 
@@ -733,7 +786,7 @@ public function watch_command(args: span[str]) -> int:
         while dirty:
             stdio.print_line("change detected; rebuilding")
             let _ = terminal.flush_stdout()
-            let ok = watch_build_once(build_args.as_span(), ref_of(cache))
+            let ok = watch_build_atomic(atomic_args.as_span(), ref_of(cache), temp_output.as_str(), output.as_str())
             if ok and run_after_build:
                 run_watch_program(output.as_str())
             var after = vec.Vec[watch_cli.WatchFile].create()

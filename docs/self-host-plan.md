@@ -14,7 +14,7 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-182-2026-11-26)
+- [Status at a glance](#status-at-a-glance-session-183-2026-11-26)
 - [Handoff](#handoff-session-158)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
@@ -112,7 +112,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 182, 2026-11-26)
+## Status at a glance (session 183, 2026-11-26)
 
 | Area | State |
 | --- | --- |
@@ -126,11 +126,11 @@ history.
 | `test/mt` | **106 files / 0 failed** (71 in-language tests + 35 compile-fail diagnostics fixtures; session 170 added three generic-invariance fixtures and the conformance corpus lives separately; peak RSS **100 MiB**, measured session 151) |
 | Examples | **311/311** under the self-only `emit-c`/`check` sweep — session 161 extended it from 78 to **every** `examples/**/*.mt`, adding `examples/raylib` (219) and `examples/box3d` (14); a first line of `external` selects `check` instead of `emit-c` (one raw binding module).  That gap is how a call to a nonexistent `rl.image_draw` survived (session 160).  Plus the headless **`box2d_smoke`** build/run gate |
 | Multi-TU build | **opt-in `--split`** (sessions 171–172): shared `mtc.h`, one data unit for globals/static asserts, one `unit_<n>.c` per module, and one `cc -c` object per unit with an exact content-keyed object cache (512 MiB cap including key sidecars).  The split-built compiler passes 22/22 and 106/106; cache edit-one-module reuses all but one object.  Single-file output is byte-identical and remains the default.  Static archives and wasm still reject `--split` |
-| Watch/dev loop | **`mtc watch PATH`** (session 173): polls `.mt` mtime seconds/nanoseconds/size under the entry directory plus every `-I` root (default 500 ms), keeps a loader `ModuleCache` and calls `check_program_with_source` in-process (a leaf edit advances parse/analysis only for the changed module and dependents), then forks a build child for lowering/C/link so per-build IR memory dies with the child.  `--split` reuses unchanged per-TU objects (leaf `3 reused / 1 compiled`; no-op `0 compiled`).  `--run` optional; 100-cycle no-growth gate |
+| Watch/dev loop | **`mtc watch PATH`** (session 173): polls `.mt` mtime seconds/nanoseconds/size under the entry directory plus every `-I` root (default 500 ms), keeps a loader `ModuleCache` and calls `check_program_with_source` in-process (a leaf edit advances parse/analysis only for the changed module and dependents), then forks a build child for lowering/C/link so per-build IR memory dies with the child.  `--split` reuses unchanged per-TU objects (leaf `3 reused / 1 compiled`; no-op `0 compiled`).  `--run` optional; rebuilds compile to a sibling temp path and rename atomically, so an external run never observes a partial binary; 100-cycle no-growth gate |
 | IR verifier | **`ir_verify.mt`** (session 174): checks unique linkage names, concrete declaration types (no `ty_error`/`ty_var`), non-empty module owners, unique fields/params/members/arms, a single `main` entry point returning `int`, switch defaults, and labels/gotos.  `--verify-ir` is available on `build`/`run`/`lower`/`emit-c`; the dev gate verifies the compiler IR after rebuilding, and 12 constructed-IR unit tests cover each rejection path |
-| Lowering extraction | **`statements.mt` + `member_access.mt` + `expressions.mt` + `calls.mt` + `events.mt` + `declarations.mt`** (sessions 175/178/179/180/181/182): statements 1,664 lines; member_access 960; expressions 1,039 (including proc bodies); calls 858; events 2,181; declarations 487.  `lowering.mt` moved from 23,008 to 16,146 lines (6,862 extracted).  Helper visibility was opened for the moved calls; C differs only by the extracted functions' source positions, and all behavior oracles remain green.  The remaining 4.2 cluster is the foreign expression body; 4.3 context grouping and 4.4 per-module lowering remain |
+| Lowering extraction | **`statements.mt` + `member_access.mt` + `expressions.mt` + `calls.mt` + `events.mt` + `declarations.mt` + `foreign.mt`** (sessions 175/178/179/180/181/182/183): statements 1,664 lines; member_access 960; expressions 1,039; calls 858; events 2,181; declarations 487; foreign 731.  `lowering.mt` moved from 23,008 to 15,465 lines (7,543 extracted).  Helper visibility was opened for the moved calls; C differs only by the extracted functions' source positions, and all behavior oracles remain green.  The remaining 4.2 clusters are the type/qualification helpers; 4.3 context grouping and 4.4 per-module lowering remain |
 | Context grouping | **`LoweringCounters`** (session 176) plus **`LoweringCaches`**, **`LoweringFormatState`**, and **`LoweringHoistState`** (session 177).  Counters group temp/match/async; caches group specialization bodies, generic struct declarations, str-buffer types, event runtimes, and dyn vtables; format groups the dynamic-format/name/cstr state; hoist groups the statement-position window.  Access-only refactors, no behavior changes; the full compiler-core gate is green |
-| Recorded oracles | **CLI 231/231 (0.6.3); diagnostics 497 compared / 8 changed / 2 unrecorded / 0 differ; lint 644 compared / 31 changed / 10 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
+| Recorded oracles | **CLI 231/231 (0.6.3); diagnostics 497 compared / 8 changed / 2 unrecorded / 0 differ; lint 644 compared / 31 changed / 11 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
 | `check` diagnostics | the 500-file diagnostic oracle is the gate (the extra row is `box2d_api_smoke`); the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field anchor is a reviewed difference, not a residual (session 146). |
 | Linter | **43/43 rules, 13/13 fixers**; the 646-compared lint oracle is the corpus gate.  `unused-import` now credits type positions (annotations, params/returns, fields, aliases, specialization type arguments, proc signatures, `emit` declarations), fixing the type-only false positives; the remaining tree output is dominated by true style/ownership hints.  The historical host residue (3 self-only `std` files, timeout rows) is in *Deliberate differences*. |
@@ -141,7 +141,7 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check`; **Box2D is 3.2.0** (`178495ba…`, tag `v3.2.0`) and the raw module is reproducible (session 158; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; `bindings/raw/<name>.json` holds the option tables, `bindings/nullable/<name>.json` the `?` policies, and `tools/rebind_binding.rb` reproduces a raw module; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 178 files / 148,774 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **28 unused + 7 test-only** public declarations; 8,367 duplicated lines / 1,231 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 23/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 182 for the statement/member/expression/call/event/declaration/proc extraction) |
+| **Refactoring safety** | structural guard: 179 files / 148,842 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **28 unused + 7 test-only** public declarations; 8,367 duplicated lines / 1,231 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 23/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 183 for the statement/member/expression/call/event/declaration/proc/foreign extraction and atomic watch output) |
 | Gate planning | `tools/gates.sh` area inference covers `lexer/` (→ `parser`), `main/` (→ `cli`), `bindgen/` (→ `bindings`) and every other `projects/mtc/src/mtc/` path (→ `compiler_core`, the full behaviour set).  An unclassified path is a hard error naming the file; previously it planned **zero** gates and exited 0 (session 159) |
 | Bootstrap `-j` | **removed** (session 159).  The flag was parsed, capped and warned about but never passed to a build command — a stage build is one whole-program `mtc build`.  `release.sh -j` removed with it; `bootstrap.sh -j 4` now errors |
 
@@ -6656,8 +6656,10 @@ The lowering core has been split into statement and member-expression modules:
   identifier/plain/specialization/builtin call lowering (858 lines),
   `lowering/events.mt` owns the event runtime and synthetic event functions
   (2,181 lines), and `lowering/declarations.mt` owns function/method/extending
-  declaration lowering, including specialized/monomorphized bodies (487 lines); `lowering.mt` 23,008 → 16,146.  `lower_expr`
-  and `lower_call` remain entry points through lowering wrappers.
+  declaration lowering, including specialized/monomorphized bodies (487 lines),
+  and `lowering/foreign.mt` owns foreign argument/call lowering (731 lines);
+  `lowering.mt` 23,008 → 15,465.  `lower_expr` and `lower_call` remain entry
+  points through lowering wrappers.
 - Only the helper visibility needed by the moved bodies was opened
   (`HoistedValue`, return/format/guard helpers, `LocalBinding` use stays via
   `lowering.`).  `lowering.mt` imports the new module as `stmt_mod`.
@@ -6826,6 +6828,30 @@ The lowering core has been split into statement and member-expression modules:
 **22/22**; split full; watch **100 rebuilds**; CLI **231/231**; diagnostics
 **497 compared / 8 changed / 2 unrecorded / 0 differ**; lint **644 compared /
 31 changed / 10 unrecorded / 0 differ**; examples **311/311**.
+
+### Session 183 — foreign extraction and atomic watch output
+
+- `lowering/foreign.mt` now owns the foreign/external call lowering:
+  boundary/projection helpers, direct and inline foreign calls, argument
+  lowering, and mapping analysis (681 lines moved; `lowering.mt`
+  16,146 → 15,465, foreign 731).
+- The watch smoke exposed a real output race: an external runner could see
+  the binary while a rebuild was writing it.  `mtc watch` now compiles to a
+  sibling `.watch-tmp` path and atomically renames the successful artifact
+  over the final output; `--run` and external runs see the old or new binary,
+  never a partial one.
+- C bodies are unchanged apart from moved function order.  Structural
+  baseline refreshed at 179 files / 148,842 code lines; duplication and
+  long-function/file counts are unchanged.
+- **4.4 remains deferred:** whole-program lowering remains the path; no
+  per-module lowering cache is added without a measured self-host watch
+  bottleneck.
+
+**Verified with the compiler-core gate:** dev build + IR verify; dev suite
+**23/0**; bootstrap fixed point; `test/mt` **106/0**; strict **0**; conformance
+**22/22**; split full; watch **100 rebuilds**; CLI **231/231**; diagnostics
+**497 compared / 8 changed / 2 unrecorded / 0 differ**; lint **644 compared /
+31 changed / 11 unrecorded / 0 differ**; examples **311/311**.
 
 ### Known issue: `milkTea/debugInfo` on very large files
 
