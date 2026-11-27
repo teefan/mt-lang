@@ -27,6 +27,7 @@ import mtc.lowering.parallel as parallel_mod
 import mtc.lowering.utils as utils
 import mtc.lowering.events as events_mod
 import mtc.lowering.lowering as lowering
+import mtc.lowering.proc as proc_mod
 import mtc.lowering.type_helpers as type_helpers
 
 
@@ -397,7 +398,7 @@ function lower_identifier_expr(ctx: ref[lowering.LoweringContext], ep: ptr[ast.E
                         # is a proc (is_proc == true).  For plain fn
                         # fields, pass the function pointer directly.
                         if fnt_ft.is_proc:
-                            return lowering.lower_fn_to_proc(ctx, fn_c_name, fn_ty, "")
+                            return proc_mod.lower_fn_to_proc(ctx, fn_c_name, fn_ty, "")
                         # The analyzer records a bare function reference
                         # with an empty type name (the contextual
                         # field/signature form); the host's binding type
@@ -823,7 +824,7 @@ public function lower_proc_expression_typed_named(
 
     # Captures are the body's referenced enclosing locals (the host's
     # first-reference-order walk), not every visible local.
-    let captures = lowering.collect_proc_captures(ctx, method_params, body_ptr)
+    let captures = proc_mod.collect_proc_captures(ctx, method_params, body_ptr)
     let has_captures = captures.len > 0
 
     # The host's prepared-literal naming (`lower_proc_expression_for_local` plus
@@ -898,7 +899,7 @@ public function lower_proc_expression_typed_named(
         ))
 
         # Build capturing invoke: unpacks env→locals, then body.
-        ctx.pending_synthetic_functions.push(lowering.build_capturing_invoke(
+        ctx.pending_synthetic_functions.push(proc_mod.build_capturing_invoke(
             ctx,
             method_params,
             ret_ty,
@@ -909,7 +910,7 @@ public function lower_proc_expression_typed_named(
         ))
 
         # Build release: decrement ref_count, free if zero.
-        ctx.pending_synthetic_functions.push(lowering.build_capturing_release(ctx, release_str, env_type_name, captures))
+        ctx.pending_synthetic_functions.push(proc_mod.build_capturing_release(ctx, release_str, env_type_name, captures))
 
         # Build retain: increment ref_count.
         ctx.pending_synthetic_functions.push(lowering.build_capturing_retain(retain_str, env_type_name))
@@ -981,7 +982,7 @@ public function lower_proc_expression_typed_named(
             var setup_c = string.String.create()
             setup_c.append(proc_prefix)
             setup_c.append("__setup_env")
-            ctx.pending_synthetic_functions.push(lowering.build_env_setup_fn(ctx, setup_c.as_str(), env_type_name, captures))
+            ctx.pending_synthetic_functions.push(proc_mod.build_env_setup_fn(ctx, setup_c.as_str(), env_type_name, captures))
             var setup_args = vec.Vec[ir.Expr].create()
             var sai: ptr_uint = 0
             while sai < captures.len:
