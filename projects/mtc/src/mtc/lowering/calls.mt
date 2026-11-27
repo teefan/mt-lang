@@ -21,6 +21,7 @@ import mtc.lowering.match as match_mod
 import mtc.lowering.monomorphized as monomorphized
 import mtc.lowering.parallel as parallel_mod
 import mtc.lowering.tasks as tasks
+import mtc.lowering.declarations as decl_mod
 import mtc.lowering.lowering as lowering
 import mtc.lowering.member_access as member_mod
 import mtc.lowering.type_helpers as type_helpers
@@ -531,7 +532,7 @@ public function lower_specialization_callee_call(
                                                     concrete_args = sp_ext_args.as_span(),
                                                     owner_module = sp_info.value.owner_module
                                                 )
-                                                return lowering.lower_monomorphized_method(
+                                                return decl_mod.lower_monomorphized_method(
                                                     ctx,
                                                     sp_ext_info,
                                                     sp_gm.value,

@@ -1637,7 +1637,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148766,
+    "total_code": 148769,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -2008,8 +2008,8 @@
         "max_function": 372
       },
       "projects/mtc/src/mtc/lowering/calls.mt": {
-        "lines": 858,
-        "code": 676,
+        "lines": 859,
+        "code": 677,
         "max_line": 135,
         "max_function": 158
       },
@@ -2038,10 +2038,10 @@
         "max_function": 216
       },
       "projects/mtc/src/mtc/lowering/declarations.mt": {
-        "lines": 265,
-        "code": 213,
+        "lines": 487,
+        "code": 389,
         "max_line": 126,
-        "max_function": 86
+        "max_function": 126
       },
       "projects/mtc/src/mtc/lowering/events.mt": {
         "lines": 2181,
@@ -2080,8 +2080,8 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 16605,
-        "code": 12698,
+        "lines": 16389,
+        "code": 12524,
         "max_line": 156,
         "max_function": 246
       },

@@ -3652,7 +3652,7 @@ function type_declared_in_source(module_analysis: analyzer.Analysis, name: str) 
 
 
 ## Check if a struct named `name` exists in a module's source file AST.
-function struct_in_source(module_analysis: analyzer.Analysis, name: str) -> bool:
+public function struct_in_source(module_analysis: analyzer.Analysis, name: str) -> bool:
     var di: ptr_uint = 0
     while di < module_analysis.source_file.declarations.len:
         var d: ast.Decl
@@ -3807,7 +3807,7 @@ public function is_user_generic_struct(ctx: ref[LoweringContext], ty: types.Type
 
 
 ## True when `name` is a pointer-like generic type handled directly by C.
-function is_builtin_pointer_generic(name: str) -> bool:
+public function is_builtin_pointer_generic(name: str) -> bool:
     return (
         name == "ptr" or name == "const_ptr" or name == "own" or name == "ref"
         or name == "span" or name == "array" or name == "str_buffer"
@@ -7088,7 +7088,7 @@ function is_pointer_or_ref_type(t: types.Type) -> bool:
 ## True when an IR expression denotes a pointer value.  Besides pointer-like
 ## types, a `pointer`-flagged name can hold a base-typed pointer (e.g. `this` in
 ## an editable method, or a pointer-lowered receiver) — the C `*` is implied.
-function ir_expr_is_pointer(e: ptr[ir.Expr]) -> bool:
+public function ir_expr_is_pointer(e: ptr[ir.Expr]) -> bool:
     if is_pointer_or_ref_type(ir_expr_type(e)):
         return true
     unsafe:
@@ -10314,7 +10314,7 @@ public function try_generic_method_call(
             concrete_args = extended_args.as_span(),
             owner_module = info.owner_module
         )
-        return Option[ptr[ir.Expr]].some(value = lower_monomorphized_method(
+        return Option[ptr[ir.Expr]].some(value = decl_mod.lower_monomorphized_method(
             ctx,
             extended_info,
             gm,
@@ -10322,7 +10322,7 @@ public function try_generic_method_call(
             receiver,
             args
         ))
-    return Option[ptr[ir.Expr]].some(value = lower_monomorphized_method(ctx, info, gm, method_name, receiver, args))
+    return Option[ptr[ir.Expr]].some(value = decl_mod.lower_monomorphized_method(ctx, info, gm, method_name, receiver, args))
 
 
 ## True for the builtin generic constructors a method receiver can instantiate
@@ -10343,7 +10343,7 @@ function is_builtin_generic_receiver_name(name: str) -> bool:
 ## When the method declares its own type params (e.g. `unpack[T]()` on a non-generic
 ## struct), those args are appended after the method name so the struct prefix
 ## stays stable: `std_binary_Reader_unpack_CompactHeader`.
-function monomorphized_method_c_name(
+public function monomorphized_method_c_name(
     owner_module: str,
     info: GenericReceiver,
     gm: GenericMethodMatch,
@@ -10396,95 +10396,8 @@ function monomorphized_method_c_name(
 ## then emit a direct C call to it with the receiver argument.  The specialized
 ## C name groups by the concrete struct (`std_vec_Vec_int_push`), matching the
 ## monomorphized struct type produced by `qualify_type`.
-public function lower_monomorphized_method(
-    ctx: ref[LoweringContext],
-    info: GenericReceiver,
-    gm: GenericMethodMatch,
-    method_name: str,
-    receiver: ptr[ast.Expr],
-    args: span[ast.Argument]
-) -> ptr[ir.Expr]:
-    # For the struct prefix in the C name, use the struct's defining module
-    # (which may differ from the extending-block module, e.g. `Writer` is
-    # defined in `std_binary` but extended by `std_serialize`).  The receiver
-    # type's own module (`info.owner_module`) is authoritative when known;
-    # otherwise fall back to a by-name scan of the program analyses, which is
-    # ambiguous when several modules declare a struct with the same simple name.
-    var struct_module = info.owner_module
-    if struct_module.len == 0:
-        struct_module = gm.owner_module
-        var sai: ptr_uint = 0
-        while sai < ctx.program_analyses.len:
-            var sa: analyzer.Analysis
-            unsafe:
-                sa = read(ctx.program_analyses.data + sai)
-            if struct_in_source(sa, info.owner_name) or sa.structs.contains(info.owner_name):
-                struct_module = sa.module_name
-                break
-            sai += 1
-    let method_c = monomorphized_method_c_name(struct_module, info, gm, method_name)
 
-    if not ctx.caches.specializations.contains(method_c) and not ctx.spec_in_progress.contains(method_c):
-        ensure_monomorphized_method(ctx, method_c, info, gm, ctx.pre_instantiated_context)
-    else:
-        note_validated_spec_reach(ctx, method_c)
-
-    var ret_ty = ctx.void_ty
-    let cached = ctx.caches.specializations.get(method_c)
-    if cached != null:
-        ret_ty = unsafe: read(cached).return_type
-    else:
-        # A recursive self-call reaches here while the specialization is still
-        # being lowered, so only the pre-registered return type is available.
-        let fr = ctx.function_returns.get(method_c)
-        if fr != null:
-            ret_ty = unsafe: read(fr)
-
-    let recv = lower_expr(ctx, receiver)
-    let ordered_args = expand_default_args(gm.method.method_params, args)
-    var ir_args = vec.Vec[ir.Expr].create()
-    var param_offset: ptr_uint = 0
-    if is_builtin_pointer_generic(info.owner_name) and gm.method.method_kind != ast.MethodKind.mk_static:
-        # The declared receiver is itself the builtin generic (`extending
-        # ptr[T]`): pass it through (address-of for editable) rather than
-        # auto-dereferencing as a value receiver.
-        var ptr_recv = recv
-        if gm.method.method_kind == ast.MethodKind.mk_editable and not ir_expr_is_pointer(recv):
-            ptr_recv = alloc_expr(ir.Expr.expr_address_of(
-                expression = recv,
-                ty = types.generic_type(name = "ptr", args = sp_type(ir_expr_type(recv))),
-            ))
-        unsafe:
-            ir_args.push(read(ptr_recv))
-        param_offset = 1
-    else:
-        match build_receiver_arg(ctx, recv, gm.method.method_kind, gm.method.is_async):
-            Option.some as recv_arg:
-                unsafe:
-                    ir_args.push(read(recv_arg.value))
-                param_offset = 1
-            Option.none:
-                pass
-    var i: ptr_uint = 0
-    while i < ordered_args.len:
-        var arg: ast.Argument
-        unsafe:
-            arg = read(ordered_args.data + i)
-        var lowered = lower_expr(ctx, arg.arg_value)
-        lowered = coerce_arg_to_param(cached, param_offset + i, lowered)
-        lowered = coerce_monomorphized_arg_to_proc(ctx, cached, param_offset + i, lowered, arg.arg_value)
-        lowered = coerce_literal_to_mono_param(ctx, cached, param_offset + i, arg.arg_value, lowered)
-        unsafe:
-            ir_args.push(read(lowered))
-        i += 1
-    return alloc_expr(ir.Expr.expr_call(callee = method_c, arguments = ir_args.as_span(), ty = ret_ty))
-
-
-## Re-type a bare literal argument against the specialized function's parameter
-## type — the monomorphized path's `coerce_literal_to_param_type` (the params
-## live on the IR function, not an `FnSig`), so `a.m(2, 3)` against
-## `ptr_uint` parameters emits `ptr_uint` literals.
-function coerce_literal_to_mono_param(
+public function coerce_literal_to_mono_param(
     ctx: ref[LoweringContext],
     cached: ptr[ir.Function]?,
     param_index: ptr_uint,
@@ -10507,7 +10420,7 @@ function coerce_literal_to_mono_param(
 ## inside an editable method passed to a by-value `current` param), dereference
 ## the argument.  Leaves the argument unchanged when types already agree or the
 ## parameter info is unavailable.
-function coerce_arg_to_param(cached: ptr[ir.Function]?, param_index: ptr_uint, arg: ptr[ir.Expr]) -> ptr[ir.Expr]:
+public function coerce_arg_to_param(cached: ptr[ir.Function]?, param_index: ptr_uint, arg: ptr[ir.Expr]) -> ptr[ir.Expr]:
     let fn_ptr = cached else:
         return arg
     let spec_fn = unsafe: read(fn_ptr)
@@ -10558,7 +10471,7 @@ function array_value_to_span(arr: ptr[ir.Expr], arr_ty: types.Type, span_ty: typ
 ## Coerce a bare function argument to a proc struct when the monomorphized
 ## parameter expects a proc type.  Mirrors coerce_fn_arg_to_proc but uses the
 ## lowered function's parameter types.
-function coerce_monomorphized_arg_to_proc(
+public function coerce_monomorphized_arg_to_proc(
     ctx: ref[LoweringContext],
     cached: ptr[ir.Function]?,
     param_index: ptr_uint,
@@ -10597,7 +10510,7 @@ function coerce_monomorphized_arg_to_proc(
 ## the reached specialization's body (and instantiated everything inside it),
 ## even when lowering had already created the instance from another path (the
 ## `for`-iterator lookup).  Record that sticky fact for the placement pass.
-function note_validated_spec_reach(ctx: ref[LoweringContext], spec_key: str) -> void:
+public function note_validated_spec_reach(ctx: ref[LoweringContext], spec_key: str) -> void:
     if ctx.next_spec_body_validated.is_some():
         return
     let info_ptr = unsafe: read(ctx.spec_infos).get(spec_key)
@@ -10616,7 +10529,7 @@ function note_validated_spec_reach(ctx: ref[LoweringContext], spec_key: str) -> 
 ## context.  The context switch (module name, analysis, foreign map, variants)
 ## makes the body's recorded expression types and import-qualified references
 ## resolve against the defining module rather than the caller.
-function ensure_monomorphized_method(
+public function ensure_monomorphized_method(
     ctx: ref[LoweringContext],
     method_c: str,
     info: GenericReceiver,
@@ -10702,7 +10615,7 @@ function ensure_monomorphized_method(
     collect_variants(ctx, owner_a.source_file.declarations)
     install_prelude_variants(ctx)
 
-    let spec_fun = lower_specialized_method(ctx, method_c, info, gm, ref_of(sub), body_validated)
+    let spec_fun = decl_mod.lower_specialized_method(ctx, method_c, info, gm, ref_of(sub), body_validated)
     ctx.caches.specializations.set(method_c, spec_fun)
     saved_returns.set(method_c, spec_fun.return_type)
     # Record owner/declaration/arguments for host-style ordering.  The sort key
@@ -10772,7 +10685,7 @@ function ensure_monomorphized_method(
 
 ## Find the module that defines a struct named `name` by searching loaded analyses.
 ## Returns the struct's defining module name, or the default module name if not found.
-function struct_defining_module_for_type(ctx: ref[LoweringContext], name: str) -> str:
+public function struct_defining_module_for_type(ctx: ref[LoweringContext], name: str) -> str:
     var sai: ptr_uint = 0
     while sai < ctx.program_analyses.len:
         var sa: analyzer.Analysis
@@ -10787,136 +10700,7 @@ function struct_defining_module_for_type(ctx: ref[LoweringContext], name: str) -
 ## Lower a single generic method to an IR function with the struct's type
 ## parameters substituted.  Mirrors `lower_method`, but resolves the receiver and
 ## parameter/return types through `substitute_type_params` with `sub`.
-function lower_specialized_method(
-    ctx: ref[LoweringContext],
-    method_c: str,
-    info: GenericReceiver,
-    gm: GenericMethodMatch,
-    sub: ref[map_mod.Map[str, types.Type]],
-    body_validated: bool
-) -> ir.Function:
-    let m = gm.method
-    ctx.locals.clear()
-    ctx.counters.temp = 0
-    ctx.format_state.dest_name = ""
-    ctx.format_state.counter.clear()
-    ctx.format_state.counter_visible = false
-    ctx.format_state.cstr_backed.clear()
-    var saved_current_fn = ctx.current_function_linkage
-    ctx.current_function_linkage = method_c
-    # Nested instances are analyzer-created only when the body was validated
-    # (see `lower_specialized_function`).
-    var saved_pre_instantiated = ctx.pre_instantiated_context
-    ctx.pre_instantiated_context = body_validated
 
-    # Build the receiver struct type using only the struct-level type args
-    # (the first N concrete args where N = struct_param_names.len).  Method-level
-    # type params extend concrete_args but are NOT part of the receiver.
-    var struct_args = vec.Vec[types.Type].create()
-    var si: ptr_uint = 0
-    while si < gm.struct_param_names.len and si < info.concrete_args.len:
-        unsafe:
-            struct_args.push(read(info.concrete_args.data + si))
-        si += 1
-
-    # Builtin generics (ptr/span/array/...) are never module-qualified types:
-    # keep the receiver as a plain generic instance so `ptr[int]` renders as
-    # `int32_t*` rather than a nonexistent `std_mem_ptr_ptr_int` struct.
-    var recv_struct_ty: types.Type
-    if is_builtin_pointer_generic(info.owner_name):
-        recv_struct_ty = types.generic_type(name = info.owner_name, args = struct_args.as_span())
-    else:
-        recv_struct_ty = qualify_type(
-            ctx,
-            types.imported_type(
-                module_name = if info.owner_module.len > 0: info.owner_module else: struct_defining_module_for_type(
-                    ctx,
-                    info.owner_name
-                ),
-                name = info.owner_name,
-                args = struct_args.as_span()
-            )
-        )
-
-    var ir_params = vec.Vec[ir.Param].create()
-    var param_setup = vec.Vec[ir.Stmt].create()
-    if m.method_kind != ast.MethodKind.mk_static:
-        let recv_is_ptr = receiver_by_pointer(ctx, recv_struct_ty, m.method_kind, m.is_async)
-        ir_params.push(ir.Param(
-            name = "this",
-            linkage_name = utils.c_local_name("this"),
-            ty = recv_struct_ty,
-            pointer = Option[bool].some(value = recv_is_ptr)
-        ))
-        ctx.locals.push(LocalBinding(
-            name = "this",
-            c_name = utils.c_local_name("this"),
-            ty = recv_struct_ty,
-            pointer = Option[bool].some(value = recv_is_ptr)
-        ))
-
-    var pi: ptr_uint = 0
-    while pi < m.method_params.len:
-        var p: ast.Param
-        unsafe:
-            p = read(m.method_params.data + pi)
-        let p_ty = qualify_type(
-            ctx,
-            monomorphized.substitute_type_params(ctx, resolve_field_type_ref(ctx, p.param_type), sub)
-        )
-        let c_pname = utils.c_local_name(p.name)
-        let is_ptr = false
-        let link_name = array_param_input_name(p_ty, c_pname, ref_of(param_setup))
-        ir_params.push(ir.Param(
-            name = p.name,
-            linkage_name = link_name,
-            ty = p_ty,
-            pointer = Option[bool].some(value = is_ptr)
-        ))
-        ctx.locals.push(LocalBinding(
-            name = p.name,
-            c_name = c_pname,
-            ty = p_ty,
-            pointer = Option[bool].some(value = is_ptr)
-        ))
-        pi += 1
-
-    var ret_ty = ctx.void_ty
-    let return_ref = m.return_type
-    if return_ref != null:
-        let resolved_ret = resolve_field_type_ref(ctx, unsafe: read(return_ref))
-        ret_ty = qualify_type(ctx, monomorphized.substitute_type_params(ctx, resolved_ret, sub))
-
-    # Register the method's return type before lowering its body so a
-    # recursive self-call resolves its type from here rather than the
-    # analyzer's unsubstituted generic-body record.
-    ctx.function_returns.set(method_c, ret_ty)
-    var saved_sub = ctx.type_substitution
-    ctx.type_substitution = read(sub)
-    var saved_fn_ret = ctx.current_fn_return_type
-    ctx.current_fn_return_type = ret_ty
-    let body_ir = prepend_param_setup(ref_of(param_setup), lower_function_body(ctx, m.body))
-    ctx.current_fn_return_type = saved_fn_ret
-    ctx.type_substitution = saved_sub
-    ctx.current_function_linkage = saved_current_fn
-    ctx.pre_instantiated_context = saved_pre_instantiated
-
-    return ir.Function(
-        source_module = Option[str].none,
-        # Host parity: the instance's `name` is the method name; the linkage
-        # name carries the receiver and type-argument suffix.
-        name = m.name,
-        linkage_name = method_c,
-        params = ir_params.as_span(),
-        return_type = ret_ty,
-        body = body_ir,
-        entry_point = false, public_export = false,
-        method_receiver_param = m.method_kind != ast.MethodKind.mk_static,
-    )
-
-
-## Wrap a function reference in a proc struct with a synthetic invoke function
-## that calls the original function, plus no-op release/retain.
 public function lower_fn_to_proc(
     ctx: ref[LoweringContext],
     fn_c_name: str,
