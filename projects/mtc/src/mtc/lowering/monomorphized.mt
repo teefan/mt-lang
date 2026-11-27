@@ -20,6 +20,7 @@ import mtc.lowering.comptime as comptime
 import mtc.lowering.comptime_types as comptime_types
 import mtc.lowering.const_eval as const_eval
 import mtc.lowering.include_scan as include_scan
+import mtc.lowering.events as events_mod
 import mtc.lowering.lowering as lowering
 import mtc.lowering.tasks as tasks
 import mtc.lowering.type_helpers as type_helpers
@@ -1091,7 +1092,7 @@ public function lower_module(
             break
         match unsafe: read(ev_decl_ptr):
             ast.Decl.decl_event as ev:
-                let _ = lowering.ensure_event_runtime(ref_of(ctx), "", ev.name)
+                let _ = events_mod.ensure_event_runtime(ref_of(ctx), "", ev.name)
             _:
                 pass
         evi += 1
@@ -1550,7 +1551,7 @@ function lower_module_event_decl(
 ) -> void:
     match d:
         ast.Decl.decl_event as ev:
-            var info = lowering.ensure_event_runtime(ctx, "", ev.name)
+            var info = events_mod.ensure_event_runtime(ctx, "", ev.name)
             # The global's declared type is the event itself (`Types::Event`),
             # whose C name is the runtime struct; the linkage name is the
             # module-qualified event name.

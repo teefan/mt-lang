@@ -15,6 +15,7 @@ import mtc.strings
 import mtc.lowering.async_cps as async_cps
 import mtc.lowering.control_flow as control_flow
 import mtc.lowering.inline as inline_mod
+import mtc.lowering.events as events_mod
 import mtc.lowering.lowering as lowering
 import mtc.lowering.match as match_mod
 import mtc.lowering.monomorphized as monomorphized
@@ -347,10 +348,10 @@ public function lower_member_access(
     # through the receiver struct's own event map.
     var member_name = member
     var member_type = member_ty
-    match lowering.event_info_for_receiver(ctx, recv_ty, member):
+    match events_mod.event_info_for_receiver(ctx, recv_ty, member):
         Option.some as evi:
             member_name = strings.join_two("__event_", member)
-            var ev_info = lowering.ensure_event_runtime(ctx, evi.value.owner_type_name, member)
+            var ev_info = events_mod.ensure_event_runtime(ctx, evi.value.owner_type_name, member)
             var ev_payload: ptr[types.Type]? = null
             if ev_info.has_payload:
                 ev_payload = types.alloc_type(ev_info.payload_type)
@@ -365,9 +366,9 @@ public function lower_member_access(
             # module-level registration) keeps its bare-name resolution.
             if lowering.is_event_type(ctx, member_ty):
                 member_name = strings.join_two("__event_", member)
-                let ev_name = lowering.event_name_from_type(member_ty)
+                let ev_name = events_mod.event_name_from_type(member_ty)
                 if ctx.analysis.events.contains(ev_name):
-                    var ev_info = lowering.ensure_event_runtime(ctx, "", ev_name)
+                    var ev_info = events_mod.ensure_event_runtime(ctx, "", ev_name)
                     var ev_payload: ptr[types.Type]? = null
                     if ev_info.has_payload:
                         ev_payload = types.alloc_type(ev_info.payload_type)
@@ -706,7 +707,7 @@ public function lower_member_dispatch(
                 # because they ARE registered in method_sigs for sema validation.
                 if lowering.is_event_type(ctx, recv_ty):
                     let recv_ir = lowering.lower_expr(ctx, ma.receiver)
-                    return lowering.lower_event_method(ctx, recv_ir, recv_ty, ma.member_name, args, call_ep)
+                    return events_mod.lower_event_method(ctx, recv_ir, recv_ty, ma.member_name, args, call_ep)
                 match lowering.try_generic_method_call(ctx, recv_ty, ma.member_name, ma.receiver, args, call_ep):
                     Option.some as gen_call:
                         return gen_call.value

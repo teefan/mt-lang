@@ -23,6 +23,7 @@ import mtc.lowering.layout as layout_mod
 import mtc.lowering.monomorphized as monomorphized
 import mtc.lowering.parallel as parallel_mod
 import mtc.lowering.utils as utils
+import mtc.lowering.events as events_mod
 import mtc.lowering.lowering as lowering
 import mtc.lowering.type_helpers as type_helpers
 
@@ -421,7 +422,7 @@ function lower_identifier_expr(ctx: ref[lowering.LoweringContext], ep: ptr[ast.E
                 # the event itself (`Types::Event`) — the host's
                 # binding carries `Types::Event`, not a plain named
                 # type.
-                var ev_info = lowering.ensure_event_runtime(ctx, "", name)
+                var ev_info = events_mod.ensure_event_runtime(ctx, "", name)
                 var ev_payload: ptr[types.Type]? = null
                 if ev_info.has_payload:
                     ev_payload = types.alloc_type(ev_info.payload_type)
