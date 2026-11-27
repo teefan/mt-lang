@@ -146,7 +146,7 @@ unless quick
       next
     end
     out, err, status = capture(compiler, "version")
-    unless status.success? && out.include?("0.6.3")
+    unless status.success? && out.include?("0.7.0")
       report_failure(failures, "compiler-split-version", (out + err).lines.last(4).join)
     end
     out, err, status = capture(compiler, "test", "projects/mtc", "-I", ROOT, "--timeout", "120")

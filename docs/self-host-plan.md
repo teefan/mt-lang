@@ -14,7 +14,7 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-192-2026-11-26)
+- [Status at a glance](#status-at-a-glance-session-193-2026-11-26)
 - [Handoff](#handoff-session-158)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
@@ -112,14 +112,14 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 192, 2026-11-26)
+## Status at a glance (session 193, 2026-11-26)
 
 | Area | State |
 | --- | --- |
-| Compiler | **native self-host only**; the release is **0.6.3** (tag `v0.6.3`); the Ruby host is archived at tag `archive/host-ruby-0.4.26`, and `lib/`, the Ruby `test/**` suite, `milk_tea.gemspec`, `Rakefile`, `Gemfile` and `bin/mtc` are removed (session 143).  The source tree pins **Box2D 3.2.0** (session 158), and the 0.6.3 archive and seed carry it (sessions 162/164) |
-| Bootstrap fixed point | **holds** from the **0.6.3** seed (`stage2.c == stage3.c`, session 170); self-test suite **23 files / 0 failed**; `build/stage2/mtc test test/mt -I .` **106 / 0**; the shim proof is session 145 (a `ruby` shim that exits 127 is never invoked) |
-| Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`a9ddc2bc…`, release 0.6.3); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
-| Release archive | **3.5 MiB deterministic tar.gz** (`mtc-0.6.3-linux-x86_64`, `40481c09…`), checksummed beside the archive; identical across two packagings; clean-path and clean-container (Ubuntu 24.04) smokes green; includes `install.sh` (versioned prefix + `current` symlink) and `config/`; tagged `v0.6.3`; the version is the authored `cli_help.VERSION`.  The archive and seed carry Box2D 3.2.0 |
+| Compiler | **native self-host only**; the release is **0.7.0** (tag `v0.7.0`); the Ruby host is archived at tag `archive/host-ruby-0.4.26`, and `lib/`, the Ruby `test/**` suite, `milk_tea.gemspec`, `Rakefile`, `Gemfile` and `bin/mtc` are removed (session 143).  The source tree pins **Box2D 3.2.0** (session 158), and the 0.7.0 archive and seed carry it |
+| Bootstrap fixed point | **holds** from the **0.7.0** seed (`stage2.c == stage3.c`, session 193); self-test suite **23 files / 0 failed**; `build/stage2/mtc test test/mt -I .` **106 / 0**; the shim proof is session 145 (a `ruby` shim that exits 127 is never invoked) |
+| Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`46d155de…`, release 0.7.0); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
+| Release archive | **3.60 MiB deterministic tar.gz** (`mtc-0.7.0-linux-x86_64`, `2a5aa8df…`), checksummed beside the archive; identical across two packagings; clean-path and clean-container (Ubuntu 24.04) smokes green; includes `install.sh` (versioned prefix + `current` symlink) and `config/`; tagged `v0.7.0`; the version is the authored `cli_help.VERSION`.  The archive and seed carry Box2D 3.2.0 |
 | Release runtime | Linux x86_64: **glibc ≥ 2.38, zlib, OpenSSL 3**; libuv is linked statically; `tools/release_container_smoke.sh` verifies the archive in a clean Ubuntu 24.04 image; the seed has the same requirements |
 | Analyzer/IR memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB / 10.5 s**; `emit-c main.mt` **860 MiB / 12.3 s**; `build projects/mtc` **903 MiB / 25.9 s** (session 152; `peak_rss.py` reports **KiB** — the MiB figures are that value ÷ 1024).  Path: `Type` boxed 72 → 24 B (session 150), the analyzer's tooling-only `imported_type_members` gated behind `tooling_facts` (−20% on `check`), the IR dump streamed and written straight into one buffer (−66 MiB on `lower`, session 151), `reserve_exact` for known-length vectors and string builders (−42 MiB on `lower`/`emit-c`, session 152), then the emitter's per-generation tables and scratch released at the end of `generate_c` (−9 MiB on `emit-c`, −21 MiB on `build --keep-c`, and ~94 → ~82 MiB per repeated emission; session 153).  The old analyzer const blow-up (**9,228 MiB** on `main.mt`, session 142) and the cross-module async rescan (682 MB of the lower peak, session 149) are gone.  `lowering.mt` check **197 MiB** (session 151 audit).  The release profile has the same peaks with `check` **1.3 s**, `lower` **4.1 s**, `emit-c` **4.6 s**, `build` **20.0 s** (session 155).  All tooling fan-out is capped at **4**. |
 | Multi-file commands | **Flat in the file count, and no longer ~2× a heavy file's peak** (session 152).  The per-file heap region is a bump allocator: it frees everything at once and cannot reuse anything released inside it, so an abandoned temporary lands in the peak.  It buys release of every file *after* the one compiling, so it is now gated on the **file count** (`should_scope_file`, `remaining_after >= 2`): the last two files of a run compile unregioned.  Measured: `check main.mt` + a 60-byte file **422 MiB** (was 958,616 KiB always-regioned; 432,068 never-regioned), 40 small files **372 MiB** (1,367,120 never-regioned), `check projects/mtc` (191 files) **997 MiB** (11,398,120 never-regioned).  The `lower`/`emit-c` 8-heaviest sets pay 2–3% (**1,456 / 1,694 MiB**) because their last two files are heavy.  The old session-151 row (same file twice 946 MiB, `main.mt` + `sexpr.mt` 1,407 MiB) was the ungated region; see *Region gate (session 152)*. |
@@ -130,7 +130,7 @@ history.
 | IR verifier | **`ir_verify.mt`** (session 174): checks unique linkage names, concrete declaration types (no `ty_error`/`ty_var`), non-empty module owners, unique fields/params/members/arms, a single `main` entry point returning `int`, switch defaults, and labels/gotos.  `--verify-ir` is available on `build`/`run`/`lower`/`emit-c`; the dev gate verifies the compiler IR after rebuilding, and 12 constructed-IR unit tests cover each rejection path |
 | Lowering extraction | **`statements.mt` + `member_access.mt` + `expressions.mt` + `calls.mt` + `events.mt` + `declarations.mt` + `foreign.mt` + `type_qualification.mt` + `type_resolution.mt` + `declaration_resolution.mt` + `proc.mt` + `driver.mt`** (sessions 175/178/179/180/181/182/183/184/185/186/187/188/189/190/191): statements 1,664 lines; member_access 960; expressions 1,039; calls 858; events 2,181; declarations 487; foreign 1,582; type_qualification 213; type_resolution 575; declaration_resolution 620; proc 1,239; driver 408.  `lowering.mt` moved from 23,008 to 11,823 lines (11,189 extracted).  Helper visibility was opened for the moved calls; C differs only by the extracted functions' source positions, and all behavior oracles remain green.  The 4.2 shape goal is met; the counter/cache/format/hoist context groups cover 4.3, and 4.4 is measured and closed as a no-go |
 | Context grouping | **`LoweringCounters`** (session 176) plus **`LoweringCaches`**, **`LoweringFormatState`**, and **`LoweringHoistState`** (session 177).  Counters group temp/match/async; caches group specialization bodies, generic struct declarations, str-buffer types, event runtimes, and dyn vtables; format groups the dynamic-format/name/cstr state; hoist groups the statement-position window.  Access-only refactors, no behavior changes; the full compiler-core gate is green |
-| Recorded oracles | **CLI 231/231 (0.6.3); diagnostics 497 compared / 8 changed / 2 unrecorded / 0 differ; lint 644 compared / 31 changed / 16 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
+| Recorded oracles | **CLI 231/231 (0.7.0); diagnostics 497 compared / 8 changed / 2 unrecorded / 0 differ; lint 644 compared / 31 changed / 16 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.7.0 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
 | `check` diagnostics | the 500-file diagnostic oracle is the gate (the extra row is `box2d_api_smoke`); the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field anchor is a reviewed difference, not a residual (session 146). |
 | Linter | **43/43 rules, 13/13 fixers**; the 646-compared lint oracle is the corpus gate.  `unused-import` now credits type positions (annotations, params/returns, fields, aliases, specialization type arguments, proc signatures, `emit` declarations), fixing the type-only false positives; the remaining tree output is dominated by true style/ownership hints.  The historical host residue (3 self-only `std` files, timeout rows) is in *Deliberate differences*. |
@@ -7067,6 +7067,28 @@ Wave 4 is complete: 4.1 verifier, 4.2 extraction to 11,823 lines, the 4.3
 context groups, and this measured 4.4 close-out.  No new code changed in
 this session; the session-191 compiler-core gate remains the verified
 baseline.
+
+### Session 193 — release 0.7.0
+
+`cli_help.VERSION` and the help banner are **0.7.0**; the CLI golden's
+version rows and `split_build.rb`'s version assertion moved with it.  This is
+a minor bump because the cycle added user-visible `mtc watch` and `--verify-ir`
+plus the completed Wave 4 lowering split.
+
+**Artifacts.**
+
+- `tools/release.sh --version 0.7.0 --refresh-seed` built the release
+  stage2 and `dist/mtc-0.7.0-linux-x86_64.tar.gz`
+  (**3,770,823 B**, sha256 `2a5aa8df50c7dedbcae407b9a1e340df4bc9f29512612db9570637277711d8aa`).
+- The clean-path release smoke passed (`mtc 0.7.0`).
+- The seed is now `vendor/bootstrap/linux-x86_64/mtc`
+  (**6,208,680 B**, sha256 `46d155def4eac5beb63e05f7ff287fba0da36e4d2d20767f30306a9410504280`).
+- Full bootstrap from the new seed: stage2 == stage3, self-test build,
+  **23 files / 0 failed**.
+
+**Release gate.** Compiler-core, oracles, examples, docs, LSP, bindings, and
+the clean-container smoke run in CI on the release commit; the GitHub release
+is published only after those checks are green.
 
 ### Known issue: `milkTea/debugInfo` on very large files
 

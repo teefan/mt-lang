@@ -11,7 +11,7 @@ Implementation: `projects/mtc/src/mtc/lsp` — 44 `.mt` files, ~33.6k lines,
 entry point `mtc lsp` (`projects/mtc/src/mtc/lsp/server.mt`).
 Audit method: 3.18 meta-model diff, targeted code review, and live probes
 against the then-current `build/stage2/mtc` (0.4.26, release) on 2026-11-21.
-The current release is 0.6.2; the conformance harness is the authority.
+The current release is 0.7.0; the conformance harness is the authority.
 
 This is the plan of record for LSP work.  `docs/self-host-plan.md` remains the
 project ledger; this document carries the LSP-specific state, findings and
