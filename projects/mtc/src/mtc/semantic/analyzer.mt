@@ -3257,7 +3257,7 @@ function scope_set(scope: ref[sscope.Scope], name: str, ty: types.Type) -> void:
     sscope.scope_set(scope, name, ty)
 
 
-function scope_get(scope: ref[sscope.Scope], name: str) -> ptr[types.Type]?:
+public function scope_get(scope: ref[sscope.Scope], name: str) -> ptr[types.Type]?:
     return sscope.scope_get(scope, name)
 
 
@@ -5464,7 +5464,7 @@ function is_handle_builtin_name(name: str) -> bool:
 ## fallback.  Their arity/type checking is separate, so an unusable argument
 ## shape must not turn into `unknown callable`.  `str` is the StringView
 ## constructor (the host's named-type branch).
-function is_callable_builtin_name(name: str) -> bool:
+public function is_callable_builtin_name(name: str) -> bool:
     return (
         name == "read" or name == "ptr_of" or name == "const_ptr_of"
         or name == "ref_of" or name == "get" or name == "fatal"
@@ -5811,7 +5811,7 @@ function specialization_kind(ctx: ref[Context], callee: ptr[ast.Expr], type_args
                 return "unknown"
 
 
-function is_builtin_call_name(name: str) -> bool:
+public function is_builtin_call_name(name: str) -> bool:
     return (
         name == "read" or name == "ptr_of" or name == "const_ptr_of" or name == "ref_of"
         or name == "size_of" or name == "align_of" or name == "fatal"
@@ -7041,150 +7041,6 @@ function infer_unary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, opera
     return types.Type.ty_error
 
 
-## Per-argument expected types for a call, resolved before any argument is
-## inferred.  The host infers each positional argument with
-## `expected_type: parameter.type`; an argument whose parameter is not
-## statically known is inferred with no hint, never with the enclosing
-## expression's hint (a `return f(...)` must not force `f`'s arguments to the
-## function's return type).  An empty result means "no parameter is known".
-function call_argument_expected_types(
-    ctx: ref[Context],
-    scope: ref[sscope.Scope],
-    callee: ptr[ast.Expr],
-    args: span[ast.Argument]
-) -> vec.Vec[types.Type]:
-    # Named arguments are canonicalized to parameter order in the host; the self
-    # infers them in source order, so a positional hint could name the wrong
-    # parameter.  Constructors are the named-argument path that matters, and
-    # `check_construction` sets each field's hint by name itself.
-    var named_scan: ptr_uint = 0
-    while named_scan < args.len:
-        unsafe:
-            match read(args.data + named_scan).arg_name:
-                Option.some:
-                    return vec.Vec[types.Type].create()
-                Option.none:
-                    pass
-        named_scan += 1
-    unsafe:
-        match read(callee):
-            ast.Expr.expr_identifier as id:
-                if is_builtin_call_name(id.name) or is_callable_builtin_name(id.name) or scope_get(
-                    scope,
-                    id.name
-                ) != null:
-                    return vec.Vec[types.Type].create()
-                let sigp = ctx.functions.get(id.name)
-                if sigp != null:
-                    return expected_from_params(read(sigp).params, args.len)
-                let fieldsp = ctx.structs.get(id.name)
-                if fieldsp != null:
-                    return expected_from_fields(read(fieldsp), args)
-                return vec.Vec[types.Type].create()
-            ast.Expr.expr_member_access as ma:
-                match read(ma.receiver):
-                    ast.Expr.expr_identifier as rid:
-                        if scope_get(scope, rid.name) == null and ctx.import_aliases.contains(rid.name):
-                            let module_name_ptr = ctx.import_aliases.get(rid.name) else:
-                                return vec.Vec[types.Type].create()
-                            let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
-                                return vec.Vec[types.Type].create()
-                            let sig_ptr = read(binding_ptr).functions.get(ma.member_name)
-                            if sig_ptr != null:
-                                return expected_from_params(read(sig_ptr).params, args.len)
-                            let fields_ptr = read(binding_ptr).structs.get(ma.member_name)
-                            if fields_ptr != null:
-                                return expected_from_fields(read(fields_ptr), args)
-                            return vec.Vec[types.Type].create()
-                    _:
-                        pass
-                # A static struct method (`Counter.make(...)`,
-                # `lib.Adder.make(...)`).
-                match static_struct_receiver_type(ctx, scope, ma.receiver):
-                    Option.some as rt:
-                        return expected_from_method(ctx, rt.value, ma.member_name, args)
-                    Option.none:
-                        pass
-                # A value-receiver method on a bare local or `this`: the
-                # receiver's declared type is in scope, so resolving the
-                # signature needs no inference.
-                match read(ma.receiver):
-                    ast.Expr.expr_identifier as rid:
-                        let rtp = scope_get(scope, rid.name) else:
-                            return vec.Vec[types.Type].create()
-                        return expected_from_method(ctx, unwrap_ref(unsafe: read(rtp)), ma.member_name, args)
-                    _:
-                        return vec.Vec[types.Type].create()
-            ast.Expr.expr_specialization as spec:
-                match read(spec.callee):
-                    ast.Expr.expr_identifier as id:
-                        if scope_get(scope, id.name) != null:
-                            return vec.Vec[types.Type].create()
-                        # Builtin vector/array constructions type every
-                        # positional argument at the element type.
-                        if id.name.equal("simd") or id.name.equal("array"):
-                            if spec.arguments.len >= 1:
-                                match quiet_explicit_type(ctx, read(spec.arguments.data + 0).value):
-                                    Option.some as elem:
-                                        return expected_repeated(elem.value, args.len)
-                                    Option.none:
-                                        return vec.Vec[types.Type].create()
-                            return vec.Vec[types.Type].create()
-                        let tps_ptr = ctx.function_type_params.get(id.name) else:
-                            return vec.Vec[types.Type].create()
-                        let sigp = ctx.functions.get(id.name) else:
-                            return vec.Vec[types.Type].create()
-                        var subs = map_mod.Map[str, types.Type].create()
-                        defer: subs.release()
-                        if not try_quiet_type_substitutions(ctx, read(tps_ptr), spec.arguments, ref_of(subs)):
-                            return vec.Vec[types.Type].create()
-                        return expected_from_substituted_params(read(sigp).params, args.len, ref_of(subs))
-                    ast.Expr.expr_member_access as ma:
-                        match read(ma.receiver):
-                            ast.Expr.expr_identifier as rid:
-                                if scope_get(scope, rid.name) == null and ctx.import_aliases.contains(rid.name):
-                                    let module_name_ptr = ctx.import_aliases.get(rid.name) else:
-                                        return vec.Vec[types.Type].create()
-                                    let binding_ptr = find_binding(ctx, read(module_name_ptr)) else:
-                                        return vec.Vec[types.Type].create()
-                                    let tps_ptr = read(binding_ptr).function_type_params.get(ma.member_name) else:
-                                        return vec.Vec[types.Type].create()
-                                    let sig_ptr = read(binding_ptr).functions.get(ma.member_name) else:
-                                        return vec.Vec[types.Type].create()
-                                    var subs = map_mod.Map[str, types.Type].create()
-                                    defer: subs.release()
-                                    if not try_quiet_type_substitutions(
-                                        ctx,
-                                        read(tps_ptr),
-                                        spec.arguments,
-                                        ref_of(subs)
-                                    ):
-                                        return vec.Vec[types.Type].create()
-                                    return expected_from_substituted_params(
-                                        read(sig_ptr).params,
-                                        args.len,
-                                        ref_of(subs)
-                                    )
-                                let rtp = scope_get(scope, rid.name) else:
-                                    return vec.Vec[types.Type].create()
-                                let recv_ty = unwrap_ref(unsafe: read(rtp))
-                                let mtps = method_type_params_of(ctx, recv_ty, ma.member_name) else:
-                                    return vec.Vec[types.Type].create()
-                                let sig = resolve_method_sig(ctx, recv_ty, ma.member_name) else:
-                                    return vec.Vec[types.Type].create()
-                                var subs = map_mod.Map[str, types.Type].create()
-                                defer: subs.release()
-                                if not try_quiet_type_substitutions(ctx, mtps, spec.arguments, ref_of(subs)):
-                                    return vec.Vec[types.Type].create()
-                                return expected_from_substituted_params(sig.params, args.len, ref_of(subs))
-                            _:
-                                return vec.Vec[types.Type].create()
-                    _:
-                        return vec.Vec[types.Type].create()
-            _:
-                return vec.Vec[types.Type].create()
-
-
 ## Resolve the parameter list a call's named arguments map onto.  False means
 ## the callee is not a signature-bearing function/method (a builtin, struct or
 ## variant constructor, a callable value, or an unresolved name).
@@ -7413,96 +7269,12 @@ function canonicalize_call_arguments(
     return true
 
 
-## One expected type per positional parameter.  A parameter carrying a type
-## variable (a generic function or extending block) has no statically-known
-## type, so its argument is inferred with no hint.
-function expected_from_params(params: span[ParamEntry], arg_count: ptr_uint) -> vec.Vec[types.Type]:
-    var hints = vec.Vec[types.Type].create()
-    var i: ptr_uint = 0
-    while i < arg_count:
-        if i < params.len:
-            let pty = unsafe: read(params.data + i).ty
-            if types.contains_error(pty) or types.contains_type_var(pty):
-                hints.push(types.Type.ty_error)
-            else:
-                hints.push(pty)
-        else:
-            hints.push(types.Type.ty_error)
-        i += 1
-    return hints
-
-
-## The expected type of each named constructor argument (`Counter(value = 3)`),
-## keyed by field name; positional arguments have no hint.
-function expected_from_fields(fields: span[FieldEntry], args: span[ast.Argument]) -> vec.Vec[types.Type]:
-    var hints = vec.Vec[types.Type].create()
-    var i: ptr_uint = 0
-    while i < args.len:
-        var hint = types.Type.ty_error
-        unsafe:
-            match read(args.data + i).arg_name:
-                Option.some as nm:
-                    let ftp = field_type(fields, nm.value)
-                    if ftp != null:
-                        let ft = read(ftp)
-                        if not types.contains_error(ft) and not types.contains_type_var(ft):
-                            hint = ft
-                Option.none:
-                    pass
-        hints.push(hint)
-        i += 1
-    return hints
-
-
-function expected_from_method(
-    ctx: ref[Context],
-    receiver_type: types.Type,
-    method_name: str,
-    args: span[ast.Argument]
-) -> vec.Vec[types.Type]:
-    match resolve_method_sig(ctx, receiver_type, method_name):
-        Option.some as sig:
-            return expected_from_params(sig.value.params, args.len)
-        Option.none:
-            return vec.Vec[types.Type].create()
-
-
-## The same hint for every positional argument (`simd[E, N](…)` / `array[E, N](…)`).
-function expected_repeated(ty: types.Type, arg_count: ptr_uint) -> vec.Vec[types.Type]:
-    var hints = vec.Vec[types.Type].create()
-    var i: ptr_uint = 0
-    while i < arg_count:
-        hints.push(ty)
-        i += 1
-    return hints
-
-
-## As `expected_from_params`, with the explicit specialization's substitutions
-## applied first.
-function expected_from_substituted_params(
-    params: span[ParamEntry],
-    arg_count: ptr_uint,
-    subs: ref[map_mod.Map[str, types.Type]]
-) -> vec.Vec[types.Type]:
-    var hints = vec.Vec[types.Type].create()
-    var i: ptr_uint = 0
-    while i < arg_count:
-        var hint = types.Type.ty_error
-        if i < params.len:
-            let pty = substitute_type(unsafe: read(params.data + i).ty, subs)
-            if not types.contains_error(pty) and not types.contains_type_var(pty):
-                hint = pty
-        hints.push(hint)
-        i += 1
-    return hints
-
-
 ## Build the explicit specialization's substitution map without diagnosing.
 ## `check_specialization_call` resolves the same type arguments once, with
 ## diagnostics; the hint pre-pass must not report them twice, so it only accepts
 ## a bare name the analyzer already knows (a primitive/installed type or a type
 ## parameter) and gives up on anything that needs full resolution.
-function try_quiet_type_substitutions(
+public function try_quiet_type_substitutions(
     ctx: ref[Context],
     type_params: span[ast.TypeParam],
     type_args: span[ast.TypeArgument],
@@ -7529,7 +7301,7 @@ function try_quiet_type_substitutions(
     return true
 
 
-function quiet_explicit_type(ctx: ref[Context], tref: ptr[ast.TypeRef]) -> Option[types.Type]:
+public function quiet_explicit_type(ctx: ref[Context], tref: ptr[ast.TypeRef]) -> Option[types.Type]:
     unsafe:
         let t = read(tref)
         if t.nullable or t.arguments.len > 0 or t.is_fn or t.is_proc or t.is_dyn or t.is_tuple:
@@ -7571,7 +7343,7 @@ function infer_and_check_call(
     var effective_args = args
     if has_canonical:
         effective_args = canonical_args.as_span()
-    var expected = call_argument_expected_types(ctx, scope, callee, effective_args)
+    var expected = call_arguments.call_argument_expected_types(ctx, scope, callee, effective_args)
     defer: expected.release()
     var arg_types = vec.Vec[types.Type].with_capacity_exact(effective_args.len)
     let saved_hint = ctx.expected_type_hint
@@ -7877,7 +7649,7 @@ function check_specialized_method_call(
 ## The declared type parameters of a method on a receiver type: the analyzer's
 ## own table for a local declaration, the binding's export for an imported one
 ## (`Arena.alloc` -> `[T]`).
-function method_type_params_of(ctx: ref[Context], recv: types.Type, method_name: str) -> Option[span[ast.TypeParam]]:
+public function method_type_params_of(ctx: ref[Context], recv: types.Type, method_name: str) -> Option[span[ast.TypeParam]]:
     let type_name = method_receiver_type_name(recv)
     if type_name.len == 0:
         return Option[span[ast.TypeParam]].none
@@ -8797,7 +8569,7 @@ function validate_explicit_type_args(
 ## Apply a substitution map to a type, replacing bound type variables with their
 ## concrete types (used to substitute a generic call's return type).  Unbound
 ## type variables are left as-is (permissive).
-function substitute_type(t: types.Type, subs: ref[map_mod.Map[str, types.Type]]) -> types.Type:
+public function substitute_type(t: types.Type, subs: ref[map_mod.Map[str, types.Type]]) -> types.Type:
     match t:
         types.Type.ty_var as v:
             let actual_ptr = subs.get(v.name)
@@ -9380,7 +9152,7 @@ function try_imported_member(
 
 
 ## Resolve a module name to its import binding, if bindings were provided.
-function find_binding(ctx: ref[Context], module_name: str) -> ptr[ModuleBinding]?:
+public function find_binding(ctx: ref[Context], module_name: str) -> ptr[ModuleBinding]?:
     let imported = ctx.imported_modules else:
         return null
     unsafe:
@@ -9544,7 +9316,7 @@ function check_member_call(
 ## matching the language's auto-dereference of `ref` receivers.  An explicit
 ## lifetime (`ref[@a, T]`) occupies the first argument, so the referent is the
 ## last one.
-function unwrap_ref(t: types.Type) -> types.Type:
+public function unwrap_ref(t: types.Type) -> types.Type:
     match t:
         types.Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
@@ -9799,7 +9571,7 @@ function editable_receiver_root(receiver_expr: ptr[ast.Expr]) -> Option[Receiver
 ## The struct type named by a static-method receiver: a bare local struct name
 ## (`Counter`) or an imported `alias.Struct`.  None for values, enum/variant type
 ## names (handled as static members), or unknown names.
-function static_struct_receiver_type(
+public function static_struct_receiver_type(
     ctx: ref[Context],
     scope: ref[sscope.Scope],
     receiver: ptr[ast.Expr]
@@ -9841,7 +9613,7 @@ function static_struct_receiver_type(
 ## The signature of `method_name` on a receiver of struct type, whether the type
 ## is local (ctx.method_sigs) or imported (the module's binding).  None for any
 ## other receiver type or an unknown method.
-function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name: str) -> Option[FnSig]:
+public function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name: str) -> Option[FnSig]:
     match receiver:
         types.Type.ty_named as n:
             let n_np = unsafe: read(n.payload)
@@ -10808,7 +10580,7 @@ function check_construction(
     seen.release()
 
 
-function field_type(fields: span[FieldEntry], name: str) -> ptr[types.Type]?:
+public function field_type(fields: span[FieldEntry], name: str) -> ptr[types.Type]?:
     var i: ptr_uint = 0
     while i < fields.len:
         unsafe:

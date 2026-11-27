@@ -1610,7 +1610,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148739,
+    "total_code": 148742,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -2623,16 +2623,16 @@
         "max_function": 39
       },
       "projects/mtc/src/mtc/semantic/analyzer.mt": {
-        "lines": 12018,
-        "code": 9302,
+        "lines": 11790,
+        "code": 9111,
         "max_line": 184,
         "max_function": 146
       },
       "projects/mtc/src/mtc/semantic/call_arguments.mt": {
-        "lines": 142,
-        "code": 124,
-        "max_line": 120,
-        "max_function": 100
+        "lines": 372,
+        "code": 318,
+        "max_line": 126,
+        "max_function": 136
       },
       "projects/mtc/src/mtc/semantic/control_flow/builder.mt": {
         "lines": 1071,
