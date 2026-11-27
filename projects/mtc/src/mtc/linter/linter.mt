@@ -6994,4 +6994,3 @@ function lint_loop_single_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.V
 # =============================================================================
 #  redundant-null-check — `x != null` where x is already narrowed non-null
 # =============================================================================
-
