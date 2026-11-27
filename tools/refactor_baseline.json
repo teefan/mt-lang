@@ -345,6 +345,7 @@
     "semantic.diagnostics": "diag",
     "semantic.emit_expansion": "emit_ex",
     "semantic.expressions": "sem_exprs",
+    "semantic.preassign": "preassign",
     "semantic.scope": "sscope",
     "semantic.type_compatibility": "compat",
     "semantic.types": "types",
@@ -1608,7 +1609,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148730,
+    "total_code": 148733,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -1667,7 +1668,7 @@
         "max_function": 78
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 8580,
+        "lines": 8579,
         "code": 7151,
         "max_line": 237,
         "max_function": 270
@@ -2621,8 +2622,8 @@
         "max_function": 39
       },
       "projects/mtc/src/mtc/semantic/analyzer.mt": {
-        "lines": 12381,
-        "code": 9628,
+        "lines": 12151,
+        "code": 9420,
         "max_line": 184,
         "max_function": 146
       },
@@ -2661,6 +2662,12 @@
         "code": 176,
         "max_line": 121,
         "max_function": 59
+      },
+      "projects/mtc/src/mtc/semantic/preassign.mt": {
+        "lines": 235,
+        "code": 211,
+        "max_line": 118,
+        "max_function": 78
       },
       "projects/mtc/src/mtc/semantic/scope.mt": {
         "lines": 195,
