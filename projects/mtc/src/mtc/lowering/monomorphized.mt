@@ -23,6 +23,7 @@ import mtc.lowering.include_scan as include_scan
 import mtc.lowering.events as events_mod
 import mtc.lowering.declarations as decl_mod
 import mtc.lowering.lowering as lowering
+import mtc.lowering.driver as driver_mod
 import mtc.lowering.tasks as tasks
 import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.utils as utils
@@ -1299,7 +1300,7 @@ function lower_module_function_decl(
                     fun.visibility
                 ))
                 if is_root and fun.name == "main":
-                    match lowering.build_root_main_entrypoint(ctx, fun.name, fun.method_params):
+                    match driver_mod.build_root_main_entrypoint(ctx, fun.name, fun.method_params):
                         Option.some as entry:
                             functions.push(entry.value)
                         Option.none:

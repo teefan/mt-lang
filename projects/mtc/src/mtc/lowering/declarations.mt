@@ -19,6 +19,7 @@ import mtc.lowering.match as match_mod
 import mtc.lowering.monomorphized as monomorphized
 import mtc.lowering.parallel as parallel_mod
 import mtc.lowering.lowering as lowering
+import mtc.lowering.driver as driver_mod
 import mtc.lowering.tasks as tasks
 import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.utils as utils
@@ -264,7 +265,7 @@ public function lower_function(
 ## `main`.  Supports a no-parameter `main` (`int main(void)`) and a single
 ## `span[str]` parameter (`int main(int argc, char** argv)` with the argv →
 ## `span[str]` bridge), each returning `int` or `void`.  Mirrors Ruby's
-## lowering.build_root_main_entrypoint(:none / :span_str signatures).
+## driver_mod.build_root_main_entrypoint(:none / :span_str signatures).
 
 public function lower_specialized_method(
     ctx: ref[lowering.LoweringContext],

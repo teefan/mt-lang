@@ -238,6 +238,7 @@
     "lowering.control_flow": "control_flow",
     "lowering.declaration_resolution": "decl_res_mod",
     "lowering.declarations": "decl_mod",
+    "lowering.driver": "driver_mod",
     "lowering.events": "events_mod",
     "lowering.expressions": "expr_mod",
     "lowering.foreign": "foreign_mod",
@@ -531,6 +532,7 @@
       "1db5cd41e2074ef5e488d1428e5c4822f83a9c8e",
       "1dcb7e50aafb2c6a07ac32f6d04089aea1427e42",
       "1dd9b5549f6dff02f7fe053cd85c0a191aaf78ca",
+      "1e04b0960e325903117617419f6a15eaf062f38c",
       "1ec4a2b17ad343f83eea8a09a19e31d5816aad86",
       "1ef0d562bf60d89994e316362e2ba924cd361711",
       "1f123c9eb370e1805d151204c02007847b066f3c",
@@ -571,7 +573,6 @@
       "2733459400241fbb40657501df4ba9a7dc7b82fc",
       "277ea64588f15c382d641bdc007b8deef3ec3dcc",
       "279bea4f3c3e13aecfe6c9fbafe56a7e2ebf4cfe",
-      "27f05c886caa8a98d560424e8143ed7ef13a2419",
       "280b78fc8da742dc3fd7cf025f58bb7e8f2bd431",
       "280f56f57f5e03eaf8194e06bf25af50ece8b161",
       "28297016038005f4aa2b23f1607183fa644b9dc4",
@@ -792,6 +793,7 @@
       "58593c4895dabab122cd019be74c5c441e5944f0",
       "588d52cd294b8c0831375e44332771463dd4a862",
       "58e43f0bbbb8ef2186c5b842248d4149264ab737",
+      "590e45c45de69b1307e15fad27163e6c89ec24a7",
       "591585140e7f7c711958e79de84bb49916fa89b8",
       "592c0478a4c330e4119b98e5534f4cebeb7032b7",
       "594a44b6d592a59595b1c4575439fc1354b0edb6",
@@ -802,7 +804,6 @@
       "5aab9234db340f118a17dd17ea4b03d78ab1f482",
       "5ad95bbe111b3c36af13a206bd05cce0b8635ab4",
       "5b01757314831299ffe306f33fbf1832ce78d930",
-      "5b3cf19e722460be382663e211295d05ebb17579",
       "5b55170b93ad1a19ab1b60288d47bb944637a2a1",
       "5bbb490937b30c00a875a1e2aa3c3693b1e2c2cf",
       "5bfdd71c73b2dddc3ba4023cf8fa258f5c22455f",
@@ -946,7 +947,6 @@
       "73f40511c724b9a8e9a83958c3d3f39299490f19",
       "73f43d898e82b56174710a1ecf3e20c1b35d7883",
       "73fc4541209a8b5fd89952c8dbdec7982e719f1c",
-      "740bebded550894d7f56dee9b547755c2500d8fb",
       "742c08cceeebf6f6e10c747e9c609ab3b0a8b4e7",
       "74538f7edfe6479271dcc52019849955392aa7ff",
       "745af51a73da7d98607255ceee0563f16a090486",
@@ -1079,7 +1079,6 @@
       "8de769e36393aa932a16337f7bb4110ee57cd458",
       "8dffd59c975fda0214f65a3fc29cf75708916ba3",
       "8e081bdeb9229ea739ce9000d71f7f0401dee71a",
-      "8e7020bfbe63bbdd95cd6facbc3364d3617b3896",
       "8e9b7121302aaad688840e20ac9bb20770875c50",
       "8eb262ca64fd4d01429466fcd51a3c67bb0243f2",
       "8f0a4f037ae5589e96f03225da9df80c6d9314bd",
@@ -1185,6 +1184,7 @@
       "a5a3cdc3b4d56551278d15d32d611f284826ecf1",
       "a5bb00240fbd94bd1441184472c9e99b08179c9c",
       "a5c004e6faf0143a500a5f383915c21d969835ff",
+      "a5c0b9035f8c9578b039ef84929a7a1e04315d47",
       "a5fbe3582894134cff2e71b95aa8f99b5d97bc53",
       "a6160733b7a215a0db39ff51f31364d8efbd4b71",
       "a622ad1ae4b9a38c3b04985f84af63fa3993ae72",
@@ -1383,6 +1383,7 @@
       "cf5cc1a3ca2550e0beee95dcc3f28d0255b3332f",
       "cf5f4714a4a31724ab464a8ff49834cb8d376023",
       "cf9642ec96b2ac5587385ec14f5413dd6362b4cb",
+      "cfcb68f2e86ddeae0d426b809fad3eddfead8b84",
       "cfd3a44f1a17262eda5e16cea333b6b0795f2fd2",
       "cfe2b2e1923e6debca2e3a16a71c955694086545",
       "d08f61aec6ea8033907fd5a1106385b1ad67d6db",
@@ -1622,7 +1623,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148947,
+    "total_code": 148969,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -2029,10 +2030,16 @@
         "max_function": 134
       },
       "projects/mtc/src/mtc/lowering/declarations.mt": {
-        "lines": 487,
-        "code": 389,
+        "lines": 488,
+        "code": 390,
         "max_line": 126,
         "max_function": 126
+      },
+      "projects/mtc/src/mtc/lowering/driver.mt": {
+        "lines": 408,
+        "code": 347,
+        "max_line": 130,
+        "max_function": 245
       },
       "projects/mtc/src/mtc/lowering/events.mt": {
         "lines": 2181,
@@ -2077,10 +2084,10 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 12208,
-        "code": 9043,
+        "lines": 11823,
+        "code": 8713,
         "max_line": 157,
-        "max_function": 246
+        "max_function": 162
       },
       "projects/mtc/src/mtc/lowering/match.mt": {
         "lines": 2066,
@@ -2095,8 +2102,8 @@
         "max_function": 271
       },
       "projects/mtc/src/mtc/lowering/monomorphized.mt": {
-        "lines": 1661,
-        "code": 1370,
+        "lines": 1662,
+        "code": 1371,
         "max_line": 323,
         "max_function": 229
       },
@@ -2419,8 +2426,8 @@
         "max_function": 46
       },
       "projects/mtc/src/mtc/main.mt": {
-        "lines": 4187,
-        "code": 3400,
+        "lines": 4188,
+        "code": 3401,
         "max_line": 277,
         "max_function": 204
       },
@@ -2431,8 +2438,8 @@
         "max_function": 144
       },
       "projects/mtc/src/mtc/main/build_cli.mt": {
-        "lines": 1783,
-        "code": 1562,
+        "lines": 1784,
+        "code": 1563,
         "max_line": 198,
         "max_function": 192
       },
@@ -2455,8 +2462,8 @@
         "max_function": 50
       },
       "projects/mtc/src/mtc/main/test_cli.mt": {
-        "lines": 1632,
-        "code": 1358,
+        "lines": 1633,
+        "code": 1359,
         "max_line": 126,
         "max_function": 136
       },

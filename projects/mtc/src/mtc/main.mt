@@ -39,6 +39,7 @@ import mtc.loader.package_manifest as package_manifest
 import mtc.loader.module_loader as loader
 import mtc.semantic.analyzer as analyzer
 import mtc.lowering.lowering as lowering
+import mtc.lowering.driver as driver_mod
 import mtc.c_backend.c_backend as c_backend
 import mtc.ir as ir
 import mtc.ir_verify as ir_verify
@@ -1277,7 +1278,7 @@ function check_one_file(
     # `check --lower`: run the middle-end after a clean semantic pass and report
     # user-reachable lowering errors with the same exit-code contract.
     if file_errors == 0 and lower_after_check:
-        let lowering_outcome = lowering.lower_checked(program)
+        let lowering_outcome = driver_mod.lower_checked(program)
         if lowering_outcome.failed:
             lowering.print_lowering_error(lowering_outcome.error)
             printed_errors += 1
@@ -2669,7 +2670,7 @@ function lower_one_path(
         source_root_owner.release()
         return 1
 
-    let lowering_outcome = lowering.lower_checked(program)
+    let lowering_outcome = driver_mod.lower_checked(program)
     if lowering_outcome.failed:
         lowering.print_lowering_error(lowering_outcome.error)
         entry_path_owner.release()
@@ -2827,7 +2828,7 @@ function emit_c_one_path(
         source_root_owner.release()
         return 1
 
-    let lowering_outcome = lowering.lower_checked(program)
+    let lowering_outcome = driver_mod.lower_checked(program)
     if lowering_outcome.failed:
         lowering.print_lowering_error(lowering_outcome.error)
         entry_path_owner.release()

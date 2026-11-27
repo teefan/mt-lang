@@ -21,6 +21,7 @@ import mtc.parser.state as pstate
 import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.lowering.lowering as lowering
+import mtc.lowering.driver as driver_mod
 import mtc.lsp.debug_text as debug_text
 import mtc.packages.lock as package_lock
 import mtc.cli_help as cli_help
@@ -418,7 +419,7 @@ function check_compile_fail_expectations(
         di += 1
 
     if error_msgs.len() == 0:
-        let lowering_outcome = lowering.lower_checked(program)
+        let lowering_outcome = driver_mod.lower_checked(program)
         if lowering_outcome.failed:
             error_msgs.push(lowering_outcome.error.message)
 
@@ -1289,7 +1290,7 @@ function build_runner_file(source_path: str, options: TestRunOptions, output_pat
         build_region.release_all()
         return Result[bool, string.String].failure(error = message)
 
-    let lowering_outcome = lowering.lower_checked(program)
+    let lowering_outcome = driver_mod.lower_checked(program)
     if lowering_outcome.failed:
         heap_mod.end_region(previous_region)
         var message = string.String.from_str(lowering.lowering_error_text(lowering_outcome.error))

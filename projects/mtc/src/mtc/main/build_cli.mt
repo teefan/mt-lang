@@ -18,6 +18,7 @@ import std.time as time
 import std.vec as vec
 
 import mtc.lowering.lowering as lowering
+import mtc.lowering.driver as driver_mod
 import mtc.loader.module_loader as loader
 import mtc.semantic.analyzer as analyzer
 import mtc.loader.package_manifest as package_manifest
@@ -465,7 +466,7 @@ function build_command_impl(args: span[str], watch_cache: ptr[loader.ModuleCache
 ## watch command calls it in a forked child so lowering/C/link allocations are
 ## released by process exit.
 function finish_build(program: loader.Program, run: BuildRun) -> int:
-    let lowering_outcome = lowering.lower_checked(program)
+    let lowering_outcome = driver_mod.lower_checked(program)
     if lowering_outcome.failed:
         lowering.print_lowering_error(lowering_outcome.error)
         return 1
@@ -1533,7 +1534,7 @@ public function run_command(args: span[str]) -> int:
             Option.none:
                 pass
 
-    let lowering_outcome = lowering.lower_checked(program)
+    let lowering_outcome = driver_mod.lower_checked(program)
     if lowering_outcome.failed:
         lowering.print_lowering_error(lowering_outcome.error)
         return 1

@@ -14,6 +14,7 @@ import std.string as string
 
 import mtc.loader.module_loader as loader
 import mtc.loader.path_resolver as resolver
+import mtc.lowering.driver as driver_mod
 import mtc.lowering.lowering as lowering
 import mtc.pretty_printer.ir_formatter as irfmt
 import mtc.semantic.types as types
@@ -72,7 +73,7 @@ function lower_source(source: str) -> string.String:
     var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
     defer: program.release()
 
-    let lowering_outcome = lowering.lower_checked(program)
+    let lowering_outcome = driver_mod.lower_checked(program)
     if lowering_outcome.failed:
         return string.String.from_str(lowering.lowering_error_text(lowering_outcome.error))
     return irfmt.format_program(lowering_outcome.program)
